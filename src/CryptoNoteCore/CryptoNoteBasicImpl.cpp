@@ -35,29 +35,26 @@ namespace CryptoNote {
   //-----------------------------------------------------------------------------------------------
   uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) {
     static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
-    assert(currentBlockSize <= 2 * medianSize);
-    assert(medianSize <= std::numeric_limits<uint32_t>::max());
-    assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
+    assert(medianSize > 0);
+    assert(currentBlockSize > 0);
 
-    if (amount == 0) {
-      return 0;
-    }
-
+    // CORRECT CRYPTONOTE FORMULA
     if (currentBlockSize <= medianSize) {
-      return amount;
+      return amount; // No penalty for small blocks
+    }
+    
+    if (currentBlockSize >= 2 * medianSize) {
+      return 0; // Block too big - zero reward
     }
 
-    uint64_t productHi;
-    uint64_t productLo = mul128(amount, currentBlockSize * (UINT64_C(2) * medianSize - currentBlockSize), &productHi);
-
+    // Calculate: amount * (2*medianSize - currentBlockSize) / medianSize
+    uint64_t numeratorHi;
+    uint64_t numeratorLo = mul128(amount, 2 * medianSize - currentBlockSize, &numeratorHi);
     uint64_t penalizedAmountHi;
     uint64_t penalizedAmountLo;
-    div128_32(productHi, productLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
-    div128_32(penalizedAmountHi, penalizedAmountLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
-
-    assert(0 == penalizedAmountHi);
-    assert(penalizedAmountLo < amount);
-
+    div128_32(numeratorHi, numeratorLo, medianSize, &penalizedAmountHi, &penalizedAmountLo);
+    
+    assert(penalizedAmountHi == 0); // Should never overflow
     return penalizedAmountLo;
   }
   //-----------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -165,15 +165,15 @@ struct TransferCommand {
   bool parseArguments(LoggerRef& logger, const std::vector<std::string> &args) {
     ArgumentReader<std::vector<std::string>::const_iterator> ar(args.begin(), args.end());
 
-    try 
+    try
     {
       /* Parse the remaining arguments */
-      while (!ar.eof()) 
+      while (!ar.eof())
       {
         auto arg = ar.next();
 
-        if (arg.size() && arg[0] == '-') 
-        {          
+        if (arg.size() && arg[0] == '-')
+        {
           const auto& value = ar.next();
           if (arg == "-p") {
             if (!createTxExtraWithPaymentId(value, extra)) {
@@ -218,16 +218,17 @@ struct TransferCommand {
             CryptoNote::BinaryArray ba = Common::asBinaryArray(keys);
 
             if (!CryptoNote::fromBinaryArray(addr, ba)) {
-              return true;
+                logger(ERROR, BRIGHT_RED) << "Failed to parse address from integrated address.";
+                return false;
             }
 
-            std::string address = CryptoNote::getAccountAddressAsStr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET, 
-                                                                    addr);   
+            std::string address = CryptoNote::getAccountAddressAsStr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET,
+                                                                    addr);
             arg = address;
           }
 
           WalletLegacyTransfer destination;
-          WalletLegacyTransfer feeDestination;          
+          WalletLegacyTransfer feeDestination;
           CryptoNote::TransactionDestinationEntry de;
           std::string aliasUrl;
 
@@ -254,7 +255,7 @@ struct TransferCommand {
 
           /* Remote node transactions fees are 0.25% <-add option for Elder Nodes to set own % fee, if not, default 0.25%*/
           if (!remote_fee_address.empty()) {
-            destination.address = remote_fee_address;                     
+            destination.address = remote_fee_address;
             int64_t remote_node_fee = static_cast<int64_t>(de.amount * 0.0025);
             if (remote_node_fee > 100000000)
                 remote_node_fee = 100000000;
@@ -482,7 +483,7 @@ bool writeAddressFile(const std::string& addressFilename, const std::string& add
 
 bool processServerAliasResponse(const std::string& s, std::string& address) {
   try {
-  //   
+  //
   // Courtesy of Monero Project
 		// make sure the txt record has "oa1:xfg" and find it
 		auto pos = s.find("oa1:xfg");
@@ -617,7 +618,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
   m_consoleHandler.setHandler("optimize", boost::bind(&simple_wallet::optimize_outputs, this, boost::arg<1>()), "Combine many available outputs into a few by sending a transaction to self");
-  m_consoleHandler.setHandler("optimize_all", boost::bind(&simple_wallet::optimize_all_outputs, this, boost::arg<1>()), "Optimize your wallet several times so you can send large transactions");  
+  m_consoleHandler.setHandler("optimize_all", boost::bind(&simple_wallet::optimize_all_outputs, this, boost::arg<1>()), "Optimize your wallet several times so you can send large transactions");
   m_consoleHandler.setHandler("transfer", boost::bind(&simple_wallet::transfer, this, boost::arg<1>()),
     "transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id]"
     " - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. ");
@@ -626,7 +627,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("save", boost::bind(&simple_wallet::save, this, boost::arg<1>()), "Save wallet synchronized data");
   m_consoleHandler.setHandler("reset", boost::bind(&simple_wallet::reset, this, boost::arg<1>()), "Discard cache data and start synchronizing from the start");
   m_consoleHandler.setHandler("help", boost::bind(&simple_wallet::help, this, boost::arg<1>()), "Show this help");
-  m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");  
+  m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
   m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
 }
@@ -680,40 +681,40 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   if (!m_daemon_port)
     m_daemon_port = RPC_DEFAULT_PORT_TESTNET; // Use testnet port by default
 
-  if (!m_daemon_address.empty()) 
+  if (!m_daemon_address.empty())
   {
-    if (!parseUrlAddress(m_daemon_address, m_daemon_host, m_daemon_port)) 
+    if (!parseUrlAddress(m_daemon_address, m_daemon_host, m_daemon_port))
     {
       fail_msg_writer() << "failed to parse daemon address: " << m_daemon_address;
       return false;
     }
     remote_fee_address = getFeeAddress();
     logger(INFO, BRIGHT_WHITE) << "Connected to remote node: " << m_daemon_host;
-    if (!remote_fee_address.empty()) 
+    if (!remote_fee_address.empty())
     {
       logger(INFO, BRIGHT_WHITE) << "Fee address: " << remote_fee_address;
-    }    
-  } 
-  else 
+    }
+  }
+  else
   {
-    if (!m_daemon_host.empty()) 
+    if (!m_daemon_host.empty())
       remote_fee_address = getFeeAddress();
 		m_daemon_address = std::string("http://") + m_daemon_host + ":" + std::to_string(m_daemon_port);
     logger(INFO, BRIGHT_WHITE) << "Connected to remote node: " << m_daemon_host;
-    if (!remote_fee_address.empty()) 
+    if (!remote_fee_address.empty())
     {
       logger(INFO, BRIGHT_WHITE) << "Fee address: " << remote_fee_address;
-    }   
+    }
   }
 
   if (m_generate_new.empty() && m_wallet_file_arg.empty()) {
     std::cout <<"\n";
     std::cout <<"\n";
-    std::cout <<"       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        "<< "\n";     
-    std::cout <<"       ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒       "<< "\n";     
-    std::cout <<"       ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒       "<< "\n";     
-    std::cout <<"       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       "<< "\n";     
-    std::cout <<"       ██       ██████  ███████  ██████   ██████        "<< "\n";     
+    std::cout <<"       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        "<< "\n";
+    std::cout <<"       ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒       "<< "\n";
+    std::cout <<"       ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒       "<< "\n";
+    std::cout <<"       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       "<< "\n";
+    std::cout <<"       ██       ██████  ███████  ██████   ██████        "<< "\n";
     std::cout <<"\n";
     std::cout <<"\n";
     std::cout <<"\n";
@@ -875,8 +876,8 @@ if (key_import) {
     if (!Common::fromHex(private_view_key_string, &private_view_key_hash, sizeof(private_view_key_hash), size) || size != sizeof(private_spend_key_hash)) {
       return false;
     }
-      private_spend_key = *(struct Crypto::SecretKey *) &private_spend_key_hash;
-      private_view_key = *(struct Crypto::SecretKey *) &private_view_key_hash;
+    memcpy(&private_spend_key, &private_spend_key_hash, sizeof(private_spend_key));
+    memcpy(&private_view_key, &private_view_key_hash, sizeof(private_view_key));
     }
 
     if (!new_wallet(private_spend_key, private_view_key, walletFileName, pwd_container.password())) {
@@ -1232,7 +1233,7 @@ bool simple_wallet::get_reserve_proof(const std::vector<std::string> &args)
 
 	try {
 		const std::string sig_str = m_wallet->getReserveProof(reserve, args.size() == 2 ? args[1] : "");
-		
+
 		//logger(INFO, BRIGHT_WHITE) << "\n\n" << sig_str << "\n\n" << std::endl;
 
 		const std::string filename = "reserve_proof_" + args[0] + "_XFG.txt";
@@ -1382,7 +1383,7 @@ bool simple_wallet::sign_message(const std::vector<std::string>& args)
     fail_msg_writer() << "Use: sign_message <message>";
     return true;
   }
-    
+
   AccountKeys keys;
   m_wallet->getAccountKeys(keys);
 
@@ -1390,10 +1391,10 @@ bool simple_wallet::sign_message(const std::vector<std::string>& args)
   Crypto::Signature sig;
   Crypto::cn_fast_hash(args[0].data(), args[0].size(), message_hash);
   Crypto::generate_signature(message_hash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
-  
+
   success_msg_writer() << "Sig" << Tools::Base58::encode(std::string(reinterpret_cast<char*>(&sig)));
 
-  return true;	
+  return true;
 }
 
 bool simple_wallet::verify_signature(const std::vector<std::string>& args)
@@ -1403,28 +1404,36 @@ bool simple_wallet::verify_signature(const std::vector<std::string>& args)
     fail_msg_writer() << "Use: verify_signature <message> <address> <signature>";
     return true;
   }
-  
+
   std::string encodedSig = args[2];
   const size_t prefix_size = strlen("Sig");
-  
+
   if(encodedSig.substr(0, prefix_size) != "Sig")
   {
     fail_msg_writer() << "Invalid signature prefix";
     return true;
-  } 
-  
+  }
+
   Crypto::Hash message_hash;
   Crypto::cn_fast_hash(args[0].data(), args[0].size(), message_hash);
-  
+
   std::string decodedSig;
+  if (!Tools::Base58::decode(encodedSig.substr(prefix_size), decodedSig)) {
+    fail_msg_writer() << "Failed to decode signature";
+    return true;
+  }
+
+  if (decodedSig.size() != sizeof(Crypto::Signature)) {
+    fail_msg_writer() << "Invalid signature size";
+    return true;
+  }
   Crypto::Signature sig;
-  Tools::Base58::decode(encodedSig.substr(prefix_size), decodedSig);
   memcpy(&sig, decodedSig.data(), sizeof(sig));
-  
+
   uint64_t prefix;
   CryptoNote::AccountPublicAddress addr;
   CryptoNote::parseAccountAddressString(prefix, addr, args[1]);
-  
+
   if(Crypto::check_signature(message_hash, addr.spendPublicKey, sig))
     success_msg_writer() << "Valid";
   else
@@ -1437,11 +1446,11 @@ bool simple_wallet::verify_signature(const std::vector<std::string>& args)
 /* CREATE INTEGRATED ADDRESS */
 /* take a payment Id as an argument and generate an integrated wallet address */
 
-bool simple_wallet::create_integrated(const std::vector<std::string>& args/* = std::vector<std::string>()*/) 
+bool simple_wallet::create_integrated(const std::vector<std::string>& args/* = std::vector<std::string>()*/)
 {
 
   /* check if there is a payment id */
-  if (args.empty()) 
+  if (args.empty())
   {
 
     fail_msg_writer() << "Please enter a payment ID";
@@ -1530,13 +1539,13 @@ bool simple_wallet::show_incoming_transfers(const std::vector<std::string>& args
 bool simple_wallet::listTransfers(const std::vector<std::string>& args) {
   bool haveTransfers = false;
   bool haveBlockHeight = false;
-  std::string blockHeightString = ""; 
+  std::string blockHeightString = "";
   uint32_t blockHeight = 0;
   WalletLegacyTransaction txInfo;
 
 
   /* get block height from arguments */
-  if (args.empty()) 
+  if (args.empty())
   {
     haveBlockHeight = false;
   } else {
@@ -1546,9 +1555,9 @@ bool simple_wallet::listTransfers(const std::vector<std::string>& args) {
   }
 
   size_t transactionsCount = m_wallet->getTransactionCount();
-  for (size_t trantransactionNumber = 0; trantransactionNumber < transactionsCount; ++trantransactionNumber) 
+  for (size_t trantransactionNumber = 0; trantransactionNumber < transactionsCount; ++trantransactionNumber)
   {
-    
+
     m_wallet->getTransaction(trantransactionNumber, txInfo);
     if (txInfo.state != WalletLegacyTransactionState::Active || txInfo.blockHeight == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
       continue;
@@ -1717,7 +1726,7 @@ bool simple_wallet::optimize_all_outputs(const std::vector<std::string>& args) {
   uint64_t rounds = (num_unlocked_outputs - remainder) / 100;
   success_msg_writer() << "Total optimization rounds: " << rounds;
   for(uint64_t a = 1; a < rounds; a = a + 1 ) {
-    
+
     try {
       CryptoNote::WalletHelper::SendCompleteResultObserver sent;
       WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
@@ -1788,7 +1797,7 @@ std::string simple_wallet::resolveAlias(const std::string& aliasUrl) {
 
 /* This extracts the fee address from the remote node */
 std::string simple_wallet::getFeeAddress() {
-  
+
   HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
 
   HttpRequest req;
@@ -1899,7 +1908,7 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet->getTransaction(tx, txInfo);
     success_msg_writer(true) << "XFG successfully sent, transaction hash: " << Common::podToHex(txInfo.hash);
-    success_msg_writer(true) << "Transaction secret key " << Common::podToHex(transactionSK); 
+    success_msg_writer(true) << "Transaction secret key " << Common::podToHex(transactionSK);
 
     try {
       CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);

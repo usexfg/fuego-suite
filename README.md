@@ -4,7 +4,6 @@
 Based upon the CryptoNote protocol & philosophy.
 
 #### Resources
--   [TUI Documentation](#terminal-user-interface-tui)
 
 -   [Website](https://usexfg.org)
 -   Explorer: <http://fuego.spaceportx.net>
@@ -55,7 +54,7 @@ You may download them from:
 *** Alternatively, it may be possible to install them using a package manager by
 executing the following command.
  ```
- sudo apt-get install build-essential git cmake libboost-all-dev
+ sudo apt-get install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
 ```
 
 2. Clone Fuego repository
@@ -90,7 +89,7 @@ Fuego includes a Go-based Terminal User Interface for easy management of nodes a
 
 #### Building the TUI
 
-If you have Go 1.20+ installed, the TUI will be built automatically when running `make`. You can also build it separately:
+If you have Go 1.24+ installed, the TUI will be built automatically when running `make`. You can also build it separately:
 
 ```bash
 make build-tui

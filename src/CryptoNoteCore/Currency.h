@@ -304,6 +304,8 @@ private:
 
   bool generateGenesisBlock();
 
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) const;
+
 private:
   uint64_t m_maxBlockHeight;
   size_t m_maxBlockBlobSize;

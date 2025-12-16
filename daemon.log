@@ -1,0 +1,528 @@
+2025-Dec-15 21:12:51.220700 INFO  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             DYNAMIGO || v1.10.0.1076(0.2)
+
+
+INFO: Module folder: ./build/src/fuegod
+INFO: Initializing p2p server...
+2025-Dec-15 21:12:51.222296 INFO Binding on 0.0.0.0:10808
+2025-Dec-15 21:12:51.222347 INFO Net service bound on 0.0.0.0:10808
+2025-Dec-15 21:12:51.222367 INFO Attempting to add IGD port mapping.
+2025-Dec-15 21:12:52.933016 INFO IGD was found but reported as not connected.
+INFO: P2p server initialized OK
+INFO: Initializing core...
+INFO: Loading blockchain...
+INFO: - loading block index...
+INFO: - loading transaction map
+INFO: - loading spent keys
+INFO: - loading outputs
+INFO: - loading multi-signature outputs
+INFO: - loading banking index
+INFO: Serialization time: 128ms
+2025-Dec-15 21:12:53.095281 INFO Loading checkpoints
+2025-Dec-15 21:12:53.095348 INFO DNS checkpoints disabled
+2025-Dec-15 21:12:53.095457 INFO Checking block version at 147959
+2025-Dec-15 21:12:53.095480 INFO Checking block version at 154322
+INFO: Blockchain initialized. last block: 174025
+INFO: Core initialized OK
+INFO: Starting core rpc server setup
+INFO: Starting RPC server
+INFO: RPC server started successfully
+INFO: Core setup completed, starting P2P networking
+INFO: Starting p2p net loop...
+DEBUG: About to call p2psrv.run()
+DEBUG: Calling p2psrv.run() now
+2025-Dec-15 21:12:53.097810 INFO Starting node server
+2025-Dec-15 21:12:53.097908 DEBUG onIdle started
+2025-Dec-15 21:12:53.097957 DEBUG Selected peer: 4212151506788676876 185.32.162.191:10808 [peer_list=1] last_seen: d0.h2.m19.s46
+2025-Dec-15 21:12:53.098004 DEBUG Connecting to 185.32.162.191:10808 (peer_type=1, last_seen: d0.h2.m19.s46)...
+2025-Dec-15 21:13:00.554749 INFO [185.32.162.191:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:00.554749 INFO Synchronization started
+2025-Dec-15 21:13:00.554860 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:00.554893 DEBUG [185.32.162.191:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:00.554949 DEBUG Selected peer: 93 195.7.5.101:10808 [peer_list=1] last_seen: d0.h2.m20.s18
+2025-Dec-15 21:13:00.554975 DEBUG Connecting to 195.7.5.101:10808 (peer_type=1, last_seen: d0.h2.m20.s18)...
+2025-Dec-15 21:13:00.555099 DEBUG [185.32.162.191:10808 OUT] writeHandler started
+2025-Dec-15 21:13:00.555126 DEBUG [185.32.162.191:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:00.693132 DEBUG [185.32.162.191:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:01.362068 DEBUG [185.32.162.191:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:02.589236 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:02.605450 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:02.698625 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:02.775054 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:02.851587 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:02.931000 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:03.013342 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:03.094458 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:03.175475 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:06.403621 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:06.403689 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:06.420233 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:06.809428 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:06.811235 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:07.232731 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:07.234485 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:07.665959 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:07.667692 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:08.061988 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:08.063775 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:08.453157 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:08.454912 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:08.828531 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:08.830261 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:09.199128 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:09.200853 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:13:09.598479 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:13:09.598827 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:13:09.620091 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:13:09.620475 DEBUG [185.32.162.191:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:13:09.620652 DEBUG [185.32.162.191:10808 OUT] Interrupt connection
+2025-Dec-15 21:13:09.620698 DEBUG [185.32.162.191:10808 OUT] writeHandler finished
+2025-Dec-15 21:13:10.820798 INFO [195.7.5.101:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:10.820798 INFO Synchronization started
+2025-Dec-15 21:13:10.820965 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:10.821033 DEBUG [195.7.5.101:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:10.821087 DEBUG Selected peer: 2926712434535782218 164.68.115.162:10808 [peer_list=1] last_seen: d0.h2.m20.s11
+2025-Dec-15 21:13:10.821110 DEBUG Connecting to 164.68.115.162:10808 (peer_type=1, last_seen: d0.h2.m20.s11)...
+2025-Dec-15 21:13:10.821202 DEBUG [195.7.5.101:10808 OUT] writeHandler started
+2025-Dec-15 21:13:10.821224 DEBUG [195.7.5.101:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:10.948290 DEBUG [195.7.5.101:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:11.768373 DEBUG [195.7.5.101:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:14.782807 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:14.796465 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:14.892912 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:14.971474 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:15.049975 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:15.129744 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:15.215421 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:15.294726 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:15.374078 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:18.763745 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:18.763807 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:18.778567 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:19.178021 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:19.179792 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:19.567196 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:19.569342 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:19.970047 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:19.972396 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:20.353401 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:20.355135 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:20.746680 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:20.748390 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:21.139155 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:21.140919 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:21.528846 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:21.530596 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:13:21.923576 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:13:21.923977 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:13:21.943475 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:13:21.943871 DEBUG [195.7.5.101:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:13:21.944077 DEBUG [195.7.5.101:10808 OUT] Interrupt connection
+2025-Dec-15 21:13:21.944122 DEBUG [195.7.5.101:10808 OUT] writeHandler finished
+2025-Dec-15 21:13:21.944531 INFO [164.68.115.162:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:21.944531 INFO Synchronization started
+2025-Dec-15 21:13:21.944571 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:21.944596 DEBUG [164.68.115.162:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:21.944639 DEBUG Selected peer: 93 195.7.5.101:10808 [peer_list=1] last_seen: d0.h0.m0.s11
+2025-Dec-15 21:13:21.944662 DEBUG Connecting to 195.7.5.101:10808 (peer_type=1, last_seen: d0.h0.m0.s11)...
+2025-Dec-15 21:13:21.947234 DEBUG [164.68.115.162:10808 OUT] writeHandler started
+2025-Dec-15 21:13:21.947287 DEBUG [164.68.115.162:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:21.947327 DEBUG [164.68.115.162:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:22.693293 DEBUG [164.68.115.162:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:24.024710 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:24.030263 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:24.110049 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:24.188979 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:24.268627 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:24.351044 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:24.433832 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:24.518382 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:24.602333 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:27.924586 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:27.924661 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:27.941651 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:28.368464 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:28.370641 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:28.771562 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:28.773634 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:29.171505 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:29.173302 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:29.558775 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:29.560521 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:29.942788 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:29.944537 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:30.320916 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:30.322677 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:30.698660 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:30.700421 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:13:31.075640 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:13:31.076002 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:13:31.094995 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:13:31.095464 DEBUG [164.68.115.162:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:13:31.095690 DEBUG [164.68.115.162:10808 OUT] Interrupt connection
+2025-Dec-15 21:13:31.095764 DEBUG [164.68.115.162:10808 OUT] writeHandler finished
+2025-Dec-15 21:13:32.197157 INFO [195.7.5.101:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:32.197157 INFO Synchronization started
+2025-Dec-15 21:13:32.197257 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:32.197296 DEBUG [195.7.5.101:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:32.197379 DEBUG Selected peer: 2926712434535782218 164.68.115.162:10808 [peer_list=1] last_seen: d0.h0.m0.s11
+2025-Dec-15 21:13:32.197414 DEBUG Connecting to 164.68.115.162:10808 (peer_type=1, last_seen: d0.h0.m0.s11)...
+2025-Dec-15 21:13:32.197534 DEBUG [195.7.5.101:10808 OUT] writeHandler started
+2025-Dec-15 21:13:32.197567 DEBUG [195.7.5.101:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:32.324858 DEBUG [195.7.5.101:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:32.947863 DEBUG [195.7.5.101:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:35.181316 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:35.196268 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:35.290343 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:35.367051 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:35.443916 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:35.522889 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:35.601142 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:35.682207 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:35.764523 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:39.035245 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:39.035308 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:39.050855 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:39.474872 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:39.476709 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:39.897869 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:39.899662 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:40.296489 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:40.298281 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:40.688598 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:40.690673 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:41.085015 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:41.086756 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:41.462427 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:41.465021 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:41.849405 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:41.851173 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:13:42.226255 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:13:42.226617 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:13:42.245598 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:13:42.246156 DEBUG [195.7.5.101:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:13:42.246424 DEBUG [195.7.5.101:10808 OUT] Interrupt connection
+2025-Dec-15 21:13:42.246466 DEBUG [195.7.5.101:10808 OUT] writeHandler finished
+2025-Dec-15 21:13:42.436666 INFO [164.68.115.162:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:42.436666 INFO Synchronization started
+2025-Dec-15 21:13:42.436737 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:42.436762 DEBUG [164.68.115.162:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:42.436814 DEBUG Selected peer: 4212151506788676876 185.32.162.191:10808 [peer_list=1] last_seen: d0.h0.m0.s42
+2025-Dec-15 21:13:42.436837 DEBUG Connecting to 185.32.162.191:10808 (peer_type=1, last_seen: d0.h0.m0.s42)...
+2025-Dec-15 21:13:42.436937 DEBUG [164.68.115.162:10808 OUT] writeHandler started
+2025-Dec-15 21:13:42.436962 DEBUG [164.68.115.162:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:42.559972 DEBUG [164.68.115.162:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:43.176199 DEBUG [164.68.115.162:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:43.176347 DEBUG [164.68.115.162:10808 OUT] msg 1:1002
+2025-Dec-15 21:13:44.599156 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:44.614141 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:44.707591 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:44.783099 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:44.858924 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:44.936020 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:45.013477 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:45.092704 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:45.171947 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:48.418595 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:48.418659 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:48.433488 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:48.817282 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:48.819096 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:49.231905 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:49.234063 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:49.655890 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:49.657683 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:50.049091 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:50.050880 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:50.424047 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:50.425802 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:50.795274 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:50.797132 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:51.164361 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:51.166146 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:13:51.532595 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:13:51.532958 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:13:51.551965 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:13:51.552518 DEBUG [164.68.115.162:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:13:51.552753 DEBUG [164.68.115.162:10808 OUT] Interrupt connection
+2025-Dec-15 21:13:51.552791 DEBUG [164.68.115.162:10808 OUT] writeHandler finished
+2025-Dec-15 21:13:51.553369 INFO [185.32.162.191:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:13:51.553369 INFO Synchronization started
+2025-Dec-15 21:13:51.553414 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:13:51.553439 DEBUG [185.32.162.191:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:13:51.553482 DEBUG Selected peer: 93 195.7.5.101:10808 [peer_list=1] last_seen: d0.h0.m0.s19
+2025-Dec-15 21:13:51.553505 DEBUG Connecting to 195.7.5.101:10808 (peer_type=1, last_seen: d0.h0.m0.s19)...
+2025-Dec-15 21:13:51.556277 DEBUG [185.32.162.191:10808 OUT] writeHandler started
+2025-Dec-15 21:13:51.556341 DEBUG [185.32.162.191:10808 OUT] msg 2:2006
+2025-Dec-15 21:13:51.556390 DEBUG [185.32.162.191:10808 OUT] msg 2:2002
+2025-Dec-15 21:13:52.350903 DEBUG [185.32.162.191:10808 OUT] msg 2:2003
+2025-Dec-15 21:13:53.371028 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:13:53.384477 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:13:53.478136 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:13:53.553813 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:13:53.629501 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:13:53.707959 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:13:53.788714 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:13:53.870664 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:13:53.950737 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:13:57.190524 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:13:57.190591 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:13:57.206428 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:13:57.607034 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:13:57.608937 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:13:58.014242 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:13:58.016094 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:13:58.427191 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:13:58.429035 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:13:58.831309 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:13:58.833034 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:13:59.206761 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:13:59.208504 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:13:59.574131 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:13:59.575841 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:13:59.941767 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:13:59.943750 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:00.310459 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:00.310798 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:00.329760 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:00.330207 DEBUG [185.32.162.191:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:00.330418 DEBUG [185.32.162.191:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:00.330455 DEBUG [185.32.162.191:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:01.804568 INFO [195.7.5.101:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:01.804568 INFO Synchronization started
+2025-Dec-15 21:14:01.804699 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:01.804772 DEBUG [195.7.5.101:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:01.804847 DEBUG Selected peer: 4212151506788676876 185.32.162.191:10808 [peer_list=1] last_seen: d0.h0.m0.s10
+2025-Dec-15 21:14:01.804884 DEBUG Connecting to 185.32.162.191:10808 (peer_type=1, last_seen: d0.h0.m0.s10)...
+2025-Dec-15 21:14:01.805016 DEBUG [195.7.5.101:10808 OUT] writeHandler started
+2025-Dec-15 21:14:01.805072 DEBUG [195.7.5.101:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:01.932464 DEBUG [195.7.5.101:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:02.546070 DEBUG [195.7.5.101:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:04.457171 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:04.462592 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:04.540371 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:04.618265 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:04.696965 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:04.776467 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:04.854115 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:04.934330 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:05.016353 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:08.320066 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:08.320135 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:14:08.335907 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:14:08.753151 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:14:08.755037 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:14:09.143129 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:14:09.144982 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:14:09.544441 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:14:09.546345 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:14:09.935679 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:14:09.937647 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:14:10.322710 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:14:10.324480 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:14:10.703354 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:14:10.705136 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:14:11.085161 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:14:11.087036 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:11.477529 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:11.477924 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:11.500122 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:11.500906 DEBUG [195.7.5.101:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:11.501207 DEBUG [195.7.5.101:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:11.501247 DEBUG [195.7.5.101:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:11.501921 INFO [185.32.162.191:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:11.501921 INFO Synchronization started
+2025-Dec-15 21:14:11.501975 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:11.502002 DEBUG [185.32.162.191:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:11.502058 DEBUG Selected peer: 93 195.7.5.101:10808 [peer_list=1] last_seen: d0.h0.m0.s10
+2025-Dec-15 21:14:11.502083 DEBUG Connecting to 195.7.5.101:10808 (peer_type=1, last_seen: d0.h0.m0.s10)...
+2025-Dec-15 21:14:11.505510 DEBUG [185.32.162.191:10808 OUT] writeHandler started
+2025-Dec-15 21:14:11.505582 DEBUG [185.32.162.191:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:11.505636 DEBUG [185.32.162.191:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:12.295985 DEBUG [185.32.162.191:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:13.295274 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:13.311782 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:13.400940 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:13.478586 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:13.555757 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:13.635309 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:13.717277 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:13.798555 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:13.881085 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:17.167876 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:17.167949 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:14:17.183304 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:14:17.577026 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:14:17.578948 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:14:17.970611 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:14:17.972490 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:14:18.366403 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:14:18.368261 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:14:18.753694 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:14:18.755518 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:14:19.139132 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:14:19.140915 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:14:19.512059 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:14:19.513840 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:14:19.884085 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:14:19.885879 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:20.282750 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:20.283211 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:20.306801 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:20.307724 DEBUG [185.32.162.191:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:20.308137 DEBUG [185.32.162.191:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:20.308186 DEBUG [185.32.162.191:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:21.753314 INFO [195.7.5.101:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:21.753314 INFO Synchronization started
+2025-Dec-15 21:14:21.753392 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:21.753432 DEBUG [195.7.5.101:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:21.753482 DEBUG Selected peer: 4212151506788676876 185.32.162.191:10808 [peer_list=1] last_seen: d0.h0.m0.s10
+2025-Dec-15 21:14:21.753513 DEBUG Connecting to 185.32.162.191:10808 (peer_type=1, last_seen: d0.h0.m0.s10)...
+2025-Dec-15 21:14:21.753643 DEBUG [195.7.5.101:10808 OUT] writeHandler started
+2025-Dec-15 21:14:21.753674 DEBUG [195.7.5.101:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:21.879180 DEBUG [195.7.5.101:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:22.501717 DEBUG [195.7.5.101:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:24.530758 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:24.539290 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:24.640716 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:24.720316 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:24.800039 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:24.877461 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:24.955778 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:25.035389 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:25.115120 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:28.479516 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:28.479585 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:14:28.498463 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:14:28.961668 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:14:28.963542 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:14:29.386666 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:14:29.388533 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:14:29.787373 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:14:29.789280 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:14:30.173063 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:14:30.174866 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:14:30.591884 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:14:30.593971 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:14:30.979277 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:14:30.981083 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:14:31.388370 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:14:31.390176 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:31.756598 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:31.757023 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:31.780279 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:31.780907 DEBUG [195.7.5.101:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:31.781176 DEBUG [195.7.5.101:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:31.781216 DEBUG [195.7.5.101:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:31.781914 INFO [185.32.162.191:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:31.781914 INFO Synchronization started
+2025-Dec-15 21:14:31.781971 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:31.781997 DEBUG [185.32.162.191:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:31.782036 DEBUG Selected peer: 93 195.7.5.101:10808 [peer_list=1] last_seen: d0.h0.m0.s10
+2025-Dec-15 21:14:31.782059 DEBUG Connecting to 195.7.5.101:10808 (peer_type=1, last_seen: d0.h0.m0.s10)...
+2025-Dec-15 21:14:31.784959 DEBUG [185.32.162.191:10808 OUT] writeHandler started
+2025-Dec-15 21:14:31.785010 DEBUG [185.32.162.191:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:31.785086 DEBUG [185.32.162.191:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:32.424330 DEBUG [185.32.162.191:10808 OUT] msg 1:1002
+2025-Dec-15 21:14:32.679316 DEBUG [185.32.162.191:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:33.652387 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:33.671652 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:33.764546 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:33.841683 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:33.920186 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:34.000203 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:34.080799 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:34.162032 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:34.244665 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:37.654977 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:37.655062 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:14:37.675549 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:14:38.074783 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:14:38.076672 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:14:38.460664 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:14:38.462507 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:14:38.848239 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:14:38.850057 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:14:39.226455 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:14:39.228289 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:14:39.608716 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:14:39.610526 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:14:39.975923 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:14:39.977773 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:14:40.343447 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:14:40.345242 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:40.711302 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:40.711665 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:40.730724 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:40.731440 DEBUG [185.32.162.191:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:40.731762 DEBUG [185.32.162.191:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:40.731801 DEBUG [185.32.162.191:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:42.038884 INFO [195.7.5.101:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:42.038884 INFO Synchronization started
+2025-Dec-15 21:14:42.038992 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:42.039028 DEBUG [195.7.5.101:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:42.039096 DEBUG Selected peer: 2926712434535782218 164.68.115.162:10808 [peer_list=1] last_seen: d0.h0.m1.s0
+2025-Dec-15 21:14:42.039129 DEBUG Connecting to 164.68.115.162:10808 (peer_type=1, last_seen: d0.h0.m1.s0)...
+2025-Dec-15 21:14:42.039247 DEBUG [195.7.5.101:10808 OUT] writeHandler started
+2025-Dec-15 21:14:42.039280 DEBUG [195.7.5.101:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:42.166720 DEBUG [195.7.5.101:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:42.787097 DEBUG [195.7.5.101:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:44.410841 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:44.426496 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:44.521605 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:44.603293 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:44.682310 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:44.759521 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:44.837320 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:44.919427 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:45.001035 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:48.210096 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:48.210186 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a50c74880d5> has invalid miner transaction
+2025-Dec-15 21:14:48.229992 DEBUG Processing tx <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> with inputs of 20022084400 and outputs of 20021284400
+2025-Dec-15 21:14:48.666397 DEBUG Transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> added to pool
+2025-Dec-15 21:14:48.668606 DEBUG Processing tx <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> with inputs of 20249220941 and outputs of 20248420941
+2025-Dec-15 21:14:49.083674 DEBUG Transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> added to pool
+2025-Dec-15 21:14:49.085705 DEBUG Processing tx <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> with inputs of 20043290623 and outputs of 20042490623
+2025-Dec-15 21:14:49.501878 DEBUG Transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> added to pool
+2025-Dec-15 21:14:49.503690 DEBUG Processing tx <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> with inputs of 20061967665 and outputs of 20061167665
+2025-Dec-15 21:14:49.906857 DEBUG Transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> added to pool
+2025-Dec-15 21:14:49.908717 DEBUG Processing tx <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> with inputs of 20001498469 and outputs of 20000698469
+2025-Dec-15 21:14:50.303781 DEBUG Transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> added to pool
+2025-Dec-15 21:14:50.305565 DEBUG Processing tx <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> with inputs of 20059060434 and outputs of 20058260434
+2025-Dec-15 21:14:50.676475 DEBUG Transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> added to pool
+2025-Dec-15 21:14:50.678237 DEBUG Processing tx <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> with inputs of 20070662938 and outputs of 20069862938
+2025-Dec-15 21:14:51.045135 DEBUG Transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> added to pool
+2025-Dec-15 21:14:51.046909 DEBUG Processing tx <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> with inputs of 20092526974 and outputs of 20091726974
+2025-Dec-15 21:14:51.418779 DEBUG Transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> added to pool
+2025-Dec-15 21:14:51.419129 DEBUG Processing tx <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> with inputs of 471040047 and outputs of 469440047
+2025-Dec-15 21:14:51.439671 DEBUG Transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> added to pool
+2025-Dec-15 21:14:51.440310 DEBUG [195.7.5.101:10808 OUT] Block verification failed, dropping connection
+2025-Dec-15 21:14:51.440566 DEBUG [195.7.5.101:10808 OUT] Interrupt connection
+2025-Dec-15 21:14:51.440604 DEBUG [195.7.5.101:10808 OUT] writeHandler finished
+2025-Dec-15 21:14:52.309708 INFO [164.68.115.162:10808 OUT] Unknown top block: 174025 -> 979882
+2025-Dec-15 21:14:52.309708 INFO Synchronization started
+2025-Dec-15 21:14:52.309805 DEBUG Remote top block height: 979882, id: <07e3724970b795a943d13d33166d5310263d8c59d707fd0e0f298a9795d5d3fe>
+2025-Dec-15 21:14:52.309841 DEBUG [164.68.115.162:10808 OUT] COMMAND_HANDSHAKE INVOKED OK
+2025-Dec-15 21:14:52.309905 DEBUG Selected peer: 4212151506788676876 185.32.162.191:10808 [peer_list=1] last_seen: d0.h0.m0.s21
+2025-Dec-15 21:14:52.309947 DEBUG Connecting to 185.32.162.191:10808 (peer_type=1, last_seen: d0.h0.m0.s21)...
+2025-Dec-15 21:14:52.310068 DEBUG [164.68.115.162:10808 OUT] writeHandler started
+2025-Dec-15 21:14:52.310102 DEBUG [164.68.115.162:10808 OUT] msg 2:2006
+2025-Dec-15 21:14:52.455599 DEBUG [164.68.115.162:10808 OUT] msg 2:2002
+2025-Dec-15 21:14:53.261055 DEBUG [164.68.115.162:10808 OUT] msg 2:2003
+2025-Dec-15 21:14:54.826043 DEBUG transaction <8e957b26374370946e306b40b6d03ff4a3da079c59572946c031bb4324822e20> came in processObjects
+2025-Dec-15 21:14:54.839423 DEBUG transaction <5c652f20f733a10de7db115ce03d5b3e71c377725be4a627aba3477c54326a37> came in processObjects
+2025-Dec-15 21:14:54.933170 DEBUG transaction <78d2c3cacdb3b52f3188951515161a4554c04ee3be1fbb6840b2854ae5eb5c81> came in processObjects
+2025-Dec-15 21:14:55.008728 DEBUG transaction <30ea68e0376689dcd7ca669da35b3c59d4165e826cb9ad6774301295b763eee1> came in processObjects
+2025-Dec-15 21:14:55.084272 DEBUG transaction <fcadbee5e11958d7c5d91b19e59dc08c21b89541db5c4602a7d3156ea0cb5c9f> came in processObjects
+2025-Dec-15 21:14:55.161180 DEBUG transaction <6de42a746c2be1d38f441e3b48a4954b5bd301a05300aa32776fa1bbc00cde5a> came in processObjects
+2025-Dec-15 21:14:55.238677 DEBUG transaction <6d7dfa1a8f76d570020c6c738a253c77eb34426c04a1132ba309a11d891c1941> came in processObjects
+2025-Dec-15 21:14:55.319616 DEBUG transaction <73a87d9f1bd5886a009ae280671d9fcb629d1d90adbc023630f4e76eae0173b4> came in processObjects
+2025-Dec-15 21:14:55.399066 DEBUG transaction <65dab35ba349d75edf622c2b6d386ff5b86a1baa8fc9fec53eb0de17bb07f7db> came in processObjects
+2025-Dec-15 21:14:58.566073 ERROR Coinbase transaction spends too much money: 16.5153519, block reward is 2.5287595
+2025-Dec-15 21:14:58.566139 INFO Block <7a5c59aff9b7f60c31ff0dab491c0f96558fbce698eb04ca93ef9a5

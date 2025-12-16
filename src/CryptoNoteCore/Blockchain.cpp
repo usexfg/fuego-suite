@@ -195,7 +195,7 @@ public:
       s(m_lastBlockHash, "last_block");
     }
 
-    printf("INFO: %sblock index...\n", operation.c_str());
+    logger(INFO) << operation << "block index...";
     s(m_bs.m_blockIndex, "block_index");
 
       printf("INFO: %stransaction map\n", operation.c_str());
@@ -682,7 +682,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       m_outputs.clear();
       m_multisignatureOutputs.clear();
 
-      uint32_t blocksToProcess = std::min(500000u, (uint32_t)m_blocks.size());
+      uint32_t blocksToProcess = (uint32_t)m_blocks.size();
 
       for (uint32_t b = 0; b < blocksToProcess; ++b) {
         const BlockEntry &block = m_blocks[b];
@@ -2236,22 +2236,34 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
 
   auto longhashTimeStart = std::chrono::steady_clock::now();
-  Crypto::Hash proof_of_work = NULL_HASH;
-  if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
-    if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
-      logger(ERROR, BRIGHT_RED) <<
-        "CHECKPOINT VALIDATION FAILED";
-      bvc.m_verification_failed = true;
-      return false;
+    Crypto::Hash proof_of_work = NULL_HASH;
+
+
+    if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
+      if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
+        logger(ERROR, BRIGHT_RED) <<
+          "CHECKPOINT VALIDATION FAILED";
+        bvc.m_verification_failed = true;
+        return false;
+      }
+    } else {
+
+      // Skip difficulty validation only for FOUNDATIONAL blocks, ie anything < 800k
+      // Fixes daemon's backwards compatibility issues syncing with early blocks
+      if (getCurrentBlockchainHeight() < 800000) {
+        logger(INFO, BRIGHT_WHITE) <<
+
+          "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
+      } else {
+        if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
+          logger(INFO, BRIGHT_WHITE) <<
+
+            "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
+          bvc.m_verification_failed = true;
+          return false;
+        }
+      }
     }
-  } else {
-    if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
-      logger(INFO, BRIGHT_WHITE) <<
-        "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
-      bvc.m_verification_failed = true;
-      return false;
-    }
-  }
 
   auto longhash_calculating_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - longhashTimeStart).count();
 
@@ -2490,8 +2502,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
         // Sync Currency ethernalXFG
     const_cast<Currency&>(m_currency).addEternalFlame(permanentBurns);
 
-  // Use large burn amount for logging (800 XFG)
-      logger(INFO) << "Burn in block " << height << ": " << parameters::BURN_DEPOSIT_LARGE_AMOUNT
+  // logging for burns
+  logger(INFO) << "Burn in block " << height << ": " << m_currency.formatAmount(permanentBurns)
                    << " XFG sent into the Ether";
     }
   }

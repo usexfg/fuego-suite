@@ -1,8 +1,6 @@
 module github.com/usexfg/fuego-node/tui
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.18
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10

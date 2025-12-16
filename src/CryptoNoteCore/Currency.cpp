@@ -203,22 +203,22 @@ void Currency::getEternalFlame(uint64_t& amount) const {
     uint64_t baseReward = (m_moneySupply - Osavvirsak) >> m_emissionSpeedFactor;
 
     // Debug output for reward calculation analysis
-    static uint32_t lastDebugHeight = 0;
-    if (height % 1000 == 0 && height != lastDebugHeight) {
-        lastDebugHeight = height;
-        printf("BLOCK %u: alreadyGen=%llu, burned=%llu, osavvirsak=%llu, baseReward=%llu\n",
-               height, (unsigned long long)alreadyGeneratedCoins,
-               (unsigned long long)getEternalFlame(),
-               (unsigned long long)Osavvirsak,
-               (unsigned long long)baseReward);
-    }
-    size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);
-    medianSize = std::max(medianSize, blockGrantedFullRewardZone);
-    if (currentBlockSize > UINT64_C(2) * medianSize)
-    {
-      logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
-      return false;
-    }
+        static uint32_t lastDebugHeight = 0;
+        if (height % 10000 == 0 && height != lastDebugHeight) {
+            lastDebugHeight = height;
+            printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
+                   height, (unsigned long long)alreadyGeneratedCoins,
+                   (unsigned long long)getEternalFlame(),
+                   (unsigned long long)Osavvirsak,
+                   (unsigned long long)baseReward);
+        }
+        size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);
+        medianSize = std::max(medianSize, blockGrantedFullRewardZone);
+        if (currentBlockSize > UINT64_C(2) * medianSize)
+        {
+          logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
+          return false;
+        }
 
 		uint64_t penalizedBaseReward = getPenalizedAmount(baseReward, medianSize, currentBlockSize);
 		uint64_t penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, medianSize, currentBlockSize) : fee;
@@ -1330,6 +1330,31 @@ void Currency::getEternalFlame(uint64_t& amount) const {
                              GLOBAL_INDEXES_INITIAL_VALUE_SIZE + mixinCount * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
 
     return (transactionSize - headerSize - outputsSize) / inputSize;
+  }
+
+  uint64_t Currency::getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) const {
+    static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
+    assert(medianSize > 0);
+    assert(currentBlockSize > 0);
+
+    // CORRECT CRYPTONOTE FORMULA
+    if (currentBlockSize <= medianSize) {
+      return amount; // No penalty for small blocks
+    }
+    
+    if (currentBlockSize >= 2 * medianSize) {
+      return 0; // Block too big - zero reward
+    }
+
+    // Calculate: amount * (2*medianSize - currentBlockSize) / medianSize
+    uint64_t numeratorHi;
+    uint64_t numeratorLo = mul128(amount, 2 * medianSize - currentBlockSize, &numeratorHi);
+    uint64_t penalizedAmountHi;
+    uint64_t penalizedAmountLo;
+    div128_32(numeratorHi, numeratorLo, medianSize, &penalizedAmountHi, &penalizedAmountLo);
+    
+    assert(penalizedAmountHi == 0); // Should never overflow
+    return penalizedAmountLo;
   }
 
   /* ---------------------------------------------------------------------------------------------------- */

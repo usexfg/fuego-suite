@@ -34,9 +34,9 @@ function(check_go_version)
     set(GO_MAJOR ${CMAKE_MATCH_1})
     set(GO_MINOR ${CMAKE_MATCH_2})
 
-    # Require Go 1.20 or higher
-    if(${GO_MAJOR} LESS 1 OR (${GO_MAJOR} EQUAL 1 AND ${GO_MINOR} LESS 20))
-        message(FATAL_ERROR "Go 1.20 or higher is required. Found Go ${GO_MAJOR}.${GO_MINOR}")
+    # Require Go 1.18 or higher
+    if(${GO_MAJOR} LESS 1 OR (${GO_MAJOR} EQUAL 1 AND ${GO_MINOR} LESS 18))
+        message(FATAL_ERROR "Go 1.18 or higher is required. Found Go ${GO_MAJOR}.${GO_MINOR}")
     endif()
 endfunction()
 

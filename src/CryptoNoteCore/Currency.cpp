@@ -204,10 +204,13 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 
     // Debug output for reward calculation analysis
         static uint32_t lastDebugHeight = 0;
-        if (height % 10000 == 0 && height != lastDebugHeight) {
+        // Testnet uses lower block heights for debugging
+        uint32_t debugStartHeight = m_testnet ? 0 : 980000;
+        uint32_t debugInterval = m_testnet ? 10 : 10000;
+        if (height > debugStartHeight && (height % debugInterval == 0 && height != lastDebugHeight)) {
             lastDebugHeight = height;
-            printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
-                   height, (unsigned long long)alreadyGeneratedCoins,
+            printf("[%s] BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
+                   m_testnet ? "TESTNET" : "MAINNET", height, (unsigned long long)alreadyGeneratedCoins,
                    (unsigned long long)getEternalFlame(),
                    (unsigned long long)Osavvirsak,
                    (unsigned long long)baseReward);
@@ -1341,7 +1344,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
     if (currentBlockSize <= medianSize) {
       return amount; // No penalty for small blocks
     }
-    
+
     if (currentBlockSize >= 2 * medianSize) {
       return 0; // Block too big - zero reward
     }
@@ -1352,7 +1355,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
     uint64_t penalizedAmountHi;
     uint64_t penalizedAmountLo;
     div128_32(numeratorHi, numeratorLo, medianSize, &penalizedAmountHi, &penalizedAmountLo);
-    
+
     assert(penalizedAmountHi == 0); // Should never overflow
     return penalizedAmountLo;
   }

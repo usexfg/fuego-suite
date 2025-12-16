@@ -1405,10 +1405,10 @@ bool simple_wallet::verify_signature(const std::vector<std::string>& args)
     return true;
   }
 
-  std::string encodedSig = args[2];
-  const size_t prefix_size = strlen("Sig");
-
-  if(encodedSig.substr(0, prefix_size) != "Sig")
+  const std::string& encodedSig = args[2];
+  const char* prefix_literal = "Sig";
+  const size_t prefix_size = strlen(prefix_literal);
+  +  if (encodedSig.size() <= prefix_size || encodedSig.substr(0, prefix_size) != prefix_literal)
   {
     fail_msg_writer() << "Invalid signature prefix";
     return true;
@@ -1422,24 +1422,22 @@ bool simple_wallet::verify_signature(const std::vector<std::string>& args)
     fail_msg_writer() << "Failed to decode signature";
     return true;
   }
+  Crypto::Signature sig;
+  std::memcpy(&sig, decodedSig.data(), sizeof(sig));
 
-  if (decodedSig.size() != sizeof(Crypto::Signature)) {
-    fail_msg_writer() << "Invalid signature size";
+  uint64_t prefix = 0;
+  CryptoNote::AccountPublicAddress addr;
+  if (!CryptoNote::parseAccountAddressString(prefix, addr, args[1])) {
+    fail_msg_writer() << "Failed to parse address";
     return true;
   }
-  Crypto::Signature sig;
-  memcpy(&sig, decodedSig.data(), sizeof(sig));
 
-  uint64_t prefix;
-  CryptoNote::AccountPublicAddress addr;
-  CryptoNote::parseAccountAddressString(prefix, addr, args[1]);
-
-  if(Crypto::check_signature(message_hash, addr.spendPublicKey, sig))
+  if (Crypto::check_signature(message_hash, addr.spendPublicKey, sig))
     success_msg_writer() << "Valid";
-  else
-    success_msg_writer() << "Invalid";
-  return true;
-}
+     else
+       success_msg_writer() << "Invalid";
+     return true;
+   }
 
 /* ------------------------------------------------------------------------------------------- */
 

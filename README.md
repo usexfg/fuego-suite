@@ -73,7 +73,7 @@ cd fuego
 make
 ```
 
-Note: This will also build the TUI (Terminal User Interface) if Go is installed.
+The TUI will be automatically built and placed with other binaries if Go 1.24+ is installed.
 
 5. Starting Fuego daemon
 ```

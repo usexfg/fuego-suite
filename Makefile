@@ -35,6 +35,7 @@ build-tui:
 		echo "Building Fuego TUI"; \
 		mkdir -p tui/build; \
 		cd tui && go mod tidy && go build -o build/fuego-tui; \
+		cp tui/build/fuego-tui build/release/src/; \
 	else \
 		echo "Go is not installed. Skipping TUI build."; \
 	fi

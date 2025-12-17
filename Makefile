@@ -33,9 +33,16 @@ all-release: build-release build-tui
 build-tui:
 	@if command -v go >/dev/null 2>&1; then \
 		echo "Building Fuego TUI"; \
-		mkdir -p tui/build; \
-		cd tui && go mod tidy && go build -o build/fuego-tui; \
-		cp tui/build/fuego-tui build/release/src/; \
+		cd tui && go mod tidy && go build -o fuego-tui; \
+		if [ -f "tui/fuego-tui" ]; then \
+			mkdir -p build/release/src; \
+			cp tui/fuego-tui build/release/src/; \
+			chmod +x build/release/src/fuego-tui; \
+			echo "Fuego TUI built successfully"; \
+		else \
+			echo "Failed to build fuego-tui binary"; \
+			exit 1; \
+		fi; \
 	else \
 		echo "Go is not installed. Skipping TUI build."; \
 	fi

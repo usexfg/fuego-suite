@@ -1408,7 +1408,7 @@ bool simple_wallet::verify_signature(const std::vector<std::string>& args)
   const std::string& encodedSig = args[2];
   const char* prefix_literal = "Sig";
   const size_t prefix_size = strlen(prefix_literal);
-  +  if (encodedSig.size() <= prefix_size || encodedSig.substr(0, prefix_size) != prefix_literal)
+    if (encodedSig.size() <= prefix_size || encodedSig.substr(0, prefix_size) != prefix_literal)
   {
     fail_msg_writer() << "Invalid signature prefix";
     return true;

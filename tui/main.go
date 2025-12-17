@@ -177,6 +177,11 @@ func startNode(m model) model {
 		return m
 	}
 	path := binPath("fuegod")
+	if path == "" {
+		m.appendLog("fuegod binary not found")
+		m.statusMsg = "Binary not found"
+		return m
+	}
 	// Use existing Fuego data directory instead of creating a new one
 	var dataDir string
 	if runtime.GOOS == "darwin" {
@@ -184,7 +189,8 @@ func startNode(m model) model {
 	} else {
 		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego")
 	}
-	cmd := exec.Command(path, fmt.Sprintf("--rpc-bind-port=%d", nodeRPCPort), fmt.Sprintf("--data-dir=%s", dataDir))
+	// Start with testnet mode
+	cmd := exec.Command(path, fmt.Sprintf("--rpc-bind-port=%d", nodeRPCPort), fmt.Sprintf("--data-dir=%s", dataDir), "--testnet")
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -198,6 +204,8 @@ func startNode(m model) model {
 	m.statusMsg = "Node starting"
 	go streamPipe(stdout, "NODE", &m)
 	go streamPipe(stderr, "NODE-ERR", &m)
+	// Wait for RPC to initialize before querying
+	time.Sleep(3 * time.Second)
 	go func() {
 		for m.runningNode {
 			info, err := getInfo(nodeRPCPort)
@@ -205,6 +213,8 @@ func startNode(m model) model {
 				m.height = info.Height
 				m.peers = info.Peers
 				m.statusMsg = fmt.Sprintf("Node running — height %d", m.height)
+			} else {
+				m.appendLog("Failed to get node info: " + err.Error())
 			}
 			time.Sleep(5 * time.Second)
 		}
@@ -837,7 +847,7 @@ type nodeInfo struct {
 
 func getInfo(port int) (nodeInfo, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", port)
-	client := http.Client{Timeout: 2 * time.Second}
+	client := http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nodeInfo{}, err
@@ -851,12 +861,18 @@ func getInfo(port int) (nodeInfo, error) {
 	peers := 0
 	if h, ok := out["height"].(float64); ok {
 		height = int(h)
+	} else if h, ok := out["height"].(int); ok {
+		height = h
 	}
 	if p, ok := out["incoming_connections_count"].(float64); ok {
 		peers += int(p)
+	} else if p, ok := out["incoming_connections_count"].(int); ok {
+		peers += p
 	}
 	if p, ok := out["outgoing_connections_count"].(float64); ok {
 		peers += int(p)
+	} else if p, ok := out["outgoing_connections_count"].(int); ok {
+		peers += p
 	}
 	return nodeInfo{Height: height, Peers: peers}, nil
 }

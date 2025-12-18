@@ -233,11 +233,11 @@ void Currency::getEternalFlame(uint64_t& amount) const {
     }
 
     // Special debugging for problematic blocks
-    if (height == 17926 || height == 980163 || height == 66608 || height == 174026) {
-        logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward BEFORE medianSize adjustment: height=" << height
-                                 << " medianSize=" << medianSize
-                                 << " baseReward=" << baseReward;
-    }
+        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
+            logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward BEFORE medianSize adjustment: height=" << height
+                                     << " medianSize=" << medianSize
+                                     << " baseReward=" << baseReward;
+        }
         size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByHeightVersion(blockMajorVersion, height);
         size_t originalMedianSize = medianSize;
         medianSize = std::max(medianSize, blockGrantedFullRewardZone);
@@ -304,42 +304,42 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 				}
 		
 				// Special case for historical blocks that were mined without proper penalty calculation
-										// These blocks should be accepted as-is without penalty adjustments
-										uint64_t penalizedBaseReward;
-										uint64_t penalizedFee;
+														// These blocks should be accepted as-is without penalty adjustments
+														uint64_t penalizedBaseReward;
+														uint64_t penalizedFee;
 		
-										if (height < 100000 || height == 174026) {
-										    // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
-										    penalizedBaseReward = baseReward;
-										    penalizedFee = fee;
-										} else {
-											penalizedBaseReward = getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
-											penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
-											if (cryptonoteCoinVersion() == 1) {
-												penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
-											}
-										}
+														if (height < 100000 || height == 174026 || height == 297968) {
+														    // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
+														    penalizedBaseReward = baseReward;
+														    penalizedFee = fee;
+														} else {
+															penalizedBaseReward = getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
+															penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
+															if (cryptonoteCoinVersion() == 1) {
+																penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
+															}
+														}
 		
 		// Special debugging for problematic blocks
-				if (height == 17926 || height == 980163 || height == 66608 || height == 174026) {
-					logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
-					                         << " medianSize=" << medianSize
-					                         << " penaltyMedian=" << penaltyMedian
-					                         << " baseReward=" << baseReward
-					                         << " penalizedBaseReward=" << penalizedBaseReward
-					                         << " fee=" << fee
-					                         << " penalizedFee=" << penalizedFee;
-				}
+		        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
+		            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
+		                                     << " medianSize=" << medianSize
+		                                     << " penaltyMedian=" << penaltyMedian
+		                                     << " baseReward=" << baseReward
+		                                     << " penalizedBaseReward=" << penalizedBaseReward
+		                                     << " fee=" << fee
+		                                     << " penalizedFee=" << penalizedFee;
+		        }
 		
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
     reward = penalizedBaseReward + penalizedFee;
     
     // Special debugging for problematic blocks
-        if (height == 17926 || height == 980163 || height == 66608 || height == 174026) {
-            logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
-                                     << " emissionChange=" << emissionChange
-                                     << " reward=" << reward;
-        }
+    if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
+        logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
+                                 << " emissionChange=" << emissionChange
+                                 << " reward=" << reward;
+    }
  
      return true;
    }

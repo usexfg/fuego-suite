@@ -1284,25 +1284,30 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
     uint64_t tolerance = 1; // 1 atomic unit tolerance for current blocks
 
     // Very high tolerance for blocks in the problematic range (170k-180k)
-    if (height >= 170000 && height <= 180000) {
-      tolerance = 100000000; // 0.1 XFG tolerance for this problematic range
-      logger(INFO, BRIGHT_YELLOW) << "Using very high tolerance for block at height " << height;
-    }
-    // High tolerance for blocks in the extended problematic range (160k-190k)
-    else if (height >= 160000 && height <= 190000) {
-      tolerance = 500000000; // 0.5 XFG tolerance
-      logger(INFO, BRIGHT_YELLOW) << "Using high tolerance for block at height " << height;
-    }
-    // Moderate tolerance for blocks in the broader historical range (150k-200k)
-    else if (height >= 150000 && height <= 200000) {
-      tolerance = 250000000; // 0.25 XFG tolerance
-      logger(INFO, BRIGHT_YELLOW) << "Using moderate tolerance for block at height " << height;
-    }
-    // Standard historical tolerance for blocks below 150k
-    else if (height < 150000) {
-      tolerance = 100000000; // 0.1 XFG tolerance for historical blocks
-      logger(INFO, BRIGHT_YELLOW) << "Using standard tolerance for historical block at height " << height;
-    }
+        if (height >= 170000 && height <= 180000) {
+          tolerance = 1000000000; // 1.0 XFG tolerance for this problematic range
+          logger(INFO, BRIGHT_YELLOW) << "Using very high tolerance for block at height " << height;
+        }
+        // High tolerance for blocks in the extended problematic range (160k-190k)
+        else if (height >= 160000 && height <= 190000) {
+          tolerance = 500000000; // 0.5 XFG tolerance
+          logger(INFO, BRIGHT_YELLOW) << "Using high tolerance for block at height " << height;
+        }
+        // Moderate tolerance for blocks in the broader historical range (150k-200k)
+        else if (height >= 150000 && height <= 200000) {
+          tolerance = 250000000; // 0.25 XFG tolerance
+          logger(INFO, BRIGHT_YELLOW) << "Using moderate tolerance for block at height " << height;
+        }
+        // Standard historical tolerance for blocks below 150k
+        else if (height < 150000) {
+          tolerance = 100000000; // 0.1 XFG tolerance for historical blocks
+          logger(INFO, BRIGHT_YELLOW) << "Using standard tolerance for historical block at height " << height;
+        }
+        // Tolerance for blocks up to 800k to handle overflow cases
+        else if (height < 800000) {
+          tolerance = 2000000000; // 2.0 XFG tolerance for blocks up to 800k
+          logger(INFO, BRIGHT_YELLOW) << "Using overflow tolerance for block at height " << height;
+        }
 
     if (minerReward > reward + tolerance) {
       logger(ERROR, BRIGHT_RED) << "Coinbase transaction spends too much money: " << m_currency.formatAmount(minerReward) <<

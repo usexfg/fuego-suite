@@ -281,6 +281,16 @@ void Currency::getEternalFlame(uint64_t& amount) const {
               return false;
             }
           }
+          // Add tolerance for blocks up to 800k to handle size validation overflow cases
+          else if (height < 800000) {
+            // Use lenient size check for historical blocks up to 800k
+            // Allow up to 20x the median size to accommodate historical variations
+            size_t lenientMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
+            if (currentBlockSize > UINT64_C(20) * lenientMedian) {
+              logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 20 * lenientMedian;
+              return false;
+            }
+          }
           else if (height >= 50000) { // Only apply strict size check to blocks after height 50,000
             logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
             return false;

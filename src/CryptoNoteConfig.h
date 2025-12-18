@@ -154,7 +154,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 980000; //Veryfire  (dmwda|dynamaxin|ethernalXFG)
+        const uint32_t UPGRADE_HEIGHT_V10                            = 980980; //Veryfire  (dmwda|dynamaxin|ethernalXFG)
 
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
 		const size_t UPGRADE_VOTING_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;

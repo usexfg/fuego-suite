@@ -42,7 +42,7 @@ public:
   size_t minedMoneyUnlockWindow() const { return m_minedMoneyUnlockWindow; }
 
   size_t timestampCheckWindow() const { return m_timestampCheckWindow; }
-  size_t timestampCheckWindow(uint8_t blockMajorVersion) const {  
+  size_t timestampCheckWindow(uint8_t blockMajorVersion) const {
      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_5) {
         return timestampCheckWindow_v1();
        }
@@ -71,16 +71,16 @@ public:
   unsigned int emissionSpeedFactor_FUEGO() const { return m_emissionSpeedFactor_FUEGO; }
 
   unsigned int emissionSpeedFactor(uint8_t blockMajorVersion) const {
-    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_9) {
-      return emissionSpeedFactor_FUEGO();
+      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_9) {
+        return emissionSpeedFactor_FUEGO();
+        }
+      else if (blockMajorVersion == BLOCK_MAJOR_VERSION_8) {
+      return emissionSpeedFactor_FANGO();
       }
-    else if (blockMajorVersion == BLOCK_MAJOR_VERSION_8) {
-    return emissionSpeedFactor_FANGO();
+     else {
+        return emissionSpeedFactor();
+      }
     }
-   else {
-      return emissionSpeedFactor();
-    }
-  }
   uint64_t moneySupply() const { return m_moneySupply; }
   size_t cryptonoteCoinVersion() const { return m_cryptonoteCoinVersion; }
 
@@ -89,6 +89,8 @@ public:
 
   size_t blockGrantedFullRewardZone() const { return m_blockGrantedFullRewardZone; }
   size_t blockGrantedFullRewardZoneByBlockVersion(uint8_t blockMajorVersion) const;
+  size_t blockGrantedFullRewardZoneByHeightVersion(uint8_t blockMajorVersion, uint32_t height) const;
+  size_t blockGrantedFullRewardZoneAtHeight(uint32_t height) const;
   size_t minerTxBlobReservedSize() const { return m_minerTxBlobReservedSize; }
   size_t minMixin() const { return m_minMixin; }
   size_t minMixin(uint8_t blockMajorVersion) const {
@@ -97,39 +99,39 @@ public:
     }
     return m_minMixin; // legacy default mixin 2 / ring ct 3
   }
-  
+
   // Dynamic ring ct calculation based on available outputs
   size_t calculateOptimalRingSize(uint64_t amount, size_t availableOutputs, uint8_t blockMajorVersion) const {
     if (blockMajorVersion < BLOCK_MAJOR_VERSION_10) {
       return minMixin(blockMajorVersion); // Use legacy for older versions
     }
-    
+
     // Standard privacy: aim for larger ring sizes when possible
-    size_t minRingSize = minMixin(blockMajorVersion); // Minimum: 8
+    size_t minRingSize = minMixin(blockMajorVersion); // Minimum: 8 at v10+
     size_t maxRingSize = maxMixin(); // Maximum: 18
-    
+
     // For BlockMajorVersion 10+, never go below ring size 8
     // If insufficient outputs for ring ct 8, this is handled by the caller
     if (availableOutputs < minRingSize) {
       // indicates insufficient outputs - caller should handle this error
-      
+
       return 0; // Signal to caller that ring ct 8 is not achievable - direct user to run optimizer
     }
-    
+
     // Target ring sizes in order of preference
     std::vector<size_t> targetRingSizes = {18, 15, 12, 11, 10, 9, 8};
-    
+
     // Find the largest achievable ring size
     for (size_t targetSize : targetRingSizes) {
       if (targetSize <= availableOutputs && targetSize <= maxRingSize) {
         return targetSize;
       }
     }
-    
+
     // Fall back to standard if no targets are achievable
     return minRingSize;
   }
-  
+
   size_t maxMixin() const { return m_maxMixin; }
   size_t numberOfDecimalPlaces() const { return m_numberOfDecimalPlaces; }
   uint64_t coin() const { return m_coin; }
@@ -143,7 +145,7 @@ public:
   uint64_t difficultyTarget_DRGL() const { return m_difficultyTarget_DRGL; }
   uint64_t difficultyTarget() const { return m_difficultyTarget; }
   uint64_t difficultyTarget(uint8_t blockMajorVersion) const {
-    if (blockMajorVersion <= BLOCK_MAJOR_VERSION_6) { 
+    if (blockMajorVersion <= BLOCK_MAJOR_VERSION_6) {
       return difficultyTarget_DRGL();
     }
     else {
@@ -157,7 +159,7 @@ public:
     {
       if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3)
       {
-        return difficultyBlocksCount3() + 1;
+        return difficultyBlocksCount3();
       }
       else if (blockMajorVersion == BLOCK_MAJOR_VERSION_2)
       {
@@ -182,8 +184,8 @@ public:
 
   uint64_t lockedTxAllowedDeltaSeconds() const { return m_lockedTxAllowedDeltaSeconds; }
   uint64_t lockedTxAllowedDeltaSeconds(uint8_t blockMajorVersion) const {
-    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) { 
-      return lockedTxAllowedDeltaSeconds_v2(); 
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
+      return lockedTxAllowedDeltaSeconds_v2();
     }
     else {
       return lockedTxAllowedDeltaSeconds();
@@ -355,7 +357,7 @@ private:
   uint64_t m_burnDepositMinAmount;
   uint64_t m_burnDepositStandardAmount;
   uint64_t m_burnDeposit8000Amount;
-  uint32_t m_depositTermForever;  
+  uint32_t m_depositTermForever;
 
   // HEAT token conversion
   uint64_t m_heatConversionRate;
@@ -389,7 +391,7 @@ private:
   uint32_t m_upgradeHeightV8;
   uint32_t m_upgradeHeightV9;
   uint32_t m_upgradeHeightV10;
-  
+
   unsigned int m_upgradeVotingThreshold;
   uint32_t m_upgradeVotingWindow;
   uint32_t m_upgradeWindow;
@@ -435,7 +437,7 @@ public:
 
   CurrencyBuilder& timestampCheckWindow(size_t val) { m_currency.m_timestampCheckWindow = val; return *this; }
   CurrencyBuilder& timestampCheckWindow_v1(size_t val) { m_currency.m_timestampCheckWindow_v1 = val; return *this; }
-  
+
   CurrencyBuilder& blockFutureTimeLimit(uint64_t val) { m_currency.m_blockFutureTimeLimit = val; return *this; }
   CurrencyBuilder& blockFutureTimeLimit_v1(uint64_t val) { m_currency.m_blockFutureTimeLimit_v1 = val; return *this; }
   CurrencyBuilder& blockFutureTimeLimit_v2(uint64_t val) { m_currency.m_blockFutureTimeLimit_v2 = val; return *this; }
@@ -449,7 +451,7 @@ public:
   CurrencyBuilder& rewardBlocksWindow(size_t val) { m_currency.m_rewardBlocksWindow = val; return *this; }
   CurrencyBuilder& blockGrantedFullRewardZone(size_t val) { m_currency.m_blockGrantedFullRewardZone = val; return *this; }
   CurrencyBuilder& minerTxBlobReservedSize(size_t val) { m_currency.m_minerTxBlobReservedSize = val; return *this; }
-  
+
   CurrencyBuilder& minMixin(size_t val) { m_currency.m_minMixin = val; return *this; }
   CurrencyBuilder& maxMixin(size_t val) { m_currency.m_maxMixin = val; return *this; }
 
@@ -509,7 +511,7 @@ public:
   CurrencyBuilder& mempoolTxLiveTime(uint64_t val) { m_currency.m_mempoolTxLiveTime = val; return *this; }
   CurrencyBuilder& mempoolTxFromAltBlockLiveTime(uint64_t val) { m_currency.m_mempoolTxFromAltBlockLiveTime = val; return *this; }
   CurrencyBuilder& numberOfPeriodsToForgetTxDeletedFromPool(uint64_t val) { m_currency.m_numberOfPeriodsToForgetTxDeletedFromPool = val; return *this; }
-  CurrencyBuilder& transactionMaxSize(size_t val) { m_currency.m_transactionMaxSize = val; return *this;  } 
+  CurrencyBuilder& transactionMaxSize(size_t val) { m_currency.m_transactionMaxSize = val; return *this;  }
   CurrencyBuilder& fusionTxMaxSize(size_t val) { m_currency.m_fusionTxMaxSize = val; return *this; }
   CurrencyBuilder& fusionTxMinInputCount(size_t val) { m_currency.m_fusionTxMinInputCount = val; return *this; }
   CurrencyBuilder& fusionTxMinInOutCountRatio(size_t val) { m_currency.m_fusionTxMinInOutCountRatio = val; return *this; }
@@ -532,16 +534,16 @@ public:
   CurrencyBuilder& blockIndexesFileName(const std::string& val) { m_currency.m_blockIndexesFileName = val; return *this; }
   CurrencyBuilder& txPoolFileName(const std::string& val) { m_currency.m_txPoolFileName = val; return *this; }
   CurrencyBuilder& blockchinIndicesFileName(const std::string& val) { m_currency.m_blockchinIndicesFileName = val; return *this; }
-  
-  CurrencyBuilder& testnet(bool val) { 
-    m_currency.m_testnet = val; 
-    
+
+  CurrencyBuilder& testnet(bool val) {
+    m_currency.m_testnet = val;
+
     // Set testnet-specific address prefix when testnet mode is enabled
     if (val) {
       publicAddressBase58Prefix(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET);
     }
-    
-    return *this; 
+
+    return *this;
   }
 
   private:

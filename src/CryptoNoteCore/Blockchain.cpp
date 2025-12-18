@@ -1306,7 +1306,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
         // Tolerance for blocks up to 800k to handle overflow cases
         else if (height < 800000) {
           tolerance = 2000000000; // 2.0 XFG tolerance for blocks up to 800k
-          logger(INFO, BRIGHT_YELLOW) << "Using overflow tolerance for block at height " << height;
+          logger(INFO, BRIGHT_YELLOW) << "Using overflow tolerance for historical block at height " << height;
         }
 
     if (minerReward > reward + tolerance) {

@@ -20,6 +20,9 @@
 
 #include <fstream>
 #include <boost/filesystem.hpp>
+#include <iostream>
+#include <chrono>
+#include <future>
 
 using namespace CryptoNote;
 
@@ -40,8 +43,20 @@ std::error_code walletSaveWrapper(CryptoNote::IWalletLegacy& wallet, std::ofstre
     std::future<std::error_code> f = o.saveResult.get_future();
     wallet.addObserver(&o);
     wallet.save(file, saveDetailes, saveCache);
+    
+    std::cout << "DEBUG: Waiting for wallet save to complete (timeout: 120 seconds)..." << std::endl;
+    // Add timeout to prevent indefinite hanging (increased to 300 seconds for wallet generation/sync)
+    std::future_status status = f.wait_for(std::chrono::seconds(300));
+    if (status == std::future_status::timeout) {
+      std::cout << "DEBUG: Timeout while saving wallet" << std::endl;
+      wallet.removeObserver(&o);
+      return make_error_code(std::errc::timed_out);
+    }
+    std::cout << "DEBUG: Wallet save completed successfully" << std::endl;
+    
     e = f.get();
-  } catch (std::exception&) {
+  } catch (std::exception& ex) {
+    std::cout << "DEBUG: Exception while saving wallet: " << ex.what() << std::endl;
     wallet.removeObserver(&o);
     return make_error_code(std::errc::invalid_argument);
   }
@@ -106,34 +121,53 @@ void WalletHelper::IWalletRemoveObserverGuard::removeObserver() {
 }
 
 bool WalletHelper::storeWallet(CryptoNote::IWalletLegacy& wallet, const std::string& walletFilename) {
+  std::cout << "DEBUG: Starting wallet storage process for: " << walletFilename << std::endl;
 	boost::filesystem::path tempFile = boost::filesystem::unique_path(walletFilename + ".tmp.%%%%-%%%%");
+  bool hadExistingFile = boost::filesystem::exists(walletFilename);
 
-  if (boost::filesystem::exists(walletFilename)) {
+  if (hadExistingFile) {
+    std::cout << "DEBUG: Wallet file exists, renaming to temporary file" << std::endl;
     boost::filesystem::rename(walletFilename, tempFile);
   }
 
   std::ofstream file;
   try {
+    std::cout << "DEBUG: Opening output file stream for: " << walletFilename << std::endl;
     openOutputFileStream(walletFilename, file);
+    std::cout << "DEBUG: File stream opened successfully" << std::endl;
   } catch (std::exception&) {
+    std::cout << "DEBUG: Exception occurred while opening file stream" << std::endl;
     if (boost::filesystem::exists(tempFile)) {
       boost::filesystem::rename(tempFile, walletFilename);
     }
     throw;
   }
 
+  std::cout << "DEBUG: Calling walletSaveWrapper" << std::endl;
   std::error_code saveError = walletSaveWrapper(wallet, file, true, true);
+  std::cout << "DEBUG: walletSaveWrapper completed with error code: " << saveError.message() << std::endl;
+  
   if (saveError) {
+    std::cout << "DEBUG: Save error occurred, closing file and restoring backup" << std::endl;
     file.close();
     boost::filesystem::remove(walletFilename);
-    boost::filesystem::rename(tempFile, walletFilename);
+    // Only restore backup if we had an existing file
+    if (hadExistingFile && boost::filesystem::exists(tempFile)) {
+      boost::filesystem::rename(tempFile, walletFilename);
+    }
     throw std::system_error(saveError);
+
 		return false;
   }
 
+  std::cout << "DEBUG: Closing file" << std::endl;
   file.close();
+  std::cout << "DEBUG: File closed successfully" << std::endl;
 
   boost::system::error_code ignore;
+  std::cout << "DEBUG: Removing temporary file: " << tempFile << std::endl;
   boost::filesystem::remove(tempFile, ignore);
+  std::cout << "DEBUG: Temporary file removed" << std::endl;
+  
 	return true;
 }

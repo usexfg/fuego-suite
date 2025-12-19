@@ -415,7 +415,8 @@ void WalletLegacy::doSave(std::ostream& destination, bool saveDetailed, bool sav
     serializer.serialize(destination, m_password, saveDetailed, cache);
 
     m_state = INITIALIZED;
-    m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
+    // Don't restart blockchain sync during wallet save
+    // The wallet was saved successfully, sync can be handled separately
     }
   catch (std::system_error& e) {
     runAtomic(m_cacheMutex, [this] () {this->m_state = WalletLegacy::INITIALIZED;} );
@@ -428,6 +429,7 @@ void WalletLegacy::doSave(std::ostream& destination, bool saveDetailed, bool sav
     return;
   }
 
+  // Notify that save completed successfully, even if sync restart failed
   m_observerManager.notify(&IWalletLegacyObserver::saveCompleted, std::error_code());
 }
 

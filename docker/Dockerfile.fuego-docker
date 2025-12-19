@@ -85,17 +85,17 @@ VOLUME ["/home/fuego/.fuego", "/home/fuego/.fuego-wallet", "/home/fuego/logs"]
 
 # Expose ports
 # 20808 - P2P port
-# 28180 - RPC port
+# 28280 - RPC port
 # 8070 - Wallet RPC port
-EXPOSE 20808 28180 8070
+EXPOSE 20808 28280 8070
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:28180/getinfo || exit 1
+    CMD curl -f http://localhost:28280/getinfo || exit 1
 
 # Default command
 ENTRYPOINT ["fuegod"]
-CMD ["--data-dir=/home/fuego/.fuego", "--rpc-bind-ip=0.0.0.0", "--rpc-bind-port=28180"]
+CMD ["--data-dir=/home/fuego/.fuego", "--rpc-bind-ip=0.0.0.0", "--rpc-bind-port=28280"]
 
 # Labels for metadata
 LABEL maintainer="Fuego Development Team"

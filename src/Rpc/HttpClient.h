@@ -39,7 +39,7 @@ public:
 class HttpClient {
 public:
 
-  HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port);
+  HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port, uint32_t timeout = 0);
   ~HttpClient();
   void request(const HttpRequest& req, HttpResponse& res);
   
@@ -51,6 +51,7 @@ private:
 
   const std::string m_address;
   const uint16_t m_port;
+  const uint32_t m_timeout;
 
   bool m_connected = false;
   System::Dispatcher& m_dispatcher;

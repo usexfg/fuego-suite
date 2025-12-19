@@ -27,6 +27,7 @@
 #else
 #include <termios.h>
 #include <unistd.h>
+#include <sys/select.h>
 #endif
 
 namespace Tools
@@ -80,7 +81,9 @@ namespace Tools
     }
     else
     {
+      std::cout << "Reading password from file/input..." << std::endl;
       r = read_from_file();
+      std::cout << "Finished reading password from file/input" << std::endl;
     }
 
     if (r)

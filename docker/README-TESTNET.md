@@ -44,7 +44,7 @@ The testnet setup includes:
 
 ### **Ports**
 - `20808` - P2P networking port
-- `28180` - Node RPC API port
+- `28280` - Node RPC API port
 - `8070` - Wallet service port
 
 ### **Volumes**
@@ -118,13 +118,13 @@ curl -X POST http://localhost:8070/createDeposit \
 ### **Check Supply Metrics**
 ```bash
 # Get complete supply overview
-curl -X POST http://localhost:28180/getDynamicSupplyOverview
+curl -X POST http://localhost:28280/getDynamicSupplyOverview
 
 # Get circulating supply
-curl -X POST http://localhost:28180/getCirculatingSupply
+curl -X POST http://localhost:28280/getCirculatingSupply
 
 # Get total burned XFG
-curl -X POST http://localhost:28180/getTotalBurnedXfg
+curl -X POST http://localhost:28280/getTotalBurnedXfg
 ```
 
 ## 🔍 **Monitoring**
@@ -157,7 +157,7 @@ docker system df
 docker logs fuego-testnet-node
 
 # Check if ports are available
-netstat -tulpn | grep :28180
+netstat -tulpn | grep :28280
 ```
 
 **Permission Issues**

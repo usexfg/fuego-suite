@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   fuego-testnet-node:
@@ -11,8 +11,8 @@ services:
     container_name: fuego-testnet-node
     restart: unless-stopped
     ports:
-      - "20808:20808"  # P2P port
-      - "28180:28180"  # RPC port
+      - "20808:20808" # P2P port
+      - "28280:28280" # RPC port
     volumes:
       - fuego-testnet-data:/home/fuego/.fuego
       - ./config:/home/fuego/config:ro
@@ -21,21 +21,22 @@ services:
     networks:
       - fuego-testnet-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:28180/getinfo"]
+      test: ["CMD", "curl", "-f", "http://localhost:28280/getinfo"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     entrypoint: ["fuegod"]
-    command: [
-      "--data-dir=/home/fuego/.fuego",
-      "--rpc-bind-ip=0.0.0.0",
-      "--rpc-bind-port=28180",
-      "--p2p-bind-ip=0.0.0.0",
-      "--p2p-bind-port=20808",
-      "--testnet",
-      "--log-level=2"
-    ]
+    command:
+      [
+        "--data-dir=/home/fuego/.fuego",
+        "--rpc-bind-ip=0.0.0.0",
+        "--rpc-bind-port=28280",
+        "--p2p-bind-ip=0.0.0.0",
+        "--p2p-bind-port=20808",
+        "--testnet",
+        "--log-level=2",
+      ]
 
   fuego-testnet-wallet:
     build:
@@ -44,7 +45,7 @@ services:
     container_name: fuego-testnet-wallet
     restart: unless-stopped
     ports:
-      - "8070:8070"   # Wallet RPC port
+      - "8070:8070" # Wallet RPC port
     volumes:
       - fuego-testnet-wallet-data:/home/fuego/.fuego-wallet
     environment:
@@ -54,15 +55,16 @@ services:
     depends_on:
       - fuego-testnet-node
     entrypoint: ["walletd"]
-    command: [
-      "--daemon-host=fuego-testnet-node",
-      "--daemon-port=28180",
-      "--bind-port=8070",
-      "--bind-ip=0.0.0.0",
-      "--wallet-dir=/home/fuego/.fuego-wallet",
-      "--testnet",
-      "--log-level=2"
-    ]
+    command:
+      [
+        "--daemon-host=fuego-testnet-node",
+        "--daemon-port=28280",
+        "--bind-port=8070",
+        "--bind-ip=0.0.0.0",
+        "--wallet-dir=/home/fuego/.fuego-wallet",
+        "--testnet",
+        "--log-level=2",
+      ]
 
   # Optional: Nginx reverse proxy for web access
   nginx:

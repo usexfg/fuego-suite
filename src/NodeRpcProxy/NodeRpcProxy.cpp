@@ -132,7 +132,8 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
     m_dispatcher = &dispatcher;
     ContextGroup contextGroup(dispatcher);
     m_context_group = &contextGroup;
-    HttpClient httpClient(dispatcher, m_nodeHost, m_nodePort);
+    std::cout << "Creating HttpClient with timeout: " << m_rpcTimeout << "ms" << std::endl;
+    HttpClient httpClient(dispatcher, m_nodeHost, m_nodePort, m_rpcTimeout);
     m_httpClient = &httpClient;
     Event httpEvent(dispatcher);
     m_httpEvent = &httpEvent;
@@ -145,7 +146,10 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
       m_cv_initialized.notify_all();
     }
 
+    std::cout << "NodeRpcProxy initialized, calling callback" << std::endl;
+    std::cout << "About to call initialized_callback" << std::endl;
     initialized_callback(std::error_code());
+    std::cout << "Finished calling initialized_callback" << std::endl;
 
     contextGroup.spawn([this]() {
       Timer pullTimer;

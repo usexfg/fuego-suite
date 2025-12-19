@@ -184,6 +184,10 @@ namespace CryptoNote
     std::string m_daemon_address;
     std::string m_daemon_host;
     uint16_t m_daemon_port;
+    
+    // Track if arguments were explicitly provided (for testnet wallet menu)
+    bool m_wallet_file_arg_provided;
+    bool m_generate_new_provided;
 
     std::string m_wallet_file;
 

@@ -17,6 +17,7 @@
 
 #include "SimpleWallet/SimpleWallet.h"
 
+#include <chrono>
 #include <ctime>
 #include <fstream>
 #include <future>
@@ -630,6 +631,10 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
   m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
+
+  // Initialize argument tracking flags
+  m_wallet_file_arg_provided = false;
+  m_generate_new_provided = false;
 }
 
 /* This function shows the number of outputs in the wallet
@@ -707,7 +712,10 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     }
   }
 
-  if (m_generate_new.empty() && m_wallet_file_arg.empty()) {
+  // Show menu if no explicit wallet operations were specified
+  // For testnet wallet, we want to show the menu when no explicit wallet file or generation is requested
+  bool showMenu = !m_generate_new_provided && !m_wallet_file_arg_provided;
+  if (showMenu) {
     std::cout <<"\n";
     std::cout <<"\n";
     std::cout <<"       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        "<< "\n";
@@ -729,10 +737,15 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     char c;
     do {
       std::string answer;
+      std::cout << "Please enter your choice (G/O/R/I/M/E): ";
       std::getline(std::cin, answer);
+      if (answer.empty()) {
+        std::cout << "No input received. Please try again." << std::endl;
+        continue;
+      }
       c = answer[0];
       if (!(c == 'O' || c == 'G' || c == 'E' || c == 'I' || c == 'o' || c == 'g' || c == 'e' || c == 'i' || c == 'm' || c == 'M')) {
-        std::cout << "Unknown command: " << c <<std::endl;
+        std::cout << "Unknown command: " << c << ". Please enter G, O, R, I, M, or E." << std::endl;
       } else {
         break;
       }
@@ -798,20 +811,47 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
 
   std::promise<std::error_code> errorPromise;
   std::future<std::error_code> f_error = errorPromise.get_future();
-  auto callback = [&errorPromise](std::error_code e) {errorPromise.set_value(e); };
+  auto callback = [&errorPromise](std::error_code e) {
+    std::cout << "Callback called with error: " << e.message() << std::endl;
+    errorPromise.set_value(e);
+    std::cout << "Promise value set" << std::endl;
+  };
 
   m_node->addObserver(static_cast<INodeRpcProxyObserver*>(this));
+  logger(INFO, BRIGHT_WHITE) << "Initializing NodeRPCProxy...";
   m_node->init(callback);
-  auto error = f_error.get();
+  logger(INFO, BRIGHT_WHITE) << "Waiting for NodeRPCProxy initialization...";
+
+  // Add timeout to prevent indefinite hanging
+  std::future_status status = f_error.wait_for(std::chrono::seconds(30));
+  if (status == std::future_status::timeout) {
+    fail_msg_writer() << "timeout while connecting to daemon at " << m_daemon_host << ":" << m_daemon_port;
+    return false;
+  }
+
+  logger(INFO, BRIGHT_WHITE) << "Getting NodeRPCProxy initialization result...";
+  std::error_code error;
+  try {
+    error = f_error.get();
+    logger(INFO, BRIGHT_WHITE) << "NodeRPCProxy initialization result obtained: " << error.message();
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "exception while getting NodeRPCProxy initialization result: " << e.what();
+    return false;
+  }
   if (error) {
     fail_msg_writer() << "failed to init NodeRPCProxy: " << error.message();
     return false;
   }
 
-  if (!m_generate_new.empty()) {
-    std::string walletAddressFile = prepareWalletAddressFilename(m_generate_new);
-    boost::system::error_code ignore;
-    if (boost::filesystem::exists(walletAddressFile, ignore)) {
+  logger(INFO, BRIGHT_WHITE) << "Continuing with wallet initialization...";
+
+   if (!m_generate_new.empty()) {
+     logger(INFO, BRIGHT_WHITE) << "Generating new wallet...";
+     logger(INFO, BRIGHT_WHITE) << "Preparing wallet filenames...";
+     std::string walletAddressFile = prepareWalletAddressFilename(m_generate_new);
+     boost::system::error_code ignore;
+     logger(INFO, BRIGHT_WHITE) << "Checking if wallet address file exists...";
+     if (boost::filesystem::exists(walletAddressFile, ignore)) {
       logger(ERROR, BRIGHT_RED) << "Address file already exists: " + walletAddressFile;
       return false;
     }
@@ -909,6 +949,7 @@ if (key_import) {
       "**********************************************************************";
   }
 
+  logger(INFO, BRIGHT_WHITE) << "Wallet initialization completed successfully";
   return true;
 }
 
@@ -987,6 +1028,13 @@ void simple_wallet::handle_command_line(const boost::program_options::variables_
   m_daemon_address = command_line::get_arg(vm, arg_daemon_address);
   m_daemon_host = command_line::get_arg(vm, arg_daemon_host);
   m_daemon_port = command_line::get_arg(vm, arg_daemon_port);
+
+  // Track whether arguments were explicitly provided
+  // For testnet, we check if the user actually provided these arguments vs default values
+  m_wallet_file_arg_provided = vm.count(arg_wallet_file.name) > 0 &&
+                              !vm[arg_wallet_file.name].defaulted();
+  m_generate_new_provided = vm.count(arg_generate_new_wallet.name) > 0 &&
+                           !vm[arg_generate_new_wallet.name].defaulted();
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string& password) {
@@ -998,7 +1046,18 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
   try {
     m_initResultPromise.reset(new std::promise<std::error_code>());
     std::future<std::error_code> f_initError = m_initResultPromise->get_future();
+    logger(INFO, BRIGHT_WHITE) << "Initializing and generating wallet...";
     m_wallet->initAndGenerate(password);
+    logger(INFO, BRIGHT_WHITE) << "Waiting for wallet initialization result...";
+
+    // Add timeout to prevent indefinite hanging
+    std::future_status status = f_initError.wait_for(std::chrono::seconds(30));
+    if (status == std::future_status::timeout) {
+      fail_msg_writer() << "timeout while generating wallet";
+      return false;
+    }
+
+    logger(INFO, BRIGHT_WHITE) << "Getting wallet initialization result...";
     auto initError = f_initError.get();
     m_initResultPromise.reset(nullptr);
     if (initError) {
@@ -1006,8 +1065,10 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
       return false;
     }
 
+    logger(INFO, BRIGHT_WHITE) << "Storing wallet to file: " << m_wallet_file;
     try {
       CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
+      logger(INFO, BRIGHT_WHITE) << "Wallet stored successfully";
     } catch (std::exception& e) {
       fail_msg_writer() << "failed to save new wallet: " << e.what();
       throw;
@@ -1025,6 +1086,7 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
     std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
     std::cout << "Mnemonic Seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl;
+    logger(INFO, BRIGHT_WHITE) << "Wallet generation completed successfully";
 
   }
   catch (const std::exception& e) {

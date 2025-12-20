@@ -86,6 +86,10 @@ namespace CryptoNote {
         } else {
           int blockVersionAtUpgradeHeight = m_blockchain[upgradeHeight].bl.majorVersion;
           if (blockVersionAtUpgradeHeight != m_targetVersion - 1) {
+            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: block at height " << upgradeHeight <<
+              " has invalid version " << blockVersionAtUpgradeHeight <<
+              ", expected " << static_cast<int>(m_targetVersion - 1);
+            return false;
           }
 
           int blockVersionAfterUpgradeHeight = m_blockchain[upgradeHeight + 1].bl.majorVersion;

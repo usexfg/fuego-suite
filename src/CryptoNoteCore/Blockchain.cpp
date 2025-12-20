@@ -906,25 +906,25 @@ uint64_t Blockchain::coinsEmittedAtHeight(uint64_t height) {
     const auto &previous = m_blocks[height - 1];
     return current.cumulative_difficulty - previous.cumulative_difficulty;
   }
-
+ 
 uint8_t Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
-         if (height > m_upgradeDetectorV10.upgradeHeight()) {
+  if (height >= m_upgradeDetectorV10.upgradeHeight()) {
     return m_upgradeDetectorV10.targetVersion();
-  } else if (height > m_upgradeDetectorV9.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV9.upgradeHeight()) {
     return m_upgradeDetectorV9.targetVersion();
-  } else if (height > m_upgradeDetectorV8.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV8.upgradeHeight()) {
     return m_upgradeDetectorV8.targetVersion();
-  } else if (height > m_upgradeDetectorV7.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV7.upgradeHeight()) {
     return m_upgradeDetectorV7.targetVersion();
-  } else if (height > m_upgradeDetectorV6.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV6.upgradeHeight()) {
     return m_upgradeDetectorV6.targetVersion();
-  } else if (height > m_upgradeDetectorV5.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV5.upgradeHeight()) {
     return m_upgradeDetectorV5.targetVersion();
-  } else if (height > m_upgradeDetectorV4.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV4.upgradeHeight()) {
     return m_upgradeDetectorV4.targetVersion();
-  } else if (height > m_upgradeDetectorV3.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV3.upgradeHeight()) {
     return m_upgradeDetectorV3.targetVersion();
-  } else if (height > m_upgradeDetectorV2.upgradeHeight()) {
+  } else if (height >= m_upgradeDetectorV2.upgradeHeight()) {
     return m_upgradeDetectorV2.targetVersion();
   } else {
     return BLOCK_MAJOR_VERSION_1;

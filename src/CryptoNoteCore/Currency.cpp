@@ -90,7 +90,7 @@ namespace CryptoNote
 			m_upgradeHeightV7 = 7;
 			m_upgradeHeightV8 = 8;
                      m_upgradeHeightV9 = 9;
-                     m_upgradeHeightV10 = 10;
+                     m_upgradeHeightV10 = 42;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "testnet_" + m_blocksCacheFileName;
@@ -241,7 +241,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
         size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByHeightVersion(blockMajorVersion, height);
         size_t originalMedianSize = medianSize;
         medianSize = std::max(medianSize, blockGrantedFullRewardZone);
-        
+
         // For very early blocks with very small block sizes, preserve the original median for penalty calculation
         // This ensures backward compatibility with blocks mined when the blockchain was young
         bool useOriginalMedian = false;
@@ -249,7 +249,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
             medianSize = originalMedianSize;
             useOriginalMedian = true;
         }
-        
+
         if (height == 17926 || height == 980163 || height == 66608) {
             logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward AFTER medianSize adjustment: height=" << height
                                      << " originalMedianSize=" << originalMedianSize
@@ -312,12 +312,12 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 					// Use blockGrantedFullRewardZone as a more reasonable basis for penalty calculation
 					penaltyMedian = blockGrantedFullRewardZone;
 				}
-		
+
 				// Special case for historical blocks that were mined without proper penalty calculation
 														// These blocks should be accepted as-is without penalty adjustments
 														uint64_t penalizedBaseReward;
 														uint64_t penalizedFee;
-		
+
 														if (height < 100000 || height == 174026 || height == 297968) {
 														    // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
 														    penalizedBaseReward = baseReward;
@@ -329,7 +329,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 																penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
 															}
 														}
-		
+
 		// Special debugging for problematic blocks
 		        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
 		            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
@@ -340,17 +340,17 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 		                                     << " fee=" << fee
 		                                     << " penalizedFee=" << penalizedFee;
 		        }
-		
+
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
     reward = penalizedBaseReward + penalizedFee;
-    
+
     // Special debugging for problematic blocks
     if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
         logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
                                  << " emissionChange=" << emissionChange
                                  << " reward=" << reward;
     }
- 
+
      return true;
    }
 

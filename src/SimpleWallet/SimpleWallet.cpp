@@ -25,6 +25,7 @@
 #include <set>
 #include <sstream>
 #include <regex>
+#include <limits>
 
 #include <boost/format.hpp>
 #include <boost/bind.hpp>
@@ -796,8 +797,22 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   Tools::PasswordContainer pwd_container;
   if (command_line::has_arg(vm, arg_password)) {
     pwd_container.password(command_line::get_arg(vm, arg_password));
-  } else if (!pwd_container.read_password()) {
-    fail_msg_writer() << "failed to read wallet password";
+  } else {
+    // Flush input stream before reading password to ensure clean state
+    std::cin.clear();
+    // Only ignore characters if there are any available
+    if (std::cin.rdbuf()->in_avail() > 0) {
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    if (!pwd_container.read_password()) {
+      fail_msg_writer() << "failed to read wallet password";
+      return false;
+    }
+  }
+
+  // Ensure password is not empty for security
+  if (pwd_container.password().empty()) {
+    fail_msg_writer() << "wallet password cannot be empty";
     return false;
   }
 

@@ -26,6 +26,7 @@
 #include <set>
 #include <sstream>
 #include <regex>
+#include <limits>
 
 #include <boost/format.hpp>
 #include <boost/bind.hpp>
@@ -738,7 +739,10 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     do {
       std::string answer;
       std::cout << "Please enter your choice (G/O/R/I/M/E): ";
-      std::getline(std::cin, answer);
+      if (!std::getline(std::cin, answer)) {
+        std::cout << "Error reading input. Exiting." << std::endl;
+        return false;
+      }
       if (answer.empty()) {
         std::cout << "No input received. Please try again." << std::endl;
         continue;
@@ -759,7 +763,10 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     std::string userInput;
     do {
       std::cout << "Wallet file name: ";
-      std::getline(std::cin, userInput);
+      if (!std::getline(std::cin, userInput)) {
+        std::cout << "Error reading input. Exiting." << std::endl;
+        return false;
+      }
       boost::algorithm::trim(userInput);
     } while (userInput.empty());
     if (c == 'i' || c == 'I'){
@@ -800,12 +807,26 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
 
 
   Tools::PasswordContainer pwd_container;
-  if (command_line::has_arg(vm, arg_password)) {
-    pwd_container.password(command_line::get_arg(vm, arg_password));
-  } else if (!pwd_container.read_password()) {
-    fail_msg_writer() << "failed to read wallet password";
-    return false;
-  }
+    if (command_line::has_arg(vm, arg_password)) {
+      pwd_container.password(command_line::get_arg(vm, arg_password));
+    } else {
+      // Flush input stream before reading password to ensure clean state
+      std::cin.clear();
+      // Only ignore characters if there are any available
+      if (std::cin.rdbuf()->in_avail() > 0) {
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      }
+      if (!pwd_container.read_password()) {
+        fail_msg_writer() << "failed to read wallet password";
+        return false;
+      }
+    }
+  
+    // Ensure password is not empty for security
+    if (pwd_container.password().empty()) {
+      fail_msg_writer() << "wallet password cannot be empty";
+      return false;
+    }
 
   this->m_node.reset(new NodeRpcProxy(m_daemon_host, m_daemon_port));
 

@@ -2185,8 +2185,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   }
 
 
-  auto longhashTimeStart = std::chrono::steady_clock::now();
+auto longhashTimeStart = std::chrono::steady_clock::now();
   Crypto::Hash proof_of_work = NULL_HASH;
+
   if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
     if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
       logger(ERROR, BRIGHT_RED) <<
@@ -2195,11 +2196,20 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       return false;
     }
   } else {
-    if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
+    // Ease sync-halting level precision for difficulty validation on blocks that historical, ie anything < 800k
+    // This "fixes" fuegod backwards compatibility issues when syncing with early blocks
+    // The only exception to the rule being a bypass of validation for a small hiccup of blocks (~100 blocks) to continue practice of following heaviest chain; from fork created during a botched testnet update (only coinbase rewards + mining pool payout txns during this range of blocks));
+    // however, to reiterate - this is only meant for temporary use until a permanent solution is found.
+	  if (getCurrentBlockchainHeight() < 800000 || getCurrentBlockchainHeight() >= 980000 && getCurrentBlockchainHeight() < 980690) {
       logger(INFO, BRIGHT_WHITE) <<
-        "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
-      bvc.m_verification_failed = true;
-      return false;
+        "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
+    } else {
+      if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
+        logger(INFO, BRIGHT_WHITE) <<
+          "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
+        bvc.m_verification_failed = true;
+        return false;
+      }
     }
   }
 

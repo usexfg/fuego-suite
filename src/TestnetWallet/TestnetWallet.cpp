@@ -78,7 +78,7 @@ const command_line::arg_descriptor<std::string> arg_wallet_file = { "wallet-file
 const command_line::arg_descriptor<std::string> arg_generate_new_wallet = { "generate-new-wallet", "Generate new wallet and save it to <arg>", "" };
 const command_line::arg_descriptor<std::string> arg_daemon_address = { "daemon-address", "Use daemon instance at <host>:<port>", "" };
 const command_line::arg_descriptor<std::string> arg_daemon_host = { "daemon-host", "Use daemon instance at host <arg> instead of localhost", "" };
-const command_line::arg_descriptor<std::string> arg_password = { "password", "Wallet password (testnet)", std::string("") };
+const command_line::arg_descriptor<std::string> arg_password = { "password", "Wallet password (testnet)", std::string(""), true };
 const command_line::arg_descriptor<uint16_t>    arg_daemon_port = { "daemon-port", "Use daemon instance at port <arg> instead of default", 0 };
 const command_line::arg_descriptor<uint32_t>    arg_log_level = { "set_log", "", INFO, true };
 const command_line::arg_descriptor<bool>        arg_testnet = { "testnet", "Always use testnet mode (hardcoded)", true };
@@ -812,13 +812,30 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     } else {
       // Flush input stream before reading password to ensure clean state
       std::cin.clear();
-      // Only ignore characters if there are any available
-      if (std::cin.rdbuf()->in_avail() > 0) {
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-      }
+      // Clear any leftover characters in the input buffer
+      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      
+      // Ensure we prompt for password
+      std::cout << "password: ";
       if (!pwd_container.read_password()) {
         fail_msg_writer() << "failed to read wallet password";
         return false;
+      }
+      
+      // If password is still empty after reading, prompt again
+      if (pwd_container.password().empty()) {
+        std::cout << "Password cannot be empty. Please try again." << std::endl;
+        std::cout << "password: ";
+        if (!pwd_container.read_password()) {
+          fail_msg_writer() << "failed to read wallet password";
+          return false;
+        }
+        
+        // Check again after second attempt
+        if (pwd_container.password().empty()) {
+          fail_msg_writer() << "wallet password cannot be empty";
+          return false;
+        }
       }
     }
   

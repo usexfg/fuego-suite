@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2014-2018 The Monero project
 // Copyright (c) 2018-2019 The Ryo Currency developers
@@ -47,14 +47,18 @@ namespace CryptoNote
 		const uint64_t MONEY_SUPPLY = UINT64_C(80000088000008); /* max supply: 8M8 */
 		const uint64_t COIN = UINT64_C(10000000);			  
 		const uint64_t MINIMUM_FEE_V1 = UINT64_C(800000);
-		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG */
+		const uint64_t MINIMUM_FEE_V2  = UINT64_C(80000);	/* 0.008 XFG */
+		const uint64_t MINIMUM_FEE_8Kh  = UINT64_C(8000);	/* 0.0008 XFG */
+
 		const uint64_t MINIMUM_FEE = MINIMUM_FEE_V2;		
 		const uint64_t MINIMUM_FEE_BANKING = UINT64_C(80000);  /* 0.008 XFG */
-		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(20000); /* < 0.002 XFG */
+		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(10000); /* < 0.001 XFG */
+		const uint64_t DEFAULT_DUST_THRESHOLD_8Kh = UINT64_C(1000); /* < 0.0001 XFG */
+
 		const size_t   MINIMUM_MIXIN = 2;
 
 		const size_t   CRYPTONOTE_COIN_VERSION                       = 1;
-		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	     = 7;
+		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	         = 7;
 		const size_t   CRYPTONOTE_REWARD_BLOCKS_WINDOW               = 100;
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE     = 800000; //size of block (bytes) after reward for block is calculated in block-size
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2  = 800000;

@@ -150,7 +150,7 @@ $ make
 If the build is successful the binaries will be located in `src` directory.
 *******************************
 
-Join our ever-expanding community of Fuego holders thru [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
+Join the ever-expanding Fuego Mob thru [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
 
 
 

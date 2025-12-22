@@ -1,5 +1,5 @@
 <img title="The Long Night Is Coming" src="https://github.com/usexfg/fuego-data/blob/master/fuego-images/fuegoline.gif?raw=true"><img/>
-### Fuego is open-source peer-to-peer decentralized privacy cryptocurrency built by advocates for freedom thru sound money and free open-source software.
+### Fuego is open-source peer-to-peer decentralized private cryptocurrency built by advocates of freedom thru sound money and free open-source software .
 
 Based upon the CryptoNote protocol & philosophy.
 
@@ -23,6 +23,8 @@ Based upon the CryptoNote protocol & philosophy.
 [![Build check](https://github.com/usexfg/fuego/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/check.yml)
 
 [![macOS](https://github.com/usexfg/fuego/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml)
+
+[![AppImage Linux](https://github.com/usexfg/fuego/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/appimage.yml)
 
 [![Ubuntu 24.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
 
@@ -52,7 +54,7 @@ You may download them from:
 *** Alternatively, it may be possible to install them using a package manager by
 executing the following command.
  ```
- sudo apt-get install build-essential git cmake libboost-all-dev
+ sudo apt-get install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
 ```
 
 2. Clone Fuego repository
@@ -71,13 +73,37 @@ cd fuego
 make
 ```
 
+The TUI will be automatically built and placed with other binaries if Go 1.24+ is installed.
+
 5. Starting Fuego daemon
 ```
 cd fuego/build/release/src `
 ./fuegod
 ````
 try --help from within dæmon for a full list of available commands
-or <code>./fuegod --help</code> when outside of dæmon 
+or <code>./fuegod --help</code> when outside of dæmon
+
+### Terminal User Interface (TUI)
+
+Fuego includes a Go-based Terminal User Interface for easy management of node and wallet(s). The TUI provides full support for Elderfier and Burn2Mint menus.
+
+#### Building the TUI
+
+If you have Go 1.24+ installed, the TUI will be built automatically when running `make`. You can also build it separately:
+
+```bash
+make build-tui
+```
+
+#### Running the TUI
+
+```bash
+./tui/build/fuego-tui
+```
+
+Navigate with arrow keys or letters j & k, select with Enter, quit with q (or Ctrl+C)
+
+For detailed documentation, see `tui/README.md`.
 _________________________________________________________
 For the most user-friendly graphic interface experience
 
@@ -150,7 +176,6 @@ $ make
 If the build is successful the binaries will be located in `src` directory.
 *******************************
 
-Join the ever-expanding Fuego Mob thru [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
-
+Join our ever-expanding community of Fuego holders thru [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
 
 

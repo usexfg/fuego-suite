@@ -280,7 +280,7 @@ bool core::get_stat_info(core_stat_info& st_inf) {
   return true;
 }
 
-bool core::check_tx_mixin(const Transaction& tx) {
+bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion) {
   size_t inputIndex = 0;
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
@@ -290,8 +290,8 @@ bool core::check_tx_mixin(const Transaction& tx) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
-      if (getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(getCurrentBlockMajorVersion()) && txMixin != 1) {
-        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count below the required minimum (" << m_currency.minMixin(getCurrentBlockMajorVersion()) << "), rejected";
+      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(blockMajorVersion) && txMixin != 1) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count below the required minimum (" << m_currency.minMixin(blockMajorVersion) << "), rejected";
         return false;
       }
     }
@@ -299,7 +299,7 @@ bool core::check_tx_mixin(const Transaction& tx) {
   return true;
 }
 
-bool core::check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_context& tvc) {
+bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMajorVersion, tx_verification_context& tvc) {
 	uint64_t inputs_amount = 0;
 	if (!get_inputs_money_amount(tx, inputs_amount)) {
 		tvc.m_verification_failed = true;
@@ -319,9 +319,9 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_
 	getObjectHash(tx, h, blobSize);
 	const uint64_t fee = inputs_amount - outputs_amount;
 	bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
-	if (!isFusionTransaction && fee < m_currency.minimumFee()) {
+	if (!isFusionTransaction && fee < m_currency.minimumFee(blockMajorVersion)) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
+			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee(blockMajorVersion));
 		tvc.m_verification_failed = true;
 		tvc.m_tx_fee_too_small = true;
 		return false;
@@ -458,7 +458,9 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
         if (b.majorVersion == BLOCK_MAJOR_VERSION_1) {
       b.minorVersion = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_2) == UpgradeDetectorBase::UNDEF_HEIGHT ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
-    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
+    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) { // upgradekit
+            if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10) == UpgradeDetectorBase::UNDEF_HEIGHT) {
+          b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_9 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
              if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_9) == UpgradeDetectorBase::UNDEF_HEIGHT) {
         b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_8 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
       } else if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_8) == UpgradeDetectorBase::UNDEF_HEIGHT) {

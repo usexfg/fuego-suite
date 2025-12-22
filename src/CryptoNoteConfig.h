@@ -36,8 +36,8 @@ namespace CryptoNote
 		const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW = 60;
 		const uint64_t DIFFICULTY_TARGET_DRGL = 81;
 		const unsigned EMISSION_SPEED_FACTOR = 18;
-    const unsigned EMISSION_SPEED_FACTOR_FANGO = 19;  //major version 8
-    const unsigned EMISSION_SPEED_FACTOR_FUEGO = 20;   //major version 9
+        const unsigned EMISSION_SPEED_FACTOR_FANGO = 19;  //major version 8
+        const unsigned EMISSION_SPEED_FACTOR_FUEGO = 20;   //major version 9
 		const uint64_t CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT  = 60 * 60 * 2;
 		const uint64_t CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT_V1 = DIFFICULTY_TARGET_DRGL * 6;
 		const uint64_t CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT_V2 = DIFFICULTY_TARGET * 2;
@@ -49,13 +49,13 @@ namespace CryptoNote
 		const uint64_t COIN = UINT64_C(10000000);
 		const uint64_t MINIMUM_FEE_V1 = UINT64_C(800000);
 		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG */
-		const uint64_t MINIMUM_FEE = MINIMUM_FEE_V2;
+		const uint64_t MINIMUM_FEE_800H = UINT64_C(800);	/* 0.00008 XFG from BMv10*/
+		const uint64_t MINIMUM_FEE = MINIMUM_FEE_800H;
 		const uint64_t MINIMUM_FEE_BANKING = UINT64_C(80000);  /* 0.008 XFG */
-		const uint64_t MINIMUM_FEE_BANKING_PERCENT = UINT64_C(80000);  /* 0.008 XFG */ // 0.08% (1250/1) [0.125% 800]
+		const uint64_t MINIMUM_FEE_BANKING_PERCENT = UINT64_C(80000); //For COLD & Yield deposits 0.125% fee on 800 principal =1]
 
 		const uint64_t MINIMUM_FEE_BURN = UINT64_C(80000);  /* 0.008 XFG */
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(10000); /* < 0.001 XFG */
-		const size_t   MINIMUM_MIXIN = 2;  // from GUI- use MinTXmixin
 
 		const size_t   CRYPTONOTE_COIN_VERSION                       = 1;
 		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	         = 7;
@@ -98,7 +98,9 @@ namespace CryptoNote
 		const double   DMWDA_BLOCK_STEALING_TIME_THRESHOLD           = 0.05; // 5% of target time threshold for fast blocks
 
         // MIXIN
-		const uint64_t MIN_TX_MIXIN_SIZE                             = 2;  // Legacy mixin
+ 		const size_t   MINIMUM_MIXIN                                 = MIN_TX_MIXIN_SIZE_V10;  // from GUI- use MinTXmixin
+        const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;
+		const uint64_t MIN_TX_MIXIN_SIZE_V2                          = 2;  // Legacy mixin
 		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // Maxmix min starting from BlockMajorVersion 10
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
@@ -154,8 +156,9 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 980980; //Veryfire  (dmwda|dynamaxin|ethernalXFG)
-
+        const uint32_t UPGRADE_HEIGHT_V10                            = 980980; //Dynamigo  (dmwda|dynamaxin|ethernalXFG)
+// upgradekit
+//
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
 		const size_t UPGRADE_VOTING_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
 		const size_t UPGRADE_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
@@ -188,7 +191,7 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_7                         =  7;
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
-	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10;
+	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; //upgradekit
 
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
@@ -202,8 +205,8 @@ namespace CryptoNote
 	const int P2P_DEFAULT_PORT = 10808;
  	const int RPC_DEFAULT_PORT = 18180;
 
-	/* P2P Network Configuration Section - This defines our current P2P network version
-	and the minimum version for communication between nodes */
+	/* P2P Network Configuration Section - Defines current P2P network version
+	and minimum version for communication between nodes */
 	const uint8_t P2P_VERSION_1 = 1;
 	const uint8_t P2P_VERSION_2 = 2;
 	const uint8_t P2P_CURRENT_VERSION = 1;
@@ -247,7 +250,7 @@ namespace CryptoNote
  		 "80.89.228.157:20808",
  		   "207.244.247.64:20808",
 	        "216.145.66.224:20808"
-		// Add more testnet seed nodes as they become available
+
 		};
 
  	// TESTNET DEFAULTS
@@ -356,9 +359,9 @@ namespace CryptoNote
  			    { 752411, "8675187b8a7bdf73ac93ac9d86f37315c0780a41ff4c0aa671f5d809b6c5b631" },
  			   { 752593, "e270b1419d5ae8589ea8fdb148a6de6b02637432e76a1b23258324754a16f46f" },
 			  { 777777, "82cbbe5436b1f273b4b7b3ebe6517cfe4ddff33dd365e438cc44f456f43fa71b" },
-		   { 800001, "ee744efcc80fe4a483b21bf6918f72bfa19ca2b4324b51786c522428acffce98" },
- 	    { 810000, "ca66bed2600a0750f4dafe8ec7a8e4581b2ab9df326cc8f321ffd96bc2947b2c" },
-	     { 820000, "6bb848f23668412e35c7bdcd60cd0aea70761d11f1f41204a1b8ca2d808e79d7" },
+		     { 800001, "ee744efcc80fe4a483b21bf6918f72bfa19ca2b4324b51786c522428acffce98" },
+ 	        { 810000, "ca66bed2600a0750f4dafe8ec7a8e4581b2ab9df326cc8f321ffd96bc2947b2c" },
+	         { 820000, "6bb848f23668412e35c7bdcd60cd0aea70761d11f1f41204a1b8ca2d808e79d7" },
 			  { 826421, "9a0158c87c062c63a675c65eda91c10bb6d7b68b854be783aa85b2cbbf3b8a55" },
 			   { 830000, "cee38b0701df9f26a938f6c65a1f233d1f810e5f19eb1b4cb87b15d514342064" },
 			    { 840000, "ec767b0e56d7002966e3184e197b3da06c5f94484bf6218781a38f59a75bfaab" },

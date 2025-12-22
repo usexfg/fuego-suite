@@ -95,7 +95,11 @@ public:
   size_t minMixin() const { return m_minMixin; }
   size_t minMixin(uint8_t blockMajorVersion) const {
     if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
-      return parameters::MIN_TX_MIXIN_SIZE_V10; // standard privacy: mix8/ ring ct 9
+      return parameters::MIN_TX_MIXIN_SIZE_V10; // Maxmix min: 8 starting from BMV10
+    } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
+      return parameters::MIN_TX_MIXIN_SIZE_V2;  // Legacy mixin: 2 for BMV7-BMV9
+    } else {
+      return 0; 
     }
     return m_minMixin; // legacy default mixin 2 / ring ct 3
   }
@@ -136,7 +140,8 @@ public:
   size_t numberOfDecimalPlaces() const { return m_numberOfDecimalPlaces; }
   uint64_t coin() const { return m_coin; }
 
-  uint64_t minimumFee() const { return m_minimumFee; }
+  uint64_t minimumFee() const { return minimumFee(BLOCK_MAJOR_VERSION_10); } // Default to latest version (0.00008 XFG)
+  uint64_t minimumFee(uint8_t blockMajorVersion) const;
   uint64_t minimumFeeV1() const { return m_minimumFeeV1; }
   uint64_t minimumFeeV2() const { return m_minimumFeeV2; }
   uint64_t minimumFeeBanking() const { return m_minimumFeeBanking; }
@@ -200,6 +205,7 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
+  uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }
   uint32_t upgradeWindow() const { return m_upgradeWindow; }

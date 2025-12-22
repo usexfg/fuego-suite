@@ -4,7 +4,7 @@
 
 **Release Name**: Dynamigo  
 **Block Major Version**: 10  
-**Activation Height**: 969,696  
+**Activation Height**: 980980
 **Target Date**: Ready for Production Deployment  
 
 This release introduces comprehensive **Dynamic Updates** that revolutionize Fuego's capabilities with adaptive systems for supply management, privacy enhancement, and difficulty adjustment.
@@ -122,10 +122,9 @@ circulating supply = total supply - locked deposits
 
 ### **Block Major Version 10 Parameters**
 ```cpp
-const uint32_t UPGRADE_HEIGHT_V10 = 969696;           // Dynamigo activation
-const uint8_t BLOCK_MAJOR_VERSION_10 = 10;            // Enhanced features
+const uint32_t UPGRADE_HEIGHT_V10 = 980980;           // Dynamigo activation
 const uint64_t MIN_TX_MIXIN_SIZE_V10 = 8;             // Enhanced privacy minimum
-const unsigned EMISSION_SPEED_FACTOR_FUEGO = 20;      // Major version 9
+const unsigned EMISSION_SPEED_FACTOR_FUEGO = 20;      // BMV_9
 ```
 
 ### **Dynamic Supply Parameters**

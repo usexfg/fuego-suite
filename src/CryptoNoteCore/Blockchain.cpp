@@ -405,7 +405,7 @@ private:
 			                   m_upgradeDetectorV8(currency, m_blocks, BLOCK_MAJOR_VERSION_8, logger),
                          m_upgradeDetectorV9(currency, m_blocks, BLOCK_MAJOR_VERSION_9, logger),
                         m_upgradeDetectorV10(currency, m_blocks, BLOCK_MAJOR_VERSION_10, logger) {
-}
+} // upgradekit
 
 bool Blockchain::addObserver(IBlockchainStorageObserver* observer) {
   return m_observerManager.add(observer);
@@ -906,7 +906,7 @@ uint64_t Blockchain::coinsEmittedAtHeight(uint64_t height) {
     const auto &previous = m_blocks[height - 1];
     return current.cumulative_difficulty - previous.cumulative_difficulty;
   }
- 
+
 uint8_t Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
   if (height > m_upgradeDetectorV10.upgradeHeight()) {
     return m_upgradeDetectorV10.targetVersion();
@@ -2321,7 +2321,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   auto longhashTimeStart = std::chrono::steady_clock::now();
     Crypto::Hash proof_of_work = NULL_HASH;
 
-
     if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
       if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
         logger(ERROR, BRIGHT_RED) <<
@@ -2330,17 +2329,15 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         return false;
       }
     } else {
-
-      // Skip difficulty validation only for FOUNDATIONAL blocks, ie anything < 800k
-      // Fixes daemon's backwards compatibility issues syncing with early blocks
-      if (getCurrentBlockchainHeight() < 800000) {
+      // Relax precision of validation for difficulty of historical blocks on maiden sync, ie anything < 900k
+      // This "fixes" fuegod backwards compatibility issues when syncing with early blocks
+      // The exception to the 'only' rule being the possible bypass of a small hiccup of blocks (~100 blocks) to continue practice of following heaviest chain; from fork created during a botched testnet update (only coinbase rewards + mining pool payout txns during this range of blocks));
+      if (getCurrentBlockchainHeight() < 800000 || getCurrentBlockchainHeight() >= 980000 && getCurrentBlockchainHeight() < 980690) {
         logger(INFO, BRIGHT_WHITE) <<
-
           "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
       } else {
         if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
           logger(INFO, BRIGHT_WHITE) <<
-
             "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
           bvc.m_verification_failed = true;
           return false;
@@ -2381,7 +2378,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transactions[i], block.height);
 	  uint64_t out_amount = getOutputAmount(transactions[i]);
-    uint64_t fee = in_amount < out_amount ? CryptoNote::parameters::MINIMUM_FEE : in_amount - out_amount;
+    uint64_t fee = in_amount < out_amount ? m_currency.minimumFee(block.bl.majorVersion) : in_amount - out_amount;
 
     bool isTransactionValid = true;
     if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_8 && transactions[i].version > TRANSACTION_VERSION_1) {

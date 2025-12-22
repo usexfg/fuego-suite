@@ -729,16 +729,16 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     std::cout <<"\n";
     std::cout <<  "Welcome to the Fuego command-line wallet."<<"\n";
     std::cout << "Please choose from the following options what you would like to do:\n";
-    std::cout << "G - Generate new wallet\n";
     std::cout << "O - Open wallet\n";
-    std::cout << "R - Restore backup/paperwallet\n";
-    std::cout << "I - Import wallet from keys\n";
-    std::cout << "M - Mnemonic seed import\n";
+    std::cout << "₲ - Generate new wallet\n";
+    std::cout << "R - Restore from backup/paperwallet\n";
+    std::cout << "I - Import wallet from private keys\n";
+    std::cout << "M - Mnemonic seed (25-words) import\n";
     std::cout << "E - Exit\n";
     char c;
     do {
       std::string answer;
-      std::cout << "Please enter your choice (G/O/R/I/M/E): ";
+      std::cout << "Please enter your choice (O/₲/R/I/M/E): ";
       if (!std::getline(std::cin, answer)) {
         std::cout << "Error reading input. Exiting." << std::endl;
         return false;
@@ -749,7 +749,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
       }
       c = answer[0];
       if (!(c == 'O' || c == 'G' || c == 'E' || c == 'I' || c == 'o' || c == 'g' || c == 'e' || c == 'i' || c == 'm' || c == 'M')) {
-        std::cout << "Unknown command: " << c << ". Please enter G, O, R, I, M, or E." << std::endl;
+        std::cout << "Unknown command: " << c << ". Please enter O, ₲, R, I, M, or E." << std::endl;
       } else {
         break;
       }
@@ -814,14 +814,14 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
       std::cin.clear();
       // Clear any leftover characters in the input buffer
       std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-      
+
       // Ensure we prompt for password
       std::cout << "password: ";
       if (!pwd_container.read_password()) {
         fail_msg_writer() << "failed to read wallet password";
         return false;
       }
-      
+
       // If password is still empty after reading, prompt again
       if (pwd_container.password().empty()) {
         std::cout << "Password cannot be empty. Please try again." << std::endl;
@@ -830,7 +830,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
           fail_msg_writer() << "failed to read wallet password";
           return false;
         }
-        
+
         // Check again after second attempt
         if (pwd_container.password().empty()) {
           fail_msg_writer() << "wallet password cannot be empty";
@@ -838,7 +838,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
         }
       }
     }
-  
+
     // Ensure password is not empty for security
     if (pwd_container.password().empty()) {
       fail_msg_writer() << "wallet password cannot be empty";
@@ -1136,9 +1136,9 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     "**********************************************************************\n" <<
     "Your wallet has been generated.\n" <<
     "Use \"help\" command to see the list of available commands.\n" <<
-    "Always use \"exit\" command when closing fuego-wallet-cli to save\n" <<
-    "current session's state. Otherwise, you will possibly need to synchronize \n" <<
-    "your wallet again. Your wallet keys are not under risk in doing so.\n" <<
+    "Always use \"exit\" command when closing wallet to save\n" <<
+    "current session's state. Otherwise, you may need to re-synchronize \n" <<
+    "your wallet with the network.\n" <<
     "**********************************************************************";
   return true;
 }
@@ -1189,9 +1189,9 @@ bool simple_wallet::new_wallet(Crypto::SecretKey &secret_key, Crypto::SecretKey 
                   "**********************************************************************\n" <<
                   "Your wallet has been imported.\n" <<
                   "Use \"help\" command to see the list of available commands.\n" <<
-                  "Always use \"exit\" command when closing fuego-wallet-cli to save\n" <<
-                  "current session's state. Otherwise, you will possibly need to synchronize \n" <<
-                  "your wallet again. Your wallet key is not under risk in doing so.\n" <<
+                  "Always use \"exit\" command when closing wallet to save\n" <<
+                  "current session's state. Otherwise, you may need to re-synchronize \n" <<
+                  "your wallet with the network.\n" <<
                   "**********************************************************************";
                 return true;
                 }

@@ -98,10 +98,9 @@ namespace CryptoNote
 		const double   DMWDA_BLOCK_STEALING_TIME_THRESHOLD           = 0.05; // 5% of target time threshold for fast blocks
 
         // MIXIN
- 		const size_t   MINIMUM_MIXIN                                 = MIN_TX_MIXIN_SIZE_V10;  // from GUI- use MinTXmixin
-        const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;
 		const uint64_t MIN_TX_MIXIN_SIZE_V2                          = 2;  // Legacy mixin
 		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // Maxmix min starting from BlockMajorVersion 10
+        const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;  // Default mixin size
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 

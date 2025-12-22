@@ -1981,11 +1981,11 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
     /* set static mixin of 2*/
-    cmd.fake_outs_count = CryptoNote::parameters::MINIMUM_MIXIN;
+    cmd.fake_outs_count = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
 
     /* force minimum fee */
-    if (cmd.fee < CryptoNote::parameters::MINIMUM_FEE_V2) {
-      cmd.fee = CryptoNote::parameters::MINIMUM_FEE_V2;
+    if (cmd.fee < CryptoNote::parameters::MINIMUM_FEE_800H) {
+      cmd.fee = CryptoNote::parameters::MINIMUM_FEE_800H;
     }
 
     Crypto::SecretKey transactionSK;

@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
+#include "AdaptiveDifficulty.h"
 #include <cctype>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/math/special_functions/round.hpp>
@@ -1188,6 +1189,49 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 			   }
 
 			   return  next_D;
+	}
+
+
+	difficulty_type Currency::nextDifficultyV6(uint32_t height, uint8_t blockMajorVersion,
+		std::vector<std::uint64_t> timestamps, std::vector<difficulty_type> cumulativeDifficulties) const {
+		
+		// Stabilization period protection: Use fixed difficulty for first blocks after upgrade
+		// Commented out but left available in case needed
+		// const uint64_t difficulty_plate = 100000; // Standard stabilization difficulty
+		// const uint32_t upgradeHeight = CryptoNote::parameters::UPGRADE_HEIGHT_V10;
+		// const uint32_t stabilizationPeriod = 15; // Shorter period for DMWDA since it's adaptive
+		
+		// if (height <= upgradeHeight + stabilizationPeriod) {
+		// 	return difficulty_plate;
+		// }
+		
+		// Buffer protection: Limit the size of input vectors to prevent crazy calculations
+		const size_t MAX_DIFFICULTY_WINDOW = 200; // Reasonable limit for DMWDA
+		if (timestamps.size() > MAX_DIFFICULTY_WINDOW) {
+			timestamps.resize(MAX_DIFFICULTY_WINDOW);
+			cumulativeDifficulties.resize(MAX_DIFFICULTY_WINDOW);
+		}
+		
+		// Ensure vectors have the same size and minimum required data
+		assert(timestamps.size() == cumulativeDifficulties.size());
+		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() < 3) {
+			return 10000; // Minimum difficulty for insufficient data
+		}
+		
+		// Use DMWDA (Dynamic Multi-Window Difficulty Adjustment) for BMV10+
+		AdaptiveDifficulty::DifficultyConfig config = getDefaultFuegoConfig(isTestnet());
+		AdaptiveDifficulty dmwda(config);
+		
+		// Convert difficulty_type vector to uint64_t vector as expected by DMWDA
+		std::vector<uint64_t> difficulties;
+		for (const auto& diff : cumulativeDifficulties) {
+			difficulties.push_back(static_cast<uint64_t>(diff));
+		}
+		
+		uint64_t calculatedDifficulty = dmwda.calculateNextDifficulty(height, timestamps, difficulties, isTestnet());
+		
+		// Final safety check: enforce minimum difficulty
+		return std::max(static_cast<uint64_t>(10000), calculatedDifficulty);
 	}
 
 

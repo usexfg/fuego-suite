@@ -99,9 +99,8 @@ public:
     } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
       return parameters::MIN_TX_MIXIN_SIZE_V2;  // Legacy mixin: 2 for BMV7-BMV9
     } else {
-      return 0; 
+      return m_minMixin;
     }
-    return m_minMixin; // legacy default mixin 2 / ring ct 3
   }
 
   // Dynamic ring ct calculation based on available outputs

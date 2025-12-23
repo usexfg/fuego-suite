@@ -333,27 +333,10 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMaj
 	const uint64_t fee = inputs_amount - outputs_amount;
 	bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
 
-	// Get median block size for dynamic fee calculation
-	size_t medianBlockSize = 0;
-	{
-		LockedBlockchainStorage blockchainLock(m_blockchain);
-		std::vector<size_t> lastBlocksSizes;
-		// Use public method to get block sizes
-		uint32_t currentHeight = m_blockchain.getCurrentBlockchainHeight();
-		size_t windowSize = m_currency.rewardBlocksWindow();
-		getBackwardBlocksSizes(currentHeight, lastBlocksSizes, windowSize);
-		if (!lastBlocksSizes.empty()) {
-			medianBlockSize = Common::medianValue(lastBlocksSizes);
-		}
-	}
-
-	// Use dynamic minimum fee based on block size
-	// uint64_t dynamicMinFee = m_currency.dynamicMinimumFee(blobSize, medianBlockSize, blockMajorVersion);
-
-	if (!isFusionTransaction && fee < dynamicMinFee) {
+	// Use flat minimum fee (no dynamic calculation)
+	if (!isFusionTransaction && fee < m_currency.minimumFee(blockMajorVersion)) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-			", dynamic minimum fee: " << m_currency.formatAmount(dynamicMinFee) <<
-			" (median block size: " << medianBlockSize << " bytes)";
+			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee(blockMajorVersion));
 		tvc.m_verification_failed = true;
 		tvc.m_tx_fee_too_small = true;
 		return false;

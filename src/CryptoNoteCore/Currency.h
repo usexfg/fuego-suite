@@ -144,8 +144,11 @@ public:
   uint64_t minimumFeeV1() const { return m_minimumFeeV1; }
   uint64_t minimumFeeV2() const { return m_minimumFeeV2; }
   uint64_t minimumFeeBanking() const { return m_minimumFeeBanking; }
-  
-  // Dynamic minimum fee based on block size (Monero-style)
+
+  // Calculate banking fee as percentage of deposit amount (0.125%)
+  uint64_t calculateBankingFee(uint64_t depositAmount) const;
+
+  // Dynamic minimum fee based on block size
   uint64_t dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const;
 
   uint64_t defaultDustThreshold() const { return m_defaultDustThreshold; }

@@ -1451,7 +1451,7 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
     minimumFee(parameters::MINIMUM_FEE); // Use the configured default
     minimumFeeV1(parameters::MINIMUM_FEE_V1);
     minimumFeeV2(parameters::MINIMUM_FEE_V2);
-    minimumFeeBanking(parameters::MINIMUM_FEE_BANKING);
+    minimumFeeBanking(parameters::MINIMUM_FEE_BANKING_PERCENT);
     defaultDustThreshold(parameters::DEFAULT_DUST_THRESHOLD);
 
     difficultyTarget(parameters::DIFFICULTY_TARGET);

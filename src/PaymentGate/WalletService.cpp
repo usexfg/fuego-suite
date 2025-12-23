@@ -1422,7 +1422,7 @@ namespace PaymentService
       sendParams.sourceAddresses = request.sourceAddresses;
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
-      sendParams.fee = m_currency.minimumFee();
+      sendParams.fee = currency.minimumFee();
       // Use dynamic ring sizing for optimal privacy (aim for 18, fallback to 8 minimum)
       sendParams.mixIn = parameters::MIN_TX_MIXIN_SIZE_V10;
       sendParams.unlockTimestamp = request.unlockTime;

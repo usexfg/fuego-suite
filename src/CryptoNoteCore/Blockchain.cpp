@@ -1266,6 +1266,14 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
       effectiveBlockSize = maxHistoricalSize;
     }
   }
+  // Special handling for blocks around height 800,000 due to penalty calculation changes
+  else if (height >= 800000 && height <= 850000) {
+    // Use a more lenient block size limit for these blocks
+    size_t maxHeightSize = 3.5 * 1024 * 1024; // 3.5MB limit for blocks 800k-850k
+    if (cumulativeBlockSize > maxHeightSize) {
+      effectiveBlockSize = maxHeightSize;
+    }
+  }
 
   if (!m_currency.getBlockReward(blockMajorVersion, blocksSizeMedian, effectiveBlockSize, alreadyGeneratedCoins, fee, height, reward, emissionChange)) {
     logger(INFO, BRIGHT_WHITE) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego blockchain";
@@ -1307,6 +1315,16 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
         else if (height < 800000) {
           tolerance = 2000000000; // 2.0 XFG tolerance for blocks up to 800k
           logger(INFO, BRIGHT_YELLOW) << "Using overflow tolerance for historical block at height " << height;
+        }
+        // Special tolerance for blocks 800k-850k due to penalty calculation and block size changes
+        else if (height >= 800000 && height <= 850000) {
+          tolerance = 5000000000; // 5.0 XFG tolerance for this transition period
+          logger(INFO, BRIGHT_YELLOW) << "Using transition tolerance for block at height " << height;
+        }
+        // Standard tolerance for newer blocks
+        else {
+          tolerance = 1000000000; // 1.0 XFG tolerance for new blocks
+          logger(INFO, BRIGHT_YELLOW) << "Using standard tolerance for block at height " << height;
         }
 
     if (minerReward > reward + tolerance) {

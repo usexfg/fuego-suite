@@ -144,6 +144,9 @@ public:
   uint64_t minimumFeeV1() const { return m_minimumFeeV1; }
   uint64_t minimumFeeV2() const { return m_minimumFeeV2; }
   uint64_t minimumFeeBanking() const { return m_minimumFeeBanking; }
+  
+  // Dynamic minimum fee based on block size (Monero-style)
+  uint64_t dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const;
 
   uint64_t defaultDustThreshold() const { return m_defaultDustThreshold; }
   uint64_t difficultyTarget_DRGL() const { return m_difficultyTarget_DRGL; }
@@ -230,7 +233,9 @@ public:
 
   bool getBlockReward(uint8_t blockMajorVersion, size_t medianSize, size_t currentBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint32_t height,
                         uint64_t &reward, int64_t &emissionChange) const;
-    // Interest functions removed - no on-chain interest calculation
+    // Interest functions
+    uint64_t calculateInterest(uint64_t amount, uint32_t term, uint32_t height) const;
+    uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
@@ -311,7 +316,7 @@ private:
 
   bool generateGenesisBlock();
 
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) const;
+  // getPenalizedAmount is a standalone function defined in CryptoNoteBasicImpl.h/CryptoNoteBasicImpl.cpp
 
 private:
   uint64_t m_maxBlockHeight;

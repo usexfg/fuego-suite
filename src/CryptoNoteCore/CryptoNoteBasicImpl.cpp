@@ -35,26 +35,39 @@ namespace CryptoNote {
   //-----------------------------------------------------------------------------------------------
   uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) {
     static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
-    assert(medianSize > 0);
-    assert(currentBlockSize > 0);
+    assert(currentBlockSize <= 3 * medianSize);
+    assert(medianSize <= std::numeric_limits<uint32_t>::max());
+    assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
 
-    // CORRECT CRYPTONOTE FORMULA
+    if (amount == 0) {
+      return 0;
+    }
+
     if (currentBlockSize <= medianSize) {
-      return amount; // No penalty for small blocks
+      return amount;
     }
     
-    if (currentBlockSize >= 2 * medianSize) {
-      return 0; // Block too big - zero reward
+    if (currentBlockSize >= 3 * medianSize) {
+      return 0; // No reward for blocks >= 3× median
     }
 
-    // Calculate: amount * (2*medianSize - currentBlockSize) / medianSize
-    uint64_t numeratorHi;
-    uint64_t numeratorLo = mul128(amount, 2 * medianSize - currentBlockSize, &numeratorHi);
+    // Fuego penalty formula with 3× limit - logical penalty that increases with block size
+    // Formula: amount * medianSize / currentBlockSize (for blocks > median)
+    if (currentBlockSize <= medianSize) {
+      return amount; // No penalty for blocks <= median
+    }
+    
+    // For blocks larger than median, apply penalty: reward = amount * medianSize / currentBlockSize
+    uint64_t productHi;
+    uint64_t productLo = mul128(amount, medianSize, &productHi);
+    
     uint64_t penalizedAmountHi;
     uint64_t penalizedAmountLo;
-    div128_32(numeratorHi, numeratorLo, medianSize, &penalizedAmountHi, &penalizedAmountLo);
+    div128_32(productHi, productLo, static_cast<uint32_t>(currentBlockSize), &penalizedAmountHi, &penalizedAmountLo);
     
-    assert(penalizedAmountHi == 0); // Should never overflow
+    assert(0 == penalizedAmountHi);
+    assert(penalizedAmountLo < amount);
+    
     return penalizedAmountLo;
   }
   //-----------------------------------------------------------------------

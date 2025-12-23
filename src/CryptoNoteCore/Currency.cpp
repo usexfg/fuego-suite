@@ -18,13 +18,13 @@
 #include "Currency.h"
 #include "AdaptiveDifficulty.h"
 #include <cctype>
+#include <numeric>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/math/special_functions/round.hpp>
 #include <boost/lexical_cast.hpp>
 #include "../Common/Base58.h"
 #include "../Common/int-util.h"
 #include "../Common/StringTools.h"
-
 #include "CryptoNoteConfig.h"
 #include "Account.h"
 #include "CryptoNoteBasicImpl.h"
@@ -32,6 +32,10 @@
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
 #include "UpgradeDetector.h"
+#include "../crypto/hash.h"
+#include "../crypto/keccak.h"
+#include <algorithm>
+
 
 #undef ERROR
 
@@ -250,6 +254,76 @@ void Currency::getEternalFlame(uint64_t& amount) const {
   amount = m_ethernalXFG;
 }
 
+double Currency::getBurnPercentage() const {
+  if (m_moneySupply == 0) {
+    return 0.0;
+  }
+  return static_cast<double>(m_ethernalXFG) / static_cast<double>(m_moneySupply) * 100.0;
+}
+
+// Fuego-specific dynamic minimum fee based on block size (reverse Monero-style)
+// This encourages network usage when underutilized and prevents bloat when congested
+uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const {
+  // Use versioned base fee
+  uint64_t baseFee = minimumFee(blockMajorVersion);
+  
+  // Target block size for optimal fee calculation
+  // Fuego's default blockGrantedFullRewardZone is 430080 bytes (420KB)
+  size_t targetBlockSize = m_blockGrantedFullRewardZone;
+  
+  // If median is 0 or target is 0, fall back to base fee
+  if (medianBlockSize == 0 || targetBlockSize == 0) {
+    return baseFee;
+  }
+  
+  // Fuego's reverse dynamic fee formula:
+  // When blocks are small (< target): Higher fees per byte (encourage usage)
+  // When blocks are large (> target): Lower fees per byte (discourage bloat)
+  // Formula: baseFee × (targetBlockSize / medianBlockSize)
+  double ratio = static_cast<double>(targetBlockSize) / static_cast<double>(medianBlockSize);
+  
+  // Apply reasonable bounds to prevent extreme fee fluctuations
+  double minRatio = 0.5;   // Don't go below 50% of base fee
+  double maxRatio = 3.0;   // Don't go above 300% of base fee
+  
+  if (ratio < minRatio) {
+    ratio = minRatio;
+  } else if (ratio > maxRatio) {
+    ratio = maxRatio;
+  }
+  
+  // Calculate dynamic fee
+  uint64_t dynamicFee = static_cast<uint64_t>(static_cast<double>(baseFee) * ratio);
+  
+  return dynamicFee;
+}
+
+// getPenalizedAmount is a standalone function defined in CryptoNoteBasicImpl.h/CryptoNoteBasicImpl.cpp
+
+uint64_t Currency::minimumFee(uint8_t blockMajorVersion) const {
+  if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
+    return m_minimumFee; // 0.00008 XFG (80000 atomic units)
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_9) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_8) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_6) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_5) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_4) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3) {
+    return m_minimumFee;
+  } else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_2) {
+    return m_minimumFeeV2; // 0.00005 XFG
+  } else {
+    return m_minimumFeeV1; // 0.00001 XFG
+  }
+}
+
 	bool Currency::getBlockReward(uint8_t blockMajorVersion, size_t medianSize, size_t currentBlockSize, uint64_t alreadyGeneratedCoins,
 		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange) const {
 		unsigned int m_emissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
@@ -306,7 +380,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
         }
         // For very early blocks, adjust the size validation to account for the small median values
         // Early blocks had much smaller medians but could still be legitimately larger
-        if (currentBlockSize > UINT64_C(2) * medianSize)
+        if (currentBlockSize > UINT64_C(3) * medianSize)
         {
           // Special handling for blocks in the problematic height range (170k-180k)
           // These blocks have known size validation issues due to historical changes
@@ -339,7 +413,7 @@ void Currency::getEternalFlame(uint64_t& amount) const {
             }
           }
           else if (height >= 50000) { // Only apply strict size check to blocks after height 50,000
-            logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
+            logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 3 * medianSize;
             return false;
           } else {
             // For early blocks, use a more lenient size check based on blockGrantedFullRewardZone
@@ -370,10 +444,10 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 														    penalizedBaseReward = baseReward;
 														    penalizedFee = fee;
 														} else {
-															penalizedBaseReward = getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
-															penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
+															penalizedBaseReward = CryptoNote::getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
+															penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? CryptoNote::getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
 															if (cryptonoteCoinVersion() == 1) {
-																penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
+																penalizedFee = CryptoNote::getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
 															}
 														}
 
@@ -1194,42 +1268,42 @@ void Currency::getEternalFlame(uint64_t& amount) const {
 
 	difficulty_type Currency::nextDifficultyV6(uint32_t height, uint8_t blockMajorVersion,
 		std::vector<std::uint64_t> timestamps, std::vector<difficulty_type> cumulativeDifficulties) const {
-		
+
 		// Stabilization period protection: Use fixed difficulty for first blocks after upgrade
 		// Commented out but left available in case needed
 		// const uint64_t difficulty_plate = 100000; // Standard stabilization difficulty
 		// const uint32_t upgradeHeight = CryptoNote::parameters::UPGRADE_HEIGHT_V10;
 		// const uint32_t stabilizationPeriod = 15; // Shorter period for DMWDA since it's adaptive
-		
+
 		// if (height <= upgradeHeight + stabilizationPeriod) {
 		// 	return difficulty_plate;
 		// }
-		
+
 		// Buffer protection: Limit the size of input vectors to prevent crazy calculations
 		const size_t MAX_DIFFICULTY_WINDOW = 200; // Reasonable limit for DMWDA
 		if (timestamps.size() > MAX_DIFFICULTY_WINDOW) {
 			timestamps.resize(MAX_DIFFICULTY_WINDOW);
 			cumulativeDifficulties.resize(MAX_DIFFICULTY_WINDOW);
 		}
-		
+
 		// Ensure vectors have the same size and minimum required data
 		assert(timestamps.size() == cumulativeDifficulties.size());
 		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() < 3) {
 			return 10000; // Minimum difficulty for insufficient data
 		}
-		
+
 		// Use DMWDA (Dynamic Multi-Window Difficulty Adjustment) for BMV10+
 		AdaptiveDifficulty::DifficultyConfig config = getDefaultFuegoConfig(isTestnet());
 		AdaptiveDifficulty dmwda(config);
-		
+
 		// Convert difficulty_type vector to uint64_t vector as expected by DMWDA
 		std::vector<uint64_t> difficulties;
 		for (const auto& diff : cumulativeDifficulties) {
 			difficulties.push_back(static_cast<uint64_t>(diff));
 		}
-		
+
 		uint64_t calculatedDifficulty = dmwda.calculateNextDifficulty(height, timestamps, difficulties, isTestnet());
-		
+
 		// Final safety check: enforce minimum difficulty
 		return std::max(static_cast<uint64_t>(10000), calculatedDifficulty);
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -35,6 +35,19 @@
 #include "Miner.h"
 #include "TransactionExtra.h"
 #include "IBlock.h"
+#include "Currency.h"
+#include <vector>
+#include <functional>
+#include <array>
+#include <list>
+#include <string>
+#include <memory>
+#include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
+#include "../Rpc/CoreRpcServerCommandsDefinitions.h"
+#include "../crypto/hash.h"
+#include "../CryptoNoteCore/CryptoNoteBasic.h"
+#include "../CryptoNoteCore/Difficulty.h"
+#include "../../include/CryptoNote.h"
 
 #undef ERROR
 
@@ -319,9 +332,25 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMaj
 	getObjectHash(tx, h, blobSize);
 	const uint64_t fee = inputs_amount - outputs_amount;
 	bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
-	if (!isFusionTransaction && fee < m_currency.minimumFee(blockMajorVersion)) {
+	
+	// Get median block size for dynamic fee calculation
+	size_t medianBlockSize = 0;
+	{
+		LockedBlockchainStorage blockchainLock(m_blockchain);
+		std::vector<size_t> lastBlocksSizes;
+		m_blockchain.getLastNBlocksSizes(lastBlocksSizes, m_currency.rewardBlocksWindow());
+		if (!lastBlocksSizes.empty()) {
+			medianBlockSize = Common::medianValue(lastBlocksSizes);
+		}
+	}
+	
+	// Use dynamic minimum fee based on block size
+	uint64_t dynamicMinFee = m_currency.dynamicMinimumFee(blobSize, medianBlockSize, blockMajorVersion);
+	
+	if (!isFusionTransaction && fee < dynamicMinFee) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee(blockMajorVersion));
+			", dynamic minimum fee: " << m_currency.formatAmount(dynamicMinFee) <<
+			" (median block size: " << medianBlockSize << " bytes)";
 		tvc.m_verification_failed = true;
 		tvc.m_tx_fee_too_small = true;
 		return false;
@@ -478,8 +507,9 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       } else {
         b.minorVersion = BLOCK_MINOR_VERSION_0;
       }
+    }
 
-      b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+    b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
       b.parentBlock.minorVersion = BLOCK_MINOR_VERSION_0;
       b.parentBlock.transactionCount = 1;
       TransactionExtraMergeMiningTag mm_tag = boost::value_initialized<decltype(mm_tag)>();
@@ -580,17 +610,19 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       return false;
     }
 
-    return true;
-  }
+    logger(ERROR, BRIGHT_RED) <<
+      "Failed to create_block_template with " << 10 << " tries";
 
-  logger(ERROR, BRIGHT_RED) <<
-    "Failed to create_block_template with " << 10 << " tries";
-
-  return false;
+    return false;
+}
 }
 
-std::vector<Crypto::Hash> core::findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
-  uint32_t& totalBlockCount, uint32_t& startBlockIndex) {
+
+std::vector<Crypto::Hash> core::findBlockchainSupplement(
+    const std::vector<Crypto::Hash>& remoteBlockIds, 
+    size_t maxCount,
+    uint32_t& totalBlockCount, 
+    uint32_t& startBlockIndex) {
 
   assert(!remoteBlockIds.empty());
   assert(remoteBlockIds.back() == m_blockchain.getBlockIdByHeight(0));
@@ -1251,3 +1283,4 @@ uint64_t core::getBurnedXfgAtHeight(size_t height) const {
 }
 
 }
+

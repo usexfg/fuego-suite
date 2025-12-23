@@ -152,8 +152,8 @@ struct TransactionParameters
   std::vector<std::string> sourceAddresses;
   std::vector<WalletOrder> destinations;
   std::vector<WalletMessage> messages;
-  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
-  uint64_t mixIn = CryptoNote::parameters::MINIMUM_MIXIN;
+  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE;
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
   std::string extra;
   DepositId firstDepositId = WALLET_INVALID_DEPOSIT_ID;
   size_t depositCount = 0;

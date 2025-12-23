@@ -348,7 +348,7 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMaj
 	}
 
 	// Use dynamic minimum fee based on block size
-	// uint64_t dynamicMinFee = m_currency.dynamicMinimumFee(blobSize, medianBlockSize, blockMajorVersion);
+	uint64_t dynamicMinFee = m_currency.dynamicMinimumFee(blobSize, medianBlockSize, blockMajorVersion);
 
 	if (!isFusionTransaction && fee < dynamicMinFee) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<

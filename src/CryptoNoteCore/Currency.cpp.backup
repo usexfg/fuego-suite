@@ -234,7 +234,7 @@ namespace CryptoNote
 
 	uint64_t Currency::minimumFee(uint8_t blockMajorVersion) const {
 		if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
-			return parameters::MINIMUM_FEE_8KH;  // 0.00008 XFG for BMV10 and above
+			return parameters::MINIMUM_FEE_800H;  // 0.00008 XFG for BMV10 and above
 		} else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_8) {
 			return parameters::MINIMUM_FEE_V2;   // 0.008 XFG for BMV8 and above
 		} else if (blockMajorVersion <= BLOCK_MAJOR_VERSION_7) {
@@ -266,16 +266,16 @@ double Currency::getBurnPercentage() const {
 uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const {
   // Use versioned base fee
   uint64_t baseFee = minimumFee(blockMajorVersion);
-
+  
   // Target block size for optimal fee calculation
   // Fuego's default blockGrantedFullRewardZone is 430080 bytes (420KB)
   size_t targetBlockSize = m_blockGrantedFullRewardZone;
-
+  
   // If median is 0 or target is 0, fall back to base fee
   if (medianBlockSize == 0 || targetBlockSize == 0) {
     return baseFee;
   }
-
+  
   // Fuego's Eternal Flame-aware dynamic fee formula:
   // Accounts for Osavvirsak supply replenishment and 8-minute blocks
   // When blocks are small (< target): Lower fees per byte (attract users)
@@ -283,26 +283,26 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
   // Maintains miner revenue stability given Eternal Flame dynamics
   // Formula: baseFee × (medianBlockSize / targetBlockSize) with gentle scaling
   double ratio = static_cast<double>(medianBlockSize) / static_cast<double>(targetBlockSize);
-
+    
   // Apply gentle bounds considering Eternal Flame supply stability
-  double minRatio = 0.8;   // Don't go below 60% of base fee (Eternal Flame provides stability)
-  double maxRatio = 3.0;   // Don't go above 300% of base fee (prevent extreme spam)
-
+  double minRatio = 0.6;   // Don't go below 60% of base fee (Eternal Flame provides stability)
+  double maxRatio = 2.5;   // Don't go above 250% of base fee (prevent extreme spam)
+  
   if (ratio < minRatio) {
     ratio = minRatio;
   } else if (ratio > maxRatio) {
     ratio = maxRatio;
   }
-
+  
   // Calculate dynamic fee
   uint64_t dynamicFee = static_cast<uint64_t>(static_cast<double>(baseFee) * ratio);
-
+  
   // Log dynamic fee calculation for monitoring Eternal Flame impact
   if (medianBlockSize > 0 && ratio != 1.0) {
       logger(DEBUGGING, BRIGHT_GREEN) << "Dynamic fee adjustment: " << formatAmount(dynamicFee)
                         << " (ratio: " << ratio << ", median: " << medianBlockSize << " bytes)";
   }
-
+    
   return dynamicFee;
 }
 

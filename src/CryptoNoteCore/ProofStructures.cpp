@@ -15,7 +15,7 @@
 #include "ProofStructures.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/SerializationOverloads.h"
-#include <jsoncpp/json.h>
+#include <json/json.h>
 
 namespace CryptoNote {
 

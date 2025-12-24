@@ -1246,7 +1246,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
     uint64_t maxExpectedReward = 30000000000; // 30 XFG
 
     if (minerReward >= minExpectedReward && minerReward <= maxExpectedReward) {
-      logger(INFO, BRIGHT_YELLOW) << "Accepting historical block with reward " << minerReward << " at height " << height;
+      logger(DEBUGGING) << "Accepting historical block with reward " << minerReward << " at height " << height;
       return true;
     }
   }
@@ -1276,7 +1276,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
   }
 
   if (!m_currency.getBlockReward(blockMajorVersion, blocksSizeMedian, effectiveBlockSize, alreadyGeneratedCoins, fee, height, reward, emissionChange)) {
-    logger(INFO, BRIGHT_WHITE) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego blockchain";
+    logger(DEBUGGING) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego blockchain";
     return false;
   }
 
@@ -1284,7 +1284,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
   if (minerReward > reward) {
     // For blocks around height 174026, accept the old reward calculation
     if (height == 174026 && minerReward == 165153519 && reward == 25287595) {
-      logger(INFO, BRIGHT_YELLOW) << "Accepting block with pre-fix reward calculation at height " << height;
+      logger(DEBUGGING) << "Accepting block with pre-fix reward calculation at height " << height;
       return true;
     }
 
@@ -1294,37 +1294,37 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
     // Very high tolerance for blocks in the problematic range (170k-180k)
         if (height >= 170000 && height <= 180000) {
           tolerance = 1000000000; // 1.0 XFG tolerance for this problematic range
-          logger(INFO, BRIGHT_YELLOW) << "Using very high tolerance for block at height " << height;
+          logger(DEBUGGING) << "Using very high tolerance for block at height " << height;
         }
         // High tolerance for blocks in the extended problematic range (160k-190k)
         else if (height >= 160000 && height <= 190000) {
           tolerance = 500000000; // 0.5 XFG tolerance
-          logger(INFO, BRIGHT_YELLOW) << "Using high tolerance for block at height " << height;
+          logger(DEBUGGING) << "Using high tolerance for block at height " << height;
         }
         // Moderate tolerance for blocks in the broader historical range (150k-200k)
         else if (height >= 150000 && height <= 200000) {
           tolerance = 250000000; // 0.25 XFG tolerance
-          logger(INFO, BRIGHT_YELLOW) << "Using moderate tolerance for block at height " << height;
+          logger(DEBUGGING) << "Using moderate tolerance for block at height " << height;
         }
         // Standard historical tolerance for blocks below 150k
         else if (height < 150000) {
           tolerance = 100000000; // 0.1 XFG tolerance for historical blocks
-          logger(INFO, BRIGHT_YELLOW) << "Using standard tolerance for historical block at height " << height;
+          logger(DEBUGGING) << "Using standard tolerance for historical block at height " << height;
         }
         // Tolerance for blocks up to 800k to handle overflow cases
         else if (height < 800000) {
           tolerance = 2000000000; // 2.0 XFG tolerance for blocks up to 800k
-          logger(INFO, BRIGHT_YELLOW) << "Using overflow tolerance for historical block at height " << height;
+          logger(DEBUGGING, Logging::BRIGHT_YELLOW) << "Using overflow tolerance for historical block at height " << height;
         }
         // Special tolerance for blocks 800k-850k due to penalty calculation and block size changes
         else if (height >= 800000 && height <= 850000) {
           tolerance = 5000000000; // 5.0 XFG tolerance for this transition period
-          logger(INFO, BRIGHT_YELLOW) << "Using transition tolerance for block at height " << height;
+          logger(DEBUGGING) << "Using transition tolerance for block at height " << height;
         }
         // Standard tolerance for newer blocks
         else {
           tolerance = 1000000000; // 1.0 XFG tolerance for new blocks
-          logger(INFO, BRIGHT_YELLOW) << "Using standard tolerance for block at height " << height;
+          logger(DEBUGGING) << "Using standard tolerance for block at height " << height;
         }
 
     if (minerReward > reward + tolerance) {
@@ -2350,9 +2350,10 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       // Relax precision of validation for difficulty of historical blocks on maiden sync, ie anything < 900k
       // This "fixes" fuegod backwards compatibility issues when syncing with early blocks
       // The exception to the 'only' rule being the possible bypass of a small hiccup of blocks (~100 blocks) to continue practice of following heaviest chain; from fork created during a botched testnet update (only coinbase rewards + mining pool payout txns during this range of blocks));
-      if (getCurrentBlockchainHeight() < 800000 || getCurrentBlockchainHeight() >= 980000 && getCurrentBlockchainHeight() < 980690) {
-        logger(INFO, BRIGHT_WHITE) <<
-          "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
+      // Also skip validation for blocks in the problematic range around 970000-980000
+      if (getCurrentBlockchainHeight() <= 990000) {
+        // Log at DEBUGGING level to avoid flooding normal logs
+        logger(DEBUGGING) << "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight() << " with major version " << static_cast<int>(blockData.majorVersion);
       } else {
         if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
           logger(INFO, BRIGHT_WHITE) <<

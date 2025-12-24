@@ -1,7 +1,4 @@
 // Copyright (c) 2017-2025 Fuego Developers
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
-// Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2012-2018 The CryptoNote developers
 //
 // This file is part of Fuego.
 //
@@ -16,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
+#include "../CryptoNoteConfig.h"
 
 namespace CryptoNote {
 
@@ -29,7 +27,7 @@ uint64_t Currency::calculateBankingFee(uint64_t depositAmount) const {
     
     // Ensure minimum fee of 1 XFG for small deposits
     if (fee == 0 && depositAmount > 0) {
-        fee = COIN; // 1 XFG = 10,000,000 atomic units
+        fee = CryptoNote::parameters::COIN; // 1 XFG = 10,000,000 atomic units
     }
     
     return fee;

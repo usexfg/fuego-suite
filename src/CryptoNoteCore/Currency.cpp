@@ -234,7 +234,7 @@ namespace CryptoNote
 
 	uint64_t Currency::minimumFee(uint8_t blockMajorVersion) const {
 		if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
-			return parameters::MINIMUM_FEE_8KH;  // 0.00008 XFG for BMV10 and above
+			return parameters::MINIMUM_FEE_8KH;  // 0.0008 XFG for BMV10 and above
 		} else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_8) {
 			return parameters::MINIMUM_FEE_V2;   // 0.008 XFG for BMV8 and above
 		} else if (blockMajorVersion <= BLOCK_MAJOR_VERSION_7) {
@@ -276,8 +276,7 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
     return baseFee;
   }
 
-  // Fuego's Eternal Flame-aware dynamic fee formula:
-  // Accounts for Osavvirsak supply replenishment and 8-minute blocks
+
   // When blocks are small (< target): Lower fees per byte (attract users)
   // When blocks are large (> target): Higher fees per byte (prevent spam)
   // Maintains miner revenue stability given Eternal Flame dynamics
@@ -285,8 +284,8 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
   double ratio = static_cast<double>(medianBlockSize) / static_cast<double>(targetBlockSize);
 
   // Apply gentle bounds considering Eternal Flame supply stability
-  double minRatio = 0.8;   // Don't go below 60% of base fee (Eternal Flame provides stability)
-  double maxRatio = 3.0;   // Don't go above 300% of base fee (prevent extreme spam)
+  double minRatio = 1.0;   // Don't go below base fee (Eternal Flame provides stability)
+  double maxRatio = 100.0;   // Don't go above 10k% of base fee (0.08 prevent extreme spam)
 
   if (ratio < minRatio) {
     ratio = minRatio;
@@ -307,29 +306,6 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
 }
 
 // getPenalizedAmount is a standalone function defined in CryptoNoteBasicImpl.h/CryptoNoteBasicImpl.cpp
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 	bool Currency::getBlockReward(uint8_t blockMajorVersion, size_t medianSize, size_t currentBlockSize, uint64_t alreadyGeneratedCoins,

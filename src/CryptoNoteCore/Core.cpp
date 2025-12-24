@@ -751,9 +751,10 @@ bool core::handle_incoming_block(const Block& b, block_verification_context& bvc
       bool r = toBinaryArray(b, blockBa);
       if (!(r)) { logger(ERROR, BRIGHT_RED) << "failed to serialize block"; return false; }
       arg.b.block = asString(blockBa);
-      for (auto& tx : txs) {
-        arg.b.txs.push_back(asString(toBinaryArray(tx)));
-      }
+
+              for (auto& tx : txs) {
+                arg.b.txs.push_back(asString(toBinaryArray(tx)));
+              }
 
       m_pprotocol->relay_block(arg);
     }

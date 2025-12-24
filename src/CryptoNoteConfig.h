@@ -51,9 +51,9 @@ namespace CryptoNote
 		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG */
 		const uint64_t MINIMUM_FEE_8KH = UINT64_C(8000);	/* 0.0008 XFG (8 KiloHEAT) from BMv10 - FLAT RATE */
 		const uint64_t MINIMUM_FEE = MINIMUM_FEE_8KH;
-		const uint64_t MINIMUM_FEE_BANKING = UINT64_C(80000);  /* 0.008 XFG - FLAT RATE */
 		const uint64_t MINIMUM_FEE_BANKING_PERCENT = UINT64_C(125000); // 0.125% fee for COLD/YIELD deposits
-
+		const uint64_t MINIMUM_FEE_BANKING = MINIMUM_FEE_BANKING_PERCENT;
+		
 		const uint64_t MINIMUM_FEE_BURN_SMALL = UINT64_C(80000);  /* 0.008 XFG for 0.8 XFG burns */
 		const uint64_t MINIMUM_FEE_BURN_LARGE = UINT64_C(800000000);  /* 0.8 XFG for 800 XFG burns */
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(10000); /* < 0.001 XFG */
@@ -156,7 +156,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 980980; //Dynamigo  (dmwda|dynamaxin|ethernalXFG)
+        const uint32_t UPGRADE_HEIGHT_V10                            = 999999; //Dynamigo  (dmwda|dynamaxin|ethernalXFG)
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

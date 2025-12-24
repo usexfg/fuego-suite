@@ -546,8 +546,13 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   size_t txs_size;
   uint64_t fee;
   if (!m_mempool.fill_block_template(b, median_size, m_currency.maxBlockCumulativeSize(height), already_generated_coins, txs_size, fee, height)) {
+    logger(ERROR, BRIGHT_RED) << "fill_block_template failed - median_size=" << median_size 
+      << ", max_block_size=" << m_currency.maxBlockCumulativeSize(height) 
+      << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
+    logger(INFO) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion 
+      << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*
      two-phase miner transaction generation: we don't know exact block size until we prepare block, but we don't know reward until we know
@@ -562,10 +567,19 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
   for (size_t try_count = 0; try_count != 10; ++try_count) {
+    logger(INFO) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion 
+      << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size 
+      << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
     r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, 11);
 
-    if (!(r)) { logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance"; return false; }
+    if (!(r)) { 
+      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height 
+        << ", majorVersion=" << (int)b.majorVersion << ", cumulative_size=" << cumulative_size 
+        << ", fee=" << fee << ", already_generated_coins=" << already_generated_coins;
+      return false; 
+    }
     size_t coinbase_blob_size = getObjectBinarySize(b.baseTransaction);
+    logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << ", cumulative_size=" << cumulative_size << ", txs_size=" << txs_size;
     if (coinbase_blob_size > cumulative_size - txs_size) {
       cumulative_size = txs_size + coinbase_blob_size;
       continue;
@@ -573,10 +587,11 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     if (coinbase_blob_size < cumulative_size - txs_size) {
       size_t delta = cumulative_size - txs_size - coinbase_blob_size;
+      logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << " < expected=" << (cumulative_size - txs_size) << ", delta=" << delta;
       b.baseTransaction.extra.insert(b.baseTransaction.extra.end(), delta, 0);
       //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
       if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
-        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
+        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size + 1 << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
           b.baseTransaction.extra.resize(b.baseTransaction.extra.size() - 1);
           if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
             //fuck, not lucky, -1 makes varint-counter size smaller, in that case we continue to grow with cumulative_size
@@ -596,8 +611,11 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       return false;
     }
 
-    logger(ERROR, BRIGHT_RED) <<
-      "Failed to create_block_template with " << 10 << " tries";
+    logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size 
+      << " vs txs_size + coinbase_blob=" << (txs_size + coinbase_blob_size);
+    logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion 
+      << ", median_size=" << median_size << ", already_generated_coins=" << already_generated_coins;
+    logger(ERROR, BRIGHT_RED) << "Fee=" << fee << ", txs_size=" << txs_size;
 
     return false;
 }

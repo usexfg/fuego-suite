@@ -325,6 +325,10 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
     } else {
         baseReward = (m_moneySupply - alreadyGeneratedCoins) >> m_emissionSpeedFactor;
     }
+		logger(INFO) << "getBlockReward baseReward calculation: m_moneySupply=" << m_moneySupply 
+			<< ", alreadyGeneratedCoins=" << alreadyGeneratedCoins 
+			<< ", Osavvirsak=" << Osavvirsak 
+			<< ", baseReward=" << baseReward;
 
     // Debug output for reward calculation analysis
     static uint32_t lastDebugHeight = 0;
@@ -364,6 +368,10 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
         }
         // For very early blocks, adjust the size validation to account for the small median values
         // Early blocks had much smaller medians but could still be legitimately larger
+        logger(INFO) << "getBlockReward size check: currentBlockSize=" << currentBlockSize 
+			<< ", medianSize=" << medianSize 
+			<< ", 3*medianSize=" << (medianSize * 3) 
+			<< ", blockGrantedFullReward-zone=" << blockGrantedFullRewardZone;
         if (currentBlockSize > UINT64_C(3) * medianSize)
         {
           // Special handling for blocks in the problematic height range (170k-180k)
@@ -448,16 +456,24 @@ uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlock
 
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
     reward = penalizedBaseReward + penalizedFee;
-
-    // Special debugging for known problematic blocks
+    
+    // Debug logging for final reward
     if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
         logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
                                  << " emissionChange=" << emissionChange
                                  << " reward=" << reward;
     }
+    
+    // Critical check for v10 upgrade at small heights where reward might be 0
+    if (reward == 0 && height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
+        logger(ERROR, BRIGHT_RED) << "CRITICAL: Zero reward at v10 upgrade height=" << height 
+            << ", blockMajorVersion=" << (int)blockMajorVersion 
+            << ", baseReward=" << baseReward 
+            << ", penalty=" << (baseReward - penalizedBaseReward);
+    }
 
-     return true;
-   }
+    return true;
+  }
 
   /* ---------------------------------------------------------------------------------------------------- */
 

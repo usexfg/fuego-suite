@@ -148,9 +148,6 @@ public:
   // Calculate banking fee as percentage of deposit amount (0.125%)
   uint64_t calculateBankingFee(uint64_t depositAmount) const;
 
-  // Dynamic minimum fee based on block size
-  uint64_t dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const;
-
   uint64_t defaultDustThreshold() const { return m_defaultDustThreshold; }
   uint64_t difficultyTarget_DRGL() const { return m_difficultyTarget_DRGL; }
   uint64_t difficultyTarget() const { return m_difficultyTarget; }

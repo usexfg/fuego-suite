@@ -263,48 +263,6 @@ double Currency::getBurnPercentage() const {
 
 // Fuego-specific dynamic minimum fee based on block size (reverse Monero-style)
 // This encourages network usage when underutilized and prevents bloat when congested
-uint64_t Currency::dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const {
-  // Use versioned base fee
-  uint64_t baseFee = minimumFee(blockMajorVersion);
-
-  // Target block size for optimal fee calculation
-  // Fuego's default blockGrantedFullRewardZone is 430080 bytes (420KB)
-  size_t targetBlockSize = m_blockGrantedFullRewardZone;
-
-  // If median is 0 or target is 0, fall back to base fee
-  if (medianBlockSize == 0 || targetBlockSize == 0) {
-    return baseFee;
-  }
-
-
-  // When blocks are small (< target): Lower fees per byte (attract users)
-  // When blocks are large (> target): Higher fees per byte (prevent spam)
-  // Maintains miner revenue stability given Eternal Flame dynamics
-  // Formula: baseFee × (medianBlockSize / targetBlockSize) with gentle scaling
-  double ratio = static_cast<double>(medianBlockSize) / static_cast<double>(targetBlockSize);
-
-  // Apply gentle bounds considering Eternal Flame supply stability
-  double minRatio = 1.0;   // Don't go below base fee (Eternal Flame provides stability)
-  double maxRatio = 100.0;   // Don't go above 10k% of base fee (0.08 prevent extreme spam)
-
-  if (ratio < minRatio) {
-    ratio = minRatio;
-  } else if (ratio > maxRatio) {
-    ratio = maxRatio;
-  }
-
-  // Calculate dynamic fee
-  uint64_t dynamicFee = static_cast<uint64_t>(static_cast<double>(baseFee) * ratio);
-
-  // Log dynamic fee calculation for monitoring Eternal Flame impact
-  if (medianBlockSize > 0 && ratio != 1.0) {
-      logger(DEBUGGING, BRIGHT_GREEN) << "Dynamic fee adjustment: " << formatAmount(dynamicFee)
-                        << " (ratio: " << ratio << ", median: " << medianBlockSize << " bytes)";
-  }
-
-  return dynamicFee;
-}
-
 // getPenalizedAmount is a standalone function defined in CryptoNoteBasicImpl.h/CryptoNoteBasicImpl.cpp
 
 

@@ -202,8 +202,13 @@ target_link_directories(SimpleWallet PRIVATE ${FUEGOTOR_LIB_PATH})
 target_link_directories(Daemon PRIVATE ${FUEGOTOR_LIB_PATH})
 target_link_directories(testnet-wallet-cli PRIVATE ${FUEGOTOR_LIB_PATH})
 
+# Create a minimal library for testnet-wallet without the SimpleWallet class conflict
+# TestnetWallet needs PasswordContainer but NOT the SimpleWallet class implementation (which would cause ODR violation)
+add_library(TestnetWalletCommon STATIC SimpleWallet/PasswordContainer.cpp)
+
 target_link_libraries(testnet-wallet-cli PRIVATE
-    SimpleWalletLib
+    # REMOVED: SimpleWalletLib - contains SimpleWallet.cpp with conflicting simple_wallet class
+    TestnetWalletCommon
     Wallet
     NodeRpcProxy
     Transfers
@@ -218,10 +223,15 @@ target_link_libraries(testnet-wallet-cli PRIVATE
     Common
     upnpc-static
     BlockchainExplorer
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
     ${JSONCPP_LIBRARIES}
+)
+
+# Add include paths for headers used by TestnetWallet (SimpleWallet.h and TestnetWallet.h)
+target_include_directories(testnet-wallet-cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/SimpleWallet
+    ${CMAKE_CURRENT_SOURCE_DIR}/TestnetWallet
 )
 
 set_target_properties(testnet-wallet-cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src")
@@ -365,8 +375,8 @@ add_dependencies(P2P version)
 # --------------------------
 # Output names
 # --------------------------
-set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "fuego-wallet-cli")
-set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "testnet-wallet-cli")
+set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "xfg_wallet")
+set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "test_wallet")
 set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "walletd")
 set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")

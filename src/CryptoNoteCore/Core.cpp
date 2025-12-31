@@ -551,7 +551,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
-    logger(INFO) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion 
+    logger(TRACE) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion 
       << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*
@@ -567,7 +567,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
   for (size_t try_count = 0; try_count != 10; ++try_count) {
-    logger(INFO) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion 
+    logger(TRACE) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion 
       << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size 
       << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
     r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, 11);

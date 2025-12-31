@@ -1,0 +1,56 @@
+# Fuego Testnet Daemon - Multi-stage build
+# Usage: docker build -t fuego/testnetd:latest -f Dockerfiles/testnetd .
+
+FROM ubuntu:22.04 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libboost-all-dev \
+    libjsoncpp-dev \
+    libssl-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Build testnetd
+RUN cmake -DCMAKE_BUILD_TYPE=Release . && \
+    make -j$(nproc) testnetd
+
+# Runtime stage - minimal dependencies
+FROM ubuntu:22.04
+
+# Install ONLY runtime libraries
+RUN apt-get update && apt-get install -y \
+    libboost-filesystem1.74.0 \
+    libboost-program-options1.74.0 \
+    libboost-system1.74.0 \
+    libjsoncpp25 \
+    libssl1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy compiled binary from builder
+COPY --from=builder /build/build/src/testnetd ./
+COPY --from=builder /build/src/config/ ./
+
+# Create data directory for blockchain
+RUN mkdir -p /app/data
+
+# EXPOSE TESTNET ports: 20808 P2P, 28280 RPC
+EXPOSE 20808 28280
+
+# Create and switch to non-root user
+RUN useradd -m -u 1000 -s /bin/bash fuego && \
+    chown -R fuego:fuego /app
+USER fuego
+
+# Default entrypoint with data directory
+ENTRYPOINT ["./testnetd", "--data-dir=/app/data"]
+
+# Default arguments (can be overridden)
+CMD ["--log-level=1"]

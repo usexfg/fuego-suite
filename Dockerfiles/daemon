@@ -1,0 +1,53 @@
+# Fuego Mainnet Daemon - Multi-stage build
+# Usage: docker build -t fuego/daemon:latest -f Dockerfiles/daemon .
+
+FROM ubuntu:22.04 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libboost-all-dev \
+    libjsoncpp-dev \
+    libssl-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Build mainnet daemon
+RUN cmake -DCMAKE_BUILD_TYPE=Release . && \
+    make -j$(nproc) daemon
+
+# Runtime stage
+FROM ubuntu:22.04
+
+# Install ONLY runtime libraries
+RUN apt-get update && apt-get install -y \
+    libboost-filesystem1.74.0 \
+    libboost-program-options1.74.0 \
+    libboost-system1.74.0 \
+    libjsoncpp25 \
+    libssl1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy compiled binary
+COPY --from=builder /build/build/src/daemon ./
+COPY --from=builder /build/src/config/ ./
+
+# Create data directory
+RUN mkdir -p /app/data
+
+# EXPOSE MAINNET ports: 10808 P2P, 18180 RPC
+EXPOSE 10808 18180
+
+# Non-root user
+RUN useradd -m -u 1000 -s /bin/bash fuego && \
+    chown -R fuego:fuego /app
+USER fuego
+
+ENTRYPOINT ["./daemon", "--data-dir=/app/data"]
+CMD ["--log-level=2"]

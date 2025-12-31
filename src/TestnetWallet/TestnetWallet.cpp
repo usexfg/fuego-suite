@@ -616,7 +616,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("list_transfers", boost::bind(&simple_wallet::listTransfers, this, boost::arg<1>()), "list_transfers <height> - Show all known transfers from a certain (optional) block height");
   m_consoleHandler.setHandler("payments", boost::bind(&simple_wallet::show_payments, this, boost::arg<1>()), "payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>");
   m_consoleHandler.setHandler("get_tx_proof", boost::bind(&simple_wallet::get_tx_proof, this, boost::arg<1>()), "Generate a signature to prove payment: <txid> <address> [<txkey>]");
-  m_consoleHandler.setHandler("bc_height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
+  m_consoleHandler.setHandler("height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
   m_consoleHandler.setHandler("optimize", boost::bind(&simple_wallet::optimize_outputs, this, boost::arg<1>()), "Combine many available outputs into a few by sending a transaction to self");
@@ -632,6 +632,8 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
   m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
+  m_consoleHandler.setHandler("start_mining", boost::bind(&simple_wallet::start_mining, this, boost::arg<1>()), "start_mining [<threads>] - Start mining to your wallet");
+  m_consoleHandler.setHandler("stop_mining", boost::bind(&simple_wallet::stop_mining, this, boost::arg<1>()), "stop_mining - Stop mining");
 
   // Initialize argument tracking flags
   m_wallet_file_arg_provided = false;
@@ -967,17 +969,23 @@ if (key_import) {
       logger(WARNING, BRIGHT_RED) << "Couldn't write wallet address file: " + walletAddressFile;
     }
   } else {
+    logger(INFO, BRIGHT_WHITE) << "Attempting to open wallet with file: " << m_wallet_file_arg;
     m_wallet.reset(new WalletLegacy(m_currency, *m_node, logManager));
 
     try {
       m_wallet_file = tryToOpenWalletOrLoadKeysOrThrow(logger, m_wallet, m_wallet_file_arg, pwd_container.password());
+      logger(INFO, BRIGHT_GREEN) << "Wallet loaded from: " << m_wallet_file;
+      logger(INFO, BRIGHT_WHITE) << "Wallet address: " << m_wallet->getAddress();
+      logger(INFO, BRIGHT_WHITE) << "Transaction count after load: " << m_wallet->getTransactionCount();
     } catch (const std::exception& e) {
+      logger(ERROR, BRIGHT_RED) << "Failed to load wallet: " << e.what();
       fail_msg_writer() << "failed to load wallet: " << e.what();
       return false;
     }
 
     m_wallet->addObserver(this);
     m_node->addObserver(static_cast<INodeObserver*>(this));
+    logger(INFO, BRIGHT_WHITE) << "Observers added to wallet and node";
 
     logger(INFO, BRIGHT_WHITE) << "Opened wallet: " << m_wallet->getAddress();
 
@@ -1073,14 +1081,19 @@ void simple_wallet::handle_command_line(const boost::program_options::variables_
                               !vm[arg_wallet_file.name].defaulted();
   m_generate_new_provided = vm.count(arg_generate_new_wallet.name) > 0 &&
                            !vm[arg_generate_new_wallet.name].defaulted();
+
+  logger(INFO, BRIGHT_WHITE) << "handle_command_line: wallet_file_arg='" << m_wallet_file_arg << "', provided=" << m_wallet_file_arg_provided;
+  logger(INFO, BRIGHT_WHITE) << "handle_command_line: generate_new='" << m_generate_new << "', provided=" << m_generate_new_provided;
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string& password) {
   m_wallet_file = wallet_file;
+  logger(INFO, BRIGHT_WHITE) << "new_wallet called with file: " << wallet_file;
 
   m_wallet.reset(new WalletLegacy(m_currency, *m_node, logManager));
   m_node->addObserver(static_cast<INodeObserver*>(this));
   m_wallet->addObserver(this);
+  logger(INFO, BRIGHT_WHITE) << "new_wallet: wallet observer added to WalletLegacy";
   try {
     m_initResultPromise.reset(new std::promise<std::error_code>());
     std::future<std::error_code> f_initError = m_initResultPromise->get_future();
@@ -1145,10 +1158,12 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::new_wallet(Crypto::SecretKey &secret_key, Crypto::SecretKey &view_key, const std::string &wallet_file, const std::string& password) {
                 m_wallet_file = wallet_file;
+                logger(INFO, BRIGHT_WHITE) << "new_wallet(import) called with file: " << wallet_file;
 
                 m_wallet.reset(new WalletLegacy(m_currency, *m_node.get(), logManager));
                 m_node->addObserver(static_cast<INodeObserver*>(this));
                 m_wallet->addObserver(this);
+                logger(INFO, BRIGHT_WHITE) << "new_wallet(import): wallet observer added to WalletLegacy";
                 try {
                   m_initResultPromise.reset(new std::promise<std::error_code>());
                   std::future<std::error_code> f_initError = m_initResultPromise->get_future();
@@ -1199,9 +1214,12 @@ bool simple_wallet::new_wallet(Crypto::SecretKey &secret_key, Crypto::SecretKey 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::close_wallet()
 {
+  logger(INFO, BRIGHT_WHITE) << "close_wallet called, saving to: " << m_wallet_file;
   try {
     CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
+    logger(INFO, BRIGHT_GREEN) << "Wallet saved successfully";
   } catch (const std::exception& e) {
+    logger(ERROR, BRIGHT_RED) << "Failed to save wallet: " << e.what();
     fail_msg_writer() << e.what();
     return false;
   }
@@ -1415,6 +1433,14 @@ bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
 
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::initCompleted(std::error_code result) {
+  logger(INFO, BRIGHT_WHITE) << "initCompleted called with error: " << result.message();
+  if (!result) {
+    logger(INFO, BRIGHT_GREEN) << "Wallet initialization SUCCESSFUL!";
+    logger(INFO, BRIGHT_WHITE) << "Wallet address: " << m_wallet->getAddress();
+    logger(INFO, BRIGHT_WHITE) << "Transaction count on init: " << m_wallet->getTransactionCount();
+  } else {
+    logger(ERROR, BRIGHT_RED) << "Wallet initialization FAILED: " << result.message();
+  }
   if (m_initResultPromise.get() != nullptr) {
     m_initResultPromise->set_value(result);
   }
@@ -1439,6 +1465,12 @@ void simple_wallet::externalTransactionCreated(CryptoNote::TransactionId transac
     logPrefix << "Height " << txInfo.blockHeight << ',';
   }
 
+  logger(INFO, BRIGHT_CYAN) << "externalTransactionCreated called - txId: " << transactionId
+                            << ", hash: " << Common::podToHex(txInfo.hash)
+                            << ", amount: " << m_currency.formatAmount(txInfo.totalAmount)
+                            << ", isCoinbase: " << (txInfo.isCoinbase ? "YES" : "NO")
+                            << ", blockHeight: " << txInfo.blockHeight;
+
   if (txInfo.totalAmount >= 0) {
     logger(INFO, GREEN) <<
       logPrefix.str() << " transaction " << Common::podToHex(txInfo.hash) <<
@@ -1458,6 +1490,12 @@ void simple_wallet::externalTransactionCreated(CryptoNote::TransactionId transac
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::synchronizationCompleted(std::error_code result) {
   std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
+  logger(INFO, BRIGHT_YELLOW) << "synchronizationCompleted called with error: " << result.message();
+  if (result) {
+    logger(ERROR, BRIGHT_RED) << "ERROR: Blockchain synchronization failed!";
+  } else {
+    logger(INFO, BRIGHT_GREEN) << "Blockchain synchronization completed successfully!";
+  }
   m_walletSynchronized = true;
   m_walletSynchronizedCV.notify_one();
 }
@@ -1466,12 +1504,26 @@ void simple_wallet::synchronizationProgressUpdated(uint32_t current, uint32_t to
   std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
   if (!m_walletSynchronized) {
     m_refresh_progress_reporter.update(current, false);
+    logger(INFO) << "Sync progress - current: " << current << ", total: " << total;
   }
 }
 
-bool simple_wallet::show_balance(const std::vector<std::string>& args/* = std::vector<std::string>()*/) {
-  success_msg_writer() << "available balance: " << m_currency.formatAmount(m_wallet->actualBalance()) <<
-    ", locked amount: " << m_currency.formatAmount(m_wallet->pendingBalance());
+bool simple_wallet::show_balance(const std::vector<std::string>& args) {
+  uint64_t actual = m_wallet->actualBalance();
+  uint64_t pending = m_wallet->pendingBalance();
+  size_t txCount = m_wallet->getTransactionCount();
+
+  logger(INFO, BRIGHT_WHITE) << "DEBUG: Transaction count: " << txCount;
+  logger(INFO, BRIGHT_WHITE) << "DEBUG: Actual balance: " << actual << " (" << m_currency.formatAmount(actual) << ")";
+  logger(INFO, BRIGHT_WHITE) << "DEBUG: Pending balance: " << pending << " (" << m_currency.formatAmount(pending) << ")";
+
+  if (txCount == 0) {
+    logger(WARNING, BRIGHT_YELLOW) << "WARNING: No transactions found in wallet cache!";
+    logger(WARNING, BRIGHT_YELLOW) << "This could mean the wallet never synced or cache was not saved properly.";
+  }
+
+  success_msg_writer() << "available balance: " << m_currency.formatAmount(actual) <<
+    ", locked amount: " << m_currency.formatAmount(pending);
 
   return true;
 }
@@ -2028,13 +2080,14 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
 bool simple_wallet::run() {
   {
     std::unique_lock<std::mutex> lock(m_walletSynchronizedMutex);
+    logger(INFO, BRIGHT_WHITE) << "Waiting for wallet to synchronize...";
     while (!m_walletSynchronized) {
       m_walletSynchronizedCV.wait(lock);
     }
+    logger(INFO, BRIGHT_GREEN) << "Wallet synchronized!";
   }
 
   std::cout << std::endl;
-
   std::string addr_start = m_wallet->getAddress().substr(0, 6);
   m_consoleHandler.start(false, "[wallet " + addr_start + "]: ", Common::Console::Color::BrightYellow);
   return true;

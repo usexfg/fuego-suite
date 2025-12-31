@@ -283,27 +283,27 @@ double Currency::getBurnPercentage() const {
     } else {
         baseReward = (m_moneySupply - alreadyGeneratedCoins) >> m_emissionSpeedFactor;
     }
-		logger(INFO) << "getBlockReward baseReward calculation: m_moneySupply=" << m_moneySupply 
+		logger(TRACE) << "getBlockReward baseReward calculation: m_moneySupply=" << m_moneySupply 
 			<< ", alreadyGeneratedCoins=" << alreadyGeneratedCoins 
 			<< ", Osavvirsak=" << Osavvirsak 
 			<< ", baseReward=" << baseReward;
 
-    // Debug output for reward calculation analysis
-    static uint32_t lastDebugHeight = 0;
-    if (height % 10000 == 0 && height != lastDebugHeight) {
-        lastDebugHeight = height;
-        printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
-               height, (unsigned long long)alreadyGeneratedCoins,
-               (unsigned long long)getEternalFlame(),
-               (unsigned long long)Osavvirsak,
-               (unsigned long long)baseReward);
-    }
+    // Debug output for reward calculation analysis - REMOVED FOR CLEANER LOGS
+    // static uint32_t lastDebugHeight = 0;
+    // if (height % 10000 == 0 && height != lastDebugHeight) {
+    //     lastDebugHeight = height;
+    //     printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
+    //            height, (unsigned long long)alreadyGeneratedCoins,
+    //            (unsigned long long)getEternalFlame(),
+    //            (unsigned long long)Osavvirsak,
+    //            (unsigned long long)baseReward);
+    // }
 
     // Special debugging for problematic blocks
         if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-            logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward BEFORE medianSize adjustment: height=" << height
-                                     << " medianSize=" << medianSize
-                                     << " baseReward=" << baseReward;
+            logger(TRACE, BRIGHT_RED) << "DEBUG getBlockReward BEFORE medianSize adjustment: height=" << height
+                                             << " medianSize=" << medianSize
+                                             << " baseReward=" << baseReward;
         }
         size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByHeightVersion(blockMajorVersion, height);
         size_t originalMedianSize = medianSize;
@@ -318,18 +318,18 @@ double Currency::getBurnPercentage() const {
         }
 
         if (height == 17926 || height == 980163 || height == 66608) {
-            logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward AFTER medianSize adjustment: height=" << height
-                                     << " originalMedianSize=" << originalMedianSize
-                                     << " blockGrantedFullRewardZone=" << blockGrantedFullRewardZone
-                                     << " finalMedianSize=" << medianSize
-                                     << " useOriginalMedian=" << (useOriginalMedian ? "true" : "false");
+            logger(TRACE, BRIGHT_RED) << "DEBUG getBlockReward AFTER medianSize adjustment: height=" << height
+                                             << " originalMedianSize=" << originalMedianSize
+                                             << " blockGrantedFullRewardZone=" << blockGrantedFullRewardZone
+                                             << " finalMedianSize=" << medianSize
+                                             << " useOriginalMedian=" << (useOriginalMedian ? "true" : "false");
         }
         // For very early blocks, adjust the size validation to account for the small median values
         // Early blocks had much smaller medians but could still be legitimately larger
-        logger(INFO) << "getBlockReward size check: currentBlockSize=" << currentBlockSize 
-			<< ", medianSize=" << medianSize 
-			<< ", 3*medianSize=" << (medianSize * 3) 
-			<< ", blockGrantedFullReward-zone=" << blockGrantedFullRewardZone;
+        logger(TRACE) << "getBlockReward size check: currentBlockSize=" << currentBlockSize 
+            << ", medianSize=" << medianSize 
+            << ", 3*medianSize=" << (medianSize * 3) 
+            << ", blockGrantedFullReward-zone=" << blockGrantedFullRewardZone;
         if (currentBlockSize > UINT64_C(3) * medianSize)
         {
           // Special handling for blocks in the problematic height range (170k-180k)
@@ -340,7 +340,7 @@ double Currency::getBurnPercentage() const {
             size_t lenientMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
             if (currentBlockSize > UINT64_C(100) * lenientMedian) {
               logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 100 * lenientMedian;
-              return false;
+                      return false;
             }
           }
           // Extended range for blocks that might have similar issues
@@ -349,7 +349,7 @@ double Currency::getBurnPercentage() const {
             size_t moderateMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
             if (currentBlockSize > UINT64_C(50) * moderateMedian) {
               logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 50 * moderateMedian;
-              return false;
+                      return false;
             }
           }
           // Add tolerance for blocks up to 800k to handle size validation overflow cases
@@ -359,12 +359,12 @@ double Currency::getBurnPercentage() const {
             size_t lenientMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
             if (currentBlockSize > UINT64_C(20) * lenientMedian) {
               logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 20 * lenientMedian;
-              return false;
+                      return false;
             }
           }
           else if (height >= 50000) { // Only apply strict size check to blocks after height 50,000
             logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 3 * medianSize;
-            return false;
+                    return false;
           } else {
             // For early blocks, use a more lenient size check based on blockGrantedFullRewardZone
             // This ensures backward compatibility while still validating that blocks aren't excessively large
@@ -403,7 +403,7 @@ double Currency::getBurnPercentage() const {
 
 		// Special debugging for problematic blocks
 		        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-		            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
+		    logger(TRACE) << "DEBUG PENALTY CALCULATION: height=" << height
 		                                     << " medianSize=" << medianSize
 		                                     << " penaltyMedian=" << penaltyMedian
 		                                     << " baseReward=" << baseReward
@@ -417,9 +417,9 @@ double Currency::getBurnPercentage() const {
     
     // Debug logging for final reward
     if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-        logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
-                                 << " emissionChange=" << emissionChange
-                                 << " reward=" << reward;
+        logger(TRACE, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
+                                     << " emissionChange=" << emissionChange
+                                     << " reward=" << reward;
     }
     
     // Critical check for v10 upgrade at small heights where reward might be 0

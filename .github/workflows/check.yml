@@ -357,7 +357,11 @@ jobs:
       - name: Install dependencies and verify repository
         run: |
           set -e
-          brew install gcc boost cmake jsoncpp
+          brew install gcc boost@1.65 cmake jsoncpp
+          brew link boost@1.65 --force
+          export BOOST_ROOT=$(brew --prefix boost@1.65)
+          echo "BOOST_ROOT=$BOOST_ROOT" >> $GITHUB_ENV
+          echo "Boost 1.65 pinned for io_service compatibility"
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="

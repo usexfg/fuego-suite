@@ -28,6 +28,16 @@ Based upon the CryptoNote protocol & philosophy.
 
 [![Ubuntu 24.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
 
+### Build Requirements  
+
+**Boost Version**: Fuego requires Boost 1.65 or later due to legacy io_service API usage.  
+- **macOS**: The CMake is configured to suppress deprecated builtin warnings for Boost 1.65+ compatibility  
+- **Linux**: Use `sudo apt-get install libboost-all-dev` (Ubuntu) or `sudo dnf install boost-devel` (Fedora)  
+- **Windows**: Use vcpkg or precompiled Boost 1.65+ with the required components  
+
+**Dependencies**: See [Building Fuego](https://github.com/usexfg/fuego/blob/master/doc/Building.md) for detailed instructions  
+
+
 [![Ubuntu 22.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
 
 [![Windows](https://github.com/usexfg/fuego/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml)

@@ -20,398 +20,409 @@ jobs:
     env:
       CMAKE_BUILD_TYPE: Release
     steps:
-    - uses: actions/checkout@v4
-    
-    # -------------------- Cache Dependencies --------------------
-    - name: Cache Homebrew packages (macOS)
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/Library/Caches/Homebrew
-          /usr/local/Homebrew/Library/Homebrew/vendor/bundle
-        key: ${{ runner.os }}-homebrew-release-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-homebrew-release-
-          ${{ runner.os }}-homebrew-
-    
-    - name: Install dependencies (macOS)
-      run: |
-        brew update
-        brew install ninja boost qt@5 miniupnpc qrencode icu4c
-        
-        # Set environment variables for Boost and ICU
-        echo "BOOST_ROOT=$(brew --prefix boost)" >> $GITHUB_ENV
-        
-        # Try different ICU versions
-        if [ -d "$(brew --prefix)/opt/icu4c" ]; then
-          ICU_PREFIX="$(brew --prefix)/opt/icu4c"
-        elif [ -d "$(brew --prefix)/opt/icu4c@77" ]; then
-          ICU_PREFIX="$(brew --prefix)/opt/icu4c@77"
-        elif [ -d "$(brew --prefix)/opt/icu4c@76" ]; then
-          ICU_PREFIX="$(brew --prefix)/opt/icu4c@76"
-        else
-          ICU_PREFIX="$(brew --prefix icu4c)"
-        fi
-        
-        echo "ICU_ROOT=$ICU_PREFIX" >> $GITHUB_ENV
-        echo "PATH=$ICU_PREFIX/bin:$PATH" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=$ICU_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-        echo "LDFLAGS=-L$ICU_PREFIX/lib" >> $GITHUB_ENV
-        echo "CPPFLAGS=-I$ICU_PREFIX/include" >> $GITHUB_ENV
-        
-    - name: Build macOS ${{ matrix.arch_name }}
-      run: |
-        build_folder="build/"
-        xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
-        release_name="fuego-cli-macOS-${{ matrix.arch_name }}-v$xfg_ver"
-        
-        mkdir "$build_folder"
-        cd "$build_folder"
-        
-        # Configure CMake with architecture-specific flags and ICU
-        export PATH="$ICU_ROOT/bin:$PATH"
-        export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
-        export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
-        export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
-        
-        cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-              -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} \
-              -DBOOST_ROOT="$BOOST_ROOT" \
-              -DICU_ROOT="$ICU_ROOT" \
-              -DCMAKE_PREFIX_PATH="$ICU_ROOT" \
-              -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
-        
-        # Build
-        cmake --build . --parallel
-        
-        # Create release package
-        mkdir "$release_name"
-        
-        # Copy and strip executables
-        exeFiles=()
-        for f in src/*; do 
-          if [[ -x $f && -f $f ]]; then
-            strip "$f"
-            exeFiles+=("$f")
-          fi
-        done
-        cp "${exeFiles[@]}" "$release_name/"
-        
-        # Create zip archive
-        zip -r "$release_name.zip" "$release_name"
-        
-        # Calculate SHA256
-        sha256=$(shasum -a 256 "$release_name.zip" | awk '{print toupper($1)}')
-        
-        # Set outputs
-        echo "sha256=$sha256" >> $GITHUB_OUTPUT
-        echo "release_name=$release_name.zip" >> $GITHUB_OUTPUT
-        echo "asset_path=./$build_folder$release_name.zip" >> $GITHUB_OUTPUT
-        echo "arch_name=${{ matrix.arch_name }}" >> $GITHUB_OUTPUT
-        
-    - name: Upload macOS ${{ matrix.arch_name }} artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fuego-cli-macOS-${{ matrix.arch_name }}-v${{ github.ref_name }}
-        path: build/fuego-cli-macOS-${{ matrix.arch_name }}-v${{ github.ref_name }}.zip
+      - uses: actions/checkout@v4
 
-  release-ubuntu-22:
+      # -------------------- Cache Dependencies --------------------
+      - name: Cache Homebrew packages (macOS)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /usr/local/Homebrew/Library/Homebrew/vendor/bundle
+          key: ${{ runner.os }}-homebrew-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-homebrew-release-
+            ${{ runner.os }}-homebrew-
+
+      - name: Install dependencies (macOS)
+        run: |
+          brew update
+          brew install ninja boost@1.65 qt@5 miniupnpc qrencode icu4c
+          brew link boost@1.65 --force
+
+          # Set environment variables for Boost to pin to 1.65 for io_service compatibility
+          echo "BOOST_ROOT=$(brew --prefix boost@1.65)" >> $GITHUB_ENV
+          echo "Boost 1.65 pinned for io_service API compatibility"
+
+          # Try different ICU versions
+          if [ -d "$(brew --prefix)/opt/icu4c" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c"
+          elif [ -d "$(brew --prefix)/opt/icu4c@77" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c@77"
+          elif [ -d "$(brew --prefix)/opt/icu4c@76" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c@76"
+          else
+            ICU_PREFIX="$(brew --prefix icu4c)"
+          fi
+
+          echo "ICU_ROOT=$ICU_PREFIX" >> $GITHUB_ENV
+          echo "PATH=$ICU_PREFIX/bin:$PATH" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$ICU_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$ICU_PREFIX/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$ICU_PREFIX/include" >> $GITHUB_ENV
+
+      - name: Build macOS ${{ matrix.arch_name }}
+        run: |
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-macOS-${{ matrix.arch_name }}-v$xfg_ver"
+
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          # Configure CMake with architecture-specific flags and ICU
+          export PATH="$ICU_ROOT/bin:$PATH"
+          export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
+          export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
+          export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
+          export BOOST_ROOT=$(brew --prefix boost@1.65)
+
+          # Verify Boost 1.65 installation
+          echo "Boost 1.65 root: $BOOST_ROOT"
+          ls -la "$BOOST_ROOT/include/boost/version.hpp" && grep "BOOST_LIB_VERSION" "$BOOST_ROOT/include/boost/version.hpp" || echo "Boost version.hpp not found"
+
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+                -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} \
+                -DBOOST_ROOT="$BOOST_ROOT" \
+                -DBOOST_INCLUDEDIR="$BOOST_ROOT/include" \
+                -DBOOST_LIBRARYDIR="$BOOST_ROOT/lib" \
+                -DBoost_NO_SYSTEM_PATHS=ON \
+                -DICU_ROOT="$ICU_ROOT" \
+                -DCMAKE_PREFIX_PATH="$ICU_ROOT" \
+                -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+
+          # Build
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy and strip executables
+          exeFiles=()
+          for f in src/*; do
+            if [[ -x $f && -f $f ]]; then
+              strip "$f"
+              exeFiles+=("$f")
+            fi
+          done
+          cp "${exeFiles[@]}" "$release_name/"
+
+          # Create zip archive
+          zip -r "$release_name.zip" "$release_name"
+
+          # Calculate SHA256
+          sha256=$(shasum -a 256 "$release_name.zip" | awk '{print toupper($1)}')
+
+          # Set outputs
+          echo "sha256=$sha256" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name.zip" >> $GITHUB_OUTPUT
+          echo "asset_path=./$build_folder$release_name.zip" >> $GITHUB_OUTPUT
+          echo "arch_name=${{ matrix.arch_name }}" >> $GITHUB_OUTPUT
+
+      - name: Upload macOS ${{ matrix.arch_name }} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuego-cli-macOS-${{ matrix.arch_name }}-v${{ github.ref_name }}
+          path: build/fuego-cli-macOS-${{ matrix.arch_name }}-v${{ github.ref_name }}.zip
+
+   release-ubuntu-22:
     runs-on: ubuntu-22.04
     env:
       CMAKE_BUILD_TYPE: Release
     steps:
-    - uses: actions/checkout@v4
-    
-    # -------------------- Cache Dependencies --------------------
-    - name: Cache apt packages (Ubuntu)
-      uses: actions/cache@v4
-      with:
-        path: /var/cache/apt
-        key: ${{ runner.os }}-apt-release-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-release-
-          ${{ runner.os }}-apt-
-    
-    - name: Install dependencies (Ubuntu)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential ninja-build pkg-config \
-             libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
-             libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
-             libicu-dev
+      - uses: actions/checkout@v4
 
-        # Install Boost using apt (more reliable)
-        sudo apt-get install -y libboost-all-dev
-        
-    - name: Build Ubuntu 22.04
-      run: |
-        build_folder="build/"
-        xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
-        release_name="fuego-cli-ubuntu-2204-v$xfg_ver"
-        
-        mkdir "$build_folder"
-        cd "$build_folder"
-        
-        cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
-        cmake --build . --parallel
-        
-        # Create release package
-        mkdir "$release_name"
-        
-        # Copy and strip executables
-        exeFiles=()
-        for f in src/*; do 
-          if [[ -x $f && -f $f ]]; then
-            strip "$f"
-            exeFiles+=("$f")
-          fi
-        done
-        cp "${exeFiles[@]}" "$release_name/"
-        
-        # Create tar.gz archive
-        tar -czf "$release_name.tar.gz" "$release_name"
-        
-        # Calculate SHA256
-        sha256=$(sha256sum "$release_name.tar.gz" | awk '{print toupper($1)}')
-        
-        # Set outputs
-        echo "sha256=$sha256" >> $GITHUB_OUTPUT
-        echo "release_name=$release_name.tar.gz" >> $GITHUB_OUTPUT
-        echo "asset_path=./$build_folder$release_name.tar.gz" >> $GITHUB_OUTPUT
-        
-    - name: Upload Ubuntu 22.04 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fuego-cli-ubuntu-2204-v${{ github.ref_name }}
-        path: build/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz
+      # -------------------- Cache Dependencies --------------------
+      - name: Cache apt packages (Ubuntu)
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-apt-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-release-
+            ${{ runner.os }}-apt-
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config \
+               libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
+               libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
+               libicu-dev
+
+          # Install Boost using apt (more reliable)
+          sudo apt-get install -y libboost-all-dev
+
+      - name: Build Ubuntu 22.04
+        run: |
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-ubuntu-2204-v$xfg_ver"
+
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy and strip executables
+          exeFiles=()
+          for f in src/*; do
+            if [[ -x $f && -f $f ]]; then
+              strip "$f"
+              exeFiles+=("$f")
+            fi
+          done
+          cp "${exeFiles[@]}" "$release_name/"
+
+          # Create tar.gz archive
+          tar -czf "$release_name.tar.gz" "$release_name"
+
+          # Calculate SHA256
+          sha256=$(sha256sum "$release_name.tar.gz" | awk '{print toupper($1)}')
+
+          # Set outputs
+          echo "sha256=$sha256" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name.tar.gz" >> $GITHUB_OUTPUT
+          echo "asset_path=./$build_folder$release_name.tar.gz" >> $GITHUB_OUTPUT
+
+      - name: Upload Ubuntu 22.04 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuego-cli-ubuntu-2204-v${{ github.ref_name }}
+          path: build/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz
 
   release-ubuntu-24:
     runs-on: ubuntu-24.04
     env:
       CMAKE_BUILD_TYPE: Release
     steps:
-    - uses: actions/checkout@v4
-    
-    # -------------------- Cache Dependencies --------------------
-    - name: Cache apt packages (Ubuntu)
-      uses: actions/cache@v4
-      with:
-        path: /var/cache/apt
-        key: ${{ runner.os }}-apt-release-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-release-
-          ${{ runner.os }}-apt-
-    
-    - name: Install dependencies (Ubuntu)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential ninja-build pkg-config \
-             libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
-             libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
-             libicu-dev
+      - uses: actions/checkout@v4
 
-        # Install Boost using apt (more reliable)
-        sudo apt-get install -y libboost-all-dev
-        
-    - name: Build Ubuntu 24.04
-      run: |
-        build_folder="build/"
-        xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
-        release_name="fuego-cli-ubuntu-2404-v$xfg_ver"
-        
-        mkdir "$build_folder"
-        cd "$build_folder"
-        
-        cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
-        cmake --build . --parallel
-        
-        # Create release package
-        mkdir "$release_name"
-        
-        # Copy and strip executables
-        exeFiles=()
-        for f in src/*; do 
-          if [[ -x $f && -f $f ]]; then
-            strip "$f"
-            exeFiles+=("$f")
-          fi
-        done
-        cp "${exeFiles[@]}" "$release_name/"
-        
-        # Create tar.gz archive
-        tar -czf "$release_name.tar.gz" "$release_name"
-        
-        # Calculate SHA256
-        sha256=$(sha256sum "$release_name.tar.gz" | awk '{print toupper($1)}')
-        
-        # Set outputs
-        echo "sha256=$sha256" >> $GITHUB_OUTPUT
-        echo "release_name=$release_name.tar.gz" >> $GITHUB_OUTPUT
-        echo "asset_path=./$build_folder$release_name.tar.gz" >> $GITHUB_OUTPUT
-        
-    - name: Upload Ubuntu 24.04 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fuego-cli-ubuntu-2404-v${{ github.ref_name }}
-        path: build/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz
+      # -------------------- Cache Dependencies --------------------
+      - name: Cache apt packages (Ubuntu)
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: ${{ runner.os }}-apt-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-release-
+            ${{ runner.os }}-apt-
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config \
+               libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
+               libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
+               libicu-dev
+
+          # Install Boost using apt (more reliable)
+          sudo apt-get install -y libboost-all-dev
+
+      - name: Build Ubuntu 24.04
+        run: |
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-ubuntu-2404-v$xfg_ver"
+
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy and strip executables
+          exeFiles=()
+          for f in src/*; do
+            if [[ -x $f && -f $f ]]; then
+              strip "$f"
+              exeFiles+=("$f")
+            fi
+          done
+          cp "${exeFiles[@]}" "$release_name/"
+
+          # Create tar.gz archive
+          tar -czf "$release_name.tar.gz" "$release_name"
+
+          # Calculate SHA256
+          sha256=$(sha256sum "$release_name.tar.gz" | awk '{print toupper($1)}')
+
+          # Set outputs
+          echo "sha256=$sha256" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name.tar.gz" >> $GITHUB_OUTPUT
+          echo "asset_path=./$build_folder$release_name.tar.gz" >> $GITHUB_OUTPUT
+
+      - name: Upload Ubuntu 24.04 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuego-cli-ubuntu-2404-v${{ github.ref_name }}
+          path: build/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz
 
   release-windows:
     runs-on: windows-2022
     env:
       CMAKE_BUILD_TYPE: Release
     steps:
-    - uses: actions/checkout@v4
-    
-    # -------------------- Cache Dependencies --------------------
-    - name: Cache vcpkg packages (Windows)
-      uses: actions/cache@v4
-      with:
-        path: C:\vcpkg\installed
-        key: ${{ runner.os }}-vcpkg-release-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-release-
-          ${{ runner.os }}-vcpkg-
+      - uses: actions/checkout@v4
 
-    - name: Cache Chocolatey packages (Windows)
-      uses: actions/cache@v4
-      with:
-        path: C:\ProgramData\chocolatey\lib
-        key: ${{ runner.os }}-choco-release-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-choco-release-
-          ${{ runner.os }}-choco-
-    
-    - name: Install dependencies (Windows)
-      shell: pwsh
-      run: |
-        # Install basic tools
-        choco install -y ninja
-        # Install tools and dependencies via Chocolatey
-        choco install -y ninja
-        choco install -y vcpkg
-        choco install -y miniupnpc qrencode
-        choco install -y qt5-default --params '/InstallDir:C:\Qt'
+      # -------------------- Cache Dependencies --------------------
+      - name: Cache vcpkg packages (Windows)
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ runner.os }}-vcpkg-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-release-
+            ${{ runner.os }}-vcpkg-
 
-        # Initialize vcpkg if not already done
-        if (-not (Test-Path "C:/vcpkg/vcpkg.exe")) {
-          git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
-          cd C:/vcpkg
-          .\bootstrap-vcpkg.bat
-          .\vcpkg integrate install
-        }
+      - name: Cache Chocolatey packages (Windows)
+        uses: actions/cache@v4
+        with:
+          path: C:\ProgramData\chocolatey\lib
+          key: ${{ runner.os }}-choco-release-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-choco-release-
+            ${{ runner.os }}-choco-
 
-        # Install packages via vcpkg
-        C:/vcpkg/vcpkg.exe install --triplet x64-windows `
-          boost-filesystem boost-thread boost-date-time boost-chrono `
-          boost-regex boost-serialization boost-program-options `
-          boost-multi-index boost-uuid boost-asio boost-scope-exit `
-          boost-format icu openssl miniupnpc qrencode
+      - name: Install dependencies (Windows)
+        shell: pwsh
+        run: |
+          # Install basic tools
+          choco install -y ninja
+          # Install tools and dependencies via Chocolatey
+          choco install -y ninja
+          choco install -y vcpkg
+          choco install -y miniupnpc qrencode
+          choco install -y qt5-default --params '/InstallDir:C:\Qt'
 
-    - name: Debug Boost installation (Windows)
-      shell: pwsh
-      run: |
-        echo "Checking Boost installation..."
-        if (Test-Path "C:\local\") { ls C:\local\ } else { echo "C:\local\ does not exist" }
-        if (Test-Path "C:\tools\") { ls C:\tools\ } else { echo "C:\tools\ does not exist" }
-        if (Test-Path "C:\ProgramData\chocolatey\lib\boost-msvc-14.3\") { ls C:\ProgramData\chocolatey\lib\boost-msvc-14.3\ } else { echo "Chocolatey Boost path does not exist" }
-        echo "Environment variables:"
-        echo "BOOST_ROOT=$env:BOOST_ROOT"
-        echo "Boost_INCLUDEDIR=$env:Boost_INCLUDEDIR"
-        echo "Boost_LIBRARYDIR=$env:Boost_LIBRARYDIR"
-        
-    - name: Build Windows
-      shell: bash
-      run: |
-        build_folder="build/"
-        xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
-        release_name="fuego-cli-win64-v$xfg_ver"
-        
-        mkdir "$build_folder"
-        cd "$build_folder"
-        
-        # Configure CMake
-        cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-              -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-              -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
-        
-        # Build
-        cmake --build . --parallel
-        
-        # Create release package
-        mkdir "$release_name"
-        
-        # Copy executables
-        exeFiles=()
-        for f in src/*.exe; do 
-          if [[ -x $f && -f $f ]]; then
-            exeFiles+=("$f")
-          fi
-        done
-        cp "${exeFiles[@]}" "$release_name/"
-        
-        # Create zip archive
-        zip -r "$release_name.zip" "$release_name"
-        
-        # Calculate SHA256
-        sha256=$(sha256sum "$release_name.zip" | awk '{print toupper($1)}')
-        
-        # Set outputs
-        echo "sha256=$sha256" >> $GITHUB_OUTPUT
-        echo "release_name=$release_name.zip" >> $GITHUB_OUTPUT
-        echo "asset_path=./$build_folder$release_name.zip" >> $GITHUB_OUTPUT
-        
-    - name: Upload Windows artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fuego-cli-win64-v${{ github.ref_name }}
-        path: build/fuego-cli-win64-v${{ github.ref_name }}.zip
+          # Initialize vcpkg if not already done
+          if (-not (Test-Path "C:/vcpkg/vcpkg.exe")) {
+            git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg
+            .\bootstrap-vcpkg.bat
+            .\vcpkg integrate install
+          }
+
+          # Install packages via vcpkg
+          C:/vcpkg/vcpkg.exe install --triplet x64-windows `
+            boost-filesystem boost-thread boost-date-time boost-chrono `
+            boost-regex boost-serialization boost-program-options `
+            boost-multi-index boost-uuid boost-asio boost-scope-exit `
+            boost-format icu openssl miniupnpc qrencode
+
+      - name: Debug Boost installation (Windows)
+        shell: pwsh
+        run: |
+          echo "Checking Boost installation..."
+          if (Test-Path "C:\local\") { ls C:\local\ } else { echo "C:\local\ does not exist" }
+          if (Test-Path "C:\tools\") { ls C:\tools\ } else { echo "C:\tools\ does not exist" }
+          if (Test-Path "C:\ProgramData\chocolatey\lib\boost-msvc-14.3\") { ls C:\ProgramData\chocolatey\lib\boost-msvc-14.3\ } else { echo "Chocolatey Boost path does not exist" }
+          echo "Environment variables:"
+          echo "BOOST_ROOT=$env:BOOST_ROOT"
+          echo "Boost_INCLUDEDIR=$env:Boost_INCLUDEDIR"
+          echo "Boost_LIBRARYDIR=$env:Boost_LIBRARYDIR"
+
+      - name: Build Windows
+        shell: bash
+        run: |
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-win64-v$xfg_ver"
+
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          # Configure CMake
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+                -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+                -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+
+          # Build
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy executables
+          exeFiles=()
+          for f in src/*.exe; do
+            if [[ -x $f && -f $f ]]; then
+              exeFiles+=("$f")
+            fi
+          done
+          cp "${exeFiles[@]}" "$release_name/"
+
+          # Create zip archive
+          zip -r "$release_name.zip" "$release_name"
+
+          # Calculate SHA256
+          sha256=$(sha256sum "$release_name.zip" | awk '{print toupper($1)}')
+
+          # Set outputs
+          echo "sha256=$sha256" >> $GITHUB_OUTPUT
+          echo "release_name=$release_name.zip" >> $GITHUB_OUTPUT
+          echo "asset_path=./$build_folder$release_name.zip" >> $GITHUB_OUTPUT
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuego-cli-win64-v${{ github.ref_name }}
+          path: build/fuego-cli-win64-v${{ github.ref_name }}.zip
 
   create-release:
-    needs: [release-macos, release-ubuntu-22, release-ubuntu-24, release-windows]
+    needs:
+      [release-macos, release-ubuntu-22, release-ubuntu-24, release-windows]
     runs-on: ubuntu-latest
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          ./artifacts/fuego-cli-macOS-intel-v${{ github.ref_name }}/fuego-cli-macOS-intel-v${{ github.ref_name }}.zip
-          ./artifacts/fuego-cli-macOS-apple-v${{ github.ref_name }}/fuego-cli-macOS-apple-v${{ github.ref_name }}.zip
-          ./artifacts/fuego-cli-ubuntu-2204-v${{ github.ref_name }}/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz
-          ./artifacts/fuego-cli-ubuntu-2404-v${{ github.ref_name }}/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz
-          ./artifacts/fuego-cli-win64-v${{ github.ref_name }}/fuego-cli-win64-v${{ github.ref_name }}.zip
-        name: Fuego CLI Suite v${{ github.ref_name }}
-        body: |
-          ## Fuego CLI Suite v${{ github.ref_name }}
-          
-          ### Downloads
-          
-          🍏 **macOS (Intel)** - [fuego-cli-macOS-intel-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-macOS-intel-v${{ github.ref_name }}.zip)
-          
-          🍏 **macOS (Apple Silicon)** - [fuego-cli-macOS-apple-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-macOS-apple-v${{ github.ref_name }}.zip)
-          
-          🐧 **Ubuntu 22.04** - [fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz](../../releases/download/${{ github.ref_name }}/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz)
-          
-          🐧 **Ubuntu 24.04** - [fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz](../../releases/download/${{ github.ref_name }}/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz)
-          
-          🪟 **Windows** - [fuego-cli-win64-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-win64-v${{ github.ref_name }}.zip)
-          
-          ### Installation
-          
-          **macOS**: Extract the zip file and run the executables from Terminal
-          
-          **Linux**: Extract the tar.gz file and run the executables
-          
-          **Windows**: Extract the zip file and run the executables from Command Prompt or PowerShell
-          
-          ### Verification
-          
-          All artifacts are signed and include SHA256 checksums for verification.
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/fuego-cli-macOS-intel-v${{ github.ref_name }}/fuego-cli-macOS-intel-v${{ github.ref_name }}.zip
+            ./artifacts/fuego-cli-macOS-apple-v${{ github.ref_name }}/fuego-cli-macOS-apple-v${{ github.ref_name }}.zip
+            ./artifacts/fuego-cli-ubuntu-2204-v${{ github.ref_name }}/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz
+            ./artifacts/fuego-cli-ubuntu-2404-v${{ github.ref_name }}/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz
+            ./artifacts/fuego-cli-win64-v${{ github.ref_name }}/fuego-cli-win64-v${{ github.ref_name }}.zip
+          name: Fuego CLI Suite v${{ github.ref_name }}
+          body: |
+            ## Fuego CLI Suite v${{ github.ref_name }}
+
+            ### Downloads
+
+            🍏 **macOS (Intel)** - [fuego-cli-macOS-intel-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-macOS-intel-v${{ github.ref_name }}.zip)
+
+            🍏 **macOS (Apple Silicon)** - [fuego-cli-macOS-apple-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-macOS-apple-v${{ github.ref_name }}.zip)
+
+            🐧 **Ubuntu 22.04** - [fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz](../../releases/download/${{ github.ref_name }}/fuego-cli-ubuntu-2204-v${{ github.ref_name }}.tar.gz)
+
+            🐧 **Ubuntu 24.04** - [fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz](../../releases/download/${{ github.ref_name }}/fuego-cli-ubuntu-2404-v${{ github.ref_name }}.tar.gz)
+
+            🪟 **Windows** - [fuego-cli-win64-v${{ github.ref_name }}.zip](../../releases/download/${{ github.ref_name }}/fuego-cli-win64-v${{ github.ref_name }}.zip)
+
+            ### Installation
+
+            **macOS**: Extract the zip file and run the executables from Terminal
+
+            **Linux**: Extract the tar.gz file and run the executables
+
+            **Windows**: Extract the zip file and run the executables from Command Prompt or PowerShell
+
+            ### Verification
+
+            All artifacts are signed and include SHA256 checksums for verification.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

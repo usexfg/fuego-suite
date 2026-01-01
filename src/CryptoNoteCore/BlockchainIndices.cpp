@@ -220,23 +220,7 @@ void GeneratedTransactionsIndex::clear() {
 }
 
 void GeneratedTransactionsIndex::serialize(ISerializer& s) {
-  if (s.type() == ISerializer::INPUT) {
-    // Load phmap container
-    std::vector<std::pair<uint32_t, uint64_t>> temp;
-    s(temp, "index");
-    index.clear();
-    for (const auto& pair : temp) {
-      index.emplace(pair.first, pair.second);
-    }
-  } else {
-    // Save phmap container
-    std::vector<std::pair<uint32_t, uint64_t>> temp;
-    temp.reserve(index.size());
-    for (const auto& pair : index) {
-      temp.emplace_back(pair.first, pair.second);
-    }
-    s(temp, "index");
-  }
+  s(index, "index");
   s(lastGeneratedTxNumber, "lastGeneratedTxNumber");
 }
 

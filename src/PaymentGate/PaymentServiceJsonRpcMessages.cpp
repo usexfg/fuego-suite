@@ -141,7 +141,7 @@ void GetDeposit::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(unlockHeight, "unlockHeight");
   serializer(locked, "locked");
   serializer(address, "address");
-  // serializer(useStagedUnlock, "useStagedUnlock");
+  serializer(useStagedUnlock, "useStagedUnlock");
   serializer(transactionFee, "transactionFee");
   serializer(totalFees, "totalFees");
 }

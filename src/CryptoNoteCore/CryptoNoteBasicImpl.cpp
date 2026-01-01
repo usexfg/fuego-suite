@@ -46,25 +46,15 @@ namespace CryptoNote {
     if (currentBlockSize <= medianSize) {
       return amount;
     }
-    
-    if (currentBlockSize >= 3 * medianSize) {
-      return 0; // No reward for blocks >= 3× median
-    }
 
-    // Fuego penalty formula with 3× limit - logical penalty that increases with block size
-    // Formula: amount * medianSize / currentBlockSize (for blocks > median)
-    if (currentBlockSize <= medianSize) {
-      return amount; // No penalty for blocks <= median
-    }
-    
-    // For blocks larger than median, apply penalty: reward = amount * medianSize / currentBlockSize
     uint64_t productHi;
-    uint64_t productLo = mul128(amount, medianSize, &productHi);
-    
+    uint64_t productLo = mul128(amount, currentBlockSize * (UINT64_C(3) * medianSize - currentBlockSize), &productHi);
+
     uint64_t penalizedAmountHi;
     uint64_t penalizedAmountLo;
-    div128_32(productHi, productLo, static_cast<uint32_t>(currentBlockSize), &penalizedAmountHi, &penalizedAmountLo);
-    
+    div128_32(productHi, productLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
+    div128_32(penalizedAmountHi, penalizedAmountLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
+
     assert(0 == penalizedAmountHi);
     assert(penalizedAmountLo < amount);
     

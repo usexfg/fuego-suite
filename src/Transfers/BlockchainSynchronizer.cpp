@@ -366,14 +366,7 @@ void BlockchainSynchronizer::startBlockchainSync() {
           detachedPromise.set_value(ec);
         });
 
-      // Add timeout to prevent indefinite hanging during blockchain sync
-      std::future_status status = queryBlocksWaitFuture.wait_for(std::chrono::seconds(30));
-      std::error_code ec;
-      if (status == std::future_status::timeout) {
-        ec = std::make_error_code(std::errc::timed_out);
-      } else {
-        ec = queryBlocksWaitFuture.get();
-      }
+      std::error_code ec = queryBlocksWaitFuture.get();
 
       if (ec) {
         setFutureStateIf(State::idle, [this] { return m_futureState != State::stopped; });

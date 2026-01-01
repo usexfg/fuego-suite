@@ -29,7 +29,7 @@ enum class BlockchainExplorerErrorCodes : int {
   REQUEST_ERROR
 };
 
-class BlockchainExplorerErrorCategory : public ::std::error_category {
+class BlockchainExplorerErrorCategory : public std::error_category {
 public:
   static BlockchainExplorerErrorCategory INSTANCE;
 
@@ -37,11 +37,11 @@ public:
     return "BlockchainExplorerErrorCategory";
   }
 
-  virtual ::std::error_condition default_error_condition(int ev) const throw() override {
-    return ::std::error_condition(ev, *this);
+  virtual std::error_condition default_error_condition(int ev) const throw() override {
+    return std::error_condition(ev, *this);
   }
 
-  virtual ::std::string message(int ev) const override {
+  virtual std::string message(int ev) const override {
     switch (ev) {
       case static_cast<int>(BlockchainExplorerErrorCodes::NOT_INITIALIZED):     return "Object was not initialized";
       case static_cast<int>(BlockchainExplorerErrorCodes::ALREADY_INITIALIZED): return "Object has been already initialized";
@@ -59,7 +59,7 @@ private:
 } //namespace error
 } //namespace CryptoNote
 
-inline ::std::error_code make_error_code(CryptoNote::error::BlockchainExplorerErrorCodes e) {
-  return ::std::error_code(static_cast<int>(e), CryptoNote::error::BlockchainExplorerErrorCategory::INSTANCE);
+inline std::error_code make_error_code(CryptoNote::error::BlockchainExplorerErrorCodes e) {
+  return std::error_code(static_cast<int>(e), CryptoNote::error::BlockchainExplorerErrorCategory::INSTANCE);
 }
 

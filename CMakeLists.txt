@@ -53,11 +53,22 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     message(STATUS "Using MSVC compiler with C++17")
 endif()
 
-# Debug/Release flags
-set(CMAKE_C_FLAGS_DEBUG   "-g3 -O0")
-set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
-set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+# Debug/Release flags - platform-specific
+if(MSVC)
+    # MSVC uses different optimization and warning flags
+    set(CMAKE_C_FLAGS_DEBUG   "/Zi /Od /MDd")
+    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /MDd")
+    set(CMAKE_C_FLAGS_RELEASE   "/O2 /DNDEBUG /MD")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG /MD")
+    # Disable specific warnings that cause issues
+    string(REPLACE "/W3" "/W0" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    string(REPLACE "/W3" "/W0" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+else()
+    set(CMAKE_C_FLAGS_DEBUG   "-g3 -O0")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
+    set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
 
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "C++ Flags: ${CMAKE_CXX_FLAGS}")
@@ -96,8 +107,13 @@ endif()
 
 # First try with all required components
 # Note: boost_system is header-only in Boost 1.69+ so we don't require it as a component
-# Note: boost_variant, boost_system, and boost_uuid are header-only in Boost 1.89+ so we don't require them as components
+# For vcpkg on Windows, header-only components need to be in the include path
 set(BOOST_COMPONENTS filesystem thread date_time chrono regex serialization program_options)
+
+# Additional components for MSVC/vcpkg builds
+if(MSVC)
+    list(APPEND BOOST_COMPONENTS variant uuid)
+endif()
 
 # Try to find coroutine component (may not be available in all Boost versions)
 find_package(Boost 1.74 COMPONENTS coroutine QUIET)
@@ -111,18 +127,23 @@ endif()
 # Handle vcpkg Boost installation specifically
 if(WIN32 AND DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     message(STATUS "Using vcpkg toolchain, configuring Boost search...")
-    # Make sure vcpkg Boost is found
-    find_package(Boost 1.74 QUIET COMPONENTS ${BOOST_COMPONENTS})
-    if(NOT Boost_FOUND)
-        message(STATUS "Boost not found with COMPONENTS, trying without explicit components")
-        find_package(Boost 1.74 REQUIRED)
-    endif()
+    # For vcpkg, find_package with components should work
+    find_package(Boost 1.74 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 else()
     # Find Boost with available components (non-vcpkg)
     find_package(Boost 1.74 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Boost version: ${Boost_VERSION}")
+message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
+# Verify boost/variant.hpp exists for MSVC
+if(MSVC AND Boost_INCLUDE_DIRS)
+    if(EXISTS "${Boost_INCLUDE_DIRS}/boost/variant.hpp")
+        message(STATUS "✓ boost/variant.hpp confirmed")
+    else()
+        message(WARNING "boost/variant.hpp not found at ${Boost_INCLUDE_DIRS}/boost/variant.hpp")
+    endif()
+endif()
 
 # Check for Homebrew installation first (takes precedence on macOS)
 if(APPLE)

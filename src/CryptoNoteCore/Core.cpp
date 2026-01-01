@@ -566,7 +566,8 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   }
 
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
-  for (size_t try_count = 0; try_count != 10; ++try_count) {
+  size_t try_count = 0;
+  for (; try_count != 10; ++try_count) {
     logger(INFO) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion 
       << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size 
       << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
@@ -606,20 +607,31 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       }
     }
 
-    if (!(cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction))) {
-      logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
-      return false;
+    if (cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction)) {
+      // SUCCESS: Sizes match exactly, we're done
+      logger(TRACE) << "Mining transaction size adjustment successful for height=" << height;
+      break;
     }
 
+    // Unexpected case - sizes don't match after all adjustment attempts
+    logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size + " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
+    return false;
+  }
+
+  // After loop: check if we used all 10 attempts
+  if (try_count >= 10) {
+    size_t final_coinbase_size = getObjectBinarySize(b.baseTransaction);
     logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size 
-      << " vs txs_size + coinbase_blob=" << (txs_size + coinbase_blob_size);
+      << " vs txs_size + coinbase_blob=" << (txs_size + final_coinbase_size);
     logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion 
       << ", median_size=" << median_size << ", already_generated_coins=" << already_generated_coins;
     logger(ERROR, BRIGHT_RED) << "Fee=" << fee << ", txs_size=" << txs_size;
-
     return false;
+  }
+
+  return true;
 }
-}
+
 
 
 std::vector<Crypto::Hash> core::findBlockchainSupplement(

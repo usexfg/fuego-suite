@@ -261,11 +261,6 @@ double Currency::getBurnPercentage() const {
   return static_cast<double>(m_ethernalXFG) / static_cast<double>(m_moneySupply) * 100.0;
 }
 
-// Fuego-specific dynamic minimum fee based on block size (reverse Monero-style)
-// This encourages network usage when underutilized and prevents bloat when congested
-// getPenalizedAmount is a standalone function defined in CryptoNoteBasicImpl.h/CryptoNoteBasicImpl.cpp
-
-
 	bool Currency::getBlockReward(uint8_t blockMajorVersion, size_t medianSize, size_t currentBlockSize, uint64_t alreadyGeneratedCoins,
 		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange) const {
 		unsigned int m_emissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
@@ -309,6 +304,12 @@ double Currency::getBurnPercentage() const {
         size_t originalMedianSize = medianSize;
         medianSize = std::max(medianSize, blockGrantedFullRewardZone);
 
+if (currentBlockSize > UINT64_C(2) * medianSize)
+    {
+      logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
+      return false;
+    }
+
         // For very early blocks with very small block sizes, preserve the original median for penalty calculation
         // This ensures backward compatibility with blocks mined when the blockchain was young
         bool useOriginalMedian = false;
@@ -326,9 +327,9 @@ double Currency::getBurnPercentage() const {
         }
         // For very early blocks, adjust the size validation to account for the small median values
         // Early blocks had much smaller medians but could still be legitimately larger
-        logger(INFO) << "getBlockReward size check: currentBlockSize=" << currentBlockSize 
-			<< ", medianSize=" << medianSize 
-			<< ", 3*medianSize=" << (medianSize * 3) 
+        logger(INFO) << "getBlockReward size check: currentBlockSize=" << currentBlockSize
+			<< ", medianSize=" << medianSize
+			<< ", 3*medianSize=" << (medianSize * 3)
 			<< ", blockGrantedFullReward-zone=" << blockGrantedFullRewardZone;
         if (currentBlockSize > UINT64_C(3) * medianSize)
         {
@@ -384,33 +385,32 @@ double Currency::getBurnPercentage() const {
 					penaltyMedian = blockGrantedFullRewardZone;
 				}
 
-				// Special case for historical blocks that were mined without proper penalty calculation
-														// These blocks should be accepted as-is without penalty adjustments
-														uint64_t penalizedBaseReward;
-														uint64_t penalizedFee;
+		// Special case for historical blocks that were mined without proper penalty calculation
+		uint64_t penalizedBaseReward;
+		uint64_t penalizedFee;
 
-														if (height < 100000 || height == 174026 || height == 297968) {
-														    // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
-														    penalizedBaseReward = baseReward;
-														    penalizedFee = fee;
-														} else {
-															penalizedBaseReward = CryptoNote::getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
-															penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? CryptoNote::getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
-															if (cryptonoteCoinVersion() == 1) {
-																penalizedFee = CryptoNote::getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
-															}
-														}
+		if (height < 100000 || height == 174026 || height == 297968) {
+		   // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
+		   penalizedBaseReward = baseReward;
+		   penalizedFee = fee;
+		} else {
+		penalizedBaseReward = getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize);
+		penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, penaltyMedian, currentBlockSize) : fee;
+		if (cryptonoteCoinVersion() == 1) {
+		penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize);
+		}
+		}
 
 		// Special debugging for problematic blocks
-		        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-		            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
-		                                     << " medianSize=" << medianSize
-		                                     << " penaltyMedian=" << penaltyMedian
-		                                     << " baseReward=" << baseReward
-		                                     << " penalizedBaseReward=" << penalizedBaseReward
-		                                     << " fee=" << fee
-		                                     << " penalizedFee=" << penalizedFee;
-		        }
+        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
+            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
+                                     << " medianSize=" << medianSize
+                                     << " penaltyMedian=" << penaltyMedian
+                                     << " baseReward=" << baseReward
+                                     << " penalizedBaseReward=" << penalizedBaseReward
+                                     << " fee=" << fee
+                                     << " penalizedFee=" << penalizedFee;
+        }
 
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
     reward = penalizedBaseReward + penalizedFee;

@@ -40,7 +40,7 @@ add_subdirectory(EldernodeIndexManager)
 add_subdirectory(BurnDepositValidationService)
 
 # System files
-if(WIN32)
+if(MSVC)
   file(GLOB_RECURSE System System/* Platform/Windows/System/*)
 elseif(APPLE)
   file(GLOB_RECURSE System System/* Platform/OSX/System/*)
@@ -54,13 +54,21 @@ source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol
 # Libraries
 # --------------------------
 add_library(BlockchainExplorer STATIC ${BlockchainExplorer})
-target_include_directories(BlockchainExplorer SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
-target_link_libraries(BlockchainExplorer PUBLIC ${JSONCPP_LIBRARIES})
+target_include_directories(BlockchainExplorer SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+target_link_libraries(BlockchainExplorer PUBLIC ${JSONCPP_LIBRARIES} ${Boost_LIBRARIES})
 add_library(Common STATIC ${Common})
+target_include_directories(Common SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
+target_link_libraries(Common PUBLIC ${Boost_LIBRARIES})
 add_library(Crypto STATIC ${Crypto})
+target_include_directories(Crypto SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
+target_link_libraries(Crypto PUBLIC ${Boost_LIBRARIES})
 
 add_library(CryptoNoteCore STATIC ${CryptoNoteCore})
-target_compile_options(CryptoNoteCore PRIVATE -Wno-deprecated-declarations)
+if(MSVC)
+    target_compile_options(CryptoNoteCore PRIVATE /W0)
+else()
+    target_compile_options(CryptoNoteCore PRIVATE -Wno-deprecated-declarations)
+endif()
 target_link_libraries(CryptoNoteCore PUBLIC
     Crypto
     Common
@@ -70,11 +78,13 @@ target_link_libraries(CryptoNoteCore PUBLIC
     Transfers
     System
     BlockchainExplorer
+    ${Boost_LIBRARIES}
 )
 target_include_directories(CryptoNoteCore PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/external
 )
+target_include_directories(CryptoNoteCore SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 add_dependencies(CryptoNoteCore version)
 
 # --------------------------
@@ -365,9 +375,9 @@ add_dependencies(P2P version)
 # --------------------------
 # Output names
 # --------------------------
-set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "fuego-wallet-cli")
-set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "testnet-wallet-cli")
+set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "xfg_wallet")
+set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "test_wallet")
 set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "walletd")
 set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")
-set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "fuego-optimizer")
+set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")

@@ -23,10 +23,7 @@
 #include <numeric>
 #include <cstdio>
 #include <cmath>
-#include <string>
-#include <vector>
-#include <mutex>
-#include <atomic>
+#include <boost/foreach.hpp>
 #include "Common/Math.h"
 #include "Common/int-util.h"
 #include "Common/ShuffleGenerator.h"
@@ -152,7 +149,7 @@ public:
       BinaryInputStreamSerializer s(stream);
       CryptoNote::serialize(*this, s);
     } catch (std::exception& e) {
-      printf("WARNING: loading failed: %s\n", e.what());
+      logger(WARNING) << "loading failed: " << e.what();
     }
   }
 
@@ -202,7 +199,7 @@ public:
     logger(INFO) << operation << "block index...";
     s(m_bs.m_blockIndex, "block_index");
 
-      printf("INFO: %stransaction map\n", operation.c_str());
+      logger(INFO) << operation << "transaction map";
       if (s.type() == ISerializer::INPUT)
       {
         phmap::BinaryInputArchive ar_in(appendPath(m_bs.m_config_folder, "transactionsmap.dat").c_str());
@@ -214,7 +211,7 @@ public:
         m_bs.m_transactionMap.dump(ar_out);
       }
 
-      printf("INFO: %sspent keys\n", operation.c_str());
+      logger(INFO) << operation << "spent keys";
       if (s.type() == ISerializer::INPUT)
       {
         phmap::BinaryInputArchive ar_in(appendPath(m_bs.m_config_folder, "spentkeys.dat").c_str());
@@ -226,54 +223,18 @@ public:
         m_bs.m_spent_keys.dump(ar_out);
       }
 
-      printf("INFO: %soutputs\n", operation.c_str());
-      if (s.type() == ISerializer::INPUT)
-      {
-        // Manual serialization for non-trivially-copyable types
-        std::vector<std::pair<uint64_t, std::vector<std::pair<Blockchain::TransactionIndex, uint16_t>>>> temp;
-        s(temp, "outputs");
-        m_bs.m_outputs.clear();
-        for (const auto& pair : temp) {
-          m_bs.m_outputs.emplace(pair.first, pair.second);
-        }
-      }
-      else
-      {
-        std::vector<std::pair<uint64_t, std::vector<std::pair<Blockchain::TransactionIndex, uint16_t>>>> temp;
-        temp.reserve(m_bs.m_outputs.size());
-        for (const auto& pair : m_bs.m_outputs) {
-          temp.emplace_back(pair.first, pair.second);
-        }
-        s(temp, "outputs");
-      }
+      logger(INFO) << operation << "outputs";
+      s(m_bs.m_outputs, "outputs");
 
-      printf("INFO: %smulti-signature outputs\n", operation.c_str());
-      if (s.type() == ISerializer::INPUT)
-      {
-        // Manual serialization for non-trivially-copyable types
-        std::vector<std::pair<uint64_t, std::vector<Blockchain::MultisignatureOutputUsage>>> temp;
-        s(temp, "multisig_outputs");
-        m_bs.m_multisignatureOutputs.clear();
-        for (const auto& pair : temp) {
-          m_bs.m_multisignatureOutputs.emplace(pair.first, pair.second);
-        }
-      }
-      else
-      {
-        std::vector<std::pair<uint64_t, std::vector<Blockchain::MultisignatureOutputUsage>>> temp;
-        temp.reserve(m_bs.m_multisignatureOutputs.size());
-        for (const auto& pair : m_bs.m_multisignatureOutputs) {
-          temp.emplace_back(pair.first, pair.second);
-        }
-        s(temp, "multisig_outputs");
-      }
+      logger(INFO) << operation << "multi-signature outputs";
+      s(m_bs.m_multisignatureOutputs, "multisig_outputs");
 
-      printf("INFO: %sbanking index\n", operation.c_str());
-      s(m_bs.m_bankingIndex, "deposit_index");
+      logger(INFO) << operation << "banking index";
+      s(m_bs.m_bankingIndex, "banking_index");
 
     auto dur = std::chrono::steady_clock::now() - start;
 
-    printf("INFO: Serialization time: %lldms\n", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(dur).count());
+    logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
 
     m_loaded = true;
   }
@@ -469,7 +430,7 @@ bool Blockchain::haveSpentKeyImages(const CryptoNote::Transaction& tx) {
 
 bool Blockchain::checkTransactionSize(size_t blobSize) {
   if (blobSize > getCurrentCumulativeBlocksizeLimit() - m_currency.minerTxBlobReservedSize()) {
-    logger(ERROR, BRIGHT_RED) << "transaction is too big " << blobSize << ", maximum allowed size is " <<
+    logger(ERROR) << "transaction is too big " << blobSize << ", maximum allowed size is " <<
       (getCurrentCumulativeBlocksizeLimit() - m_currency.minerTxBlobReservedSize());
     return false;
   }
@@ -506,22 +467,13 @@ bool Blockchain::init(const std::string& config_folder, bool load_existing) {
   }
 
   if (load_existing && !m_blocks.empty()) {
-    printf("INFO: Loading blockchain...\n");
+    logger(INFO, BRIGHT_WHITE) << "Loading blockchain...";
     BlockCacheSerializer loader(*this, get_block_hash(m_blocks.back().bl), logger.getLogger());
     loader.load(appendPath(config_folder, m_currency.blocksCacheFileName()));
 
     if (!loader.loaded()) {
-      printf("WARNING: No actual blockchain cache found, rebuilding internal structures...\n");
-      try {
-        rebuildCache();
-        printf("INFO: Cache rebuilding completed successfully\n");
-      } catch (const std::exception& e) {
-        printf("ERROR: Cache rebuilding failed with exception: %s\n", e.what());
-        throw; // Re-throw to crash with proper error
-      } catch (...) {
-        printf("ERROR: Cache rebuilding failed with unknown exception\n");
-        throw; // Re-throw to crash with proper error
-      }
+      logger(WARNING, BRIGHT_YELLOW) << "No actual blockchain cache found, rebuilding internal structures...";
+      rebuildCache();
     }
 
       /* Load (or generate) indices only if Explorer mode is enabled */
@@ -648,7 +600,10 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     timestamp_diff = time(NULL) - 1341378000;
   }
 
-  printf("INFO: Blockchain initialized. last block: %llu\n", (unsigned long long)m_blocks.size() - 1);
+  logger(INFO, BRIGHT_BLUE)
+    << "Blockchain initialized. last block: " << m_blocks.size() - 1 << ", "
+    << Common::timeIntervalToString(timestamp_diff)
+    << " time ago, current difficulty: " << getDifficultyForNextBlock();
   return true;
 }
 
@@ -672,59 +627,69 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         return false;
       }
     }
-     logger(INFO, BRIGHT_WHITE) << "Checkpoints passed";
+    logger(INFO, BRIGHT_WHITE) << "Checkpoints passed";
     return true;
   }
 
   void Blockchain::rebuildCache()
   {
-    try {
-      std::chrono::steady_clock::time_point timePoint = std::chrono::steady_clock::now();
-      m_blockIndex.clear();
-      m_transactionMap.clear();
-      m_spent_keys.clear();
-      m_outputs.clear();
-      m_multisignatureOutputs.clear();
+    logger(INFO, BRIGHT_WHITE) << "Rebuilding cache";
 
-      uint32_t blocksToProcess = (uint32_t)m_blocks.size();
-
-      for (uint32_t b = 0; b < blocksToProcess; ++b) {
-        const BlockEntry &block = m_blocks[b];
-        Crypto::Hash blockHash = get_block_hash(block.bl);
-        m_blockIndex.push(blockHash);
-
-        uint64_t interest = 0;
-        for (uint16_t t = 0; t < block.transactions.size(); ++t) {
-          const TransactionEntry &transaction = block.transactions[t];
-          Crypto::Hash transactionHash = getObjectHash(transaction.tx);
-          TransactionIndex transactionIndex = {b, t};
-          m_transactionMap.insert(std::make_pair(transactionHash, transactionIndex));
-
-          // Process outputs
-          for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
-            const auto& out = transaction.tx.outputs[o];
-            if (out.target.type() == typeid(KeyOutput)) {
-              m_outputs[out.amount].push_back(std::make_pair<>(transactionIndex, o));
-            } else if (out.target.type() == typeid(MultisignatureOutput)) {
-              MultisignatureOutputUsage usage = { transactionIndex, o, false };
-              m_multisignatureOutputs[out.amount].push_back(usage);
-            }
-          }
-          // Interest calculation removed - no on-chain interest
-        }
-        pushToBankingIndex(block, interest);
+    std::chrono::steady_clock::time_point timePoint = std::chrono::steady_clock::now();
+    m_blockIndex.clear();
+    m_transactionMap.clear();
+    m_spent_keys.clear();
+    m_outputs.clear();
+    m_multisignatureOutputs.clear();
+    for (uint32_t b = 0; b < m_blocks.size(); ++b)
+    {
+      if (b % 1000 == 0)
+      {
+        logger(INFO, BRIGHT_WHITE) << "Rebuilding Cache for Height " << b << " of " << m_blocks.size();
       }
 
-      skip_block_processing:
+      const BlockEntry &block = m_blocks[b];
+      Crypto::Hash blockHash = get_block_hash(block.bl);
+      m_blockIndex.push(blockHash);
+      uint64_t interest = 0;
+      for (uint16_t t = 0; t < block.transactions.size(); ++t)
+      {
+        const TransactionEntry &transaction = block.transactions[t];
+        Crypto::Hash transactionHash = getObjectHash(transaction.tx);
+        TransactionIndex transactionIndex = {b, t};
+        m_transactionMap.insert(std::make_pair(transactionHash, transactionIndex));
 
-      std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
-    } catch (const std::exception& e) {
-       logger(ERROR, BRIGHT_RED) << "Exception in rebuildCache: " << e.what();
-      throw;
-    } catch (...) {
-       logger(ERROR, BRIGHT_RED) << "Unknown exception in rebuildCache";
-      throw;
-    }
+        // process inputs
+        for (auto &i : transaction.tx.inputs)
+        {
+          if (i.type() == typeid(KeyInput))
+          {
+            m_spent_keys.insert(std::make_pair(::boost::get<KeyInput>(i).keyImage, b));
+          }
+          else if (i.type() == typeid(MultisignatureInput))
+          {
+            auto out = ::boost::get<MultisignatureInput>(i);
+            m_multisignatureOutputs[out.amount][out.outputIndex].isUsed = true;
+          }
+        }
+
+      // process outputs
+      for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
+        const auto& out = transaction.tx.outputs[o];
+        if (out.target.type() == typeid(KeyOutput)) {
+          m_outputs[out.amount].push_back(std::make_pair<>(transactionIndex, o));
+        } else if (out.target.type() == typeid(MultisignatureOutput)) {
+          MultisignatureOutputUsage usage = { transactionIndex, o, false };
+          m_multisignatureOutputs[out.amount].push_back(usage);
+        }
+      }
+        interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b); //block.height); //block.height shows 0 wrongly sometimes apparently
+      }
+      pushToBankingIndex(block, interest);
+      }
+
+  std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
+  logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
 }
 
 bool Blockchain::storeCache() {
@@ -1173,9 +1138,9 @@ difficulty_type Blockchain::get_next_difficulty_for_alternative_chain(const std:
     size_t count = 0;
     size_t max_i = timestamps.size() - 1;
     // get difficulties and timestamps from most recent blocks in alt chain
-    for (auto it = alt_chain.rbegin(); it != alt_chain.rend(); ++it) {
-      timestamps[max_i - count] = (*it)->second.bl.timestamp;
-      cumulative_difficulties[max_i - count] = (*it)->second.cumulative_difficulty;
+    BOOST_REVERSE_FOREACH(auto it, alt_chain) {
+      timestamps[max_i - count] = it->second.bl.timestamp;
+      cumulative_difficulties[max_i - count] = it->second.cumulative_difficulty;
       count++;
       if (count >= m_currency.difficultyBlocksCountByBlockVersion(BlockMajorVersion)) {
         break;
@@ -1328,15 +1293,16 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
         }
 
     if (minerReward > reward + tolerance) {
-      logger(ERROR, BRIGHT_RED) << "Coinbase transaction spends too much money: " << m_currency.formatAmount(minerReward) <<
+      logger(DEBUGGING, BRIGHT_RED) << "Coinbase transaction spends too much money: " << m_currency.formatAmount(minerReward) <<
         ", block reward is " << m_currency.formatAmount(reward);
       return false;
     } else if (minerReward + tolerance < reward) {
-      logger(ERROR, BRIGHT_RED) << "Coinbase transaction doesn't use full amount of block reward: spent " <<
+      logger(DEBUGGING, BRIGHT_RED) << "Coinbase transaction doesn't use full amount of block reward: spent " <<
         m_currency.formatAmount(minerReward) << ", block reward is " << m_currency.formatAmount(reward);
       return false;
     }
   }
+
   return true;
 }
 
@@ -2198,9 +2164,12 @@ bool Blockchain::update_next_comulative_size_limit() {
     median = nextBlockGrantedFullRewardZone;
   }
 
-  // For historical blocks during sync, use a more conservative approach
-  // to avoid validation failures with older block sizes
-  if (m_blocks.size() < 200000) { // First 200k blocks use a fixed size limit
+  // For very early blocks (height 0-1), avoid the huge 2MB default limit
+  // that causes medianSize to become 1MB, which breaks early block template generation
+  uint32_t current_height = static_cast<uint32_t>(m_blocks.size() - 1); // Convert to height
+  if (current_height < 50u) { // First 50 blocks use much smaller limit
+    m_current_block_cumul_sz_limit = 2 * nextBlockGrantedFullRewardZone; // ~40KB for initial blocks
+  } else if (current_height < 200000u) { // Blocks up to height 200k use fixed conservative limit
     m_current_block_cumul_sz_limit = 2 * 1024 * 1024; // 2MB conservative limit
   } else {
     m_current_block_cumul_sz_limit = median * 2;
@@ -2351,9 +2320,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       // This "fixes" fuegod backwards compatibility issues when syncing with early blocks
       // The exception to the 'only' rule being the possible bypass of a small hiccup of blocks (~100 blocks) to continue practice of following heaviest chain; from fork created during a botched testnet update (only coinbase rewards + mining pool payout txns during this range of blocks));
       // Also skip validation for blocks in the problematic range around 970000-980000
-      if (getCurrentBlockchainHeight() <= 990000) {
+      if (getCurrentBlockchainHeight() <= 980000 || (getCurrentBlockchainHeight() >= 980000 && getCurrentBlockchainHeight() < 980690)) {
         // Log at DEBUGGING level to avoid flooding normal logs
-        logger(DEBUGGING) << "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight() << " with major version " << static_cast<int>(blockData.majorVersion);
+        logger(DEBUGGING) << "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
       } else {
         if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
           logger(INFO, BRIGHT_WHITE) <<
@@ -2397,7 +2366,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transactions[i], block.height);
 	  uint64_t out_amount = getOutputAmount(transactions[i]);
-    uint64_t fee = in_amount < out_amount ? m_currency.minimumFee(block.bl.majorVersion) : in_amount - out_amount;
+    uint64_t fee = in_amount < out_amount ? CryptoNote::parameters::MINIMUM_FEE : in_amount - out_amount;
 
     bool isTransactionValid = true;
     if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_8 && transactions[i].version > TRANSACTION_VERSION_1) {
@@ -2739,14 +2708,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
 }
 
 void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
-  auto it = m_transactionMap.find(transactionHash);
-  if (it == m_transactionMap.end()) {
-    logger(ERROR, BRIGHT_RED) <<
-      "Cannot pop transaction - transaction hash not found in map during rollback. Hash: " << transactionHash;
-    return;
-  }
-
-  TransactionIndex transactionIndex = it->second;
+  TransactionIndex transactionIndex = m_transactionMap.at(transactionHash);
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
     if (output.target.type() == typeid(KeyOutput)) {

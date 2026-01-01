@@ -36,11 +36,11 @@ class ISerializer;
 
 namespace std {
   template<>
-  struct hash<::std::tuple<::Crypto::Hash, uint32_t>> {
-    size_t operator()(const ::std::tuple<::Crypto::Hash, uint32_t>& item) const {
+  struct hash<std::tuple<Crypto::Hash, uint32_t>> {
+    size_t operator()(const std::tuple<Crypto::Hash, uint32_t>& item) const {
       size_t hash = 0;
-      boost::hash_combine(hash, ::std::get<0>(item));
-      boost::hash_combine(hash, ::std::get<1>(item));
+      boost::hash_combine(hash, std::get<0>(item));
+      boost::hash_combine(hash, std::get<1>(item));
       return hash;
     }
   };

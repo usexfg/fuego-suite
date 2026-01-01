@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -20,9 +21,9 @@ import (
 )
 
 const (
-	nodeRPCPort   = 18180
-	walletRPCPort = 18183
-	nodeP2PPort   = 10808
+	nodeRPCPort   = 28280
+	walletRPCPort = 28281
+	nodeP2PPort   = 20808
 )
 
 var (
@@ -41,9 +42,10 @@ type versionInfo struct {
 }
 
 var verInfo = versionInfo{
-	projectName:    "Fuego",
-	projectVersion: "DYNAMIGO v1.10.0",
-	fullVersion:    "Fuego MAINNET || v1.10.0 DYNAMIGO",
+	projectName:    "Fuego DYNAMIGO",
+	projectVersion: "v1.10.0",
+	testnetVersion: "TESTNET",
+	fullVersion:    "Fuego DYNAMIGO TESTNET v1.10.0",
 }
 
 type menuItem string
@@ -57,9 +59,12 @@ const (
 	mGetBalance     menuItem = "Get Balance"
 	mSendTx         menuItem = "Send Transaction"
 	mElderfierMenu  menuItem = "Elderfier Menu"
-	mBurn2MintMenu  menuItem = "Burn2Mint Menu"
-	mShowLogs       menuItem = "Show Logs"
+	mBurn2MintMenu  menuItem = "Æternal Flame Menu"
 	mQuit           menuItem = "Quit"
+)
+
+const (
+	logViewUpdateInterval = 100 * time.Millisecond
 )
 
 var menu = []menuItem{
@@ -76,25 +81,21 @@ var menu = []menuItem{
 	mQuit,
 }
 
-type model struct {
-	cursor      int
-	nodeCmd     *exec.Cmd
-	walletCmd   *exec.Cmd
-	logs        []string
-	mutex       sync.Mutex
-	statusMsg   string
-	running     bool
-	runningNode bool
-	runningW    bool
-	height      int
-	peers       int
+func initialModel() model {
+	return model{
+		cursor:      0,
+		logs:        []string{"Fuego TUI Testnet v2.0 initialized"},
+		statusMsg:   "Ready - use arrows to navigate, Enter to select",
+		showingLogs: false,
+		logOffset:   0,
+	}
 }
 
 func initialModel() model {
 	initVersionInfo()
 	return model{
 		cursor:    0,
-		logs:      []string{fmt.Sprintf("🔥 %s TUI Ready", verInfo.projectName)},
+		logs:      []string{fmt.Sprintf("🔥 %s TESTNET TUI Ready", verInfo.projectName)},
 		statusMsg: "",
 	}
 }
@@ -118,47 +119,83 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(menu)-1 {
-				m.cursor++
-			}
-		case "enter":
-			item := menu[m.cursor]
-			switch item {
-			case mStartNode:
-				m = startNode(m)
-			case mStopNode:
-				m = stopNode(m)
-			case mNodeStatus:
-				m = queryNodeStatus(m)
-			case mStartWalletRPC:
-				m = startWalletRPC(m)
-			case mCreateWallet:
-				m = createWalletCmd(m)
-			case mGetBalance:
-				m = getBalanceCmd(m)
-			case mSendTx:
-				m = sendTxPrompt(m)
-			case mElderfierMenu:
-				m = elderfierMenu(m)
-			case mBurn2MintMenu:
-				m = burn2MintMenu(m)
-			case mShowLogs:
-				m = showLogs(m)
-			case mQuit:
-				return m, tea.Quit
-			}
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
+				func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+					// Handle log viewing mode
+					if m.showingLogs {
+						switch msg := msg.(type) {
+						case tea.KeyMsg:
+							switch msg.String() {
+							case "q", "esc", "enter", " ":
+								m.showingLogs = false
+								m.logOffset = 0
+								return m, nil
+							case "up", "k":
+								if m.logOffset > 0 {
+									m.logOffset--
+								}
+								return m, nil
+							case "down", "j":
+								maxOffset := len(m.logs) - 1
+								if m.logOffset < maxOffset {
+									m.logOffset++
+								}
+								return m, nil
+							}
+						}
+						return m, nil
+					}
+
+					switch msg := msg.(type) {
+					case tea.KeyMsg:
+						switch msg.String() {
+						case "up", "k":
+							if m.cursor > 0 {
+								m.cursor--
+							}
+						case "down", "j":
+							if m.cursor < len(menu)-1 {
+								m.cursor++
+							}
+						case "enter":
+							item := menu[m.cursor]
+							switch item {
+							case mStartNode:
+								m = startNode(m)
+							case mStopNode:
+								m = stopNode(m)
+							case mNodeStatus:
+								m = queryNodeStatus(m)
+							case mStartWalletRPC:
+								m = startWalletRPC(m)
+							case mCreateWallet:
+								m = createWalletCmd(m)
+							case mGetBalance:
+								m = getBalanceCmd(m)
+							case mSendTx:
+								m = sendTxPrompt(m)
+							case mElderfierMenu:
+								m = elderfierMenu(m)
+							case mBurn2MintMenu:
+								m = burn2MintMenu(m)
+							case mQuit:
+								return m, tea.Quit
+							}
+						case "l":
+							// Toggle log view mode
+							if len(m.logs) > 0 {
+								m.showingLogs = true
+								m.logOffset = len(m.logs) - 1
+							}
+							return m, nil
+						case "q", "ctrl+c":
+							return m, tea.Quit
+						}
+					}
+					return m, nil
+				}
 
 func (m model) View() string {
-	s := titleStyle.Render(fmt.Sprintf("🔥 %s TUI", verInfo.projectName)) + "\n"
+	s := titleStyle.Render(fmt.Sprintf("🔥 %s TESTNET TUI", verInfo.projectName)) + "\n"
 	s += menuStyle.Render(verInfo.fullVersion) + "\n\n"
 	for i, it := range menu {
 		line := fmt.Sprintf("  %s", it)
@@ -177,27 +214,12 @@ func (m model) View() string {
 }
 
 func binPath(name string) string {
-	cwd, _ := os.Getwd()
-	// Check if we're in tui directory
-	if filepath.Base(cwd) == "tui" {
-		cwd = filepath.Dir(cwd)
-		// Go up one more to get to fuego (copy) directory
-		if filepath.Base(cwd) == "fuego-copy" {
-			cwd = filepath.Dir(cwd)
-		}
+	// Hardcoded absolute path to testnet binaries
+	binPath := filepath.Join("/home/ar/fuego-copy", "build", "release", "src", name)
+	if _, err := os.Stat(binPath); err == nil {
+		return binPath
 	}
-	// Also try the current directory structure
-	if strings.Contains(cwd, "fuego") {
-		testPath := filepath.Join(cwd, "fuego-copy", "build", "src", name)
-		if _, err := os.Stat(testPath); err == nil {
-			return testPath
-		}
-	}
-	// Try direct path
-	cand := filepath.Join(cwd, "build", "src", name)
-	if _, err := os.Stat(cand); err == nil {
-		return cand
-	}
+	// Fallback to $PATH
 	return name
 }
 
@@ -207,27 +229,27 @@ func startNode(m model) model {
 		m.statusMsg = "Node already running"
 		return m
 	}
-	path := binPath("fuegod")
+	path := binPath("testnetd")
 	if path == "" {
-		m.appendLog("fuegod binary not found")
+		m.appendLog("testnetd binary not found")
 		m.statusMsg = "Binary not found"
 		return m
 	}
-	// Use mainnet-specific data directory
+	// Use testnet-specific data directory
 	var dataDir string
 	if runtime.GOOS == "darwin" {
-		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego")
+		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego-testnet")
 	} else {
-		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego")
+		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego-testnet")
 	}
 	// Create directory if it doesn't exist
 	os.MkdirAll(dataDir, 0755)
-	// Start with mainnet mode on mainnet ports
+	// Start with testnet mode on testnet ports
 	cmd := exec.Command(path,
 		fmt.Sprintf("--p2p-bind-port=%d", nodeP2PPort),
 		fmt.Sprintf("--rpc-bind-port=%d", nodeRPCPort),
 		fmt.Sprintf("--data-dir=%s", dataDir),
-	)
+		"--testnet")
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -237,7 +259,7 @@ func startNode(m model) model {
 	}
 	m.nodeCmd = cmd
 	m.runningNode = true
-	m.appendLog("Started fuegod")
+	m.appendLog("Started testnetd")
 	m.statusMsg = "Node starting"
 	go streamPipe(stdout, "NODE", &m)
 	go streamPipe(stderr, "NODE-ERR", &m)
@@ -266,7 +288,7 @@ func stopNode(m model) model {
 		return m
 	}
 	_ = m.nodeCmd.Process.Kill()
-	m.appendLog("Stopped fuegod")
+	m.appendLog("Stopped testnetd")
 	m.nodeCmd = nil
 	m.runningNode = false
 	m.statusMsg = "Node stopped"
@@ -297,17 +319,18 @@ func startWalletRPC(m model) model {
 		m.statusMsg = "Binary not found"
 		return m
 	}
-	// Use mainnet-specific data directory
+	// Use testnet-specific data directory
 	var dataDir string
 	if runtime.GOOS == "darwin" {
-		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego")
+		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego-testnet")
 	} else {
-		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego")
+		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego-testnet")
 	}
 	cmd := exec.Command(path,
 		"--daemon-port", fmt.Sprintf("%d", nodeRPCPort),
 		"--bind-address", "127.0.0.1",
 		"--bind-port", fmt.Sprintf("%d", walletRPCPort),
+		"--testnet",
 		fmt.Sprintf("--data-dir=%s", dataDir),
 	)
 	stdout, _ := cmd.StdoutPipe()
@@ -357,11 +380,11 @@ func sendTxPrompt(m model) model {
 	var addr string
 	fmt.Print("Recipient address: ")
 	fmt.Scanln(&addr)
-	fmt.Print("Amount XFG: ")
+	fmt.Print("Amount TEST: ")
 	var amt float64
 	fmt.Scanln(&amt)
 	m.appendLog(fmt.Sprintf("Sending %f to %s...", amt, addr))
-	amountAtomic := int64(amt * 10000000)
+	amountAtomic := int64(amt * 100000000)
 	params := map[string]interface{}{"transfers": []map[string]interface{}{{"address": addr, "amount": amountAtomic}}}
 	res, err := walletRpcCall(walletRPCPort, "send_transaction", params)
 	if err != nil {
@@ -439,7 +462,7 @@ func elderfierMenu(m model) model {
 	m.appendLog("Options:")
 	m.appendLog("  [1] View Consensus Requests")
 	m.appendLog("  [2] Vote on Pending Items")
-	m.appendLog("  [3] Review Burn2Mint Requests")
+	m.appendLog("  [3] Review Ethereal XFG Requests")
 	m.appendLog("  [4] Manage Stake")
 	m.appendLog("  [5] Update ENindex Keys")
 	m.appendLog("  [0] Return to Main Menu")
@@ -476,14 +499,14 @@ func startElderfyreStayking(m model) model {
 
 	// Step 1: Create stake deposit
 	m.appendLog("Step 1: Create Elderfier Stake Deposit")
-	m.appendLog("Minimum stake required: 800 XFG (MAINNET minimum)")
+	m.appendLog("Minimum stake required: 80 TEST (TESTNET minimum)")
 	m.appendLog("")
 
 	var amount float64
-	fmt.Print("Enter stake amount (MAINNET): ")
+	fmt.Print("Enter stake amount (TEST): ")
 	fmt.Scanln(&amount)
-	if amount < 800 {
-		m.appendLog("❌ Minimum stake is 800 XFG")
+	if amount < 80 {
+		m.appendLog("❌ Minimum stake is 80 TEST")
 		return m
 	}
 	amountAtomic := int64(amount * 10000000)
@@ -492,7 +515,7 @@ func startElderfyreStayking(m model) model {
 		"type":   "elderfier_stake",
 	}
 
-	m.appendLog(fmt.Sprintf("Creating stake deposit: %.2f MAINNET...", amount))
+	m.appendLog(fmt.Sprintf("Creating stake deposit: %.2f TEST...", amount))
 
 	stakeRes, err := walletRpcCall(walletRPCPort, "create_stake_deposit", stakeParams)
 	if err != nil {
@@ -566,7 +589,7 @@ func startElderfyreStayking(m model) model {
 	m.appendLog("once your stake is confirmed (10 blocks)")
 	m.appendLog("─────────────────────────────────────")
 
-	m.statusMsg = "Elderfyre Stayking complete"
+	m.statusMsg = "ElderFyre Stayking complete"
 	return m
 }
 
@@ -631,7 +654,7 @@ func voteOnPendingItems(m model) model {
 // Review Burn2Mint Requests
 func reviewBurn2MintRequests(m model) model {
 	m.appendLog("─────────────────────────────────────")
-	m.appendLog("  BURN2MINT CONSENSUS REQUESTS")
+	m.appendLog("  Ethereal XFG CONSENSUS REQUESTS")
 	m.appendLog("─────────────────────────────────────")
 
 	requests, err := walletRpcCall(walletRPCPort, "get_burn2mint_requests", map[string]interface{}{})
@@ -716,7 +739,7 @@ func manageStake(m model) model {
 // Update ENindex Keys
 func updateENindexKeys(m model) model {
 	m.appendLog("─────────────────────────────────────")
-	m.appendLog("  UPDATE ENINDEX KEYS")
+	m.appendLog("  UPDATE Elderfier ID")
 	m.appendLog("─────────────────────────────────────")
 
 	m.appendLog("Current ENindex registration will be updated")
@@ -744,13 +767,13 @@ func updateENindexKeys(m model) model {
 // Burn2Mint: Complete flow with Elderfier consensus
 func burn2MintMenu(m model) model {
 	m.appendLog("═══════════════════════════════════════")
-	m.appendLog("  BURN2MINT: MAINNET → HEAT (MAINNET)")
+	m.appendLog("  BURN2MINT: TEST → HEAT (TESTNET)")
 	m.appendLog("═══════════════════════════════════════")
 
 	// Step 1: Choose burn amount
-	m.appendLog("Burn options:")
-	m.appendLog("  1) Small burn: 0.8 XFG (minimum)")
-	m.appendLog("  2) Large burn: 800 XFG")
+	m.appendLog("Burn options (testnet):")
+	m.appendLog("  1) Small burn: 0.8 TEST (minimum)")
+	m.appendLog("  2) Large burn: 80 TEST")
 	fmt.Print("Choose (1 or 2): ")
 	var choice int
 	fmt.Scanln(&choice)
@@ -758,10 +781,10 @@ func burn2MintMenu(m model) model {
 	var amount float64
 	if choice == 2 {
 		amount = 800.0
-		m.appendLog("Selected: Large burn (800 XFG)")
+		m.appendLog("Selected: Large burn (80 TEST)")
 	} else {
 		amount = 0.8
-		m.appendLog("Selected: Small burn (0.8 XFG)")
+		m.appendLog("Selected: Small burn (0.8 TEST)")
 	}
 
 	// Step 2: Create burn_deposit transaction
@@ -863,32 +886,21 @@ func burn2MintMenu(m model) model {
 	return m
 }
 
-func showLogs(m model) model {
-	m.appendLog("Displaying full logs...")
-	for _, l := range m.logs {
-		fmt.Println(l)
-	}
-	fmt.Print("\nPress Enter to continue...")
-	var dummy string
-	fmt.Scanln(&dummy)
-	m.statusMsg = "Returned from logs"
-	return m
+func showLogs(m model) (model, tea.Cmd) {
+	// Suspend the TUI and display logs in a pager-like view
+	return m, tea.Suspend()
 }
 
 func streamPipe(r io.Reader, prefix string, m *model) {
-	buf := make([]byte, 1024)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			line := strings.TrimSpace(string(buf[:n]))
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
 			m.appendLog(fmt.Sprintf("%s: %s", prefix, line))
 		}
-		if err != nil {
-			if err != io.EOF {
-				m.appendLog(prefix + " error: " + err.Error())
-			}
-			return
-		}
+	}
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		m.appendLog(prefix + " error: " + err.Error())
 	}
 }
 
@@ -958,12 +970,12 @@ func min(a, b int) int {
 
 func main() {
 	initVersionInfo()
-	fmt.Printf("====== %s TUI ======\n", verInfo.projectName)
-	fmt.Printf("Fuego v.%s\n", verInfo.projectVersion)
-	fmt.Println("P2P Port: 10808")
-	fmt.Println("RPC Ports: Node=18180, Wallet=18183")
-	fmt.Println("Data Dir: ~/.fuego")
-	fmt.Println("Coin: XFG, Address Prefix: 1075740 (fire)")
+	fmt.Printf("====== %s TESTNET TUI ======\n", verInfo.projectName)
+	fmt.Printf("Testnetd v.%s running: %s\n", verInfo.testnetVersion, verInfo.projectVersion)
+	fmt.Println("P2P Port: 20808")
+	fmt.Println("RPC Ports: Node=28280, Wallet=28281")
+	fmt.Println("Data Dir: ~/.fuego-testnet")
+	fmt.Println("Coin: TEST, Address Prefix: 1075740 (TEST)")
 	fmt.Println("")
 
 	if runtime.GOOS == "windows" {
@@ -979,7 +991,7 @@ func main() {
 // initVersionInfo populates version data from version.h
 func initVersionInfo() {
 	// Try to read version.h
-	versionFile := filepath.Join(filepath.Dir(binPath("fuegod")), "version", "version.h")
+	versionFile := filepath.Join(filepath.Dir(binPath("testnetd")), "version", "version.h")
 	content, err := os.ReadFile(versionFile)
 	if err == nil {
 		verStr := string(content)
@@ -1008,11 +1020,12 @@ func initVersionInfo() {
 			}
 		}
 
-		verInfo.fullVersion = fmt.Sprintf("%s || v%s", verInfo.projectName, verInfo.projectVersion)
+		verInfo.testnetVersion = "TESTNET v." + verInfo.projectVersion
+		verInfo.fullVersion = fmt.Sprintf("%s TESTNET", verInfo.projectName)
 	} else {
-		// Fallback: try fuegod --version
-		path := binPath("fuegod")
-		if path != "fuegod" {
+		// Fallback: try testnetd --version
+		path := binPath("testnetd")
+		if path != "testnetd" {
 			cmd := exec.Command(path, "--version")
 			output, err := cmd.Output()
 			if err == nil {
@@ -1022,6 +1035,7 @@ func initVersionInfo() {
 				if len(matches) > 2 {
 					verInfo.projectName = strings.TrimSpace(matches[1])
 					verInfo.projectVersion = matches[2]
+					verInfo.testnetVersion = "TESTNET v." + matches[2]
 					verInfo.fullVersion = strings.TrimSpace(versionStr)
 				}
 			}
@@ -1035,7 +1049,10 @@ func initVersionInfo() {
 	if verInfo.projectVersion == "" {
 		verInfo.projectVersion = "1.10.0.1076(0.2)"
 	}
+	if verInfo.testnetVersion == "" {
+		verInfo.testnetVersion = "TESTNET v.1.10.0.1076(0.2)"
+	}
 	if verInfo.fullVersion == "" {
-		verInfo.fullVersion = "DYNAMIGO || v1.10.0.1076(0.2)"
+		verInfo.fullVersion = "DYNAMIGO TESTNET"
 	}
 }

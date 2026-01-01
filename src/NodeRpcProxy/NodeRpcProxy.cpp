@@ -115,8 +115,11 @@ bool NodeRpcProxy::shutdown() {
   assert(m_state == STATE_INITIALIZED);
   assert(m_dispatcher != nullptr);
 
-  // Simplified for stub dispatcher - just set stop flag
-  m_stop = true;
+  m_dispatcher->remoteSpawn([this]() {
+    m_stop = true;
+    // Run all spawned contexts
+    m_dispatcher->yield();
+  });
 
   if (m_workerThread.joinable()) {
     m_workerThread.join();
@@ -132,8 +135,7 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
     m_dispatcher = &dispatcher;
     ContextGroup contextGroup(dispatcher);
     m_context_group = &contextGroup;
-    std::cout << "Creating HttpClient with timeout: " << m_rpcTimeout << "ms" << std::endl;
-    HttpClient httpClient(dispatcher, m_nodeHost, m_nodePort, m_rpcTimeout);
+    HttpClient httpClient(dispatcher, m_nodeHost, m_nodePort);
     m_httpClient = &httpClient;
     Event httpEvent(dispatcher);
     m_httpEvent = &httpEvent;
@@ -152,18 +154,18 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
     std::cout << "Finished calling initialized_callback" << std::endl;
 
     contextGroup.spawn([this]() {
-      Timer pullTimer;
+      Timer pullTimer(*m_dispatcher);
       while (!m_stop) {
         updateNodeStatus();
         if (!m_stop) {
-          // Simplified sleep using std::this_thread::sleep_for
-          std::this_thread::sleep_for(std::chrono::milliseconds(m_pullInterval));
+          pullTimer.sleep(std::chrono::milliseconds(m_pullInterval));
         }
       }
     });
 
     contextGroup.wait();
-    // Simplified - stub dispatcher doesn't need yield
+    // Make sure all remote spawns are executed
+    m_dispatcher->yield();
   } catch (std::exception&) {
   }
 
@@ -664,19 +666,20 @@ void NodeRpcProxy::scheduleRequest(std::function<std::error_code()>&& procedure,
     Callback callback;
   };
   assert(m_dispatcher != nullptr && m_context_group != nullptr);
-  // Simplified for stub dispatcher - execute directly
-  m_context_group->spawn(Wrapper([this](std::function<std::error_code()>& procedure, const Callback& callback) {
-      if (m_stop) {
-        callback(std::make_error_code(std::errc::operation_canceled));
-      } else {
-        std::error_code ec = procedure();
-        if (m_connected != m_httpClient->isConnected()) {
-          m_connected = m_httpClient->isConnected();
-          m_rpcProxyObserverManager.notify(&INodeRpcProxyObserver::connectionStatusUpdated, m_connected);
+  m_dispatcher->remoteSpawn(Wrapper([this](std::function<std::error_code()>& procedure, Callback& callback) {
+    m_context_group->spawn(Wrapper([this](std::function<std::error_code()>& procedure, const Callback& callback) {
+        if (m_stop) {
+          callback(std::make_error_code(std::errc::operation_canceled));
+        } else {
+          std::error_code ec = procedure();
+          if (m_connected != m_httpClient->isConnected()) {
+            m_connected = m_httpClient->isConnected();
+            m_rpcProxyObserverManager.notify(&INodeRpcProxyObserver::connectionStatusUpdated, m_connected);
+          }
+          callback(m_stop ? std::make_error_code(std::errc::operation_canceled) : ec);
         }
-        callback(m_stop ? std::make_error_code(std::errc::operation_canceled) : ec);
-      }
-    }, std::move(procedure), std::move(callback)));
+      }, std::move(procedure), std::move(callback)));
+    }, std::move(procedure), callback));
 }
 
 template <typename Request, typename Response>

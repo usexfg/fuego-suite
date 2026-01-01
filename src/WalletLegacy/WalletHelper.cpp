@@ -125,8 +125,7 @@ bool WalletHelper::storeWallet(CryptoNote::IWalletLegacy& wallet, const std::str
 	boost::filesystem::path tempFile = boost::filesystem::unique_path(walletFilename + ".tmp.%%%%-%%%%");
   bool hadExistingFile = boost::filesystem::exists(walletFilename);
 
-  if (hadExistingFile) {
-    std::cout << "DEBUG: Wallet file exists, renaming to temporary file" << std::endl;
+  if (boost::filesystem::exists(walletFilename)) {
     boost::filesystem::rename(walletFilename, tempFile);
   }
 

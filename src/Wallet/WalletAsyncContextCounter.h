@@ -17,16 +17,16 @@
 
 #pragma once
 
-#include <cstdint>
-#include <memory>
+#include <condition_variable>
+#include <mutex>
+#include <stdint.h>
 
 namespace CryptoNote {
 
 class WalletAsyncContextCounter
 {
 public:
-  WalletAsyncContextCounter();
-  ~WalletAsyncContextCounter();
+  WalletAsyncContextCounter() : m_asyncContexts(0) {}
 
   void addAsyncContext();
   void delAsyncContext();
@@ -35,8 +35,9 @@ public:
   void waitAsyncContextsFinish();
 
 private:
-  struct Impl;
-  std::unique_ptr<Impl> m_impl;
+  uint32_t m_asyncContexts;
+  std::condition_variable m_cv;
+  std::mutex m_mutex;
 };
 
 } //namespace CryptoNote

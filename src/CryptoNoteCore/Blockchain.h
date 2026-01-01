@@ -148,7 +148,7 @@ namespace CryptoNote {
         if (!m_blockIndex.getBlockHeight(bl_id, height)) {
           missed_bs.push_back(bl_id);
         } else {
-          if (!(height < m_blocks.size())) { logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: bl_id=" << Common::podToHex(bl_id)
+          if (!(height < m_blocks.size())) { logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: bl_id=" << Common::podToHex(bl_id)
             << " have index record with offset=" << height << ", bigger then m_blocks.size()=" << m_blocks.size(); return false; }
             blocks.push_back(m_blocks[height].bl);
         }
@@ -389,7 +389,7 @@ namespace CryptoNote {
       const TransactionEntry& tx = transactionByIndex(amount_outs_vec[i].first);
 
       if (!(amount_outs_vec[i].second < tx.tx.outputs.size())) {
-        logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED)
+        logger(Logging::ERROR, Logging::BRIGHT_RED)
             << "Wrong index in transaction outputs: "
             << amount_outs_vec[i].second << ", expected less then "
             << tx.tx.outputs.size();

@@ -118,7 +118,6 @@ namespace CryptoNote {
     std::string print_pool(bool short_format) const;
     void on_idle();
 
-    // Lazy-loading functions for removed indexes
     bool getTransactionIdsByPaymentId(const Crypto::Hash& paymentId, std::vector<Crypto::Hash>& transactionIds);
     bool getTransactionIdsByTimestamp(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<Crypto::Hash>& hashes, uint64_t& transactionsNumberWithinTimestamps);
     bool getTransaction(const Crypto::Hash &id, Transaction &tx);
@@ -211,12 +210,12 @@ namespace CryptoNote {
 
     tx_container_t m_transactions;  
     tx_container_t::nth_index<1>::type& m_fee_index;
-    // std::unordered_map<Crypto::Hash, uint64_t> m_recentlyDeletedTransactions;  // REMOVED: Debug only
+    std::unordered_map<Crypto::Hash, uint64_t> m_recentlyDeletedTransactions;
 
     Logging::LoggerRef logger;
 
-    // PaymentIdIndex m_paymentIdIndex;  // REMOVED: RPC convenience only, lazy-load when needed
-    // TimestampTransactionsIndex m_timestampIndex;  // REMOVED: RPC convenience only, lazy-load when needed
+    PaymentIdIndex m_paymentIdIndex;
+    TimestampTransactionsIndex m_timestampIndex;
     std::unordered_map<Crypto::Hash, uint64_t> m_ttlIndex;
   };
 }

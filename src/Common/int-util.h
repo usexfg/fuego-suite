@@ -181,8 +181,24 @@ static inline void memcpy_swap64(void *dst, const void *src, size_t n) {
 
 
 
+// Define byte order for Windows/MSVC which doesn't have BYTE_ORDER
+#if defined(_WIN32) || defined(_WIN64) || defined(WIN32) || defined(_MSC_VER)
+#define LITTLE_ENDIAN 1234
+#define BIG_ENDIAN 4321
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif
+
 #if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
-static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
+#if defined(__BYTE_ORDER__) && defined(__LITTLE_ENDIAN__) && defined(__BIG_ENDIAN__)
+#define BYTE_ORDER __BYTE_ORDER__
+#define LITTLE_ENDIAN __LITTLE_ENDIAN__
+#define BIG_ENDIAN __BIG_ENDIAN__
+#else
+// Assume little endian as default for most modern systems
+#define LITTLE_ENDIAN 1234
+#define BIG_ENDIAN 4321
+#define BYTE_ORDER LITTLE_ENDIAN
+#endif
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN

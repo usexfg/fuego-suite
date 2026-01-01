@@ -29,12 +29,6 @@
 
 #include <boost/format.hpp>
 #include <boost/bind.hpp>
-
-#ifdef _WIN32
-  #ifdef _MSC_VER
-    #include <crtdbg.h>
-  #endif
-#endif
 #include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -797,22 +791,8 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   Tools::PasswordContainer pwd_container;
   if (command_line::has_arg(vm, arg_password)) {
     pwd_container.password(command_line::get_arg(vm, arg_password));
-  } else {
-    // Flush input stream before reading password to ensure clean state
-    std::cin.clear();
-    // Only ignore characters if there are any available
-    if (std::cin.rdbuf()->in_avail() > 0) {
-      std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    }
-    if (!pwd_container.read_password()) {
-      fail_msg_writer() << "failed to read wallet password";
-      return false;
-    }
-  }
-
-  // Ensure password is not empty for security
-  if (pwd_container.password().empty()) {
-    fail_msg_writer() << "wallet password cannot be empty";
+  } else if (!pwd_container.read_password()) {
+    fail_msg_writer() << "failed to read wallet password";
     return false;
   }
 
@@ -1041,7 +1021,7 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
     std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::parameters::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, secretKeysData);
 
-    logger(INFO, BRIGHT_GREEN) << "fuego-wallet-cli is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit Fuego - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account CANNOT be recovered. Freedom isn't free - to truly be our own bank, we must treat fuego keys just like the credit banks (backin the old days) did with their vault keys. Schofield's 2nd Law of Computing states that data doesn't really exist unless you have at least two copies of it-- then keep each somewhere safe & secure.   " << std::endl << std::endl;
+    logger(INFO, BRIGHT_GREEN) << "xfg_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit Fuego - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account CANNOT be recovered. Freedom isn't free - to truly be our own bank, we must treat fuego keys just like the credit banks (backin the old days) did with their vault keys. Schofield's 2nd Law of Computing states that data doesn't really exist unless you have at least two copies of it-- then keep each somewhere safe & secure.   " << std::endl << std::endl;
 
     std::cout << "Wallet Address: " << m_wallet->getAddress() << std::endl;
     std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
@@ -2117,9 +2097,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
 
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
-  #ifdef _MSC_VER
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-  #endif
+  _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
   po::options_description desc_general("General options");

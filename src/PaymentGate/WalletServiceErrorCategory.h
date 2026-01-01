@@ -74,6 +74,6 @@ inline std::error_code make_error_code(CryptoNote::error::WalletServiceErrorCode
 namespace std {
 
 template <>
-struct is_error_code_enum<CryptoNote::error::WalletServiceErrorCode>: public ::std::true_type {};
+struct is_error_code_enum<CryptoNote::error::WalletServiceErrorCode>: public true_type {};
 
 }

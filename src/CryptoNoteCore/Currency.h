@@ -71,16 +71,16 @@ public:
   unsigned int emissionSpeedFactor_FUEGO() const { return m_emissionSpeedFactor_FUEGO; }
 
   unsigned int emissionSpeedFactor(uint8_t blockMajorVersion) const {
-      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_9) {
-        return emissionSpeedFactor_FUEGO();
-        }
-      else if (blockMajorVersion == BLOCK_MAJOR_VERSION_8) {
-      return emissionSpeedFactor_FANGO();
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_9) {
+      return emissionSpeedFactor_FUEGO();
       }
-     else {
-        return emissionSpeedFactor();
-      }
+    else if (blockMajorVersion == BLOCK_MAJOR_VERSION_8) {
+    return emissionSpeedFactor_FANGO();
     }
+   else {
+      return emissionSpeedFactor();
+    }
+  }
   uint64_t moneySupply() const { return m_moneySupply; }
   size_t cryptonoteCoinVersion() const { return m_cryptonoteCoinVersion; }
 
@@ -145,6 +145,9 @@ public:
   uint64_t minimumFeeV2() const { return m_minimumFeeV2; }
   uint64_t minimumFeeBanking() const { return m_minimumFeeBanking; }
 
+  // Dynamic minimum fee based on block size
+  uint64_t dynamicMinimumFee(size_t currentBlockSize, size_t medianBlockSize, uint8_t blockMajorVersion) const;
+
   // Calculate banking fee as percentage of deposit amount (0.125%)
   uint64_t calculateBankingFee(uint64_t depositAmount) const;
 
@@ -166,7 +169,7 @@ public:
     {
       if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3)
       {
-        return difficultyBlocksCount3();
+        return difficultyBlocksCount3() + 1;
       }
       else if (blockMajorVersion == BLOCK_MAJOR_VERSION_2)
       {

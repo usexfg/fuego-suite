@@ -67,7 +67,7 @@ namespace CryptoNote
     }
 
     Logging::LoggerMessage fail_msg_writer() const {
-      auto msg = logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED);
+      auto msg = logger(Logging::ERROR, Logging::BRIGHT_RED);
       msg << "Error: ";
       return msg;
     }

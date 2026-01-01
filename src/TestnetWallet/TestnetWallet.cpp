@@ -616,7 +616,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("list_transfers", boost::bind(&simple_wallet::listTransfers, this, boost::arg<1>()), "list_transfers <height> - Show all known transfers from a certain (optional) block height");
   m_consoleHandler.setHandler("payments", boost::bind(&simple_wallet::show_payments, this, boost::arg<1>()), "payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>");
   m_consoleHandler.setHandler("get_tx_proof", boost::bind(&simple_wallet::get_tx_proof, this, boost::arg<1>()), "Generate a signature to prove payment: <txid> <address> [<txkey>]");
-  m_consoleHandler.setHandler("bc_height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
+  m_consoleHandler.setHandler("height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
   m_consoleHandler.setHandler("optimize", boost::bind(&simple_wallet::optimize_outputs, this, boost::arg<1>()), "Combine many available outputs into a few by sending a transaction to self");
@@ -632,6 +632,8 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
   m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
+  m_consoleHandler.setHandler("start_mining", boost::bind(&simple_wallet::start_mining, this, boost::arg<1>()), "start_mining [<threads>] - Start mining to your wallet");
+  m_consoleHandler.setHandler("stop_mining", boost::bind(&simple_wallet::stop_mining, this, boost::arg<1>()), "stop_mining - Stop mining");
 
   // Initialize argument tracking flags
   m_wallet_file_arg_provided = false;
@@ -719,19 +721,18 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   if (showMenu) {
     std::cout <<"\n";
     std::cout <<"\n";
-    std::cout <<"       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        "<< "\n";
-    std::cout <<"       ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒       "<< "\n";
-    std::cout <<"       ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒       "<< "\n";
-    std::cout <<"       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       "<< "\n";
-    std::cout <<"       ██       ██████  ███████  ██████   ██████        "<< "\n";
+     std::cout <<"    ████████ ███████ ███████ ████████ "<< "\n";
+     std::cout <<"       ██    ██      ██         ██    "<< "\n";
+     std::cout <<"       ██    █████   ███████    ██    "<< "\n";
+     std::cout <<"       ██    ██           ██    ██    "<< "\n";
+     std::cout <<"       ██    ███████ ███████    ██    "<< "\n";
     std::cout <<"\n";
     std::cout <<"\n";
-    std::cout <<"\n";
-    std::cout <<  "Welcome to the Fuego command-line wallet."<<"\n";
+    std::cout <<  "Welcome to the TEST command-line wallet for Fuego TESTNET coins."<<"\n";
     std::cout << "Please choose from the following options what you would like to do:\n";
     std::cout << "O - Open wallet\n";
     std::cout << "₲ - Generate new wallet\n";
-    std::cout << "R - Restore from backup/paperwallet\n";
+    std::cout << "R - Restore from backup or paperwallet\n";
     std::cout << "I - Import wallet from private keys\n";
     std::cout << "M - Mnemonic seed (25-words) import\n";
     std::cout << "E - Exit\n";
@@ -1118,7 +1119,7 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
     std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET, secretKeysData);
 
-    logger(INFO, BRIGHT_GREEN) << "fuego-wallet-cli is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit Fuego - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can NOT be recovered. Freedom isn't free - You must truly act as your own bank." << std::endl << std::endl;
+    logger(INFO, BRIGHT_GREEN) << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit Fuego - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can NOT be recovered. Freedom isn't free - You must truly act as your own bank." << std::endl << std::endl;
 
     std::cout << "Wallet Address: " << m_wallet->getAddress() << std::endl;
     std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
@@ -1598,7 +1599,7 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args/* = std::ve
   std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
   std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET, secretKeysData);
 
-  logger(INFO, BRIGHT_GREEN) << std::endl << "fuego-wallet-cli is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit $XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
+  logger(INFO, BRIGHT_GREEN) << std::endl << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit $XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
 
   std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
   std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
@@ -2098,12 +2099,12 @@ int main(int argc, char* argv[]) {
       CryptoNote::Currency tmp_currency = CryptoNote::CurrencyBuilder(logManager).currency();
       CryptoNote::simple_wallet tmp_wallet(dispatcher, tmp_currency, logManager);
 
-      std::cout << "fuego-wallet-cli -" << PROJECT_VERSION_LONG << std::endl;
-      std::cout << "Usage: fuego-wallet-cli [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
+      std::cout << "TEST Wallet -" << PROJECT_VERSION_LONG << std::endl;
+      std::cout << "Usage: test-wallet [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
       std::cout << desc_all << '\n' << tmp_wallet.get_commands_str();
       return false;
     } else if (command_line::get_arg(vm, command_line::arg_version))  {
-      std::cout << "fuego-wallet-cli -" << PROJECT_VERSION_LONG << std::endl;
+      std::cout << "TEST Wallet - " << PROJECT_VERSION_LONG << std::endl;
       return false;
     }
 
@@ -2125,7 +2126,7 @@ int main(int argc, char* argv[]) {
 
   logManager.configure(buildLoggerConfiguration(logLevel, Common::ReplaceExtenstion(argv[0], ".log")));
 
-  logger(INFO, BRIGHT_GREEN) << "fuego-wallet-cli -" << PROJECT_VERSION_LONG;
+  logger(INFO, BRIGHT_GREEN) << "test_wallet -" << PROJECT_VERSION_LONG;
 
   CryptoNote::Currency currency = CryptoNote::CurrencyBuilder(logManager).
     testnet(true).currency(); // Always true for TestnetWallet

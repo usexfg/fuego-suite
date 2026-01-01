@@ -25,8 +25,6 @@
 #include "Serialization/SerializationOverloads.h"
 
 namespace CryptoNote {
-  // Make global boost namespace available to avoid namespace resolution issues
-  using namespace ::boost;
 //-----------------------------------------------
 #define CORE_RPC_STATUS_OK "OK"
 #define CORE_RPC_STATUS_BUSY "BUSY"
@@ -1017,7 +1015,7 @@ struct K_COMMAND_RPC_CHECK_RESERVE_PROOF {
 		}
 	};
 
-	struct response {
+	struct response	{
 		bool good;
 		uint64_t total;
 		uint64_t spent;

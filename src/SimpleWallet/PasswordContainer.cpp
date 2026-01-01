@@ -74,16 +74,14 @@ namespace Tools
     clear();
 
     bool r;
-    // Always prompt for password interactively
-    std::cout << "password: ";
     if (is_cin_tty())
     {
+      std::cout << "password: ";
       r = read_from_tty();
     }
     else
     {
-      // Even when not a TTY, try to read password interactively
-      r = read_from_tty();
+      r = read_from_file();
     }
 
     if (r)

@@ -24,13 +24,13 @@ namespace Logging {
 
 class LoggerRef {
 public:
-  LoggerRef(ILogger& logger, const ::std::string& category);
-  LoggerMessage operator()(Level level = INFO, const ::std::string& color = DEFAULT) const;
+  LoggerRef(ILogger& logger, const std::string& category);
+  LoggerMessage operator()(Level level = INFO, const std::string& color = DEFAULT) const;
   ILogger& getLogger() const;
 
 private:
   ILogger* logger;
-  ::std::string category;
+  std::string category;
 };
 
 }

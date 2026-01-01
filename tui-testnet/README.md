@@ -1,6 +1,12 @@
-# Fuego TUI
+# Fuego TUI - TESTNET VERSION
 
-A minimal terminal UI for controlling `fuegod` and `walletd`, with full support for **Elderfier Staking** and **Burn2Mint (XFG→HEAT)** flows.
+A minimal terminal UI for controlling `fuegod` and `walletd` on **TESTNET**, with full support for **Elderfier Staking** and **Burn2Mint (XFG→HEAT)** flows.
+
+## Testnet Configuration
+- **Testnet Node RPC**: 20808
+- **Testnet Wallet RPC**: 28280  
+- **Data Directory**: `~/.fuego-testnet` or `~/Library/Application Support/Fuego-testnet`
+- **Network**: Testnet (use with testnet XFG only)
 
 ## Prerequisites
 
@@ -11,15 +17,15 @@ A minimal terminal UI for controlling `fuegod` and `walletd`, with full support 
 ## Build
 
 ```bash
-cd tui
+cd tui-testnet
 go mod tidy
-go build -o fuego-tui
+go build -o fuego-tui-testnet
 ```
 
 ## Run
 
 ```bash
-./fuego-tui
+./fuego-tui-testnet
 ```
 
 Navigate with **arrow keys** or **j/k**, select with **Enter**, quit with **q** or **Ctrl+C**.
@@ -29,11 +35,11 @@ Navigate with **arrow keys** or **j/k**, select with **Enter**, quit with **q** 
 ## Features
 
 ### 🔥 Node & Wallet Controls
-- **Start/Stop Node** - Launch `fuegod` daemon with RPC
-- **Start Wallet RPC** - Launch `walletd` for wallet operations
-- **Create Wallet** - Generate new XFG wallet
-- **Get Balance** - Query wallet balance
-- **Send Transaction** - Transfer XFG to another address
+- **Start/Stop Node** - Launch `testnetd` daemon with **testnet** RPC on port 28081
+- **Start Wallet RPC** - Launch `walletd` with **testnet** config on port 28082
+- **Create Wallet** - Generate new testnet XFG wallet
+- **Get Balance** - Query wallet balance (testnet)
+- **Send Transaction** - Transfer testnet XFG to another address
 
 ### 👑 Elderfier Menu (READ/WRITE)
 Full Elderfyre Staking dashboard with voting and consensus powers.
@@ -56,7 +62,7 @@ Full Elder Council access with read/write capabilities:
 **3-Step Interactive Wizard:**
 
 **Step 1: Create Stake Deposit**
-- Minimum stake: **800 XFG**
+- Minimum stake: **10,000 XFG**
 - Creates `elderfier_stake` transaction type
 - Returns transaction hash for tracking
 
@@ -76,7 +82,7 @@ Full Elder Council access with read/write capabilities:
 🎉 ELDERFYRE STAYKING COMPLETE!
 
 Summary:
-  • Stake: 800.00 XFG
+  • Stake: 10000.00 XFG
   • Elderfier ID: ELDER001
   • TX Hash: abc123...
   • ENindex: Registered
@@ -98,6 +104,8 @@ once your stake is confirmed (10 blocks)
 - `get_burn2mint_requests` - List pending Burn2Mint consensus
 - `provide_consensus_proof` - Provide consensus for burns
 - `update_enindex` - Update ENindex registration
+
+**All RPC requests use testnet ports: 28081 (node) and 28082 (wallet)**
 
 ### 🔥➡️💎 Burn2Mint Menu
 Complete **XFG → HEAT** minting flow:
@@ -133,8 +141,9 @@ Complete **XFG → HEAT** minting flow:
    - HEAT tokens minted on Ethereum mainnet
 
 **RPC Endpoints Used:**
-- `create_burn_deposit` - Creates burn transaction
-- `request_elderfier_consensus` - Requests Elder Council proof
+- `create_burn_deposit` - Creates burn transaction on testnet
+- `request_elderfier_consensus` - Requests Elder Council proof on testnet
+- **Uses testnet ports: 28081 (node) and 28082 (wallet)**
 
 **External Tools:**
 - `xfg-stark` CLI - Generates zk-STARK proof
@@ -214,6 +223,7 @@ Complete **XFG → HEAT** minting flow:
 - TUI looks for binaries in `../build/src/` (development)
 - Falls back to `$PATH` (production)
 - Supported binaries: `fuegod`, `walletd`, `xfg-stark`
+- **Testnet modes use `~/.fuego-testnet` data directory**
 
 ---
 
@@ -243,11 +253,11 @@ The following RPC methods are called by the TUI but may need implementation:
 - `provide_consensus_proof` - Provides consensus proof for burn tx
 - `request_elderfier_consensus` - **Critical**: Returns eldernode_proof for STARK
 
-### Testing
+### Testing (Testnet)
 
 ```bash
-# Start node and wallet
-./fuego-tui
+# Start node and wallet in testnet mode
+./fuego-tui-testnet
 # Select: Start Node → Start Wallet RPC
 
 # Test Elderfier menu
@@ -255,7 +265,18 @@ The following RPC methods are called by the TUI but may need implementation:
 
 # Test Burn2Mint (requires xfg-stark)
 # Select: Burn2Mint Menu → Choose amount → Follow prompts
+
+# Check testnet data
+ls -la ~/.fuego-testnet/
 ```
+
+## Testnet Specific Notes
+
+- **IMPORTANT**: All operations use testnet XFG only
+- Testnet RPC ports are 28081 and 28082 (different from mainnet)
+- Separate data directory prevents mixing testnet/mainnet data
+- Testnet nodes connect to testnet peers only
+- Testnet wallets use testnet addresses (different prefix)
 
 ---
 

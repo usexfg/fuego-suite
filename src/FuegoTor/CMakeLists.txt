@@ -80,6 +80,9 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/System
     ${CMAKE_SOURCE_DIR}/src/Logging
     ${CMAKE_SOURCE_DIR}/src/Serialization
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}
+    ${Boost_INCLUDE_DIRS}
     ${FUEGOTOR_EXTRA_INCLUDE_DIRS}
 )
 
@@ -103,7 +106,8 @@ set_target_properties(Fuegotor PROPERTIES
 
 # Compiler-specific options
 if(MSVC)
-    target_compile_options(Fuegotor PRIVATE /W4 /WX)
+    # For MSVC, use less strict warnings to avoid errors on socket definitions
+    target_compile_options(Fuegotor PRIVATE /W3)
 else()
     target_compile_options(Fuegotor PRIVATE
         -Wall
@@ -121,9 +125,9 @@ endif()
 if(WIN32)
     target_compile_definitions(Fuegotor PRIVATE
         _WIN32_WINNT=0x0601
-        WIN32_LEAN_AND_MEAN
         NOMINMAX
-        _WINSOCK2API_
+        _CRT_SECURE_NO_WARNINGS
+        _WINSOCK_DEPRECATED_NO_WARNINGS
     )
 elseif(APPLE)
     target_compile_definitions(Fuegotor PRIVATE
@@ -159,7 +163,7 @@ target_link_libraries(Fuegotor PRIVATE
 
 # Ensure Windows libraries are properly linked on Windows
 if(WIN32)
-    target_link_libraries(Fuegotor PRIVATE ws2_32 wsock32 iphlpapi)
+    target_link_libraries(Fuegotor PRIVATE ws2_32 iphlpapi)
 endif()
 
 # Conditional Tor library linking

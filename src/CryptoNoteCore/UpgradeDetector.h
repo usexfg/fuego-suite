@@ -62,14 +62,14 @@ namespace CryptoNote {
           auto it = std::lower_bound(m_blockchain.begin(), m_blockchain.end(), m_targetVersion,
             [](const typename BC::value_type& b, uint8_t v) { return b.bl.majorVersion < v; });
           if (it == m_blockchain.end() || it->bl.majorVersion != m_targetVersion) {
-            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: upgrade height isn't found";
+            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: upgrade height isn't found";
             return false;
           }
 
           uint32_t upgradeHeight = it - m_blockchain.begin();
           m_votingCompleteHeight = findVotingCompleteHeight(upgradeHeight);
           if (m_votingCompleteHeight == UNDEF_HEIGHT) {
-            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: voting complete height isn't found, upgrade height = " << upgradeHeight;
+            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: voting complete height isn't found, upgrade height = " << upgradeHeight;
             return false;
           }
         } else {
@@ -78,7 +78,7 @@ namespace CryptoNote {
       } else if (!m_blockchain.empty()) {
         if (m_blockchain.size() <= upgradeHeight + 1) {
           if (m_blockchain.back().bl.majorVersion >= m_targetVersion) {
-            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: block at height " << (m_blockchain.size() - 1) <<
+            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: block at height " << (m_blockchain.size() - 1) <<
               " has invalid version " << static_cast<int>(m_blockchain.back().bl.majorVersion) <<
               ", expected " << static_cast<int>(m_targetVersion - 1) << " or less";
             return false;
@@ -86,7 +86,7 @@ namespace CryptoNote {
         } else {
           int blockVersionAtUpgradeHeight = m_blockchain[upgradeHeight].bl.majorVersion;
           if (blockVersionAtUpgradeHeight != m_targetVersion - 1) {
-            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: block at height " << upgradeHeight <<
+            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: block at height " << upgradeHeight <<
               " has invalid version " << blockVersionAtUpgradeHeight <<
               ", expected " << static_cast<int>(m_targetVersion - 1);
             return false;
@@ -94,7 +94,7 @@ namespace CryptoNote {
 
           int blockVersionAfterUpgradeHeight = m_blockchain[upgradeHeight + 1].bl.majorVersion;
           if (blockVersionAfterUpgradeHeight != m_targetVersion) {
-            logger(static_cast<Logging::Level>(1), Logging::BRIGHT_RED) << "Internal error: block at height " << (upgradeHeight + 1) <<
+            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: block at height " << (upgradeHeight + 1) <<
               " has invalid version " << blockVersionAfterUpgradeHeight <<
               ", expected " << static_cast<int>(m_targetVersion);
             return false;

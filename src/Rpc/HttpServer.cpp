@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "HttpServer.h"
+#include <boost/scope_exit.hpp>
 
 #include <Common/Base64.h>
 #include <HTTP/HttpParser.h>
@@ -56,15 +57,14 @@ void HttpServer::stop() {
 }
 
 void HttpServer::acceptLoop() {
-  System::TcpConnection* connection = nullptr;
+
   try {
-    System::TcpConnection conn; 
-    connection = &conn;
+    System::TcpConnection connection; 
     bool accepted = false;
 
     while (!accepted) {
       try {
-        conn = m_listener.accept();
+        connection = m_listener.accept();
         accepted = true;
       } catch (System::InterruptedException&) {
         throw;
@@ -73,21 +73,23 @@ void HttpServer::acceptLoop() {
       }
     }
 
-    m_connections.insert(connection);
+    m_connections.insert(&connection);
+    BOOST_SCOPE_EXIT_ALL(this, &connection) { 
+      m_connections.erase(&connection); };
 
 	workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
 
-	//auto addr = connection->getPeerAddressAndPort();
+	//auto addr = connection.getPeerAddressAndPort();
 	auto addr = std::pair<System::Ipv4Address, uint16_t>(static_cast<System::Ipv4Address>(0), 0);
 	try {
-		addr = connection->getPeerAddressAndPort();
+		addr = connection.getPeerAddressAndPort();
 	} catch (std::runtime_error&) {
 		logger(WARNING) << "Could not get IP of connection";
 	}
 
     logger(DEBUGGING) << "Incoming connection from " << addr.first.toDottedDecimal() << ":" << addr.second;
 
-    System::TcpStreambuf streambuf(*connection);
+    System::TcpStreambuf streambuf(connection);
     std::iostream stream(&streambuf);
     HttpParser parser;
 
@@ -116,22 +118,9 @@ void HttpServer::acceptLoop() {
 
     logger(DEBUGGING) << "Closing connection from " << addr.first.toDottedDecimal() << ":" << addr.second << " total=" << m_connections.size();
 
-    // Cleanup: remove connection from active connections
-    if (connection) {
-      m_connections.erase(connection);
-    }
-
   } catch (System::InterruptedException&) {
-    // Cleanup: remove connection from active connections
-    if (connection) {
-      m_connections.erase(connection);
-    }
   } catch (std::exception& e) {
     logger(DEBUGGING) << "Connection error: " << e.what();
-    // Cleanup: remove connection from active connections
-    if (connection) {
-      m_connections.erase(connection);
-    }
   }
 }
 

@@ -158,6 +158,26 @@ private:
     bool m_initialized;
     
     /**
+     * @brief Start Tor process (stub for compatibility)
+     * @return true if successful
+     */
+    bool startTorProcess();
+    
+    /**
+     * @brief Stop Tor process (stub for compatibility)
+     */
+    void stopTorProcess();
+    
+    /**
+     * @brief Send command to Tor (stub for compatibility)
+     * @param command Command to send
+     * @param response Output buffer for response
+     * @param responseSize Size of output buffer
+     * @return true if successful
+     */
+    bool sendTorCommand(const char* command, char* response, size_t responseSize);
+    
+    /**
      * @brief Test SOCKS5 connection
      * @return true if connection is successful
      */

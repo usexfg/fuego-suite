@@ -11,6 +11,7 @@
 #include "CryptoNoteProtocolHandler.h"
 
 #include <future>
+#include <boost/scope_exit.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <System/Dispatcher.h>
 #include <boost/optional.hpp>
@@ -517,13 +518,12 @@ int CryptoNoteProtocolHandler::handle_response_get_objects(int command, NOTIFY_R
       ++dismiss;
     }
 
+    BOOST_SCOPE_EXIT_ALL(this) { m_core.update_block_template_and_resume_mining(); };
+
     int result = processObjects(context, parsed_blocks);
     if (result != 0) {
       return result;
     }
-    
-    // Cleanup: update block template and resume mining
-    m_core.update_block_template_and_resume_mining();
   }
 
   m_core.get_blockchain_top(height, top);

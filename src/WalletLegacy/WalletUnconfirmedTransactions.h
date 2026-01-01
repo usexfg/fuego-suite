@@ -40,7 +40,7 @@ namespace std {
 template<> 
 struct hash<CryptoNote::TransactionOutputId> {
   size_t operator()(const CryptoNote::TransactionOutputId &_v) const {    
-    return ::std::hash<::Crypto::PublicKey>()(_v.first) ^ _v.second;
+    return hash<Crypto::PublicKey>()(_v.first) ^ _v.second;
   } 
 }; 
 

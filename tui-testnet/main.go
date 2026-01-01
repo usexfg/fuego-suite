@@ -60,6 +60,7 @@ const (
 	mSendTx         menuItem = "Send Transaction"
 	mElderfierMenu  menuItem = "Elderfier Menu"
 	mBurn2MintMenu  menuItem = "Æternal Flame Menu"
+	mShowLogs       menuItem = "Show Logs"
 	mQuit           menuItem = "Quit"
 )
 
@@ -81,29 +82,40 @@ var menu = []menuItem{
 	mQuit,
 }
 
-func initialModel() model {
-	return model{
-		cursor:      0,
-		logs:        []string{"Fuego TUI Testnet v2.0 initialized"},
-		statusMsg:   "Ready - use arrows to navigate, Enter to select",
-		showingLogs: false,
-		logOffset:   0,
-	}
+type model struct {
+	cursor      int
+	runningNode bool
+	runningW    bool
+	logs        []string
+	showingLogs bool
+	logOffset   int
+	statusMsg   string
+	nodeCmd     *exec.Cmd
+	walletCmd   *exec.Cmd
+	height      int
+	peers       int
+	mutex       sync.Mutex
+	flame       int
+	stake       int
 }
 
 func initialModel() model {
 	initVersionInfo()
 	return model{
-		cursor:    0,
-		logs:      []string{fmt.Sprintf("🔥 %s TESTNET TUI Ready", verInfo.projectName)},
-		statusMsg: "",
+		cursor:      0,
+		runningNode: false,
+		runningW:    false,
+		logs:        []string{"🔥 FUEGO Testnet TUI Ready"},
+		showingLogs: false,
+		logOffset:   0,
+		statusMsg:   "Ready",
 	}
 }
 
 func (m *model) appendLog(s string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	m.logs = append(m.logs, fmt.Sprintf("%s %s", time.Now().Format("15:04:05"), s))
+	m.logs = append(m.logs, fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), s))
 	if len(m.logs) > 200 {
 		m.logs = m.logs[len(m.logs)-200:]
 	}
@@ -114,85 +126,79 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle log viewing mode
+	if m.showingLogs {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "q", "esc", "enter", " ":
+				m.showingLogs = false
+				m.logOffset = 0
+				return m, nil
+			case "up", "k":
+				if m.logOffset > 0 {
+					m.logOffset--
+				}
+				return m, nil
+			case "down", "j":
+				maxOffset := len(m.logs) - 1
+				if m.logOffset < maxOffset {
+					m.logOffset++
+				}
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
-				func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-					// Handle log viewing mode
-					if m.showingLogs {
-						switch msg := msg.(type) {
-						case tea.KeyMsg:
-							switch msg.String() {
-							case "q", "esc", "enter", " ":
-								m.showingLogs = false
-								m.logOffset = 0
-								return m, nil
-							case "up", "k":
-								if m.logOffset > 0 {
-									m.logOffset--
-								}
-								return m, nil
-							case "down", "j":
-								maxOffset := len(m.logs) - 1
-								if m.logOffset < maxOffset {
-									m.logOffset++
-								}
-								return m, nil
-							}
-						}
-						return m, nil
-					}
-
-					switch msg := msg.(type) {
-					case tea.KeyMsg:
-						switch msg.String() {
-						case "up", "k":
-							if m.cursor > 0 {
-								m.cursor--
-							}
-						case "down", "j":
-							if m.cursor < len(menu)-1 {
-								m.cursor++
-							}
-						case "enter":
-							item := menu[m.cursor]
-							switch item {
-							case mStartNode:
-								m = startNode(m)
-							case mStopNode:
-								m = stopNode(m)
-							case mNodeStatus:
-								m = queryNodeStatus(m)
-							case mStartWalletRPC:
-								m = startWalletRPC(m)
-							case mCreateWallet:
-								m = createWalletCmd(m)
-							case mGetBalance:
-								m = getBalanceCmd(m)
-							case mSendTx:
-								m = sendTxPrompt(m)
-							case mElderfierMenu:
-								m = elderfierMenu(m)
-							case mBurn2MintMenu:
-								m = burn2MintMenu(m)
-							case mQuit:
-								return m, tea.Quit
-							}
-						case "l":
-							// Toggle log view mode
-							if len(m.logs) > 0 {
-								m.showingLogs = true
-								m.logOffset = len(m.logs) - 1
-							}
-							return m, nil
-						case "q", "ctrl+c":
-							return m, tea.Quit
-						}
-					}
-					return m, nil
-				}
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(menu)-1 {
+				m.cursor++
+			}
+		case "enter":
+			item := menu[m.cursor]
+			switch item {
+			case mStartNode:
+				m = startNode(m)
+			case mStopNode:
+				m = stopNode(m)
+			case mNodeStatus:
+				m = queryNodeStatus(m)
+			case mStartWalletRPC:
+				m = startWalletRPC(m)
+			case mCreateWallet:
+				m = createWalletCmd(m)
+			case mGetBalance:
+				m = getBalanceCmd(m)
+			case mSendTx:
+				m = sendTxPrompt(m)
+			case mElderfierMenu:
+				m = elderfierMenu(m)
+			case mBurn2MintMenu:
+				m = burn2MintMenu(m)
+			case mQuit:
+				return m, tea.Quit
+			}
+		case "l":
+			// Toggle log view mode
+			if len(m.logs) > 0 {
+				m.showingLogs = true
+				m.logOffset = len(m.logs) - 1
+			}
+			return m, nil
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
 
 func (m model) View() string {
 	s := titleStyle.Render(fmt.Sprintf("🔥 %s TESTNET TUI", verInfo.projectName)) + "\n"
@@ -215,7 +221,7 @@ func (m model) View() string {
 
 func binPath(name string) string {
 	// Hardcoded absolute path to testnet binaries
-	binPath := filepath.Join("/home/ar/fuego-copy", "build", "release", "src", name)
+	binPath := filepath.Join("/home/ar/fuego", "build", "release", "src", name)
 	if _, err := os.Stat(binPath); err == nil {
 		return binPath
 	}
@@ -229,10 +235,11 @@ func startNode(m model) model {
 		m.statusMsg = "Node already running"
 		return m
 	}
-	path := binPath("testnetd")
-	if path == "" {
-		m.appendLog("testnetd binary not found")
-		m.statusMsg = "Binary not found"
+	path := "./testnetd"
+	// Check if testnetd exists in current directory
+	if _, err := os.Stat(path); err != nil {
+		m.appendLog("testnetd binary not found in current directory")
+		m.statusMsg = "Binary not found (run from dir containing testnetd)"
 		return m
 	}
 	// Use testnet-specific data directory
@@ -259,7 +266,7 @@ func startNode(m model) model {
 	}
 	m.nodeCmd = cmd
 	m.runningNode = true
-	m.appendLog("Started testnetd")
+	m.appendLog("Started testnetd (current directory)")
 	m.statusMsg = "Node starting"
 	go streamPipe(stdout, "NODE", &m)
 	go streamPipe(stderr, "NODE-ERR", &m)
@@ -887,8 +894,8 @@ func burn2MintMenu(m model) model {
 }
 
 func showLogs(m model) (model, tea.Cmd) {
-	// Suspend the TUI and display logs in a pager-like view
-	return m, tea.Suspend()
+	// Handled in Update function - showLogs is not needed
+	return m, nil
 }
 
 func streamPipe(r io.Reader, prefix string, m *model) {
@@ -1023,9 +1030,9 @@ func initVersionInfo() {
 		verInfo.testnetVersion = "TESTNET v." + verInfo.projectVersion
 		verInfo.fullVersion = fmt.Sprintf("%s TESTNET", verInfo.projectName)
 	} else {
-		// Fallback: try testnetd --version
-		path := binPath("testnetd")
-		if path != "testnetd" {
+		// Fallback: try ./testnetd --version
+		path := "./testnetd"
+		if _, err := os.Stat(path); err == nil {
 			cmd := exec.Command(path, "--version")
 			output, err := cmd.Output()
 			if err == nil {

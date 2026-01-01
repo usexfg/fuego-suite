@@ -27,14 +27,14 @@ namespace CryptoNote {
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
-  template<class t_array>
+  /*template<class t_array>
   struct array_hasher: std::unary_function<t_array&, size_t>
   {
     size_t operator()(const t_array& val) const
     {
       return boost::hash_range(&val.data[0], &val.data[sizeof(val.data)]);
     }
-  };
+  };*/
 
   /************************************************************************/
   /* CryptoNote helper functions                                          */
@@ -50,7 +50,7 @@ namespace CryptoNote {
 
 template <class T>
 std::ostream &print256(std::ostream &o, const T &v) {
-  return o << "<" << Common::podToHex(v) << ">";
+  return o << Common::podToHex(v);
 }
 
 bool parse_hash256(const std::string& str_hash, Crypto::Hash& hash);

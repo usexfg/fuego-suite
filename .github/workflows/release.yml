@@ -37,12 +37,20 @@ jobs:
       - name: Install dependencies (macOS)
         run: |
           brew update
-          brew install ninja boost@1.65 qt@5 miniupnpc qrencode icu4c
-          brew link boost@1.65 --force
+          brew install ninja qt@5 miniupnpc qrencode icu4c wget
 
-          # Set environment variables for Boost to pin to 1.65 for io_service compatibility
-          echo "BOOST_ROOT=$(brew --prefix boost@1.65)" >> $GITHUB_ENV
-          echo "Boost 1.65 pinned for io_service API compatibility"
+          # Install Boost 1.65.0 from source (Homebrew only has 1.66+ which deprecated io_service)
+          echo "Building Boost 1.65.0 from source for io_service compatibility..."
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.65.0/source/boost_1_65_0.tar.gz
+          tar -xzf boost_1_65_0.tar.gz
+          cd boost_1_65_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
+          # Set environment variables for Boost 1.65
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
+          echo "Boost 1.65.0 installed at /usr/local for io_service compatibility"
 
           # Try different ICU versions
           if [ -d "$(brew --prefix)/opt/icu4c" ]; then
@@ -75,7 +83,7 @@ jobs:
           export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
           export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
           export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
-          export BOOST_ROOT=$(brew --prefix boost@1.65)
+          export BOOST_ROOT=/usr/local
 
           # Verify Boost 1.65 installation
           echo "Boost 1.65 root: $BOOST_ROOT"

@@ -97,6 +97,8 @@ endif()
 # --------------------------
 # Boost
 # --------------------------
+# Note: boost_system is header-only in Boost 1.69+ so we don't require it as a component
+# For vcpkg on Windows, header-only components need to be in the include path
 if(APPLE)
     if(EXISTS /opt/homebrew)
         set(BOOST_ROOT /opt/homebrew)
@@ -105,10 +107,15 @@ if(APPLE)
     endif()
 endif()
 
+# Suppress deprecated builtin warnings on AppleClang when building with Boost 1.74+
+# This allows the source-built Boost 1.65 to be found without warnings
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    add_compile_options(-Wno-deprecated-builtins)
+    message(STATUS "AppleClang detected: suppressing deprecated builtin warnings for Boost compatibility")
+endif()
+
 # First try with all required components
-# Note: boost_system is header-only in Boost 1.69+ so we don't require it as a component
-# For vcpkg on Windows, header-only components need to be in the include path
-set(BOOST_COMPONENTS filesystem thread date_time chrono regex serialization program_options)
+set(BOOST_COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 
 # Additional components for MSVC/vcpkg builds
 if(MSVC)
@@ -116,7 +123,7 @@ if(MSVC)
 endif()
 
 # Try to find coroutine component (may not be available in all Boost versions)
-find_package(Boost 1.65 COMPONENTS coroutine QUIET)
+find_package(Boost 1.65 QUIET COMPONENTS coroutine)
 if(Boost_COROUTINE_FOUND)
     list(APPEND BOOST_COMPONENTS coroutine)
     message(STATUS "Boost coroutine component found, including in build")
@@ -136,12 +143,10 @@ endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
-
-# Handle macOS warnings for deprecated Boost builtins
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    add_compile_options(-Wno-deprecated-builtins)
-    message(STATUS "Suppressing deprecated builtin warnings for Boost 1.65 compatibility")
+if(Boost_VERSION VERSION_GREATER_EQUAL 1.66)
+    message(WARNING "Boost 1.66+ detected - io_service may be deprecated. Installation should use Boost 1.65 from source for io_service compatibility.")
 endif()
+
 # Verify boost/variant.hpp exists for MSVC
 if(MSVC AND Boost_INCLUDE_DIRS)
     if(EXISTS "${Boost_INCLUDE_DIRS}/boost/variant.hpp")

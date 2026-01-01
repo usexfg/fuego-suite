@@ -357,11 +357,22 @@ jobs:
       - name: Install dependencies and verify repository
         run: |
           set -e
-          brew install gcc boost@1.65 cmake jsoncpp
-          brew link boost@1.65 --force
-          export BOOST_ROOT=$(brew --prefix boost@1.65)
+          brew update
+          brew install gcc cmake jsoncpp wget ninja
+
+          # Download and build Boost 1.65.0 (io_service not deprecated)
+          echo "Building Boost 1.65.0 from source for io_service compatibility..."
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.65.0/source/boost_1_65_0.tar.gz
+          tar -xzf boost_1_65_0.tar.gz
+          cd boost_1_65_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
+          # Set environment variables for Boost 1.65
+          export BOOST_ROOT=/usr/local
           echo "BOOST_ROOT=$BOOST_ROOT" >> $GITHUB_ENV
-          echo "Boost 1.65 pinned for io_service compatibility"
+          echo "Boost 1.65.0 installed for io_service compatibility at $BOOST_ROOT"
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="

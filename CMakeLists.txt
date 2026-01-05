@@ -95,67 +95,36 @@ else()
 endif()
 
 # --------------------------
-# Boost
+# Boost - Updated for 1.86
 # --------------------------
-# Note: boost_system is header-only in Boost 1.69+ so we don't require it as a component
-# For vcpkg on Windows, header-only components need to be in the include path
-if(APPLE)
-    if(EXISTS /opt/homebrew)
-        set(BOOST_ROOT /opt/homebrew)
-    elseif(EXISTS /usr/local)
-        set(BOOST_ROOT /usr/local)
-    endif()
+# Link static BOOST libraries everywhere
+set(Boost_NO_BOOST_CMAKE ON)
+set(Boost_USE_STATIC_LIBS ON)
+set(Boost_USE_STATIC_RUNTIME ON)
+
+if(MINGW)
+  set(Boost_THREADAPI win32)
+  include_directories(SYSTEM src/platform/mingw)
 endif()
 
-# Suppress deprecated builtin warnings on AppleClang when building with Boost 1.74+
-# This allows the source-built Boost 1.65 to be found without warnings
-if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    add_compile_options(-Wno-deprecated-builtins)
-    message(STATUS "AppleClang detected: suppressing deprecated builtin warnings for Boost compatibility")
-endif()
-
-# First try with all required components
-set(BOOST_COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
-
-# Additional components for MSVC/vcpkg builds
-if(MSVC)
-    list(APPEND BOOST_COMPONENTS variant uuid)
-endif()
-
-# Try to find coroutine component (may not be available in all Boost versions)
-find_package(Boost 1.65 QUIET COMPONENTS coroutine)
-if(Boost_COROUTINE_FOUND)
-    list(APPEND BOOST_COMPONENTS coroutine)
-    message(STATUS "Boost coroutine component found, including in build")
-else()
-    message(WARNING "Boost coroutine component not found - using alternative context implementation")
-endif()
-
-# Handle vcpkg Boost installation specifically
-if(WIN32 AND DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
-    message(STATUS "Using vcpkg toolchain, configuring Boost search...")
-    # For vcpkg, find_package with components should work
-    find_package(Boost 1.65 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
-else()
-    # Find Boost with available components (non-vcpkg)
-    find_package(Boost 1.65 REQUIRED COMPONENTS ${BOOST_COMPONENTS})
-endif()
+# Required components based on karbo's CMakeLists.txt
+find_package(Boost 1.86 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
-message(STATUS "Boost version: ${Boost_VERSION}")
-message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
-if(Boost_VERSION VERSION_GREATER_EQUAL 1.66)
-    message(WARNING "Boost 1.66+ detected - io_service may be deprecated. Installation should use Boost 1.65 from source for io_service compatibility.")
+message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
+message(STATUS "Found Boost Version: ${Boost_VERSION}")
+
+# Platform-specific Boost library handling
+if(MINGW)
+  set(Boost_LIBRARIES "${Boost_LIBRARIES};ws2_32;mswsock;iphlpapi;bcrypt")
+elseif(APPLE OR OPENBSD OR ANDROID)
+  set(Boost_LIBRARIES "${Boost_LIBRARIES}")
+elseif(NOT MSVC)
+  set(Boost_LIBRARIES "${Boost_LIBRARIES};rt")
 endif()
 
-# Verify boost/variant.hpp exists for MSVC
-if(MSVC AND Boost_INCLUDE_DIRS)
-    if(EXISTS "${Boost_INCLUDE_DIRS}/boost/variant.hpp")
-        message(STATUS "✓ boost/variant.hpp confirmed")
-    else()
-        message(WARNING "boost/variant.hpp not found at ${Boost_INCLUDE_DIRS}/boost/variant.hpp")
-    endif()
-endif()
-
+# --------------------------
+# jsoncpp Configuration
+# --------------------------
 # Check for Homebrew installation first (takes precedence on macOS)
 if(APPLE)
     # Check via Homebrew on macOS first
@@ -163,7 +132,6 @@ if(APPLE)
     if(BREW_RESULT EQUAL 0)
       set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include/json")
       set(JSONCPP_LIBRARY_DIRS "${BREW_JSONCPP_PREFIX}/lib")
-      # For Homebrew on macOS, we need to use the full path to the library
       set(JSONCPP_LIBRARIES "${BREW_JSONCPP_PREFIX}/lib/libjsoncpp.dylib")
       set(JSONCPP_FOUND TRUE)
       message(STATUS "Found jsoncpp via Homebrew at ${JSONCPP_INCLUDE_DIRS}")
@@ -182,9 +150,7 @@ if(APPLE)
 else()
   # For non-macOS, try find_package first
   find_package(jsoncpp QUIET)
-
   if(jsoncpp_FOUND OR JSONCPP_FOUND)
-    # jsoncpp was found via find_package
     if(jsoncpp_FOUND)
       message(STATUS "Found jsoncpp via find_package")
     endif()
@@ -194,12 +160,12 @@ else()
 endif()
 
 if(NOT JSONCPP_FOUND)
-  # Fall back to manual detection
+  # Manual detection fallback
   set(JSONCPP_FOUND FALSE)
   set(JSONCPP_LIBRARIES "jsoncpp")
   set(JSONCPP_LIBRARY_DIRS "")
 
-  # Try standard locations, with preference for the expected location
+  # Try standard locations
   if(EXISTS "/usr/include/json/json.h")
     set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
     set(JSONCPP_FOUND TRUE)
@@ -213,7 +179,6 @@ if(NOT JSONCPP_FOUND)
     set(JSONCPP_FOUND TRUE)
     message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp/json")
   elseif(WIN32)
-    # Check for vcpkg on Windows
     if(EXISTS "C:/vcpkg/installed/x64-windows/include/json/json.h")
       set(JSONCPP_INCLUDE_DIRS "C:/vcpkg/installed/x64-windows/include/json")
       set(JSONCPP_FOUND TRUE)
@@ -221,27 +186,21 @@ if(NOT JSONCPP_FOUND)
     endif()
   endif()
 
-  # Apply JSON include directories if found
   if(JSONCPP_FOUND)
     include_directories(SYSTEM ${JSONCPP_INCLUDE_DIRS})
   else()
-    # As a last resort, try common include locations
     include_directories(SYSTEM /usr/include/json /usr/include/jsoncpp/json /usr/include/x86_64-linux-gnu/jsoncpp/json)
     message(WARNING "jsoncpp headers not found, using fallback paths")
-    endif()
   endif()
+endif()
 
-# Ensure JSONCPP_LIBRARIES is always defined
+# Ensure variables are always defined
 if(NOT DEFINED JSONCPP_LIBRARIES)
   set(JSONCPP_LIBRARIES "jsoncpp")
 endif()
-
-# Ensure JSONCPP_INCLUDE_DIRS is always defined
 if(NOT DEFINED JSONCPP_INCLUDE_DIRS)
   set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
 endif()
-
-# Ensure JSONCPP_LIBRARY_DIRS is always defined
 if(NOT DEFINED JSONCPP_LIBRARY_DIRS)
   set(JSONCPP_LIBRARY_DIRS "")
 endif()
@@ -250,12 +209,11 @@ message(STATUS "jsoncpp include dirs: ${JSONCPP_INCLUDE_DIRS}")
 message(STATUS "jsoncpp libraries: ${JSONCPP_LIBRARIES}")
 message(STATUS "jsoncpp library dirs: ${JSONCPP_LIBRARY_DIRS}")
 
-# Add library directory if specified
 if(JSONCPP_LIBRARY_DIRS)
   link_directories(${JSONCPP_LIBRARY_DIRS})
 endif()
+
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
-message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
 
 # --------------------------
 # ICU (skipped on Android)

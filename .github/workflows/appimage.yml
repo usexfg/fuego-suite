@@ -29,7 +29,17 @@ jobs:
           sudo apt-get install -y build-essential cmake ninja-build pkg-config \
                libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
                libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
-               libboost-all-dev libicu-dev wget fuse file desktop-file-utils
+               libicu-dev wget fuse file desktop-file-utils
+
+      - name: Build Boost 1.86.0 from source
+        run: |
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+          cd / && rm -rf /tmp/boost_1_86_0*
 
       - name: Download AppImageTool
         run: |

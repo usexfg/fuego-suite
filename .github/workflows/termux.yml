@@ -34,10 +34,9 @@ jobs:
 
       - name: Download and Build Boost for Android
         run: |
-          wget -O boost_1_83_0.tar.gz "https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz"
-          echo "c2fe8e80e82d8c90ddf016edd51f0579b0ccfee7b6e28b4b4a6ca0d8ce744dc2  boost_1_83_0.tar.gz" | sha256sum -c -
-          tar -xzf boost_1_83_0.tar.gz
-          cd boost_1_83_0
+          wget -O boost_1_86_0.tar.gz "https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz"
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
           
           # Configure for Android
           cat > user-config.jam << EOF
@@ -55,7 +54,7 @@ jobs:
           ./b2 --user-config=user-config.jam toolset=clang-android target-os=android \
                architecture=${{ matrix.arch == 'aarch64' && 'arm' || 'arm' }} \
                address-model=${{ matrix.arch == 'aarch64' && '64' || '32' }} \
-               --prefix=/tmp/boost-android-${{ matrix.arch }} install
+               --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic --prefix=/tmp/boost-android-${{ matrix.arch }} install
           cd ..
 
       - name: Create Android Toolchain File

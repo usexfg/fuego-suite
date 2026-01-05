@@ -39,18 +39,18 @@ jobs:
           brew update
           brew install ninja qt@5 miniupnpc qrencode icu4c wget
 
-          # Install Boost 1.65.0 from source (Homebrew only has 1.66+ which deprecated io_service)
-          echo "Building Boost 1.65.0 from source for io_service compatibility..."
+          # Install Boost 1.86.0 from source
+          echo "Building Boost 1.86.0 from source..."
           cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.65.0/source/boost_1_65_0.tar.gz
-          tar -xzf boost_1_65_0.tar.gz
-          cd boost_1_65_0
-          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic
           ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
 
-          # Set environment variables for Boost 1.65
+          # Set environment variables for Boost 1.86
           echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
-          echo "Boost 1.65.0 installed at /usr/local for io_service compatibility"
+          echo "Boost 1.86.0 installed at /usr/local"
 
           # Try different ICU versions
           if [ -d "$(brew --prefix)/opt/icu4c" ]; then
@@ -85,8 +85,8 @@ jobs:
           export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
           export BOOST_ROOT=/usr/local
 
-          # Verify Boost 1.65 installation
-          echo "Boost 1.65 root: $BOOST_ROOT"
+          # Verify Boost 1.86 installation
+          echo "Boost 1.86 root: $BOOST_ROOT"
           ls -la "$BOOST_ROOT/include/boost/version.hpp" && grep "BOOST_LIB_VERSION" "$BOOST_ROOT/include/boost/version.hpp" || echo "Boost version.hpp not found"
 
           cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \

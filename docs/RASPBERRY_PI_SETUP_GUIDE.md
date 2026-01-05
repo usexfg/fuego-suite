@@ -121,20 +121,20 @@ sudo apt install -y build-essential cmake git wget curl
 sudo apt install -y pkg-config libssl-dev libboost-all-dev
 ```
 
-### 2. Install Boost 1.83 (if needed)
+### 2. Install Boost 1.86 (if needed)
 ```bash
 # Check current Boost version
 dpkg -l | grep libboost
 
-# If Boost < 1.83, install from source
+# If Boost < 1.86, install from source
 cd /tmp
-wget https://sourceforge.net/projects/boost/files/boost/1.83.0/boost_1_83_0.tar.bz2
+wget https://sourceforge.net/projects/boost/files/release/1.86.0/source/boost_1_86_0.tar.gz
 tar -xjf boost_1_83_0.tar.bz2
 cd boost_1_83_0
 
 # Configure and build Boost
 ./bootstrap.sh
-./b2 --prefix=/usr/local --with-system --with-filesystem --with-thread --with-date_time --with-chrono --with-regex --with-serialization --with-program_options install
+./b2 --prefix=/usr/local --with-system --with-filesystem --with-thread --with-date_time --with-chrono --with-regex --with-serialization --with-program_options --with-coroutine --with-context --with-atomic install
 
 # Update library cache
 sudo ldconfig

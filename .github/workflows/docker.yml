@@ -45,14 +45,13 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile << 'EOF'
-          FROM ubuntu:22.04 as builder
+          FROM ubuntu:24.04 as builder
 
           # Install dependencies
           RUN apt-get update && apt-get install -y \
               build-essential \
               cmake \
               ninja-build \
-              libboost-all-dev \
               libssl-dev \
               libminiupnpc-dev \
               libqrencode-dev \
@@ -63,7 +62,17 @@ jobs:
               qtbase5-dev-tools \
               pkg-config \
               git \
+              wget \
               && rm -rf /var/lib/apt/lists/*
+
+          # Build Boost 1.86.0 from source
+          RUN cd /tmp && \
+              wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz && \
+              tar -xzf boost_1_86_0.tar.gz && \
+              cd boost_1_86_0 && \
+              ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic --prefix=/usr/local && \
+              ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local && \
+              cd / && rm -rf /tmp/boost_1_86_0*
 
           # Copy source code
           WORKDIR /src
@@ -71,22 +80,14 @@ jobs:
 
           # Build
           RUN mkdir build && cd build && \
-              cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_DEFAULT_CMP0167=OLD .. && \
+              cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_DEFAULT_CMP0167=NEW .. && \
               make -j$(nproc)
-          
-          # Runtime stage
-          FROM ubuntu:22.04
 
-          # Install runtime dependencies
+          # Runtime stage
+          FROM ubuntu:24.04
+
+          # Install runtime dependencies (minimal since Boost is statically linked)
           RUN apt-get update && apt-get install -y \
-              libboost-system1.74.0 \
-              libboost-filesystem1.74.0 \
-              libboost-thread1.74.0 \
-              libboost-date-time1.74.0 \
-              libboost-chrono1.74.0 \
-              libboost-regex1.74.0 \
-              libboost-serialization1.74.0 \
-              libboost-program-options1.74.0 \
               libminiupnpc18 \
               libqrencode4 \
               libudev1 \
@@ -135,7 +136,7 @@ jobs:
           xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
           cat > docker-instructions.md << EOF
           # Fuego Docker Images v${xfg_ver}
-          
+
           ## Quick Start
           \`\`\`bash
           # Run Fuego daemon
@@ -143,18 +144,18 @@ jobs:
             -p 20808:20808 -p 28180:28180 \\
             -v fuego-data:/home/fuego/.fuego \\
             ghcr.io/${{ github.repository }}:${xfg_ver}
-          
+
           # Run wallet CLI
           docker run -it --rm \\
             -v fuego-wallet:/home/fuego/.fuego \\
             ghcr.io/${{ github.repository }}:${xfg_ver} \\
             fuego-wallet-cli
           \`\`\`
-          
+
           ## Available Images
           - \`fuego/fuego:${xfg_ver}\` (Docker Hub)
           - \`ghcr.io/${{ github.repository }}:${xfg_ver}\` (GitHub Container Registry)
-          
+
           ## Architectures
           - linux/amd64 (Intel/AMD)
           - linux/arm64 (ARM64/Apple Silicon)
@@ -168,12 +169,12 @@ jobs:
           name: Fuego CLI Suite v${{ steps.meta.outputs.version }}
           body: |
             🐳 [Docker instructions](../../releases/download/${{ steps.meta.outputs.version }}/docker-instructions.md) for **Fuego CLI Docker ${{ steps.meta.outputs.version }}**
-            
+
             Multi-architecture images:
             - `fuego/fuego:${{ steps.meta.outputs.version }}`
             - `ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}`
-            
+
             Supported platforms: linux/amd64, linux/arm64
           append_body: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

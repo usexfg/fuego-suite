@@ -257,24 +257,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Boost 1.86.0
+      - name: Build
+        id: build
         run: |
           set -e
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build wget
-
-          # Build Boost 1.86.0 from source
-          cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
-          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
-          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
-          cd /usr/local && ls -la include/boost/
-
-      - name: Install other dependencies
-        run: |
-          sudo apt-get install -y cmake libjsoncpp-dev
+          sudo apt-get install -y build-essential libboost-all-dev cmake libjsoncpp-dev
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="
@@ -334,13 +322,13 @@ jobs:
           release_name=fuego-cli-ubuntu-2404-dev"$xfg_ver"
           mkdir -p "$build_folder"
           cd "$build_folder"
-          cmake ../.. -DCMAKE_BUILD_TYPE=Release
+          cmake ../.. -DCMAKE_BUILD_TYPE=Debug
           make -j$(nproc)
           mkdir -p "$release_name"
           exeFiles=()
           for f in src/*; do [[ -x $f && -f $f ]] && exeFiles+=( "$f" ); done
-          echo "asset_path=./$build_folder$release_name.tar.gz" >> $GITHUB_OUTPUT
-          archive "$release_name"
+          strip "${exeFiles[@]}"
+          cp "${exeFiles[@]}" "$release_name/"
           echo "release_name=${release_name}.tar.gz" >> $GITHUB_OUTPUT
           echo "artifact_path=$build_folder/$release_name" >> $GITHUB_OUTPUT
       - name: Upload To GH Artifacts
@@ -369,36 +357,21 @@ jobs:
       - name: Install dependencies and verify repository
         run: |
           set -e
-          brew update
-          brew install gcc cmake jsoncpp wget ninja
-
-          # Download and build Boost 1.86.0
-          echo "Building Boost 1.86.0 from source..."
-          cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
-          ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic --prefix=/usr/local
-          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
-
-          # Set environment variables for Boost 1.86
-          export BOOST_ROOT=/usr/local
-          echo "BOOST_ROOT=$BOOST_ROOT" >> $GITHUB_ENV
-          echo "Boost 1.86.0 installed at $BOOST_ROOT"
+          brew install gcc boost cmake jsoncpp
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="
           echo "Source directory contents:"
           ls -la src | head -20
           if [ ! -d "src/FuegoTor" ]; then
-          echo "ERROR: FuegoTor directory not found!"
-          echo "All directories in src:"
-          ls -la src
-          exit 1
+            echo "ERROR: FuegoTor directory not found!"
+            echo "All directories in src:"
+            ls -la src
+            exit 1
           else
-          echo "✓ FuegoTor directory found"
-          echo "FuegoTor directory contents:"
-          ls -la src/FuegoTor
+            echo "✓ FuegoTor directory found"
+            echo "FuegoTor directory contents:"
+            ls -la src/FuegoTor
           fi
 
       - name: Build

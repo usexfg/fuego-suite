@@ -379,14 +379,14 @@ jobs:
           echo "Source directory contents:"
           ls -la src | head -20
           if [ ! -d "src/FuegoTor" ]; then
-            echo "ERROR: FuegoTor directory not found!"
-            echo "All directories in src:"
-            ls -la src
-            exit 1
+          echo "ERROR: FuegoTor directory not found!"
+          echo "All directories in src:"
+          ls -la src
+          exit 1
           else
-            echo "✓ FuegoTor directory found"
-            echo "FuegoTor directory contents:"
-            ls -la src/FuegoTor
+          echo "✓ FuegoTor directory found"
+          echo "FuegoTor directory contents:"
+          ls -la src/FuegoTor
           fi
 
       - name: Build

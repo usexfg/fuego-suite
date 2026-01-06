@@ -108,7 +108,7 @@ if(MINGW)
 endif()
 
 # Required components based on karbo's CMakeLists.txt
-find_package(Boost 1.86 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
+find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Found Boost Version: ${Boost_VERSION}")

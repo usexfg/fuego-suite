@@ -1,0 +1,8 @@
+$0fa3260f-245f-45c5-a81b-803f95a8028f²¾"id ÿÿÿÿÿÿÿÿÿ*string8Zdefault)content ÿÿÿÿÿÿÿÿÿ*string8Zdefault+	file_path ÿÿÿÿÿÿÿÿÿ*string8Zdefault+
+start_line ÿÿÿÿÿÿÿÿÿ*int648Zdefault)end_line ÿÿÿÿÿÿÿÿÿ*int648Zdefault+
+start_char ÿÿÿÿÿÿÿÿÿ*int648Zdefault)end_char ÿÿÿÿÿÿÿÿÿ*int648Zdefault0file_extension ÿÿÿÿÿÿÿÿÿ*string8Zdefault1repository_path ÿÿÿÿÿÿÿÿÿ*string8Zdefault,
+chunk_type	 ÿÿÿÿÿÿÿÿÿ*string8ZdefaultA	embedding
+ ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:256008Zdefault*metadata ÿÿÿÿÿÿÿÿÿ*string8Zdefault,
+call_graph ÿÿÿÿÿÿÿÿÿ*string8Zdefault-git_history ÿÿÿÿÿÿÿÿÿ*string8Zdefault.dependencies ÿÿÿÿÿÿÿÿÿ*string8Zdefault5function_signatures ÿÿÿÿÿÿÿÿÿ*string8Zdefault"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

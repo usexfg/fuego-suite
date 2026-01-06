@@ -173,68 +173,19 @@ jobs:
         id: build
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y build-essential libboost-all-dev cmake libjsoncpp-dev
-
-          # Verify repository structure
-          echo "=== Verifying repository structure ==="
-          echo "Source directory contents:"
-          ls -la src | head -20
-          if [ ! -d "src/FuegoTor" ]; then
-            echo "ERROR: FuegoTor directory not found!"
-            echo "All directories in src:"
-            ls -la src
-            exit 1
-          else
-            echo "✓ FuegoTor directory found"
-            echo "FuegoTor directory contents:"
-            ls -la src/FuegoTor
-          fi
-
-          # Debug JSON installation locations
-          echo "=== JSONcpp Installation Debug ==="
-          echo "Looking for json.h files:"
-          find /usr -name "json.h" -type f 2>/dev/null | head -5
-          echo "libjsoncpp-dev package contents (first 20 lines):"
-          dpkg -L libjsoncpp-dev 2>/dev/null | head -20
-
-          # Create system-level symlink for jsoncpp
-          echo "=== Setting up jsoncpp symlinks ==="
-          if [ -d "/usr/include/jsoncpp" ] && [ ! -d "/usr/include/json" ]; then
-            sudo ln -sf /usr/include/jsoncpp/json /usr/include/json
-            echo "Created system symlink: /usr/include/json -> /usr/include/jsoncpp/json"
-          elif [ -d "/usr/include/x86_64-linux-gnu/jsoncpp" ] && [ ! -d "/usr/include/json" ]; then
-            sudo ln -sf /usr/include/x86_64-linux-gnu/jsoncpp/json /usr/include/json
-            echo "Created system symlink: /usr/include/json -> /usr/include/x86_64-linux-gnu/jsoncpp/json"
-          elif [ ! -d "/usr/include/json" ]; then
-            echo "Creating manual directory /usr/include/json"
-            sudo mkdir -p /usr/include/json
-            if [ -f "/usr/include/jsoncpp/json/json.h" ]; then
-              sudo cp -r /usr/include/jsoncpp/json/* /usr/include/json/
-              echo "Copied jsoncpp headers to /usr/include/json"
-            elif [ -f "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h" ]; then
-              sudo cp -r /usr/include/x86_64-linux-gnu/jsoncpp/json/* /usr/include/json/
-              echo "Copied multiarch jsoncpp headers to /usr/include/json"
-            fi
-          fi
-
-          # Verify the headers are accessible
-          echo "=== Verification ==="
-          if [ -f "/usr/include/json/json.h" ]; then
-            echo "SUCCESS: Found /usr/include/json/json.h"
-            ls -la /usr/include/json/ | head -5
-          else
-            echo "ERROR: Could not find or create /usr/include/json/json.h"
-            echo "All include dirs containing json:"
-            find /usr/include -type d -name "*json*" 2>/dev/null
-          fi
+          sudo apt-get update && sudo apt-get install -y libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
           release_name=fuego-cli-ubuntu-2204-dev"$xfg_ver"
           mkdir -p "$build_folder"
           cd "$build_folder"
-          cmake ../.. -DCMAKE_BUILD_TYPE=Debug
+          cmake -D ARCH=default -D CMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG="-O3 -DNDEBUG" \
+            -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
           make -j$(nproc)
           mkdir -p "$release_name"
           exeFiles=()
@@ -261,68 +212,19 @@ jobs:
         id: build
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y build-essential libboost-all-dev cmake libjsoncpp-dev
-
-          # Verify repository structure
-          echo "=== Verifying repository structure ==="
-          echo "Source directory contents:"
-          ls -la src | head -20
-          if [ ! -d "src/FuegoTor" ]; then
-            echo "ERROR: FuegoTor directory not found!"
-            echo "All directories in src:"
-            ls -la src
-            exit 1
-          else
-            echo "✓ FuegoTor directory found"
-            echo "FuegoTor directory contents:"
-            ls -la src/FuegoTor
-          fi
-
-          # Debug JSON installation locations
-          echo "=== JSONcpp Installation Debug ==="
-          echo "Looking for json.h files:"
-          find /usr -name "json.h" -type f 2>/dev/null | head -5
-          echo "libjsoncpp-dev package contents (first 20 lines):"
-          dpkg -L libjsoncpp-dev 2>/dev/null | head -20
-
-          # Create system-level symlink for jsoncpp
-          echo "=== Setting up jsoncpp symlinks ==="
-          if [ -d "/usr/include/jsoncpp" ] && [ ! -d "/usr/include/json" ]; then
-            sudo ln -sf /usr/include/jsoncpp/json /usr/include/json
-            echo "Created system symlink: /usr/include/json -> /usr/include/jsoncpp/json"
-          elif [ -d "/usr/include/x86_64-linux-gnu/jsoncpp" ] && [ ! -d "/usr/include/json" ]; then
-            sudo ln -sf /usr/include/x86_64-linux-gnu/jsoncpp/json /usr/include/json
-            echo "Created system symlink: /usr/include/json -> /usr/include/x86_64-linux-gnu/jsoncpp/json"
-          elif [ ! -d "/usr/include/json" ]; then
-            echo "Creating manual directory /usr/include/json"
-            sudo mkdir -p /usr/include/json
-            if [ -f "/usr/include/jsoncpp/json/json.h" ]; then
-              sudo cp -r /usr/include/jsoncpp/json/* /usr/include/json/
-              echo "Copied jsoncpp headers to /usr/include/json"
-            elif [ -f "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h" ]; then
-              sudo cp -r /usr/include/x86_64-linux-gnu/jsoncpp/json/* /usr/include/json/
-              echo "Copied multiarch jsoncpp headers to /usr/include/json"
-            fi
-          fi
-
-          # Verify the headers are accessible
-          echo "=== Verification ==="
-          if [ -f "/usr/include/json/json.h" ]; then
-            echo "SUCCESS: Found /usr/include/json/json.h"
-            ls -la /usr/include/json/ | head -5
-          else
-            echo "ERROR: Could not find or create /usr/include/json/json.h"
-            echo "All include dirs containing json:"
-            find /usr/include -type d -name "*json*" 2>/dev/null
-          fi
+          sudo apt-get update && sudo apt-get install -y libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
           release_name=fuego-cli-ubuntu-2404-dev"$xfg_ver"
           mkdir -p "$build_folder"
           cd "$build_folder"
-          cmake ../.. -DCMAKE_BUILD_TYPE=Debug
+          cmake -D ARCH=default -D CMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG="-O3 -DNDEBUG" \
+            -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
           make -j$(nproc)
           mkdir -p "$release_name"
           exeFiles=()

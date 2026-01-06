@@ -150,17 +150,54 @@ jobs:
             ${{ runner.os }}-apt-release-
             ${{ runner.os }}-apt-
 
-      - name: Install dependencies (Ubuntu)
+      - name: Build Boost 1.74.0 (Ubuntu 22 compatibility)
         run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build wget
+
+          # Build Boost 1.74.0 from source (matches Ubuntu 22 system version)
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.74.0/source/boost_1_74_0.tar.gz
+          tar -xzf boost_1_74_0.tar.gz
+          cd boost_1_74_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
+          # Set environment for CMake
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=/usr/local" >> $GITHUB_ENV
+
+      - name: Build
+        id: build
+        run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y build-essential ninja-build pkg-config \
                libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
                libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
-               libicu-dev
+               libicu-dev libboost-all-dev
 
-          # Install Boost using apt (more reliable)
-          sudo apt-get install -y libboost-all-dev
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-ubuntu-2204-v$xfg_ver"
 
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          cmake -D ARCH=default -D CMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG" \
+            -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy and strip executables
+          exeFiles=()
       - name: Build Ubuntu 22.04
         run: |
           build_folder="build/"
@@ -170,7 +207,7 @@ jobs:
           mkdir "$build_folder"
           cd "$build_folder"
 
-          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON
           cmake --build . --parallel
 
           # Create release package
@@ -220,17 +257,54 @@ jobs:
             ${{ runner.os }}-apt-release-
             ${{ runner.os }}-apt-
 
-      - name: Install dependencies (Ubuntu)
+      - name: Build Boost 1.83.0 (Ubuntu 24 compatibility)
         run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build wget
+
+          # Build Boost 1.83.0 from source (matches Ubuntu 24 system version)
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.83.0/source/boost_1_83_0.tar.gz
+          tar -xzf boost_1_83_0.tar.gz
+          cd boost_1_83_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
+          # Set environment for CMake
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=/usr/local" >> $GITHUB_ENV
+
+      - name: Build
+        id: build
+        run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y build-essential ninja-build pkg-config \
                libssl-dev libminiupnpc-dev libqrencode-dev libudev-dev \
                libunwind-dev liblzma-dev qtbase5-dev qtbase5-dev-tools \
-               libicu-dev
+               libicu-dev libboost-all-dev
 
-          # Install Boost using apt (more reliable)
-          sudo apt-get install -y libboost-all-dev
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-ubuntu-2404-v$xfg_ver"
 
+          mkdir "$build_folder"
+          cd "$build_folder"
+
+          cmake -D ARCH=default -D CMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG" \
+            -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
+          cmake --build . --parallel
+
+          # Create release package
+          mkdir "$release_name"
+
+          # Copy and strip executables
+          exeFiles=()
       - name: Build Ubuntu 24.04
         run: |
           build_folder="build/"
@@ -240,7 +314,7 @@ jobs:
           mkdir "$build_folder"
           cd "$build_folder"
 
-          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
+          cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DCMAKE_POLICY_DEFAULT_CMP0167=OLD -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON
           cmake --build . --parallel
 
           # Create release package

@@ -30,10 +30,10 @@ Based upon the CryptoNote protocol & philosophy.
 
 ### Build Requirements  
 
-**Boost Version**: Fuego requires Boost 1.65 or later.  
-- **macOS**: CMake is configured for Boost 1.65+ compatibility  
-- **Linux**: Use `sudo apt-get install libboost-all-dev` (Ubuntu) or `sudo dnf install boost-devel` (Fedora)  
-- **Windows**: Use vcpkg or precompiled Boost 1.65+ with the required components  
+**Boost Version**: Fuego requires Boost 1.86 or below (for io_service compatibility)  
+- **macOS**: Builds Boost 1.86 from source automatically  
+- **Linux**: Uses system packages (1.74+ on Ubuntu 22.04, 1.83+ on Ubuntu 24.04)  
+- **Windows**: Uses vcpkg packages (1.84+)
 
 [![Ubuntu 22.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
 

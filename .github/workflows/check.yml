@@ -358,7 +358,7 @@ jobs:
         run: |
           set -e
           brew install gcc cmake ninja-build wget
-          
+
           # Build Boost 1.86.0 from source
           cd /tmp
           wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
@@ -367,11 +367,13 @@ jobs:
           ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
           ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
 
-
-      - name: Install dependencies and verify repository
+      - name: Install other dependencies
         run: |
           set -e
-          brew install gcc boost cmake jsoncpp
+          brew install gcc cmake jsoncpp openssl
+
+          # Set environment to use the built Boost 1.86
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="
@@ -398,7 +400,7 @@ jobs:
           release_name=fuego-cli-macos-${{ matrix.arch }}-dev"$xfg_ver"
           mkdir "$build_folder"
           cd "$build_folder"
-          cmake -S .. -B . -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }}
+          cmake -S .. -B . -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON
           make -j$(sysctl -n hw.ncpu)
           mkdir "$release_name"
           exeFiles=()

@@ -354,6 +354,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build Boost 1.86.0
+        run: |
+          set -e
+          brew install gcc cmake ninja-build wget
+          
+          # Build Boost 1.86.0 from source
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
+
       - name: Install dependencies and verify repository
         run: |
           set -e

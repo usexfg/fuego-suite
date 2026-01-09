@@ -546,12 +546,12 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   size_t txs_size;
   uint64_t fee;
   if (!m_mempool.fill_block_template(b, median_size, m_currency.maxBlockCumulativeSize(height), already_generated_coins, txs_size, fee, height)) {
-    logger(ERROR, BRIGHT_RED) << "fill_block_template failed - median_size=" << median_size 
-      << ", max_block_size=" << m_currency.maxBlockCumulativeSize(height) 
+    logger(ERROR, BRIGHT_RED) << "fill_block_template failed - median_size=" << median_size
+      << ", max_block_size=" << m_currency.maxBlockCumulativeSize(height)
       << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
-    logger(INFO) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion 
+    logger(INFO) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion
       << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*
@@ -568,16 +568,16 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
   size_t try_count = 0;
   for (; try_count != 10; ++try_count) {
-    logger(INFO) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion 
-      << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size 
+    logger(TRACE) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion
+      << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size
       << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
     r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, 11);
 
-    if (!(r)) { 
-      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height 
-        << ", majorVersion=" << (int)b.majorVersion << ", cumulative_size=" << cumulative_size 
+    if (!(r)) {
+      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height
+        << ", majorVersion=" << (int)b.majorVersion << ", cumulative_size=" << cumulative_size
         << ", fee=" << fee << ", already_generated_coins=" << already_generated_coins;
-      return false; 
+      return false;
     }
     size_t coinbase_blob_size = getObjectBinarySize(b.baseTransaction);
     logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << ", cumulative_size=" << cumulative_size << ", txs_size=" << txs_size;
@@ -621,9 +621,9 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   // After loop: check if we used all 10 attempts
   if (try_count >= 10) {
     size_t final_coinbase_size = getObjectBinarySize(b.baseTransaction);
-    logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size 
+    logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size
       << " vs txs_size + coinbase_blob=" << (txs_size + final_coinbase_size);
-    logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion 
+    logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion
       << ", median_size=" << median_size << ", already_generated_coins=" << already_generated_coins;
     logger(ERROR, BRIGHT_RED) << "Fee=" << fee << ", txs_size=" << txs_size;
     return false;
@@ -882,9 +882,9 @@ bool core::on_idle() {
   if (!m_starter_message_showed) {
     logger(INFO, BRIGHT_YELLOW)
       << "**********************************************************************" << ENDL
-      << "Your daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
-      << "Fuego blockchain can also be downloaded at https://github.com/usexfg/XFG-data/releases "<< ENDL
-      << "You can use the \"set_log <level>\" command for a more detailed view of the process."<< ENDL
+      << "Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
+      << "Bootstrap file of Fuego's blockchain is available at https://github.com/usexfg/XFG-data/releases - though, full sync using network peers is best practice. "<< ENDL
+      << "You can use \"set_log <level>\" command for a more detailed view of the process."<< ENDL
       << "Using <level> option from 0 (no details) up to 4 (very verbose)." << ENDL
       << "Use \"help\" command to see a list of available commands." << ENDL
       << "Note: in case you need to interrupt the process, use \"exit\" command,"<<ENDL

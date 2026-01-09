@@ -198,7 +198,7 @@ struct CreateBurnDepositWithProof
   };
 };
 
-struct CreateBurnDeposit8000
+struct CreateBurnDepositLarge
 {
   struct Request
   {
@@ -218,7 +218,7 @@ struct CreateBurnDeposit8000
   };
 };
 
-struct CreateBurnDeposit8000WithProof
+struct CreateBurnDepositLargeWithProof
 {
   struct Request
   {
@@ -820,30 +820,7 @@ struct SendTransaction
   };
 };
 
-struct SubmitBurnTransaction
-{
-  struct Request
-  {
-    std::vector<std::string> sourceAddresses;
-    uint64_t amount;
-    std::string address;
-    std::string memo;
-    uint64_t fee = CryptoNote::parameters::MINIMUM_FEE;
-    uint32_t anonymity = DEFAULT_ANONYMITY_LEVEL;
-    std::string extra;
-    uint64_t unlockTime = 0;
 
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-
-  struct Response
-  {
-    std::string transactionHash;
-    std::string transactionSecretKey;
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-};
 
 struct CreateDelayedTransaction
 {

@@ -93,7 +93,7 @@ bool TransactionExtraDepositReceipt::serialize(CryptoNote::ISerializer& serializ
   serializer.binary(&mutable_self.proof_pubkey, sizeof(mutable_self.proof_pubkey), "proof_pubkey");
   serializer(mutable_self.tx_hash, "tx_hash");
   serializer(mutable_self.timestamp, "timestamp");
-  serializer(mutable_self.term_months, "term_months");
+  serializer(mutable_self.term, "term");
   serializer(mutable_self.deposit_type, "deposit_type");
   return true;
 }

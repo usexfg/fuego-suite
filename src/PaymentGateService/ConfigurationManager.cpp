@@ -92,9 +92,22 @@ bool ConfigurationManager::init(int argc, char** argv) {
 
     netNodeConfig.setTestnet(confOptions["testnet"].as<bool>());
     startInprocess = confOptions["local"].as<bool>();
+
+    // Update data directory for testnet if data-dir was defaulted
+    if (confOptions["testnet"].as<bool>() && coreConfig.configFolderDefaulted) {
+      std::string testnetDataDir = Tools::getDefaultDataDirectory() + "-testnet";
+      coreConfig.configFolder = testnetDataDir;
+      netNodeConfig.setConfigFolder(testnetDataDir);
+      
+      // Update container file if it's a simple name (no path)
+      if (!gateConfiguration.containerFile.empty() && 
+          gateConfiguration.containerFile.find('/') == std::string::npos) {
+        gateConfiguration.containerFile = testnetDataDir + "/" + gateConfiguration.containerFile;
+      }
+    }
   }
 
-  //command line options should override options from config file
+  // Command line options should override options from config file
   gateConfiguration.init(cmdOptions);
   netNodeConfig.init(cmdOptions);
   coreConfig.init(cmdOptions);
@@ -102,6 +115,19 @@ bool ConfigurationManager::init(int argc, char** argv) {
 
   if (cmdOptions["testnet"].as<bool>()) {
     netNodeConfig.setTestnet(true);
+    
+    // Update data directory for testnet if data-dir was defaulted
+    if (coreConfig.configFolderDefaulted) {
+      std::string testnetDataDir = Tools::getDefaultDataDirectory() + "-testnet";
+      coreConfig.configFolder = testnetDataDir;
+      netNodeConfig.setConfigFolder(testnetDataDir);
+      
+      // Update container file if it's a simple name (no path)
+      if (!gateConfiguration.containerFile.empty() && 
+          gateConfiguration.containerFile.find('/') == std::string::npos) {
+        gateConfiguration.containerFile = testnetDataDir + "/" + gateConfiguration.containerFile;
+      }
+    }
   }
 
   if (cmdOptions["local"].as<bool>()) {

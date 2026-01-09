@@ -826,8 +826,11 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
   std::vector<uint64_t> timestamps;
   std::vector<difficulty_type> cumulative_difficulties;
   uint8_t BlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(m_blocks.size()));
+  
+  // Get the correct window size for this block version
+  size_t windowSize = m_currency.difficultyBlocksCountByBlockVersion(BlockMajorVersion);
   size_t offset;
-  offset = m_blocks.size() - std::min(m_blocks.size(), static_cast<uint64_t>(m_currency.difficultyBlocksCountByBlockVersion(BlockMajorVersion)));
+  offset = m_blocks.size() - std::min(m_blocks.size(), static_cast<uint64_t>(windowSize));
 
   if (offset == 0) {
     ++offset;
@@ -836,6 +839,14 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
     timestamps.push_back(m_blocks[offset].bl.timestamp);
     cumulative_difficulties.push_back(m_blocks[offset].cumulative_difficulty);
   }
+  
+  // Ensure we don't pass more data than the difficulty function expects
+  // This prevents buffer overflows in nextDifficultyV5 and other functions
+  if (timestamps.size() > windowSize) {
+    timestamps.resize(windowSize);
+    cumulative_difficulties.resize(windowSize);
+  }
+  
   return m_currency.nextDifficulty(static_cast<uint32_t>(m_blocks.size()), BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 

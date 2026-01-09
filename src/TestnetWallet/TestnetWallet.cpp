@@ -500,10 +500,10 @@ bool processServerAliasResponse(const std::string& s, std::string& address) {
 		auto pos2 = s.find(";", pos);
 		if (pos2 != std::string::npos)
 		{
-			// length of address == 98 ccx, we can at least validate that much here
-			if (pos2 - pos == 99)
+			// length of address == 100 ccx, we can at least validate that much here
+			if (pos2 - pos == 100)
 			{
-				address = s.substr(pos, 99);
+				address = s.substr(pos, 100);
 			} else {
 				return false;
 			}
@@ -1599,7 +1599,7 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args/* = std::ve
   std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
   std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET, secretKeysData);
 
-  logger(INFO, BRIGHT_GREEN) << std::endl << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit $XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
+  logger(INFO, BRIGHT_GREEN) << std::endl << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit TEST coins - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
 
   std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
   std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
@@ -2006,7 +2006,7 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
 
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet->getTransaction(tx, txInfo);
-    success_msg_writer(true) << "XFG successfully sent, transaction hash: " << Common::podToHex(txInfo.hash);
+    success_msg_writer(true) << "TEST successfully sent, transaction hash: " << Common::podToHex(txInfo.hash);
     success_msg_writer(true) << "Transaction secret key " << Common::podToHex(transactionSK);
 
     try {

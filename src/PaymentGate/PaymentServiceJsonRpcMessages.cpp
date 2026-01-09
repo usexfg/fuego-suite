@@ -87,14 +87,14 @@ void CreateDeposit::Request::serialize(CryptoNote::ISerializer &serializer)
   serializer(sourceAddress, "sourceAddress");
   serializer(heatCommitment, "heatCommitment");
   serializer(metadata, "metadata");
-  // serializer(useStagedUnlock, "useStagedUnlock");
+  serializer(useStagedUnlock, "useStagedUnlock");
 }
 
 void CreateDeposit::Response::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(transactionHash, "transactionHash");
   serializer(isBurnDeposit, "isBurnDeposit");
-  // serializer(useStagedUnlock, "useStagedUnlock");
+  serializer(useStagedUnlock, "useStagedUnlock");
   serializer(transactionFee, "transactionFee");
   serializer(totalFees, "totalFees");
 }
@@ -428,39 +428,6 @@ void SendTransaction::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(transactionSecretKey, "transactionSecretKey");
 }
 
-void SubmitBurnTransaction::Request::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(sourceAddresses, "addresses");
-
-  if (!serializer(amount, "amount"))
-  {
-    throw RequestSerializationError();
-  }
-
-  serializer(address, "address");
-  serializer(memo, "memo");
-
-  if (!serializer(fee, "fee"))
-  {
-    throw RequestSerializationError();
-  }
-
-  if (!serializer(anonymity, "anonymity"))
-  {
-    throw RequestSerializationError();
-  }
-
-  bool hasExtra = serializer(extra, "extra");
-
-  serializer(unlockTime, "unlockTime");
-}
-
-void SubmitBurnTransaction::Response::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(transactionHash, "transactionHash");
-  serializer(transactionSecretKey, "transactionSecretKey");
-}
-
 void CreateDelayedTransaction::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(addresses, "addresses");
@@ -623,27 +590,27 @@ void CreateBurnDepositWithProof::Response::serialize(CryptoNote::ISerializer &se
   serializer(networkId, "networkId");
 }
 
-void CreateBurnDeposit8000::Request::serialize(CryptoNote::ISerializer &serializer)
+void CreateBurnDepositLarge::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(sourceAddress, "sourceAddress");
   serializer(metadata, "metadata");
 }
 
-void CreateBurnDeposit8000::Response::serialize(CryptoNote::ISerializer &serializer)
+void CreateBurnDepositLarge::Response::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(transactionHash, "transactionHash");
   serializer(term, "term");
   serializer(heatAmount, "heatAmount");
 }
 
-void CreateBurnDeposit8000WithProof::Request::serialize(CryptoNote::ISerializer &serializer)
+void CreateBurnDepositLargeWithProof::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(sourceAddress, "sourceAddress");
   serializer(recipientAddress, "recipientAddress");
   serializer(metadata, "metadata");
 }
 
-void CreateBurnDeposit8000WithProof::Response::serialize(CryptoNote::ISerializer &serializer)
+void CreateBurnDepositLargeWithProof::Response::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(transactionHash, "transactionHash");
   serializer(term, "term");

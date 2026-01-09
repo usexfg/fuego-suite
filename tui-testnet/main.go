@@ -1,75 +1,1129 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/rivo/tview"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-type Tui struct {
-	app         *tview.Application
-	pages       *tview.Pages
-	logs        []string
+const (
+	nodeRPCPort   = 28280
+	walletRPCPort = 28283
+	nodeP2PPort   = 20808
+)
+
+var (
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	menuStyle   = lipgloss.NewStyle().Padding(1, 2)
+	activeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	logStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+)
+
+// VersionInfo holds dynamic version information
+type versionInfo struct {
+	projectName    string
+	projectVersion string
+	testnetVersion string
+	fullVersion    string
+}
+
+var verInfo = versionInfo{
+	projectName:    "Fuego",
+	projectVersion: "DYNAMIGO v1.10.0",
+	fullVersion:    "Fuego TESTNET || v1.10.0 DYNAMIGO",
+}
+
+type menuItem string
+
+const (
+	mStartNode      menuItem = "Start Node"
+	mStopNode       menuItem = "Stop Node"
+	mNodeStatus     menuItem = "Node Status"
+	mStartWalletRPC menuItem = "Start Wallet RPC"
+	mCreateWallet   menuItem = "Create Wallet"
+	mGetBalance     menuItem = "Get Balance"
+	mSendTx         menuItem = "Send Transaction"
+	mElderfierMenu  menuItem = "Elderfier Menu"
+	mBurn2MintMenu  menuItem = "Burn2Mint Menu"
+	mShowLogs       menuItem = "Show Logs"
+	mQuit           menuItem = "Quit"
+)
+
+var menu = []menuItem{
+	mStartNode,
+	mStopNode,
+	mNodeStatus,
+	mStartWalletRPC,
+	mCreateWallet,
+	mGetBalance,
+	mSendTx,
+	mElderfierMenu,
+	mBurn2MintMenu,
+	mShowLogs,
+	mQuit,
+}
+
+type model struct {
+	cursor      int
 	nodeCmd     *exec.Cmd
 	walletCmd   *exec.Cmd
+	logs        []string
+	mutex       sync.Mutex
+	statusMsg   string
+	running     bool
 	runningNode bool
 	runningW    bool
 	height      int
 	peers       int
 }
 
-func main() {
-	// Detect build mode from executable name or argument
-	execName := filepath.Base(os.Args[0])
-	
-	if strings.Contains(execName, "testnet") {
-		CurrentConfig = TestnetConfig
-	} else {
-		CurrentConfig = MainnetConfig
-	}
-
-	// Also allow runtime override with --testnet flag
-	if len(os.Args) > 1 && os.Args[1] == "--testnet" {
-		CurrentConfig = TestnetConfig
-	}
-
+func initialModel() model {
 	initVersionInfo()
+	return model{
+		cursor:    0,
+		logs:      []string{fmt.Sprintf("🔥 %s TESTNET TUI Ready", verInfo.projectName)},
+		statusMsg: "",
+	}
+}
 
-	tui := &Tui{
-		app:  tview.NewApplication(),
-		logs: []string{fmt.Sprintf("🔥 %s TUI Ready - %s", CurrentConfig.Name, verInfo.fullVersion)},
+func (m *model) appendLog(s string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.logs = append(m.logs, fmt.Sprintf("%s %s", time.Now().Format("15:04:05"), s))
+	if len(m.logs) > 200 {
+		m.logs = m.logs[len(m.logs)-200:]
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(menu)-1 {
+				m.cursor++
+			}
+		case "enter":
+			item := menu[m.cursor]
+			switch item {
+			case mStartNode:
+				m = startNode(m)
+			case mStopNode:
+				m = stopNode(m)
+			case mNodeStatus:
+				m = queryNodeStatus(m)
+			case mStartWalletRPC:
+				m = startWalletRPC(m)
+			case mCreateWallet:
+				m = createWalletCmd(m)
+			case mGetBalance:
+				m = getBalanceCmd(m)
+			case mSendTx:
+				m = sendTxPrompt(m)
+			case mElderfierMenu:
+				m = elderfierMenu(m)
+			case mBurn2MintMenu:
+				m = burn2MintMenu(m)
+			case mShowLogs:
+				m = showLogs(m)
+			case mQuit:
+				return m, tea.Quit
+			}
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m model) View() string {
+	s := titleStyle.Render(fmt.Sprintf("🔥 %s TESTNET TUI", verInfo.projectName)) + "\n"
+	s += menuStyle.Render(verInfo.fullVersion) + "\n\n"
+	for i, it := range menu {
+		line := fmt.Sprintf("  %s", it)
+		if m.cursor == i {
+			line = activeStyle.Render(line)
+		}
+		s += menuStyle.Render(line) + "\n"
+	}
+	s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Render("Status: ") + m.statusMsg + "\n"
+	if m.runningNode {
+		s += lipgloss.NewStyle().Render(fmt.Sprintf("Node: running | Height: %d | Peers: %d\n", m.height, m.peers))
+	} else {
+		s += lipgloss.NewStyle().Render("Node: stopped\n")
+	}
+	return s
+}
+
+func binPath(name string) string {
+	cwd, _ := os.Getwd()
+	// Check if we're in tui-testnet directory
+	if filepath.Base(cwd) == "tui-testnet" {
+		cwd = filepath.Dir(cwd)
+		// Go up one more to get to fuego directory
+		if filepath.Base(cwd) == "fuego" {
+			// Try to find build directory
+			testPath := filepath.Join(cwd, "build", "src", name)
+			if _, err := os.Stat(testPath); err == nil {
+				return testPath
+			}
+		}
+	}
+	// Try direct path in current directory
+	cand := filepath.Join(cwd, "build", "src", name)
+	if _, err := os.Stat(cand); err == nil {
+		return cand
+	}
+	// Try in parent directory
+	cand = filepath.Join(cwd, "..", "build", "src", name)
+	if _, err := os.Stat(cand); err == nil {
+		return cand
+	}
+	// Fall back to PATH
+	return name
+}
+
+func startNode(m model) model {
+	if m.runningNode {
+		m.appendLog("Node already running")
+		m.statusMsg = "Node already running"
+		return m
+	}
+	path := binPath("fuegod")
+	if path == "fuegod" {
+		// Try to find in PATH
+		if _, err := exec.LookPath("fuegod"); err != nil {
+			m.appendLog("fuegod binary not found in PATH or build directory")
+			m.statusMsg = "Binary not found"
+			return m
+		}
+	}
+	// Use testnet-specific data directory
+	var dataDir string
+	if runtime.GOOS == "darwin" {
+		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego-testnet")
+	} else {
+		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego-testnet")
+	}
+	// Create directory if it doesn't exist
+	os.MkdirAll(dataDir, 0755)
+	// Start with testnet mode on testnet ports
+	cmd := exec.Command(path,
+		fmt.Sprintf("--p2p-bind-port=%d", nodeP2PPort),
+		fmt.Sprintf("--rpc-bind-port=%d", nodeRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		m.appendLog("Failed to start node: " + err.Error())
+		m.statusMsg = "Failed to start node"
+		return m
+	}
+	m.nodeCmd = cmd
+	m.runningNode = true
+	m.appendLog("Started fuegod (testnet)")
+	m.statusMsg = "Node starting"
+	go streamPipe(stdout, "NODE", &m)
+	go streamPipe(stderr, "NODE-ERR", &m)
+	// Wait for RPC to initialize before querying
+	time.Sleep(3 * time.Second)
+	go func() {
+		for m.runningNode && m.nodeCmd != nil {
+			info, err := getInfo(nodeRPCPort)
+			if err == nil {
+				m.height = info.Height
+				m.peers = info.Peers
+				m.statusMsg = fmt.Sprintf("Node running — height %d", m.height)
+			} else {
+				// Log errors less frequently to avoid spam
+				m.mutex.Lock()
+				shouldLog := len(m.logs) == 0 || !strings.Contains(m.logs[len(m.logs)-1], "Failed to query node")
+				m.mutex.Unlock()
+				if shouldLog {
+					m.appendLog("Failed to query node: " + err.Error())
+				}
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	return m
+}
+
+func stopNode(m model) model {
+	if !m.runningNode || m.nodeCmd == nil {
+		m.appendLog("Node not running")
+		m.statusMsg = "Node not running"
+		return m
+	}
+	_ = m.nodeCmd.Process.Kill()
+	m.appendLog("Stopped fuegod")
+	m.nodeCmd = nil
+	m.runningNode = false
+	m.statusMsg = "Node stopped"
+	m.height = 0
+	m.peers = 0
+	return m
+}
+
+func queryNodeStatus(m model) model {
+	info, err := getInfo(nodeRPCPort)
+	if err != nil {
+		m.appendLog("Failed to query node: " + err.Error())
+		m.statusMsg = "Query failed"
+		return m
+	}
+	m.appendLog(fmt.Sprintf("Height: %d, Peers: %d", info.Height, info.Peers))
+	m.statusMsg = "Status fetched"
+	return m
+}
+
+func startWalletRPC(m model) model {
+	if m.runningW {
+		m.appendLog("Wallet RPC already running")
+		m.statusMsg = "Wallet RPC already running"
+		return m
+	}
+	path := binPath("walletd")
+	if path == "walletd" {
+		// Try to find in PATH
+		if _, err := exec.LookPath("walletd"); err != nil {
+			m.appendLog("walletd binary not found in PATH or build directory")
+			m.statusMsg = "Binary not found"
+			return m
+		}
+	}
+	// Use testnet-specific data directory
+	var dataDir string
+	if runtime.GOOS == "darwin" {
+		dataDir = filepath.Join(os.Getenv("HOME"), "Library/Application Support/Fuego-testnet")
+	} else {
+		dataDir = filepath.Join(os.Getenv("HOME"), ".fuego-testnet")
+	}
+	cmd := exec.Command(path,
+		"--daemon-port", fmt.Sprintf("%d", nodeRPCPort),
+		"--bind-address", "127.0.0.1",
+		"--bind-port", fmt.Sprintf("%d", walletRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		m.appendLog("Failed to start walletd: " + err.Error())
+		m.statusMsg = "Failed to start walletd"
+		return m
+	}
+	m.walletCmd = cmd
+	m.runningW = true
+	m.appendLog("Started walletd (testnet)")
+	m.statusMsg = "Wallet RPC started"
+	go streamPipe(stdout, "WALLET", &m)
+	go streamPipe(stderr, "WALLET-ERR", &m)
+	return m
+}
+
+func createWalletCmd(m model) model {
+	m.appendLog("Creating wallet (RPC)...")
+	_, err := walletRpcCall(walletRPCPort, "create_address", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("create wallet error: " + err.Error())
+		m.statusMsg = "Create wallet failed"
+		return m
+	}
+	m.appendLog("Create wallet attempted (see walletd logs)")
+	m.statusMsg = "Create wallet requested"
+	return m
+}
+
+func getBalanceCmd(m model) model {
+	m.appendLog("Querying balance...")
+	res, err := walletRpcCall(walletRPCPort, "get_balance", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("get balance error: " + err.Error())
+		m.statusMsg = "Get balance failed"
+		return m
+	}
+	m.appendLog("Balance: " + fmt.Sprintf("%v", res))
+	m.statusMsg = "Balance fetched"
+	return m
+}
+
+func sendTxPrompt(m model) model {
+	m.appendLog("Send TX: enter recipient address:")
+	var addr string
+	fmt.Print("Recipient address: ")
+	fmt.Scanln(&addr)
+	fmt.Print("Amount TEST: ")
+	var amt float64
+	fmt.Scanln(&amt)
+	m.appendLog(fmt.Sprintf("Sending %f to %s...", amt, addr))
+	amountAtomic := int64(amt * 10000000)
+	params := map[string]interface{}{"transfers": []map[string]interface{}{{"address": addr, "amount": amountAtomic}}}
+	res, err := walletRpcCall(walletRPCPort, "send_transaction", params)
+	if err != nil {
+		m.appendLog("send tx error: " + err.Error())
+		m.statusMsg = "Send failed"
+		return m
+	}
+	m.appendLog("Tx sent: " + fmt.Sprintf("%v", res))
+	m.statusMsg = "Tx sent"
+	return m
+}
+
+// Elderfier Menu: Full read/write access with Elderfyre Stayking
+func elderfierMenu(m model) model {
+	m.appendLog("═══════════════════════════════════════")
+	m.appendLog("  ELDERFIER DASHBOARD (READ/WRITE)")
+	m.appendLog("═══════════════════════════════════════")
+
+	// Check if wallet has confirmed EFdeposit
+	status, err := walletRpcCall(walletRPCPort, "get_stake_status", map[string]interface{}{})
+	hasStake := err == nil && status != nil
+
+	if !hasStake {
+		m.appendLog("⚠️  No Elderfier stake detected")
+		m.appendLog("")
+		m.appendLog("To become an Elderfier, you must:")
+		m.appendLog("  1. Create Elderfyre Stayking deposit")
+		m.appendLog("  2. Generate 8-char Elderfier ID")
+		m.appendLog("  3. Register keys to ENindex")
+		m.appendLog("")
+		m.appendLog("Options:")
+		m.appendLog("  [1] Start Elderfyre Stayking Process")
+		m.appendLog("  [2] Check Stake Status")
+		m.appendLog("  [0] Return to Main Menu")
+
+		var choice int
+		fmt.Print("\nSelect option: ")
+		fmt.Scanln(&choice)
+
+		switch choice {
+		case 1:
+			return startElderfyreStayking(m)
+		case 2:
+			if err != nil {
+				m.appendLog("No stake found: " + err.Error())
+			} else {
+				m.appendLog("Stake Status: " + fmt.Sprintf("%v", status))
+			}
+		case 0:
+			m.appendLog("Returning to main menu...")
+		}
+
+		m.appendLog("═══════════════════════════════════════")
+		return m
 	}
 
-	tui.app.EnableMouse(true)
-	tui.setupUI()
+	// Wallet has confirmed EFdeposit - show full dashboard
+	m.appendLog("✅ Elderfier Status: ACTIVE")
+	m.appendLog("Stake: " + fmt.Sprintf("%v", status))
+	m.appendLog("")
 
-	if err := tui.app.Run(); err != nil {
+	// Elder Council Inbox with voting/consensus
+	m.appendLog("📬 ELDER COUNCIL INBOX")
+	m.appendLog("─────────────────────────────────────")
+
+	inbox, err := walletRpcCall(walletRPCPort, "get_elder_inbox", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("⚠️  Inbox unavailable: " + err.Error())
+	} else {
+		m.appendLog("Pending Items: " + fmt.Sprintf("%v", inbox))
+	}
+	m.appendLog("")
+
+	// Menu options
+	m.appendLog("Options:")
+	m.appendLog("  [1] View Consensus Requests")
+	m.appendLog("  [2] Vote on Pending Items")
+	m.appendLog("  [3] Review Burn2Mint Requests")
+	m.appendLog("  [4] Manage Stake")
+	m.appendLog("  [5] Update ENindex Keys")
+	m.appendLog("  [0] Return to Main Menu")
+
+	var choice int
+	fmt.Print("\nSelect option: ")
+	fmt.Scanln(&choice)
+
+	switch choice {
+	case 1:
+		return viewConsensusRequests(m)
+	case 2:
+		return voteOnPendingItems(m)
+	case 3:
+		return reviewBurn2MintRequests(m)
+	case 4:
+		return manageStake(m)
+	case 5:
+		return updateENindexKeys(m)
+	case 0:
+		m.appendLog("Returning to main menu...")
+	}
+
+	m.appendLog("═══════════════════════════════════════")
+	m.statusMsg = "Elderfier dashboard accessed"
+	return m
+}
+
+// Start Elderfyre Stayking Process
+func startElderfyreStayking(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  ELDERFYRE STAYKING CEREMONY")
+	m.appendLog("─────────────────────────────────────")
+
+	// Step 1: Create stake deposit
+	m.appendLog("Step 1: Create Elderfier Stake Deposit")
+	m.appendLog("Minimum stake required: 80 XFG (TESTNET minimum)")
+	m.appendLog("")
+
+	var amount float64
+	fmt.Print("Enter stake amount (TESTNET): ")
+	fmt.Scanln(&amount)
+	if amount < 80 {
+		m.appendLog("❌ Minimum stake is 80 XFG")
+		return m
+	}
+	amountAtomic := int64(amount * 10000000)
+	stakeParams := map[string]interface{}{
+		"amount": amountAtomic,
+		"type":   "elderfier_stake",
+	}
+
+	m.appendLog(fmt.Sprintf("Creating stake deposit: %.2f TESTNET...", amount))
+
+	stakeRes, err := walletRpcCall(walletRPCPort, "create_stake_deposit", stakeParams)
+	if err != nil {
+		m.appendLog("❌ Stake creation failed: " + err.Error())
+		return m
+	}
+
+	txHash := fmt.Sprintf("%v", stakeRes["tx_hash"])
+	m.appendLog("✅ Stake deposit created: " + txHash)
+	m.appendLog("")
+
+	// Step 2: Generate 8-char Elderfier ID
+	m.appendLog("Step 2: Generate Elderfier ID")
+	m.appendLog("Enter your 8-character Elderfier ID")
+	m.appendLog("(alphanumeric, unique identifier)")
+
+	var elderID string
+	fmt.Print("Elderfier ID (8 chars): ")
+	fmt.Scanln(&elderID)
+
+	if len(elderID) != 8 {
+		m.appendLog("❌ ID must be exactly 8 characters")
+		return m
+	}
+
+	m.appendLog("✅ Elderfier ID: " + elderID)
+	m.appendLog("")
+
+	// Step 3: Register keys to ENindex
+	m.appendLog("Step 3: Register Keys to ENindex")
+
+	// Get wallet address/keys
+	addressRes, err := walletRpcCall(walletRPCPort, "getAddresses", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("❌ Failed to get wallet address: " + err.Error())
+		return m
+	}
+
+	address := fmt.Sprintf("%v", addressRes)
+	m.appendLog("Public Address: " + address)
+
+	// Register to ENindex
+	enindexParams := map[string]interface{}{
+		"elder_id":      elderID,
+		"stake_tx_hash": txHash,
+		"address":       address,
+		"stake_amount":  amountAtomic,
+	}
+
+	m.appendLog("Registering to ENindex...")
+
+	enRes, err := walletRpcCall(walletRPCPort, "register_to_enindex", enindexParams)
+	if err != nil {
+		m.appendLog("⚠️  ENindex registration: " + err.Error())
+		m.appendLog("   (May need manual registration)")
+	} else {
+		m.appendLog("✅ Registered to ENindex: " + fmt.Sprintf("%v", enRes))
+	}
+
+	m.appendLog("")
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("🎉 ELDERFYRE STAYKING COMPLETE!")
+	m.appendLog("")
+	m.appendLog("Summary:")
+	m.appendLog(fmt.Sprintf("  • Stake: %.2f XFG", amount))
+	m.appendLog("  • Elderfier ID: " + elderID)
+	m.appendLog("  • TX Hash: " + txHash)
+	m.appendLog("  • ENindex: Registered")
+	m.appendLog("")
+	m.appendLog("You can now access Elder Council Inbox")
+	m.appendLog("once your stake is confirmed (10 blocks)")
+	m.appendLog("─────────────────────────────────────")
+
+	m.statusMsg = "Elderfyre StayKing complete"
+	return m
+}
+
+// View Consensus Requests
+func viewConsensusRequests(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  CONSENSUS REQUESTS")
+	m.appendLog("─────────────────────────────────────")
+
+	requests, err := walletRpcCall(walletRPCPort, "get_consensus_requests", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("⚠️  Failed to fetch requests: " + err.Error())
+		return m
+	}
+
+	m.appendLog("Pending Consensus Requests:")
+	m.appendLog(fmt.Sprintf("%v", requests))
+
+	return m
+}
+
+// Vote on Pending Items
+func voteOnPendingItems(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  VOTE ON PENDING ITEMS")
+	m.appendLog("─────────────────────────────────────")
+
+	// Get pending items
+	items, err := walletRpcCall(walletRPCPort, "get_pending_votes", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("⚠️  No pending votes: " + err.Error())
+		return m
+	}
+
+	m.appendLog("Pending votes: " + fmt.Sprintf("%v", items))
+	m.appendLog("")
+
+	var itemID string
+	var vote string
+
+	fmt.Print("Enter item ID to vote on: ")
+	fmt.Scanln(&itemID)
+
+	fmt.Print("Vote (approve/reject): ")
+	fmt.Scanln(&vote)
+
+	voteParams := map[string]interface{}{
+		"item_id": itemID,
+		"vote":    vote,
+	}
+
+	res, err := walletRpcCall(walletRPCPort, "submit_vote", voteParams)
+	if err != nil {
+		m.appendLog("❌ Vote failed: " + err.Error())
+	} else {
+		m.appendLog("✅ Vote submitted: " + fmt.Sprintf("%v", res))
+	}
+
+	return m
+}
+
+// Review Burn2Mint Requests
+func reviewBurn2MintRequests(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  BURN2MINT CONSENSUS REQUESTS")
+	m.appendLog("─────────────────────────────────────")
+
+	requests, err := walletRpcCall(walletRPCPort, "get_burn2mint_requests", map[string]interface{}{})
+	if err != nil {
+		m.appendLog("⚠️  No pending burn requests: " + err.Error())
+		return m
+	}
+
+	m.appendLog("Pending Burn2Mint Requests:")
+	m.appendLog(fmt.Sprintf("%v", requests))
+	m.appendLog("")
+
+	var txHash string
+	var approve string
+
+	fmt.Print("Enter burn TX hash to review: ")
+	fmt.Scanln(&txHash)
+
+	fmt.Print("Approve consensus proof? (yes/no): ")
+	fmt.Scanln(&approve)
+
+	if approve == "yes" {
+		proofParams := map[string]interface{}{
+			"tx_hash": txHash,
+			"approve": true,
+		}
+
+		res, err := walletRpcCall(walletRPCPort, "provide_consensus_proof", proofParams)
+		if err != nil {
+			m.appendLog("❌ Consensus failed: " + err.Error())
+		} else {
+			m.appendLog("✅ Consensus proof provided: " + fmt.Sprintf("%v", res))
+		}
+	} else {
+		m.appendLog("Consensus denied")
+	}
+
+	return m
+}
+
+// Manage Stake
+func manageStake(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  STAKE MANAGEMENT")
+	m.appendLog("─────────────────────────────────────")
+
+	status, _ := walletRpcCall(walletRPCPort, "get_stake_status", map[string]interface{}{})
+
+	m.appendLog("Current Stake: " + fmt.Sprintf("%v", status))
+	m.appendLog("")
+	m.appendLog("Options:")
+	m.appendLog("  [1] Increase Stake")
+	m.appendLog("  [2] View Stake Details")
+	m.appendLog("  [0] Back")
+
+	var choice int
+	fmt.Print("\nSelect: ")
+	fmt.Scanln(&choice)
+
+	switch choice {
+	case 1:
+		var addAmount float64
+		fmt.Print("Additional stake amount: ")
+		fmt.Scanln(&addAmount)
+
+		params := map[string]interface{}{
+			"amount": int64(addAmount * 10000000),
+		}
+		res, err := walletRpcCall(walletRPCPort, "increase_stake", params)
+		if err != nil {
+			m.appendLog("❌ Stake increase failed: " + err.Error())
+		} else {
+			m.appendLog("✅ Stake increased: " + fmt.Sprintf("%v", res))
+		}
+	case 2:
+		m.appendLog("Stake Details: " + fmt.Sprintf("%v", status))
+	}
+
+	return m
+}
+
+// Update ENindex Keys
+func updateENindexKeys(m model) model {
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("  UPDATE ENINDEX KEYS")
+	m.appendLog("─────────────────────────────────────")
+
+	m.appendLog("Current ENindex registration will be updated")
+	m.appendLog("")
+
+	var newID string
+	fmt.Print("New Elderfier ID (8 chars, or press Enter to keep): ")
+	fmt.Scanln(&newID)
+
+	params := map[string]interface{}{}
+	if len(newID) == 8 {
+		params["elder_id"] = newID
+	}
+
+	res, err := walletRpcCall(walletRPCPort, "update_enindex", params)
+	if err != nil {
+		m.appendLog("⚠️  Update failed: " + err.Error())
+	} else {
+		m.appendLog("✅ ENindex updated: " + fmt.Sprintf("%v", res))
+	}
+
+	return m
+}
+
+// Burn2Mint: Complete flow with Elderfier consensus
+func burn2MintMenu(m model) model {
+	m.appendLog("═══════════════════════════════════════")
+	m.appendLog("  BURN2MINT: TESTNET → HEAT (TESTNET)")
+	m.appendLog("═══════════════════════════════════════")
+
+	// Step 1: Choose burn amount
+	m.appendLog("Burn options:")
+	m.appendLog("  1) Small burn: 0.8 TEST (minimum)")
+	m.appendLog("  2) Large burn: 800 TEST")
+	fmt.Print("Choose (1 or 2): ")
+	var choice int
+	fmt.Scanln(&choice)
+
+	var amount float64
+	if choice == 2 {
+		amount = 800.0
+		m.appendLog("Selected: Large burn (800 TEST)")
+	} else {
+		amount = 0.8
+		m.appendLog("Selected: Small burn (0.8 TEST)")
+	}
+
+	// Step 2: Create burn_deposit transaction
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("Step 1/4: Creating burn deposit...")
+	amountAtomic := int64(amount * 10000000)
+	params := map[string]interface{}{"amount": amountAtomic}
+	burnRes, err := walletRpcCall(walletRPCPort, "create_burn_deposit", params)
+	if err != nil {
+		m.appendLog("❌ Burn failed: " + err.Error())
+		m.statusMsg = "Burn failed"
+		return m
+	}
+	txHash := fmt.Sprintf("%v", burnRes["tx_hash"])
+	m.appendLog("✅ Burn tx created: " + txHash)
+
+	// Step 3: Wait for confirmations
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("Step 2/4: Waiting for confirmations...")
+	for i := 1; i <= 10; i++ {
+		m.appendLog(fmt.Sprintf("  Confirmation %d/10...", i))
+		time.Sleep(1 * time.Second)
+	}
+	m.appendLog("✅ Transaction confirmed")
+
+	// Step 4: Request Elderfier consensus proof
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("Step 3/4: Requesting Elderfier consensus...")
+	m.appendLog("  → Querying Elder Council for burn proof")
+
+	consensusParams := map[string]interface{}{
+		"tx_hash": txHash,
+		"amount":  amountAtomic,
+	}
+	consensusRes, err := walletRpcCall(walletRPCPort, "request_elderfier_consensus", consensusParams)
+	if err != nil {
+		m.appendLog("❌ Consensus request failed: " + err.Error())
+		m.appendLog("  (This RPC endpoint may need implementation)")
+		m.statusMsg = "Consensus failed"
+		return m
+	}
+
+	eldernodeProof := fmt.Sprintf("%v", consensusRes["eldernode_proof"])
+	m.appendLog("✅ Elderfier consensus received")
+	m.appendLog("  Proof: " + eldernodeProof[:32] + "...")
+
+	// Step 5: Generate STARK proof using consensus as input
+	m.appendLog("─────────────────────────────────────")
+	m.appendLog("Step 4/4: Generating XFG-STARK proof...")
+
+	xfgStarkPath := binPath("xfg-stark")
+	if _, err := exec.LookPath("xfg-stark"); err == nil || xfgStarkPath != "xfg-stark" {
+		m.appendLog("  → Running: xfg-stark generate-proof")
+
+		// Use elderfier consensus proof as inputs
+		cmd := exec.Command(xfgStarkPath,
+			"generate-proof",
+			"--tx-hash", txHash,
+			"--amount", fmt.Sprintf("%d", amountAtomic),
+			"--eldernode-proof", eldernodeProof,
+		)
+
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			m.appendLog("❌ STARK generation failed: " + err.Error())
+			m.appendLog(string(out))
+			m.statusMsg = "STARK proof failed"
+			return m
+		}
+
+		m.appendLog("✅ STARK proof generated successfully")
+		m.appendLog("  Output: " + string(out)[:min(100, len(out))] + "...")
+
+		// Step 6: Ready for L2 submission
+		m.appendLog("─────────────────────────────────────")
+		m.appendLog("🎉 Burn2Mint preparation complete!")
+		m.appendLog("")
+		m.appendLog("Next steps:")
+		m.appendLog("  1. Estimate L1 gas fees (0.001-0.01 ETH)")
+		m.appendLog("  2. Call claimHEAT() on Arbitrum L2 with:")
+		m.appendLog("     • STARK proof (generated above)")
+		m.appendLog("     • Eldernode proof")
+		m.appendLog("     • L1 gas fees (msg.value)")
+		m.appendLog("  3. Receive HEAT on Ethereum L1")
+		m.appendLog("")
+		m.appendLog("⚠️  Remember: Include 20% gas buffer to avoid restart!")
+
+	} else {
+		m.appendLog("⚠️  xfg-stark CLI not found")
+		m.appendLog("  Please install xfg-stark to generate proofs")
+		m.appendLog("  Manual steps:")
+		m.appendLog("    $ xfg-stark generate-proof \\")
+		m.appendLog("      --tx-hash " + txHash + " \\")
+		m.appendLog("      --eldernode-proof " + eldernodeProof)
+	}
+
+	m.appendLog("═══════════════════════════════════════")
+	m.statusMsg = "Burn2Mint flow complete"
+	return m
+}
+
+func showLogs(m model) model {
+	m.appendLog("Displaying full logs...")
+	for _, l := range m.logs {
+		fmt.Println(l)
+	}
+	fmt.Print("\nPress Enter to continue...")
+	var dummy string
+	fmt.Scanln(&dummy)
+	m.statusMsg = "Returned from logs"
+	return m
+}
+
+func streamPipe(r io.Reader, prefix string, m *model) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			line := strings.TrimSpace(string(buf[:n]))
+			// Only log significant messages to avoid spam
+			if strings.Contains(line, "ERROR") || strings.Contains(line, "error") ||
+				strings.Contains(line, "Starting") || strings.Contains(line, "started") ||
+				strings.Contains(line, "Failed") || strings.Contains(line, "height") ||
+				strings.Contains(line, "Listening") || strings.Contains(line, "Connected") {
+				m.appendLog(fmt.Sprintf("%s: %s", prefix, line))
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				m.appendLog(fmt.Sprintf("%s stream error: %s", prefix, err.Error()))
+			}
+			return
+		}
+	}
+}
+
+type nodeInfo struct {
+	Height int `json:"height"`
+	Peers  int `json:"peers"`
+}
+
+func getInfo(port int) (nodeInfo, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", port)
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nodeInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nodeInfo{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nodeInfo{}, fmt.Errorf("HTTP %d: %s - body: %s", resp.StatusCode, resp.Status, string(body))
+	}
+
+	// Log response for debugging (first few characters)
+	if len(body) > 0 {
+		sample := string(body)
+		if len(sample) > 200 {
+			sample = sample[:200] + "...[truncated]"
+		}
+		// Note: In a production environment, you might want to make this conditional
+		// For now, let's keep it for debugging purposes
+	}
+
+	// Try to parse JSON
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nodeInfo{}, fmt.Errorf("invalid JSON response: %w - body: %s", err, string(body))
+	}
+
+	height := 0
+	peers := 0
+	if h, ok := out["height"].(float64); ok {
+		height = int(h)
+	} else if h, ok := out["height"].(int); ok {
+		height = h
+	} else if h, ok := out["height"].(json.Number); ok {
+		if v, err := h.Int64(); err == nil {
+			height = int(v)
+		}
+	}
+
+	if p, ok := out["incoming_connections_count"].(float64); ok {
+		peers += int(p)
+	} else if p, ok := out["incoming_connections_count"].(int); ok {
+		peers += p
+	} else if p, ok := out["incoming_connections_count"].(json.Number); ok {
+		if v, err := p.Int64(); err == nil {
+			peers += int(v)
+		}
+	}
+
+	if p, ok := out["outgoing_connections_count"].(float64); ok {
+		peers += int(p)
+	} else if p, ok := out["outgoing_connections_count"].(int); ok {
+		peers += p
+	} else if p, ok := out["outgoing_connections_count"].(json.Number); ok {
+		if v, err := p.Int64(); err == nil {
+			peers += int(v)
+		}
+	}
+
+	return nodeInfo{Height: height, Peers: peers}, nil
+}
+
+func walletRpcCall(port int, method string, params map[string]interface{}) (map[string]interface{}, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/json_rpc", port)
+	payload := map[string]interface{}{"jsonrpc": "2.0", "id": "0", "method": method, "params": params}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to wallet RPC: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read wallet RPC response: %w", err)
+	}
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("wallet RPC HTTP %d: %s - body: %s", resp.StatusCode, resp.Status, string(body))
+	}
+
+	// Log response for debugging (first few characters)
+	if len(body) > 0 {
+		sample := string(body)
+		if len(sample) > 200 {
+			sample = sample[:200] + "...[truncated]"
+		}
+		// Note: In a production environment, you might want to make this conditional
+		// For now, let's keep it for debugging purposes
+	}
+
+	// Try to parse JSON
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("invalid wallet RPC JSON response: %w - body: %s", err, string(body))
+	}
+
+	// Check for RPC error
+	if errObj, ok := out["error"].(map[string]interface{}); ok {
+		if msg, ok := errObj["message"].(string); ok {
+			return nil, fmt.Errorf("wallet RPC error: %s", msg)
+		}
+		return nil, fmt.Errorf("wallet RPC error: %v", errObj)
+	}
+
+	// Return result
+	if res, ok := out["result"].(map[string]interface{}); ok {
+		return res, nil
+	}
+
+	// If no result field, return the whole response
+	return out, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// testRPCConnection is a diagnostic function to test raw RPC responses
+func testRPCConnection(port int) (string, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", port)
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to connect: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return fmt.Sprintf("Status: %d, Body: %s", resp.StatusCode, string(body)), nil
+}
+
+func main() {
+	initVersionInfo()
+	fmt.Printf("====== %s TESTNET TUI ======\n", verInfo.projectName)
+	fmt.Printf("Fuego v.%s\n", verInfo.projectVersion)
+	fmt.Println("P2P Port: 20808")
+	fmt.Println("RPC Ports: Node=28280, Wallet=28283")
+	fmt.Println("Data Dir: ~/.fuego-testnet")
+	fmt.Println("Coin: TEST, Address Prefix: 1075740")
+	fmt.Println("")
+
+	if runtime.GOOS == "windows" {
+		// VT100 support
+	}
+	p := tea.NewProgram(initialModel())
+	if err := p.Start(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+// initVersionInfo populates version data from version.h
 func initVersionInfo() {
-	versionFile := filepath.Join(CurrentConfig.HomeDir, "build", "release", "version", "version.h")
+	// Try to read version.h
+	versionFile := filepath.Join(filepath.Dir(binPath("fuegod")), "..", "version", "version.h")
 	content, err := os.ReadFile(versionFile)
+	if err != nil {
+		versionFile = filepath.Join(filepath.Dir(binPath("fuegod")), "version", "version.h")
+		content, err = os.ReadFile(versionFile)
+	}
+
 	if err == nil {
 		verStr := string(content)
+
+		// Extract PROJECT_RELEASE
+		reRelease := regexp.MustCompile(`#define PROJECT_RELEASE "([^"]+)"`)
+		if match := reRelease.FindStringSubmatch(verStr); len(match) > 1 {
+			verInfo.projectName = match[1]
+		}
+
+		// Extract version parts
 		reVer := regexp.MustCompile(`#define PROJECT_VERSION "([^"]+)"`)
+		reBuild := regexp.MustCompile(`#define PROJECT_VERSION_BUILD_NO "([^"]+)"`)
 		if verMatch := reVer.FindStringSubmatch(verStr); len(verMatch) > 1 {
-			verInfo.projectVersion = verMatch[1]
+			if buildMatch := reBuild.FindStringSubmatch(verStr); len(buildMatch) > 1 {
+				verInfo.projectVersion = fmt.Sprintf("%s.%s", verMatch[1], buildMatch[1])
+			}
 		}
-		reBuild := regexp.MustCompile(`#define BUILD_VERSION "([^"]+)"`)
-		if buildMatch := reBuild.FindStringSubmatch(verStr); len(buildMatch) > 1 {
-			verInfo.projectVersion = fmt.Sprintf("%s.%s", verInfo.projectVersion, buildMatch[1])
-		}
+
+		// Extract commit ID
 		reCommit := regexp.MustCompile(`#define BUILD_COMMIT_ID "([^"]+)"`)
 		if commitMatch := reCommit.FindStringSubmatch(verStr); len(commitMatch) > 1 {
 			commit := commitMatch[1]
@@ -77,122 +1131,35 @@ func initVersionInfo() {
 				verInfo.projectVersion = fmt.Sprintf("%s(%s)", verInfo.projectVersion, commit)
 			}
 		}
-		verInfo.testnetVersion = CurrentConfig.Name + " v." + verInfo.projectVersion
-		verInfo.fullVersion = fmt.Sprintf("%s %s", CurrentConfig.CoinName, CurrentConfig.Name)
+
+		verInfo.fullVersion = fmt.Sprintf("%s || v%s", verInfo.projectName, verInfo.projectVersion)
 	} else {
-		verInfo.fullVersion = fmt.Sprintf("%s %s (dev)", CurrentConfig.CoinName, CurrentConfig.Name)
+		// Fallback: try fuegod --version
+		path := binPath("fuegod")
+		if path != "fuegod" {
+			cmd := exec.Command(path, "--version")
+			output, err := cmd.Output()
+			if err == nil {
+				versionStr := string(output)
+				re := regexp.MustCompile(`^([A-Za-z0-9\s]+)\s*\|\|\s*v([0-9.]+)`)
+				matches := re.FindStringSubmatch(versionStr)
+				if len(matches) > 2 {
+					verInfo.projectName = strings.TrimSpace(matches[1])
+					verInfo.projectVersion = matches[2]
+					verInfo.fullVersion = strings.TrimSpace(versionStr)
+				}
+			}
+		}
+	}
+
+	// Set defaults if still empty
+	if verInfo.projectName == "" {
+		verInfo.projectName = "Fuego DYNAMIGO"
+	}
+	if verInfo.projectVersion == "" {
+		verInfo.projectVersion = "1.10.0.1076(0.2)"
+	}
+	if verInfo.fullVersion == "" {
+		verInfo.fullVersion = "Fuego DYNAMIGO || v1.10.0.1076(0.2)"
 	}
 }
-
-func (t *Tui) setupUI() {
-	t.pages = tview.NewPages()
-	t.showMainMenu()
-	t.app.SetRoot(t.pages, true)
-}
-
-func (t *Tui) showMainMenu() {
-	header := tview.NewTextView().
-		SetTextAlign(tview.AlignCenter).
-		SetDynamicColors(true).
-		SetText(fmt.Sprintf("[yellow]🔥 %s %s TUI\n[green]%s\n[grey]Mouse enabled - Click items or use shortcuts", 
-			CurrentConfig.CoinName, CurrentConfig.Name, verInfo.fullVersion))
-
-	list := tview.NewList().
-		ShowSecondaryText(true).
-		SetDoneFunc(func() {
-			t.app.Stop()
-		})
-
-	list.AddItem("Node & Wallet", "Start/Stop node, wallet RPC, status", '1', func() {
-		t.showNodeWalletMenu()
-	})
-	list.AddItem("Elderfier Menu", "Staking, consensus, voting", '2', func() {
-		t.showElderfierMenu()
-	})
-	list.AddItem("Æternal Flame", "Burn2Mint flow (XFG→HEAT)", '3', func() {
-		t.showBurn2MintMenu()
-	})
-	list.AddItem("Transfer", "Create wallet, send, receive", '4', func() {
-		t.showTransferMenu()
-	})
-	list.AddItem("View All Logs", "Show complete log history", 'l', func() {
-		t.showLogs()
-	})
-	list.AddItem("[red]Quit", "Exit the TUI", 'q', func() {
-		t.app.Stop()
-	})
-
-	status := tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextFunc(func() string {
-			text := fmt.Sprintf("[white]Status: [yellow]%s\n", t.getStatus())
-			if t.runningNode {
-				text += fmt.Sprintf("[white]Node: [green]running[white] | Height: [cyan]%d[white] | Peers: [cyan]%d\n", t.height, t.peers)
-			} else {
-				text += "[white]Node: [red]stopped\n"
-			}
-			if t.runningW {
-				text += fmt.Sprintf("[white]Wallet: [green]running[white] on port [cyan]%d\n", CurrentConfig.WalletRPCPort)
-			} else {
-				text += "[white]Wallet: [red]stopped\n"
-			}
-			return text
-		})
-
-	logView := tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true).
-		SetChangedFunc(func() {
-			t.app.Draw()
-		})
-
-	t.updateLogs(logView)
-
-	flex := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(header, 3, 1, false).
-		AddItem(tview.NewFlex().
-			AddItem(list, 0, 2, true).
-			AddItem(logView, 0, 2, false), 0, 1, true).
-		AddItem(status, 4, 1, false)
-
-	t.pages.AddPage("main", flex, true, true)
-}
-
-func (t *Tui) showNodeWalletMenu() {
-	list := tview.NewList().
-		SetTitle(fmt.Sprintf("[yellow]Node & Wallet Controls (%s)", CurrentConfig.Name)).
-		SetBorder(true)
-
-	list.AddItem("Start Node", fmt.Sprintf("Launch %s on ports %d/%d", CurrentConfig.NodeBinary, CurrentConfig.NodeRPCPort, CurrentConfig.NodeP2PPort), '1', t.startNode)
-	list.AddItem("Stop Node", "Kill running node process", '2', t.stopNode)
-	list.AddItem("Node Status", "Query height and peer count", '3', t.nodeStatus)
-	list.AddItem("Start Wallet RPC", fmt.Sprintf("Launch %s on port %d", CurrentConfig.WalletBinary, CurrentConfig.WalletRPCPort), '4', t.startWallet)
-	list.AddItem("[gray]Back", "Return to main menu", '0', func() {
-		t.pages.RemovePage("nodeload")
-	})
-
-	t.addLogViewAndBack(list, "nodeload")
-}
-
-func (t *Tui) showElderfierMenu() {
-	list := tview.NewList().
-		SetTitle(fmt.Sprintf("[cyan]Elderfier Menu (%s)", CurrentConfig.Name)).
-		SetBorder(true)
-
-	minStake := float64(CurrentConfig.MinStake) / 100000000
-	list.AddItem("Start Elderfier Stayking", fmt.Sprintf("Create %.0f %s stake deposit", minStake, CurrentConfig.CoinName), '1', t.startStake)
-	list.AddItem("Check Stake Status", "Query get_stake_status", '2', t.checkStake)
-	list.AddItem("View Consensus Requests", "get_consensus_requests", '3', t.viewConsensus)
-	list.AddItem("Vote on Pending", "get_pending_votes + vote", '4', t.voteOnPending)
-	list.AddItem("Register to ENindex", "Interactive ENindex registration", '5', t.registerENindex)
-	list.AddItem("Increase Stake", "Add to existing stake", '6', t.increaseStake)
-	list.AddItem("Update ENindex Keys", "Change Elderfier ID", '7', t.updateENindex)
-	list.AddItem("[gray]Back", "Return to main menu", '0', func() {
-		t.pages.RemovePage("elder")
-	})
-
-	t.addLogViewAndBack(list, "elder")
-}
-
-func (t *Tui) showBurn

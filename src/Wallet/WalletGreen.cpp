@@ -636,7 +636,8 @@ namespace CryptoNote
       
       /* Add YIELD commitment to transaction extra */
       std::vector<uint8_t> extra;
-      if (!CryptoNote::createTxExtraWithYieldCommitment(finalCommitment.commitment, amount, term, "standard", finalCommitment.metadata, extra))
+      std::vector<uint8_t> gift_secret; // Empty gift secret for non-gifted deposits
+      if (!CryptoNote::createTxExtraWithYieldCommitment(finalCommitment.commitment, amount, term, "standard", finalCommitment.metadata, 1, gift_secret, extra))
       {
         throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "Failed to create YIELD commitment in transaction extra");
       }

@@ -261,7 +261,7 @@ public:
   bool isBurnDeposit(uint32_t term) const;
   uint64_t getBurnDepositMinAmount() const { return m_burnDepositMinAmount; }
   uint64_t getBurnDepositStandardAmount() const { return m_burnDepositStandardAmount; }
-  uint64_t getBurnDeposit8000Amount() const { return m_burnDeposit8000Amount; }
+  uint64_t getBurnDepositLargeAmount() const { return m_burnDepositLargeAmount; }
   uint32_t getDepositTermForever() const { return m_depositTermForever; }
   uint32_t getDepositTermBurn() const { return m_depositTermForever; }  // Alias for compatibility
 
@@ -369,7 +369,7 @@ private:
   // Burn deposit configuration
   uint64_t m_burnDepositMinAmount;
   uint64_t m_burnDepositStandardAmount;
-  uint64_t m_burnDeposit8000Amount;
+  uint64_t m_burnDepositLargeAmount;
   uint32_t m_depositTermForever;
 
   // HEAT token conversion
@@ -507,7 +507,7 @@ public:
   // Burn deposit configuration builders
   CurrencyBuilder& burnDepositMinAmount(uint64_t val) { m_currency.m_burnDepositMinAmount = val; return *this; }
   CurrencyBuilder& burnDepositStandardAmount(uint64_t val) { m_currency.m_burnDepositStandardAmount = val; return *this; }
-  CurrencyBuilder& burnDeposit8000Amount(uint64_t val) { m_currency.m_burnDeposit8000Amount = val; return *this; }
+  CurrencyBuilder& burnDepositLargeAmount(uint64_t val) { m_currency.m_burnDepositLargeAmount = val; return *this; }
   CurrencyBuilder& depositTermForever(uint32_t val) { m_currency.m_depositTermForever = val; return *this; }
 
   // HEAT conversion builder

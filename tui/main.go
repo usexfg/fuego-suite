@@ -181,23 +181,26 @@ func binPath(name string) string {
 	// Check if we're in tui directory
 	if filepath.Base(cwd) == "tui" {
 		cwd = filepath.Dir(cwd)
-		// Go up one more to get to fuego (copy) directory
-		if filepath.Base(cwd) == "fuego-copy" {
-			cwd = filepath.Dir(cwd)
+		// Go up one more to get to fuego directory
+		if filepath.Base(cwd) == "fuego" {
+			// Try to find build directory
+			testPath := filepath.Join(cwd, "build", "src", name)
+			if _, err := os.Stat(testPath); err == nil {
+				return testPath
+			}
 		}
 	}
-	// Also try the current directory structure
-	if strings.Contains(cwd, "fuego") {
-		testPath := filepath.Join(cwd, "fuego-copy", "build", "src", name)
-		if _, err := os.Stat(testPath); err == nil {
-			return testPath
-		}
-	}
-	// Try direct path
+	// Try direct path in current directory
 	cand := filepath.Join(cwd, "build", "src", name)
 	if _, err := os.Stat(cand); err == nil {
 		return cand
 	}
+	// Try in parent directory
+	cand = filepath.Join(cwd, "..", "build", "src", name)
+	if _, err := os.Stat(cand); err == nil {
+		return cand
+	}
+	// Fall back to PATH
 	return name
 }
 
@@ -208,10 +211,13 @@ func startNode(m model) model {
 		return m
 	}
 	path := binPath("fuegod")
-	if path == "" {
-		m.appendLog("fuegod binary not found")
-		m.statusMsg = "Binary not found"
-		return m
+	if path == "fuegod" {
+		// Try to find in PATH
+		if _, err := exec.LookPath("fuegod"); err != nil {
+			m.appendLog("fuegod binary not found in PATH or build directory")
+			m.statusMsg = "Binary not found"
+			return m
+		}
 	}
 	// Use mainnet-specific data directory
 	var dataDir string
@@ -244,14 +250,20 @@ func startNode(m model) model {
 	// Wait for RPC to initialize before querying
 	time.Sleep(3 * time.Second)
 	go func() {
-		for m.runningNode {
+		for m.runningNode && m.nodeCmd != nil {
 			info, err := getInfo(nodeRPCPort)
 			if err == nil {
 				m.height = info.Height
 				m.peers = info.Peers
 				m.statusMsg = fmt.Sprintf("Node running — height %d", m.height)
 			} else {
-				m.appendLog("Failed to get node info: " + err.Error())
+				// Log errors less frequently to avoid spam
+				m.mutex.Lock()
+				shouldLog := len(m.logs) == 0 || !strings.Contains(m.logs[len(m.logs)-1], "Failed to query node")
+				m.mutex.Unlock()
+				if shouldLog {
+					m.appendLog("Failed to query node: " + err.Error())
+				}
 			}
 			time.Sleep(5 * time.Second)
 		}
@@ -270,6 +282,8 @@ func stopNode(m model) model {
 	m.nodeCmd = nil
 	m.runningNode = false
 	m.statusMsg = "Node stopped"
+	m.height = 0
+	m.peers = 0
 	return m
 }
 
@@ -292,10 +306,13 @@ func startWalletRPC(m model) model {
 		return m
 	}
 	path := binPath("walletd")
-	if path == "" {
-		m.appendLog("walletd binary not found")
-		m.statusMsg = "Binary not found"
-		return m
+	if path == "walletd" {
+		// Try to find in PATH
+		if _, err := exec.LookPath("walletd"); err != nil {
+			m.appendLog("walletd binary not found in PATH or build directory")
+			m.statusMsg = "Binary not found"
+			return m
+		}
 	}
 	// Use mainnet-specific data directory
 	var dataDir string
@@ -881,11 +898,17 @@ func streamPipe(r io.Reader, prefix string, m *model) {
 		n, err := r.Read(buf)
 		if n > 0 {
 			line := strings.TrimSpace(string(buf[:n]))
-			m.appendLog(fmt.Sprintf("%s: %s", prefix, line))
+			// Only log significant messages to avoid spam
+			if strings.Contains(line, "ERROR") || strings.Contains(line, "error") ||
+				strings.Contains(line, "Starting") || strings.Contains(line, "started") ||
+				strings.Contains(line, "Failed") || strings.Contains(line, "height") ||
+				strings.Contains(line, "Listening") || strings.Contains(line, "Connected") {
+				m.appendLog(fmt.Sprintf("%s: %s", prefix, line))
+			}
 		}
 		if err != nil {
 			if err != io.EOF {
-				m.appendLog(prefix + " error: " + err.Error())
+				m.appendLog(fmt.Sprintf("%s stream error: %s", prefix, err.Error()))
 			}
 			return
 		}
@@ -905,47 +928,125 @@ func getInfo(port int) (nodeInfo, error) {
 		return nodeInfo{}, err
 	}
 	defer resp.Body.Close()
-	var out map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nodeInfo{}, err
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nodeInfo{}, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nodeInfo{}, fmt.Errorf("HTTP %d: %s - body: %s", resp.StatusCode, resp.Status, string(body))
+	}
+
+	// Log response for debugging (first few characters)
+	if len(body) > 0 {
+		sample := string(body)
+		if len(sample) > 200 {
+			sample = sample[:200] + "...[truncated]"
+		}
+		// Note: In a production environment, you might want to make this conditional
+		// For now, let's keep it for debugging purposes
+	}
+
+	// Try to parse JSON
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nodeInfo{}, fmt.Errorf("invalid JSON response: %w - body: %s", err, string(body))
+	}
+
 	height := 0
 	peers := 0
 	if h, ok := out["height"].(float64); ok {
 		height = int(h)
 	} else if h, ok := out["height"].(int); ok {
 		height = h
+	} else if h, ok := out["height"].(json.Number); ok {
+		if v, err := h.Int64(); err == nil {
+			height = int(v)
+		}
 	}
+
 	if p, ok := out["incoming_connections_count"].(float64); ok {
 		peers += int(p)
 	} else if p, ok := out["incoming_connections_count"].(int); ok {
 		peers += p
+	} else if p, ok := out["incoming_connections_count"].(json.Number); ok {
+		if v, err := p.Int64(); err == nil {
+			peers += int(v)
+		}
 	}
+
 	if p, ok := out["outgoing_connections_count"].(float64); ok {
 		peers += int(p)
 	} else if p, ok := out["outgoing_connections_count"].(int); ok {
 		peers += p
+	} else if p, ok := out["outgoing_connections_count"].(json.Number); ok {
+		if v, err := p.Int64(); err == nil {
+			peers += int(v)
+		}
 	}
+
 	return nodeInfo{Height: height, Peers: peers}, nil
 }
 
 func walletRpcCall(port int, method string, params map[string]interface{}) (map[string]interface{}, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json_rpc", port)
 	payload := map[string]interface{}{"jsonrpc": "2.0", "id": "0", "method": method, "params": params}
-	b, _ := json.Marshal(payload)
-	client := http.Client{Timeout: 4 * time.Second}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(b))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to wallet RPC: %w", err)
 	}
 	defer resp.Body.Close()
-	var out map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read wallet RPC response: %w", err)
 	}
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("wallet RPC HTTP %d: %s - body: %s", resp.StatusCode, resp.Status, string(body))
+	}
+
+	// Log response for debugging (first few characters)
+	if len(body) > 0 {
+		sample := string(body)
+		if len(sample) > 200 {
+			sample = sample[:200] + "...[truncated]"
+		}
+		// Note: In a production environment, you might want to make this conditional
+		// For now, let's keep it for debugging purposes
+	}
+
+	// Try to parse JSON
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("invalid wallet RPC JSON response: %w - body: %s", err, string(body))
+	}
+
+	// Check for RPC error
+	if errObj, ok := out["error"].(map[string]interface{}); ok {
+		if msg, ok := errObj["message"].(string); ok {
+			return nil, fmt.Errorf("wallet RPC error: %s", msg)
+		}
+		return nil, fmt.Errorf("wallet RPC error: %v", errObj)
+	}
+
+	// Return result
 	if res, ok := out["result"].(map[string]interface{}); ok {
 		return res, nil
 	}
+
+	// If no result field, return the whole response
 	return out, nil
 }
 
@@ -954,6 +1055,24 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// testRPCConnection is a diagnostic function to test raw RPC responses
+func testRPCConnection(port int) (string, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", port)
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to connect: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return fmt.Sprintf("Status: %d, Body: %s", resp.StatusCode, string(body)), nil
 }
 
 func main() {
@@ -969,7 +1088,7 @@ func main() {
 	if runtime.GOOS == "windows" {
 		// VT100 support
 	}
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel())
 	if err := p.Start(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -979,8 +1098,13 @@ func main() {
 // initVersionInfo populates version data from version.h
 func initVersionInfo() {
 	// Try to read version.h
-	versionFile := filepath.Join(filepath.Dir(binPath("fuegod")), "version", "version.h")
+	versionFile := filepath.Join(filepath.Dir(binPath("fuegod")), "..", "version", "version.h")
 	content, err := os.ReadFile(versionFile)
+	if err != nil {
+		versionFile = filepath.Join(filepath.Dir(binPath("fuegod")), "version", "version.h")
+		content, err = os.ReadFile(versionFile)
+	}
+
 	if err == nil {
 		verStr := string(content)
 
@@ -1030,12 +1154,12 @@ func initVersionInfo() {
 
 	// Set defaults if still empty
 	if verInfo.projectName == "" {
-		verInfo.projectName = "DYNAMIGO"
+		verInfo.projectName = "Fuego DYNAMIGO"
 	}
 	if verInfo.projectVersion == "" {
 		verInfo.projectVersion = "1.10.0.1076(0.2)"
 	}
 	if verInfo.fullVersion == "" {
-		verInfo.fullVersion = "DYNAMIGO || v1.10.0.1076(0.2)"
+		verInfo.fullVersion = "Fuego DYNAMIGO || v1.10.0.1076(0.2)"
 	}
 }

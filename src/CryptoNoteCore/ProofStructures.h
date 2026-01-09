@@ -81,7 +81,7 @@ struct ProofVerificationData {
     Crypto::PublicKey proof_pubkey;
     std::string tx_hash;
     uint64_t timestamp;
-    uint32_t term_months;
+    uint32_t term;
     std::string deposit_type;
 
     bool serialize(CryptoNote::ISerializer& serializer) const;

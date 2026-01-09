@@ -18,6 +18,7 @@
 #include "CryptoNoteBasicImpl.h"
 #include "CryptoNoteFormatUtils.h"
 #include "CryptoNoteTools.h"
+#include "CryptoNoteConfig.h"
 #include "CryptoNoteSerialization.h"
 
 #include "Common/Base58.h"
@@ -33,11 +34,13 @@ namespace CryptoNote {
   /* CryptoNote helper functions                                          */
   /************************************************************************/
   //-----------------------------------------------------------------------------------------------
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) {
-    static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
-    assert(currentBlockSize <= 3 * medianSize);
-    assert(medianSize <= std::numeric_limits<uint32_t>::max());
-    assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize, uint8_t blockMajorVersion) {
+        static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
+            // Use 2x multiplier for older versions (before V10), 3x for V10+
+            size_t maxMultiplier = (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) ? 3 : 2;
+            assert(currentBlockSize <= maxMultiplier * medianSize);
+            assert(medianSize <= std::numeric_limits<uint32_t>::max());
+            assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
 
     if (amount == 0) {
       return 0;
@@ -48,7 +51,9 @@ namespace CryptoNote {
     }
 
     uint64_t productHi;
-    uint64_t productLo = mul128(amount, currentBlockSize * (UINT64_C(3) * medianSize - currentBlockSize), &productHi);
+        // Use 2x multiplier for older versions (before V10), 3x for V10+
+                size_t penaltyMultiplier = (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) ? 3 : 2;
+                uint64_t productLo = mul128(amount, currentBlockSize * (static_cast<uint64_t>(penaltyMultiplier) * medianSize - currentBlockSize), &productHi);
 
     uint64_t penalizedAmountHi;
     uint64_t penalizedAmountLo;

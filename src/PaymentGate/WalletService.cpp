@@ -1448,51 +1448,7 @@ namespace PaymentService
     return std::error_code();
   }
 
-  std::error_code WalletService::submitBurnTransaction(const SubmitBurnTransaction::Request &request, std::string &transactionHash, std::string &burnSecretKey) {
-    try
-    {
-      System::EventLock lk(readyEvent);
 
-      validateAddresses(request.sourceAddresses, currency, logger);
-
-      CryptoNote::TransactionParameters sendParams;
-      sendParams.extra = Common::asString(Common::fromHex(request.extra));
-
-      sendParams.sourceAddresses = request.sourceAddresses;
-      
-      // Create a burn transaction with a special destination address
-      // and the specified amount to be burned
-      WalletRpcOrder burnOrder;
-      burnOrder.amount = request.amount;
-      burnOrder.address = request.address;  // This will be the burn destination
-      sendParams.destinations = convertWalletRpcOrdersToWalletOrders({burnOrder});
-      
-      sendParams.fee = request.fee;
-      sendParams.mixIn = request.anonymity;
-      sendParams.unlockTimestamp = request.unlockTime;
-
-      size_t transactionId = wallet.makeTransaction(sendParams);
-      const auto& tx = wallet.getTransaction(transactionId);
-      transactionHash = Common::podToHex(tx.hash);
-      
-      // Extract the transaction secret key
-      burnSecretKey = Common::podToHex(tx.secretKey);
-
-      logger(Logging::DEBUGGING) << "Burn transaction " << transactionHash << " has been created";
-    }
-    catch (std::system_error &x)
-    {
-      logger(Logging::WARNING) << "Error while creating delayed transaction: " << x.what();
-      return x.code();
-    }
-    catch (std::exception &x)
-    {
-      logger(Logging::WARNING) << "Error while creating delayed transaction: " << x.what();
-      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
-    }
-
-    return std::error_code();
-  }
 
   std::error_code WalletService::createDelayedTransaction(const CreateDelayedTransaction::Request &request, std::string &transactionHash)
   {
@@ -2330,7 +2286,6 @@ namespace PaymentService
       }
     }
 
-    // Removed getTotalRebornXfg - no longer needed
 
     std::error_code WalletService::getBurnPercentage(double &burnPercentage)
     {
@@ -2345,13 +2300,6 @@ namespace PaymentService
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
       }
     }
-
-    // Removed getRebornPercentage - no longer needed
-
-    // Removed getSupplyIncreasePercentage - no longer needed
-
-
-        
 
   std::error_code WalletService::storeBurnDepositSecret(
       const std::string& transactionHash,

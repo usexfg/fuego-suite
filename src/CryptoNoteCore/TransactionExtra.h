@@ -60,109 +60,13 @@
 // 0xCD tags: COLD (CD) yield deposits
 #define TX_EXTRA_CD_DEPOSIT_SECRET          0xCD  // COLD yield deposits
 
-/*
- * COLD DEPOSIT (CD) YIELD SYSTEM
- * ===============================
- *
- * Fixed term deposit options with guaranteed APR rates:
- *
- * Term Code | Term Length | APR Rate | Days | Basis Points
- * ----------|-------------|----------|------|-------------
- *    1      |   3 months  |   8%     |  90  |    800
- *    2      |   9 months  |  18%     | 270  |   1800
- *    3      |   1 year    |  21%     | 365  |   2100
- *    4      |   3 years   |  33%     | 1095 |   3300
- *    5      |   5 years   |  80%     | 1825 |   8000
- *
- * Deposits are locked for the full term and earn interest off-chain.
- * Staged withdrawal may be permitted - funds remain locked until maturity.
- *
- * Usage Example:
- *   createTxExtraWithCDDepositSecret(secret_key, amount, CD_APR_21PCT, CD_TERM_1YR_21PCT, chain_code, metadata, extra);
- */
 
 // 0x_E tags: Elderfier system (consensus/messaging)
 #define TX_EXTRA_ELDERFIER_MESSAGE          0xEF  // Elderfier messaging/consensus
 
-// 0x_F tags: Encrypted P2P Media Messages (ephemeral content)
-#define TX_EXTRA_ENCRYPTED_MEDIA_MESSAGE    0xF0  // Encrypted media message with TTL
-#define TX_EXTRA_MEDIA_ATTACHMENT           0xF1  // Media attachment chunk
-#define TX_EXTRA_MEDIA_TRANSFER_REQUEST     0xF2  // Request for media transfer
-#define TX_EXTRA_MEDIA_TRANSFER_RESPONSE    0xF3  // Response to media transfer
-
-/*
- * ============================================================================
- * ENCRYPTED P2P MEDIA MESSAGING SYSTEM - DESIGN OVERVIEW
- * ============================================================================
- *
- * This system enables encrypted, ephemeral media sharing in the Fuego blockchain
- * with automatic content cleanup to prevent permanent storage on nodes.
- *
- * KEY FEATURES:
- * - End-to-end encryption using ECDH + AES-256-GCM
- * - Configurable TTL (Time To Live) with automatic cleanup
- * - Support for video, audio, images, documents (up to 100MB)
- * - Chunked transfer for large files
- * - Transfer request/response protocol
- * - Cryptographic signatures for authenticity
- *
- * ARCHITECTURE:
- *
- * 1. ENCRYPTED MEDIA MESSAGE (0xF0):
- *    - Contains encrypted media data or reference
- *    - Includes TTL for automatic cleanup
- *    - Signed by sender for authenticity
- *    - Can be inline (<64KB) or chunked (>64KB)
- *
- * 2. MEDIA ATTACHMENT (0xF1):
- *    - Individual chunks for large files
- *    - SHA3-256 integrity verification
- *    - Reference to parent message
- *
- * 3. TRANSFER REQUEST/RESPONSE (0xF2/0xF3):
- *    - Request media from other nodes
- *    - Response with availability status
- *    - Signed for authenticity
- *
- * USAGE WORKFLOW:
- *
- * 1. Sender encrypts media with recipient's public key
- * 2. Creates TX_EXTRA_ENCRYPTED_MEDIA_MESSAGE transaction
- * 3. If media > 64KB, creates additional TX_EXTRA_MEDIA_ATTACHMENT chunks
- * 4. Recipient receives and decrypts using private key
- * 5. After TTL expires, nodes automatically delete content
- *
- * TRANSFER PROTOCOL:
- *
- * 1. Node A sends TRANSFER_REQUEST for media hash
- * 2. Node B responds with TRANSFER_RESPONSE (accepted/rejected)
- * 3. If accepted, Node B sends media via new transaction(s)
- * 4. Node A receives and validates media integrity
- *
- * SECURITY:
- * - ECDH key exchange for symmetric encryption
- * - AES-256-GCM authenticated encryption
- * - SHA3-256 content hashing
- * - Ed25519 digital signatures
- * - TTL enforcement prevents permanent storage
- *
- * EXAMPLE USAGE:
- *
- * // Create encrypted video message
- * std::vector<uint8_t> videoData = loadVideoFile("myvideo.mp4");
- * std::vector<uint8_t> extra;
- *
- * bool success = createTxExtraWithEncryptedMediaMessage(
- *     senderPublicKey, recipientPublicKey, 86400, // 24 hour TTL
- *     MEDIA_TYPE_VIDEO, videoData, recipientAddress, senderKeys, extra
- * );
- *
- * ============================================================================
- */
-
 // 0x07 FUEGO MOB Custom Interest Assets   Check full compatibility -
 #define TX_EXTRA_YIELD_COMMITMENT           0x07  //  yield commitment
-#define TX_EXTRA_DEPOSIT_RECEIPT            0x17  // Deposit receipt
+#define TX_EXTRA_DEPOSIT_RECEIPT            0x69  // Deposit receipt
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 
@@ -209,11 +113,15 @@ struct TransactionExtraHeatCommitment {
 };
 
 struct TransactionExtraYieldCommitment {
-  Crypto::Hash commitment;
-  uint64_t amount;
-  uint32_t term_months;
-  std::string yield_scheme;
+  Crypto::Hash commitment;       // 🔒 SECURE: Only commitment hash on blockchain
+  uint64_t amount;               // Principal amount in XFG
+  uint32_t term;                 // Deposit term in blocks
   std::vector<uint8_t> metadata;
+  uint8_t claimChainCode;        // Claim chain (1=ETH, 2=SOL, 3=C0DL)
+  std::string CIAId;             // Crypto Interest Asset ID (hash of token/asset)
+  std::vector<uint8_t> gift_secret;        // Secret key encrypted with recipient's view key
+                                            // Only used for gifted deposits, otherwise dummy data with pattern
+
 
   bool serialize(ISerializer& serializer);
 };
@@ -256,73 +164,21 @@ struct TransactionExtraElderfierMessage {
 // Reserved tags: 0x0A (Album), 0x0B (Listen Rights), 0x0C (Curator), 0x1C (CURA Coin), 0xA8 (DIGM Mint)
 
 struct TransactionExtraCDDepositSecret {
-  std::vector<uint8_t> secret_key;  // 32-byte deposit secret key
-  uint64_t xfg_amount;              // XFG amount for CD conversion
-  uint32_t apr_basis_points;        // APR in basis points (800=8%, 1800=18%, etc.)
-  uint8_t term_code;                // CD term code (1=3mo/8%, 2=9mo/18%, 3=1yr/21%, 4=3yr/33%, 5=5yr/80%)
-  uint8_t chain_code;               // Chain code (1=testnet, 2=mainnet)
-  std::vector<uint8_t> metadata;    // Additional metadata
+  Crypto::Hash commitment;       // 🔒 SECURE: Only commitment hash on blockchain
+  uint64_t amount;               // Principal amount in XFG
+  uint32_t term;                 // Deposit term in blocks
+  std::vector<uint8_t> metadata;
+  uint8_t claimChainCode;        // Claim chain (1=ETH, 2=SOL, 3=C0DL)
+  uint32_t apr_basis_points;     // APR in basis points for CD
+  std::vector<uint8_t> gift_secret;        // Secret key encrypted with recipient's view key
+                                            // Only used for gifted deposits, otherwise dummy data with pattern
 
   bool serialize(ISerializer& serializer);
 };
 
-// Encrypted P2P Media Message structures
-struct TransactionExtraEncryptedMediaMessage {
-  Crypto::PublicKey senderKey;        // Sender's public key
-  Crypto::PublicKey recipientKey;     // Recipient's public key
-  uint64_t timestamp;                 // Message creation timestamp
-  uint64_t ttl;                       // Time to live in seconds from timestamp
-  uint32_t mediaType;                 // 0=text, 1=image, 2=video, 3=audio, 4=document, etc.
-  std::string mediaHash;              // SHA3-256 hash of original media content
-  uint64_t mediaSize;                 // Size of media content in bytes
-  std::vector<uint8_t> encryptedContent; // AES-256-GCM encrypted media data
-  std::vector<uint8_t> encryptionNonce;   // 12-byte nonce for AES-GCM
-  std::vector<uint8_t> encryptionKey;     // ECDH-derived key (encrypted with recipient's pubkey)
-  std::vector<uint8_t> signature;         // Ed25519 signature of the entire message
 
-  bool encrypt(const std::vector<uint8_t>& mediaData, const AccountPublicAddress& recipient, const KeyPair& senderKeys);
-  bool decrypt(std::vector<uint8_t>& mediaData, const Crypto::SecretKey& recipientPrivateKey) const;
-  bool verifySignature() const;
-  bool isExpired(uint64_t currentTime) const;
-  std::string getMediaTypeString() const;
-  bool isValid() const;
-};
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraElderfierDeposit, CryptoNote::TransactionExtraElderfierMessage, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraYieldCommitment, CryptoNote::TransactionExtraCDDepositSecret, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt> TransactionExtraField;
 
-struct TransactionExtraMediaAttachment {
-  Crypto::Hash messageId;     // Reference to the main media message
-  uint32_t chunkIndex;        // Index of this chunk (0-based)
-  uint32_t totalChunks;       // Total number of chunks
-  std::vector<uint8_t> chunkData;  // Encrypted chunk data
-  Crypto::Hash chunkHash;     // SHA3-256 of chunkData for integrity
-
-  bool isValid() const;
-  bool verifyIntegrity() const;
-};
-
-struct TransactionExtraMediaTransferRequest {
-  Crypto::Hash mediaHash;          // Hash of the media content requested
-  Crypto::PublicKey requesterKey;  // Public key of requester
-  uint64_t timestamp;              // Request timestamp
-  uint32_t priority;               // Transfer priority (0=low, 1=normal, 2=high, 3=critical)
-  std::vector<uint8_t> signature;  // Signature by requester
-
-  bool isValid() const;
-  bool verifySignature() const;
-};
-
-struct TransactionExtraMediaTransferResponse {
-  Crypto::Hash mediaHash;          // Hash of the media content
-  Crypto::PublicKey responderKey;  // Public key of responder
-  uint64_t timestamp;              // Response timestamp
-  uint32_t responseCode;           // 0=accepted, 1=rejected, 2=not_found, 3=rate_limited
-  std::string responseMessage;     // Optional response message
-  std::vector<uint8_t> signature;  // Signature by responder
-
-  bool isValid() const;
-  bool verifySignature() const;
-};
-
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraElderfierDeposit, CryptoNote::TransactionExtraElderfierMessage, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraYieldCommitment, CryptoNote::TransactionExtraCDDepositSecret, CryptoNote::TransactionExtraEncryptedMediaMessage, CryptoNote::TransactionExtraMediaAttachment, CryptoNote::TransactionExtraMediaTransferRequest, CryptoNote::TransactionExtraMediaTransferResponse, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt> TransactionExtraField;
 
 
 template<typename T>
@@ -362,7 +218,7 @@ bool addHeatCommitmentToExtra(std::vector<uint8_t>& tx_extra, const TransactionE
 bool getHeatCommitmentFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraHeatCommitment& commitment);
 
 // Yield commitment helper functions
-bool createTxExtraWithYieldCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term_months, const std::string& yield_scheme, const std::vector<uint8_t>& metadata, std::vector<uint8_t>& extra);
+bool createTxExtraWithYieldCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, const std::string& CIAId, const std::vector<uint8_t>& metadata, uint8_t claimChainCode, const std::vector<uint8_t>& gift_secret, std::vector<uint8_t>& extra);
 bool addYieldCommitmentToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraYieldCommitment& commitment);
 bool getYieldCommitmentFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraYieldCommitment& commitment);
 
@@ -384,9 +240,17 @@ bool createElderfierWitnessMessage(const Crypto::PublicKey& senderKey, const Cry
 // DIGM helper functions will be implemented later
 
 // CD Deposit Secret helper functions
-bool createTxExtraWithCDDepositSecret(const std::vector<uint8_t>& secret_key, uint64_t xfg_amount, uint32_t apr_basis_points, uint8_t term_code, uint8_t chain_code, const std::vector<uint8_t>& metadata, std::vector<uint8_t>& extra);
+bool createTxExtraWithCDDepositSecret(const std::vector<uint8_t>& secret_key, uint64_t amount, uint32_t apr_basis_points, uint8_t term_code, uint8_t chain_code, const std::vector<uint8_t>& metadata, std::vector<uint8_t>& extra);
 bool addCDDepositSecretToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCDDepositSecret& deposit_secret);
 bool getCDDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraCDDepositSecret& deposit_secret);
+
+// Secret encryption helper functions
+bool encryptSecretWithViewKey(const std::vector<uint8_t>& secret, const Crypto::PublicKey& recipientViewKey, std::vector<uint8_t>& gift_secret);
+bool decryptSecretWithViewKey(const std::vector<uint8_t>& gift_secret, const Crypto::SecretKey& viewSecretKey, std::vector<uint8_t>& secret);
+
+// Helper functions for handling gift_secret field
+bool isDummyGiftSecret(const std::vector<uint8_t>& gift_secret);
+std::vector<uint8_t> createDummyGiftSecret();
 
 // CD Deposit validation and utility functions
 bool validateCDTermAndAPR(uint8_t term_code, uint32_t apr_basis_points);
@@ -415,92 +279,22 @@ bool buildHeatExtra(const std::array<uint8_t, 32>& secret,
                     const std::vector<uint8_t>& metadata,
                     std::vector<uint8_t>& extra);
 
-// Encrypted Media Message helper functions
-bool createTxExtraWithEncryptedMediaMessage(const Crypto::PublicKey& senderKey,
-                                           const Crypto::PublicKey& recipientKey,
-                                           uint64_t ttl,
-                                           uint32_t mediaType,
-                                           const std::vector<uint8_t>& mediaData,
-                                           const AccountPublicAddress& recipientAddr,
-                                           const KeyPair& senderKeys,
-                                           std::vector<uint8_t>& extra);
-bool addEncryptedMediaMessageToExtra(std::vector<uint8_t>& tx_extra,
-                                    const TransactionExtraEncryptedMediaMessage& message);
-bool getEncryptedMediaMessageFromExtra(const std::vector<uint8_t>& tx_extra,
-                                      TransactionExtraEncryptedMediaMessage& message);
 
-// Media Attachment helper functions
-bool createTxExtraWithMediaAttachment(const Crypto::Hash& messageId,
-                                     uint32_t chunkIndex,
-                                     uint32_t totalChunks,
-                                     const std::vector<uint8_t>& chunkData,
-                                     std::vector<uint8_t>& extra);
-bool addMediaAttachmentToExtra(std::vector<uint8_t>& tx_extra,
-                              const TransactionExtraMediaAttachment& attachment);
-bool getMediaAttachmentFromExtra(const std::vector<uint8_t>& tx_extra,
-                                TransactionExtraMediaAttachment& attachment);
 
-// Media Transfer Request/Response helper functions
-bool createTxExtraWithMediaTransferRequest(const Crypto::Hash& mediaHash,
-                                          const Crypto::PublicKey& requesterKey,
-                                          uint32_t priority,
-                                          const Crypto::SecretKey& requesterSecretKey,
-                                          std::vector<uint8_t>& extra);
-bool addMediaTransferRequestToExtra(std::vector<uint8_t>& tx_extra,
-                                   const TransactionExtraMediaTransferRequest& request);
-bool getMediaTransferRequestFromExtra(const std::vector<uint8_t>& tx_extra,
-                                     TransactionExtraMediaTransferRequest& request);
-
-bool createTxExtraWithMediaTransferResponse(const Crypto::Hash& mediaHash,
-                                           const Crypto::PublicKey& responderKey,
-                                           uint32_t responseCode,
-                                           const std::string& responseMessage,
-                                           const Crypto::SecretKey& responderSecretKey,
-                                           std::vector<uint8_t>& extra);
-bool addMediaTransferResponseToExtra(std::vector<uint8_t>& tx_extra,
-                                    const TransactionExtraMediaTransferResponse& response);
-bool getMediaTransferResponseFromExtra(const std::vector<uint8_t>& tx_extra,
-                                      TransactionExtraMediaTransferResponse& response);
 
 // Burn receipt helper functions
 bool getBurnReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraBurnReceipt& burnReceipt);
 bool addBurnReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraBurnReceipt& burnReceipt);
 bool createTxExtraWithBurnReceipt(const TransactionExtraBurnReceipt& burnReceipt, std::vector<uint8_t>& extra);
 
+
+
+
+
 // Deposit receipt helper functions
 bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt);
 bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt);
 bool createTxExtraWithDepositReceipt(const TransactionExtraDepositReceipt& depositReceipt, std::vector<uint8_t>& extra);
-
-// Media type constants
-enum MediaType {
-  MEDIA_TYPE_TEXT = 0,
-  MEDIA_TYPE_IMAGE = 1,
-  MEDIA_TYPE_VIDEO = 2,
-  MEDIA_TYPE_AUDIO = 3,
-  MEDIA_TYPE_DOCUMENT = 4,
-  MEDIA_TYPE_ARCHIVE = 5,
-  MEDIA_TYPE_EXECUTABLE = 6,
-  MEDIA_TYPE_OTHER = 255
-};
-
-// Transfer priority constants
-enum TransferPriority {
-  TRANSFER_PRIORITY_LOW = 0,
-  TRANSFER_PRIORITY_NORMAL = 1,
-  TRANSFER_PRIORITY_HIGH = 2,
-  TRANSFER_PRIORITY_CRITICAL = 3
-};
-
-// Transfer response codes
-enum TransferResponseCode {
-  TRANSFER_RESPONSE_ACCEPTED = 0,
-  TRANSFER_RESPONSE_REJECTED = 1,
-  TRANSFER_RESPONSE_NOT_FOUND = 2,
-  TRANSFER_RESPONSE_RATE_LIMITED = 3,
-  TRANSFER_RESPONSE_BUSY = 4,
-  TRANSFER_RESPONSE_STORAGE_FULL = 5
-};
 
 // Cold Deposit (CD) term codes and APR rates
 enum CDTermCode {
@@ -519,11 +313,5 @@ enum CDAPRRate {
   CD_APR_33PCT = 3300,       // 33% APR = 3300 basis points
   CD_APR_80PCT = 8000        // 80% APR = 8000 basis points
 };
-
-// Media chunk size constants (for splitting large files)
-const size_t MAX_MEDIA_CHUNK_SIZE = 1024 * 1024;     // 1MB per chunk
-const size_t MAX_MEDIA_INLINE_SIZE = 64 * 1024;      // 64KB for inline storage
-const uint64_t MAX_MEDIA_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
-const uint64_t DEFAULT_MEDIA_TTL = 24 * 60 * 60;     // 24 hours default TTL
 
 }

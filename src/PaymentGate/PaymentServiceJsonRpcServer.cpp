@@ -77,8 +77,8 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("createDeposit", jsonHandler<CreateDeposit::Request, CreateDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("createBurnDeposit", jsonHandler<CreateBurnDeposit::Request, CreateBurnDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("createBurnDepositWithProof", jsonHandler<CreateBurnDepositWithProof::Request, CreateBurnDepositWithProof::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("createBurnDeposit8000", jsonHandler<CreateBurnDeposit8000::Request, CreateBurnDeposit8000::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("createBurnDeposit8000WithProof", jsonHandler<CreateBurnDeposit8000WithProof::Request, CreateBurnDeposit8000WithProof::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000WithProof, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("createBurnDepositLarge", jsonHandler<CreateBurnDepositLarge::Request, CreateBurnDepositLarge::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("createBurnDepositLargeWithProof", jsonHandler<CreateBurnDepositLargeWithProof::Request, CreateBurnDepositLargeWithProof::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithProof, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("generateBurnProofDataFile", jsonHandler<GenerateBurnProofDataFile::Request, GenerateBurnProofDataFile::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("generateBurnProofDataFileAuto", jsonHandler<GenerateBurnProofDataFileAuto::Request, GenerateBurnProofDataFileAuto::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFileAuto, this, std::placeholders::_1, std::placeholders::_2)));
 
@@ -272,7 +272,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDep
   // Check if this is a burn deposit (FOREVER term)
   bool isBurnDeposit = (request.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
   response.isBurnDeposit = isBurnDeposit;
-  // response.useStagedUnlock = request.useStagedUnlock;
+  response.useStagedUnlock = request.useStagedUnlock;
 
   // Generate commitment based on deposit type
   if (isBurnDeposit) {
@@ -286,9 +286,9 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDep
   // Calculate transaction fees
   uint64_t baseFee = 800000; // 0.008 XFG base transaction fee
   response.transactionFee = baseFee;
-  // response.totalFees = request.useStagedUnlock ? (baseFee * 5) : baseFee; // 5 transactions for staged unlock
+  response.totalFees = request.useStagedUnlock ? (baseFee * 5) : baseFee; // 5 transactions for staged unlock
 
-  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash, commitment/*, request.useStagedUnlock*/);
+  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash, commitment, request.useStagedUnlock);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const CreateBurnDeposit::Request& request, CreateBurnDeposit::Response& response) {
@@ -373,12 +373,12 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof(co
   return result;
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000(const CreateBurnDeposit8000::Request& request, CreateBurnDeposit8000::Response& response) {
+std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const CreateBurnDepositLarge::Request& request, CreateBurnDepositLarge::Response& response) {
   // Create burn deposit with FOREVER term and fixed 800 XFG amount
   uint64_t term = CryptoNote::parameters::DEPOSIT_TERM_BURN;  // 4294967295 (FOREVER)
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
-  // 🔥 ADD: Include network ID in metadata for STARK validation
+  //  ADD: Include network ID in metadata for STARK validation
   std::string networkId = "93385046440755750514194170694064996624";
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
@@ -394,19 +394,19 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000(const C
     response.term = term;  // Always 4294967295
     response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 800 XFG = 8,000,000,000 HEAT
 
-    // 🔥 ADD: Store secret locally (never on blockchain)
+    //  ADD: Store secret locally (never on blockchain)
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
   }
 
   return result;
 }
 
-std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000WithProof(const CreateBurnDeposit8000WithProof::Request& request, CreateBurnDeposit8000WithProof::Response& response) {
+std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithProof(const CreateBurnDepositLargeWithProof::Request& request, CreateBurnDepositLargeWithProof::Response& response) {
   // Create burn deposit with FOREVER term and fixed 800 XFG amount
   uint64_t term = CryptoNote::parameters::DEPOSIT_TERM_BURN;  // 4294967295 (FOREVER)
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
-  // 🔥 ADD: Include network ID in metadata for STARK validation
+  //  ADD: Include network ID in metadata for STARK validation
   std::string networkId = "93385046440755750514194170694064996624";
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
@@ -422,7 +422,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000WithProo
     response.term = term;  // Always 4294967295
     response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 800 XFG = 8,000,000,000 HEAT
 
-    // 🔥 ADD: Generate BPDF with network ID
+    //  ADD: Generate BPDF with network ID
     std::string outputPath = service.getDefaultWalletPath() + "/bpdf/" + response.transactionHash + ".json";
     std::error_code bpdfResult = service.generateBurnProofDataFile(
       response.transactionHash,
@@ -445,10 +445,10 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit8000WithProo
 
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(const GenerateBurnProofDataFile::Request& request, GenerateBurnProofDataFile::Response& response) {
   try {
-    // 🔥 MANUAL: Generate BPDF manually (user provides secret separately)
+    //  MANUAL: Generate BPDF manually (user provides secret separately)
     std::string networkId = "93385046440755750514194170694064996624";
 
-    // 🔥 ADD: Use default wallet path if outputPath is empty
+    //  ADD: Use default wallet path if outputPath is empty
     std::string outputPath = request.outputPath;
     if (outputPath.empty()) {
       outputPath = service.getDefaultWalletPath() + "/bpdf/" + request.transactionHash + ".json";
@@ -479,7 +479,7 @@ std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(con
 
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFileAuto(const GenerateBurnProofDataFileAuto::Request& request, GenerateBurnProofDataFileAuto::Response& response) {
   try {
-    // 🔥 AUTO: Generate BPDF automatically with local secret retrieval
+    //  AUTO: Generate BPDF automatically with local secret retrieval
     std::string networkId = "93385046440755750514194170694064996624";
 
     // Retrieve secret from local storage
@@ -493,7 +493,7 @@ std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFileAuto
       return std::error_code();
     }
 
-    // 🔥 ADD: Use default wallet path if outputPath is empty
+    //  ADD: Use default wallet path if outputPath is empty
     std::string outputPath = request.outputPath;
     if (outputPath.empty()) {
       outputPath = service.getDefaultWalletPath() + "/bpdf/" + request.transactionHash + ".json";

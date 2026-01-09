@@ -96,14 +96,29 @@ namespace CryptoNote {
             return 10000; // Minimum difficulty for invalid solve time
         }
 
+        // Additional safety check: prevent extremely small solve times that could cause overflow
+        if (weightedSolveTime < m_config.targetTime / 1000.0) {
+            weightedSolveTime = m_config.targetTime / 1000.0;
+        }
+
         double difficultyRatio = static_cast<double>(m_config.targetTime) / weightedSolveTime;
 
-        // Apply bounds
+        // Apply bounds - use more conservative bounds to prevent extreme values
         difficultyRatio = std::max(m_config.minAdjustment,
                                   std::min(m_config.maxAdjustment, difficultyRatio));
         
+        // Additional safety check: prevent extreme difficulty ratios
+        if (difficultyRatio > 1000.0) {
+            difficultyRatio = 1000.0;
+        }
+        
         // Prevent overflow in multiplication
         double calculatedDifficulty = static_cast<double>(avgDifficulty) * difficultyRatio;
+
+        // Additional safety check: prevent extreme calculated difficulties
+        if (calculatedDifficulty > static_cast<double>(avgDifficulty) * 1000.0) {
+            calculatedDifficulty = static_cast<double>(avgDifficulty) * 1000.0;
+        }
 
         // Clamp to prevent overflow
         if (calculatedDifficulty > static_cast<double>(std::numeric_limits<uint64_t>::max())) {
@@ -129,18 +144,30 @@ namespace CryptoNote {
         
         uint32_t effectiveWindow = std::min(static_cast<uint32_t>(timestamps.size() - 1), windowSize);
         
+        // Safety check: prevent excessive window sizes that could cause overflow
+        if (effectiveWindow > 200) {
+            effectiveWindow = 200;
+        }
+        
         double weightedSum = 0.0;
         double weightSum = 0.0;
         
         for (uint32_t i = 1; i <= effectiveWindow; ++i) {
             int64_t solveTime = static_cast<int64_t>(timestamps[i]) - static_cast<int64_t>(timestamps[i - 1]);
 
-            // Clamp solve time to prevent manipulation
+            // Clamp solve time to prevent manipulation and overflow
             solveTime = std::max(static_cast<int64_t>(m_config.targetTime / 10),
                                 std::min(static_cast<int64_t>(m_config.targetTime * 10), solveTime));
 
             double weight = static_cast<double>(i);
-            weightedSum += solveTime * weight;
+            
+            // Prevent overflow in weighted sum calculation
+            double weightedContribution = static_cast<double>(solveTime) * weight;
+            if (weightedContribution > 1e15) {
+                weightedContribution = 1e15; // Cap to prevent overflow
+            }
+            
+            weightedSum += weightedContribution;
             weightSum += weight;
         }
 
@@ -149,7 +176,14 @@ namespace CryptoNote {
             return static_cast<double>(m_config.targetTime);
         }
 
-        return weightedSum / weightSum;
+        double lwma = weightedSum / weightSum;
+        
+        // Additional safety check: prevent extremely small LWMA values that could cause overflow
+        if (lwma < m_config.targetTime / 100.0) {
+            lwma = m_config.targetTime / 100.0;
+        }
+        
+        return lwma;
     }
 
     double AdaptiveDifficulty::calculateEMA(

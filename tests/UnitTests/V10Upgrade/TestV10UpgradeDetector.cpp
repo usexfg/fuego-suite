@@ -271,9 +271,9 @@ namespace {
     size_t veryLargeBlock = 1290240; // 1.23MB (3x median) - full penalty
     
     // Get penalized amounts
-    uint64_t noPenalty = CryptoNote::getPenalizedAmount(amount, medianSize, smallBlock);
-    uint64_t moderatePenalty = CryptoNote::getPenalizedAmount(amount, medianSize, largeBlock);
-    uint64_t fullPenalty = CryptoNote::getPenalizedAmount(amount, medianSize, veryLargeBlock);
+    uint64_t noPenalty = CryptoNote::getPenalizedAmount(amount, medianSize, smallBlock, CryptoNote::BLOCK_MAJOR_VERSION_10);
+    uint64_t moderatePenalty = CryptoNote::getPenalizedAmount(amount, medianSize, largeBlock, CryptoNote::BLOCK_MAJOR_VERSION_10);
+    uint64_t fullPenalty = CryptoNote::getPenalizedAmount(amount, medianSize, veryLargeBlock, CryptoNote::BLOCK_MAJOR_VERSION_10);
     
     // Small block: no penalty (should equal original)
     ASSERT_EQ(noPenalty, amount);
@@ -605,7 +605,7 @@ namespace {
     // Reward should be approximately: (8M8 - alreadyGen) >> 20 minus penalty
     uint64_t moneySupply = currency.moneySupply();
     uint64_t expectedBase = (moneySupply - alreadyGen) >> 20;
-    uint64_t penalty = CryptoNote::getPenalizedAmount(expectedBase, medianSize, currentSize);
+    uint64_t penalty = CryptoNote::getPenalizedAmount(expectedBase, medianSize, currentSize, CryptoNote::BLOCK_MAJOR_VERSION_10);
     
     // With negative penalty, reward should be penalized
     uint64_t expectedReward = penalty + fee;
@@ -883,7 +883,8 @@ namespace {
     uint64_t basePenalty = CryptoNote::getPenalizedAmount(
       5000000000,          // 500 XFG
       430080,               // 420KB median
-      500000                // 476KB block
+      500000,               // 476KB block
+      CryptoNote::BLOCK_MAJOR_VERSION_10
     );
     
     // Should be slightly penalized (500KB vs 420KB median)

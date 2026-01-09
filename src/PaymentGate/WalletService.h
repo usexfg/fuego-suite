@@ -90,7 +90,6 @@ std::error_code getViewKey(std::string &viewSecretKey);
   std::error_code getTransaction(const std::string &transactionHash, TransactionRpcInfo &transaction);
   std::error_code getAddresses(std::vector<std::string> &addresses);
   std::error_code sendTransaction(const SendTransaction::Request &request, std::string &transactionHash, std::string &transactionSecretKey);
-  std::error_code submitBurnTransaction(const SubmitBurnTransaction::Request &request, std::string &transactionHash, std::string &burnSecretKey);
   std::error_code createDelayedTransaction(const CreateDelayedTransaction::Request &request, std::string &transactionHash);
   std::error_code createIntegratedAddress(const CreateIntegrated::Request &request, std::string &integrated_address);
   std::error_code splitIntegratedAddress(const SplitIntegrated::Request &request, std::string &address, std::string &payment_id);

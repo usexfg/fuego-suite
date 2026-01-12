@@ -95,7 +95,7 @@ else()
 endif()
 
 # --------------------------
-# Boost - Updated for 1.86
+# Boost - Configured consistently like Karbowanec
 # --------------------------
 # Link static BOOST libraries everywhere
 set(Boost_NO_BOOST_CMAKE ON)
@@ -107,10 +107,9 @@ if(MINGW)
   include_directories(SYSTEM src/platform/mingw)
 endif()
 
-# Required components based on karbo's CMakeLists.txt
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Found Boost Version: ${Boost_VERSION}")
 
 # Platform-specific Boost library handling

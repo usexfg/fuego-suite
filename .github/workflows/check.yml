@@ -37,6 +37,24 @@ jobs:
       - name: Install msbuild
         uses: microsoft/setup-msbuild@v1.3
 
+      - name: Install Boost via Chocolatey
+        shell: pwsh
+        run: |
+          Write-Host "Installing Boost via Chocolatey..."
+          choco install boost-msvc-14.3 -y
+
+          Write-Host "Locating Boost installation..."
+          $boostPath = Get-ChildItem "C:\local" -Directory -Filter "boost_*" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+
+          if ($boostPath) {
+            Write-Host "Found Boost at: $boostPath"
+            echo "BOOST_ROOT=$boostPath" >> $env:GITHUB_ENV
+          }
+          else {
+            Write-Error "Boost installation not found in C:\local!"
+            Get-ChildItem "C:\local" -ErrorAction SilentlyContinue
+            exit 1
+          }
       - name: Verify Boost Installation
         shell: pwsh
         run: |
@@ -94,9 +112,9 @@ jobs:
             cd ..
           }
 
-          # Install jsoncpp, Boost (all required components), and ICU via vcpkg for consistency
+          # Install jsoncpp, Boost, and ICU via vcpkg for consistency
           Write-Host "Installing jsoncpp, Boost, and ICU via vcpkg..."
-          C:/vcpkg/vcpkg.exe install --triplet x64-windows jsoncpp boost-system boost-filesystem boost-thread boost-date-time boost-chrono boost-regex boost-serialization boost-program-options boost-coroutine boost-context boost-atomic icu
+          C:/vcpkg/vcpkg.exe install --triplet x64-windows jsoncpp boost-date-time boost-filesystem boost-program-options boost-regex boost-system boost-thread icu
           if ($LASTEXITCODE -ne 0) { throw "vcpkg installation failed" }
 
           # Verify ICU installation
@@ -151,16 +169,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y build-essential libicu-dev libboost-all-dev libssl-dev libminiupnpc-dev libqrencode-dev libjsoncpp-dev
-
       - name: Build
         id: build
         run: |
           set -e
+          sudo apt-get update && sudo apt-get install -y libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
@@ -171,7 +184,8 @@ jobs:
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
             -DCMAKE_CXX_FLAGS_DEBUG="-O3 -DNDEBUG" \
             -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
-            ../..
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
           make -j$(nproc)
           mkdir -p "$release_name"
           exeFiles=()
@@ -198,7 +212,7 @@ jobs:
         id: build
         run: |
           set -e
-          sudo apt-get update && sudo apt-get install -y libboost1.86-all-dev
+          sudo apt-get update && sudo apt-get install -y libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
@@ -209,7 +223,8 @@ jobs:
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
             -DCMAKE_CXX_FLAGS_DEBUG="-O3 -DNDEBUG" \
             -D CMAKE_POSITION_INDEPENDENT_CODE:BOOL=true \
-            ../..
+            -D BOOST_IGNORE_SYSTEM_PATHS_DEFAULT=ON \
+            -D BOOST_ROOT=/usr ../..
           make -j$(nproc)
           mkdir -p "$release_name"
           exeFiles=()
@@ -241,10 +256,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build Boost 1.86.0
+        run: |
+          set -e
+          brew install gcc cmake ninja-build wget
+
+          # Build Boost 1.86.0 from source
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
+          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
+
       - name: Install other dependencies
         run: |
           set -e
-          brew install gcc cmake jsoncpp openssl boost
+          brew install gcc cmake jsoncpp openssl
+
+          # Set environment to use the built Boost 1.86
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
 
           # Verify repository structure
           echo "=== Verifying repository structure ==="
@@ -271,7 +302,7 @@ jobs:
           release_name=fuego-cli-macos-${{ matrix.arch }}-dev"$xfg_ver"
           mkdir "$build_folder"
           cd "$build_folder"
-          cmake -S .. -B . -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }}
+          cmake -S .. -B . -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} -DBOOST_ROOT=/usr/local -DBoost_NO_SYSTEM_PATHS=ON
           make -j$(sysctl -n hw.ncpu)
           mkdir "$release_name"
           exeFiles=()

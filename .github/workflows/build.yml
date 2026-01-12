@@ -121,17 +121,35 @@ jobs:
           brew update
           brew install ninja qt@5 miniupnpc qrencode icu4c jsoncpp wget
 
-          # Install dependencies via Homebrew
-          brew install ninja qt@5 miniupnpc qrencode icu4c jsoncpp boost
-          brew link icu4c --force
+          # Download and build Boost 1.86.0 (modern version with all required components)
+          echo "Building Boost 1.86.0 from source..."
+          cd /tmp
+          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
+          tar -xzf boost_1_86_0.tar.gz
+          cd boost_1_86_0
+          ./bootstrap.sh --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic --prefix=/usr/local
+          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
 
-          # Set environment variables
-          echo "BOOST_ROOT=$(brew --prefix boost)" >> $GITHUB_ENV
-          echo "ICU_ROOT=$(brew --prefix icu4c)" >> $GITHUB_ENV
-          echo "PATH=$(brew --prefix icu4c)/bin:$PATH" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          echo "LDFLAGS=-L$(brew --prefix icu4c)/lib $LDFLAGS" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I$(brew --prefix icu4c)/include $CPPFLAGS" >> $GITHUB_ENV
+          # Set environment variables for Boost 1.86
+          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
+          echo "Boost 1.86.0 installed"
+
+          # Try different ICU versions
+          if [ -d "$(brew --prefix)/opt/icu4c" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c"
+          elif [ -d "$(brew --prefix)/opt/icu4c@77" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c@77"
+          elif [ -d "$(brew --prefix)/opt/icu4c@76" ]; then
+            ICU_PREFIX="$(brew --prefix)/opt/icu4c@76"
+          else
+            ICU_PREFIX="$(brew --prefix icu4c)"
+          fi
+
+          echo "ICU_ROOT=$ICU_PREFIX" >> $GITHUB_ENV
+          echo "PATH=$ICU_PREFIX/bin:$PATH" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$ICU_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$ICU_PREFIX/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$ICU_PREFIX/include" >> $GITHUB_ENV
 
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-2022'
@@ -153,11 +171,12 @@ jobs:
             .\vcpkg integrate install
           }
 
-          # Install packages via vcpkg - match components with Karbowanec
-          C:/vcpkg/vcpkg.exe install --triplet x64-windows boost-system boost-filesystem boost-thread `
-            boost-date-time boost-chrono boost-regex boost-serialization `
-            boost-program-options boost-coroutine boost-context boost-atomic `
-            icu openssl miniupnpc jsoncpp qrencode
+          # Install packages via vcpkg
+          C:/vcpkg/vcpkg.exe install --triplet x64-windows `
+            boost-filesystem boost-thread boost-date-time boost-chrono `
+            boost-regex boost-serialization boost-program-options `
+            boost-multi-index boost-foreach boost-uuid boost-asio boost-scope-exit `
+            boost-format icu openssl miniupnpc jsoncpp
 
       - name: Debug Boost installation (Windows)
         if: matrix.os == 'windows-2022'
@@ -177,14 +196,70 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.os }}" = "macos-14" ]; then
+            # ICU_ROOT should be set from previous step
+            export PATH="$ICU_ROOT/bin:$PATH"
+            export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
+            export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
+            export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
+            export BOOST_ROOT=$(brew --prefix boost)
+
+            echo "Using ICU_ROOT: $ICU_ROOT"
+            echo "Available ICU libraries:"
+            ls -la "$ICU_ROOT/lib/" | grep -E "libicu.*\.(dylib|a)$" || echo "No ICU libraries found"
+
+            # Verify Boost installation
+            echo "Boost installation verification:"
+            ls -la "$BOOST_ROOT/include/boost/version.hpp" && grep "BOOST_LIB_VERSION" "$BOOST_ROOT/include/boost/version.hpp" || echo "Boost version.hpp not found"
+
+            # Check for ICU library files and use versioned names if needed
+            ICU_DATA_LIB=""
+            ICU_I18N_LIB=""
+            ICU_UC_LIB=""
+
+            # Try to find ICU libraries with different version patterns
+            for version in 77 76 75 74 ""; do
+              if [ -n "$version" ]; then
+                suffix=".$version.dylib"
+              else
+                suffix=".dylib"
+              fi
+
+              if [ -z "$ICU_DATA_LIB" ] && [ -f "$ICU_ROOT/lib/libicudata$suffix" ]; then
+                ICU_DATA_LIB="$ICU_ROOT/lib/libicudata$suffix"
+              fi
+              if [ -z "$ICU_I18N_LIB" ] && [ -f "$ICU_ROOT/lib/libicui18n$suffix" ]; then
+                ICU_I18N_LIB="$ICU_ROOT/lib/libicui18n$suffix"
+              fi
+              if [ -z "$ICU_UC_LIB" ] && [ -f "$ICU_ROOT/lib/libicuuc$suffix" ]; then
+                ICU_UC_LIB="$ICU_ROOT/lib/libicuuc$suffix"
+              fi
+            done
+
+            echo "ICU Data Library: $ICU_DATA_LIB"
+            echo "ICU I18N Library: $ICU_I18N_LIB"
+            echo "ICU UC Library: $ICU_UC_LIB"
+
             cmake -S . -B build \
               -G Ninja \
               -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
-              -DBOOST_ROOT=$(brew --prefix boost) \
-              -DICU_ROOT=$(brew --prefix icu4c) \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DBOOST_ROOT="$BOOST_ROOT" \
+              -DBOOST_INCLUDEDIR="$BOOST_ROOT/include" \
+              -DBOOST_LIBRARYDIR="$BOOST_ROOT/lib" \
+              -DBoost_NO_SYSTEM_PATHS=ON \
+              -DBOOST_INCLUDEDIR="$BOOST_ROOT/include" \
+              -DBOOST_LIBRARYDIR="$BOOST_ROOT/lib" \
+              -DBUILD_TESTS=ON \
+              -DICU_ROOT="$ICU_ROOT" \
+              -DICU_INCLUDE_DIR="$ICU_ROOT/include" \
+              -DICU_DATA_LIBRARY="$ICU_DATA_LIB" \
+              -DICU_I18N_LIBRARY="$ICU_I18N_LIB" \
+              -DICU_UC_LIBRARY="$ICU_UC_LIB" \
+              -DCMAKE_PREFIX_PATH="$ICU_ROOT" \
+              -DCMAKE_LIBRARY_PATH="$ICU_ROOT/lib" \
+              -DCMAKE_INCLUDE_PATH="$ICU_ROOT/include" \
               -DBoost_USE_STATIC_LIBS=ON \
               -DBoost_NO_SYSTEM_PATHS=ON \
-              -DBUILD_TESTS=ON \
               -DCMAKE_POLICY_DEFAULT_CMP0167=OLD \
               -DDISABLE_ASYNC_CONSOLE=$([[ "$CMAKE_BUILD_TYPE" == "RelWithDebInfo" ]] && echo ON || echo OFF)
           elif [ "${{ matrix.os }}" = "windows-2022" ]; then

@@ -34,9 +34,9 @@ jobs:
 
       - name: Download and Build Boost for Android
         run: |
-          wget -O boost_1_86_0.tar.gz "https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz"
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
+          wget -O boost_1_85_0.tar.gz "https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.tar.gz"
+          tar -xzf boost_1_85_0.tar.gz
+          cd boost_1_85_0
           
           # Configure for Android
           cat > user-config.jam << EOF

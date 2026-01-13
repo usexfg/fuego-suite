@@ -37,20 +37,12 @@ jobs:
       - name: Install dependencies (macOS)
         run: |
           brew update
-          brew install ninja qt@5 miniupnpc qrencode icu4c wget
+          brew install ninja qt@5 miniupnpc qrencode icu4c boost@1.85 jsoncpp
 
-          # Install Boost 1.86.0 from source
-          echo "Building Boost 1.86.0 from source..."
-          cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
-          ./bootstrap.sh --prefix=/usr/local --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic
-          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
-
-          # Set environment variables for Boost 1.86
-          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
-          echo "Boost 1.86.0 installed at /usr/local"
+          # Set environment variables for Boost 1.85
+          BOOST_PREFIX=$(brew --prefix boost@1.85)
+          echo "BOOST_ROOT=$BOOST_PREFIX" >> $GITHUB_ENV
+          echo "Boost 1.85 installed from Homebrew at $BOOST_PREFIX"
 
           # Try different ICU versions
           if [ -d "$(brew --prefix)/opt/icu4c" ]; then
@@ -83,10 +75,9 @@ jobs:
           export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
           export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
           export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
-          export BOOST_ROOT=/usr/local
 
-          # Verify Boost 1.86 installation
-          echo "Boost 1.86 root: $BOOST_ROOT"
+          # Use Boost 1.85 from Homebrew (set in previous step)
+          echo "Boost 1.85 root: $BOOST_ROOT"
           ls -la "$BOOST_ROOT/include/boost/version.hpp" && grep "BOOST_LIB_VERSION" "$BOOST_ROOT/include/boost/version.hpp" || echo "Boost version.hpp not found"
 
           cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
@@ -376,15 +367,20 @@ jobs:
       - name: Install dependencies (Windows)
         shell: pwsh
         run: |
-          # Install basic tools
-          choco install -y ninja
-          # Install tools and dependencies via Chocolatey
-          choco install -y ninja
-          choco install -y vcpkg
-          choco install -y miniupnpc qrencode
-          choco install -y qt5-default --params '/InstallDir:C:\Qt'
+          # Install basic tools and Boost 1.85.0 via Chocolatey
+          choco install -y ninja boost-msvc-14.3 --version=1.85.0
 
-          # Initialize vcpkg if not already done
+          # Set Boost environment variable
+          $boostPath = "C:\local\boost_1_85_0"
+          if (Test-Path $boostPath) {
+            echo "BOOST_ROOT=$boostPath" >> $env:GITHUB_ENV
+            Write-Host "Boost 1.85.0 installed at $boostPath"
+          } else {
+            Write-Error "Boost installation failed"
+            exit 1
+          }
+
+          # Initialize vcpkg if not already done for other dependencies
           if (-not (Test-Path "C:/vcpkg/vcpkg.exe")) {
             git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
             cd C:/vcpkg
@@ -392,12 +388,9 @@ jobs:
             .\vcpkg integrate install
           }
 
-          # Install packages via vcpkg
+          # Install other packages via vcpkg (excluding Boost)
           C:/vcpkg/vcpkg.exe install --triplet x64-windows `
-            boost-filesystem boost-thread boost-date-time boost-chrono `
-            boost-regex boost-serialization boost-program-options `
-            boost-multi-index boost-uuid boost-asio boost-scope-exit `
-            boost-format icu openssl miniupnpc qrencode
+            icu openssl miniupnpc qrencode jsoncpp
 
       - name: Debug Boost installation (Windows)
         shell: pwsh
@@ -421,8 +414,12 @@ jobs:
           mkdir "$build_folder"
           cd "$build_folder"
 
-          # Configure CMake
+          # Configure CMake with Chocolatey Boost 1.85.0
           cmake -S .. -B . -G Ninja -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+                -DBOOST_ROOT="C:/local/boost_1_85_0" \
+                -DBOOST_INCLUDEDIR="C:/local/boost_1_85_0" \
+                -DBOOST_LIBRARYDIR="C:/local/boost_1_85_0/lib64-msvc-14.3" \
+                -DBoost_USE_STATIC_LIBS=ON \
                 -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" \
                 -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
 

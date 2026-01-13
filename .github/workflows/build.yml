@@ -119,20 +119,12 @@ jobs:
         if: matrix.os == 'macos-14'
         run: |
           brew update
-          brew install ninja qt@5 miniupnpc qrencode icu4c jsoncpp wget
+          brew install ninja qt@5 miniupnpc qrencode icu4c jsoncpp boost@1.85
 
-          # Download and build Boost 1.86.0 (modern version with all required components)
-          echo "Building Boost 1.86.0 from source..."
-          cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
-          ./bootstrap.sh --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic --prefix=/usr/local
-          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
-
-          # Set environment variables for Boost 1.86
-          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
-          echo "Boost 1.86.0 installed"
+          # Set environment variables for Boost 1.85
+          BOOST_PREFIX=$(brew --prefix boost@1.85)
+          echo "BOOST_ROOT=$BOOST_PREFIX" >> $GITHUB_ENV
+          echo "Boost 1.85 installed from Homebrew at $BOOST_PREFIX"
 
           # Try different ICU versions
           if [ -d "$(brew --prefix)/opt/icu4c" ]; then
@@ -155,15 +147,20 @@ jobs:
         if: matrix.os == 'windows-2022'
         shell: pwsh
         run: |
-          # Install basic tools
-          choco install -y ninja
-          # Install basic tools
-          choco install -y ninja
-          choco install -y vcpkg
-          choco install -y miniupnpc qrencode
-          choco install -y qt5-default --params '/InstallDir:C:\Qt'
+          # Install basic tools and Boost 1.85.0
+          choco install -y ninja boost-msvc-14.3 --version=1.85.0
 
-          # Initialize vcpkg if not already done
+          # Set Boost environment variable
+          $boostPath = "C:\local\boost_1_85_0"
+          if (Test-Path $boostPath) {
+            echo "BOOST_ROOT=$boostPath" >> $env:GITHUB_ENV
+            Write-Host "Boost 1.85.0 installed at $boostPath"
+          } else {
+            Write-Error "Boost installation failed"
+            exit 1
+          }
+
+          # Initialize vcpkg if not already done for other dependencies
           if (-not (Test-Path "C:/vcpkg/vcpkg.exe")) {
             git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
             cd C:/vcpkg
@@ -171,12 +168,9 @@ jobs:
             .\vcpkg integrate install
           }
 
-          # Install packages via vcpkg
+          # Install other packages via vcpkg (excluding Boost)
           C:/vcpkg/vcpkg.exe install --triplet x64-windows `
-            boost-filesystem boost-thread boost-date-time boost-chrono `
-            boost-regex boost-serialization boost-program-options `
-            boost-multi-index boost-foreach boost-uuid boost-asio boost-scope-exit `
-            boost-format icu openssl miniupnpc jsoncpp
+            icu openssl miniupnpc jsoncpp qrencode
 
       - name: Debug Boost installation (Windows)
         if: matrix.os == 'windows-2022'
@@ -201,8 +195,9 @@ jobs:
             export PKG_CONFIG_PATH="$ICU_ROOT/lib/pkgconfig:$PKG_CONFIG_PATH"
             export LDFLAGS="-L$ICU_ROOT/lib $LDFLAGS"
             export CPPFLAGS="-I$ICU_ROOT/include $CPPFLAGS"
-            export BOOST_ROOT=$(brew --prefix boost)
 
+            # Use Boost 1.85 from Homebrew (set in previous step)
+            echo "Using BOOST_ROOT: $BOOST_ROOT"
             echo "Using ICU_ROOT: $ICU_ROOT"
             echo "Available ICU libraries:"
             ls -la "$ICU_ROOT/lib/" | grep -E "libicu.*\.(dylib|a)$" || echo "No ICU libraries found"
@@ -263,10 +258,15 @@ jobs:
               -DCMAKE_POLICY_DEFAULT_CMP0167=OLD \
               -DDISABLE_ASYNC_CONSOLE=$([[ "$CMAKE_BUILD_TYPE" == "RelWithDebInfo" ]] && echo ON || echo OFF)
           elif [ "${{ matrix.os }}" = "windows-2022" ]; then
+            # Use Chocolatey Boost 1.85.0
             cmake -S . -B build \
               -G Ninja \
               -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
               -DBUILD_TESTS=ON \
+              -DBOOST_ROOT="C:/local/boost_1_85_0" \
+              -DBOOST_INCLUDEDIR="C:/local/boost_1_85_0" \
+              -DBOOST_LIBRARYDIR="C:/local/boost_1_85_0/lib64-msvc-14.3" \
+              -DBoost_USE_STATIC_LIBS=ON \
               -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" \
               -DCMAKE_POLICY_DEFAULT_CMP0167=OLD
           else

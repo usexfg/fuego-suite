@@ -65,14 +65,14 @@ jobs:
               wget \
               && rm -rf /var/lib/apt/lists/*
 
-          # Build Boost 1.86.0 from source
+          # Build Boost 1.85.0 from source
           RUN cd /tmp && \
-              wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz && \
-              tar -xzf boost_1_86_0.tar.gz && \
-              cd boost_1_86_0 && \
+              wget -q https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.tar.gz && \
+              tar -xzf boost_1_85_0.tar.gz && \
+              cd boost_1_85_0 && \
               ./bootstrap.sh --with-libraries=system,filesystem,thread,date_time,chrono,regex,serialization,program_options,coroutine,context,atomic --prefix=/usr/local && \
               ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local && \
-              cd / && rm -rf /tmp/boost_1_86_0*
+              cd / && rm -rf /tmp/boost_1_85_0*
 
           # Copy source code
           WORKDIR /src

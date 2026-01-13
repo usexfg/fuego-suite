@@ -20,6 +20,10 @@
 #include "IWalletLegacy.h"
 #include "Common/ObserverManager.h"
 
+namespace CryptoNote {
+  class WalletLegacy;
+}
+
 namespace CryptoNote
 {
 
@@ -30,6 +34,7 @@ public:
   };
 
   virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer) = 0;
+  virtual void process(CryptoNote::WalletLegacy* wallet) {}
 };
 
 class WalletTransactionUpdatedEvent : public WalletLegacyEvent
@@ -203,6 +208,32 @@ public:
   }
 private:
   uint64_t m_balance;
+};
+
+class WalletBurnDepositSecretCreatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletBurnDepositSecretCreatedEvent(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata) 
+    : m_txHash(txHash), m_secret(secret), m_amount(amount), m_metadata(metadata) {}
+  virtual ~WalletBurnDepositSecretCreatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer) override
+  {
+    observer.notify(&IWalletLegacyObserver::burnSecretCreated, m_txHash);
+  }
+
+  virtual void process(CryptoNote::WalletLegacy* wallet) override;
+
+  const std::string& getTxHash() const { return m_txHash; }
+  const Crypto::SecretKey& getSecret() const { return m_secret; }
+  uint64_t getAmount() const { return m_amount; }
+  const std::vector<uint8_t>& getMetadata() const { return m_metadata; }
+
+private:
+  std::string m_txHash;
+  Crypto::SecretKey m_secret;
+  uint64_t m_amount;
+  std::vector<uint8_t> m_metadata;
 };
 
 

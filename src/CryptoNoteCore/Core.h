@@ -172,7 +172,7 @@ namespace CryptoNote {
     bool add_new_tx(const Transaction &tx, const Crypto::Hash &tx_hash, size_t blob_size, tx_verification_context &tvc, bool keeped_by_block, uint32_t height);
     bool load_state_data();
     bool parse_tx_from_blob(Transaction &tx, Crypto::Hash &tx_hash, Crypto::Hash &tx_prefix_hash, const BinaryArray &blob);
-    bool handle_incoming_block(const Block &b, block_verification_context &bvc, bool control_miner, bool relay_block);
+    bool handle_incoming_block(const Block &b, block_verification_context &bvc, bool control_miner, bool relay_block) override;
 
     bool check_tx_syntax(const Transaction &tx);  //check correct values, amounts and all lightweight checks not related with database
     bool check_tx_semantic(const Transaction &tx, bool keeped_by_block, uint32_t &height); //check if tx already in memory pool or in main blockchain

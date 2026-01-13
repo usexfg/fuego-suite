@@ -46,7 +46,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
    CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
    CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wno-deprecated-builtins")
     message(STATUS "Using ${CMAKE_CXX_COMPILER_ID} compiler with C++17")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
@@ -98,9 +98,9 @@ endif()
 # Boost - Updated for 1.86
 # --------------------------
 # Link static BOOST libraries everywhere
-set(Boost_NO_BOOST_CMAKE ON)
-set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_STATIC_RUNTIME ON)
+set(Boost_NO_BOOST_CMAKE OFF)
+set(Boost_USE_STATIC_LIBS OFF)
+set(Boost_USE_STATIC_RUNTIME OFF)
 
 if(MINGW)
   set(Boost_THREADAPI win32)
@@ -120,6 +120,10 @@ elseif(APPLE OR OPENBSD OR ANDROID)
   set(Boost_LIBRARIES "${Boost_LIBRARIES}")
 elseif(NOT MSVC)
   set(Boost_LIBRARIES "${Boost_LIBRARIES};rt")
+endif()
+
+if(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost@1.85/lib -Wl,-rpath,/opt/homebrew/opt/boost@1.85/lib")
 endif()
 
 # --------------------------
@@ -215,6 +219,11 @@ endif()
 
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 
+# Configure runtime path for Boost libraries on macOS arm64
+if(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost@1.85/lib -Wl,-rpath,/opt/homebrew/opt/boost@1.85/lib")
+endif()
+
 # --------------------------
 # ICU (skipped on Android)
 # --------------------------
@@ -264,6 +273,32 @@ else()
             message(STATUS "ICU UC Library: ${ICU_UC_LIBRARY}")
         endif()
     endif()
+endif()
+
+# --------------------------
+# Boost linking for executables (macOS)
+# --------------------------
+if(APPLE AND Boost_FOUND)
+    message(STATUS "Linking Boost libraries to executables")
+    foreach(exec_target Daemon SimpleWallet PaymentGateService Optimizer TestnetDaemon testnet-wallet-cli)
+        if(TARGET ${exec_target})
+            message(STATUS "Linking Boost to ${exec_target}")
+            target_link_libraries(${exec_target} PRIVATE ${Boost_LIBRARIES})
+        endif()
+    endforeach()
+endif()
+
+# --------------------------
+# Boost linking for executables (macOS)
+# --------------------------
+if(APPLE AND Boost_FOUND)
+    message(STATUS "Linking Boost libraries to executables")
+    foreach(exec_target Daemon SimpleWallet PaymentGateService Optimizer TestnetDaemon testnet-wallet-cli)
+        if(TARGET ${exec_target})
+            message(STATUS "Linking Boost to ${exec_target}")
+            target_link_libraries(${exec_target} PRIVATE ${Boost_LIBRARIES})
+        endif()
+    endforeach()
 endif()
 
 # --------------------------

@@ -29,6 +29,7 @@
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/DepositCommitment.h"
+#include "CryptoNoteCore/BurnTransactionHandler.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Wallet/WalletErrors.h"
 #include "Common/Base58.h"
@@ -37,6 +38,7 @@
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
 #include "Common/Util.h"
+#include "Common/FileSystem.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
@@ -320,6 +322,40 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
 
     // 🔥 ADD: Store secret locally (never on blockchain)
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
+    
+    // 🔥 ADD: Automatically generate BPDF for backup
+    try {
+      std::string bpdfDir = service.getDefaultWalletPath() + "/bpdf";
+      std::string bpdfPath = bpdfDir + "/" + response.transactionHash + ".json";
+      
+      // Create BPDF directory if it doesn't exist
+      Common::createDirectory(bpdfDir);
+      
+      std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
+      std::string networkId = "93385046440755750514194170694064996624";
+      
+      // Only generate BPDF if we have an Ethereum address
+      if (!ethAddress.empty()) {
+        std::error_code bpdfResult = service.generateBurnProofDataFile(
+          response.transactionHash,
+          ethAddress,
+          bpdfPath,
+          secret,
+          amount,
+          std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()),
+          networkId);
+        
+        if (bpdfResult) {
+          logger(Logging::WARNING) << "Failed to automatically generate BPDF for burn transaction " << response.transactionHash << ": " << bpdfResult.message();
+        } else {
+          logger(Logging::INFO) << "Successfully generated BPDF for burn transaction " << response.transactionHash;
+        }
+      } else {
+        logger(Logging::DEBUGGING) << "No Ethereum address found in metadata for burn transaction " << response.transactionHash << ", skipping BPDF generation";
+      }
+    } catch (const std::exception& e) {
+      logger(Logging::WARNING) << "Exception while generating BPDF for burn transaction " << response.transactionHash << ": " << e.what();
+    }
   }
 
   return result;
@@ -396,6 +432,40 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
 
     //  ADD: Store secret locally (never on blockchain)
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
+    
+    // 🔥 ADD: Automatically generate BPDF for backup
+    try {
+      std::string bpdfDir = service.getDefaultWalletPath() + "/bpdf";
+      std::string bpdfPath = bpdfDir + "/" + response.transactionHash + ".json";
+      
+      // Create BPDF directory if it doesn't exist
+      Common::createDirectory(bpdfDir);
+      
+      std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
+      std::string networkId = "93385046440755750514194170694064996624";
+      
+      // Only generate BPDF if we have an Ethereum address
+      if (!ethAddress.empty()) {
+        std::error_code bpdfResult = service.generateBurnProofDataFile(
+          response.transactionHash,
+          ethAddress,
+          bpdfPath,
+          secret,
+          amount,
+          std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()),
+          networkId);
+        
+        if (bpdfResult) {
+          logger(Logging::WARNING) << "Failed to automatically generate BPDF for burn transaction " << response.transactionHash << ": " << bpdfResult.message();
+        } else {
+          logger(Logging::INFO) << "Successfully generated BPDF for burn transaction " << response.transactionHash;
+        }
+      } else {
+        logger(Logging::DEBUGGING) << "No Ethereum address found in metadata for burn transaction " << response.transactionHash << ", skipping BPDF generation";
+      }
+    } catch (const std::exception& e) {
+      logger(Logging::WARNING) << "Exception while generating BPDF for burn transaction " << response.transactionHash << ": " << e.what();
+    }
   }
 
   return result;

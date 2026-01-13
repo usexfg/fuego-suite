@@ -7,6 +7,12 @@ if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
 endif()
 
+# Set BOOST_NO_BOOST_CMAKE early to disable CMake config mode and force classic FindBoost
+set(BOOST_NO_BOOST_CMAKE ON)
+set(Boost_NO_BOOST_CMAKE ON)
+set(Boost_DIR "")
+set(Boost_CONFIG_PATH "")
+
 include(CheckCXXCompilerFlag)
 set(VERSION "0.2")
 # Packaged from main commits
@@ -90,13 +96,20 @@ if(MSVC)
     include_directories(src/Platform/Windows)
 elseif(APPLE)
     include_directories(src/Platform/OSX)
+    include_directories(src/Platform/Posix)
 else()
     include_directories(src/Platform/Linux)
+    include_directories(src/Platform/Posix)
 endif()
 
 # --------------------------
-# Boost - Updated for 1.86
+# Boost - Configured consistently like Karbowanec
 # --------------------------
+set(OLD_LIB_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+if(STATIC AND MINGW)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+endif()
+
 # Link static BOOST libraries everywhere
 set(Boost_NO_BOOST_CMAKE ON)
 set(Boost_USE_STATIC_LIBS ON)
@@ -107,11 +120,17 @@ if(MINGW)
   include_directories(SYSTEM src/platform/mingw)
 endif()
 
-# Required components based on karbo's CMakeLists.txt
-find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+find_package(Boost 1.86.0 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Found Boost Version: ${Boost_VERSION}")
+
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
+if(NOT Boost_FOUND)
+  message(FATAL_ERROR "Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (1.58) or the equivalent")
+elseif(Boost_FOUND)
+  message(STATUS "Found Boost Version: ${Boost_VERSION}")
+endif()
 
 # Platform-specific Boost library handling
 if(MINGW)

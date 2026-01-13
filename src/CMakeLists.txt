@@ -43,9 +43,9 @@ add_subdirectory(BurnDepositValidationService)
 if(MSVC)
   file(GLOB_RECURSE System System/* Platform/Windows/System/*)
 elseif(APPLE)
-  file(GLOB_RECURSE System System/* Platform/OSX/System/*)
+  file(GLOB_RECURSE System System/* Platform/OSX/System/* Platform/Posix/System/*)
 else()
-  file(GLOB_RECURSE System System/* Platform/Linux/System/*)
+  file(GLOB_RECURSE System System/* Platform/Linux/System/* Platform/Posix/System/*)
 endif()
 
 source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${System} ${Transfers} ${Wallet} ${WalletLegacy})
@@ -174,6 +174,7 @@ target_link_libraries(Serialization PUBLIC Common)
 # Link jsoncpp for any potential JSON serialization
 target_link_libraries(Serialization PUBLIC ${JSONCPP_LIBRARIES})
 add_library(System STATIC ${System})
+target_link_libraries(System PRIVATE ${Boost_LIBRARIES})
 
 # Fix ucontext compilation issues on macOS
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")

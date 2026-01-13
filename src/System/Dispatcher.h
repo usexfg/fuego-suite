@@ -1,123 +1,110 @@
+// Copyright (c) 2016-2025, The Karbo developers
 // Copyright (c) 2012-2016, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2016-2025, The Fuego developers
 //
-// This file is part of Bytecoin.
+// This file is part of Fuego.
 //
-// Bytecoin is free software: you can redistribute it and/or modify
+// Fuego is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// Bytecoin is distributed in the hope that it will be useful,
+// Fuego is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// along with Fuego.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <queue>
-#include <stack>
+#include <boost/asio.hpp>
+#include <boost/coroutine/symmetric_coroutine.hpp>
 
 namespace System {
 
-struct NativeContextGroup;
+  using coro_t = boost::coroutines::symmetric_coroutine<void>;
 
-struct NativeContext {
-  void* ucontext;
-  void* stackPtr;
-  bool interrupted;
-  bool inExecutionQueue;
-  NativeContext* next;
-  NativeContextGroup* group;
-  NativeContext* groupPrev;
-  NativeContext* groupNext;
-  std::function<void()> procedure;
-  std::function<void()> interruptProcedure;
-};
+  struct NativeContextGroup;
 
-struct NativeContextGroup {
-  NativeContext* firstContext;
-  NativeContext* lastContext;
-  NativeContext* firstWaiter;
-  NativeContext* lastWaiter;
-};
+  struct NativeContext {
+    // Fiber replacement
+    coro_t::call_type* coro{ nullptr };
+    coro_t::yield_type* yield{ nullptr };
 
-struct OperationContext {
-  NativeContext *context;
-  bool interrupted;
-  uint32_t events;
-};
+    bool interrupted{ false };
+    bool inExecutionQueue{ false };
+    NativeContext* next{ nullptr };
+    NativeContextGroup* group{ nullptr };
+    NativeContext* groupPrev{ nullptr };
+    NativeContext* groupNext{ nullptr };
+    std::function<void()> procedure;
+    std::function<void()> interruptProcedure;
+  };
 
-struct ContextPair {
-  OperationContext *readContext;
-  OperationContext *writeContext;
-};
+  struct NativeContextGroup {
+    NativeContext* firstContext{ nullptr };
+    NativeContext* lastContext{ nullptr };
+    NativeContext* firstWaiter{ nullptr };
+    NativeContext* lastWaiter{ nullptr };
+  };
 
-class Dispatcher {
-public:
-  Dispatcher();
-  Dispatcher(const Dispatcher&) = delete;
-  ~Dispatcher();
-  Dispatcher& operator=(const Dispatcher&) = delete;
-  void clear();
-  void dispatch();
-  NativeContext* getCurrentContext() const;
-  void interrupt();
-  void interrupt(NativeContext* context);
-  bool interrupted();
-  void pushContext(NativeContext* context);
-  void remoteSpawn(std::function<void()>&& procedure);
-  void yield();
+  class Dispatcher {
+  public:
+    Dispatcher();
+    Dispatcher(const Dispatcher&) = delete;
+    ~Dispatcher();
+    Dispatcher& operator=(const Dispatcher&) = delete;
 
-  // system-dependent
-  int getEpoll() const;
-  NativeContext& getReusableContext();
-  void pushReusableContext(NativeContext&);
-  int getTimer();
-  void pushTimer(int timer);
+    void clear();
+    void dispatch();
+    NativeContext* getCurrentContext() const;
+    void interrupt();
+    void interrupt(NativeContext* context);
+    bool interrupted();
+    void pushContext(NativeContext* context);
+    void remoteSpawn(std::function<void()>&& procedure);
+    void yield();
 
-#ifdef __x86_64__
-#if defined(__WORDSIZE) && __WORDSIZE == 64
-  static const int SIZEOF_PTHREAD_MUTEX_T = 40;
-#elif defined(__WORDSIZE) && __WORDSIZE == 32
-  static const int SIZEOF_PTHREAD_MUTEX_T = 32;
-#elif defined(_WIN64)
-  static const int SIZEOF_PTHREAD_MUTEX_T = 40;
-#else
-  static const int SIZEOF_PTHREAD_MUTEX_T = 32;
-#endif
-#else
-#if defined(__aarch64__)
-  static const int SIZEOF_PTHREAD_MUTEX_T = 48;
-#else
-  static const int SIZEOF_PTHREAD_MUTEX_T = 24;
-#endif
-#endif
+    // Timers (compatible API)
+    void addTimer(uint64_t time, NativeContext* context);
+    void interruptTimer(uint64_t time, NativeContext* context);
 
-private:
-  void spawn(std::function<void()>&& procedure);
-  int epoll;
-  alignas(void*) uint8_t mutex[SIZEOF_PTHREAD_MUTEX_T];
-  int remoteSpawnEvent;
-  ContextPair remoteSpawnEventContext;
-  std::queue<std::function<void()>> remoteSpawningProcedures;
-  std::stack<int> timers;
+    // Legacy Windows API compat
+    void* getCompletionPort() const { return nullptr; }
 
-  NativeContext mainContext;
-  NativeContextGroup contextGroup;
-  NativeContext* currentContext;
-  NativeContext* firstResumingContext;
-  NativeContext* lastResumingContext;
-  NativeContext* firstReusableContext;
-  size_t runningContextCount;
+    // Context pool API
+    NativeContext& getReusableContext();
+    void pushReusableContext(NativeContext&);
 
-  void contextProcedure(void* ucontext);
-  static void contextProcedureStatic(void* context);
-};
+    // Needed by TCP stack
+    boost::asio::io_context& getIoContext() { return ioContext; }
 
-}
+  private:
+    void spawn(std::function<void()>&& procedure);
+    void contextProcedure(coro_t::yield_type& yield);
+
+    boost::asio::io_context ioContext;
+
+    NativeContext mainContext;
+    NativeContextGroup contextGroup;
+    NativeContext* currentContext{ nullptr };
+    NativeContext* firstResumingContext{ nullptr };
+    NativeContext* lastResumingContext{ nullptr };
+    NativeContext* firstReusableContext{ nullptr };
+    size_t runningContextCount{ 0 };
+
+    // Deadline (ms since steady_clock epoch) -> waiting context
+    std::multimap<uint64_t, NativeContext*> timers;
+
+    boost::asio::steady_timer wakeTimer{ ioContext };
+    bool wakeArmed{ false };
+    uint64_t wakeExpiryMs{ 0 };
+  };
+
+} // namespace System

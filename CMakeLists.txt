@@ -103,17 +103,42 @@ else()
 endif()
 
 # --------------------------
-# Boost - Configured consistently like Karbowanec
+
 # --------------------------
+# Set default static linking option based on platform
+if(MSVC OR MINGW)
+  set(DEFAULT_STATIC true)
+else()
+  set(DEFAULT_STATIC false)
+endif()
+
+option(STATIC "Link libraries statically" ${DEFAULT_STATIC})
+
+# Clear Boost variables from cache to ensure fresh detection
+unset(Boost_INCLUDE_DIRS CACHE)
+unset(Boost_LIBRARIES CACHE)
+unset(Boost_LIBRARY_DIRS CACHE)
+unset(Boost_VERSION CACHE)
+unset(Boost_FOUND CACHE)
+
 set(OLD_LIB_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
 if(STATIC AND MINGW)
   set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
 endif()
 
-# Link static BOOST libraries everywhere
+# Link BOOST libraries based on STATIC option
 set(Boost_NO_BOOST_CMAKE ON)
-set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_STATIC_RUNTIME ON)
+if(STATIC)
+  set(Boost_USE_STATIC_LIBS ON)
+  set(Boost_USE_STATIC_RUNTIME ON)
+  message(STATUS "Using static Boost libraries")
+else()
+  set(Boost_USE_STATIC_LIBS OFF)
+  set(Boost_USE_STATIC_RUNTIME OFF)
+  message(STATUS "Using dynamic Boost libraries")
+endif()
+set(Boost_USE_MULTITHREADED ON)
+set(Boost_USE_DEBUG_LIBS OFF)
 
 if(MINGW)
   set(Boost_THREADAPI win32)
@@ -124,10 +149,12 @@ find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time chrono
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Found Boost Version: ${Boost_VERSION}")
+message(STATUS "Boost Libraries: ${Boost_LIBRARIES}")
+message(STATUS "Boost Library Dirs: ${Boost_LIBRARY_DIRS}")
 
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
 if(NOT Boost_FOUND)
-  message(FATAL_ERROR "Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (1.58) or the equivalent")
+  message(FATAL_ERROR "Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (version 1.58 or higher) or the equivalent")
 elseif(Boost_FOUND)
   message(STATUS "Found Boost Version: ${Boost_VERSION}")
 endif()

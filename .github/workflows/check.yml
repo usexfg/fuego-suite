@@ -259,7 +259,7 @@ jobs:
       - name: Build Boost 1.86.0
         run: |
           set -e
-          brew install gcc cmake ninja-build wget
+          brew install gcc cmake ninja wget
 
           # Build Boost 1.86.0 from source
           cd /tmp

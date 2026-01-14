@@ -120,7 +120,7 @@ if(MINGW)
   include_directories(SYSTEM src/platform/mingw)
 endif()
 
-find_package(Boost 1.86.0 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
+find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Found Boost Version: ${Boost_VERSION}")

@@ -73,9 +73,9 @@ public:
   virtual uint64_t actualBalance() override;
   virtual uint64_t pendingBalance() override;
   virtual uint64_t actualDepositBalance() override;
-  virtual uint64_t actualInvestmentBalance() override;  
+  virtual uint64_t actualInvestmentBalance() override;
   virtual uint64_t pendingDepositBalance() override;
-  virtual uint64_t pendingInvestmentBalance() override;  
+  virtual uint64_t pendingInvestmentBalance() override;
 
   virtual size_t getTransactionCount() override;
   virtual size_t getTransferCount() override;
@@ -141,7 +141,7 @@ private:
   void notifyClients(std::deque<std::unique_ptr<WalletLegacyEvent> >& events);
   void notifyIfBalanceChanged();
   void notifyIfDepositBalanceChanged();
-  void notifyIfInvestmentBalanceChanged();  
+  void notifyIfInvestmentBalanceChanged();
 
   std::unique_ptr<WalletLegacyEvent> getActualInvestmentBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingInvestmentBalanceChangedEvent();
@@ -190,7 +190,7 @@ private:
   std::string m_password;
   const CryptoNote::Currency& m_currency;
   INode& m_node;
-  Logging::ILogger& m_loggerGroup;  
+  Logging::ILogger& m_loggerGroup;
   bool m_isStopping;
 
   std::atomic<uint64_t> m_lastNotifiedActualBalance;
@@ -199,7 +199,7 @@ private:
   std::atomic<uint64_t> m_lastNotifiedActualDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedPendingDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedActualInvestmentBalance;
-  std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;  
+  std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;
 
   BlockchainSynchronizer m_blockchainSync;
   TransfersSyncronizer m_transfersSync;
@@ -212,7 +212,7 @@ private:
   Tools::ObserverManager<CryptoNote::IWalletLegacyObserver> m_observerManager;
 
   std::unique_ptr<SyncStarter> m_onInitSyncStarter;
-  
+
   // Burn transaction management
   std::unique_ptr<CryptoNote::BurnTransactionManager> m_burnTransactionManager;
 };

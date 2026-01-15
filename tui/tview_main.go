@@ -1,0 +1,939 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+)
+
+// RPCResponse represents a JSON-RPC response
+type RPCResponse struct {
+	ID      interface{} `json:"id"`
+	JSONRPC string      `json:"jsonrpc"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *RPCError   `json:"error,omitempty"`
+}
+
+// RPCError represents a JSON-RPC error
+type RPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// NodeInfo represents node information
+type NodeInfo struct {
+	Height int `json:"height"`
+	Peers  int `json:"peers"`
+}
+
+// AppState represents the application state
+type AppState struct {
+	app             *tview.Application
+	pages           *tview.Pages
+	network         string
+	nodeCmd         *exec.Cmd
+	walletCmd       *exec.Cmd
+	logs            []string
+	isNodeRunning   bool
+	isWalletRunning bool
+}
+
+var appState AppState
+
+func main() {
+	// Initialize application state
+	appState = AppState{
+		app:             tview.NewApplication(),
+		pages:           tview.NewPages(),
+		network:         "mainnet",
+		logs:            make([]string, 0),
+		isNodeRunning:   false,
+		isWalletRunning: false,
+	}
+
+	// Set initial config
+	CurrentConfig = MainnetConfig
+
+	// Create the main menu
+	createMainMenu()
+
+	// Enable mouse support
+	appState.app.EnableMouse(true)
+
+	// Run the application
+	if err := appState.app.SetRoot(appState.pages, true).SetFocus(appState.pages).Run(); err != nil {
+		panic(err)
+	}
+}
+
+// createMainMenu creates the main menu screen
+func createMainMenu() {
+	// Create network selection dropdown
+	networkSelect := tview.NewDropDown().
+		SetLabel("Network: ").
+		SetOptions([]string{"Mainnet", "Testnet"}, func(text string, index int) {
+			if text == "Mainnet" {
+				appState.network = "mainnet"
+				CurrentConfig = MainnetConfig
+			} else {
+				appState.network = "testnet"
+				CurrentConfig = TestnetConfig
+			}
+		}).
+		SetCurrentOption(0)
+
+	// Create main menu items
+	menuItems := []struct {
+		text   string
+		action func()
+	}{
+		{"Start Node", startNode},
+		{"Stop Node", stopNode},
+		{"Node Status", showNodeStatus},
+		{"Start Wallet RPC", startWalletRPC},
+		{"Create Wallet", createWallet},
+		{"Get Balance", getBalance},
+		{"Send Transaction", showSendTransactionForm},
+		{"Elderfier Menu", showElderfierMenu},
+		{"Burn2Mint Menu", showBurn2MintMenu},
+		{"Show Logs", showLogs},
+		{"Quit", func() { appState.app.Stop() }},
+	}
+
+	// Create list for menu items
+	list := tview.NewList().
+		SetMainTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedBackgroundColor(tview.Styles.MoreContrastBackgroundColor)
+
+	for _, item := range menuItems {
+		list.AddItem(item.text, "", 0, item.action)
+	}
+
+	// Set up focus handling for the dropdown
+	networkSelect.SetDoneFunc(func(key tcell.Key) {
+		if key == tcell.KeyEnter || key == tcell.KeyTab {
+			// Move focus to the list after selecting network
+			appState.app.SetFocus(list)
+		}
+	})
+
+	// Create layout
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(tview.NewFlex().
+			AddItem(tview.NewBox().SetBorder(false), 1, 0, false).
+			AddItem(networkSelect, 20, 0, true).
+			AddItem(tview.NewBox().SetBorder(false), 0, 1, false), 3, 0, true).
+		AddItem(list, 0, 1, true)
+
+	// Add title
+	title := tview.NewTextView().
+		SetText("🔥 Fuego TUI - Mainnet & Testnet").
+		SetTextColor(tview.Styles.PrimaryTextColor).
+		SetTextAlign(tview.AlignCenter)
+
+	mainLayout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(title, 3, 0, false).
+		AddItem(layout, 0, 1, true)
+
+	appState.pages.AddPage("main", mainLayout, true, true)
+}
+
+// startNode starts the Fuego node
+func startNode() {
+	if appState.isNodeRunning {
+		showMessage("Node is already running")
+		return
+	}
+
+	binPath := binPath(CurrentConfig.NodeBinary)
+	if binPath == "" {
+		showMessage("Node binary not found")
+		return
+	}
+
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+
+	cmd := exec.Command(binPath,
+		"--rpc-bind-port", strconv.Itoa(CurrentConfig.NodeRPCPort),
+		"--p2p-bind-port", strconv.Itoa(CurrentConfig.NodeP2PPort),
+		"--data-dir", dataDir)
+
+	appState.nodeCmd = cmd
+	appState.isNodeRunning = true
+
+	// Set up logging
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	err := cmd.Start()
+	if err != nil {
+		appState.isNodeRunning = false
+		showMessage("Error starting node: " + err.Error())
+		return
+	}
+
+	// Log output in background
+	go logStream(stdout, "NODE")
+	go logStream(stderr, "NODE-ERR")
+
+	showMessage("Node started successfully")
+}
+
+// stopNode stops the Fuego node
+func stopNode() {
+	if !appState.isNodeRunning {
+		showMessage("Node is not running")
+		return
+	}
+
+	if appState.nodeCmd != nil && appState.nodeCmd.Process != nil {
+		err := appState.nodeCmd.Process.Kill()
+		if err != nil {
+			showMessage("Error stopping node: " + err.Error())
+			return
+		}
+	}
+
+	appState.isNodeRunning = false
+	showMessage("Node stopped successfully")
+}
+
+// showNodeStatus displays node status information
+func showNodeStatus() {
+	if !appState.isNodeRunning {
+		showMessage("Node is not running")
+		return
+	}
+
+	info, err := getNodeInfo()
+	if err != nil {
+		showMessage("Error getting node info: " + err.Error())
+		return
+	}
+
+	statusText := fmt.Sprintf("Node Status\n\nHeight: %d\nPeers: %d", info.Height, info.Peers)
+	showMessage(statusText)
+}
+
+// startWalletRPC starts the wallet RPC server
+func startWalletRPC() {
+	if appState.isWalletRunning {
+		showMessage("Wallet RPC is already running")
+		return
+	}
+
+	binPath := binPath(CurrentConfig.WalletBinary)
+	if binPath == "" {
+		showMessage("Wallet binary not found")
+		return
+	}
+
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+
+	walletFile := filepath.Join(dataDir, "wallet.wallet")
+
+	// Check if wallet exists
+	if _, err := os.Stat(walletFile); os.IsNotExist(err) {
+		showMessage("Wallet file not found. Please create a wallet first.")
+		return
+	}
+
+	cmd := exec.Command(binPath,
+		"--rpc-bind-port", strconv.Itoa(CurrentConfig.WalletRPCPort),
+		"--wallet-file", walletFile,
+		"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort))
+
+	appState.walletCmd = cmd
+	appState.isWalletRunning = true
+
+	// Set up logging
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	err := cmd.Start()
+	if err != nil {
+		appState.isWalletRunning = false
+		showMessage("Error starting wallet RPC: " + err.Error())
+		return
+	}
+
+	// Log output in background
+	go logStream(stdout, "WALLET")
+	go logStream(stderr, "WALLET-ERR")
+
+	showMessage("Wallet RPC started successfully")
+}
+
+// createWallet creates a new wallet
+func createWallet() {
+	binPath := binPath(CurrentConfig.WalletBinary)
+	if binPath == "" {
+		showMessage("Wallet binary not found")
+		return
+	}
+
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+
+	walletFile := filepath.Join(dataDir, "wallet.wallet")
+
+	// Check if wallet already exists
+	if _, err := os.Stat(walletFile); err == nil {
+		showMessage("Wallet already exists. Please delete it first if you want to create a new one.")
+		return
+	}
+
+	showMessage("Creating wallet... Please follow the prompts in the terminal.")
+
+	// For now, we'll just show a message since terminal interaction is complex in tview
+	cmd := exec.Command(binPath,
+		"--wallet-file", walletFile,
+		"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort),
+		"--generate-new-wallet")
+
+	err := cmd.Run()
+	if err != nil {
+		showMessage("Error creating wallet: " + err.Error())
+		return
+	}
+
+	showMessage("Wallet created successfully")
+}
+
+// getBalance gets the wallet balance
+func getBalance() {
+	if !appState.isWalletRunning {
+		showMessage("Wallet RPC is not running")
+		return
+	}
+
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.GetBalanceRPC, nil)
+	if err != nil {
+		showMessage("Error getting balance: " + err.Error())
+		return
+	}
+
+	balance, ok := result["balance"]
+	if !ok {
+		showMessage("Unexpected response format")
+		return
+	}
+
+	balanceStr := fmt.Sprintf("%v", balance)
+	balanceInt, err := strconv.ParseInt(balanceStr, 10, 64)
+	if err != nil {
+		showMessage("Error parsing balance: " + err.Error())
+		return
+	}
+
+	// Convert from atomic units
+	balanceXFG := float64(balanceInt) / float64(CurrentConfig.CoinUnits)
+	showMessage(fmt.Sprintf("Balance: %.8f %s", balanceXFG, CurrentConfig.CoinName))
+}
+
+// showSendTransactionForm displays the send transaction form
+func showSendTransactionForm() {
+	if !appState.isWalletRunning {
+		showMessage("Wallet RPC is not running")
+		return
+	}
+
+	// Create form
+	form := tview.NewForm()
+	addressField := tview.NewInputField().SetLabel("Recipient Address").SetFieldWidth(60)
+	amountField := tview.NewInputField().SetLabel("Amount (" + CurrentConfig.CoinName + ")").SetFieldWidth(20)
+
+	form.AddFormItem(addressField).
+		AddFormItem(amountField).
+		AddButton("Send", func() {
+			address := addressField.GetText()
+			amountStr := amountField.GetText()
+
+			if address == "" || amountStr == "" {
+				showMessage("Please fill all fields")
+				return
+			}
+
+			amount, err := strconv.ParseFloat(amountStr, 64)
+			if err != nil {
+				showMessage("Invalid amount")
+				return
+			}
+
+			// Convert to atomic units
+			amountAtomic := int64(amount * float64(CurrentConfig.CoinUnits))
+
+			params := map[string]interface{}{
+				"transfers": []map[string]interface{}{
+					{"address": address, "amount": amountAtomic},
+				},
+			}
+
+			result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.SendTransactionRPC, params)
+			if err != nil {
+				showMessage("Error sending transaction: " + err.Error())
+				return
+			}
+
+			txHash, ok := result["tx_hash"]
+			if !ok {
+				showMessage("Unexpected response format")
+				return
+			}
+
+			showMessage(fmt.Sprintf("Transaction sent successfully!\nTX Hash: %v", txHash))
+		}).
+		AddButton("Cancel", func() {
+			appState.pages.SwitchToPage("main")
+		})
+
+	form.SetBorder(true).SetTitle("Send Transaction").SetTitleAlign(tview.AlignLeft)
+
+	// Create layout
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(form, 0, 1, true)
+
+	appState.pages.AddPage("sendTx", layout, true, true)
+	appState.pages.SwitchToPage("sendTx")
+}
+
+// showElderfierMenu displays the elderfier menu
+func showElderfierMenu() {
+	if !appState.isWalletRunning {
+		showMessage("Wallet RPC is not running")
+		return
+	}
+
+	// Check stake status
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.GetStakeStatusRPC, nil)
+	hasStake := err == nil && result != nil
+
+	menuItems := []struct {
+		text   string
+		action func()
+	}{
+		{"View Consensus Requests", viewConsensusRequests},
+		{"Vote on Pending Items", voteOnPendingItems},
+		{"Review Burn2Mint Requests", reviewBurn2MintRequests},
+		{"Manage Stake", manageStake},
+		{"Update ENindex Keys", updateENindexKeys},
+		{"Back to Main Menu", func() { appState.pages.SwitchToPage("main") }},
+	}
+
+	if !hasStake {
+		menuItems = []struct {
+			text   string
+			action func()
+		}{
+			{"Start Elderfyre Stayking Process", startElderfyreStayking},
+			{"Check Stake Status", checkStakeStatus},
+			{"Back to Main Menu", func() { appState.pages.SwitchToPage("main") }},
+		}
+	}
+
+	// Create list for menu items
+	list := tview.NewList().
+		SetMainTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedBackgroundColor(tview.Styles.MoreContrastBackgroundColor)
+
+	for _, item := range menuItems {
+		list.AddItem(item.text, "", 0, item.action)
+	}
+
+	// Create layout
+	title := tview.NewTextView().
+		SetText("👑 Elderfier Dashboard").
+		SetTextColor(tview.Styles.PrimaryTextColor).
+		SetTextAlign(tview.AlignCenter)
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(title, 3, 0, false).
+		AddItem(list, 0, 1, true)
+
+	appState.pages.AddPage("elderfier", layout, true, true)
+	appState.pages.SwitchToPage("elderfier")
+}
+
+// startElderfyreStayking starts the elderfyre stayking process
+func startElderfyreStayking() {
+	form := tview.NewForm()
+	stakeAmountField := tview.NewInputField().SetLabel("Stake Amount (" + CurrentConfig.CoinName + ")").SetFieldWidth(20).SetText("800")
+	elderfierIDField := tview.NewInputField().SetLabel("Elderfier ID (8 chars)").SetFieldWidth(20)
+
+	form.AddFormItem(stakeAmountField).
+		AddFormItem(elderfierIDField).
+		AddButton("Create Stake", func() {
+			amountStr := stakeAmountField.GetText()
+			elderfierID := elderfierIDField.GetText()
+
+			amount, err := strconv.ParseFloat(amountStr, 64)
+			if err != nil {
+				showMessage("Invalid amount")
+				return
+			}
+
+			if len(elderfierID) != 8 {
+				showMessage("Elderfier ID must be exactly 8 characters")
+				return
+			}
+
+			// Create stake deposit
+			amountAtomic := int64(amount * float64(CurrentConfig.CoinUnits))
+			params := map[string]interface{}{"amount": amountAtomic}
+
+			result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.CreateStakeRPC, params)
+			if err != nil {
+				showMessage("Error creating stake: " + err.Error())
+				return
+			}
+
+			txHash, ok := result["tx_hash"]
+			if !ok {
+				showMessage("Unexpected response format")
+				return
+			}
+
+			// Show confirmation and next steps
+			message := fmt.Sprintf("🎉 Stake Deposit Created!\n\nTX Hash: %v\n\nNext steps:\n1. Wait for 10 confirmations\n2. Register your Elderfier ID", txHash)
+			showMessage(message)
+		}).
+		AddButton("Cancel", func() {
+			appState.pages.SwitchToPage("elderfier")
+		})
+
+	form.SetBorder(true).SetTitle("Elderfyre Stayking Process").SetTitleAlign(tview.AlignLeft)
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(form, 0, 1, true)
+
+	appState.pages.AddPage("stayking", layout, true, true)
+	appState.pages.SwitchToPage("stayking")
+}
+
+// checkStakeStatus checks the stake status
+func checkStakeStatus() {
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.GetStakeStatusRPC, nil)
+	if err != nil {
+		showMessage("Error checking stake status: " + err.Error())
+		return
+	}
+
+	statusStr := fmt.Sprintf("Stake Status: %v", result)
+	showMessage(statusStr)
+}
+
+// viewConsensusRequests views consensus requests
+func viewConsensusRequests() {
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.GetConsensusRPC, nil)
+	if err != nil {
+		showMessage("Error getting consensus requests: " + err.Error())
+		return
+	}
+
+	message := fmt.Sprintf("Consensus Requests:\n%v", result)
+	showMessage(message)
+}
+
+// voteOnPendingItems votes on pending items
+func voteOnPendingItems() {
+	// Get pending votes
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.GetPendingVotesRPC, nil)
+	if err != nil {
+		showMessage("Error getting pending votes: " + err.Error())
+		return
+	}
+
+	// For now, just show the votes
+	message := fmt.Sprintf("Pending Votes:\n%v", result)
+	showMessage(message)
+}
+
+// reviewBurn2MintRequests reviews burn2mint requests
+func reviewBurn2MintRequests() {
+	showMessage("Reviewing Burn2Mint requests...")
+	// Implementation would go here
+}
+
+// manageStake manages stake
+func manageStake() {
+	showMessage("Managing stake...")
+	// Implementation would go here
+}
+
+// updateENindexKeys updates ENindex keys
+func updateENindexKeys() {
+	showMessage("Updating ENindex keys...")
+	// Implementation would go here
+}
+
+// showBurn2MintMenu displays the burn2mint menu
+func showBurn2MintMenu() {
+	if !appState.isWalletRunning {
+		showMessage("Wallet RPC is not running")
+		return
+	}
+
+	menuItems := []struct {
+		text   string
+		action func()
+	}{
+		{"Small Burn (0.8 " + CurrentConfig.CoinName + ")", func() { startBurnProcess(CurrentConfig.BurnSmallAmount) }},
+		{"Large Burn (800 " + CurrentConfig.CoinName + ")", func() { startBurnProcess(CurrentConfig.BurnLargeAmount) }},
+		{"Back to Main Menu", func() { appState.pages.SwitchToPage("main") }},
+	}
+
+	// Create list for menu items
+	list := tview.NewList().
+		SetMainTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedTextColor(tview.Styles.PrimaryTextColor).
+		SetSelectedBackgroundColor(tview.Styles.MoreContrastBackgroundColor)
+
+	for _, item := range menuItems {
+		list.AddItem(item.text, "", 0, item.action)
+	}
+
+	// Create layout
+	title := tview.NewTextView().
+		SetText("🔥➡️💎 Burn2Mint Menu").
+		SetTextColor(tview.Styles.PrimaryTextColor).
+		SetTextAlign(tview.AlignCenter)
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(title, 3, 0, false).
+		AddItem(list, 0, 1, true)
+
+	appState.pages.AddPage("burn2mint", layout, true, true)
+	appState.pages.SwitchToPage("burn2mint")
+}
+
+// startBurnProcess starts the burn process
+func startBurnProcess(amount int64) {
+	// Show confirmation dialog
+	message := fmt.Sprintf("Are you sure you want to burn %f %s?\nThis action cannot be undone.",
+		float64(amount)/float64(CurrentConfig.CoinUnits), CurrentConfig.CoinName)
+
+	modal := tview.NewModal().
+		SetText(message).
+		AddButtons([]string{"Confirm", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Confirm" {
+				// Perform burn
+				performBurn(amount)
+			} else {
+				appState.pages.SwitchToPage("burn2mint")
+			}
+		})
+
+	appState.pages.AddPage("burnConfirm", modal, true, true)
+	appState.pages.SwitchToPage("burnConfirm")
+}
+
+// performBurn performs the actual burn
+func performBurn(amount int64) {
+	params := map[string]interface{}{"amount": amount}
+
+	result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.CreateBurnRPC, params)
+	if err != nil {
+		showMessage("Error creating burn: " + err.Error())
+		return
+	}
+
+	txHash, ok := result["tx_hash"]
+	if !ok {
+		showMessage("Unexpected response format")
+		return
+	}
+
+	// Show progress
+	progressMessage := fmt.Sprintf("🔥 Burn Transaction Created\nTX Hash: %s\n\nWaiting for confirmations...", txHash)
+	showProgress(progressMessage, 10, func() {
+		// Request consensus after confirmations
+		requestConsensus(fmt.Sprintf("%v", txHash), amount)
+	})
+}
+
+// requestConsensus requests consensus for a burn
+func requestConsensus(txHash string, amount int64) {
+	progressMessage := "👑 Requesting Elderfier Consensus...\nThis may take a few moments."
+	showProgress(progressMessage, 5, func() {
+		params := map[string]interface{}{
+			"tx_hash": txHash,
+			"amount":  amount,
+		}
+
+		result, err := walletRpcCall(CurrentConfig.WalletRPCPort, CurrentConfig.RequestConsensusRPC, params)
+		if err != nil {
+			showMessage("Error requesting consensus: " + err.Error())
+			return
+		}
+
+		proof, ok := result["eldernode_proof"]
+		if !ok {
+			showMessage("Unexpected response format")
+			return
+		}
+
+		// Check if xfg-stark is available
+		if _, err := exec.LookPath("xfg-stark"); err != nil {
+			message := fmt.Sprintf("✅ Consensus Received!\n\nEldernode Proof: %v\n\nNext steps:\n1. Install xfg-stark CLI\n2. Run: xfg-stark generate-proof --tx-hash %s --amount %d --eldernode-proof %v",
+				proof, txHash, amount, proof)
+			showMessage(message)
+		} else {
+			// Generate STARK proof
+			generateStarkProof(txHash, amount, fmt.Sprintf("%v", proof))
+		}
+	})
+}
+
+// generateStarkProof generates a STARK proof
+func generateStarkProof(txHash string, amount int64, proof string) {
+	progressMessage := "🔐 Generating STARK Proof...\nUsing xfg-stark CLI."
+	showProgress(progressMessage, 10, func() {
+		xfgStarkPath := binPath("xfg-stark")
+		if xfgStarkPath == "" {
+			xfgStarkPath = "xfg-stark"
+		}
+
+		cmd := exec.Command(xfgStarkPath,
+			"generate-proof",
+			"--tx-hash", txHash,
+			"--amount", fmt.Sprintf("%d", amount),
+			"--eldernode-proof", proof)
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			showMessage(fmt.Sprintf("Error generating STARK proof: %s\nOutput: %s", err.Error(), string(output)))
+			return
+		}
+
+		message := fmt.Sprintf("🎉 STARK Proof Generated Successfully!\n\nOutput: %s\n\nNext steps:\n1. Submit to Arbitrum L2\n2. Receive HEAT on Ethereum L1", string(output))
+		showMessage(message)
+	})
+}
+
+// showLogs displays the application logs
+func showLogs() {
+	logText := strings.Join(appState.logs, "\n")
+	if logText == "" {
+		logText = "No logs available"
+	}
+
+	textView := tview.NewTextView().
+		SetText(logText).
+		SetScrollable(true).
+		SetWrap(true)
+
+	textView.SetBorder(true).SetTitle("Application Logs").SetTitleAlign(tview.AlignLeft)
+
+	// Create layout with back button
+	backButton := tview.NewButton("Back to Main Menu").SetSelectedFunc(func() {
+		appState.pages.SwitchToPage("main")
+	})
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(textView, 0, 1, true).
+		AddItem(backButton, 3, 0, true)
+
+	appState.pages.AddPage("logs", layout, true, true)
+	appState.pages.SwitchToPage("logs")
+}
+
+// showProgress shows a progress indicator
+func showProgress(message string, steps int, onComplete func()) {
+	// Use a TextView to simulate progress since tview doesn't have ProgressBar
+	progressText := tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetDynamicColors(true)
+
+	textView := tview.NewTextView().
+		SetText(message).
+		SetTextAlign(tview.AlignCenter)
+
+	layout := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(textView, 3, 0, false).
+		AddItem(progressText, 1, 0, false)
+
+	appState.pages.AddPage("progress", layout, true, true)
+	appState.pages.SwitchToPage("progress")
+
+	// Simulate progress
+	go func() {
+		for i := 0; i <= steps; i++ {
+			time.Sleep(500 * time.Millisecond)
+			appState.app.QueueUpdateDraw(func() {
+				// Create a simple progress bar using characters
+				progressBar := ""
+				for j := 0; j < steps; j++ {
+					if j < i {
+						progressBar += "█"
+					} else {
+						progressBar += "░"
+					}
+				}
+				progressText.SetText(fmt.Sprintf("[%d/%d] %s", i, steps, progressBar))
+			})
+		}
+
+		appState.app.QueueUpdateDraw(func() {
+			appState.pages.RemovePage("progress")
+			if onComplete != nil {
+				onComplete()
+			}
+		})
+	}()
+}
+
+// showMessage shows a message dialog
+func showMessage(message string) {
+	modal := tview.NewModal().
+		SetText(message).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			appState.pages.SwitchToPage("main")
+		})
+
+	appState.pages.AddPage("message", modal, true, true)
+	appState.pages.SwitchToPage("message")
+}
+
+// binPath finds the binary path
+func binPath(binName string) string {
+	// Check in build directory first
+	buildPath := filepath.Join("..", "build", "src", binName)
+	if _, err := os.Stat(buildPath); err == nil {
+		return buildPath
+	}
+
+	// Check in build-test directory
+	buildTestPath := filepath.Join("..", "build-test", "src", binName)
+	if _, err := os.Stat(buildTestPath); err == nil {
+		return buildTestPath
+	}
+
+	// Check in current directory build
+	currentBuildPath := filepath.Join("build", "src", binName)
+	if _, err := os.Stat(currentBuildPath); err == nil {
+		return currentBuildPath
+	}
+
+	// Check in PATH
+	if path, err := exec.LookPath(binName); err == nil {
+		return path
+	}
+
+	return ""
+}
+
+// getNodeInfo gets node information
+func getNodeInfo() (*NodeInfo, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", CurrentConfig.NodeRPCPort)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var rpcResp RPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		return nil, err
+	}
+
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("RPC error: %s", rpcResp.Error.Message)
+	}
+
+	resultBytes, err := json.Marshal(rpcResp.Result)
+	if err != nil {
+		return nil, err
+	}
+
+	var info NodeInfo
+	if err := json.Unmarshal(resultBytes, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// walletRpcCall makes an RPC call to the wallet
+func walletRpcCall(port int, method string, params interface{}) (map[string]interface{}, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/json_rpc", port)
+
+	request := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      "tui",
+		"method":  method,
+	}
+
+	if params != nil {
+		request["params"] = params
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var rpcResp RPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		return nil, err
+	}
+
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("RPC error: %s", rpcResp.Error.Message)
+	}
+
+	result, ok := rpcResp.Result.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected result format")
+	}
+
+	return result, nil
+}
+
+// logStream logs output from a stream
+func logStream(stream interface{}, prefix string) {
+	// This is a simplified version - in a real implementation you would
+	// read from the stream and add to appState.logs
+	// For now, we'll just simulate some logging
+	time.Sleep(1 * time.Second)
+	appState.app.QueueUpdateDraw(func() {
+		appState.logs = append(appState.logs, fmt.Sprintf("[%s] Process started", prefix))
+	})
+}

@@ -293,7 +293,7 @@ int unregisterService() {
 }
 
 int main(int argc, char** argv) {
-  PaymentGateService pg; 
+  PaymentGateService pg;
   ppg = &pg;
 
   try {

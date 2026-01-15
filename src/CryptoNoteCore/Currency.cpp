@@ -139,25 +139,6 @@ namespace CryptoNote
 			return m_blockGrantedFullRewardZone;
 		}
 		else if (blockMajorVersion == BLOCK_MAJOR_VERSION_2) {
-			// For blocks before UPGRADE_HEIGHT_V2 (147958), use V1 reward zone
-			// Even if marked as v2, early blocks were created with v1 parameters
-			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
-		}
-		else {
-			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
-		}
-	}
-
-	size_t Currency::blockGrantedFullRewardZoneByHeightVersion(uint8_t blockMajorVersion, uint32_t height) const {
-		// Use height-based logic for early blocks to ensure backward compatibility
-		if (height < CryptoNote::parameters::UPGRADE_HEIGHT_V2) {
-			// All blocks before first upgrade use v1 reward zone
-			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
-		}
-		else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3) {
-			return m_blockGrantedFullRewardZone;
-		}
-		else if (blockMajorVersion == BLOCK_MAJOR_VERSION_2) {
 			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
 		}
 		else {
@@ -285,7 +266,7 @@ double Currency::getBurnPercentage() const {
 
     // Debug output for reward calculation analysis
     static uint32_t lastDebugHeight = 0;
-    if (height % 10000 == 0 && height != lastDebugHeight) {
+    if (height % 100000 == 0 && height != lastDebugHeight) {
         lastDebugHeight = height;
         printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
                height, (unsigned long long)alreadyGeneratedCoins,
@@ -294,141 +275,26 @@ double Currency::getBurnPercentage() const {
                (unsigned long long)baseReward);
     }
 
-    // Special debugging for problematic blocks
-        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-            logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward BEFORE medianSize adjustment: height=" << height
-                                     << " medianSize=" << medianSize
-                                     << " baseReward=" << baseReward;
-        }
-        size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByHeightVersion(blockMajorVersion, height);
-        size_t originalMedianSize = medianSize;
-        medianSize = std::max(medianSize, blockGrantedFullRewardZone);
+    size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);
+    size_t originalMedianSize = medianSize;
+    logger(DEBUGGING) << "DEBUG: medianSize before max: " << medianSize << ", blockGrantedFullRewardZone: " << blockGrantedFullRewardZone;
+    medianSize = std::max(medianSize, blockGrantedFullRewardZone);
+    logger(DEBUGGING) << "DEBUG: medianSize after max: " << medianSize;
 
-if (currentBlockSize > UINT64_C(2) * medianSize)
-    {
-      logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 2 * medianSize;
-      return false;
+    // Simple 2x median validation - but allow penalty function to handle oversized blocks
+    if (currentBlockSize > UINT64_C(2) * medianSize) {
+      // For blocks significantly over the limit, the penalty function will return minimal reward
+      logger(DEBUGGING) << "Block size exceeds 2x median, penalty will be applied: " << currentBlockSize << " > " << 2 * medianSize;
     }
 
-        // For very early blocks with very small block sizes, preserve the original median for penalty calculation
-        // This ensures backward compatibility with blocks mined when the blockchain was young
-        bool useOriginalMedian = false;
-        if (height < 50000 && originalMedianSize < 1000) {  // Very early blocks with small sizes
-            medianSize = originalMedianSize;
-            useOriginalMedian = true;
-        }
-
-        if (height == 17926 || height == 980163 || height == 66608) {
-            logger(INFO, BRIGHT_RED) << "DEBUG getBlockReward AFTER medianSize adjustment: height=" << height
-                                     << " originalMedianSize=" << originalMedianSize
-                                     << " blockGrantedFullRewardZone=" << blockGrantedFullRewardZone
-                                     << " finalMedianSize=" << medianSize
-                                     << " useOriginalMedian=" << (useOriginalMedian ? "true" : "false");
-        }
-        // For very early blocks, adjust the size validation to account for the small median values
-        // Early blocks had much smaller medians but could still be legitimately larger
-        logger(INFO) << "getBlockReward size check: currentBlockSize=" << currentBlockSize
-			<< ", medianSize=" << medianSize
-			<< ", 3*medianSize=" << (medianSize * 3)
-			<< ", blockGrantedFullReward-zone=" << blockGrantedFullRewardZone;
-        if (currentBlockSize > UINT64_C(3) * medianSize)
-        {
-          // Special handling for blocks in the problematic height range (170k-180k)
-          // These blocks have known size validation issues due to historical changes
-          if (height >= 170000 && height <= 180000) {
-            // Use a much more lenient size check for these historical blocks
-            // Allow up to 100x the median size to accommodate historical variations
-            size_t lenientMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
-            if (currentBlockSize > UINT64_C(100) * lenientMedian) {
-              logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 100 * lenientMedian;
-              return false;
-            }
-          }
-          // Extended range for blocks that might have similar issues
-          else if (height >= 160000 && height <= 190000) {
-            // Use moderate leniency for this extended range
-            size_t moderateMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
-            if (currentBlockSize > UINT64_C(50) * moderateMedian) {
-              logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 50 * moderateMedian;
-              return false;
-            }
-          }
-          // Add tolerance for blocks up to 800k to handle size validation overflow cases
-          else if (height < 800000) {
-            // Use lenient size check for historical blocks up to 800k
-            // Allow up to 20x the median size to accommodate historical variations
-            size_t lenientMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
-            if (currentBlockSize > UINT64_C(20) * lenientMedian) {
-              logger(TRACE) << "Block cumulative size is too big for historical block: " << currentBlockSize << ", expected less than " << 20 * lenientMedian;
-              return false;
-            }
-          }
-          else if (height >= 50000) { // Only apply strict size check to blocks after height 50,000
-            logger(TRACE) << "Block cumulative size is too big: " << currentBlockSize << ", expected less than " << 3 * medianSize;
-            return false;
-          } else {
-            // For early blocks, use a more lenient size check based on blockGrantedFullRewardZone
-            // This ensures backward compatibility while still validating that blocks aren't excessively large
-            size_t effectiveMedian = std::max(originalMedianSize, blockGrantedFullRewardZone);
-            if (currentBlockSize > UINT64_C(10) * effectiveMedian) {
-              logger(TRACE) << "Block cumulative size is too big for early block: " << currentBlockSize << ", expected less than " << 10 * effectiveMedian;
-              return false;
-            }
-          }
-        }
-
-		// For very early blocks with very small medians, use a more appropriate median for penalty calculation
-				// This ensures the penalty is not overly harsh for blocks created when the blockchain was young
-				size_t penaltyMedian = medianSize;
-				if (height < 50000 && useOriginalMedian && originalMedianSize < 1000) {
-					// Use blockGrantedFullRewardZone as a more reasonable basis for penalty calculation
-					penaltyMedian = blockGrantedFullRewardZone;
-				}
-
-		// Special case for historical blocks that were mined without proper penalty calculation
-		uint64_t penalizedBaseReward;
-		uint64_t penalizedFee;
-
-		if (height < 100000 || height == 174026 || height == 297968) {
-		   // Blocks before height 100k or specific problematic blocks were mined with full reward, no penalty
-		   penalizedBaseReward = baseReward;
-		   penalizedFee = fee;
-		} else {
-		penalizedBaseReward = getPenalizedAmount(baseReward, penaltyMedian, currentBlockSize, blockMajorVersion);
-		penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, penaltyMedian, currentBlockSize, blockMajorVersion) : fee;
+		uint64_t penalizedBaseReward = getPenalizedAmount(baseReward, medianSize, currentBlockSize);
+		uint64_t penalizedFee = blockMajorVersion >= BLOCK_MAJOR_VERSION_2 ? getPenalizedAmount(fee, medianSize, currentBlockSize) : fee;
 		if (cryptonoteCoinVersion() == 1) {
-		penalizedFee = getPenalizedAmount(fee, penaltyMedian, currentBlockSize, blockMajorVersion);
+			penalizedFee = getPenalizedAmount(fee, medianSize, currentBlockSize);
 		}
-		}
-
-		// Special debugging for problematic blocks
-        if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-            logger(INFO, BRIGHT_RED) << "DEBUG PENALTY CALCULATION: height=" << height
-                                     << " medianSize=" << medianSize
-                                     << " penaltyMedian=" << penaltyMedian
-                                     << " baseReward=" << baseReward
-                                     << " penalizedBaseReward=" << penalizedBaseReward
-                                     << " fee=" << fee
-                                     << " penalizedFee=" << penalizedFee;
-        }
 
     emissionChange = penalizedBaseReward - (fee - penalizedFee);
     reward = penalizedBaseReward + penalizedFee;
-
-    // Debug logging for final reward
-    if (height == 17926 || height == 980163 || height == 66608 || height == 174026 || height == 297968) {
-        logger(INFO, BRIGHT_RED) << "DEBUG FINAL REWARD: height=" << height
-                                 << " emissionChange=" << emissionChange
-                                 << " reward=" << reward;
-    }
-
-    // Critical check for v10 upgrade at small heights where reward might be 0
-    if (reward == 0 && height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
-        logger(ERROR, BRIGHT_RED) << "CRITICAL: Zero reward at v10 upgrade height=" << height
-            << ", blockMajorVersion=" << (int)blockMajorVersion
-            << ", baseReward=" << baseReward
-            << ", penalty=" << (baseReward - penalizedBaseReward);
-    }
 
     return true;
   }
@@ -1595,22 +1461,21 @@ if (currentBlockSize > UINT64_C(2) * medianSize)
 	}
 
 	bool Currency::isBurnDeposit(uint32_t term) const {
-		// Check if this is a burn deposit (FOREVER term)
+		// Check if this is a burn
 		return isValidBurnDepositTerm(term);
 	}
 
 	uint64_t Currency::convertXfgToHeat(uint64_t xfgAmount) const {
-		// Convert XFG to HEAT: 0.8 XFG = 8M HEAT
-		// Formula: (xfgAmount * 10000000) / 800000000
-		return (xfgAmount * 10000000) / 800000000;
-	}
+    // Convert XFG to HEAT: 1 XFG = 10M HEAT
+    // Formula: xfgAmount * 10000000
+    return xfgAmount * 10000000;
+    }
 
-	uint64_t Currency::convertHeatToXfg(uint64_t heatAmount) const {
-		// Convert HEAT to XFG: 8M HEAT = 0.8 XFG
-		// Formula: (heatAmount * 800000000) / 10000000
-		return (heatAmount * 800000000) / 10000000;
-	}
-
+    uint64_t Currency::convertHeatToXfg(uint64_t heatAmount) const {
+    // Convert HEAT to XFG: 10M HEAT = 1 XFG
+    // Formula: heatAmount / 10000000
+    return heatAmount / 10000000;
+    }
 
 	bool Currency::validateNetworkId(uint64_t networkId) const {
 		// Validate against hashed Fuego network ID

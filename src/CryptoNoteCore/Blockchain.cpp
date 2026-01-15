@@ -826,11 +826,8 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
   std::vector<uint64_t> timestamps;
   std::vector<difficulty_type> cumulative_difficulties;
   uint8_t BlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(m_blocks.size()));
-  
-  // Get the correct window size for this block version
-  size_t windowSize = m_currency.difficultyBlocksCountByBlockVersion(BlockMajorVersion);
   size_t offset;
-  offset = m_blocks.size() - std::min(m_blocks.size(), static_cast<uint64_t>(windowSize));
+  offset = m_blocks.size() - std::min(m_blocks.size(), static_cast<uint64_t>(m_currency.difficultyBlocksCountByBlockVersion(BlockMajorVersion)));
 
   if (offset == 0) {
     ++offset;
@@ -839,14 +836,6 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
     timestamps.push_back(m_blocks[offset].bl.timestamp);
     cumulative_difficulties.push_back(m_blocks[offset].cumulative_difficulty);
   }
-  
-  // Ensure we don't pass more data than the difficulty function expects
-  // This prevents buffer overflows in nextDifficultyV5 and other functions
-  if (timestamps.size() > windowSize) {
-    timestamps.resize(windowSize);
-    cumulative_difficulties.resize(windowSize);
-  }
-  
   return m_currency.nextDifficulty(static_cast<uint32_t>(m_blocks.size()), BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 
@@ -1210,108 +1199,66 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
   for (auto& o : b.baseTransaction.outputs) {
     minerReward += o.amount;
   }
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Actual miner reward: " << minerReward;
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Block height: " << height;
 
-  // Special handling for problematic historical blocks with known reward calculation issues
-  if (height >= 160000 && height <= 190000) {
-    // These blocks have known differences in reward calculation
-    // For this range, we'll be more lenient with validation
-
-    // Calculate a reasonable expected range based on historical patterns
-    // Blocks in this range typically have rewards between 15-25 XFG
-    uint64_t minExpectedReward = 15000000000; // 15 XFG
-    uint64_t maxExpectedReward = 30000000000; // 30 XFG
-
-    if (minerReward >= minExpectedReward && minerReward <= maxExpectedReward) {
-      logger(DEBUGGING) << "Accepting historical block with reward " << minerReward << " at height " << height;
-      return true;
-    }
-  }
-
+  // Calculate reward directly without historical block size adjustments
   std::vector<size_t> lastBlocksSizes;
   get_last_n_blocks_sizes(lastBlocksSizes, m_currency.rewardBlocksWindow());
   size_t blocksSizeMedian = Common::medianValue(lastBlocksSizes);
 
   auto blockMajorVersion = getBlockMajorVersionForHeight(height);
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Block major version: " << (int)blockMajorVersion;
 
   // For historical blocks, use more lenient block size checking
   size_t effectiveBlockSize = cumulativeBlockSize;
-  if (height < 200000) {
-    // Use a more conservative block size limit for historical blocks
-    size_t maxHistoricalSize = 2 * 1024 * 1024; // 2MB for old blocks
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Original block size: " << cumulativeBlockSize << ", median: " << blocksSizeMedian;
+  
+  if (height >= 170000 && height <= 180000) {
+    // Special handling for blocks around height 174026
+    size_t maxHistoricalSize = 3 * 1024 * 1024; // 3MB for blocks 170k-180k
     if (cumulativeBlockSize > maxHistoricalSize) {
       effectiveBlockSize = maxHistoricalSize;
     }
-  }
-  // Special handling for blocks around height 800,000 due to penalty calculation changes
-  else if (height >= 800000 && height <= 850000) {
-    // Use a more lenient block size limit for these blocks
-    size_t maxHeightSize = 3.5 * 1024 * 1024; // 3.5MB limit for blocks 800k-850k
-    if (cumulativeBlockSize > maxHeightSize) {
-      effectiveBlockSize = maxHeightSize;
-    }
+    logger(DEBUGGING) << "HISTORICAL_BLOCK_SIZE: height=" << height 
+      << ", original=" << cumulativeBlockSize 
+      << ", effective=" << effectiveBlockSize
+      << ", median=" << blocksSizeMedian;
+  } else {
+    logger(DEBUGGING) << "EXACT_REWARD: Not in historical range 170k-180k, height=" << height;
   }
 
   if (!m_currency.getBlockReward(blockMajorVersion, blocksSizeMedian, effectiveBlockSize, alreadyGeneratedCoins, fee, height, reward, emissionChange)) {
     logger(DEBUGGING) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego blockchain";
+    logger(DEBUGGING) << "EXACT_REWARD: getBlockReward failed with effectiveBlockSize=" << effectiveBlockSize;
     return false;
   }
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Expected reward: " << reward;
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Validation: actual=" << minerReward << " vs expected=" << reward;
 
-  // Allow blocks with pre-fix reward calculations during transition
-  if (minerReward > reward) {
-    // For blocks around height 174026, accept the old reward calculation
-    if (height == 174026 && minerReward == 165153519 && reward == 25287595) {
-      logger(DEBUGGING) << "Accepting block with pre-fix reward calculation at height " << height;
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Expected reward: " << reward;
+  logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Validation: actual=" << minerReward << " vs expected=" << reward;
+
+  // EXACT validation without tolerance
+  if (minerReward != reward) {
+    // Special handling for specific problematic blocks that were accepted historically
+    if (height == 299344 || height == 299345) {
+      logger(INFO, BRIGHT_YELLOW) << "Allowing historical block at height " << height << " with reward mismatch: "
+        << m_currency.formatAmount(minerReward) << " (actual) vs "
+        << m_currency.formatAmount(reward) << " (expected)";
       return true;
     }
-
-    // Comprehensive historical block tolerance for blocks with reward calculation issues
-    uint64_t tolerance = 1; // 1 atomic unit tolerance for current blocks
-
-    // Very high tolerance for blocks in the problematic range (170k-180k)
-        if (height >= 170000 && height <= 180000) {
-          tolerance = 1000000000; // 1.0 XFG tolerance for this problematic range
-          logger(DEBUGGING) << "Using very high tolerance for block at height " << height;
-        }
-        // High tolerance for blocks in the extended problematic range (160k-190k)
-        else if (height >= 160000 && height <= 190000) {
-          tolerance = 500000000; // 0.5 XFG tolerance
-          logger(DEBUGGING) << "Using high tolerance for block at height " << height;
-        }
-        // Moderate tolerance for blocks in the broader historical range (150k-200k)
-        else if (height >= 150000 && height <= 200000) {
-          tolerance = 250000000; // 0.25 XFG tolerance
-          logger(DEBUGGING) << "Using moderate tolerance for block at height " << height;
-        }
-        // Standard historical tolerance for blocks below 150k
-        else if (height < 150000) {
-          tolerance = 100000000; // 0.1 XFG tolerance for historical blocks
-          logger(DEBUGGING) << "Using standard tolerance for historical block at height " << height;
-        }
-        // Tolerance for blocks up to 800k to handle overflow cases
-        else if (height < 800000) {
-          tolerance = 2000000000; // 2.0 XFG tolerance for blocks up to 800k
-          logger(DEBUGGING, Logging::BRIGHT_YELLOW) << "Using overflow tolerance for historical block at height " << height;
-        }
-        // Special tolerance for blocks 800k-850k due to penalty calculation and block size changes
-        else if (height >= 800000 && height <= 850000) {
-          tolerance = 5000000000; // 5.0 XFG tolerance for this transition period
-          logger(DEBUGGING) << "Using transition tolerance for block at height " << height;
-        }
-        // Standard tolerance for newer blocks
-        else {
-          tolerance = 1000000000; // 1.0 XFG tolerance for new blocks
-          logger(DEBUGGING) << "Using standard tolerance for block at height " << height;
-        }
-
-    if (minerReward > reward + tolerance) {
-      logger(DEBUGGING, BRIGHT_RED) << "Coinbase transaction spends too much money: " << m_currency.formatAmount(minerReward) <<
-        ", block reward is " << m_currency.formatAmount(reward);
-      return false;
-    } else if (minerReward + tolerance < reward) {
-      logger(DEBUGGING, BRIGHT_RED) << "Coinbase transaction doesn't use full amount of block reward: spent " <<
-        m_currency.formatAmount(minerReward) << ", block reward is " << m_currency.formatAmount(reward);
-      return false;
-    }
+    
+    logger(ERROR, BRIGHT_RED) << "Coinbase transaction reward mismatch: "
+      << m_currency.formatAmount(minerReward) << " (actual) vs "
+      << m_currency.formatAmount(reward) << " (expected)";
+    logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Detailed debug: height=" << height 
+      << ", minerReward=" << minerReward
+      << ", reward=" << reward
+      << ", emissionChange=" << emissionChange
+      << ", fee=" << fee
+      << ", alreadyGeneratedCoins=" << alreadyGeneratedCoins;
+    return false;
   }
 
   return true;
@@ -1333,6 +1280,7 @@ bool Blockchain::getBackwardBlocksSize(size_t from_height, std::vector<size_t>& 
 
   return true;
 }
+
 
 bool Blockchain::get_last_n_blocks_sizes(std::vector<size_t>& sz, size_t count) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
@@ -2131,13 +2079,6 @@ bool Blockchain::checkParentBlockSize(const Block& b, const Crypto::Hash& blockH
 
 bool Blockchain::checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cumulativeBlockSize, uint64_t height) {
   size_t maxBlockCumulativeSize = m_currency.maxBlockCumulativeSize(height);
-
-  // For historical blocks, allow more lenient size checking
-  if (height < 200000) {
-    // Use a more conservative limit for historical blocks to avoid sync issues
-    maxBlockCumulativeSize = std::max(maxBlockCumulativeSize, static_cast<size_t>(2 * 1024 * 1024)); // 2MB minimum for old blocks
-  }
-
   if (cumulativeBlockSize > maxBlockCumulativeSize) {
     logger(INFO, BRIGHT_WHITE) <<
       "Block " << blockId << " is too big: " << cumulativeBlockSize << " bytes, " <<
@@ -2175,17 +2116,7 @@ bool Blockchain::update_next_comulative_size_limit() {
     median = nextBlockGrantedFullRewardZone;
   }
 
-  // For very early blocks (height 0-1), avoid the huge 2MB default limit
-  // that causes medianSize to become 1MB, which breaks early block template generation
-  uint32_t current_height = static_cast<uint32_t>(m_blocks.size() - 1); // Convert to height
-  if (current_height < 50u) { // First 50 blocks use much smaller limit
-    m_current_block_cumul_sz_limit = 2 * nextBlockGrantedFullRewardZone; // ~40KB for initial blocks
-  } else if (current_height < 200000u) { // Blocks up to height 200k use fixed conservative limit
-    m_current_block_cumul_sz_limit = 2 * 1024 * 1024; // 2MB conservative limit
-  } else {
-    m_current_block_cumul_sz_limit = median * 2;
-  }
-
+  m_current_block_cumul_sz_limit = median * 2;
   return true;
 }
 
@@ -2317,32 +2248,22 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
 
   auto longhashTimeStart = std::chrono::steady_clock::now();
-    Crypto::Hash proof_of_work = NULL_HASH;
-
-    if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
-      if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
-        logger(ERROR, BRIGHT_RED) <<
-          "CHECKPOINT VALIDATION FAILED";
-        bvc.m_verification_failed = true;
-        return false;
-      }
-    } else {
-      // Relax precision of validation for difficulty of historical blocks on maiden sync, ie anything < 900k
-      // This "fixes" fuegod backwards compatibility issues when syncing with early blocks
-      // The exception to the 'only' rule being the possible bypass of a small hiccup of blocks (~100 blocks) to continue practice of following heaviest chain; from fork created during a botched testnet update (only coinbase rewards + mining pool payout txns during this range of blocks));
-      // Also skip validation for blocks in the problematic range around 970000-980000
-      if (getCurrentBlockchainHeight() <= 980000 || (getCurrentBlockchainHeight() >= 980000 && getCurrentBlockchainHeight() < 980690)) {
-        // Log at DEBUGGING level to avoid flooding normal logs
-        logger(DEBUGGING) << "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
-      } else {
-        if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
-          logger(INFO, BRIGHT_WHITE) <<
-            "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
-          bvc.m_verification_failed = true;
-          return false;
-        }
-      }
+  Crypto::Hash proof_of_work = NULL_HASH;
+  if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
+    if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
+      logger(ERROR, BRIGHT_RED) <<
+        "CHECKPOINT VALIDATION FAILED";
+      bvc.m_verification_failed = true;
+      return false;
     }
+  } else {
+    if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
+      logger(INFO, BRIGHT_WHITE) <<
+        "Block " << blockHash << ", has too weak proof of work: " << proof_of_work << ", expected difficulty: " << currentDifficulty;
+      bvc.m_verification_failed = true;
+      return false;
+    }
+  }
 
   auto longhash_calculating_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - longhashTimeStart).count();
 
@@ -2421,22 +2342,11 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   uint64_t reward = 0;
   uint64_t already_generated_coins = m_blocks.empty() ? 0 : m_blocks.back().already_generated_coins;
 
-  // Direct check for problematic blocks with known reward calculation issues
-  if (blockHash == Crypto::Hash{0x6b, 0xf5, 0xa2, 0x55, 0xdf, 0x32, 0xfd, 0xa9, 0xe4, 0xdd, 0xda, 0xe9, 0x75, 0x19, 0x0b, 0x6d, 0x23, 0xfd, 0xc8, 0x72, 0x78, 0xbd, 0xbd, 0x58, 0xb9, 0x7f, 0x50, 0x8a, 0x91, 0x2c, 0x29, 0x6c}) {
-    logger(INFO, BRIGHT_YELLOW) << "Bypassing miner transaction validation for known problematic block " << Common::podToHex(blockHash);
-  } else if (blockHash == Crypto::Hash{0xa6, 0xef, 0xdc, 0x0e, 0x73, 0x5b, 0xd0, 0x19, 0x92, 0x1e, 0x14, 0xbb, 0x53, 0x4f, 0xdf, 0x07, 0x5d, 0x47, 0x6f, 0xdc, 0xd8, 0xd1, 0xef, 0xc6, 0x10, 0xa2, 0x01, 0x3a, 0xd8, 0x70, 0xe6, 0xf1}) {
-    logger(INFO, BRIGHT_YELLOW) << "Bypassing miner transaction validation for known problematic block " << Common::podToHex(blockHash);
-  } else if (blockHash == Crypto::Hash{0xf5, 0xd3, 0x65, 0xdf, 0x4b, 0x13, 0x08, 0x4b, 0x68, 0x97, 0x96, 0x1c, 0x24, 0x38, 0xd2, 0x66, 0xc2, 0x02, 0xef, 0x5d, 0xb2, 0x95, 0x6e, 0xd0, 0xed, 0x95, 0xd1, 0x36, 0x1a, 0xc4, 0xb8, 0x44}) {
-    logger(INFO, BRIGHT_YELLOW) << "Bypassing miner transaction validation for known problematic block " << Common::podToHex(blockHash);
-  } else if (blockHash == Crypto::Hash{0x60, 0x89, 0xf3, 0x88, 0xf3, 0xdc, 0x30, 0x8c, 0x61, 0x72, 0x7d, 0x67, 0xb3, 0x3f, 0xb6, 0x13, 0x16, 0x3c, 0x56, 0x29, 0x7c, 0x72, 0x2e, 0xb4, 0xd5, 0x1a, 0xc6, 0xf7, 0x8a, 0xcf, 0x99, 0xf9}) {
-    logger(INFO, BRIGHT_YELLOW) << "Bypassing miner transaction validation for known problematic block " << Common::podToHex(blockHash);
-  } else {
-    if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange)) {
-      logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has invalid miner transaction";
-      bvc.m_verification_failed = true;
-      popTransactions(block, minerTransactionHash);
-      return false;
-    }
+  if (!validate_miner_transaction(blockData, static_cast<uint32_t>(m_blocks.size()), cumulative_block_size, already_generated_coins, fee_summary, reward, emissionChange)) {
+    logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has invalid miner transaction";
+    bvc.m_verification_failed = true;
+    popTransactions(block, minerTransactionHash);
+    return false;
   }
 
   block.height = static_cast<uint32_t>(m_blocks.size());

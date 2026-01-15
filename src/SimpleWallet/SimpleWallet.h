@@ -96,8 +96,8 @@ namespace CryptoNote
     bool show_blockchain_height(const std::vector<std::string> &args);
     bool show_num_unlocked_outputs(const std::vector<std::string> &args);
     bool optimize_outputs(const std::vector<std::string> &args);
-	  bool get_reserve_proof(const std::vector<std::string> &args);    
-    bool get_tx_proof(const std::vector<std::string> &args);    
+	bool get_reserve_proof(const std::vector<std::string> &args);
+    bool get_tx_proof(const std::vector<std::string> &args);
     bool optimize_all_outputs(const std::vector<std::string> &args);
     bool listTransfers(const std::vector<std::string> &args);
     bool transfer(const std::vector<std::string> &args);
@@ -106,7 +106,7 @@ namespace CryptoNote
     bool reset(const std::vector<std::string> &args);
     bool set_log(const std::vector<std::string> &args);
     bool payment_id(const std::vector<std::string> &args);
-    
+
     // COLD deposit secret management command
     bool create_cold_secret(const std::vector<std::string> &args);
     // Proof generation using stored secrets
@@ -184,7 +184,7 @@ namespace CryptoNote
     std::string m_daemon_address;
     std::string m_daemon_host;
     uint16_t m_daemon_port;
-    
+
     // Track if arguments were explicitly provided (for testnet wallet menu)
     bool m_wallet_file_arg_provided;
     bool m_generate_new_provided;

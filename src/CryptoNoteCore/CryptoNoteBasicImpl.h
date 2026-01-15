@@ -27,19 +27,19 @@ namespace CryptoNote {
   /************************************************************************/
   /*                                                                      */
   /************************************************************************/
-  /*template<class t_array>
+  template<class t_array>
   struct array_hasher: std::unary_function<t_array&, size_t>
   {
     size_t operator()(const t_array& val) const
     {
       return boost::hash_range(&val.data[0], &val.data[sizeof(val.data)]);
     }
-  };*/
+  };
 
   /************************************************************************/
   /* CryptoNote helper functions                                          */
   /************************************************************************/
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize, uint8_t blockMajorVersion);
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize);
   std::string getAccountAddressAsStr(uint64_t prefix, const AccountPublicAddress& adr);
   bool parseAccountAddressString(uint64_t& prefix, AccountPublicAddress& adr, const std::string& str);
   bool is_coinbase(const Transaction& tx);
@@ -50,7 +50,7 @@ namespace CryptoNote {
 
 template <class T>
 std::ostream &print256(std::ostream &o, const T &v) {
-  return o << Common::podToHex(v);
+  return o << "<" << Common::podToHex(v) << ">";
 }
 
 bool parse_hash256(const std::string& str_hash, Crypto::Hash& hash);

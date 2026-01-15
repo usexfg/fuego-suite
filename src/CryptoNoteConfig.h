@@ -53,7 +53,7 @@ namespace CryptoNote
 		const uint64_t MINIMUM_FEE = MINIMUM_FEE_8KH;
 		const uint64_t MINIMUM_FEE_BANKING_PERCENT = UINT64_C(125000); // 0.125% fee for COLD/YIELD deposits
 		const uint64_t MINIMUM_FEE_BANKING = MINIMUM_FEE_BANKING_PERCENT;
-		
+
 		const uint64_t MINIMUM_FEE_BURN_SMALL = UINT64_C(80000);  /* 0.008 XFG for 0.8 XFG burns */
 		const uint64_t MINIMUM_FEE_BURN_LARGE = UINT64_C(800000000);  /* 0.8 XFG for 800 XFG burns */
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(10000); /* < 0.001 XFG */

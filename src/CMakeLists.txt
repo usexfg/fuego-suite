@@ -9,7 +9,9 @@ endif()
 file(GLOB_RECURSE BlockchainExplorer BlockchainExplorer/*)
 file(GLOB_RECURSE Common Common/*)
 file(GLOB_RECURSE Crypto crypto/*)
-file(GLOB_RECURSE CryptoNoteCore CryptoNoteCore/* CryptoNoteConfig.h DynamicRingSize.cpp OSPEADDecoySelection.cpp)
+add_library(Crypto STATIC ${Crypto})
+file(GLOB_RECURSE CryptoNoteCore
+CryptoNoteCore/* CryptoNoteConfig.h DynamicRingSize.cpp OSPEADDecoySelection.cpp)
 file(GLOB_RECURSE CryptoNoteProtocol CryptoNoteProtocol/*)
 file(GLOB_RECURSE Daemon Daemon/*)
 file(GLOB_RECURSE Http HTTP/*)
@@ -41,11 +43,11 @@ add_subdirectory(BurnDepositValidationService)
 
 # System files
 if(WIN32)
-  file(GLOB_RECURSE System System/* Platform/Windows/System/*)
+  file(GLOB_RECURSE System System/*.cpp System/*.h Platform/Windows/System/*.cpp Platform/Windows/System/*.h)
 elseif(APPLE)
-  file(GLOB_RECURSE System System/* Platform/OSX/System/*)
+  file(GLOB_RECURSE System System/*.cpp System/*.h Platform/OSX/System/*.cpp Platform/OSX/System/*.h Platform/OSX/System/*.s)
 else()
-  file(GLOB_RECURSE System System/* Platform/Linux/System/*)
+  file(GLOB_RECURSE System System/*.cpp System/*.h Platform/Linux/System/*.cpp Platform/Linux/System/*.h)
 endif()
 
 source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${System} ${Transfers} ${Wallet} ${WalletLegacy})
@@ -57,7 +59,7 @@ add_library(BlockchainExplorer STATIC ${BlockchainExplorer})
 target_include_directories(BlockchainExplorer SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
 target_link_libraries(BlockchainExplorer PUBLIC ${JSONCPP_LIBRARIES})
 add_library(Common STATIC ${Common})
-add_library(Crypto STATIC ${Crypto})
+
 
 add_library(CryptoNoteCore STATIC ${CryptoNoteCore})
 target_compile_options(CryptoNoteCore PRIVATE -Wno-deprecated-declarations)
@@ -85,10 +87,12 @@ add_dependencies(CryptoNoteCore version)
 # Always try to enable AES-NI for GCC/Clang on non-Android systems
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT ANDROID)
     # Enable AES-NI and SSE instructions for cryptographic operations
-    target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)
 
-    # Add preprocessor definitions for AES-NI support
-    target_compile_definitions(Crypto PRIVATE __AES__ __SSE2__ __SSE4_1__ __SSE4_2__ HAVE_AES_NI)
+        # Add preprocessor definitions for AES-NI support
+        target_compile_definitions(Crypto PRIVATE __AES__ __SSE2__ __SSE4_1__ __SSE4_2__ HAVE_AES_NI)
+    endif()
 
     # Special handling for CI environments
     if (DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS} OR DEFINED ENV{GITHUB_REF} OR DEFINED ENV{GITHUB_RUN_ID})
@@ -121,7 +125,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     if (CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
         # Apple Silicon - use software AES
         target_compile_definitions(Crypto PRIVATE NO_AES)
-        target_compile_options(Crypto PRIVATE -msse2 -msse4.1)  # Keep SSE for other crypto operations
+        if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            target_compile_options(Crypto PRIVATE -msse2 -msse4.1)  # Keep SSE for other crypto operations
+        endif()
         message(STATUS "Apple Silicon detected, using software AES for Crypto library")
     else()
         # Intel Mac or unknown - AES-NI should be enabled above

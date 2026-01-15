@@ -175,6 +175,11 @@ private:
   bool isBurnTransaction(const std::vector<uint8_t>& txExtra);
   BurnTransactionHandler::BurnTransactionData parseBurnTransaction(const std::vector<uint8_t>& txExtra);
   void generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount);
+  
+  // Burn deposit secret management
+  void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
+  bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
+  bool hasBurnDepositSecret(const std::string& txHash);
 
   enum WalletState
   {
@@ -200,6 +205,25 @@ private:
   std::atomic<uint64_t> m_lastNotifiedPendingDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedActualInvestmentBalance;
   std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;
+
+  // Burn deposit secrets storage
+  struct BurnDepositSecret {
+    Crypto::SecretKey secret;
+    uint64_t amount;
+    std::vector<uint8_t> metadata;
+    time_t timestamp;
+    
+    BurnDepositSecret() : amount(0), timestamp(0) {}
+    BurnDepositSecret(const Crypto::SecretKey& s, uint64_t a, const std::vector<uint8_t>& m)
+      : secret(s), amount(a), metadata(m), timestamp(std::time(nullptr)) {}
+  };
+  
+  std::map<std::string, BurnDepositSecret> m_burnDepositSecrets;
+  
+  // Pending burn deposit secrets (before transaction hash is known)
+  Crypto::SecretKey m_pendingBurnSecret;
+  uint64_t m_pendingBurnAmount;
+  bool m_hasPendingBurnSecret;
 
   BlockchainSynchronizer m_blockchainSync;
   TransfersSyncronizer m_transfersSync;

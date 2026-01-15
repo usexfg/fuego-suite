@@ -40,6 +40,14 @@
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "BurnTransactionHandler.h"
+#include "CryptoNoteCore/DepositCommitment.h"
+#include "WalletLegacy/WalletLegacyEvent.h"
+#include "WalletLegacy/WalletLegacy.h"
+
+// Forward declarations
+namespace CryptoNote {
+  class WalletBurnDepositSecretCreatedEvent;
+}
 
 #include "CryptoNoteConfig.h"
 
@@ -170,7 +178,9 @@ WalletLegacy::WalletLegacy(const CryptoNote::Currency& currency, INode& node, Lo
   m_transactionsCache(m_currency.mempoolTxLiveTime()),
   m_sender(nullptr),
   m_onInitSyncStarter(new SyncStarter(m_blockchainSync)),
-  m_burnTransactionManager(std::unique_ptr<CryptoNote::BurnTransactionManager>(new CryptoNote::BurnTransactionManager()))
+  m_burnTransactionManager(std::unique_ptr<CryptoNote::BurnTransactionManager>(new CryptoNote::BurnTransactionManager())),
+  m_pendingBurnAmount(0),
+  m_hasPendingBurnSecret(false)
 {
   addObserver(m_onInitSyncStarter.get());
   initializeBurnTransactionManager();
@@ -827,7 +837,7 @@ TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depos
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
-  fee = CryptoNote::parameters::MINIMUM_FEE;
+  fee = CryptoNote::parameters::MINIMUM_FEE_V2;
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
@@ -1044,6 +1054,7 @@ void WalletLegacy::throwIfNotInitialised() {
 void WalletLegacy::notifyClients(std::deque<std::unique_ptr<WalletLegacyEvent>>& events) {
   while (!events.empty()) {
     std::unique_ptr<WalletLegacyEvent>& event = events.front();
+    event->process(this);
     event->notify(m_observerManager);
     events.pop_front();
   }
@@ -1549,17 +1560,51 @@ bool WalletLegacy::isBurnTransaction(const std::vector<uint8_t>& txExtra) {
   return false;
 }
 
+// Burn deposit secret management implementation
+void WalletLegacy::storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  m_burnDepositSecrets[txHash] = BurnDepositSecret(secret, amount, metadata);
+  
+  // Notify observers that burn secret was created
+  m_observerManager.notify(&IWalletLegacyObserver::burnSecretCreated, txHash);
+}
+
+bool WalletLegacy::getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  auto it = m_burnDepositSecrets.find(txHash);
+  if (it == m_burnDepositSecrets.end()) {
+    return false;
+  }
+  
+  const BurnDepositSecret& burnInfo = it->second;
+  secret = burnInfo.secret;
+  amount = burnInfo.amount;
+  metadata = burnInfo.metadata;
+  
+  return true;
+}
+
+bool WalletLegacy::hasBurnDepositSecret(const std::string& txHash) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  return m_burnDepositSecrets.find(txHash) != m_burnDepositSecrets.end();
+}
+
 BurnTransactionHandler::BurnTransactionData WalletLegacy::parseBurnTransaction(const std::vector<uint8_t>& txExtra) {
   if (m_burnTransactionManager) {
     return m_burnTransactionManager->getHandler().parseBurnTransaction(txExtra);
   }
-  return BurnTransactionHandler::BurnTransactionData{};
+  return BurnTransactionHandler::BurnTransactionData();
 }
 
 void WalletLegacy::generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount) {
   if (m_burnTransactionManager) {
     m_burnTransactionManager->getHandler().generateStarkProof(txHash, ethAddress, amount);
   }
+}
+ 
+// Implementation of process method for WalletBurnDepositSecretCreatedEvent
+void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wallet) {
+  wallet->storeBurnDepositSecret(getTxHash(), getSecret(), getAmount(), getMetadata());
 }
 
 } //namespace CryptoNote

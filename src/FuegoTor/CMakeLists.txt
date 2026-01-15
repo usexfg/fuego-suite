@@ -113,6 +113,7 @@ else()
         -Wall
         -Wextra
         -Wpedantic
+        -Wno-deprecated-builtins
         -Werror
         -O2
     )

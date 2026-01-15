@@ -260,7 +260,7 @@ jobs:
       - name: Install dependencies
         run: |
           set -e
-          brew install gcc cmake ninja-build jsoncpp openssl boost@1.85
+          brew install gcc cmake ninja jsoncpp openssl boost@1.85
 
           # Set environment to use Boost 1.85 from Homebrew
           BOOST_PREFIX=$(brew --prefix boost@1.85)

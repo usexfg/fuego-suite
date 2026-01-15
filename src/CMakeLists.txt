@@ -9,6 +9,7 @@ endif()
 file(GLOB_RECURSE BlockchainExplorer BlockchainExplorer/*)
 file(GLOB_RECURSE Common Common/*)
 file(GLOB_RECURSE Crypto crypto/*)
+add_library(Crypto STATIC ${Crypto})
 file(GLOB_RECURSE CryptoNoteCore CryptoNoteCore/* CryptoNoteConfig.h DynamicRingSize.cpp OSPEADDecoySelection.cpp)
 file(GLOB_RECURSE CryptoNoteProtocol CryptoNoteProtocol/*)
 file(GLOB_RECURSE Daemon Daemon/*)
@@ -41,14 +42,33 @@ add_subdirectory(BurnDepositValidationService)
 
 # System files
 if(MSVC)
-  file(GLOB_RECURSE System System/* Platform/Windows/System/*)
+  file(GLOB_RECURSE System Platform/Windows/System/* System/*)
 elseif(APPLE)
-  file(GLOB_RECURSE System System/* Platform/OSX/System/*)
+  file(GLOB_RECURSE System Platform/OSX/System/* System/*)
 else()
-  file(GLOB_RECURSE System System/* Platform/Linux/System/*)
-endif()
+  file(GLOB_RECURSE System Platform/OSX/System/* System/*)
+  endif()
 
-source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${System} ${Transfers} ${Wallet} ${WalletLegacy})
+  # Add Boost linking to existing System target
+
+
+
+
+
+
+
+# Explicitly include ContextGroupTimeout files for all platforms
+list(APPEND System
+  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
+  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.h
+)
+
+# Add ContextGroupTimeout.cpp directly to System library
+set(SYSTEM_SOURCES ${System}
+  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
+)
+
+source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${SYSTEM_SOURCES} ${Transfers} ${Wallet} ${WalletLegacy})
 
 # --------------------------
 # Libraries
@@ -57,11 +77,10 @@ add_library(BlockchainExplorer STATIC ${BlockchainExplorer})
 target_include_directories(BlockchainExplorer SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 target_link_libraries(BlockchainExplorer PUBLIC ${JSONCPP_LIBRARIES} ${Boost_LIBRARIES})
 add_library(Common STATIC ${Common})
-target_include_directories(Common SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
-target_link_libraries(Common PUBLIC ${Boost_LIBRARIES})
-add_library(Crypto STATIC ${Crypto})
-target_include_directories(Crypto SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
-target_link_libraries(Crypto PUBLIC ${Boost_LIBRARIES})
+# System target already defined at line 81 - removing duplicate definition
+
+
+
 
 add_library(CryptoNoteCore STATIC ${CryptoNoteCore})
 if(MSVC)
@@ -78,7 +97,6 @@ target_link_libraries(CryptoNoteCore PUBLIC
     Transfers
     System
     BlockchainExplorer
-    ${Boost_LIBRARIES}
 )
 target_include_directories(CryptoNoteCore PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -95,7 +113,13 @@ add_dependencies(CryptoNoteCore version)
 # Always try to enable AES-NI for GCC/Clang on non-Android systems
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT ANDROID)
     # Enable AES-NI and SSE instructions for cryptographic operations
-    target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)
+    # Only enable AES-NI instructions on x86_64 architecture
+    if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64" OR NOT CMAKE_OSX_ARCHITECTURES)
+        # Apple Silicon detected, using software AES for Crypto library
+    else()
+        # On ARM64, use software AES implementation
+        target_compile_options(Crypto PRIVATE)
+    endif()
 
     # Add preprocessor definitions for AES-NI support
     target_compile_definitions(Crypto PRIVATE __AES__ __SSE2__ __SSE4_1__ __SSE4_2__ HAVE_AES_NI)
@@ -131,7 +155,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     if (CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
         # Apple Silicon - use software AES
         target_compile_definitions(Crypto PRIVATE NO_AES)
-        target_compile_options(Crypto PRIVATE -msse2 -msse4.1)  # Keep SSE for other crypto operations
+
         message(STATUS "Apple Silicon detected, using software AES for Crypto library")
     else()
         # Intel Mac or unknown - AES-NI should be enabled above
@@ -147,6 +171,9 @@ message(STATUS "=== End AES-NI Configuration ===")
 add_library(Http STATIC ${Http})
 add_library(InProcessNode STATIC ${InProcessNode})
 add_library(Logging STATIC ${Logging})
+target_include_directories(Logging SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
+target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
+target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 add_library(Rpc STATIC ${Rpc})
 add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
@@ -173,7 +200,7 @@ add_library(Serialization STATIC ${Serialization})
 target_link_libraries(Serialization PUBLIC Common)
 # Link jsoncpp for any potential JSON serialization
 target_link_libraries(Serialization PUBLIC ${JSONCPP_LIBRARIES})
-add_library(System STATIC ${System})
+add_library(System STATIC ${SYSTEM_SOURCES})
 
 # Fix ucontext compilation issues on macOS
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")

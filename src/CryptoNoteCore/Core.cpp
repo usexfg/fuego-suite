@@ -614,7 +614,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
     }
 
     // Unexpected case - sizes don't match after all adjustment attempts
-    logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size + " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
+    logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
     return false;
   }
 

@@ -220,15 +220,16 @@ else()
     endif()
   endif()
 
-  # Try standard CMake module if the above didn't work
-  if(NOT JSONCPP_FOUND)
-    find_package(jsoncpp NAMES jsoncpp REQUIRED QUIET)
-    if(JSONCPP_FOUND)
-      message(STATUS "Found jsoncpp via standard module")
-      message(STATUS "JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
-      message(STATUS "JSONCPP_LIBRARIES: ${JSONCPP_LIBRARIES}")
-    endif()
-  endif()
+  # Skip find_package on Ubuntu to avoid config file errors
+  # Manual detection should handle header locations correctly
+  # if(NOT JSONCPP_FOUND)
+  #   find_package(jsoncpp NAMES jsoncpp jsoncpp-config jsoncppConfig QUIET NO_MODULE)
+  #   if(JSONCPP_FOUND)
+  #     message(STATUS "Found jsoncpp via standard module")
+  #     message(STATUS "JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
+  #     message(STATUS "JSONCPP_LIBRARIES: ${JSONCPP_LIBRARIES}")
+  #   endif()
+  # endif()
 endif()
 
 if(NOT JSONCPP_FOUND)
@@ -239,15 +240,15 @@ if(NOT JSONCPP_FOUND)
 
   message(STATUS "Attempting manual jsoncpp detection...")
 
-  # Try standard locations
-  if(EXISTS "/usr/include/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include")
-    set(JSONCPP_FOUND TRUE)
-    message(STATUS "Found jsoncpp headers at /usr/include")
-  elseif(EXISTS "/usr/include/jsoncpp/json/json.h")
+  # Try standard locations - check both json/json.h and jsoncpp/json/json.h patterns
+  if(EXISTS "/usr/include/jsoncpp/json/json.h")
     set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
     set(JSONCPP_FOUND TRUE)
     message(STATUS "Found jsoncpp headers at /usr/include/jsoncpp")
+  elseif(EXISTS "/usr/include/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include")
+    set(JSONCPP_FOUND TRUE)
+    message(STATUS "Found jsoncpp headers at /usr/include")
   elseif(EXISTS "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
     set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp")
     set(JSONCPP_FOUND TRUE)
@@ -284,13 +285,13 @@ if(NOT JSONCPP_FOUND)
       message(STATUS "Found: /usr/local/include/jsoncpp/json/json.h")
     endif()
 
-    # More comprehensive fallback paths
+    # More comprehensive fallback paths - order matters for correct header resolution
     include_directories(SYSTEM
-      /usr/include
       /usr/include/jsoncpp
+      /usr/include
       /usr/include/x86_64-linux-gnu/jsoncpp
-      /usr/local/include
-      /usr/local/include/jsoncpp)
+      /usr/local/include/jsoncpp
+      /usr/local/include)
     message(WARNING "jsoncpp headers not found via detection, using fallback paths")
   endif()
 endif()
@@ -321,6 +322,16 @@ endif()
 message(STATUS "jsoncpp include dirs: ${JSONCPP_INCLUDE_DIRS}")
 message(STATUS "jsoncpp libraries: ${JSONCPP_LIBRARIES}")
 message(STATUS "jsoncpp library dirs: ${JSONCPP_LIBRARY_DIRS}")
+
+# Final verification that headers can be found
+if(NOT JSONCPP_FOUND)
+  if(EXISTS "${JSONCPP_INCLUDE_DIRS}/json/json.h")
+    message(STATUS "Verified: jsoncpp headers found at ${JSONCPP_INCLUDE_DIRS}/json/json.h")
+    set(JSONCPP_FOUND TRUE)
+  else()
+    message(WARNING "Could not verify jsoncpp headers at expected location ${JSONCPP_INCLUDE_DIRS}/json/json.h")
+  endif()
+endif()
 
 if(JSONCPP_LIBRARY_DIRS)
   link_directories(${JSONCPP_LIBRARY_DIRS})

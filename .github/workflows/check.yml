@@ -247,10 +247,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-15
+          - os: macos-15-intel
             arch: intel
             arch_flag: x86_64
-          - os: macos-14
+          - os: macos-15
             arch: apple
             arch_flag: arm64
     steps:
@@ -261,7 +261,7 @@ jobs:
         id: install-boost
         with:
           boost_version: 1.86.0
-          platform_version: ${{ matrix.os == 'macos-14' && '14' || '15' }}
+          platform_version: ${{ matrix.os == 'macos-15' && '15' || '15' }}
           toolset: clang
           arch: ${{ matrix.arch_flag == 'arm64' && 'aarch64' || 'x86' }}
 

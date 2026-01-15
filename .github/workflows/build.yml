@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ master, HEAT ]
+    branches: [ ]
   pull_request:
     branches: [master, integtest]
 
@@ -120,7 +120,7 @@ jobs:
         uses: MarkusJx/install-boost@v2
         id: install-boost
         with:
-          boost_version: 1.86.0
+          boost_version: 1.85.0
           platform_version: 14
           toolset: clang
           arch: aarch64

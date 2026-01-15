@@ -240,6 +240,27 @@ if(NOT JSONCPP_FOUND)
 
   message(STATUS "Attempting manual jsoncpp detection...")
 
+  # Debug: Check what files actually exist at this point
+  message(STATUS "=== JSONCPP Debug Info ===")
+  if(EXISTS "/usr/include/jsoncpp/json/json.h")
+    message(STATUS "EXISTS: /usr/include/jsoncpp/json/json.h")
+  else()
+    message(STATUS "MISSING: /usr/include/jsoncpp/json/json.h")
+  endif()
+
+  if(EXISTS "/usr/include/json/json.h")
+    message(STATUS "EXISTS: /usr/include/json/json.h")
+  else()
+    message(STATUS "MISSING: /usr/include/json/json.h")
+  endif()
+
+  if(EXISTS "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
+    message(STATUS "EXISTS: /usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
+  else()
+    message(STATUS "MISSING: /usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
+  endif()
+  message(STATUS "=== End JSONCPP Debug Info ===")
+
   # Try standard locations - check both json/json.h and jsoncpp/json/json.h patterns
   if(EXISTS "/usr/include/jsoncpp/json/json.h")
     set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
@@ -286,15 +307,20 @@ if(NOT JSONCPP_FOUND)
     endif()
 
     # More comprehensive fallback paths - order matters for correct header resolution
+    # Make sure /usr/include is first since the workflow creates symlink there
     include_directories(SYSTEM
-      /usr/include/jsoncpp
       /usr/include
+      /usr/include/jsoncpp
       /usr/include/x86_64-linux-gnu/jsoncpp
-      /usr/local/include/jsoncpp
-      /usr/local/include)
+      /usr/local/include
+      /usr/local/include/jsoncpp)
     message(WARNING "jsoncpp headers not found via detection, using fallback paths")
   endif()
 endif()
+
+# Debug: Show all include directories
+get_property(all_includes DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+message(STATUS "All include directories: ${all_includes}")
 
 # Ensure variables are always defined
 if(NOT DEFINED JSONCPP_LIBRARIES)

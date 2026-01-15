@@ -194,14 +194,40 @@ if(APPLE)
       endif()
     endif()
 else()
-  # For non-macOS, try find_package first
-  find_package(jsoncpp QUIET)
-  if(jsoncpp_FOUND OR JSONCPP_FOUND)
+  # For non-macOS, try multiple detection methods
+  set(JSONCPP_FOUND FALSE)
+
+  # Try pkg-config first
+  find_package(PkgConfig QUIET)
+  if(PKG_CONFIG_FOUND)
+    pkg_check_modules(JSONCPP QUIET jsoncpp)
+    if(JSONCPP_FOUND)
+      message(STATUS "Found jsoncpp via pkg-config")
+      message(STATUS "JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
+      message(STATUS "JSONCPP_LIBRARIES: ${JSONCPP_LIBRARIES}")
+      set(JSONCPP_INCLUDE_DIRS ${JSONCPP_INCLUDE_DIRS})
+      set(JSONCPP_LIBRARIES ${JSONCPP_LIBRARIES})
+    endif()
+  endif()
+
+  # Try find_package if pkg-config didn't work
+  if(NOT JSONCPP_FOUND)
+    find_package(jsoncpp QUIET)
     if(jsoncpp_FOUND)
       message(STATUS "Found jsoncpp via find_package")
+      message(STATUS "JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
+      message(STATUS "JSONCPP_LIBRARIES: ${JSONCPP_LIBRARIES}")
     endif()
-  else()
-    set(JSONCPP_FOUND FALSE)
+  endif()
+
+  # Try standard CMake module if the above didn't work
+  if(NOT JSONCPP_FOUND)
+    find_package(jsoncpp NAMES jsoncpp REQUIRED QUIET)
+    if(JSONCPP_FOUND)
+      message(STATUS "Found jsoncpp via standard module")
+      message(STATUS "JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
+      message(STATUS "JSONCPP_LIBRARIES: ${JSONCPP_LIBRARIES}")
+    endif()
   endif()
 endif()
 
@@ -210,6 +236,8 @@ if(NOT JSONCPP_FOUND)
   set(JSONCPP_FOUND FALSE)
   set(JSONCPP_LIBRARIES "jsoncpp")
   set(JSONCPP_LIBRARY_DIRS "")
+
+  message(STATUS "Attempting manual jsoncpp detection...")
 
   # Try standard locations
   if(EXISTS "/usr/include/json/json.h")
@@ -224,6 +252,14 @@ if(NOT JSONCPP_FOUND)
     set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp")
     set(JSONCPP_FOUND TRUE)
     message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp")
+  elseif(EXISTS "/usr/local/include/jsoncpp/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/local/include/jsoncpp")
+    set(JSONCPP_FOUND TRUE)
+    message(STATUS "Found jsoncpp headers at /usr/local/include/jsoncpp")
+  elseif(EXISTS "/usr/local/include/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/local/include")
+    set(JSONCPP_FOUND TRUE)
+    message(STATUS "Found jsoncpp headers at /usr/local/include")
   elseif(WIN32)
     if(EXISTS "C:/vcpkg/installed/x64-windows/include/json/json.h")
       set(JSONCPP_INCLUDE_DIRS "C:/vcpkg/installed/x64-windows/include/json")
@@ -233,10 +269,29 @@ if(NOT JSONCPP_FOUND)
   endif()
 
   if(JSONCPP_FOUND)
+    message(STATUS "Using JSONCPP_INCLUDE_DIRS: ${JSONCPP_INCLUDE_DIRS}")
     include_directories(SYSTEM ${JSONCPP_INCLUDE_DIRS})
   else()
-    include_directories(SYSTEM /usr/include /usr/include/jsoncpp /usr/include/x86_64-linux-gnu/jsoncpp)
-    message(WARNING "jsoncpp headers not found, using fallback paths")
+    message(STATUS "Manual detection failed, checking common paths...")
+    # Debug what files actually exist
+    if(EXISTS "/usr/include/jsoncpp/json/json.h")
+      message(STATUS "Found: /usr/include/jsoncpp/json/json.h")
+    endif()
+    if(EXISTS "/usr/include/json/json.h")
+      message(STATUS "Found: /usr/include/json/json.h")
+    endif()
+    if(EXISTS "/usr/local/include/jsoncpp/json/json.h")
+      message(STATUS "Found: /usr/local/include/jsoncpp/json/json.h")
+    endif()
+
+    # More comprehensive fallback paths
+    include_directories(SYSTEM
+      /usr/include
+      /usr/include/jsoncpp
+      /usr/include/x86_64-linux-gnu/jsoncpp
+      /usr/local/include
+      /usr/local/include/jsoncpp)
+    message(WARNING "jsoncpp headers not found via detection, using fallback paths")
   endif()
 endif()
 
@@ -245,7 +300,19 @@ if(NOT DEFINED JSONCPP_LIBRARIES)
   set(JSONCPP_LIBRARIES "jsoncpp")
 endif()
 if(NOT DEFINED JSONCPP_INCLUDE_DIRS)
-  set(JSONCPP_INCLUDE_DIRS "/usr/include")
+  # Try to detect the most common installation paths
+  if(EXISTS "/usr/include/jsoncpp/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
+  elseif(EXISTS "/usr/include/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include")
+  elseif(EXISTS "/usr/local/include/jsoncpp/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/local/include/jsoncpp")
+  elseif(EXISTS "/usr/local/include/json/json.h")
+    set(JSONCPP_INCLUDE_DIRS "/usr/local/include")
+  else()
+    # Default fallback
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
+  endif()
 endif()
 if(NOT DEFINED JSONCPP_LIBRARY_DIRS)
   set(JSONCPP_LIBRARY_DIRS "")

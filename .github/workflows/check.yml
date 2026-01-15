@@ -247,7 +247,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-12
+          - os: macos-15
             arch: intel
             arch_flag: x86_64
           - os: macos-14
@@ -261,10 +261,9 @@ jobs:
         id: install-boost
         with:
           boost_version: 1.86.0
-          platform: macos
-          platform_version: ${{ matrix.os == 'macos-14' && '14' || '12' }}
+          platform_version: ${{ matrix.os == 'macos-14' && '14' || '15' }}
           toolset: clang
-          arch: ${{ matrix.arch_flag }}
+          arch: ${{ matrix.arch_flag == 'arm64' && 'aarch64' || 'x86' }}
 
       - name: Set Boost environment variables and install dependencies
         run: |

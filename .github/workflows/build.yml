@@ -115,24 +115,27 @@ jobs:
             find /usr/include -type d -name "*json*" 2>/dev/null
           fi
 
-      - name: Install dependencies (macOS)
+      - name: Install Boost (ARM64)
+        if: matrix.os == 'macos-14'
+        uses: MarkusJx/install-boost@v2
+        id: install-boost
+        with:
+          boost_version: 1.86.0
+          platform: macos
+          platform_version: 14
+          toolset: clang
+          arch: arm64
+
+      - name: Set Boost environment variables and install other dependencies
         if: matrix.os == 'macos-14'
         run: |
-          brew update
+          # Set Boost environment variables
+          echo "BOOST_ROOT=${{ steps.install-boost.outputs.BOOST_ROOT }}" >> $GITHUB_ENV
+          echo "Boost_INCLUDE_DIR=${{ steps.install-boost.outputs.BOOST_ROOT }}/include" >> $GITHUB_ENV
+          echo "Boost_LIBRARY_DIR=${{ steps.install-boost.outputs.BOOST_ROOT }}/lib" >> $GITHUB_ENV
+
+          # Install other dependencies
           brew install ninja qt@5 miniupnpc qrencode icu4c jsoncpp wget
-
-          # Download and build Boost 1.86.0 (modern version with all required components)
-          echo "Building Boost 1.86.0 from source..."
-          cd /tmp
-          wget -q https://boostorg.jfrog.io/artifactory/main/release/1.86.0/source/boost_1_86_0.tar.gz
-          tar -xzf boost_1_86_0.tar.gz
-          cd boost_1_86_0
-          ./bootstrap.sh --with-libraries=system,filesystem,thread,chrono,regex,serialization,program_options,date_time,coroutine,context,atomic --prefix=/usr/local
-          ./b2 link=static,shared threading=multi variant=release install --prefix=/usr/local
-
-          # Set environment variables for Boost 1.86
-          echo "BOOST_ROOT=/usr/local" >> $GITHUB_ENV
-          echo "Boost 1.86.0 installed"
 
           # Try different ICU versions
           if [ -d "$(brew --prefix)/opt/icu4c" ]; then

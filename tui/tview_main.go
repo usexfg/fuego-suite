@@ -77,19 +77,10 @@ func main() {
 
 // createMainMenu creates the main menu screen
 func createMainMenu() {
-	// Create network selection dropdown
-	networkSelect := tview.NewDropDown().
-		SetLabel("Network: ").
-		SetOptions([]string{"Mainnet", "Testnet"}, func(text string, index int) {
-			if text == "Mainnet" {
-				appState.network = "mainnet"
-				CurrentConfig = MainnetConfig
-			} else {
-				appState.network = "testnet"
-				CurrentConfig = TestnetConfig
-			}
-		}).
-		SetCurrentOption(0)
+	// Create network selection as a simple text display with toggle instruction
+	networkText := tview.NewTextView().
+		SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", appState.network)).
+		SetTextColor(tview.Styles.PrimaryTextColor)
 
 	// Create main menu items
 	menuItems := []struct {
@@ -99,12 +90,12 @@ func createMainMenu() {
 		{"Start Node", startNode},
 		{"Stop Node", stopNode},
 		{"Node Status", showNodeStatus},
-		{"Start Wallet RPC", startWalletRPC},
-		{"Create Wallet", createWallet},
+		{"Start Walletd", startWalletRPC},
+		{"Create New Wallet", createWallet},
 		{"Get Balance", getBalance},
 		{"Send Transaction", showSendTransactionForm},
 		{"Elderfier Menu", showElderfierMenu},
-		{"Burn2Mint Menu", showBurn2MintMenu},
+		{"Eternal Flame Menu", showBurn2MintMenu},
 		{"Show Logs", showLogs},
 		{"Quit", func() { appState.app.Stop() }},
 	}
@@ -119,26 +110,20 @@ func createMainMenu() {
 		list.AddItem(item.text, "", 0, item.action)
 	}
 
-	// Set up focus handling for the dropdown
-	networkSelect.SetDoneFunc(func(key tcell.Key) {
-		if key == tcell.KeyEnter || key == tcell.KeyTab {
-			// Move focus to the list after selecting network
-			appState.app.SetFocus(list)
-		}
-	})
+
 
 	// Create layout
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(tview.NewFlex().
 			AddItem(tview.NewBox().SetBorder(false), 1, 0, false).
-			AddItem(networkSelect, 20, 0, true).
-			AddItem(tview.NewBox().SetBorder(false), 0, 1, false), 3, 0, true).
+			AddItem(networkText, 20, 0, false).
+			AddItem(tview.NewBox().SetBorder(false), 0, 1, false), 3, 0, false).
 		AddItem(list, 0, 1, true)
 
 	// Add title
 	title := tview.NewTextView().
-		SetText("🔥 Fuego TUI - Mainnet & Testnet").
+		SetText(fmt.Sprintf("🔥 Fuego TUI - %s", strings.Title(appState.network))).
 		SetTextColor(tview.Styles.PrimaryTextColor).
 		SetTextAlign(tview.AlignCenter)
 
@@ -146,6 +131,24 @@ func createMainMenu() {
 		SetDirection(tview.FlexRow).
 		AddItem(title, 3, 0, false).
 		AddItem(layout, 0, 1, true)
+
+	// Handle key events for network toggle
+	mainLayout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Rune() == 'n' || event.Rune() == 'N' {
+			// Toggle network
+			if appState.network == "mainnet" {
+				appState.network = "testnet"
+				CurrentConfig = TestnetConfig
+			} else {
+				appState.network = "mainnet"
+				CurrentConfig = MainnetConfig
+			}
+			networkText.SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", appState.network))
+			title.SetText(fmt.Sprintf("🔥 Fuego TUI - %s", strings.Title(appState.network)))
+			return nil
+		}
+		return event
+	})
 
 	appState.pages.AddPage("main", mainLayout, true, true)
 }

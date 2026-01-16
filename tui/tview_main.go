@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -69,6 +70,13 @@ func main() {
 	// Enable mouse support
 	appState.app.EnableMouse(true)
 
+	// Set fire-themed colors
+	tview.Styles.PrimaryTextColor = tcell.ColorOrange
+	tview.Styles.SecondaryTextColor = tcell.ColorYellow
+	tview.Styles.TertiaryTextColor = tcell.ColorRed
+	tview.Styles.BorderColor = tcell.ColorOrange
+	tview.Styles.TitleColor = tcell.ColorOrange
+
 	// Run the application
 	if err := appState.app.SetRoot(appState.pages, true).SetFocus(appState.pages).Run(); err != nil {
 		panic(err)
@@ -77,10 +85,67 @@ func main() {
 
 // createMainMenu creates the main menu screen
 func createMainMenu() {
+	createMainMenuWithNetwork(appState.network)
+}
+
+// createMainMenuWithNetwork creates the main menu screen with specified network
+func createMainMenuWithNetwork(network string) {
 	// Create network selection as a simple text display with toggle instruction
 	networkText := tview.NewTextView().
-		SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", appState.network)).
-		SetTextColor(tview.Styles.PrimaryTextColor)
+			SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", network)).
+			SetTextColor(tview.Styles.PrimaryTextColor).
+			SetBackgroundColor(tcell.ColorBlack)
+
+	// Add random ASCII art title
+	asciiTitles := []string{
+
+`____ _  _ ____ ____ ____    ____ _  _ _ ___ ____
+ |___ |  | |___ | __ |  |    [__  |  | |  |  |___
+ |    |__| |___ |__] |__|    ___] |__| |  |  |___`,
+`▄▖          ▄▖  ▘▗
+ ▙▖▌▌█▌▛▌▛▌  ▚ ▌▌▌▜▘█▌
+ ▌ ▙▌▙▖▙▌▙▌  ▄▌▙▌▌▐▖▙▖
+       ▄▌             `,
+`▗▄▄▄▖▗▖ ▗▖▗▄▄▄▖ ▗▄▄▖ ▗▄▖     ▗▄▄▄▖▗▖ ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▄▖
+ ▐▌   ▐▌ ▐▌▐▌   ▐▌   ▐▌ ▐▌    ▐▌   ▐▌ ▐▌  █    █  ▐▌
+ ▐▛▀▀▘▐▌ ▐▌▐▛▀▀▘▐▌▝▜▌▐▌ ▐▌     ▝▀▚▖▐▌ ▐▌  █    █  ▐▛▀▀▘
+ ▐▌   ▝▚▄▞▘▐▙▄▄▖▝▚▄▞▘▝▚▄▞▘    ▗▄▄▞▘▝▚▄▞▘▗▄█▄▖  █  ▐▙▄▄▖`,
+`┏┓┳┳┏┓┏┓┏┓  ┏┓┳┳┳┏┳┓┏┓
+ ┣ ┃┃┣ ┃┓┃┃  ┗┓┃┃┃ ┃ ┣
+ ┻ ┗┛┗┛┗┛┗┛  ┗┛┗┛┻ ┻ ┗┛`,
+
+	}
+
+	// Select a random ASCII art title
+	rand.Seed(time.Now().UnixNano())
+	selectedTitle := asciiTitles[rand.Intn(len(asciiTitles))]
+
+	// Create title with ASCII art and text below
+	title := tview.NewTextView()
+	title.SetText(fmt.Sprintf("%s\n\nFuego %s TUI", selectedTitle, strings.Title(network)))
+	title.SetTextColor(tview.Styles.TitleColor)
+	title.SetTextAlign(tview.AlignCenter)
+	title.SetBackgroundColor(tcell.ColorBlack)
+	title.SetDynamicColors(true)
+
+	// Add simple color animation to title
+	go func() {
+		colors := []tcell.Color{tcell.ColorRed, tcell.ColorOrange, tcell.ColorYellow, tcell.ColorGreen, tcell.ColorBlue, tcell.ColorPurple}
+		for i := 0; i < 10 && appState.app != nil; i++ {
+			colorIndex := i % len(colors)
+			// Update title color
+			appState.app.QueueUpdateDraw(func() {
+				title.SetTextColor(colors[colorIndex])
+			})
+			time.Sleep(500 * time.Millisecond)
+		}
+		// Reset to default color
+		appState.app.QueueUpdateDraw(func() {
+			title.SetTextColor(tview.Styles.TitleColor)
+		})
+	}()
+
+	// Create main menu items
 
 	// Create main menu items
 	menuItems := []struct {
@@ -90,12 +155,12 @@ func createMainMenu() {
 		{"Start Node", startNode},
 		{"Stop Node", stopNode},
 		{"Node Status", showNodeStatus},
-		{"Start Walletd", startWalletRPC},
-		{"Create New Wallet", createWallet},
+		{"Start walletd", startWalletRPC},
+		{"Create Wallet", createWallet},
 		{"Get Balance", getBalance},
 		{"Send Transaction", showSendTransactionForm},
-		{"Elderfier Menu", showElderfierMenu},
-		{"Eternal Flame Menu", showBurn2MintMenu},
+		{"Ælder Kings Council", showElderfierMenu},
+		{"Ξternal Flame Menu", showBurn2MintMenu},
 		{"Show Logs", showLogs},
 		{"Quit", func() { appState.app.Stop() }},
 	}
@@ -121,12 +186,6 @@ func createMainMenu() {
 			AddItem(tview.NewBox().SetBorder(false), 0, 1, false), 3, 0, false).
 		AddItem(list, 0, 1, true)
 
-	// Add title
-	title := tview.NewTextView().
-		SetText(fmt.Sprintf("🔥 Fuego TUI - %s", strings.Title(appState.network))).
-		SetTextColor(tview.Styles.PrimaryTextColor).
-		SetTextAlign(tview.AlignCenter)
-
 	mainLayout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(title, 3, 0, false).
@@ -143,8 +202,7 @@ func createMainMenu() {
 				appState.network = "mainnet"
 				CurrentConfig = MainnetConfig
 			}
-			networkText.SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", appState.network))
-			title.SetText(fmt.Sprintf("🔥 Fuego TUI - %s", strings.Title(appState.network)))
+			// For now, we'll just update the config without trying to update the display
 			return nil
 		}
 		return event
@@ -756,6 +814,15 @@ func showLogs() {
 		SetDirection(tview.FlexRow).
 		AddItem(textView, 0, 1, true).
 		AddItem(backButton, 3, 0, true)
+
+	// Handle ESC key to exit to main menu
+	layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			appState.pages.SwitchToPage("main")
+			return nil
+		}
+		return event
+	})
 
 	appState.pages.AddPage("logs", layout, true, true)
 	appState.pages.SwitchToPage("logs")

@@ -110,29 +110,28 @@ add_dependencies(CryptoNoteCore version)
 # --------------------------
 # Robust AES-NI configuration that works in CI environments
 
-# Always try to enable AES-NI for GCC/Clang on non-Android systems
+# Always try to enable AES-NI for GCC/Clang on non-Android x86_64 systems
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT ANDROID)
-    # Enable AES-NI and SSE instructions for cryptographic operations
-    # Only enable AES-NI instructions on x86_64 architecture
-    if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64" OR NOT CMAKE_OSX_ARCHITECTURES)
-        # Apple Silicon detected, using software AES for Crypto library
+    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+        # Apple Silicon: skip AES/SSE flags, use software AES
+        target_compile_definitions(Crypto PRIVATE NO_AES)
+        message(STATUS "Apple Silicon detected, using software AES for Crypto library")
     else()
-        # On ARM64, use software AES implementation
-        target_compile_options(Crypto PRIVATE)
+        # Enable AES-NI and SSE instructions for cryptographic operations
+        target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)
+
+        # Add preprocessor definitions for AES-NI support
+        target_compile_definitions(Crypto PRIVATE __AES__ __SSE2__ __SSE4_1__ __SSE4_2__ HAVE_AES_NI)
+
+        # Special handling for CI environments
+        if (DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS} OR DEFINED ENV{GITHUB_REF} OR DEFINED ENV{GITHUB_RUN_ID})
+            # In CI, add march=native for better performance (works in most CI environments)
+            target_compile_options(Crypto PRIVATE -march=native)
+            message(STATUS "CI environment detected, AES-NI enabled with march=native for Crypto library")
+        else()
+            message(STATUS "AES-NI instructions enabled for Crypto library")
+        endif()
     endif()
-
-    # Add preprocessor definitions for AES-NI support
-    target_compile_definitions(Crypto PRIVATE __AES__ __SSE2__ __SSE4_1__ __SSE4_2__ HAVE_AES_NI)
-
-    # Special handling for CI environments
-    if (DEFINED ENV{CI} OR DEFINED ENV{GITHUB_ACTIONS} OR DEFINED ENV{GITHUB_REF} OR DEFINED ENV{GITHUB_RUN_ID})
-        # In CI, add march=native for better performance (works in most CI environments)
-        target_compile_options(Crypto PRIVATE -march=native)
-        message(STATUS "CI environment detected, AES-NI enabled with march=native for Crypto library")
-    else()
-        message(STATUS "AES-NI instructions enabled for Crypto library")
-    endif()
-
 elseif (CMAKE_C_COMPILER_ID MATCHES "MSVC" AND NOT ANDROID)
     # MSVC compiler - enable AVX2 which includes AES-NI support
     target_compile_options(Crypto PRIVATE /arch:AVX2)
@@ -149,22 +148,8 @@ else()
     endif()
 endif()
 
-# Platform-specific adjustments
-if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # On macOS, only enable for Intel Macs
-    if (CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
-        # Apple Silicon - use software AES
-        target_compile_definitions(Crypto PRIVATE NO_AES)
-
-        message(STATUS "Apple Silicon detected, using software AES for Crypto library")
-    else()
-        # Intel Mac or unknown - AES-NI should be enabled above
-        message(STATUS "macOS Intel or unknown architecture, AES-NI configuration applied")
-    endif()
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # Linux - AES-NI should be enabled above for GCC/Clang
-    message(STATUS "Linux detected, AES-NI configuration applied")
-endif()
+# Platform-specific adjustments handled above
+# No additional flags needed for Darwin/Linux
 
 message(STATUS "=== End AES-NI Configuration ===")
 

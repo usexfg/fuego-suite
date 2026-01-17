@@ -814,9 +814,12 @@ func generateStarkProof(txHash string, amount int64, proof string) {
 
 // showLogs displays the application logs
 func showLogs() {
+	// Force update the log text to ensure we see the latest logs
 	logText := strings.Join(appState.logs, "\n")
 	if logText == "" {
-		logText = "No logs available"
+		logText = "No logs available. Try starting node or wallet to see logs."
+		appState.logs = append(appState.logs, "[INFO] Logs screen opened - no logs yet")
+		logText = strings.Join(appState.logs, "\n")
 	}
 
 	textView := tview.NewTextView().

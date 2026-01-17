@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -90,35 +92,27 @@ func createMainMenu() {
 
 // createMainMenuWithNetwork creates the main menu screen with specified network
 func createMainMenuWithNetwork(network string) {
-	// Create network selection as a simple text display with toggle instruction
-	networkText := tview.NewTextView().
-			SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", network)).
-			SetTextColor(tview.Styles.PrimaryTextColor).
-			SetBackgroundColor(tcell.ColorBlack)
-
-	// Add random ASCII art title
-	asciiTitles := []string{
-
-`____ _  _ ____ ____ ____    ____ _  _ _ ___ ____
- |___ |  | |___ | __ |  |    [__  |  | |  |  |___
- |    |__| |___ |__] |__|    ___] |__| |  |  |___`,
-`▄▖          ▄▖  ▘▗
- ▙▖▌▌█▌▛▌▛▌  ▚ ▌▌▌▜▘█▌
- ▌ ▙▌▙▖▙▌▙▌  ▄▌▙▌▌▐▖▙▖
-       ▄▌             `,
-`▗▄▄▄▖▗▖ ▗▖▗▄▄▄▖ ▗▄▄▖ ▗▄▖     ▗▄▄▄▖▗▖ ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▄▖
- ▐▌   ▐▌ ▐▌▐▌   ▐▌   ▐▌ ▐▌    ▐▌   ▐▌ ▐▌  █    █  ▐▌
- ▐▛▀▀▘▐▌ ▐▌▐▛▀▀▘▐▌▝▜▌▐▌ ▐▌     ▝▀▚▖▐▌ ▐▌  █    █  ▐▛▀▀▘
- ▐▌   ▝▚▄▞▘▐▙▄▄▖▝▚▄▞▘▝▚▄▞▘    ▗▄▄▞▘▝▚▄▞▘▗▄█▄▖  █  ▐▙▄▄▖`,
-`┏┓┳┳┏┓┏┓┏┓  ┏┓┳┳┳┏┳┓┏┓
- ┣ ┃┃┣ ┃┓┃┃  ┗┓┃┃┃ ┃ ┣
- ┻ ┗┛┗┛┗┛┗┛  ┗┛┗┛┻ ┻ ┗┛`,
-
+	// Define network-specific ASCII art titles
+	var selectedTitle string
+	if network == "testnet" {
+		// Testnet specific ASCII art
+		selectedTitle = "░▀█▀░█▀▀░█▀▀░▀█▀░█▀█░█▀▀░▀█▀░░░█▀▀░█░█░▀█▀░▀█▀░█▀▀\n░░█░░█▀▀░▀▀█░░█░░█░█░█▀▀░░█░░░░▀▀█░█░█░░█░░░█░░█▀▀\n░░▀░░▀▀▀░▀▀▀░░▀░░▀░▀░▀▀▀░░▀░░░░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀"
+	} else {
+		// Mainnet specific ASCII art
+		asciiTitles := []string{
+			"░█▀▀░█░█░█▀▀░█▀▀░█▀█░░░█▀▀░█░█░▀█▀░▀█▀░█▀▀\n░█▀▀░█░█░█▀▀░█░█░█░█░░░▀▀█░█░█░░█░░░█░░█▀▀\n░▀░░░▀▀▀░▀▀▀░▀▀▀░▀▀▀░░░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀",
+			"┏━╸╻ ╻┏━╸┏━╸┏━┓   ┏━┓╻ ╻╻╺┳╸┏━╸\n┣╸ ┃ ┃┣╸ ┃╺┓┃ ┃   ┗━┓┃ ┃┃ ┃ ┣╸\n╹  ┗━┛┗━╸┗━┛┗━┛   ┗━┛┗━┛╹ ╹ ┗━╸",
+		}
+		// Select a random ASCII art title for mainnet
+		rand.Seed(time.Now().UnixNano())
+		selectedTitle = asciiTitles[rand.Intn(len(asciiTitles))]
 	}
 
-	// Select a random ASCII art title
-	rand.Seed(time.Now().UnixNano())
-	selectedTitle := asciiTitles[rand.Intn(len(asciiTitles))]
+	// Create network selection as a simple text display with toggle instruction
+	networkText := tview.NewTextView().
+			SetText(fmt.Sprintf("Network: %s (Press 'n' to toggle)", strings.Title(network))).
+			SetTextColor(tview.Styles.PrimaryTextColor).
+			SetBackgroundColor(tcell.ColorBlack)
 
 	// Create title with ASCII art and text below
 	title := tview.NewTextView()
@@ -131,19 +125,21 @@ func createMainMenuWithNetwork(network string) {
 	// Add simple color animation to title
 	go func() {
 		colors := []tcell.Color{tcell.ColorRed, tcell.ColorOrange, tcell.ColorYellow, tcell.ColorGreen, tcell.ColorBlue, tcell.ColorPurple}
-		for i := 0; i < 10 && appState.app != nil; i++ {
+		for i := 0; i < 20 && appState.app != nil; i++ {
 			colorIndex := i % len(colors)
 			// Update title color
 			appState.app.QueueUpdateDraw(func() {
 				title.SetTextColor(colors[colorIndex])
 			})
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(150 * time.Millisecond)
 		}
 		// Reset to default color
 		appState.app.QueueUpdateDraw(func() {
 			title.SetTextColor(tview.Styles.TitleColor)
 		})
 	}()
+
+
 
 	// Create main menu items
 
@@ -202,7 +198,10 @@ func createMainMenuWithNetwork(network string) {
 				appState.network = "mainnet"
 				CurrentConfig = MainnetConfig
 			}
-			// For now, we'll just update the config without trying to update the display
+			// Recreate the main menu with the new network
+			appState.pages.RemovePage("main")
+			createMainMenu()
+			appState.pages.SwitchToPage("main")
 			return nil
 		}
 		return event
@@ -218,9 +217,12 @@ func startNode() {
 		return
 	}
 
+	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Looking for node binary: %s", CurrentConfig.NodeBinary))
 	binPath := binPath(CurrentConfig.NodeBinary)
+	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] binPath returned: %s", binPath))
 	if binPath == "" {
 		showMessage("Node binary not found")
+		appState.logs = append(appState.logs, "[ERROR] Node binary not found")
 		return
 	}
 
@@ -358,21 +360,40 @@ func createWallet() {
 		return
 	}
 
-	showMessage("Creating wallet... Please follow the prompts in the terminal.")
+	showMessage("Creating wallet... This may take a moment.")
 
-	// For now, we'll just show a message since terminal interaction is complex in tview
 	cmd := exec.Command(binPath,
 		"--wallet-file", walletFile,
 		"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort),
 		"--generate-new-wallet")
 
-	err := cmd.Run()
+	// Set up logging
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	err := cmd.Start()
 	if err != nil {
-		showMessage("Error creating wallet: " + err.Error())
+		showMessage("Error starting wallet creation: " + err.Error())
 		return
 	}
 
-	showMessage("Wallet created successfully")
+	// Log output in background
+	go logStream(stdout, "WALLET-CREATE")
+	go logStream(stderr, "WALLET-CREATE-ERR")
+
+	// Wait for completion
+	go func() {
+		err := cmd.Wait()
+		appState.app.QueueUpdateDraw(func() {
+			if err != nil {
+				appState.logs = append(appState.logs, "[WALLET-CREATE] Error creating wallet: " + err.Error())
+				showMessage("Error creating wallet. Check logs for details.")
+			} else {
+				appState.logs = append(appState.logs, "[WALLET-CREATE] Wallet created successfully")
+				showMessage("Wallet created successfully!")
+			}
+		})
+	}()
 }
 
 // getBalance gets the wallet balance
@@ -889,29 +910,41 @@ func showMessage(message string) {
 
 // binPath finds the binary path
 func binPath(binName string) string {
-	// Check in build directory first
-	buildPath := filepath.Join("..", "build", "src", binName)
-	if _, err := os.Stat(buildPath); err == nil {
-		return buildPath
+	// Check in various build directories - expanded list
+	buildPaths := []string{
+		filepath.Join("..", "build", "src", binName),
+		filepath.Join("..", "build", "release", "src", binName),
+		filepath.Join("..", "build-test", "src", binName),
+		filepath.Join("..", "bulid3", "release", "src", binName),
+		filepath.Join("build", "src", binName),
+		filepath.Join("build", "release", "src", binName),
+		filepath.Join("..", "..", "build", "src", binName), // In case we're in tui/build
+		filepath.Join("..", "..", "build", "release", "src", binName),
+		filepath.Join("/home/ar/fuego", "build", "release", "src", binName),
+		filepath.Join("/home/ar/fuego", "build", "src", binName),
+		filepath.Join("/home/ar/fuego", "bulid3", "release", "src", binName),
 	}
 
-	// Check in build-test directory
-	buildTestPath := filepath.Join("..", "build-test", "src", binName)
-	if _, err := os.Stat(buildTestPath); err == nil {
-		return buildTestPath
-	}
-
-	// Check in current directory build
-	currentBuildPath := filepath.Join("build", "src", binName)
-	if _, err := os.Stat(currentBuildPath); err == nil {
-		return currentBuildPath
+	for _, buildPath := range buildPaths {
+		if _, err := os.Stat(buildPath); err == nil {
+			appState.app.QueueUpdateDraw(func() {
+				appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Found %s at: %s", binName, buildPath))
+			})
+			return buildPath
+		}
 	}
 
 	// Check in PATH
 	if path, err := exec.LookPath(binName); err == nil {
+		appState.app.QueueUpdateDraw(func() {
+			appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Found %s in PATH: %s", binName, path))
+		})
 		return path
 	}
 
+	appState.app.QueueUpdateDraw(func() {
+		appState.logs = append(appState.logs, fmt.Sprintf("[ERROR] Could not find binary: %s", binName))
+	})
 	return ""
 }
 
@@ -999,11 +1032,38 @@ func walletRpcCall(port int, method string, params interface{}) (map[string]inte
 
 // logStream logs output from a stream
 func logStream(stream interface{}, prefix string) {
-	// This is a simplified version - in a real implementation you would
-	// read from the stream and add to appState.logs
-	// For now, we'll just simulate some logging
-	time.Sleep(1 * time.Second)
-	appState.app.QueueUpdateDraw(func() {
-		appState.logs = append(appState.logs, fmt.Sprintf("[%s] Process started", prefix))
-	})
+	// Convert stream to io.Reader
+	var reader io.Reader
+	switch s := stream.(type) {
+	case io.Reader:
+		reader = s
+	case *os.File:
+		reader = s
+	default:
+		appState.app.QueueUpdateDraw(func() {
+			appState.logs = append(appState.logs, fmt.Sprintf("[%s] Invalid stream type", prefix))
+		})
+		return
+	}
+
+	// Read from the stream and add to logs
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			appState.app.QueueUpdateDraw(func() {
+				appState.logs = append(appState.logs, fmt.Sprintf("[%s] %s", prefix, line))
+				// Keep only the last 1000 log entries to prevent memory issues
+				if len(appState.logs) > 1000 {
+					appState.logs = appState.logs[len(appState.logs)-1000:]
+				}
+			})
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		appState.app.QueueUpdateDraw(func() {
+			appState.logs = append(appState.logs, fmt.Sprintf("[%s] Stream error: %v", prefix, err))
+		})
+	}
 }

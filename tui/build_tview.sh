@@ -27,13 +27,13 @@ go mod tidy
 
 # Build the tview-based TUI
 echo "Building tview-based TUI..."
-go build -o fuego-tui-tview tview_main.go config.go
+go build -o fuego_suite_tview tview_main.go config.go
 
 if [ $? -eq 0 ]; then
-    echo "Build successful! Binary created: fuego-tui-tview"
+    echo "Build successful! Binary created: fuego_suite_tview"
     echo ""
     echo "To run the tview-based TUI:"
-    echo "  ./fuego-tui-tview"
+    echo "  ./fuego_suite_tview"
     echo ""
     echo "Note: Make sure the Fuego node and wallet binaries are built in ../build/src/"
     echo "      or available in your PATH"

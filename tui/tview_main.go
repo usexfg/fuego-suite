@@ -228,6 +228,7 @@ func startNode() {
 
 	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
 	os.MkdirAll(dataDir, 0755)
+	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Using data directory: %s", dataDir))
 
 	cmd := exec.Command(binPath,
 		"--rpc-bind-port", strconv.Itoa(CurrentConfig.NodeRPCPort),
@@ -238,21 +239,51 @@ func startNode() {
 	appState.isNodeRunning = true
 
 	// Set up logging
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		appState.isNodeRunning = false
+		showMessage("Error setting up node stdout: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error setting up node stdout: " + err.Error())
+		return
+	}
 
-	err := cmd.Start()
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		appState.isNodeRunning = false
+		showMessage("Error setting up node stderr: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error setting up node stderr: " + err.Error())
+		return
+	}
+
+	// Start the command
+	err = cmd.Start()
 	if err != nil {
 		appState.isNodeRunning = false
 		showMessage("Error starting node: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error starting node: " + err.Error())
 		return
 	}
+
+	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Node started with PID: %d", cmd.Process.Pid))
 
 	// Log output in background
 	go logStream(stdout, "NODE")
 	go logStream(stderr, "NODE-ERR")
 
-	showMessage("Node started successfully")
+	// Monitor the process in background
+	go func() {
+		err := cmd.Wait()
+		appState.app.QueueUpdateDraw(func() {
+			appState.isNodeRunning = false
+			if err != nil {
+				appState.logs = append(appState.logs, fmt.Sprintf("[NODE] Process exited with error: %v", err))
+			} else {
+				appState.logs = append(appState.logs, "[NODE] Process exited normally")
+			}
+		})
+	}()
+
+	showMessage("Node started successfully (check logs for details)")
 }
 
 // stopNode stops the Fuego node
@@ -298,20 +329,25 @@ func startWalletRPC() {
 		return
 	}
 
+	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Looking for wallet binary: %s", CurrentConfig.WalletBinary))
 	binPath := binPath(CurrentConfig.WalletBinary)
+	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] binPath returned: %s", binPath))
 	if binPath == "" {
 		showMessage("Wallet binary not found")
+		appState.logs = append(appState.logs, "[ERROR] Wallet binary not found")
 		return
 	}
 
 	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
 	os.MkdirAll(dataDir, 0755)
+	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Using data directory: %s", dataDir))
 
 	walletFile := filepath.Join(dataDir, "wallet.wallet")
 
 	// Check if wallet exists
 	if _, err := os.Stat(walletFile); os.IsNotExist(err) {
 		showMessage("Wallet file not found. Please create a wallet first.")
+		appState.logs = append(appState.logs, fmt.Sprintf("[WARN] Wallet file not found: %s", walletFile))
 		return
 	}
 
@@ -324,21 +360,51 @@ func startWalletRPC() {
 	appState.isWalletRunning = true
 
 	// Set up logging
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		appState.isWalletRunning = false
+		showMessage("Error setting up wallet stdout: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error setting up wallet stdout: " + err.Error())
+		return
+	}
 
-	err := cmd.Start()
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		appState.isWalletRunning = false
+		showMessage("Error setting up wallet stderr: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error setting up wallet stderr: " + err.Error())
+		return
+	}
+
+	// Start the command
+	err = cmd.Start()
 	if err != nil {
 		appState.isWalletRunning = false
 		showMessage("Error starting wallet RPC: " + err.Error())
+		appState.logs = append(appState.logs, "[ERROR] Error starting wallet RPC: " + err.Error())
 		return
 	}
+
+	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Wallet started with PID: %d", cmd.Process.Pid))
 
 	// Log output in background
 	go logStream(stdout, "WALLET")
 	go logStream(stderr, "WALLET-ERR")
 
-	showMessage("Wallet RPC started successfully")
+	// Monitor the process in background
+	go func() {
+		err := cmd.Wait()
+		appState.app.QueueUpdateDraw(func() {
+			appState.isWalletRunning = false
+			if err != nil {
+				appState.logs = append(appState.logs, fmt.Sprintf("[WALLET] Process exited with error: %v", err))
+			} else {
+				appState.logs = append(appState.logs, "[WALLET] Process exited normally")
+			}
+		})
+	}()
+
+	showMessage("Wallet RPC started successfully (check logs for details)")
 }
 
 // createWallet creates a new wallet

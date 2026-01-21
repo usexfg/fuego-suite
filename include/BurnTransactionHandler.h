@@ -108,7 +108,9 @@ private:
     // Helper functions
     BurnTransactionData parseHeatCommitment(const std::vector<uint8_t>& txExtra, size_t pos);
     BurnTransactionData parseYieldCommitment(const std::vector<uint8_t>& txExtra, size_t pos);
-    std::string extractEthereumAddress(const std::string& metadata);
+    
+public:
+    static std::string extractEthereumAddress(const std::string& metadata);
 };
 
 /**

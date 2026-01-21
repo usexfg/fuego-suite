@@ -73,35 +73,6 @@ class BlockchainIndicesSerializer;
 
 namespace CryptoNote {
 
-template<typename K, typename V, typename Hash>
-bool serialize(google::sparse_hash_map<K, V, Hash>& value, Common::StringView name, CryptoNote::ISerializer& serializer) {
-  return serializeMap(value, name, serializer, [&value](size_t size) { value.resize(size); });
-}
-
-template<typename K, typename Hash>
-bool serialize(google::sparse_hash_set<K, Hash>& value, Common::StringView name, CryptoNote::ISerializer& serializer) {
-  size_t size = value.size();
-  if (!serializer.beginArray(size, name)) {
-    return false;
-  }
-
-  if (serializer.type() == ISerializer::OUTPUT) {
-    for (auto& key : value) {
-      serializer(const_cast<K&>(key), "");
-    }
-  } else {
-    value.resize(size);
-    while (size--) {
-      K key;
-      serializer(key, "");
-      value.insert(key);
-    }
-  }
-
-  serializer.endArray();
-  return true;
-}
-
 // custom serialization to speedup cache loading
 bool serialize(std::vector<std::pair<Blockchain::TransactionIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
   const size_t elementSize = sizeof(std::pair<Blockchain::TransactionIndex, uint16_t>);
@@ -673,24 +644,24 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
           }
         }
 
-      // process outputs
-      for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
-        const auto& out = transaction.tx.outputs[o];
-        if (out.target.type() == typeid(KeyOutput)) {
-          m_outputs[out.amount].push_back(std::make_pair<>(transactionIndex, o));
-        } else if (out.target.type() == typeid(MultisignatureOutput)) {
-          MultisignatureOutputUsage usage = { transactionIndex, o, false };
-          m_multisignatureOutputs[out.amount].push_back(usage);
+        // process outputs
+        for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
+          const auto& out = transaction.tx.outputs[o];
+          if (out.target.type() == typeid(KeyOutput)) {
+            m_outputs[out.amount].push_back(std::make_pair<>(transactionIndex, o));
+          } else if (out.target.type() == typeid(MultisignatureOutput)) {
+            MultisignatureOutputUsage usage = { transactionIndex, o, false };
+            m_multisignatureOutputs[out.amount].push_back(usage);
+          }
         }
-      }
-        interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b); //block.height); //block.height shows 0 wrongly sometimes apparently
+        interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b);
       }
       pushToBankingIndex(block, interest);
-      }
+    }
 
-  std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
-  logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
-}
+    std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
+    logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
+  }
 
 bool Blockchain::storeCache() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
@@ -1274,7 +1245,7 @@ bool Blockchain::getBackwardBlocksSize(size_t from_height, std::vector<size_t>& 
     return false;
   }
   size_t start_offset = (from_height + 1) - std::min((from_height + 1), count);
-  for (size_t i = start_offset; i != from_height + 1; i++) {
+  for (size_t i = start_offset; i <= from_height && i < m_blocks.size(); i++) {
     sz.push_back(m_blocks[i].block_cumulative_size);
   }
 
@@ -1288,14 +1259,23 @@ bool Blockchain::get_last_n_blocks_sizes(std::vector<size_t>& sz, size_t count) 
     return true;
   }
 
-  return getBackwardBlocksSize(m_blocks.size() - 1, sz, count);
+  size_t height = m_blocks.size() - 1;
+  if (height >= m_blocks.size()) {
+    logger(ERROR, BRIGHT_RED) << "Invalid height calculation in get_last_n_blocks_sizes";
+    return false;
+  }
+  return getBackwardBlocksSize(height, sz, count);
 }
 
 uint64_t Blockchain::getCurrentCumulativeBlocksizeLimit() {
   return m_current_block_cumul_sz_limit;
 }
 
- bool Blockchain::complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_top_height, std::vector<uint64_t>& timestamps) {
+bool Blockchain::complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_top_height, std::vector<uint64_t>& timestamps) {
+  if (m_blocks.empty()) {
+    logger(WARNING, BRIGHT_YELLOW) << "Cannot complete timestamps vector: blockchain is empty";
+    return false;
+  }
    if (timestamps.size() >= m_currency.timestampCheckWindow(blockMajorVersion))
     return true;
 

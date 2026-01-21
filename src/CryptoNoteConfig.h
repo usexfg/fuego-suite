@@ -119,6 +119,10 @@ namespace CryptoNote
        const uint32_t DEPOSIT_TERM_YIELD = DEPOSIT_MIN_TERM;     // 16440 blocks (3 months) for yield deposits
         const uint32_t DEPOSIT_TERM_BURN = DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
 
+        const uint32_t DEPOSIT_TERM_MIN = 16000;  // New 3-month term, slightly <90 days of Fuego blocks (180 blks per day)
+        const uint32_t DEPOSIT_TERM_MEDIUM = 33000;   // slightly > 6 months by Fuego block time (~183 days)
+        const uint32_t DEPOSIT_TERM_MAX   = 65000;   // ~1-year using 360(+1)days/yr (65k blocks)
+
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");
 
@@ -269,6 +273,10 @@ namespace CryptoNote
  	const uint32_t TESTNET_DEPOSIT_MAX_TERM_v1 = 5480;
  	const uint32_t TESTNET_DEPOSIT_MIN_TERM = 2;  //blocks		 /* one month=5480
  	const uint32_t TESTNET_DEPOSIT_MAX_TERM = 2;
+    const uint32_t TESTNET_DEPOSIT_TERM_MIN = 2;  // New 3-month term, slightly <90 days / Fuego blocks (180 blks per day)
+    const uint32_t TESTNET_DEPOSIT_TERM_MEDIUM = 33;   // ~6 months by Fuego blocks (33k blocks)
+    const uint32_t TESTNET_DEPOSIT_TERM_MAX = 69;   // ~1-year using 360(+1)days/yr (65k blocks)
+
     const uint32_t TESTNET_DEPOSIT_TERM_YIELD = TESTNET_DEPOSIT_MIN_TERM;     // 16440 blocks (3 months) for yield deposits
 //__________________________________________________________________________________________________________________________
                                      	// TESTNET DMWDA parameters

@@ -179,7 +179,7 @@ BurnTransactionHandler::BurnTransactionData BurnTransactionHandler::parseHeatCom
             data.metadata = std::string(reinterpret_cast<const char*>(txExtra.data() + pos), metadataSize);
 
             // Try to extract Ethereum address from metadata
-            data.ethAddress = extractEthereumAddress(data.metadata);
+            data.ethAddress = BurnTransactionHandler::extractEthereumAddress(data.metadata);
         }
 
         data.isValid = true;
@@ -247,7 +247,7 @@ BurnTransactionHandler::BurnTransactionData BurnTransactionHandler::parseYieldCo
             data.metadata = std::string(reinterpret_cast<const char*>(txExtra.data() + pos), metadataSize);
 
             // Try to extract Ethereum address from metadata
-            data.ethAddress = extractEthereumAddress(data.metadata);
+            data.ethAddress = BurnTransactionHandler::extractEthereumAddress(data.metadata);
         }
 
         data.isValid = true;

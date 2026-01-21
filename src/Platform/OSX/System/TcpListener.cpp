@@ -18,13 +18,13 @@
 
 #include "Dispatcher.h"
 #include "TcpConnection.h"
-#include <System/ErrorMessage.h>
-#include <System/InterruptedException.h>
-#include <System/Ipv4Address.h>
+#include "ErrorMessage.h"
+#include "../../System/InterruptedException.h"
+#include "../../System/Ipv4Address.h"
 
 namespace System {
 
-TcpListener::TcpListener() : dispatcher(nullptr) {
+TcpListener::TcpListener() : dispatcher(nullptr), listener(-1) {
 }
 
 TcpListener::TcpListener(Dispatcher& dispatcher, const Ipv4Address& addr, uint16_t port) : dispatcher(&dispatcher) {
@@ -81,7 +81,7 @@ TcpListener::TcpListener(TcpListener&& other) : dispatcher(other.dispatcher) {
 }
 
 TcpListener::~TcpListener() {
-  if (dispatcher != nullptr) {
+  if (dispatcher != nullptr && listener != -1) {
     assert(context == nullptr);
     int result = close(listener);
     assert(result != -1);
@@ -89,7 +89,7 @@ TcpListener::~TcpListener() {
 }
 
 TcpListener& TcpListener::operator=(TcpListener&& other) {
-  if (dispatcher != nullptr) {
+  if (dispatcher != nullptr && listener != -1) {
     assert(context == nullptr);
     if (close(listener) == -1) {
       throw std::runtime_error("TcpListener::operator=, close failed, " + lastErrorMessage());
@@ -102,6 +102,8 @@ TcpListener& TcpListener::operator=(TcpListener&& other) {
     listener = other.listener;
     context = nullptr;
     other.dispatcher = nullptr;
+  } else {
+    listener = -1;
   }
 
   return *this;

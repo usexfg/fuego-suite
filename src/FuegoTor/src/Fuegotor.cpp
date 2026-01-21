@@ -46,13 +46,14 @@ extern "C" {
 #endif
 }
 
-#include "../include/Fuegotor.h"
-
 // Standard C++ includes
 #include <string>
 #include <vector>
 #include <memory>
 #include <functional>
+#include <locale>
+
+#include "../include/Fuegotor.h"
 #include <mutex>
 #include <thread>
 #include <atomic>

@@ -19,7 +19,7 @@
 #include <boost/scope_exit.hpp>
 
 #include <Common/Base64.h>
-#include <HTTP/HttpParser.h>
+#include "HTTP/HttpParser.h"
 #include <System/InterruptedException.h>
 #include <System/TcpStream.h>
 #include <System/Ipv4Address.h>

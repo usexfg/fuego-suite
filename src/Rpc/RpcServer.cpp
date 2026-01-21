@@ -63,7 +63,7 @@ RpcServer::HandlerFunction binMethod(bool (RpcServer::*handler)(typename Command
     }
 
     bool result = (obj->*handler)(req, res);
-    response.setBody(storeToBinaryKeyValue(res.data()));
+    response.setBody(storeToBinaryKeyValue(res));
     return result;
   };
 }
@@ -80,7 +80,7 @@ RpcServer::HandlerFunction jsonMethod(bool (RpcServer::*handler)(typename Comman
     }
 
     bool result = (obj->*handler)(req, res);
-    response.setBody(storeToJson(res.data()));
+    response.setBody(storeToJson(res));
     return result;
   };
 }

@@ -7,7 +7,6 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/rivo/tview v0.42.1-0.20250929082832-e113793670e2
-
 )
 
 require (

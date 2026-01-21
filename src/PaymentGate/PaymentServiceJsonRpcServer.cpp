@@ -29,7 +29,7 @@
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/DepositCommitment.h"
-#include "CryptoNoteCore/BurnTransactionHandler.h"
+#include "BurnTransactionHandler.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Wallet/WalletErrors.h"
 #include "Common/Base58.h"

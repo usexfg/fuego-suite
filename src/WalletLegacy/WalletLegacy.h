@@ -118,6 +118,11 @@ public:
 
   virtual void getAccountKeys(AccountKeys& keys) override;
 
+  // Burn deposit secret management
+  void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
+  bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
+  bool hasBurnDepositSecret(const std::string& txHash);
+
 private:
 
   // IBlockchainSynchronizerObserver
@@ -176,10 +181,7 @@ private:
   BurnTransactionHandler::BurnTransactionData parseBurnTransaction(const std::vector<uint8_t>& txExtra);
   void generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount);
   
-  // Burn deposit secret management
-  void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
-  bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
-  bool hasBurnDepositSecret(const std::string& txHash);
+
 
   enum WalletState
   {

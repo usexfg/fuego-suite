@@ -1,5 +1,6 @@
 add_definitions(-DSTATICLIB)
 include_directories(${CMAKE_SOURCE_DIR}/external/parallel_hashmap)
+include_directories(${CMAKE_SOURCE_DIR}/external/httplib)
 
 # Add JSON include directories globally for all targets
 if(JSONCPP_INCLUDE_DIRS)
@@ -19,7 +20,11 @@ file(GLOB_RECURSE Logging Logging/*)
 # Optimizer sources
 file(GLOB_RECURSE NodeRpcProxy NodeRpcProxy/*)
 file(GLOB_RECURSE P2p P2p/*)
-file(GLOB_RECURSE Rpc Rpc/*)
+file(GLOB_RECURSE RPC_SOURCES Rpc/*)
+# Exclude the problematic RpcServer.cpp
+list(FILTER RPC_SOURCES EXCLUDE REGEX "Rpc/RpcServer\\.cpp$")
+# Add our new implementation
+list(APPEND RPC_SOURCES Rpc/RpcServerHttplib.cpp)
 file(GLOB_RECURSE Serialization Serialization/*)
 # Source files defined directly in add_executable calls
 
@@ -34,7 +39,7 @@ file(GLOB_RECURSE Optimizer Optimizer/*)
 file(GLOB_RECURSE SimpleWalletLib SimpleWallet/*)
 
 # Tor integration
-add_subdirectory(FuegoTor)
+#add_subdirectory(FuegoTor)
 
 # Eldernode services
 add_subdirectory(EldernodeIndexManager)
@@ -160,7 +165,7 @@ target_include_directories(Logging SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
-add_library(Rpc STATIC ${Rpc})
+add_library(Rpc STATIC ${RPC_SOURCES})
 add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
 # Check if target exists to prevent duplicate definition
 if(NOT TARGET CryptoNoteCore)
@@ -222,6 +227,7 @@ set(FUEGOTOR_LIB_PATH ${CMAKE_CURRENT_BINARY_DIR}/src/FuegoTor)
 target_link_directories(PaymentGateService PRIVATE ${FUEGOTOR_LIB_PATH})
 target_link_directories(SimpleWallet PRIVATE ${FUEGOTOR_LIB_PATH})
 target_link_directories(Daemon PRIVATE ${FUEGOTOR_LIB_PATH})
+target_link_directories(TestnetDaemon PRIVATE ${FUEGOTOR_LIB_PATH})
 target_link_directories(testnet-wallet-cli PRIVATE ${FUEGOTOR_LIB_PATH})
 
 target_link_libraries(testnet-wallet-cli PRIVATE
@@ -231,7 +237,6 @@ target_link_libraries(testnet-wallet-cli PRIVATE
     Transfers
     Rpc
     Http
-    Fuegotor
     CryptoNoteCore
     Crypto
     P2P
@@ -240,7 +245,6 @@ target_link_libraries(testnet-wallet-cli PRIVATE
     Common
     upnpc-static
     BlockchainExplorer
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
     ${JSONCPP_LIBRARIES}
@@ -263,7 +267,6 @@ target_link_libraries(Daemon PRIVATE
     InProcessNode
     upnpc-static
     BlockchainExplorer
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
     ${JSONCPP_LIBRARIES}
@@ -318,7 +321,6 @@ target_link_libraries(PaymentGateService PRIVATE
     InProcessNode
     upnpc-static
     BlockchainExplorer
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
   )
@@ -332,7 +334,6 @@ target_link_libraries(Optimizer PRIVATE
     Common
     Crypto
     System
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
     ${JSONCPP_LIBRARIES}
@@ -350,11 +351,17 @@ target_link_libraries(SimpleWallet PRIVATE
     Logging
     Common
     Crypto
-    Fuegotor
     ${Boost_LIBRARIES}
     Serialization
     ${JSONCPP_LIBRARIES}
 )
+
+# Suppress deprecation warnings for Rpc target
+if(APPLE)
+  target_compile_options(Rpc PRIVATE -Wno-deprecated-declarations -Wno-deprecated -Wno-deprecated-builtins -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-copy -Wno-deprecated-copy-dtor -Wno-system-headers -w)
+  target_include_directories(Rpc SYSTEM PRIVATE /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
+  target_include_directories(Rpc SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/external/parallel_hashmap)
+endif()
 
 # --------------------------
 # ICU linking is handled in root CMakeLists.txt

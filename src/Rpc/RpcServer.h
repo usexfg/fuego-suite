@@ -14,12 +14,14 @@
 // by third parties. See file labeled LICENSE for more details.
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
-
-#include "HttpServer.h"
+#pragma once
 
 #include <functional>
 #include <unordered_map>
+#include <thread>
+#include <memory>
 
+#include "httplib.h"
 #include <Logging/LoggerRef.h>
 #include "Common/Math.h"
 #include "CoreRpcServerCommandsDefinitions.h"
@@ -30,9 +32,11 @@ class core;
 class NodeServer;
 class ICryptoNoteProtocolQuery;
 
-class RpcServer : public HttpServer {
+class RpcServer {
 public:
   RpcServer(System::Dispatcher& dispatcher, Logging::ILogger& log, core& c, NodeServer& p2p, const ICryptoNoteProtocolQuery& protocolQuery);
+  ~RpcServer();
+
   typedef std::function<bool(RpcServer*, const HttpRequest& request, HttpResponse& response)> HandlerFunction;
   bool setFeeAddress(const std::string& fee_address, const AccountPublicAddress& fee_acc);
   bool setViewKey(const std::string& view_key);
@@ -41,6 +45,11 @@ public:
   bool k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF::request& req, K_COMMAND_RPC_CHECK_RESERVE_PROOF::response& res);
   bool enableCors(const std::string domain);
   bool remotenode_check_incoming_tx(const BinaryArray& tx_blob);
+
+  // Start the HTTP server
+  void start(const std::string& address, uint16_t port);
+  // Stop the HTTP server
+  void stop();
 
 private:
 
@@ -53,7 +62,7 @@ private:
   typedef void (RpcServer::*HandlerPtr)(const HttpRequest& request, HttpResponse& response);
   static std::unordered_map<std::string, RpcHandler<HandlerFunction>> s_handlers;
 
-  virtual void processRequest(const HttpRequest& request, HttpResponse& response) override;
+  void processRequest(const HttpRequest& request, HttpResponse& response);
   bool processJsonRpcRequest(const HttpRequest& request, HttpResponse& response);
   bool isCoreReady();
 
@@ -109,6 +118,10 @@ private:
   std::string m_fee_address;
   Crypto::SecretKey m_view_key = NULL_SECRET_KEY;
   AccountPublicAddress m_fee_acc;
+
+  // httplib server
+  std::unique_ptr<httplib::Server> m_server;
+  std::unique_ptr<std::thread> m_server_thread;
 };
 
 }

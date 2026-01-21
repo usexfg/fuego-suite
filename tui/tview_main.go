@@ -101,7 +101,6 @@ func createMainMenuWithNetwork(network string) {
 		// Mainnet specific ASCII art
 		asciiTitles := []string{
 			"░█▀▀░█░█░█▀▀░█▀▀░█▀█░░░█▀▀░█░█░▀█▀░▀█▀░█▀▀\n░█▀▀░█░█░█▀▀░█░█░█░█░░░▀▀█░█░█░░█░░░█░░█▀▀\n░▀░░░▀▀▀░▀▀▀░▀▀▀░▀▀▀░░░▀▀▀░▀▀▀░▀▀▀░░▀░░▀▀▀",
-			"┏━╸╻ ╻┏━╸┏━╸┏━┓   ┏━┓╻ ╻╻╺┳╸┏━╸\n┣╸ ┃ ┃┣╸ ┃╺┓┃ ┃   ┗━┓┃ ┃┃ ┃ ┣╸\n╹  ┗━┛┗━╸┗━┛┗━┛   ┗━┛┗━┛╹ ╹ ┗━╸",
 		}
 		// Select a random ASCII art title for mainnet
 		rand.Seed(time.Now().UnixNano())
@@ -217,73 +216,66 @@ func startNode() {
 		return
 	}
 
-	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Looking for node binary: %s", CurrentConfig.NodeBinary))
 	binPath := binPath(CurrentConfig.NodeBinary)
-	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] binPath returned: %s", binPath))
 	if binPath == "" {
 		showMessage("Node binary not found")
 		appState.logs = append(appState.logs, "[ERROR] Node binary not found")
 		return
 	}
 
+	// Use network-specific data directory
 	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
 	os.MkdirAll(dataDir, 0755)
 	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Using data directory: %s", dataDir))
 
+	// Start with network-specific configuration
 	cmd := exec.Command(binPath,
-		"--rpc-bind-port", strconv.Itoa(CurrentConfig.NodeRPCPort),
-		"--p2p-bind-port", strconv.Itoa(CurrentConfig.NodeP2PPort),
-		"--data-dir", dataDir)
+		fmt.Sprintf("--p2p-bind-port=%d", CurrentConfig.NodeP2PPort),
+		fmt.Sprintf("--rpc-bind-port=%d", CurrentConfig.NodeRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	)
+
+	// Set up pipes for stdout and stderr like original
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	// Start the command asynchronously like original
+	if err := cmd.Start(); err != nil {
+		appState.logs = append(appState.logs, "[ERROR] Failed to start node: " + err.Error())
+		showMessage("Failed to start node: " + err.Error())
+		return
+	}
 
 	appState.nodeCmd = cmd
 	appState.isNodeRunning = true
+	appState.logs = append(appState.logs, "[INFO] Started fuegod")
+	showMessage("Node starting")
 
-	// Set up logging
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		appState.isNodeRunning = false
-		showMessage("Error setting up node stdout: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error setting up node stdout: " + err.Error())
-		return
-	}
+	// Handle output streams asynchronously like the original
+	go streamPipe(stdout, "NODE", &appState)
+	go streamPipe(stderr, "NODE-ERR", &appState)
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		appState.isNodeRunning = false
-		showMessage("Error setting up node stderr: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error setting up node stderr: " + err.Error())
-		return
-	}
-
-	// Start the command
-	err = cmd.Start()
-	if err != nil {
-		appState.isNodeRunning = false
-		showMessage("Error starting node: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error starting node: " + err.Error())
-		return
-	}
-
-	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Node started with PID: %d", cmd.Process.Pid))
-
-	// Log output in background
-	go logStream(stdout, "NODE")
-	go logStream(stderr, "NODE-ERR")
-
-	// Monitor the process in background
+	// Wait for RPC to initialize before querying like original
 	go func() {
-		err := cmd.Wait()
-		appState.app.QueueUpdateDraw(func() {
-			appState.isNodeRunning = false
-			if err != nil {
-				appState.logs = append(appState.logs, fmt.Sprintf("[NODE] Process exited with error: %v", err))
+		time.Sleep(3 * time.Second)
+		for appState.isNodeRunning && appState.nodeCmd != nil {
+			info, err := getNodeInfo()
+			if err == nil {
+				appState.app.QueueUpdateDraw(func() {
+					appState.logs = append(appState.logs, fmt.Sprintf("[NODE] Height: %d, Peers: %d", info.Height, info.Peers))
+				})
 			} else {
-				appState.logs = append(appState.logs, "[NODE] Process exited normally")
+				// Log errors less frequently to avoid spam like original
+				appState.app.QueueUpdateDraw(func() {
+					shouldLog := len(appState.logs) == 0 || !strings.Contains(appState.logs[len(appState.logs)-1], "Failed to query node")
+					if shouldLog {
+						appState.logs = append(appState.logs, "[NODE] Failed to query node: " + err.Error())
+					}
+				})
 			}
-		})
+			time.Sleep(5 * time.Second)
+		}
 	}()
-
-	showMessage("Node started successfully (check logs for details)")
 }
 
 // stopNode stops the Fuego node
@@ -329,9 +321,7 @@ func startWalletRPC() {
 		return
 	}
 
-	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] Looking for wallet binary: %s", CurrentConfig.WalletBinary))
 	binPath := binPath(CurrentConfig.WalletBinary)
-	appState.logs = append(appState.logs, fmt.Sprintf("[DEBUG] binPath returned: %s", binPath))
 	if binPath == "" {
 		showMessage("Wallet binary not found")
 		appState.logs = append(appState.logs, "[ERROR] Wallet binary not found")
@@ -351,60 +341,32 @@ func startWalletRPC() {
 		return
 	}
 
+	// Start with network-specific configuration like original
 	cmd := exec.Command(binPath,
-		"--rpc-bind-port", strconv.Itoa(CurrentConfig.WalletRPCPort),
-		"--wallet-file", walletFile,
-		"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort))
+		fmt.Sprintf("--rpc-bind-port=%d", CurrentConfig.WalletRPCPort),
+		fmt.Sprintf("--wallet-file=%s", walletFile),
+		fmt.Sprintf("--daemon-address=127.0.0.1:%d", CurrentConfig.NodeRPCPort),
+	)
+
+	// Set up pipes for stdout and stderr like original
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	// Start the command asynchronously like original
+	if err := cmd.Start(); err != nil {
+		appState.logs = append(appState.logs, "[ERROR] Failed to start wallet RPC: " + err.Error())
+		showMessage("Failed to start wallet RPC: " + err.Error())
+		return
+	}
 
 	appState.walletCmd = cmd
 	appState.isWalletRunning = true
+	appState.logs = append(appState.logs, "[INFO] Started walletd")
+	showMessage("Wallet RPC starting")
 
-	// Set up logging
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		appState.isWalletRunning = false
-		showMessage("Error setting up wallet stdout: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error setting up wallet stdout: " + err.Error())
-		return
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		appState.isWalletRunning = false
-		showMessage("Error setting up wallet stderr: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error setting up wallet stderr: " + err.Error())
-		return
-	}
-
-	// Start the command
-	err = cmd.Start()
-	if err != nil {
-		appState.isWalletRunning = false
-		showMessage("Error starting wallet RPC: " + err.Error())
-		appState.logs = append(appState.logs, "[ERROR] Error starting wallet RPC: " + err.Error())
-		return
-	}
-
-	appState.logs = append(appState.logs, fmt.Sprintf("[INFO] Wallet started with PID: %d", cmd.Process.Pid))
-
-	// Log output in background
-	go logStream(stdout, "WALLET")
-	go logStream(stderr, "WALLET-ERR")
-
-	// Monitor the process in background
-	go func() {
-		err := cmd.Wait()
-		appState.app.QueueUpdateDraw(func() {
-			appState.isWalletRunning = false
-			if err != nil {
-				appState.logs = append(appState.logs, fmt.Sprintf("[WALLET] Process exited with error: %v", err))
-			} else {
-				appState.logs = append(appState.logs, "[WALLET] Process exited normally")
-			}
-		})
-	}()
-
-	showMessage("Wallet RPC started successfully (check logs for details)")
+	// Handle output streams asynchronously like original
+	go streamPipe(stdout, "WALLET", &appState)
+	go streamPipe(stderr, "WALLET-ERR", &appState)
 }
 
 // createWallet creates a new wallet
@@ -428,14 +390,17 @@ func createWallet() {
 
 	showMessage("Creating wallet... This may take a moment.")
 
-	cmd := exec.Command(binPath,
-		"--wallet-file", walletFile,
-		"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort),
-		"--generate-new-wallet")
+	// Run wallet creation in a separate goroutine to prevent blocking
+	go func() {
+		cmd := exec.Command(binPath,
+			"--wallet-file", walletFile,
+			"--daemon-address", "127.0.0.1:"+strconv.Itoa(CurrentConfig.NodeRPCPort),
+			"--generate-new-wallet")
 
-	// Set up logging
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+		// Set up logging
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			appState.app.QueueUpdateDrawstderr, _ := cmd.StderrPipe()
 
 	err := cmd.Start()
 	if err != nil {
@@ -977,6 +942,34 @@ func showMessage(message string) {
 	appState.pages.SwitchToPage("message")
 }
 
+// streamPipe handles streaming output from a pipe like the original TUI
+func streamPipe(r io.Reader, prefix string, appState *AppState) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			line := strings.TrimSpace(string(buf[:n]))
+			// Only log significant messages to avoid spam
+			if strings.Contains(line, "ERROR") || strings.Contains(line, "error") ||
+				strings.Contains(line, "Starting") || strings.Contains(line, "started") ||
+				strings.Contains(line, "Failed") || strings.Contains(line, "height") ||
+				strings.Contains(line, "Listening") || strings.Contains(line, "Connected") {
+				appState.app.QueueUpdateDraw(func() {
+					appState.logs = append(appState.logs, fmt.Sprintf("%s: %s", prefix, line))
+				})
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				appState.app.QueueUpdateDraw(func() {
+					appState.logs = append(appState.logs, fmt.Sprintf("%s stream error: %s", prefix, err.Error()))
+				})
+			}
+			return
+		}
+	}
+}
+
 // binPath finds the binary path
 func binPath(binName string) string {
 	// Check in various build directories - expanded list
@@ -1021,7 +1014,12 @@ func binPath(binName string) string {
 func getNodeInfo() (*NodeInfo, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", CurrentConfig.NodeRPCPort)
 
-	resp, err := http.Get(url)
+	// Create HTTP client with timeout to prevent freezing
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -1057,6 +1055,11 @@ func getNodeInfo() (*NodeInfo, error) {
 func walletRpcCall(port int, method string, params interface{}) (map[string]interface{}, error) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/json_rpc", port)
 
+	// Create HTTP client with timeout to prevent freezing
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
 	request := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      "tui",
@@ -1072,7 +1075,7 @@ func walletRpcCall(port int, method string, params interface{}) (map[string]inte
 		return nil, err
 	}
 
-	resp, err := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, err
 	}

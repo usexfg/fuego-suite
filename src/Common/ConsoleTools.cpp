@@ -60,6 +60,8 @@ void setTextColor(Color color) {
     FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
     FOREGROUND_GREEN | FOREGROUND_BLUE,
     FOREGROUND_RED | FOREGROUND_BLUE,
+    // grey
+    FOREGROUND_INTENSITY,
     // bright
     FOREGROUND_BLUE | FOREGROUND_INTENSITY,
     FOREGROUND_GREEN | FOREGROUND_INTENSITY,
@@ -87,6 +89,8 @@ void setTextColor(Color color) {
     "\033[0;37m",
     "\033[0;36m",
     "\033[0;35m",
+    // grey
+    "\033[0;37m",
     // bright
     "\033[1;34m",
     "\033[1;32m",

@@ -48,6 +48,7 @@ extern const std::string BRIGHT_YELLOW;
 extern const std::string BRIGHT_WHITE;
 extern const std::string BRIGHT_CYAN;
 extern const std::string BRIGHT_MAGENTA;
+extern const std::string GREY;
 extern const std::string DEFAULT;
 
 class ILogger {

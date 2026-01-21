@@ -51,7 +51,7 @@ if(MSVC)
 elseif(APPLE)
   file(GLOB_RECURSE System Platform/OSX/System/* System/*)
 else()
-  file(GLOB_RECURSE System Platform/OSX/System/* System/*)
+  file(GLOB_RECURSE System System/*)
   endif()
 
   # Add Boost linking to existing System target
@@ -64,14 +64,12 @@ else()
 
 # Explicitly include ContextGroupTimeout files for all platforms
 list(APPEND System
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.h
+  System/ContextGroupTimeout.cpp
+  System/ContextGroupTimeout.h
 )
 
 # Add ContextGroupTimeout.cpp directly to System library
-set(SYSTEM_SOURCES ${System}
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
-)
+set(SYSTEM_SOURCES ${System})
 
 source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${SYSTEM_SOURCES} ${Transfers} ${Wallet} ${WalletLegacy})
 

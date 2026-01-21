@@ -1038,7 +1038,7 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     "**********************************************************************\n" <<
     "Your wallet has been generated.\n" <<
     "Use \"help\" command to see the list of available commands.\n" <<
-    "Always use \"exit\" command when closing fuego-wallet-cli to save\n" <<
+    "Always use \"exit\" command when closing xfg_wallet to save\n" <<
     "current session's state. Otherwise, you will possibly need to synchronize \n" <<
     "your wallet again. Your wallet keys are not under risk in doing so.\n" <<
     "**********************************************************************";
@@ -1494,7 +1494,7 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args/* = std::ve
   std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
   std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::parameters::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, secretKeysData);
 
-  logger(INFO, BRIGHT_GREEN) << std::endl << "fuego-wallet-cli is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit $XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
+  logger(INFO, BRIGHT_GREEN) << std::endl << "xfg_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit $XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility. Protect your keys like you would the passcode to your own personal money vault." << std::endl << std::endl;
 
   std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
   std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
@@ -2125,7 +2125,7 @@ int main(int argc, char* argv[]) {
   Logging::LoggerManager logManager;
   Logging::LoggerRef logger(logManager, "simplewallet");
   System::Dispatcher dispatcher;
-
+  System::Event m_stopComplete(dispatcher);
   po::variables_map vm;
 
   bool r = command_line::handle_error_helper(desc_all, [&]() {
@@ -2135,12 +2135,12 @@ int main(int argc, char* argv[]) {
       CryptoNote::Currency tmp_currency = CryptoNote::CurrencyBuilder(logManager).currency();
       CryptoNote::simple_wallet tmp_wallet(dispatcher, tmp_currency, logManager);
 
-      std::cout << "fuego-wallet-cli -" << PROJECT_VERSION_LONG << std::endl;
-      std::cout << "Usage: fuego-wallet-cli [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
+      std::cout << "xfg_wallet -" << PROJECT_VERSION_LONG << std::endl;
+      std::cout << "Usage: xfg_wallet [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
       std::cout << desc_all << '\n' << tmp_wallet.get_commands_str();
       return false;
     } else if (command_line::get_arg(vm, command_line::arg_version))  {
-      std::cout << "fuego-wallet-cli -" << PROJECT_VERSION_LONG << std::endl;
+      std::cout << "xfg_wallet -" << PROJECT_VERSION_LONG << std::endl;
       return false;
     }
 
@@ -2162,7 +2162,7 @@ int main(int argc, char* argv[]) {
 
   logManager.configure(buildLoggerConfiguration(logLevel, Common::ReplaceExtenstion(argv[0], ".log")));
 
-  logger(INFO, BRIGHT_GREEN) << "fuego-wallet-cli -" << PROJECT_VERSION_LONG;
+  logger(INFO, BRIGHT_GREEN) << "xfg_wallet -" << PROJECT_VERSION_LONG;
 
   CryptoNote::Currency currency = CryptoNote::CurrencyBuilder(logManager).
     testnet(command_line::get_arg(vm, arg_testnet)).currency();
@@ -2227,15 +2227,13 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    Tools::wallet_rpc_server wrpc(dispatcher, logManager, *wallet, *node, currency, walletFileName);
-
-    if (!wrpc.init(vm)) {
+    Tools::wallet_rpc_server wrpc(dispatcher, logManager, *wallet, *node, currency, walletFileName);    if (!wrpc.init(vm)) {
       logger(ERROR, BRIGHT_RED) << "Failed to initialize wallet rpc server";
       return 1;
     }
 
     Tools::SignalHandler::install([&wrpc, &wallet] {
-      wrpc.send_stop_signal();
+      wrpc.stop();
     });
 
     logger(INFO) << "Starting wallet rpc server";

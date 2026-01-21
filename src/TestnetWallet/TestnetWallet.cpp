@@ -500,7 +500,7 @@ bool processServerAliasResponse(const std::string& s, std::string& address) {
 		auto pos2 = s.find(";", pos);
 		if (pos2 != std::string::npos)
 		{
-			// length of address == 100 ccx, we can at least validate that much here
+			// length of address == 100 for fuego, we can at least validate that much here
 			if (pos2 - pos == 100)
 			{
 				address = s.substr(pos, 100);
@@ -728,7 +728,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
      std::cout <<"       ██    ███████ ███████    ██    "<< "\n";
     std::cout <<"\n";
     std::cout <<"\n";
-    std::cout <<  "Welcome to the TEST command-line wallet for Fuego TESTNET coins."<<"\n";
+    std::cout <<  "Welcome to TEST command-line wallet for Fuego TESTNET coins."<<"\n";
     std::cout << "Please choose from the following options what you would like to do:\n";
     std::cout << "O - Open wallet\n";
     std::cout << "₲ - Generate new wallet\n";
@@ -1135,7 +1135,7 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
 
   success_msg_writer() <<
     "**********************************************************************\n" <<
-    "Your wallet has been generated.\n" <<
+    "Your test_wallet has been generated.\n" <<
     "Use \"help\" command to see the list of available commands.\n" <<
     "Always use \"exit\" command when closing wallet to save\n" <<
     "current session's state. Otherwise, you may need to re-synchronize \n" <<
@@ -1278,7 +1278,7 @@ bool simple_wallet::start_mining(const std::vector<std::string>& args) {
 
     std::string err = interpret_rpc_response(true, res.status);
     if (err.empty())
-      success_msg_writer() << "Mining started in daemon";
+      success_msg_writer() << "TEST mining started in daemon";
     else
       fail_msg_writer() << "mining has NOT been started: " << err;
 
@@ -1302,7 +1302,7 @@ bool simple_wallet::stop_mining(const std::vector<std::string>& args)
     invokeJsonCommand(httpClient, "/stop_mining", req, res);
     std::string err = interpret_rpc_response(true, res.status);
     if (err.empty())
-      success_msg_writer() << "Mining stopped in daemon";
+      success_msg_writer() << "TEST mining stopped in daemon";
     else
       fail_msg_writer() << "mining has NOT been stopped: " << err;
   } catch (const ConnectException&) {
@@ -1599,7 +1599,7 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args/* = std::ve
   std::string secretKeysData = std::string(reinterpret_cast<char*>(&keys.spendSecretKey), sizeof(keys.spendSecretKey)) + std::string(reinterpret_cast<char*>(&keys.viewSecretKey), sizeof(keys.viewSecretKey));
   std::string guiKeys = Tools::Base58::encode_addr(CryptoNote::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET, secretKeysData);
 
-  logger(INFO, BRIGHT_GREEN) << std::endl << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit TEST coins - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is you must truly act as your own bank." << std::endl << std::endl;
+  logger(INFO, BRIGHT_GREEN) << std::endl << "test_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego TESTNET coins instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit TEST coins - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility." << std::endl << std::endl;
 
   std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
   std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
@@ -1772,7 +1772,7 @@ bool simple_wallet::optimize_outputs(const std::vector<std::string>& args) {
     Crypto::SecretKey transactionSK;
     CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
     if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      fail_msg_writer() << "Can't send money";
+      fail_msg_writer() << "Can't send TEST";
       return true;
     }
 
@@ -1786,7 +1786,7 @@ bool simple_wallet::optimize_outputs(const std::vector<std::string>& args) {
 
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet->getTransaction(tx, txInfo);
-    success_msg_writer(true) << "Money successfully sent, transaction " << Common::podToHex(txInfo.hash);
+    success_msg_writer(true) << "TEST coins successfully sent, transaction " << Common::podToHex(txInfo.hash);
     success_msg_writer(true) << "Transaction secret key " << Common::podToHex(transactionSK);
 
     try {
@@ -1840,7 +1840,7 @@ bool simple_wallet::optimize_all_outputs(const std::vector<std::string>& args) {
       Crypto::SecretKey transactionSK;
       CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
       if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-        fail_msg_writer() << "Can't send money";
+        fail_msg_writer() << "Can't send TEST coins";
         return true;
       }
 
@@ -1992,7 +1992,7 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
     Crypto::SecretKey transactionSK;
     CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, cmd.dsts, cmd.fee, extraString, cmd.fake_outs_count, 0, messages, ttl);
     if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      fail_msg_writer() << "Can't send money";
+      fail_msg_writer() << "Can't send TESTNET coins";
       return true;
     }
 
@@ -2055,7 +2055,7 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 }
 
 void simple_wallet::printConnectionError() const {
-  fail_msg_writer() << "wallet failed to connect to daemon (" << m_daemon_address << ").";
+  fail_msg_writer() << "wallet failed to connect to testnet daemon (" << m_daemon_address << ").";
 }
 
 
@@ -2100,7 +2100,7 @@ int main(int argc, char* argv[]) {
       CryptoNote::simple_wallet tmp_wallet(dispatcher, tmp_currency, logManager);
 
       std::cout << "TEST Wallet -" << PROJECT_VERSION_LONG << std::endl;
-      std::cout << "Usage: test-wallet [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
+      std::cout << "Usage: test_wallet [--wallet-file=<file>|--generate-new-wallet=<file>] [--daemon-address=<host>:<port>] [<COMMAND>]";
       std::cout << desc_all << '\n' << tmp_wallet.get_commands_str();
       return false;
     } else if (command_line::get_arg(vm, command_line::arg_version))  {

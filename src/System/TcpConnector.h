@@ -1,34 +1,28 @@
-// Copyright (c) 2011-2017 The Cryptonote developers
-// Copyright (c) 2017-2018 The Circle Foundation & Conceal Devs
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Copyright (c) 2012-2016, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2016-2025, The Karbo developers
 
 #pragma once
 
-#include <cstdint>
-#include <string>
+#include <System/TcpConnection.h>
+#include <System/Dispatcher.h>
+#include <System/Ipv4Address.h>
 
 namespace System {
 
-class Dispatcher;
-class Ipv4Address;
-class TcpConnection;
-
 class TcpConnector {
 public:
-  TcpConnector();
-  TcpConnector(Dispatcher& dispatcher);
-  TcpConnector(const TcpConnector&) = delete;
-  TcpConnector(TcpConnector&& other);
-  ~TcpConnector();
-  TcpConnector& operator=(const TcpConnector&) = delete;
-  TcpConnector& operator=(TcpConnector&& other);
-  TcpConnection connect(const Ipv4Address& address, uint16_t port);
+    TcpConnector();
+    explicit TcpConnector(Dispatcher& dispatcher);
+    TcpConnector(const TcpConnector&) = delete;
+    TcpConnector(TcpConnector&& other) noexcept;
+    ~TcpConnector();
+    TcpConnector& operator=(const TcpConnector&) = delete;
+    TcpConnector& operator=(TcpConnector&& other) noexcept;
+
+    TcpConnection connect(const Ipv4Address& address, uint16_t port);
 
 private:
-  void* context;
-  Dispatcher* dispatcher;
+    Dispatcher* dispatcher{nullptr};
 };
 
-}
+} // namespace System

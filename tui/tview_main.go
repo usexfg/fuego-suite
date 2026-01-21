@@ -428,7 +428,7 @@ func createWallet() {
 }
 
 // getBalance gets the wallet balance
-func getBalance() {
+func (app *AppState) getBalance() {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return
@@ -459,7 +459,7 @@ func getBalance() {
 }
 
 // showSendTransactionForm displays the send transaction form
-func showSendTransactionForm() {
+func (app *AppState) showSendTransactionForm() {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return
@@ -526,7 +526,7 @@ func showSendTransactionForm() {
 }
 
 // showElderfierMenu displays the elderfier menu
-func showElderfierMenu() {
+func (app *AppState) showElderfierMenu() { {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return
@@ -698,7 +698,7 @@ func updateENindexKeys() {
 }
 
 // showBurn2MintMenu displays the burn2mint menu
-func showBurn2MintMenu() {
+func (app *AppState) showBurn2MintMenu() { {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return

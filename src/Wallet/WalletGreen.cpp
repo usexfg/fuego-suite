@@ -2222,14 +2222,22 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::TX_TRANSFER_IMPOSSIBLE));
     }
 
-    System::Event completion(m_dispatcher);
     std::error_code ec;
 
-    m_node.relayTransaction(m_uncommitedTransactions[transactionId], [&ec, &completion, this](std::error_code error) {
-      ec = error;
-      this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(completion)));
-    });
-    completion.wait();
+    try {
+        auto relayTransactionCompleted = std::promise<std::error_code>();
+        auto relayTransactionWaitFuture = relayTransactionCompleted.get_future();
+    
+        m_node.relayTransaction(m_uncommitedTransactions[transactionId], [&ec, &relayTransactionCompleted, this](std::error_code error) {
+          auto detachedPromise = std::move(relayTransactionCompleted);
+          detachedPromise.set_value(ec);
+          });
+        ec = relayTransactionWaitFuture.get();
+      }
+      catch (const std::exception& e) {
+        m_logger(ERROR, BRIGHT_RED) << "Failed to relay uncommited transaction: " << e.what();
+      }
+
 
     if (!ec)
     {

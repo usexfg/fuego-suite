@@ -21,10 +21,6 @@ file(GLOB_RECURSE Logging Logging/*)
 file(GLOB_RECURSE NodeRpcProxy NodeRpcProxy/*)
 file(GLOB_RECURSE P2p P2p/*)
 file(GLOB_RECURSE RPC_SOURCES Rpc/*)
-# Exclude the problematic RpcServer.cpp
-list(FILTER RPC_SOURCES EXCLUDE REGEX "Rpc/RpcServer\\.cpp$")
-# Add our new implementation
-list(APPEND RPC_SOURCES Rpc/RpcServerHttplib.cpp)
 file(GLOB_RECURSE Serialization Serialization/*)
 # Source files defined directly in add_executable calls
 
@@ -50,9 +46,26 @@ if(MSVC)
   file(GLOB_RECURSE System Platform/Windows/System/* System/*)
 elseif(APPLE)
   file(GLOB_RECURSE System Platform/OSX/System/* System/*)
+elseif(ANDROID)
+  file(GLOB_RECURSE System Platform/Android/System/* System/* Platform/Posix/System/*)
+elseif(FREEBSD)
+  file(GLOB_RECURSE System Platform/FreeBSD/System/* System/* Platform/Posix/System/*)
 else()
-  file(GLOB_RECURSE System System/*)
-  endif()
+  file(GLOB_RECURSE System System/* Platform/Linux/System/* Platform/Posix/System/*)
+endif()
+
+# Explicitly include platform-specific files
+if(MSVC)
+  list(APPEND System Platform/Windows/System/Ipv4Resolver.cpp Platform/Windows/System/ErrorMessage.cpp Platform/Windows/System/Future.h)
+elseif(APPLE)
+  list(APPEND System Platform/OSX/System/Ipv4Resolver.cpp Platform/OSX/System/ErrorMessage.cpp Platform/OSX/System/Future.h)
+elseif(ANDROID)
+  list(APPEND System Platform/Android/System/Ipv4Resolver.cpp Platform/Android/System/ErrorMessage.cpp Platform/Android/System/Future.h)
+elseif(FREEBSD)
+  list(APPEND System Platform/FreeBSD/System/Ipv4Resolver.cpp Platform/FreeBSD/System/ErrorMessage.cpp Platform/FreeBSD/System/Future.h)
+else()
+  list(APPEND System Platform/Linux/System/Ipv4Resolver.cpp Platform/Linux/System/ErrorMessage.cpp Platform/Linux/System/Future.h)
+endif()
 
   # Add Boost linking to existing System target
 
@@ -67,6 +80,19 @@ list(APPEND System
   System/ContextGroupTimeout.cpp
   System/ContextGroupTimeout.h
 )
+
+# Add platform-specific files
+if(MSVC)
+  list(APPEND System Platform/Windows/System/Ipv4Resolver.cpp Platform/Windows/System/ErrorMessage.cpp Platform/Windows/System/Future.h)
+elseif(APPLE)
+  list(APPEND System Platform/OSX/System/Ipv4Resolver.cpp Platform/OSX/System/ErrorMessage.cpp Platform/OSX/System/Future.h)
+elseif(ANDROID)
+  list(APPEND System Platform/Android/System/Ipv4Resolver.cpp Platform/Android/System/ErrorMessage.cpp Platform/Android/System/Future.h)
+elseif(FREEBSD)
+  list(APPEND System Platform/FreeBSD/System/Ipv4Resolver.cpp Platform/FreeBSD/System/ErrorMessage.cpp Platform/FreeBSD/System/Future.h)
+else()
+  list(APPEND System Platform/Linux/System/Ipv4Resolver.cpp Platform/Linux/System/ErrorMessage.cpp Platform/Linux/System/Future.h)
+endif()
 
 # Add ContextGroupTimeout.cpp directly to System library
 set(SYSTEM_SOURCES ${System})

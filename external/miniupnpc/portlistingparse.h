@@ -1,21 +1,15 @@
-/* $Id: portlistingparse.h,v 1.7 2012/09/27 15:42:10 nanard Exp $ */
+/* $Id: portlistingparse.h,v 1.10 2014/11/01 10:37:32 nanard Exp $ */
 /* MiniUPnP project
  * http://miniupnp.free.fr/ or http://miniupnp.tuxfamily.org/
- * (c) 2011-2012 Thomas Bernard
+ * (c) 2011-2015 Thomas Bernard
  * This software is subject to the conditions detailed
  * in the LICENCE file provided within the distribution */
 #ifndef PORTLISTINGPARSE_H_INCLUDED
 #define PORTLISTINGPARSE_H_INCLUDED
 
-#include "declspec.h"
+#include "miniupnpc_declspec.h"
 /* for the definition of UNSIGNED_INTEGER */
 #include "miniupnpctypes.h"
-
-#if defined(NO_SYS_QUEUE_H) || defined(_WIN32) || defined(__HAIKU__)
-#include "bsdqueue.h"
-#else
-#include <sys/queue.h>
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,34 +31,31 @@ typedef enum { PortMappingEltNone,
        PortMappingEntry, NewRemoteHost,
        NewExternalPort, NewProtocol,
        NewInternalPort, NewInternalClient,
-              NewEnabled, NewDescription,
+       NewEnabled, NewDescription,
        NewLeaseTime } portMappingElt;
 
-/* Forward declaration for LIST_HEAD macro */
-struct PortMapping;
+struct PortMapping {
+	struct PortMapping * l_next;	/* list next element */
+	UNSIGNED_INTEGER leaseTime;
+	unsigned short externalPort;
+	unsigned short internalPort;
+	char remoteHost[64];
+	char internalClient[64];
+	char description[64];
+	char protocol[4];
+	unsigned char enabled;
+};
 
 struct PortMappingParserData {
-        LIST_HEAD(PortMappingHead, PortMapping) head;
-        portMappingElt curelt;
+	struct PortMapping * l_head;	/* list head */
+	portMappingElt curelt;
 };
 
-struct PortMapping {
-        LIST_ENTRY(PortMapping) entries;
-        UNSIGNED_INTEGER leaseTime;
-        unsigned short externalPort;
-        unsigned short internalPort;
-        char remoteHost[64];
-        char internalClient[64];
-        char description[64];
-        char protocol[4];
-        unsigned char enabled;
-};
-
-LIBSPEC void
+MINIUPNP_LIBSPEC void
 ParsePortListing(const char * buffer, int bufsize,
                  struct PortMappingParserData * pdata);
 
-LIBSPEC void
+MINIUPNP_LIBSPEC void
 FreePortListing(struct PortMappingParserData * pdata);
 
 #ifdef __cplusplus

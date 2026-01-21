@@ -19,6 +19,7 @@
 
 #include <miniupnpc/miniupnpc.h>
 #include <miniupnpc/upnpcommands.h>
+#include <miniupnpc/upnpdev.h>
 
 #include <System/Context.h>
 #include <System/ContextGroupTimeout.h>
@@ -61,11 +62,11 @@ size_t get_random_index_with_fixed_probability(size_t max_index) {
   return (x * x * x ) / (max_index * max_index); //parabola \/
 }
 
-void addPortMapping(Logging::LoggerRef& logger, uint32_t port) {
+void addPortMapping(const Logging::LoggerRef& logger, uint32_t port, uint32_t externalPort) {
   // Add UPnP port mapping
-  logger(INFO) <<  "Attempting to add IGD port mapping.";
+  logger(INFO) << "Attempting to add IGD port mapping.";
   int result;
-  UPNPDev* deviceList = upnpDiscover(1000, NULL, NULL, 0, 0, &result);
+  UPNPDev *deviceList = upnpDiscover(1000, nullptr, nullptr, 0, 0, 2, &result);
   UPNPUrls urls;
   IGDdatas igdData;
   char lanAddress[64];
@@ -386,7 +387,7 @@ namespace CryptoNote
 	return true;
   }
   //-----------------------------------------------------------------------------------
-  
+
   bool NodeServer::unblock_host(const uint32_t address_ip)
   {
     auto i = m_blocked_hosts.find(address_ip);
@@ -460,7 +461,7 @@ namespace CryptoNote
 	  std::unique_lock<std::mutex> lock(mutex);
 	  return block_host(address_ip, seconds);
   }
-  
+
   bool NodeServer::unban_host(const uint32_t address_ip)
   {
 	  std::unique_lock<std::mutex> lock(mutex);
@@ -620,7 +621,7 @@ namespace CryptoNote
       logger(INFO) <<  "External port defined as " << m_external_port;
     }
 
-    addPortMapping(logger, m_listeningPort);
+    addPortMapping(logger, m_listeningPort, m_external_port);
 
     return true;
   }
@@ -1083,7 +1084,7 @@ namespace CryptoNote
     {
       m_peerlist.get_and_empty_anchor_peerlist(apl);
     }
-  
+
       size_t conn_count = get_outgoing_connections_count();
       //add new connections from white peers
       while (conn_count < expected_connections)
@@ -1444,7 +1445,7 @@ namespace CryptoNote
     return true;
   }
   //-----------------------------------------------------------------------------------
-  
+
   bool NodeServer::log_banlist()
   {
 	  logger(INFO) << "Banned nodes:" << ENDL << print_banlist_to_string(m_blocked_hosts) << ENDL;

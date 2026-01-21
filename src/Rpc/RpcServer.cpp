@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -15,8 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
-#include "RpcServerHttplib.h"
-#include "HTTP/httplib.h"
+#include "RpcServer.h"
 
 #include <future>
 #include <unordered_map>
@@ -50,6 +49,12 @@ using namespace Common;
 
 namespace CryptoNote {
 
+
+
+
+
+
+
 namespace {
 
 template <typename Command>
@@ -64,7 +69,7 @@ RpcServer::HandlerFunction binMethod(bool (RpcServer::*handler)(typename Command
     }
 
     bool result = (obj->*handler)(req, res);
-    response.setBody(storeToBinaryKeyValue(res));
+    response.setBody(storeToBinaryKeyValue(static_cast<typename Command::response&>(res)));
     return result;
   };
 }
@@ -81,7 +86,7 @@ RpcServer::HandlerFunction jsonMethod(bool (RpcServer::*handler)(typename Comman
     }
 
     bool result = (obj->*handler)(req, res);
-    response.setBody(storeToJson(res));
+    response.setBody(storeToJson(static_cast<typename Command::response&>(res)));
     return result;
   };
 }
@@ -102,14 +107,11 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   // json handlers
   { "/getinfo", { jsonMethod<COMMAND_RPC_GET_INFO>(&RpcServer::on_get_info), true } },
   { "/peers", { jsonMethod<COMMAND_RPC_GET_PEER_LIST>(&RpcServer::on_get_peer_list), true } },
-  { "/getpeers", { jsonMethod<COMMAND_RPC_GET_PEER_LIST>(&RpcServer::on_get_peer_list), true } },
   { "/getdeposits", { jsonMethod<COMMAND_RPC_GET_DEPOSITS>(&RpcServer::on_get_deposits), true } },
   { "/getheight", { jsonMethod<COMMAND_RPC_GET_HEIGHT>(&RpcServer::on_get_height), true } },
   { "/gettransactions", { jsonMethod<COMMAND_RPC_GET_TRANSACTIONS>(&RpcServer::on_get_transactions), false } },
   { "/sendrawtransaction", { jsonMethod<COMMAND_RPC_SEND_RAW_TX>(&RpcServer::on_send_raw_tx), false } },
   { "/feeaddress", { jsonMethod<COMMAND_RPC_GET_FEE_ADDRESS>(&RpcServer::on_get_fee_address), true } },
-  { "/peers", { jsonMethod<COMMAND_RPC_GET_PEER_LIST>(&RpcServer::on_get_peer_list), true } },
-  { "/getpeers", { jsonMethod<COMMAND_RPC_GET_PEER_LIST>(&RpcServer::on_get_peer_list), true } },
   { "/paymentid", { jsonMethod<COMMAND_RPC_GEN_PAYMENT_ID>(&RpcServer::on_get_payment_id), true } },
 
   // disabled in restricted rpc mode
@@ -120,260 +122,26 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   // json rpc
   { "/json_rpc", { std::bind(&RpcServer::processJsonRpcRequest, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), true } }
 };
- 
+
 RpcServer::RpcServer(System::Dispatcher& dispatcher, Logging::ILogger& log, core& c, NodeServer& p2p, const ICryptoNoteProtocolQuery& protocolQuery) :
-  logger(log, "RpcServer"), m_core(c), m_p2p(p2p), m_protocolQuery(protocolQuery) {
-  m_server = std::make_unique<httplib::Server>();
+  HttpServer(dispatcher, log), logger(log, "RpcServer"), m_core(c), m_p2p(p2p), m_protocolQuery(protocolQuery) {
 }
- 
+
 RpcServer::~RpcServer() {
-  stop();
 }
- 
+
 void RpcServer::start(const std::string& address, uint16_t port) {
-  // Set up the routes
-  m_server->Post("/(.*)", [this](const httplib::Request& req, httplib::Response& res) {
-    // Convert httplib request to our internal format
-    HttpRequest internalReq;
-    internalReq.setMethod("POST");
-    internalReq.setUrl(req.path);
-    internalReq.setBody(req.body);
-     
-    // Copy headers
-    for (const auto& header : req.headers) {
-      internalReq.addHeader(header.first, header.second);
-    }
-     
-    // Process the request
-    HttpResponse internalRes;
-    processRequest(internalReq, internalRes);
-     
-    // Convert response back to httplib format
-    res.status = static_cast<int>(internalRes.getStatus());
-    res.body = internalRes.getBody();
-     
-    // Copy response headers
-    for (const auto& header : internalRes.getHeaders()) {
-      res.set_header(header.first, header.second);
-    }
-  });
-   
-  m_server->Get("/(.*)", [this](const httplib::Request& req, httplib::Response& res) {
-    // Convert httplib request to our internal format
-    HttpRequest internalReq;
-    internalReq.setMethod("GET");
-    internalReq.setUrl(req.path);
-    internalReq.setBody(req.body);
-     
-    // Copy headers
-    for (const auto& header : req.headers) {
-      internalReq.addHeader(header.first, header.second);
-    }
-     
-    // Process the request
-    HttpResponse internalRes;
-    processRequest(internalReq, internalRes);
-     
-    // Convert response back to httplib format
-    res.status = static_cast<int>(internalRes.getStatus());
-    res.body = internalRes.getBody();
-     
-    // Copy response headers
-    for (const auto& header : internalRes.getHeaders()) {
-      res.set_header(header.first, header.second);
-    }
-  });
-   
-  // Start the server in a separate thread
-  m_server_thread = std::make_unique<std::thread>([this, address, port]() {
-    m_server->listen(address.c_str(), port);
-  });
+  HttpServer::start(address, port);
 }
- 
+
 void RpcServer::stop() {
-  if (m_server) {
-    m_server->stop();
-  }
-  if (m_server_thread && m_server_thread->joinable()) {
-    m_server_thread->join();
-  }
+  HttpServer::stop();
 }
- 
+
 void RpcServer::processRequest(const HttpRequest& request, HttpResponse& response) {
   auto url = request.getUrl();
 
   auto it = s_handlers.find(url);
-  if (it == s_handlers.end()) {
-    response.setStatus(HttpResponse::STATUS_404);
-    return;
-  }
-
-  if (!it->second.allowBusyCore && !isCoreReady()) {
-    response.setStatus(HttpResponse::STATUS_500);
-    response.setBody("Core is busy");
-    return;
-  }
-
-  it->second.handler(this, request, response);
-}
-
-bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& response) {
-  using namespace JsonRpc;
-
-  response.addHeader("Content-Type", "application/json");
-  if (!m_cors_domain.empty()) {
-        response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
-  }
-
-  JsonRpcRequest jsonRequest;
-  JsonRpcResponse jsonResponse;
-
-  try {
-    logger(TRACE) << "JSON-RPC request: " << request.getBody();
-    jsonRequest.parseRequest(request.getBody());
-    jsonResponse.setId(jsonRequest.getId()); // copy id
-
-    static std::unordered_map<std::string, RpcServer::RpcHandler<JsonMemberMethod>> jsonRpcHandlers = {
-        {"getaltblockslist", {makeMemberMethod(&RpcServer::on_alt_blocks_list_json), true}},
-        {"f_blocks_list_json", {makeMemberMethod(&RpcServer::f_on_blocks_list_json), false}},
-        {"f_block_json", {makeMemberMethod(&RpcServer::f_on_block_json), false}},
-        {"f_transaction_json", {makeMemberMethod(&RpcServer::f_on_transaction_json), false}},
-        {"f_on_transactions_pool_json", {makeMemberMethod(&RpcServer::f_on_transactions_pool_json), false}},
-        {"check_tx_proof", {makeMemberMethod(&RpcServer::k_on_check_tx_proof), false}},
-        {"check_reserve_proof", {makeMemberMethod(&RpcServer::k_on_check_reserve_proof), false}},
-        {"getblockcount", {makeMemberMethod(&RpcServer::on_getblockcount), true}},
-        {"on_getblockhash", {makeMemberMethod(&RpcServer::on_getblockhash), false}},
-        {"getblocktemplate", {makeMemberMethod(&RpcServer::on_getblocktemplate), false}},
-        {"getcurrencyid", {makeMemberMethod(&RpcServer::on_get_currency_id), true}},
-        {"submitblock", {makeMemberMethod(&RpcServer::on_submitblock), false}},
-        {"getlastblockheader", {makeMemberMethod(&RpcServer::on_get_last_block_header), false}},
-        {"getblockheaderbyhash", {makeMemberMethod(&RpcServer::on_get_block_header_by_hash), false}},
-        {"getblockheaderbyheight", {makeMemberMethod(&RpcServer::on_get_block_header_by_height), false}}};
-
-    auto it = jsonRpcHandlers.find(jsonRequest.getMethod());
-    if (it == jsonRpcHandlers.end()) {
-      throw JsonRpcError(JsonRpc::errMethodNotFound);
-    }
-
-    if (!it->second.allowBusyCore && !isCoreReady()) {
-      throw JsonRpcError(CORE_RPC_ERROR_CODE_CORE_BUSY, "Core is busy");
-    }
-
-    it->second.handler(this, jsonRequest, jsonResponse);
-
-  } catch (const JsonRpcError& err) {
-    jsonResponse.setError(err);
-  } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, e.what()));
-  }
-
-  response.setBody(jsonResponse.getBody());
-  logger(TRACE) << "JSON-RPC response: " << jsonResponse.getBody();
-  return true;
-}
-        {"f_block_json", {makeMemberMethod(&RpcServer::f_on_block_json), false}},
-        {"f_transaction_json", {makeMemberMethod(&RpcServer::f_on_transaction_json), false}},
-        {"f_on_transactions_pool_json", {makeMemberMethod(&RpcServer::f_on_transactions_pool_json), false}},
-        {"check_tx_proof", {makeMemberMethod(&RpcServer::k_on_check_tx_proof), false}},
-        {"check_reserve_proof", {makeMemberMethod(&RpcServer::k_on_check_reserve_proof), false}},
-        {"getblockcount", {makeMemberMethod(&RpcServer::on_getblockcount), true}},
-        {"on_getblockhash", {makeMemberMethod(&RpcServer::on_getblockhash), false}},
-        {"getblocktemplate", {makeMemberMethod(&RpcServer::on_getblocktemplate), false}},
-        {"getcurrencyid", {makeMemberMethod(&RpcServer::on_get_currency_id), true}},
-        {"submitblock", {makeMemberMethod(&RpcServer::on_submitblock), false}},
-        {"getlastblockheader", {makeMemberMethod(&RpcServer::on_get_last_block_header), false}},
-        {"getblockheaderbyhash", {makeMemberMethod(&RpcServer::on_get_block_header_by_hash), false}},
-        {"getblockheaderbyheight", {makeMemberMethod(&RpcServer::on_get_block_header_by_height), false}}};
-
-    auto it = jsonRpcHandlers.find(jsonRequest.getMethod());
-    if (it == jsonRpcHandlers.end()) {
-      throw JsonRpcError(JsonRpc::errMethodNotFound);
-    }
-
-    if (!it->second.allowBusyCore && !isCoreReady()) {
-      throw JsonRpcError(CORE_RPC_ERROR_CODE_CORE_BUSY, "Core is busy");
-    }
-
-    it->second.handler(this, jsonRequest, jsonResponse);
-
-  } catch (const JsonRpcError& err) {
-    jsonResponse.setError(err);
-  } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, e.what()));
-  }
-
-  response.setBody(jsonResponse.getBody());
-  logger(TRACE) << "JSON-RPC response: " << jsonResponse.getBody();
-  return true;
-}
-  if (it == s_handlers.end()) {
-    response.setStatus(HttpResponse::STATUS_404);
-    return;
-  }
-
-  if (!it->second.allowBusyCore && !isCoreReady()) {
-    response.setStatus(HttpResponse::STATUS_500);
-    response.setBody("Core is busy");
-    return;
-  }
-
-  it->second.handler(this, request, response);
-}
- 
-bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& response) {
-  using namespace JsonRpc;
-
-  response.addHeader("Content-Type", "application/json");
-  if (!m_cors_domain.empty()) {
-        response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
-  }
-
-  JsonRpcRequest jsonRequest;
-  JsonRpcResponse jsonResponse;
-
-  try {
-    logger(TRACE) << "JSON-RPC request: " << request.getBody();
-    jsonRequest.parseRequest(request.getBody());
-    jsonResponse.setId(jsonRequest.getId()); // copy id
-
-    static std::unordered_map<std::string, RpcServer::RpcHandler<JsonMemberMethod>> jsonRpcHandlers = {
-        {"getaltblockslist", {makeMemberMethod(&RpcServer::on_alt_blocks_list_json), true}},
-        {"f_blocks_list_json", {makeMemberMethod(&RpcServer::f_on_blocks_list_json), false}},
-        {"f_block_json", {makeMemberMethod(&RpcServer::f_on_block_json), false}},
-        {"f_transaction_json", {makeMemberMethod(&RpcServer::f_on_transaction_json), false}},
-        {"f_on_transactions_pool_json", {makeMemberMethod(&RpcServer::f_on_transactions_pool_json), false}},
-        {"check_tx_proof", {makeMemberMethod(&RpcServer::k_on_check_tx_proof), false}},
-        {"check_reserve_proof", {makeMemberMethod(&RpcServer::k_on_check_reserve_proof), false}},
-        {"getblockcount", {makeMemberMethod(&RpcServer::on_getblockcount), true}},
-        {"on_getblockhash", {makeMemberMethod(&RpcServer::on_getblockhash), false}},
-        {"getblocktemplate", {makeMemberMethod(&RpcServer::on_getblocktemplate), false}},
-        {"getcurrencyid", {makeMemberMethod(&RpcServer::on_get_currency_id), true}},
-        {"submitblock", {makeMemberMethod(&RpcServer::on_submitblock), false}},
-        {"getlastblockheader", {makeMemberMethod(&RpcServer::on_get_last_block_header), false}},
-        {"getblockheaderbyhash", {makeMemberMethod(&RpcServer::on_get_block_header_by_hash), false}},
-        {"getblockheaderbyheight", {makeMemberMethod(&RpcServer::on_get_block_header_by_height), false}}};
-
-    auto it = jsonRpcHandlers.find(jsonRequest.getMethod());
-    if (it == jsonRpcHandlers.end()) {
-      throw JsonRpcError(JsonRpc::errMethodNotFound);
-    }
-
-    if (!it->second.allowBusyCore && !isCoreReady()) {
-      throw JsonRpcError(CORE_RPC_ERROR_CODE_CORE_BUSY, "Core is busy");
-    }
-
-    it->second.handler(this, jsonRequest, jsonResponse);
-
-  } catch (const JsonRpcError& err) {
-    jsonResponse.setError(err);
-  } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, e.what()));
-  }
-
-  response.setBody(jsonResponse.getBody());
-  logger(TRACE) << "JSON-RPC response: " << jsonResponse.getBody();
-  return true;
-}
   if (it == s_handlers.end()) {
     response.setStatus(HttpResponse::STATUS_404);
     return;
@@ -1730,5 +1498,7 @@ bool RpcServer::on_prove_collateral(const COMMAND_RPC_PROVE_COLLATERAL::request&
   res.errorMessage = "";
   return true;
 }
+
+
 
 }

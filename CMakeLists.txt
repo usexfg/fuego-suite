@@ -84,15 +84,25 @@ if(APPLE OR FREEBSD)
         cmake_policy(SET CMP0042 NEW)
     endif()
     enable_language(ASM)
+
+    # Add macOS specific definitions for Boost.Asio
+    add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1)
 endif()
 
 if(MSVC)
-    include_directories(src/Platform/Windows)
+   include_directories(src/Platform/Windows)
+   include_directories(src/Platform/Posix)
 elseif(APPLE)
-    include_directories(src/Platform/OSX)
+   include_directories(src/Platform/OSX)
+   include_directories(src/Platform/Posix)
+   # Add additional system include directories for macOS
+   include_directories(SYSTEM /usr/include /usr/local/include /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include)
 else()
-    include_directories(src/Platform/Linux)
+   include_directories(src/Platform/Linux)
+   include_directories(src/Platform/Posix)
 endif()
+include_directories(src/Platform/Android)
+include_directories(src/Platform/FreeBSD)
 
 # --------------------------
 # Boost - Updated for 1.86

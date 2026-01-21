@@ -250,7 +250,7 @@ namespace CryptoNote
 
 	// TESTNET Seed Nodes
 	const std::initializer_list<const char *> SEED_NODES_TESTNET = {
-		"216.145.66.230:20808",
+		"216.145.84.248:20808",
  		 "80.89.228.157:20808",
  		   "207.244.247.64:20808",
 	        "216.145.66.224:20808"

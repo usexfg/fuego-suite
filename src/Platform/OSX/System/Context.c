@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <string.h>
+#include <stdint.h>
 #include "Context.h"
 
 void

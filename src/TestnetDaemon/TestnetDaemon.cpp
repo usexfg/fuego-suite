@@ -198,7 +198,7 @@ int main(int argc, char* argv[])
 
     // configure logging
 	    logManager.configure(buildLoggerConfiguration(cfgLogLevel, cfgLogFile));
-		logger(INFO, BRIGHT_WHITE) <<
+		logger(INFO, GREY) <<
 #ifdef _WIN32
 " \n"		
 "       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n" 

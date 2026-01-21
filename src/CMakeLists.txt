@@ -51,7 +51,7 @@ if(MSVC)
 elseif(APPLE)
   file(GLOB_RECURSE System Platform/OSX/System/* System/*)
 else()
-  file(GLOB_RECURSE System Platform/OSX/System/* System/*)
+  file(GLOB_RECURSE System System/*)
   endif()
 
   # Add Boost linking to existing System target
@@ -64,14 +64,12 @@ else()
 
 # Explicitly include ContextGroupTimeout files for all platforms
 list(APPEND System
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.h
+  System/ContextGroupTimeout.cpp
+  System/ContextGroupTimeout.h
 )
 
 # Add ContextGroupTimeout.cpp directly to System library
-set(SYSTEM_SOURCES ${System}
-  /Users/aejt/Documents/GitHub/Fuego-desktop/cryptonote/src/System/ContextGroupTimeout.cpp
-)
+set(SYSTEM_SOURCES ${System})
 
 source_group("" FILES ${Common} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${Daemon} ${JsonRpcServer} ${Http} ${Logging} ${NodeRpcProxy} ${P2p} ${Rpc} ${Serialization} ${SimpleWallet} ${SYSTEM_SOURCES} ${Transfers} ${Wallet} ${WalletLegacy})
 
@@ -166,6 +164,7 @@ target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 add_library(Rpc STATIC ${RPC_SOURCES})
+target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)
 add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
 # Check if target exists to prevent duplicate definition
 if(NOT TARGET CryptoNoteCore)

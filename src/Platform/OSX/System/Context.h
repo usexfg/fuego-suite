@@ -24,6 +24,8 @@
 extern "C" {
 #endif
 #include <stdlib.h>
+#include <stdint.h>
+#include <signal.h>
 
 typedef struct mcontext mctx;
 typedef struct ucontext uctx;

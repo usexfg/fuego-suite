@@ -31,6 +31,7 @@ enum class Color : uint8_t {
   White,
   Cyan,
   Magenta,
+  Grey,
 
   BrightBlue,
   BrightGreen,

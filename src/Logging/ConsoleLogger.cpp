@@ -42,6 +42,7 @@ void ConsoleLogger::doLogString(const std::string& message) {
     { WHITE, Color::White },
     { CYAN, Color::Cyan },
     { MAGENTA, Color::Magenta },
+    { GREY, Color::Grey },
 
     { BRIGHT_BLUE, Color::BrightBlue },
     { BRIGHT_GREEN, Color::BrightGreen },

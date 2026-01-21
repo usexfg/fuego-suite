@@ -164,6 +164,7 @@ target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 add_library(Rpc STATIC ${RPC_SOURCES})
+target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)
 add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
 # Check if target exists to prevent duplicate definition
 if(NOT TARGET CryptoNoteCore)

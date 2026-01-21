@@ -21,7 +21,7 @@
 #include <thread>
 #include <memory>
 
-#include "HTTP/httplib.h"
+#include "httplib.h"
 #include <Logging/LoggerRef.h>
 #include "Common/Math.h"
 #include "CoreRpcServerCommandsDefinitions.h"

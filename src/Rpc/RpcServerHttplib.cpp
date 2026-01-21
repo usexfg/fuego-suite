@@ -16,7 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "RpcServerHttplib.h"
-#include "HTTP/httplib.h"
+#include "httplib.h"
 
 #include <future>
 #include <unordered_map>

@@ -2125,7 +2125,7 @@ int main(int argc, char* argv[]) {
   Logging::LoggerManager logManager;
   Logging::LoggerRef logger(logManager, "simplewallet");
   System::Dispatcher dispatcher;
-  System::Event m_stopComplete(dispatcher);
+ // System::Event m_stopComplete(dispatcher);
   po::variables_map vm;
 
   bool r = command_line::handle_error_helper(desc_all, [&]() {
@@ -2227,14 +2227,16 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    Tools::wallet_rpc_server wrpc(dispatcher, logManager, *wallet, *node, currency, walletFileName);    if (!wrpc.init(vm)) {
-      logger(ERROR, BRIGHT_RED) << "Failed to initialize wallet rpc server";
-      return 1;
-    }
+    Tools::wallet_rpc_server wrpc(dispatcher, logManager, *wallet, *node, currency, walletFileName);
 
-    Tools::SignalHandler::install([&wrpc, &wallet] {
-      wrpc.stop();
-    });
+        if (!wrpc.init(vm)) {
+          logger(ERROR, BRIGHT_RED) << "Failed to initialize wallet rpc server";
+          return 1;
+        }
+
+        Tools::SignalHandler::install([&wrpc, &wallet] {
+          wrpc.send_stop_signal();
+        });
 
     logger(INFO) << "Starting wallet rpc server";
     wrpc.run();

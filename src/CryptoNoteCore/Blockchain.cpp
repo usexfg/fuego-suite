@@ -1184,15 +1184,15 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
   // For historical blocks, use more lenient block size checking
   size_t effectiveBlockSize = cumulativeBlockSize;
   logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Original block size: " << cumulativeBlockSize << ", median: " << blocksSizeMedian;
-  
+
   if (height >= 170000 && height <= 180000) {
     // Special handling for blocks around height 174026
     size_t maxHistoricalSize = 3 * 1024 * 1024; // 3MB for blocks 170k-180k
     if (cumulativeBlockSize > maxHistoricalSize) {
       effectiveBlockSize = maxHistoricalSize;
     }
-    logger(DEBUGGING) << "HISTORICAL_BLOCK_SIZE: height=" << height 
-      << ", original=" << cumulativeBlockSize 
+    logger(DEBUGGING) << "HISTORICAL_BLOCK_SIZE: height=" << height
+      << ", original=" << cumulativeBlockSize
       << ", effective=" << effectiveBlockSize
       << ", median=" << blocksSizeMedian;
   } else {
@@ -1200,7 +1200,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
   }
 
   if (!m_currency.getBlockReward(blockMajorVersion, blocksSizeMedian, effectiveBlockSize, alreadyGeneratedCoins, fee, height, reward, emissionChange)) {
-    logger(DEBUGGING) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego blockchain";
+    logger(DEBUGGING) << "block size " << cumulativeBlockSize << " is bigger than what is currently allowed on Fuego's blockchain";
     logger(DEBUGGING) << "EXACT_REWARD: getBlockReward failed with effectiveBlockSize=" << effectiveBlockSize;
     return false;
   }
@@ -1219,11 +1219,11 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
         << m_currency.formatAmount(reward) << " (expected)";
       return true;
     }
-    
+
     logger(ERROR, BRIGHT_RED) << "Coinbase transaction reward mismatch: "
       << m_currency.formatAmount(minerReward) << " (actual) vs "
       << m_currency.formatAmount(reward) << " (expected)";
-    logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Detailed debug: height=" << height 
+    logger(DEBUGGING, BRIGHT_BLUE) << "EXACT_REWARD: Detailed debug: height=" << height
       << ", minerReward=" << minerReward
       << ", reward=" << reward
       << ", emissionChange=" << emissionChange

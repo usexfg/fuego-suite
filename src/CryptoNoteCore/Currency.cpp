@@ -259,20 +259,19 @@ double Currency::getBurnPercentage() const {
     } else {
         baseReward = (m_moneySupply - alreadyGeneratedCoins) >> m_emissionSpeedFactor;
     }  // start after bmv10
-		logger(INFO) << "getBlockReward baseReward calculation: m_moneySupply=" << m_moneySupply
+		logger(DEBUGGING) << "getBlockReward baseReward calculation: m_moneySupply=" << m_moneySupply
 			<< ", alreadyGeneratedCoins=" << alreadyGeneratedCoins
 			<< ", Osavvirsak=" << Osavvirsak
 			<< ", baseReward=" << baseReward;
 
     // Debug output for reward calculation analysis
     static uint32_t lastDebugHeight = 0;
-    if (height % 100000 == 0 && height != lastDebugHeight) {
+    if (height > 900000 && height % 10000 == 0 && height != lastDebugHeight) {
         lastDebugHeight = height;
-        printf("BLOCK %u: XFG minted=%llu, Ethereal XFG=%llu, Osavvirsak=%llu, Base Reward=%llu\n",
-               height, (unsigned long long)alreadyGeneratedCoins,
-               (unsigned long long)getEternalFlame(),
-               (unsigned long long)Osavvirsak,
-               (unsigned long long)baseReward);
+        logger(INFO) << "BLOCK " << height << ": XFG minted=" << alreadyGeneratedCoins
+                         << ", Ethereal XFG=" << getEternalFlame()
+                         << ", Osavvirsak=" << Osavvirsak
+                         << ", Base Reward=" << baseReward;
     }
 
     size_t blockGrantedFullRewardZone = blockGrantedFullRewardZoneByBlockVersion(blockMajorVersion);

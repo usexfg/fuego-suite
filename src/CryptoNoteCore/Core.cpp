@@ -883,7 +883,7 @@ bool core::on_idle() {
     logger(INFO, BRIGHT_YELLOW)
       << "**********************************************************************" << ENDL
       << "Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
-      << "Bootstrap file of Fuego's blockchain is available at https://github.com/usexfg/XFG-data/releases - though, full sync using network peers is best practice. "<< ENDL
+      << "Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. "<< ENDL
       << "You can use \"set_log <level>\" command for a more detailed view of the process."<< ENDL
       << "Using <level> option from 0 (no details) up to 4 (very verbose)." << ENDL
       << "Use \"help\" command to see a list of available commands." << ENDL

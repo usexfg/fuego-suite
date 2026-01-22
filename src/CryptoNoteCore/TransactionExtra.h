@@ -57,16 +57,16 @@
 #define TX_EXTRA_DIGM_CURATOR               0x0C  // Curator operations
 #define TX_EXTRA_DIGM_CURATOR_COIN          0x1C  // CURA coin operations
 
-// 0xCD tags: COLD (CD) yield deposits
-#define TX_EXTRA_CD_DEPOSIT_SECRET          0xCD  // COLD yield deposits
-
-
-// 0x_E tags: Elderfier system (consensus/messaging)
-#define TX_EXTRA_ELDERFIER_MESSAGE          0xEF  // Elderfier messaging/consensus
+// 0xCD tag: COLD (CD) deposits
+#define TX_EXTRA_COLD_COMMITMENT            0xCD  // COLD CD deposits
+// 0x69 tag: Receipts for both COLD & YIELD
+#define TX_EXTRA_COLD_RECEIPT               0x69  // All Deposits receipt
 
 // 0x07 FUEGO MOB Custom Interest Assets   Check full compatibility -
 #define TX_EXTRA_YIELD_COMMITMENT           0x07  //  yield commitment
-#define TX_EXTRA_DEPOSIT_RECEIPT            0x69  // Deposit receipt
+
+// 0x_E tags: Elderfier system (consensus/messaging)
+#define TX_EXTRA_ELDERFIER_MESSAGE          0xEF  // Elderfier messaging/consensus
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 

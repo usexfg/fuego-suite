@@ -169,7 +169,7 @@ namespace CryptoNote
         }
 
 
-        case TX_EXTRA_CD_DEPOSIT_SECRET:
+        case TX_EXTRA_COLD_COMMITMENT:
         {
           TransactionExtraCDDepositSecret cdDepositSecret;
           if (getCDDepositSecretFromExtra(transactionExtra, cdDepositSecret)) {
@@ -191,7 +191,7 @@ namespace CryptoNote
           break;
         }
 
-        case TX_EXTRA_DEPOSIT_RECEIPT:
+        case TX_EXTRA_COLD_RECEIPT:
         {
           TransactionExtraDepositReceipt depositReceipt;
           if (getDepositReceiptFromExtra(transactionExtra, depositReceipt)) {
@@ -1162,7 +1162,7 @@ namespace CryptoNote
     if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_YIELD_COMMITMENT) {
       return false;
     }
-    
+
     size_t pos = 1;
 
     // Deserialize commitment hash (32 bytes)
@@ -1230,7 +1230,7 @@ namespace CryptoNote
 
   bool getCDDepositSecretFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraCDDepositSecret &deposit_secret)
   {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_CD_DEPOSIT_SECRET) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_COMMITMENT) {
       return false;
     }
 
@@ -1418,7 +1418,7 @@ namespace CryptoNote
   // CD Deposit Secret helper functions
   bool addCDDepositSecretToExtra(std::vector<uint8_t> &tx_extra, const CryptoNote::TransactionExtraCDDepositSecret &deposit_secret)
   {
-    tx_extra.push_back(TX_EXTRA_CD_DEPOSIT_SECRET);
+    tx_extra.push_back(TX_EXTRA_COLD_COMMITMENT);
 
     // Serialize secret key (32 bytes)
     // Note: In the old implementation, the secret key was stored directly
@@ -1669,7 +1669,7 @@ namespace CryptoNote
   // Deposit receipt functions
   bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt)
   {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_DEPOSIT_RECEIPT) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_RECEIPT) {
       return false;
     }
 
@@ -1720,7 +1720,7 @@ namespace CryptoNote
 
   bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt)
   {
-    tx_extra.push_back(TX_EXTRA_DEPOSIT_RECEIPT);
+    tx_extra.push_back(TX_EXTRA_COLD_RECEIPT);
 
     // Add proof_pubkey
     tx_extra.insert(tx_extra.end(), reinterpret_cast<const uint8_t*>(&depositReceipt.proof_pubkey),

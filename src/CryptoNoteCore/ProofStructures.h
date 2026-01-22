@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <json/json.h>
+#include "Common/JsonValue.h"
 #include "crypto/crypto.h"
 #include "Serialization/ISerializer.h"
 
@@ -61,8 +61,8 @@ struct ProofVerificationData {
   std::string tx_hash;
   std::string proof_type;
 
-  void serialize(Json::Value& json) const;
-  void deserialize(const Json::Value& json);
+  void serialize(Common::JsonValue& json) const;
+  void deserialize(const Common::JsonValue& json);
 
   bool serialize(CryptoNote::ISerializer& serializer) const;
 };

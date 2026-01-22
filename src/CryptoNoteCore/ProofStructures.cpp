@@ -15,7 +15,7 @@
 #include "ProofStructures.h"
 #include "Serialization/ISerializer.h"
 #include "Serialization/SerializationOverloads.h"
-#include <json/json.h>
+#include "Common/JsonValue.h"
 
 namespace CryptoNote {
 
@@ -43,26 +43,26 @@ bool TransactionExtraDepositProof::serialize(CryptoNote::ISerializer& serializer
   return true;
 }
 
-void ProofVerificationData::serialize(Json::Value& json) const {
-  json["amount"] = amount;
-  json["recipient"] = recipient;
-  json["address"] = address;
-  json["timestamp"] = timestamp;
-  json["commitment"] = commitment;
-  json["nullifier"] = nullifier;
-  json["tx_hash"] = tx_hash;
-  json["proof_type"] = proof_type;
+void ProofVerificationData::serialize(Common::JsonValue& json) const {
+  json("amount") = Common::JsonValue(static_cast<int64_t>(amount));
+  json("recipient") = Common::JsonValue(recipient);
+  json("address") = Common::JsonValue(address);
+  json("timestamp") = Common::JsonValue(static_cast<int64_t>(timestamp));
+  json("commitment") = Common::JsonValue(commitment);
+  json("nullifier") = Common::JsonValue(nullifier);
+  json("tx_hash") = Common::JsonValue(tx_hash);
+  json("proof_type") = Common::JsonValue(proof_type);
 }
 
-void ProofVerificationData::deserialize(const Json::Value& json) {
-  if (json.isMember("amount")) amount = json["amount"].asUInt64();
-  if (json.isMember("recipient")) recipient = json["recipient"].asString();
-  if (json.isMember("address")) address = json["address"].asString();
-  if (json.isMember("timestamp")) timestamp = json["timestamp"].asUInt64();
-  if (json.isMember("commitment")) commitment = json["commitment"].asString();
-  if (json.isMember("nullifier")) nullifier = json["nullifier"].asString();
-  if (json.isMember("tx_hash")) tx_hash = json["tx_hash"].asString();
-  if (json.isMember("proof_type")) proof_type = json["proof_type"].asString();
+void ProofVerificationData::deserialize(const Common::JsonValue& json) {
+  if (json.contains("amount")) amount = static_cast<uint64_t>(json("amount").getInteger());
+  if (json.contains("recipient")) recipient = json("recipient").getString();
+  if (json.contains("address")) address = json("address").getString();
+  if (json.contains("timestamp")) timestamp = static_cast<uint64_t>(json("timestamp").getInteger());
+  if (json.contains("commitment")) commitment = json("commitment").getString();
+  if (json.contains("nullifier")) nullifier = json("nullifier").getString();
+  if (json.contains("tx_hash")) tx_hash = json("tx_hash").getString();
+  if (json.contains("proof_type")) proof_type = json("proof_type").getString();
 }
 
 bool ProofVerificationData::serialize(CryptoNote::ISerializer& serializer) const {

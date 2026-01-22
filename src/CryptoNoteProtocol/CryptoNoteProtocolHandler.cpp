@@ -200,7 +200,7 @@ bool CryptoNoteProtocolHandler::process_payload_sync_data(const CORE_SYNC_DATA &
 
     logger(diff >= 0 ? (is_inital ? Logging::INFO : DEBUGGING) : Logging::TRACE)  << context << "Unknown top block: " << get_current_blockchain_height() << " -> " << hshd.current_height
                                                                                           << std::endl
-                                                                                          
+
                                                                                           << "Synchronization started";
 
     logger(DEBUGGING) << "Remote top block height: " << hshd.current_height << ", id: " << hshd.top_id;
@@ -685,17 +685,18 @@ bool CryptoNoteProtocolHandler::on_connection_synchronized()
 {
   bool val_expected = false;
   if (m_synchronized.compare_exchange_strong(val_expected, true)) {
+    std::string networkName = m_core.currency().isTestnet() ? "Fuego TESTNET" : "Fuego network";
+    std::string walletName = m_core.currency().isTestnet() ? "test_wallet" : "fuego-wallet-cli";
     logger(Logging::INFO, Logging::BRIGHT_CYAN)
       << "**********************************************************************" << ENDL
-      << "You are synchronized with the Fuego network." << ENDL
-      << "fuego-wallet-cli is now at your service, m'lorde." << ENDL
+      << "You are synchronized with the " << networkName << "." << ENDL
+      << walletName << " is now at your service, m'lorde." << ENDL
       << "Type \"help\" to see Fango daemon commands." << ENDL
       << ENDL
-      << "Please note, the Fuego blockchain will only be saved after" << ENDL
+      << "Please note, the " << networkName << " blockchain will only be saved after" << ENDL
       << "you quit the daemon with \"exit\" command" << ENDL
       << "Better yet use the \"save\" command." << ENDL
-      << "Otherwise, it may be necessary to re-sync.";
-      logger(Logging::INFO, Logging::BRIGHT_CYAN)
+      << "Otherwise, it may be necessary to re-sync." << ENDL
       << "**********************************************************************";
     m_core.on_synchronized();
 

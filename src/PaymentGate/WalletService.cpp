@@ -1707,36 +1707,36 @@ namespace PaymentService
   }
 
   std::error_code WalletService::getStatus(
-      uint32_t &blockCount,
-      uint32_t &knownBlockCount,
-      std::string &lastBlockHash,
-      uint32_t &peerCount,
-      uint32_t &depositCount,
-      uint32_t &transactionCount,
-      uint32_t &addressCount,
-      std::string &networkId)
-  {
-    try
+        uint32_t &blockCount,
+        uint32_t &knownBlockCount,
+        std::string &lastBlockHash,
+        uint32_t &peerCount,
+        uint32_t &depositCount,
+        uint32_t &transactionCount,
+        uint32_t &addressCount,
+        std::string &networkId)
     {
-      System::EventLock lk(readyEvent);
-
-      auto estimateResult = fusionManager.estimate(1000000, {});
-      knownBlockCount = node.getKnownBlockCount();
-      peerCount = static_cast<uint32_t>(node.getPeerCount());
-      blockCount = wallet.getBlockCount();
-      depositCount = static_cast<uint32_t>(wallet.getWalletDepositCount());
-      transactionCount = static_cast<uint32_t>(wallet.getTransactionCount());
-      addressCount = static_cast<uint32_t>(wallet.getAddressCount());
-      auto lastHashes = wallet.getBlockHashes(blockCount - 1, 1);
-      lastBlockHash = Common::podToHex(lastHashes.back());
-              networkId = "93385046440755750514194170694064996624";
-    }
-      catch (std::system_error &x)
+      try
       {
-        logger(Logging::WARNING) << "Error while getting status: " << x.what();
-        return x.code();
+        System::EventLock lk(readyEvent);
+
+        auto estimateResult = fusionManager.estimate(1000000, {});
+        knownBlockCount = node.getKnownBlockCount();
+        peerCount = static_cast<uint32_t>(node.getPeerCount());
+        blockCount = wallet.getBlockCount();
+        depositCount = static_cast<uint32_t>(wallet.getWalletDepositCount());
+        transactionCount = static_cast<uint32_t>(wallet.getTransactionCount());
+        addressCount = static_cast<uint32_t>(wallet.getAddressCount());
+        auto lastHashes = wallet.getBlockHashes(blockCount - 1, 1);
+        lastBlockHash = Common::podToHex(lastHashes.back());
+                networkId = currency.getFuegoNetworkIdString();
       }
-      catch (std::exception &x)
+        catch (std::system_error &x)
+        {
+          logger(Logging::WARNING) << "Error while getting status: " << x.what();
+          return x.code();
+        }
+        catch (std::exception &x)
       {
         logger(Logging::WARNING) << "Error while getting status: " << x.what();
         return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);

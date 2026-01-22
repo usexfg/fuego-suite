@@ -305,7 +305,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
   }
 
   // 🔥 ADD: Include network ID in metadata for STARK validation
-  std::string networkId = "93385046440755750514194170694064996624";
+  std::string networkId = service.currency.getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -332,7 +332,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
       Common::createDirectory(bpdfDir);
       
       std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
-      std::string networkId = "93385046440755750514194170694064996624";
+      std::string networkId = service.currency.getFuegoNetworkIdString();
       
       // Only generate BPDF if we have an Ethereum address
       if (!ethAddress.empty()) {
@@ -373,7 +373,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof(co
   }
 
   // 🔥 ADD: Include network ID in metadata for STARK validation
-  std::string networkId = "93385046440755750514194170694064996624";
+  std::string networkId = service.currency.getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -415,7 +415,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
   //  ADD: Include network ID in metadata for STARK validation
-  std::string networkId = "93385046440755750514194170694064996624";
+  std::string networkId = service.currency.getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -442,7 +442,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
       Common::createDirectory(bpdfDir);
       
       std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
-      std::string networkId = "93385046440755750514194170694064996624";
+      std::string networkId = service.currency.getFuegoNetworkIdString();
       
       // Only generate BPDF if we have an Ethereum address
       if (!ethAddress.empty()) {
@@ -477,7 +477,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithPro
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
   //  ADD: Include network ID in metadata for STARK validation
-  std::string networkId = "93385046440755750514194170694064996624";
+  std::string networkId = service.currency.getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -516,7 +516,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithPro
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(const GenerateBurnProofDataFile::Request& request, GenerateBurnProofDataFile::Response& response) {
   try {
     //  MANUAL: Generate BPDF manually (user provides secret separately)
-    std::string networkId = "93385046440755750514194170694064996624";
+    std::string networkId = service.currency.getFuegoNetworkIdString();
 
     //  ADD: Use default wallet path if outputPath is empty
     std::string outputPath = request.outputPath;
@@ -550,7 +550,7 @@ std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(con
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFileAuto(const GenerateBurnProofDataFileAuto::Request& request, GenerateBurnProofDataFileAuto::Response& response) {
   try {
     //  AUTO: Generate BPDF automatically with local secret retrieval
-    std::string networkId = "93385046440755750514194170694064996624";
+    std::string networkId = service.currency.getFuegoNetworkIdString();
 
     // Retrieve secret from local storage
     Crypto::SecretKey secret;

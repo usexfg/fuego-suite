@@ -1320,9 +1320,15 @@ double Currency::getBurnPercentage() const {
 
 
     // Fuego network ID - using hash of the full network ID for uint64_t compatibility
-    fuegoNetworkIdString("93385046440755750514194170694064996624");
-    // Calculate hash of the full network ID for uint64_t storage
-    std::string networkIdStr = "93385046440755750514194170694064996624";
+    if (m_currency.m_testnet) {
+      // Testnet network ID based on P2P network ID "TEST FUEGO NET  "
+      fuegoNetworkIdString("740838354326331649518908687400750781456");
+      std::string networkIdStr = "740838354326331649518908687400750781456";
+    } else {
+      // Mainnet network ID
+      fuegoNetworkIdString("93385046440755750514194170694064996624");
+      std::string networkIdStr = "93385046440755750514194170694064996624";
+    }
     Crypto::Hash networkIdHash;
     keccak(reinterpret_cast<const uint8_t*>(networkIdStr.data()), networkIdStr.size(), networkIdHash.data, sizeof(networkIdHash.data));
     // Use first 8 bytes of hash as uint64_t

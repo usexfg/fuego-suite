@@ -551,7 +551,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
-    logger(INFO) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion
+    logger(DEBUGGING) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion
       << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*

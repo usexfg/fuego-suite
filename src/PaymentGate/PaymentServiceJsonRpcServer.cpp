@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -304,8 +304,8 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
 
-  // 🔥 ADD: Include network ID in metadata for STARK validation
-  std::string networkId = service.currency.getFuegoNetworkIdString();
+  // Include network ID in metadata for STARK validation
+  std::string networkId = service.getCurrency().getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -320,20 +320,20 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
     response.term = term;  // Always 4294967295
     response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 0.8 XFG = 8M HEAT
 
-    // 🔥 ADD: Store secret locally (never on blockchain)
+    // Store secret locally 
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
-    
-    // 🔥 ADD: Automatically generate BPDF for backup
+
+    // Automatically generate BPDF for backup
     try {
       std::string bpdfDir = service.getDefaultWalletPath() + "/bpdf";
       std::string bpdfPath = bpdfDir + "/" + response.transactionHash + ".json";
-      
+
       // Create BPDF directory if it doesn't exist
       Common::createDirectory(bpdfDir);
-      
+
       std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
-      std::string networkId = service.currency.getFuegoNetworkIdString();
-      
+      std::string networkId = service.getCurrency().getFuegoNetworkIdString();
+
       // Only generate BPDF if we have an Ethereum address
       if (!ethAddress.empty()) {
         std::error_code bpdfResult = service.generateBurnProofDataFile(
@@ -344,7 +344,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
           amount,
           std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()),
           networkId);
-        
+
         if (bpdfResult) {
           logger(Logging::WARNING) << "Failed to automatically generate BPDF for burn transaction " << response.transactionHash << ": " << bpdfResult.message();
         } else {
@@ -372,8 +372,8 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof(co
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
 
-  // 🔥 ADD: Include network ID in metadata for STARK validation
-  std::string networkId = service.currency.getFuegoNetworkIdString();
+  // Include network ID in metadata for STARK validation
+  std::string networkId = service.getCurrency().getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -388,7 +388,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof(co
     response.term = term;  // Always 4294967295
     response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 0.8 XFG = 8M HEAT
 
-    // 🔥 ADD: Generate BPDF with network ID
+    // Generate BPDF with network ID
     std::string outputPath = service.getDefaultWalletPath() + "/bpdf/" + response.transactionHash + ".json";
     std::error_code bpdfResult = service.generateBurnProofDataFile(
       response.transactionHash,
@@ -415,7 +415,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
   //  ADD: Include network ID in metadata for STARK validation
-  std::string networkId = service.currency.getFuegoNetworkIdString();
+  std::string networkId = service.getCurrency().getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -432,18 +432,18 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
 
     //  ADD: Store secret locally (never on blockchain)
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
-    
-    // 🔥 ADD: Automatically generate BPDF for backup
+
+    // Automatically generate BPDF for backup
     try {
       std::string bpdfDir = service.getDefaultWalletPath() + "/bpdf";
       std::string bpdfPath = bpdfDir + "/" + response.transactionHash + ".json";
-      
+
       // Create BPDF directory if it doesn't exist
       Common::createDirectory(bpdfDir);
-      
+
       std::string ethAddress = CryptoNote::BurnTransactionHandler::extractEthereumAddress(std::string(enhancedMetadata.begin(), enhancedMetadata.end()));
-      std::string networkId = service.currency.getFuegoNetworkIdString();
-      
+      std::string networkId = service.getCurrency().getFuegoNetworkIdString();
+
       // Only generate BPDF if we have an Ethereum address
       if (!ethAddress.empty()) {
         std::error_code bpdfResult = service.generateBurnProofDataFile(
@@ -454,7 +454,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
           amount,
           std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()),
           networkId);
-        
+
         if (bpdfResult) {
           logger(Logging::WARNING) << "Failed to automatically generate BPDF for burn transaction " << response.transactionHash << ": " << bpdfResult.message();
         } else {
@@ -477,7 +477,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithPro
   uint64_t amount = CryptoNote::parameters::BURN_DEPOSIT_LARGE_AMOUNT;  // 800 XFG
 
   //  ADD: Include network ID in metadata for STARK validation
-  std::string networkId = service.currency.getFuegoNetworkIdString();
+  std::string networkId = service.getCurrency().getFuegoNetworkIdString();
   std::string enhancedMetadata = request.metadata.empty() ?
       "network_id:" + networkId :
       request.metadata + "|network_id:" + networkId;
@@ -516,7 +516,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithPro
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(const GenerateBurnProofDataFile::Request& request, GenerateBurnProofDataFile::Response& response) {
   try {
     //  MANUAL: Generate BPDF manually (user provides secret separately)
-    std::string networkId = service.currency.getFuegoNetworkIdString();
+    std::string networkId = service.getCurrency().getFuegoNetworkIdString();
 
     //  ADD: Use default wallet path if outputPath is empty
     std::string outputPath = request.outputPath;
@@ -550,7 +550,7 @@ std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFile(con
 std::error_code PaymentServiceJsonRpcServer::handleGenerateBurnProofDataFileAuto(const GenerateBurnProofDataFileAuto::Request& request, GenerateBurnProofDataFileAuto::Response& response) {
   try {
     //  AUTO: Generate BPDF automatically with local secret retrieval
-    std::string networkId = service.currency.getFuegoNetworkIdString();
+    std::string networkId = service.getCurrency().getFuegoNetworkIdString();
 
     // Retrieve secret from local storage
     Crypto::SecretKey secret;

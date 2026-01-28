@@ -198,17 +198,17 @@ int main(int argc, char* argv[])
 
     // configure logging
 	    logManager.configure(buildLoggerConfiguration(cfgLogLevel, cfgLogFile));
-		logger(INFO, GREY) <<
+		logger(INFO, WHITE) <<
 #ifdef _WIN32
-" \n"		
-"       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n" 
+" \n"
+"       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n"
 "       888        888     888 888       d88P  Y88b d88P` `Y88b  \n"
 "       888        888     888 888       888    888 888     888  \n"
 "       8888888    888     888 8888888   888        888     888  \n"
 "       888        888     888 888       888  88888 888     888  \n"
 "       888        888     888 888       888    888 888     888  \n"
 "       888        Y88b. .d88P 888       Y88b  d88P Y88b. .d88P  \n"
-"       888         `Y88888P`  8888888888 `Y8888P88  `Y88888P`   \n"                                                   
+"       888         `Y88888P`  8888888888 `Y8888P88  `Y88888P`   \n"
 #else
 " \n"
 " ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  \n"
@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
 
     bool testnet_mode = true; // Always true for TestnetDaemon
     logger(INFO) << "Starting in testnet mode!";
-    
+
     //create objects and link them
     CryptoNote::CurrencyBuilder currencyBuilder(logManager);
     currencyBuilder.testnet(testnet_mode);
@@ -249,25 +249,25 @@ int main(int argc, char* argv[])
     NetNodeConfig netNodeConfig;
     netNodeConfig.init(vm);
     netNodeConfig.setTestnet(testnet_mode);
-    
+
     // Set testnet-specific P2P port if not explicitly configured
     if (testnet_mode && netNodeConfig.getBindPort() == P2P_DEFAULT_PORT) {
       netNodeConfig.setBindPort(P2P_DEFAULT_PORT_TESTNET);
     }
-    
+
     // Set testnet-specific default ports if not explicitly configured
     if (testnet_mode) {
       if (netNodeConfig.getBindPort() == 0) {
         netNodeConfig.setBindPort(P2P_DEFAULT_PORT_TESTNET);
       }
-    } 
+    }
 
     MinerConfig minerConfig;
     minerConfig.init(vm);
     RpcServerConfig rpcConfig;
     rpcConfig.init(vm);
 
-    
+
     // Set testnet-specific RPC port if not explicitly configured
     if (testnet_mode && rpcConfig.bindPort == RPC_DEFAULT_PORT) {
       rpcConfig.bindPort = RPC_DEFAULT_PORT_TESTNET;
@@ -317,7 +317,7 @@ int main(int argc, char* argv[])
     }
 
     logger(INFO) << "Starting core rpc server on address " << rpcConfig.getBindAddress();
-  
+
     /* Set address for remote node fee */
   	if (command_line::has_arg(vm, arg_set_fee_address)) {
 	  std::string addr_str = command_line::get_arg(vm, arg_set_fee_address);
@@ -332,9 +332,9 @@ int main(int argc, char* argv[])
 
       }
 	  }
-  
+
     /* This sets the view-key so we can confirm that
-       the fee is part of the transaction blob */       
+       the fee is part of the transaction blob */
     if (command_line::has_arg(vm, arg_set_view_key)) {
       std::string vk_str = command_line::get_arg(vm, arg_set_view_key);
 	    if (!vk_str.empty()) {
@@ -342,7 +342,7 @@ int main(int argc, char* argv[])
         logger(INFO, BRIGHT_YELLOW) << "Secret view key set: " << vk_str;
       }
     }
- 
+
     rpcServer.start(rpcConfig.bindIp, rpcConfig.bindPort);
     rpcServer.restrictRPC(command_line::get_arg(vm, arg_restricted_rpc));
     rpcServer.enableCors(command_line::get_arg(vm, arg_enable_cors));

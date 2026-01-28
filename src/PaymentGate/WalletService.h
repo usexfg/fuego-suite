@@ -64,6 +64,10 @@ public:
   void saveWallet();
 
   std::error_code saveWalletNoThrow();
+  
+  // Public access to currency for network ID access
+  const CryptoNote::Currency &getCurrency() const { return currency; }
+
   std::error_code resetWallet();
   std::error_code resetWallet(const uint32_t scanHeight);
   std::error_code exportWallet(const std::string& fileName);

@@ -325,7 +325,7 @@ private:
                          m_currency(currency),
                          m_tx_pool(tx_pool),
                          m_current_block_cumul_sz_limit(0),
-			 m_checkpoints(logger),
+			 m_checkpoints(logger, &currency),
 			 m_blockchainIndexesEnabled(blockchainIndexesEnabled),
 			 m_blockchainAutosaveEnabled(blockchainAutosaveEnabled),
                          m_upgradeDetectorV2(currency, m_blocks, BLOCK_MAJOR_VERSION_2, logger),

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2014-2017 XDN developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
@@ -74,7 +74,7 @@ namespace CryptoNote {
     bool getLowerBound(uint64_t timestamp, uint64_t startOffset, uint32_t& height);
     std::vector<Crypto::Hash> getBlockIds(uint32_t startHeight, uint32_t maxCount);
 
-    void setCheckpoints(Checkpoints&& chk_pts) { m_checkpoints = chk_pts; }
+    void setCheckpoints(Checkpoints&& chk_pts) { m_checkpoints = std::move(chk_pts); }
     bool getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks, std::list<Transaction>& txs);
     bool getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks);
     bool getAlternativeBlocks(std::list<Block>& blocks);
@@ -315,7 +315,7 @@ namespace CryptoNote {
     bool check_block_timestamp_main(const Block &b);
     bool check_block_timestamp(std::vector<uint64_t> timestamps, const Block &b);
     uint64_t get_adjusted_time();
-    bool complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_height, std::vector<uint64_t>& timestamps); 
+    bool complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_height, std::vector<uint64_t>& timestamps);
     bool checkBlockVersion(const Block& b, const Crypto::Hash& blockHash);
     bool checkParentBlockSize(const Block& b, const Crypto::Hash& blockHash);
     bool checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cumulativeBlockSize, uint64_t height);

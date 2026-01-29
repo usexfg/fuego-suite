@@ -400,7 +400,8 @@ func createWallet() {
 		// Set up logging
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			appState.app.QueueUpdateDrawstderr, _ := cmd.StderrPipe()
+			appState.app.QueueUpdateDraw(func() {})
+		stderr, _ := cmd.StderrPipe()
 
 	err := cmd.Start()
 	if err != nil {
@@ -428,6 +429,7 @@ func createWallet() {
 }
 
 // getBalance gets the wallet balance
+
 func (app *AppState) getBalance() {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
@@ -457,6 +459,7 @@ func (app *AppState) getBalance() {
 	balanceXFG := float64(balanceInt) / float64(CurrentConfig.CoinUnits)
 	showMessage(fmt.Sprintf("Balance: %.8f %s", balanceXFG, CurrentConfig.CoinName))
 }
+
 
 // showSendTransactionForm displays the send transaction form
 func (app *AppState) showSendTransactionForm() {
@@ -526,7 +529,7 @@ func (app *AppState) showSendTransactionForm() {
 }
 
 // showElderfierMenu displays the elderfier menu
-func (app *AppState) showElderfierMenu() { {
+func (app *AppState) showElderfierMenu() {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return
@@ -698,7 +701,7 @@ func updateENindexKeys() {
 }
 
 // showBurn2MintMenu displays the burn2mint menu
-func (app *AppState) showBurn2MintMenu() { {
+func (app *AppState) showBurn2MintMenu() {
 	if !appState.isWalletRunning {
 		showMessage("Wallet RPC is not running")
 		return

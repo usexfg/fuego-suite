@@ -108,12 +108,19 @@ void CommitmentIndex::addCommitment(const CommitmentEntry& entry) {
         m_pendingElderfierStakes[wallet].signing_pubkey = entry.signingPubKey;
       }
 
-      // Auto-register when 20 deposits across all tiers (4,444 XFG total) are confirmed
-      const uint64_t REGISTRATION_AMOUNT = CryptoNote::parameters::ELDERKING_CEREMONY_AMOUNT;
-      const uint32_t REGISTRATION_COUNT = CryptoNote::parameters::ELDERKING_TOTAL_DEPOSITS;
-      if (m_pendingElderfierStakes[wallet].deposit_count == REGISTRATION_COUNT &&
-          m_pendingElderfierStakes[wallet].total_amount >= REGISTRATION_AMOUNT) {
-        tryRegisterElderfier(wallet, m_pendingElderfierStakes[wallet].signing_pubkey, m_pendingElderfierStakes[wallet].alias);
+      // Auto-register when 20 deposits across all tiers are confirmed
+      const uint64_t REGISTRATION_AMOUNT = m_currency.isTestnet()
+          ? CryptoNote::parameters::TESTIFIER_CEREMONY_AMOUNT
+          : CryptoNote::parameters::ELDERKING_CEREMONY_AMOUNT;
+      const uint32_t REGISTRATION_COUNT = m_currency.isTestnet()
+          ? CryptoNote::parameters::TESTIFIER_TOTAL_DEPOSITS
+          : CryptoNote::parameters::ELDERKING_TOTAL_DEPOSITS;
+
+      auto& pending = m_pendingElderfierStakes[wallet];
+
+      if (pending.deposit_count >= REGISTRATION_COUNT &&
+          pending.total_amount >= REGISTRATION_AMOUNT) {
+        tryRegisterElderfier(wallet, pending.signing_pubkey, pending.alias);
         m_pendingElderfierStakes.erase(wallet);
       }
     }
@@ -1210,8 +1217,8 @@ void CommitmentIndex::serialize(ISerializer& s) {
   // (stored as individual fields since SlashProposal contains a std::set)
   // We skip m_slashProposals for now — slashes are rare and verifiable on-chain via commitments
 
-  // Double-sign events (last 10 epochs worth, non-critical to persist)
-  // Skipped — regenerated from epoch reports when signatures arrive
+  // Epoch reports (last 10)
+  s(m_epochReports, "epoch_reports");
 
   if (s.type() == ISerializer::INPUT) {
     // Rebuild all derived data from m_commitments on load

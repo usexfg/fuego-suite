@@ -12,6 +12,7 @@
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "CommitmentIndex.h"
+#include <Logging/LoggerRef.h>
 
 namespace CryptoNote {
 
@@ -23,7 +24,8 @@ struct COMMAND_ELDERFIER_SIGNATURE;
 // Handles P2P signature gossip, consensus threshold tracking, and active signing
 class ElderfierSignatureBroadcaster {
 public:
-  ElderfierSignatureBroadcaster(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint = nullptr);
+  ElderfierSignatureBroadcaster(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint,
+                               Logging::ILogger& logger);
   ~ElderfierSignatureBroadcaster();
 
   // Handle incoming signature messages from P2P network
@@ -47,6 +49,9 @@ public:
   // Configure signing keys (enables active signing mode)
   void setSigningKeys(const Crypto::PublicKey& pub, const Crypto::SecretKey& sec);
 
+  // Set wallet address for receiving banking fee rewards
+  void setPayoutAddress(const std::string& address);
+
   // Start broadcaster (and signing thread if keys are set)
   void start();
 
@@ -67,11 +72,13 @@ private:
   IP2pEndpoint* m_p2pEndpoint;
   mutable std::mutex m_mutex;
   bool m_running = false;
+  Logging::LoggerRef m_logger;
 
   // Signing keys (set via --elderfier-key)
   Crypto::PublicKey m_signingPubKey;
   Crypto::SecretKey m_signingSecKey;
   bool m_hasSigningKeys = false;
+  std::string m_payoutAddress;  // wallet address for banking fee rewards
   uint8_t m_myEfid = 0;        // resolved from registration by pubkey
   bool m_efidResolved = false;  // true once we've looked up EFiD
 

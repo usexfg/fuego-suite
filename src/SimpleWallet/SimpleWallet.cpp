@@ -550,6 +550,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("migrate_cold", boost::bind(&simple_wallet::migrate_cold, this, boost::arg<1>()), "migrate_cold <id> - Migrate a pre-v3 legacy deposit to v3 format (register commitment for L2 claims)");
   // Hidden — only surfaced inside the elder_council panel. Direct use requires knowing it exists.
   m_consoleHandler.setHandler("propose_slash", boost::bind(&simple_wallet::propose_slash, this, boost::arg<1>()), "");
+  m_consoleHandler.setHandler("get_report", boost::bind(&simple_wallet::get_report, this, boost::arg<1>()), "");
 
   // NOTE: create_cold_secret and gen_proof might be better off as INTERNAL commands
   // Users should NOT manually create commitments (auto-embedded in tx_extra)
@@ -2289,6 +2290,11 @@ bool simple_wallet::elderking_ceremony(const std::vector<std::string> &args)
         elderfierDeposit.metadata.insert(elderfierDeposit.metadata.end(), alias.begin(), alias.end());
         elderfierDeposit.metadata.insert(elderfierDeposit.metadata.end(),
           signingPubKey.data, signingPubKey.data + 32);
+        // v2: append payout address keys (spend + view = 64 bytes) for coinbase reward delivery
+        elderfierDeposit.metadata.insert(elderfierDeposit.metadata.end(),
+          walletKeys.address.spendPublicKey.data, walletKeys.address.spendPublicKey.data + 32);
+        elderfierDeposit.metadata.insert(elderfierDeposit.metadata.end(),
+          walletKeys.address.viewPublicKey.data, walletKeys.address.viewPublicKey.data + 32);
         elderfierDeposit.signature.clear();
         elderfierDeposit.isSlashable        = true;
 
@@ -2582,12 +2588,17 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
   Common::Console::setTextColor(Common::Console::Color::Default);
   success_msg_writer() << "";
   Common::Console::setTextColor(Common::Console::Color::BrightCyan);
+  std::cout << "  get_report [epoch]\n";
+  Common::Console::setTextColor(Common::Console::Color::Default);
+  success_msg_writer() << "      Fetch the epoch report for a given epoch (default: latest).";
+  success_msg_writer() << "      Shows EFier activity, double-sign events, and slash advisories.";
+  success_msg_writer() << "";
+  Common::Console::setTextColor(Common::Console::Color::BrightCyan);
   std::cout << "  propose_slash <deposit_txhash> <reason>\n";
   Common::Console::setTextColor(Common::Console::Color::Default);
   success_msg_writer() << "      Submit a slash proposal for elder_council review.";
   success_msg_writer() << "      Reasons: double_sign | inactive_<N>_epochs";
   success_msg_writer() << "      Requires explicit confirmation before broadcasting.";
-  success_msg_writer() << "      Advisory notices appear in: /get_epoch_report";
   success_msg_writer() << "";
   Common::Console::setTextColor(Common::Console::Color::BrightCyan);
   std::cout << "  unstake\n";
@@ -2598,6 +2609,120 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
   success_msg_writer() << "";
   success_msg_writer() << "  Guard the Realm well, King " << registeredAlias << ".";
   success_msg_writer() << "";
+  return true;
+}
+
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::get_report(const std::vector<std::string> &args)
+{
+  uint64_t epoch = 0;
+  if (!args.empty()) {
+    try { epoch = std::stoull(args[0]); }
+    catch (...) { fail_msg_writer() << "Usage: get_report [epoch]"; return true; }
+  }
+
+  try {
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    COMMAND_RPC_GET_EPOCH_REPORT::request req;
+    COMMAND_RPC_GET_EPOCH_REPORT::response res;
+    req.epoch = epoch;
+    invokeJsonCommand(httpClient, "/get_epoch_report", req, res);
+
+    if (!res.found) {
+      fail_msg_writer() << "No epoch report found" << (epoch > 0 ? " for epoch " + std::to_string(epoch) : "") << ".";
+      return true;
+    }
+
+    success_msg_writer() << "";
+    Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+    std::cout << "╔════════════════════════════════════════════════════════════╗\n";
+    std::cout << "║   ";
+    Common::Console::setTextColor(Common::Console::Color::BrightWhite);
+    std::cout << "EPOCH " << std::left << std::setw(6) << res.epoch_number << " REPORT";
+    std::cout << std::setw(33) << " ";
+    Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+    std::cout << "║\n";
+    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
+    Common::Console::setTextColor(Common::Console::Color::Default);
+    success_msg_writer() << "";
+    success_msg_writer() << "  Blocks:           " << res.epoch_start_block << " — " << res.epoch_end_block;
+    success_msg_writer() << "  Generated at:     Block " << res.generated_at_block;
+    success_msg_writer() << "  Active EFiers:    " << res.active_efer_count;
+    success_msg_writer() << "  Participating:    " << res.participating_efer_count;
+    success_msg_writer() << "  Fees distributed: " << m_currency.formatAmount(res.total_fees_distributed) << " XFG";
+    success_msg_writer() << "";
+
+    // Signing / Missing
+    if (!res.signing_efier_ids.empty()) {
+      std::string ids;
+      for (auto id : res.signing_efier_ids) ids += std::to_string(id) + " ";
+      success_msg_writer() << "  Signed:           [" << ids << "]";
+    }
+    if (!res.missing_efier_ids.empty()) {
+      std::string ids;
+      for (auto id : res.missing_efier_ids) ids += std::to_string(id) + " ";
+      Common::Console::setTextColor(Common::Console::Color::BrightRed);
+      std::cout << "  Missing:          [" << ids << "]\n";
+      Common::Console::setTextColor(Common::Console::Color::Default);
+    }
+
+    // EFier activity table
+    if (!res.efier_activity.empty()) {
+      success_msg_writer() << "";
+      Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+      std::cout << "  ── EFIER ACTIVITY ──────────────────────────────────────\n";
+      Common::Console::setTextColor(Common::Console::Color::Default);
+      for (const auto& ef : res.efier_activity) {
+        std::string flags;
+        if (ef.is_slashed) flags += " [SLASHED]";
+        if (ef.is_unstaking) flags += " [UNSTAKING]";
+        if (ef.consecutive_missed_epochs > 0)
+          flags += " [MISSED:" + std::to_string(ef.consecutive_missed_epochs) + "]";
+
+        Common::Console::setTextColor(ef.signed_this_epoch ? Common::Console::Color::BrightGreen : Common::Console::Color::BrightRed);
+        std::cout << "  EFiD " << std::setw(3) << static_cast<int>(ef.elderfier_id);
+        Common::Console::setTextColor(Common::Console::Color::BrightCyan);
+        std::cout << "  @" << std::left << std::setw(9) << ef.ceremony_alias;
+        Common::Console::setTextColor(Common::Console::Color::Default);
+        std::cout << "  sigs=" << std::setw(3) << ef.signatures_submitted
+                  << "  fees=" << std::setw(12) << m_currency.formatAmount(ef.fees_earned)
+                  << (ef.signed_this_epoch ? "  OK" : "  MISS")
+                  << flags << "\n";
+      }
+    }
+
+    // Double-sign events
+    if (!res.double_sign_events.empty()) {
+      success_msg_writer() << "";
+      Common::Console::setTextColor(Common::Console::Color::BrightRed);
+      std::cout << "  ── DOUBLE-SIGN EVENTS ──────────────────────────────────\n";
+      Common::Console::setTextColor(Common::Console::Color::Default);
+      for (const auto& ds : res.double_sign_events) {
+        success_msg_writer() << "  EFiD " << static_cast<int>(ds.elderfier_id)
+                             << "  root_a=" << ds.root_a.substr(0, 16) << "..."
+                             << "  root_b=" << ds.root_b.substr(0, 16) << "..."
+                             << "  block=" << ds.block_height
+                             << "  detected=" << ds.detected_at_block;
+      }
+    }
+
+    // Slash advisories
+    if (!res.slash_advisory.empty()) {
+      success_msg_writer() << "";
+      Common::Console::setTextColor(Common::Console::Color::BrightRed);
+      std::cout << "  ── SLASH ADVISORIES ────────────────────────────────────\n";
+      Common::Console::setTextColor(Common::Console::Color::Default);
+      for (const auto& adv : res.slash_advisory) {
+        success_msg_writer() << "  " << adv;
+      }
+    }
+
+    success_msg_writer() << "";
+  } catch (const ConnectException&) {
+    printConnectionError();
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Error: " << e.what();
+  }
   return true;
 }
 

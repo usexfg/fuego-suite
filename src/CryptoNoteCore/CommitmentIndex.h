@@ -106,6 +106,15 @@ struct DoubleSignEvent {
   uint64_t block_height;     // Block height at which both signatures claim to apply
   uint64_t detected_at_block;
   std::string ceremony_alias;  // For human-readable logs
+
+  void serialize(ISerializer& s) {
+    s(elderfier_id, "elderfier_id");
+    s.binary(&root_a, sizeof(root_a), "root_a");
+    s.binary(&root_b, sizeof(root_b), "root_b");
+    s(block_height, "block_height");
+    s(detected_at_block, "detected_at_block");
+    s(ceremony_alias, "ceremony_alias");
+  }
 };
 
 // Per-epoch activity report for elder_council review
@@ -125,6 +134,18 @@ struct EpochReport {
     bool isSlashed = false;
     bool isUnstaking = false;
     uint32_t consecutiveMissedEpochs = 0;
+
+    void serialize(ISerializer& s) {
+      s(elderfier_id, "elderfier_id");
+      s(address, "address");
+      s(ceremonyAlias, "ceremony_alias");
+      s(signedThisEpoch, "signed_this_epoch");
+      s(signaturesSubmitted, "signatures_submitted");
+      s(feesEarned, "fees_earned");
+      s(isSlashed, "is_slashed");
+      s(isUnstaking, "is_unstaking");
+      s(consecutiveMissedEpochs, "consecutive_missed_epochs");
+    }
   };
 
   std::vector<EFierActivity> efierActivity;
@@ -139,6 +160,21 @@ struct EpochReport {
   // A council member must explicitly run `propose_slash` in the wallet to act on these.
   // "DOUBLE_SIGN:<efid>" or "INACTIVE:<efid>:<N>_epochs_missed"
   std::vector<std::string> slash_advisory;
+
+  void serialize(ISerializer& s) {
+    s(epochNumber, "epoch_number");
+    s(epochStartBlock, "epoch_start_block");
+    s(epochEndBlock, "epoch_end_block");
+    s(generatedAtBlock, "generated_at_block");
+    s(efierActivity, "efier_activity");
+    s(signingEfierIds, "signing_efier_ids");
+    s(missingEfierIds, "missing_efier_ids");
+    s(doubleSignEvents, "double_sign_events");
+    s(totalFeesDistributed, "total_fees_distributed");
+    s(activeEfierCount, "active_efer_count");
+    s(participatingEfierCount, "participating_efer_count");
+    s(slash_advisory, "slash_advisory");
+  }
 };
 
 // Elderfier registration status tracking (public for method signatures)

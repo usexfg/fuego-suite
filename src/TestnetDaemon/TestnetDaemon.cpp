@@ -67,6 +67,7 @@ namespace
     const command_line::arg_descriptor<bool>        arg_print_genesis_tx = { "print-genesis-tx", "Prints genesis' block tx hex to insert it to config and exits" };
     const command_line::arg_descriptor<bool>        arg_generate_new_genesis = { "generate-new-genesis", "Generates a new genesis block for testnet" };
     const command_line::arg_descriptor<std::string> arg_testifier_key = {"testifier-key", "Secret signing key (hex) for Testifier merkle root signing.", ""};
+    const command_line::arg_descriptor<std::string> arg_testifier_address = {"testifier-address", "Wallet address for receiving EFier banking fee rewards.", ""};
 }
 
 bool command_line_preprocessor(const boost::program_options::variables_map& vm, LoggerRef& logger);
@@ -152,6 +153,7 @@ int main(int argc, char* argv[])
    command_line::add_arg(desc_cmd_sett, arg_print_genesis_tx);
       command_line::add_arg(desc_cmd_sett, arg_generate_new_genesis);
       command_line::add_arg(desc_cmd_sett, arg_testifier_key);
+      command_line::add_arg(desc_cmd_sett, arg_testifier_address);
 
       RpcServerConfig::initOptions(desc_cmd_sett);
    CoreConfig::initOptions(desc_cmd_sett);
@@ -354,8 +356,19 @@ int main(int argc, char* argv[])
             logger(INFO, BRIGHT_CYAN) << "  Signing pubkey: " << Common::podToHex(sigPub);
             logger(INFO, BRIGHT_CYAN) << "========================================";
             logger(INFO, BRIGHT_CYAN) << "";
-            elderfierBroadcaster = std::make_unique<CryptoNote::ElderfierSignatureBroadcaster>(ccore, p2psrv, &p2psrv);
+            elderfierBroadcaster = std::make_unique<CryptoNote::ElderfierSignatureBroadcaster>(ccore, p2psrv, &p2psrv, logManager);
             elderfierBroadcaster->setSigningKeys(sigPub, sigSec);
+
+            // Set payout address if provided
+            std::string payoutAddr = command_line::get_arg(vm, arg_testifier_address);
+            if (!payoutAddr.empty()) {
+              elderfierBroadcaster->setPayoutAddress(payoutAddr);
+              logger(INFO, BRIGHT_CYAN) << "  Payout address: " << payoutAddr;
+            } else {
+              logger(WARNING, BRIGHT_YELLOW) << "No --testifier-address set. EFier will not receive banking fee rewards.";
+              logger(WARNING, BRIGHT_YELLOW) << "Use: --testifier-address=<your_wallet_address>";
+            }
+
             elderfierBroadcaster->start();
             logger(INFO, BRIGHT_GREEN) << "Testifier signature broadcaster started";
           } else {

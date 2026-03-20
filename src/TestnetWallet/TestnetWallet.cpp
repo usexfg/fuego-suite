@@ -706,10 +706,10 @@ namespace CryptoNote
 
       // ── DRY RUN: verify wallet has enough separate outputs ──────────────
       // After each deposit TX, change outputs are locked (unconfirmed) and
-      // cannot be spent by subsequent deposits. We simulate the same bucket-
-      // based selection that selectTransfersToSend uses: group outputs into
-      // power-of-10 buckets, take one from each bucket per round (smallest
-      // bucket first) until neededMoney is covered. Change is NOT added back.
+      // cannot be spent by subsequent deposits. Simulate same bucket-based selection 
+      // that selectTransfersToSend uses: group outputs into power-of-10 buckets
+      // take one from each bucket per round (smallest bucket first) until 
+      // neededMoney is covered w/o adding change back.
       {
         auto unspent = m_wallet->getUnspentOutputs();
         std::vector<uint64_t> available;

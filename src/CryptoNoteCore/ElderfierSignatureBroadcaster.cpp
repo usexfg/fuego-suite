@@ -31,8 +31,10 @@
 
 namespace CryptoNote {
 
-ElderfierSignatureBroadcaster::ElderfierSignatureBroadcaster(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint)
-  : m_core(ccore), m_p2p(p2psrv), m_p2pEndpoint(p2pEndpoint), m_running(false) {
+ElderfierSignatureBroadcaster::ElderfierSignatureBroadcaster(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint,
+                                                             Logging::ILogger& logger)
+  : m_core(ccore), m_p2p(p2psrv), m_p2pEndpoint(p2pEndpoint), m_running(false),
+    m_logger(logger, "EFsign") {
   // Derive sign-lock file path from blockchain data dir (persists across restarts)
   const std::string& dataDir = m_core.get_blockchain_storage().getConfigFolder();
   m_signLockPath = dataDir.empty() ? "efsig_lock.dat" : dataDir + "/efsig_lock.dat";
@@ -99,6 +101,11 @@ void ElderfierSignatureBroadcaster::setSigningKeys(const Crypto::PublicKey& pub,
   m_signingPubKey = pub;
   m_signingSecKey = sec;
   m_hasSigningKeys = true;
+}
+
+void ElderfierSignatureBroadcaster::setPayoutAddress(const std::string& address) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  m_payoutAddress = address;
 }
 
 void ElderfierSignatureBroadcaster::start() {
@@ -175,6 +182,7 @@ bool ElderfierSignatureBroadcaster::checkSignLock(uint32_t height, const Crypto:
 
 void ElderfierSignatureBroadcaster::signingThread() {
   // Wait for core to fully sync before signing
+  m_logger(Logging::INFO) << "Signing thread started, waiting 5s for sync...";
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
   while (m_signingRunning) {
@@ -193,11 +201,20 @@ void ElderfierSignatureBroadcaster::signingThread() {
                 registered_pk == m_signingPubKey) {
               m_myEfid = id;
               m_efidResolved = true;
+              m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "Resolved EFiD=" << (int)m_myEfid
+                << " from signing pubkey " << Common::podToHex(m_signingPubKey).substr(0, 16) << "...";
+
+              // Register payout address for banking fee distribution
+              if (!m_payoutAddress.empty()) {
+                blockchain.getCommitmentIndex().registerElderfierAddress(id, m_payoutAddress);
+                m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "EF" << (int)m_myEfid
+                  << " payout address registered: " << m_payoutAddress;
+              }
               break;
             }
           }
           if (!m_efidResolved) {
-            // Not registered yet — skip signing this block
+            m_logger(Logging::DEBUGGING) << "EFiD not registered yet at height " << currentHeight << ", skipping";
             m_lastSignedHeight = currentHeight;
             continue;
           }
@@ -208,28 +225,24 @@ void ElderfierSignatureBroadcaster::signingThread() {
 
         // only sign if there are commitments (non-zero root)
         if (commitmentRoot == Crypto::Hash()) {
+          m_logger(Logging::DEBUGGING) << "No commitments at height " << currentHeight << ", empty root";
           m_lastSignedHeight = currentHeight;
         } else {
           // ── Sign-once-per-height safety lock ──────────────────────────────────
-          // Check the persistent sign-lock before producing any signature.
-          // This prevents accidental double-signs from restarts, reorgs, or
-          // any software bug that would cause us to sign two different roots
-          // at the same block height.
           bool alreadySameRoot = false;
           {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (!checkSignLock(currentHeight, commitmentRoot, alreadySameRoot)) {
-              // SAFETY REFUSAL: we already committed to a different root at this height.
-              // Signing now would produce a double-sign and expose us to slashing.
-              auto it = m_signedRoots.find(currentHeight);
-              // Log but do NOT sign.
-              (void)it;  // suppress unused warning; log omitted to avoid logger dependency here
+              // SAFETY REFUSAL: already committed to a different root at this height.
+              m_logger(Logging::WARNING, Logging::BRIGHT_RED)
+                << "DOUBLE-SIGN PREVENTED at height " << currentHeight
+                << "! Already signed different root. Refusing to sign.";
               m_lastSignedHeight = currentHeight;
               continue;
             }
           }
           if (alreadySameRoot) {
-            // Already signed the same root — nothing to do (idempotent)
+            m_logger(Logging::DEBUGGING) << "Already signed same root at height " << currentHeight << ", skip";
             m_lastSignedHeight = currentHeight;
             continue;
           }
@@ -256,8 +269,7 @@ void ElderfierSignatureBroadcaster::signingThread() {
                 COMMAND_ELDERFIER_SIGNATURE::ID, buf, nullptr);
           }
 
-          // Persist sign-lock BEFORE broadcasting — if we crash after persisting
-          // but before broadcasting, we're safe (won't sign a different root on restart).
+          // Persist sign-lock BEFORE broadcasting
           {
             std::lock_guard<std::mutex> lock(m_mutex);
             persistSignLock(currentHeight, commitmentRoot);
@@ -269,20 +281,26 @@ void ElderfierSignatureBroadcaster::signingThread() {
           cached.signature = sig;
           cached.elderfier_id = m_myEfid;
           cached.block_height = currentHeight;
+          cached.received_block_height = currentHeight;
           cached.timestamp = sig_msg.timestamp;
           cached.sig_algorithm = 0;
           m_core.get_blockchain_storage().addSignatureToCache(cached);
+
+          m_logger(Logging::INFO, Logging::BRIGHT_CYAN) << "EF" << (int)m_myEfid
+            << " signed root " << Common::podToHex(commitmentRoot).substr(0, 16) << "..."
+            << " at height " << currentHeight << ", broadcast to peers";
 
           m_lastSignedHeight = currentHeight;
         }
       }
     } catch (const std::exception& e) {
-      // Silently continue — signing failures are non-fatal
+      m_logger(Logging::WARNING) << "Signing error: " << e.what();
     }
 
     // Check for new blocks every 2 seconds
     std::this_thread::sleep_for(std::chrono::seconds(2));
   }
+  m_logger(Logging::INFO) << "Signing thread stopped";
 }
 
 bool ElderfierSignatureBroadcaster::validateSignature(const CachedElderfierSignature& sig) const {

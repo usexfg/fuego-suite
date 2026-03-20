@@ -982,21 +982,48 @@ void WalletLegacy::synchronizationCompleted(std::error_code result) {
 void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Hash& transactionHash) {
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
-  // Use container from subscription that fired the event.
-  // For sub-address outputs the transaction lives in the sub-address container,
-  // not in primary wallet container (m_transferDetails).
-  ITransfersContainer& container = object->getContainer();
-
+  // Aggregate balance across ALL containers (primary + sub-addresses).
+  // A cross-container spend (e.g. subaddress input → primary change output)
+  // fires onTransactionUpdated once per container.  Each container only sees
+  // its own inputs/outputs, so a single-container view gives a wrong net.
+  // We query every container for this txHash and sum up.
   TransactionInformation txInfo;
-  uint64_t amountIn;
-  uint64_t amountOut;
-  if (container.getTransactionInformation(transactionHash, txInfo, &amountIn, &amountOut)) {
+  bool haveTxInfo = false;
+  uint64_t totalIn = 0;
+  uint64_t totalOut = 0;
+  std::vector<TransactionOutputInformation> allDepositOuts;
+  std::vector<TransactionOutputInformation> allSpentDeposits;
+
+  auto queryContainer = [&](ITransfersContainer& c) {
+    TransactionInformation ti;
+    uint64_t cIn = 0, cOut = 0;
+    if (c.getTransactionInformation(transactionHash, ti, &cIn, &cOut)) {
+      if (!haveTxInfo) { txInfo = ti; haveTxInfo = true; }
+      totalIn  += cIn;
+      totalOut += cOut;
+      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
+      allDepositOuts.insert(allDepositOuts.end(), deps.begin(), deps.end());
+      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
+      allSpentDeposits.insert(allSpentDeposits.end(), spent.begin(), spent.end());
+    }
+  };
+
+  // Primary container
+  if (m_transferDetails) {
+    queryContainer(*m_transferDetails);
+  }
+  // Sub-address containers
+  for (const auto& sa : m_subAddresses) {
+    if (sa.container) {
+      queryContainer(*sa.container);
+    }
+  }
+
+  if (haveTxInfo) {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
 
-    auto newDepositOuts = container.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
-    auto spentDeposits = container.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
-
-    events = m_transactionsCache.onTransactionUpdated(txInfo, static_cast<int64_t>(amountOut)-static_cast<int64_t>(amountIn), newDepositOuts, spentDeposits, m_currency);
+    int64_t txBalance = static_cast<int64_t>(totalOut) - static_cast<int64_t>(totalIn);
+    events = m_transactionsCache.onTransactionUpdated(txInfo, txBalance, allDepositOuts, allSpentDeposits, m_currency);
 
     auto actualDepositBalanceChangedEvent = getActualDepositBalanceChangedEvent();
     auto pendingDepositBalanceChangedEvent = getPendingDepositBalanceChangedEvent();

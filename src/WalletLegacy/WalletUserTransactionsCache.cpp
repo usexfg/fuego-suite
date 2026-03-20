@@ -334,6 +334,9 @@ std::deque<std::unique_ptr<WalletLegacyEvent>> WalletUserTransactionsCache::onTr
     tr.blockHeight = txInfo.blockHeight;
     tr.timestamp = txInfo.timestamp;
     tr.state = WalletLegacyTransactionState::Active;
+    // Update totalAmount — cross-container transactions (e.g. subaddress spend)
+    // may arrive with a more complete aggregate balance on subsequent calls.
+    tr.totalAmount = txBalance;
     // notification event
     events.push_back(std::unique_ptr<WalletLegacyEvent>(new WalletTransactionUpdatedEvent(id)));
 
@@ -504,7 +507,7 @@ bool WalletUserTransactionsCache::getDeposit(DepositId depositId, Deposit& depos
 
   deposit = m_deposits[depositId].deposit;
 
-  // Populate transactionHash and height from the creating transaction
+  // Populate transactionHash, height, and extra from the creating transaction
   // (these fields aren't serialized to maintain backward compat with old wallet caches)
   if (deposit.creatingTransactionId < m_transactions.size()) {
     const auto& tx = m_transactions[deposit.creatingTransactionId];
@@ -514,6 +517,11 @@ bool WalletUserTransactionsCache::getDeposit(DepositId depositId, Deposit& depos
     bool isForever = (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
     bool isPending = (tx.blockHeight == static_cast<int32_t>(WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT));
     deposit.unlockHeight = (isForever || isPending) ? 0 : deposit.height + deposit.term;
+    // Recover deposit extra from the transaction extra (Deposit::extra is not serialized
+    // so it's lost on wallet reload; the transaction extra IS serialized).
+    if (deposit.extra.empty() && !tx.extra.empty()) {
+      deposit.extra = tx.extra;
+    }
   }
 
   return true;

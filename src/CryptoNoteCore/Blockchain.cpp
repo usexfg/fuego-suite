@@ -64,7 +64,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 8
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 6
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -770,20 +770,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
           {
             m_spent_keys.insert(std::make_pair(::boost::get<TransactionInputCommitmentSpend>(i).keyImage, b));
           }
-          else if (i.type() == typeid(TransactionInputHashLockClaim))
-          {
-            const auto& claim = ::boost::get<TransactionInputHashLockClaim>(i);
-            if (claim.outputIndex < m_htlcOutputs.size()) {
-              m_htlcOutputs[claim.outputIndex].isSpent = true;
-            }
-          }
-          else if (i.type() == typeid(TransactionInputHashLockRefund))
-          {
-            const auto& refund = ::boost::get<TransactionInputHashLockRefund>(i);
-            if (refund.outputIndex < m_htlcOutputs.size()) {
-              m_htlcOutputs[refund.outputIndex].isSpent = true;
-            }
-          }
         }
 
         // process outputs
@@ -802,18 +788,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             ref.commitKey            = commitOut.commitKey;
             ref.term                 = commitOut.term;
             m_commitmentOutputs[out.amount].push_back(ref);
-          } else if (out.target.type() == typeid(TransactionOutputHashLock)) {
-            const auto& htlcOut = ::boost::get<TransactionOutputHashLock>(out.target);
-            HashLockOutputUsage htlcUsage;
-            htlcUsage.transactionIndex    = transactionIndex;
-            htlcUsage.outputInTransaction = o;
-            htlcUsage.amount              = out.amount;
-            htlcUsage.recipientKey        = htlcOut.recipientKey;
-            htlcUsage.refundKey           = htlcOut.refundKey;
-            htlcUsage.hashLock            = htlcOut.hashLock;
-            htlcUsage.timeoutHeight       = htlcOut.timeoutHeight;
-            htlcUsage.isSpent             = false;
-            m_htlcOutputs.push_back(htlcUsage);
           }
         }
         interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b);
@@ -845,25 +819,13 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             entry.senderAddress = Common::podToHex(dep.elderfierCommitment);
             std::string alias;
             Crypto::PublicKey signingPubKey = {};
-            std::string payoutAddress;
             if (dep.metadata.size() >= 41 && dep.metadata[0] == 0xEA) {
               alias = std::string(dep.metadata.begin() + 1, dep.metadata.begin() + 9);
               std::memcpy(signingPubKey.data, &dep.metadata[9], 32);
-              // v2: extract payout address keys
-              if (dep.metadata.size() >= 105) {
-                AccountPublicAddress payoutAddr;
-                std::memcpy(payoutAddr.spendPublicKey.data, &dep.metadata[41], 32);
-                std::memcpy(payoutAddr.viewPublicKey.data, &dep.metadata[73], 32);
-                payoutAddress = m_currency.accountAddressAsString(payoutAddr);
-              }
             } else if (dep.metadata.size() >= 2 && dep.metadata[0] == 0xEA) {
               alias = std::string(dep.metadata.begin() + 1, dep.metadata.end());
             }
-            if (!payoutAddress.empty()) {
-              entry.senderAddress = payoutAddress;
-            } else if (!alias.empty()) {
-              entry.senderAddress = "CEREMONY:" + alias;
-            }
+            if (!alias.empty()) entry.senderAddress = "CEREMONY:" + alias;
             entry.ceremonyAlias = alias;
             entry.signingPubKey = signingPubKey;
             m_commitmentIndex.addCommitment(entry);
@@ -2190,100 +2152,6 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
 
         ++inputIndex;
       }
-      else if (txin.type() == typeid(TransactionInputHashLockClaim))
-      {
-        const TransactionInputHashLockClaim& claim = boost::get<TransactionInputHashLockClaim>(txin);
-
-        // Validate HTLC output reference
-        if (claim.outputIndex >= m_htlcOutputs.size()) {
-          logger(ERROR, BRIGHT_RED) << "HTLC claim references non-existent output index " << claim.outputIndex
-                                    << " in tx " << transactionHash;
-          return false;
-        }
-
-        const auto& htlc = m_htlcOutputs[claim.outputIndex];
-
-        if (htlc.isSpent) {
-          logger(DEBUGGING) << "HTLC output " << claim.outputIndex << " already spent in tx " << transactionHash;
-          return false;
-        }
-
-        // Amount must match
-        if (claim.amount != htlc.amount) {
-          logger(ERROR, BRIGHT_RED) << "HTLC claim amount mismatch: claim=" << claim.amount
-                                    << " htlc=" << htlc.amount << " in tx " << transactionHash;
-          return false;
-        }
-
-        // Verify preimage: cn_fast_hash(preimage) must equal hashLock
-        Crypto::Hash computedHash;
-        Crypto::cn_fast_hash(claim.preimage.data, sizeof(claim.preimage.data), computedHash);
-        if (computedHash != htlc.hashLock) {
-          logger(INFO, BRIGHT_WHITE) << "HTLC claim preimage mismatch in tx " << transactionHash;
-          return false;
-        }
-
-        // Verify signature with recipientKey
-        if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
-          if (tx.signatures[inputIndex].size() != 1) {
-            logger(ERROR, BRIGHT_RED) << "HTLC claim expects exactly 1 signature in tx " << transactionHash;
-            return false;
-          }
-          if (!Crypto::check_signature(tx_prefix_hash, htlc.recipientKey, tx.signatures[inputIndex][0])) {
-            logger(INFO, BRIGHT_WHITE) << "HTLC claim signature verification failed in tx " << transactionHash;
-            return false;
-          }
-        }
-
-        ++inputIndex;
-      }
-      else if (txin.type() == typeid(TransactionInputHashLockRefund))
-      {
-        const TransactionInputHashLockRefund& refund = boost::get<TransactionInputHashLockRefund>(txin);
-
-        // Validate HTLC output reference
-        if (refund.outputIndex >= m_htlcOutputs.size()) {
-          logger(ERROR, BRIGHT_RED) << "HTLC refund references non-existent output index " << refund.outputIndex
-                                    << " in tx " << transactionHash;
-          return false;
-        }
-
-        const auto& htlc = m_htlcOutputs[refund.outputIndex];
-
-        if (htlc.isSpent) {
-          logger(DEBUGGING) << "HTLC output " << refund.outputIndex << " already spent in tx " << transactionHash;
-          return false;
-        }
-
-        // Amount must match
-        if (refund.amount != htlc.amount) {
-          logger(ERROR, BRIGHT_RED) << "HTLC refund amount mismatch: refund=" << refund.amount
-                                    << " htlc=" << htlc.amount << " in tx " << transactionHash;
-          return false;
-        }
-
-        // Timeout must have expired
-        uint32_t currentHeight = getCurrentBlockchainHeight();
-        if (currentHeight < htlc.timeoutHeight) {
-          logger(INFO, BRIGHT_WHITE) << "HTLC refund attempted before timeout: current=" << currentHeight
-                                     << " timeout=" << htlc.timeoutHeight << " in tx " << transactionHash;
-          return false;
-        }
-
-        // Verify signature with refundKey
-        if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
-          if (tx.signatures[inputIndex].size() != 1) {
-            logger(ERROR, BRIGHT_RED) << "HTLC refund expects exactly 1 signature in tx " << transactionHash;
-            return false;
-          }
-          if (!Crypto::check_signature(tx_prefix_hash, htlc.refundKey, tx.signatures[inputIndex][0])) {
-            logger(INFO, BRIGHT_WHITE) << "HTLC refund signature verification failed in tx " << transactionHash;
-            return false;
-          }
-        }
-
-        ++inputIndex;
-      }
       else
       {
         logger(INFO, BRIGHT_WHITE) << "Transaction << " << transactionHash << " contains input of unsupported type.";
@@ -2507,33 +2375,6 @@ bool Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const 
             return false;
           }
         }
-      }
-    } else if (out.target.type() == typeid(TransactionOutputHashLock)) {
-      if (tx.version < CryptoNote::TRANSACTION_VERSION_2) {
-        logger(INFO, BRIGHT_WHITE) << getObjectHash(tx) << " contains HTLC output but has version " << tx.version;
-        return false;
-      }
-      const auto& htlc = ::boost::get<TransactionOutputHashLock>(out.target);
-      // Validate timeout range
-      uint32_t minTimeout = m_currency.isTestnet() ?
-        CryptoNote::parameters::TESTNET_HTLC_MIN_TIMEOUT :
-        CryptoNote::parameters::HTLC_MIN_TIMEOUT;
-      uint32_t maxTimeout = m_currency.isTestnet() ?
-        CryptoNote::parameters::TESTNET_HTLC_MAX_TIMEOUT :
-        CryptoNote::parameters::HTLC_MAX_TIMEOUT;
-      if (htlc.timeoutHeight < height + minTimeout) {
-        logger(INFO, BRIGHT_WHITE) << getObjectHash(tx) << " HTLC timeout too short: " << htlc.timeoutHeight
-                                   << " (min " << (height + minTimeout) << ")";
-        return false;
-      }
-      if (htlc.timeoutHeight > height + maxTimeout) {
-        logger(INFO, BRIGHT_WHITE) << getObjectHash(tx) << " HTLC timeout too far: " << htlc.timeoutHeight
-                                   << " (max " << (height + maxTimeout) << ")";
-        return false;
-      }
-      if (out.amount == 0) {
-        logger(INFO, BRIGHT_WHITE) << getObjectHash(tx) << " HTLC output with zero amount";
-        return false;
       }
     }
   }
@@ -3186,37 +3027,25 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
             entry.targetChainId = 0;  // No cross-chain claim for staking
             entry.senderAddress = Common::podToHex(elderfierDeposit.elderfierCommitment);
 
-            // Extract ceremony alias, signing pubkey, and payout address from metadata
-            // v1: [0xEA][alias:8][signingPubKey:32] = 41 bytes
-            // v2: [0xEA][alias:8][signingPubKey:32][spendPubKey:32][viewPubKey:32] = 105 bytes
+            // Extract ceremony alias and signing pubkey from metadata
+            // Format: [0xEA][alias:8][signingPubKey:32]
             std::string ceremonyAlias;
             Crypto::PublicKey signingPubKey = {};
-            std::string payoutAddress;
             if (elderfierDeposit.metadata.size() >= 2 && elderfierDeposit.metadata[0] == 0xEA) {
               if (elderfierDeposit.metadata.size() >= 41) {
+                // New format: 1 byte tag + 8 byte alias + 32 byte signing pubkey
                 ceremonyAlias = std::string(elderfierDeposit.metadata.begin() + 1, elderfierDeposit.metadata.begin() + 9);
                 std::memcpy(signingPubKey.data, &elderfierDeposit.metadata[9], 32);
                 logger(INFO) << "Elderfier signing pubkey registered for @" << ceremonyAlias
                              << ": " << Common::podToHex(signingPubKey);
-
-                // v2: extract payout address keys
-                if (elderfierDeposit.metadata.size() >= 105) {
-                  AccountPublicAddress payoutAddr;
-                  std::memcpy(payoutAddr.spendPublicKey.data, &elderfierDeposit.metadata[41], 32);
-                  std::memcpy(payoutAddr.viewPublicKey.data, &elderfierDeposit.metadata[73], 32);
-                  payoutAddress = m_currency.accountAddressAsString(payoutAddr);
-                  logger(INFO) << "Elderfier @" << ceremonyAlias << " payout address: " << payoutAddress;
-                }
               } else {
                 // Legacy format: 1 byte tag + alias (no signing key)
                 ceremonyAlias = std::string(elderfierDeposit.metadata.begin() + 1, elderfierDeposit.metadata.end());
               }
             }
 
-            // Use payout address as key if available, otherwise ceremony alias
-            if (!payoutAddress.empty()) {
-              entry.senderAddress = payoutAddress;
-            } else if (!ceremonyAlias.empty()) {
+            // Use alias as ceremony identifier (groups all 5 deposits)
+            if (!ceremonyAlias.empty()) {
               entry.senderAddress = "CEREMONY:" + ceremonyAlias;
             }
             entry.ceremonyAlias = ceremonyAlias;
@@ -3595,22 +3424,6 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
         m_transactionMap.erase(transactionHash);
         return false;
       }
-    } else if (inv.type() == typeid(TransactionInputHashLockClaim)) {
-      const auto& claim = ::boost::get<TransactionInputHashLockClaim>(inv);
-      if (claim.outputIndex >= m_htlcOutputs.size() || m_htlcOutputs[claim.outputIndex].isSpent) {
-        logger(ERROR, BRIGHT_RED) << "HTLC claim references invalid or already-spent HTLC output.";
-        m_transactionMap.erase(transactionHash);
-        return false;
-      }
-      m_htlcOutputs[claim.outputIndex].isSpent = true;
-    } else if (inv.type() == typeid(TransactionInputHashLockRefund)) {
-      const auto& refund = ::boost::get<TransactionInputHashLockRefund>(inv);
-      if (refund.outputIndex >= m_htlcOutputs.size() || m_htlcOutputs[refund.outputIndex].isSpent) {
-        logger(ERROR, BRIGHT_RED) << "HTLC refund references invalid or already-spent HTLC output.";
-        m_transactionMap.erase(transactionHash);
-        return false;
-      }
-      m_htlcOutputs[refund.outputIndex].isSpent = true;
     }
   }
 
@@ -3635,19 +3448,6 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       ref.commitKey           = commitOut.commitKey;
       ref.term                = commitOut.term;
       amountOutputs.push_back(ref);
-    } else if (transaction.tx.outputs[output].target.type() == typeid(TransactionOutputHashLock)) {
-      const auto& htlcOut = ::boost::get<TransactionOutputHashLock>(transaction.tx.outputs[output].target);
-      transaction.m_global_output_indexes[output] = static_cast<uint32_t>(m_htlcOutputs.size());
-      HashLockOutputUsage htlcUsage;
-      htlcUsage.transactionIndex    = transactionIndex;
-      htlcUsage.outputInTransaction = output;
-      htlcUsage.amount              = transaction.tx.outputs[output].amount;
-      htlcUsage.recipientKey        = htlcOut.recipientKey;
-      htlcUsage.refundKey           = htlcOut.refundKey;
-      htlcUsage.hashLock            = htlcOut.hashLock;
-      htlcUsage.timeoutHeight       = htlcOut.timeoutHeight;
-      htlcUsage.isSpent             = false;
-      m_htlcOutputs.push_back(htlcUsage);
     }
   }
 
@@ -3744,13 +3544,6 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       if (amountOutputs->second.empty()) {
         m_commitmentOutputs.erase(amountOutputs);
       }
-    } else if (output.target.type() == typeid(TransactionOutputHashLock)) {
-      if (m_htlcOutputs.empty()) {
-        logger(ERROR, BRIGHT_RED) <<
-          "Blockchain consistency broken - HTLC output array is empty during pop.";
-        continue;
-      }
-      m_htlcOutputs.pop_back();
     }
   }
 
@@ -3775,16 +3568,6 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       if (count != 1) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent commitment key.";
-      }
-    } else if (input.type() == typeid(TransactionInputHashLockClaim)) {
-      const auto& claim = ::boost::get<TransactionInputHashLockClaim>(input);
-      if (claim.outputIndex < m_htlcOutputs.size()) {
-        m_htlcOutputs[claim.outputIndex].isSpent = false;
-      }
-    } else if (input.type() == typeid(TransactionInputHashLockRefund)) {
-      const auto& refund = ::boost::get<TransactionInputHashLockRefund>(input);
-      if (refund.outputIndex < m_htlcOutputs.size()) {
-        m_htlcOutputs[refund.outputIndex].isSpent = false;
       }
     }
   }

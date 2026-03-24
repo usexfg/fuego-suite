@@ -2427,6 +2427,7 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
 
   // ── Gate: must be a registered Elderfier — identified by signing pubkey ──
   std::string registeredAlias;
+  uint8_t registeredEfid = 0;
   uint32_t registeredBlock = 0;
 
   try {
@@ -2460,6 +2461,7 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
       return true;
     }
     registeredAlias = efRes.ceremony_alias;
+    registeredEfid = efRes.elderfier_id;
     registeredBlock = 0;  // Not tracked in this endpoint
   } catch (const ConnectException&) {
     printConnectionError();
@@ -2473,15 +2475,22 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
   success_msg_writer() << "";
   Common::Console::setTextColor(Common::Console::Color::BrightYellow);
   std::cout << "╔════════════════════════════════════════════════════════════╗\n";
-  std::cout << "║   ";
+  std::cout << "║  ";
   Common::Console::setTextColor(Common::Console::Color::BrightWhite);
-  std::cout << "ΞLDERFIER PANEL  ·  KING " << std::left << std::setw(32) << registeredAlias;
+  std::cout << "ΞFID";
   Common::Console::setTextColor(Common::Console::Color::BrightYellow);
-  std::cout << "║\n";
+  std::cout << "(" << (int)(registeredEfid + 1) << ")";
+  Common::Console::setTextColor(Common::Console::Color::BrightWhite);
+  std::cout << "     ·     Ξlderfier Panel    ·   ";
+  Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+  // Build alias label and pad to fill box width
+  std::string aliasLabel = "( KING " + registeredAlias + " )";
+  int pad = 60 - 43 - static_cast<int>(aliasLabel.size());
+  if (pad < 0) pad = 0;
+  std::cout << aliasLabel << std::string(pad, ' ') << "║\n";
   std::cout << "╚════════════════════════════════════════════════════════════╝\n";
   Common::Console::setTextColor(Common::Console::Color::Default);
   success_msg_writer() << "";
-  success_msg_writer() << "  EFID:           " << registeredAlias;
   success_msg_writer() << "  Registered:     Block " << registeredBlock;
   std::cout << "  Signing key:    ";
   Common::Console::setTextColor(Common::Console::Color::BrightCyan);
@@ -2565,7 +2574,7 @@ bool simple_wallet::elder_council(const std::vector<std::string> &)
                          << "  (" << consRes.blocks_until_next_flush << " blocks to next flush)";
     if (!consRes.signed_by.empty()) {
       std::string ids;
-      for (auto eid : consRes.signed_by) ids += std::to_string(eid) + " ";
+      for (auto eid : consRes.signed_by) ids += std::to_string(eid + 1) + " ";
       success_msg_writer() << "  Signed by IDs:  [" << ids << "]";
     }
     success_msg_writer() << "";
@@ -2664,12 +2673,12 @@ bool simple_wallet::get_report(const std::vector<std::string> &args)
     // Signing / Missing
     if (!res.signing_efier_ids.empty()) {
       std::string ids;
-      for (auto id : res.signing_efier_ids) ids += std::to_string(id) + " ";
+      for (auto id : res.signing_efier_ids) ids += std::to_string(id + 1) + " ";
       success_msg_writer() << "  Signed:           [" << ids << "]";
     }
     if (!res.missing_efier_ids.empty()) {
       std::string ids;
-      for (auto id : res.missing_efier_ids) ids += std::to_string(id) + " ";
+      for (auto id : res.missing_efier_ids) ids += std::to_string(id + 1) + " ";
       Common::Console::setTextColor(Common::Console::Color::BrightRed);
       std::cout << "  Missing:          [" << ids << "]\n";
       Common::Console::setTextColor(Common::Console::Color::Default);
@@ -2689,7 +2698,7 @@ bool simple_wallet::get_report(const std::vector<std::string> &args)
           flags += " [MISSED:" + std::to_string(ef.consecutive_missed_epochs) + "]";
 
         Common::Console::setTextColor(ef.signed_this_epoch ? Common::Console::Color::BrightGreen : Common::Console::Color::BrightRed);
-        std::cout << "  EFiD " << std::setw(3) << static_cast<int>(ef.elderfier_id);
+        std::cout << "  EFiD " << std::setw(3) << static_cast<int>(ef.elderfier_id + 1);
         Common::Console::setTextColor(Common::Console::Color::BrightCyan);
         std::cout << "  @" << std::left << std::setw(9) << ef.ceremony_alias;
         Common::Console::setTextColor(Common::Console::Color::Default);
@@ -2707,7 +2716,7 @@ bool simple_wallet::get_report(const std::vector<std::string> &args)
       std::cout << "  ── DOUBLE-SIGN EVENTS ──────────────────────────────────\n";
       Common::Console::setTextColor(Common::Console::Color::Default);
       for (const auto& ds : res.double_sign_events) {
-        success_msg_writer() << "  EFiD " << static_cast<int>(ds.elderfier_id)
+        success_msg_writer() << "  EFiD " << static_cast<int>(ds.elderfier_id + 1)
                              << "  root_a=" << ds.root_a.substr(0, 16) << "..."
                              << "  root_b=" << ds.root_b.substr(0, 16) << "..."
                              << "  block=" << ds.block_height

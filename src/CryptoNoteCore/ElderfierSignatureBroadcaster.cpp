@@ -201,13 +201,13 @@ void ElderfierSignatureBroadcaster::signingThread() {
                 registered_pk == m_signingPubKey) {
               m_myEfid = id;
               m_efidResolved = true;
-              m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "Resolved EFiD=" << (int)m_myEfid
+              m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "Resolved EFiD=" << (int)(m_myEfid + 1)
                 << " from signing pubkey " << Common::podToHex(m_signingPubKey).substr(0, 16) << "...";
 
               // Register payout address for banking fee distribution
               if (!m_payoutAddress.empty()) {
                 blockchain.getCommitmentIndex().registerElderfierAddress(id, m_payoutAddress);
-                m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "EF" << (int)m_myEfid
+                m_logger(Logging::INFO, Logging::BRIGHT_GREEN) << "EF" << (int)(m_myEfid + 1)
                   << " payout address registered: " << m_payoutAddress;
               }
               break;
@@ -286,7 +286,7 @@ void ElderfierSignatureBroadcaster::signingThread() {
           cached.sig_algorithm = 0;
           m_core.get_blockchain_storage().addSignatureToCache(cached);
 
-          m_logger(Logging::INFO, Logging::BRIGHT_CYAN) << "EF" << (int)m_myEfid
+          m_logger(Logging::INFO, Logging::BRIGHT_CYAN) << "EF" << (int)(m_myEfid + 1)
             << " signed root " << Common::podToHex(commitmentRoot).substr(0, 16) << "..."
             << " at height " << currentHeight << ", broadcast to peers";
 

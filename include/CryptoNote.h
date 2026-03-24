@@ -74,6 +74,18 @@ struct TransactionInputCommitmentSpend {
   uint64_t amount;                      // must match referenced commitment output amount
   std::vector<uint32_t> outputIndexes;  // ring: global commitment output indices (relative offsets, decoded absolute on verify)
   Crypto::KeyImage keyImage;            // H_p(commitKey) * keyScalar — double-spend prevention via m_spent_keys
+  uint64_t claimedInterest = 0;         // declared interest from fee pool (0 for pre-activation)
+};
+
+// v11+ commitment deposit transfer — transfers CD ownership without redeeming.
+// Ring signature proves spend authority, key image prevents double-transfer.
+// Does NOT require maturity — the CD stays locked with remaining term.
+// Must produce exactly one TransactionOutputCommitment at the same amount.
+struct TransactionInputCommitmentTransfer {
+  uint64_t amount;                      // must match referenced CD amount
+  std::vector<uint32_t> outputIndexes;  // ring: global commitment output indices (relative offsets)
+  Crypto::KeyImage keyImage;            // H_p(commitKey) * keyScalar
+  uint32_t newTerm;                     // new CD's term (spender-declared, >= 1)
 };
 
 // v11+ unified output — replaces KeyOutput + TransactionOutputCommitment.
@@ -131,7 +143,7 @@ struct TransactionInputHashLockRefund {
   uint32_t outputIndex;                              // global output index of the HTLC
 };
 
-typedef boost::variant<BaseInput, KeyInput, MultisignatureInput, TransactionInputCommitmentSpend, TransactionInputUnified, TransactionInputHashLockClaim, TransactionInputHashLockRefund> TransactionInput;
+typedef boost::variant<BaseInput, KeyInput, MultisignatureInput, TransactionInputCommitmentSpend, TransactionInputCommitmentTransfer, TransactionInputUnified, TransactionInputHashLockClaim, TransactionInputHashLockRefund> TransactionInput;
 
 typedef boost::variant<KeyOutput, MultisignatureOutput, TransactionOutputCommitment, TransactionOutputUnified, TransactionOutputHashLock> TransactionOutputTarget;
 

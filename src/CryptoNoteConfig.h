@@ -149,8 +149,15 @@ namespace CryptoNote
         const uint32_t TESTNET_ELDERFIER_STAKING_REVIEW_WINDOW = 10;  // 10 blocks (fast review for testing)
 
         // Epoch duration for EFier fee distribution
-        const uint64_t EPOCH_DURATION_BLOCKS = 1000;             // Mainnet: 1000 blocks (~5.5 days)
+        const uint64_t EPOCH_DURATION_BLOCKS = 900;              // Mainnet: 900 blocks (5 days at 480s/block)
         const uint64_t TESTNET_EPOCH_DURATION_BLOCKS = 10;       // Testnet: 10 blocks (fast epochs for testing)
+
+        // CD Fee Pool — funded by atomic swap (HTLC) fees, distributed as interest to CD holders
+        const uint64_t SWAP_FEE_RATE_BPS = 100;                // 1% of HTLC claim/refund amount (100 basis points)
+        const uint64_t SWAP_FEE_RATE_DIVISOR = 10000;          // basis point denominator
+        const uint64_t FEE_POOL_RATE_PRECISION = 1000000ULL;   // 1e6 fixed-point (fits uint32_t for div128_32)
+        const uint64_t TESTNET_SWAP_FEE_RATE_BPS = 100;        // 1% on testnet (same as mainnet)
+        const uint32_t CD_TRANSFER_MIN_REMAINING_TERM = 1;     // minimum term for transferred CD
 
         // MAINNET DEPOSITS
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 0.8 XFG

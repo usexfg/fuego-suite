@@ -67,6 +67,18 @@ namespace CryptoNote
           (void)r; //just to make compiler to shut up
           assert(r.second);
         }
+        else if (in.type() == typeid(TransactionInputCommitmentSpend))
+        {
+          auto r = m_keyImages.insert(boost::get<TransactionInputCommitmentSpend>(in).keyImage);
+          (void)r;
+          assert(r.second);
+        }
+        else if (in.type() == typeid(TransactionInputCommitmentTransfer))
+        {
+          auto r = m_keyImages.insert(boost::get<TransactionInputCommitmentTransfer>(in).keyImage);
+          (void)r;
+          assert(r.second);
+        }
         else if (in.type() == typeid(MultisignatureInput))
         {
           const auto &msig = boost::get<MultisignatureInput>(in);
@@ -93,6 +105,20 @@ namespace CryptoNote
         if (in.type() == typeid(KeyInput))
         {
           if (m_keyImages.count(boost::get<KeyInput>(in).keyImage))
+          {
+            return false;
+          }
+        }
+        else if (in.type() == typeid(TransactionInputCommitmentSpend))
+        {
+          if (m_keyImages.count(boost::get<TransactionInputCommitmentSpend>(in).keyImage))
+          {
+            return false;
+          }
+        }
+        else if (in.type() == typeid(TransactionInputCommitmentTransfer))
+        {
+          if (m_keyImages.count(boost::get<TransactionInputCommitmentTransfer>(in).keyImage))
           {
             return false;
           }

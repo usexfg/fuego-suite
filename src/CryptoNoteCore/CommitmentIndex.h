@@ -156,6 +156,11 @@ struct EpochReport {
   uint64_t activeEfierCount = 0;
   uint64_t participatingEfierCount = 0;
 
+  // Fee pool: swap fee data for this epoch
+  uint64_t swapFeesCollected = 0;       // total swap fees from HTLC claims this epoch
+  uint64_t totalCdLockedAtStart = 0;    // total XFG in CDs at epoch start
+  uint64_t feeRateFixedPoint = 0;       // (swapFeesCollected * RATE_PRECISION) / totalCdLockedAtStart
+
   // Advisory notices for elder_council — informational only, never auto-acted upon.
   // A council member must explicitly run `propose_slash` in the wallet to act on these.
   // "DOUBLE_SIGN:<efid>" or "INACTIVE:<efid>:<N>_epochs_missed"
@@ -174,6 +179,9 @@ struct EpochReport {
     s(activeEfierCount, "active_efer_count");
     s(participatingEfierCount, "participating_efer_count");
     s(slash_advisory, "slash_advisory");
+    s(swapFeesCollected, "swap_fees_collected");
+    s(totalCdLockedAtStart, "total_cd_locked_at_start");
+    s(feeRateFixedPoint, "fee_rate_fixed_point");
   }
 };
 
@@ -383,6 +391,12 @@ public:
   EpochReport generateEpochReport(uint64_t epochNumber, uint64_t startBlock, uint64_t endBlock,
                                   uint64_t generatedAtBlock) const;
 
+  // Fee pool epoch rate tracking
+  void recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
+                          uint64_t feesCollected, uint64_t totalLocked);
+  uint64_t getEpochFeeRate(uint64_t epochNumber) const;
+  uint64_t getEpochCount() const;
+
   // Store a finalized epoch report (Blockchain calls this after generating)
   void storeEpochReport(const EpochReport& report);
 
@@ -427,6 +441,9 @@ private:
   };
 
   std::map<std::string, PendingElderfierStake> m_pendingElderfierStakes;
+
+  // Fee pool epoch rates — indexed by epoch number, fixed-point (FEE_POOL_RATE_PRECISION)
+  std::vector<uint64_t> m_epochFeeRates;
 
   // Signature cache
   std::map<std::pair<uint8_t, std::string>, CachedElderfierSignature> m_signatures;

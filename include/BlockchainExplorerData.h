@@ -83,6 +83,13 @@ struct TransactionInputCommitmentSpendDetails {
   uint64_t ringSize;
 };
 
+struct TransactionInputCommitmentTransferDetails {
+  std::vector<uint32_t> outputIndexes;
+  Crypto::KeyImage keyImage;
+  uint32_t newTerm;
+  uint64_t ringSize;
+};
+
 struct TransactionInputDetails {
   uint64_t amount;
 
@@ -90,7 +97,8 @@ struct TransactionInputDetails {
     TransactionInputGenerateDetails,
     TransactionInputToKeyDetails,
     TransactionInputMultisignatureDetails,
-    TransactionInputCommitmentSpendDetails> input;
+    TransactionInputCommitmentSpendDetails,
+    TransactionInputCommitmentTransferDetails> input;
 };
 
 struct TransactionExtraDetails {

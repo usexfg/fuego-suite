@@ -34,6 +34,12 @@ bool checkInputsKeyimagesDiff(const CryptoNote::TransactionPrefix& tx) {
     if (in.type() == typeid(KeyInput)) {
       if (!ki.insert(boost::get<KeyInput>(in).keyImage).second)
         return false;
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      if (!ki.insert(boost::get<TransactionInputCommitmentSpend>(in).keyImage).second)
+        return false;
+    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      if (!ki.insert(boost::get<TransactionInputCommitmentTransfer>(in).keyImage).second)
+        return false;
     }
   }
   return true;
@@ -48,6 +54,12 @@ size_t getRequiredSignaturesCount(const TransactionInput& in) {
   if (in.type() == typeid(MultisignatureInput)) {
     return boost::get<MultisignatureInput>(in).signatureCount;
   }
+  if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+    return boost::get<TransactionInputCommitmentSpend>(in).outputIndexes.size();
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return boost::get<TransactionInputCommitmentTransfer>(in).outputIndexes.size();
+  }
   if (in.type() == typeid(TransactionInputHashLockClaim) || in.type() == typeid(TransactionInputHashLockRefund)) {
     return 1;
   }
@@ -61,6 +73,12 @@ uint64_t getTransactionInputAmount(const TransactionInput& in) {
   if (in.type() == typeid(MultisignatureInput)) {
     // TODO calculate interest
     return boost::get<MultisignatureInput>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+    return boost::get<TransactionInputCommitmentSpend>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return boost::get<TransactionInputCommitmentTransfer>(in).amount;
   }
   if (in.type() == typeid(TransactionInputHashLockClaim)) {
     return boost::get<TransactionInputHashLockClaim>(in).amount;
@@ -83,6 +101,9 @@ TransactionTypes::InputType getTransactionInputType(const TransactionInput& in) 
   }
   if (in.type() == typeid(TransactionInputCommitmentSpend)) {
     return TransactionTypes::InputType::CommitmentSpend;
+  }
+  if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+    return TransactionTypes::InputType::CommitmentTransfer;
   }
   if (in.type() == typeid(TransactionInputHashLockClaim)) {
     return TransactionTypes::InputType::HashLockClaim;

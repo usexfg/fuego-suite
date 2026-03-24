@@ -195,11 +195,10 @@ void CommitmentIndex::addSignatureToCache(const CachedElderfierSignature& sig) {
     m_root_first_seen_block[merkle_root_hex] = sig.received_block_height;
   }
 
-  // Update current merkle root if newer (only from verified signatures)
-  if (verified_sig.is_valid && sig.received_block_height >= m_current_block_height) {
-    m_current_merkle_root = sig.merkle_root;
-    m_current_block_height = sig.received_block_height;
-  }
+  // NOTE: m_current_merkle_root is ONLY set by computeMerkleRootInternal() (via
+  // addCommitment / loadFromStorage). Never overwrite it from incoming signatures —
+  // the local tree is authoritative. Peer sigs for a different root are valid
+  // attestations of their tree state but must not change ours.
 }
 
 void CommitmentIndex::checkAndFlushThreshold(uint64_t current_block_height) {
@@ -1050,6 +1049,19 @@ EpochReport CommitmentIndex::generateEpochReport(uint64_t epochNumber, uint64_t 
     }
   }
 
+  // Also count EFiers who have signed the current merkle root regardless of timing.
+  // On fast testnet the signing thread (2s poll) can miss entire short epochs,
+  // and if the root hasn't changed the sig's received_block_height may be from
+  // a prior epoch. An EFier with a valid sig for the current root is participating.
+  std::string current_root_hex = Common::podToHex(m_current_merkle_root);
+  if (m_current_merkle_root != Crypto::Hash()) {
+    for (auto& kv : m_signatures) {
+      if (kv.second.is_valid && kv.first.second == current_root_hex) {
+        signersThisEpoch.insert(kv.first.first);
+      }
+    }
+  }
+
   // Collect all registered active EFiers
   std::set<uint8_t> allActiveEfids;
   for (auto& reg : m_elderfierRegistrations) {
@@ -1070,6 +1082,14 @@ EpochReport CommitmentIndex::generateEpochReport(uint64_t epochNumber, uint64_t 
       report.signingEfierIds.push_back(efid);
     } else {
       report.missingEfierIds.push_back(efid);
+    }
+
+    // Count total valid signatures in cache for this EFier
+    activity.signaturesSubmitted = 0;
+    for (auto& sig_kv : m_signatures) {
+      if (sig_kv.first.first == efid && sig_kv.second.is_valid) {
+        activity.signaturesSubmitted++;
+      }
     }
 
     // Look up address and alias from registration
@@ -1166,6 +1186,27 @@ EpochReport CommitmentIndex::generateEpochReport(uint64_t epochNumber, uint64_t 
   return report;
 }
 
+void CommitmentIndex::recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
+                                          uint64_t feesCollected, uint64_t totalLocked) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  // Grow vector if needed (epochs may skip if no blocks for a while)
+  if (epochNumber >= m_epochFeeRates.size()) {
+    m_epochFeeRates.resize(epochNumber + 1, 0);
+  }
+  m_epochFeeRates[epochNumber] = feeRate;
+}
+
+uint64_t CommitmentIndex::getEpochFeeRate(uint64_t epochNumber) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_epochFeeRates.size()) return 0;
+  return m_epochFeeRates[epochNumber];
+}
+
+uint64_t CommitmentIndex::getEpochCount() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_epochFeeRates.size();
+}
+
 void CommitmentIndex::storeEpochReport(const EpochReport& report) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -1219,6 +1260,9 @@ void CommitmentIndex::serialize(ISerializer& s) {
 
   // Epoch reports (last 10)
   s(m_epochReports, "epoch_reports");
+
+  // Fee pool epoch rates
+  s(m_epochFeeRates, "epoch_fee_rates");
 
   if (s.type() == ISerializer::INPUT) {
     // Rebuild all derived data from m_commitments on load

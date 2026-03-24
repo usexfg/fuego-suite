@@ -32,6 +32,7 @@
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
 #include "UpgradeDetector.h"
+#include "CommitmentIndex.h"
 #include "../crypto/hash.h"
 #include "../crypto/keccak.h"
 #include <algorithm>
@@ -310,6 +311,31 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                          uint32_t currentHeight,
+                                          const CommitmentIndex& commitmentIndex) const {
+    if (currentHeight <= creationHeight) return 0;
+
+    uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    uint64_t startEpoch = creationHeight / epochDuration;
+    uint64_t endEpoch = currentHeight / epochDuration;
+    uint64_t epochCount = commitmentIndex.getEpochCount();
+
+    uint64_t interest = 0;
+    for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
+      // interest += amount * epochRate / RATE_PRECISION
+      // max: 8e9 * 1e6 = 8e15 < 2^63, safe in 64-bit
+      interest += (amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION;
+    }
+
+    return interest;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   uint64_t Currency::calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const
   {
     uint64_t interest = 0;
@@ -350,7 +376,12 @@ double Currency::getBurnPercentage() const {
     }
       else if (in.type() == typeid(TransactionInputCommitmentSpend))
     {
-      return boost::get<TransactionInputCommitmentSpend>(in).amount;
+      const auto& spend = boost::get<TransactionInputCommitmentSpend>(in);
+      return spend.amount + spend.claimedInterest;
+    }
+    else if (in.type() == typeid(TransactionInputCommitmentTransfer))
+    {
+      return boost::get<TransactionInputCommitmentTransfer>(in).amount;
     }
     else if (in.type() == typeid(TransactionInputHashLockClaim))
     {
@@ -394,9 +425,18 @@ double Currency::getBurnPercentage() const {
     //if (tx.inputs.size() == 0)// || tx.outputs.size() == 0) //0 outputs needed in TestGenerator::constructBlock
     //	  return false;
 
+    uint64_t swapFeeTotal = 0;
     for (const auto &in : tx.inputs)
     {
       amount_in += getTransactionInputAmount(in, height);
+      // Swap fee on HTLC inputs goes to fee pool, not miner
+      if (in.type() == typeid(TransactionInputHashLockClaim)) {
+        uint64_t amt = boost::get<TransactionInputHashLockClaim>(in).amount;
+        swapFeeTotal += (amt * parameters::SWAP_FEE_RATE_BPS) / parameters::SWAP_FEE_RATE_DIVISOR;
+      } else if (in.type() == typeid(TransactionInputHashLockRefund)) {
+        uint64_t amt = boost::get<TransactionInputHashLockRefund>(in).amount;
+        swapFeeTotal += (amt * parameters::SWAP_FEE_RATE_BPS) / parameters::SWAP_FEE_RATE_DIVISOR;
+      }
     }
 
     for (const auto &o : tx.outputs)
@@ -404,13 +444,16 @@ double Currency::getBurnPercentage() const {
       amount_out += o.amount;
     }
 
-    if (amount_out > amount_in)
+    // For HTLC txs: effective_in = amount_in - swapFee (swap fee goes to pool, not miner)
+    uint64_t effective_in = amount_in > swapFeeTotal ? amount_in - swapFeeTotal : amount_in;
+
+    if (amount_out > effective_in)
     {
       // interest shows up in the output of the W/D transactions and W/Ds always have min fee
       // Use versioned minimum fee based on block height
       uint8_t blockVersion = blockMajorVersionAtHeight(height);
       uint64_t versionedMinFee = minimumFee(blockVersion);
-      if (tx.inputs.size() > 0 && tx.outputs.size() > 0 && amount_out > amount_in + versionedMinFee)
+      if (tx.inputs.size() > 0 && tx.outputs.size() > 0 && amount_out > effective_in + versionedMinFee)
       {
         fee = versionedMinFee;
         logger(INFO) << "TRIGGERED: Currency.cpp getTransactionFee with versioned fee: " << versionedMinFee;
@@ -422,7 +465,7 @@ double Currency::getBurnPercentage() const {
     }
     else
     {
-      fee = amount_in - amount_out;
+      fee = effective_in - amount_out;
     }
 
     return true;

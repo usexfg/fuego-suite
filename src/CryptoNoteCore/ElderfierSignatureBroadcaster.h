@@ -1,6 +1,18 @@
-// Copyright (c) 2017-2025 Elderfire Privacy Council
-// Elderfier Signature Broadcaster for P2P Consensus
-// Phase 5 Implementation
+// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2020-2025 Elderfire Privacy Group
+//
+// This file is part of Fuego.
+//
+// Fuego is free software distributed in the hope that it
+// will be useful, but WITHOUT ANY WARRANTY; without even the
+// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. You can redistribute it and/or modify it under the terms
+// of the GNU General Public License v3 or later versions as published
+// by the Free Software Foundation. Fuego includes elements written
+// by third parties. See file labeled LICENSE for more details.
+// You should have received a copy of the GNU General Public License
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
+
 
 #pragma once
 
@@ -9,8 +21,8 @@
 #include <vector>
 #include <thread>
 #include <atomic>
-#include "crypto/crypto.h"
-#include "crypto/hash.h"
+#include "../crypto/crypto.h"
+#include "../crypto/hash.h"
 #include "CommitmentIndex.h"
 #include <Logging/LoggerRef.h>
 

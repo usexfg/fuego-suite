@@ -49,11 +49,11 @@ struct ElderfierServiceId {
 
 // Eldernode tier levels
 enum class EldernodeTier : uint8_t {
-    ELDERFIER = 1,       // Elderfier service node (4000 XFG stake required)
-    ELDARADO = 2         // Eldarado validator (4000 XFG stake required)
+    ELDERFIER = 1,       // Elderfier service node (4444 XFG stake required)
+    ELDERADO = 2         // Elderado validator (4000 XFG stake required)
 };
 
-// Note: Old stake proof system removed - now using 0x06 tag deposits for Elderfiers
+// Note: Old stake proof system removed - now using 0xEF tag deposits for Elderfiers
 
 // Security window configuration
 namespace SecurityWindow {
@@ -208,7 +208,7 @@ struct ElderfierDepositData {
     // Then 1000 blocks countdown begins before claiming is allowed
     bool unstakingRequested;         // true = user initiated unstaking, false = still staking
     uint64_t unstakingRequestBlock;  // Block height when user called initiate-unstake (0 if not requested)
-    uint64_t unstakeClaimableBlock;  // Block height = unstakingRequestBlock + 1440 when claim becomes possible (8 days)
+    uint64_t unstakeClaimableBlock;  // Block height = unstakingRequestBlock + 1000 when claim becomes possible (8 days)
 
     // Methods
     bool isValid() const;
@@ -222,12 +222,11 @@ struct ElderfierDepositData {
     void markSpent();                // Mark deposit as spent (invalidates Elderfier status)
     void updateLastSignature(uint64_t timestamp); // Update last signature timestamp
 
-    // PHASE 5: User-Initiated Unstaking Implementation
-    // User requests to unstake: sets flag and records block height
+    // EFier requests to unstake: sets flag and records block height
     void initiateUnstake(uint64_t blockHeight) {
       unstakingRequested = true;
       unstakingRequestBlock = blockHeight;
-      unstakeClaimableBlock = blockHeight + 1440;  // 8 days (180 blocks/day * 8 = 1440 blocks at 8 min/block)
+      unstakeClaimableBlock = blockHeight + 1000;  // use 1k  //8 days (180 blocks/day * 8 = 1440 blocks at 8 min/block)
     }
 
     // Check if unstaking window has passed and funds can be claimed
@@ -242,7 +241,7 @@ struct ElderfierDepositData {
 namespace EldernodeFees {
     static const uint64_t LARGE_BURN_FEE = 8000000;      // 0.8 XFG for large burns (800 XFG+)
     static const uint64_t DEFAULT_BURN_FEE = 80000;       // 0.008 XFG for default burns
-    static const uint64_t ELDERFIER_STAKE_AMOUNT = 4000000000000;  // 4000 XFG stake required
+    static const uint64_t ELDERFIER_STAKE_AMOUNT = 4444000000000;  // 4444 XFG stake required
     static const uint64_t ELDERADO_STAKE_AMOUNT  = 4000000000000;  // 4000 XFG stake required
 }
 
@@ -368,7 +367,7 @@ struct SlashingConfig {
 
 // Elderfier service configuration
 struct ElderfierServiceConfig {
-    uint64_t minimumStakeAmount;      // 4000 XFG minimum for Elderfier
+    uint64_t minimumStakeAmount;      // 4444 XFG minimum for Elderfier
     uint64_t customNameLength;        // Exactly 8 letters for custom names
     bool allowHashedAddresses;        // Whether to allow hashed addresses
     std::vector<std::string> reservedNames; // Reserved custom names

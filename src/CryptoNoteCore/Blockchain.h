@@ -98,6 +98,9 @@ namespace CryptoNote {
     difficulty_type getDifficultyForNextBlock();
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
+    uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
+    uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
+    uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
     uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);
@@ -386,6 +389,11 @@ namespace CryptoNote {
     MultisignatureOutputsContainer m_multisignatureOutputs;
     CommitmentOutputsContainer     m_commitmentOutputs;
     HashLockOutputsContainer       m_htlcOutputs;
+
+    // Fee pool: accumulates swap fees from HTLC claims/refunds, distributed as interest to CD holders.
+    uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts
+    uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
+    uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
     UpgradeDetector m_upgradeDetectorV2;
     UpgradeDetector m_upgradeDetectorV3;
     UpgradeDetector m_upgradeDetectorV4;
@@ -444,6 +452,7 @@ namespace CryptoNote {
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
+    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);

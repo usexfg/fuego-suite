@@ -101,6 +101,12 @@ private:
   bool on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EXISTS::request& req, COMMAND_RPC_CHECK_COMMITMENT_EXISTS::response& res);
   bool on_get_epoch_report(const COMMAND_RPC_GET_EPOCH_REPORT::request& req, COMMAND_RPC_GET_EPOCH_REPORT::response& res);
 
+  // Fee pool analytics + treasury
+  bool on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req, COMMAND_RPC_GET_FEE_POOL_INFO::response& res);
+  bool on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req, COMMAND_RPC_GET_EPOCH_HISTORY::response& res);
+  bool on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
+  bool on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req, COMMAND_RPC_GET_TREASURY_INFO::response& res);
+
   // Elderfier RPC endpoints
   bool on_get_elderfier_signatures(const COMMAND_RPC_GET_ELDERFIER_SIGNATURES::request& req,
                                     COMMAND_RPC_GET_ELDERFIER_SIGNATURES::response& res);

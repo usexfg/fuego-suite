@@ -140,6 +140,12 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/check_commitment_exists", { jsonMethod<COMMAND_RPC_CHECK_COMMITMENT_EXISTS>(&RpcServer::on_check_commitment_exists), true } },
   { "/get_epoch_report", { jsonMethod<COMMAND_RPC_GET_EPOCH_REPORT>(&RpcServer::on_get_epoch_report), true } },
 
+  // Fee pool analytics + treasury
+  { "/get_fee_pool_info", { jsonMethod<COMMAND_RPC_GET_FEE_POOL_INFO>(&RpcServer::on_get_fee_pool_info), true } },
+  { "/get_epoch_history", { jsonMethod<COMMAND_RPC_GET_EPOCH_HISTORY>(&RpcServer::on_get_epoch_history), true } },
+  { "/estimate_cd_yield", { jsonMethod<COMMAND_RPC_ESTIMATE_CD_YIELD>(&RpcServer::on_estimate_cd_yield), true } },
+  { "/get_treasury_info", { jsonMethod<COMMAND_RPC_GET_TREASURY_INFO>(&RpcServer::on_get_treasury_info), true } },
+
   // json rpc
   { "/json_rpc", { std::bind(&RpcServer::processJsonRpcRequest, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), true } }
 };
@@ -2203,6 +2209,93 @@ bool RpcServer::on_get_epoch_report(const COMMAND_RPC_GET_EPOCH_REPORT::request&
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
+}
+
+//-----------------------------------------------
+// Fee pool analytics + treasury RPC handlers
+//-----------------------------------------------
+
+bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req,
+                                      COMMAND_RPC_GET_FEE_POOL_INFO::response& res) {
+  const uint64_t epochDuration = m_core.currency().isTestnet()
+    ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+    : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+  const uint64_t height = m_core.get_current_blockchain_height();
+  res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
+  res.current_epoch_swap_fees = m_core.get_blockchain_storage().getCurrentEpochSwapFees();
+  res.total_cd_locked = m_core.get_blockchain_storage().getTotalCdLocked();
+  res.current_epoch_number = (epochDuration > 0) ? (height / epochDuration) : 0;
+  res.active_efier_count = static_cast<uint64_t>(m_core.getActiveElderfierCount());
+  res.efier_swap_reward_per_block = m_core.get_blockchain_storage().getEfierSwapRewardPerBlock();
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req,
+                                      COMMAND_RPC_GET_EPOCH_HISTORY::response& res) {
+  static constexpr uint32_t MAX_EPOCH_HISTORY = 100;
+
+  const uint64_t totalEpochs = m_core.getCommitmentIndex().getEpochCount();
+  res.total_epochs = totalEpochs;
+
+  if (totalEpochs == 0) {
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+
+  const uint32_t count = (req.count == 0) ? 10 : std::min(req.count, MAX_EPOCH_HISTORY);
+  const uint64_t startEpoch = (totalEpochs > static_cast<uint64_t>(count))
+    ? (totalEpochs - static_cast<uint64_t>(count))
+    : 0;
+
+  uint32_t collected = 0;
+  uint64_t n = totalEpochs - 1;
+  while (collected < count) {
+    auto report = m_core.getCommitmentIndex().getEpochReport(n);
+    if (report) {
+      COMMAND_RPC_GET_EPOCH_HISTORY::epoch_summary summary;
+      summary.epoch_number = report->epochNumber;
+      summary.swap_fees_collected = report->swapFeesCollected;
+      summary.total_cd_locked_at_start = report->totalCdLockedAtStart;
+      summary.fee_rate_fixed_point = report->feeRateFixedPoint;
+      summary.total_fees_distributed = report->totalFeesDistributed;
+      summary.active_efier_count = report->activeEfierCount;
+      res.epochs.push_back(summary);
+      ++collected;
+    }
+    if (n == startEpoch) break;
+    --n;
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req,
+                                      COMMAND_RPC_ESTIMATE_CD_YIELD::response& res) {
+  const uint32_t currentHeight = (req.current_height > 0)
+    ? req.current_height
+    : static_cast<uint32_t>(m_core.get_current_blockchain_height());
+
+  res.estimated_interest = m_core.currency().calculateCdInterest(
+    req.amount, req.creation_height, currentHeight, m_core.getCommitmentIndex());
+
+  const uint64_t epochDuration = m_core.currency().isTestnet()
+    ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+    : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+  res.effective_epochs = (epochDuration > 0 && currentHeight > req.creation_height)
+    ? ((currentHeight - req.creation_height) / epochDuration)
+    : 0;
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req,
+                                      COMMAND_RPC_GET_TREASURY_INFO::response& res) {
+  res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
 }
 
 }

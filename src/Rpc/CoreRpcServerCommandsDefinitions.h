@@ -1776,6 +1776,114 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
   };
 };
 
+/** @brief Current fee pool state snapshot */
+struct COMMAND_RPC_GET_FEE_POOL_INFO {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t fee_pool_balance;
+    uint64_t current_epoch_swap_fees;
+    uint64_t total_cd_locked;
+    uint64_t current_epoch_number;
+    uint64_t active_efier_count;
+    uint64_t efier_swap_reward_per_block;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(fee_pool_balance)
+      KV_MEMBER(current_epoch_swap_fees)
+      KV_MEMBER(total_cd_locked)
+      KV_MEMBER(current_epoch_number)
+      KV_MEMBER(active_efier_count)
+      KV_MEMBER(efier_swap_reward_per_block)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+/** @brief List of past epoch summaries */
+struct COMMAND_RPC_GET_EPOCH_HISTORY {
+  struct request {
+    uint32_t count = 10;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(count)
+    }
+  };
+
+  struct epoch_summary {
+    uint64_t epoch_number;
+    uint64_t swap_fees_collected;
+    uint64_t total_cd_locked_at_start;
+    uint64_t fee_rate_fixed_point;
+    uint64_t total_fees_distributed;
+    uint64_t active_efier_count;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(epoch_number)
+      KV_MEMBER(swap_fees_collected)
+      KV_MEMBER(total_cd_locked_at_start)
+      KV_MEMBER(fee_rate_fixed_point)
+      KV_MEMBER(total_fees_distributed)
+      KV_MEMBER(active_efier_count)
+    }
+  };
+
+  struct response {
+    std::vector<epoch_summary> epochs;
+    uint64_t total_epochs;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(epochs)
+      KV_MEMBER(total_epochs)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+/** @brief Estimate interest for a given CD */
+struct COMMAND_RPC_ESTIMATE_CD_YIELD {
+  struct request {
+    uint64_t amount;
+    uint32_t creation_height;
+    uint32_t current_height = 0;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(amount)
+      KV_MEMBER(creation_height)
+      KV_MEMBER(current_height)
+    }
+  };
+
+  struct response {
+    uint64_t estimated_interest;
+    uint64_t effective_epochs;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(estimated_interest)
+      KV_MEMBER(effective_epochs)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+/** @brief Treasury balance snapshot */
+struct COMMAND_RPC_GET_TREASURY_INFO {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t treasury_balance;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(treasury_balance)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 /** @brief Get total burned XFG amount (eternal flame)
   */
  struct COMMAND_RPC_GET_ETHERNAL_FLAME {

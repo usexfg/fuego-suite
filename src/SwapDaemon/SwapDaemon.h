@@ -74,6 +74,10 @@ private:
   // Returns true if the escrow is confirmed on chain.
   bool verifyEscrowFunding(const SwapParams& params);
 
+  // Returns the resolved XFG address. If input is an alias (@name or short name),
+  // resolves via RPC. If already an address, returns as-is. Returns "" on failure.
+  std::string resolveAddressOrAlias(const std::string& input);
+
   FuegoRpcClient m_rpc;
   SwapDatabase m_db;
   PriceOracle m_oracle;

@@ -48,6 +48,22 @@ std::string SwapDaemon::generateSwapId() {
   return Common::toHex(hash.data, 16);
 }
 
+std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
+  if (input.empty()) return "";
+  // XFG addresses are 98 chars and start with lowercase 'f' (e.g. fireVHx...)
+  // Anything shorter or not starting with 'f' is treated as an alias candidate
+  const bool looksLikeAlias = input.length() < 98 || input[0] != 'f';
+  if (looksLikeAlias) {
+    std::string candidate = input;
+    if (!candidate.empty() && candidate[0] == '@') candidate = candidate.substr(1);
+    std::string resolved;
+    if (m_rpc.resolveAlias(candidate, resolved)) {
+      return resolved;
+    }
+  }
+  return input; // treat as raw address
+}
+
 bool SwapDaemon::initiate(SwapParams params) {
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
@@ -56,6 +72,8 @@ bool SwapDaemon::initiate(SwapParams params) {
   }
 
   m_logger(Logging::INFO) << "Connected to fuegod at height " << currentHeight;
+
+  params.ctrAddress = resolveAddressOrAlias(params.ctrAddress);
 
   if (params.swapId.empty()) {
     params.swapId = generateSwapId();

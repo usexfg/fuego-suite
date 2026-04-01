@@ -293,4 +293,16 @@ bool FuegoRpcClient::getTransactionOutputs(const std::string& txHashHex,
   }
 }
 
+bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& addressOut) {
+  try {
+    std::string body = "{\"alias\":\"" + alias + "\"}";
+    std::string responseBody = daemonPost("/get_alias", body);
+    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+    if (!json.isObject() || !json.contains("found")) return false;
+    if (!json("found").getBool()) return false;
+    addressOut = json("address").getString();
+    return true;
+  } catch (const std::exception&) { return false; }
+}
+
 } // namespace XfgSwap

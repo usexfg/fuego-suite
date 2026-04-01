@@ -258,6 +258,22 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 	return data, firstErr
 }
 
+// --- Alias resolution ---
+
+type AliasResult struct {
+	Found   bool   `json:"found"`
+	Alias   string `json:"alias"`
+	Address string `json:"address"`
+}
+
+func (c *FuegoClient) ResolveAlias(alias string) (string, bool) {
+	var result AliasResult
+	if err := c.post("/get_alias", map[string]string{"alias": alias}, &result); err != nil {
+		return "", false
+	}
+	return result.Address, result.Found
+}
+
 // --- HTTP helper ---
 
 func (c *FuegoClient) post(path string, reqBody interface{}, result interface{}) error {

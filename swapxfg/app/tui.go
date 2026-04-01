@@ -2,6 +2,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -196,8 +197,32 @@ func (m *tuiModel) handleCommand(cmd string) {
 				m.statusMsg = "unknown pair: " + parts[1]
 			}
 		}
+	case "initiate":
+		// Usage: initiate <alias_or_address> <amount_xfg> <pair>
+		if len(parts) < 4 {
+			m.statusMsg = "usage: initiate <alias_or_address> <amount> <pair>"
+			return
+		}
+		aliasOrAddr := parts[1]
+		// Resolve alias if needed
+		addr := aliasOrAddr
+		// XFG addresses are 98 chars and start with lowercase 'f'
+		if !strings.HasPrefix(aliasOrAddr, "f") || len(aliasOrAddr) < 98 {
+			// Looks like an alias — try to resolve
+			candidate := strings.TrimPrefix(aliasOrAddr, "@")
+			if resolved, ok := m.client.ResolveAlias(candidate); ok {
+				addr = resolved
+				m.statusMsg = "resolved " + aliasOrAddr + " → " + addr[:12] + "..."
+			} else {
+				// Not found as alias — use as-is (may be a raw address)
+				addr = aliasOrAddr
+				m.statusMsg = fmt.Sprintf("using address: %s...", addr[:min(12, len(addr))])
+			}
+		}
+		// Show the resolved address to user
+		m.statusMsg = fmt.Sprintf("address: %s (enter 'confirm %s %s %s' to proceed)", addr[:16]+"...", addr, parts[2], parts[3])
 	case "help":
-		m.statusMsg = "pair <name> | 0-3: switch pair | r: refresh | q: quit"
+		m.statusMsg = "pair <name> | initiate <alias/@alias/addr> <amount> <pair> | r: refresh | q: quit"
 	default:
 		m.statusMsg = "unknown: " + cmd + " (type help)"
 	}

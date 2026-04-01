@@ -73,6 +73,9 @@ public:
   bool getTransactionOutputs(const std::string& txHashHex,
                              std::vector<TxOutputInfo>& outputs);
 
+  // Resolve an alias name to an XFG address. Returns false if not found.
+  bool resolveAlias(const std::string& alias, std::string& addressOut);
+
 private:
   // Synchronous HTTP POST to an arbitrary host:port
   std::string httpPost(const std::string& host, uint16_t port,

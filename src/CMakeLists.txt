@@ -424,11 +424,12 @@ target_link_libraries(Optimizer PRIVATE
     ${JSONCPP_LIBRARIES}
 )
 
+find_package(OpenSSL REQUIRED)
 target_link_libraries(SwapDaemon PRIVATE
     Crypto Common Logging Crypto Common
     ${Boost_LIBRARIES}
-    ssl
-    crypto
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 target_include_directories(SwapDaemon PRIVATE
     ${CMAKE_SOURCE_DIR}/src

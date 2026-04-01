@@ -109,6 +109,10 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getethereal", { jsonMethod<COMMAND_RPC_GET_ETHERNAL_FLAME>(&RpcServer::on_get_ethereal_flame), true } },
   { "/paymentid", { jsonMethod<COMMAND_RPC_GEN_PAYMENT_ID>(&RpcServer::on_get_payment_id), true } },
 
+  // swap state persistence endpoints
+  { "/listswaps",      { jsonMethod<COMMAND_RPC_LIST_SWAPS>(&RpcServer::on_list_swaps), true } },
+  { "/getswapstatus",  { jsonMethod<COMMAND_RPC_GET_SWAP_STATUS>(&RpcServer::on_get_swap_status), true } },
+
   // swap orderbook endpoints
   { "/getswapoffers", { jsonMethod<COMMAND_RPC_GET_SWAP_OFFERS>(&RpcServer::on_get_swap_offers), true } },
   { "/getswapprice", { jsonMethod<COMMAND_RPC_GET_SWAP_PRICE>(&RpcServer::on_get_swap_price), true } },
@@ -754,6 +758,71 @@ bool RpcServer::on_get_height(const COMMAND_RPC_GET_HEIGHT::request& req, COMMAN
 
 void RpcServer::setSwapRelay(SwapOfferRelay* relay) {
   m_swapRelay = relay;
+}
+
+void RpcServer::setSwapDb(XfgSwap::SwapDatabase* db) {
+  m_swapDb = db;
+}
+
+bool RpcServer::on_list_swaps(const COMMAND_RPC_LIST_SWAPS::request& /*req*/, COMMAND_RPC_LIST_SWAPS::response& res) {
+  if (!m_swapDb) {
+    res.status = "Swap database not available";
+    return true;
+  }
+
+  auto swapIds = m_swapDb->listSwaps();
+  res.swaps.reserve(swapIds.size());
+
+  for (const auto& id : swapIds) {
+    XfgSwap::SwapStateMachine sm;
+    if (!m_swapDb->loadSwap(id, sm)) continue;
+
+    const auto& p = sm.params();
+    COMMAND_RPC_LIST_SWAPS::response::swap_summary entry;
+    entry.swap_id    = p.swapId;
+    entry.state      = XfgSwap::swapStateToString(sm.currentState());
+    entry.pair       = XfgSwap::swapPairToString(p.pair);
+    entry.role       = (p.role == XfgSwap::SwapRole::BOB) ? "BOB" : "ALICE";
+    entry.xfg_amount = p.xfgAmount;
+    entry.created_at = static_cast<uint64_t>(sm.createdAt());
+    entry.updated_at = static_cast<uint64_t>(sm.updatedAt());
+    entry.is_terminal = sm.isTerminal();
+    res.swaps.push_back(std::move(entry));
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_swap_status(const COMMAND_RPC_GET_SWAP_STATUS::request& req, COMMAND_RPC_GET_SWAP_STATUS::response& res) {
+  if (!m_swapDb) {
+    res.status = "Swap database not available";
+    res.found = false;
+    return true;
+  }
+
+  XfgSwap::SwapStateMachine sm;
+  if (!m_swapDb->loadSwap(req.swap_id, sm)) {
+    res.swap_id = req.swap_id;
+    res.found   = false;
+    res.status  = "Swap not found";
+    return true;
+  }
+
+  const auto& p = sm.params();
+  res.swap_id       = p.swapId;
+  res.state         = XfgSwap::swapStateToString(sm.currentState());
+  res.pair          = XfgSwap::swapPairToString(p.pair);
+  res.role          = (p.role == XfgSwap::SwapRole::BOB) ? "BOB" : "ALICE";
+  res.xfg_amount    = p.xfgAmount;
+  res.ctr_address   = p.ctrAddress;
+  res.peer_endpoint = p.peerEndpoint;
+  res.created_at    = static_cast<uint64_t>(sm.createdAt());
+  res.updated_at    = static_cast<uint64_t>(sm.updatedAt());
+  res.is_terminal   = sm.isTerminal();
+  res.found         = true;
+  res.status        = CORE_RPC_STATUS_OK;
+  return true;
 }
 
 bool RpcServer::on_get_swap_offers(const COMMAND_RPC_GET_SWAP_OFFERS::request& req, COMMAND_RPC_GET_SWAP_OFFERS::response& res) {

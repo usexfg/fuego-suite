@@ -204,8 +204,23 @@ target_include_directories(Logging SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
+
+# Swap core library: shared by libRpc and the xfg-swap binary
+add_library(SwapDaemonLib STATIC
+    SwapDaemon/SwapTypes.cpp
+    SwapDaemon/SwapStateMachine.cpp
+    SwapDaemon/SwapDatabase.cpp
+)
+target_include_directories(SwapDaemonLib PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(SwapDaemonLib PUBLIC Common)
+target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
+
 add_library(Rpc STATIC ${RPC_SOURCES})
 target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)
+target_link_libraries(Rpc PUBLIC SwapDaemonLib)
 add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
 # Check if target exists to prevent duplicate definition
 if(NOT TARGET CryptoNoteCore)
@@ -272,12 +287,9 @@ add_executable(Optimizer ${Optimizer})
 # Swap Daemon executable (xfg-swap)
 add_executable(SwapDaemon
     SwapDaemon/main.cpp
-    SwapDaemon/SwapTypes.cpp
-    SwapDaemon/SwapStateMachine.cpp
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
-    SwapDaemon/SwapDatabase.cpp
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
@@ -426,6 +438,7 @@ target_link_libraries(Optimizer PRIVATE
 
 find_package(OpenSSL REQUIRED)
 target_link_libraries(SwapDaemon PRIVATE
+    SwapDaemonLib
     Crypto Common Logging Crypto Common
     ${Boost_LIBRARIES}
     OpenSSL::SSL
@@ -464,6 +477,7 @@ if(APPLE)
   target_link_libraries(Logging PRIVATE -stdlib=libc++)
   target_link_libraries(NodeRpcProxy PRIVATE -stdlib=libc++)
   target_link_libraries(Rpc PRIVATE -stdlib=libc++)
+  target_link_libraries(SwapDaemonLib PRIVATE -stdlib=libc++)
   target_link_libraries(P2P PRIVATE -stdlib=libc++)
   target_link_libraries(Serialization PRIVATE -stdlib=libc++)
   target_link_libraries(System PRIVATE -stdlib=libc++)

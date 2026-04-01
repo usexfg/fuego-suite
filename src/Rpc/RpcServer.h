@@ -25,6 +25,7 @@
 #include <Logging/LoggerRef.h>
 #include "Common/Math.h"
 #include "CoreRpcServerCommandsDefinitions.h"
+#include "../SwapDaemon/SwapDatabase.h"
 
 namespace CryptoNote {
 
@@ -47,6 +48,7 @@ public:
   bool enableCors(const std::string domain);
   bool remotenode_check_incoming_tx(const BinaryArray& tx_blob);
   void setSwapRelay(SwapOfferRelay* relay);
+  void setSwapDb(XfgSwap::SwapDatabase* db);
 
   // Start the HTTP server
   void start(const std::string& address, uint16_t port);
@@ -83,6 +85,10 @@ private:
   bool on_get_info(const COMMAND_RPC_GET_INFO::request& req, COMMAND_RPC_GET_INFO::response& res);
   bool on_get_height(const COMMAND_RPC_GET_HEIGHT::request& req, COMMAND_RPC_GET_HEIGHT::response& res);
   bool on_get_ethereal_flame(const COMMAND_RPC_GET_ETHERNAL_FLAME::request& req, COMMAND_RPC_GET_ETHERNAL_FLAME::response& res);
+
+  // Swap state persistence RPC endpoints
+  bool on_list_swaps(const COMMAND_RPC_LIST_SWAPS::request& req, COMMAND_RPC_LIST_SWAPS::response& res);
+  bool on_get_swap_status(const COMMAND_RPC_GET_SWAP_STATUS::request& req, COMMAND_RPC_GET_SWAP_STATUS::response& res);
 
   // Swap orderbook RPC endpoints
   bool on_get_swap_offers(const COMMAND_RPC_GET_SWAP_OFFERS::request& req, COMMAND_RPC_GET_SWAP_OFFERS::response& res);
@@ -165,6 +171,7 @@ private:
   Crypto::SecretKey m_view_key = NULL_SECRET_KEY;
   AccountPublicAddress m_fee_acc;
   SwapOfferRelay* m_swapRelay = nullptr;
+  XfgSwap::SwapDatabase* m_swapDb = nullptr;
 
 };
 

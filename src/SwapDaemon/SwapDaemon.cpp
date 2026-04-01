@@ -33,6 +33,22 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   , m_logger(logger, "SwapDaemon") {
 }
 
+void SwapDaemon::start() {
+  std::vector<std::string> swapIds = m_db.listSwaps();
+  int recovered = 0;
+  for (const auto& id : swapIds) {
+    SwapStateMachine sm;
+    if (m_db.loadSwap(id, sm) && !sm.isTerminal()) {
+      m_logger(Logging::INFO) << "Recovered in-progress swap " << id
+        << " state=" << swapStateToString(sm.currentState());
+      recovered++;
+    }
+  }
+  if (recovered > 0) {
+    m_logger(Logging::INFO) << "Recovered " << recovered << " in-progress swap(s)";
+  }
+}
+
 std::string SwapDaemon::generateSwapId() {
   struct {
     time_t timestamp;
@@ -180,6 +196,26 @@ bool SwapDaemon::accept(const std::string& swapId) {
   return true;
 }
 
+void SwapDaemon::checkStuckSwaps() {
+  time_t now = std::time(nullptr);
+  for (const auto& id : m_db.listSwaps()) {
+    SwapStateMachine sm;
+    if (!m_db.loadSwap(id, sm)) continue;
+    if (sm.isTerminal()) continue;
+
+    time_t age = now - sm.updatedAt();
+    int threshold = (sm.currentState() >= SwapState::ADAPTOR_ESCROW_FUNDED)
+      ? SWAP_STUCK_THRESHOLD_ESCROW_SECS
+      : SWAP_STUCK_THRESHOLD_KEYS_SECS;
+
+    if (age > threshold) {
+      m_logger(Logging::WARNING) << "Swap " << id
+        << " stuck in state " << swapStateToString(sm.currentState())
+        << " for " << age << "s — consider cooperative refund";
+    }
+  }
+}
+
 bool SwapDaemon::checkTimeouts() {
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
@@ -219,6 +255,8 @@ bool SwapDaemon::checkTimeouts() {
   if (!anyExpired) {
     m_logger(Logging::DEBUGGING) << "No swaps timed out at height " << currentHeight;
   }
+
+  checkStuckSwaps();
 
   return true;
 }

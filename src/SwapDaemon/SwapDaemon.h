@@ -31,6 +31,10 @@ public:
   SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
              const std::string& dataDir, Logging::ILogger& logger);
 
+  // Load persisted non-terminal swaps and log recovery summary.
+  // Call once after construction before issuing any commands.
+  void start();
+
   // Configure wallet RPC endpoint for escrow funding.
   // Must be called before processSwap() can fund escrow.
   void setWalletRpc(const std::string& host, uint16_t port);
@@ -60,6 +64,13 @@ public:
   PriceOracle& priceOracle();
 
 private:
+  // Scan non-terminal swaps and warn about any stuck longer than threshold.
+  // Called from checkTimeouts().
+  void checkStuckSwaps();
+
+  static constexpr int SWAP_STUCK_THRESHOLD_ESCROW_SECS = 1800;  // 30 min
+  static constexpr int SWAP_STUCK_THRESHOLD_KEYS_SECS   = 600;   // 10 min
+
   // Generate a unique swap ID from the current time and random data.
   std::string generateSwapId();
 

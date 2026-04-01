@@ -1884,6 +1884,75 @@ struct COMMAND_RPC_GET_TREASURY_INFO {
   };
 };
 
+/** @brief List all persisted swaps (from SwapDaemon database) */
+struct COMMAND_RPC_LIST_SWAPS {
+  struct request { void serialize(ISerializer&) {} };
+  struct response {
+    struct swap_summary {
+      std::string swap_id;
+      std::string state;
+      std::string pair;
+      std::string role;
+      uint64_t xfg_amount = 0;
+      uint64_t created_at = 0;
+      uint64_t updated_at = 0;
+      bool is_terminal = false;
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swap_id)
+        KV_MEMBER(state)
+        KV_MEMBER(pair)
+        KV_MEMBER(role)
+        KV_MEMBER(xfg_amount)
+        KV_MEMBER(created_at)
+        KV_MEMBER(updated_at)
+        KV_MEMBER(is_terminal)
+      }
+    };
+    std::vector<swap_summary> swaps;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(swaps)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+/** @brief Get status of a single persisted swap by swap_id */
+struct COMMAND_RPC_GET_SWAP_STATUS {
+  struct request {
+    std::string swap_id;
+    void serialize(ISerializer& s) { KV_MEMBER(swap_id) }
+  };
+  struct response {
+    std::string swap_id;
+    std::string state;
+    std::string pair;
+    std::string role;
+    uint64_t xfg_amount = 0;
+    std::string ctr_address;
+    std::string peer_endpoint;
+    uint64_t created_at = 0;
+    uint64_t updated_at = 0;
+    bool is_terminal = false;
+    bool found = false;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(swap_id)
+      KV_MEMBER(state)
+      KV_MEMBER(pair)
+      KV_MEMBER(role)
+      KV_MEMBER(xfg_amount)
+      KV_MEMBER(ctr_address)
+      KV_MEMBER(peer_endpoint)
+      KV_MEMBER(created_at)
+      KV_MEMBER(updated_at)
+      KV_MEMBER(is_terminal)
+      KV_MEMBER(found)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 /** @brief Get total burned XFG amount (eternal flame)
   */
  struct COMMAND_RPC_GET_ETHERNAL_FLAME {

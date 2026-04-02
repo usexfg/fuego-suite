@@ -1,0 +1,13 @@
+[package]
+name = "fuego-cn"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Software AES (no hardware intrinsics — safe inside SP1 RISC-V zkVM)
+aes = { version = "0.8", features = ["hazmat"] }
+# Keccak-1600 (used for scratchpad init and final hash)
+tiny-keccak = { version = "2", features = ["keccak"] }
+
+[dev-dependencies]
+hex = "0.4"

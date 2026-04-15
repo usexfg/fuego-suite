@@ -994,7 +994,10 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
   }
 
   if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0) {
-    isOuputUnlocked = m_currentHeight + 1 >= info.blockHeight + info.term;
+    // Deposit matures when currentHeight >= creationHeight + term.
+    // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
+    // which also requires currentHeight >= maturityHeight (strict >=, no off-by-one).
+    isOuputUnlocked = m_currentHeight >= info.blockHeight + info.term;
   }
 
   return isOuputUnlocked;
@@ -1058,8 +1061,10 @@ std::vector<TransactionOutputInformation> TransfersContainer::getUnlockingTransf
   }
 
   auto& index = m_transfersUnlockJobs.get<TransferUnlockHeightIndex>();
-  auto start = (prevHeight == 0) ? index.begin() : index.upper_bound(prevHeight + 1);
-  auto end = index.upper_bound(currentHeight + 1);
+  // Use upper_bound(currentHeight) so a deposit with unlockHeight=H unlocks
+  // when currentHeight >= H (consistent with consensus >= check, no off-by-one).
+  auto start = (prevHeight == 0) ? index.begin() : index.upper_bound(prevHeight);
+  auto end = index.upper_bound(currentHeight);
 
   if (start == end) {
     //no transfers to unlock
@@ -1088,8 +1093,10 @@ void TransfersContainer::getLockingTransfers(uint32_t prevHeight, uint32_t curre
   }
 
   auto& index = m_transfersUnlockJobs.get<TransferUnlockHeightIndex>();
-  auto start = index.upper_bound(currentHeight + 1);
-  auto end = index.upper_bound(prevHeight + 1);
+  // Mirror the getUnlockingTransfers fix: use upper_bound(H) so rollback
+  // re-locks exactly the transfers that were unlocked at prevHeight.
+  auto start = index.upper_bound(currentHeight);
+  auto end = index.upper_bound(prevHeight);
 
   if (start == end) {
     //no transfers to lock

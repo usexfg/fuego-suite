@@ -26,6 +26,7 @@
 #include <sstream>
 #include <cstring>
 #include <ctime>
+#include <stdexcept>
 #include "../Logging/ILogger.h"
 
 namespace XfgSwap {
@@ -36,6 +37,42 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   , m_db(dataDir)
   , m_poolOrganizer(logger)
   , m_logger(logger, "SwapDaemon") {
+  // Chain clients not configured — processSwap() will warn if needed.
+}
+
+SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
+                        const std::string& dataDir, Logging::ILogger& logger,
+                        const ChainClientConfig& chainCfg)
+  : m_rpc(fuegodHost, fuegodPort)
+  , m_db(dataDir)
+  , m_poolOrganizer(logger)
+  , m_logger(logger, "SwapDaemon") {
+  if (!chainCfg.bchHost.empty()) {
+    m_bchClient = std::make_unique<BchRpcClient>(
+        chainCfg.bchHost, chainCfg.bchPort,
+        chainCfg.bchRpcUser, chainCfg.bchRpcPass);
+    m_logger(Logging::INFO) << "BCH RPC client configured: "
+      << chainCfg.bchHost << ":" << chainCfg.bchPort;
+  }
+  if (!chainCfg.ethHost.empty()) {
+    m_ethClient = std::make_unique<EthRpcClient>(
+        chainCfg.ethHost, chainCfg.ethPort);
+    m_logger(Logging::INFO) << "ETH RPC client configured: "
+      << chainCfg.ethHost << ":" << chainCfg.ethPort;
+  }
+  if (!chainCfg.solHost.empty()) {
+    m_solClient = std::make_unique<SolRpcClient>(
+        chainCfg.solHost, chainCfg.solPort, chainCfg.solProgramId);
+    m_logger(Logging::INFO) << "SOL RPC client configured: "
+      << chainCfg.solHost << ":" << chainCfg.solPort;
+  }
+  if (!chainCfg.xmrDaemonHost.empty()) {
+    m_xmrClient = std::make_unique<MoneroRpcClient>(
+        chainCfg.xmrDaemonHost, chainCfg.xmrDaemonPort,
+        chainCfg.xmrWalletHost, chainCfg.xmrWalletPort);
+    m_logger(Logging::INFO) << "XMR RPC client configured: "
+      << chainCfg.xmrDaemonHost << ":" << chainCfg.xmrDaemonPort;
+  }
 }
 
 SwapDaemon::~SwapDaemon() {
@@ -346,7 +383,9 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
     return false;
   }
 
-  const auto& params = sm.params();
+  // Use a mutable reference so that chain dispatch can update ctrLockTxId etc.
+  // before saving.
+  SwapParams& params = sm.params();
   SwapState current = sm.currentState();
 
   m_logger(Logging::INFO) << "Processing swap " << swapId
@@ -371,14 +410,256 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
       break;
 
     case SwapState::ADAPTOR_PRESIGS_READY:
-      m_logger(Logging::INFO) << "  Pre-sigs ready. Waiting for counterparty ("
-        << swapPairToString(params.pair) << ") lock.";
+      // Bob locks counterparty chain funds once pre-sigs are ready.
+      if (params.role == SwapRole::BOB) {
+        m_logger(Logging::INFO) << "  Pre-sigs ready. Bob locking counterparty ("
+          << swapPairToString(params.pair) << ") funds...";
+
+        bool lockOk = false;
+        switch (params.pair) {
+          case SwapPair::BCH:
+            if (!m_bchClient) {
+              m_logger(Logging::ERROR) << "  BCH client not configured — cannot lock HTLC";
+            } else {
+              // hashLock is SHA256(adaptorSecret) per Phase 5.1.3 fix
+              std::string lockTxId;
+              lockOk = m_bchClient->lockHtlc(
+                  /*senderWif=*/"",  // TODO: inject wallet key via config
+                  params.ctrAddress,
+                  Common::podToHex(params.adaptorPoint),  // T = t*G used as hashlock seed
+                  static_cast<uint32_t>(params.ctrTimeoutBlock),
+                  params.ctrAmount,
+                  lockTxId);
+              if (lockOk) {
+                m_logger(Logging::INFO) << "  BCH HTLC locked, txid: " << lockTxId;
+                params.ctrLockTxId = lockTxId;
+                sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+                m_db.saveSwap(sm);
+              } else {
+                m_logger(Logging::ERROR) << "  BCH lockHtlc failed (stub — not yet implemented)";
+              }
+            }
+            break;
+
+          case SwapPair::ETH:
+            if (!m_ethClient) {
+              m_logger(Logging::ERROR) << "  ETH client not configured — cannot deploy HTLC";
+            } else {
+              try {
+                std::string contractAddress;
+                lockOk = m_ethClient->deployHtlc(
+                    /*fromAddress=*/"",  // TODO: inject ETH address via config
+                    params.ctrAddress,
+                    Common::podToHex(params.adaptorPoint),
+                    params.ctrTimeoutBlock,
+                    params.ctrAmount,
+                    contractAddress);
+                if (lockOk) {
+                  m_logger(Logging::INFO) << "  ETH HTLC deployed at: " << contractAddress;
+                  params.ctrLockTxId = contractAddress;
+                  sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+                  m_db.saveSwap(sm);
+                }
+              } catch (const std::runtime_error& e) {
+                m_logger(Logging::ERROR) << "  ETH signing not implemented: " << e.what()
+                  << " — marking swap FAILED";
+                sm.transition(SwapState::FAILED);
+                m_db.saveSwap(sm);
+              }
+            }
+            break;
+
+          case SwapPair::SOL:
+            if (!m_solClient) {
+              m_logger(Logging::ERROR) << "  SOL client not configured — cannot lock HTLC";
+            } else {
+              SolTxResult solResult;
+              lockOk = m_solClient->lock(
+                  /*senderSecretKey=*/"",  // TODO: inject SOL keypair via config
+                  params.ctrAddress,
+                  Common::podToHex(params.adaptorPoint),
+                  params.ctrTimeoutBlock,
+                  params.ctrAmount,
+                  solResult);
+              if (lockOk && solResult.confirmed) {
+                m_logger(Logging::INFO) << "  SOL HTLC locked, sig: " << solResult.signature;
+                params.ctrLockTxId = solResult.signature;
+                sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+                m_db.saveSwap(sm);
+              } else if (!lockOk) {
+                m_logger(Logging::ERROR) << "  SOL lock failed: " << solResult.error;
+              }
+            }
+            break;
+
+          case SwapPair::XMR:
+            if (!m_xmrClient) {
+              m_logger(Logging::ERROR) << "  XMR client not configured — cannot lock adaptor";
+            } else {
+              MoneroTransferResult xmrResult;
+              lockOk = m_xmrClient->lockAdaptor(
+                  params.ctrAddress,
+                  params.ctrAmount,
+                  xmrResult);
+              if (lockOk && xmrResult.success) {
+                m_logger(Logging::INFO) << "  XMR adaptor locked, txhash: " << xmrResult.txHash;
+                params.ctrLockTxId = xmrResult.txHash;
+                sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+                m_db.saveSwap(sm);
+              } else {
+                m_logger(Logging::ERROR) << "  XMR lockAdaptor failed: " << xmrResult.error;
+              }
+            }
+            break;
+        }
+      } else {
+        // Alice: verify Bob has locked on the counterparty chain
+        m_logger(Logging::INFO) << "  Pre-sigs ready. Alice verifying counterparty ("
+          << swapPairToString(params.pair) << ") lock...";
+
+        bool verified = false;
+        switch (params.pair) {
+          case SwapPair::BCH:
+            if (!m_bchClient) {
+              m_logger(Logging::WARNING) << "  BCH client not configured — cannot verify lock";
+            } else {
+              verified = m_bchClient->verifyLock(params.ctrLockTxId, params.ctrAmount);
+            }
+            break;
+          case SwapPair::ETH:
+            if (!m_ethClient) {
+              m_logger(Logging::WARNING) << "  ETH client not configured — cannot verify lock";
+            } else {
+              verified = m_ethClient->verifyLock(params.ctrLockTxId, params.ctrAmount);
+            }
+            break;
+          case SwapPair::SOL:
+            if (!m_solClient) {
+              m_logger(Logging::WARNING) << "  SOL client not configured — cannot verify lock";
+            } else {
+              verified = m_solClient->verifyLock(params.ctrLockTxId, params.ctrAmount);
+            }
+            break;
+          case SwapPair::XMR:
+            if (!m_xmrClient) {
+              m_logger(Logging::WARNING) << "  XMR client not configured — cannot verify lock";
+            } else {
+              verified = m_xmrClient->verifyLock(params.ctrAddress, params.ctrAmount);
+            }
+            break;
+        }
+
+        if (verified) {
+          m_logger(Logging::INFO) << "  Counterparty lock verified. Transitioning to CTR_LOCKED.";
+          sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+          m_db.saveSwap(sm);
+        } else {
+          m_logger(Logging::INFO) << "  Counterparty lock not yet verified — will retry next tick.";
+        }
+      }
       break;
 
     case SwapState::ADAPTOR_CTR_LOCKED:
       if (params.role == SwapRole::ALICE) {
+        // Alice claims the counterparty funds, revealing the adaptor secret.
         m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
-          << " locked. Claim it to reveal adaptor secret.";
+          << " locked. Alice claiming to reveal adaptor secret...";
+
+        bool claimOk = false;
+        switch (params.pair) {
+          case SwapPair::BCH:
+            if (!m_bchClient) {
+              m_logger(Logging::ERROR) << "  BCH client not configured — cannot claim";
+            } else {
+              std::string claimTxId;
+              claimOk = m_bchClient->claim(
+                  /*claimerWif=*/"",  // TODO: inject via config
+                  params.ctrLockTxId, 0, params.ctrAmount,
+                  /*redeemScriptHex=*/"",  // TODO: persist redeem script in SwapParams
+                  Common::podToHex(params.adaptorSecret),
+                  params.ctrAddress,
+                  claimTxId);
+              if (claimOk) {
+                m_logger(Logging::INFO) << "  BCH claimed, txid: " << claimTxId;
+                sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+                m_db.saveSwap(sm);
+              } else {
+                m_logger(Logging::ERROR) << "  BCH claim failed (stub)";
+              }
+            }
+            break;
+
+          case SwapPair::ETH:
+            if (!m_ethClient) {
+              m_logger(Logging::ERROR) << "  ETH client not configured — cannot claim";
+            } else {
+              try {
+                std::string claimTxHash;
+                claimOk = m_ethClient->claimHtlc(
+                    /*fromAddress=*/"",
+                    params.ctrLockTxId,
+                    Common::podToHex(params.adaptorSecret),
+                    claimTxHash);
+                if (claimOk) {
+                  m_logger(Logging::INFO) << "  ETH claimed, tx: " << claimTxHash;
+                  sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+                  m_db.saveSwap(sm);
+                }
+              } catch (const std::runtime_error& e) {
+                m_logger(Logging::ERROR) << "  ETH claim not implemented: " << e.what()
+                  << " — marking swap FAILED";
+                sm.transition(SwapState::FAILED);
+                m_db.saveSwap(sm);
+              }
+            }
+            break;
+
+          case SwapPair::SOL: {
+            if (!m_solClient) {
+              m_logger(Logging::ERROR) << "  SOL client not configured — cannot claim";
+            } else {
+              SolTxResult solResult;
+              claimOk = m_solClient->claim(
+                  /*claimerSecretKey=*/"",
+                  params.ctrLockTxId,
+                  Common::podToHex(params.adaptorSecret),
+                  solResult);
+              if (claimOk && solResult.confirmed) {
+                m_logger(Logging::INFO) << "  SOL claimed, sig: " << solResult.signature;
+                sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+                m_db.saveSwap(sm);
+              } else if (!claimOk) {
+                m_logger(Logging::ERROR) << "  SOL claim failed: " << solResult.error;
+              }
+            }
+            break;
+          }
+
+          case SwapPair::XMR:
+            if (!m_xmrClient) {
+              m_logger(Logging::ERROR) << "  XMR client not configured — cannot claim";
+            } else {
+              MoneroTransferResult xmrResult;
+              claimOk = m_xmrClient->claimAdaptor(
+                  /*aliceSpendKeyHex=*/Common::podToHex(params.ourSwapSecKey),
+                  /*bobSpendKeyHex=*/Common::podToHex(params.adaptorSecret),
+                  /*viewKeyHex=*/"",  // TODO: persist XMR view key
+                  params.ctrAddress,
+                  xmrResult);
+              if (claimOk && xmrResult.success) {
+                m_logger(Logging::INFO) << "  XMR claimed, txhash: " << xmrResult.txHash;
+                sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+                m_db.saveSwap(sm);
+              } else {
+                m_logger(Logging::ERROR) << "  XMR claimAdaptor failed: " << xmrResult.error;
+              }
+            }
+            break;
+        }
+
+        if (!claimOk) {
+          m_logger(Logging::INFO) << "  Claim not yet complete — will retry next tick.";
+        }
       } else {
         m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
           << " locked. Waiting for Alice to claim (reveals adaptor secret).";
@@ -615,6 +896,106 @@ bool SwapDaemon::refund(const std::string& swapId) {
       << "Swap stays in " << swapStateToString(current)
       << " until cooperative refund tx is broadcast.";
     return true;
+  }
+
+  // Counterparty chain refund: Bob locked on the counterparty chain but the
+  // swap timed out before Alice claimed.  Bob must also refund the CTR HTLC.
+  if (current == SwapState::ADAPTOR_CTR_LOCKED && params.role == SwapRole::BOB) {
+    if (currentHeight < params.xfgTimeoutHeight) {
+      m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
+        << ", timeout: " << params.xfgTimeoutHeight
+        << " (" << (params.xfgTimeoutHeight - currentHeight) << " blocks remaining)";
+      return false;
+    }
+
+    m_logger(Logging::INFO) << "Timeout elapsed. Refunding counterparty ("
+      << swapPairToString(params.pair) << ") HTLC...";
+
+    bool ctrRefundOk = false;
+    switch (params.pair) {
+      case SwapPair::BCH:
+        if (!m_bchClient) {
+          m_logger(Logging::ERROR) << "  BCH client not configured — cannot refund HTLC";
+        } else {
+          std::string refundTxId;
+          ctrRefundOk = m_bchClient->refundHtlc(
+              /*senderWif=*/"",  // TODO: inject via config
+              params.ctrLockTxId, 0, params.ctrAmount,
+              /*redeemScriptHex=*/"",  // TODO: persist redeem script
+              params.ctrAddress,
+              refundTxId);
+          if (ctrRefundOk) {
+            m_logger(Logging::INFO) << "  BCH HTLC refunded, txid: " << refundTxId;
+          } else {
+            m_logger(Logging::ERROR) << "  BCH refundHtlc failed (stub)";
+          }
+        }
+        break;
+
+      case SwapPair::ETH:
+        if (!m_ethClient) {
+          m_logger(Logging::ERROR) << "  ETH client not configured — cannot refund HTLC";
+        } else {
+          try {
+            std::string refundTxHash;
+            ctrRefundOk = m_ethClient->refundHtlc(
+                /*fromAddress=*/"",
+                params.ctrLockTxId,
+                refundTxHash);
+            if (ctrRefundOk) {
+              m_logger(Logging::INFO) << "  ETH HTLC refunded, tx: " << refundTxHash;
+            }
+          } catch (const std::runtime_error& e) {
+            m_logger(Logging::ERROR) << "  ETH refund not implemented: " << e.what();
+          }
+        }
+        break;
+
+      case SwapPair::SOL: {
+        if (!m_solClient) {
+          m_logger(Logging::ERROR) << "  SOL client not configured — cannot refund HTLC";
+        } else {
+          SolTxResult solResult;
+          ctrRefundOk = m_solClient->refund(
+              /*senderSecretKey=*/"",
+              params.ctrLockTxId,
+              solResult);
+          if (ctrRefundOk && solResult.confirmed) {
+            m_logger(Logging::INFO) << "  SOL HTLC refunded, sig: " << solResult.signature;
+          } else if (!ctrRefundOk) {
+            m_logger(Logging::ERROR) << "  SOL refund failed: " << solResult.error;
+          }
+        }
+        break;
+      }
+
+      case SwapPair::XMR:
+        if (!m_xmrClient) {
+          m_logger(Logging::ERROR) << "  XMR client not configured — cannot refund adaptor";
+        } else {
+          MoneroTransferResult xmrResult;
+          ctrRefundOk = m_xmrClient->refundAdaptor(
+              Common::podToHex(params.ourSwapSecKey),
+              /*viewKeyHex=*/"",  // TODO: persist XMR view key
+              params.ctrAddress,
+              xmrResult);
+          if (ctrRefundOk && xmrResult.success) {
+            m_logger(Logging::INFO) << "  XMR adaptor refunded, txhash: " << xmrResult.txHash;
+          } else {
+            m_logger(Logging::ERROR) << "  XMR refundAdaptor failed: " << xmrResult.error;
+          }
+        }
+        break;
+    }
+
+    if (ctrRefundOk) {
+      sm.transition(SwapState::ADAPTOR_REFUNDED);
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
+    } else {
+      m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
+    }
+    return ctrRefundOk;
   }
 
   m_logger(Logging::ERROR) << "Cannot refund swap in state: "

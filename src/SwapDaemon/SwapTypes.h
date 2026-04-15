@@ -37,7 +37,7 @@ enum class SwapState : uint8_t {
   CTR_REFUNDED = 6,     // Alice refunded counterparty chain (timeout)
   FAILED = 7,
 
-  // ── Adaptor signature flow ──
+  // ── ADAPTOR SWAP STATES (active — v1) ────────────────────────────────────
   //
   // Protocol (Alice sells XFG, Bob buys XFG):
   //   1. Both exchange pubkeys → Musig2 joint key P
@@ -57,7 +57,10 @@ enum class SwapState : uint8_t {
   ADAPTOR_XFG_SPENT      = 15,   // adapted sig broadcast, escrow spent
   ADAPTOR_REFUNDED       = 16,   // cooperative refund completed
 
-  // ── Pool operations ──
+  // ── zkLPSWAP POOL STATES (v11 — deferred) ────────────────────────────────
+  // These states are reserved for the trustless pool trading subsystem.
+  // Not reachable from any active swap path in v1 builds.
+  // Implementation lives in src/SwapDaemon/pool_v11/ — see README there.
   POOL_DEPOSIT_INITIATED  = 20,   // LP provider requests deposit
   POOL_DEPOSIT_LOCKED_A   = 21,   // Asset A locked in escrow
   POOL_DEPOSIT_LOCKED_B   = 22,   // Asset B locked in escrow

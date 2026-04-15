@@ -63,7 +63,7 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
   }
 
   switch (m_state) {
-    // ── Adaptor signature flow ──
+    // ── ADAPTOR SWAP STATES (active — v1) ────────────────────────────────────
     case SwapState::INITIATED:
       return newState == SwapState::ADAPTOR_KEYS_EXCHANGED;
 
@@ -85,7 +85,9 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
     case SwapState::ADAPTOR_SECRET_REVEALED:
       return newState == SwapState::ADAPTOR_XFG_SPENT;
 
-    // ── Pool operations ──
+    // ── zkLPSWAP POOL STATES (v11 — deferred) ────────────────────────────────
+    // These transitions are not reachable from any active v1 swap path.
+    // Pool implementation lives in src/SwapDaemon/pool_v11/ — see README there.
     case SwapState::POOL_DEPOSIT_INITIATED:
       return newState == SwapState::POOL_DEPOSIT_LOCKED_A;
 

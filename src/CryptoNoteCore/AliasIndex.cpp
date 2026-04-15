@@ -24,30 +24,30 @@ AliasIndex::AliasIndex() {
 
 AliasIndex::~AliasIndex() {}
 
+// Reserved aliases — cannot be registered by users.
+// Permanently pre-allocated at genesis (block 0) to the Fuego Developer Fund address.
+// Add new entries here to extend the reserved set; each must be exactly 8 chars.
+static const struct { const char* name; uint8_t type; } RESERVED_ALIASES[] = {
+  { "FUEGOXFG", 0 },  // Elderfier (type 0)
+  { "fuegoxfg", 1 },  // Regular   (type 1)
+  { "FUEGODEV", 0 },  // Elderfier (type 0)
+  { "fuegodev", 1 },  // Regular   (type 1)
+};
+static const size_t RESERVED_ALIASES_COUNT = sizeof(RESERVED_ALIASES) / sizeof(RESERVED_ALIASES[0]);
+
 void AliasIndex::reserveDevTeamAliases() {
   // Reserve dev team aliases at genesis (block 0)
   // These are permanently owned by the Fuego Developer Fund address
   const std::string devAddress = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
 
-  struct ReservedAlias {
-    std::string name;
-    uint8_t type;  // 0 = Elderfier, 1 = Regular
-  };
-
-  const ReservedAlias reserved[] = {
-    { "FUEGOXFG", 0 },
-    { "fuegoxfg", 1 },
-    { "FUEGODEV", 0 },
-    { "fuegodev", 1 },
-  };
-
-  for (const auto& r : reserved) {
+  for (size_t i = 0; i < RESERVED_ALIASES_COUNT; ++i) {
+    const std::string name = RESERVED_ALIASES[i].name;
     AliasEntry entry;
-    entry.alias = r.name;
+    entry.alias = name;
     entry.ownerAddress = "";  // Not stored on-chain for privacy
-    entry.aliasHash = Crypto::cn_fast_hash(r.name.data(), r.name.size());
+    entry.aliasHash = Crypto::cn_fast_hash(name.data(), name.size());
     entry.addressHash = Crypto::cn_fast_hash(devAddress.data(), devAddress.size());
-    entry.aliasType = r.type;
+    entry.aliasType = RESERVED_ALIASES[i].type;
     entry.registeredBlock = 0;  // Genesis
 
     std::string addrHashHex = Common::podToHex(entry.addressHash);
@@ -80,39 +80,16 @@ bool AliasIndex::isValidRegularAlias(const std::string& alias) {
 bool AliasIndex::registerAlias(const AliasEntry& entry) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  // Special handling for case-sensitive aliases that cannot coexist
-  if (entry.alias == "winslayer" || entry.alias == "WINSLAYER" ||
-      entry.alias == "galapagos" || entry.alias == "GALAPAGOS") {
-    // Check if the opposite case version already exists
-    std::string opposite_case;
-    if (entry.alias == "winslayer") {
-      opposite_case = "WINSLAYER";
-    } else if (entry.alias == "WINSLAYER") {
-      opposite_case = "winslayer";
-    } else if (entry.alias == "LOUDMINING") {
-      // LOUDMINING has no lowercase counterpart
-      opposite_case = "";
-    } else if (entry.alias == "galapagos") {
-      opposite_case = "GALAPAGOS";
-    } else if (entry.alias == "GALAPAGOS") {
-      opposite_case = "galapagos";
+  // Reject reserved aliases first — before any other validation.
+  for (size_t i = 0; i < RESERVED_ALIASES_COUNT; ++i) {
+    if (entry.alias == RESERVED_ALIASES[i].name) {
+      return false;  // Reserved — cannot be registered by users
     }
+  }
 
-    // Check if opposite case version already exists
-    auto it = m_aliases.find(opposite_case);
-    if (it != m_aliases.end()) {
-      return false;  // Opposite case version already registered
-    }
-
-    // Also check if same case version already exists
-    if (m_aliases.find(entry.alias) != m_aliases.end()) {
-      return false;  // Same case version already registered
-    }
-  } else {
-    // Regular alias handling
-    if (m_aliases.find(entry.alias) != m_aliases.end()) {
-      return false;  // Alias already taken
-    }
+  // Reject duplicate alias names
+  if (m_aliases.find(entry.alias) != m_aliases.end()) {
+    return false;  // Alias already taken
   }
 
   // Check address hash does not already have an alias (no raw address stored)

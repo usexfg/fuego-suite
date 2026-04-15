@@ -223,12 +223,15 @@ AdaptorSignature AdaptorSigScheme::createAdaptor(
   sc_mulsub(asBytes(adaptor.s_hat), asBytes(e), asBytes(signerSecret), asBytes(k));
 
   // 7. DLEQ proof: proves log_G(R) == log_H(R_H) where H is a second generator.
-  //    This ensures the adaptor point T is binding (cannot be chosen maliciously).
+  //    This ensures the nonce k is well-formed and the adaptor binding holds.
   //    Uses a nothing-up-my-sleeve H so that log_G(H) is unknown.
   Crypto::EllipticCurvePoint G_pt, H_pt;
   getBasePoint(G_pt);
   getDleqSecondGenerator(H_pt);
   adaptor.proof = createDleqProof(k, G_pt, H_pt);
+
+  // 8. Store R_H = k*H so the verifier can check the DLEQ proof without the secret k.
+  scalarMultPoint(k, H_pt, adaptor.R_H);
 
   return adaptor;
 }
@@ -276,13 +279,24 @@ bool AdaptorSigScheme::verifyAdaptor(
   // 4. Check adaptor equation: s_hat*G + e*P == R_hat - T
   if (std::memcmp(lhs_bytes, rhs_bytes, 32) != 0) return false;
 
-  // 5. TODO (protocol v2): verify DLEQ proof using distinct generators G and H.
-  //    Full binding requires P2 = k*H to be transmitted in the wire format.
-  //    getDleqSecondGenerator() now generates a distinct H, but verifyDleqProof
-  //    needs P2 explicitly. Add P2 to AdaptorSignature wire format in v2.
-  //    For testnet: adaptor equation check above is sufficient for correctness;
-  //    the DLEQ binding property requires the v2 wire format upgrade.
-  return true;
+  // 5. Verify the DLEQ proof: proves that the prover knows k such that
+  //    R = k*G  (= R_hat - T, computed above as rhs_bytes)  AND
+  //    R_H = k*H  (stored in adaptor.R_H, transmitted in wire format).
+  //
+  //    verifyDleqProof(proof, P1, P2, G, H) checks:
+  //      P1 = k*G  = R = R_hat - T
+  //      P2 = k*H  = R_H
+  //    This ensures the adaptor is well-formed and not malleable.
+
+  Crypto::EllipticCurvePoint G_pt, H_pt;
+  getBasePoint(G_pt);
+  getDleqSecondGenerator(H_pt);
+
+  // R = R_hat - T, already computed as rhs_bytes (32 bytes)
+  Crypto::EllipticCurvePoint R_pt;
+  std::memcpy(asBytes(R_pt), rhs_bytes, 32);
+
+  return verifyDleqProof(adaptor.proof, R_pt, adaptor.R_H, G_pt, H_pt);
 }
 
 Crypto::Signature AdaptorSigScheme::adaptSignature(

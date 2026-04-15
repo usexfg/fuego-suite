@@ -34,9 +34,10 @@ struct DleqProof {
 // A signature "encrypted" under a public key T.
 // Given the secret t where T = t*G, the signature can be "adapted" (completed).
 struct AdaptorSignature {
-  Crypto::EllipticCurvePoint R_hat;   // shifted nonce point
+  Crypto::EllipticCurvePoint R_hat;   // shifted nonce point (R + T = k*G + t*G)
   Crypto::EllipticCurveScalar s_hat;  // partial signature scalar
-  DleqProof proof;                     // proves adaptor is well-formed
+  DleqProof proof;                     // proves adaptor is well-formed (Fiat-Shamir)
+  Crypto::EllipticCurvePoint R_H;     // k*H — second DLEQ point for proof verification
 };
 
 // Key pair for swap protocol

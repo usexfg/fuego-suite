@@ -88,6 +88,27 @@ ws.onmessage = async (ev) => {
 </html>`, port)
 }
 
+// ethAllowedActions is the whitelist of action strings the ETH bridge will
+// accept. Any action not in this map is rejected before being sent to the
+// browser, preventing injection of unsanctioned operations.
+var ethAllowedActions = map[string]bool{
+	"eth_getAddress":   true,
+	"eth_getBalance":   true,
+	"eth_sendTx":       true,
+	"erc20_getBalance": true,
+	"erc20_approve":    true,
+	"erc20_transfer":   true,
+}
+
+// sendEth sends a bridge request after validating the action against the ETH
+// whitelist.
+func (b *BridgeServer) sendEth(req BridgeRequest) (BridgeResponse, error) {
+	if !ethAllowedActions[req.Action] {
+		return BridgeResponse{}, fmt.Errorf("bridge: unknown ETH action: %s", req.Action)
+	}
+	return b.Send(req)
+}
+
 // newReqID returns a cryptographically random 8-byte hex string for use as a
 // JSON-RPC request ID. Using crypto/rand avoids the predictability of a
 // monotonic counter, which can leak timing and ordering information.
@@ -103,7 +124,7 @@ func newReqID() string {
 // EthGetAddress retrieves the connected MetaMask wallet address.
 func (b *BridgeServer) EthGetAddress() (string, error) {
 	params, _ := json.Marshal(map[string]string{})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "eth_getAddress", Params: params})
+	resp, err := b.sendEth(BridgeRequest{ID: newReqID(), Action: "eth_getAddress", Params: params})
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +137,7 @@ func (b *BridgeServer) EthGetAddress() (string, error) {
 // EthGetBalance returns the ETH balance (in wei as string) for address.
 func (b *BridgeServer) EthGetBalance(address string) (string, error) {
 	params, _ := json.Marshal(map[string]string{"address": address})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "eth_getBalance", Params: params})
+	resp, err := b.sendEth(BridgeRequest{ID: newReqID(), Action: "eth_getBalance", Params: params})
 	if err != nil {
 		return "", err
 	}
@@ -129,7 +150,7 @@ func (b *BridgeServer) EthGetBalance(address string) (string, error) {
 // EthSendTransaction sends a raw ETH transaction via MetaMask. Returns tx hash.
 func (b *BridgeServer) EthSendTransaction(to, value, data string) (string, error) {
 	params, _ := json.Marshal(map[string]string{"to": to, "value": value, "data": data})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "eth_sendTx", Params: params})
+	resp, err := b.sendEth(BridgeRequest{ID: newReqID(), Action: "eth_sendTx", Params: params})
 	if err != nil {
 		return "", err
 	}
@@ -142,7 +163,7 @@ func (b *BridgeServer) EthSendTransaction(to, value, data string) (string, error
 // Erc20Balance returns the ERC-20 token balance for address.
 func (b *BridgeServer) Erc20Balance(token, address string) (string, error) {
 	params, _ := json.Marshal(map[string]string{"token": token, "address": address})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "erc20_getBalance", Params: params})
+	resp, err := b.sendEth(BridgeRequest{ID: newReqID(), Action: "erc20_getBalance", Params: params})
 	if err != nil {
 		return "", err
 	}

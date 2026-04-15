@@ -65,10 +65,28 @@ ws.onmessage = async (ev) => {
 </html>`, port)
 }
 
+// solAllowedActions is the whitelist of action strings the SOL bridge will
+// accept. Any action not in this map is rejected before being sent to the
+// browser.
+var solAllowedActions = map[string]bool{
+	"sol_getAddress": true,
+	"sol_getBalance": true,
+	"sol_sendTx":     true,
+}
+
+// sendSol sends a bridge request after validating the action against the SOL
+// whitelist.
+func (b *BridgeServer) sendSol(req BridgeRequest) (BridgeResponse, error) {
+	if !solAllowedActions[req.Action] {
+		return BridgeResponse{}, fmt.Errorf("bridge: unknown SOL action: %s", req.Action)
+	}
+	return b.Send(req)
+}
+
 // SolGetBalance returns the SOL balance in lamports for the given pubkey.
 func (b *BridgeServer) SolGetBalance(pubkey string) (uint64, error) {
 	params, _ := json.Marshal(map[string]string{"pubkey": pubkey})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "sol_getBalance", Params: params})
+	resp, err := b.sendSol(BridgeRequest{ID: newReqID(), Action: "sol_getBalance", Params: params})
 	if err != nil {
 		return 0, err
 	}
@@ -86,7 +104,7 @@ func (b *BridgeServer) SolGetBalance(pubkey string) (uint64, error) {
 // Returns the transaction signature.
 func (b *BridgeServer) SolSendTransaction(txBase64 string) (string, error) {
 	params, _ := json.Marshal(map[string]string{"txBase64": txBase64})
-	resp, err := b.Send(BridgeRequest{ID: newReqID(), Action: "sol_sendTx", Params: params})
+	resp, err := b.sendSol(BridgeRequest{ID: newReqID(), Action: "sol_sendTx", Params: params})
 	if err != nil {
 		return "", err
 	}

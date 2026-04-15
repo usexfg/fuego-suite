@@ -1678,7 +1678,7 @@ static Crypto::chacha8_iv depositEncIV(const Crypto::PublicKey& txPubKey) {
 bool encryptDepositSecret(const DepositSecretPayload& plaintext,
                           const Crypto::PublicKey& recipientViewPubKey,
                           TransactionExtraDepositSecret& out) {
-  // Generate one-time ephemeral keypair for ECDH
+  // Ephemeral key generated internally to prevent nonce reuse across deposits
   Crypto::SecretKey ephSecKey;
   Crypto::generate_keys(out.ephPubKey, ephSecKey);
 

@@ -144,6 +144,17 @@ bool SwapDaemon::initiate(SwapParams params) {
     params.xfgTimeoutHeight = currentHeight + 180;
   }
 
+  // Timelock ordering: Alice's XFG refund window must strictly exceed Bob's
+  // counterparty timeout so Alice can always reclaim XFG if Bob goes silent.
+  if (params.ctrTimeoutBlock != 0 &&
+      params.xfgTimeoutHeight <= params.ctrTimeoutBlock) {
+    m_logger(Logging::ERROR)
+      << "Timelock ordering violation: xfgTimeoutHeight ("
+      << params.xfgTimeoutHeight << ") must exceed ctrTimeoutBlock ("
+      << params.ctrTimeoutBlock << ")";
+    return false;
+  }
+
   // Validate price against TWAP
   RateCheck rc = m_oracle.validateSwapAmounts(params.pair, params.xfgAmount, params.ctrAmount);
   if (rc == RateCheck::BELOW_FLOOR) {
@@ -202,6 +213,17 @@ bool SwapDaemon::accept(const std::string& swapId) {
   }
 
   auto& params = sm.params();
+
+  // Timelock ordering: Alice's XFG refund window must strictly exceed Bob's
+  // counterparty timeout so Alice can always reclaim XFG if Bob goes silent.
+  if (params.ctrTimeoutBlock != 0 &&
+      params.xfgTimeoutHeight <= params.ctrTimeoutBlock) {
+    m_logger(Logging::ERROR)
+      << "Timelock ordering violation: xfgTimeoutHeight ("
+      << params.xfgTimeoutHeight << ") must exceed ctrTimeoutBlock ("
+      << params.ctrTimeoutBlock << ")";
+    return false;
+  }
 
   // ── Adaptor sig step 2: key aggregation ──
   // Peer's pubkey must be set before calling accept

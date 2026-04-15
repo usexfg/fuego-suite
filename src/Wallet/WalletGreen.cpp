@@ -768,6 +768,204 @@ namespace CryptoNote
     }
   }
 
+  bool WalletGreen::rolloverDeposit(
+      DepositId depositId,
+      uint32_t newTerm,
+      uint64_t precomputedInterest,
+      std::string &txHashOut)
+  {
+    // Thin wrapper: constructs a temporary CommitmentIndex-free path by delegating to
+    // the CommitmentIndex overload via a lambda that returns the pre-computed value.
+    // This avoids duplicating the transaction-building logic while allowing callers
+    // that obtained interest via INode::getCdInterest to proceed without Core access.
+    //
+    // Implementation: reuse all validation and tx-building from the existing overload,
+    // but override the interest computation step.  We do this by directly reimplementing
+    // the body with precomputedInterest substituted for the calculateCdInterest call.
+
+    throwIfNotInitialized();
+    throwIfTrackingMode();
+    throwIfStopped();
+
+    if (m_deposits.size() <= depositId) {
+      m_logger(ERROR) << "Rollover failed: deposit " << depositId << " does not exist";
+      return false;
+    }
+
+    Deposit deposit = getDeposit(depositId);
+
+    uint32_t currentHeight = getBlockCount();
+    if (deposit.unlockHeight > currentHeight) {
+      m_logger(ERROR) << "Rollover failed: deposit " << depositId << " is not yet mature"
+        << " (unlockHeight=" << deposit.unlockHeight << " > currentHeight=" << currentHeight << ")";
+      return false;
+    }
+
+    if (deposit.depositType != Deposit::Type::COLD) {
+      m_logger(ERROR) << "Rollover failed: only COLD deposits can be rolled over";
+      return false;
+    }
+
+    WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
+    std::string address = firstTransfer.address;
+
+    const auto &wallet = getWalletRecord(address);
+    ITransfersContainer *container = wallet.container;
+    AccountKeys account = makeAccountKeys(wallet);
+    ITransfersContainer::TransferState state;
+    TransactionOutputInformation transfer;
+
+    container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state);
+
+    if (state != ITransfersContainer::TransferState::TransferAvailable) {
+      m_logger(ERROR) << "Rollover failed: deposit output is not available";
+      return false;
+    }
+
+    // Use the pre-computed interest supplied by the caller (obtained via INode::getCdInterest).
+    uint64_t interest = precomputedInterest;
+
+    m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover(precomputed) deposit id=" << depositId
+      << " amount=" << deposit.amount
+      << " interest=" << interest
+      << " newTerm=" << newTerm
+      << " globalOutputIndex=" << transfer.globalOutputIndex;
+
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    uint64_t reinvestedAmount = deposit.amount + interest;
+    const uint64_t fee = m_currency.minimumFee();
+
+    m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
+      << " term=" << newTerm << " from rollover";
+
+    std::array<uint8_t, 32> newDepositSecret;
+    generate_random_bytes(sizeof(newDepositSecret), newDepositSecret.data());
+    CryptoNote::DepositCommitmentKeys newCommitKeys = CryptoNote::deriveCommitmentKeys(newDepositSecret);
+    CryptoNote::TransactionOutputCommitment newCommitOut;
+    newCommitOut.commitKey = newCommitKeys.commitKey;
+    newCommitOut.term = newTerm;
+
+    transaction->addOutput(reinvestedAmount - fee, newCommitOut);
+    transaction->setUnlockTime(0);
+
+    if (transfer.type == TransactionTypes::OutputType::Commitment) {
+      Crypto::SecretKey keyScalar;
+      uint64_t storedAmount;
+      std::vector<uint8_t> meta;
+      std::string txHashHex = Common::podToHex(deposit.transactionHash);
+
+      if (!getBurnDepositSecret(txHashHex, keyScalar, storedAmount, meta)) {
+        m_logger(ERROR) << "Rollover failed: commitment secret not found";
+        return false;
+      }
+
+      Crypto::PublicKey commitKey;
+      if (!Crypto::secret_key_to_public_key(keyScalar, commitKey)) {
+        m_logger(ERROR) << "Rollover failed: could not derive commitment public key";
+        return false;
+      }
+      Crypto::KeyImage keyImage;
+      Crypto::generate_key_image(commitKey, keyScalar, keyImage);
+
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
+      System::Event requestFinished(m_dispatcher);
+      std::error_code nodeError;
+
+      throwIfStopped();
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), decoys,
+        [&requestFinished, &nodeError, this](std::error_code ec) {
+          nodeError = ec;
+          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+        });
+      requestFinished.wait();
+
+      if (nodeError) {
+        m_logger(ERROR) << "Rollover failed: could not fetch ring decoys: " << nodeError.message();
+        return false;
+      }
+
+      decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
+        [&](const CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry& d) {
+          return d.global_amount_index == transfer.globalOutputIndex;
+        }), decoys.end());
+
+      const size_t numDecoys  = std::min(decoys.size(), static_cast<size_t>(m_currency.maxMixin() - 1));
+      const size_t actualRing = numDecoys + 1;
+      const size_t realPos    = Crypto::rand<size_t>() % actualRing;
+
+      std::vector<uint32_t>                 absIndices;
+      std::vector<const Crypto::PublicKey*> ringKeys;
+      absIndices.reserve(actualRing);
+      ringKeys.reserve(actualRing);
+
+      size_t decoyPos = 0;
+      for (size_t slot = 0; slot < actualRing; ++slot) {
+        if (slot == realPos) {
+          absIndices.push_back(transfer.globalOutputIndex);
+          ringKeys.push_back(&commitKey);
+        } else {
+          absIndices.push_back(decoys[decoyPos].global_amount_index);
+          ringKeys.push_back(&decoys[decoyPos].commit_key);
+          ++decoyPos;
+        }
+      }
+
+      std::vector<size_t> order(actualRing);
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return absIndices[a] < absIndices[b];
+      });
+      size_t sortedRealPos = 0;
+      std::vector<uint32_t>                 sortedAbs(actualRing);
+      std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
+      for (size_t s = 0; s < actualRing; ++s) {
+        sortedAbs[s]  = absIndices[order[s]];
+        sortedKeys[s] = ringKeys[order[s]];
+        if (order[s] == realPos) sortedRealPos = s;
+      }
+
+      std::vector<uint32_t> relOffsets(actualRing);
+      relOffsets[0] = sortedAbs[0];
+      for (size_t s = 1; s < actualRing; ++s) {
+        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
+      }
+
+      TransactionInputCommitmentSpend csInput;
+      csInput.amount          = deposit.amount;
+      csInput.claimedInterest = interest;
+      csInput.outputIndexes   = relOffsets;
+      csInput.keyImage        = keyImage;
+      transaction->addInput(csInput);
+
+      KeyPair commitmentKeyPair{ commitKey, keyScalar };
+      transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover commitment spend ring size=" << actualRing
+        << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
+
+    } else {
+      m_logger(ERROR) << "Rollover failed: deposit is not a commitment output";
+      return false;
+    }
+
+    try {
+      BinaryArray txData = transaction->getTransactionData();
+      CryptoNote::Transaction cryptoNoteTx;
+      if (!fromBinaryArray(cryptoNoteTx, txData)) {
+        m_logger(ERROR) << "Rollover failed: could not serialize transaction";
+        return false;
+      }
+      sendTransaction(cryptoNoteTx);
+      txHashOut = Common::podToHex(transaction->getTransactionHash());
+      m_logger(INFO) << "Rollover transaction sent: " << txHashOut;
+      return true;
+    } catch (const std::exception& e) {
+      m_logger(ERROR) << "Rollover failed to send transaction: " << e.what();
+      return false;
+    }
+  }
+
   void WalletGreen::createDeposit(
       uint64_t amount,
       uint64_t term,

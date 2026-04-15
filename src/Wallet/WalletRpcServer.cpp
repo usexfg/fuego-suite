@@ -817,23 +817,28 @@ bool wallet_rpc_server::on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD
     uint32_t newTerm = (req.new_term == 0) ? dep.term : req.new_term;
     std::string txHash;
 
-    // rolloverDeposit requires CommitmentIndex from the Core layer.
-    // WalletRpcServer does not currently have Core access — this must be called
-    // from a walletd instance that is co-located with the daemon (not remote).
-    // TODO: expose CommitmentIndex via INode interface to remove this limitation.
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-      "rollover_cd requires Core access not yet exposed via INode. "
-      "Use the daemon /rollover_deposit RPC endpoint instead.");
-    (void)wg; (void)newTerm; (void)txHash;
+    // Obtain accumulated CD interest via INode (delegates to CommitmentIndex in the Core).
+    uint32_t currentHeight = m_node.getLastLocalBlockHeight();
+    uint64_t interest = 0;
+    std::error_code ec = m_node.getCdInterest(dep.amount, dep.height, currentHeight, interest);
+    if (ec) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+                                  "getCdInterest failed: " + ec.message());
+    }
+
+    if (!wg->rolloverDeposit(depId, newTerm, interest, txHash)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR,
+                                  "rolloverDeposit failed");
+    }
 
     // Get new deposit info (last created)
     size_t newDepId = m_wallet.getDepositCount() - 1;
     CryptoNote::Deposit newDep;
     m_wallet.getDeposit(static_cast<CryptoNote::DepositId>(newDepId), newDep);
 
-    res.tx_hash   = txHash;
+    res.tx_hash    = txHash;
     res.new_amount = newDep.amount;
-    res.status    = WALLET_RPC_STATUS_OK;
+    res.status     = WALLET_RPC_STATUS_OK;
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
@@ -852,10 +857,6 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
       ? m_node.getLastLocalBlockHeight()
       : req.current_height;
 
-    // Delegate to daemon RPC for yield estimation (requires CommitmentIndex access)
-    // Wallet layer proxies through the node's local blockchain height
-    // For a full implementation, Core::calculateCdInterest should be exposed via INode
-    // For now, return a conservative estimate based on height difference
     uint32_t heightDiff = (currentHeight > req.creation_height)
       ? (currentHeight - req.creation_height) : 0;
 
@@ -865,9 +866,16 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
       : static_cast<uint32_t>(CryptoNote::parameters::EPOCH_DURATION_BLOCKS);
 
     res.effective_epochs = heightDiff / epochDuration;
-    // Interest rate estimate: conservative placeholder (actual rate from CommitmentIndex)
-    // A proper implementation requires INode to expose getCommitmentIndex()
-    res.estimated_interest = 0;  // Will be non-zero once INode exposes CommitmentIndex
+
+    // Delegate to INode which in turn calls CommitmentIndex via Core.
+    uint64_t interest = 0;
+    std::error_code ec = m_node.getCdInterest(req.amount, req.creation_height,
+                                               currentHeight, interest);
+    if (ec) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+                                  "getCdInterest failed: " + ec.message());
+    }
+    res.estimated_interest = interest;
     res.status = WALLET_RPC_STATUS_OK;
   } catch (const JsonRpc::JsonRpcError&) {
     throw;

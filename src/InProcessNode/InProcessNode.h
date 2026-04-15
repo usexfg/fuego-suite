@@ -81,6 +81,10 @@ public:
   virtual void getPoolTransactions(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<TransactionDetails>& transactions, uint64_t& transactionsNumberWithinTimestamps, const Callback& callback) override;
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
 
+  virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                        uint32_t currentHeight, uint64_t& outInterest) override;
+  virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
+
 private:
   virtual void peerCountUpdated(size_t count) override;
   virtual void lastKnownBlockHeightUpdated(uint32_t height) override;

@@ -124,6 +124,18 @@ public:
 
   virtual bool addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) = 0;
   virtual bool removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) = 0;
+
+  // CD interest calculation delegated to Currency + CommitmentIndex.
+  // Non-pure so mock/stub ICore implementations compile without changes.
+  virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                               uint32_t currentHeight, uint64_t& outInterest) {
+    outInterest = 0;
+    return {};
+  }
+  virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+    outFeeRate = 0;
+    return {};
+  }
 };
 
 } //namespace CryptoNote

@@ -62,6 +62,11 @@ public:
   bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
                        const CommitmentIndex& commitmentIndex,
                        std::string &txHashOut);
+  // Overload that accepts a pre-computed interest amount (obtained via INode::getCdInterest).
+  // Used by WalletRpcServer which does not have direct Core access.
+  bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
+                       uint64_t precomputedInterest,
+                       std::string &txHashOut);
 
   // Burn deposit information for local secret storage
   struct BurnDepositInfo {

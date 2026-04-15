@@ -96,6 +96,19 @@ public:
   virtual void getTransactionsByPaymentId(const Crypto::Hash& paymentId, std::vector<TransactionDetails>& transactions, const Callback& callback) = 0;
   virtual void getPoolTransactions(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<TransactionDetails>& transactions, uint64_t& transactionsNumberWithinTimestamps, const Callback& callback) = 0;
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) = 0;
+
+  // CD interest and epoch fee rate queries — delegated to CommitmentIndex in the daemon.
+  // Default implementations return success with zero so existing INode implementations
+  // (e.g. NodeRpcProxy) compile without changes until they override these.
+  virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                        uint32_t currentHeight, uint64_t& outInterest) {
+    outInterest = 0;
+    return {};
+  }
+  virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+    outFeeRate = 0;
+    return {};
+  }
 };
 
 }

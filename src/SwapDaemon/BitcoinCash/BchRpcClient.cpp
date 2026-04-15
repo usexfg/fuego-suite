@@ -362,4 +362,52 @@ bool BchRpcClient::importAddress(const std::string& address, const std::string& 
   }
 }
 
+// ─── HTLC operations (stubs — full secp256k1/script-signing TODO) ────────────
+
+bool BchRpcClient::lockHtlc(const std::string& /*senderWif*/,
+                             const std::string& /*recipientAddress*/,
+                             const std::string& /*hashLockSha256Hex*/,
+                             uint32_t /*timeoutBlock*/,
+                             uint64_t /*amountSatoshis*/,
+                             std::string& /*lockTxId*/) {
+  // TODO: Build P2SH redeem script via BchHtlcScript::createRedeemScript,
+  // compute P2SH address, fund it via fundrawtransaction + signrawtransaction,
+  // broadcast with sendRawTransaction.
+  // hashLockSha256Hex is SHA256(adaptor_secret) — do NOT use RIPEMD160 here.
+  return false;
+}
+
+bool BchRpcClient::verifyLock(const std::string& htlcAddress,
+                               uint64_t expectedSatoshis,
+                               uint32_t minConfirms) {
+  // TODO: Call listUnspent or getBalance for htlcAddress and check amount/confirms.
+  (void)htlcAddress; (void)expectedSatoshis; (void)minConfirms;
+  return true;  // optimistic stub — real impl must check on-chain
+}
+
+bool BchRpcClient::claim(const std::string& /*claimerWif*/,
+                          const std::string& /*htlcTxid*/,
+                          uint32_t /*htlcVout*/,
+                          uint64_t /*htlcAmount*/,
+                          const std::string& /*redeemScriptHex*/,
+                          const std::string& /*preimageHex*/,
+                          const std::string& /*destAddress*/,
+                          std::string& /*claimTxId*/) {
+  // TODO: Build claim scriptSig via BchHtlcScript::createClaimScriptSig,
+  // assemble raw tx via BchHtlcScript::buildRawTransaction, broadcast.
+  return false;
+}
+
+bool BchRpcClient::refundHtlc(const std::string& /*senderWif*/,
+                               const std::string& /*htlcTxid*/,
+                               uint32_t /*htlcVout*/,
+                               uint64_t /*htlcAmount*/,
+                               const std::string& /*redeemScriptHex*/,
+                               const std::string& /*destAddress*/,
+                               std::string& /*refundTxId*/) {
+  // TODO: Build refund scriptSig via BchHtlcScript::createRefundScriptSig,
+  // set nLockTime = timeoutBlock, assemble and broadcast.
+  return false;
+}
+
 } // namespace XfgSwap

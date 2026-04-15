@@ -143,6 +143,13 @@ public:
                     uint32_t pollIntervalMs = 2000,
                     uint64_t maxWaitMs = 600000);
 
+  // Verify that a SOL HTLC is on-chain, holds the expected amount, and is
+  // not yet claimed or refunded.
+  // htlcAccount:      HTLC state account pubkey (base58).
+  // expectedLamports: expected locked amount.
+  bool verifyLock(const std::string& htlcAccount,
+                  uint64_t expectedLamports);
+
 private:
   // JSON-RPC call to Solana node.
   std::string jsonRpc(const std::string& method, const std::string& params);

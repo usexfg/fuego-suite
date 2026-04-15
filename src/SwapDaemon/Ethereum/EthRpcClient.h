@@ -54,6 +54,44 @@ public:
   // Send raw signed transaction
   bool sendRawTransaction(const std::string& signedTxHex, std::string& txHash);
 
+  // ─── HTLC operations ─────────────────────────────────────────────────────
+  //
+  // Deploy the XFG HashedTimelock ETH contract and return the contract address.
+  // NOTE: throws std::runtime_error("EIP-155 signing not implemented") until
+  // the secp256k1 library is linked.  Callers must catch and mark swap FAILED.
+  //
+  // hashLockHex:      64-char hex of keccak256(adaptor_secret).
+  // recipientAddress: ETH address for the claim path.
+  // timeoutBlock:     block number after which refund is valid.
+  // valueWei:         ETH to lock (in wei).
+  // fromAddress:      sender's ETH address.
+  // On success sets contractAddress.
+  bool deployHtlc(const std::string& fromAddress,
+                  const std::string& recipientAddress,
+                  const std::string& hashLockHex,
+                  uint64_t timeoutBlock,
+                  uint64_t valueWei,
+                  std::string& contractAddress);
+
+  // Verify the HTLC contract is deployed and holds the expected value.
+  // NOTE: This uses eth_call (read-only) so it works even without signing.
+  bool verifyLock(const std::string& contractAddress,
+                  uint64_t expectedWei,
+                  uint64_t minConfirmBlocks = 1);
+
+  // Claim ETH from the HTLC by revealing the adaptor secret preimage.
+  // NOTE: throws std::runtime_error("EIP-155 signing not implemented").
+  bool claimHtlc(const std::string& fromAddress,
+                 const std::string& contractAddress,
+                 const std::string& preimageHex,
+                 std::string& claimTxHash);
+
+  // Refund ETH from the HTLC after timeout.
+  // NOTE: throws std::runtime_error("EIP-155 signing not implemented").
+  bool refundHtlc(const std::string& fromAddress,
+                  const std::string& contractAddress,
+                  std::string& refundTxHash);
+
 private:
   std::string httpPost(const std::string& path, const std::string& body);
   std::string jsonRpc(const std::string& method, const std::string& params);

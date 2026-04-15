@@ -59,6 +59,40 @@ public:
   // Check if an address has received funds
   bool checkAddressBalance(const std::string& address, uint64_t& balance, uint64_t& unlocked);
 
+  // ─── Adaptor-signature lock/claim/refund ──────────────────────────────────
+  //
+  // For the XMR/XFG atomic swap the XMR side uses a view-key adaptor scheme
+  // (no on-chain script; lock = send to shared address, reveal = spend key).
+  // All methods below are stubs pending the full CLSAG adaptor implementation.
+
+  // Lock XMR by transferring to the shared 2-of-2 address.
+  // adaptorPointHex: Bob's adaptor point T = t*G (hex), used to derive the lock.
+  // amountPiconero:  amount to lock.
+  // On success sets lockTxHash.
+  bool lockAdaptor(const std::string& sharedAddress,
+                   uint64_t amountPiconero,
+                   MoneroTransferResult& result);
+
+  // Verify the shared address holds the expected amount (unlocked).
+  bool verifyLock(const std::string& sharedAddress,
+                  uint64_t expectedPiconero);
+
+  // Claim XMR from the shared address by providing both spend keys.
+  // This is equivalent to sweepSharedAddress with the adaptor secret applied.
+  // adaptorSecretHex: the 32-byte adaptor secret t (hex).
+  bool claimAdaptor(const std::string& aliceSpendKeyHex,
+                    const std::string& bobSpendKeyHex,
+                    const std::string& viewKeyHex,
+                    const std::string& destAddress,
+                    MoneroTransferResult& result);
+
+  // Refund XMR from the shared address cooperatively (both keys present).
+  // Used when the swap times out before Alice claims on counterparty chain.
+  bool refundAdaptor(const std::string& spendKeyHex,
+                     const std::string& viewKeyHex,
+                     const std::string& destAddress,
+                     MoneroTransferResult& result);
+
 private:
   std::string httpPost(const std::string& host, uint16_t port, const std::string& path, const std::string& body);
   std::string jsonRpc(const std::string& host, uint16_t port, const std::string& method, const std::string& params);

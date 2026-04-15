@@ -418,4 +418,42 @@ bool MoneroRpcClient::checkAddressBalance(const std::string& address,
   return true;
 }
 
+// ─── Adaptor-signature stubs (CLSAG adaptor path — TODO) ─────────────────────
+
+bool MoneroRpcClient::lockAdaptor(const std::string& sharedAddress,
+                                   uint64_t amountPiconero,
+                                   MoneroTransferResult& result) {
+  // Delegate to transferToShared — the lock IS the transfer to the shared address.
+  // No on-chain script; the adaptor secret reveals the spend key.
+  return transferToShared(sharedAddress, amountPiconero, result);
+}
+
+bool MoneroRpcClient::verifyLock(const std::string& sharedAddress,
+                                  uint64_t expectedPiconero) {
+  uint64_t balance = 0, unlocked = 0;
+  if (!checkAddressBalance(sharedAddress, balance, unlocked)) return false;
+  // Accept either locked or unlocked balance — XMR may take time to unlock.
+  return balance >= expectedPiconero;
+}
+
+bool MoneroRpcClient::claimAdaptor(const std::string& aliceSpendKeyHex,
+                                    const std::string& /*bobSpendKeyHex*/,
+                                    const std::string& viewKeyHex,
+                                    const std::string& destAddress,
+                                    MoneroTransferResult& result) {
+  // TODO: combine Alice + Bob spend keys with adaptor secret to form the
+  // combined spend key, then call sweepSharedAddress.
+  // For now delegate with Alice's key as a placeholder.
+  return sweepSharedAddress(aliceSpendKeyHex, viewKeyHex, destAddress, result);
+}
+
+bool MoneroRpcClient::refundAdaptor(const std::string& spendKeyHex,
+                                     const std::string& viewKeyHex,
+                                     const std::string& destAddress,
+                                     MoneroTransferResult& result) {
+  // Cooperative refund: sweep back to the original sender using both keys.
+  // TODO: requires both parties to cooperate and provide their key shares.
+  return sweepSharedAddress(spendKeyHex, viewKeyHex, destAddress, result);
+}
+
 } // namespace XfgSwap

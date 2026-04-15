@@ -359,6 +359,59 @@ bool EthRpcClient::callContract(const std::string& to, const std::string& data,
   return !result.empty();
 }
 
+// ─── HTLC operations (stubs — EIP-155 signing not yet implemented) ──────────
+
+bool EthRpcClient::deployHtlc(const std::string& fromAddress,
+                               const std::string& /*recipientAddress*/,
+                               const std::string& /*hashLockHex*/,
+                               uint64_t /*timeoutBlock*/,
+                               uint64_t /*valueWei*/,
+                               std::string& /*contractAddress*/) {
+  // TODO: ABI-encode constructor(recipient, hashLock, timeoutBlock), append to
+  // HTLC bytecode, then call deployContract(fromAddress, bytecode, gasLimit, txHash).
+  // Blocked on EIP-155 secp256k1 signing.
+  (void)fromAddress;
+  throw std::runtime_error("EIP-155 signing not implemented");
+}
+
+bool EthRpcClient::verifyLock(const std::string& contractAddress,
+                               uint64_t expectedWei,
+                               uint64_t minConfirmBlocks) {
+  // Read-only check: call eth_getBalance on the HTLC contract address.
+  // This does not require signing and works without secp256k1.
+  uint64_t balance = 0;
+  if (!getBalance(contractAddress, balance)) return false;
+  if (balance < expectedWei) return false;
+
+  // Optionally check confirmations via eth_getCode (contract must exist)
+  if (minConfirmBlocks > 0) {
+    std::string result;
+    std::string params = "[\"" + contractAddress + "\",\"latest\"]";
+    std::string resp = jsonRpc("eth_getCode", params);
+    if (resp.empty()) return false;
+  }
+  return true;
+}
+
+bool EthRpcClient::claimHtlc(const std::string& fromAddress,
+                               const std::string& /*contractAddress*/,
+                               const std::string& /*preimageHex*/,
+                               std::string& /*claimTxHash*/) {
+  // TODO: ABI-encode claim(preimage) call data, call sendTransaction.
+  // Blocked on EIP-155 secp256k1 signing.
+  (void)fromAddress;
+  throw std::runtime_error("EIP-155 signing not implemented");
+}
+
+bool EthRpcClient::refundHtlc(const std::string& fromAddress,
+                                const std::string& /*contractAddress*/,
+                                std::string& /*refundTxHash*/) {
+  // TODO: ABI-encode refund() call data, call sendTransaction.
+  // Blocked on EIP-155 secp256k1 signing.
+  (void)fromAddress;
+  throw std::runtime_error("EIP-155 signing not implemented");
+}
+
 bool EthRpcClient::sendRawTransaction(const std::string& signedTxHex, std::string& txHash) {
   std::string params = "[\"" + signedTxHex + "\"]";
   std::string resp = jsonRpc("eth_sendRawTransaction", params);

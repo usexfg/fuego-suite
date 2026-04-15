@@ -1370,4 +1370,17 @@ bool SolRpcClient::sendAndConfirmTransaction(const std::vector<uint8_t>& txBytes
   return false;
 }
 
+bool SolRpcClient::verifyLock(const std::string& htlcAccount,
+                               uint64_t expectedLamports) {
+  SolHtlcInfo info;
+  if (!getHtlcState(htlcAccount, info)) {
+    // Account may not exist yet or parsing failed
+    return false;
+  }
+  if (info.claimed || info.refunded) {
+    return false;
+  }
+  return info.amount >= expectedLamports;
+}
+
 } // namespace XfgSwap

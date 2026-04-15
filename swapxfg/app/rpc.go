@@ -9,18 +9,22 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // FuegoClient talks to a fuegod node via JSON-RPC.
 type FuegoClient struct {
-	endpoint string
-	client   *http.Client
+	endpoint    string
+	client      *http.Client
+	fetchLimiter *rate.Limiter // max 10 FetchAll calls/second
 }
 
 func NewFuegoClient(endpoint string) *FuegoClient {
 	return &FuegoClient{
-		endpoint: endpoint,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		endpoint:     endpoint,
+		client:       &http.Client{Timeout: 10 * time.Second},
+		fetchLimiter: rate.NewLimiter(rate.Every(time.Second/10), 10), // 10 calls/s
 	}
 }
 
@@ -189,7 +193,11 @@ type AllPairData struct {
 
 // FetchAll fetches offers, prices, and trades for the given pairs in parallel,
 // plus CD market offers and price stats.
+// It is rate-limited to 10 calls/second to prevent flooding the daemon.
 func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
+	if !c.fetchLimiter.Allow() {
+		return nil, fmt.Errorf("FetchAll: rate limit exceeded (max 10/s)")
+	}
 	data := &AllPairData{
 		Offers:   make(map[uint8][]SwapOffer),
 		Prices:   make(map[uint8]*SwapPriceResponse),

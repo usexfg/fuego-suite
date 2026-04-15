@@ -5,6 +5,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 )
 
 // BridgeRequest is a message sent from the TUI to the browser.
@@ -40,12 +43,35 @@ type BridgeServer struct {
 	solHTML string
 	port    int
 
+	// sessionToken is a random 16-byte hex nonce injected into bridge pages
+	// and required as ?token=<nonce> on WebSocket upgrade requests.
+	sessionToken string
+
 	upgrader websocket.Upgrader
 	mu       sync.Mutex
 	pending  map[string]pendingReq
 	conn     *websocket.Conn
 	srv      *http.Server
 	cancel   context.CancelFunc
+
+	// wsLimiters is a sync.Map of IP string -> *rate.Limiter (5 conns/minute).
+	wsLimiters sync.Map
+}
+
+// newSessionToken generates a cryptographically random 16-byte hex token.
+func newSessionToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate session token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// wsLimiter returns (creating if necessary) the per-IP rate limiter.
+// Max 5 WebSocket upgrade attempts per minute per IP.
+func (b *BridgeServer) wsLimiter(ip string) *rate.Limiter {
+	v, _ := b.wsLimiters.LoadOrStore(ip, rate.NewLimiter(rate.Every(time.Minute/5), 5))
+	return v.(*rate.Limiter)
 }
 
 // NewBridgeServer creates and starts a BridgeServer bound to a random
@@ -61,13 +87,25 @@ func NewBridgeServer(preferredPort int) (*BridgeServer, error) {
 		}
 	}
 
+	token, err := newSessionToken()
+	if err != nil {
+		return nil, err
+	}
+
 	b := &BridgeServer{
-		pending: make(map[string]pendingReq),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
-		},
+		pending:      make(map[string]pendingReq),
+		sessionToken: token,
 	}
 	b.port = l.Addr().(*net.TCPAddr).Port
+
+	// CheckOrigin: only allow requests from our own loopback page.
+	expectedOrigin := fmt.Sprintf("http://127.0.0.1:%d", b.port)
+	b.upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return r.Header.Get("Origin") == expectedOrigin
+		},
+	}
+
 	b.ethHTML = ethBridgeHTML(b.port)
 	b.solHTML = solBridgeHTML(b.port)
 
@@ -101,6 +139,10 @@ func NewBridgeServer(preferredPort int) (*BridgeServer, error) {
 
 // Port returns the port the bridge is listening on.
 func (b *BridgeServer) Port() int { return b.port }
+
+// SessionToken returns the per-session nonce that must be presented as
+// ?token=<nonce> when connecting to /bridge/ws.
+func (b *BridgeServer) SessionToken() string { return b.sessionToken }
 
 // EthURL returns the URL for the ETH bridge page.
 func (b *BridgeServer) EthURL() string {
@@ -169,19 +211,81 @@ func openURL(url string) error {
 
 // handleWS upgrades the HTTP connection to a WebSocket and reads responses.
 func (b *BridgeServer) handleWS(w http.ResponseWriter, r *http.Request) {
+	// --- Rate limit per IP ---
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if !b.wsLimiter(host).Allow() {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
+	// --- Validate session token ---
+	if r.URL.Query().Get("token") != b.sessionToken {
+		http.Error(w, "invalid or missing session token", http.StatusForbidden)
+		return
+	}
+
+	// --- Reject duplicate connections ---
+	b.mu.Lock()
+	if b.conn != nil {
+		b.mu.Unlock()
+		http.Error(w, "connection already active", http.StatusConflict)
+		return
+	}
+	b.mu.Unlock()
+
 	conn, err := b.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 
+	// --- Set framing limits and initial read deadline ---
+	conn.SetReadLimit(1 << 16) // 64 KB max message
+
+	const readDeadline = 60 * time.Second
+	conn.SetReadDeadline(time.Now().Add(readDeadline)) //nolint:errcheck
+
+	// Pong handler: extend read deadline on each pong received.
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(readDeadline))
+	})
+
 	b.mu.Lock()
+	// Double-check: another goroutine may have won the race between our
+	// nil-check above and the upgrade completing.
 	if b.conn != nil {
-		_ = b.conn.Close()
+		b.mu.Unlock()
+		_ = conn.Close()
+		return
 	}
 	b.conn = conn
 	b.mu.Unlock()
 
+	// --- Ping goroutine ---
+	stopPing := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				b.mu.Lock()
+				c := b.conn
+				b.mu.Unlock()
+				if c == nil {
+					return
+				}
+				_ = c.WriteMessage(websocket.PingMessage, nil)
+			case <-stopPing:
+				return
+			}
+		}
+	}()
+
 	defer func() {
+		close(stopPing)
 		b.mu.Lock()
 		if b.conn == conn {
 			b.conn = nil

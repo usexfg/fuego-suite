@@ -198,7 +198,15 @@ bool SwapStateMachine::isTerminal() const {
          m_state == SwapState::POOL_SWAP_REFUNDED ||
          m_state == SwapState::POOL_FEE_CLAIM_REFUNDED ||
          // Pool checkpoint is the final success state after all pool ops complete
-         m_state == SwapState::POOL_CHECKPOINT_GENERATED;
+         m_state == SwapState::POOL_CHECKPOINT_GENERATED ||
+         // Legacy HTLC states (protocol v1, inactive but kept for DB compat).
+         // XFG_CLAIMED and CTR_CLAIMED represent successful completion.
+         // XFG_REFUNDED and CTR_REFUNDED represent timeout/refund completion.
+         // XFG_LOCKED and CTR_LOCKED are intermediate — NOT included here.
+         m_state == SwapState::XFG_CLAIMED ||    // Alice claimed XFG (success)
+         m_state == SwapState::CTR_CLAIMED ||    // Bob claimed counterparty (success)
+         m_state == SwapState::XFG_REFUNDED ||   // Bob refunded XFG after timeout
+         m_state == SwapState::CTR_REFUNDED;     // Alice refunded counterparty after timeout
 }
 
 std::string SwapStateMachine::serialize() const {

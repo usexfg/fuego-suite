@@ -2223,7 +2223,11 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
-  uint32_t oldestRingMemberHeight = currentHeight;  // track for interest bounds
+  // Track youngest (highest creation height) ring member for interest cap.
+  // Using the youngest member prevents gaming the system by including old
+  // high-rate deposits: the real spend can only be as young as the youngest
+  // ring member, so interest must be bounded by that member's epoch rate.
+  uint32_t youngestRingMemberHeight = 0;
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -2232,10 +2236,10 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
 
-    // Track oldest ring member for interest bounds check
+    // Track youngest (most recent) ring member for interest bounds check
     uint32_t memberHeight = ref.transactionIndex.block;
-    if (memberHeight < oldestRingMemberHeight) {
-      oldestRingMemberHeight = memberHeight;
+    if (memberHeight > youngestRingMemberHeight) {
+      youngestRingMemberHeight = memberHeight;
     }
 
     if (ref.term != CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
@@ -2290,11 +2294,13 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
     return false;
   }
 
-  // Declare-and-verify: validate claimedInterest against max possible
+  // Declare-and-verify: validate claimedInterest against max possible.
+  // Cap is based on the YOUNGEST (most recent) ring member: the real spend
+  // cannot have accrued interest longer than since the youngest member was
+  // created, preventing inflation attacks via old high-rate ring decoys.
   if (txin.claimedInterest > 0) {
-    // Max interest = what the oldest ring member could have accrued
     uint64_t maxInterest = m_currency.calculateCdInterest(
-        txin.amount, oldestRingMemberHeight, currentHeight, m_commitmentIndex);
+        txin.amount, youngestRingMemberHeight, currentHeight, m_commitmentIndex);
     // Also capped by available fee pool balance
     if (maxInterest > m_feePoolBalance) {
       maxInterest = m_feePoolBalance;
@@ -2302,7 +2308,7 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
     if (txin.claimedInterest > maxInterest) {
       logger(INFO) << "CommitmentSpend: claimedInterest " << txin.claimedInterest
                    << " exceeds max " << maxInterest
-                   << " (oldest ring member at height " << oldestRingMemberHeight << ")";
+                   << " (youngest ring member at height " << youngestRingMemberHeight << ")";
       return false;
     }
   }

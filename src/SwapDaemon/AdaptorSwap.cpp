@@ -191,6 +191,14 @@ Crypto::Signature adaptor_aggregate(SwapParams& params, bool adapted) {
     sc_add(reinterpret_cast<unsigned char*>(&sig1.s),
            reinterpret_cast<const unsigned char*>(&sig1.s),
            reinterpret_cast<const unsigned char*>(&params.adaptorSecret));
+
+    // Zero the adaptor secret immediately after use to prevent it lingering
+    // in memory. volatile cast prevents the compiler from eliding the wipe.
+    volatile unsigned char* secret_ptr =
+        reinterpret_cast<volatile unsigned char*>(&params.adaptorSecret);
+    for (size_t i = 0; i < sizeof(params.adaptorSecret); ++i) {
+      secret_ptr[i] = 0;
+    }
   }
 
   Crypto::Signature final_sig;

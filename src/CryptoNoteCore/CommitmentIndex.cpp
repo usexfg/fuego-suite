@@ -294,7 +294,28 @@ EpochReport CommitmentIndex::generateEpochReport(uint64_t epochNumber, uint64_t 
   report.epochStartBlock = startBlock;
   report.epochEndBlock = endBlock;
   report.generatedAtBlock = generatedAtBlock;
- }
+
+  // TODO: totalFeesDistributed — not tracked in CommitmentIndex; caller (Blockchain.cpp) should
+  // populate this field after the call using the epoch fee-distribution totals it computes.
+  report.totalFeesDistributed = 0;
+
+  // swapFeesCollected, totalCdLockedAtStart, feeRateFixedPoint are filled by the caller
+  // (Blockchain.cpp) immediately after this call — leave them zero here.
+
+  // Count active Elderfier aliases (aliasType == 0) via m_aliasIndex if available.
+  if (m_aliasIndex != nullptr) {
+    const auto allAliases = m_aliasIndex->getAllAliases();
+    uint64_t efierCount = 0;
+    for (const auto& a : allAliases) {
+      if (a.aliasType == 0) {
+        ++efierCount;
+      }
+    }
+    report.activeEfierCount = efierCount;
+  }
+
+  return report;
+}
 
 void CommitmentIndex::recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
                                            uint64_t feesCollected, uint64_t totalLocked) {

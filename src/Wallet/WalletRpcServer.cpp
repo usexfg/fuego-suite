@@ -32,6 +32,7 @@
 #include "SwapDaemon/AdaptorSwap.h"
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
+#include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
@@ -760,10 +761,28 @@ bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::re
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term must be > 0");
     }
 
+    // Validate deposit_type: only HEAT=0x08, xCD=0xCD, YIELD=0x07 are permitted
+    static const std::initializer_list<uint32_t> validDepositTypes = {0x07, 0x08, 0xCD};
+    bool typeValid = false;
+    for (uint32_t v : validDepositTypes) {
+      if (req.deposit_type == v) { typeValid = true; break; }
+    }
+    if (!typeValid) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+          "deposit_type must be one of: 0x07 (YIELD), 0x08 (HEAT), 0xCD (xCD)");
+    }
+
+    // Map wire deposit_type to internal CommitmentType
+    CryptoNote::CommitmentType commitType =
+        (req.deposit_type == 0x08) ? CryptoNote::CommitmentType::HEAT :
+        (req.deposit_type == 0x07) ? CryptoNote::CommitmentType::YIELD :
+                                     CryptoNote::CommitmentType::COLD;
+    CryptoNote::DepositCommitment commitment(commitType, Crypto::Hash{});
+
     std::string txHash;
     CryptoNote::IWallet* iwallet = static_cast<CryptoNote::IWallet*>(wg);
     std::string addr = iwallet->getAddress(0);
-    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash);
+    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash, commitment);
 
     // Deposit ID is the new last index after creation
     size_t depositId = iwallet->getWalletDepositCount() - 1;

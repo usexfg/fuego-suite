@@ -584,10 +584,12 @@ using CryptoNote::ISerializer;
     struct request {
       uint64_t amount;
       uint32_t term;
+      uint32_t deposit_type;  // HEAT=0x08, xCD=0xCD, YIELD=0x07; validated in handler
 
       void serialize(ISerializer& s) {
         KV_MEMBER(amount)
         KV_MEMBER(term)
+        KV_MEMBER(deposit_type)
       }
     };
 

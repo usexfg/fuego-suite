@@ -324,40 +324,25 @@ bool EthRpcClient::getTransactionReceipt(const std::string& txHash, EthTxReceipt
   return true;
 }
 
-bool EthRpcClient::deployContract(const std::string& fromAddress,
-                                  const std::string& bytecode,
-                                  uint64_t gasLimit,
-                                  std::string& txHash) {
-  // Contract deployment: send tx with no "to" address, data = bytecode
-  std::ostringstream params;
-  params << "[{\"from\":\"" << fromAddress
-         << "\",\"data\":\"" << bytecode
-         << "\",\"gas\":\"" << uint64ToHex(gasLimit)
-         << "\"}]";
-
-  std::string resp = jsonRpc("eth_sendTransaction", params.str());
-  if (resp.empty() || jsonHasError(resp)) return false;
-
-  txHash = jsonGetResult(resp);
-  return !txHash.empty();
+bool EthRpcClient::deployContract(const std::string& /*fromAddress*/,
+                                  const std::string& /*bytecode*/,
+                                  uint64_t /*gasLimit*/,
+                                  std::string& /*txHash*/) {
+  // STUB: eth_sendRawTransaction not yet implemented — secp256k1 library not linked.
+  // To implement: RLP-encode [nonce, gasPrice, gasLimit, "", 0, data, chainId, 0, 0],
+  // keccak256-hash, sign with EIP-155 (v = chainId*2+35/36), call eth_sendRawTransaction.
+  // chainId must come from config, not be hardcoded.
+  throw std::runtime_error("EIP-155 signing not implemented");
 }
 
-bool EthRpcClient::sendTransaction(const std::string& from, const std::string& to,
-                                   const std::string& data, uint64_t value,
-                                   uint64_t gasLimit, std::string& txHash) {
-  std::ostringstream params;
-  params << "[{\"from\":\"" << from
-         << "\",\"to\":\"" << to
-         << "\",\"data\":\"" << data
-         << "\",\"value\":\"" << uint64ToHex(value)
-         << "\",\"gas\":\"" << uint64ToHex(gasLimit)
-         << "\"}]";
-
-  std::string resp = jsonRpc("eth_sendTransaction", params.str());
-  if (resp.empty() || jsonHasError(resp)) return false;
-
-  txHash = jsonGetResult(resp);
-  return !txHash.empty();
+bool EthRpcClient::sendTransaction(const std::string& /*from*/, const std::string& /*to*/,
+                                   const std::string& /*data*/, uint64_t /*value*/,
+                                   uint64_t /*gasLimit*/, std::string& /*txHash*/) {
+  // STUB: eth_sendRawTransaction not yet implemented — secp256k1 library not linked.
+  // To implement: RLP-encode [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0],
+  // keccak256-hash, sign with EIP-155 (v = chainId*2+35/36), call eth_sendRawTransaction.
+  // chainId must come from config, not be hardcoded.
+  throw std::runtime_error("EIP-155 signing not implemented");
 }
 
 bool EthRpcClient::callContract(const std::string& to, const std::string& data,

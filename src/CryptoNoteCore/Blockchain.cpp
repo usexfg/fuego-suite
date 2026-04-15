@@ -1971,6 +1971,14 @@ bool Blockchain::haveTransactionKeyImagesAsSpent(const Transaction &tx) {
       if (have_tx_keyimg_as_spent(boost::get<KeyInput>(in).keyImage)) {
         return true;
       }
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      if (have_tx_keyimg_as_spent(boost::get<TransactionInputCommitmentSpend>(in).keyImage)) {
+        return true;
+      }
+    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      if (have_tx_keyimg_as_spent(boost::get<TransactionInputCommitmentTransfer>(in).keyImage)) {
+        return true;
+      }
     }
   }
 

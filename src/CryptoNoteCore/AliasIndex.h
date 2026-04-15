@@ -43,7 +43,6 @@ public:
 
   // Registration
   bool registerAlias(const AliasEntry& entry);
-  bool voidAlias(const std::string& ownerAddress);
 
   // Queries
   bool aliasExists(const std::string& alias) const;

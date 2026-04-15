@@ -138,22 +138,12 @@ bool AliasIndex::registerAlias(const AliasEntry& entry) {
   return true;
 }
 
-bool AliasIndex::voidAlias(const std::string& ownerAddress) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-
-  Crypto::Hash addrHash = Crypto::cn_fast_hash(ownerAddress.data(), ownerAddress.size());
-  std::string addrHashHex = Common::podToHex(addrHash);
-
-  auto alias_it = m_addrHashToAlias.find(addrHashHex);
-  if (alias_it == m_addrHashToAlias.end()) {
-    return false;  // No alias for this address
-  }
-
-  std::string aliasName = alias_it->second;
-  m_aliases.erase(aliasName);
-  m_addrHashToAlias.erase(alias_it);
-  return true;
-}
+// DEPRECATED: voidAlias has no authentication model — any caller could void any alias.
+// It is unreachable from all RPC surfaces and has no callers in the codebase.
+// Removed from public interface (AliasIndex.h). Retained here as dead code for reference
+// until a signed-revocation path (sign(alias_name, owner_spend_key)) is designed.
+// DO NOT call this function — it is not declared in the header.
+// TODO: implement signed-revocation auth before re-exposing this via RPC.
 
 // ============================================================================
 // QUERIES

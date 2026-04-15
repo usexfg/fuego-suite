@@ -28,16 +28,23 @@ uint64_t poolGetOutputAmount(uint64_t inputAmount,
     return 0;
   }
 
-  // inputWithFee = inputAmount * (10000 - feeBps)
-  uint64_t inputWithFee = inputAmount * (10000 - feeBps);
-  uint64_t numerator = inputWithFee * reserveOut;
-  uint64_t denominator = reserveIn * 10000 + inputWithFee;
+  // inputWithFee = inputAmount * (10000 - feeBps) / 10000  — fee fraction applied first
+  // to keep the value in uint64_t range before multiplying by reserveOut.
+  uint64_t inputWithFee = static_cast<uint64_t>((__uint128_t)inputAmount * (10000 - feeBps) / 10000);
+  __uint128_t numerator   = (__uint128_t)inputWithFee * reserveOut;
+  __uint128_t denominator = (__uint128_t)reserveIn * 10000 + inputWithFee;
 
   if (denominator == 0) {
     return 0;
   }
 
-  return numerator / denominator;
+  // Guard: result must fit in uint64_t.
+  if (numerator / denominator > (__uint128_t)UINT64_MAX) {
+    return 0;
+  }
+
+  uint64_t output = static_cast<uint64_t>(numerator / denominator);
+  return output;
 }
 
 uint64_t poolGetInputAmount(uint64_t outputAmount,
@@ -53,16 +60,21 @@ uint64_t poolGetInputAmount(uint64_t outputAmount,
   }
 
   // numerator = reserveIn * outputAmount * 10000
-  uint64_t numerator = reserveIn * outputAmount * 10000;
+  __uint128_t numerator   = (__uint128_t)reserveIn * outputAmount * 10000;
   // denominator = (reserveOut - outputAmount) * (10000 - feeBps)
-  uint64_t denominator = (reserveOut - outputAmount) * (10000 - feeBps);
+  __uint128_t denominator = (__uint128_t)(reserveOut - outputAmount) * (10000 - feeBps);
 
   if (denominator == 0) {
     return 0;
   }
 
-  // Add 1 to round up (input must be sufficient)
-  return (numerator / denominator) + 1;
+  // Guard: result (rounded up) must fit in uint64_t.
+  __uint128_t quotient = numerator / denominator + 1; // +1 to round up
+  if (quotient > (__uint128_t)UINT64_MAX) {
+    return 0;
+  }
+
+  return static_cast<uint64_t>(quotient);
 }
 
 uint64_t poolMintLPShares(uint64_t amountA,

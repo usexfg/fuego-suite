@@ -2331,7 +2331,15 @@ bool Blockchain::checkCommitmentTransferInput(
     return false;
   }
 
-  // newTerm must meet minimum
+  // newTerm must be within the valid protocol range [1..5].
+  // An unchecked upper bound would allow newTerm=255, creating a deposit
+  // that never matures and permanently locks funds.
+  if (txin.newTerm < 1 || txin.newTerm > 5) {
+    logger(WARNING) << "Invalid newTerm " << txin.newTerm << " in CommitmentTransfer";
+    return false;
+  }
+
+  // newTerm must also meet protocol minimum for remaining term
   if (txin.newTerm < CryptoNote::parameters::CD_TRANSFER_MIN_REMAINING_TERM) {
     logger(ERROR) << "CommitmentTransfer newTerm " << txin.newTerm
                   << " below minimum " << CryptoNote::parameters::CD_TRANSFER_MIN_REMAINING_TERM;

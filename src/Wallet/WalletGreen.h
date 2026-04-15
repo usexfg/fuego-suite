@@ -89,6 +89,17 @@ public:
   void markBurnDepositBPDFGenerated(const std::string& transactionHash);
   std::vector<BurnDepositInfo> getAllBurnDeposits();
 
+  // Alias methods
+  // Register an 8-character alias on-chain.  Builds the 0xEA extra, adds the mandatory
+  // ALIAS_REGISTRATION_FEE output to the Fuego Developer Fund (mainnet only), and
+  // submits the transaction.  On success, txHashOut receives the transaction hash.
+  std::error_code registerAlias(const std::string& alias, const std::string& ownerAddress, Crypto::Hash& txHashOut);
+
+  // Look up the alias registered for a given wallet address.
+  // Delegates to m_node via /get_alias_by_address (INode::getAliasByAddress if available,
+  // otherwise returns false).
+  bool getAliasByAddress(const std::string& address, std::string& aliasOut);
+
 private:
 
 

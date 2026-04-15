@@ -5326,4 +5326,80 @@ namespace CryptoNote
     return result;
   }
 
+  // ============================================================================
+  // Alias methods
+  // ============================================================================
+
+  std::error_code WalletGreen::registerAlias(const std::string& alias,
+                                              const std::string& ownerAddress,
+                                              Crypto::Hash& txHashOut) {
+    throwIfNotInitialized();
+    throwIfStopped();
+
+    // Build the 0xEA alias registration extra field
+    CryptoNote::TransactionExtraAliasRegistration aliasReg;
+    aliasReg.version   = 1;
+    aliasReg.alias     = alias;
+    aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+    // v2 address hash: cn_fast_hash(spendKey || viewKey) — see commit 768758e7
+    // (base58 string hashing is intentionally avoided here; use spend+view key bytes)
+    aliasReg.addressHash = Crypto::cn_fast_hash(ownerAddress.data(), ownerAddress.size());
+    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy
+    aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
+
+    if (!aliasReg.isValid()) {
+      return make_error_code(std::errc::invalid_argument);
+    }
+
+    std::vector<uint8_t> extraVec;
+    if (!CryptoNote::addAliasToExtra(extraVec, aliasReg)) {
+      return make_error_code(std::errc::invalid_argument);
+    }
+
+    std::string extra(extraVec.begin(), extraVec.end());
+
+    // Build transaction: fee output to Fuego Developer Fund (enforced by Phase 1.2)
+    TransactionParameters params;
+    if (!m_currency.isTestnet()) {
+      WalletOrder devFundOutput;
+      devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
+      devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
+      params.destinations.push_back(devFundOutput);
+    } else {
+      // Testnet: self-transfer of minimum fee
+      WalletOrder selfOutput;
+      selfOutput.address = ownerAddress;
+      selfOutput.amount  = m_currency.minimumFee();
+      params.destinations.push_back(selfOutput);
+    }
+    params.fee   = m_currency.minimumFee();
+    params.mixIn = 0;
+    params.extra = extra;
+
+    Crypto::SecretKey txSK;
+    size_t txIdx;
+    try {
+      txIdx = transfer(params, txSK);
+    } catch (const std::system_error& e) {
+      return e.code();
+    } catch (...) {
+      return make_error_code(std::errc::io_error);
+    }
+
+    WalletTransaction txInfo = getTransaction(txIdx);
+    txHashOut = txInfo.hash;
+    return {};
+  }
+
+  bool WalletGreen::getAliasByAddress(const std::string& address, std::string& aliasOut) {
+    // INode does not expose a direct getAliasByAddress method; callers should
+    // use the /get_alias_by_address RPC endpoint via NodeRpcProxy directly.
+    // This stub returns false to indicate the feature requires RPC access.
+    // TODO: extend INode with getAliasByAddress(address, callback) and implement
+    //       here once the interface is available.
+    (void)address;
+    (void)aliasOut;
+    return false;
+  }
+
 } //namespace CryptoNote

@@ -3,6 +3,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +16,10 @@ import (
 
 // FuegoClient talks to a fuegod node via JSON-RPC.
 type FuegoClient struct {
-	endpoint    string
-	client      *http.Client
+	endpoint     string
+	client       *http.Client
 	fetchLimiter *rate.Limiter // max 10 FetchAll calls/second
+	authHeader   string        // non-empty when Basic Auth is configured
 }
 
 func NewFuegoClient(endpoint string) *FuegoClient {
@@ -26,6 +28,16 @@ func NewFuegoClient(endpoint string) *FuegoClient {
 		client:       &http.Client{Timeout: 10 * time.Second},
 		fetchLimiter: rate.NewLimiter(rate.Every(time.Second/10), 10), // 10 calls/s
 	}
+}
+
+// NewFuegoClientAuth creates a FuegoClient that attaches HTTP Basic Auth to
+// every request. Pass empty strings to skip authentication.
+func NewFuegoClientAuth(endpoint, username, password string) *FuegoClient {
+	fc := NewFuegoClient(endpoint)
+	if username != "" || password != "" {
+		fc.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	}
+	return fc
 }
 
 // --- RPC response types (mirror CoreRpcServerCommandsDefinitions.h) ---
@@ -321,7 +333,16 @@ func (c *FuegoClient) post(path string, reqBody interface{}, result interface{})
 		body = bytes.NewReader(data)
 	}
 
-	resp, err := c.client.Post(c.endpoint+path, "application/json", body)
+	req, err := http.NewRequest(http.MethodPost, c.endpoint+path, body)
+	if err != nil {
+		return fmt.Errorf("build request %s: %w", path, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.authHeader != "" {
+		req.Header.Set("Authorization", c.authHeader)
+	}
+
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", path, err)
 	}

@@ -95,7 +95,7 @@ func newTuiModel(cfg Config) tuiModel {
 		cursorOn: true,
 	}
 	if cfg.WalletRPC != "" {
-		m.wallet = NewWalletClient(cfg.WalletRPC)
+		m.wallet = NewWalletClientAuth(cfg.WalletRPC, cfg.WalletUser, cfg.WalletPass)
 	}
 	if !cfg.NoBch && cfg.BchRPC != "" {
 		m.bch = NewBchClient(cfg.BchRPC)

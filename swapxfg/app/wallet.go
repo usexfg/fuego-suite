@@ -13,6 +13,12 @@ func NewWalletClient(endpoint string) *WalletClient {
 	return &WalletClient{fc: NewFuegoClient(endpoint)}
 }
 
+// NewWalletClientAuth creates a WalletClient that attaches HTTP Basic Auth to
+// every request, matching fire_wallet's --rpc-user / --rpc-password flags.
+func NewWalletClientAuth(endpoint, username, password string) *WalletClient {
+	return &WalletClient{fc: NewFuegoClientAuth(endpoint, username, password)}
+}
+
 // ── Response types ─────────────────────────────────────────────────────
 
 type WalletBalance struct {

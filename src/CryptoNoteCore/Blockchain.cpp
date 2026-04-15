@@ -3185,10 +3185,13 @@ bool Blockchain::pushBlock(BlockEntry &block) {
      uint64_t treasuryShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
     uint64_t cdSwapShare = epochSwapFees - treasuryShare;
 
-    // Compute fee rate for this epoch on CD's 80% share only
+    // Compute fee rate for this epoch on CD's 80% share only.
+    // Use __uint128_t for the intermediate product to prevent uint64_t overflow
+    // when cdSwapShare * FEE_POOL_RATE_PRECISION exceeds 2^64.
     uint64_t epochFeeRate = 0;
     if (epochCdLocked > 0 && cdSwapShare > 0) {
-      epochFeeRate = (cdSwapShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION) / epochCdLocked;
+      epochFeeRate = static_cast<uint64_t>(
+          (__uint128_t)cdSwapShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, cdSwapShare, epochCdLocked);
 

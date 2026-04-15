@@ -65,11 +65,6 @@ void AliasIndex::reserveDevTeamAliases() {
 
 // Regular alias: exactly 8 characters from [a-z 0-9 &]
 bool AliasIndex::isValidRegularAlias(const std::string& alias) {
-  // Special exception: "winslayer" is allowed as a 9-character regular alias
-  if (alias == "winslayer") return true;
-  // Special exception: "galapagos" is allowed as a 9-character regular alias
-  if (alias == "galapagos") return true;
-
   if (alias.length() != 8) return false;
   for (char c : alias) {
     bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '&');

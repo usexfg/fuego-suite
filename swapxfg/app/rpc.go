@@ -327,6 +327,10 @@ func (c *FuegoClient) post(path string, reqBody interface{}, result interface{})
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("rpc: server returned %d %s", resp.StatusCode, resp.Status)
+	}
+
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)

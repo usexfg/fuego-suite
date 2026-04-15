@@ -296,17 +296,24 @@ bool wallet_rpc_server::on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_
 }
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res) {
-  // complete_swap is handled by SwapDaemon (M5) which maintains full session state.
-  // The wallet RPC exposes this as a thin stub; SwapDaemon calls it after aggregating.
-  throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-    "complete_swap requires SwapDaemon session state. Use /processswap via fuegod RPC (M5).");
+  // TODO: requires SwapDaemon IPC channel
+  // complete_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
+  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
+  // Use /processswap via fuegod RPC until the IPC channel is implemented.
+  (void)req;
+  res.txHash = "";
+  res.status = "not yet implemented — SwapDaemon IPC not wired";
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res) {
-  // refund_swap is handled by SwapDaemon (M5) which maintains full session state.
-  throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-    "refund_swap requires SwapDaemon session state. Use /refundswap via fuegod RPC (M5).");
+  // TODO: requires SwapDaemon IPC channel
+  // refund_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
+  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
+  // Use /refundswap via fuegod RPC until the IPC channel is implemented.
+  (void)req;
+  res.txHash = "";
+  res.status = "not yet implemented — SwapDaemon IPC not wired";
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------

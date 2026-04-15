@@ -24,6 +24,10 @@
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
 #include "PoolOrganizer.h"
+#include "BitcoinCash/BchRpcClient.h"
+#include "Ethereum/EthRpcClient.h"
+#include "Solana/SolRpcClient.h"
+#include "Monero/MoneroRpcClient.h"
 
 #include <string>
 #include <memory>
@@ -34,10 +38,45 @@
 
 namespace XfgSwap {
 
+// Configuration for counterparty chain RPC endpoints.
+// Pass to SwapDaemon constructor to wire per-chain clients.
+// Leave host empty ("") for any chain that is not in use.
+struct ChainClientConfig {
+  // BCH
+  std::string bchHost;
+  uint16_t    bchPort     = 8332;
+  std::string bchRpcUser;
+  std::string bchRpcPass;
+
+  // ETH
+  std::string ethHost;
+  uint16_t    ethPort     = 8545;
+
+  // SOL
+  std::string solHost;
+  uint16_t    solPort     = 8899;
+  std::string solProgramId;  // xfg_htlc program ID (base58)
+
+  // XMR
+  std::string xmrDaemonHost;
+  uint16_t    xmrDaemonPort = 18081;
+  std::string xmrWalletHost;
+  uint16_t    xmrWalletPort = 18082;
+};
+
 class SwapDaemon {
 public:
+  // Construct with only the Fuegod connection.  Chain clients are disabled;
+  // processSwap() will log a warning and skip counterparty-chain steps.
   SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
              const std::string& dataDir, Logging::ILogger& logger);
+
+  // Construct with Fuegod connection and counterparty chain RPC config.
+  // For any chain whose host is empty the corresponding client is not created.
+  SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
+             const std::string& dataDir, Logging::ILogger& logger,
+             const ChainClientConfig& chainCfg);
+
   ~SwapDaemon();
 
   // Load persisted non-terminal swaps, log recovery summary, and start the
@@ -139,6 +178,13 @@ public:
    PriceOracle m_oracle;
    PoolOrganizer m_poolOrganizer;
    Logging::LoggerRef m_logger;
+
+   // Per-chain RPC clients.  Heap-allocated so they are optional (nullptr when
+   // the chain endpoint is not configured).
+   std::unique_ptr<BchRpcClient>    m_bchClient;
+   std::unique_ptr<EthRpcClient>    m_ethClient;
+   std::unique_ptr<SolRpcClient>    m_solClient;
+   std::unique_ptr<MoneroRpcClient> m_xmrClient;
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

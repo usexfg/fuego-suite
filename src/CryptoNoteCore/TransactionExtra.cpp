@@ -262,6 +262,34 @@ namespace CryptoNote
           }
           break;
         }
+
+        case TX_EXTRA_ALIAS:
+        {
+          // 0xEA: @ alias registration. Format: varint(size) + BinaryArray(struct).
+          uint64_t aliasSize = 0;
+          readVarint(iss, aliasSize);
+          BinaryArray aliasBa(aliasSize);
+          if (aliasSize > 0) {
+            read(iss, aliasBa.data(), aliasSize);
+          }
+          TransactionExtraAliasRegistration aliasReg;
+          if (!fromBinaryArray(aliasReg, aliasBa)) {
+            return false;
+          }
+          transactionExtraFields.push_back(aliasReg);
+          break;
+        }
+
+        default:
+        {
+          // Forward-compatible TLV skip for unknown tags (prevents stream desync)
+          uint64_t unknownSize = 0;
+          readVarint(iss, unknownSize);
+          for (uint64_t i = 0; i < unknownSize; ++i) {
+            read<uint8_t>(iss);
+          }
+          break;
+        }
       }
     }
     }

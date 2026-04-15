@@ -339,6 +339,13 @@ uint64_t CommitmentIndex::getEpochCount() const {
   return m_epochFeeRates.size();
 }
 
+void CommitmentIndex::popEpochFeeRate() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (!m_epochFeeRates.empty()) {
+    m_epochFeeRates.pop_back();
+  }
+}
+
 void CommitmentIndex::storeEpochReport(const EpochReport& report) {
   std::lock_guard<std::mutex> lock(m_mutex);
   m_epochReports.push_back(report);

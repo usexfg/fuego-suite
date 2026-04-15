@@ -3160,6 +3160,10 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
   assert(m_blockIndex.size() == m_blocks.size());
 
+  // Snapshot epoch accumulator before any per-block fee additions this push may make.
+  // The delta is recorded so popBlock can reverse the contribution.
+  uint64_t epochFeesBefore = m_currentEpochSwapFees;
+
   // Generate epoch report at epoch boundaries
   uint32_t newHeight = static_cast<uint32_t>(m_blocks.size()) - 1;
   uint64_t epochDuration = m_currency.isTestnet()
@@ -3192,8 +3196,14 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       m_totalTreasuryAccrued += treasuryShare;
     }
 
+    // Record the full epoch accumulator as this block's contribution before resetting.
+    // popBlock will subtract this value and pop the matching m_epochFeeRates entry.
+    m_blockSwapFeeContributions.push_back(epochSwapFees);
+
     // Reset epoch accumulator for next epoch
     m_currentEpochSwapFees = 0;
+    // Also reset epochFeesBefore so the non-epoch path below records a zero delta.
+    epochFeesBefore = 0;
 
     EpochReport report = m_commitmentIndex.generateEpochReport(
         epochNumber, epochStart, epochEnd, newHeight);
@@ -3211,6 +3221,10 @@ bool Blockchain::pushBlock(BlockEntry &block) {
                  << " treasuryBal=" << m_treasuryBalance
                  << " cdLocked=" << epochCdLocked
                  << " feeRate=" << epochFeeRate;
+  } else {
+    // Non-epoch-boundary block: record any swap fees accumulated during this block push.
+    uint64_t blockContribution = m_currentEpochSwapFees - epochFeesBefore;
+    m_blockSwapFeeContributions.push_back(blockContribution);
   }
 
   return true;
@@ -3244,6 +3258,30 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
   }
 
   m_bankingIndex.popBlock();
+
+  // Undo per-block swap-fee contribution to the epoch accumulator.
+  if (!m_blockSwapFeeContributions.empty()) {
+    uint64_t contribution = m_blockSwapFeeContributions.back();
+    m_blockSwapFeeContributions.pop_back();
+
+    uint64_t epochDuration = m_currency.isTestnet()
+        ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+
+    if (poppedHeight > 0 && poppedHeight % epochDuration == 0) {
+      // This block was an epoch boundary: the contribution was the full epoch accumulator
+      // that got consumed (and reset to 0).  Restore it so the epoch accumulator reflects
+      // what it held just before the boundary was crossed, and remove the epoch fee rate
+      // record that was appended to CommitmentIndex.
+      m_currentEpochSwapFees += contribution;
+      m_totalSwapFeesCollected -= contribution;
+      m_commitmentIndex.popEpochFeeRate();
+    } else {
+      // Non-boundary block: simply subtract the fee delta that was added.
+      m_currentEpochSwapFees -= contribution;
+    }
+  }
+
   m_blocks.pop_back();
   m_blockIndex.pop();
 

@@ -19,6 +19,7 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
 
 #include "../../external/parallel_hashmap/phmap.h"
 
@@ -364,6 +365,8 @@ namespace CryptoNote {
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts
     uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
     uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
+    // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
+    std::deque<uint64_t> m_blockSwapFeeContributions;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)
     uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool

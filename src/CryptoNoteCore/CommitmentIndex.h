@@ -109,6 +109,8 @@ public:
                            uint64_t feesCollected, uint64_t totalLocked);
   uint64_t getEpochFeeRate(uint64_t epochNumber) const;
   uint64_t getEpochCount() const;
+  // Remove the most-recently recorded epoch fee rate (used by popBlock rollback).
+  void popEpochFeeRate();
 
   void storeEpochReport(const EpochReport& report);
   std::optional<EpochReport> getEpochReport(uint64_t epochNumber) const;

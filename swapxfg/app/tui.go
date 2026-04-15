@@ -432,26 +432,8 @@ func (m *tuiModel) handleCommand(cmd string) {
 				m.statusMsg = "usage: bch lock <amount_bch> <hashlock_hex> <timeout_blocks> <counterparty_bch_addr>"
 				return
 			}
-			amtBCH, hashlock, timeoutBlocks, counterpartyAddr := parts[2], parts[3], parts[4], parts[5]
-			go func(amt, hl, tbl, cAddr string) {
-				// Get the P2SH HTLC address from SwapDaemon via fuegod (SwapDaemon builds
-				// the HTLC script and exposes the P2SH address as part of initiating a BCH swap).
-				// For now we use the counterparty address directly as a placeholder until
-				// SwapDaemon has a /getbchhtlcaddress endpoint.
-				_ = hl
-				_ = tbl
-				txHex, err := m.bch.PayTo(cAddr, amt)
-				if err != nil {
-					m.statusMsg = "bch lock (payto) failed: " + err.Error()
-					return
-				}
-				txid, err := m.bch.BroadcastTx(txHex)
-				if err != nil {
-					m.statusMsg = "bch lock (broadcast) failed: " + err.Error()
-					return
-				}
-				m.statusMsg = fmt.Sprintf("bch lock tx: %s... (%.8s BCH to %s)", txid[:min(16, len(txid))], amt, cAddr[:min(12, len(cAddr))])
-			}(amtBCH, hashlock, timeoutBlocks, counterpartyAddr)
+			_, _, _, _ = parts[2], parts[3], parts[4], parts[5]
+			m.statusMsg = fmt.Errorf("bch lock: not yet implemented — SwapDaemon must expose an HTLC P2SH address endpoint first").Error()
 
 		case "claim":
 			if len(parts) < 5 {

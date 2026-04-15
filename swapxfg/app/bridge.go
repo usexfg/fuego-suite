@@ -277,7 +277,10 @@ func (b *BridgeServer) handleWS(w http.ResponseWriter, r *http.Request) {
 				if c == nil {
 					return
 				}
+				// Set a write deadline so a hung client doesn't block the ping forever.
+				_ = c.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				_ = c.WriteMessage(websocket.PingMessage, nil)
+				_ = c.SetWriteDeadline(time.Time{}) // clear after write
 			case <-stopPing:
 				return
 			}

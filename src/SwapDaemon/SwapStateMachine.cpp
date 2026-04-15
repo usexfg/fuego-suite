@@ -204,6 +204,10 @@ bool SwapStateMachine::isTerminal() const {
 std::string SwapStateMachine::serialize() const {
   Common::JsonValue root(Common::JsonValue::OBJECT);
 
+  // Serialization version — bump when adding new fields so deserialize()
+  // can skip missing fields on older records gracefully.
+  root.insert("serVersion", static_cast<int64_t>(2));
+
   root.insert("swapId", m_params.swapId);
   root.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(m_params.pair)));
   root.insert("role", static_cast<int64_t>(static_cast<uint8_t>(m_params.role)));
@@ -219,6 +223,13 @@ std::string SwapStateMachine::serialize() const {
   root.insert("adaptorDleqQ", Common::podToHex(m_params.adaptorDleqQ));
   root.insert("escrowTxHash", Common::podToHex(m_params.escrowTxHash));
   root.insert("escrowOutputIndex", static_cast<int64_t>(m_params.escrowOutputIndex));
+
+  // Persist adaptorSecret so a daemon restart mid-swap can recover the
+  // 32-byte scalar needed to adapt the pre-signature on the XFG chain.
+  // TODO: encrypt at rest — currently plaintext. Key at minimum should be
+  //       ChaCha20-Poly1305 keyed from the wallet spend key (available in
+  //       wallet context but not in scope of SwapStateMachine today).
+  root.insert("adaptorSecret", Common::podToHex(m_params.adaptorSecret));
 
   // Legacy fields (kept for backward compat in DB)
   root.insert("aliceXfgPubKey", Common::podToHex(m_params.aliceXfgPubKey));
@@ -239,6 +250,9 @@ std::string SwapStateMachine::serialize() const {
 
 SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   Common::JsonValue root = Common::JsonValue::fromString(json);
+
+  // serVersion added in v2; v1 records simply omit it and fall back gracefully.
+  // int64_t serVersion = root.contains("serVersion") ? root("serVersion").getInteger() : 1;
 
   SwapParams params;
   params.swapId = root("swapId").getString();
@@ -262,6 +276,12 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     Common::podFromHex(root("escrowTxHash").getString(), params.escrowTxHash);
   if (root.contains("escrowOutputIndex"))
     params.escrowOutputIndex = static_cast<uint32_t>(root("escrowOutputIndex").getInteger());
+
+  // Restore adaptorSecret persisted since serVersion 2.
+  // Absent in v1 records — zero-initialised by SwapStateMachine() default ctor
+  // and will be populated from the counterparty chain claim when the swap resumes.
+  if (root.contains("adaptorSecret"))
+    Common::podFromHex(root("adaptorSecret").getString(), params.adaptorSecret);
 
   // Legacy fields
   if (root.contains("aliceXfgPubKey"))

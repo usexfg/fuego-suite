@@ -98,8 +98,8 @@ func RenderCdDetail(offer *CdOffer, price *CdPriceStats, width int) string {
 	}
 
 	var estInt string
-	if price != nil && price.EstInterest > 0 {
-		estInt = fmt.Sprintf("~%.4f XFG", float64(price.EstInterest)/1e7)
+	if price != nil && price.EstimatedInterest > 0 {
+		estInt = fmt.Sprintf("~%.4f XFG", float64(price.EstimatedInterest)/1e7)
 	} else {
 		estInt = "—"
 	}

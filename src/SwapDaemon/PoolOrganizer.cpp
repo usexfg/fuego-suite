@@ -105,6 +105,19 @@ PoolCheckpoint PoolOrganizer::processDeposit(const LPDepositParams& params,
   std::string key = poolKey(params.poolId);
   PoolState& state = m_pools.at(key);
 
+  // Validate that the deposit ratio matches the current pool ratio within 1%
+  // tolerance (100 bps). This prevents manipulative deposits that shift the
+  // pool price by contributing an unbalanced amount.
+  static constexpr uint32_t DEPOSIT_TOLERANCE_BPS = 100; // 1%
+  if (!poolValidateDepositRatio(params.amountA, params.amountB,
+                                state.reserveA, state.reserveB,
+                                DEPOSIT_TOLERANCE_BPS)) {
+    m_logger(Logging::WARNING)
+      << "processDeposit: deposit ratio outside tolerance ("
+      << DEPOSIT_TOLERANCE_BPS << " bps) — rejecting deposit";
+    return PoolCheckpoint{};
+  }
+
   uint64_t newShares = poolMintLPShares(
       params.amountA, params.amountB,
       state.totalLPShares, state.reserveA, state.reserveB);

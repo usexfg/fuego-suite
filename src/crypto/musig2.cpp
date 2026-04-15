@@ -287,14 +287,20 @@ bool musig2_session_init(
 
 // ─── partial signing ──────────────────────────────────────────────────
 
-void musig2_partial_sign(
-    const Musig2Session &session,
+bool musig2_partial_sign(
+    Musig2Session &session,
     const Musig2KeyAgg &key_agg,
     Musig2SecNonce &sec_nonce,
     const SecretKey &sec_key,
     unsigned int signer_index,
     Musig2PartialSig &partial_sig)
 {
+  // Guard: reject if this session has already produced a partial signature.
+  // Reusing the same nonce in two signatures leaks the private key.
+  if (session.nonceSigned) {
+    return false; // nonce already used — refuse to sign
+  }
+
   // k_eff = k[0] + b * k[1]
   unsigned char k_eff[32];
   sc_muladd(k_eff,
@@ -316,6 +322,10 @@ void musig2_partial_sign(
 
   // Securely erase secret nonces — MUST NOT be reused
   memset(&sec_nonce, 0, sizeof(Musig2SecNonce));
+
+  // Mark session as signed to prevent nonce reuse on any subsequent call.
+  session.nonceSigned = true;
+  return true;
 }
 
 // ─── partial verification ─────────────────────────────────────────────

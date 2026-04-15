@@ -83,7 +83,8 @@ bool adaptor_session_init(SwapParams& params,
 // ─── Step 6: Partial signing ─────────────────────────────────────────
 //
 // Create our Musig2 partial signature.  Consumes and zeroes our sec nonce.
-void adaptor_partial_sign(SwapParams& params);
+// Returns false if the session nonce has already been used (nonce reuse guard).
+bool adaptor_partial_sign(SwapParams& params);
 
 // ─── Step 7: Partial signature verification ──────────────────────────
 //

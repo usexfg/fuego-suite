@@ -137,8 +137,13 @@ bool adaptor_session_init(SwapParams& params,
   return true;
 }
 
-void adaptor_partial_sign(SwapParams& params) {
-  Crypto::musig2_partial_sign(
+bool adaptor_partial_sign(SwapParams& params) {
+  if (params.musig2.session.nonceSigned) {
+    // Nonce has already been consumed for this session. Signing again would
+    // reuse the same nonce, which leaks the private key in MuSig2.
+    return false;
+  }
+  return Crypto::musig2_partial_sign(
       params.musig2.session,
       params.musig2.keyAgg,
       params.musig2.ourSecNonce,   // zeroed after use

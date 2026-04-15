@@ -3,10 +3,10 @@
 package app
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"sync/atomic"
 )
 
 // ethBridgeHTML returns the inline HTML for the ETH MetaMask bridge page.
@@ -88,12 +88,16 @@ ws.onmessage = async (ev) => {
 </html>`, port)
 }
 
-// reqCounter is an atomic counter for unique request IDs.
-var reqCounter uint64
-
+// newReqID returns a cryptographically random 8-byte hex string for use as a
+// JSON-RPC request ID. Using crypto/rand avoids the predictability of a
+// monotonic counter, which can leak timing and ordering information.
 func newReqID() string {
-	n := atomic.AddUint64(&reqCounter, 1)
-	return "req-" + strconv.FormatUint(n, 10)
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failure is fatal on any sane OS; panic with context.
+		panic("swapxfg: crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 // EthGetAddress retrieves the connected MetaMask wallet address.

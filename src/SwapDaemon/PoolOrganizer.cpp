@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "PoolOrganizer.h"
+#include "PoolDatabase.h"
 #include "Logging/LoggerRef.h"
 #include <algorithm>
 #include <sstream>
@@ -37,7 +38,39 @@ static std::string lpKey(const PoolId& poolId, const Crypto::PublicKey& owner) {
 }
 
 PoolOrganizer::PoolOrganizer(Logging::ILogger& logger)
-    : m_logger(logger, "PoolOrg") {}
+    : m_logger(logger, "PoolOrg")
+    , m_db(nullptr) {}
+
+PoolOrganizer::PoolOrganizer(Logging::ILogger& logger, PoolDatabase& db)
+    : m_logger(logger, "PoolOrg")
+    , m_db(&db) {
+  // Load all persisted pool states and their LP shares on startup.
+  std::vector<PoolId> storedPools = m_db->listPools();
+  for (const PoolId& id : storedPools) {
+    PoolState state;
+    if (m_db->loadPool(id, state)) {
+      std::string key = poolKey(id);
+      m_pools[key] = state;
+      m_lpTrees[key] = PoolMerkleTree();
+      m_feeTrees[key] = PoolMerkleTree();
+      m_prevCheckpoints[key] = state.checkpointHash;
+
+      // Restore LP shares
+      std::vector<LPShare> shares = m_db->listLPShares(id);
+      for (const LPShare& share : shares) {
+        std::string lkey = lpKey(id, share.owner);
+        m_lpRegistry[lkey] = share;
+        addLPShareToTree(id, share);
+      }
+
+      m_logger(Logging::INFO)
+        << "PoolOrganizer: restored pool " << poolIdToHex(id)
+        << " reserveA=" << state.reserveA
+        << " reserveB=" << state.reserveB
+        << " shares=" << shares.size();
+    }
+  }
+}
 
 PoolOrganizer::~PoolOrganizer() {}
 
@@ -164,6 +197,9 @@ PoolCheckpoint PoolOrganizer::processDeposit(const LPDepositParams& params,
   m_prevCheckpoints[key] = checkpoint.newCheckpoint;
   state.checkpointHash = checkpoint.newCheckpoint;
 
+  // Persist pool state and LP share so they survive a daemon restart.
+  persistDeposit(state, m_lpRegistry.at(lkey));
+
   return checkpoint;
 }
 
@@ -224,6 +260,9 @@ PoolCheckpoint PoolOrganizer::processWithdrawal(const LPWithdrawalParams& params
       state, m_lpTrees.at(key), m_feeTrees.at(key), m_prevCheckpoints.at(key));
   m_prevCheckpoints[key] = checkpoint.newCheckpoint;
   state.checkpointHash = checkpoint.newCheckpoint;
+
+  // Persist updated pool state and LP share after withdrawal.
+  persistDeposit(state, it->second);
 
   return checkpoint;
 }
@@ -394,6 +433,9 @@ PoolCheckpoint PoolOrganizer::processFeeClaim(const Crypto::PublicKey& owner,
       state, m_lpTrees.at(key), m_feeTrees.at(key), m_prevCheckpoints.at(key));
   m_prevCheckpoints[key] = checkpoint.newCheckpoint;
   state.checkpointHash = checkpoint.newCheckpoint;
+
+  // Persist updated pool state and LP share fee balances.
+  persistDeposit(state, it->second);
 
   return checkpoint;
 }
@@ -784,6 +826,21 @@ Crypto::Hash PoolOrganizer::getStateCommitment(const PoolId& poolId) const {
   }
 
   return it->second.checkpointHash;
+}
+
+// ─── Persistence helpers ────────────────────────────────────────────────
+
+void PoolOrganizer::persistPoolState(const PoolState& state) {
+  if (m_db) {
+    m_db->savePool(state);
+  }
+}
+
+void PoolOrganizer::persistDeposit(const PoolState& state, const LPShare& share) {
+  if (m_db) {
+    m_db->savePool(state);
+    m_db->saveLPShare(state.id, share);
+  }
 }
 
 } // namespace XfgSwap

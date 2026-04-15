@@ -39,6 +39,9 @@
 
 namespace XfgSwap {
 
+// Forward declaration avoids circular include with PoolDatabase.h
+class PoolDatabase;
+
 // ─── ZK Proof Epoch Constants ───────────────────────────────────────────
 
 static constexpr uint32_t LP_EPOCH_BLOCKS = 100;  // ~13 hours
@@ -46,7 +49,13 @@ static constexpr uint32_t LP_PROOF_DEADLINE_BLOCKS = 115;  // 15 blocks after ep
 
 class PoolOrganizer {
 public:
+  // Construct without persistence (state is lost on restart).
   explicit PoolOrganizer(Logging::ILogger& logger);
+
+  // Construct with a PoolDatabase for LP state persistence.
+  // Loads all existing pool state and LP shares from db on construction.
+  PoolOrganizer(Logging::ILogger& logger, PoolDatabase& db);
+
   ~PoolOrganizer();
 
   // ─── Pool lifecycle ──────────────────────────────────────────────────
@@ -244,6 +253,13 @@ private:
   std::unordered_map<std::string, std::vector<std::vector<uint8_t>>> m_eventBuffers;
 
   Logging::LoggerRef m_logger;
+
+  // Optional persistence backend (null if not injected)
+  PoolDatabase* m_db = nullptr;
+
+  // Persist pool state and LP share to m_db if it is set.
+  void persistDeposit(const PoolState& state, const LPShare& share);
+  void persistPoolState(const PoolState& state);
 };
 
 } // namespace XfgSwap

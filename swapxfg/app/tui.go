@@ -297,12 +297,19 @@ func (m *tuiModel) handleCommand(cmd string) {
 			m.statusMsg = "no wallet connected (use --wallet <endpoint>)"
 			return
 		}
+		// Validate XFG/XMR-family address format before launching goroutine.
+		if err := validateAddress("xfg", parts[1]); err != nil {
+			m.statusMsg = "invalid address: " + err.Error()
+			return
+		}
 		m.statusMsg = "signing offer..."
 		go func(addr, amtStr, pair string) {
-			// Parse amount (simple float to atomic units)
-			var amt float64
-			fmt.Sscanf(amtStr, "%f", &amt)
-			xfgAtomic := uint64(amt * 1e7)
+			// Parse amount with bounds checking.
+			xfgAtomic, err := parseAmountAtomic(amtStr, 1e7)
+			if err != nil {
+				m.statusMsg = "invalid amount: " + err.Error()
+				return
+			}
 			signed, err := m.wallet.SignOffer(xfgAtomic, 0, pairToID(pair), 144, true)
 			if err != nil {
 				m.statusMsg = "sign_offer failed: " + err.Error()
@@ -344,9 +351,11 @@ func (m *tuiModel) handleCommand(cmd string) {
 			return
 		}
 		go func(amtStr, peerPub, pair, role string) {
-			var amt float64
-			fmt.Sscanf(amtStr, "%f", &amt)
-			xfgAtomic := uint64(amt * 1e7)
+			xfgAtomic, err := parseAmountAtomic(amtStr, 1e7)
+			if err != nil {
+				m.statusMsg = "invalid amount: " + err.Error()
+				return
+			}
 			result, err := m.wallet.InitiateSwap(xfgAtomic, peerPub, pair, role)
 			if err != nil {
 				m.statusMsg = "initiate_swap failed: " + err.Error()
@@ -495,7 +504,16 @@ func (m *tuiModel) handleCommand(cmd string) {
 		if len(parts) > 5 {
 			timeout = parts[5]
 		}
-		// calldata: lock(bytes32 hashlock, uint256 timeout)
+		if err := validateETHAddress(htlcAddr); err != nil {
+			m.statusMsg = "invalid HTLC contract address: " + err.Error()
+			return
+		}
+		if _, err := parseAmount(amtWei); err != nil {
+			m.statusMsg = "invalid amount: " + err.Error()
+			return
+		}
+		// TODO: use go-ethereum/abi for encoding once CGO constraints are resolved.
+		// calldata: lock(bytes32 hashlock, uint256 timeout) — raw hex assembly (see fix 5.2.1)
 		calldata := "0x" + hashlock + timeout
 		go func(to, value, data string) {
 			txHash, err := m.bridge.EthSendTransaction(to, value, data)
@@ -517,9 +535,11 @@ func (m *tuiModel) handleCommand(cmd string) {
 			return
 		}
 		keyImage := parts[2]
-		var askF float64
-		fmt.Sscanf(parts[3], "%f", &askF)
-		askAtomic := uint64(askF * 1e7)
+		askAtomic, err := parseAmountAtomic(parts[3], 1e7)
+		if err != nil {
+			m.statusMsg = "invalid ask price: " + err.Error()
+			return
+		}
 		go func(ki string, ask uint64) {
 			// wallet must sign the offer — stub until wallet endpoint added
 			m.statusMsg = fmt.Sprintf("sell cd: key_image=%s ask=%.7f XFG (signing not yet wired)", ki, float64(ask)/1e7)

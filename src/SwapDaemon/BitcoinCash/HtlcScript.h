@@ -23,17 +23,17 @@ class BchHtlcScript {
 public:
   // Create the HTLC redeem script.
   //
-  // Claim path: provide preimage where HASH160(preimage) == hashLock, sign with recipientPubKey
+  // Claim path: provide preimage where SHA256(preimage) == hashLock, sign with recipientPubKey
   // Refund path: after timeoutBlock, sign with senderPubKey
   //
   // Script:
   //   OP_IF
-  //     OP_HASH160 <hash_lock_ripemd160> OP_EQUALVERIFY <recipient_pubkey> OP_CHECKSIG
+  //     OP_SHA256 <hash_lock_sha256> OP_EQUALVERIFY <recipient_pubkey> OP_CHECKSIG
   //   OP_ELSE
   //     <timeout_block> OP_CHECKLOCKTIMEVERIFY OP_DROP <sender_pubkey> OP_CHECKSIG
   //   OP_ENDIF
   static std::vector<uint8_t> createRedeemScript(
-      const std::vector<uint8_t>& hashLockRipemd160,  // 20 bytes: RIPEMD160(SHA256(preimage))
+      const std::vector<uint8_t>& hashLockSha256,     // 32 bytes: SHA256(preimage)
       const std::vector<uint8_t>& recipientPubKey,     // 33 bytes: compressed public key
       const std::vector<uint8_t>& senderPubKey,        // 33 bytes: compressed public key
       uint32_t timeoutBlock);
@@ -131,7 +131,8 @@ namespace OpCode {
   constexpr uint8_t OP_DUP       = 0x76;
   constexpr uint8_t OP_EQUAL     = 0x87;
   constexpr uint8_t OP_EQUALVERIFY = 0x88;
-  constexpr uint8_t OP_HASH160   = 0xA9;
+  constexpr uint8_t OP_SHA256    = 0xA8;  // single SHA256 — used in HTLC hash lock
+  constexpr uint8_t OP_HASH160   = 0xA9;  // RIPEMD160(SHA256) — used in P2PKH/P2SH only
   constexpr uint8_t OP_CHECKSIG  = 0xAC;
   constexpr uint8_t OP_CHECKLOCKTIMEVERIFY = 0xB1;
   constexpr uint8_t OP_PUSHDATA1 = 0x4C;

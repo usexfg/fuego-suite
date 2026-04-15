@@ -361,13 +361,13 @@ std::vector<uint8_t> BchHtlcScript::buildP2shScriptPubKey(const std::vector<uint
 // =============================================================================
 
 std::vector<uint8_t> BchHtlcScript::createRedeemScript(
-    const std::vector<uint8_t>& hashLockRipemd160,
+    const std::vector<uint8_t>& hashLockSha256,
     const std::vector<uint8_t>& recipientPubKey,
     const std::vector<uint8_t>& senderPubKey,
     uint32_t timeoutBlock) {
 
-  if (hashLockRipemd160.size() != 20) {
-    throw std::runtime_error("createRedeemScript: hashLock must be 20 bytes (RIPEMD160)");
+  if (hashLockSha256.size() != 32) {
+    throw std::runtime_error("createRedeemScript: hashLock must be 32 bytes (SHA256)");
   }
   if (recipientPubKey.size() != 33) {
     throw std::runtime_error("createRedeemScript: recipientPubKey must be 33 bytes (compressed)");
@@ -379,22 +379,22 @@ std::vector<uint8_t> BchHtlcScript::createRedeemScript(
   //
   // Script structure:
   //   OP_IF
-  //     OP_HASH160 <20: hashLock> OP_EQUALVERIFY <33: recipientPubKey> OP_CHECKSIG
+  //     OP_SHA256 <32: hashLock> OP_EQUALVERIFY <33: recipientPubKey> OP_CHECKSIG
   //   OP_ELSE
   //     <N: timeoutBlock> OP_CHECKLOCKTIMEVERIFY OP_DROP <33: senderPubKey> OP_CHECKSIG
   //   OP_ENDIF
   //
   std::vector<uint8_t> script;
-  script.reserve(1 + 1 + 1 + 20 + 1 + 1 + 33 + 1 + 1 + 5 + 1 + 1 + 1 + 33 + 1 + 1);
+  script.reserve(1 + 1 + 1 + 32 + 1 + 1 + 33 + 1 + 1 + 5 + 1 + 1 + 1 + 33 + 1 + 1);
 
   // OP_IF
   script.push_back(OpCode::OP_IF);
 
-  // OP_HASH160
-  script.push_back(OpCode::OP_HASH160);
+  // OP_SHA256 (single SHA256 — consistent with other chains in this protocol)
+  script.push_back(OpCode::OP_SHA256);
 
-  // <hashLock> (20 bytes, direct push)
-  pushData(script, hashLockRipemd160);
+  // <hashLock> (32 bytes, direct push)
+  pushData(script, hashLockSha256);
 
   // OP_EQUALVERIFY
   script.push_back(OpCode::OP_EQUALVERIFY);

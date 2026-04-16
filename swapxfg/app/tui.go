@@ -512,9 +512,11 @@ func (m *tuiModel) handleCommand(cmd string) {
 			m.statusMsg = "invalid amount: " + err.Error()
 			return
 		}
-		// TODO: use go-ethereum/abi for encoding once CGO constraints are resolved.
-		// calldata: lock(bytes32 hashlock, uint256 timeout) — raw hex assembly (see fix 5.2.1)
-		calldata := "0x" + hashlock + timeout
+		calldata, calldataErr := buildHTLCLockCalldata(hashlock, timeout)
+		if calldataErr != nil {
+			m.statusMsg = "eth calldata error: " + calldataErr.Error()
+			return
+		}
 		go func(to, value, data string) {
 			txHash, err := m.bridge.EthSendTransaction(to, value, data)
 			if err != nil {

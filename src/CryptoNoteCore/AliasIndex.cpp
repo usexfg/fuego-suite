@@ -15,6 +15,8 @@
 #include "AliasIndex.h"
 #include "../CryptoNoteConfig.h"
 #include "../Common/StringTools.h"
+#include <algorithm>
+#include <cctype>
 
 namespace CryptoNote {
 
@@ -80,29 +82,40 @@ bool AliasIndex::isValidRegularAlias(const std::string& alias) {
 bool AliasIndex::registerAlias(const AliasEntry& entry) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  // Normalize alias to lowercase so lookups and storage are case-consistent.
+  // Callers may pass mixed-case input; we canonicalize here so the index
+  // never stores two aliases that differ only in case.
+  AliasEntry normalizedEntry = entry;
+  std::transform(normalizedEntry.alias.begin(), normalizedEntry.alias.end(),
+                 normalizedEntry.alias.begin(), ::tolower);
+  // Recompute aliasHash from the normalized (lowercase) form so hash lookups
+  // are consistent regardless of the caller's capitalization.
+  normalizedEntry.aliasHash = Crypto::cn_fast_hash(
+      normalizedEntry.alias.data(), normalizedEntry.alias.size());
+
   // Reject reserved aliases first — before any other validation.
   for (size_t i = 0; i < RESERVED_ALIASES_COUNT; ++i) {
-    if (entry.alias == RESERVED_ALIASES[i].name) {
+    if (normalizedEntry.alias == RESERVED_ALIASES[i].name) {
       return false;  // Reserved — cannot be registered by users
     }
   }
 
   // Reject duplicate alias names
-  if (m_aliases.find(entry.alias) != m_aliases.end()) {
+  if (m_aliases.find(normalizedEntry.alias) != m_aliases.end()) {
     return false;  // Alias already taken
   }
 
   // Check address hash does not already have an alias (no raw address stored)
-  std::string addrHashHex = Common::podToHex(entry.addressHash);
+  std::string addrHashHex = Common::podToHex(normalizedEntry.addressHash);
   if (m_addrHashToAlias.find(addrHashHex) != m_addrHashToAlias.end()) {
     return false;  // Address already has an alias
   }
 
   // Validate alias format based on type
-  if (entry.aliasType == 0) {
+  if (normalizedEntry.aliasType == 0) {
     return false;  // Elderfier aliases no longer supported
-  } else if (entry.aliasType == 1) {
-    if (!isValidRegularAlias(entry.alias)) {
+  } else if (normalizedEntry.aliasType == 1) {
+    if (!isValidRegularAlias(normalizedEntry.alias)) {
       return false;
     }
   } else {
@@ -110,8 +123,8 @@ bool AliasIndex::registerAlias(const AliasEntry& entry) {
   }
 
   // Store the alias — reverse map uses addressHash hex, not raw address
-  m_aliases[entry.alias] = entry;
-  m_addrHashToAlias[addrHashHex] = entry.alias;
+  m_aliases[normalizedEntry.alias] = normalizedEntry;
+  m_addrHashToAlias[addrHashHex] = normalizedEntry.alias;
   return true;
 }
 
@@ -140,7 +153,13 @@ bool AliasIndex::addressHasAlias(const std::string& address) const {
 std::optional<AliasEntry> AliasIndex::getAliasByName(const std::string& alias) const {
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  auto it = m_aliases.find(alias);
+  // Normalize to lowercase so lookups are case-insensitive (aliases are stored
+  // in lowercase canonical form since registerAlias normalizes on insertion).
+  std::string normalizedAlias = alias;
+  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
+                 normalizedAlias.begin(), ::tolower);
+
+  auto it = m_aliases.find(normalizedAlias);
   if (it != m_aliases.end()) {
     return it->second;
   }

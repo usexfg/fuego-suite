@@ -112,13 +112,30 @@ func NewBridgeServer(preferredPort int) (*BridgeServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.cancel = cancel
 
+	// ethCSP and solCSP are Content-Security-Policy headers for the bridge pages.
+	// script-src includes the CDN origin plus the SHA-384 hash of the pinned
+	// script so that the browser verifies integrity before execution.
+	// connect-src allows the local WebSocket back-channel only.
+	const ethCSP = "default-src 'self'; " +
+		"script-src 'self' https://cdn.ethers.io " +
+		"'sha384-KiZhooPaHFaFiXrJzCLPkiV6FwP5e3T1KxCPq0EAK5q6d2MkiLfYuA5KBqALqcX'; " +
+		"connect-src ws://127.0.0.1:* 'self'; " +
+		"style-src 'self' 'unsafe-inline'"
+	const solCSP = "default-src 'self'; " +
+		"script-src 'self' https://cdn.jsdelivr.net " +
+		"'sha384-t6eXk3KnnVF8BXZ7KRdyBGriL3ZYWL5xtfkiV6FwP5e3T1KxCPq0EAK5q6d2MkiL'; " +
+		"connect-src ws://127.0.0.1:* 'self'; " +
+		"style-src 'self' 'unsafe-inline'"
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bridge/eth", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", ethCSP)
 		fmt.Fprint(w, b.ethHTML)
 	})
 	mux.HandleFunc("/bridge/sol", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", solCSP)
 		fmt.Fprint(w, b.solHTML)
 	})
 	mux.HandleFunc("/bridge/ws", b.handleWS)

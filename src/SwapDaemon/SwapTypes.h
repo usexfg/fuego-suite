@@ -154,6 +154,11 @@ struct SwapParams {
   // Counterparty-specific
   std::string ctrAddress;       // counterparty chain address (SOL/ETH/XMR/BCH)
   std::string peerEndpoint;     // swap counterparty's network address
+
+  // BCH-specific: hex-encoded P2SH redeem script for the HTLC.
+  // Set when the BCH HTLC is created (lockHtlc) and read on claim/refund.
+  // Must be persisted so claim/refund work after a daemon restart.
+  std::string bchRedeemScriptHex;
 };
 
 const char* swapStateToString(SwapState s);

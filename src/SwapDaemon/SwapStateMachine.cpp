@@ -251,6 +251,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
   root.insert("ctrAddress", m_params.ctrAddress);
   root.insert("peerEndpoint", m_params.peerEndpoint);
+  root.insert("bchRedeemScriptHex", m_params.bchRedeemScriptHex);
 
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
@@ -305,6 +306,10 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrLockTxId = root("ctrLockTxId").getString();
   params.ctrAddress = root("ctrAddress").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
+  // bchRedeemScriptHex was added in serialization v2; gracefully default to ""
+  // for older records that pre-date the field.
+  try { params.bchRedeemScriptHex = root("bchRedeemScriptHex").getString(); }
+  catch (...) { params.bchRedeemScriptHex = ""; }
 
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));

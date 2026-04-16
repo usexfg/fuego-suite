@@ -94,6 +94,9 @@ void SwapDaemon::start() {
     m_logger(Logging::INFO) << "Recovered " << recovered << " in-progress swap(s)";
   }
 
+  // Handle any swaps that expired while daemon was offline
+  checkTimeouts();
+
   m_running.store(true);
   m_tickThread = std::thread(&SwapDaemon::tickLoop, this);
   m_logger(Logging::INFO) << "SwapDaemon tick thread started (interval=" << TICK_INTERVAL_SECS << "s)";

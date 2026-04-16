@@ -32,7 +32,7 @@ struct AliasEntry {
   std::string ownerAddress;     // Always empty — not stored on-chain. Use addressHash for privacy-preserving lookup.
   Crypto::Hash aliasHash;       // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;     // cn_fast_hash(address) for privacy
-  uint8_t aliasType = 0;        // 0 = Elderfier [A-Z0-9&], 1 = Regular [a-z0-9&]
+  uint8_t aliasType = 1;        // 0 = Elderfier [A-Z0-9&], 1 = Regular [a-z0-9&]
   uint32_t registeredBlock = 0;
 };
 

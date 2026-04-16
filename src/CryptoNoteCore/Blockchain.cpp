@@ -3064,7 +3064,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                               << " not found in blockchain";
             }
           }
-          // Check for @ Alias Registration (0xFA)
+          // Check for @ Alias Registration (0xEA)
           else if (field.type() == typeid(TransactionExtraAliasRegistration)) {
             const auto& aliasReg = boost::get<TransactionExtraAliasRegistration>(field);
 

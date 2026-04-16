@@ -184,6 +184,13 @@ namespace CryptoNote {
     // Direct CommitmentIndex access (for epoch reports, slash queries)
     const CommitmentIndex& getCommitmentIndex() const;
 
+    // ICore overrides: CD interest and epoch fee rate via CommitmentIndex
+    virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                                 uint32_t currentHeight,
+                                                 uint64_t& outInterest) override;
+    virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
+                                                       uint64_t& outFeeRate) override;
+
 
 
     // @ Alias system proxies

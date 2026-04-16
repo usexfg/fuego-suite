@@ -1338,6 +1338,18 @@ const CommitmentIndex& core::getCommitmentIndex() const {
   return m_blockchain.getCommitmentIndex();
 }
 
+std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
+                                           uint32_t currentHeight, uint64_t& outInterest) {
+  outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
+                                               m_blockchain.getCommitmentIndex());
+  return {};
+}
+
+std::error_code core::getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+  outFeeRate = m_blockchain.getCommitmentIndex().getEpochFeeRate(epoch);
+  return {};
+}
+
 size_t core::getCommitmentCount() const {
   return m_blockchain.getCommitmentCount();
 }

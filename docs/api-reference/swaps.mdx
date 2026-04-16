@@ -73,23 +73,24 @@ Returns full details for a specific swap.
   "status": "OK"
 }
 ```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ctr_address` | string | Counterparty chain address |
-| `peer_endpoint` | string | Counterparty's swap daemon endpoint |
-| `found` | bool | `false` if no swap with this ID exists |
+   
+|     Field      |  Type  |       Description          |
+|----------------|--------|----------------------------|
+| `ctr_address`  | string | Counterparty chain address |
+| `peer_endpoint`| string | Counterparty's swap daemon endpoint |
+| `found`        |  bool  | `false` if no swap with this ID exists |
 
 ---
 
 ## Swap states
-
-| State | Value | Description |
-|-------|-------|-------------|
-| `ADAPTOR_KEYS_EXCHANGED` | 10 | Initial key exchange complete |
-| `ADAPTOR_ESCROW_FUNDED` | 11 | XFG locked in escrow |
-| `ADAPTOR_PRESIGS_READY` | 12 | Pre-signatures exchanged |
-| `ADAPTOR_CTR_LOCKED` | 13 | Counterparty locked their funds |
-| `ADAPTOR_SECRET_REVEALED` | 14 | Adaptor secret revealed on-chain |
-| `ADAPTOR_XFG_SPENT` | 15 | Swap complete — terminal |
-| `ADAPTOR_REFUNDED` | 16 | Swap refunded — terminal |
+ 
+|          State           | Value |      Description                |
+|--------------------------|-------|---------------------------------|
+| `ADAPTOR_KEYS_EXCHANGED` |   10  | Initial key exchange complete   |
+| `ADAPTOR_ESCROW_FUNDED`  |   11  | XFG locked in escrow            |
+| `ADAPTOR_PRESIGS_READY`  |   12  | Pre-signatures exchanged        |
+| `ADAPTOR_CTR_LOCKED`     |   13  | Counterparty locked their funds |
+| `ADAPTOR_SECRET_REVEALED`|   14  | Adaptor secret revealed on-chain|
+| `ADAPTOR_XFG_SPENT`      |   15  | Swap complete — terminal        |
+| `ADAPTOR_REFUNDED`       |   16  | Swap refunded — terminal        |
+======================================================================

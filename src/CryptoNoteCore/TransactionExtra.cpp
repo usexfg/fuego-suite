@@ -1221,7 +1221,7 @@ namespace CryptoNote
 
   // ---------------- Secret encryption helpers ----------------
 
-  // Size of the appended authentication tag (cn_fast_hash of ciphertext || key).
+  // Size of the appended authentication tag (cn_fast_hash of ciphertext || IV).
   static constexpr size_t GIFT_SECRET_MAC_SIZE = 32;
 
   // Encrypt secret with recipient's view key using ChaCha8 + HMAC-style authentication tag.
@@ -1245,10 +1245,12 @@ namespace CryptoNote
       Crypto::chacha8(secret.data(), secret.size(), chachaKey, chachaIV,
                       reinterpret_cast<char*>(ciphertext.data()));
 
-      // Compute authentication tag: cn_fast_hash( ciphertext || key ).
-      std::vector<uint8_t> macInput(ciphertext.size() + CHACHA8_KEY_SIZE);
+      // Compute authentication tag: cn_fast_hash( ciphertext || IV ).
+      // Using the IV (not the key) avoids exposing key material in the MAC
+      // preimage while still domain-separating across encryptions.
+      std::vector<uint8_t> macInput(ciphertext.size() + CHACHA8_IV_SIZE);
       memcpy(macInput.data(), ciphertext.data(), ciphertext.size());
-      memcpy(macInput.data() + ciphertext.size(), chachaKey.data, CHACHA8_KEY_SIZE);
+      memcpy(macInput.data() + ciphertext.size(), chachaIV.data, CHACHA8_IV_SIZE);
       Crypto::Hash macHash;
       Crypto::cn_fast_hash(macInput.data(), macInput.size(), macHash);
 
@@ -1293,9 +1295,9 @@ namespace CryptoNote
       const uint8_t* storedMac    = gift_secret.data() + ciphertextLen;
 
       // Recompute MAC and verify BEFORE decrypting (authenticate-then-decrypt).
-      std::vector<uint8_t> macInput(ciphertextLen + CHACHA8_KEY_SIZE);
+      std::vector<uint8_t> macInput(ciphertextLen + CHACHA8_IV_SIZE);
       memcpy(macInput.data(), ciphertextPtr, ciphertextLen);
-      memcpy(macInput.data() + ciphertextLen, chachaKey.data, CHACHA8_KEY_SIZE);
+      memcpy(macInput.data() + ciphertextLen, chachaIV.data, CHACHA8_IV_SIZE);
       Crypto::Hash macHash;
       Crypto::cn_fast_hash(macInput.data(), macInput.size(), macHash);
 

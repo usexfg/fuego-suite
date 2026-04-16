@@ -29,11 +29,11 @@ AliasIndex::~AliasIndex() {}
 // Reserved aliases — cannot be registered by users.
 // Permanently pre-allocated at genesis (block 0) to the Fuego Developer Fund address.
 // Add new entries here to extend the reserved set; each must be exactly 8 chars.
+// All entries must be lowercase — registerAlias normalises input to lowercase
+// before comparing, so uppercase variants would never match.
 static const struct { const char* name; uint8_t type; } RESERVED_ALIASES[] = {
-  { "FUEGOXFG", 0 },  // Elderfier (type 0)
-  { "fuegoxfg", 1 },  // Regular   (type 1)
-  { "FUEGODEV", 0 },  // Elderfier (type 0)
-  { "fuegodev", 1 },  // Regular   (type 1)
+  { "fuegoxfg", 1 },  // Reserved — Fuego project identity (regular alias)
+  { "fuegodev", 1 },  // Reserved — Fuego developer fund  (regular alias)
 };
 static const size_t RESERVED_ALIASES_COUNT = sizeof(RESERVED_ALIASES) / sizeof(RESERVED_ALIASES[0]);
 

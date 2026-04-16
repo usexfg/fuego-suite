@@ -1221,28 +1221,41 @@ namespace CryptoNote
 
   // ---------------- Secret encryption helpers ----------------
 
-  // Encrypt secret with recipient's view key using ChaCha20
+  // Size of the appended authentication tag (cn_fast_hash of ciphertext || key).
+  static constexpr size_t GIFT_SECRET_MAC_SIZE = 32;
+
+  // Encrypt secret with recipient's view key using ChaCha8 + HMAC-style authentication tag.
+  // Output layout: [ ciphertext (secret.size() bytes) | MAC (32 bytes) ]
   bool encryptSecretWithViewKey(const std::vector<uint8_t>& secret, const Crypto::PublicKey& recipientViewKey, std::vector<uint8_t>& gift_secret)
   {
     try {
-      // Derive encryption key from recipient's view key
+      // Derive encryption key and nonce from recipient's view key via Keccak.
       Crypto::Hash keyHash;
       keccak(recipientViewKey.data, sizeof(recipientViewKey.data), keyHash.data, sizeof(keyHash.data));
 
-      // Use ChaCha20 with derived key (first 32 bytes of hash for key, next 8 bytes for nonce)
-      std::array<uint8_t, 32> chachaKey;
-      std::copy(keyHash.data, keyHash.data + 32, chachaKey.begin());
+      // First 32 bytes → ChaCha8 key; next 8 bytes → IV.
+      Crypto::chacha8_key chachaKey;
+      memcpy(chachaKey.data, keyHash.data, CHACHA8_KEY_SIZE);
 
-      std::array<uint8_t, 8> nonce;
-      std::copy(keyHash.data + 32, keyHash.data + 40, nonce.begin());
+      Crypto::chacha8_iv chachaIV;
+      memcpy(chachaIV.data, keyHash.data + CHACHA8_KEY_SIZE, CHACHA8_IV_SIZE);
 
-      // Prepare output (same size as input)
-      gift_secret.resize(secret.size());
+      // Encrypt plaintext with ChaCha8.
+      std::vector<uint8_t> ciphertext(secret.size());
+      Crypto::chacha8(secret.data(), secret.size(), chachaKey, chachaIV,
+                      reinterpret_cast<char*>(ciphertext.data()));
 
-      // Simple ChaCha20 encryption (in real implementation, would use proper crypto library)
-      for (size_t i = 0; i < secret.size(); ++i) {
-        gift_secret[i] = secret[i] ^ chachaKey[i % chachaKey.size()] ^ nonce[i % nonce.size()];
-      }
+      // Compute authentication tag: cn_fast_hash( ciphertext || key ).
+      std::vector<uint8_t> macInput(ciphertext.size() + CHACHA8_KEY_SIZE);
+      memcpy(macInput.data(), ciphertext.data(), ciphertext.size());
+      memcpy(macInput.data() + ciphertext.size(), chachaKey.data, CHACHA8_KEY_SIZE);
+      Crypto::Hash macHash;
+      Crypto::cn_fast_hash(macInput.data(), macInput.size(), macHash);
+
+      // Output: ciphertext | MAC
+      gift_secret.resize(ciphertext.size() + GIFT_SECRET_MAC_SIZE);
+      memcpy(gift_secret.data(), ciphertext.data(), ciphertext.size());
+      memcpy(gift_secret.data() + ciphertext.size(), macHash.data, GIFT_SECRET_MAC_SIZE);
 
       return true;
     } catch (...) {
@@ -1250,31 +1263,50 @@ namespace CryptoNote
     }
   }
 
-  // Decrypt secret with recipient's view key using ChaCha20
+  // Decrypt secret with recipient's view key using ChaCha8 + HMAC verification.
+  // Expects gift_secret layout: [ ciphertext | MAC (32 bytes) ]
+  // Returns false if the MAC is invalid (authentication failure).
   bool decryptSecretWithViewKey(const std::vector<uint8_t>& gift_secret, const Crypto::SecretKey& viewSecretKey, std::vector<uint8_t>& secret)
   {
     try {
-      // Derive encryption key from secret key
+      // gift_secret must contain at least the MAC tag.
+      if (gift_secret.size() < GIFT_SECRET_MAC_SIZE) {
+        return false;
+      }
+
+      // Derive encryption key and nonce from the corresponding public view key.
       Crypto::PublicKey viewPublicKey;
       Crypto::secret_key_to_public_key(viewSecretKey, viewPublicKey);
 
       Crypto::Hash keyHash;
       keccak(viewPublicKey.data, sizeof(viewPublicKey.data), keyHash.data, sizeof(keyHash.data));
 
-      // Use same ChaCha20 derivation as encryption
-      std::array<uint8_t, 32> chachaKey;
-      std::copy(keyHash.data, keyHash.data + 32, chachaKey.begin());
+      Crypto::chacha8_key chachaKey;
+      memcpy(chachaKey.data, keyHash.data, CHACHA8_KEY_SIZE);
 
-      std::array<uint8_t, 8> nonce;
-      std::copy(keyHash.data + 32, keyHash.data + 40, nonce.begin());
+      Crypto::chacha8_iv chachaIV;
+      memcpy(chachaIV.data, keyHash.data + CHACHA8_KEY_SIZE, CHACHA8_IV_SIZE);
 
-      // Prepare output (same size as input)
-      secret.resize(gift_secret.size());
+      // Split gift_secret into ciphertext and stored MAC.
+      const size_t ciphertextLen = gift_secret.size() - GIFT_SECRET_MAC_SIZE;
+      const uint8_t* ciphertextPtr = gift_secret.data();
+      const uint8_t* storedMac    = gift_secret.data() + ciphertextLen;
 
-      // Decrypt (same operation as encrypt with XOR)
-      for (size_t i = 0; i < gift_secret.size(); ++i) {
-        secret[i] = gift_secret[i] ^ chachaKey[i % chachaKey.size()] ^ nonce[i % nonce.size()];
+      // Recompute MAC and verify BEFORE decrypting (authenticate-then-decrypt).
+      std::vector<uint8_t> macInput(ciphertextLen + CHACHA8_KEY_SIZE);
+      memcpy(macInput.data(), ciphertextPtr, ciphertextLen);
+      memcpy(macInput.data() + ciphertextLen, chachaKey.data, CHACHA8_KEY_SIZE);
+      Crypto::Hash macHash;
+      Crypto::cn_fast_hash(macInput.data(), macInput.size(), macHash);
+
+      if (memcmp(macHash.data, storedMac, GIFT_SECRET_MAC_SIZE) != 0) {
+        return false; // Authentication failure — reject ciphertext.
       }
+
+      // MAC is valid; decrypt with ChaCha8.
+      secret.resize(ciphertextLen);
+      Crypto::chacha8(ciphertextPtr, ciphertextLen, chachaKey, chachaIV,
+                      reinterpret_cast<char*>(secret.data()));
 
       return true;
     } catch (...) {

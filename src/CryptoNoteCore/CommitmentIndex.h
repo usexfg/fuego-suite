@@ -123,7 +123,8 @@ private:
 
   std::vector<uint64_t> m_epochFeeRates;
 
-  Crypto::Hash m_current_merkle_root;
+  mutable Crypto::Hash m_current_merkle_root;
+  mutable bool m_merkleDirty = true;
   uint64_t m_current_block_height = 0;
 
   std::map<uint64_t, uint64_t> m_blockBankingFees;

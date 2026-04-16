@@ -75,7 +75,7 @@ void CommitmentIndex::addCommitment(const CommitmentEntry& entry) {
     m_current_block_height = entry.blockHeight;
   }
 
-  m_current_merkle_root = computeMerkleRootInternal();
+  m_merkleDirty = true;
 }
 
 // ============================================================================
@@ -84,6 +84,10 @@ void CommitmentIndex::addCommitment(const CommitmentEntry& entry) {
 
 Crypto::Hash CommitmentIndex::computeMerkleRoot() const {
   std::lock_guard<std::mutex> lock(m_mutex);
+  if (m_merkleDirty) {
+    m_current_merkle_root = computeMerkleRootInternal();
+    m_merkleDirty = false;
+  }
   return m_current_merkle_root;
 }
 
@@ -231,7 +235,7 @@ size_t CommitmentIndex::rollbackToHeight(Height h) {
   } else {
     m_current_block_height = 0;
   }
-  m_current_merkle_root = computeMerkleRootInternal();
+  m_merkleDirty = true;
 
   return removed;
 }
@@ -245,6 +249,7 @@ void CommitmentIndex::clear() {
   m_cold_count = 0;
   m_blockBankingFees.clear();
   m_current_merkle_root = Crypto::Hash();
+  m_merkleDirty = false;  // leaves are empty; root is already the zero hash
   m_current_block_height = 0;
 }
 
@@ -400,7 +405,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
         m_current_block_height = entry.blockHeight;
     }
 
-    m_current_merkle_root = computeMerkleRootInternal();
+    m_merkleDirty = true;
   }
 }
 

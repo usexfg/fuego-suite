@@ -97,6 +97,12 @@ public:
   static std::vector<uint8_t> hexToBytes(const std::string& hex);
   static std::string bytesToHex(const std::vector<uint8_t>& bytes);
 
+  // Build a P2PKH scriptPubKey: OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG
+  static std::vector<uint8_t> buildP2pkhScriptPubKey(const std::vector<uint8_t>& pubKeyHash);
+
+  // Build a P2SH scriptPubKey: OP_HASH160 <hash> OP_EQUAL
+  static std::vector<uint8_t> buildP2shScriptPubKey(const std::vector<uint8_t>& scriptHash);
+
 private:
   // Push data onto script with correct length prefix
   static void pushData(std::vector<uint8_t>& script, const std::vector<uint8_t>& data);
@@ -109,12 +115,6 @@ private:
   // Decode a Base58Check address to extract the hash (20 bytes) and version byte
   static bool decodeAddress(const std::string& address, uint8_t& version,
                             std::vector<uint8_t>& hash);
-
-  // Build a P2PKH scriptPubKey: OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG
-  static std::vector<uint8_t> buildP2pkhScriptPubKey(const std::vector<uint8_t>& pubKeyHash);
-
-  // Build a P2SH scriptPubKey: OP_HASH160 <hash> OP_EQUAL
-  static std::vector<uint8_t> buildP2shScriptPubKey(const std::vector<uint8_t>& scriptHash);
 
   // Serialize a Bitcoin varint (CompactSize)
   static void writeVarInt(std::vector<uint8_t>& out, uint64_t n);

@@ -20,6 +20,7 @@
 #include "Blockchain.h"
 
 #include <algorithm>
+#include <cstring>
 #include <numeric>
 #include <cstdio>
 #include <cmath>
@@ -455,6 +456,18 @@ std::optional<AliasEntry> Blockchain::getAliasByName(const std::string& alias) c
 
 std::optional<AliasEntry> Blockchain::getAliasByAddress(const std::string& address) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  // v2 addressHash scheme: cn_fast_hash(spendKey||viewKey) instead of cn_fast_hash(base58).
+  // Parse the address to extract raw key bytes for consistent hash computation.
+  CryptoNote::AccountPublicAddress addr;
+  if (m_currency.parseAccountAddressString(address, addr)) {
+    uint8_t preimage[64];
+    memcpy(preimage,      &addr.spendPublicKey, 32);
+    memcpy(preimage + 32, &addr.viewPublicKey,  32);
+    Crypto::Hash addrHash;
+    Crypto::cn_fast_hash(preimage, 64, addrHash);
+    return m_aliasIndex.getAliasByAddressHash(addrHash);
+  }
+  // Fallback for unparseable addresses (should not occur in practice).
   return m_aliasIndex.getAliasByAddress(address);
 }
 

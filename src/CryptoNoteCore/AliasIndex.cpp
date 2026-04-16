@@ -182,6 +182,27 @@ std::optional<AliasEntry> AliasIndex::getAliasByAddress(const std::string& addre
   return std::nullopt;
 }
 
+// v2 hash-based query: caller supplies cn_fast_hash(spendKey||viewKey).
+// These overloads are preferred over the string-address versions for new code
+// because they are independent of the address encoding scheme.
+bool AliasIndex::addressHasAliasByHash(const Crypto::Hash& addrHash) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_addrHashToAlias.find(Common::podToHex(addrHash)) != m_addrHashToAlias.end();
+}
+
+std::optional<AliasEntry> AliasIndex::getAliasByAddressHash(const Crypto::Hash& addrHash) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto alias_it = m_addrHashToAlias.find(Common::podToHex(addrHash));
+  if (alias_it == m_addrHashToAlias.end()) {
+    return std::nullopt;
+  }
+  auto entry_it = m_aliases.find(alias_it->second);
+  if (entry_it != m_aliases.end()) {
+    return entry_it->second;
+  }
+  return std::nullopt;
+}
+
 std::vector<AliasEntry> AliasIndex::getAllAliases() const {
   std::lock_guard<std::mutex> lock(m_mutex);
 

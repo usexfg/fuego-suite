@@ -3657,7 +3657,20 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     aliasReg.version = 1;
     aliasReg.alias = alias;
     aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    aliasReg.addressHash = Crypto::cn_fast_hash(walletAddress.data(), walletAddress.size());
+    // v2 addressHash: cn_fast_hash(spendKey||viewKey) — rainbow-table resistant.
+    // Hashing the raw 64-byte key preimage (not the base58 string) prevents
+    // precomputed base58 rainbow-table attacks on the on-chain hash.
+    {
+      CryptoNote::AccountPublicAddress addr;
+      if (!m_currency.parseAccountAddressString(walletAddress, addr)) {
+        fail_msg_writer() << "Failed to parse wallet address for addressHash computation.";
+        return true;
+      }
+      uint8_t preimage[64];
+      memcpy(preimage,      &addr.spendPublicKey, 32);
+      memcpy(preimage + 32, &addr.viewPublicKey,  32);
+      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
+    }
     aliasReg.ownerAddress = "";  // Not stored on-chain for privacy — addressHash is sufficient
     aliasReg.aliasType = aliasType;
 

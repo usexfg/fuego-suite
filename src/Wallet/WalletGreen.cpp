@@ -5341,9 +5341,19 @@ namespace CryptoNote
     aliasReg.version   = 1;
     aliasReg.alias     = alias;
     aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    // v2 address hash: cn_fast_hash(spendKey || viewKey) — see commit 768758e7
-    // (base58 string hashing is intentionally avoided here; use spend+view key bytes)
-    aliasReg.addressHash = Crypto::cn_fast_hash(ownerAddress.data(), ownerAddress.size());
+    // v2 addressHash: cn_fast_hash(spendKey||viewKey) — rainbow-table resistant.
+    // Hashing the raw 64-byte key preimage (not the base58 string) prevents
+    // precomputed base58 rainbow-table attacks on the on-chain hash.
+    {
+      CryptoNote::AccountPublicAddress addr;
+      if (!m_currency.parseAccountAddressString(ownerAddress, addr)) {
+        return make_error_code(std::errc::invalid_argument);
+      }
+      uint8_t preimage[64];
+      memcpy(preimage,      &addr.spendPublicKey, 32);
+      memcpy(preimage + 32, &addr.viewPublicKey,  32);
+      Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
+    }
     aliasReg.ownerAddress = "";  // Not stored on-chain for privacy
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
 

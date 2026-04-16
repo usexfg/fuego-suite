@@ -46,9 +46,14 @@ public:
 
   // Queries
   bool aliasExists(const std::string& alias) const;
+  // Legacy string-address overloads (hash address as base58 string — v1 scheme).
+  // Prefer the Hash overloads below for new code (v2 scheme: hash spend+view bytes).
   bool addressHasAlias(const std::string& address) const;
-  std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
   std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
+  // v2 hash-based overloads: caller computes cn_fast_hash(spendKey||viewKey).
+  bool addressHasAliasByHash(const Crypto::Hash& addrHash) const;
+  std::optional<AliasEntry> getAliasByAddressHash(const Crypto::Hash& addrHash) const;
+  std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
   std::vector<AliasEntry> getAllAliases() const;
 
   // State

@@ -1564,6 +1564,7 @@ namespace CryptoNote
     s(addressHash, "addressHash");
     s(ownerAddress, "ownerAddress");
     s(aliasType, "aliasType");
+    s(networkId, "networkId");
     return true;
   }
 

@@ -3082,42 +3082,59 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
             const auto& aliasReg = boost::get<TransactionExtraAliasRegistration>(field);
 
             if (aliasReg.isValid()) {
-              // Fee enforcement: regular users (aliasType == 1) must pay ALIAS_REGISTRATION_FEE.
-              // Elderfiers (aliasType == 0) are exempt. Testnet always passes.
-              bool feeOk = true;
-              if (!m_currency.isTestnet() && aliasReg.aliasType != 0) {
-                bool feeOutputFound = false;
-                for (const auto& out : tx.tx.outputs) {
-                  if (out.amount == parameters::ALIAS_REGISTRATION_FEE) {
-                    feeOutputFound = true;
-                    break;
+              // Network ID check: reject registrations whose networkId field is set but
+              // does not match this chain's ID.  networkId == 0 means the field was
+              // absent (legacy tx) and is always accepted for backward compatibility.
+              // A non-zero mismatch means the tx was constructed for a different network
+              // (e.g. testnet replay on mainnet) and must be rejected.
+              const bool networkIdOk =
+                  (aliasReg.networkId == 0) ||
+                  m_currency.validateNetworkId(static_cast<uint64_t>(aliasReg.networkId));
+
+              if (!networkIdOk) {
+                logger(WARNING) << "@ Alias registration rejected in block " << block.height
+                                << ": @" << aliasReg.alias
+                                << " — networkId mismatch (got "
+                                << aliasReg.networkId << ", expected "
+                                << m_currency.getFuegoNetworkId() << ")";
+              } else {
+                // Fee enforcement: regular users (aliasType == 1) must pay ALIAS_REGISTRATION_FEE.
+                // Elderfiers (aliasType == 0) are exempt. Testnet always passes.
+                bool feeOk = true;
+                if (!m_currency.isTestnet() && aliasReg.aliasType != 0) {
+                  bool feeOutputFound = false;
+                  for (const auto& out : tx.tx.outputs) {
+                    if (out.amount == parameters::ALIAS_REGISTRATION_FEE) {
+                      feeOutputFound = true;
+                      break;
+                    }
+                  }
+                  if (!feeOutputFound) {
+                    logger(WARNING) << "@ Alias registration skipped in block " << block.height
+                                    << ": @" << aliasReg.alias
+                                    << " — missing ALIAS_REGISTRATION_FEE output ("
+                                    << parameters::ALIAS_REGISTRATION_FEE << " atomic units)";
+                    feeOk = false;
                   }
                 }
-                if (!feeOutputFound) {
-                  logger(WARNING) << "@ Alias registration skipped in block " << block.height
-                                  << ": @" << aliasReg.alias
-                                  << " — missing ALIAS_REGISTRATION_FEE output ("
-                                  << parameters::ALIAS_REGISTRATION_FEE << " atomic units)";
-                  feeOk = false;
-                }
-              }
 
-              if (feeOk) {
-                AliasEntry aliasEntry;
-                aliasEntry.alias = aliasReg.alias;
-                aliasEntry.ownerAddress = aliasReg.ownerAddress;
-                aliasEntry.aliasHash = aliasReg.aliasHash;
-                aliasEntry.addressHash = aliasReg.addressHash;
-                aliasEntry.aliasType = aliasReg.aliasType;
-                aliasEntry.registeredBlock = block.height;
+                if (feeOk) {
+                  AliasEntry aliasEntry;
+                  aliasEntry.alias = aliasReg.alias;
+                  aliasEntry.ownerAddress = aliasReg.ownerAddress;
+                  aliasEntry.aliasHash = aliasReg.aliasHash;
+                  aliasEntry.addressHash = aliasReg.addressHash;
+                  aliasEntry.aliasType = aliasReg.aliasType;
+                  aliasEntry.registeredBlock = block.height;
 
-                if (m_aliasIndex.registerAlias(aliasEntry)) {
-                  logger(INFO) << "@ Alias registered in block " << block.height
-                               << ": @" << aliasReg.alias
-                               << " (type=" << static_cast<int>(aliasReg.aliasType) << ")";
-                } else {
-                  logger(WARNING) << "@ Alias registration rejected in block " << block.height
-                                  << ": @" << aliasReg.alias << " (duplicate or invalid)";
+                  if (m_aliasIndex.registerAlias(aliasEntry)) {
+                    logger(INFO) << "@ Alias registered in block " << block.height
+                                 << ": @" << aliasReg.alias
+                                 << " (type=" << static_cast<int>(aliasReg.aliasType) << ")";
+                  } else {
+                    logger(WARNING) << "@ Alias registration rejected in block " << block.height
+                                    << ": @" << aliasReg.alias << " (duplicate or invalid)";
+                  }
                 }
               }
             }

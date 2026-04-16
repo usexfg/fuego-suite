@@ -141,9 +141,10 @@ struct TransactionExtraAliasRegistration {
   uint8_t version = 1;             // Schema version
   std::string alias;               // Exactly 8 chars: [A-Z0-9] for EFiers, [a-z0-9] for regular users
   Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
-  Crypto::Hash addressHash;        // cn_fast_hash(address) for privacy
+  Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
   std::string ownerAddress;        // Full wallet address (optional: can be empty for privacy)
   uint8_t aliasType = 0;           // 0 = Elderfier (ALLCAPS [A-Z0-9]), 1 = Regular user (lowercase [a-z0-9])
+  uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
 
   bool serialize(ISerializer& serializer);
   bool isValid() const;

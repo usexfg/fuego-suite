@@ -5356,6 +5356,7 @@ namespace CryptoNote
     }
     aliasReg.ownerAddress = "";  // Not stored on-chain for privacy
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
+    aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
     if (!aliasReg.isValid()) {
       return make_error_code(std::errc::invalid_argument);

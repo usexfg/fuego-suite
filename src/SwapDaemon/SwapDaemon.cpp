@@ -949,7 +949,13 @@ bool SwapDaemon::refund(const std::string& swapId) {
               m_logger(Logging::INFO) << "  ETH HTLC refunded, tx: " << refundTxHash;
             }
           } catch (const std::runtime_error& e) {
-            m_logger(Logging::ERROR) << "  ETH refund not implemented: " << e.what();
+            // A hard error from refundHtlc (misconfigured signer, RPC unreachable,
+            // invalid calldata) is unrecoverable — transition to FAILED so the
+            // swap does not loop forever on every checkTimeouts tick.
+            m_logger(Logging::ERROR) << "  ETH refund failed (unrecoverable): " << e.what();
+            sm.transition(SwapState::FAILED);
+            m_db.saveSwap(sm);
+            return false;
           }
         }
         break;

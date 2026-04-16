@@ -248,7 +248,7 @@ target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/SwapDaemon
 )
-target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto secp256k1)
 target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
 
 # SwapDaemon unit test: adaptor_aggregate ↔ extract_secret roundtrip
@@ -494,6 +494,7 @@ target_link_libraries(SwapDaemon PRIVATE
     ${Boost_LIBRARIES}
     OpenSSL::SSL
     OpenSSL::Crypto
+    secp256k1
 )
 target_include_directories(SwapDaemon PRIVATE
     ${CMAKE_SOURCE_DIR}/src

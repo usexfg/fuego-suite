@@ -62,6 +62,21 @@ struct ChainClientConfig {
   uint16_t    xmrDaemonPort = 18081;
   std::string xmrWalletHost;
   uint16_t    xmrWalletPort = 18082;
+
+  // ── Signer credentials ────────────────────────────────────────────────────
+  // ETH private key (64 hex chars, 32 bytes) and derived address ("0x...")
+  std::string ethPrivKeyHex;
+  std::string ethAddress;
+  uint64_t    ethChainId = 1;  // EIP-155 chain ID (1=mainnet, 11155111=Sepolia)
+  // Optional: path to the pre-compiled HashedTimelock .bin file
+  std::string ethHtlcBinPath;
+
+  // XMR spend/view keys (64 hex chars each)
+  std::string xmrSpendKeyHex;
+  std::string xmrViewKeyHex;
+
+  // Solana keypair JSON file path (as produced by `solana-keygen new`)
+  std::string solKeypairPath;
 };
 
 class SwapDaemon {
@@ -191,5 +206,11 @@ public:
    std::mutex            m_tickMutex;
    std::condition_variable m_tickCv;
 };
+
+// Load a ChainClientConfig from a JSON file.
+// Returns true on success; sets errorMsg on failure.
+bool loadChainClientConfig(const std::string& path,
+                            ChainClientConfig& out,
+                            std::string& errorMsg);
 
 } // namespace XfgSwap

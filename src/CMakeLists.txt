@@ -245,6 +245,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/ChainClientConfig.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -346,6 +347,7 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/ChainClientConfig.cpp
     # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
     # SwapDaemon/pool_v11/PoolTypes.cpp
     # SwapDaemon/pool_v11/PoolAMM.cpp

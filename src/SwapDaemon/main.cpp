@@ -14,6 +14,7 @@
 
 #include "SwapDaemon.h"
 #include "SwapTypes.h"
+#include <optional>
 
 #include "Logging/ConsoleLogger.h"
 #include "Logging/LoggerRef.h"
@@ -45,6 +46,7 @@ void printUsage() {
     "  --fuegod-host <host>    Fuegod RPC host (default: 127.0.0.1)\n"
     "  --fuegod-port <port>    Fuegod RPC port (default: 18180)\n"
     "  --data-dir <dir>        Data directory (default: ~/.xfg-swap)\n"
+    "  --swap-config <file>    JSON config with chain RPC + signer keys\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --help                  Show this help message\n"
     "\n"
@@ -73,6 +75,7 @@ int main(int argc, char* argv[]) {
   std::string host = DEFAULT_HOST;
   uint16_t port = DEFAULT_MAINNET_PORT;
   std::string dataDir = getDefaultDataDir();
+  std::string swapConfigPath;
   bool testnet = false;
 
   // Parse options (before the command)
@@ -101,6 +104,12 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       dataDir = argv[argIdx];
+    } else if (opt == "--swap-config") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --swap-config requires an argument" << std::endl;
+        return 1;
+      }
+      swapConfigPath = argv[argIdx];
     } else if (opt == "--testnet") {
       testnet = true;
       port = DEFAULT_TESTNET_PORT;
@@ -127,8 +136,20 @@ int main(int argc, char* argv[]) {
     logger(Logging::INFO) << "Using testnet configuration";
   }
 
-  // Create swap daemon
-  XfgSwap::SwapDaemon daemon(host, port, dataDir, consoleLogger);
+  // Create swap daemon (with optional chain client config)
+  XfgSwap::SwapDaemon daemon = [&]() -> XfgSwap::SwapDaemon {
+    if (!swapConfigPath.empty()) {
+      XfgSwap::ChainClientConfig chainCfg;
+      std::string errMsg;
+      if (!XfgSwap::loadChainClientConfig(swapConfigPath, chainCfg, errMsg)) {
+        std::cerr << "Error loading swap config: " << errMsg << std::endl;
+        std::exit(1);
+      }
+      logger(Logging::INFO) << "Loaded chain client config from " << swapConfigPath;
+      return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger, chainCfg);
+    }
+    return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger);
+  }();
 
   // Dispatch command
   if (command == "initiate") {

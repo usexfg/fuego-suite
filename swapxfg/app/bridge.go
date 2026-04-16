@@ -204,8 +204,32 @@ func (b *BridgeServer) Send(req BridgeRequest) (BridgeResponse, error) {
 	}
 }
 
+// waitForServerReady polls the URL endpoint for up to 2 seconds before opening browser.
+func waitForServerReady(url string) error {
+	deadline := time.Now().Add(2 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		resp, err := http.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			return nil
+		}
+		select {
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("server not ready after 2 seconds")
+			}
+		}
+	}
+}
+
 // openURL opens a URL in the default browser (non-blocking, best effort).
 func openURL(url string) error {
+	if err := waitForServerReady(url); err != nil {
+		// Log but don't fail; user can still manually navigate
+		return nil
+	}
 	return openURLOS(url)
 }
 

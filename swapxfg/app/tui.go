@@ -575,6 +575,10 @@ func (m *tuiModel) handleCommand(cmd string) {
 			m.statusMsg = "usage: accept <offer_id> (or select a row in CD tab)"
 			return
 		}
+		if offerID == "" {
+			m.statusMsg = "No CD offer selected"
+			return
+		}
 		if m.wallet == nil {
 			m.statusMsg = "no wallet connected (use --wallet <endpoint>)"
 			return

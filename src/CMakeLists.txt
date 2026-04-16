@@ -244,6 +244,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
+    SwapDaemon/Crypto/Bip143Sighash.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -344,6 +345,7 @@ add_executable(SwapDaemon
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
+    SwapDaemon/Crypto/Bip143Sighash.cpp
     # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
     # SwapDaemon/pool_v11/PoolTypes.cpp
     # SwapDaemon/pool_v11/PoolAMM.cpp

@@ -5,6 +5,7 @@
 Add LP pool trading as an **additional option** alongside existing P2P atomic swaps in the Fuego DEX. LP providers deposit both assets of a swap pair into a pool governed by constant product (x*y=k) AMM formula. Swaps execute against pool reserves with fees accrued proportionally to LP share holders.
 
 Pool state is tracked via **merkle checkpoint attestations** (mirroring fuego-prover patterns) so no trust in the pool organizer is required.
+Furthermore, we are exploring the feasibility of pederson-type commitment/proofs which LP providers can generate in order to obscure all pool data from pool organizer (similar to the model of a rollup's sequencer) while proving legitimacy (also) using Fuego Prover, for zero-knowledge privacy in all LP swap pool trades, instead of plaintext.
 
 ## Architecture
 

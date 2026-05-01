@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include "IInputStream.h"
 #include "IOutputStream.h"
+#include "int-util.h"
 
 namespace Common {
 
@@ -39,18 +40,18 @@ void read(IInputStream& in, int8_t& value) {
 }
 
 void read(IInputStream& in, int16_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap16le(value);
 }
 
 void read(IInputStream& in, int32_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap32le(value);
 }
 
 void read(IInputStream& in, int64_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap64le(value);
 }
 
 void read(IInputStream& in, uint8_t& value) {
@@ -58,18 +59,18 @@ void read(IInputStream& in, uint8_t& value) {
 }
 
 void read(IInputStream& in, uint16_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap16le(value);
 }
 
 void read(IInputStream& in, uint32_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap32le(value);
 }
 
 void read(IInputStream& in, uint64_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = swap64le(value);
 }
 
 void read(IInputStream& in, std::vector<uint8_t>& data, size_t size) {
@@ -188,17 +189,17 @@ void write(IOutputStream& out, int8_t value) {
 }
 
 void write(IOutputStream& out, int16_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap16le(value);
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, int32_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap32le(value);
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, int64_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap64le(value);
   write(out, &value, sizeof(value));
 }
 
@@ -207,17 +208,17 @@ void write(IOutputStream& out, uint8_t value) {
 }
 
 void write(IOutputStream& out, uint16_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap16le(value);
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, uint32_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap32le(value);
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, uint64_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = swap64le(value);
   write(out, &value, sizeof(value));
 }
 

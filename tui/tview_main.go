@@ -30,6 +30,7 @@ type AppState struct {
 	logs          []string
 	isNodeRunning bool
 	isWalletOpen  bool
+	statusBar     *tview.TextView
 }
 
 var appState AppState
@@ -50,7 +51,14 @@ func main() {
 		logs:    make([]string, 0),
 	}
 	CurrentConfig = MainnetConfig
-	appState.app.EnableMouse(true)
+	// appState.app.EnableMouse(true) // Disabled to allow native terminal text selection
+	appState.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyCtrlC {
+			appState.app.Stop()
+			return nil
+		}
+		return event
+	})
 	tview.Styles.PrimaryTextColor = tcell.ColorOrange
 	tview.Styles.SecondaryTextColor = tcell.ColorYellow
 	tview.Styles.TertiaryTextColor = tcell.ColorRed
@@ -81,20 +89,20 @@ func showSplashScreen() {
 			{tcell.ColorYellow, "  *  *  *  *  *  *  *  *  *  *  *  *  *  *  *  *"},
 			{tcell.ColorWhite, " *  *  *  *  *  *  *  *  *  *  *  *  *  *  *  * "},
 		}
-		for i := 0; i < 18; i++ {
+		for i := 0; i < 6; i++ {
 			f := colors[i%len(colors)]
 			appState.app.QueueUpdateDraw(func() {
 				splash.SetTextColor(f.color)
 				splash.SetText(fmt.Sprintf("\n%s\n%s\n%s\n\n         Fuego P2P Blockchain Network(s) TUI\n",
 					f.border, fuegoLogo, f.border))
 			})
-			time.Sleep(1070 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 		appState.app.QueueUpdateDraw(func() {
 			splash.SetTextColor(tcell.ColorOrange)
-			splash.SetText(fmt.Sprintf("\n%s\n\n   Money To Burn With COLD Returns \n", fuegoLogo))
+			splash.SetText(fmt.Sprintf("\n%s\n\n   Money To Burn With CD Returns \n", fuegoLogo))
 		})
-		time.Sleep(8000 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 		appState.app.QueueUpdateDraw(func() {
 			buildMainMenu()
 			appState.pages.SwitchToPage("main")
@@ -114,45 +122,51 @@ func buildMainMenu() {
 		SetSelectedTextColor(tcell.ColorBlack).
 		SetSelectedBackgroundColor(tcell.ColorOrange)
 
-	list.AddItem("[::b]--- Node ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ NODE ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Start Node", fmt.Sprintf("Launch %s daemon", CurrentConfig.NodeBinary), '1', startNode)
 	list.AddItem("  Stop Node", "Shut down running daemon", '2', stopNode)
 	list.AddItem("  Node Status", "Show height and peer count", '3', showNodeStatus)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- Wallet ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ WALLET ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Open Wallet", fmt.Sprintf("Launch %s with existing wallet", CurrentConfig.WalletBinary), '4', openWallet)
 	list.AddItem("  Create New Wallet", "Generate a new wallet file", '5', uiCreateWallet)
 	list.AddItem("  Close Wallet", "Exit running wallet process", '6', closeWallet)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- Info ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ INFO ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Balance", "Show wallet balance", 'b', cmdBalance)
 	list.AddItem("  Address", "Show wallet address", 'a', cmdAddress)
 	list.AddItem("  Blockchain Height", "Show current chain height", 0, cmdBcHeight)
 	list.AddItem("  List Transfers", "Show transaction history", 0, cmdListTransfers)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- Transfer ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ TRANSFER ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Send Transaction", fmt.Sprintf("Send %s to an address", CurrentConfig.CoinName), 's', uiSendForm)
+	list.AddItem("  Atomic Swap", "Swap XFG for other coins", 'w', uiSwapMenu)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- Ethereal Mint (HEAT Burns) ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ ETHEREAL MINT ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Burn (HEAT)", "Permanently burn coins (0.8/8/80/800)", 'h', uiBurnMenu)
 	list.AddItem("  Generate Proof", "Generate STARK proof from burn tx hash", 0, uiGenerateProofForm)
 	list.AddItem("  List Burns", "Show all burn transactions", 0, cmdListBurns)
 	list.AddItem("  Burn Info", "Detailed info for a burn by ID", 0, uiBurnInfoForm)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- COLD Interest Banking ---", "", 0, nil)
-	list.AddItem("  List Deposits", "Show all COLD/Elderfier deposits", 0, cmdListDeposits)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ CD BANKING ━━━━━━━━━━━━━━", "", 0, nil)
+	list.AddItem("  List Deposits", "Show all CD deposits", 0, cmdListDeposits)
 	list.AddItem("  Deposit Info", "Detailed info for a deposit by ID", 0, uiDepositInfoForm)
 	list.AddItem("  Withdraw Deposit", "Withdraw a matured deposit", 0, uiWithdrawForm)
+	list.AddItem("  New CD Deposit", "Lock XFG for interest", 0, uiNewDepositForm)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- Ξlderfiers ---", "", 0, nil)
-	list.AddItem("  Elderking Ceremony", "Register as Elderfier (5x 800 deposits)", 'e', cmdElderkingCeremony)
-
-	list.AddItem("[::b]--- @ Aliases ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ ALIASES ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Register Alias", "Register an @ alias", 0, uiRegisterAliasForm)
 	list.AddItem("  Lookup Alias", "Look up alias or address", 0, uiLookupAliasForm)
 	list.AddItem("  List Aliases", "Show all registered aliases", 0, cmdListAliases)
+	list.AddItem("", "", 0, nil)
 
-	list.AddItem("[::b]--- System ---", "", 0, nil)
+	list.AddItem("[orange]━━━━━━━━━━━━━━ SYSTEM ━━━━━━━━━━━━━━", "", 0, nil)
 	list.AddItem("  Wallet Console", "Send raw commands to wallet", 'c', uiWalletConsole)
 	list.AddItem("  Show Logs", "View application log output", 'l', uiShowLogs)
 	list.AddItem("  Quit", "Exit the TUI", 'q', func() { appState.app.Stop() })
@@ -164,12 +178,16 @@ func buildMainMenu() {
 	if appState.isWalletOpen {
 		statusText += " | [green]Wallet: Open[white]"
 	}
-	statusBar := tview.NewTextView().SetDynamicColors(true).SetText(" " + statusText).SetBackgroundColor(tcell.ColorDarkSlateGray)
+	if appState.statusBar == nil {
+		appState.statusBar = tview.NewTextView().SetDynamicColors(true)
+		appState.statusBar.SetBackgroundColor(tcell.ColorDarkSlateGray)
+	}
+	appState.statusBar.SetText(" " + statusText)
 
 	mainLayout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(header, 1, 0, false).
 		AddItem(list, 0, 1, true).
-		AddItem(statusBar, 1, 0, false)
+		AddItem(appState.statusBar, 1, 0, false)
 
 	mainLayout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Rune() == 'n' || event.Rune() == 'N' {
@@ -205,6 +223,20 @@ func rebuildMenu() {
 // ============================================================================
 
 func startNode() {
+	// Check if a node process is already running on the system
+	out, _ := exec.Command("pgrep", "-f", CurrentConfig.NodeBinary).Output()
+	if len(out) > 0 {
+		msgBox("A " + CurrentConfig.NodeBinary + " process is already running on this system.")
+		appState.isNodeRunning = true
+		addLog("[INFO] Detected existing " + CurrentConfig.NodeBinary + " process")
+		appState.app.QueueUpdateDraw(func() {
+			if appState.statusBar != nil {
+				appState.statusBar.SetText(" [green]Node: Running (External)[white]")
+			}
+		})
+		return
+	}
+
 	if appState.isNodeRunning {
 		msgBox("Node is already running")
 		return
@@ -232,7 +264,10 @@ func startNode() {
 	appState.nodeCmd = cmd
 	appState.isNodeRunning = true
 	addLog("[INFO] Started " + CurrentConfig.NodeBinary)
-	rebuildMenu()
+	
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Node: Starting...[white]")
+	}
 	msgBox("Node starting...")
 	go pipeReader(stdout, "NODE")
 	go pipeReader(stderr, "NODE-ERR")
@@ -241,7 +276,11 @@ func startNode() {
 		appState.isNodeRunning = false
 		appState.nodeCmd = nil
 		addLog("[INFO] Node process exited")
-		appState.app.QueueUpdateDraw(func() { rebuildMenu() })
+		appState.app.QueueUpdateDraw(func() { 
+			if appState.statusBar != nil {
+				appState.statusBar.SetText(" [green]Ready[white]")
+			}
+		})
 	}()
 }
 
@@ -255,7 +294,9 @@ func stopNode() {
 	}
 	appState.isNodeRunning = false
 	appState.nodeCmd = nil
-	rebuildMenu()
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Ready[white]")
+	}
 	msgBox("Node stopped")
 }
 
@@ -266,7 +307,192 @@ func showNodeStatus() {
 	}
 	info, err := fetchNodeInfo()
 	if err != nil {
-		msgBox("Error: " + err.Error())
+		addLog("[ERROR] Node RPC query failed: " + err.Error())
+		msgBox("Node RPC error: " + err.Error() + "\n\nWait for node to fully start or check logs.")
+		return
+	}
+	msgBox(fmt.Sprintf("Node Status\n\nHeight: %d\nPeers: %d", info.Height, info.Peers))
+}
+
+		})
+		return
+	}
+
+	if appState.isNodeRunning {
+		msgBox("Node is already running")
+		return
+	}
+	bp := findBinary(CurrentConfig.NodeBinary)
+	if bp == "" {
+		msgBox(CurrentConfig.NodeBinary + " not found")
+		return
+	}
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+	args := []string{
+		fmt.Sprintf("--p2p-bind-port=%d", CurrentConfig.NodeP2PPort),
+		fmt.Sprintf("--rpc-bind-port=%d", CurrentConfig.NodeRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	}
+	cmd := exec.Command(bp, args...)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		addLog("[ERROR] Failed to start node: " + err.Error())
+		msgBox("Failed to start node: " + err.Error())
+		return
+	}
+	appState.nodeCmd = cmd
+	appState.isNodeRunning = true
+	addLog("[INFO] Started " + CurrentConfig.NodeBinary)
+	
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Node: Starting...[white]")
+	}
+	msgBox("Node starting...")
+	go pipeReader(stdout, "NODE")
+	go pipeReader(stderr, "NODE-ERR")
+	go func() {
+		cmd.Wait()
+		appState.isNodeRunning = false
+		appState.nodeCmd = nil
+		addLog("[INFO] Node process exited")
+		appState.app.QueueUpdateDraw(func() { 
+			if appState.statusBar != nil {
+				appState.statusBar.SetText(" [green]Ready[white]")
+			}
+		})
+	}()
+}
+
+		})
+		return
+	}
+
+	if appState.isNodeRunning {
+		msgBox("Node is already running")
+		return
+	}
+	bp := findBinary(CurrentConfig.NodeBinary)
+	if bp == "" {
+		msgBox(CurrentConfig.NodeBinary + " not found")
+		return
+	}
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+	args := []string{
+		fmt.Sprintf("--p2p-bind-port=%d", CurrentConfig.NodeP2PPort),
+		fmt.Sprintf("--rpc-bind-port=%d", CurrentConfig.NodeRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	}
+	cmd := exec.Command(bp, args...)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		addLog("[ERROR] Failed to start node: " + err.Error())
+		msgBox("Failed to start node: " + err.Error())
+		return
+	}
+	appState.nodeCmd = cmd
+	appState.isNodeRunning = true
+	addLog("[INFO] Started " + CurrentConfig.NodeBinary)
+	
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Node: Starting...[white]")
+	}
+	msgBox("Node starting...")
+	go pipeReader(stdout, "NODE")
+	go pipeReader(stderr, "NODE-ERR")
+	go func() {
+		cmd.Wait()
+		appState.isNodeRunning = false
+		appState.nodeCmd = nil
+		addLog("[INFO] Node process exited")
+		appState.app.QueueUpdateDraw(func() { 
+			if appState.statusBar != nil {
+				appState.statusBar.SetText(" [green]Ready[white]")
+			}
+		})
+	}()
+}
+
+
+		})
+		return
+	}
+
+	if appState.isNodeRunning {
+		msgBox("Node is already running")
+		return
+	}
+	bp := findBinary(CurrentConfig.NodeBinary)
+	if bp == "" {
+		msgBox(CurrentConfig.NodeBinary + " not found")
+		return
+	}
+	dataDir := filepath.Join(os.Getenv("HOME"), CurrentConfig.DataDir)
+	os.MkdirAll(dataDir, 0755)
+	args := []string{
+		fmt.Sprintf("--p2p-bind-port=%d", CurrentConfig.NodeP2PPort),
+		fmt.Sprintf("--rpc-bind-port=%d", CurrentConfig.NodeRPCPort),
+		fmt.Sprintf("--data-dir=%s", dataDir),
+	}
+	cmd := exec.Command(bp, args...)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		addLog("[ERROR] Failed to start node: " + err.Error())
+		msgBox("Failed to start node: " + err.Error())
+		return
+	}
+	appState.nodeCmd = cmd
+	appState.isNodeRunning = true
+	addLog("[INFO] Started " + CurrentConfig.NodeBinary)
+	
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Node: Starting...[white]")
+	}
+	msgBox("Node starting...")
+	go pipeReader(stdout, "NODE")
+	go pipeReader(stderr, "NODE-ERR")
+	go func() {
+		cmd.Wait()
+		appState.isNodeRunning = false
+		appState.nodeCmd = nil
+		addLog("[INFO] Node process exited")
+		appState.app.QueueUpdateDraw(func() { 
+			if appState.statusBar != nil {
+				appState.statusBar.SetText(" [green]Ready[white]")
+			}
+		})
+	}()
+}
+
+func stopNode() {
+	if !appState.isNodeRunning {
+		msgBox("Node is not running")
+		return
+	}
+	if appState.nodeCmd != nil && appState.nodeCmd.Process != nil {
+		appState.nodeCmd.Process.Kill()
+	}
+	appState.isNodeRunning = false
+	appState.nodeCmd = nil
+	if appState.statusBar != nil {
+		appState.statusBar.SetText(" [green]Ready[white]")
+	}
+	msgBox("Node stopped")
+}
+
+func showNodeStatus() {
+	if !appState.isNodeRunning {
+		msgBox("Node is not running")
+		return
+	}
+	info, err := fetchNodeInfo()
+	if err != nil {
+		addLog("[ERROR] Node RPC query failed: " + err.Error())
+		msgBox("Node RPC error: " + err.Error() + "\n\nWait for node to fully start or check logs.")
 		return
 	}
 	msgBox(fmt.Sprintf("Node Status\n\nHeight: %d\nPeers: %d", info.Height, info.Peers))
@@ -518,7 +744,7 @@ func cmdListDeposits() {
 	if !needWallet() { return }
 	go func() {
 		lines := walletExec("list_deposits", 3)
-		appState.app.QueueUpdateDraw(func() { scrollBox("COLD Deposits", lines) })
+		appState.app.QueueUpdateDraw(func() { scrollBox("CD Deposits", lines) })
 	}()
 }
 
@@ -530,23 +756,72 @@ func cmdListAliases() {
 	}()
 }
 
-func cmdElderkingCeremony() {
+// Elderking Ceremony is removed.
+
+func uiSwapMenu() {
 	if !needWallet() { return }
-	modal := tview.NewModal().
-		SetText("Elderking Ceremony\n\nThis will create 5x 800 " + CurrentConfig.CoinName + " deposits\n(4000 " + CurrentConfig.CoinName + " total) to register as an Elderfier.\n\nProceed?").
-		AddButtons([]string{"Begin Ceremony", "Cancel"}).
-		SetDoneFunc(func(_ int, label string) {
-			if label == "Begin Ceremony" {
-				go func() {
-					lines := walletExec("elderking_ceremony", 10)
-					appState.app.QueueUpdateDraw(func() { scrollBox("Elderking Ceremony", lines) })
-				}()
-			} else {
-				appState.pages.SwitchToPage("main")
-			}
-		})
-	appState.pages.AddPage("elderkingConfirm", modal, true, true)
-	appState.pages.SwitchToPage("elderkingConfirm")
+	list := tview.NewList().
+		SetMainTextColor(tcell.ColorOrange).
+		SetSelectedTextColor(tcell.ColorBlack).
+		SetSelectedBackgroundColor(tcell.ColorOrange)
+	list.AddItem("  Create Swap", "Initiate a new atomic swap", 'c', uiCreateSwapForm)
+	list.AddItem("  List Active Swaps", "View status of active swaps", 'l', cmdListSwaps)
+	list.AddItem("  Swap Info", "Detailed info for swap by ID", 'i', uiSwapInfoForm)
+	list.AddItem("  Back", "", 'b', func() { appState.pages.SwitchToPage("main") })
+	
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tview.NewTextView().SetText(" Atomic Swap Dashboard ").SetTextAlign(tview.AlignCenter).SetTextColor(tcell.ColorOrange), 1, 0, false).
+		AddItem(list, 0, 1, true)
+	appState.pages.AddPage("swapMenu", layout, true, true)
+	appState.pages.SwitchToPage("swapMenu")
+}
+
+func uiCreateSwapForm() {
+	if !needWallet() { return }
+	form := tview.NewForm()
+	pair := tview.NewInputField().SetLabel("Pair (e.g. XFG-ETH)").SetFieldWidth(20)
+	amt := tview.NewInputField().SetLabel("Amount XFG").SetFieldWidth(20)
+	form.AddFormItem(pair).AddFormItem(amt).
+		AddButton("Initiate", func() {
+			p := pair.GetText()
+			a := amt.GetText()
+			if p == "" || a == "" { msgBox("Fill fields"); return }
+			go func() {
+				lines := walletExec("swap_init "+p+" "+a, 5)
+				appState.app.QueueUpdateDraw(func() { msgBox("Swap Result\n\n" + strings.Join(lines, "\n")) })
+			}()
+		}).
+		AddButton("Cancel", func() { appState.pages.SwitchToPage("swapMenu") })
+	form.SetBorder(true).SetTitle(" Create Atomic Swap ").SetTitleAlign(tview.AlignLeft)
+	appState.pages.AddPage("createSwap", tview.NewFlex().SetDirection(tview.FlexRow).AddItem(form, 0, 1, true), true, true)
+	appState.pages.SwitchToPage("createSwap")
+}
+
+func cmdListSwaps() {
+	if !needWallet() { return }
+	go func() {
+		lines := walletExec("list_swaps", 3)
+		appState.app.QueueUpdateDraw(func() { scrollBox("Active Swaps", lines) })
+	}()
+}
+
+func uiSwapInfoForm() {
+	if !needWallet() { return }
+	form := tview.NewForm()
+	sid := tview.NewInputField().SetLabel("Swap ID").SetFieldWidth(30)
+	form.AddFormItem(sid).
+		AddButton("Get Info", func() {
+			id := sid.GetText()
+			if id == "" { msgBox("Enter swap ID"); return }
+			go func() {
+				lines := walletExec("swap_info "+id, 3)
+				appState.app.QueueUpdateDraw(func() { scrollBox("Swap Info", lines) })
+			}()
+		}).
+		AddButton("Cancel", func() { appState.pages.SwitchToPage("swapMenu") })
+	form.SetBorder(true).SetTitle(" Swap Info ").SetTitleAlign(tview.AlignLeft)
+	appState.pages.AddPage("swapInfo", tview.NewFlex().SetDirection(tview.FlexRow).AddItem(form, 0, 1, true), true, true)
+	appState.pages.SwitchToPage("swapInfo")
 }
 
 // ============================================================================
@@ -666,9 +941,31 @@ func uiBurnInfoForm() {
 	appState.pages.SwitchToPage("burnInfo")
 }
 
+func uiNewDepositForm() {
+	if !needWallet() { return }
+	form := tview.NewForm()
+	amt := tview.NewInputField().SetLabel("Amount (" + CurrentConfig.CoinName + ")").SetFieldWidth(20)
+	term := tview.NewInputField().SetLabel("Term (blocks)").SetFieldWidth(20)
+	form.AddFormItem(amt).AddFormItem(term).
+		AddButton("Deposit", func() {
+			a := amt.GetText()
+			t := term.GetText()
+			if a == "" || t == "" { msgBox("Fill fields"); return }
+			go func() {
+				lines := walletExec("deposit "+a+" "+t, 5)
+				appState.app.QueueUpdateDraw(func() { msgBox("Deposit Result\n\n" + strings.Join(lines, "\n")) })
+			}()
+		}).
+		AddButton("Cancel", func() { appState.pages.SwitchToPage("main") })
+	form.SetBorder(true).SetTitle(" New CD Deposit ").SetTitleAlign(tview.AlignLeft)
+	appState.pages.AddPage("newDep", tview.NewFlex().SetDirection(tview.FlexRow).AddItem(form, 0, 1, true), true, true)
+	appState.pages.SwitchToPage("newDep")
+}
+
 // ============================================================================
-// COLD Deposits
+// Withdraw Deposit (Restoration)
 // ============================================================================
+
 
 func uiDepositInfoForm() {
 	if !needWallet() { return }
@@ -846,11 +1143,19 @@ func pipeReader(r io.Reader, prefix string) {
 }
 
 func findBinary(name string) string {
+	cwd, _ := os.Getwd()
+	
+	// If we are running from the tui directory, we need to adjust paths
+	baseDir := cwd
+	if filepath.Base(cwd) == "tui" {
+		baseDir = filepath.Dir(cwd)
+	}
+
 	paths := []string{
-		filepath.Join("..", "build", "src", name),
-		filepath.Join("..", "build", "release", "src", name),
-		filepath.Join("..", "build-test", "src", name),
-		filepath.Join("..", "bulid3", "release", "src", name),
+		filepath.Join(baseDir, "build", "src", name),
+		filepath.Join(baseDir, "build", "release", "src", name),
+		filepath.Join(baseDir, "build-test", "src", name),
+		filepath.Join(baseDir, "bulid3", "release", "src", name),
 		filepath.Join("/home/ar/fuego", "build", "release", "src", name),
 		filepath.Join("/home/ar/fuego", "build", "src", name),
 		filepath.Join("/home/ar/fuego", "build-test", "src", name),
@@ -880,14 +1185,14 @@ type NodeInfo struct {
 }
 
 func fetchNodeInfo() (*NodeInfo, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/get_info", CurrentConfig.NodeRPCPort)
+	url := fmt.Sprintf("http://127.0.0.1:%d/getinfo", CurrentConfig.NodeRPCPort)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil { return nil, err }
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK { return nil, fmt.Errorf("HTTP %d", resp.StatusCode) }
 	var data map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, fmt.Errorf("invalid JSON: %w", err) }
 	info := &NodeInfo{}
 	if h, ok := data["height"]; ok {
 		if v, ok := h.(float64); ok { info.Height = int(v) }

@@ -82,7 +82,16 @@ enum class SwapState : uint8_t {
   POOL_FEE_CLAIMED         = 51,  // Fees paid to LP provider
   POOL_FEE_CLAIM_REFUNDED  = 52,  // Fee claim cancelled
 
-  POOL_CHECKPOINT_GENERATED = 60  // Checkpoint attestation generated
+  POOL_CHECKPOINT_GENERATED = 60, // Checkpoint attestation generated
+
+
+
+  // ── AFK ADAPTOR SWAP STATES (v2) ───────────────────────────────────────────
+  // Non-interactive "Pre-lock" flow for AFK makers
+  AFK_OFFER_LOCKED   = 100,  // Maker locked XFG on-chain with adaptor sig
+  AFK_OFFER_ACCEPTED = 101,  // Taker locked coins on counterparty chain
+  AFK_CLAIMED        = 102,  // Both sides claimed (swap finished)
+  AFK_REFUNDED       = 103,  // Maker refunded XFG after timeout
 };
 
 enum class SwapRole : uint8_t {

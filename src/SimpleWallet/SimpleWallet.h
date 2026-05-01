@@ -108,6 +108,7 @@ namespace CryptoNote
     bool show_num_unlocked_outputs(const std::vector<std::string> &args);
     bool optimize_outputs(const std::vector<std::string> &args);
 	bool get_reserve_proof(const std::vector<std::string> &args);
+	bool get_swapKey(const std::vector<std::string> &args = std::vector<std::string>());
     bool get_tx_proof(const std::vector<std::string> &args);
     bool optimize_all_outputs(const std::vector<std::string> &args);
     bool listTransfers(const std::vector<std::string> &args);

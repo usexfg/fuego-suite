@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletLegacy.h"
+#include "crypto/adaptor.h"
 
 #include <algorithm>
 #include <memory>
@@ -1723,4 +1724,122 @@ void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wall
   wallet->storeBurnDepositSecret(getTxHash(), getSecret(), getAmount(), getMetadata());
 }
 
-} //namespace CryptoNote
+std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  throwIfNotInitialised();
+
+  if (amount == 0) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  if (timeout_hours == 0 || timeout_hours > 200) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+
+  // 1. Generate AFK Lock Data
+  Crypto::AFKLockData lockData;
+  Crypto::Hash zeroHash = {{0}};
+  if (!Crypto::generate_afk_lock_data(zeroHash, m_account.getAccountKeys().address.spendPublicKey, m_account.getAccountKeys().spendSecretKey, lockData)) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  // 2. Calculate Total Lock Amount (Base + 1% Bob's fee)
+  uint64_t feeBob = (amount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+  uint64_t totalAmount = amount + feeBob;
+
+  // Create the lock transaction (Refund path)
+  uint64_t unlockTimestamp = std::time(nullptr) + (static_cast<uint64_t>(timeout_hours) * 3600);
+  
+  Crypto::SecretKey txSK;
+  Crypto::PublicKey txPK;
+  Crypto::generate_keys(txPK, txSK);
+
+  std::vector<WalletLegacyTransfer> transfers;
+  WalletLegacyTransfer transfer;
+  transfer.address = getAddress();
+  transfer.amount = static_cast<int64_t>(totalAmount);
+  transfers.push_back(transfer);
+
+  TransactionId txId = sendTransaction(txSK, transfers, 1000, "", 0, unlockTimestamp);
+  if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  // Use the transaction hash as the lockId
+  WalletLegacyTransaction tx;
+  if (!getTransaction(txId, tx)) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+  
+  std::string lockIdStr = Common::podToHex(tx.hash);
+  lockId = lockIdStr;
+  adaptorPoint = Crypto::pointToString(lockData.adaptor_point);
+  preSig = Crypto::signatureToString(lockData.pre_sig);
+
+  // 3. Store secret and pre-signature
+  Crypto::Signature ps;
+  std::memcpy(&ps, &lockData.pre_sig, sizeof(ps));
+  m_afkLockSecrets[lockIdStr] = AFKLockSecret(reinterpret_cast<const Crypto::SecretKey&>(lockData.secret), ps, amount, timeout_hours, pair);
+
+  return std::error_code();
+}
+
+std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, std::string& txHash) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  throwIfNotInitialised();
+
+  auto it = m_afkLockSecrets.find(swapId);
+  if (it == m_afkLockSecrets.end()) {
+    return make_error_code(CryptoNote::error::NOT_FOUND);
+  }
+
+  // 1. Extract secret s from the final signature revealed on target chain
+  Crypto::Signature finalSig;
+  if (!Common::podFromHex(secret_s, finalSig)) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
+
+  Crypto::SecretKey s;
+  Crypto::AdaptorSignature pre_sig;
+  std::memcpy(&pre_sig, &it->second.preSig, sizeof(pre_sig));
+
+  if (!Crypto::extract_afk_secret(pre_sig, finalSig, s)) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  // 2. Calculate payouts (Net 99% for Taker)
+  uint64_t baseAmount = it->second.amount;
+  uint64_t minFee = m_currency.minimumFee();
+  uint64_t totalLocked = baseAmount + (baseAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR);
+  
+  uint64_t takerNet = baseAmount - (baseAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR);
+  uint64_t takerGross = takerNet + minFee;
+  uint64_t feePoolAmount = totalLocked - takerGross - minFee;
+
+  if (totalLocked < takerGross + minFee) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
+
+  // 3. Build and broadcast the XFG claim transaction.
+  std::vector<WalletLegacyTransfer> transfers;
+  transfers.push_back({ "TakerAddress_Placeholder", static_cast<int64_t>(takerGross) });
+  if (!fee_address.empty()) {
+    transfers.push_back({ fee_address, static_cast<int64_t>(feePoolAmount) });
+  }
+
+  Crypto::SecretKey txSK;
+  Crypto::PublicKey txPK;
+  Crypto::generate_keys(txPK, txSK);
+  TransactionId txId = sendTransaction(txSK, transfers, minFee);
+  
+  if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  WalletLegacyTransaction tx;
+  if (getTransaction(txId, tx)) {
+    txHash = Common::podToHex(tx.hash);
+  } else {
+    txHash = "TX_BROADCASTED";
+  }
+
+  m_afkLockSecrets.erase(it);
+  return std::error_code();
+}
+
+} // namespace CryptoNote

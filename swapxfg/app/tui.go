@@ -310,80 +310,95 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 				m.statusMsg = "unknown pair: " + parts[1]
 			}
 		}
-	case "initiate":
-		// Usage: initiate <alias_or_address> <amount_xfg> <pair>
-		if len(parts) < 4 {
-			m.statusMsg = "usage: initiate <alias_or_address> <amount> <pair>"
+	case "offer":
+		// Usage: offer <amount_xfg> <amount_target> <pair> <timeout_hrs>
+		if len(parts) < 5 {
+			m.statusMsg = "usage: offer <amount_xfg> <amount_target> <pair> <timeout_hrs>"
 			return nil
 		}
-		aliasOrAddr := parts[1]
-		// Resolve alias if needed
-		addr := aliasOrAddr
-		// XFG addresses are 98 chars and start with lowercase 'f'
-		if !strings.HasPrefix(aliasOrAddr, "f") || len(aliasOrAddr) < 98 {
-			// Looks like an alias — try to resolve
-			candidate := strings.TrimPrefix(aliasOrAddr, "@")
-			if resolved, ok := m.client.ResolveAlias(candidate); ok {
-				addr = resolved
-				m.statusMsg = "resolved " + aliasOrAddr + " → " + addr[:12] + "..."
-			} else {
-				// Not found as alias — use as-is (may be a raw address)
-				addr = aliasOrAddr
-				m.statusMsg = fmt.Sprintf("using address: %s...", addr[:min(12, len(addr))])
-			}
-		}
-		// Show the resolved address to user
-		m.statusMsg = fmt.Sprintf("address: %s (enter 'confirm %s %s %s' to proceed)", addr[:16]+"...", addr, parts[2], parts[3])
-	case "confirm":
-		// confirm <address> <amount_xfg> <pair> [role]
-		if len(parts) < 4 {
-			m.statusMsg = "usage: confirm <address> <amount_xfg> <pair> [role]"
+		amtXfg, amtCtr, pair, timeout := parts[1], parts[2], parts[3], parts[4]
+		m.statusMsg = fmt.Sprintf("offer %s XFG for %s %s (%s hrs) | enter 'confirm-offer %s %s %s %s' to lock", 
+			amtXfg, amtCtr, pair, timeout, amtXfg, amtCtr, pair, timeout)
+	case "confirm-offer":
+		// Usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs>
+		if len(parts) < 5 {
+			m.statusMsg = "usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs>"
 			return nil
 		}
 		if m.wallet == nil {
-			m.statusMsg = "no wallet connected (use --wallet <endpoint>)"
+			m.statusMsg = "no wallet connected"
 			return nil
 		}
-		// Validate XFG/XMR-family address format before launching goroutine.
-		if err := validateAddress("xfg", parts[1]); err != nil {
-			m.statusMsg = "invalid address: " + err.Error()
-			return nil
-		}
-		m.statusMsg = "signing offer..."
-		amtStr, pair := parts[2], parts[3]
+		m.statusMsg = "locking funds on-chain..."
+		amtXfg, amtCtr, pair, timeout := parts[1], parts[2], parts[3], parts[4]
 		wallet := m.wallet
 		client := m.client
 		return func() tea.Msg {
-			// Parse amount with bounds checking.
-			xfgAtomic, err := parseAmountAtomic(amtStr, 1e7)
+			xfgAtomic, err := parseAmountAtomic(amtXfg, 1e7)
 			if err != nil {
 				return statusUpdateMsg{"invalid amount: " + err.Error()}
 			}
-			signed, err := wallet.SignOffer(xfgAtomic, 0, pairToID(pair), 144, true)
-			if err != nil {
-				return statusUpdateMsg{"sign_offer failed: " + err.Error()}
+			var timeoutHrs uint32
+			if _, err := fmt.Sscanf(timeout, "%d", &timeoutHrs); err != nil {
+				return statusUpdateMsg{"invalid timeout: " + err.Error()}
 			}
-			// Submit offer to daemon
+			
+			res, err := wallet.CreateAfkLock(xfgAtomic, timeoutHrs, pairToID(pair))
+			if err != nil {
+				return statusUpdateMsg{"create_afk_lock failed: " + err.Error()}
+			}
+			
+			// Submit AFK offer to daemon
 			offerReq := map[string]interface{}{
-				"offerId":      signed.OfferID,
+				"offerId":      res.LockID,
 				"xfgAmount":    xfgAtomic,
-				"rateNum":      uint64(0),
+				"ctrAmount":    amtCtr,
 				"pair":         pairToID(pair),
-				"makerPubKey":  signed.MakerPubKey,
-				"signature":    signed.Signature,
-				"timestamp":    signed.Timestamp,
-				"ttlBlocks":    uint32(144),
-				"postedHeight": uint32(0),
+				"adaptorPoint": res.AdaptorPoint,
+				"preSig":       res.PreSig,
+				"timeoutHrs":   timeoutHrs,
 				"isSell":       true,
 			}
 			var submitResp struct{ Status string `json:"status"` }
 			if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
 				return statusUpdateMsg{"submit failed: " + err.Error()}
 			}
-			return statusUpdateMsg{"offer posted: " + signed.OfferID[:12] + "..."}
+			return statusUpdateMsg{"AFK offer locked and posted: " + res.LockID[:12] + "..."}
 		}
-
+	case "accept":
+		// accept <offer_id>
+		if len(parts) < 2 {
+			m.statusMsg = "usage: accept <offer_id>"
+			return nil
+		}
+		offerID := parts[1]
+		wallet := m.wallet
+		client := m.client
+		return func() tea.Msg {
+			// First, fetch offer details from daemon to calculate net
+			var offer struct {
+				XfgAmount uint64 `json:"xfgAmount"`
+			}
+			if err := client.get(fmt.Sprintf("/getswapstatus/%s", offerID), &offer); err != nil {
+				return statusUpdateMsg{"failed to fetch offer: " + err.Error()}
+			}
+			
+			// Calculate Net Receive: 99% of base
+			netReceive := float64(offer.XfgAmount) / 1e7 * 0.99
+			
+			m.statusMsg = fmt.Sprintf("Est. Net Receive: %.4f XFG (Fuego covers your txn fee as a welcoming gift!)", netReceive)
+			
+			// Now actually accept
+			var resp struct {
+				Status string `json:"status"`
+			}
+			if err := client.post("/accept", map[string]interface{}{"swap_id": offerID}, &resp); err != nil {
+				return statusUpdateMsg{"accept failed: " + err.Error()}
+			}
+			return statusUpdateMsg{"Offer accepted! Please deploy ETH contract to lock funds."}
+		}
 	case "swap":
+
 		// swap initiate <amount> <peer_pubkey> <pair> [role]
 		if len(parts) < 5 {
 			m.statusMsg = "usage: swap initiate <amount> <peer_pubkey> <pair> [role]"
@@ -637,7 +652,7 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 		}
 
 	case "help":
-		m.statusMsg = "pair <name> | c: CD | connect metamask|phantom|bch | bch lock|claim|refund | eth lock | sell cd | accept [id] | initiate <alias> <amt> <pair> | confirm <addr> <amt> <pair> | q: quit"
+		m.statusMsg = "pair <name> | c: CD | connect metamask|phantom|bch | bch lock|claim|refund | eth lock | sell cd | accept [id] | offer <amt> <pair> | confirm-offer <amt> <pair> | q: quit"
 	default:
 		m.statusMsg = "unknown: " + cmd + " (type help)"
 	}

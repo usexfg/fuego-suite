@@ -940,19 +940,6 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
   std::vector<uint32_t> checkpointHeights = m_checkpoints.getCheckpointHeights();
   uint32_t lastCheckpointHeight = checkpointHeights.empty() ? 0 : checkpointHeights.back();
 
-  // Stabilization period: use fixed difficulty for N blocks after exiting checkpoint zone
-  // This prevents garbage difficulty from corrupted cumulative_difficulty during checkpoint sync
-  if (lastCheckpointHeight > 0 && currentHeight > lastCheckpointHeight &&
-      currentHeight <= lastCheckpointHeight + difficultyWindow + 10) {
-    // Use a reasonable stabilization difficulty based on recent network state
-    // This should be approximately the expected difficulty at the checkpoint boundary
-    difficulty_type stabilizationDifficulty = m_blocks[lastCheckpointHeight].cumulative_difficulty - m_blocks[lastCheckpointHeight - 1].cumulative_difficulty; // Use actual difficulty at checkpoint boundary
-    logger(DEBUGGING) << "Using stabilization difficulty " << stabilizationDifficulty
-                      << " for height " << currentHeight
-                      << " (checkpoint transition, last checkpoint: " << lastCheckpointHeight << ")";
-    return stabilizationDifficulty;
-  }
-
   std::vector<uint64_t> timestamps;
   std::vector<difficulty_type> cumulative_difficulties;
   size_t offset;
@@ -2671,7 +2658,7 @@ bool Blockchain::pushBlock(const Block &blockData, const Crypto::Hash &id, block
     return false;
   }
 
-  if (!pushBlock(blockData, transactions, id, bvc)) {
+  if (!pushBlock(blockData, transactions, id, bvc, height)) {
     saveTransactions(transactions, height);
     return false;
   }
@@ -2679,7 +2666,7 @@ bool Blockchain::pushBlock(const Block &blockData, const Crypto::Hash &id, block
   return true;
 }
 
-bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc) {
+bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   auto blockProcessingStart = std::chrono::steady_clock::now();
@@ -2731,8 +2718,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
   auto longhashTimeStart = std::chrono::steady_clock::now();
   Crypto::Hash proof_of_work = NULL_HASH;
-  if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
-    if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
+  if (m_checkpoints.is_in_checkpoint_zone(height)) {
+    if (!m_checkpoints.check_block(height, blockHash)) {
       logger(ERROR, BRIGHT_RED) <<
         "CHECKPOINT VALIDATION FAILED";
       bvc.m_verification_failed = true;
@@ -3307,6 +3294,8 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     report.swapFeesCollected = epochSwapFees;
     report.totalCdLockedAtStart = epochCdLocked;
     report.feeRateFixedPoint = epochFeeRate;
+    report.treasuryBalance = m_treasuryBalance;
+    report.rolloverVaultBalance = m_rolloverVaultBalance;
     m_commitmentIndex.storeEpochReport(report);
     logger(INFO) << "=== Epoch " << epochNumber << " Report ==="
                  << " blocks=" << epochStart << "-" << epochEnd

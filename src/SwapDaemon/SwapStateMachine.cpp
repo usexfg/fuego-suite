@@ -66,7 +66,8 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
   switch (m_state) {
     // ── ADAPTOR SWAP STATES (active — v1) ────────────────────────────────────
     case SwapState::INITIATED:
-      return newState == SwapState::ADAPTOR_KEYS_EXCHANGED;
+      return newState == SwapState::ADAPTOR_KEYS_EXCHANGED ||
+             newState == SwapState::AFK_OFFER_LOCKED;
 
     case SwapState::ADAPTOR_KEYS_EXCHANGED:
       return newState == SwapState::ADAPTOR_ESCROW_FUNDED;
@@ -85,6 +86,14 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
 
     case SwapState::ADAPTOR_SECRET_REVEALED:
       return newState == SwapState::ADAPTOR_XFG_SPENT;
+
+    case SwapState::AFK_OFFER_LOCKED:
+      return newState == SwapState::AFK_OFFER_ACCEPTED ||
+             newState == SwapState::AFK_REFUNDED;
+
+    case SwapState::AFK_OFFER_ACCEPTED:
+      return newState == SwapState::AFK_CLAIMED ||
+             newState == SwapState::AFK_REFUNDED;
 
     // ── zkLPSWAP POOL STATES (v11 — deferred) ────────────────────────────────
     // These transitions are not reachable from any active v1 swap path.
@@ -193,10 +202,13 @@ time_t SwapStateMachine::updatedAt() const {
 
 bool SwapStateMachine::isTerminal() const {
   return m_state == SwapState::ADAPTOR_XFG_SPENT ||
-         m_state == SwapState::ADAPTOR_REFUNDED ||
-         m_state == SwapState::FAILED ||
-         // Pool refund/failure states are terminal (funds returned or lost)
-         m_state == SwapState::POOL_DEPOSIT_REFUNDED ||
+          m_state == SwapState::ADAPTOR_REFUNDED ||
+          m_state == SwapState::FAILED ||
+          m_state == SwapState::AFK_CLAIMED ||
+          m_state == SwapState::AFK_REFUNDED ||
+          // Pool refund/failure states are terminal (funds returned or lost)
+          m_state == SwapState::POOL_DEPOSIT_REFUNDED ||
+
          m_state == SwapState::POOL_WITHDRAW_REFUNDED ||
          m_state == SwapState::POOL_SWAP_REFUNDED ||
          m_state == SwapState::POOL_FEE_CLAIM_REFUNDED ||

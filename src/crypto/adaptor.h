@@ -58,6 +58,12 @@ struct AdaptorSignature {
   uint8_t data[64];
 };
 
+struct AFKLockData {
+  EllipticCurveScalar secret;
+  PublicKey adaptor_point;
+  AdaptorSignature pre_sig;
+};
+
 // Generate an adaptor pre-signature.
 //
 // Signs prefix_hash under key (pub, sec) with adaptor point T.
@@ -83,6 +89,23 @@ bool check_adaptor_signature(
     const PublicKey &pub,
     const PublicKey &adaptor_point,
     const AdaptorSignature &pre_sig);
+
+// AFK-specific primitives for non-interactive locks
+bool generate_afk_lock_data(
+    const Hash &prefix_hash,
+    const PublicKey &pub,
+    const SecretKey &sec,
+    AFKLockData &out);
+
+void complete_afk_signature(
+    const AdaptorSignature &pre_sig,
+    const EllipticCurveScalar &adaptor_secret,
+    Signature &sig);
+
+bool extract_afk_secret(
+    const AdaptorSignature &pre_sig,
+    const Signature &sig,
+    EllipticCurveScalar &adaptor_secret);
 
 // Adapt a pre-signature into a valid Schnorr signature.
 //

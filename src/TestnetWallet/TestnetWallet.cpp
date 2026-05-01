@@ -272,8 +272,8 @@ namespace CryptoNote
       uint32_t cold_term = 0;
       std::string term_label = "";
 
-      uint32_t min_term = CryptoNote::parameters::TESTNET_COLD_MIN_TERM;
-      uint32_t max_term = CryptoNote::parameters::TESTNET_COLD_MAX_TERM;
+      uint32_t min_term = CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM;
+      uint32_t max_term = CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM;
 
       // Map term codes to valid testnet terms
       if (term_code == 3) {

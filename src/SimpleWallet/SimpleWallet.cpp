@@ -519,6 +519,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("payments", boost::bind(&simple_wallet::show_payments, this, boost::arg<1>()), "payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>");
   m_consoleHandler.setHandler("get_tx_proof", boost::bind(&simple_wallet::get_tx_proof, this, boost::arg<1>()), "Generate a signature to prove payment: <txid> <address> [<txkey>]");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
+  m_consoleHandler.setHandler("get_swapKey", boost::bind(&simple_wallet::get_swapKey, this, boost::arg<1>()), "Show the public spend key for atomic swaps");
   m_consoleHandler.setHandler("height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
@@ -1016,105 +1017,31 @@ bool simple_wallet::deposit(const std::vector<std::string> &args)
     size_t amount_index = std::distance(valid_amounts.begin(), it);
     std::string amount_label = amount_labels[amount_index];
 
-    // Parse term in epochs (1, 18, 36, 72)
-    uint32_t term_epochs = boost::lexical_cast<uint32_t>(args[1]);
-    
-    // Validate term is one of the allowed tiers
-    auto termIt = std::find(CryptoNote::parameters::CD_ALLOWED_TIERS.begin(), CryptoNote::parameters::CD_ALLOWED_TIERS.end(), term_epochs);
-    if (termIt == CryptoNote::parameters::CD_ALLOWED_TIERS.end()) {
-      fail_msg_writer() << "Invalid term. Must be one of the allowed tiers:";
-      for (uint32_t tier : CryptoNote::parameters::CD_ALLOWED_TIERS) {
-        fail_msg_writer() << "  " << tier << " epoch(s)";
-      }
-      return true;
-    }
-
-    uint32_t deposit_term = 0;
-    std::string term_label = "";
-
-    // Map epoch tier to a human-readable label
-    if (term_epochs == 1) term_label = "1 epoch (Short)";
-    else if (term_epochs == 18) term_label = "18 epochs (3 months)";
-    else if (term_epochs == 36) term_label = "36 epochs (6 months)";
-    else if (term_epochs == 72) term_label = "72 epochs (1 year)";
-    else term_label = std::to_string(term_epochs) + " epoch(s)";
-
-    // Calculate term in blocks (1 epoch = EPOCH_DURATION_BLOCKS = 900 blocks)
-    deposit_term = term_epochs * CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-
-    // Confirm with user
-    success_msg_writer() << "Creating new Fuego CD:";
-    success_msg_writer() << "  Amount: " << m_currency.formatAmount(deposit_amount) << " (" << amount_label << ")";
-    success_msg_writer() << "  Term: " << term_label << " (" << deposit_term << " blocks)";
-
-    std::string confirm;
-    success_msg_writer() << "Confirm? (y/n): ";
-    std::getline(std::cin, confirm);
-    if (confirm != "y" && confirm != "Y") {
-      success_msg_writer() << "Deposit cancelled";
-      return true;
-    }
-
-    success_msg_writer() << "Creating deposit with commitment...";
-
-    // Create transaction extra with commitment
-    std::vector<uint8_t> extra;
-    std::string extraString;
-
-    // Generate CD commitment - simple hash for on-chain interest tracking
-    Crypto::Hash commitment;
-    Crypto::generate_random_bytes(32, commitment.data);
-
-    // Use the Simple CD extra format (minimal, on-chain only)
-    if (!CryptoNote::createTxExtraWithSimpleCDCommitment(commitment, deposit_amount, deposit_term, extra)) {
-      fail_msg_writer() << "Failed to create CD commitment data";
-      return true;
-    }
-
-    success_msg_writer() << "CD commitment generated: " << Common::podToHex(commitment);
-    success_msg_writer() << "";
-    success_msg_writer() << "This CD earns on-chain interest from the fee pool.";
-    success_msg_writer() << "Interest accrues automatically each epoch (900 blocks ≈ 5 days).";
-
-    // Convert extra vector to string
-    extraString = std::string(extra.begin(), extra.end());
-
-    // Use IWalletLegacy deposit method with extra data
-    uint64_t fee = m_currency.minimumFee();
-    CryptoNote::TransactionId txId = m_wallet->deposit(deposit_term, deposit_amount, fee, extraString, 0);
-
-    if (txId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      fail_msg_writer() << "Failed to create deposit transaction";
-      return true;
-    }
-
-
+    // Parse term in epochs
     uint32_t term_epochs = boost::lexical_cast<uint32_t>(args[1]);
     uint32_t deposit_term = 0;
     std::string term_label = "";
 
-    // Get actual min/max term from currency config
-    uint32_t min_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MIN_TERM
-                                                : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-    uint32_t max_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MAX_TERM
-                                                : CryptoNote::parameters::DEPOSIT_MAX_TERM;
-
-    // Calculate min/max epochs (round up for min, down for max)
-    uint32_t min_epochs = (min_term + CryptoNote::parameters::EPOCH_DURATION_BLOCKS - 1) / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-    uint32_t max_epochs = max_term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    // Get min/max epochs from CD config
+    uint32_t min_epochs = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_CD_MIN_EPOCHS
+                                                  : CryptoNote::parameters::CD_MIN_EPOCHS;
+    uint32_t max_epochs = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_CD_MAX_EPOCHS
+                                                  : CryptoNote::parameters::CD_MAX_EPOCHS;
 
     // Validate epoch range based on actual term limits
     if (term_epochs < min_epochs || term_epochs > max_epochs) {
       fail_msg_writer() << "Invalid term. Must be " << min_epochs << "-" << max_epochs
                         << " epochs (1 epoch = 900 blocks ≈ 5 days).";
-      fail_msg_writer() << "  Min: " << min_epochs << " epochs (" << min_term << " blocks)";
-      fail_msg_writer() << "  Max: " << max_epochs << " epochs (" << max_term << " blocks)";
+      fail_msg_writer() << "  Min: " << min_epochs << " epoch(s)";
+      fail_msg_writer() << "  Max: " << max_epochs << " epoch(s)";
       return true;
     }
 
-    // Calculate term in blocks (1 epoch = EPOCH_DURATION_BLOCKS = 900 blocks)
-    deposit_term = term_epochs * CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-    term_label = std::to_string(term_epochs) + " epoch(s) (~" + std::to_string(term_epochs * 5) + " days)";
+    // Calculate term in blocks using correct epoch duration
+    uint32_t epoch_duration = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    deposit_term = term_epochs * epoch_duration;
+    uint32_t days_per_epoch = m_currency.isTestnet() ? 1 : 5;
+    term_label = std::to_string(term_epochs) + " epoch(s) (~" + std::to_string(term_epochs * days_per_epoch) + " days)";
 
     // Confirm with user
     success_msg_writer() << "Creating new Fuego CD:";
@@ -1330,18 +1257,91 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
     return true;
   }
 
-  success_msg_writer() << "Deposits (" << deposit_count << "):";
-  success_msg_writer() << "ID    | Amount             | Term          | Unlock Height | Status";
-  success_msg_writer() << "------|--------------------|---------------|---------------|--------";
+   success_msg_writer() << "Deposits (" << deposit_count << "):";
+   success_msg_writer() << "ID    | Amount             | Term          | Unlock Height | Status | Key Image";
+   success_msg_writer() << "------|--------------------|---------------|---------------|--------|---------";
 
-  // go through deposits ids for the amount of deposits in wallet
-  for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
-  {
-    // get deposit info from id and store it to deposit
-    CryptoNote::Deposit deposit;
-    if (!m_wallet->getDeposit(id, deposit)) {
-      continue; // Skip invalid deposits
-    }
+   // go through deposits ids for the amount of deposits in wallet
+   for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
+   {
+     // get deposit info from id and store it to deposit
+     CryptoNote::Deposit deposit;
+     if (!m_wallet->getDeposit(id, deposit)) {
+       continue; // Skip invalid deposits
+     }
+
+     // Skip burns / HEAT txns — those belong in list_burns only
+     if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
+       continue;
+     }
+
+     // Extract commitment (Key Image) from transaction extra
+     std::string key_image_str = "";
+     if (!deposit.extra.empty()) {
+       std::vector<TransactionExtraField> extraFields;
+       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+       if (parseTransactionExtra(extraBytes, extraFields)) {
+         for (const auto& field : extraFields) {
+           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
+             key_image_str = Common::podToHex(heatCommit.commitment);
+             break;
+           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+             key_image_str = Common::podToHex(coldCommit.commitment);
+             break;
+           }
+         }
+       }
+     }
+
+     // Format amount
+     std::string amount_str = m_currency.formatAmount(deposit.amount);
+
+     // Format term (CD deposits)
+     uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
+                                                 : CryptoNote::parameters::DEPOSIT_MIN_TERM;
+     uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
+                                                 : CryptoNote::parameters::DEPOSIT_MAX_TERM;
+
+     std::string term_str;
+     // Convert blocks to epochs (1 epoch = 900 blocks ≈ 5 days)
+     if (deposit.term >= cdMin && deposit.term <= cdMax) {
+       uint32_t epochs = deposit.term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+       uint32_t days_approx = epochs * 5;
+       term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
+     } else {
+       term_str = std::to_string(deposit.term) + " blocks";
+     }
+
+     // Format unlock height
+     std::string unlock_str = "";
+     if (deposit.locked) {
+       unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
+     } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+       unlock_str = "Withdrawn";
+     } else {
+       unlock_str = "Unlocked";
+     }
+
+     // Format status
+     std::string status_str = "";
+     if (deposit.locked) {
+       status_str = "Locked";
+     } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+       status_str = "Unlocked";
+     } else {
+       status_str = "Withdrawn";
+     }
+
+     success_msg_writer() << std::left <<
+       std::setw(5)  << std::to_string(id) << " | " <<
+       std::setw(18) << amount_str << " | " <<
+       std::setw(13) << term_str << " | " <<
+       std::setw(13) << unlock_str << " | " <<
+       std::setw(8) << status_str << " | " <<
+       key_image_str;
+   }
 
     // Skip burns / HEAT txns — those belong in list_burns only
     if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
@@ -1352,9 +1352,9 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
     std::string amount_str = m_currency.formatAmount(deposit.amount);
 
     // Format term (CD deposits)
-    uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MIN_TERM
+    uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
                                                : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-    uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MAX_TERM
+    uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
                                                : CryptoNote::parameters::DEPOSIT_MAX_TERM;
 
     std::string term_str;
@@ -1612,8 +1612,8 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     std::string term_label = "";
 
     // Define valid terms based on network
-    uint32_t min_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MIN_TERM : CryptoNote::parameters::COLD_MIN_TERM;
-    uint32_t max_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_COLD_MAX_TERM : CryptoNote::parameters::COLD_MAX_TERM;
+    uint32_t min_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM : CryptoNote::parameters::DEPOSIT_MIN_TERM;
+    uint32_t max_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM : CryptoNote::parameters::DEPOSIT_MAX_TERM;
 
     // Validate term codes - only 3 or 12
     if (term_code == 3) {
@@ -1978,7 +1978,6 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
             std::cout << "Commitment: " << Common::podToHex(coldDeposit.commitment) << std::endl;
             std::cout << "Amount: " << coldDeposit.amount << " heat (atomic XFG)" << std::endl;
             std::cout << "Term: " << coldDeposit.term << " blocks" << std::endl;
-            std::cout << "Target Chain: " << static_cast<int>(coldDeposit.targetChainId) << std::endl;
             std::cout << "=================================" << std::endl;
 
             logger(INFO, BRIGHT_GREEN) << "Proof data generated for CD transaction " << tx_hash;
@@ -2088,13 +2087,13 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
 
       if (parseTransactionExtra(extraBytes, extraFields)) {
         for (const auto& field : extraFields) {
-          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-            const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            success_msg_writer() << "Commitment:    " << Common::podToHex(heatCommit.commitment);
-           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-             success_msg_writer() << "Commitment:    " << Common::podToHex(coldCommit.commitment);
-           }
+             if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+               const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
+               success_msg_writer() << "Key Image:     " << Common::podToHex(heatCommit.commitment);
+             } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+               const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+               success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
+             }
         }
       }
 
@@ -2508,6 +2507,9 @@ bool simple_wallet::reset(const std::vector<std::string> &args) {
 #include <climits>
 #include <cerrno>
 #include <cstring>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 static std::string findSwapxfg() {
@@ -2518,7 +2520,7 @@ static std::string findSwapxfg() {
     std::string dir(self);
     auto pos = dir.rfind('\\');
     if (pos != std::string::npos) {
-      std::string candidate = dir.substr(0, pos + 1) + "swapxfg.exe";
+      std::string candidate = dir.substr(0, pos + 1) + "xfg-swap.exe";
       if (GetFileAttributesA(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
         return candidate;
     }
@@ -2526,18 +2528,35 @@ static std::string findSwapxfg() {
   return "";
 #else
   // 1. Same directory as current executable
-  char self[PATH_MAX];
-  ssize_t len = readlink("/proc/self/exe", self, sizeof(self) - 1);
-  if (len > 0) {
-    self[len] = '\0';
-    std::string dir(self);
+  std::string self;
+#ifdef __APPLE__
+  char path[PATH_MAX];
+  uint32_t len = PATH_MAX;
+  if (_NSGetExecutablePath(path, &len) == 0) {
+    self = path;
+  }
+#else
+  char self_buf[PATH_MAX];
+  ssize_t len_read = readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
+  if (len_read > 0) {
+    self_buf[len_read] = '\0';
+    self = self_buf;
+  }
+#endif
+
+  if (!self.empty()) {
+    std::string dir = self;
     dir = dir.substr(0, dir.rfind('/'));
-    std::string candidate = dir + "/swapxfg";
+    std::string candidate = dir + "/xfg-swap";
     if (access(candidate.c_str(), X_OK) == 0) return candidate;
   }
+
+  // 1.5. Current working directory fallback
+  if (access("./xfg-swap", X_OK) == 0) return "./xfg-swap";
+
   // 2. PATH fallback
-  if (system("which swapxfg > /dev/null 2>&1") == 0)
-    return "swapxfg";
+  if (system("which xfg-swap > /dev/null 2>&1") == 0)
+    return "xfg-swap";
   return "";
 #endif
 }
@@ -2545,11 +2564,11 @@ static std::string findSwapxfg() {
 void simple_wallet::launchSwapxfg(bool testnet) {
   std::string swapxfgPath = findSwapxfg();
   if (swapxfgPath.empty()) {
-    logger(Logging::WARNING) << "swapxfg not found. To use the swap terminal, install swapxfg:";
-    logger(Logging::WARNING) << "  - Download from https://github.com/usexfg/fuego/releases";
-    logger(Logging::WARNING) << "  - Place swapxfg in the same directory as fuego-wallet";
+    logger(Logging::WARNING) << "xfg-swap not found. To use the swap terminal, install xfg-swap:";
+    logger(Logging::WARNING) << "  - Download from https://github.com/usexfg/fuego-suite/releases";
+    logger(Logging::WARNING) << "  - Place xfg-swap in the same directory as fire_wallet";
     logger(Logging::INFO)    << "Alternatively, run manually:";
-    logger(Logging::INFO)    << "  swapxfg --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
+    logger(Logging::INFO)    << "  xfg-swap --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
     return;
   }
 
@@ -2570,22 +2589,22 @@ void simple_wallet::launchSwapxfg(bool testnet) {
     if (m_wallet_rpc_port) {
       std::string walletEndpoint = "http://127.0.0.1:" + std::to_string(m_wallet_rpc_port);
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "swapxfg",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "swapxfg",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     } else {
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "swapxfg",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "swapxfg",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     }
@@ -3153,6 +3172,13 @@ bool simple_wallet::create_integrated(const std::vector<std::string>& args) {
   return true;
 }
 
+bool simple_wallet::get_swapKey(const std::vector<std::string>& args) {
+  AccountKeys keys;
+  m_wallet->getAccountKeys(keys);
+  success_msg_writer() << "Public Spend Key: " << Common::podToHex(keys.address.spendPublicKey);
+  return true;
+}
+
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::export_keys(const std::vector<std::string>& args) {
   AccountKeys keys;
@@ -3167,6 +3193,7 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
   logger(INFO, BRIGHT_GREEN) << std::endl << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility. Protect your keys." << std::endl << std::endl;
 
   std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
+  std::cout << "Public spend key: " << Common::podToHex(keys.address.spendPublicKey) << std::endl;
   std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
 
   Crypto::PublicKey unused_dummy_variable;

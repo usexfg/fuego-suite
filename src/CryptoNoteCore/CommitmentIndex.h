@@ -63,6 +63,8 @@ struct EpochReport {
   uint64_t totalCdLockedAtStart = 0;
   uint64_t feeRateFixedPoint = 0;
   uint64_t activeEfierCount = 0;
+  uint64_t treasuryBalance = 0;
+  uint64_t rolloverVaultBalance = 0;
 
   void serialize(ISerializer& s) {
     s(epochNumber, "epoch_number");
@@ -74,6 +76,8 @@ struct EpochReport {
     s(totalCdLockedAtStart, "total_cd_locked_at_start");
     s(feeRateFixedPoint, "fee_rate_fixed_point");
     s(activeEfierCount, "active_efier_count");
+    s(treasuryBalance, "treasury_balance");
+    s(rolloverVaultBalance, "rollover_vault_balance");
   }
 };
 

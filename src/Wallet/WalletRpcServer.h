@@ -67,6 +67,8 @@ namespace Tools
     bool on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res);
     bool on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res);
     bool on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res);
+    bool on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::request& req, wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::response& res);
+    bool on_claim_afk_swap(const wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::request& req, wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::response& res);
     bool on_create_integrated(const wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::request& req, wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::response& res);
     bool on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res);
     bool on_store(const wallet_rpc::COMMAND_RPC_STORE::request& req, wallet_rpc::COMMAND_RPC_STORE::response& res);

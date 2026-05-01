@@ -205,8 +205,8 @@ namespace CryptoNote
   bool client_helper::confirm_deposit(uint32_t term, uint64_t amount, bool is_testnet, const Currency &currency, const Logging::LoggerRef &logger) const
   {
     uint64_t interest = currency.calculateInterest(amount, term, 0); // Pass 0 as height placeholder
-    uint64_t min_term = is_testnet ? parameters::TESTNET_COLD_MIN_TERM : parameters::COLD_MIN_TERM;
-    uint64_t max_term = is_testnet ? parameters::TESTNET_COLD_MAX_TERM : parameters::COLD_MAX_TERM;
+    uint64_t min_term = is_testnet ? parameters::TESTNET_DEPOSIT_MIN_TERM : parameters::DEPOSIT_MIN_TERM;
+    uint64_t max_term = is_testnet ? parameters::TESTNET_DEPOSIT_MAX_TERM : parameters::DEPOSIT_MAX_TERM;
 
     logger(Logging::INFO) << "Confirm deposit details:\n"
       << "\tAmount: " << currency.formatAmount(amount) << "\n"

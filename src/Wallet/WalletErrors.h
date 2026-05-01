@@ -26,6 +26,8 @@ namespace error {
 // custom error conditions enum type:
 enum WalletErrorCodes {
   NOT_INITIALIZED = 1,
+  INVALID_ARGUMENT,
+  NOT_FOUND,
   ALREADY_INITIALIZED,
   WRONG_STATE,
   WRONG_PASSWORD,
@@ -68,6 +70,8 @@ enum WalletErrorCodes {
   DAEMON_NOT_SYNCED,
   INSUFFICIENT_OUTPUTS_FOR_RING_SIZE
 };
+
+
 
 // custom category:
 class WalletErrorCategory : public std::error_category {

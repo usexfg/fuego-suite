@@ -140,6 +140,8 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "initiate_swap", makeMemberMethod(&wallet_rpc_server::on_initiate_swap) },
       { "complete_swap", makeMemberMethod(&wallet_rpc_server::on_complete_swap) },
       { "refund_swap",   makeMemberMethod(&wallet_rpc_server::on_refund_swap)   },
+      { "create_afk_lock", makeMemberMethod(&wallet_rpc_server::on_create_afk_lock) },
+      { "claim_afk_swap",  makeMemberMethod(&wallet_rpc_server::on_claim_afk_swap)  },
       { "transfer", makeMemberMethod(&wallet_rpc_server::on_transfer) },
       { "store", makeMemberMethod(&wallet_rpc_server::on_store) },
       { "get_messages", makeMemberMethod(&wallet_rpc_server::on_get_messages) },
@@ -317,6 +319,35 @@ bool wallet_rpc_server::on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP
   res.status = "not yet implemented — SwapDaemon IPC not wired";
   return true;
 }
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::request& req, wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::response& res) {
+  std::string lockId, adaptorPoint, preSig;
+  std::error_code ec = m_wallet.create_afk_lock(req.amount, req.timeout_hours, req.pair, lockId, adaptorPoint, preSig);
+  if (ec) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
+  }
+  res.lockId = lockId;
+  res.adaptorPoint = adaptorPoint;
+  res.preSig = preSig;
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_claim_afk_swap(const wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::request& req, wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::response& res) {
+  // Fetch fee address from node if possible, or use a default.
+  std::string fee_address = ""; 
+  // In a real deployment, this would be a call to m_rpc.getFeeAddress()
+  
+  std::string txHash;
+  std::error_code ec = m_wallet.claim_afk_swap(req.swapId, req.secret_s, req.target_chain, fee_address, txHash);
+  if (ec) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
+  }
+  res.txHash = txHash;
+  res.status = WALLET_RPC_STATUS_OK;
+  return true;
+}
+
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res) {
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;

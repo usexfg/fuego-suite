@@ -110,68 +110,49 @@ public:
                                         uint64_t unlockTimestamp = 0,
                                         const std::vector<TransactionMessage>& messages = std::vector<TransactionMessage>(),
                                         uint64_t ttl = 0) override;
-  virtual size_t estimateFusion(const uint64_t& threshold);
-  virtual std::list<TransactionOutputInformation> selectFusionTransfersToSend(uint64_t threshold, size_t minInputCount, size_t maxInputCount);
-  virtual TransactionId sendFusionTransaction(const std::list<TransactionOutputInformation>& fusionInputs, uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0);
+  virtual size_t estimateFusion(const uint64_t& threshold) override;
+  virtual std::list<TransactionOutputInformation> selectFusionTransfersToSend(uint64_t threshold, size_t minInputCount, size_t maxInputCount) override;
+  virtual TransactionId sendFusionTransaction(const std::list<TransactionOutputInformation>& fusionInputs, uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0) override;
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 4);
+  virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 4) override;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
   virtual std::error_code cancelTransaction(size_t transactionId) override;
-
+  virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) override;
+  virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, std::string& txHash) override;
   virtual void getAccountKeys(AccountKeys& keys) override;
-
-  // Burn deposit secret management
   void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
   bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   bool hasBurnDepositSecret(const std::string& txHash);
-
-  // Sub-address registration.
-  // Derives the sub-address at (major, minor), subscribes it to the chain scanner
-  // and returns the sub-address string. Outputs received at this address contribute
-  // to actualBalance() and are selectable as transaction inputs (spend key b_ij used).
-  // Idempotent: calling with a previously-registered index is a no-op and returns the address.
   virtual std::string registerSubAddress(uint32_t major, uint32_t minor) override;
-
-private:
-
-  // IBlockchainSynchronizerObserver
+  private:
   virtual void synchronizationProgressUpdated(uint32_t current, uint32_t total) override;
   virtual void synchronizationCompleted(std::error_code result) override;
-
-  // ITransfersObserver
   virtual void onTransactionUpdated(ITransfersSubscription* object, const Crypto::Hash& transactionHash) override;
   virtual void onTransactionDeleted(ITransfersSubscription* object, const Crypto::Hash& transactionHash) override;
   virtual void onTransfersUnlocked(ITransfersSubscription* object, const std::vector<TransactionOutputInformation>& unlockedTransfers) override;
   virtual void onTransfersLocked(ITransfersSubscription* object, const std::vector<TransactionOutputInformation>& lockedTransfers) override;
-
   void initSync();
   void throwIfNotInitialised();
-
   void doSave(std::ostream& destination, bool saveDetailed, bool saveCache);
   void doLoad(std::istream& source);
-
   void synchronizationCallback(WalletRequest::Callback callback, std::error_code ec);
   void sendTransactionCallback(WalletRequest::Callback callback, std::error_code ec);
   void notifyClients(std::deque<std::unique_ptr<WalletLegacyEvent> >& events);
   void notifyIfBalanceChanged();
   void notifyIfDepositBalanceChanged();
   void notifyIfInvestmentBalanceChanged();
-
   std::unique_ptr<WalletLegacyEvent> getActualInvestmentBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingInvestmentBalanceChangedEvent();
-
   std::unique_ptr<WalletLegacyEvent> getActualDepositBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingDepositBalanceChangedEvent();
-
   std::unique_ptr<WalletLegacyEvent> getActualBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingBalanceChangedEvent();
-
   uint64_t calculateActualDepositBalance();
   uint64_t calculateActualInvestmentBalance();
   uint64_t calculatePendingDepositBalance();
   uint64_t calculatePendingInvestmentBalance();
-  uint64_t getWalletMaximum();
-  uint64_t dustBalance();
+  uint64_t getWalletMaximum() override;
+  uint64_t dustBalance() override;
 
   uint64_t calculateActualBalance();
   uint64_t calculatePendingBalance();
@@ -229,7 +210,21 @@ private:
       : secret(s), amount(a), metadata(m), timestamp(std::time(nullptr)) {}
   };
 
+  struct AFKLockSecret {
+    Crypto::SecretKey secret;
+    Crypto::Signature preSig;
+    uint64_t amount;
+    uint32_t timeout_hours;
+    uint8_t pair;
+    time_t timestamp;
+
+    AFKLockSecret() : amount(0), timeout_hours(0), pair(0), timestamp(0) {}
+    AFKLockSecret(const Crypto::SecretKey& s, const Crypto::Signature& ps, uint64_t a, uint32_t t, uint8_t p)
+      : secret(s), preSig(ps), amount(a), timeout_hours(t), pair(p), timestamp(std::time(nullptr)) {}
+  };
+
   std::map<std::string, BurnDepositSecret> m_burnDepositSecrets;
+  std::map<std::string, AFKLockSecret> m_afkLockSecrets;
 
   // Pending burn deposit secrets (before transaction hash is known)
   Crypto::SecretKey m_pendingBurnSecret;

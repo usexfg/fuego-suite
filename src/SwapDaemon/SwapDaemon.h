@@ -109,9 +109,17 @@ public:
   bool initiate(SwapParams params);
 
   // Accept an incoming swap proposal.
-  bool accept(const std::string& swapId);
+  struct AcceptResult {
+    bool success;
+    std::string warning;
+  };
+  AcceptResult accept(const std::string& swapId);
+  
+  // Returns active AFK offers that are still valid (>= 1 hour remaining)
+  std::vector<SwapStateMachine> getActiveAfkOffers();
 
   // Scan active swaps and refund any that have timed out.
+
   bool checkTimeouts();
 
   // Advance a specific swap to its next state based on chain observations.

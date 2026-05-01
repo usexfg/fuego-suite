@@ -195,12 +195,47 @@ bool extract_adaptor_secret(
 
   // t = r - r_hat = (r_hat + t) - r_hat
   sc_sub(reinterpret_cast<unsigned char*>(&adaptor_secret),
-         sig.data + 32,
-         pre_sig.data + 32);
+          sig.data + 32,
+          pre_sig.data + 32);
 
   // Secret must be nonzero (zero would mean T was the identity)
   return sc_isnonzero(
       reinterpret_cast<const unsigned char*>(&adaptor_secret)) != 0;
 }
 
+bool generate_afk_lock_data(
+    const Hash &prefix_hash,
+    const PublicKey &pub,
+    const SecretKey &sec,
+    AFKLockData &out)
+{
+  // 1. Generate secret s
+  adaptor_random_scalar(out.secret);
+  
+  // 2. Compute adaptor point S = s*G
+  ge_p3 S_p3;
+  ge_scalarmult_base(&S_p3, reinterpret_cast<const unsigned char*>(&out.secret));
+  ge_p3_tobytes(reinterpret_cast<unsigned char*>(&out.adaptor_point), &S_p3);
+  
+  // 3. Generate twisted pre-signature
+  return generate_adaptor_signature(prefix_hash, pub, sec, out.adaptor_point, out.pre_sig);
+}
+
+void complete_afk_signature(
+    const AdaptorSignature &pre_sig,
+    const EllipticCurveScalar &adaptor_secret,
+    Signature &sig)
+{
+  adapt_signature(pre_sig, adaptor_secret, sig);
+}
+
+bool extract_afk_secret_wrapper(
+    const AdaptorSignature &pre_sig,
+    const Signature &sig,
+    EllipticCurveScalar &adaptor_secret)
+{
+  return extract_adaptor_secret(pre_sig, sig, adaptor_secret);
+}
+
 } // namespace Crypto
+

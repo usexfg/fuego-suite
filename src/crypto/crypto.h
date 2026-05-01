@@ -27,8 +27,19 @@
 
 #include "generic-ops.h"
 #include "hash.h"
+#include "Common/StringTools.h"
 
 namespace Crypto {
+
+template<typename T>
+std::string pointToString(const T& point) {
+  return Common::podToHex(point);
+}
+
+template<typename T>
+std::string signatureToString(const T& signature) {
+  return Common::podToHex(signature);
+}
 
   extern "C" {
 #include "random.h"

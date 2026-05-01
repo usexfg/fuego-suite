@@ -152,94 +152,97 @@ int main(int argc, char* argv[]) {
   }();
 
   // Dispatch command
-  if (command == "initiate") {
-    if (argIdx + 3 >= argc) {
-      std::cerr << "Usage: xfg-swap initiate <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
-      return 1;
-    }
+    if (command == "initiate") {
+      if (argIdx + 3 >= argc) {
+        std::cerr << "Usage: xfg-swap initiate <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
+        return 1;
+      }
 
-    std::string pairStr = argv[argIdx++];
-    std::string xfgAmountStr = argv[argIdx++];
-    std::string ctrAmountStr = argv[argIdx++];
-    std::string peer = argv[argIdx++];
+      std::string pairStr = argv[argIdx++];
+      std::string xfgAmountStr = argv[argIdx++];
+      std::string ctrAmountStr = argv[argIdx++];
+      std::string peer = argv[argIdx++];
 
-    XfgSwap::SwapParams params;
-    try {
-      params.pair = XfgSwap::swapPairFromString(pairStr);
-    } catch (const std::exception& e) {
-      std::cerr << "Error: " << e.what() << std::endl;
-      return 1;
-    }
+      XfgSwap::SwapParams params;
+      try {
+        params.pair = XfgSwap::swapPairFromString(pairStr);
+      } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+      }
 
-    params.role = XfgSwap::SwapRole::BOB;
-    params.xfgAmount = std::strtoull(xfgAmountStr.c_str(), nullptr, 10);
-    params.ctrAmount = std::strtoull(ctrAmountStr.c_str(), nullptr, 10);
-    params.peerEndpoint = peer;
+      params.role = XfgSwap::SwapRole::BOB;
+      params.xfgAmount = std::strtoull(xfgAmountStr.c_str(), nullptr, 10);
+      params.ctrAmount = std::strtoull(ctrAmountStr.c_str(), nullptr, 10);
+      params.peerEndpoint = peer;
 
-    // Zero-init crypto fields
-    std::memset(&params.aliceXfgPubKey, 0, sizeof(params.aliceXfgPubKey));
-    std::memset(&params.bobXfgPubKey, 0, sizeof(params.bobXfgPubKey));
-    std::memset(&params.ourSwapSecKey, 0, sizeof(params.ourSwapSecKey));
-    std::memset(&params.ourSwapPubKey, 0, sizeof(params.ourSwapPubKey));
-    std::memset(&params.peerSwapPubKey, 0, sizeof(params.peerSwapPubKey));
-    std::memset(&params.escrowPubKey, 0, sizeof(params.escrowPubKey));
-    std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
-    std::memset(&params.adaptorSecret, 0, sizeof(params.adaptorSecret));
-    std::memset(&params.escrowTxHash, 0, sizeof(params.escrowTxHash));
-    std::memset(&params.hashLock, 0, sizeof(params.hashLock));
-    std::memset(&params.preimage, 0, sizeof(params.preimage));
-    params.xfgTimeoutHeight = 0;  // will be set by daemon
-    params.ctrTimeoutBlock = 0;
-    params.escrowOutputIndex = 0;
-    params.htlcOutputIndex = 0;
+      // Zero-init crypto fields
+      std::memset(&params.aliceXfgPubKey, 0, sizeof(params.aliceXfgPubKey));
+      std::memset(&params.bobXfgPubKey, 0, sizeof(params.bobXfgPubKey));
+      std::memset(&params.ourSwapSecKey, 0, sizeof(params.ourSwapSecKey));
+      std::memset(&params.ourSwapPubKey, 0, sizeof(params.ourSwapPubKey));
+      std::memset(&params.peerSwapPubKey, 0, sizeof(params.peerSwapPubKey));
+      std::memset(&params.escrowPubKey, 0, sizeof(params.escrowPubKey));
+      std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
+      std::memset(&params.adaptorSecret, 0, sizeof(params.adaptorSecret));
+      std::memset(&params.escrowTxHash, 0, sizeof(params.escrowTxHash));
+      std::memset(&params.hashLock, 0, sizeof(params.hashLock));
+      std::memset(&params.preimage, 0, sizeof(params.preimage));
+      params.xfgTimeoutHeight = 0;  // will be set by daemon
+      params.ctrTimeoutBlock = 0;
+      params.escrowOutputIndex = 0;
+      params.htlcOutputIndex = 0;
 
-    if (!daemon.initiate(params)) {
-      return 1;
-    }
+      if (!daemon.initiate(params)) {
+        return 1;
+      }
 
-  } else if (command == "accept") {
-    if (argIdx >= argc) {
-      std::cerr << "Usage: xfg-swap accept <swap_id>" << std::endl;
-      return 1;
-    }
-    std::string swapId = argv[argIdx++];
-    if (!daemon.accept(swapId)) {
-      return 1;
-    }
-
-  } else if (command == "status") {
-    if (argIdx < argc) {
-      // Show specific swap
+    } else if (command == "accept") {
+      if (argIdx >= argc) {
+        std::cerr << "Usage: xfg-swap accept <swap_id>" << std::endl;
+        return 1;
+      }
       std::string swapId = argv[argIdx++];
-      daemon.showSwap(swapId);
-    } else {
-      // Show all swaps
+      auto result = daemon.accept(swapId);
+      if (!result.success) {
+        std::cerr << "Error: " << result.warning << std::endl;
+        return 1;
+      }
+
+    } else if (command == "status") {
+      if (argIdx < argc) {
+        // Show specific swap
+        std::string swapId = argv[argIdx++];
+        daemon.showSwap(swapId);
+      } else {
+        // Show all swaps
+        daemon.listSwaps();
+      }
+
+    } else if (command == "refund") {
+      if (argIdx >= argc) {
+        std::cerr << "Usage: xfg-swap refund <swap_id>" << std::endl;
+        return 1;
+      }
+      std::string swapId = argv[argIdx++];
+      if (!daemon.refund(swapId)) {
+        return 1;
+      }
+
+    } else if (command == "list") {
       daemon.listSwaps();
-    }
 
-  } else if (command == "refund") {
-    if (argIdx >= argc) {
-      std::cerr << "Usage: xfg-swap refund <swap_id>" << std::endl;
-      return 1;
-    }
-    std::string swapId = argv[argIdx++];
-    if (!daemon.refund(swapId)) {
-      return 1;
-    }
+    } else if (command == "check-timeouts") {
+      if (!daemon.checkTimeouts()) {
+        return 1;
+      }
 
-  } else if (command == "list") {
-    daemon.listSwaps();
-
-  } else if (command == "check-timeouts") {
-    if (!daemon.checkTimeouts()) {
+    } else {
+      std::cerr << "Unknown command: " << command << std::endl;
+      printUsage();
       return 1;
     }
 
-  } else {
-    std::cerr << "Unknown command: " << command << std::endl;
-    printUsage();
-    return 1;
-  }
 
   return 0;
 }

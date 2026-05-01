@@ -546,6 +546,58 @@ using CryptoNote::ISerializer;
 
   // ── Phase 7: CD / COLD wallet RPC bridges ─────────────────────────────────
 
+  struct COMMAND_RPC_CREATE_AFK_LOCK {
+    struct request {
+      uint64_t amount;
+      uint32_t timeout_hours;
+      uint8_t pair;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(timeout_hours)
+        KV_MEMBER(pair)
+      }
+    };
+
+    struct response {
+      std::string lockId;
+      std::string adaptorPoint;
+      std::string preSig;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lockId)
+        KV_MEMBER(adaptorPoint)
+        KV_MEMBER(preSig)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_CLAIM_AFK_SWAP {
+    struct request {
+      std::string swapId;
+      std::string secret_s;
+      std::string target_chain;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(swapId)
+        KV_MEMBER(secret_s)
+        KV_MEMBER(target_chain)
+      }
+    };
+
+    struct response {
+      std::string txHash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(txHash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
   struct COMMAND_RPC_LIST_CDS {
     typedef CryptoNote::EMPTY_STRUCT request;
 

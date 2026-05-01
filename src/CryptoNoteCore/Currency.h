@@ -581,14 +581,14 @@ public:
       publicAddressBase58Prefix(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET);
       subAddressBase58Prefix(CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET);
       // Set testnet-specific deposit terms
-      depositMinTerm(parameters::TESTNET_COLD_MIN_TERM);
-      depositMaxTerm(parameters::TESTNET_COLD_MAX_TERM);
+      depositMinTerm(parameters::TESTNET_CD_MIN_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+      depositMaxTerm(parameters::TESTNET_CD_MAX_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
       // Set testnet-specific mined money unlock window
       minedMoneyUnlockWindow(parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_TESTNET);
     } else {
       // Set mainnet deposit terms when switching from testnet to mainnet
-      depositMinTerm(parameters::COLD_MIN_TERM);
-      depositMaxTerm(parameters::COLD_MAX_TERM);
+      depositMinTerm(parameters::CD_MIN_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
+      depositMaxTerm(parameters::CD_MAX_EPOCHS * parameters::EPOCH_DURATION_BLOCKS);
       // Set mainnet mined money unlock window
       minedMoneyUnlockWindow(parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
     }

@@ -1785,8 +1785,8 @@ namespace PaymentService
 
           /* Use testnet or mainnet term limits */
           bool isTestnet = this->currency.isTestnet();
-          uint32_t min_term = isTestnet ? CryptoNote::parameters::TESTNET_COLD_MIN_TERM : CryptoNote::parameters::COLD_MIN_TERM;
-          uint32_t max_term = isTestnet ? CryptoNote::parameters::TESTNET_COLD_MAX_TERM : CryptoNote::parameters::COLD_MAX_TERM;
+          uint32_t min_term = isTestnet ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM : CryptoNote::parameters::DEPOSIT_MIN_TERM;
+          uint32_t max_term = isTestnet ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM : CryptoNote::parameters::DEPOSIT_MAX_TERM;
 
           /* Deposits should be either min_term, max_term, or FOREVER */
           bool isValidTerm = (term == min_term ||
@@ -1896,8 +1896,8 @@ namespace PaymentService
 
           /* Use testnet or mainnet term limits */
           bool isTestnet = this->currency.isTestnet();
-          uint32_t min_term = isTestnet ? CryptoNote::parameters::TESTNET_COLD_MIN_TERM : CryptoNote::parameters::COLD_MIN_TERM;
-          uint32_t max_term = isTestnet ? CryptoNote::parameters::TESTNET_COLD_MAX_TERM : CryptoNote::parameters::COLD_MAX_TERM;
+          uint32_t min_term = isTestnet ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM : CryptoNote::parameters::DEPOSIT_MIN_TERM;
+          uint32_t max_term = isTestnet ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM : CryptoNote::parameters::DEPOSIT_MAX_TERM;
 
           if (term < min_term)
           {

@@ -873,8 +873,9 @@ bool RpcServer::on_accept_swap(const COMMAND_RPC_ACCEPT_SWAP::request& req, COMM
     return true;
   }
 
-  if (!m_swapDaemon->accept(req.swap_id)) {
-    res.status = "Failed to accept swap";
+  XfgSwap::SwapDaemon::AcceptResult result = m_swapDaemon->accept(req.swap_id);
+  if (!result.success) {
+    res.status = result.warning.empty() ? "Failed to accept swap" : result.warning;
     return true;
   }
 

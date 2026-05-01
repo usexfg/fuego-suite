@@ -161,29 +161,23 @@ namespace CryptoNote
         // MAINNET DEPOSITS
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 0.8 XFG
         const uint64_t BURN_DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;  // 0.8 XFG (8,000,000 heat units) 8M HEAT
-	    const uint32_t DEPOSIT_MIN_TERM_v1 = 5480;  // blocks (deprecated - v1 only)
-        const uint32_t DEPOSIT_MAX_TERM_v1 = 5480;  // one month=5480 (deprecated - v1 only)
-        // DEPRECATED: Use CD_MIN_EPOCHS * EPOCH_DURATION_BLOCKS instead
-        const uint32_t DEPOSIT_MIN_TERM = 16000;  // blocks (~3 months) - DEPRECATED
-        const uint32_t DEPOSIT_MAX_TERM = 65000;  // blocks (~1 year) - DEPRECATED
-        const uint32_t COLD_MIN_TERM = 16000;  // DEPRECATED - use CD_MIN_EPOCHS
-        const uint32_t COLD_MAX_TERM = 65000;  // DEPRECATED - use CD_MAX_EPOCHS
-        const uint32_t TESTNET_COLD_MIN_TERM =  8;   // DEPRECATED
-        const uint32_t TESTNET_COLD_MAX_TERM = 42;   // DEPRECATED
+        // CD term limits in blocks (derived from epochs)
+        const uint32_t DEPOSIT_MIN_TERM = CD_MIN_EPOCHS * EPOCH_DURATION_BLOCKS;  // 900 blocks (~5 days mainnet)
+        const uint32_t DEPOSIT_MAX_TERM = CD_MAX_EPOCHS * EPOCH_DURATION_BLOCKS;  // 64,800 blocks (~1 year)
+        // Testnet
+        const uint32_t TESTNET_DEPOSIT_MIN_TERM = TESTNET_CD_MIN_EPOCHS * TESTNET_EPOCH_DURATION_BLOCKS;  // 10 blocks
+        const uint32_t TESTNET_DEPOSIT_MAX_TERM = TESTNET_CD_MAX_EPOCHS * TESTNET_EPOCH_DURATION_BLOCKS;  // 720 blocks
 
         const uint32_t DEPOSIT_TERM_FOREVER = ((uint32_t)(-1));  // Forever term = burn
-        const uint32_t DEPOSIT_TERM_YIELD = COLD_MIN_TERM;     // 16k blocks (3 mo) for Fuego Untraceable Custom Interest Assets (FuCIA) deposits
+        const uint32_t DEPOSIT_TERM_YIELD = DEPOSIT_MIN_TERM;  // CD minimum term for FuCIA deposits
         const uint32_t DEPOSIT_TERM_BURN = DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
 
         // XFG-STARK commitment constants (unified format for xfg-stark-cli relay)
         const uint32_t STARK_NETWORK_ID_MAINNET  = 1;
         const uint32_t STARK_NETWORK_ID_TESTNET  = 2;
-        const uint32_t STARK_COMMITMENT_VERSION  = 3;     // v3: unified HEAT+COLD relay format (4 tiers)
+        const uint32_t STARK_COMMITMENT_VERSION  = 3;     // v3: unified HEAT+CD relay format (4 tiers)
         const uint32_t STARK_TARGET_CHAIN_ETH    = 1;     // Ethereum mainnet
         const uint32_t STARK_TARGET_CHAIN_ARB    = 42161; // Arbitrum One
-
-        const uint32_t DEPOSIT_TERM_MIN = 16000;  // New 3-month term, slightly <90 days of Fuego blocks (180 blks per day)
-        const uint32_t DEPOSIT_TERM_MAX   = 65000;   // ~1-year using 360(+1)days/yr (65k blocks)
 
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");
@@ -413,7 +407,8 @@ namespace CryptoNote
 			   { 960000, "1ac7447e9819be997209b0bd3fa56edeca31f4cd33068a1808db3ab2c6705f18" },
 			  { 970000, "96f8735193c5435254d32c03d25b3747e059931cd3382c436d91b61cb6c6b871" },
 			 { 980000, "1ae34b8d56a796bf5d82bd80ba9cb81e029deda46a293ebb225b26f33c8e240a"},
-			{ 988000, "dd509fba899ecb1b7b58ea3023624fbd2b34df247056869c0ac4b59d65cfa6bf"}
+			{ 988000, "dd509fba899ecb1b7b58ea3023624fbd2b34df247056869c0ac4b59d65cfa6bf"},
+			{ 988001, "c38e275d08f3a984484d920d9c65157384c6ea75cc95dbc0015b90b9fa3d3250"},
 
 
 		};

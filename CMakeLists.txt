@@ -147,7 +147,11 @@ if(STATIC)
 endif()
 
 #set(Boost_DEBUG on)
-find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
+if(APPLE)
+  find_package(Boost 1.55 REQUIRED COMPONENTS filesystem thread date_time chrono regex serialization program_options)
+else()
+  find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
+endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 if(MINGW)

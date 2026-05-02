@@ -27,7 +27,9 @@ jobs:
           build_folder="build/"
           xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
           release_name="fuego-cli-macOS-${{ matrix.arch }}-v$xfg_ver"
-          brew install gcc boost
+          brew install gcc boost@1.83 ccache
+          brew link boost@1.83 --force
+          export BOOST_ROOT=$(brew --prefix boost@1.83)
           # Uninstall ccache if present to avoid --D option error
           brew uninstall ccache 2>/dev/null || echo "ccache not installed via brew"
           # Completely disable ccache to avoid --D option error

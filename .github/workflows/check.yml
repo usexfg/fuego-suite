@@ -167,7 +167,9 @@ jobs:
           xfg_ver=${GITHUB_SHA::7}
           release_name=fuego-cli-macos-${{ matrix.arch }}-dev"$xfg_ver"
 
-          brew install gcc boost ccache
+          brew install gcc boost@1.83 ccache
+          brew link boost@1.83 --force
+          export BOOST_ROOT=$(brew --prefix boost@1.83)
           export CC=clang
           export CXX=clang++
           export PATH="/usr/local/opt/ccache/libexec:$PATH"

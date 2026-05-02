@@ -146,7 +146,14 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
 endif()
 
-set(Boost_NO_BOOST_CMAKE ON)
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  set(Boost_NO_BOOST_CMAKE ON)
+  # Standard Homebrew location for Boost on Apple Silicon
+  set(BOOST_ROOT "/opt/homebrew")
+  set(BOOST_INCLUDEDIR "/opt/homebrew/include")
+  set(BOOST_LIBRARYDIR "/opt/homebrew/lib")
+endif()
+
 #set(Boost_DEBUG on)
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})

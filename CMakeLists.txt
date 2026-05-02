@@ -16,6 +16,10 @@ set(CMAKE_SKIP_INSTALL_RULES ON)
 set(CMAKE_SKIP_PACKAGE_ALL_DEPENDENCY ON)
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
+
 project(fuegoX)
 
 include_directories(include src external "${CMAKE_BINARY_DIR}/version")
@@ -147,6 +151,7 @@ if(STATIC)
 endif()
 
 #set(Boost_DEBUG on)
+set(Boost_NO_BOOST_CMAKE ON)
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 

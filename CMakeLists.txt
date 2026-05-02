@@ -20,6 +20,10 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 OLD)
 endif()
 
+if(APPLE)
+  list(APPEND CMAKE_PREFIX_PATH /opt/homebrew)
+endif()
+
 project(fuegoX)
 
 include_directories(include src external "${CMAKE_BINARY_DIR}/version")

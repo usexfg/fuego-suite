@@ -550,7 +550,6 @@ static OAES_RET oaes_key_expand( OAES_CTX * ctx )
 
 static OAES_RET oaes_key_gen( OAES_CTX * ctx, size_t key_size )
 {
-	size_t _i;
 	oaes_key * _key = NULL;
 	oaes_ctx * _ctx = (oaes_ctx *) ctx;
 	OAES_RET _rc = OAES_RET_SUCCESS;

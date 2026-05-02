@@ -146,6 +146,7 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
 endif()
 
+set(Boost_NO_BOOST_CMAKE ON)
 #set(Boost_DEBUG on)
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})

@@ -1,0 +1,640 @@
+2026-Apr-26 22:57:01.604863 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             DYNAMIGO || v1.10.00.1150(0.2)
+
+
+2026-Apr-26 22:57:01.607175 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/fuegod
+2026-Apr-26 22:57:01.610899 INFO [daemon] Initializing p2p server...
+2026-Apr-26 22:57:01.611582 INFO [node_server] Binding on 0.0.0.0:10808
+2026-Apr-26 22:57:01.611714 INFO [node_server] Net service bound on 0.0.0.0:10808
+2026-Apr-26 22:57:01.611752 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-26 22:57:06.618361 INFO [node_server] No IGD was found.
+2026-Apr-26 22:57:06.618694 INFO [daemon] P2p server initialized OK
+2026-Apr-26 22:57:06.618895 INFO [daemon] Initializing core...
+2026-Apr-26 22:57:06.644699 INFO [Blockchain] Loading blockchain...
+2026-Apr-26 22:57:06.645980 WARNING [Blockchain] No actual blockchain cache found, rebuilding internal structures...
+2026-Apr-26 22:57:06.646067 INFO [Blockchain] Rebuilding cache
+2026-Apr-26 22:57:06.646152 INFO [Blockchain] Rebuilding Cache for Height 0 of 521894
+2026-Apr-26 22:57:06.670073 INFO [Blockchain] Rebuilding Cache for Height 1000 of 521894
+2026-Apr-26 22:57:06.690138 INFO [Blockchain] Rebuilding Cache for Height 2000 of 521894
+2026-Apr-26 22:57:06.714529 INFO [Blockchain] Rebuilding Cache for Height 3000 of 521894
+2026-Apr-26 22:57:06.732675 INFO [Blockchain] Rebuilding Cache for Height 4000 of 521894
+2026-Apr-26 22:57:06.750367 INFO [Blockchain] Rebuilding Cache for Height 5000 of 521894
+2026-Apr-26 22:57:06.770118 INFO [Blockchain] Rebuilding Cache for Height 6000 of 521894
+2026-Apr-26 22:57:06.789640 INFO [Blockchain] Rebuilding Cache for Height 7000 of 521894
+2026-Apr-26 22:57:06.810107 INFO [Blockchain] Rebuilding Cache for Height 8000 of 521894
+2026-Apr-26 22:57:06.829632 INFO [Blockchain] Rebuilding Cache for Height 9000 of 521894
+2026-Apr-26 22:57:06.850914 INFO [Blockchain] Rebuilding Cache for Height 10000 of 521894
+2026-Apr-26 22:57:06.870263 INFO [Blockchain] Rebuilding Cache for Height 11000 of 521894
+2026-Apr-26 22:57:06.889451 INFO [Blockchain] Rebuilding Cache for Height 12000 of 521894
+2026-Apr-26 22:57:06.908286 INFO [Blockchain] Rebuilding Cache for Height 13000 of 521894
+2026-Apr-26 22:57:06.927463 INFO [Blockchain] Rebuilding Cache for Height 14000 of 521894
+2026-Apr-26 22:57:06.947495 INFO [Blockchain] Rebuilding Cache for Height 15000 of 521894
+2026-Apr-26 22:57:06.966576 INFO [Blockchain] Rebuilding Cache for Height 16000 of 521894
+2026-Apr-26 22:57:06.985638 INFO [Blockchain] Rebuilding Cache for Height 17000 of 521894
+2026-Apr-26 22:57:07.005500 INFO [Blockchain] Rebuilding Cache for Height 18000 of 521894
+2026-Apr-26 22:57:07.026130 INFO [Blockchain] Rebuilding Cache for Height 19000 of 521894
+2026-Apr-26 22:57:07.046559 INFO [Blockchain] Rebuilding Cache for Height 20000 of 521894
+2026-Apr-26 22:57:07.069119 INFO [Blockchain] Rebuilding Cache for Height 21000 of 521894
+2026-Apr-26 22:57:07.091596 INFO [Blockchain] Rebuilding Cache for Height 22000 of 521894
+2026-Apr-26 22:57:07.111839 INFO [Blockchain] Rebuilding Cache for Height 23000 of 521894
+2026-Apr-26 22:57:07.131737 INFO [Blockchain] Rebuilding Cache for Height 24000 of 521894
+2026-Apr-26 22:57:07.152997 INFO [Blockchain] Rebuilding Cache for Height 25000 of 521894
+2026-Apr-26 22:57:07.173815 INFO [Blockchain] Rebuilding Cache for Height 26000 of 521894
+2026-Apr-26 22:57:07.194425 INFO [Blockchain] Rebuilding Cache for Height 27000 of 521894
+2026-Apr-26 22:57:07.214947 INFO [Blockchain] Rebuilding Cache for Height 28000 of 521894
+2026-Apr-26 22:57:07.236178 INFO [Blockchain] Rebuilding Cache for Height 29000 of 521894
+2026-Apr-26 22:57:07.255728 INFO [Blockchain] Rebuilding Cache for Height 30000 of 521894
+2026-Apr-26 22:57:07.275099 INFO [Blockchain] Rebuilding Cache for Height 31000 of 521894
+2026-Apr-26 22:57:07.294916 INFO [Blockchain] Rebuilding Cache for Height 32000 of 521894
+2026-Apr-26 22:57:07.314327 INFO [Blockchain] Rebuilding Cache for Height 33000 of 521894
+2026-Apr-26 22:57:07.333493 INFO [Blockchain] Rebuilding Cache for Height 34000 of 521894
+2026-Apr-26 22:57:07.352722 INFO [Blockchain] Rebuilding Cache for Height 35000 of 521894
+2026-Apr-26 22:57:07.371855 INFO [Blockchain] Rebuilding Cache for Height 36000 of 521894
+2026-Apr-26 22:57:07.391025 INFO [Blockchain] Rebuilding Cache for Height 37000 of 521894
+2026-Apr-26 22:57:07.410213 INFO [Blockchain] Rebuilding Cache for Height 38000 of 521894
+2026-Apr-26 22:57:07.429396 INFO [Blockchain] Rebuilding Cache for Height 39000 of 521894
+2026-Apr-26 22:57:07.448490 INFO [Blockchain] Rebuilding Cache for Height 40000 of 521894
+2026-Apr-26 22:57:07.467534 INFO [Blockchain] Rebuilding Cache for Height 41000 of 521894
+2026-Apr-26 22:57:07.486329 INFO [Blockchain] Rebuilding Cache for Height 42000 of 521894
+2026-Apr-26 22:57:07.505315 INFO [Blockchain] Rebuilding Cache for Height 43000 of 521894
+2026-Apr-26 22:57:07.524995 INFO [Blockchain] Rebuilding Cache for Height 44000 of 521894
+2026-Apr-26 22:57:07.544002 INFO [Blockchain] Rebuilding Cache for Height 45000 of 521894
+2026-Apr-26 22:57:07.563169 INFO [Blockchain] Rebuilding Cache for Height 46000 of 521894
+2026-Apr-26 22:57:07.583029 INFO [Blockchain] Rebuilding Cache for Height 47000 of 521894
+2026-Apr-26 22:57:07.602369 INFO [Blockchain] Rebuilding Cache for Height 48000 of 521894
+2026-Apr-26 22:57:07.621627 INFO [Blockchain] Rebuilding Cache for Height 49000 of 521894
+2026-Apr-26 22:57:07.643156 INFO [Blockchain] Rebuilding Cache for Height 50000 of 521894
+2026-Apr-26 22:57:07.662769 INFO [Blockchain] Rebuilding Cache for Height 51000 of 521894
+2026-Apr-26 22:57:07.683027 INFO [Blockchain] Rebuilding Cache for Height 52000 of 521894
+2026-Apr-26 22:57:07.702121 INFO [Blockchain] Rebuilding Cache for Height 53000 of 521894
+2026-Apr-26 22:57:07.722712 INFO [Blockchain] Rebuilding Cache for Height 54000 of 521894
+2026-Apr-26 22:57:07.746196 INFO [Blockchain] Rebuilding Cache for Height 55000 of 521894
+2026-Apr-26 22:57:07.767039 INFO [Blockchain] Rebuilding Cache for Height 56000 of 521894
+2026-Apr-26 22:57:07.786679 INFO [Blockchain] Rebuilding Cache for Height 57000 of 521894
+2026-Apr-26 22:57:07.807141 INFO [Blockchain] Rebuilding Cache for Height 58000 of 521894
+2026-Apr-26 22:57:07.827584 INFO [Blockchain] Rebuilding Cache for Height 59000 of 521894
+2026-Apr-26 22:57:07.847341 INFO [Blockchain] Rebuilding Cache for Height 60000 of 521894
+2026-Apr-26 22:57:07.867446 INFO [Blockchain] Rebuilding Cache for Height 61000 of 521894
+2026-Apr-26 22:57:07.889058 INFO [Blockchain] Rebuilding Cache for Height 62000 of 521894
+2026-Apr-26 22:57:07.909596 INFO [Blockchain] Rebuilding Cache for Height 63000 of 521894
+2026-Apr-26 22:57:07.932878 INFO [Blockchain] Rebuilding Cache for Height 64000 of 521894
+2026-Apr-26 22:57:07.952991 INFO [Blockchain] Rebuilding Cache for Height 65000 of 521894
+2026-Apr-26 22:57:07.972310 INFO [Blockchain] Rebuilding Cache for Height 66000 of 521894
+2026-Apr-26 22:57:07.995199 INFO [Blockchain] Rebuilding Cache for Height 67000 of 521894
+2026-Apr-26 22:57:08.017465 INFO [Blockchain] Rebuilding Cache for Height 68000 of 521894
+2026-Apr-26 22:57:08.039702 INFO [Blockchain] Rebuilding Cache for Height 69000 of 521894
+2026-Apr-26 22:57:08.060443 INFO [Blockchain] Rebuilding Cache for Height 70000 of 521894
+2026-Apr-26 22:57:08.104297 INFO [Blockchain] Rebuilding Cache for Height 71000 of 521894
+2026-Apr-26 22:57:08.124304 INFO [Blockchain] Rebuilding Cache for Height 72000 of 521894
+2026-Apr-26 22:57:08.143848 INFO [Blockchain] Rebuilding Cache for Height 73000 of 521894
+2026-Apr-26 22:57:08.162580 INFO [Blockchain] Rebuilding Cache for Height 74000 of 521894
+2026-Apr-26 22:57:08.182478 INFO [Blockchain] Rebuilding Cache for Height 75000 of 521894
+2026-Apr-26 22:57:08.202368 INFO [Blockchain] Rebuilding Cache for Height 76000 of 521894
+2026-Apr-26 22:57:08.221398 INFO [Blockchain] Rebuilding Cache for Height 77000 of 521894
+2026-Apr-26 22:57:08.241010 INFO [Blockchain] Rebuilding Cache for Height 78000 of 521894
+2026-Apr-26 22:57:08.260376 INFO [Blockchain] Rebuilding Cache for Height 79000 of 521894
+2026-Apr-26 22:57:08.279858 INFO [Blockchain] Rebuilding Cache for Height 80000 of 521894
+2026-Apr-26 22:57:08.299708 INFO [Blockchain] Rebuilding Cache for Height 81000 of 521894
+2026-Apr-26 22:57:08.319195 INFO [Blockchain] Rebuilding Cache for Height 82000 of 521894
+2026-Apr-26 22:57:08.365453 INFO [Blockchain] Rebuilding Cache for Height 83000 of 521894
+2026-Apr-26 22:57:08.385483 INFO [Blockchain] Rebuilding Cache for Height 84000 of 521894
+2026-Apr-26 22:57:08.404575 INFO [Blockchain] Rebuilding Cache for Height 85000 of 521894
+2026-Apr-26 22:57:08.423777 INFO [Blockchain] Rebuilding Cache for Height 86000 of 521894
+2026-Apr-26 22:57:08.442942 INFO [Blockchain] Rebuilding Cache for Height 87000 of 521894
+2026-Apr-26 22:57:08.462538 INFO [Blockchain] Rebuilding Cache for Height 88000 of 521894
+2026-Apr-26 22:57:08.481576 INFO [Blockchain] Rebuilding Cache for Height 89000 of 521894
+2026-Apr-26 22:57:08.500971 INFO [Blockchain] Rebuilding Cache for Height 90000 of 521894
+2026-Apr-26 22:57:08.521363 INFO [Blockchain] Rebuilding Cache for Height 91000 of 521894
+2026-Apr-26 22:57:08.541977 INFO [Blockchain] Rebuilding Cache for Height 92000 of 521894
+2026-Apr-26 22:57:08.562342 INFO [Blockchain] Rebuilding Cache for Height 93000 of 521894
+2026-Apr-26 22:57:08.582543 INFO [Blockchain] Rebuilding Cache for Height 94000 of 521894
+2026-Apr-26 22:57:08.602001 INFO [Blockchain] Rebuilding Cache for Height 95000 of 521894
+2026-Apr-26 22:57:08.621483 INFO [Blockchain] Rebuilding Cache for Height 96000 of 521894
+2026-Apr-26 22:57:08.640945 INFO [Blockchain] Rebuilding Cache for Height 97000 of 521894
+2026-Apr-26 22:57:08.659275 INFO [Blockchain] Rebuilding Cache for Height 98000 of 521894
+2026-Apr-26 22:57:08.681227 INFO [Blockchain] Rebuilding Cache for Height 99000 of 521894
+2026-Apr-26 22:57:08.699520 INFO [Blockchain] Rebuilding Cache for Height 100000 of 521894
+2026-Apr-26 22:57:08.717813 INFO [Blockchain] Rebuilding Cache for Height 101000 of 521894
+2026-Apr-26 22:57:08.735966 INFO [Blockchain] Rebuilding Cache for Height 102000 of 521894
+2026-Apr-26 22:57:08.754120 INFO [Blockchain] Rebuilding Cache for Height 103000 of 521894
+2026-Apr-26 22:57:08.772787 INFO [Blockchain] Rebuilding Cache for Height 104000 of 521894
+2026-Apr-26 22:57:08.791150 INFO [Blockchain] Rebuilding Cache for Height 105000 of 521894
+2026-Apr-26 22:57:08.809867 INFO [Blockchain] Rebuilding Cache for Height 106000 of 521894
+2026-Apr-26 22:57:08.828531 INFO [Blockchain] Rebuilding Cache for Height 107000 of 521894
+2026-Apr-26 22:57:08.846906 INFO [Blockchain] Rebuilding Cache for Height 108000 of 521894
+2026-Apr-26 22:57:08.870829 INFO [Blockchain] Rebuilding Cache for Height 109000 of 521894
+2026-Apr-26 22:57:08.889403 INFO [Blockchain] Rebuilding Cache for Height 110000 of 521894
+2026-Apr-26 22:57:08.909676 INFO [Blockchain] Rebuilding Cache for Height 111000 of 521894
+2026-Apr-26 22:57:08.929512 INFO [Blockchain] Rebuilding Cache for Height 112000 of 521894
+2026-Apr-26 22:57:08.949432 INFO [Blockchain] Rebuilding Cache for Height 113000 of 521894
+2026-Apr-26 22:57:08.970202 INFO [Blockchain] Rebuilding Cache for Height 114000 of 521894
+2026-Apr-26 22:57:08.990273 INFO [Blockchain] Rebuilding Cache for Height 115000 of 521894
+2026-Apr-26 22:57:09.011159 INFO [Blockchain] Rebuilding Cache for Height 116000 of 521894
+2026-Apr-26 22:57:09.031158 INFO [Blockchain] Rebuilding Cache for Height 117000 of 521894
+2026-Apr-26 22:57:09.051445 INFO [Blockchain] Rebuilding Cache for Height 118000 of 521894
+2026-Apr-26 22:57:09.071433 INFO [Blockchain] Rebuilding Cache for Height 119000 of 521894
+2026-Apr-26 22:57:09.091811 INFO [Blockchain] Rebuilding Cache for Height 120000 of 521894
+2026-Apr-26 22:57:09.111402 INFO [Blockchain] Rebuilding Cache for Height 121000 of 521894
+2026-Apr-26 22:57:09.130839 INFO [Blockchain] Rebuilding Cache for Height 122000 of 521894
+2026-Apr-26 22:57:09.155505 INFO [Blockchain] Rebuilding Cache for Height 123000 of 521894
+2026-Apr-26 22:57:09.174469 INFO [Blockchain] Rebuilding Cache for Height 124000 of 521894
+2026-Apr-26 22:57:09.207876 INFO [Blockchain] Rebuilding Cache for Height 125000 of 521894
+2026-Apr-26 22:57:09.228461 INFO [Blockchain] Rebuilding Cache for Height 126000 of 521894
+2026-Apr-26 22:57:09.259115 INFO [Blockchain] Rebuilding Cache for Height 127000 of 521894
+2026-Apr-26 22:57:09.280677 INFO [Blockchain] Rebuilding Cache for Height 128000 of 521894
+2026-Apr-26 22:57:09.301757 INFO [Blockchain] Rebuilding Cache for Height 129000 of 521894
+2026-Apr-26 22:57:09.322075 INFO [Blockchain] Rebuilding Cache for Height 130000 of 521894
+2026-Apr-26 22:57:09.341544 INFO [Blockchain] Rebuilding Cache for Height 131000 of 521894
+2026-Apr-26 22:57:09.361333 INFO [Blockchain] Rebuilding Cache for Height 132000 of 521894
+2026-Apr-26 22:57:09.381364 INFO [Blockchain] Rebuilding Cache for Height 133000 of 521894
+2026-Apr-26 22:57:09.400847 INFO [Blockchain] Rebuilding Cache for Height 134000 of 521894
+2026-Apr-26 22:57:09.422055 INFO [Blockchain] Rebuilding Cache for Height 135000 of 521894
+2026-Apr-26 22:57:09.441706 INFO [Blockchain] Rebuilding Cache for Height 136000 of 521894
+2026-Apr-26 22:57:09.461951 INFO [Blockchain] Rebuilding Cache for Height 137000 of 521894
+2026-Apr-26 22:57:09.481120 INFO [Blockchain] Rebuilding Cache for Height 138000 of 521894
+2026-Apr-26 22:57:09.500282 INFO [Blockchain] Rebuilding Cache for Height 139000 of 521894
+2026-Apr-26 22:57:09.520226 INFO [Blockchain] Rebuilding Cache for Height 140000 of 521894
+2026-Apr-26 22:57:09.539492 INFO [Blockchain] Rebuilding Cache for Height 141000 of 521894
+2026-Apr-26 22:57:09.560116 INFO [Blockchain] Rebuilding Cache for Height 142000 of 521894
+2026-Apr-26 22:57:09.585279 INFO [Blockchain] Rebuilding Cache for Height 143000 of 521894
+2026-Apr-26 22:57:09.604493 INFO [Blockchain] Rebuilding Cache for Height 144000 of 521894
+2026-Apr-26 22:57:09.624203 INFO [Blockchain] Rebuilding Cache for Height 145000 of 521894
+2026-Apr-26 22:57:09.643370 INFO [Blockchain] Rebuilding Cache for Height 146000 of 521894
+2026-Apr-26 22:57:09.663114 INFO [Blockchain] Rebuilding Cache for Height 147000 of 521894
+2026-Apr-26 22:57:09.683261 INFO [Blockchain] Rebuilding Cache for Height 148000 of 521894
+2026-Apr-26 22:57:09.706493 INFO [Blockchain] Rebuilding Cache for Height 149000 of 521894
+2026-Apr-26 22:57:09.729971 INFO [Blockchain] Rebuilding Cache for Height 150000 of 521894
+2026-Apr-26 22:57:09.754170 INFO [Blockchain] Rebuilding Cache for Height 151000 of 521894
+2026-Apr-26 22:57:09.778937 INFO [Blockchain] Rebuilding Cache for Height 152000 of 521894
+2026-Apr-26 22:57:09.806001 INFO [Blockchain] Rebuilding Cache for Height 153000 of 521894
+2026-Apr-26 22:57:09.833907 INFO [Blockchain] Rebuilding Cache for Height 154000 of 521894
+2026-Apr-26 22:57:09.864174 INFO [Blockchain] Rebuilding Cache for Height 155000 of 521894
+2026-Apr-26 22:57:09.891121 INFO [Blockchain] Rebuilding Cache for Height 156000 of 521894
+2026-Apr-26 22:57:09.919342 INFO [Blockchain] Rebuilding Cache for Height 157000 of 521894
+2026-Apr-26 22:57:09.953794 INFO [Blockchain] Rebuilding Cache for Height 158000 of 521894
+2026-Apr-26 22:57:09.978655 INFO [Blockchain] Rebuilding Cache for Height 159000 of 521894
+2026-Apr-26 22:57:10.004141 INFO [Blockchain] Rebuilding Cache for Height 160000 of 521894
+2026-Apr-26 22:57:10.051504 INFO [Blockchain] Rebuilding Cache for Height 161000 of 521894
+2026-Apr-26 22:57:10.081553 INFO [Blockchain] Rebuilding Cache for Height 162000 of 521894
+2026-Apr-26 22:57:10.134068 INFO [Blockchain] Rebuilding Cache for Height 163000 of 521894
+2026-Apr-26 22:57:10.159736 INFO [Blockchain] Rebuilding Cache for Height 164000 of 521894
+2026-Apr-26 22:57:10.186355 INFO [Blockchain] Rebuilding Cache for Height 165000 of 521894
+2026-Apr-26 22:57:10.212023 INFO [Blockchain] Rebuilding Cache for Height 166000 of 521894
+2026-Apr-26 22:57:10.238247 INFO [Blockchain] Rebuilding Cache for Height 167000 of 521894
+2026-Apr-26 22:57:10.276766 INFO [Blockchain] Rebuilding Cache for Height 168000 of 521894
+2026-Apr-26 22:57:10.301250 INFO [Blockchain] Rebuilding Cache for Height 169000 of 521894
+2026-Apr-26 22:57:10.325833 INFO [Blockchain] Rebuilding Cache for Height 170000 of 521894
+2026-Apr-26 22:57:10.351056 INFO [Blockchain] Rebuilding Cache for Height 171000 of 521894
+2026-Apr-26 22:57:10.399125 INFO [Blockchain] Rebuilding Cache for Height 172000 of 521894
+2026-Apr-26 22:57:10.463548 INFO [Blockchain] Rebuilding Cache for Height 173000 of 521894
+2026-Apr-26 22:57:10.535082 INFO [Blockchain] Rebuilding Cache for Height 174000 of 521894
+2026-Apr-26 22:57:10.623602 INFO [Blockchain] Rebuilding Cache for Height 175000 of 521894
+2026-Apr-26 22:57:10.695217 INFO [Blockchain] Rebuilding Cache for Height 176000 of 521894
+2026-Apr-26 22:57:10.766366 INFO [Blockchain] Rebuilding Cache for Height 177000 of 521894
+2026-Apr-26 22:57:10.832108 INFO [Blockchain] Rebuilding Cache for Height 178000 of 521894
+2026-Apr-26 22:57:10.899464 INFO [Blockchain] Rebuilding Cache for Height 179000 of 521894
+2026-Apr-26 22:57:10.964834 INFO [Blockchain] Rebuilding Cache for Height 180000 of 521894
+2026-Apr-26 22:57:11.028399 INFO [Blockchain] Rebuilding Cache for Height 181000 of 521894
+2026-Apr-26 22:57:11.097663 INFO [Blockchain] Rebuilding Cache for Height 182000 of 521894
+2026-Apr-26 22:57:11.153762 INFO [Blockchain] Rebuilding Cache for Height 183000 of 521894
+2026-Apr-26 22:57:11.182807 INFO [Blockchain] Rebuilding Cache for Height 184000 of 521894
+2026-Apr-26 22:57:11.227052 INFO [Blockchain] Rebuilding Cache for Height 185000 of 521894
+2026-Apr-26 22:57:11.286862 INFO [Blockchain] Rebuilding Cache for Height 186000 of 521894
+2026-Apr-26 22:57:11.373070 INFO [Blockchain] Rebuilding Cache for Height 187000 of 521894
+2026-Apr-26 22:57:11.432998 INFO [Blockchain] Rebuilding Cache for Height 188000 of 521894
+2026-Apr-26 22:57:11.494500 INFO [Blockchain] Rebuilding Cache for Height 189000 of 521894
+2026-Apr-26 22:57:11.563463 INFO [Blockchain] Rebuilding Cache for Height 190000 of 521894
+2026-Apr-26 22:57:11.634389 INFO [Blockchain] Rebuilding Cache for Height 191000 of 521894
+2026-Apr-26 22:57:11.706136 INFO [Blockchain] Rebuilding Cache for Height 192000 of 521894
+2026-Apr-26 22:57:11.771385 INFO [Blockchain] Rebuilding Cache for Height 193000 of 521894
+2026-Apr-26 22:57:11.826767 INFO [Blockchain] Rebuilding Cache for Height 194000 of 521894
+2026-Apr-26 22:57:11.871675 INFO [Blockchain] Rebuilding Cache for Height 195000 of 521894
+2026-Apr-26 22:57:11.915946 INFO [Blockchain] Rebuilding Cache for Height 196000 of 521894
+2026-Apr-26 22:57:11.967178 INFO [Blockchain] Rebuilding Cache for Height 197000 of 521894
+2026-Apr-26 22:57:12.015904 INFO [Blockchain] Rebuilding Cache for Height 198000 of 521894
+2026-Apr-26 22:57:12.085565 INFO [Blockchain] Rebuilding Cache for Height 199000 of 521894
+2026-Apr-26 22:57:12.148862 INFO [Blockchain] Rebuilding Cache for Height 200000 of 521894
+2026-Apr-26 22:57:12.197889 INFO [Blockchain] Rebuilding Cache for Height 201000 of 521894
+2026-Apr-26 22:57:12.251920 INFO [Blockchain] Rebuilding Cache for Height 202000 of 521894
+2026-Apr-26 22:57:12.300238 INFO [Blockchain] Rebuilding Cache for Height 203000 of 521894
+2026-Apr-26 22:57:12.369118 INFO [Blockchain] Rebuilding Cache for Height 204000 of 521894
+2026-Apr-26 22:57:12.436031 INFO [Blockchain] Rebuilding Cache for Height 205000 of 521894
+2026-Apr-26 22:57:12.491414 INFO [Blockchain] Rebuilding Cache for Height 206000 of 521894
+2026-Apr-26 22:57:12.548602 INFO [Blockchain] Rebuilding Cache for Height 207000 of 521894
+2026-Apr-26 22:57:12.619115 INFO [Blockchain] Rebuilding Cache for Height 208000 of 521894
+2026-Apr-26 22:57:12.689870 INFO [Blockchain] Rebuilding Cache for Height 209000 of 521894
+2026-Apr-26 22:57:12.762112 INFO [Blockchain] Rebuilding Cache for Height 210000 of 521894
+2026-Apr-26 22:57:12.858514 INFO [Blockchain] Rebuilding Cache for Height 211000 of 521894
+2026-Apr-26 22:57:12.932488 INFO [Blockchain] Rebuilding Cache for Height 212000 of 521894
+2026-Apr-26 22:57:13.001632 INFO [Blockchain] Rebuilding Cache for Height 213000 of 521894
+2026-Apr-26 22:57:13.072832 INFO [Blockchain] Rebuilding Cache for Height 214000 of 521894
+2026-Apr-26 22:57:13.151523 INFO [Blockchain] Rebuilding Cache for Height 215000 of 521894
+2026-Apr-26 22:57:13.226895 INFO [Blockchain] Rebuilding Cache for Height 216000 of 521894
+2026-Apr-26 22:57:13.298344 INFO [Blockchain] Rebuilding Cache for Height 217000 of 521894
+2026-Apr-26 22:57:13.372739 INFO [Blockchain] Rebuilding Cache for Height 218000 of 521894
+2026-Apr-26 22:57:13.468558 INFO [Blockchain] Rebuilding Cache for Height 219000 of 521894
+2026-Apr-26 22:57:13.546955 INFO [Blockchain] Rebuilding Cache for Height 220000 of 521894
+2026-Apr-26 22:57:13.615658 INFO [Blockchain] Rebuilding Cache for Height 221000 of 521894
+2026-Apr-26 22:57:13.685937 INFO [Blockchain] Rebuilding Cache for Height 222000 of 521894
+2026-Apr-26 22:57:13.751873 INFO [Blockchain] Rebuilding Cache for Height 223000 of 521894
+2026-Apr-26 22:57:13.821355 INFO [Blockchain] Rebuilding Cache for Height 224000 of 521894
+2026-Apr-26 22:57:13.892752 INFO [Blockchain] Rebuilding Cache for Height 225000 of 521894
+2026-Apr-26 22:57:13.960320 INFO [Blockchain] Rebuilding Cache for Height 226000 of 521894
+2026-Apr-26 22:57:14.031191 INFO [Blockchain] Rebuilding Cache for Height 227000 of 521894
+2026-Apr-26 22:57:14.101627 INFO [Blockchain] Rebuilding Cache for Height 228000 of 521894
+2026-Apr-26 22:57:14.169422 INFO [Blockchain] Rebuilding Cache for Height 229000 of 521894
+2026-Apr-26 22:57:14.243226 INFO [Blockchain] Rebuilding Cache for Height 230000 of 521894
+2026-Apr-26 22:57:14.312570 INFO [Blockchain] Rebuilding Cache for Height 231000 of 521894
+2026-Apr-26 22:57:14.384290 INFO [Blockchain] Rebuilding Cache for Height 232000 of 521894
+2026-Apr-26 22:57:14.457320 INFO [Blockchain] Rebuilding Cache for Height 233000 of 521894
+2026-Apr-26 22:57:14.532040 INFO [Blockchain] Rebuilding Cache for Height 234000 of 521894
+2026-Apr-26 22:57:14.609284 INFO [Blockchain] Rebuilding Cache for Height 235000 of 521894
+2026-Apr-26 22:57:14.681405 INFO [Blockchain] Rebuilding Cache for Height 236000 of 521894
+2026-Apr-26 22:57:14.756160 INFO [Blockchain] Rebuilding Cache for Height 237000 of 521894
+2026-Apr-26 22:57:14.828163 INFO [Blockchain] Rebuilding Cache for Height 238000 of 521894
+2026-Apr-26 22:57:14.894142 INFO [Blockchain] Rebuilding Cache for Height 239000 of 521894
+2026-Apr-26 22:57:14.966818 INFO [Blockchain] Rebuilding Cache for Height 240000 of 521894
+2026-Apr-26 22:57:15.040180 INFO [Blockchain] Rebuilding Cache for Height 241000 of 521894
+2026-Apr-26 22:57:15.115623 INFO [Blockchain] Rebuilding Cache for Height 242000 of 521894
+2026-Apr-26 22:57:15.186999 INFO [Blockchain] Rebuilding Cache for Height 243000 of 521894
+2026-Apr-26 22:57:15.258953 INFO [Blockchain] Rebuilding Cache for Height 244000 of 521894
+2026-Apr-26 22:57:15.330329 INFO [Blockchain] Rebuilding Cache for Height 245000 of 521894
+2026-Apr-26 22:57:15.398956 INFO [Blockchain] Rebuilding Cache for Height 246000 of 521894
+2026-Apr-26 22:57:15.468489 INFO [Blockchain] Rebuilding Cache for Height 247000 of 521894
+2026-Apr-26 22:57:15.548750 INFO [Blockchain] Rebuilding Cache for Height 248000 of 521894
+2026-Apr-26 22:57:15.622775 INFO [Blockchain] Rebuilding Cache for Height 249000 of 521894
+2026-Apr-26 22:57:15.697956 INFO [Blockchain] Rebuilding Cache for Height 250000 of 521894
+2026-Apr-26 22:57:15.776849 INFO [Blockchain] Rebuilding Cache for Height 251000 of 521894
+2026-Apr-26 22:57:15.855752 INFO [Blockchain] Rebuilding Cache for Height 252000 of 521894
+2026-Apr-26 22:57:15.935769 INFO [Blockchain] Rebuilding Cache for Height 253000 of 521894
+2026-Apr-26 22:57:16.014161 INFO [Blockchain] Rebuilding Cache for Height 254000 of 521894
+2026-Apr-26 22:57:16.097127 INFO [Blockchain] Rebuilding Cache for Height 255000 of 521894
+2026-Apr-26 22:57:16.185555 INFO [Blockchain] Rebuilding Cache for Height 256000 of 521894
+2026-Apr-26 22:57:16.264157 INFO [Blockchain] Rebuilding Cache for Height 257000 of 521894
+2026-Apr-26 22:57:16.358298 INFO [Blockchain] Rebuilding Cache for Height 258000 of 521894
+2026-Apr-26 22:57:16.452096 INFO [Blockchain] Rebuilding Cache for Height 259000 of 521894
+2026-Apr-26 22:57:16.535424 INFO [Blockchain] Rebuilding Cache for Height 260000 of 521894
+2026-Apr-26 22:57:16.616967 INFO [Blockchain] Rebuilding Cache for Height 261000 of 521894
+2026-Apr-26 22:57:16.694691 INFO [Blockchain] Rebuilding Cache for Height 262000 of 521894
+2026-Apr-26 22:57:16.770260 INFO [Blockchain] Rebuilding Cache for Height 263000 of 521894
+2026-Apr-26 22:57:16.845177 INFO [Blockchain] Rebuilding Cache for Height 264000 of 521894
+2026-Apr-26 22:57:16.915430 INFO [Blockchain] Rebuilding Cache for Height 265000 of 521894
+2026-Apr-26 22:57:16.987301 INFO [Blockchain] Rebuilding Cache for Height 266000 of 521894
+2026-Apr-26 22:57:17.056065 INFO [Blockchain] Rebuilding Cache for Height 267000 of 521894
+2026-Apr-26 22:57:17.123879 INFO [Blockchain] Rebuilding Cache for Height 268000 of 521894
+2026-Apr-26 22:57:17.192028 INFO [Blockchain] Rebuilding Cache for Height 269000 of 521894
+2026-Apr-26 22:57:17.266630 INFO [Blockchain] Rebuilding Cache for Height 270000 of 521894
+2026-Apr-26 22:57:17.337152 INFO [Blockchain] Rebuilding Cache for Height 271000 of 521894
+2026-Apr-26 22:57:17.405378 INFO [Blockchain] Rebuilding Cache for Height 272000 of 521894
+2026-Apr-26 22:57:17.471806 INFO [Blockchain] Rebuilding Cache for Height 273000 of 521894
+2026-Apr-26 22:57:17.536320 INFO [Blockchain] Rebuilding Cache for Height 274000 of 521894
+2026-Apr-26 22:57:17.599912 INFO [Blockchain] Rebuilding Cache for Height 275000 of 521894
+2026-Apr-26 22:57:17.663429 INFO [Blockchain] Rebuilding Cache for Height 276000 of 521894
+2026-Apr-26 22:57:17.727812 INFO [Blockchain] Rebuilding Cache for Height 277000 of 521894
+2026-Apr-26 22:57:17.795426 INFO [Blockchain] Rebuilding Cache for Height 278000 of 521894
+2026-Apr-26 22:57:17.866074 INFO [Blockchain] Rebuilding Cache for Height 279000 of 521894
+2026-Apr-26 22:57:17.938488 INFO [Blockchain] Rebuilding Cache for Height 280000 of 521894
+2026-Apr-26 22:57:18.010763 INFO [Blockchain] Rebuilding Cache for Height 281000 of 521894
+2026-Apr-26 22:57:18.076626 INFO [Blockchain] Rebuilding Cache for Height 282000 of 521894
+2026-Apr-26 22:57:18.144639 INFO [Blockchain] Rebuilding Cache for Height 283000 of 521894
+2026-Apr-26 22:57:18.209411 INFO [Blockchain] Rebuilding Cache for Height 284000 of 521894
+2026-Apr-26 22:57:18.280584 INFO [Blockchain] Rebuilding Cache for Height 285000 of 521894
+2026-Apr-26 22:57:18.346720 INFO [Blockchain] Rebuilding Cache for Height 286000 of 521894
+2026-Apr-26 22:57:18.420335 INFO [Blockchain] Rebuilding Cache for Height 287000 of 521894
+2026-Apr-26 22:57:18.490217 INFO [Blockchain] Rebuilding Cache for Height 288000 of 521894
+2026-Apr-26 22:57:18.562030 INFO [Blockchain] Rebuilding Cache for Height 289000 of 521894
+2026-Apr-26 22:57:18.630951 INFO [Blockchain] Rebuilding Cache for Height 290000 of 521894
+2026-Apr-26 22:57:18.713368 INFO [Blockchain] Rebuilding Cache for Height 291000 of 521894
+2026-Apr-26 22:57:18.789201 INFO [Blockchain] Rebuilding Cache for Height 292000 of 521894
+2026-Apr-26 22:57:18.853024 INFO [Blockchain] Rebuilding Cache for Height 293000 of 521894
+2026-Apr-26 22:57:18.927588 INFO [Blockchain] Rebuilding Cache for Height 294000 of 521894
+2026-Apr-26 22:57:18.993969 INFO [Blockchain] Rebuilding Cache for Height 295000 of 521894
+2026-Apr-26 22:57:19.062204 INFO [Blockchain] Rebuilding Cache for Height 296000 of 521894
+2026-Apr-26 22:57:19.120106 INFO [Blockchain] Rebuilding Cache for Height 297000 of 521894
+2026-Apr-26 22:57:19.211868 INFO [Blockchain] Rebuilding Cache for Height 298000 of 521894
+2026-Apr-26 22:57:19.254864 INFO [Blockchain] Rebuilding Cache for Height 299000 of 521894
+2026-Apr-26 22:57:19.344874 INFO [Blockchain] Rebuilding Cache for Height 300000 of 521894
+2026-Apr-26 22:57:19.391560 INFO [Blockchain] Rebuilding Cache for Height 301000 of 521894
+2026-Apr-26 22:57:19.439630 INFO [Blockchain] Rebuilding Cache for Height 302000 of 521894
+2026-Apr-26 22:57:19.499653 INFO [Blockchain] Rebuilding Cache for Height 303000 of 521894
+2026-Apr-26 22:57:19.572040 INFO [Blockchain] Rebuilding Cache for Height 304000 of 521894
+2026-Apr-26 22:57:19.642102 INFO [Blockchain] Rebuilding Cache for Height 305000 of 521894
+2026-Apr-26 22:57:19.714840 INFO [Blockchain] Rebuilding Cache for Height 306000 of 521894
+2026-Apr-26 22:57:19.788251 INFO [Blockchain] Rebuilding Cache for Height 307000 of 521894
+2026-Apr-26 22:57:19.858420 INFO [Blockchain] Rebuilding Cache for Height 308000 of 521894
+2026-Apr-26 22:57:19.929858 INFO [Blockchain] Rebuilding Cache for Height 309000 of 521894
+2026-Apr-26 22:57:20.002575 INFO [Blockchain] Rebuilding Cache for Height 310000 of 521894
+2026-Apr-26 22:57:20.071072 INFO [Blockchain] Rebuilding Cache for Height 311000 of 521894
+2026-Apr-26 22:57:20.116444 INFO [Blockchain] Rebuilding Cache for Height 312000 of 521894
+2026-Apr-26 22:57:20.158301 INFO [Blockchain] Rebuilding Cache for Height 313000 of 521894
+2026-Apr-26 22:57:20.200584 INFO [Blockchain] Rebuilding Cache for Height 314000 of 521894
+2026-Apr-26 22:57:20.242638 INFO [Blockchain] Rebuilding Cache for Height 315000 of 521894
+2026-Apr-26 22:57:20.296350 INFO [Blockchain] Rebuilding Cache for Height 316000 of 521894
+2026-Apr-26 22:57:20.345502 INFO [Blockchain] Rebuilding Cache for Height 317000 of 521894
+2026-Apr-26 22:57:20.394003 INFO [Blockchain] Rebuilding Cache for Height 318000 of 521894
+2026-Apr-26 22:57:20.438782 INFO [Blockchain] Rebuilding Cache for Height 319000 of 521894
+2026-Apr-26 22:57:20.476794 INFO [Blockchain] Rebuilding Cache for Height 320000 of 521894
+2026-Apr-26 22:57:20.517942 INFO [Blockchain] Rebuilding Cache for Height 321000 of 521894
+2026-Apr-26 22:57:20.568261 INFO [Blockchain] Rebuilding Cache for Height 322000 of 521894
+2026-Apr-26 22:57:20.612701 INFO [Blockchain] Rebuilding Cache for Height 323000 of 521894
+2026-Apr-26 22:57:20.657991 INFO [Blockchain] Rebuilding Cache for Height 324000 of 521894
+2026-Apr-26 22:57:20.728223 INFO [Blockchain] Rebuilding Cache for Height 325000 of 521894
+2026-Apr-26 22:57:20.801820 INFO [Blockchain] Rebuilding Cache for Height 326000 of 521894
+2026-Apr-26 22:57:20.883045 INFO [Blockchain] Rebuilding Cache for Height 327000 of 521894
+2026-Apr-26 22:57:20.952641 INFO [Blockchain] Rebuilding Cache for Height 328000 of 521894
+2026-Apr-26 22:57:21.017120 INFO [Blockchain] Rebuilding Cache for Height 329000 of 521894
+2026-Apr-26 22:57:21.065729 INFO [Blockchain] Rebuilding Cache for Height 330000 of 521894
+2026-Apr-26 22:57:21.117644 INFO [Blockchain] Rebuilding Cache for Height 331000 of 521894
+2026-Apr-26 22:57:21.182459 INFO [Blockchain] Rebuilding Cache for Height 332000 of 521894
+2026-Apr-26 22:57:21.251627 INFO [Blockchain] Rebuilding Cache for Height 333000 of 521894
+2026-Apr-26 22:57:21.323121 INFO [Blockchain] Rebuilding Cache for Height 334000 of 521894
+2026-Apr-26 22:57:21.395103 INFO [Blockchain] Rebuilding Cache for Height 335000 of 521894
+2026-Apr-26 22:57:21.468896 INFO [Blockchain] Rebuilding Cache for Height 336000 of 521894
+2026-Apr-26 22:57:21.538583 INFO [Blockchain] Rebuilding Cache for Height 337000 of 521894
+2026-Apr-26 22:57:21.605912 INFO [Blockchain] Rebuilding Cache for Height 338000 of 521894
+2026-Apr-26 22:57:21.673553 INFO [Blockchain] Rebuilding Cache for Height 339000 of 521894
+2026-Apr-26 22:57:21.745686 INFO [Blockchain] Rebuilding Cache for Height 340000 of 521894
+2026-Apr-26 22:57:21.821987 INFO [Blockchain] Rebuilding Cache for Height 341000 of 521894
+2026-Apr-26 22:57:21.885250 INFO [Blockchain] Rebuilding Cache for Height 342000 of 521894
+2026-Apr-26 22:57:21.945152 INFO [Blockchain] Rebuilding Cache for Height 343000 of 521894
+2026-Apr-26 22:57:22.006867 INFO [Blockchain] Rebuilding Cache for Height 344000 of 521894
+2026-Apr-26 22:57:22.079848 INFO [Blockchain] Rebuilding Cache for Height 345000 of 521894
+2026-Apr-26 22:57:22.152384 INFO [Blockchain] Rebuilding Cache for Height 346000 of 521894
+2026-Apr-26 22:57:22.212904 INFO [Blockchain] Rebuilding Cache for Height 347000 of 521894
+2026-Apr-26 22:57:22.292702 INFO [Blockchain] Rebuilding Cache for Height 348000 of 521894
+2026-Apr-26 22:57:22.358910 INFO [Blockchain] Rebuilding Cache for Height 349000 of 521894
+2026-Apr-26 22:57:22.421725 INFO [Blockchain] Rebuilding Cache for Height 350000 of 521894
+2026-Apr-26 22:57:22.492598 INFO [Blockchain] Rebuilding Cache for Height 351000 of 521894
+2026-Apr-26 22:57:22.566243 INFO [Blockchain] Rebuilding Cache for Height 352000 of 521894
+2026-Apr-26 22:57:22.695482 INFO [Blockchain] Rebuilding Cache for Height 353000 of 521894
+2026-Apr-26 22:57:22.821855 INFO [Blockchain] Rebuilding Cache for Height 354000 of 521894
+2026-Apr-26 22:57:22.925675 INFO [Blockchain] Rebuilding Cache for Height 355000 of 521894
+2026-Apr-26 22:57:23.014158 INFO [Blockchain] Rebuilding Cache for Height 356000 of 521894
+2026-Apr-26 22:57:23.093475 INFO [Blockchain] Rebuilding Cache for Height 357000 of 521894
+2026-Apr-26 22:57:23.159745 INFO [Blockchain] Rebuilding Cache for Height 358000 of 521894
+2026-Apr-26 22:57:23.232138 INFO [Blockchain] Rebuilding Cache for Height 359000 of 521894
+2026-Apr-26 22:57:23.293418 INFO [Blockchain] Rebuilding Cache for Height 360000 of 521894
+2026-Apr-26 22:57:23.362000 INFO [Blockchain] Rebuilding Cache for Height 361000 of 521894
+2026-Apr-26 22:57:23.425458 INFO [Blockchain] Rebuilding Cache for Height 362000 of 521894
+2026-Apr-26 22:57:23.498263 INFO [Blockchain] Rebuilding Cache for Height 363000 of 521894
+2026-Apr-26 22:57:23.567366 INFO [Blockchain] Rebuilding Cache for Height 364000 of 521894
+2026-Apr-26 22:57:23.622647 INFO [Blockchain] Rebuilding Cache for Height 365000 of 521894
+2026-Apr-26 22:57:23.689853 INFO [Blockchain] Rebuilding Cache for Height 366000 of 521894
+2026-Apr-26 22:57:23.759679 INFO [Blockchain] Rebuilding Cache for Height 367000 of 521894
+2026-Apr-26 22:57:23.817366 INFO [Blockchain] Rebuilding Cache for Height 368000 of 521894
+2026-Apr-26 22:57:23.891936 INFO [Blockchain] Rebuilding Cache for Height 369000 of 521894
+2026-Apr-26 22:57:23.942567 INFO [Blockchain] Rebuilding Cache for Height 370000 of 521894
+2026-Apr-26 22:57:24.008280 INFO [Blockchain] Rebuilding Cache for Height 371000 of 521894
+2026-Apr-26 22:57:24.059823 INFO [Blockchain] Rebuilding Cache for Height 372000 of 521894
+2026-Apr-26 22:57:24.107257 INFO [Blockchain] Rebuilding Cache for Height 373000 of 521894
+2026-Apr-26 22:57:24.156413 INFO [Blockchain] Rebuilding Cache for Height 374000 of 521894
+2026-Apr-26 22:57:24.202563 INFO [Blockchain] Rebuilding Cache for Height 375000 of 521894
+2026-Apr-26 22:57:24.255182 INFO [Blockchain] Rebuilding Cache for Height 376000 of 521894
+2026-Apr-26 22:57:24.312751 INFO [Blockchain] Rebuilding Cache for Height 377000 of 521894
+2026-Apr-26 22:57:24.373130 INFO [Blockchain] Rebuilding Cache for Height 378000 of 521894
+2026-Apr-26 22:57:24.433422 INFO [Blockchain] Rebuilding Cache for Height 379000 of 521894
+2026-Apr-26 22:57:24.499784 INFO [Blockchain] Rebuilding Cache for Height 380000 of 521894
+2026-Apr-26 22:57:24.617209 INFO [Blockchain] Rebuilding Cache for Height 381000 of 521894
+2026-Apr-26 22:57:24.697180 INFO [Blockchain] Rebuilding Cache for Height 382000 of 521894
+2026-Apr-26 22:57:24.778188 INFO [Blockchain] Rebuilding Cache for Height 383000 of 521894
+2026-Apr-26 22:57:24.851439 INFO [Blockchain] Rebuilding Cache for Height 384000 of 521894
+2026-Apr-26 22:57:24.913223 INFO [Blockchain] Rebuilding Cache for Height 385000 of 521894
+2026-Apr-26 22:57:24.994462 INFO [Blockchain] Rebuilding Cache for Height 386000 of 521894
+2026-Apr-26 22:57:25.066617 INFO [Blockchain] Rebuilding Cache for Height 387000 of 521894
+2026-Apr-26 22:57:25.187617 INFO [Blockchain] Rebuilding Cache for Height 388000 of 521894
+2026-Apr-26 22:57:25.243050 INFO [Blockchain] Rebuilding Cache for Height 389000 of 521894
+2026-Apr-26 22:57:25.296366 INFO [Blockchain] Rebuilding Cache for Height 390000 of 521894
+2026-Apr-26 22:57:25.414881 INFO [Blockchain] Rebuilding Cache for Height 391000 of 521894
+2026-Apr-26 22:57:25.475167 INFO [Blockchain] Rebuilding Cache for Height 392000 of 521894
+2026-Apr-26 22:57:25.538879 INFO [Blockchain] Rebuilding Cache for Height 393000 of 521894
+2026-Apr-26 22:57:25.630617 INFO [Blockchain] Rebuilding Cache for Height 394000 of 521894
+2026-Apr-26 22:57:25.692998 INFO [Blockchain] Rebuilding Cache for Height 395000 of 521894
+2026-Apr-26 22:57:25.760117 INFO [Blockchain] Rebuilding Cache for Height 396000 of 521894
+2026-Apr-26 22:57:25.829782 INFO [Blockchain] Rebuilding Cache for Height 397000 of 521894
+2026-Apr-26 22:57:25.891033 INFO [Blockchain] Rebuilding Cache for Height 398000 of 521894
+2026-Apr-26 22:57:25.968995 INFO [Blockchain] Rebuilding Cache for Height 399000 of 521894
+2026-Apr-26 22:57:26.033837 INFO [Blockchain] Rebuilding Cache for Height 400000 of 521894
+2026-Apr-26 22:57:26.095526 INFO [Blockchain] Rebuilding Cache for Height 401000 of 521894
+2026-Apr-26 22:57:26.155334 INFO [Blockchain] Rebuilding Cache for Height 402000 of 521894
+2026-Apr-26 22:57:26.217219 INFO [Blockchain] Rebuilding Cache for Height 403000 of 521894
+2026-Apr-26 22:57:26.285059 INFO [Blockchain] Rebuilding Cache for Height 404000 of 521894
+2026-Apr-26 22:57:26.350433 INFO [Blockchain] Rebuilding Cache for Height 405000 of 521894
+2026-Apr-26 22:57:26.414095 INFO [Blockchain] Rebuilding Cache for Height 406000 of 521894
+2026-Apr-26 22:57:26.477503 INFO [Blockchain] Rebuilding Cache for Height 407000 of 521894
+2026-Apr-26 22:57:26.540769 INFO [Blockchain] Rebuilding Cache for Height 408000 of 521894
+2026-Apr-26 22:57:26.601543 INFO [Blockchain] Rebuilding Cache for Height 409000 of 521894
+2026-Apr-26 22:57:26.662906 INFO [Blockchain] Rebuilding Cache for Height 410000 of 521894
+2026-Apr-26 22:57:26.723257 INFO [Blockchain] Rebuilding Cache for Height 411000 of 521894
+2026-Apr-26 22:57:26.776101 INFO [Blockchain] Rebuilding Cache for Height 412000 of 521894
+2026-Apr-26 22:57:26.839741 INFO [Blockchain] Rebuilding Cache for Height 413000 of 521894
+2026-Apr-26 22:57:26.895530 INFO [Blockchain] Rebuilding Cache for Height 414000 of 521894
+2026-Apr-26 22:57:26.922068 INFO [Blockchain] Rebuilding Cache for Height 415000 of 521894
+2026-Apr-26 22:57:26.971776 INFO [Blockchain] Rebuilding Cache for Height 416000 of 521894
+2026-Apr-26 22:57:27.008566 INFO [Blockchain] Rebuilding Cache for Height 417000 of 521894
+2026-Apr-26 22:57:27.049287 INFO [Blockchain] Rebuilding Cache for Height 418000 of 521894
+2026-Apr-26 22:57:27.116138 INFO [Blockchain] Rebuilding Cache for Height 419000 of 521894
+2026-Apr-26 22:57:27.187117 INFO [Blockchain] Rebuilding Cache for Height 420000 of 521894
+2026-Apr-26 22:57:27.294836 INFO [Blockchain] Rebuilding Cache for Height 421000 of 521894
+2026-Apr-26 22:57:27.391426 INFO [Blockchain] Rebuilding Cache for Height 422000 of 521894
+2026-Apr-26 22:57:27.503138 INFO [Blockchain] Rebuilding Cache for Height 423000 of 521894
+2026-Apr-26 22:57:27.615273 INFO [Blockchain] Rebuilding Cache for Height 424000 of 521894
+2026-Apr-26 22:57:27.733720 INFO [Blockchain] Rebuilding Cache for Height 425000 of 521894
+2026-Apr-26 22:57:27.984526 INFO [Blockchain] Rebuilding Cache for Height 426000 of 521894
+2026-Apr-26 22:57:28.140029 INFO [Blockchain] Rebuilding Cache for Height 427000 of 521894
+2026-Apr-26 22:57:28.276111 INFO [Blockchain] Rebuilding Cache for Height 428000 of 521894
+2026-Apr-26 22:57:28.414086 INFO [Blockchain] Rebuilding Cache for Height 429000 of 521894
+2026-Apr-26 22:57:28.544329 INFO [Blockchain] Rebuilding Cache for Height 430000 of 521894
+2026-Apr-26 22:57:28.669642 INFO [Blockchain] Rebuilding Cache for Height 431000 of 521894
+2026-Apr-26 22:57:28.798462 INFO [Blockchain] Rebuilding Cache for Height 432000 of 521894
+2026-Apr-26 22:57:28.894690 INFO [Blockchain] Rebuilding Cache for Height 433000 of 521894
+2026-Apr-26 22:57:28.998397 INFO [Blockchain] Rebuilding Cache for Height 434000 of 521894
+2026-Apr-26 22:57:29.111829 INFO [Blockchain] Rebuilding Cache for Height 435000 of 521894
+2026-Apr-26 22:57:29.223815 INFO [Blockchain] Rebuilding Cache for Height 436000 of 521894
+2026-Apr-26 22:57:29.305067 INFO [Blockchain] Rebuilding Cache for Height 437000 of 521894
+2026-Apr-26 22:57:29.397106 INFO [Blockchain] Rebuilding Cache for Height 438000 of 521894
+2026-Apr-26 22:57:29.491687 INFO [Blockchain] Rebuilding Cache for Height 439000 of 521894
+2026-Apr-26 22:57:29.572551 INFO [Blockchain] Rebuilding Cache for Height 440000 of 521894
+2026-Apr-26 22:57:29.651892 INFO [Blockchain] Rebuilding Cache for Height 441000 of 521894
+2026-Apr-26 22:57:29.734936 INFO [Blockchain] Rebuilding Cache for Height 442000 of 521894
+2026-Apr-26 22:57:29.813800 INFO [Blockchain] Rebuilding Cache for Height 443000 of 521894
+2026-Apr-26 22:57:29.898234 INFO [Blockchain] Rebuilding Cache for Height 444000 of 521894
+2026-Apr-26 22:57:29.984244 INFO [Blockchain] Rebuilding Cache for Height 445000 of 521894
+2026-Apr-26 22:57:30.085067 INFO [Blockchain] Rebuilding Cache for Height 446000 of 521894
+2026-Apr-26 22:57:30.170973 INFO [Blockchain] Rebuilding Cache for Height 447000 of 521894
+2026-Apr-26 22:57:30.258807 INFO [Blockchain] Rebuilding Cache for Height 448000 of 521894
+2026-Apr-26 22:57:30.339187 INFO [Blockchain] Rebuilding Cache for Height 449000 of 521894
+2026-Apr-26 22:57:30.429281 INFO [Blockchain] Rebuilding Cache for Height 450000 of 521894
+2026-Apr-26 22:57:30.510250 INFO [Blockchain] Rebuilding Cache for Height 451000 of 521894
+2026-Apr-26 22:57:30.588620 INFO [Blockchain] Rebuilding Cache for Height 452000 of 521894
+2026-Apr-26 22:57:30.667992 INFO [Blockchain] Rebuilding Cache for Height 453000 of 521894
+2026-Apr-26 22:57:30.735706 INFO [Blockchain] Rebuilding Cache for Height 454000 of 521894
+2026-Apr-26 22:57:30.830773 INFO [Blockchain] Rebuilding Cache for Height 455000 of 521894
+2026-Apr-26 22:57:30.986390 INFO [Blockchain] Rebuilding Cache for Height 456000 of 521894
+2026-Apr-26 22:57:31.086036 INFO [Blockchain] Rebuilding Cache for Height 457000 of 521894
+2026-Apr-26 22:57:31.199295 INFO [Blockchain] Rebuilding Cache for Height 458000 of 521894
+2026-Apr-26 22:57:31.319502 INFO [Blockchain] Rebuilding Cache for Height 459000 of 521894
+2026-Apr-26 22:57:31.397402 INFO [Blockchain] Rebuilding Cache for Height 460000 of 521894
+2026-Apr-26 22:57:31.501806 INFO [Blockchain] Rebuilding Cache for Height 461000 of 521894
+2026-Apr-26 22:57:31.581166 INFO [Blockchain] Rebuilding Cache for Height 462000 of 521894
+2026-Apr-26 22:57:31.681790 INFO [Blockchain] Rebuilding Cache for Height 463000 of 521894
+2026-Apr-26 22:57:31.734868 INFO [Blockchain] Rebuilding Cache for Height 464000 of 521894
+2026-Apr-26 22:57:31.781589 INFO [Blockchain] Rebuilding Cache for Height 465000 of 521894
+2026-Apr-26 22:57:31.849781 INFO [Blockchain] Rebuilding Cache for Height 466000 of 521894
+2026-Apr-26 22:57:31.902860 INFO [Blockchain] Rebuilding Cache for Height 467000 of 521894
+2026-Apr-26 22:57:31.940494 INFO [Blockchain] Rebuilding Cache for Height 468000 of 521894
+2026-Apr-26 22:57:32.024354 INFO [Blockchain] Rebuilding Cache for Height 469000 of 521894
+2026-Apr-26 22:57:32.094598 INFO [Blockchain] Rebuilding Cache for Height 470000 of 521894
+2026-Apr-26 22:57:32.172187 INFO [Blockchain] Rebuilding Cache for Height 471000 of 521894
+2026-Apr-26 22:57:32.252393 INFO [Blockchain] Rebuilding Cache for Height 472000 of 521894
+2026-Apr-26 22:57:32.329120 INFO [Blockchain] Rebuilding Cache for Height 473000 of 521894
+2026-Apr-26 22:57:32.381927 INFO [Blockchain] Rebuilding Cache for Height 474000 of 521894
+2026-Apr-26 22:57:32.430642 INFO [Blockchain] Rebuilding Cache for Height 475000 of 521894
+2026-Apr-26 22:57:32.497938 INFO [Blockchain] Rebuilding Cache for Height 476000 of 521894
+2026-Apr-26 22:57:32.565921 INFO [Blockchain] Rebuilding Cache for Height 477000 of 521894
+2026-Apr-26 22:57:32.624545 INFO [Blockchain] Rebuilding Cache for Height 478000 of 521894
+2026-Apr-26 22:57:32.712504 INFO [Blockchain] Rebuilding Cache for Height 479000 of 521894
+2026-Apr-26 22:57:32.788446 INFO [Blockchain] Rebuilding Cache for Height 480000 of 521894
+2026-Apr-26 22:57:32.853587 INFO [Blockchain] Rebuilding Cache for Height 481000 of 521894
+2026-Apr-26 22:57:32.916923 INFO [Blockchain] Rebuilding Cache for Height 482000 of 521894
+2026-Apr-26 22:57:32.999743 INFO [Blockchain] Rebuilding Cache for Height 483000 of 521894
+2026-Apr-26 22:57:33.072070 INFO [Blockchain] Rebuilding Cache for Height 484000 of 521894
+2026-Apr-26 22:57:33.136553 INFO [Blockchain] Rebuilding Cache for Height 485000 of 521894
+2026-Apr-26 22:57:33.212707 INFO [Blockchain] Rebuilding Cache for Height 486000 of 521894
+2026-Apr-26 22:57:33.282275 INFO [Blockchain] Rebuilding Cache for Height 487000 of 521894
+2026-Apr-26 22:57:33.336393 INFO [Blockchain] Rebuilding Cache for Height 488000 of 521894
+2026-Apr-26 22:57:33.394785 INFO [Blockchain] Rebuilding Cache for Height 489000 of 521894
+2026-Apr-26 22:57:33.520845 INFO [Blockchain] Rebuilding Cache for Height 490000 of 521894
+2026-Apr-26 22:57:33.606476 INFO [Blockchain] Rebuilding Cache for Height 491000 of 521894
+2026-Apr-26 22:57:33.649862 INFO [Blockchain] Rebuilding Cache for Height 492000 of 521894
+2026-Apr-26 22:57:33.726153 INFO [Blockchain] Rebuilding Cache for Height 493000 of 521894
+2026-Apr-26 22:57:33.772238 INFO [Blockchain] Rebuilding Cache for Height 494000 of 521894
+2026-Apr-26 22:57:33.829578 INFO [Blockchain] Rebuilding Cache for Height 495000 of 521894
+2026-Apr-26 22:57:33.903772 INFO [Blockchain] Rebuilding Cache for Height 496000 of 521894
+2026-Apr-26 22:57:34.034346 INFO [Blockchain] Rebuilding Cache for Height 497000 of 521894
+2026-Apr-26 22:57:34.136580 INFO [Blockchain] Rebuilding Cache for Height 498000 of 521894
+2026-Apr-26 22:57:34.195150 INFO [Blockchain] Rebuilding Cache for Height 499000 of 521894
+2026-Apr-26 22:57:34.290901 INFO [Blockchain] Rebuilding Cache for Height 500000 of 521894
+2026-Apr-26 22:57:34.330214 INFO [Blockchain] Rebuilding Cache for Height 501000 of 521894
+2026-Apr-26 22:57:34.372091 INFO [Blockchain] Rebuilding Cache for Height 502000 of 521894
+2026-Apr-26 22:57:34.410016 INFO [Blockchain] Rebuilding Cache for Height 503000 of 521894
+2026-Apr-26 22:57:34.521911 INFO [Blockchain] Rebuilding Cache for Height 504000 of 521894
+2026-Apr-26 22:57:34.601755 INFO [Blockchain] Rebuilding Cache for Height 505000 of 521894
+2026-Apr-26 22:57:34.685940 INFO [Blockchain] Rebuilding Cache for Height 506000 of 521894
+2026-Apr-26 22:57:34.775954 INFO [Blockchain] Rebuilding Cache for Height 507000 of 521894
+2026-Apr-26 22:57:34.877089 INFO [Blockchain] Rebuilding Cache for Height 508000 of 521894
+2026-Apr-26 22:57:34.969018 INFO [Blockchain] Rebuilding Cache for Height 509000 of 521894
+2026-Apr-26 22:57:35.074244 INFO [Blockchain] Rebuilding Cache for Height 510000 of 521894
+2026-Apr-26 22:57:35.227329 INFO [Blockchain] Rebuilding Cache for Height 511000 of 521894
+2026-Apr-26 22:57:35.334418 INFO [Blockchain] Rebuilding Cache for Height 512000 of 521894
+2026-Apr-26 22:57:35.449009 INFO [Blockchain] Rebuilding Cache for Height 513000 of 521894
+2026-Apr-26 22:57:35.558189 INFO [Blockchain] Rebuilding Cache for Height 514000 of 521894
+2026-Apr-26 22:57:35.657586 INFO [Blockchain] Rebuilding Cache for Height 515000 of 521894
+2026-Apr-26 22:57:35.750248 INFO [Blockchain] Rebuilding Cache for Height 516000 of 521894
+2026-Apr-26 22:57:35.838132 INFO [Blockchain] Rebuilding Cache for Height 517000 of 521894
+2026-Apr-26 22:57:36.032010 INFO [Blockchain] Rebuilding Cache for Height 518000 of 521894
+2026-Apr-26 22:57:36.532035 INFO [Blockchain] Rebuilding Cache for Height 519000 of 521894
+2026-Apr-26 22:57:36.730402 INFO [Blockchain] Rebuilding Cache for Height 520000 of 521894
+2026-Apr-26 22:57:36.851524 INFO [Blockchain] Rebuilding Cache for Height 521000 of 521894
+2026-Apr-26 22:57:36.945078 INFO [Blockchain] Rebuilding commitment index from block history...
+2026-Apr-26 22:57:48.861951 INFO [Blockchain] Commitment index rebuilt: 0 commitments.
+2026-Apr-26 22:57:48.862852 INFO [Blockchain] Rebuilding internal structures took: 42.2183
+2026-Apr-26 22:57:48.862922 INFO [Blockchain] Loaded mainnet checkpoints
+2026-Apr-26 22:57:48.863589 INFO [Blockchain] Checking block version at 147959
+2026-Apr-26 22:57:48.863653 INFO [Blockchain] Checking block version at 154322
+2026-Apr-26 22:57:48.863676 INFO [Blockchain] Checking block version at 300001
+2026-Apr-26 22:57:48.863698 INFO [Blockchain] Checking block version at 324820
+2026-Apr-26 22:57:48.863719 INFO [Blockchain] Checking block version at 345679
+2026-Apr-26 22:57:48.864010 INFO [Blockchain] No burn data found in BankingIndex, rescanning 521894 blocks for HEAT commitments...
+2026-Apr-26 22:57:55.431809 INFO [Blockchain] Rescan complete - no HEAT burns found in blockchain
+2026-Apr-26 22:57:55.431903 INFO [Blockchain] Blockchain initialized. last block: 521893, d2495.h5.m25.s57 time ago, current difficulty: 64100
+2026-Apr-26 22:57:55.431956 INFO [daemon] Core initialized OK
+2026-Apr-26 22:57:55.432021 INFO [daemon] Swap offer relay started
+2026-Apr-26 22:57:55.435463 ERROR [SwapDaemon] Cannot query fuegod height
+2026-Apr-26 22:57:55.435531 INFO [SwapDaemon] SwapDaemon tick thread started (interval=30s)
+2026-Apr-26 22:57:55.435558 INFO [daemon] SwapDaemon started
+2026-Apr-26 22:57:55.435609 INFO [daemon] Starting core rpc server on address 127.0.0.1:18180
+2026-Apr-26 22:57:55.435861 INFO [daemon] Core rpc server started ok
+2026-Apr-26 22:57:55.435891 INFO [daemon] Starting p2p net loop...
+2026-Apr-26 22:57:55.435914 INFO [node_server] Starting node server
+2026-Apr-26 22:58:06.003923 INFO [protocol] [164.68.115.162:10808 OUT] Unknown top block: 521893 -> 997738
+2026-Apr-26 22:58:06.003923 INFO [protocol] Synchronization started
+2026-Apr-26 22:58:10.271509 INFO [Blockchain] === Epoch 580 Report === blocks=521100-521999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 22:58:16.480204 INFO [protocol] [185.32.162.191:10808 OUT] Unknown top block: 522151 -> 997738
+2026-Apr-26 22:58:16.480204 INFO [protocol] Synchronization started
+2026-Apr-26 22:58:28.177785 INFO [protocol] [195.7.5.101:10808 OUT] Unknown top block: 522397 -> 997738
+2026-Apr-26 22:58:28.177785 INFO [protocol] Synchronization started
+2026-Apr-26 22:58:38.407184 INFO [protocol] [207.244.247.64:10808 OUT] Unknown top block: 522661 -> 997738
+2026-Apr-26 22:58:38.407184 INFO [protocol] Synchronization started
+2026-Apr-26 22:58:46.593056 INFO [Blockchain] === Epoch 581 Report === blocks=522000-522899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 22:59:14.264639 INFO [core] **********************************************************************
+2026-Apr-26 22:59:14.264639 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-26 22:59:14.264639 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-26 22:59:14.264639 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-26 22:59:14.264639 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-26 22:59:14.264639 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-26 22:59:14.264639 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-26 22:59:14.264639 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-26 22:59:14.265075 INFO [core] **********************************************************************
+2026-Apr-26 22:59:15.172926 INFO [Blockchain] === Epoch 582 Report === blocks=522900-523799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 22:59:45.306282 INFO [Blockchain] === Epoch 583 Report === blocks=523800-524699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:00:13.685285 INFO [Blockchain] === Epoch 584 Report === blocks=524700-525599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:00:42.550763 INFO [Blockchain] === Epoch 585 Report === blocks=525600-526499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:01:16.796811 INFO [Blockchain] === Epoch 586 Report === blocks=526500-527399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:01:57.273881 INFO [Blockchain] === Epoch 587 Report === blocks=527400-528299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:02:24.546904 INFO [Blockchain] === Epoch 588 Report === blocks=528300-529199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:02:45.345398 INFO [Blockchain] === Epoch 589 Report === blocks=529200-530099 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:03:04.333092 INFO [Blockchain] === Epoch 590 Report === blocks=530100-530999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:03:20.798630 INFO [Blockchain] === Epoch 591 Report === blocks=531000-531899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:03:40.552960 INFO [Blockchain] === Epoch 592 Report === blocks=531900-532799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:04:45.459813 INFO [Blockchain] === Epoch 593 Report === blocks=532800-533699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:05:17.559482 INFO [Blockchain] === Epoch 594 Report === blocks=533700-534599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:05:51.291167 INFO [Blockchain] === Epoch 595 Report === blocks=534600-535499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:06:26.700544 INFO [Blockchain] === Epoch 596 Report === blocks=535500-536399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:07:03.346605 INFO [Blockchain] === Epoch 597 Report === blocks=536400-537299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:07:56.315333 INFO [Blockchain] === Epoch 598 Report === blocks=537300-538199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:08:41.678369 ERROR [SwapDaemon] Cannot query fuegod height
+2026-Apr-26 23:09:00.407714 INFO [Blockchain] === Epoch 599 Report === blocks=538200-539099 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:09:43.567029 INFO [Blockchain] === Epoch 600 Report === blocks=539100-539999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:10:24.215427 INFO [Blockchain] === Epoch 601 Report === blocks=540000-540899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:11:07.559948 INFO [Blockchain] === Epoch 602 Report === blocks=540900-541799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:11:42.365387 INFO [Blockchain] === Epoch 603 Report === blocks=541800-542699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:12:29.920416 INFO [Blockchain] === Epoch 604 Report === blocks=542700-543599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:12:44.737435 INFO [Blockchain] === Epoch 605 Report === blocks=543600-544499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:13:01.301572 INFO [Blockchain] === Epoch 606 Report === blocks=544500-545399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:14:09.392232 INFO [Blockchain] === Epoch 607 Report === blocks=545400-546299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:14:46.758359 INFO [Blockchain] === Epoch 608 Report === blocks=546300-547199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:15:18.973801 INFO [Blockchain] === Epoch 609 Report === blocks=547200-548099 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:15:57.039099 INFO [Blockchain] === Epoch 610 Report === blocks=548100-548999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:16:19.158781 INFO [Blockchain] === Epoch 611 Report === blocks=549000-549899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:16:33.787899 INFO [Blockchain] === Epoch 612 Report === blocks=549900-550799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:17:13.871504 INFO [Blockchain] === Epoch 613 Report === blocks=550800-551699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:17:46.009474 INFO [Blockchain] === Epoch 614 Report === blocks=551700-552599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:18:08.964677 INFO [Blockchain] === Epoch 615 Report === blocks=552600-553499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:19:22.149346 INFO [Blockchain] === Epoch 616 Report === blocks=553500-554399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:20:15.644370 INFO [Blockchain] === Epoch 617 Report === blocks=554400-555299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:21:00.637348 INFO [Blockchain] === Epoch 618 Report === blocks=555300-556199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:21:36.184795 INFO [Blockchain] === Epoch 619 Report === blocks=556200-557099 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:22:13.968519 INFO [Blockchain] === Epoch 620 Report === blocks=557100-557999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:22:37.047190 INFO [Blockchain] === Epoch 621 Report === blocks=558000-558899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:22:53.747551 INFO [Blockchain] === Epoch 622 Report === blocks=558900-559799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:23:14.678885 INFO [Blockchain] === Epoch 623 Report === blocks=559800-560699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:23:34.473146 INFO [Blockchain] === Epoch 624 Report === blocks=560700-561599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:23:56.363852 INFO [Blockchain] === Epoch 625 Report === blocks=561600-562499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:24:30.468872 INFO [Blockchain] === Epoch 626 Report === blocks=562500-563399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:24:50.196256 ERROR [SwapDaemon] Cannot query fuegod height
+2026-Apr-26 23:25:28.554428 INFO [Blockchain] === Epoch 627 Report === blocks=563400-564299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:26:18.884313 INFO [Blockchain] === Epoch 628 Report === blocks=564300-565199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:27:16.510545 INFO [Blockchain] === Epoch 629 Report === blocks=565200-566099 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:28:10.973826 INFO [Blockchain] === Epoch 630 Report === blocks=566100-566999 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:28:44.603158 INFO [Blockchain] === Epoch 631 Report === blocks=567000-567899 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:29:24.719115 INFO [Blockchain] === Epoch 632 Report === blocks=567900-568799 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:29:49.720175 INFO [Blockchain] === Epoch 633 Report === blocks=568800-569699 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:30:18.640508 INFO [Blockchain] === Epoch 634 Report === blocks=569700-570599 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:30:54.855907 INFO [Blockchain] === Epoch 635 Report === blocks=570600-571499 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-26 23:31:28.111142 INFO [node_server] Stop signal sent

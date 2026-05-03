@@ -1459,8 +1459,8 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
     std::string makerPubKey;  // hex
     std::string signature;    // hex
     uint32_t ttlBlocks;
-
-    void serialize(ISerializer& s) {
+  
+    void serialize(ISerializer &s) {
       KV_MEMBER(offerId)
       KV_MEMBER(xfgAmount)
       KV_MEMBER(rateNum)
@@ -1470,17 +1470,81 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
       KV_MEMBER(ttlBlocks)
     }
   };
-
+  
   struct response {
     std::string status;
+  
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
 
+struct COMMAND_RPC_SUBMIT_AFK_OFFER {
+  struct request {
+    std::string offerId;
+    uint64_t xfgAmount;
+    uint64_t rateNum;
+    uint8_t pair;
+    std::string makerPubKey;  // hex
+    std::string signature;    // hex
+    uint32_t ttlBlocks;
+  
+    void serialize(ISerializer &s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(xfgAmount)
+      KV_MEMBER(rateNum)
+      KV_MEMBER(pair)
+      KV_MEMBER(makerPubKey)
+      KV_MEMBER(signature)
+      KV_MEMBER(ttlBlocks)
+    }
+  };
+  
+  struct response {
+    std::string status;
+  
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_ACCEPT_AFK_OFFER {
+  struct request {
+    std::string swapId;
+    std::string takerPubKey; // hex
+    void serialize(ISerializer& s) {
+      KV_MEMBER(swapId)
+      KV_MEMBER(takerPubKey)
+    }
+  };
+  
+  struct response {
+    std::string status;
     void serialize(ISerializer& s) {
       KV_MEMBER(status)
     }
   };
 };
 
+struct COMMAND_RPC_REFUND_AFK_SWAP {
+  struct request {
+    std::string swapId;
+    void serialize(ISerializer& s) { KV_MEMBER(swapId) }
+  };
+  struct response {
+    std::string txHash;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(txHash)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 struct COMMAND_RPC_CANCEL_SWAP_OFFER {
+
   struct request {
     std::string offerId;
     std::string makerPubKey;  // hex

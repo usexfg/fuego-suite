@@ -115,6 +115,10 @@ public:
   };
   AcceptResult accept(const std::string& swapId);
   
+  // AFK Adaptor Swaps (Pre-locks)
+  bool submitAfkOffer(const SwapParams& params, uint32_t ttlBlocks, const Crypto::Signature& sig);
+  bool acceptAfkOffer(const std::string& swapId, const Crypto::PublicKey& takerPubKey);
+  
   // Returns active AFK offers that are still valid (>= 1 hour remaining)
   std::vector<SwapStateMachine> getActiveAfkOffers();
 

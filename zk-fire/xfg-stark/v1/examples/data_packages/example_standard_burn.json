@@ -1,0 +1,30 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "created_at": "2024-01-15T10:30:00Z",
+    "description": "STARK proof for 0.8 XFG burn",
+    "network": "fuego-mainnet"
+  },
+  "burn_transaction": {
+    "transaction_hash": "0x7D0725F8E03021B99560ADD456C596FEA7D8DF23529E23765E56923B73236E4D",
+    "burn_amount_xfg": "0.8",
+    "burn_amount_atomic": 8000000,
+    "block_height": 1234567,
+    "timestamp": 1705312200,
+    "network_id": "fuego-mainnet"
+  },
+  "recipient": {
+    "ethereum_address": "0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6",
+    "ens_name": "alice.eth",
+    "label": "Alice's HEAT wallet"
+  },
+  "secret": {
+    "secret_key": "my-super-secret-key-12345",
+    "salt": "random-salt-67890",
+    "hint": "Remember: my favorite color + birth year"
+  },
+  "additional_data": {
+    "burn_reason": "HEAT accumulation",
+    "priority": "high"
+  }
+}

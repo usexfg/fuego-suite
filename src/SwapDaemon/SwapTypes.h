@@ -159,9 +159,11 @@ struct SwapParams {
   // Chain state
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
-
+  Crypto::PublicKey takerPubKey; // Taker's public key for AFK swaps
+  
   // Counterparty-specific
   std::string ctrAddress;       // counterparty chain address (SOL/ETH/XMR/BCH)
+
   std::string peerEndpoint;     // swap counterparty's network address
 
   // BCH-specific: hex-encoded P2SH redeem script for the HTLC.

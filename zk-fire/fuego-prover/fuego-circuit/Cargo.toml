@@ -1,0 +1,11 @@
+[package]
+name = "fuego-circuit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fuego-prover-core = { path = "../fuego-prover-core" }
+fuego-cn   = { path = "../fuego-cn" }
+sp1-zkvm   = "3"
+serde      = { version = "1", features = ["derive"] }
+tiny-keccak = { version = "2", features = ["keccak"] }

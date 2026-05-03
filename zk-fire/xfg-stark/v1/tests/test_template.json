@@ -1,0 +1,7 @@
+{
+  "name": "Standard Burn Template",
+  "description": "Template for 0.8 XFG burn to HEAT mint",
+  "burn_amount_xfg": 0.8,
+  "mint_amount_heat": 0.8,
+  "network": "fuego-mainnet"
+}

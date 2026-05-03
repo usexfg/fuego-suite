@@ -1,0 +1,792 @@
+2026-Apr-26 22:57:28.279674 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-26 22:57:28.280316 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-26 22:57:28.280353 INFO [daemon] Starting in testnet mode!
+2026-Apr-26 22:57:28.285391 INFO [daemon] Initializing p2p server...
+2026-Apr-26 22:57:28.285624 INFO [node_server] Binding on 0.0.0.0:20808
+2026-Apr-26 22:57:28.285906 INFO [node_server] Net service bound on 0.0.0.0:20808
+2026-Apr-26 22:57:28.285944 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-26 22:57:31.490456 INFO [node_server] IGD was found but reported as not connected.
+2026-Apr-26 22:57:31.490533 INFO [daemon] P2p server initialized OK
+2026-Apr-26 22:57:31.490565 INFO [daemon] Initializing core...
+2026-Apr-26 22:57:31.491112 INFO [Blockchain] Testnet doesn't use or recognize checkpoints
+2026-Apr-26 22:57:31.491147 INFO [Blockchain] Blockchain not loaded, generating genesis block.
+2026-Apr-26 22:57:31.537630 INFO [Blockchain] Checkpoints passed
+2026-Apr-26 22:57:31.537689 INFO [Blockchain] Blockchain initialized. last block: 0, d5044.h21.m57.s31 time ago, current difficulty: 1
+2026-Apr-26 22:57:31.537724 INFO [daemon] Core initialized OK
+2026-Apr-26 22:57:31.537771 INFO [daemon] Swap offer relay started
+2026-Apr-26 22:57:31.537827 INFO [daemon] Starting core rpc server on address 127.0.0.1:28280
+2026-Apr-26 22:57:31.538122 INFO [daemon] Core rpc server started ok
+2026-Apr-26 22:57:31.538152 INFO [daemon] Starting p2p net loop...
+2026-Apr-26 22:57:31.538174 INFO [node_server] Starting node server
+2026-Apr-26 22:57:31.538883 INFO [core] **********************************************************************
+2026-Apr-26 22:57:31.538883 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-26 22:57:31.538883 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-26 22:57:31.538883 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-26 22:57:31.538883 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-26 22:57:31.538883 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-26 22:57:31.538883 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-26 22:57:31.538883 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-26 22:57:31.539104 INFO [core] **********************************************************************
+2026-Apr-26 22:59:16.341969 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-26 22:59:16.343560 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-26 22:59:16.343601 INFO [daemon] Starting in testnet mode!
+2026-Apr-26 22:59:16.344124 INFO [miner] Fuego mining has been stopped, 0 halted
+2026-Apr-26 22:59:16.344189 ERROR [daemon] Exception: Directory does not exist: /Users/.fuego/2
+2026-Apr-26 22:59:26.827209 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-26 22:59:26.827839 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-26 22:59:26.827876 INFO [daemon] Starting in testnet mode!
+2026-Apr-26 22:59:26.828266 INFO [daemon] Initializing p2p server...
+2026-Apr-26 22:59:26.828529 INFO [node_server] Binding on 0.0.0.0:20888
+2026-Apr-26 22:59:26.828654 INFO [node_server] Net service bound on 0.0.0.0:20888
+2026-Apr-26 22:59:26.828690 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-26 22:59:28.086171 INFO [node_server] IGD was found but reported as not connected.
+2026-Apr-26 22:59:28.086265 INFO [daemon] P2p server initialized OK
+2026-Apr-26 22:59:28.086292 INFO [daemon] Initializing core...
+2026-Apr-26 22:59:28.086704 INFO [Blockchain] Testnet doesn't use or recognize checkpoints
+2026-Apr-26 22:59:28.086751 INFO [Blockchain] Blockchain not loaded, generating genesis block.
+2026-Apr-26 22:59:28.132710 INFO [Blockchain] Checkpoints passed
+2026-Apr-26 22:59:28.132774 INFO [Blockchain] Blockchain initialized. last block: 0, d5044.h21.m59.s28 time ago, current difficulty: 1
+2026-Apr-26 22:59:28.132808 INFO [daemon] Core initialized OK
+2026-Apr-26 22:59:28.132859 INFO [daemon] Swap offer relay started
+2026-Apr-26 22:59:28.132908 INFO [daemon] Starting core rpc server on address 127.0.0.1:29909
+2026-Apr-26 22:59:28.133184 INFO [daemon] Core rpc server started ok
+2026-Apr-26 22:59:28.133231 INFO [daemon] Starting p2p net loop...
+2026-Apr-26 22:59:28.133259 INFO [node_server] Starting node server
+2026-Apr-26 22:59:28.133327 INFO [core] **********************************************************************
+2026-Apr-26 22:59:28.133327 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-26 22:59:28.133327 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-26 22:59:28.133327 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-26 22:59:28.133327 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-26 22:59:28.133327 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-26 22:59:28.133327 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-26 22:59:28.133327 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-26 22:59:28.133549 INFO [core] **********************************************************************
+2026-Apr-26 22:59:48.315892 INFO [node_server] Stop signal sent
+2026-Apr-26 22:59:48.316207 INFO [node_server] Stopping NodeServer and it's, 0 connections...
+2026-Apr-26 22:59:48.317014 INFO [node_server] NodeServer loop stopped
+2026-Apr-26 22:59:48.317043 INFO [daemon] p2p net loop stopped
+2026-Apr-26 22:59:48.317065 INFO [daemon] Stopping swap offer relay...
+2026-Apr-26 22:59:49.229103 INFO [daemon] Stopping core rpc server...
+2026-Apr-26 22:59:49.229303 INFO [daemon] Deinitializing core...
+2026-Apr-26 22:59:49.229334 INFO [miner] Fuego mining has been stopped, 0 halted
+2026-Apr-26 22:59:49.229600 INFO [Blockchain] Saving blockchain...
+2026-Apr-26 22:59:49.229716 INFO [BlockCacheSerializer] - saving block index...
+2026-Apr-26 22:59:49.229742 INFO [BlockCacheSerializer] - saving transaction map
+2026-Apr-26 22:59:49.229859 INFO [BlockCacheSerializer] - saving spent keys
+2026-Apr-26 22:59:49.229972 INFO [BlockCacheSerializer] - saving outputs
+2026-Apr-26 22:59:49.229997 INFO [BlockCacheSerializer] - saving multi-signature outputs
+2026-Apr-26 22:59:49.230020 INFO [BlockCacheSerializer] - saving banking index
+2026-Apr-26 22:59:49.230061 INFO [BlockCacheSerializer] - saving commitment index
+2026-Apr-26 22:59:49.230083 INFO [BlockCacheSerializer] - saving commitment outputs
+2026-Apr-26 22:59:49.230105 INFO [BlockCacheSerializer] - saving fee pool state
+2026-Apr-26 22:59:49.230126 INFO [BlockCacheSerializer] Serialization time: 0ms
+2026-Apr-26 22:59:49.230175 INFO [Blockchain] Fuego blockchain was successfully saved.
+2026-Apr-26 22:59:49.230200 INFO [daemon] Deinitializing p2p...
+2026-Apr-26 22:59:49.230654 INFO [miner] Fuego mining has been stopped, 0 halted
+2026-Apr-26 22:59:49.230736 INFO [daemon] Node stopped.
+2026-Apr-26 23:00:18.673792 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-26 23:00:18.675665 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-26 23:00:18.675699 INFO [daemon] Starting in testnet mode!
+2026-Apr-26 23:00:18.676084 INFO [daemon] Initializing p2p server...
+2026-Apr-26 23:00:18.676302 INFO [node_server] Binding on 0.0.0.0:20888
+2026-Apr-26 23:00:18.676433 INFO [node_server] Net service bound on 0.0.0.0:20888
+2026-Apr-26 23:00:18.676466 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-26 23:00:21.680272 INFO [node_server] IGD was found but reported as not connected.
+2026-Apr-26 23:00:21.680422 INFO [daemon] P2p server initialized OK
+2026-Apr-26 23:00:21.680450 INFO [daemon] Initializing core...
+2026-Apr-26 23:00:21.680900 INFO [Blockchain] Loading blockchain...
+2026-Apr-26 23:00:21.681189 INFO [BlockCacheSerializer] - loading block index...
+2026-Apr-26 23:00:21.681220 INFO [BlockCacheSerializer] - loading transaction map
+2026-Apr-26 23:00:21.681374 INFO [BlockCacheSerializer] - loading spent keys
+2026-Apr-26 23:00:21.681534 INFO [BlockCacheSerializer] - loading outputs
+2026-Apr-26 23:00:21.681573 INFO [BlockCacheSerializer] - loading multi-signature outputs
+2026-Apr-26 23:00:21.681599 INFO [BlockCacheSerializer] - loading banking index
+2026-Apr-26 23:00:21.681623 INFO [BlockCacheSerializer] - loading commitment index
+2026-Apr-26 23:00:21.681646 INFO [BlockCacheSerializer] - loading commitment outputs
+2026-Apr-26 23:00:21.681668 INFO [BlockCacheSerializer] - loading fee pool state
+2026-Apr-26 23:00:21.681690 INFO [BlockCacheSerializer] Serialization time: 0ms
+2026-Apr-26 23:00:21.681715 INFO [Blockchain] Testnet doesn't use or recognize checkpoints
+2026-Apr-26 23:00:21.681751 INFO [Blockchain] Checkpoints passed
+2026-Apr-26 23:00:21.681782 INFO [Blockchain] Blockchain initialized. last block: 0, d5044.h22.m0.s21 time ago, current difficulty: 1
+2026-Apr-26 23:00:21.681817 INFO [daemon] Core initialized OK
+2026-Apr-26 23:00:21.681866 INFO [daemon] Swap offer relay started
+2026-Apr-26 23:00:21.681913 INFO [daemon] Starting core rpc server on address 127.0.0.1:29909
+2026-Apr-26 23:00:21.682168 INFO [daemon] Core rpc server started ok
+2026-Apr-26 23:00:21.682212 INFO [daemon] Starting p2p net loop...
+2026-Apr-26 23:00:21.682241 INFO [node_server] Starting node server
+2026-Apr-26 23:00:21.683022 INFO [protocol] **********************************************************************
+2026-Apr-26 23:00:21.683022 INFO [protocol] You are synchronized with Fuego TESTNET.
+2026-Apr-26 23:00:21.683022 INFO [protocol] test_wallet is at your service now, m'lorde.
+2026-Apr-26 23:00:21.683022 INFO [protocol] Type "help" to see available daemon commands.
+2026-Apr-26 23:00:21.683022 INFO [protocol] 
+2026-Apr-26 23:00:21.683022 INFO [protocol] Please note, Fuego TESTNET blockchain will only be saved after
+2026-Apr-26 23:00:21.683022 INFO [protocol] you quit the daemon with "exit" command
+2026-Apr-26 23:00:21.683022 INFO [protocol] Better yet use the "save" command.
+2026-Apr-26 23:00:21.683022 INFO [protocol] Otherwise, it may be necessary to re-sync.
+2026-Apr-26 23:00:21.683022 INFO [protocol] **********************************************************************
+2026-Apr-26 23:00:21.683665 INFO [protocol] **********************************************************************
+2026-Apr-26 23:00:21.683665 INFO [protocol] You are synchronized with Fuego TESTNET.
+2026-Apr-26 23:00:21.683665 INFO [protocol] test_wallet is at your service now, m'lorde.
+2026-Apr-26 23:00:21.683665 INFO [protocol] Type "help" to see available daemon commands.
+2026-Apr-26 23:00:21.683665 INFO [protocol] 
+2026-Apr-26 23:00:21.683665 INFO [protocol] Please note, Fuego TESTNET blockchain will only be saved after
+2026-Apr-26 23:00:21.683665 INFO [protocol] you quit the daemon with "exit" command
+2026-Apr-26 23:00:21.683665 INFO [protocol] Better yet use the "save" command.
+2026-Apr-26 23:00:21.683665 INFO [protocol] Otherwise, it may be necessary to re-sync.
+2026-Apr-26 23:00:21.683665 INFO [protocol] **********************************************************************
+2026-Apr-26 23:00:21.683943 INFO [core] **********************************************************************
+2026-Apr-26 23:00:21.683943 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-26 23:00:21.683943 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-26 23:00:21.683943 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-26 23:00:21.683943 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-26 23:00:21.683943 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-26 23:00:21.683943 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-26 23:00:21.683943 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-26 23:00:21.684150 INFO [core] **********************************************************************
+2026-Apr-26 23:31:28.095163 INFO [node_server] Stop signal sent
+2026-Apr-26 23:31:28.113297 INFO [node_server] Stopping NodeServer and it's, 1 connections...
+2026-Apr-26 23:31:28.111708 INFO [node_server] Stop signal sent
+2026-Apr-26 23:31:28.115559 INFO [node_server] Stopping NodeServer and it's, 1 connections...
+2026-Apr-27 00:52:39.358083 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-27 00:52:39.359248 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-27 00:52:39.359281 INFO [daemon] Starting in testnet mode!
+2026-Apr-27 00:52:39.360549 INFO [daemon] Initializing p2p server...
+2026-Apr-27 00:52:39.360809 INFO [node_server] Binding on 0.0.0.0:20808
+2026-Apr-27 00:52:39.360940 INFO [node_server] Net service bound on 0.0.0.0:20808
+2026-Apr-27 00:52:39.360969 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-27 00:52:43.203388 INFO [node_server] IGD was found but reported as not connected.
+2026-Apr-27 00:52:43.203650 INFO [daemon] P2p server initialized OK
+2026-Apr-27 00:52:43.203871 INFO [daemon] Initializing core...
+2026-Apr-27 00:52:43.205349 INFO [Blockchain] Testnet doesn't use or recognize checkpoints
+2026-Apr-27 00:52:43.205441 INFO [Blockchain] Blockchain not loaded, generating genesis block.
+2026-Apr-27 00:52:43.264970 INFO [Blockchain] Checkpoints passed
+2026-Apr-27 00:52:43.265028 INFO [Blockchain] Blockchain initialized. last block: 0, d5044.h23.m52.s43 time ago, current difficulty: 1
+2026-Apr-27 00:52:43.265072 INFO [daemon] Core initialized OK
+2026-Apr-27 00:52:43.265117 INFO [daemon] Swap offer relay started
+2026-Apr-27 00:52:43.265158 INFO [daemon] Starting core rpc server on address 127.0.0.1:28280
+2026-Apr-27 00:52:43.265495 INFO [daemon] Core rpc server started ok
+2026-Apr-27 00:52:43.265523 INFO [daemon] Starting p2p net loop...
+2026-Apr-27 00:52:43.265542 INFO [node_server] Starting node server
+2026-Apr-27 00:52:43.265832 INFO [core] **********************************************************************
+2026-Apr-27 00:52:43.265832 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-27 00:52:43.265832 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-27 00:52:43.265832 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-27 00:52:43.265832 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-27 00:52:43.265832 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-27 00:52:43.265832 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-27 00:52:43.265832 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-27 00:52:43.266022 INFO [core] **********************************************************************
+2026-Apr-27 01:16:52.805246 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-27 01:16:52.806389 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-27 01:16:52.806429 INFO [daemon] Starting in testnet mode!
+2026-Apr-27 01:16:52.807058 INFO [daemon] Initializing p2p server...
+2026-Apr-27 01:16:52.807342 INFO [node_server] Binding on 0.0.0.0:20888
+2026-Apr-27 01:16:52.807459 INFO [node_server] Net service bound on 0.0.0.0:20888
+2026-Apr-27 01:16:52.807491 INFO [node_server] Attempting to add IGD port mapping.
+2026-Apr-27 01:16:56.344031 INFO [node_server] IGD was found but reported as not connected.
+2026-Apr-27 01:16:56.344315 INFO [daemon] P2p server initialized OK
+2026-Apr-27 01:16:56.344368 INFO [daemon] Initializing core...
+2026-Apr-27 01:16:56.345253 INFO [Blockchain] Loading blockchain...
+2026-Apr-27 01:16:56.345986 INFO [BlockCacheSerializer] - loading block index...
+2026-Apr-27 01:16:56.346095 INFO [BlockCacheSerializer] - loading transaction map
+2026-Apr-27 01:16:56.346382 INFO [BlockCacheSerializer] - loading spent keys
+2026-Apr-27 01:16:56.346707 INFO [BlockCacheSerializer] - loading outputs
+2026-Apr-27 01:16:56.346811 INFO [BlockCacheSerializer] - loading multi-signature outputs
+2026-Apr-27 01:16:56.346859 INFO [BlockCacheSerializer] - loading banking index
+2026-Apr-27 01:16:56.346903 INFO [BlockCacheSerializer] - loading commitment index
+2026-Apr-27 01:16:56.346951 INFO [BlockCacheSerializer] - loading commitment outputs
+2026-Apr-27 01:16:56.347001 INFO [BlockCacheSerializer] - loading fee pool state
+2026-Apr-27 01:16:56.347044 INFO [BlockCacheSerializer] Serialization time: 1ms
+2026-Apr-27 01:16:56.347096 INFO [Blockchain] Testnet doesn't use or recognize checkpoints
+2026-Apr-27 01:16:56.347157 INFO [Blockchain] Checkpoints passed
+2026-Apr-27 01:16:56.347438 INFO [Blockchain] Blockchain initialized. last block: 0, d5045.h0.m16.s56 time ago, current difficulty: 1
+2026-Apr-27 01:16:56.347520 INFO [daemon] Core initialized OK
+2026-Apr-27 01:16:56.347608 INFO [daemon] Swap offer relay started
+2026-Apr-27 01:16:56.347703 INFO [daemon] Starting core rpc server on address 127.0.0.1:29909
+2026-Apr-27 01:16:56.348131 INFO [daemon] Core rpc server started ok
+2026-Apr-27 01:16:56.348294 INFO [daemon] Starting p2p net loop...
+2026-Apr-27 01:16:56.348336 INFO [node_server] Starting node server
+2026-Apr-27 01:16:56.349190 INFO [protocol] **********************************************************************
+2026-Apr-27 01:16:56.349190 INFO [protocol] You are synchronized with Fuego TESTNET.
+2026-Apr-27 01:16:56.349190 INFO [protocol] test_wallet is at your service now, m'lorde.
+2026-Apr-27 01:16:56.349190 INFO [protocol] Type "help" to see available daemon commands.
+2026-Apr-27 01:16:56.349190 INFO [protocol] 
+2026-Apr-27 01:16:56.349190 INFO [protocol] Please note, Fuego TESTNET blockchain will only be saved after
+2026-Apr-27 01:16:56.349190 INFO [protocol] you quit the daemon with "exit" command
+2026-Apr-27 01:16:56.349190 INFO [protocol] Better yet use the "save" command.
+2026-Apr-27 01:16:56.349190 INFO [protocol] Otherwise, it may be necessary to re-sync.
+2026-Apr-27 01:16:56.349190 INFO [protocol] **********************************************************************
+2026-Apr-27 01:16:56.350194 INFO [protocol] **********************************************************************
+2026-Apr-27 01:16:56.350194 INFO [protocol] You are synchronized with Fuego TESTNET.
+2026-Apr-27 01:16:56.350194 INFO [protocol] test_wallet is at your service now, m'lorde.
+2026-Apr-27 01:16:56.350194 INFO [protocol] Type "help" to see available daemon commands.
+2026-Apr-27 01:16:56.350194 INFO [protocol] 
+2026-Apr-27 01:16:56.350194 INFO [protocol] Please note, Fuego TESTNET blockchain will only be saved after
+2026-Apr-27 01:16:56.350194 INFO [protocol] you quit the daemon with "exit" command
+2026-Apr-27 01:16:56.350194 INFO [protocol] Better yet use the "save" command.
+2026-Apr-27 01:16:56.350194 INFO [protocol] Otherwise, it may be necessary to re-sync.
+2026-Apr-27 01:16:56.350194 INFO [protocol] **********************************************************************
+2026-Apr-27 01:16:56.350710 INFO [core] **********************************************************************
+2026-Apr-27 01:16:56.350710 INFO [core] Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time.
+2026-Apr-27 01:16:56.350710 INFO [core] Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. 
+2026-Apr-27 01:16:56.350710 INFO [core] You can use "set_log <level>" command for a more detailed view of the process.
+2026-Apr-27 01:16:56.350710 INFO [core] Using <level> option from 0 (no details) up to 4 (very verbose).
+2026-Apr-27 01:16:56.350710 INFO [core] Use "help" command to see a list of available commands.
+2026-Apr-27 01:16:56.350710 INFO [core] Note: in case you need to interrupt the process, use "exit" command,
+2026-Apr-27 01:16:56.350710 INFO [core] Otherwise the current progress won't be saved.
+2026-Apr-27 01:16:56.351911 INFO [core] **********************************************************************
+2026-Apr-27 01:19:51.178214 INFO [miner] Fuego mining has begun. Using 1 CPU threads
+2026-Apr-27 01:19:51.178233 INFO [miner] CPU thread 0 MINING
+2026-Apr-27 01:19:51.215346 INFO [miner] Fuego block found at difficulty of: 1
+2026-Apr-27 01:19:51.283300 INFO [miner] Fuego block found at difficulty of: 1
+2026-Apr-27 01:19:52.689947 INFO [miner] Fuego block found at difficulty of: 81
+2026-Apr-27 01:19:52.746521 INFO [miner] Fuego block found at difficulty of: 1
+2026-Apr-27 01:21:59.281679 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:29:43.315050 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:31:35.550316 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:33:21.439507 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:33:40.012232 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:33:42.727818 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 01:33:42.759581 INFO [Blockchain] === Epoch 1 Report === blocks=0-9 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 01:33:42.793680 INFO [Blockchain] === Epoch 1 Report === blocks=0-9 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 02:13:21.193868 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:31:29.433429 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:39:02.738967 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:50:12.866618 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:57:06.612187 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:57:47.841933 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 02:59:34.416222 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:01:56.263219 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:05:49.879686 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:05:56.143463 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:05:56.144746 INFO [Blockchain] === Epoch 2 Report === blocks=10-19 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:05:56.147590 INFO [Blockchain] === Epoch 2 Report === blocks=10-19 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:06:19.004234 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:23.759216 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:38.842898 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:41.198038 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:41.697945 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:42.065440 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:42.287564 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:50.408700 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:55.841219 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:56.421599 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:06:56.422842 INFO [Blockchain] === Epoch 3 Report === blocks=20-29 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:06:56.425629 INFO [Blockchain] === Epoch 3 Report === blocks=20-29 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:07:19.146252 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:07:36.519214 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:07:53.204495 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:08:19.545015 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:08:30.502240 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:08:36.681380 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:08:55.492195 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:09:42.899692 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:09:54.799143 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:10:00.595440 INFO [miner] Fuego block found at difficulty of: 10000
+2026-Apr-27 03:10:00.596773 INFO [Blockchain] === Epoch 4 Report === blocks=30-39 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:10:00.599614 INFO [Blockchain] === Epoch 4 Report === blocks=30-39 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:10:20.118908 INFO [miner] Fuego block found at difficulty of: 20900
+2026-Apr-27 03:10:46.317417 INFO [miner] Fuego block found at difficulty of: 21500
+2026-Apr-27 03:11:19.257211 INFO [miner] Fuego block found at difficulty of: 22800
+2026-Apr-27 03:11:56.967482 INFO [miner] Fuego block found at difficulty of: 24700
+2026-Apr-27 03:12:33.167757 INFO [miner] Fuego block found at difficulty of: 26400
+2026-Apr-27 03:12:46.952696 INFO [miner] Fuego block found at difficulty of: 28200
+2026-Apr-27 03:12:48.890557 INFO [miner] Fuego block found at difficulty of: 30100
+2026-Apr-27 03:13:44.148242 INFO [miner] Fuego block found at difficulty of: 32400
+2026-Apr-27 03:14:07.822410 INFO [miner] Fuego block found at difficulty of: 34900
+2026-Apr-27 03:14:19.539408 INFO [miner] Fuego block found at difficulty of: 37700
+2026-Apr-27 03:14:19.540705 INFO [Blockchain] === Epoch 5 Report === blocks=40-49 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:14:19.543564 INFO [Blockchain] === Epoch 5 Report === blocks=40-49 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:14:25.806224 INFO [miner] Fuego block found at difficulty of: 41000
+2026-Apr-27 03:14:33.462481 INFO [miner] Fuego block found at difficulty of: 43900
+2026-Apr-27 03:15:38.058394 INFO [miner] Fuego block found at difficulty of: 46800
+2026-Apr-27 03:16:08.929761 INFO [miner] Fuego block found at difficulty of: 49800
+2026-Apr-27 03:16:32.102061 INFO [miner] Fuego block found at difficulty of: 52900
+2026-Apr-27 03:17:11.021133 INFO [miner] Fuego block found at difficulty of: 56200
+2026-Apr-27 03:17:16.885403 INFO [miner] Fuego block found at difficulty of: 59600
+2026-Apr-27 03:21:18.466600 INFO [miner] Fuego block found at difficulty of: 63400
+2026-Apr-27 03:24:44.139029 INFO [miner] Fuego block found at difficulty of: 65700
+2026-Apr-27 03:25:08.713588 INFO [miner] Fuego block found at difficulty of: 68900
+2026-Apr-27 03:25:08.714890 INFO [Blockchain] === Epoch 6 Report === blocks=50-59 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:25:08.717787 INFO [Blockchain] === Epoch 6 Report === blocks=50-59 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:29:00.004991 INFO [miner] Fuego block found at difficulty of: 73200
+2026-Apr-27 03:29:25.635578 INFO [miner] Fuego block found at difficulty of: 76100
+2026-Apr-27 03:31:13.578583 INFO [miner] Fuego block found at difficulty of: 80900
+2026-Apr-27 03:31:40.155360 INFO [miner] Fuego block found at difficulty of: 86000
+2026-Apr-27 03:31:58.523064 INFO [miner] Fuego block found at difficulty of: 91500
+2026-Apr-27 03:32:24.332165 INFO [miner] Fuego block found at difficulty of: 97500
+2026-Apr-27 03:35:22.279749 INFO [miner] Fuego block found at difficulty of: 104000
+2026-Apr-27 03:39:57.158604 INFO [miner] Fuego block found at difficulty of: 110000
+2026-Apr-27 03:44:05.210362 INFO [miner] Fuego block found at difficulty of: 114000
+2026-Apr-27 03:44:41.744523 INFO [miner] Fuego block found at difficulty of: 118000
+2026-Apr-27 03:44:41.746986 INFO [Blockchain] === Epoch 7 Report === blocks=60-69 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:44:41.750051 INFO [Blockchain] === Epoch 7 Report === blocks=60-69 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 03:46:52.632361 INFO [miner] Fuego block found at difficulty of: 125000
+2026-Apr-27 03:47:28.093423 INFO [miner] Fuego block found at difficulty of: 134000
+2026-Apr-27 03:49:22.303177 INFO [miner] Fuego block found at difficulty of: 142000
+2026-Apr-27 03:51:08.672814 INFO [miner] Fuego block found at difficulty of: 152000
+2026-Apr-27 03:51:48.794466 INFO [miner] Fuego block found at difficulty of: 162000
+2026-Apr-27 03:52:45.936850 INFO [miner] Fuego block found at difficulty of: 173000
+2026-Apr-27 03:52:56.494949 INFO [miner] Fuego block found at difficulty of: 184000
+2026-Apr-27 03:58:10.485130 INFO [miner] Fuego block found at difficulty of: 197000
+2026-Apr-27 04:10:49.484229 INFO [miner] Fuego block found at difficulty of: 201000
+2026-Apr-27 04:13:21.930575 INFO [miner] Fuego block found at difficulty of: 184000
+2026-Apr-27 04:13:21.933566 INFO [Blockchain] === Epoch 8 Report === blocks=70-79 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 04:13:21.936656 INFO [Blockchain] === Epoch 8 Report === blocks=70-79 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 04:13:49.464214 INFO [miner] Fuego block found at difficulty of: 195000
+2026-Apr-27 04:14:21.260950 INFO [miner] Fuego block found at difficulty of: 206000
+2026-Apr-27 04:17:48.735967 INFO [miner] Fuego block found at difficulty of: 218000
+2026-Apr-27 04:20:22.205813 INFO [miner] Fuego block found at difficulty of: 228000
+2026-Apr-27 04:23:34.303523 INFO [miner] Fuego block found at difficulty of: 242000
+2026-Apr-27 04:29:28.981575 INFO [miner] Fuego block found at difficulty of: 254000
+2026-Apr-27 04:30:21.806104 INFO [miner] Fuego block found at difficulty of: 257000
+2026-Apr-27 04:39:01.590004 INFO [miner] Fuego block found at difficulty of: 272000
+2026-Apr-27 04:40:23.743549 INFO [miner] Fuego block found at difficulty of: 265000
+2026-Apr-27 04:45:18.677836 INFO [miner] Fuego block found at difficulty of: 280000
+2026-Apr-27 04:45:18.680292 INFO [Blockchain] === Epoch 9 Report === blocks=80-89 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 04:45:18.683413 INFO [Blockchain] === Epoch 9 Report === blocks=80-89 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 04:45:39.095818 INFO [miner] Fuego block found at difficulty of: 287000
+2026-Apr-27 04:46:11.032579 INFO [miner] Fuego block found at difficulty of: 303000
+2026-Apr-27 04:48:40.293858 INFO [miner] Fuego block found at difficulty of: 320000
+2026-Apr-27 04:50:02.833872 INFO [miner] Fuego block found at difficulty of: 338000
+2026-Apr-27 05:07:17.433324 INFO [miner] Fuego block found at difficulty of: 357000
+2026-Apr-27 05:14:45.508413 INFO [miner] Fuego block found at difficulty of: 315000
+2026-Apr-27 05:15:29.539513 INFO [miner] Fuego block found at difficulty of: 313000
+2026-Apr-27 05:37:04.291515 INFO [miner] Fuego block found at difficulty of: 329000
+2026-Apr-27 05:52:36.426763 INFO [miner] Fuego block found at difficulty of: 285000
+2026-Apr-27 05:54:33.665267 INFO [miner] Fuego block found at difficulty of: 265000
+2026-Apr-27 05:54:33.669809 INFO [Blockchain] === Epoch 10 Report === blocks=90-99 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 05:54:33.679602 INFO [Blockchain] === Epoch 10 Report === blocks=90-99 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 05:59:52.640054 INFO [miner] Fuego block found at difficulty of: 276000
+2026-Apr-27 06:07:06.357503 INFO [miner] Fuego block found at difficulty of: 282000
+2026-Apr-27 06:27:17.813035 INFO [miner] Fuego block found at difficulty of: 283000
+2026-Apr-27 06:32:33.678324 INFO [miner] Fuego block found at difficulty of: 257000
+2026-Apr-27 06:44:01.083362 INFO [miner] Fuego block found at difficulty of: 262000
+2026-Apr-27 06:54:25.617349 INFO [miner] Fuego block found at difficulty of: 255000
+2026-Apr-27 06:57:40.487277 INFO [miner] Fuego block found at difficulty of: 251000
+2026-Apr-27 07:02:44.715955 INFO [miner] Fuego block found at difficulty of: 259000
+2026-Apr-27 07:10:54.599955 INFO [miner] Fuego block found at difficulty of: 265000
+2026-Apr-27 07:13:55.940643 INFO [miner] Fuego block found at difficulty of: 265000
+2026-Apr-27 07:13:55.944413 INFO [Blockchain] === Epoch 11 Report === blocks=100-109 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 07:13:55.949263 INFO [Blockchain] === Epoch 11 Report === blocks=100-109 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 07:22:50.542329 INFO [miner] Fuego block found at difficulty of: 274000
+2026-Apr-27 07:25:36.625880 INFO [miner] Fuego block found at difficulty of: 272000
+2026-Apr-27 07:36:09.992887 INFO [miner] Fuego block found at difficulty of: 283000
+2026-Apr-27 07:48:05.797067 INFO [miner] Fuego block found at difficulty of: 277000
+2026-Apr-27 07:53:52.141003 INFO [miner] Fuego block found at difficulty of: 270000
+2026-Apr-27 08:06:59.323516 INFO [miner] Fuego block found at difficulty of: 274000
+2026-Apr-27 08:07:48.655240 INFO [miner] Fuego block found at difficulty of: 265000
+2026-Apr-27 08:16:33.929649 INFO [miner] Fuego block found at difficulty of: 274000
+2026-Apr-27 08:20:49.771401 INFO [miner] Fuego block found at difficulty of: 273000
+2026-Apr-27 08:34:37.060742 INFO [miner] Fuego block found at difficulty of: 280000
+2026-Apr-27 08:34:37.064693 INFO [Blockchain] === Epoch 12 Report === blocks=110-119 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 08:34:37.069712 INFO [Blockchain] === Epoch 12 Report === blocks=110-119 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 08:40:28.821417 INFO [miner] Fuego block found at difficulty of: 270000
+2026-Apr-27 08:51:32.741327 INFO [miner] Fuego block found at difficulty of: 273000
+2026-Apr-27 08:59:31.283079 INFO [miner] Fuego block found at difficulty of: 268000
+2026-Apr-27 09:00:39.845748 INFO [miner] Fuego block found at difficulty of: 268000
+2026-Apr-27 09:01:15.541410 INFO [miner] Fuego block found at difficulty of: 277000
+2026-Apr-27 09:07:17.260179 INFO [miner] Fuego block found at difficulty of: 286000
+2026-Apr-27 09:14:37.287980 INFO [miner] Fuego block found at difficulty of: 290000
+2026-Apr-27 09:20:43.205149 INFO [miner] Fuego block found at difficulty of: 291000
+2026-Apr-27 09:32:07.319553 INFO [miner] Fuego block found at difficulty of: 294000
+2026-Apr-27 09:32:17.131757 INFO [miner] Fuego block found at difficulty of: 287000
+2026-Apr-27 09:32:17.133909 INFO [Blockchain] === Epoch 13 Report === blocks=120-129 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 09:32:17.138155 INFO [Blockchain] === Epoch 13 Report === blocks=120-129 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 09:32:21.972144 INFO [miner] Fuego block found at difficulty of: 297000
+2026-Apr-27 10:25:27.239595 INFO [miner] Fuego block found at difficulty of: 307000
+2026-Apr-27 10:32:34.343886 INFO [miner] Fuego block found at difficulty of: 239000
+2026-Apr-27 10:42:02.613927 INFO [miner] Fuego block found at difficulty of: 239000
+2026-Apr-27 10:44:48.649177 INFO [miner] Fuego block found at difficulty of: 236000
+2026-Apr-27 10:47:00.625569 INFO [miner] Fuego block found at difficulty of: 242000
+2026-Apr-27 10:49:46.524856 INFO [miner] Fuego block found at difficulty of: 249000
+2026-Apr-27 11:32:34.852813 INFO [miner] Fuego block found at difficulty of: 256000
+2026-Apr-27 11:38:59.926560 INFO [miner] Fuego block found at difficulty of: 211000
+2026-Apr-27 11:45:08.183586 INFO [miner] Fuego block found at difficulty of: 213000
+2026-Apr-27 11:45:08.185027 INFO [Blockchain] === Epoch 14 Report === blocks=130-139 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 11:45:08.188013 INFO [Blockchain] === Epoch 14 Report === blocks=130-139 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 11:47:27.383384 INFO [miner] Fuego block found at difficulty of: 215000
+2026-Apr-27 11:51:15.254877 INFO [miner] Fuego block found at difficulty of: 220000
+2026-Apr-27 11:53:00.906642 INFO [miner] Fuego block found at difficulty of: 225000
+2026-Apr-27 11:55:05.055409 INFO [miner] Fuego block found at difficulty of: 232000
+2026-Apr-27 11:56:43.114600 INFO [miner] Fuego block found at difficulty of: 239000
+2026-Apr-27 12:03:00.087086 INFO [miner] Fuego block found at difficulty of: 247000
+2026-Apr-27 12:06:47.244532 INFO [miner] Fuego block found at difficulty of: 249000
+2026-Apr-27 12:10:59.308039 INFO [miner] Fuego block found at difficulty of: 255000
+2026-Apr-27 12:11:25.578058 INFO [miner] Fuego block found at difficulty of: 261000
+2026-Apr-27 12:24:41.564389 INFO [miner] Fuego block found at difficulty of: 271000
+2026-Apr-27 12:24:41.567551 INFO [Blockchain] === Epoch 15 Report === blocks=140-149 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 12:24:41.571133 INFO [Blockchain] === Epoch 15 Report === blocks=140-149 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 12:27:49.341294 INFO [miner] Fuego block found at difficulty of: 261000
+2026-Apr-27 12:48:16.973266 INFO [miner] Fuego block found at difficulty of: 269000
+2026-Apr-27 12:51:40.206279 INFO [miner] Fuego block found at difficulty of: 248000
+2026-Apr-27 12:51:59.469649 INFO [miner] Fuego block found at difficulty of: 255000
+2026-Apr-27 12:54:40.705810 INFO [miner] Fuego block found at difficulty of: 264000
+2026-Apr-27 12:57:33.395803 INFO [miner] Fuego block found at difficulty of: 273000
+2026-Apr-27 12:59:01.058453 INFO [miner] Fuego block found at difficulty of: 283000
+2026-Apr-27 12:59:33.913906 INFO [miner] Fuego block found at difficulty of: 294000
+2026-Apr-27 12:59:47.147609 INFO [miner] Fuego block found at difficulty of: 305000
+2026-Apr-27 13:02:37.197648 INFO [miner] Fuego block found at difficulty of: 317000
+2026-Apr-27 13:02:37.200387 INFO [Blockchain] === Epoch 16 Report === blocks=150-159 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 13:02:37.203512 INFO [Blockchain] === Epoch 16 Report === blocks=150-159 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=0 feeRate=0
+2026-Apr-27 13:21:36.399114 INFO [miner] Fuego block found at difficulty of: 330000
+2026-Apr-27 13:25:52.879972 INFO [miner] Fuego block found at difficulty of: 303000
+2026-Apr-27 13:26:03.894567 INFO [miner] Fuego block found at difficulty of: 311000
+2026-Apr-27 13:31:18.999836 INFO [miner] Fuego block found at difficulty of: 324000
+2026-Apr-27 13:31:57.115243 INFO [miner] Fuego block found at difficulty of: 331000
+2026-Apr-27 13:37:38.222316 INFO [miner] Fuego block found at difficulty of: 345000
+2026-Apr-27 13:38:51.822859 INFO [miner] Fuego block found at difficulty of: 352000
+2026-Apr-27 13:40:35.159848 INFO [miner] Fuego block found at difficulty of: 368000
+2026-Apr-27 13:44:20.953915 ERROR [miner] Starting miner but it's already started
+2026-Apr-27 13:54:50.643658 INFO [miner] Fuego block found at difficulty of: 385000
+2026-Apr-27 13:54:50.667249 INFO [Blockchain] Burn in block 169: 8.0000000 XFG sent into the Ether
+2026-Apr-27 13:54:50.695364 INFO [Blockchain] Burn in block 169: 8.0000000 XFG sent into the Ether
+2026-Apr-27 14:20:12.771740 INFO [miner] Fuego block found at difficulty of: 364000
+2026-Apr-27 14:20:12.775947 INFO [Blockchain] === Epoch 17 Report === blocks=160-169 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 14:20:12.779494 INFO [Blockchain] === Epoch 17 Report === blocks=160-169 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 14:26:29.905852 INFO [miner] Fuego block found at difficulty of: 318000
+2026-Apr-27 14:28:14.175051 INFO [miner] Fuego block found at difficulty of: 321000
+2026-Apr-27 14:28:47.702741 INFO [miner] Fuego block found at difficulty of: 334000
+2026-Apr-27 14:41:56.889208 INFO [miner] Fuego block found at difficulty of: 347000
+2026-Apr-27 14:43:01.848211 INFO [miner] Fuego block found at difficulty of: 333000
+2026-Apr-27 14:45:25.906817 INFO [miner] Fuego block found at difficulty of: 346000
+2026-Apr-27 14:46:06.576988 INFO [miner] Fuego block found at difficulty of: 361000
+2026-Apr-27 14:46:09.767910 INFO [miner] Fuego block found at difficulty of: 376000
+2026-Apr-27 14:52:52.047419 INFO [miner] Fuego block found at difficulty of: 391000
+2026-Apr-27 14:55:47.694155 INFO [miner] Fuego block found at difficulty of: 393000
+2026-Apr-27 14:55:47.697181 INFO [Blockchain] === Epoch 18 Report === blocks=170-179 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 14:55:47.700221 INFO [Blockchain] === Epoch 18 Report === blocks=170-179 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 15:00:32.506356 INFO [miner] Fuego block found at difficulty of: 408000
+2026-Apr-27 15:04:19.263416 INFO [miner] Fuego block found at difficulty of: 418000
+2026-Apr-27 15:21:54.913590 INFO [miner] Fuego block found at difficulty of: 432000
+2026-Apr-27 15:45:06.677014 INFO [miner] Fuego block found at difficulty of: 397000
+2026-Apr-27 15:58:07.057783 INFO [miner] Fuego block found at difficulty of: 353000
+2026-Apr-27 16:01:03.763940 INFO [miner] Fuego block found at difficulty of: 341000
+2026-Apr-27 16:21:37.165035 INFO [miner] Fuego block found at difficulty of: 352000
+2026-Apr-27 16:22:21.495429 INFO [miner] Fuego block found at difficulty of: 324000
+2026-Apr-27 16:27:11.411149 INFO [miner] Fuego block found at difficulty of: 335000
+2026-Apr-27 16:28:53.054067 INFO [miner] Fuego block found at difficulty of: 341000
+2026-Apr-27 16:28:53.056416 INFO [Blockchain] === Epoch 19 Report === blocks=180-189 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 16:28:53.059498 INFO [Blockchain] === Epoch 19 Report === blocks=180-189 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 16:44:35.395690 INFO [miner] Fuego block found at difficulty of: 353000
+2026-Apr-27 16:48:02.539646 INFO [miner] Fuego block found at difficulty of: 335000
+2026-Apr-27 16:49:34.011121 INFO [miner] Fuego block found at difficulty of: 345000
+2026-Apr-27 17:05:32.723550 INFO [miner] Fuego block found at difficulty of: 357000
+2026-Apr-27 17:20:13.531895 INFO [miner] Fuego block found at difficulty of: 338000
+2026-Apr-27 17:26:24.036745 INFO [miner] Fuego block found at difficulty of: 324000
+2026-Apr-27 17:44:56.554793 INFO [miner] Fuego block found at difficulty of: 328000
+2026-Apr-27 17:54:19.825013 INFO [miner] Fuego block found at difficulty of: 308000
+2026-Apr-27 17:54:53.904731 INFO [miner] Fuego block found at difficulty of: 306000
+2026-Apr-27 18:02:50.927264 INFO [miner] Fuego block found at difficulty of: 315000
+2026-Apr-27 18:02:50.931126 INFO [Blockchain] === Epoch 20 Report === blocks=190-199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 18:02:50.935159 INFO [Blockchain] === Epoch 20 Report === blocks=190-199 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 18:07:37.903744 INFO [miner] Fuego block found at difficulty of: 315000
+2026-Apr-27 18:11:09.678079 INFO [miner] Fuego block found at difficulty of: 321000
+2026-Apr-27 18:25:36.877398 INFO [miner] Fuego block found at difficulty of: 329000
+2026-Apr-27 18:30:47.880606 INFO [miner] Fuego block found at difficulty of: 317000
+2026-Apr-27 18:45:24.434485 INFO [miner] Fuego block found at difficulty of: 322000
+2026-Apr-27 18:59:09.062081 INFO [miner] Fuego block found at difficulty of: 309000
+2026-Apr-27 19:01:40.430116 INFO [miner] Fuego block found at difficulty of: 299000
+2026-Apr-27 19:07:38.322664 INFO [miner] Fuego block found at difficulty of: 308000
+2026-Apr-27 19:08:57.800541 INFO [miner] Fuego block found at difficulty of: 311000
+2026-Apr-27 19:12:06.654047 INFO [miner] Fuego block found at difficulty of: 320000
+2026-Apr-27 19:12:06.656457 INFO [Blockchain] === Epoch 21 Report === blocks=200-209 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 19:12:06.659686 INFO [Blockchain] === Epoch 21 Report === blocks=200-209 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 19:13:40.821144 INFO [miner] Fuego block found at difficulty of: 330000
+2026-Apr-27 19:34:07.631402 INFO [miner] Fuego block found at difficulty of: 341000
+2026-Apr-27 19:39:29.334365 INFO [miner] Fuego block found at difficulty of: 315000
+2026-Apr-27 19:45:36.581085 INFO [miner] Fuego block found at difficulty of: 320000
+2026-Apr-27 19:47:52.808357 INFO [miner] Fuego block found at difficulty of: 323000
+2026-Apr-27 20:05:32.048566 INFO [miner] Fuego block found at difficulty of: 334000
+2026-Apr-27 20:05:48.705080 INFO [miner] Fuego block found at difficulty of: 314000
+2026-Apr-27 20:07:15.363549 INFO [miner] Fuego block found at difficulty of: 324000
+2026-Apr-27 20:10:43.820933 INFO [miner] Fuego block found at difficulty of: 334000
+2026-Apr-27 20:34:16.777620 INFO [miner] Fuego block found at difficulty of: 344000
+2026-Apr-27 20:34:16.782047 INFO [Blockchain] === Epoch 22 Report === blocks=210-219 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 20:34:16.787530 INFO [Blockchain] === Epoch 22 Report === blocks=210-219 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 20:35:02.754803 INFO [miner] Fuego block found at difficulty of: 311000
+2026-Apr-27 20:43:20.237555 INFO [miner] Fuego block found at difficulty of: 320000
+2026-Apr-27 20:45:02.810275 INFO [miner] Fuego block found at difficulty of: 319000
+2026-Apr-27 20:53:17.822649 INFO [miner] Fuego block found at difficulty of: 329000
+2026-Apr-27 20:56:45.163789 INFO [miner] Fuego block found at difficulty of: 328000
+2026-Apr-27 21:00:12.396609 INFO [miner] Fuego block found at difficulty of: 337000
+2026-Apr-27 21:09:01.200583 INFO [miner] Fuego block found at difficulty of: 348000
+2026-Apr-27 21:33:03.717765 INFO [miner] Fuego block found at difficulty of: 345000
+2026-Apr-27 21:39:16.005968 INFO [miner] Fuego block found at difficulty of: 311000
+2026-Apr-27 21:51:04.534713 INFO [miner] Fuego block found at difficulty of: 314000
+2026-Apr-27 21:51:04.538858 INFO [Blockchain] === Epoch 23 Report === blocks=220-229 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 21:51:04.543784 INFO [Blockchain] === Epoch 23 Report === blocks=220-229 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 21:51:55.338102 INFO [miner] Fuego block found at difficulty of: 306000
+2026-Apr-27 21:52:32.667600 INFO [miner] Fuego block found at difficulty of: 316000
+2026-Apr-27 22:02:13.047104 INFO [miner] Fuego block found at difficulty of: 327000
+2026-Apr-27 22:22:23.620614 INFO [miner] Fuego block found at difficulty of: 323000
+2026-Apr-27 22:23:26.589478 INFO [miner] Fuego block found at difficulty of: 299000
+2026-Apr-27 22:24:07.675369 INFO [miner] Fuego block found at difficulty of: 308000
+2026-Apr-27 22:35:01.647503 INFO [miner] Fuego block found at difficulty of: 319000
+2026-Apr-27 22:50:27.462497 INFO [miner] Fuego block found at difficulty of: 312000
+2026-Apr-27 22:54:03.654498 INFO [miner] Fuego block found at difficulty of: 298000
+2026-Apr-27 22:56:15.946347 INFO [miner] Fuego block found at difficulty of: 306000
+2026-Apr-27 22:56:15.948607 INFO [Blockchain] === Epoch 24 Report === blocks=230-239 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 22:56:15.953381 INFO [Blockchain] === Epoch 24 Report === blocks=230-239 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-27 23:00:18.791432 INFO [miner] Fuego block found at difficulty of: 316000
+2026-Apr-27 23:48:43.517284 INFO [miner] Fuego block found at difficulty of: 323000
+2026-Apr-27 23:57:33.931515 INFO [miner] Fuego block found at difficulty of: 256000
+2026-Apr-27 23:59:27.235095 INFO [miner] Fuego block found at difficulty of: 255000
+2026-Apr-28 00:16:30.553900 INFO [miner] Fuego block found at difficulty of: 262000
+2026-Apr-28 00:25:16.384379 INFO [miner] Fuego block found at difficulty of: 249000
+2026-Apr-28 00:25:34.598817 INFO [miner] Fuego block found at difficulty of: 248000
+2026-Apr-28 00:26:21.535720 INFO [miner] Fuego block found at difficulty of: 255000
+2026-Apr-28 00:44:34.944901 INFO [miner] Fuego block found at difficulty of: 262000
+2026-Apr-28 00:45:32.530352 INFO [miner] Fuego block found at difficulty of: 248000
+2026-Apr-28 00:45:32.532699 INFO [Blockchain] === Epoch 25 Report === blocks=240-249 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 00:45:32.537452 INFO [Blockchain] === Epoch 25 Report === blocks=240-249 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 00:48:41.017288 INFO [miner] Fuego block found at difficulty of: 254000
+2026-Apr-28 00:58:03.921782 INFO [miner] Fuego block found at difficulty of: 261000
+2026-Apr-28 01:01:38.950944 INFO [miner] Fuego block found at difficulty of: 258000
+2026-Apr-28 01:07:23.637541 INFO [miner] Fuego block found at difficulty of: 264000
+2026-Apr-28 01:09:18.241216 INFO [miner] Fuego block found at difficulty of: 267000
+2026-Apr-28 01:12:00.576871 INFO [miner] Fuego block found at difficulty of: 275000
+2026-Apr-28 01:14:28.565246 INFO [miner] Fuego block found at difficulty of: 284000
+2026-Apr-28 01:21:28.571034 INFO [miner] Fuego block found at difficulty of: 293000
+2026-Apr-28 01:31:37.866347 INFO [miner] Fuego block found at difficulty of: 295000
+2026-Apr-28 01:36:08.990239 INFO [miner] Fuego block found at difficulty of: 290000
+2026-Apr-28 01:36:08.993418 INFO [Blockchain] === Epoch 26 Report === blocks=250-259 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 01:36:08.996455 INFO [Blockchain] === Epoch 26 Report === blocks=250-259 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 01:36:36.785901 INFO [miner] Fuego block found at difficulty of: 296000
+2026-Apr-28 01:41:32.206016 INFO [miner] Fuego block found at difficulty of: 307000
+2026-Apr-28 01:43:31.622060 INFO [miner] Fuego block found at difficulty of: 313000
+2026-Apr-28 01:49:43.803819 INFO [miner] Fuego block found at difficulty of: 325000
+2026-Apr-28 01:54:00.871050 INFO [miner] Fuego block found at difficulty of: 328000
+2026-Apr-28 01:56:26.561896 INFO [miner] Fuego block found at difficulty of: 337000
+2026-Apr-28 02:04:56.606454 INFO [miner] Fuego block found at difficulty of: 351000
+2026-Apr-28 02:05:19.081681 INFO [miner] Fuego block found at difficulty of: 349000
+2026-Apr-28 02:09:04.191903 INFO [miner] Fuego block found at difficulty of: 364000
+2026-Apr-28 02:11:31.139493 INFO [miner] Fuego block found at difficulty of: 376000
+2026-Apr-28 02:11:31.142515 INFO [Blockchain] === Epoch 27 Report === blocks=260-269 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 02:11:31.145611 INFO [Blockchain] === Epoch 27 Report === blocks=260-269 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 02:20:21.514831 INFO [miner] Fuego block found at difficulty of: 393000
+2026-Apr-28 02:21:29.279537 INFO [miner] Fuego block found at difficulty of: 390000
+2026-Apr-28 02:21:44.950032 INFO [miner] Fuego block found at difficulty of: 408000
+2026-Apr-28 02:38:42.251312 INFO [miner] Fuego block found at difficulty of: 428000
+2026-Apr-28 02:40:29.647268 INFO [miner] Fuego block found at difficulty of: 396000
+2026-Apr-28 02:42:54.725593 INFO [miner] Fuego block found at difficulty of: 414000
+2026-Apr-28 02:47:05.030956 INFO [miner] Fuego block found at difficulty of: 433000
+2026-Apr-28 03:07:40.878717 INFO [miner] Fuego block found at difficulty of: 449000
+2026-Apr-28 03:08:10.041750 INFO [miner] Fuego block found at difficulty of: 402000
+2026-Apr-28 03:22:23.091612 INFO [miner] Fuego block found at difficulty of: 420000
+2026-Apr-28 03:22:23.095744 INFO [Blockchain] === Epoch 28 Report === blocks=270-279 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 03:22:23.100946 INFO [Blockchain] === Epoch 28 Report === blocks=270-279 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 03:34:36.006549 INFO [miner] Fuego block found at difficulty of: 399000
+2026-Apr-28 03:47:38.478134 INFO [miner] Fuego block found at difficulty of: 386000
+2026-Apr-28 04:22:50.516452 INFO [miner] Fuego block found at difficulty of: 371000
+2026-Apr-28 04:23:59.553340 INFO [miner] Fuego block found at difficulty of: 309000
+2026-Apr-28 04:26:08.211791 INFO [miner] Fuego block found at difficulty of: 319000
+2026-Apr-28 04:30:42.848187 INFO [miner] Fuego block found at difficulty of: 330000
+2026-Apr-28 04:31:59.187987 INFO [miner] Fuego block found at difficulty of: 336000
+2026-Apr-28 04:34:27.665138 INFO [miner] Fuego block found at difficulty of: 348000
+2026-Apr-28 04:40:11.706178 INFO [miner] Fuego block found at difficulty of: 360000
+2026-Apr-28 04:40:27.871268 INFO [miner] Fuego block found at difficulty of: 364000
+2026-Apr-28 04:40:27.872627 INFO [Blockchain] === Epoch 29 Report === blocks=280-289 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 04:40:27.876302 INFO [Blockchain] === Epoch 29 Report === blocks=280-289 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 04:41:47.428619 INFO [miner] Fuego block found at difficulty of: 377000
+2026-Apr-28 04:52:29.161151 INFO [miner] Fuego block found at difficulty of: 391000
+2026-Apr-28 04:58:48.661349 INFO [miner] Fuego block found at difficulty of: 383000
+2026-Apr-28 05:03:51.234457 INFO [miner] Fuego block found at difficulty of: 386000
+2026-Apr-28 05:19:14.459364 INFO [miner] Fuego block found at difficulty of: 393000
+2026-Apr-28 05:29:01.166172 INFO [miner] Fuego block found at difficulty of: 373000
+2026-Apr-28 05:42:46.361659 INFO [miner] Fuego block found at difficulty of: 369000
+2026-Apr-28 05:45:37.728426 INFO [miner] Fuego block found at difficulty of: 355000
+2026-Apr-28 06:07:54.971795 INFO [miner] Fuego block found at difficulty of: 367000
+2026-Apr-28 06:14:51.883277 INFO [miner] Fuego block found at difficulty of: 335000
+2026-Apr-28 06:14:51.887558 INFO [Blockchain] === Epoch 30 Report === blocks=290-299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 06:14:51.892186 INFO [Blockchain] === Epoch 30 Report === blocks=290-299 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 06:15:12.539978 INFO [miner] Fuego block found at difficulty of: 338000
+2026-Apr-28 06:21:16.587639 INFO [miner] Fuego block found at difficulty of: 348000
+2026-Apr-28 06:30:02.797970 INFO [miner] Fuego block found at difficulty of: 352000
+2026-Apr-28 06:36:26.663443 INFO [miner] Fuego block found at difficulty of: 351000
+2026-Apr-28 06:40:15.333749 INFO [miner] Fuego block found at difficulty of: 354000
+2026-Apr-28 06:40:33.723703 INFO [miner] Fuego block found at difficulty of: 363000
+2026-Apr-28 06:54:54.695448 INFO [miner] Fuego block found at difficulty of: 375000
+2026-Apr-28 06:57:43.108464 INFO [miner] Fuego block found at difficulty of: 360000
+2026-Apr-28 07:01:26.906378 INFO [miner] Fuego block found at difficulty of: 372000
+2026-Apr-28 07:02:12.025914 INFO [miner] Fuego block found at difficulty of: 382000
+2026-Apr-28 07:02:12.028155 INFO [Blockchain] === Epoch 31 Report === blocks=300-309 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 07:02:12.031356 INFO [Blockchain] === Epoch 31 Report === blocks=300-309 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 07:09:18.990112 INFO [miner] Fuego block found at difficulty of: 395000
+2026-Apr-28 07:13:01.329947 INFO [miner] Fuego block found at difficulty of: 397000
+2026-Apr-28 07:18:57.586714 INFO [miner] Fuego block found at difficulty of: 409000
+2026-Apr-28 07:28:59.761030 INFO [miner] Fuego block found at difficulty of: 414000
+2026-Apr-28 07:32:01.654987 INFO [miner] Fuego block found at difficulty of: 407000
+2026-Apr-28 07:44:53.468535 INFO [miner] Fuego block found at difficulty of: 421000
+2026-Apr-28 07:44:58.012800 INFO [miner] Fuego block found at difficulty of: 406000
+2026-Apr-28 07:48:03.581370 INFO [miner] Fuego block found at difficulty of: 421000
+2026-Apr-28 07:53:13.643129 INFO [miner] Fuego block found at difficulty of: 435000
+2026-Apr-28 07:55:19.967476 INFO [miner] Fuego block found at difficulty of: 444000
+2026-Apr-28 07:55:19.971031 INFO [Blockchain] === Epoch 32 Report === blocks=310-319 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 07:55:19.974315 INFO [Blockchain] === Epoch 32 Report === blocks=310-319 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 07:58:30.983659 INFO [miner] Fuego block found at difficulty of: 462000
+2026-Apr-28 08:05:40.974821 INFO [miner] Fuego block found at difficulty of: 480000
+2026-Apr-28 08:46:15.685374 INFO [miner] Fuego block found at difficulty of: 482000
+2026-Apr-28 08:57:30.444824 INFO [miner] Fuego block found at difficulty of: 380000
+2026-Apr-28 08:59:21.332002 INFO [miner] Fuego block found at difficulty of: 372000
+2026-Apr-28 09:10:25.354966 INFO [miner] Fuego block found at difficulty of: 384000
+2026-Apr-28 09:11:34.983642 INFO [miner] Fuego block found at difficulty of: 376000
+2026-Apr-28 09:15:47.278647 INFO [miner] Fuego block found at difficulty of: 389000
+2026-Apr-28 09:37:04.157079 INFO [miner] Fuego block found at difficulty of: 398000
+2026-Apr-28 09:43:48.181488 INFO [miner] Fuego block found at difficulty of: 366000
+2026-Apr-28 09:43:48.185440 INFO [Blockchain] === Epoch 33 Report === blocks=320-329 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 09:43:48.188749 INFO [Blockchain] === Epoch 33 Report === blocks=320-329 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 09:53:03.726934 INFO [miner] Fuego block found at difficulty of: 368000
+2026-Apr-28 10:21:59.311470 INFO [miner] Fuego block found at difficulty of: 365000
+2026-Apr-28 10:31:20.650970 INFO [miner] Fuego block found at difficulty of: 323000
+2026-Apr-28 10:43:12.054628 INFO [miner] Fuego block found at difficulty of: 321000
+2026-Apr-28 11:12:40.071200 INFO [miner] Fuego block found at difficulty of: 314000
+2026-Apr-28 11:16:03.016027 INFO [miner] Fuego block found at difficulty of: 282000
+2026-Apr-28 11:37:00.770712 INFO [miner] Fuego block found at difficulty of: 288000
+2026-Apr-28 11:56:55.962969 INFO [miner] Fuego block found at difficulty of: 271000
+2026-Apr-28 12:12:56.209020 INFO [miner] Fuego block found at difficulty of: 257000
+2026-Apr-28 12:14:02.833129 INFO [miner] Fuego block found at difficulty of: 248000
+2026-Apr-28 12:14:02.835316 INFO [Blockchain] === Epoch 34 Report === blocks=330-339 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 12:14:02.839972 INFO [Blockchain] === Epoch 34 Report === blocks=330-339 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 12:37:35.779264 INFO [miner] Fuego block found at difficulty of: 254000
+2026-Apr-28 12:56:28.940684 INFO [miner] Fuego block found at difficulty of: 238000
+2026-Apr-28 13:03:16.844001 INFO [miner] Fuego block found at difficulty of: 227000
+2026-Apr-28 13:04:05.294384 INFO [miner] Fuego block found at difficulty of: 228000
+2026-Apr-28 13:06:36.790036 INFO [miner] Fuego block found at difficulty of: 233000
+2026-Apr-28 13:13:15.181115 INFO [miner] Fuego block found at difficulty of: 239000
+2026-Apr-28 13:31:20.203382 INFO [miner] Fuego block found at difficulty of: 240000
+2026-Apr-28 13:45:52.628140 INFO [miner] Fuego block found at difficulty of: 230000
+2026-Apr-28 13:58:33.175030 INFO [miner] Fuego block found at difficulty of: 224000
+2026-Apr-28 14:05:58.819808 INFO [miner] Fuego block found at difficulty of: 219000
+2026-Apr-28 14:05:58.823240 INFO [Blockchain] === Epoch 35 Report === blocks=340-349 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 14:05:58.828282 INFO [Blockchain] === Epoch 35 Report === blocks=340-349 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 14:07:58.474300 INFO [miner] Fuego block found at difficulty of: 219000
+2026-Apr-28 14:16:34.548817 INFO [miner] Fuego block found at difficulty of: 224000
+2026-Apr-28 14:19:08.302971 INFO [miner] Fuego block found at difficulty of: 223000
+2026-Apr-28 14:19:21.036037 INFO [miner] Fuego block found at difficulty of: 228000
+2026-Apr-28 14:40:57.887821 INFO [miner] Fuego block found at difficulty of: 233000
+2026-Apr-28 14:42:23.515192 INFO [miner] Fuego block found at difficulty of: 219000
+2026-Apr-28 14:45:43.106730 INFO [miner] Fuego block found at difficulty of: 224000
+2026-Apr-28 14:46:40.124996 INFO [miner] Fuego block found at difficulty of: 228000
+2026-Apr-28 14:51:04.200218 INFO [miner] Fuego block found at difficulty of: 234000
+2026-Apr-28 15:09:46.106013 INFO [miner] Fuego block found at difficulty of: 237000
+2026-Apr-28 15:09:46.109877 INFO [Blockchain] === Epoch 36 Report === blocks=350-359 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 15:09:46.115037 INFO [Blockchain] === Epoch 36 Report === blocks=350-359 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 15:27:42.705086 INFO [miner] Fuego block found at difficulty of: 224000
+2026-Apr-28 15:27:52.098405 INFO [miner] Fuego block found at difficulty of: 212000
+2026-Apr-28 15:30:49.470560 INFO [miner] Fuego block found at difficulty of: 216000
+2026-Apr-28 15:32:30.396465 INFO [miner] Fuego block found at difficulty of: 221000
+2026-Apr-28 15:51:10.480594 INFO [miner] Fuego block found at difficulty of: 227000
+2026-Apr-28 15:56:35.123047 INFO [miner] Fuego block found at difficulty of: 214000
+2026-Apr-28 15:59:39.178613 INFO [miner] Fuego block found at difficulty of: 217000
+2026-Apr-28 16:23:11.467801 INFO [miner] Fuego block found at difficulty of: 222000
+2026-Apr-28 16:27:27.934996 INFO [miner] Fuego block found at difficulty of: 204000
+2026-Apr-28 16:29:43.655054 INFO [miner] Fuego block found at difficulty of: 207000
+2026-Apr-28 16:29:43.658479 INFO [Blockchain] === Epoch 37 Report === blocks=360-369 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 16:29:43.663502 INFO [Blockchain] === Epoch 37 Report === blocks=360-369 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 16:37:09.648770 INFO [miner] Fuego block found at difficulty of: 213000
+2026-Apr-28 16:37:26.478604 INFO [miner] Fuego block found at difficulty of: 213000
+2026-Apr-28 16:43:54.060672 INFO [miner] Fuego block found at difficulty of: 220000
+2026-Apr-28 16:57:12.509054 INFO [miner] Fuego block found at difficulty of: 222000
+2026-Apr-28 17:03:22.087719 INFO [miner] Fuego block found at difficulty of: 215000
+2026-Apr-28 17:12:31.482274 INFO [miner] Fuego block found at difficulty of: 217000
+2026-Apr-28 17:13:54.368342 INFO [miner] Fuego block found at difficulty of: 216000
+2026-Apr-28 17:15:30.141876 INFO [miner] Fuego block found at difficulty of: 223000
+2026-Apr-28 17:15:59.843598 INFO [miner] Fuego block found at difficulty of: 231000
+2026-Apr-28 17:17:59.596506 INFO [miner] Fuego block found at difficulty of: 240000
+2026-Apr-28 17:17:59.598749 INFO [Blockchain] === Epoch 38 Report === blocks=370-379 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 17:17:59.603488 INFO [Blockchain] === Epoch 38 Report === blocks=370-379 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 17:20:30.936077 INFO [miner] Fuego block found at difficulty of: 249000
+2026-Apr-28 17:21:22.565678 INFO [miner] Fuego block found at difficulty of: 258000
+2026-Apr-28 17:21:54.992842 INFO [miner] Fuego block found at difficulty of: 268000
+2026-Apr-28 17:26:06.437457 INFO [miner] Fuego block found at difficulty of: 279000
+2026-Apr-28 17:29:01.412093 INFO [miner] Fuego block found at difficulty of: 288000
+2026-Apr-28 17:30:01.017298 INFO [miner] Fuego block found at difficulty of: 300000
+2026-Apr-28 17:42:03.652993 INFO [miner] Fuego block found at difficulty of: 314000
+2026-Apr-28 17:46:35.528381 INFO [miner] Fuego block found at difficulty of: 302000
+2026-Apr-28 17:54:39.199248 INFO [miner] Fuego block found at difficulty of: 310000
+2026-Apr-28 18:03:38.108256 INFO [miner] Fuego block found at difficulty of: 309000
+2026-Apr-28 18:03:38.111982 INFO [Blockchain] === Epoch 39 Report === blocks=380-389 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 18:03:38.117045 INFO [Blockchain] === Epoch 39 Report === blocks=380-389 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 18:12:43.355818 INFO [miner] Fuego block found at difficulty of: 306000
+2026-Apr-28 18:14:12.921667 INFO [miner] Fuego block found at difficulty of: 302000
+2026-Apr-28 18:36:00.907548 INFO [miner] Fuego block found at difficulty of: 315000
+2026-Apr-28 18:48:01.508745 INFO [miner] Fuego block found at difficulty of: 282000
+2026-Apr-28 19:08:24.480795 INFO [miner] Fuego block found at difficulty of: 274000
+2026-Apr-28 19:33:53.468260 INFO [miner] Fuego block found at difficulty of: 251000
+2026-Apr-28 19:43:59.769268 INFO [miner] Fuego block found at difficulty of: 225000
+2026-Apr-28 19:44:09.589602 INFO [miner] Fuego block found at difficulty of: 222000
+2026-Apr-28 19:45:40.673916 INFO [miner] Fuego block found at difficulty of: 229000
+2026-Apr-28 19:48:46.893131 INFO [miner] Fuego block found at difficulty of: 236000
+2026-Apr-28 19:48:46.897160 INFO [Blockchain] === Epoch 40 Report === blocks=390-399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-28 19:48:46.902021 INFO [Blockchain] === Epoch 40 Report === blocks=390-399 swapFees=0 cdShare=0 treasuryShare=0 treasuryBal=0 cdLocked=80000000 feeRate=0
+2026-Apr-30 15:23:51.313685 INFO [daemon]  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-30 15:23:51.314826 INFO [daemon] Module folder: /Users/aejt/fuego_WS/src/testnetd
+2026-Apr-30 15:23:51.314872 INFO [daemon] Starting in testnet mode!
+2026-Apr-30 15:23:51.315920 INFO [daemon] Initializing p2p server...
+2026-Apr-30 15:23:51.316174 INFO [node_server] Binding on 0.0.0.0:20888
+2026-Apr-30 15:23:51.317195 INFO [miner] Fuego mining has been stopped, 0 halted
+2026-Apr-30 15:23:51.317268 ERROR [daemon] Exception: bind: Address already in use [system:48 at /opt/homebrew/include/boost/asio/detail/reactive_socket_service.hpp:161:33 in function 'bind']

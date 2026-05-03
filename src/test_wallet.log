@@ -1,0 +1,777 @@
+2026-Apr-27 00:53:04.509679 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:53:04.510523 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:54:05.488516 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:54:05.489176 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:55:18.743222 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:55:18.744219 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:55:23.328656 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:55:23.329117 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:57:16.688591 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:57:16.689649 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:57:50.777630 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:57:50.778169 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:57:57.683703 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:57:57.684136 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:58:25.530667 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:58:25.531107 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 00:59:40.167763 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 00:59:40.168775 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:00:17.777453 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 01:00:17.778067 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:01:54.997680 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 01:01:54.998450 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:03:21.482081 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 01:03:21.482670 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:06:20.319464 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 01:06:20.320250 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:06:20.328766 INFO [firewallet] Connected to remote node: localhost
+2026-Apr-27 01:15:53.859677 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 01:15:53.860722 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 01:15:53.866259 INFO [firewallet] Connected to remote node: localhost
+2026-Apr-27 01:16:28.287792 INFO [firewallet] fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account CANNOT be recovered. Freedom isn't free - the cost is responsibility. Schofield's 2nd Law of Computing states that data doesn't really exist unless you have at least two copies of it-- then keep each somewhere safe & secure.   
+2026-Apr-27 01:16:28.287792 INFO [firewallet] 
+2026-Apr-27 01:16:28.289104 INFO [firewallet] **********************************************************************
+Your wallet has been generated.
+Use "help" command to see the list of available commands.
+Always use "exit" command when closing fire_wallet to save
+current session's state. Otherwise, you will possibly need to synchronize 
+your wallet again. Your wallet keys are not under risk in doing so.
+**********************************************************************
+2026-Apr-27 01:17:14.450228 INFO [firewallet] Commands: 
+  address              Show current wallet public address
+  balance              Show current wallet balance
+  burn                 burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)
+  burn_info            burn_info <id> - Get detailed info of burn by ID
+  cold                 cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)
+  cold_info            cold_info <id> - Get detailed info on your Certificate of Ledger Deposits
+  complete_swap        complete_swap <adaptor_secret> <peer_partial_sig> <tx_prefix_hash> - Complete swap with revealed adaptor secret
+  create_cold_secret   create_cold_secret <amount> <term_blocks> <chain_code> <metadata> - Create COLD commitment
+  create_integrated    create_integrated <payment_id> - Create an integrated address with a payment ID
+  elderking_ceremony   elderking_ceremony - (DEPRECATED)
+  exit                 Close wallet
+  export_keys          Show the secret keys of the current wallet
+  gen_new_sub          gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).
+  gen_proof            gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)
+  get_reserve_proof    all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. 
+  get_tx_proof         Generate a signature to prove payment: <txid> <address> [<txkey>]
+  height               Show blockchain height
+  help                 Show this help
+  incoming_transfers   Show incoming transfers
+  initiate_swap        initiate_swap <amount> <peer_pubkey> <pair> [role] - Start adaptor-sig atomic swap (Musig2 escrow)
+  list_aliases         list_aliases - List all registered TEST aliases on the network
+  list_burns           list_burns - List all burn transactions.
+  list_cold            list_cold - List all COLD yield deposits
+  list_subs            list_subs - List all sub-addresses for this wallet
+  list_transfers       list_transfers <block_height> - Show all known transfers, optionally from a certain block height
+  lookup_alias         lookup_alias <alias_or_address> - Look up a TEST alias by name or wallet address
+  migrate_cold         migrate_cold <id> - Migrate a pre-v3 legacy deposit to v3 format (register commitment for L2 claims)
+  optimize             Combine many available outputs into a few by sending a transaction to self
+  optimize_all         Optimize your wallet several times so you can send large transactions
+  outputs              Show the number of unlocked outputs available for a transaction
+  payment_id           Generate random Payment ID
+  payments             payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>
+  refund_swap          refund_swap <peer_partial_sig> <tx_prefix_hash> - Cooperative refund of Musig2 escrow
+  register_alias       register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)
+  reset                Discard cache data and start synchronizing from the start
+  save                 Save wallet synchronized data
+  set_log              set_log <level> - Change current log level, <level> is a number 0-4
+  show_dust            Show the number of unmixable dust outputs
+  sign_message         Sign a message with your wallet keys
+  start_mining         start_mining [<threads>] - Start mining to your wallet
+  stop_mining          stop_mining - Stop mining
+  swap                 swap - Launch swapxfg testnet swap terminal
+  transfer             transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. 
+  unstake              unstake - (DEPRECATED)
+  verify_signature     Verify a signed message
+  withdraw             withdraw <id> - Withdraw a deposit
+  
+
+2026-Apr-27 01:19:51.178999 INFO [firewallet] Mining started in daemon
+2026-Apr-27 01:19:53.284151 INFO [firewallet] Height 1, transaction 68dce424c855204335b93e25db0c0943479e2a5b52f5464d297e513d824f68e8, received 30.5174952
+2026-Apr-27 01:19:53.284512 INFO [firewallet] Height 2, transaction ed719657b14cd5639ef48430c822134808f608d05b7c32a07df462d0be091aff, received 30.5173788
+2026-Apr-27 01:19:53.285040 INFO [firewallet] Height 3, transaction 0ee16da21687eb0e44d3894d433bb9782a8983bc18896cbc68c3eca4cadb8e5c, received 30.5172624
+2026-Apr-27 01:19:53.285069 INFO [firewallet] Height 4, transaction 31d045068d99b9193ee01268208395454051a99889b3ea2e599fea3f59e6ffd7, received 30.5171460
+2026-Apr-27 01:22:03.305952 INFO [firewallet] Height 5, transaction d70c5f61bf87cb3c82deb03eabee88d49cd756c5b36cb0fbd14fe0112990aa85, received 30.5170296
+2026-Apr-27 01:29:43.383119 INFO [firewallet] Height 6, transaction f3a07d549f988f18a82a5184367b7b4df27efedcb001ca6d08098fbdcf161236, received 30.5169132
+2026-Apr-27 01:31:38.425508 INFO [firewallet] Height 7, transaction 419e6f76cbb846b074e4dc7a14cd31b16672e3a146f35e0d401b87e70983a9a4, received 30.5167967
+2026-Apr-27 01:33:23.444353 INFO [firewallet] Height 8, transaction c49215dc688664cc75a9027223b13bbabb6001ca85cbe871da75b1a56c1fe4aa, received 30.5166803
+2026-Apr-27 01:33:43.449178 INFO [firewallet] Height 9, transaction d241e6ef2b56aebe172e9115c09fe712cb1dea4d865b378644764c3f8b63d8b0, received 30.5165639
+2026-Apr-27 01:33:43.449253 INFO [firewallet] Height 10, transaction ce02b4556a57a582d4dae11fec013695211d949d8092cc9fcac3eff269264832, received 30.5164475
+2026-Apr-27 02:13:23.893521 INFO [firewallet] Height 11, transaction b87a6af3c57928ba452fa64ef4d15b05581eef0b1da731ca2a3a039e996f1270, received 30.5163311
+2026-Apr-27 02:31:34.149727 INFO [firewallet] Height 12, transaction 92073fcccb9484d83542f03e456309819d0ef38cc408ede7121b77e9b249d9e2, received 30.5162147
+2026-Apr-27 02:39:04.312754 INFO [firewallet] Height 13, transaction 461e095725be24dd1b7ef9d8889e4bc7e90ea4213ea0f721c1d847963e084f15, received 30.5160983
+2026-Apr-27 02:50:14.602334 INFO [firewallet] Height 14, transaction c8986d539bc8ba7165e6b3cbc8a101b77d6ccae49ff7d2694882569298e11947, received 30.5159819
+2026-Apr-27 02:57:09.758582 INFO [firewallet] Height 15, transaction d4742df8de16d4337fc055fbb3771ccaffcaf7bed557d63bf898e83f182896b0, received 30.5158655
+2026-Apr-27 02:57:49.774272 INFO [firewallet] Height 16, transaction 1d4e33efabd1858aec69ca477ffafe68e778d4d7cfb689f5811dbc1ae9bdf4aa, received 30.5157491
+2026-Apr-27 02:59:34.812277 INFO [firewallet] Height 17, transaction bba3c08a6ebd8e7260c97ebf711ca0a229eccaa6fda6b66809c142f264611376, received 30.5156326
+2026-Apr-27 03:01:59.866232 INFO [firewallet] Height 18, transaction fb2e616d3104a2d8b30a498b63842557d3343fe991618cc2bd418a441553faac, received 30.5155162
+2026-Apr-27 03:05:49.965304 INFO [firewallet] Height 19, transaction 9f48e209cc74c5f159b0cc0a48302f76c9848c4b49e4c463ab986758b72ecc38, received 15.2576999
+2026-Apr-27 03:05:59.967115 INFO [firewallet] Height 20, transaction f70fa97ef6c463c8e886b3b19883acfa3fe169f40e2a175484c65965c2870dda, received 7.6288354
+2026-Apr-27 03:06:19.975091 INFO [firewallet] Height 21, transaction 13d963ddc9cf0e1a6c32d7eecc626d11df2f89232ab1649d3e9299b0f27d7b1c, received 7.6288281
+2026-Apr-27 03:06:24.977170 INFO [firewallet] Height 22, transaction 4880bf571421ae2cc632faf76471269891ef0124844cb1d7967d5f077c19e817, received 7.6288208
+2026-Apr-27 03:06:39.983287 INFO [firewallet] Height 23, transaction 236a6c1b6dfb28e85d0f93c635284342b67c9c8517ba7bcb067f7df172130b6f, received 7.6288135
+2026-Apr-27 03:06:44.988839 INFO [firewallet] Height 24, transaction a9af71c9c39bb76f9d10a140df9d725d985cbd7e6cfa6b2825083c709f37e2b7, received 7.6288063
+2026-Apr-27 03:06:44.988889 INFO [firewallet] Height 25, transaction f022d46981ee816cd202d9be877a8d3245506738ccca5f1c53e8e0e1dd2c8e68, received 7.6287990
+2026-Apr-27 03:06:44.988917 INFO [firewallet] Height 26, transaction cdcecb05c632f3623a386baef5f5591d1ce17f979b10977130c1cd9c297875a3, received 7.6287917
+2026-Apr-27 03:06:44.988941 INFO [firewallet] Height 27, transaction aa56220b81561655fa3a24e5a0e4781073400c7692659dd9ed2989c160d45488, received 7.6287844
+2026-Apr-27 03:06:54.989296 INFO [firewallet] Height 28, transaction d93cc21b9d5a3d5a4de22fcfa02af9e7eb7a7700f64fef27690266fe3c7cdb7e, received 7.6287772
+2026-Apr-27 03:06:59.992539 INFO [firewallet] Height 29, transaction 618eedc5a2375aaecf8a1fd9f07fa2047b33b858edb34340454e55023f2ec18a, received 7.6287699
+2026-Apr-27 03:06:59.992599 INFO [firewallet] Height 30, transaction 990c6aeba2bf9c264a502faf3879c77225968fa1070f8dfc6bfe60b51828abc7, received 7.6287626
+2026-Apr-27 03:07:19.997603 INFO [firewallet] Height 31, transaction 559aa5e200ae6de49356dc647acf4f8c3bf11e69b5b28ee32dbfdd601e9c5976, received 7.6287553
+2026-Apr-27 03:07:40.005648 INFO [firewallet] Height 32, transaction 6a6b5db682fbc03c791e0649bbfbd5f81f51c10ff8013d89af8e83d83e71f928, received 7.6287481
+2026-Apr-27 03:07:55.011545 INFO [firewallet] Height 33, transaction e105e8579b52a5438955e7fe12100f3a910c9a3d006d61212dec6043a0a1f131, received 7.6287408
+2026-Apr-27 03:08:20.019449 INFO [firewallet] Height 34, transaction 54bb609a1a11c371b216691e63fe204abc7550ed246f52e5b7022f6db16c468a, received 7.6287335
+2026-Apr-27 03:08:35.025477 INFO [firewallet] Height 35, transaction f8d19e203a9ecd82bb6242e4892d71120eddd478d8d1cb86f56784992fe1313a, received 7.6287262
+2026-Apr-27 03:08:40.027603 INFO [firewallet] Height 36, transaction 1dfc33eeac2b3de215806106144ead36a9c923a48e9c64e19698fc43d88b9d25, received 7.6287190
+2026-Apr-27 03:09:00.035783 INFO [firewallet] Height 37, transaction 83c11a89bbc5b41ef27e96e7f1821a9b0cf3c6e83df4a5fac79a1b44b910a332, received 7.6287117
+2026-Apr-27 03:09:45.051645 INFO [firewallet] Height 38, transaction dca23f85eae2fff5aa87bc1bc48af40316d47ced98dae97eea73bb148adc1eed, received 7.6287044
+2026-Apr-27 03:09:55.055897 INFO [firewallet] Height 39, transaction 756d82333000fa00a6cf33f27b78120ee0f4f74ef580e94c8d5d2367020a6218, received 7.6286971
+2026-Apr-27 03:10:05.059941 INFO [firewallet] Height 40, transaction 32d743ad94bbc9316462741cdbe7a66d805d726ba44f6238d02db48f117f4d29, received 7.6286899
+2026-Apr-27 03:10:25.067750 INFO [firewallet] Height 41, transaction a977d560b9269b0f2d276badfc30c99298170a3634d86e66260b95ce3ca474f2, received 7.6286826
+2026-Apr-27 03:10:50.077836 INFO [firewallet] Height 42, transaction 72cbca5c93c0555f80c3dbc0b38bbca5a2ad1d127d5b6c37699233fde0b5984b, received 7.6286753
+2026-Apr-27 03:11:20.089938 INFO [firewallet] Height 43, transaction 72e19c0ca6d018bcefb9acf10d9b653d636324736a459b7c7c98f71d0ed5aa24, received 7.6286680
+2026-Apr-27 03:12:00.105125 INFO [firewallet] Height 44, transaction c4e817df8c487933036448829fd085d6dac912dd65face8ac67f3c091ec28861, received 7.6286608
+2026-Apr-27 03:12:35.118059 INFO [firewallet] Height 45, transaction 0a510f1ac23acd9d2c0689e85fd49b6406ba9be4689fd138ecdc3ba6e37deece, received 7.6286535
+2026-Apr-27 03:12:50.125347 INFO [firewallet] Height 46, transaction 994dc649abc55c846da375d6b68351ebd2698bd7df78ed3e2c69d8bc93a31d22, received 7.6286462
+2026-Apr-27 03:12:50.125393 INFO [firewallet] Height 47, transaction 272f3ad7b093dd2f4fa109d33f41a857193843c2fefe35a4b9062dbe209042a1, received 7.6286389
+2026-Apr-27 03:13:45.146273 INFO [firewallet] Height 48, transaction 62d988ad49647e8d7d78172d375f9a53b4325c98b780654ec30821cad0ddf2a8, received 7.6286317
+2026-Apr-27 03:14:10.154499 INFO [firewallet] Height 49, transaction 66dcd261d958c235263e437a9e1b73be66a2a53a36239203dfb1e78f31645ea3, received 7.6286244
+2026-Apr-27 03:14:20.158502 INFO [firewallet] Height 50, transaction 370b185080c5df3934fa78d048af2efe24fefa4b7c5a22117d1db9d75417a88d, received 7.6286171
+2026-Apr-27 03:14:30.162403 INFO [firewallet] Height 51, transaction 949cc6ed99fe52156331560980c7f8910f0ec70a2971a180a1c0c50248dc787f, received 7.6286098
+2026-Apr-27 03:14:35.164418 INFO [firewallet] Height 52, transaction 8820ce62f1decfb98d59d9e3400bd577ff4ad29f2094c801cf8e23f718903fe5, received 7.6286026
+2026-Apr-27 03:15:40.190666 INFO [firewallet] Height 53, transaction d7824e9643ae8703bffac5f3fe267c16410bd9f36bbcdad91da9b16ac5e4b7d4, received 7.6285953
+2026-Apr-27 03:16:10.202628 INFO [firewallet] Height 54, transaction 5b592ea3b043c9695538d50b86ed992b40b513cacfbda3bbb2321313be5807ac, received 7.6285880
+2026-Apr-27 03:16:35.212956 INFO [firewallet] Height 55, transaction 0a1c993b40f6236292141d0f5e4f91df24cdc98ae168bd9f6b5d84dd21a5c720, received 7.6285807
+2026-Apr-27 03:17:15.228796 INFO [firewallet] Height 56, transaction 4ee2901550bde372c6e6a3c22762012c91e06c46160aec575fc8fbf7b64a119b, received 7.6285735
+2026-Apr-27 03:17:20.230826 INFO [firewallet] Height 57, transaction b710e2f9244491c61978f3087172b3da907ed946c3e320f6e5eb082273a74760, received 7.6285662
+2026-Apr-27 03:21:20.323507 INFO [firewallet] Height 58, transaction 6124f37ca5c6442138be6f55fc1412f659f62ed0ec4b95d3a294fdfe69e029f2, received 7.6285589
+2026-Apr-27 03:24:45.390619 INFO [firewallet] Height 59, transaction ce0fce562fd44fda1cbf8c4be7c2fdd4854469f3fed76345bcfe1d47d9fa1d73, received 7.6285516
+2026-Apr-27 03:25:10.395492 INFO [firewallet] Height 60, transaction 50ccdfbb428f939c6fffbc56a1bdcf3a92d1b73ba39d4c4d151ff6b2db89ac8c, received 7.6285444
+2026-Apr-27 03:29:00.441355 INFO [firewallet] Height 61, transaction 56570841300a54e7960c935a0cf067ed6defc7efc21ec9507babc4e53da9b2a1, received 7.6285371
+2026-Apr-27 03:29:30.447299 INFO [firewallet] Height 62, transaction 538c0e5e98f441615765563b9526c2f6b3edbe272866cb829373b1a5914c5908, received 7.6285298
+2026-Apr-27 03:31:15.464725 INFO [firewallet] Height 63, transaction 18e1e81663d02501b25542b752512b8178b99d9ab975e67de562091de795544a, received 7.6285225
+2026-Apr-27 03:31:40.469737 INFO [firewallet] Height 64, transaction 1dc1f42bd4a3b7715488f1e1e8ca39573de23256d54c70ac8db447c004aa6487, received 7.6285153
+2026-Apr-27 03:32:00.472642 INFO [firewallet] Height 65, transaction 153ea4aa3651b402e90903473bf85123049363c9d5879ff7386d0cf695d82c56, received 7.6285080
+2026-Apr-27 03:32:25.477131 INFO [firewallet] Height 66, transaction 189ff386a7c2609666bb9f440e59e52d0ece9266f325ae1d0c9035944443b977, received 7.6285007
+2026-Apr-27 03:35:25.509313 INFO [firewallet] Height 67, transaction 8737ea19276c7df1b630fea300590be8820ca118bcefe2e76d4f7a2e0f901caa, received 7.6284934
+2026-Apr-27 03:40:00.565326 INFO [firewallet] Height 68, transaction ab8a1cf7cb10fcff2d97c3f8d2c908974d1d71b4e6e0d6b870a140896913cfd5, received 7.6284862
+2026-Apr-27 03:44:05.612274 INFO [firewallet] Height 69, transaction 851e0f15c1c1e7121df2c99a1dc38f51d65ece4d6804d77c577c180f12275cb9, received 7.6284789
+2026-Apr-27 03:44:45.620369 INFO [firewallet] Height 70, transaction a0f83c347fcf00e78ba8865c8e6d214d60d562e3e331976ce10ce3f2273885ad, received 7.6284716
+2026-Apr-27 03:46:55.646305 INFO [firewallet] Height 71, transaction bfc1cb3e6a18a0bf6c20ac7a8ff645703cc099ccd491abfc12bf7189df2a9f9d, received 7.6284643
+2026-Apr-27 03:47:30.653159 INFO [firewallet] Height 72, transaction 9776e2ab85a5bd3643b4f3ebaa123460a4767929a3e8c672e2a12c1fcfa41690, received 7.6284571
+2026-Apr-27 03:49:25.676263 INFO [firewallet] Height 73, transaction 147c841125b49f75a525213d97dfe0be0fcd0b274f27a12c8fc691e1e037c83b, received 7.6284498
+2026-Apr-27 03:51:10.697875 INFO [firewallet] Height 74, transaction 664fffbe516d36a1d495812de324ece04d3804101aadf88c3bf72a6eef082d8f, received 7.6284425
+2026-Apr-27 03:51:50.705927 INFO [firewallet] Height 75, transaction 7f0cb5ecf945c830b3a1bfac2890a0f5b0f2ca5862d49e4c4f049c64791ad376, received 7.6284352
+2026-Apr-27 03:52:50.717059 INFO [firewallet] Height 76, transaction 85a6d31b885f1bc12cbedb8f6fb27e1226bd005332b3515ee4e467cd32154bd5, received 7.6284280
+2026-Apr-27 03:53:00.723659 INFO [firewallet] Height 77, transaction 0bcf35d20b47d7dcca7aa5abd7ca43281562b69991fbedcdcf5e452be488df0c, received 7.6284207
+2026-Apr-27 03:58:10.816824 INFO [firewallet] Height 78, transaction de98c72b7e1faac4f466d5d3916d9ca36eee728ea2c729874d10bb76d5ef28e5, received 7.6284134
+2026-Apr-27 04:10:51.044553 INFO [firewallet] Height 79, transaction 93c3a781a9664e4391d8409eeff8d743dea05b2117414b3e680b97f79674db1b, received 7.6284061
+2026-Apr-27 04:13:26.075487 INFO [firewallet] Height 80, transaction 1a352f124820398e39b85424e7f050193f3ab70be4c954ccbfbd4c26cc4103ab, received 7.6283989
+2026-Apr-27 04:13:51.080608 INFO [firewallet] Height 81, transaction 97980607b080705f73ecc38e369c21c96ff0aee25e27cd3297b5e3fc632b14b6, received 7.6283916
+2026-Apr-27 04:14:26.092046 INFO [firewallet] Height 82, transaction 2fdb9fb687c19a8b8ed9a63c975296e491cfc2beb92aca0175cf419987c05d95, received 7.6283843
+2026-Apr-27 04:17:51.111640 INFO [firewallet] Height 83, transaction ac7f55eb5a70f96850132716011c11a660ddc5fece14780b1dfea2c2db7a2bb4, received 7.6283770
+2026-Apr-27 04:20:26.130880 INFO [firewallet] Height 84, transaction c1e581aa7727d8e50a2cca335edf95fa845bd3a67ac5279e360d8ebc3957f3d5, received 7.6283698
+2026-Apr-27 04:23:36.184549 INFO [firewallet] Height 85, transaction 2ea6124a9f3f002d17a92c4a6aaa7ed859b91b6abb73e6446a73d2aa28177ce2, received 7.6283625
+2026-Apr-27 04:29:31.310641 INFO [firewallet] Height 86, transaction ec18d573c892e46d782c110e4cedc731b8d37c58c3e85c943a819e80a19da4e9, received 7.6283552
+2026-Apr-27 04:30:26.330923 INFO [firewallet] Height 87, transaction 6ac786392358f877920216f055a4c714bb3a8472fb1928df2e7718a3e482ad98, received 7.6283479
+2026-Apr-27 04:39:06.534107 INFO [firewallet] Height 88, transaction 10462e9c4f7d4cac8ae7546e2118591fad550101f7abdb9afcdcf06f29122d72, received 7.6283407
+2026-Apr-27 04:40:26.563807 INFO [firewallet] Height 89, transaction 09bb45ac21e69988bf72ddcb51c0478b645e21c3f7936c28c4780dea36df8dea, received 7.6283334
+2026-Apr-27 04:45:21.672479 INFO [firewallet] Height 90, transaction cb7281dadfaf88357cbd5a42aae47804157a7214255221567da66a8c7868309a, received 7.6283261
+2026-Apr-27 04:45:41.680717 INFO [firewallet] Height 91, transaction 4708bba7a23a9fd4cf7f6c13bdca2733c174e9ad6ff5b3773ff8fb57e345d8c6, received 7.6283188
+2026-Apr-27 04:46:11.692808 INFO [firewallet] Height 92, transaction 19606626162162ff1be15cf7ebb691c7ac96eeccdedc5d90d8e19fcbbd419c00, received 7.6283116
+2026-Apr-27 04:48:41.749277 INFO [firewallet] Height 93, transaction fadc72edd6fe9667911ddf549fbc62c0c24e59a0128b677b455754a6fd1b9663, received 7.6283043
+2026-Apr-27 04:50:06.784085 INFO [firewallet] Height 94, transaction 87b8ef83a7b656e58f56fd3e1ada1ff750ac7c18fb8fd4d3a84860ad69eb3e0e, received 7.6282970
+2026-Apr-27 05:07:22.168861 INFO [firewallet] Height 95, transaction d307afdbf0abefe5246d82a4e21fd0b3a57e0f0ca324c9f5c83f4d0fd770aa95, received 7.6282897
+2026-Apr-27 05:14:50.252250 INFO [firewallet] Height 96, transaction c7de1ddce36bdbff082cdcca388f8e8b561a9a0b4735604cd48955c45f2f4873, received 7.6282825
+2026-Apr-27 05:15:30.260119 INFO [firewallet] Height 97, transaction bd93adff8523c9a75b2f761c44731139be8eacee795bf792668bb67e78c6627d, received 7.6282752
+2026-Apr-27 05:37:05.641471 INFO [firewallet] Height 98, transaction 498462ebc02cf2758e4a52ed17452029ca2ceb61a7ada231a6d13a2b78af87c6, received 7.6282679
+2026-Apr-27 05:52:40.794555 INFO [firewallet] Height 99, transaction 5d475e98cf65978fb585c22f797ab13df5e21d58a365f77ac84c17631d4de26b, received 7.6282606
+2026-Apr-27 05:54:35.817455 INFO [firewallet] Height 100, transaction 5a9959f45d2e6fdeebb50e8daa75f3289e2e1e24fc747627502a87ecbf36b944, received 7.6282534
+2026-Apr-27 05:59:55.878294 INFO [firewallet] Height 101, transaction ab768207d93546474e03598a9a98fea5d5e63dff0fd503127d41db57907f95e3, received 7.6282461
+2026-Apr-27 06:07:10.948597 INFO [firewallet] Height 102, transaction 2d012cfc8f6a2b6c17af1dab3d50b27f500d563215784e81dc14fecdba698d3a, received 7.6282388
+2026-Apr-27 06:27:21.379046 INFO [firewallet] Height 103, transaction e3e1e117e3c549b7c2809396cfe592bf7f519bdb1fd7f7cbc257991d5eebe24b, received 7.6282315
+2026-Apr-27 06:32:36.490398 INFO [firewallet] Height 104, transaction 778a8d17fbdd9da808fec85230a6fcc2aebb5d4d3a63a4f01bb530829b4693d7, received 7.6282243
+2026-Apr-27 06:44:01.573879 INFO [firewallet] Height 105, transaction 7056710c434a41cc6d3b7c96bdb93eb2c8f3e4d1814522a455da82ce61979b29, received 7.6282170
+2026-Apr-27 06:54:26.758602 INFO [firewallet] Height 106, transaction 4eb360dce73aeb33d9fd1972d2a34de792d519318a5830fbdccee27bc591c1ee, received 7.6282097
+2026-Apr-27 06:57:41.828743 INFO [firewallet] Height 107, transaction cd129afef948b5fdc8d00af98d294b6a0db41b5e2168cce59da194a3e542173c, received 7.6282024
+2026-Apr-27 07:02:46.938160 INFO [firewallet] Height 108, transaction 2e0195c1a151e240ceb13d231257a95c37740432f6663355c9b42c61c2533b22, received 7.6281952
+2026-Apr-27 07:10:57.114285 INFO [firewallet] Height 109, transaction 828aa71c422ec0b2515320b497c0e8fec41602e5aa6582db8e90ed8c650d5491, received 7.6281879
+2026-Apr-27 07:13:57.168628 INFO [firewallet] Height 110, transaction 0913a27fe67f68fdd23b0850478b2448763769c7fcc5b8c369983787d56eeb79, received 7.6281806
+2026-Apr-27 07:22:52.347781 INFO [firewallet] Height 111, transaction 275c87f6cd05c296acac511e4b6e2c5ab26b6483d32dffb1b1d7ebabd67a689f, received 7.6281733
+2026-Apr-27 07:25:37.401376 INFO [firewallet] Height 112, transaction a4044500637891e7aeeeb58d55a8e8ec2d7f4c88425238b31c12a3974ff7ac1d, received 7.6281661
+2026-Apr-27 07:36:12.602241 INFO [firewallet] Height 113, transaction 1a276cad1272e167ca348a40cf21e8689640e711770b59061e1fbd83a6105bee, received 7.6281588
+2026-Apr-27 07:48:07.830358 INFO [firewallet] Height 114, transaction 30ff8743d965b4e95b7a99871081a1eba72024365d92af2456711b2d40c3763f, received 7.6281515
+2026-Apr-27 07:53:52.950669 INFO [firewallet] Height 115, transaction a2ee915d29afa3c3ff65e877279ec53e2bdb163ac2804c5ee8c8ed9c20422405, received 7.6281442
+2026-Apr-27 08:07:03.217485 INFO [firewallet] Height 116, transaction 430059438828970e4fe98c5a583f3d4055c1e9e37daab0d422b60730c7fba658, received 7.6281370
+2026-Apr-27 08:07:53.236032 INFO [firewallet] Height 117, transaction 7f0d0a614df7bcb4167b25f27367ebc5c91b5ca50cab55ebee20952a7a4f616d, received 7.6281297
+2026-Apr-27 08:16:38.415613 INFO [firewallet] Height 118, transaction f1130366d3d6f4233cf83920cb254af8ff0af8949853bad8eb8445c4eb30237b, received 7.6281224
+2026-Apr-27 08:20:53.500888 INFO [firewallet] Height 119, transaction 97ce86ecc9b0432f33f4fca221a1127c36187b473b607cde9b51fada9598d9b4, received 7.6281151
+2026-Apr-27 08:34:38.763441 INFO [firewallet] Height 120, transaction 9bec187f085e6de4ba11fa9e14fd9cca5f2fd63617bfb48a85dec80bbc026731, received 7.6281079
+2026-Apr-27 08:40:28.882664 INFO [firewallet] Height 121, transaction 972bdc5da985d63c6c20d8751dad6440f9e0118eece1210bfe729a38f4c20cde, received 7.6281006
+2026-Apr-27 08:51:34.112021 INFO [firewallet] Height 122, transaction c928e8f5744ebd5fff3a15cc4a5c61457e49b6d98e7b51cbe4686ad36ff49f82, received 7.6280933
+2026-Apr-27 08:59:34.279661 INFO [firewallet] Height 123, transaction 023bc78594f5ed677d90737f02be6dc92a1dcacbcf252321fc92bd05ae7f9660, received 7.6280860
+2026-Apr-27 09:00:44.303741 INFO [firewallet] Height 124, transaction 3a5c5235f8ca4b0ea1fac4c8ae1b446aafa43ab57dcf0435b7ad334712fe6a44, received 7.6280788
+2026-Apr-27 09:01:19.314683 INFO [firewallet] Height 125, transaction 70772363e4cfdc4edfd9bcfead32912fa2c6ecbe52eed6bf3a7e5c1ba7cb1c05, received 7.6280715
+2026-Apr-27 09:07:19.439206 INFO [firewallet] Height 126, transaction bec921ea798c75c91623c6b1fda9578be4fde6ee51fefa1fdf7f964be10e30e5, received 7.6280642
+2026-Apr-27 09:14:39.592412 INFO [firewallet] Height 127, transaction 52d0fe25482016309cac91d6f17a07e90cb887534ce8bb416dc545f2f256d919, received 7.6280569
+2026-Apr-27 09:20:44.721511 INFO [firewallet] Height 128, transaction e2e94a171d16c25fac53fce506584aaf08fd09e6a60f526478e7c606335f6542, received 7.6280497
+2026-Apr-27 09:32:09.963870 INFO [firewallet] Height 129, transaction 9a904d82ba25cbae0b7165cb112b99b766acc884e614a02e8482979640011a5e, received 7.6280424
+2026-Apr-27 09:32:19.967674 INFO [firewallet] Height 130, transaction 63cd69f5a8e91731777c78387554e9e82f99dffce9838d1771bb643a0dab721a, received 7.6280351
+2026-Apr-27 09:32:24.967705 INFO [firewallet] Height 131, transaction 31224309f7569e28114ce17a836642e04bfe9bdce135af27ac59f6c41648e547, received 7.6280278
+2026-Apr-27 10:25:31.036650 INFO [firewallet] Height 132, transaction 8dff8a74a73917e04890e9e5b3e1cbc6890be79df8b0d5549e0e471ef0161ad3, received 7.6280206
+2026-Apr-27 10:32:36.180643 INFO [firewallet] Height 133, transaction cf761ca2b343477315853bef959e72e885d25bba4c2f1c69157a52d7e2939e46, received 7.6280133
+2026-Apr-27 10:42:06.375698 INFO [firewallet] Height 134, transaction 4ac449a0de3084b547c4098ec0aef40694ab8a54548c1655892873bcad612907, received 7.6280060
+2026-Apr-27 10:44:51.430723 INFO [firewallet] Height 135, transaction d7a736ac35881c92c36710d88f2ea893bafc4a49bd1914d44ca96b949d35eb06, received 7.6279987
+2026-Apr-27 10:47:01.476779 INFO [firewallet] Height 136, transaction 4ed3eaddf7f6faf1d9c511acb4f506b139fd82250f020fc23fe1f6c20c5462d8, received 7.6279915
+2026-Apr-27 10:49:46.533229 INFO [firewallet] Height 137, transaction b0e5f26e2a6d6f2e35ed5c6479ecec9a16dadecc683c8a46130200c0d266957f, received 7.6279842
+2026-Apr-27 11:32:38.914998 INFO [firewallet] Height 138, transaction c51591188b1d124bcd73eea73d5508f1aae60a4ad148da9bcdb69633215bc742, received 7.6279769
+2026-Apr-27 11:39:03.969256 INFO [firewallet] Height 139, transaction 09f624be7bd3a095e5ee231d210900be63e290642555c56492ca1735ad50bebe, received 7.6279696
+2026-Apr-27 11:45:09.050791 INFO [firewallet] Height 140, transaction 4bba4f1b06ba9d0a79b1b8f895999d10d8a580d1fd65a5480abfd65ba1bb3c1d, received 7.6279624
+2026-Apr-27 11:47:29.101053 INFO [firewallet] Height 141, transaction 69aabf425bbcad124615b4008da06f27cf1f2761b5a758dd7985f416f6b0dd51, received 7.6279551
+2026-Apr-27 11:51:19.179473 INFO [firewallet] Height 142, transaction 85c2de47331011b546b9fcdbb26af5e0669751aba01ea9c3756012dac96661f6, received 7.6279478
+2026-Apr-27 11:53:04.206650 INFO [firewallet] Height 143, transaction 00773732b554558ffc7bc7d92bb7c0e023e3b58708639e152d933c30534af2cb, received 7.6279405
+2026-Apr-27 11:55:09.246139 INFO [firewallet] Height 144, transaction 7409171ecfce5f07fad39b9b3ebde06901aacc444679ed410b123a47bdedff50, received 7.6279333
+2026-Apr-27 11:56:44.277498 INFO [firewallet] Height 145, transaction 8a27de269a8863c935391c80aebf8d8fb85270b25785b1c49b43517e0f250cd5, received 7.6279260
+2026-Apr-27 12:03:04.344313 INFO [firewallet] Height 146, transaction 2570661e34a8692b0000ac127ee57f2e987c503be849558c2fb4ee656268dbd2, received 7.6279187
+2026-Apr-27 12:06:49.389492 INFO [firewallet] Height 147, transaction e94120dfb5044d65a0ec7634ae787c215823b4ba94dd0e07f3eae844107bfbbe, received 7.6279114
+2026-Apr-27 12:10:59.430358 INFO [firewallet] Height 148, transaction c3677bfdab4fecbd3aedadcc11f2a8f571f9e904575c5ce5c93ef461ed0cb247, received 7.6279042
+2026-Apr-27 12:11:29.433723 INFO [firewallet] Height 149, transaction 0c5ed5f725ef8509e4deb326441cbd108fffda30ab87500512075465a176806f, received 7.6278969
+2026-Apr-27 12:24:44.583818 INFO [firewallet] Height 150, transaction 3e867355e94f18f1beee9eaca01a695e141f9076c5e2bca8635067f03084a28c, received 7.6278896
+2026-Apr-27 12:27:49.640984 INFO [firewallet] Height 151, transaction c8a5545de232f443762ae6f76e6290c389eca905e4c7df02c1b4f77480c9349b, received 7.6278823
+2026-Apr-27 12:48:20.006599 INFO [firewallet] Height 152, transaction 04eddaab7e5d8d146e09c9c600a2b17255fc823a7eadb23a661831a3298c9882, received 7.6278751
+2026-Apr-27 12:51:45.055869 INFO [firewallet] Height 153, transaction b7a10124e6424e8f109c791dc3467a409ffcf8d320008084bd1e0bf29455bf2e, received 7.6278678
+2026-Apr-27 12:52:00.054619 INFO [firewallet] Height 154, transaction 88a9438e041fb7034b64801be97521cde58e96e37760226847f0a21250c558d3, received 7.6278605
+2026-Apr-27 12:54:45.082983 INFO [firewallet] Height 155, transaction 308ced7be5c2b58b711978d8a88c79c110ab777e47602bc6451c1a9f7221fca4, received 7.6278532
+2026-Apr-27 12:57:35.133365 INFO [firewallet] Height 156, transaction ce2956e0b61c8fbc6b8aadb793e399096bfb31ea65885c139d1fc05f9d3223a2, received 7.6278460
+2026-Apr-27 12:59:05.166351 INFO [firewallet] Height 157, transaction 1e35313d5fe4c468c549532d581f1e3943c430defaa0d48e92380e656ac73f15, received 7.6278387
+2026-Apr-27 12:59:35.175404 INFO [firewallet] Height 158, transaction 356321f177d596d8d4cf2836441ad9a5e38f56090b34fb22877da9a63863405f, received 7.6278314
+2026-Apr-27 12:59:50.181127 INFO [firewallet] Height 159, transaction 661bcfd34a74fc1f18287c2cd1ac40d0c0cc718958fd2c48ec43357ce7ba67fb, received 7.6278242
+2026-Apr-27 13:02:40.242375 INFO [firewallet] Height 160, transaction 03cfc6fca64a82446874ddec841f2aeb68e37edf70665158fce7e61446bfcd30, received 7.6278169
+2026-Apr-27 13:21:40.586051 INFO [firewallet] Height 161, transaction d1fdf934afc80fa445ce3e9380365dc0c8f45c55f7646d4e9debb422fc410193, received 7.6278096
+2026-Apr-27 13:25:55.631621 INFO [firewallet] Height 162, transaction 2c4a82524ac5113f2de957d3b0d01be563177ea89788a6f3afa8759aa71d0ead, received 7.6278023
+2026-Apr-27 13:26:05.633316 INFO [firewallet] Height 163, transaction 90cd407e24ba37d894603108a91ecfa2da931b410ed1882bbd3ec67e96dd698a, received 7.6277951
+2026-Apr-27 13:31:20.687007 INFO [firewallet] Height 164, transaction dd7457c1996e69bbceaf1aad0130f906ce4056617d3d674ca30e900250089312, received 7.6277878
+2026-Apr-27 13:32:00.693214 INFO [firewallet] Height 165, transaction a6807e4eda6b945ecc14ee184f90c8d2c381ea0c6e51bc260c7bc9c86f2938cf, received 7.6277805
+2026-Apr-27 13:36:59.354723 INFO [firewallet] Wallet data saved
+2026-Apr-27 13:37:05.748175 ERROR [firewallet] Error: wallet failed to connect to daemon (http://localhost:28280).
+2026-Apr-27 13:37:15.076958 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 13:37:15.077719 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 13:37:15.079634 INFO [firewallet] Connected to remote node: localhost
+2026-Apr-27 13:37:21.918196 INFO [firewallet] Loading wallet...
+2026-Apr-27 13:37:21.950398 INFO [firewallet] Opened wallet: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 13:37:21.950499 INFO [firewallet] **********************************************************************
+Use "help" command to see the list of available commands.
+**********************************************************************
+2026-Apr-27 13:37:25.234605 INFO [firewallet] Commands: 
+  address                  Show current wallet public address
+  balance                  Show current wallet balance
+  burn                     burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)
+  cd_info                  cd_info <id> - Get detailed info on CD by ID
+  cold                     cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)
+  create_integrated        create_integrated <payment_id> - Create an integrated address with a payment ID
+  deposit                  deposit <amount> <term_code> - Create a CD deposit (0.8, 8, 80, 800 XFG with terms 3=3mo, 12=1yr).
+  elderking_ceremony       elderking_ceremony - (DEPRECATED)
+  exit                     Close wallet
+  export_keys              Show the secret keys of the current wallet
+  gen_new_sub              gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).
+  get_reserve_proof        all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. 
+  get_tx_proof             Generate a signature to prove payment: <txid> <address> [<txkey>]
+  height                   Show blockchain height
+  help                     Show this help
+  incoming_transfers       Show incoming transfers
+  list_aliases             list_aliases - List all registered TEST aliases on the network
+  list_burns               list_burns - List all burn transactions.
+  list_cds                 list_cds - List all CD (Certificate of Deposit) yield accounts
+  list_subs                list_subs - List all sub-addresses for this wallet
+  list_transfers           list_transfers <block_height> - Show all known transfers, optionally from a certain block height
+  lookup_alias             lookup_alias <alias_or_address> - Look up a TEST alias by name or wallet address
+  migrate_legacy_deposit   migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format
+  optimize                 Combine many available outputs into a few by sending a transaction to self
+  optimize_all             Optimize your wallet several times so you can send large transactions
+  outputs                  Show the number of unlocked outputs available for a transaction
+  payment_id               Generate random Payment ID
+  payments                 payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>
+  register_alias           register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)
+  reset                    Discard cache data and start synchronizing from the start
+  save                     Save wallet synchronized data
+  set_log                  set_log <level> - Change current log level, <level> is a number 0-4
+  show_dust                Show the number of unmixable dust outputs
+  sign_message             Sign a message with your wallet keys
+  start_mining             start_mining [<threads>] - Start mining to your wallet
+  stop_mining              stop_mining - Stop mining
+  swap                     swap - Launch swapxfg testnet swap terminal
+  transfer                 transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. 
+  unstake                  unstake - (DEPRECATED)
+  verify_signature         Verify a signed message
+  withdraw                 withdraw <id> - Withdraw a matured CD
+  
+
+2026-Apr-27 13:37:41.924200 INFO [firewallet] Height 166, transaction 52077ce6b02922af1a95c4973d03e90d2e3a8ca758d5d7c80bfe0aab7cecd53d, received 7.6277732
+2026-Apr-27 13:37:46.118771 INFO [firewallet] Creating CD deposit:
+2026-Apr-27 13:37:46.118824 INFO [firewallet]   Amount: 8.0000000 (8 XFG (HEAT/COLD))
+2026-Apr-27 13:37:46.118845 INFO [firewallet]   Term: 1 epoch(s) (~5 days) (900 blocks)
+2026-Apr-27 13:37:46.118861 INFO [firewallet] Confirm? (y/n): 
+2026-Apr-27 13:38:51.935825 INFO [firewallet] Height 167, transaction 0bc8aac52a2f40438be3e0098f19e6bd286a0c24ab1fc66d9fb21b3ced406037, received 7.6277660
+2026-Apr-27 13:40:21.568079 INFO [firewallet] Creating deposit with commitment...
+2026-Apr-27 13:40:21.569672 INFO [firewallet] COLD commitment generated: 9590a8eeb4cfafab21dc789642a9f4439b046128ec3b2cafa36c2e53eaad3ce0
+2026-Apr-27 13:40:21.569717 INFO [firewallet] Secret key (STORE SECURELY): 2a07bb98f07d42fd47406a89cc242a3e4de5f5aa643bf2856d2a1dd408764c07
+2026-Apr-27 13:40:21.569735 INFO [firewallet] IMPORTANT: Save the secret key! You will need it + your ETH address
+2026-Apr-27 13:40:21.569748 INFO [firewallet]            when generating the STARK proof with xfg-stark-cli.
+2026-Apr-27 13:40:21.570660 ERROR [firewallet] Error: System error: Deposit term is too big
+2026-Apr-27 13:40:36.952672 INFO [firewallet] Height 168, transaction b486d21db492e1626bc67d76f4e14b44963d282bfab3266d084f75e35be8dc02, received 7.6277587
+2026-Apr-27 13:42:41.618788 INFO [firewallet] TESTNET Burn Transaction Summary:
+2026-Apr-27 13:42:41.619589 INFO [firewallet]   Amount: 8.0000000 TEST (PERMANENT)
+2026-Apr-27 13:42:41.619614 INFO [firewallet]   Banking Fee: 0.0080000 TEST (0.1% of amount to stakers)
+2026-Apr-27 13:42:41.619639 INFO [firewallet]   Network Fee: 0.0008000 TEST (minimum txn fee to miners)
+2026-Apr-27 13:42:41.619654 INFO [firewallet]   Commitment Type: 〘HEAT〙 ✺ These funds will be BURNED (to mint HEAT)
+2026-Apr-27 13:42:41.619667 INFO [firewallet] Confirm? (1) OK  (2) No 
+2026-Apr-27 13:42:45.773834 INFO [firewallet] STARK Commitment Data (SAVE THIS — needed to claim HEAT):
+2026-Apr-27 13:42:45.773884 INFO [firewallet]   Secret:     1ca49bda968ab938a07213c11f6a5882d40e027ae35c436b568b3298ca5711fc
+2026-Apr-27 13:42:45.773902 INFO [firewallet]   Commitment: b660c33e002b9f94de5c044bb417f9e3cedd0f7ecd7b4d4bbc89ba6240a99e1f
+2026-Apr-27 13:42:45.773917 INFO [firewallet]   Nullifier:  06d1b03552ed042118982c5601713e37277e27ffe16e24bbf2da27bc7fb1b79a
+2026-Apr-27 13:42:45.774058 INFO [firewallet] Creating TEST burn (HEAT): 8.0000000 TEST
+2026-Apr-27 13:42:45.787034 INFO [firewallet] TEST burn transaction created. TX ID: 168
+2026-Apr-27 13:43:25.939902 INFO [firewallet] Registering alias @fire&ice
+2026-Apr-27 13:43:25.940037 INFO [firewallet]   Type: Regular [a-z0-9&]
+2026-Apr-27 13:43:25.940078 INFO [firewallet]   Fee: self-transfer (testnet)
+2026-Apr-27 13:43:25.940112 INFO [firewallet]   Address: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 13:43:25.940159 INFO [firewallet] Confirm? (1) OK  (2) No 
+2026-Apr-27 13:43:28.671862 INFO [firewallet]  XFG Alias registered successfully!
+2026-Apr-27 13:43:28.671911 INFO [firewallet]   Alias: @fire&ice
+2026-Apr-27 13:43:28.671927 INFO [firewallet]   TX Hash: 3a831d6e3cf7ca88baeab82816688633342accba01b441c382fa3b523de38d87
+2026-Apr-27 13:43:28.671942 INFO [firewallet]   The alias will be active after the transaction is confirmed.
+2026-Apr-27 13:43:56.892438 INFO [firewallet] Registering alias @aegonone
+2026-Apr-27 13:43:56.892498 INFO [firewallet]   Type: Regular [a-z0-9&]
+2026-Apr-27 13:43:56.892515 INFO [firewallet]   Fee: self-transfer (testnet)
+2026-Apr-27 13:43:56.892527 INFO [firewallet]   Address: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 13:43:56.892543 INFO [firewallet] Confirm? (1) OK  (2) No 
+2026-Apr-27 13:43:59.052881 INFO [firewallet]  XFG Alias registered successfully!
+2026-Apr-27 13:43:59.052937 INFO [firewallet]   Alias: @aegonone
+2026-Apr-27 13:43:59.052953 INFO [firewallet]   TX Hash: 50462dbde80b605ce0118e3c6a2d46c5b30b95f867cfb22572cd4987af5a32a7
+2026-Apr-27 13:43:59.052967 INFO [firewallet]   The alias will be active after the transaction is confirmed.
+2026-Apr-27 13:44:10.220750 INFO [firewallet] Registering alias @firenode
+2026-Apr-27 13:44:10.220811 INFO [firewallet]   Type: Regular [a-z0-9&]
+2026-Apr-27 13:44:10.220828 INFO [firewallet]   Fee: self-transfer (testnet)
+2026-Apr-27 13:44:10.220840 INFO [firewallet]   Address: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 13:44:10.220856 INFO [firewallet] Confirm? (1) OK  (2) No 
+2026-Apr-27 13:44:12.078825 INFO [firewallet]  XFG Alias registered successfully!
+2026-Apr-27 13:44:12.078894 INFO [firewallet]   Alias: @firenode
+2026-Apr-27 13:44:12.078919 INFO [firewallet]   TX Hash: 65a7c2097efe3cefbe490209c3bff43aea0075de734b3dd8b202eb1bfdd863ba
+2026-Apr-27 13:44:12.078936 INFO [firewallet]   The alias will be active after the transaction is confirmed.
+2026-Apr-27 13:44:20.954035 ERROR [firewallet] Error: mining has NOT been started: Failed, mining not started
+2026-Apr-27 13:47:13.133648 INFO [firewallet] Creating CD deposit:
+2026-Apr-27 13:47:13.133859 INFO [firewallet]   Amount: 8.0000000 (8 XFG (HEAT/COLD))
+2026-Apr-27 13:47:13.133898 INFO [firewallet]   Term: 8 epoch(s) (~40 days) (7200 blocks)
+2026-Apr-27 13:47:13.133947 INFO [firewallet] Confirm? (y/n): 
+2026-Apr-27 13:47:15.302104 INFO [firewallet] Creating deposit with commitment...
+2026-Apr-27 13:47:15.302270 INFO [firewallet] COLD commitment generated: 61f268e6c329a15d534f18c7c37dcfff6a13a27e2eae3d142860d8f97f2e1a53
+2026-Apr-27 13:47:15.302301 INFO [firewallet] Secret key (STORE SECURELY): 093fb314750472a819a26ae8c50a9ec20c7d313acdc1ae3778e6f923b0b77f06
+2026-Apr-27 13:47:15.302317 INFO [firewallet] IMPORTANT: Save the secret key! You will need it + your ETH address
+2026-Apr-27 13:47:15.302330 INFO [firewallet]            when generating the STARK proof with xfg-stark-cli.
+2026-Apr-27 13:47:15.302395 ERROR [firewallet] Error: System error: Deposit term is too big
+2026-Apr-27 13:54:52.497546 INFO [firewallet] Height 169, transaction e6494ab7057c4abb1678822a2edc5965ea233066b3cce0209292eeefc967a977, received 7.6309514
+2026-Apr-27 14:20:13.039525 INFO [firewallet] Height 170, transaction 1e5f50c0996bf52f1a24daf1bbd8bb425d2a522fea6d62ff6e93ea61ecb2a8d4, received 7.6277518
+2026-Apr-27 14:26:33.185532 INFO [firewallet] Height 171, transaction 87bdbbee15049a1f4112afe162eab4e2a804db9e7e9fede70419e56bdc6636f3, received 7.6277445
+2026-Apr-27 14:28:18.225013 INFO [firewallet] Height 172, transaction d26ec4e35ff310e72b1bfa08d6edd5968bab66d14ffa36a66497b40d1a4e43a4, received 7.6277372
+2026-Apr-27 14:28:48.236851 INFO [firewallet] Height 173, transaction 8355b9211ca2ec5bea02186ca073ef586a652b04118ccc3071364e0b6464fe0c, received 7.6277299
+2026-Apr-27 14:41:58.589867 INFO [firewallet] Height 174, transaction 40c77fb91906ae4062352c05c86ddfa59d88b6c754cdb5aa8d258be10c3ab74f, received 7.6277227
+2026-Apr-27 14:43:03.615955 INFO [firewallet] Height 175, transaction dfc34eda4c5a73e2d1cea2daa4c476efecd3da85290b4db45a9fd671f7429401, received 7.6277154
+2026-Apr-27 14:45:28.671224 INFO [firewallet] Height 176, transaction c2a27a1ee9a1e9d9912f5a448eb86b278919e7f5470895ee38bf4e2c655e0011, received 7.6277081
+2026-Apr-27 14:46:08.687744 INFO [firewallet] Height 177, transaction d0d7c455c7e0ea9c0ec645689fecf0590249020c305c3efbc38d6f839de2b8a2, received 7.6277008
+2026-Apr-27 14:46:13.689851 INFO [firewallet] Height 178, transaction 5bd7b0ed456f163e9a0c20833c93bd26db25bb53f9dab0382cf9e2c7c6b8d651, received 7.6276936
+2026-Apr-27 14:52:53.851633 INFO [firewallet] Height 179, transaction cfd68230414b0cb68ed8d050671bed34828bc0c26ea2c6083da9d745cb49e953, received 7.6276863
+2026-Apr-27 14:55:48.917445 INFO [firewallet] Height 180, transaction 6e276a7b37d8b131acddb18ecbecef0b6fb3df7bba5b557594469591ffff308c, received 7.6276790
+2026-Apr-27 15:00:34.025000 INFO [firewallet] Height 181, transaction 0a122a8b4f7b5ad3910ec40507700b96b4349201f16ba1694d007195a2e82ab5, received 7.6276717
+2026-Apr-27 15:04:24.119923 INFO [firewallet] Height 182, transaction 90c44cc74203489b167469fad5ea21661287b18f5b5a4ef2f375f40200fe0af0, received 7.6276645
+2026-Apr-27 15:21:59.327591 INFO [firewallet] Height 183, transaction 2ac97a4def33f8f25d62b5e7dc805179c24c574c825f0ee123194f94f130a8d1, received 7.6276572
+2026-Apr-27 15:29:08.715647 INFO [firewallet] Wallet data saved
+2026-Apr-27 15:29:14.407727 ERROR [firewallet] Error: wallet failed to connect to daemon (http://localhost:28280).
+2026-Apr-27 15:29:36.661047 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 15:29:36.662007 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 15:29:36.664941 INFO [firewallet] Connected to remote node: localhost
+2026-Apr-27 15:29:42.215758 INFO [firewallet] Loading wallet...
+2026-Apr-27 15:29:42.249439 INFO [firewallet] Opened wallet: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 15:29:42.249513 INFO [firewallet] **********************************************************************
+Use "help" command to see the list of available commands.
+**********************************************************************
+2026-Apr-27 15:29:47.330092 INFO [firewallet] Commands: 
+  address                  Show current wallet public address
+  balance                  Show current wallet balance
+  burn                     burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)
+  cd_info                  cd_info <id> - Get detailed info on CD by ID
+  cold                     cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)
+  create_integrated        create_integrated <payment_id> - Create an integrated address with a payment ID
+  deposit                  deposit <amount> <epochs> - Create a CD deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks≈5 days).
+  elderking_ceremony       elderking_ceremony - (DEPRECATED)
+  exit                     Close wallet
+  export_keys              Show the secret keys of the current wallet
+  gen_new_sub              gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).
+  get_reserve_proof        all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. 
+  get_tx_proof             Generate a signature to prove payment: <txid> <address> [<txkey>]
+  height                   Show blockchain height
+  help                     Show this help
+  incoming_transfers       Show incoming transfers
+  list_aliases             list_aliases - List all registered TEST aliases on the network
+  list_burns               list_burns - List all burn transactions.
+  list_cds                 list_cds - List all CD (Certificate of Deposit) yield accounts
+  list_subs                list_subs - List all sub-addresses for this wallet
+  list_transfers           list_transfers <block_height> - Show all known transfers, optionally from a certain block height
+  lookup_alias             lookup_alias <alias_or_address> - Look up a TEST alias by name or wallet address
+  migrate_legacy_deposit   migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format
+  optimize                 Combine many available outputs into a few by sending a transaction to self
+  optimize_all             Optimize your wallet several times so you can send large transactions
+  outputs                  Show the number of unlocked outputs available for a transaction
+  payment_id               Generate random Payment ID
+  payments                 payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>
+  register_alias           register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)
+  reset                    Discard cache data and start synchronizing from the start
+  rollover                 rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).
+  save                     Save wallet synchronized data
+  set_log                  set_log <level> - Change current log level, <level> is a number 0-4
+  show_dust                Show the number of unmixable dust outputs
+  sign_message             Sign a message with your wallet keys
+  start_mining             start_mining [<threads>] - Start mining to your wallet
+  stop_mining              stop_mining - Stop mining
+  swap                     swap - Launch swapxfg testnet swap terminal
+  transfer                 transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. 
+  unstake                  unstake - (DEPRECATED)
+  verify_signature         Verify a signed message
+  withdraw                 withdraw <id> - Withdraw a matured CD
+  
+
+2026-Apr-27 15:45:07.508177 INFO [firewallet] Height 184, transaction ee668b3b0b15aa3484dda57b3ddb9b89d34da13e98fbf894066ac5214656559e, received 7.6276499
+2026-Apr-27 15:58:07.810795 INFO [firewallet] Height 185, transaction bf0d11cb2f28eb30cadf24f38d7e4ddd71bac3979caddda9c64dd2c072f8517a, received 7.6276426
+2026-Apr-27 16:01:07.876567 INFO [firewallet] Height 186, transaction 526d9130c0dd8cb35646e103ad3e77ef13c7cd874fa80415f8fee0340ea75ed4, received 7.6276354
+2026-Apr-27 16:21:38.338499 INFO [firewallet] Height 187, transaction e495c02381e13ff86c271b960d780daa32a9d89aad3471e843ba5c68beb24cba, received 7.6276281
+2026-Apr-27 16:22:23.350909 INFO [firewallet] Height 188, transaction eaa05a7eb59b5dde8c805c70f036170e3eeff9ff4ede2b5340bc4d655e32f4c6, received 7.6276208
+2026-Apr-27 16:27:13.461236 INFO [firewallet] Height 189, transaction 06b783e692f9c24e6074917b6f9d6157a15258aab70387d2ec740de86e48c340, received 7.6276135
+2026-Apr-27 16:28:53.498075 INFO [firewallet] Height 190, transaction 101447c338bf0c82a3ebd7646d1829b0793742df23b31dea458f82bbccaf3f61, received 7.6276063
+2026-Apr-27 16:44:38.852789 INFO [firewallet] Height 191, transaction 3ed33c761e08430f518d5fbbde5a557e710f1e657984f181adf299663407ec3e, received 7.6275990
+2026-Apr-27 16:48:03.930844 INFO [firewallet] Height 192, transaction dc3289cde77cd171c41f3ff1be7606223aadb67f0f85fd43860b56b8513ba9ff, received 7.6275917
+2026-Apr-27 16:49:38.965717 INFO [firewallet] Height 193, transaction dafa56c8aafc6929d5ad914c9340ab35605e8762c85d4640f151ca8614a96fd2, received 7.6275845
+2026-Apr-27 17:05:34.325871 INFO [firewallet] Height 194, transaction d0e67968e688b6377649915e3a920bf0c9ca5cbb38bd396a73257ccfd85160dd, received 7.6275772
+2026-Apr-27 17:20:14.660578 INFO [firewallet] Height 195, transaction 66a073e6b4b0e9245c6ca1beaa8936896942ce35aa1f24ea1c37dc08b9fba640, received 7.6275699
+2026-Apr-27 17:26:24.793048 INFO [firewallet] Height 196, transaction fc5fbe73ef45178c9ca41e5ff6f9d80b99701f8980d78cf634d4259343fd6cd2, received 7.6275626
+2026-Apr-27 17:45:00.208313 INFO [firewallet] Height 197, transaction baea69c1f9e875b322df1708acabe5bf794fc5332406e520232110876253960b, received 7.6275554
+2026-Apr-27 17:54:20.423353 INFO [firewallet] Height 198, transaction ea8da65f61d015f81da211ad6366ff69a5b4348fd4c447fdda83233b8671617c, received 7.6275481
+2026-Apr-27 17:54:55.434606 INFO [firewallet] Height 199, transaction 0011d46f2d99e1d9f4cb0668bda802438a364c56be1e765a42a8c1d7333b496d, received 7.6275408
+2026-Apr-27 17:57:22.167181 INFO [testnetwallet] Testnet Wallet v1.10.00-DYNAMIGO
+2026-Apr-27 17:57:22.168092 INFO [testnetwallet] /!\ Running in testnet mode /!\
+2026-Apr-27 17:57:22.170984 INFO [firewallet] Connected to remote node: localhost
+2026-Apr-27 17:57:29.471399 INFO [firewallet] Loading wallet...
+2026-Apr-27 17:57:29.505961 INFO [firewallet] Opened wallet: TESTmPJVDJ9Rjm8FmXkGD6V1DvYNfXtxUAfDW6PiGvfa4w2iLc1YwhScB4GvZrauNGfGpD19DpEgtUbt4z4bj3Ck9SzqAzSdEN
+2026-Apr-27 17:57:29.506036 INFO [firewallet] **********************************************************************
+Use "help" command to see the list of available commands.
+**********************************************************************
+2026-Apr-27 17:57:29.527201 INFO [firewallet] Height 184, transaction ee668b3b0b15aa3484dda57b3ddb9b89d34da13e98fbf894066ac5214656559e, received 7.6276499
+2026-Apr-27 17:57:29.527508 INFO [firewallet] Height 185, transaction bf0d11cb2f28eb30cadf24f38d7e4ddd71bac3979caddda9c64dd2c072f8517a, received 7.6276426
+2026-Apr-27 17:57:29.527558 INFO [firewallet] Height 186, transaction 526d9130c0dd8cb35646e103ad3e77ef13c7cd874fa80415f8fee0340ea75ed4, received 7.6276354
+2026-Apr-27 17:57:29.527603 INFO [firewallet] Height 187, transaction e495c02381e13ff86c271b960d780daa32a9d89aad3471e843ba5c68beb24cba, received 7.6276281
+2026-Apr-27 17:57:29.527644 INFO [firewallet] Height 188, transaction eaa05a7eb59b5dde8c805c70f036170e3eeff9ff4ede2b5340bc4d655e32f4c6, received 7.6276208
+2026-Apr-27 17:57:29.527686 INFO [firewallet] Height 189, transaction 06b783e692f9c24e6074917b6f9d6157a15258aab70387d2ec740de86e48c340, received 7.6276135
+2026-Apr-27 17:57:29.527731 INFO [firewallet] Height 190, transaction 101447c338bf0c82a3ebd7646d1829b0793742df23b31dea458f82bbccaf3f61, received 7.6276063
+2026-Apr-27 17:57:29.527770 INFO [firewallet] Height 191, transaction 3ed33c761e08430f518d5fbbde5a557e710f1e657984f181adf299663407ec3e, received 7.6275990
+2026-Apr-27 17:57:29.527812 INFO [firewallet] Height 192, transaction dc3289cde77cd171c41f3ff1be7606223aadb67f0f85fd43860b56b8513ba9ff, received 7.6275917
+2026-Apr-27 17:57:29.527855 INFO [firewallet] Height 193, transaction dafa56c8aafc6929d5ad914c9340ab35605e8762c85d4640f151ca8614a96fd2, received 7.6275845
+2026-Apr-27 17:57:29.527896 INFO [firewallet] Height 194, transaction d0e67968e688b6377649915e3a920bf0c9ca5cbb38bd396a73257ccfd85160dd, received 7.6275772
+2026-Apr-27 17:57:29.527937 INFO [firewallet] Height 195, transaction 66a073e6b4b0e9245c6ca1beaa8936896942ce35aa1f24ea1c37dc08b9fba640, received 7.6275699
+2026-Apr-27 17:57:29.527977 INFO [firewallet] Height 196, transaction fc5fbe73ef45178c9ca41e5ff6f9d80b99701f8980d78cf634d4259343fd6cd2, received 7.6275626
+2026-Apr-27 17:57:29.528017 INFO [firewallet] Height 197, transaction baea69c1f9e875b322df1708acabe5bf794fc5332406e520232110876253960b, received 7.6275554
+2026-Apr-27 17:57:29.528060 INFO [firewallet] Height 198, transaction ea8da65f61d015f81da211ad6366ff69a5b4348fd4c447fdda83233b8671617c, received 7.6275481
+2026-Apr-27 17:57:29.528102 INFO [firewallet] Height 199, transaction 0011d46f2d99e1d9f4cb0668bda802438a364c56be1e765a42a8c1d7333b496d, received 7.6275408
+2026-Apr-27 17:57:34.004820 INFO [firewallet] Commands: 
+  address                  Show current wallet public address
+  balance                  Show current wallet balance
+  burn                     burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)
+  cd_info                  cd_info <id> - Get detailed info on CD by ID
+  cold                     cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)
+  create_integrated        create_integrated <payment_id> - Create an integrated address with a payment ID
+  deposit                  deposit <amount> <epochs> - Create a CD deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks≈5 days).
+  exit                     Close wallet
+  export_keys              Show the secret keys of the current wallet
+  gen_new_sub              gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).
+  get_reserve_proof        all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. 
+  get_tx_proof             Generate a signature to prove payment: <txid> <address> [<txkey>]
+  height                   Show blockchain height
+  help                     Show this help
+  incoming_transfers       Show incoming transfers
+  list_aliases             list_aliases - List all registered TEST aliases on the network
+  list_burns               list_burns - List all burn transactions.
+  list_cds                 list_cds - List all CD (Certificate of Deposit) yield accounts
+  list_subs                list_subs - List all sub-addresses for this wallet
+  list_transfers           list_transfers <block_height> - Show all known transfers, optionally from a certain block height
+  lookup_alias             lookup_alias <alias_or_address> - Look up a TEST alias by name or wallet address
+  migrate_legacy_deposit   migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format
+  optimize                 Combine many available outputs into a few by sending a transaction to self
+  optimize_all             Optimize your wallet several times so you can send large transactions
+  outputs                  Show the number of unlocked outputs available for a transaction
+  payment_id               Generate random Payment ID
+  payments                 payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>
+  register_alias           register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)
+  reset                    Discard cache data and start synchronizing from the start
+  rollover                 rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).
+  save                     Save wallet synchronized data
+  set_log                  set_log <level> - Change current log level, <level> is a number 0-4
+  show_dust                Show the number of unmixable dust outputs
+  sign_message             Sign a message with your wallet keys
+  start_mining             start_mining [<threads>] - Start mining to your wallet
+  stop_mining              stop_mining - Stop mining
+  swap                     swap - Launch swapxfg testnet swap terminal
+  transfer                 transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. 
+  verify_signature         Verify a signed message
+  withdraw                 withdraw <id> - Withdraw a matured CD
+  
+
+2026-Apr-27 17:58:00.186745 INFO [firewallet] Creating CD deposit:
+2026-Apr-27 17:58:00.186800 INFO [firewallet]   Amount: 80.0000000 (80 XFG)
+2026-Apr-27 17:58:00.186817 INFO [firewallet]   Term: 1 epoch(s) (~5 days) (900 blocks)
+2026-Apr-27 17:58:00.186831 INFO [firewallet] Confirm? (y/n): 
+2026-Apr-27 17:58:02.655910 INFO [firewallet] Creating deposit with commitment...
+2026-Apr-27 17:58:02.656708 INFO [firewallet] CD commitment generated: e53897f252c2b87f87cf476483509e720a94b61821c41f6c704010ed7e9958f2
+2026-Apr-27 17:58:02.656738 INFO [firewallet] This CD earns on-chain interest from the fee pool.
+2026-Apr-27 17:58:02.656753 INFO [firewallet] Interest accrues automatically each epoch (900 blocks ≈ 5 days).
+2026-Apr-27 17:58:02.657827 ERROR [firewallet] Error: System error: Deposit term is too big
+2026-Apr-27 18:02:54.537412 INFO [firewallet] Height 200, transaction df06fcfc7aee6df3bd631791b1143fefd85e4452b05a625922b3aa0fdbdf4fbe, received 7.6275335
+2026-Apr-27 18:07:39.593123 INFO [firewallet] Height 201, transaction a192c10a24ebe17a405ef739eea70deffdd2ae3a072aa65dbe3a545ad5ff30cd, received 7.6275263
+2026-Apr-27 18:11:14.631102 INFO [firewallet] Height 202, transaction 595ff767a69f6497e3cf400d9f18c4299a5515c3758712a20689d1901d1595a6, received 7.6275190
+2026-Apr-27 18:25:39.848465 INFO [firewallet] Height 203, transaction eb55fc335f18ad40a568f7b550bdb5a1f42fc79f9050841c4cee10f67cc82444, received 7.6275117
+2026-Apr-27 18:30:49.981624 INFO [firewallet] Height 204, transaction 659ecef0ed53d2162e24ad6dc81a09784a1c8120a15d5254a4bc9378f3d6ec90, received 7.6275044
+2026-Apr-27 18:45:25.252836 INFO [firewallet] Height 205, transaction 61ef9a218b5bcb49ea31e412a886c92190c1598698344ff52a815ca89b879c8a, received 7.6274972
+2026-Apr-27 18:59:10.579911 INFO [firewallet] Height 206, transaction 001463d851efc20080b97e5115e40f9a2dbbc635c9c85049a26f149cd93f7734, received 7.6274899
+2026-Apr-27 19:01:40.635714 INFO [firewallet] Height 207, transaction 4ae8c12ab0fe091f66847a38f6c196434d552d4de2da9c9ddb9b34080148f8f6, received 7.6274826
+2026-Apr-27 19:07:40.775153 INFO [firewallet] Height 208, transaction a6686f1f8ba92cd4828ee87a36dc7a0817176ead1de04537d58173add82b132d, received 7.6274753
+2026-Apr-27 19:09:00.789574 INFO [firewallet] Height 209, transaction 87d3c54bb4cde4606670c540d4befc1264fb6dab26648fcf9c830c4912afd4cf, received 7.6274681
+2026-Apr-27 19:12:10.828293 INFO [firewallet] Height 210, transaction b916144ac27bfdeaedb71a421fdd7e7bd0ef3a024fc7c5c3ccd3e2473edf451c, received 7.6274608
+2026-Apr-27 19:13:40.864191 INFO [firewallet] Height 211, transaction 866799c9580ec7909d8d1e0a7fdb6b2bb4e75b74022c200c8657ec99ff463c52, received 7.6274535
+2026-Apr-27 19:34:11.134306 INFO [firewallet] Height 212, transaction 80fe17318231d627c119329280aa53bc738bdc89922b12c586d9ff2c5ef90063, received 7.6274462
+2026-Apr-27 19:39:31.195514 INFO [firewallet] Height 213, transaction 4b33ca8bf87f1d96485092af669989ef1bf838c097b27b85541fa38f9b7f4f8e, received 7.6274390
+2026-Apr-27 19:45:41.267634 INFO [firewallet] Height 214, transaction afcc3a390f434c977cc8600c03ba4885906e76b21ae758bbdd4162804511eaad, received 7.6274317
+2026-Apr-27 19:47:56.282416 INFO [firewallet] Height 215, transaction dd17f25c8b88f0f115ac14c98f92d7a0f3912445ae47521c7dd1576a20b3c55e, received 7.6274244
+2026-Apr-27 20:05:36.624607 INFO [firewallet] Height 216, transaction e36e2cbd4403ef2aa9e2b0fd1f7ce54bcacf68d9efc6d57ce8387e114a90d2f1, received 7.6274171
+2026-Apr-27 20:05:51.620867 INFO [firewallet] Height 217, transaction 7c8c265237dd0b921d717ca401574dea05277dfeb53e3ca0b76585ae2204cb69, received 7.6274099
+2026-Apr-27 20:07:16.622525 INFO [firewallet] Height 218, transaction 3c9859957922dc134ed14f164ad8d90ba435fe2b17e42af57545092a03a8e64b, received 7.6274026
+2026-Apr-27 20:10:46.657273 INFO [firewallet] Height 219, transaction 428695790f9c3c9d73cd67110082ef5e49a4e8b72cb676ea84d242f35e598925, received 7.6273953
+2026-Apr-27 20:34:17.166105 INFO [firewallet] Height 220, transaction aee47e84c200905aa23def3ea775acc41f8f2e3158477ed01d55c0376f6279e3, received 7.6273881
+2026-Apr-27 20:35:07.182372 INFO [firewallet] Height 221, transaction 2eb976d8be30490a6859e265a8b7335eea7310bf88a9cfb1f2e397a02a2ba05b, received 7.6273808
+2026-Apr-27 20:43:22.367437 INFO [firewallet] Height 222, transaction c51777a862e42f6a714aafc14f464ce782588f0373ae1d88b6b2776108573e2b, received 7.6273735
+2026-Apr-27 20:45:07.408945 INFO [firewallet] Height 223, transaction eb29146f4428533d1c3803a31ca9a09cfd1f8deffbe81778ea4eb6d25aa8ff8d, received 7.6273662
+2026-Apr-27 20:53:22.560998 INFO [firewallet] Height 224, transaction 85193b3a5d2fef48efe9c8d6a50e22c01aa51aee26afba1568f557893cddee82, received 7.6273590
+2026-Apr-27 20:56:47.635133 INFO [firewallet] Height 225, transaction 34ea1856a7db68b3d7ff08f2ecb35f98027c02933b278ccf588ba19e5857aed4, received 7.6273517
+2026-Apr-27 21:00:12.711622 INFO [firewallet] Height 226, transaction 5822c8304093398fa9743952e1e4dd410af39c91589ce0e19c18faca2243de3a, received 7.6273444
+2026-Apr-27 21:09:02.905965 INFO [firewallet] Height 227, transaction cfc3c2a03b7f7866820a8b08ace0dc1c9c92f583ba4a4da944e92ae85f7133ae, received 7.6273371
+2026-Apr-27 21:33:08.377654 INFO [firewallet] Height 228, transaction 2ee8a5b24c8507b5e2041f2bdf8fcabd1adecef2498fab729b22e4196918a2b6, received 7.6273299
+2026-Apr-27 21:39:18.505394 INFO [firewallet] Height 229, transaction 3089d93ce43f94745430de6e669c6bcda64c322e2f619a27f8c81f164c76f267, received 7.6273226
+2026-Apr-27 21:51:08.752455 INFO [firewallet] Height 230, transaction 69e77812992508d4588eb44e1f4db0eede4d3fa3c31b1cdec9769cf54b4c626b, received 7.6273153
+2026-Apr-27 21:51:58.757784 INFO [firewallet] Height 231, transaction aaea307e0579cff83d24163191981aadbd77567e91d64580486dc6910576ebbf, received 7.6273080
+2026-Apr-27 21:52:33.769356 INFO [firewallet] Height 232, transaction 448ac6630ba88ad071062d712455e5f32a2f2ea349a4606fc29cf544e1ffe63a, received 7.6273008
+2026-Apr-27 22:02:13.936337 INFO [firewallet] Height 233, transaction 2eb062d8e529a990ea6f3c7c24cca2b3874606472f39b42d98da940fd68e7f61, received 7.6272935
+2026-Apr-27 22:22:24.183256 INFO [firewallet] Height 234, transaction 28cceef9a9697817b12eb453f7eb62e14f3ae8dff27bac95e9b58e1891d07e09, received 7.6272862
+2026-Apr-27 22:23:29.203975 INFO [firewallet] Height 235, transaction c272181643b65c90424bafbfa292c88a4c9e4647e9b0f22dd928b2e12fb0644e, received 7.6272789
+2026-Apr-27 22:24:09.217896 INFO [firewallet] Height 236, transaction 49a821efe5efc796f74e03ab39a098e28cbe53813615966804a840ba3ccab6ec, received 7.6272717
+2026-Apr-27 22:35:04.436144 INFO [firewallet] Height 237, transaction 19bb590d91013703d66e4a68876db56db15a22e6ac1acd5772313496cd5d0c38, received 7.6272644
+2026-Apr-27 22:50:29.707335 INFO [firewallet] Height 238, transaction 46fd55992f67d3f70f0580567cb43737a7cbd4090bca5405a419872765578bd9, received 7.6272571
+2026-Apr-27 22:54:04.739422 INFO [firewallet] Height 239, transaction 6593dfa719bf9784ea8e802823f8964599fe9f302d7e69b03ab75793b53f7e8a, received 7.6272498
+2026-Apr-27 22:56:19.761953 INFO [firewallet] Height 240, transaction 81ac45154e95f3484b02d4295f6f04ceacb6d3882a623e01a437b82397e8869c, received 7.6272426
+2026-Apr-27 23:00:19.798004 INFO [firewallet] Height 241, transaction ea5a9cf33b37bf247822631d64b20fbdc3061079c60f993de0d6f793cb1efbd8, received 7.6272353
+2026-Apr-27 23:48:45.587789 INFO [firewallet] Height 242, transaction 54dea8ab73f0b58799f5ae731026e52259bdb01b5c7382f5e06881610c7382c1, received 7.6272280
+2026-Apr-27 23:57:35.764501 INFO [firewallet] Height 243, transaction 70666835026f9312655f539c8fe1ab4a6d109fd6d209f884bd520550a3e647b6, received 7.6272207
+2026-Apr-27 23:59:30.802834 INFO [firewallet] Height 244, transaction 77c0b68e0a6017f99504786e92ee4b5f4831613de1283d18466a3aad7997d818, received 7.6272135
+2026-Apr-28 00:16:31.162928 INFO [firewallet] Height 245, transaction 6778e22c266979333305b16958a7e0c63f31297f0a54938280f21ffe21d2d1db, received 7.6272062
+2026-Apr-28 00:25:21.336516 INFO [firewallet] Height 246, transaction 7670fe5458412e39c14458cb2877ba64d816a0157aeca485c5b9c167ec40a7e1, received 7.6271989
+2026-Apr-28 00:25:36.341373 INFO [firewallet] Height 247, transaction 345112a9042b194106dc63ce18e42b037a7e058381c85707af818015c3f8b8ea, received 7.6271917
+2026-Apr-28 00:26:26.349355 INFO [firewallet] Height 248, transaction e68861da9155332661930f42e377d090b8a44429ad3b71aef0f65a8e374f3ea6, received 7.6271844
+2026-Apr-28 00:44:36.532522 INFO [firewallet] Height 249, transaction e50fd12c6ffe7426323997498c218bca15d1736008c8f4449c1829a44bd0b03f, received 7.6271771
+2026-Apr-28 00:45:36.541089 INFO [firewallet] Height 250, transaction 8b881a89c66ac1e7703e54490945b2b88d56c67119c2e63a49bed7e4d2fa3fe6, received 7.6271698
+2026-Apr-28 00:47:43.926191 INFO [firewallet] Commands: 
+  address                  Show current wallet public address
+  balance                  Show current wallet balance
+  burn                     burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)
+  cd_info                  cd_info <id> - Get detailed info on CD by ID
+  cold                     cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)
+  create_integrated        create_integrated <payment_id> - Create an integrated address with a payment ID
+  deposit                  deposit <amount> <epochs> - Create a CD deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks≈5 days).
+  exit                     Close wallet
+  export_keys              Show the secret keys of the current wallet
+  gen_new_sub              gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).
+  get_reserve_proof        all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. 
+  get_tx_proof             Generate a signature to prove payment: <txid> <address> [<txkey>]
+  height                   Show blockchain height
+  help                     Show this help
+  incoming_transfers       Show incoming transfers
+  list_aliases             list_aliases - List all registered TEST aliases on the network
+  list_burns               list_burns - List all burn transactions.
+  list_cds                 list_cds - List all CD (Certificate of Deposit) yield accounts
+  list_subs                list_subs - List all sub-addresses for this wallet
+  list_transfers           list_transfers <block_height> - Show all known transfers, optionally from a certain block height
+  lookup_alias             lookup_alias <alias_or_address> - Look up a TEST alias by name or wallet address
+  migrate_legacy_deposit   migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format
+  optimize                 Combine many available outputs into a few by sending a transaction to self
+  optimize_all             Optimize your wallet several times so you can send large transactions
+  outputs                  Show the number of unlocked outputs available for a transaction
+  payment_id               Generate random Payment ID
+  payments                 payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>
+  register_alias           register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)
+  reset                    Discard cache data and start synchronizing from the start
+  rollover                 rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).
+  save                     Save wallet synchronized data
+  set_log                  set_log <level> - Change current log level, <level> is a number 0-4
+  show_dust                Show the number of unmixable dust outputs
+  sign_message             Sign a message with your wallet keys
+  start_mining             start_mining [<threads>] - Start mining to your wallet
+  stop_mining              stop_mining - Stop mining
+  swap                     swap - Launch swapxfg testnet swap terminal
+  transfer                 transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. 
+  verify_signature         Verify a signed message
+  withdraw                 withdraw <id> - Withdraw a matured CD
+  
+
+2026-Apr-28 00:48:41.569754 INFO [firewallet] Height 251, transaction 0fde407c3137261a6f497ea58b1af2decd0465a398a04a9b1237e94a98666317, received 7.6271626
+2026-Apr-28 00:58:06.659319 INFO [firewallet] Height 252, transaction f89ff47d030f29dc893e92685fe06b19fa20ff16a7c00696b3a9dfa935721fc6, received 7.6271553
+2026-Apr-28 01:01:41.703527 INFO [firewallet] Height 253, transaction 32e1ed30e2ae339b3e99fd7734d8043636eef36e3db1f62114dec17b98c1f9cf, received 7.6271480
+2026-Apr-28 01:07:26.758202 INFO [firewallet] Height 254, transaction a081f541cfe36b0944bef77a6e5a8958ccfebd81ad5ae1949544a54271a18f05, received 7.6271407
+2026-Apr-28 01:09:21.777734 INFO [firewallet] Height 255, transaction 2289a7bb46079a8f2a772f75503412b91b52988014e2b151a097aa6a187d5395, received 7.6271335
+2026-Apr-28 01:12:01.807696 INFO [firewallet] Height 256, transaction 998ef3dfc9363d18af0836464470cbfcd76ca293bc97f0ee7adab0fff87c8153, received 7.6271262
+2026-Apr-28 01:14:31.859421 INFO [firewallet] Height 257, transaction ea2e4f36cf882e140eef53d0dfd68fb9d2dcc55c97b868c1df1b5e7e9ecd5f80, received 7.6271189
+2026-Apr-28 01:21:32.004918 INFO [firewallet] Height 258, transaction ae4a7deb7816494cc45a81700b670466428ba4afa11f8938ae1e06102e39e08a, received 7.6271116
+2026-Apr-28 01:31:42.115540 INFO [firewallet] Height 259, transaction bb17a6eda101fc4a7d7274f2f55fd6f5aca86669411555d6b20b730d69864146, received 7.6271044
+2026-Apr-28 01:36:12.159429 INFO [firewallet] Height 260, transaction c1cc854cd0769be9e8562700e2774812514297032515d06f329e75819cfeb3cd, received 7.6270971
+2026-Apr-28 01:36:37.163705 INFO [firewallet] Height 261, transaction 7bbef3eb5e49fdb38d0fe3df3b8acc3c03ce1d830066c180904ff20a8e29b0c9, received 7.6270898
+2026-Apr-28 01:41:32.248006 INFO [firewallet] Height 262, transaction 12883d8461e38cc6720c5369d34505dde3b950daf574bed782275b439e80c503, received 7.6270825
+2026-Apr-28 01:43:32.262845 INFO [firewallet] Height 263, transaction f9fffaf224c35a57500ff982ac3421e36386256d3297ef6a471a95b2c77afeb4, received 7.6270753
+2026-Apr-28 01:49:47.327385 INFO [firewallet] Height 264, transaction 31774edc1946e27f702bf88d0507d5359e0c3fb7bfa38837bba688a5682fcba4, received 7.6270680
+2026-Apr-28 01:54:02.370543 INFO [firewallet] Height 265, transaction 7ae25a7cb6ea7ef3fe0af6778ad99ba557df638c87d3dbe52a8f1cca1e45f0d0, received 7.6270607
+2026-Apr-28 01:56:27.396934 INFO [firewallet] Height 266, transaction aaa0a09f75eb86782a9d62162fdb809a2875fdcd3d50a03c8141162fec368853, received 7.6270535
+2026-Apr-28 02:04:57.520499 INFO [firewallet] Height 267, transaction 25ab1fb2a5998f16b53abd526a6f7ee1149ce3412d839dab59fad9d2cc58292d, received 7.6270462
+2026-Apr-28 02:05:22.521919 INFO [firewallet] Height 268, transaction 6aabd399bfcf1b1d86b1ca3dee9cbf70c17fd466b4745a20317c152438edcf80, received 7.6270389
+2026-Apr-28 02:09:07.564830 INFO [firewallet] Height 269, transaction dbdc1b35155136d638dab380b8cea9f7e9b1b1b0f71bd1e5b99f5912b8d104be, received 7.6270316
+2026-Apr-28 02:11:32.614445 INFO [firewallet] Height 270, transaction f5eaebaed532bdc32b60e7cd2a4abc47a69e558218c3e0a3f3abbed9ad5e28c3, received 7.6270244
+2026-Apr-28 02:20:22.831487 INFO [firewallet] Height 271, transaction 183147477664b4f107d92c7af63bdf01c618a9a3ef7e9d7565f7248051fb2373, received 7.6270171
+2026-Apr-28 02:21:32.859054 INFO [firewallet] Height 272, transaction bfa2145a12cee33fcdac927a611ee4f0b2595c0e3007b7f2c2d38b2b70ae2ef0, received 7.6270098
+2026-Apr-28 02:21:47.861676 INFO [firewallet] Height 273, transaction a7ca083413c4a9c0283f58841b3dd0fd9431a75e6e2279b28401e6fd90145e92, received 7.6270025
+2026-Apr-28 02:38:43.200316 INFO [firewallet] Height 274, transaction 024a17985146a1a15b6ed4726384e011b3c7cebeab3448965bf2e493ae2fe929, received 7.6269953
+2026-Apr-28 02:40:33.234635 INFO [firewallet] Height 275, transaction eec2c88aeaa45ec84523c3392d74bb07a296412943f1ade67968c3c355812e5d, received 7.6269880
+2026-Apr-28 02:42:58.264364 INFO [firewallet] Height 276, transaction 620f0fe54480cc5d37ef7d529abd7992aef815db772329ae1c0dd958b3d2ef96, received 7.6269807
+2026-Apr-28 02:47:08.315906 INFO [firewallet] Height 277, transaction fb27613e1c7ca397c35e2c3a788a03e6da11a7f0d0191c7a8d886bce0dd6319a, received 7.6269734
+2026-Apr-28 03:07:43.566602 INFO [firewallet] Height 278, transaction 05cc14894e111c531a720ff6c1fb4b9a85b6e3f794656fc381fe9f4d5a5ded6d, received 7.6269662
+2026-Apr-28 03:08:13.569725 INFO [firewallet] Height 279, transaction aa22a1ad5625618ae6a0673476726f8f01fd2865118bc8b65947a835d55055a2, received 7.6269589
+2026-Apr-28 03:22:23.716117 INFO [firewallet] Height 280, transaction 7dc45f41d71e2dcd1a78c4b7a8a224010df5ca3e1cacde940c60723bcc480814, received 7.6269516
+2026-Apr-28 03:34:38.864389 INFO [firewallet] Height 281, transaction 445fe59067f76aef89098d5491cbdcacd5e331df52535396bbf8d3505a365bc9, received 7.6269443
+2026-Apr-28 03:47:39.014691 INFO [firewallet] Height 282, transaction 8f36d8b20af7a13c3b0b97707fff5ef96ed055bdafea87d589a471e24ede338f, received 7.6269371
+2026-Apr-28 04:22:51.028017 INFO [firewallet] Height 283, transaction e00b6414b0e1214fbc7eb0e0d423d3ea442535c7d88b33aae48e96210b0ccfaf, received 7.6269298
+2026-Apr-28 04:24:01.042196 INFO [firewallet] Height 284, transaction c0c6aba3f72e6a197d2f5a28b591e3824fefbdcf84ddf3625e25446f4270e69f, received 7.6269225
+2026-Apr-28 04:26:11.087054 INFO [firewallet] Height 285, transaction 445c486fa3d020d38773ecbcf7e30199b275bdf6e2472b3c5ccacb2f7f655083, received 7.6269153
+2026-Apr-28 04:30:46.185588 INFO [firewallet] Height 286, transaction 68d581590b39eab86567cdf3ad7a13f849b6ba0066159ebfc736e0747031d059, received 7.6269080
+2026-Apr-28 04:32:01.194555 INFO [firewallet] Height 287, transaction 889d65eaba3218f1cf74fad96de10ca40cf35b295661f1a4c72a3e4e2bf162e7, received 7.6269007
+2026-Apr-28 04:34:31.222018 INFO [firewallet] Height 288, transaction 6e36a48d3603c50446d16539e96c0b8e232770391f0a3795bbd523480fb74993, received 7.6268934
+2026-Apr-28 04:40:16.266679 INFO [firewallet] Height 289, transaction f701cba122ebd19f968d5e4534aaf9c2899d18029aab8be5b9121d0e1d78107c, received 7.6268862
+2026-Apr-28 04:40:31.268110 INFO [firewallet] Height 290, transaction 4617e690f14ce3bc92a97ac40442c65b4b284e216344eeb514a4506d869c518b, received 7.6268789
+2026-Apr-28 04:41:51.276633 INFO [firewallet] Height 291, transaction a43f15e6b23548920db585e6eedc33fc623650346706695ab7d25b205e86dbb2, received 7.6268716
+2026-Apr-28 04:52:31.385909 INFO [firewallet] Height 292, transaction c84985c0ee183aac8d30142fb1d57fdc69b9bd4529ed5227208607437d1a8cfa, received 7.6268643
+2026-Apr-28 04:58:51.455600 INFO [firewallet] Height 293, transaction a9e02805bda5bd07391dc5ad097d7a3d844b943b46d7645fbc1738dfed5246b9, received 7.6268571
+2026-Apr-28 05:03:51.510798 INFO [firewallet] Height 294, transaction 90ea5df29f3c596eace75978a84c833d8b6644cf2ac0fc2bb1942c2a5dd96a0d, received 7.6268498
+2026-Apr-28 05:19:16.699252 INFO [firewallet] Height 295, transaction fb96403d18abd3084c1ee16f620b986af5bc1c8eff3de5a332d0692f6b60c7bc, received 7.6268425
+2026-Apr-28 05:29:01.797678 INFO [firewallet] Height 296, transaction 82992a85b12cb0f8d24109996488883e9224d39ce60b69a129ac4644c04a12f4, received 7.6268352
+2026-Apr-28 05:42:46.974986 INFO [firewallet] Height 297, transaction edcb7081b532cd358648c29d73043fa089a804b5c57fa1636e05f50a029542fd, received 7.6268280
+2026-Apr-28 05:45:42.003262 INFO [firewallet] Height 298, transaction 2ce46b54c6ebebea0fef232bb42252a67a1fa3936b8203e3dad6c94830d2dafe, received 7.6268207
+2026-Apr-28 06:07:57.289380 INFO [firewallet] Height 299, transaction 55508de9f34d0924eb584d8a1c41aa6db9001bb0899b0c25958b53408418732e, received 7.6268134
+2026-Apr-28 06:14:52.452653 INFO [firewallet] Height 300, transaction 792f776474f01412ee14d9ab62c8a397c624e398600d5a446e190b23d352a8db, received 7.6268061
+2026-Apr-28 06:15:17.459244 INFO [firewallet] Height 301, transaction 643a51756926a8d99bf5b7ff85551b98b981b99052d0a05bb322b659850c0d10, received 7.6267989
+2026-Apr-28 06:21:17.555621 INFO [firewallet] Height 302, transaction e6d05b45ab7359843083df993b9e03bc5fecc498e2541de1229cb6b67563c09b, received 7.6267916
+2026-Apr-28 06:30:07.730181 INFO [firewallet] Height 303, transaction bf57fe460c6790bc83d8d239c780af4ccdec7dcf64b9147929e9a6e71020d00f, received 7.6267843
+2026-Apr-28 06:36:27.903562 INFO [firewallet] Height 304, transaction d3a701885df4e6bc84a1745d09ae6acf493c369bb67f7780f793a05eb92f1d8b, received 7.6267771
+2026-Apr-28 06:40:17.985112 INFO [firewallet] Height 305, transaction dec8d8a3ef5fd6f3954e9c7cb70725a8cf6c1817557dbd52053ebdf57977b245, received 7.6267698
+2026-Apr-28 06:40:37.993390 INFO [firewallet] Height 306, transaction 114f67da5b5c3111ba8f08b540b9914d3a9f144e34efc658e104813a0aeb0c09, received 7.6267625
+2026-Apr-28 06:54:58.363574 INFO [firewallet] Height 307, transaction 8db1b2707206cc9b8a8e65b77b6e9fb1b12adde164d95897382d1bbff4b3b11e, received 7.6267552
+2026-Apr-28 06:57:43.422297 INFO [firewallet] Height 308, transaction 22057403166fe62e8073b393fb698019443147592d06fe550cf742a475e13d13, received 7.6267480
+2026-Apr-28 07:01:28.510920 INFO [firewallet] Height 309, transaction 133dfc2ae6423063c24c0c4c14b278911316b37724fd49cdac1c007355e857b3, received 7.6267407
+2026-Apr-28 07:02:13.529483 INFO [firewallet] Height 310, transaction 6f26a44776b255c7e943a688e3b55fffa7689e56dcd676065d3b15b5f6986a0a, received 7.6267334
+2026-Apr-28 07:09:23.706547 INFO [firewallet] Height 311, transaction 3ca886e16802f1a094c76abed9df2b70097daa15bd5ee40981703f57d1647bae, received 7.6267261
+2026-Apr-28 07:13:03.792319 INFO [firewallet] Height 312, transaction 44396bb770ff1c0bf21cc935d015306656724298391909bacce457cf94cd2e28, received 7.6267189
+2026-Apr-28 07:18:58.935390 INFO [firewallet] Height 313, transaction fc0bb54a3881b3f5c4dd9a0cadbcf00bd15f18aca2cf4959e5d17d15fb003ecc, received 7.6267116
+2026-Apr-28 07:29:04.171522 INFO [firewallet] Height 314, transaction cfa18b42db8881f9c7e09167c9a8b702020d6811bc6be960de3439a5c976f23d, received 7.6267043
+2026-Apr-28 07:32:04.245042 INFO [firewallet] Height 315, transaction 144d9bbd167c7924af225450d8916a16cffca3db7f17a6e41c4d83cec704cf29, received 7.6266970
+2026-Apr-28 07:44:54.411846 INFO [firewallet] Height 316, transaction 877b0b6e43a5b9634c4bb0075f99d21c894b6e2dffe30d3c1335f220ace5c3fb, received 7.6266898
+2026-Apr-28 07:44:59.408535 INFO [firewallet] Height 317, transaction b71d16273fc3d65f9022ec03cbf0e654e04521ea14780a7f9ceb6014e24e096e, received 7.6266825
+2026-Apr-28 07:48:04.443642 INFO [firewallet] Height 318, transaction 60d0f5b6c6624b2ecf6d197efe6111e9f28cf1a36ef07014c314a3b786ba216a, received 7.6266752
+2026-Apr-28 07:53:14.552586 INFO [firewallet] Height 319, transaction 0501a4a8b3969324fac7e34ad62a8f8b7ac0aa16aea8e509c93c5401dd56b04a, received 7.6266680
+2026-Apr-28 07:55:24.578353 INFO [firewallet] Height 320, transaction 6251fb337a7bf83c2f5441fabdf96e7d4cdf88b3e58834e7ef81be3543e1af5f, received 7.6266607
+2026-Apr-28 07:58:34.617354 INFO [firewallet] Height 321, transaction aba8e72d6a4bab64d1205fa8e4565be8ddbf226c604d1ca3ed76f6e87b4a49d8, received 7.6266534
+2026-Apr-28 08:05:44.698877 INFO [firewallet] Height 322, transaction e2c22ec4e88352595dc1ae414b2eb72a056dfc5b78e8ff26c2e42049dd439bf9, received 7.6266461
+2026-Apr-28 08:46:20.190117 INFO [firewallet] Height 323, transaction 792737f1154c80fd8055307223b0a26bab6beac0865af7920096b61238239141, received 7.6266389
+2026-Apr-28 08:57:35.321316 INFO [firewallet] Height 324, transaction 3bf8774f6ca71eae1fd90c277d1ffbae573f12b81ce8fab49cf43943dd676baf, received 7.6266316
+2026-Apr-28 08:59:25.344741 INFO [firewallet] Height 325, transaction d8693d3f99e197c89640b4f850e9b8217d3bc9ba69ce1c03f9c69d96deafabd3, received 7.6266243
+2026-Apr-28 09:10:25.462937 INFO [firewallet] Height 326, transaction 51f5f8b96ac94f50c93920d17dda174331749323bc156fbc5d56f6ec56341e88, received 7.6266170
+2026-Apr-28 09:11:35.475833 INFO [firewallet] Height 327, transaction 76ec084b1de60d5e4655b9c67559d57d104aef79cf6445fad97bdc469e36db1c, received 7.6266098
+2026-Apr-28 09:15:50.526663 INFO [firewallet] Height 328, transaction be81dc5bd84e9d393d989280dbc79b60e468bd110b9cec5624c7a6912d329f7a, received 7.6266025
+2026-Apr-28 09:37:05.753125 INFO [firewallet] Height 329, transaction c8886cc6b50f68ec33514dec95692a94be5ebed73349517947bae8346e3ee717, received 7.6265952
+2026-Apr-28 09:43:50.824380 INFO [firewallet] Height 330, transaction b01777da33d14a18d83485647d1e92c01b37078d266509eabec1a9c479459a48, received 7.6265879
+2026-Apr-28 09:53:05.946691 INFO [firewallet] Height 331, transaction 5a1d797f21053b8043ba53e3f825da097a7a95a0f620a1f279293f96eab5fa45, received 7.6265807
+2026-Apr-28 10:22:01.354736 INFO [firewallet] Height 332, transaction e422eaffb4902da49c22f082ceae0c362d9455596b367ae9e6832fec16dd73d1, received 7.6265734
+2026-Apr-28 10:31:21.490651 INFO [firewallet] Height 333, transaction ed4373627c21239deb9a93f3d38ad765def8dc5c0e6174f45d6846b2689498d7, received 7.6265661
+2026-Apr-28 10:43:16.676321 INFO [firewallet] Height 334, transaction d01e2374df8164996f5928a0df32c003c24f205fc6bd7804cfb9038a51a4fb83, received 7.6265589
+2026-Apr-28 11:12:42.113805 INFO [firewallet] Height 335, transaction b94ba7dc04d83eefb6c9c8dd83ef1814087b61929ac32f8f4bf362a86ef6e9cb, received 7.6265516
+2026-Apr-28 11:16:07.153429 INFO [firewallet] Height 336, transaction 7a35f7bbc11e7489342dd43559ad3540f89dd7fec3b31a5a5410c7a290665772, received 7.6265443
+2026-Apr-28 11:37:02.468354 INFO [firewallet] Height 337, transaction 7c76d569acc70d5b7cf6fbe24195799c1d783e2c0010c9a2c215f21cb7d7ce60, received 7.6265370
+2026-Apr-28 11:56:57.734924 INFO [firewallet] Height 338, transaction f4c29258ca05efe463fa7638d623819cc1a10645950be755395c3371fce282aa, received 7.6265298
+2026-Apr-28 12:12:57.947235 INFO [firewallet] Height 339, transaction 2cac4a27b146b3624d55b9829f4ae9c504cbe4806cec95b7390255421fe9b98e, received 7.6265225
+2026-Apr-28 12:14:02.968670 INFO [firewallet] Height 340, transaction fca4ee6120668d926ce1f873bdbf3d773c0e7de72984c94e420e93d727fe3724, received 7.6265152
+2026-Apr-28 12:37:38.313170 INFO [firewallet] Height 341, transaction 62751a884cb04cf8689c767ec35b1be5aaad70b914235a52b12a0553b4215e2c, received 7.6265079
+2026-Apr-28 12:56:33.547762 INFO [firewallet] Height 342, transaction da25682017bce94756e698bd69d976846ec353df433de2d5ccf9c25c3c17e15e, received 7.6265007
+2026-Apr-28 13:03:18.627462 INFO [firewallet] Height 343, transaction 2245f05c9024a3e114511719dacc5247fc351d0de6b51436e23ffcf7928d6a35, received 7.6264934
+2026-Apr-28 13:04:08.640231 INFO [firewallet] Height 344, transaction 8375b2d5ef942b56d1e4275ed75275ab2d540faa1591ee326fdd86fd5d0db36b, received 7.6264861
+2026-Apr-28 13:06:38.672841 INFO [firewallet] Height 345, transaction 07c9abe9a5accc116332024badc2c0a0b403e2a4dbdc1856861703a48946077c, received 7.6264788
+2026-Apr-28 13:13:18.764302 INFO [firewallet] Height 346, transaction 5ae45f2baeb2352fd1bfffc6c74c28aa2557ef6f90496b3005d3e861432b2005, received 7.6264716
+2026-Apr-28 13:31:23.999643 INFO [firewallet] Height 347, transaction b7da67f3b5b3870c67da272f20da5722fd208a2f4db3e72bbd66d179722c851f, received 7.6264643
+2026-Apr-28 13:45:54.208928 INFO [firewallet] Height 348, transaction d71465959b9dee8221b0a6e7d26217300b706301112e754f252b96aee68e2a3b, received 7.6264570
+2026-Apr-28 13:58:34.373400 INFO [firewallet] Height 349, transaction 09a2d2e89b177a65b99fbf94ba420b1cf3bc798d17afe43f4960f8c8f94223b1, received 7.6264498
+2026-Apr-28 14:05:59.468744 INFO [firewallet] Height 350, transaction b41d6ee45bef9e609f21f59b326b05d6e357be6b3331440e6f211d2efe87131d, received 7.6264425
+2026-Apr-28 14:07:59.496676 INFO [firewallet] Height 351, transaction 333c2178857cc998a4758b016e430bf2854cc5b74c21c51f5792cf6c4fd8db18, received 7.6264352
+2026-Apr-28 14:16:34.610265 INFO [firewallet] Height 352, transaction 972ab4bfd9057dba57b994ab29b6bccfe1d4cbef74752ef0dfc58dac312691a1, received 7.6264279
+2026-Apr-28 14:19:09.645959 INFO [firewallet] Height 353, transaction 1ed95044002bd0f339188d95d196b1c9ef3295f095317ded9791bb6d778cce01, received 7.6264207
+2026-Apr-28 14:19:24.650344 INFO [firewallet] Height 354, transaction 5b1ec853362fd2059a4dcf80f25cb0254d4757d1b4a61beacce3085d6726ca9f, received 7.6264134
+2026-Apr-28 14:40:59.945952 INFO [firewallet] Height 355, transaction 005b2924675fce0c8e86fbf15504e808b5151a6cff707f3973874428687e7ce8, received 7.6264061
+2026-Apr-28 14:42:24.961942 INFO [firewallet] Height 356, transaction f91b8f83291520ff39e822c93cdb1c680b38b8249b841213463e58c49ba37d2e, received 7.6263988
+2026-Apr-28 14:45:45.006317 INFO [firewallet] Height 357, transaction 6570579449c1b47304ad5937292fefb5e10b1eb653bb831fad06ffa40d8d249e, received 7.6263916
+2026-Apr-28 14:46:45.021016 INFO [firewallet] Height 358, transaction a6da881fc552f38a12df366d30ce54b399229ba50903b9f1e331505a3c1b4db5, received 7.6263843
+2026-Apr-28 14:51:05.086811 INFO [firewallet] Height 359, transaction 0129e9d81237f71b04e10910180603a34516046ebd48d3ef5f1f9ff4a6170854, received 7.6263770
+2026-Apr-28 15:09:50.367910 INFO [firewallet] Height 360, transaction dc718d699af6fc2489f2a1e2bd5e877ab0995e714d43401b7e0c9f3d14a34e8e, received 7.6263698
+2026-Apr-28 15:27:45.614863 INFO [firewallet] Height 361, transaction 37b0f38b5185d38bb10df48495d7bdcb988507b3ae4ad45937f0f84558e86e3a, received 7.6263625
+2026-Apr-28 15:27:55.616894 INFO [firewallet] Height 362, transaction 86252bd9de9097a10af55c6533d0018ccb39d2acecc0212bb3d0d3183f3ba9a1, received 7.6263552
+2026-Apr-28 15:30:50.656497 INFO [firewallet] Height 363, transaction 55d6ff29e15c6329cad5e2840914c422a16cb6bab5b74fd37fe80a312324507a, received 7.6263479
+2026-Apr-28 15:32:30.675720 INFO [firewallet] Height 364, transaction 77fe27c3accd829fe624fe4fdfc088dd719a37384d5d947c567fc6edee404e4c, received 7.6263407
+2026-Apr-28 15:51:10.940467 INFO [firewallet] Height 365, transaction 4a4512e49f849e0a1e5bc279a80bdde24e739392a3b0488c7e1ca24be95b4a67, received 7.6263334
+2026-Apr-28 15:56:36.023496 INFO [firewallet] Height 366, transaction 666e8d15f843674d930eaa8ac3add3495a796ac45ff11fdac26057596ea85a0e, received 7.6263261
+2026-Apr-28 15:59:41.059306 INFO [firewallet] Height 367, transaction 7d5d0318347bafae17ee61a3d7b92132698c18972d1535061879f79fcc41261e, received 7.6263188
+2026-Apr-28 16:23:16.383326 INFO [firewallet] Height 368, transaction 2fc270bb0c541021db75ad2d2da3344ed5ddab2b159cfddb5dc08322b377c96b, received 7.6263116
+2026-Apr-28 16:27:31.444509 INFO [firewallet] Height 369, transaction 8c1a55864dbaad41ed7a46c15b253f7201af8cf369980cbd8d123e6a3011d77b, received 7.6263043
+2026-Apr-28 16:29:46.476506 INFO [firewallet] Height 370, transaction 2885868a887e83a53d1bd564e4a8c943265552898a9e3770ef342bbea54e813a, received 7.6262970
+2026-Apr-28 16:37:11.589144 INFO [firewallet] Height 371, transaction 0bac8d0ffde3396717db0d59fd93ac36fa6edf039699484f002229659f5a4a8e, received 7.6262897
+2026-Apr-28 16:37:26.589996 INFO [firewallet] Height 372, transaction eba671b2ff40b16a152b5b04f60132c6560b5bfcde3bd81f601ccc54b6efe5b3, received 7.6262825
+2026-Apr-28 16:43:56.681566 INFO [firewallet] Height 373, transaction 90f7fa164725ef9b6e9e96001d8b5f4de25cc240c4b8ea305c9483dd1b9ac58a, received 7.6262752
+2026-Apr-28 16:57:16.863094 INFO [firewallet] Height 374, transaction 338ba8461541ce13dba3076331281284a61947946a6ec54a62016521f129a7bb, received 7.6262679
+2026-Apr-28 17:03:26.938408 INFO [firewallet] Height 375, transaction 35b57c786c3579ffa445cce9d9a56a44e128c82843fe5c698919837602c4a13c, received 7.6262607
+2026-Apr-28 17:12:32.048185 INFO [firewallet] Height 376, transaction b0bbd02c2b7e4143d0a8b0f2c64c45f23d4a908c259ea5cb3aaa11cec466d1c6, received 7.6262534
+2026-Apr-28 17:13:57.070502 INFO [firewallet] Height 377, transaction 11d5930a838b2e999088971f73e23d1bff9c81ccbb37cad46c0c77c81a9119ce, received 7.6262461
+2026-Apr-28 17:15:32.091681 INFO [firewallet] Height 378, transaction 56cc5773fae5a3eac6348ddb274b51068065d5e347ee270e6c8dd948d37fdcd1, received 7.6262388
+2026-Apr-28 17:16:02.098244 INFO [firewallet] Height 379, transaction 5d09a58bf7000d88ee8b6f90673f2ff3e1e6c925cbe61849786dc12622ba1976, received 7.6262316
+2026-Apr-28 17:18:02.124854 INFO [firewallet] Height 380, transaction 59b20df8d4b5dfb2e30aa9edf62175ff3a989a6bb81bbcad898979d74c4494f2, received 7.6262243
+2026-Apr-28 17:20:32.155439 INFO [firewallet] Height 381, transaction 1fe0bbe5675da4ec7900fe684b3ddaec2f4049aec3caa70fff4133351fd1ca21, received 7.6262170
+2026-Apr-28 17:21:27.163168 INFO [firewallet] Height 382, transaction 5aa059171ee01c3906a99e376f3c0abe83358ab23cb3de03cff8fdeb6fcec0ad, received 7.6262097
+2026-Apr-28 17:21:57.171762 INFO [firewallet] Height 383, transaction 60ecbdae1a883078787115e9c17a3262d1e8b47d9c1bcbbba03f4c06e8bbad7e, received 7.6262025
+2026-Apr-28 17:26:07.225844 INFO [firewallet] Height 384, transaction 9631ee4d97482611fe5251079103b9bc0467cbb59271a8cb29362dd2e9d15ccd, received 7.6261952
+2026-Apr-28 17:29:02.268008 INFO [firewallet] Height 385, transaction 389e5c42a038bf67a03bfe642106d85297781dc0516277108ce1a2e343115fc3, received 7.6261879
+2026-Apr-28 17:30:02.288867 INFO [firewallet] Height 386, transaction e8ffb887634eaef3cab47c98802b4712991062dd6e17265a0b6023b0a0944848, received 7.6261807
+2026-Apr-28 17:42:07.450067 INFO [firewallet] Height 387, transaction 187353338fc38f03d90c38a00cee051bc761416f865dbe714302e8e9ddcd05b8, received 7.6261734
+2026-Apr-28 17:46:37.511474 INFO [firewallet] Height 388, transaction ebba14af28378635202055cc572ee1fd5ae1c41b3601467c1cb85f45471be5e9, received 7.6261661
+2026-Apr-28 17:54:42.623538 INFO [firewallet] Height 389, transaction d6f19c38ac3640aec51a039fdae8efd4cdda936ae7a365c92919ba3e83c62646, received 7.6261588
+2026-Apr-28 18:03:42.751709 INFO [firewallet] Height 390, transaction 5ca39034692d9488955c2c9740ef391e31366ce0bf95e0c9d846ef2950c8768d, received 7.6261516
+2026-Apr-28 18:12:47.870364 INFO [firewallet] Height 391, transaction aa8d839f5c9ed23742a513b513de44783ec3215923dec95b30121c7f7637586c, received 7.6261443
+2026-Apr-28 18:14:17.883097 INFO [firewallet] Height 392, transaction 006e0f1d26762e0f33d2e69bfbf6406383d48caee43fa47cb0c483378dbb6938, received 7.6261370
+2026-Apr-28 18:36:03.072040 INFO [firewallet] Height 393, transaction 73bb222e007c2c0a9d8b1f76abee0a2938c2e7ab4200d92c29e2871b2d97136d, received 7.6261297
+2026-Apr-28 18:48:03.207145 INFO [firewallet] Height 394, transaction d13438d1355a345d4a0b46c269f35ab26391de90f37b972cc4f0576a562d7d46, received 7.6261225
+2026-Apr-28 19:08:28.396936 INFO [firewallet] Height 395, transaction 1ce908ab5124907ea15ccb81d7cd32055516adb2861c3f3feaf0ef0ffc6ef165, received 7.6261152
+2026-Apr-28 19:33:53.653260 INFO [firewallet] Height 396, transaction fef2206e7aaa4d6a3df6f55cb1b18c0532ce233804492f73a6352a910614f985, received 7.6261079
+2026-Apr-28 19:44:03.793073 INFO [firewallet] Height 397, transaction 0689bfa919cc503694126df2ba626927e01125e894dbb268cfad98cb64765567, received 7.6261007
+2026-Apr-28 19:44:13.798387 INFO [firewallet] Height 398, transaction e3da2f7ba26a667ee36e6b47e922dd4b37aac18806487996ceb5f69ce684d1db, received 7.6260934
+2026-Apr-28 19:45:43.820973 INFO [firewallet] Height 399, transaction 889a04895f702206ad7aecdb8ecad7b293d41e36419a0c744f296e5a50c5a994, received 7.6260861
+2026-Apr-28 19:48:48.857028 INFO [firewallet] Height 400, transaction 0b8fe39fd3caa3544c066842f2c9c19b22ea72241440b206cdbed570753f8e0a, received 7.6260788

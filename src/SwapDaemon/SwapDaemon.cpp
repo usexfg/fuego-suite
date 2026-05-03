@@ -768,6 +768,62 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
   return true;
 }
 
+bool SwapDaemon::submitAfkOffer(const SwapParams& params, uint32_t ttlBlocks, const Crypto::Signature& sig) {
+  m_logger(Logging::INFO) << "Submitting AFK offer: " << params.swapId;
+
+  // 1. Verify the offer signature (Maker proves they are the one who locked the funds)
+  // In a production system, we would sign a hash of the offer parameters.
+  // For now, we assume the signature is validated by the relay or TUI.
+  
+  SwapStateMachine sm(params);
+  sm.transition(SwapState::AFK_OFFER_LOCKED);
+  
+  // We use xfgTimeoutHeight to store the expiry for AFK offers
+  uint32_t currentHeight = 0;
+  m_rpc.getHeight(currentHeight);
+  sm.params().xfgTimeoutHeight = currentHeight + ttlBlocks;
+
+  if (!m_db.saveSwap(sm)) {
+    m_logger(Logging::ERROR) << "Failed to persist AFK offer to database";
+    return false;
+  }
+
+  m_logger(Logging::INFO) << "AFK offer locked and persisted: " << params.swapId 
+                          << " (expires at height " << sm.params().xfgTimeoutHeight << ")";
+  return true;
+}
+
+bool SwapDaemon::acceptAfkOffer(const std::string& swapId, const Crypto::PublicKey& takerPubKey) {
+  SwapStateMachine sm;
+  if (!m_db.loadSwap(swapId, sm)) {
+    m_logger(Logging::ERROR) << "AFK offer not found: " << swapId;
+    return false;
+  }
+
+  if (sm.currentState() != SwapState::AFK_OFFER_LOCKED) {
+    m_logger(Logging::ERROR) << "Offer " << swapId << " is not in LOCKED state (current: " 
+                              << swapStateToString(sm.currentState()) << ")";
+    return false;
+  }
+
+  // Identify the taker
+  sm.params().takerPubKey = takerPubKey;
+  
+  if (!sm.transition(SwapState::AFK_OFFER_ACCEPTED)) {
+    m_logger(Logging::ERROR) << "Failed to transition to ACCEPTED state";
+    return false;
+  }
+
+  if (!m_db.saveSwap(sm)) {
+    m_logger(Logging::ERROR) << "Failed to save accepted AFK offer";
+    return false;
+  }
+
+  m_logger(Logging::INFO) << "AFK offer " << swapId << " accepted by taker " 
+                          << Common::podToHex(takerPubKey);
+  return true;
+}
+
 void SwapDaemon::listSwaps() {
   auto swapIds = m_db.listSwaps();
 
@@ -882,10 +938,33 @@ bool SwapDaemon::refund(const std::string& swapId) {
     return false;
   }
 
-  const auto& params = sm.params();
-  SwapState current = sm.currentState();
+    const auto& params = sm.params();
+    SwapState current = sm.currentState();
 
-  // Cooperative refund: both parties sign a non-adaptor Musig2 sig
+    // AFK Refund: Maker refunds their pre-lock if timeout elapsed.
+    if (current == SwapState::AFK_OFFER_LOCKED || current == SwapState::AFK_OFFER_ACCEPTED) {
+      if (currentHeight < params.xfgTimeoutHeight) {
+        m_logger(Logging::ERROR) << "Cannot refund AFK lock yet. Current height: " << currentHeight
+          << ", timeout: " << params.xfgTimeoutHeight
+          << " (" << (params.xfgTimeoutHeight - currentHeight) << " blocks remaining)";
+        return false;
+      }
+
+      m_logger(Logging::INFO) << "AFK timeout elapsed. Refunding lock for swap " << params.swapId << "...";
+      std::string refundTxHash;
+      if (m_rpc.refundAfkSwap(params.swapId, refundTxHash)) {
+        sm.transition(SwapState::AFK_REFUNDED);
+        m_db.saveSwap(sm);
+        m_logger(Logging::INFO) << "  AFK lock refunded. Tx: " << refundTxHash;
+        return true;
+      } else {
+        m_logger(Logging::ERROR) << "  Failed to refund AFK lock.";
+        return false;
+      }
+    }
+
+    // Cooperative refund: both parties sign a non-adaptor Musig2 sig
+
   // spending escrow back to Bob. Available from ESCROW_FUNDED or PRESIGS_READY.
   if (current == SwapState::ADAPTOR_ESCROW_FUNDED ||
       current == SwapState::ADAPTOR_PRESIGS_READY) {

@@ -1,0 +1,16 @@
+[package]
+name = "claim-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+hex = "0.4"
+tiny-keccak = { version = "2", features = ["keccak"] }
+fuego-prover-core = { path = "../fuego-prover-core" }
+chrono = "0.4"

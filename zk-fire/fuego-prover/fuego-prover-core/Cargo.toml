@@ -1,0 +1,9 @@
+[package]
+name = "fuego-prover-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+hex = "0.4"
+tiny-keccak = { version = "2", features = ["keccak"] }

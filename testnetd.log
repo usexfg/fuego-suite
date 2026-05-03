@@ -1,0 +1,29 @@
+sendto: No route to host
+sendto: No route to host
+sendto: No route to host
+sendto: No route to host
+2026-Apr-29 18:06:20.188165 INFO  
+ ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  
+ ▒▒      ▒▒    ▒▒ ▒▒      ▒▒       ▒▒    ▒▒ 
+ ▒▒▒▒▒   ▒▒    ▒▒ ▒▒▒▒▒   ▒▒   ▒▒▒ ▒▒    ▒▒ 
+ ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓ 
+ ██       ██████  ███████  ██████   ██████  
+
+             10.12.014
+
+
+2026-Apr-29 18:06:20.189157 INFO Module folder: ./build/src/testnetd
+2026-Apr-29 18:06:20.189194 INFO Starting in testnet mode!
+2026-Apr-29 18:06:20.190423 INFO Initializing p2p server...
+2026-Apr-29 18:06:20.190490 INFO Binding on 0.0.0.0:20888
+2026-Apr-29 18:06:20.190644 INFO Net service bound on 0.0.0.0:20888
+2026-Apr-29 18:06:20.190677 INFO Attempting to add IGD port mapping.
+2026-Apr-29 18:06:21.230637 INFO No IGD was found.
+2026-Apr-29 18:06:21.231180 INFO P2p server initialized OK
+2026-Apr-29 18:06:21.231217 INFO Initializing core...
+2026-Apr-29 18:06:21.231765 INFO Testnet doesn't use or recognize checkpoints
+2026-Apr-29 18:06:21.231799 INFO Blockchain not loaded, generating genesis block.
+2026-Apr-29 18:06:21.278175 INFO Checkpoints passed
+2026-Apr-29 18:06:21.278220 INFO Blockchain initialized. last block: 0, d5047.h17.m6.s21 time ago, current difficulty: 1
+2026-Apr-29 18:06:21.278250 INFO Core initialized OK
+2026-Apr-29 18:06:21.278318 INFO Swap offer relay started

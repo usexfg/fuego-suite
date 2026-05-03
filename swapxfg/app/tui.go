@@ -29,6 +29,8 @@ type tuiModel struct {
 
 	// CD market sub-model
 	cdMarket CdMarketModel
+	// My offers sub-model
+	myOffers *MyOffersModel
 
 	// Browser bridge (MetaMask / Phantom)
 	bridge  *BridgeServer
@@ -62,6 +64,8 @@ type refreshMsg struct {
 	balance *WalletBalance
 	balErr  error
 	bchBal  string // formatted BCH balance, empty if unavailable
+	swaps   []SwapStatus
+	swapErr error
 }
 
 type refreshTickMsg time.Time
@@ -112,6 +116,7 @@ func newTuiModel(cfg Config) tuiModel {
 			CdPrices: make(map[uint64]*CdPriceStats),
 		},
 		cdMarket: newCdMarketModel(),
+		myOffers: newMyOffersModel(),
 		cursorOn: true,
 	}
 	if cfg.WalletRPC != "" {
@@ -148,7 +153,9 @@ func (m tuiModel) fetchData() tea.Cmd {
 				msg.bchBal = FormatBchBalance(bal)
 			}
 		}
-		return msg
+		// Also fetch my active swaps
+		swaps, swapErr := client.GetActiveSwaps()
+		return refreshMsg{data: data, err: err, balance: msg.balance, balErr: msg.balErr, bchBal: msg.bchBal, swaps: swaps, swapErr: swapErr}
 	}
 }
 
@@ -179,6 +186,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.bchBal != "" {
 			m.bchBal = msg.bchBal
 		}
+		// Update my offers
+		m.myOffers.Update(msg.swaps, msg.swapErr)
 
 	case refreshTickMsg:
 		return m, tea.Batch(m.fetchData(), refreshTick())
@@ -258,6 +267,8 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		m.activePair = nextPair(m.activePair)
+	case "m":
+		m.activePair = PairMyOffers
 	case "r":
 		return m, m.fetchData()
 	case "?":
@@ -642,6 +653,50 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			m.statusMsg = "no wallet connected (use --wallet <endpoint>)"
 			return nil
 		}
+		wallet := m.wallet
+		client := m.client
+		bridge := m.bridge
+		return func() tea.Msg {
+			// 1. Accept on daemon to lock the offer for this taker
+			var resp struct {
+				Status string `json:"status"`
+			}
+			if err := client.post("/acceptafk", map[string]interface{}{"swap_id": offerID}, &resp); err != nil {
+				return statusUpdateMsg{"accept failed: " + err.Error()}
+			}
+
+			// 2. Trigger ETH bridge to deploy HTLC contract
+			if bridge == nil || !bridge.IsConnected() {
+				return statusUpdateMsg{"Offer accepted! But MetaMask not connected. Please lock funds manually."}
+			}
+
+			// We send a request to the bridge to deploy an AFK HTLC.
+			// The bridge (browser) will generate the secret t, compute H = Keccak(t),
+			// and deploy the contract.
+			deployReq := BridgeRequest{
+				ID:     "deploy_afk_" + offerID,
+				Action: "deploy_afk_htlc",
+				Params: []byte(fmt.Sprintf(`{"swap_id": "%s"}`, offerID)),
+			}
+			deployResp, err := bridge.Send(deployReq)
+			if err != nil {
+				return statusUpdateMsg{"ETH lock failed: " + err.Error()}
+			}
+			if deployResp.Error != "" {
+				return statusUpdateMsg{"ETH lock error: " + deployResp.Error}
+			}
+
+			return statusUpdateMsg{"Offer accepted & ETH locked! Tx: " + deployResp.Result[:min(12, len(deployResp.Result))] + "..."}
+		}
+
+		if offerID == "" {
+			m.statusMsg = "No CD offer selected"
+			return nil
+		}
+		if m.wallet == nil {
+			m.statusMsg = "no wallet connected (use --wallet <endpoint>)"
+			return nil
+		}
 		client := m.client
 		return func() tea.Msg {
 			resp, err := client.AcceptCdOffer(offerID, "")
@@ -664,8 +719,8 @@ func pairToID(pair string) uint8 {
 	return PairFromString(strings.ToLower(pair))
 }
 
-// allPairsWithCD includes CD as the last tab in the rotation.
-var allPairsWithCD = append(ActivePairs, PairCD)
+// allPairsWithCD includes CD and MyOffers in the rotation.
+var allPairsWithCD = append(ActivePairs, PairCD, PairMyOffers)
 
 func nextPair(cur uint8) uint8 {
 	for i, p := range allPairsWithCD {
@@ -702,6 +757,8 @@ func (m tuiModel) View() string {
 	var mainArea string
 	if m.activePair == PairCD {
 		mainArea = RenderCdMarket(&m.cdMarket, w, mainH)
+	} else if m.activePair == PairMyOffers {
+		mainArea = m.myOffers.View(w, mainH)
 	} else {
 		// chart (left 60%) | orderbook+tape (right 40%)
 		rightW := w * 38 / 100

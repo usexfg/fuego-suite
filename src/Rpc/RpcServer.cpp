@@ -126,6 +126,9 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getswapprice", { jsonMethod<COMMAND_RPC_GET_SWAP_PRICE>(&RpcServer::on_get_swap_price), true } },
   { "/getswaptrades", { jsonMethod<COMMAND_RPC_GET_SWAP_TRADES>(&RpcServer::on_get_swap_trades), true } },
   { "/submitswap", { jsonMethod<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
+  { "/submitswapafk", { jsonMethod<COMMAND_RPC_SUBMIT_AFK_OFFER>(&RpcServer::on_submit_afk_offer), false } },
+  { "/acceptswapafk", { jsonMethod<COMMAND_RPC_ACCEPT_AFK_OFFER>(&RpcServer::on_accept_afk_offer), false } },
+  { "/refundswapafk", { jsonMethod<COMMAND_RPC_REFUND_AFK_SWAP>(&RpcServer::on_refund_afk_swap), false } },
   { "/cancelswap", { jsonMethod<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
 
   // disabled in restricted rpc mode
@@ -1143,7 +1146,80 @@ bool RpcServer::on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::reques
   return true;
 }
 
+bool RpcServer::on_submit_afk_offer(const COMMAND_RPC_SUBMIT_AFK_OFFER::request& req, COMMAND_RPC_SUBMIT_AFK_OFFER::response& res) {
+  if (!m_swapDaemon) {
+    res.status = "Swap daemon not available";
+    return true;
+  }
+
+  XfgSwap::SwapParams params;
+  params.swapId    = req.offerId;
+  params.pair      = static_cast<XfgSwap::SwapPair>(req.pair);
+  params.xfgAmount = req.xfgAmount;
+  params.role      = XfgSwap::SwapRole::BOB;
+
+
+  Crypto::PublicKey makerPubKey;
+  if (!Common::podFromHex(req.makerPubKey, makerPubKey)) {
+    res.status = "Invalid makerPubKey hex";
+    return true;
+  }
+  params.bobXfgPubKey = makerPubKey;
+  params.ourSwapPubKey = makerPubKey; // In this context, the maker's pubkey is the swap pubkey
+
+  Crypto::Signature sig;
+  if (!Common::podFromHex(req.signature, sig)) {
+    res.status = "Invalid signature hex";
+    return true;
+  }
+
+  if (!m_swapDaemon->submitAfkOffer(params, req.ttlBlocks, sig)) {
+    res.status = "Failed to submit AFK offer";
+    return true;
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_accept_afk_offer(const COMMAND_RPC_ACCEPT_AFK_OFFER::request& req, COMMAND_RPC_ACCEPT_AFK_OFFER::response& res) {
+  if (!m_swapDaemon) {
+    res.status = "Swap daemon not available";
+    return true;
+  }
+  
+  Crypto::PublicKey takerPubKey;
+  if (!Common::podFromHex(req.takerPubKey, takerPubKey)) {
+    res.status = "Invalid takerPubKey hex";
+    return true;
+  }
+  
+  if (!m_swapDaemon->acceptAfkOffer(req.swapId, takerPubKey)) {
+    res.status = "Failed to accept AFK offer";
+    return true;
+  }
+  
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_refund_afk_swap(const COMMAND_RPC_REFUND_AFK_SWAP::request& req, COMMAND_RPC_REFUND_AFK_SWAP::response& res) {
+  if (!m_swapDaemon) {
+    res.status = "Swap daemon not available";
+    return true;
+  }
+
+  if (!m_swapDaemon->refund(req.swapId)) {
+    res.status = "Failed to refund AFK swap (timeout may not have elapsed)";
+    return true;
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
 bool RpcServer::on_get_ethereal_flame(const COMMAND_RPC_GET_ETHERNAL_FLAME::request& req, COMMAND_RPC_GET_ETHERNAL_FLAME::response& res) {
+
   uint64_t current_height = m_core.get_current_blockchain_height();
   res.ethereal_xfg = m_core.getBurnedXfgAtHeight(current_height);
   res.formattedAmount = m_core.currency().formatAmount(res.ethereal_xfg) + " XFG";

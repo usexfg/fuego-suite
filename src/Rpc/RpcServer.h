@@ -105,6 +105,9 @@ private:
   bool on_get_swap_price(const COMMAND_RPC_GET_SWAP_PRICE::request& req, COMMAND_RPC_GET_SWAP_PRICE::response& res);
   bool on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& req, COMMAND_RPC_GET_SWAP_TRADES::response& res);
   bool on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::request& req, COMMAND_RPC_SUBMIT_SWAP_OFFER::response& res);
+  bool on_submit_afk_offer(const COMMAND_RPC_SUBMIT_AFK_OFFER::request& req, COMMAND_RPC_SUBMIT_AFK_OFFER::response& res);
+  bool on_accept_afk_offer(const COMMAND_RPC_ACCEPT_AFK_OFFER::request& req, COMMAND_RPC_ACCEPT_AFK_OFFER::response& res);
+  bool on_refund_afk_swap(const COMMAND_RPC_REFUND_AFK_SWAP::request& req, COMMAND_RPC_REFUND_AFK_SWAP::response& res);
   bool on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::request& req, COMMAND_RPC_CANCEL_SWAP_OFFER::response& res);
 
   bool on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res);

@@ -1,0 +1,22 @@
+{
+  "name": "Large Burn (800 XFG)",
+  "description": "Template for large 800 XFG burn",
+  "defaults": {
+    "burn_amount_xfg": "800.0",
+    "network": "fuego-mainnet",
+    "version": "1.0.0"
+  },
+  "required_fields": [
+    "transaction_hash",
+    "ethereum_address",
+    "secret_key"
+  ],
+  "optional_fields": [
+    "block_height",
+    "timestamp",
+    "ens_name",
+    "label",
+    "salt",
+    "hint"
+  ]
+}

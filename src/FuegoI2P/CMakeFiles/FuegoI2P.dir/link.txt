@@ -1,0 +1,2 @@
+/usr/bin/ar qc libFuegoI2P.a CMakeFiles/FuegoI2P.dir/src/Fuegoi2p.cpp.o
+/usr/bin/ranlib libFuegoI2P.a

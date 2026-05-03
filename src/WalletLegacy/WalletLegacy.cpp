@@ -1728,13 +1728,10 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   std::unique_lock<std::mutex> lock(m_cacheMutex);
   throwIfNotInitialised();
 
-  if (amount == 0) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
-  if (timeout_hours == 0 || timeout_hours > 200) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
-
-  // 1. Generate AFK Lock Data
+  // 1. Generate Adaptor Signature data (s, P, pre_sig)
+  Crypto::Hash prefix_hash = {0};
   Crypto::AFKLockData lockData;
-  Crypto::Hash zeroHash = {{0}};
-  if (!Crypto::generate_afk_lock_data(zeroHash, m_account.getAccountKeys().address.spendPublicKey, m_account.getAccountKeys().spendSecretKey, lockData)) {
+  if (!Crypto::generate_afk_lock_data(prefix_hash, m_account.getAccountKeys().address.spendPublicKey, m_account.getAccountKeys().spendSecretKey, lockData)) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
 
@@ -1750,10 +1747,7 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   Crypto::generate_keys(txPK, txSK);
 
   std::vector<WalletLegacyTransfer> transfers;
-  WalletLegacyTransfer transfer;
-  transfer.address = getAddress();
-  transfer.amount = static_cast<int64_t>(totalAmount);
-  transfers.push_back(transfer);
+  transfers.push_back({ getAddress(), static_cast<int64_t>(totalAmount) });
 
   TransactionId txId = sendTransaction(txSK, transfers, 1000, "", 0, unlockTimestamp);
   if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
@@ -1768,13 +1762,16 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   
   std::string lockIdStr = Common::podToHex(tx.hash);
   lockId = lockIdStr;
-  adaptorPoint = Crypto::pointToString(lockData.adaptor_point);
-  preSig = Crypto::signatureToString(lockData.pre_sig);
+  adaptorPoint = Common::podToHex(lockData.adaptor_point);
+  preSig = Common::podToHex(lockData.pre_sig.data);
 
   // 3. Store secret and pre-signature
+  Crypto::SecretKey s;
+  std::memcpy(&s, &lockData.secret, sizeof(s));
   Crypto::Signature ps;
   std::memcpy(&ps, &lockData.pre_sig, sizeof(ps));
-  m_afkLockSecrets[lockIdStr] = AFKLockSecret(reinterpret_cast<const Crypto::SecretKey&>(lockData.secret), ps, amount, timeout_hours, pair);
+
+  m_afkLockSecrets[lockIdStr] = AFKLockSecret(s, ps, amount, timeout_hours, pair);
 
   return std::error_code();
 }
@@ -1797,7 +1794,7 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
   Crypto::SecretKey s;
   Crypto::AdaptorSignature pre_sig;
   std::memcpy(&pre_sig, &it->second.preSig, sizeof(pre_sig));
-
+  
   if (!Crypto::extract_afk_secret(pre_sig, finalSig, s)) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
@@ -1842,4 +1839,71 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
   return std::error_code();
 }
 
+std::error_code WalletLegacy::refund_afk_lock(const std::string& lockId, std::string& txHash) {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  throwIfNotInitialised();
+
+  auto it = m_afkLockSecrets.find(lockId);
+  if (it == m_afkLockSecrets.end()) {
+    return make_error_code(CryptoNote::error::NOT_FOUND);
+  }
+
+  // 1. Verify timeout has elapsed
+  time_t now = std::time(nullptr);
+  if (now < it->second.timestamp + (static_cast<time_t>(it->second.timeout_hours) * 3600)) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR); // Or a specific "NOT_YET_REFUNDABLE" error
+  }
+
+  // 2. Spend the lock output back to ourselves
+  // The lockId is the tx hash of the lock transaction.
+  Crypto::Hash lockHash;
+  if (!Common::podFromHex(lockId, lockHash)) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
+
+  // We find the output that matches the lock amount.
+  std::vector<TransactionOutputInformation> outputs;
+  m_transferDetails->getOutputs(outputs, ITransfersContainer::IncludeKeyUnlocked);
+  
+  TransactionOutputInformation lockOut;
+  bool found = false;
+  for (auto& out : outputs) {
+    if (out.transactionHash == lockHash && out.amount >= it->second.amount) {
+      lockOut = out;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    return make_error_code(CryptoNote::error::NOT_FOUND);
+  }
+
+  // Build a transaction to move funds from the lock output to the wallet.
+  std::vector<WalletLegacyTransfer> transfers;
+  transfers.push_back({ getAddress(), static_cast<int64_t>(lockOut.amount) });
+
+  Crypto::SecretKey txSK;
+  Crypto::PublicKey txPK;
+  Crypto::generate_keys(txPK, txSK);
+  
+  TransactionId txId = sendTransaction(txSK, transfers, m_currency.minimumFee());
+  if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  WalletLegacyTransaction tx;
+  if (getTransaction(txId, tx)) {
+    txHash = Common::podToHex(tx.hash);
+  } else {
+    txHash = "TX_BROADCASTED";
+  }
+
+  m_afkLockSecrets.erase(it);
+  return std::error_code();
+}
+
 } // namespace CryptoNote
+
+
+

@@ -1,0 +1,22 @@
+{
+  "name": "Standard Burn (0.8 XFG)",
+  "description": "Template for standard 0.8 XFG burn",
+  "defaults": {
+    "network": "fuego-mainnet",
+    "version": "1.0.0",
+    "burn_amount_xfg": "0.8"
+  },
+  "required_fields": [
+    "transaction_hash",
+    "ethereum_address",
+    "secret_key"
+  ],
+  "optional_fields": [
+    "block_height",
+    "timestamp",
+    "ens_name",
+    "label",
+    "salt",
+    "hint"
+  ]
+}

@@ -78,9 +78,34 @@ ws.onmessage = async (ev) => {
         result = tx.hash;
         break;
       }
-      default:
-        error = "unknown action: " + req.action;
-    }
+	case "deploy_afk_htlc": {
+		const HTLC_CONTRACT = "0x200Af4A95E06bC999869D8B0698d9Ef23e32e9ae"; // Sepolia HTLC
+		const TIMEOUT_HRS = 48; // Default 48h for Taker lock
+
+		const abi = ["function lock(bytes32,uint256) returns (bool)"];
+		const c = new ethers.Contract(HTLC_CONTRACT, abi, signer);
+
+		// Generate adaptor secret t
+		const t = ethers.utils.randomBytes(32);
+		const h = ethers.utils.keccak256(t);
+
+		// Store t in localStorage for later claim
+		localStorage.setItem("afk_secret_" + req.params.swap_id, ethers.utils.hexlify(t));
+
+		// Calculate amount (99% of base + miner fee)
+		// This is simplified: in a real app, we'd fetch the exact amount from the daemon.
+		// For now we assume the TUI passed the correct amount or we hardcode a demo value.
+		const amount = ethers.utils.parseEther("0.1"); // TODO: use req.params.amount
+		const timeout = Math.floor(Date.now() / 1000) + (TIMEOUT_HRS * 3600);
+
+		const tx = await c.lock(h, timeout, { value: amount });
+		result = tx.hash;
+		break;
+	}
+	default:
+		error = "unknown action: " + req.action;
+	}
+
   } catch(e) {
     error = e.message;
   }
@@ -102,6 +127,7 @@ var ethAllowedActions = map[string]bool{
 	"erc20_getBalance": true,
 	"erc20_approve":    true,
 	"erc20_transfer":   true,
+	"deploy_afk_htlc":  true,
 }
 
 // sendEth sends a bridge request after validating the action against the ETH

@@ -30,12 +30,12 @@
 | Asset | Type | Purpose |
 |-------|------|---------|
 | **XFG** | Native coin | Real-value payments. Buy albums, swap cross-chain, mine. The money. |
-| **CD** | Commitment Deposit | Locked XFG that earns yield from swap fee pool (0.3% per swap). Privacy flywheel — more locks = bigger ring pools = better privacy. |
+| **CD** | Commitment Deposit | Locked XFG that earns yield from swap fee pool (2% per swap). Privacy flywheel — more locks = bigger ring pools = better privacy. |
 | **DIGM** | Colored coin (on-chain) | Artist/publisher hosting rights. Fixed supply: 100,000. Required to publish albums on the platform. Anti-spam + quality gate. |
 
 ### In-App (DIGM platform layer, anchored on-chain)
 
-> **Scoping note.** PARA / VOX / CURA / nfVOX / TOP are **in-app tokens**. Their supply models, burn ratios, multiplier curves, and transfer rules are deliberately left **TBD** and are only meaningful *inside the DIGM app*. We are not worrying about external market value, cross-chain representation, or use-functions beyond DIGM.
+> **Scoping note.** PARA / VOX / CURA / nfVOX / TOP are **in-app tokens**. Their supply models, burn ratios, multiplier curves, and transfer rules are deliberately left **TBD** and are only meaningful *inside the DIGM app*. We are not worrying about external market value, cross-chain representation, or use-functions beyond DIGM (and mayyybe PARA...so if para will have external value it may should switch w/ VOX as the value token instead of the signal or 'like' token).
 >
 > What *is* guaranteed: every state change (mint / burn / transfer / transmutation / award) **settles to Fuego L1 via the merkle anchor** (§10) for correctness, auditability, and legitimacy. The app is the execution layer; Fuego is the truth layer. An app that lies about balances gets caught by the next anchored root.
 

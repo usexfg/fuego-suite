@@ -1334,69 +1334,18 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
        status_str = "Withdrawn";
      }
 
-     success_msg_writer() << std::left <<
-       std::setw(5)  << std::to_string(id) << " | " <<
-       std::setw(18) << amount_str << " | " <<
-       std::setw(13) << term_str << " | " <<
-       std::setw(13) << unlock_str << " | " <<
-       std::setw(8) << status_str << " | " <<
-       key_image_str;
-   }
-
-    // Skip burns / HEAT txns — those belong in list_burns only
-    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
-      continue;
+      success_msg_writer() << std::left <<
+        std::setw(5)  << std::to_string(id) << " | " <<
+        std::setw(18) << amount_str << " | " <<
+        std::setw(13) << term_str << " | " <<
+        std::setw(13) << unlock_str << " | " <<
+        std::setw(8) << status_str << " | " <<
+        key_image_str;
     }
 
-    // Format amount
-    std::string amount_str = m_currency.formatAmount(deposit.amount);
-
-    // Format term (CD deposits)
-    uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
-                                               : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-    uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
-                                               : CryptoNote::parameters::DEPOSIT_MAX_TERM;
-
-    std::string term_str;
-    // Convert blocks to epochs (1 epoch = 900 blocks ≈ 5 days)
-    if (deposit.term >= cdMin && deposit.term <= cdMax) {
-      uint32_t epochs = deposit.term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-      uint32_t days_approx = epochs * 5;
-      term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
-    } else {
-      term_str = std::to_string(deposit.term) + " blocks";
-    }
-
-    // Format unlock height
-    std::string unlock_str = "";
-    if (deposit.locked) {
-      unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
-    } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      unlock_str = "Withdrawn";
-    } else {
-      unlock_str = "Unlocked";
-    }
-
-    // Format status
-    std::string status_str = "";
-    if (deposit.locked) {
-      status_str = "Locked";
-    } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      status_str = "Unlocked";
-    } else {
-      status_str = "Withdrawn";
-    }
-
-    success_msg_writer() << std::left <<
-      std::setw(5)  << std::to_string(id) << " | " <<
-      std::setw(18) << amount_str << " | " <<
-      std::setw(13) << term_str << " | " <<
-      std::setw(13) << unlock_str << " | " <<
-      std::setw(8) << status_str;
-  }
-
-  return true;
+    return true;
 }
+
 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::burn(const std::vector<std::string> &args)

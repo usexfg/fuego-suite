@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "fuego-prover-core",
+    "fuego-cn",
+    "fuego-circuit",
+    "fuego-prover-cli",
+]
+resolver = "2"

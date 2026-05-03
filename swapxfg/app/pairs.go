@@ -7,6 +7,7 @@ const (
 	PairXMR uint8 = 2
 	PairBCH uint8 = 3
 	PairCD  uint8 = 99 // not a swap pair — CD/XFG secondary market mode
+	PairMyOffers uint8 = 100 // view of user's own active AFK offers
 )
 
 // ActivePairs lists all supported pairs in display order (SOL first).
@@ -25,6 +26,8 @@ func PairName(pair uint8) string {
 		return "BCH/XFG"
 	case PairCD:
 		return "CD/XFG"
+	case PairMyOffers:
+		return "My Offers"
 	default:
 		return "?/XFG"
 	}

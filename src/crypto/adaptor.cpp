@@ -229,7 +229,7 @@ void complete_afk_signature(
   adapt_signature(pre_sig, adaptor_secret, sig);
 }
 
-bool extract_afk_secret_wrapper(
+bool extract_afk_secret(
     const AdaptorSignature &pre_sig,
     const Signature &sig,
     EllipticCurveScalar &adaptor_secret)

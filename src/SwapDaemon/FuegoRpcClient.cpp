@@ -324,16 +324,34 @@ bool FuegoRpcClient::getRandomOutputs(uint64_t amount, uint64_t count,
   }
 }
 
-bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& addressOut) {
-  try {
-    std::string body = "{\"alias\":\"" + alias + "\"}";
-    std::string responseBody = daemonPost("/get_alias", body);
-    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
-    if (!json.isObject() || !json.contains("found")) return false;
-    if (!json("found").getBool()) return false;
-    addressOut = json("address").getString();
-    return true;
-  } catch (const std::exception&) { return false; }
-}
+  bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& addressOut) {
+    try {
+      std::string body = "{\"alias\":\"" + alias + "\"}";
+      std::string responseBody = daemonPost("/get_alias", body);
+      Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+      if (!json.isObject() || !json.contains("found")) return false;
+      if (!json("found").getBool()) return false;
+      addressOut = json("address").getString();
+      return true;
+    } catch (const std::exception&) { return false; }
+  }
+
+  bool FuegoRpcClient::refundAfkSwap(const std::string& swapId, std::string& txHashOut) {
+    try {
+      std::ostringstream body;
+      body << "{\"swap_id\":\"" << swapId << "\"}";
+      std::string responseBody = daemonPost("/refundswapafk", body.str());
+      Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+      if (!json.isObject() || !json.contains("status")) return false;
+      if (json("status").getString() != "OK") return false;
+      if (json.contains("txHash")) {
+        txHashOut = json("txHash").getString();
+      } else {
+        txHashOut = "";
+      }
+      return true;
+    } catch (const std::exception&) { return false; }
+  }
+
 
 } // namespace XfgSwap

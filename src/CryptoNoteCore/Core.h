@@ -45,6 +45,7 @@ namespace CryptoNote {
   struct core_stat_info;
   class miner;
   class CoreConfig;
+  class SwapOfferRelay;
 
   class core : public ICore, public IMinerHandler, public IBlockchainStorageObserver, public ITxPoolObserver {
    public:
@@ -56,6 +57,9 @@ namespace CryptoNote {
      bool handle_incoming_block_blob(const BinaryArray& block_blob, block_verification_context& bvc, bool control_miner, bool relay_block) override;
      virtual i_cryptonote_protocol* get_protocol() override {return m_pprotocol;}
      virtual const Currency& currency() const override { return m_currency; }
+
+     virtual SwapOfferRelay& getSwapRelay() override { return *m_swapRelay; }
+     void setSwapRelay(SwapOfferRelay* relay) { m_swapRelay = relay; }
 
      //-------------------- IMinerHandler -----------------------
      virtual bool handle_block_found(Block& b) override;
@@ -231,6 +235,7 @@ namespace CryptoNote {
     tx_memory_pool m_mempool;
     Blockchain m_blockchain;
     i_cryptonote_protocol *m_pprotocol;
+    SwapOfferRelay* m_swapRelay = nullptr;
     std::unique_ptr<miner> m_miner;
     std::string m_config_folder;
     cryptonote_protocol_stub m_protocol_stub;

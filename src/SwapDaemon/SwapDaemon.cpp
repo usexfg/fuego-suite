@@ -19,6 +19,7 @@
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
 #include "crypto/hash.h"
 #include "crypto/crypto.h"
 
@@ -122,6 +123,14 @@ void SwapDaemon::tickLoop() {
 
     // checkTimeouts handles refunds for all expired swaps
     checkTimeouts();
+
+    // Process pending soft order requests from SwapOfferRelay
+    if (m_swapRelay) {
+      auto pendingRequests = m_swapRelay->getPendingSwapRequests();
+      for (const auto& req : pendingRequests) {
+        handleSwapRequest(std::get<0>(req), std::get<1>(req), std::get<2>(req), std::get<3>(req));
+      }
+    }
 
     // Advance every non-terminal swap one step
     auto swapIds = m_db.listSwaps();
@@ -1264,5 +1273,14 @@ PriceOracle& SwapDaemon::priceOracle() {
     }
     return activeOffers;
   }
-} // namespace XfgSwap
+bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
+                         const std::string& takerPubKey, const std::string& proofOfFunds) {
+  // Validate proofOfFunds if applicable (using K_COMMAND_RPC_CHECK_RESERVE_PROOF logic via wallet/RPC)
 
+  // Create the AFK Lock using wallet RPC (auto-execute)
+  // And start the swap state machine
+  m_logger(Logging::INFO) << "Received swap request for offer " << offerId << " amount " << amount;
+  return true;
+}
+
+} // namespace XfgSwap

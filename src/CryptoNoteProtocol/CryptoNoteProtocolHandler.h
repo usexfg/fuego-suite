@@ -96,6 +96,10 @@ namespace CryptoNote
     int handle_notify_new_lite_block(int command, NOTIFY_NEW_LITE_BLOCK::request &arg, CryptoNoteConnectionContext &context);
     int handle_notify_missing_txs(int command, NOTIFY_MISSING_TXS::request &arg, CryptoNoteConnectionContext &context);
 
+    int handle_swap_offer(int command, COMMAND_SWAP_OFFER::request& arg, CryptoNoteConnectionContext& context);
+    int handle_swap_cancel(int command, COMMAND_SWAP_CANCEL::request& arg, CryptoNoteConnectionContext& context);
+    int handle_swap_request(int command, COMMAND_SWAP_REQUEST::request& arg, CryptoNoteConnectionContext& context);
+    int handle_swap_trade(int command, COMMAND_SWAP_TRADE::request& arg, CryptoNoteConnectionContext& context);
 
     //----------------- i_cryptonote_protocol ----------------------------------
     virtual void relay_block(NOTIFY_NEW_BLOCK::request& arg) override;

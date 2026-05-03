@@ -350,6 +350,7 @@ int main(int argc, char* argv[])
     auto swapDb = std::make_unique<XfgSwap::SwapDatabase>(swapDataDir);
     auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
       "127.0.0.1", rpcConfig.bindPort, swapDataDir, logManager);
+    swapDaemon->setSwapRelay(swapRelay.get());
     swapDaemon->start();
     rpcServer.setSwapDb(swapDb.get());
     rpcServer.setSwapDaemon(swapDaemon.get());

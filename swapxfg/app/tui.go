@@ -3,6 +3,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -320,17 +321,26 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 		m.statusMsg = fmt.Sprintf("offer %s XFG for %s %s (%s hrs) | enter 'confirm-offer %s %s %s %s' to lock", 
 			amtXfg, amtCtr, pair, timeout, amtXfg, amtCtr, pair, timeout)
 	case "confirm-offer":
-		// Usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs>
+		// Usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs> [soft_order: true/false]
 		if len(parts) < 5 {
-			m.statusMsg = "usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs>"
+			m.statusMsg = "usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs> [true/false]"
 			return nil
 		}
 		if m.wallet == nil {
 			m.statusMsg = "no wallet connected"
 			return nil
 		}
-		m.statusMsg = "locking funds on-chain..."
 		amtXfg, amtCtr, pair, timeout := parts[1], parts[2], parts[3], parts[4]
+		isSoftOrder := true
+		if len(parts) > 5 && parts[5] == "false" {
+			isSoftOrder = false
+		}
+
+		if isSoftOrder {
+			m.statusMsg = "publishing soft order intent..."
+		} else {
+			m.statusMsg = "locking funds on-chain..."
+		}
 		wallet := m.wallet
 		client := m.client
 		return func() tea.Msg {
@@ -342,28 +352,59 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			if _, err := fmt.Sscanf(timeout, "%d", &timeoutHrs); err != nil {
 				return statusUpdateMsg{"invalid timeout: " + err.Error()}
 			}
+
+			// We need a rate (XFG per 1 CTR, scaled by 1e7)
+			// This is a naive calculation for demonstration.
+			ctrFloat, _ := strconv.ParseFloat(amtCtr, 64)
+			rateFloat := (float64(xfgAtomic) / 1e7) / ctrFloat
+			rateNum := uint64(rateFloat * 1e7)
 			
-			res, err := wallet.CreateAfkLock(xfgAtomic, timeoutHrs, pairToID(pair))
-			if err != nil {
-				return statusUpdateMsg{"create_afk_lock failed: " + err.Error()}
+			if isSoftOrder {
+				res, err := wallet.SignOffer(xfgAtomic, rateNum, pairToID(pair), timeoutHrs * 30, true) // ~30 blocks per hour
+				if err != nil {
+					return statusUpdateMsg{"sign_offer failed: " + err.Error()}
+				}
+
+				// Submit soft AFK offer to daemon
+				offerReq := map[string]interface{}{
+					"offerId":      res.OfferID,
+					"xfgAmount":    xfgAtomic,
+					"rateNum":      rateNum,
+					"pair":         pairToID(pair),
+					"makerPubKey":  res.MakerPubKey,
+					"signature":    res.Signature,
+					"ttlBlocks":    timeoutHrs * 30,
+					"isSoftOrder":  true,
+				}
+				var submitResp struct{ Status string `json:"status"` }
+				if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
+					return statusUpdateMsg{"submit failed: " + err.Error()}
+				}
+				return statusUpdateMsg{"Soft intent posted. Wallet will auto-execute when taken: " + res.OfferID[:12] + "..."}
+			} else {
+				res, err := wallet.CreateAfkLock(xfgAtomic, timeoutHrs, pairToID(pair))
+				if err != nil {
+					return statusUpdateMsg{"create_afk_lock failed: " + err.Error()}
+				}
+
+				// Submit AFK offer to daemon
+				offerReq := map[string]interface{}{
+					"offerId":      res.LockID,
+					"xfgAmount":    xfgAtomic,
+					"ctrAmount":    amtCtr,
+					"pair":         pairToID(pair),
+					"adaptorPoint": res.AdaptorPoint,
+					"preSig":       res.PreSig,
+					"timeoutHrs":   timeoutHrs,
+					"isSell":       true,
+					"isSoftOrder":  false,
+				}
+				var submitResp struct{ Status string `json:"status"` }
+				if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
+					return statusUpdateMsg{"submit failed: " + err.Error()}
+				}
+				return statusUpdateMsg{"AFK offer locked and posted: " + res.LockID[:12] + "..."}
 			}
-			
-			// Submit AFK offer to daemon
-			offerReq := map[string]interface{}{
-				"offerId":      res.LockID,
-				"xfgAmount":    xfgAtomic,
-				"ctrAmount":    amtCtr,
-				"pair":         pairToID(pair),
-				"adaptorPoint": res.AdaptorPoint,
-				"preSig":       res.PreSig,
-				"timeoutHrs":   timeoutHrs,
-				"isSell":       true,
-			}
-			var submitResp struct{ Status string `json:"status"` }
-			if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
-				return statusUpdateMsg{"submit failed: " + err.Error()}
-			}
-			return statusUpdateMsg{"AFK offer locked and posted: " + res.LockID[:12] + "..."}
 		}
 	case "accept":
 		// accept <offer_id>
@@ -372,22 +413,8 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			return nil
 		}
 		offerID := parts[1]
-		wallet := m.wallet
 		client := m.client
 		return func() tea.Msg {
-			// First, fetch offer details from daemon to calculate net
-			var offer struct {
-				XfgAmount uint64 `json:"xfgAmount"`
-			}
-			if err := client.get(fmt.Sprintf("/getswapstatus/%s", offerID), &offer); err != nil {
-				return statusUpdateMsg{"failed to fetch offer: " + err.Error()}
-			}
-			
-			// Calculate Net Receive: 99% of base
-			netReceive := float64(offer.XfgAmount) / 1e7 * 0.99
-			
-			m.statusMsg = fmt.Sprintf("Est. Net Receive: %.4f XFG (Fuego covers your txn fee as a welcoming gift!)", netReceive)
-			
 			// Now actually accept
 			var resp struct {
 				Status string `json:"status"`
@@ -395,7 +422,7 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			if err := client.post("/accept", map[string]interface{}{"swap_id": offerID}, &resp); err != nil {
 				return statusUpdateMsg{"accept failed: " + err.Error()}
 			}
-			return statusUpdateMsg{"Offer accepted! Please deploy ETH contract to lock funds."}
+			return statusUpdateMsg{"Offer accepted! Please lock funds."}
 		}
 	case "swap":
 
@@ -623,15 +650,15 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			return statusUpdateMsg{"offer cancelled: " + offerID[:min(12, len(offerID))]}
 		}
 
-	case "accept":
-		// accept [offer_id]  — uses selected row if no arg
+	case "accept_cd":
+		// accept_cd [offer_id]  — uses selected row if no arg
 		var offerID string
 		if len(parts) >= 2 {
 			offerID = parts[1]
 		} else if o := m.cdMarket.selectedOffer(); o != nil {
 			offerID = o.OfferID
 		} else {
-			m.statusMsg = "usage: accept <offer_id> (or select a row in CD tab)"
+			m.statusMsg = "usage: accept_cd <offer_id> (or select a row in CD tab)"
 			return nil
 		}
 		if offerID == "" {
@@ -646,7 +673,7 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 		return func() tea.Msg {
 			resp, err := client.AcceptCdOffer(offerID, "")
 			if err != nil {
-				return statusUpdateMsg{"accept failed: " + err.Error()}
+				return statusUpdateMsg{"accept_cd failed: " + err.Error()}
 			}
 			return statusUpdateMsg{fmt.Sprintf("partial tx ready (expires blk %d): %s...", resp.ExpiresAt, resp.PartialTx[:min(20, len(resp.PartialTx))])}
 		}

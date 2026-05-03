@@ -44,6 +44,8 @@ struct SwapOfferMsg {
   uint64_t    timestamp;
   uint32_t    ttlBlocks;    // offer expires after this many blocks from posting
   uint32_t    postedHeight; // block height when posted
+  bool        isSoftOrder;  // true if this is an intent without an on-chain lock
+  uint8_t     allowedSlippagePct; // allowed slippage
 };
 
 // A completed swap trade (for TWAP tracking)
@@ -126,6 +128,12 @@ public:
   void handleCancelMessage(const std::string& offerId, const Crypto::PublicKey& pubkey,
                            const Crypto::Signature& sig);
 
+  // Handle incoming swap request from taker P2P (auto-execution trigger)
+  void handleSwapRequest(const std::string& offerId, uint64_t amount,
+                         const std::string& takerPubKey, const std::string& proofOfFunds);
+
+  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> getPendingSwapRequests();
+
   // Handle completed swap notification (for TWAP)
   void handleTradeCompleted(const SwapTradeRecord& trade);
 
@@ -172,6 +180,7 @@ private:
 
   // Active offers indexed by offerId
   std::map<std::string, SwapOfferMsg> m_offers;
+  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> m_pendingRequests;
 
   // Completed trades for TWAP (bounded deque, newest at back)
   std::deque<SwapTradeRecord> m_trades;

@@ -44,6 +44,13 @@ type SwapInitResult struct {
 	DleqResponse  string `json:"dleqResponse"`
 }
 
+type AfkLockResult struct {
+	LockID       string `json:"lockId"`
+	AdaptorPoint string `json:"adaptorPoint"`
+	PreSig       string `json:"preSig"`
+	Status       string `json:"status"`
+}
+
 // ── Methods ────────────────────────────────────────────────────────────
 
 func (w *WalletClient) GetBalance() (*WalletBalance, error) {
@@ -55,6 +62,25 @@ func (w *WalletClient) GetBalance() (*WalletBalance, error) {
 		"method":  "getbalance",
 		"params":  map[string]interface{}{},
 		"id":      1,
+	}, &outer); err != nil {
+		return nil, err
+	}
+	return &outer.Result, nil
+}
+
+func (w *WalletClient) CreateAfkLock(amount uint64, timeoutHrs uint32, pair uint8) (*AfkLockResult, error) {
+	var outer struct {
+		Result AfkLockResult `json:"result"`
+	}
+	if err := w.fc.post("/json_rpc", map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "create_afk_lock",
+		"params": map[string]interface{}{
+			"amount":        amount,
+			"timeout_hours": timeoutHrs,
+			"pair":          pair,
+		},
+		"id": 1,
 	}, &outer); err != nil {
 		return nil, err
 	}

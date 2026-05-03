@@ -21,6 +21,7 @@
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/VerificationContext.h"
 #include "P2p/LevinProtocol.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
 
 using namespace Logging;
 using namespace Common;
@@ -269,6 +270,11 @@ int CryptoNoteProtocolHandler::handleCommand(bool is_notify, int command, const 
     HANDLE_NOTIFY(NOTIFY_REQUEST_TX_POOL, &CryptoNoteProtocolHandler::handle_request_tx_pool)
     HANDLE_NOTIFY(NOTIFY_NEW_LITE_BLOCK, &CryptoNoteProtocolHandler::handle_notify_new_lite_block)
     HANDLE_NOTIFY(NOTIFY_MISSING_TXS, &CryptoNoteProtocolHandler::handle_notify_missing_txs)
+
+    HANDLE_NOTIFY(COMMAND_SWAP_OFFER, &CryptoNoteProtocolHandler::handle_swap_offer)
+    HANDLE_NOTIFY(COMMAND_SWAP_CANCEL, &CryptoNoteProtocolHandler::handle_swap_cancel)
+    HANDLE_NOTIFY(COMMAND_SWAP_REQUEST, &CryptoNoteProtocolHandler::handle_swap_request)
+    HANDLE_NOTIFY(COMMAND_SWAP_TRADE, &CryptoNoteProtocolHandler::handle_swap_trade)
 
   default:
     handled = false;
@@ -1123,4 +1129,52 @@ int CryptoNoteProtocolHandler::doPushLiteBlock(NOTIFY_NEW_LITE_BLOCK::request ar
   return 1;
 }
 
-}; // namespace CryptoNote
+int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER::request& arg, CryptoNoteConnectionContext& context) {
+  SwapOfferMsg offer;
+  offer.offerId = arg.offerId;
+  offer.xfgAmount = arg.xfgAmount;
+  offer.rateNum = arg.rateNum;
+  offer.pair = arg.pair;
+
+  offer.makerPubKey = arg.makerPubKey;
+  offer.signature = arg.signature;
+
+  offer.timestamp = arg.timestamp;
+  offer.ttlBlocks = arg.ttlBlocks;
+  offer.postedHeight = arg.postedHeight;
+  offer.isSoftOrder = arg.isSoftOrder;
+  offer.allowedSlippagePct = arg.allowedSlippagePct;
+
+  m_core.getSwapRelay().handleOfferMessage(offer);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_swap_cancel(int command, COMMAND_SWAP_CANCEL::request& arg, CryptoNoteConnectionContext& context) {
+  Crypto::PublicKey pubkey;
+  Crypto::Signature sig;
+
+  pubkey = arg.makerPubKey;
+  sig = arg.signature;
+
+  m_core.getSwapRelay().handleCancelMessage(arg.offerId, pubkey, sig);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_swap_request(int command, COMMAND_SWAP_REQUEST::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleSwapRequest(arg.offerId, arg.amount, arg.takerPubKey, arg.proofOfFunds);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_swap_trade(int command, COMMAND_SWAP_TRADE::request& arg, CryptoNoteConnectionContext& context) {
+  SwapTradeRecord trade;
+  trade.pair = arg.pair;
+  trade.xfgAmount = arg.xfgAmount;
+  trade.ctrAmount = arg.ctrAmount;
+  trade.rate = static_cast<double>(arg.rateScaled) / 1e7;
+  trade.blockHeight = arg.blockHeight;
+  trade.timestamp = arg.timestamp;
+  m_core.getSwapRelay().handleTradeCompleted(trade);
+  return 1;
+}
+
+} // namespace CryptoNote

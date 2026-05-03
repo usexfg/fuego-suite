@@ -140,6 +140,22 @@ void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
   }
 }
 
+void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amount,
+                                       const std::string& takerPubKey, const std::string& proofOfFunds) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_offers.find(offerId);
+  if (it != m_offers.end()) {
+    m_pendingRequests.push_back(std::make_tuple(offerId, amount, takerPubKey, proofOfFunds));
+  }
+}
+
+std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> SwapOfferRelay::getPendingSwapRequests() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> result = m_pendingRequests;
+  m_pendingRequests.clear();
+  return result;
+}
+
 void SwapOfferRelay::handleTradeCompleted(const SwapTradeRecord& trade) {
   std::lock_guard<std::mutex> lock(m_mutex);
   m_trades.push_back(trade);
@@ -227,6 +243,7 @@ bool SwapOfferRelay::submitOffer(const SwapOfferMsg& offer) {
     msg.timestamp = offer.timestamp;
     msg.ttlBlocks = offer.ttlBlocks;
     msg.postedHeight = offer.postedHeight;
+    msg.isSoftOrder = offer.isSoftOrder;
 
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);

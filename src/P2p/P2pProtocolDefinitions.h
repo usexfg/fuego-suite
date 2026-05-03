@@ -327,6 +327,8 @@ namespace CryptoNote
       uint64_t    timestamp;
       uint32_t    ttlBlocks;              // Offer expires after this many blocks
       uint32_t    postedHeight;           // Block height when posted
+      bool        isSoftOrder;            // True if this is a soft intent order
+      uint8_t     allowedSlippagePct;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
@@ -338,6 +340,8 @@ namespace CryptoNote
         KV_MEMBER(timestamp)
         KV_MEMBER(ttlBlocks)
         KV_MEMBER(postedHeight)
+        KV_MEMBER(isSoftOrder)
+        KV_MEMBER(allowedSlippagePct)
       }
     };
     typedef EMPTY_STRUCT response;
@@ -368,9 +372,30 @@ namespace CryptoNote
   /************************************************************************/
   /* SWAP TRADE COMPLETED - broadcast completed swap for TWAP             */
   /************************************************************************/
-  struct COMMAND_SWAP_TRADE
+  struct COMMAND_SWAP_REQUEST
   {
     enum { ID = P2P_COMMANDS_POOL_BASE + 15 };
+
+    struct request
+    {
+      std::string offerId;
+      uint64_t    amount; // partial fill request amount
+      std::string takerPubKey;
+      std::string proofOfFunds; // signature to prove balance (get_reserve_proof)
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(amount)
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(proofOfFunds)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  struct COMMAND_SWAP_TRADE
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 16 };
 
     struct request
     {

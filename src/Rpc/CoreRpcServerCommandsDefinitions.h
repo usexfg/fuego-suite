@@ -1460,6 +1460,9 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
     std::string signature;    // hex
     uint32_t ttlBlocks;
 
+    // Optional fields for soft orders
+    bool isSoftOrder = false;
+
     void serialize(ISerializer& s) {
       KV_MEMBER(offerId)
       KV_MEMBER(xfgAmount)
@@ -1468,6 +1471,7 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
       KV_MEMBER(makerPubKey)
       KV_MEMBER(signature)
       KV_MEMBER(ttlBlocks)
+      KV_MEMBER(isSoftOrder)
     }
   };
 

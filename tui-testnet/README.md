@@ -118,31 +118,29 @@ Complete **XFG → HEAT** minting flow:
 2. **Wait for Confirmations**
    - Transaction must be confirmed on-chain (10+ blocks)
    
-3. **Request Elderfier Consensus**
-   - Queries Elder Council for **proof of burn transaction**
-   - Elderfier nodes verify and sign the burn
-   - Returns `eldernode_proof` used as STARK inputs
+3. **Generate STARK Proof**
+   - Calls `fuego-prover-cli prove` with:
+     - Fuego RPC endpoint
+     - Start and end heights
+     - Checkpoint hash
+   - Followed by `fuego-prover-cli claim` with:
+     - `--commitment` (hex)
+     - `--preimage` (hex)
+     - `--recipient` (eth_addr)
+   - Produces **XFG-STARK proof** and claim data for L2 verification
    
-4. **Generate STARK Proof**
-   - Calls `xfg-stark generate-proof` CLI with:
-     - `--tx-hash` (burn transaction hash)
-     - `--amount` (burned amount in atomic units)
-     - `--eldernode-proof` (consensus proof from step 3)
-   - Produces **XFG-STARK proof** for L2 verification
-   
-5. **Submit to Arbitrum L2**
+4. **Submit to Arbitrum L2**
    - User calls `claimHEAT()` on Arbitrum with:
-     - STARK proof (from step 4)
-     - Eldernode proof (from step 3)
+     - STARK proof (from step 3)
+     - Preimage and Merkle Proof data
      - L1 gas fees (msg.value: ~0.001-0.01 ETH)
    
-6. **Receive HEAT on Ethereum L1**
+5. **Receive HEAT on Ethereum L1**
    - Arbitrum relays transaction to L1
    - HEAT tokens minted on Ethereum mainnet
 
 **RPC Endpoints Used:**
 - `create_burn_deposit` - Creates burn transaction on testnet
-- `request_elderfier_consensus` - Requests Elder Council proof on testnet
 - **Uses testnet ports: 28081 (node) and 28082 (wallet)**
 
 **External Tools:**
@@ -167,34 +165,23 @@ Complete **XFG → HEAT** minting flow:
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  3. Request Elderfier Consensus                             │
-│     └─> request_elderfier_consensus RPC                     │
-│         Input:  tx_hash, amount                             │
-│         Output: eldernode_proof ◄── CRITICAL INPUT          │
+│  3. Generate STARK Proof (fuego-prover-cli)                 │
+│     └─> fuego-prover prove & claim                          │
+│         Output: STARK proof file & claim data               │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  4. Generate STARK Proof (xfg-stark CLI)                    │
-│     └─> xfg-stark generate-proof \                          │
-│           --tx-hash <hash> \                                │
-│           --amount <atomic> \                               │
-│           --eldernode-proof <proof>  ◄── FROM STEP 3        │
-│         Output: STARK proof file                            │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  5. Submit to Arbitrum L2 (Manual/Web UI)                   │
+│  4. Submit to Arbitrum L2 (Manual/Web UI)                   │
 │     └─> claimHEAT() with:                                   │
 │         • STARK proof                                       │
-│         • eldernode_proof                                   │
+│         • preimage & merkleProof                            │
 │         • msg.value (L1 gas: 0.001-0.01 ETH + 20% buffer)  │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  6. Arbitrum → Ethereum L1                                  │
+│  5. Arbitrum → Ethereum L1                                  │
 │     └─> HEAT minted on Ethereum mainnet                     │
 │         Leftover gas fees automatically refunded            │
 └─────────────────────────────────────────────────────────────┘
@@ -214,9 +201,7 @@ Complete **XFG → HEAT** minting flow:
 - Perfect for menubar/tray app integration
 
 ### Burn2Mint Menu
-- **IMPORTANT**: Elderfier consensus is required BEFORE STARK generation
-- The `eldernode_proof` from consensus is a **required input** to `xfg-stark`
-- Without Elderfier consensus, STARK proof cannot be generated
+- **IMPORTANT**: Use `fuego-prover-cli` (the new ZK bridge) instead of EFier consensus for proof generation.
 - L1 gas fees: Always include **20% buffer** to avoid restart costs
 
 ### Binary Detection
@@ -249,9 +234,7 @@ The following RPC methods are called by the TUI but may need implementation:
 
 **Burn2Mint Consensus:**
 - `create_burn_deposit` - Creates burn transaction
-- `get_burn2mint_requests` - Lists pending Burn2Mint consensus requests
-- `provide_consensus_proof` - Provides consensus proof for burn tx
-- `request_elderfier_consensus` - **Critical**: Returns eldernode_proof for STARK
+
 
 ### Testing (Testnet)
 
@@ -283,6 +266,6 @@ ls -la ~/.fuego-testnet/
 ## Next Steps
 
 - [ ] Implement missing RPC endpoints in `walletd`
-- [ ] Build `xfg-stark` CLI for proof generation
+- [ ] Build `fuego-prover-cli` for ZK bridge proof generation
 - [ ] Create menubar/tray app for Elderfiers (read-only monitoring)
 - [ ] Web UI for L2 submission with MetaMask integration

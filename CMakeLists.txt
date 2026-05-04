@@ -147,6 +147,12 @@ if(STATIC)
 endif()
 
 #set(Boost_DEBUG on)
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+  set(Boost_NO_BOOST_CMAKE ON)
+  set(BOOST_ROOT "/opt/homebrew")
+  set(BOOST_INCLUDEDIR "/opt/homebrew/include")
+  set(BOOST_LIBRARYDIR "/opt/homebrew/lib")
+endif()
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 

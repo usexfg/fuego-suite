@@ -1,9 +1,7 @@
-
-cmake_minimum_required(VERSION 3.5)
-
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 OLD)
 endif()
+cmake_minimum_required(VERSION 3.5)
 
 include(CheckCXXCompilerFlag)
 set(VERSION "0.2")

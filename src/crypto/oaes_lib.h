@@ -114,10 +114,6 @@ typedef struct _oaes_key
 
 typedef struct _oaes_ctx
 {
-#ifdef OAES_HAVE_ISAAC
-  randctx * rctx;
-#endif // OAES_HAVE_ISAAC
-
 #ifdef OAES_DEBUG
   oaes_step_cb step_cb;
 #endif // OAES_DEBUG

@@ -150,6 +150,14 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
 
 
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  set(Boost_NO_BOOST_CMAKE ON)
+  # Standard Homebrew location for Boost on Apple Silicon
+  set(BOOST_ROOT "/opt/homebrew")
+  set(BOOST_INCLUDEDIR "/opt/homebrew/include")
+  set(BOOST_LIBRARYDIR "/opt/homebrew/lib")
+endif()
+
 #set(Boost_DEBUG on)
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 OLD)

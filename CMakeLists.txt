@@ -151,6 +151,10 @@ if(STATIC)
 
 
 #set(Boost_DEBUG on)
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
+set(Boost_NO_BOOST_CMAKE ON)
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
   set(Boost_NO_BOOST_CMAKE ON)
   set(BOOST_ROOT "/opt/homebrew")

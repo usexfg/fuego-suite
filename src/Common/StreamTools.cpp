@@ -41,17 +41,17 @@ void read(IInputStream& in, int8_t& value) {
 
 void read(IInputStream& in, int16_t& value) {
   read(in, &value, sizeof(value));
-  value = static_cast<int16_t>(swap16le(static_cast<uint16_t>(value)));
+  value = swap16le(value);
 }
 
 void read(IInputStream& in, int32_t& value) {
   read(in, &value, sizeof(value));
-  value = static_cast<int32_t>(swap32le(static_cast<uint32_t>(value)));
+  value = swap32le(value);
 }
 
 void read(IInputStream& in, int64_t& value) {
   read(in, &value, sizeof(value));
-  value = static_cast<int64_t>(swap64le(static_cast<uint64_t>(value)));
+  value = swap64le(value);
 }
 
 void read(IInputStream& in, uint8_t& value) {
@@ -189,18 +189,18 @@ void write(IOutputStream& out, int8_t value) {
 }
 
 void write(IOutputStream& out, int16_t value) {
-  value = static_cast<int16_t>(swap16le(static_cast<uint16_t>(value)));
-  write(out, &value, sizeof(value));
+  int16_t temp = swap16le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, int32_t value) {
-  value = static_cast<int32_t>(swap32le(static_cast<uint32_t>(value)));
-  write(out, &value, sizeof(value));
+  int32_t temp = swap32le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, int64_t value) {
-  value = static_cast<int64_t>(swap64le(static_cast<uint64_t>(value)));
-  write(out, &value, sizeof(value));
+  int64_t temp = swap64le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, uint8_t value) {
@@ -208,18 +208,18 @@ void write(IOutputStream& out, uint8_t value) {
 }
 
 void write(IOutputStream& out, uint16_t value) {
-  uint16_t le_value = swap16le(value);
-  write(out, &le_value, sizeof(le_value));
+  uint16_t temp = swap16le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, uint32_t value) {
-  uint32_t le_value = swap32le(value);
-  write(out, &le_value, sizeof(le_value));
+  uint32_t temp = swap32le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, uint64_t value) {
-  uint64_t le_value = swap64le(value);
-  write(out, &le_value, sizeof(le_value));
+  uint64_t temp = swap64le(value);
+  write(out, &temp, sizeof(temp));
 }
 
 void write(IOutputStream& out, const std::vector<uint8_t>& data) {

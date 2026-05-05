@@ -20,6 +20,14 @@ set(CMAKE_SKIP_INSTALL_RULES ON)
 set(CMAKE_SKIP_PACKAGE_ALL_DEPENDENCY ON)
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
+
+if(APPLE)
+  list(APPEND CMAKE_PREFIX_PATH /opt/homebrew)
+endif()
+
 project(fuegoX)
 
 include_directories(include src external "${CMAKE_BINARY_DIR}/version")

@@ -111,8 +111,7 @@ static inline uint32_t div128_32(uint64_t dividend_hi, uint64_t dividend_lo, uin
 #define IDENT32(x) ((uint32_t) (x))
 #define IDENT64(x) ((uint64_t) (x))
 
-#define SWAP16(x) ((((uint16_t) (x) & 0x00ff) << 8) | \
-  (((uint16_t) (x) & 0xff00) >> 8))
+#define SWAP16(x) ((((uint16_t) (x) & 0x00ff) << 8) |   (((uint16_t) (x) & 0xff00) >>  8))
 #define SWAP32(x) ((((uint32_t) (x) & 0x000000ff) << 24) | \
   (((uint32_t) (x) & 0x0000ff00) <<  8) | \
   (((uint32_t) (x) & 0x00ff0000) >>  8) | \
@@ -131,7 +130,7 @@ static inline uint32_t ident32(uint32_t x) { return x; }
 static inline uint64_t ident64(uint64_t x) { return x; }
 
 static inline uint16_t swap16(uint16_t x) {
-  return (x << 8) | (x >> 8);
+  return ((x & 0x00ff) << 8) | ((x & 0xff00) >> 8);
 }
 static inline uint32_t swap32(uint32_t x) {
   x = ((x & 0x00ff00ff) << 8) | ((x & 0xff00ff00) >> 8);

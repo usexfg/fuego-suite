@@ -208,18 +208,18 @@ void write(IOutputStream& out, uint8_t value) {
 }
 
 void write(IOutputStream& out, uint16_t value) {
-  value = swap16le(value);
-  write(out, &value, sizeof(value));
+  uint16_t le_value = swap16le(value);
+  write(out, &le_value, sizeof(le_value));
 }
 
 void write(IOutputStream& out, uint32_t value) {
-  value = swap32le(value);
-  write(out, &value, sizeof(value));
+  uint32_t le_value = swap32le(value);
+  write(out, &le_value, sizeof(le_value));
 }
 
 void write(IOutputStream& out, uint64_t value) {
-  value = swap64le(value);
-  write(out, &value, sizeof(value));
+  uint64_t le_value = swap64le(value);
+  write(out, &le_value, sizeof(le_value));
 }
 
 void write(IOutputStream& out, const std::vector<uint8_t>& data) {

@@ -81,7 +81,7 @@ jobs:
         id: build
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
+          sudo apt-get install -y --fix-missing build-essential libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
@@ -116,7 +116,7 @@ jobs:
         id: build
         run: |
           sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
+          sudo apt-get install -y --fix-missing build-essential libboost-all-dev
           build_folder="build/debug"
           xfg_ver=${GITHUB_SHA::7}
           xfg_ver_folder=$(echo $xfg_ver | sed 's/\.//g')
@@ -170,7 +170,6 @@ jobs:
           brew install gcc boost@1.85 ccache
           brew link boost@1.85 --force
           export BOOST_ROOT=$(brew --prefix boost@1.85)
-
 
           export CC=clang
           export CXX=clang++

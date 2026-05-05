@@ -961,6 +961,36 @@ std::vector<Crypto::Hash> core::findIdsForShortBlocks(uint32_t startOffset, uint
   return result;
 }
 
+bool core::getBlocksFast(const std::vector<Crypto::Hash>& knownBlockIds, std::vector<block_complete_entry>& newBlocks, uint32_t& startHeight, uint32_t& currentHeight) {
+  if (knownBlockIds.empty()) {
+    return false;
+  }
+
+  if (knownBlockIds.back() != getBlockIdByHeight(0)) {
+    return false;
+  }
+
+  std::vector<Crypto::Hash> supplement = findBlockchainSupplement(knownBlockIds, COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT, currentHeight, startHeight);
+
+  for (const auto& blockId : supplement) {
+    assert(have_block(blockId));
+    auto completeBlock = getBlock(blockId);
+    assert(completeBlock != nullptr);
+
+    block_complete_entry be;
+    be.block = asString(toBinaryArray(completeBlock->getBlock()));
+
+    be.txs.reserve(completeBlock->getTransactionCount());
+    for (size_t i = 0; i < completeBlock->getTransactionCount(); ++i) {
+      be.txs.push_back(asString(toBinaryArray(completeBlock->getTransaction(i))));
+    }
+
+    newBlocks.push_back(std::move(be));
+  }
+
+  return true;
+}
+
 bool core::queryBlocksLite(const std::vector<Crypto::Hash>& knownBlockIds, uint64_t timestamp, uint32_t& resStartHeight,
   uint32_t& resCurrentHeight, uint32_t& resFullOffset, std::vector<BlockShortInfo>& entries) {
   LockedBlockchainStorage lbs(m_blockchain);

@@ -214,38 +214,16 @@ bool RpcServer::isCoreReady() {
 //
 
 bool RpcServer::on_get_blocks(const COMMAND_RPC_GET_BLOCKS_FAST::request& req, COMMAND_RPC_GET_BLOCKS_FAST::response& res) {
-  // TODO code duplication see InProcessNode::doGetNewBlocks()
-  if (req.block_ids.empty()) {
+  uint32_t current_height;
+  uint32_t start_height;
+
+  if (!m_core.getBlocksFast(req.block_ids, res.blocks, start_height, current_height)) {
     res.status = "Failed";
     return false;
   }
 
-  if (req.block_ids.back() != m_core.getBlockIdByHeight(0)) {
-    res.status = "Failed";
-    return false;
-  }
-
-  uint32_t totalBlockCount;
-  uint32_t startBlockIndex;
-  std::vector<Crypto::Hash> supplement = m_core.findBlockchainSupplement(req.block_ids, COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT, totalBlockCount, startBlockIndex);
-
-  res.current_height = totalBlockCount;
-  res.start_height = startBlockIndex;
-
-  for (const auto& blockId : supplement) {
-    assert(m_core.have_block(blockId));
-    auto completeBlock = m_core.getBlock(blockId);
-    assert(completeBlock != nullptr);
-
-    res.blocks.resize(res.blocks.size() + 1);
-    res.blocks.back().block = asString(toBinaryArray(completeBlock->getBlock()));
-
-    res.blocks.back().txs.reserve(completeBlock->getTransactionCount());
-    for (size_t i = 0; i < completeBlock->getTransactionCount(); ++i) {
-      res.blocks.back().txs.push_back(asString(toBinaryArray(completeBlock->getTransaction(i))));
-    }
-  }
-
+  res.current_height = current_height;
+  res.start_height = start_height;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

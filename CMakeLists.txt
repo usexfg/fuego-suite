@@ -1,4 +1,8 @@
+cmake_policy(SET CMP0167 OLD)
 cmake_minimum_required(VERSION 3.5)
+
+
+
 
 include(CheckCXXCompilerFlag)
 set(VERSION "0.2")
@@ -26,7 +30,7 @@ if(APPLE OR FREEBSD)
     cmake_policy(SET CMP0042 NEW)
   endif()
   enable_language(ASM)
-endif()
+
 
 if(MSVC)
   include_directories(src/Platform/Windows)
@@ -59,7 +63,7 @@ else()
       endif()
     endif()
 	endif()
-endif()
+
 
 include (arm.cmake)
 
@@ -76,7 +80,7 @@ elseif(NOT ARM) # x86/64
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes")
 
-endif()
+
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${ARCH_FLAG}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARCH_FLAG}")
@@ -135,22 +139,28 @@ else()
   endif()
   set(RELEASE_FLAGS "-g3 -O0")
 
-endif()
+
 
 if(APPLE)
 	add_definitions(/DHAVE_ROTR)
-endif()
+
 
 if(STATIC)
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_STATIC_RUNTIME ON)
-endif()
+
 
 #set(Boost_DEBUG on)
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 OLD)
 endif()
 set(Boost_NO_BOOST_CMAKE ON)
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+  set(Boost_NO_BOOST_CMAKE ON)
+  set(BOOST_ROOT "/opt/homebrew")
+  set(BOOST_INCLUDEDIR "/opt/homebrew/include")
+  set(BOOST_LIBRARYDIR "/opt/homebrew/lib")
+endif()
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
@@ -160,14 +170,14 @@ elseif(APPLE)
   set(Boost_LIBRARIES "${Boost_LIBRARIES}")
 elseif(NOT MSVC)
   set(Boost_LIBRARIES "${Boost_LIBRARIES};rt")
-endif()
+
 
 # option(BUILD_TESTS "Build tests." ON)
 
 if(BUILD_TESTS)
   add_subdirectory(tests)
   enable_testing()
-endif()
+
 
 set(COMMIT_ID_IN_VERSION ON CACHE BOOL "Include commit ID in version")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/version")
@@ -193,7 +203,7 @@ else()
     configure_file("src/version.h.in" "version/version.h")
     add_custom_target(version ALL)
   endif()
-endif()
+
 
 add_subdirectory(external)
 add_subdirectory(src)

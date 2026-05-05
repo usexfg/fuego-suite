@@ -17,6 +17,7 @@
 
 #include "WalletService.h"
 
+#include <iostream>
 #include <future>
 #include <assert.h>
 #include <sstream>
@@ -530,11 +531,10 @@ namespace PaymentService
 
       log(Logging::INFO, Logging::BRIGHT_WHITE) << "New deterministic wallet is generated. Address: " << address;
 
-      //TODO make this a cout
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "New wallet generated.";
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Address: " << address;
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret spend key: " << Common::podToHex(spendKey.secretKey);
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret view key: " << Common::podToHex(private_view_key);
+      std::cout << "New wallet generated." << std::endl;
+      std::cout << "Address: " << address << std::endl;
+      std::cout << "Secret spend key: " << Common::podToHex(spendKey.secretKey) << std::endl;
+      std::cout << "Secret view key: " << Common::podToHex(private_view_key) << std::endl;
     }
     /* We need both secret keys to import the wallet and create the container
      so in the absence of either, display and error message and return */

@@ -40,18 +40,18 @@ void read(IInputStream& in, int8_t& value) {
 }
 
 void read(IInputStream& in, int16_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = static_cast<int16_t>(swap16le(static_cast<uint16_t>(value)));
 }
 
 void read(IInputStream& in, int32_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = static_cast<int32_t>(swap32le(static_cast<uint32_t>(value)));
 }
 
 void read(IInputStream& in, int64_t& value) {
-  // TODO: Convert from little endian on big endian platforms
   read(in, &value, sizeof(value));
+  value = static_cast<int64_t>(swap64le(static_cast<uint64_t>(value)));
 }
 
 void read(IInputStream& in, uint8_t& value) {
@@ -189,17 +189,17 @@ void write(IOutputStream& out, int8_t value) {
 }
 
 void write(IOutputStream& out, int16_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = static_cast<int16_t>(swap16le(static_cast<uint16_t>(value)));
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, int32_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = static_cast<int32_t>(swap32le(static_cast<uint32_t>(value)));
   write(out, &value, sizeof(value));
 }
 
 void write(IOutputStream& out, int64_t value) {
-  // TODO: Convert to little endian on big endian platforms
+  value = static_cast<int64_t>(swap64le(static_cast<uint64_t>(value)));
   write(out, &value, sizeof(value));
 }
 

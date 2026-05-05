@@ -169,6 +169,8 @@ jobs:
 
           brew install gcc boost@1.85 ccache
           brew link boost@1.85 --force
+          export BOOST_ROOT=$(brew --prefix boost@1.85)
+
           export CC=clang
           export CXX=clang++
           export PATH="/usr/local/opt/ccache/libexec:$PATH"

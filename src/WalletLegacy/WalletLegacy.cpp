@@ -31,7 +31,6 @@
 #include "Common/Base58.h"
 #include "Common/ShuffleGenerator.h"
 #include "Logging/ConsoleLogger.h"
-#include "Logging/LoggerRef.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "WalletLegacy/WalletLegacySerialization.h"
 #include "WalletLegacy/WalletLegacySerializer.h"
@@ -411,14 +410,8 @@ void WalletLegacy::doSave(std::ostream& destination, bool saveDetailed, bool sav
     serializer.serialize(destination, m_password, saveDetailed, cache);
 
     m_state = INITIALIZED;
-
-    try {
-      m_blockchainSync.start();
-    } catch (const std::exception& e) {
-      Logging::LoggerRef logger(m_loggerGroup, "WalletLegacy");
-      logger(Logging::ERROR) << "Failed to start blockchain sync after saving: " << e.what();
+    m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
     }
-  }
   catch (std::system_error& e) {
     runAtomic(m_cacheMutex, [this] () {this->m_state = WalletLegacy::INITIALIZED;} );
     m_observerManager.notify(&IWalletLegacyObserver::saveCompleted, e.code());

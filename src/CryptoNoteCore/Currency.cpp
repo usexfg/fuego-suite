@@ -1069,7 +1069,9 @@ double Currency::getBurnPercentage() const {
 			      // Safely prevent out-of-sequence timestamps
 			      if ( timestamps[i]  > previous_timestamp ) {   this_timestamp = timestamps[i];  }
 			      else {  this_timestamp = previous_timestamp;   }
-			      L +=  i*std::min(6*T , this_timestamp - previous_timestamp);
+			      uint64_t solveTime = this_timestamp - previous_timestamp;
+			      solveTime = std::max(T / 3, std::min(6 * T, solveTime));
+			      L +=  i * solveTime;
 			      previous_timestamp = this_timestamp;
 			   }
 			   if (L < N*N*T/20 ) { L =  N*N*T/20; }
@@ -1173,6 +1175,11 @@ double Currency::getBurnPercentage() const {
 			       if (next_D > maxDifficulty) {
 			           next_D = maxDifficulty;
 			       }
+			   }
+
+			   // Cap difficulty growth to prevent massive spikes during sync
+			   if (next_D > avg_D * 2) {
+			       next_D = avg_D * 2;
 			   }
 
 			   // Optional. Make all insignificant digits zero for easy reading.

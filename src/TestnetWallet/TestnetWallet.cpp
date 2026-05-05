@@ -204,10 +204,33 @@ namespace CryptoNote
 
       success_msg_writer() << "Creating TEST burn (HEAT): " << m_currency.formatAmount(burn_amount) << " TEST";
 
+      // First send the banking fee as a HEAT burn if > 0
+      if (banking_fee > 0) {
+        CryptoNote::TransactionExtraHeatCommitment heatCommitment;
+        std::vector<uint8_t> heatExtra;
+        CryptoNote::addHeatCommitmentToExtra(heatExtra, heatCommitment);
+        std::string heatExtraString(heatExtra.begin(), heatExtra.end());
+
+        CryptoNote::WalletHelper::SendCompleteResultObserver burnSent;
+        WalletHelper::IWalletRemoveObserverGuard burnRemoveGuard(*m_wallet, burnSent);
+        CryptoNote::TransactionId burnTxId = m_wallet->deposit(CryptoNote::parameters::DEPOSIT_TERM_FOREVER, banking_fee, m_currency.minimumFee(), heatExtraString, 0);
+        if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == burnTxId) {
+          fail_msg_writer() << "Sending banking fee burn transaction failed";
+          return true;
+        }
+        std::error_code burnSendError = burnSent.wait(burnTxId);
+        burnRemoveGuard.removeObserver();
+        if (burnSendError) {
+          fail_msg_writer() << "Banking fee burn transaction failed: " << burnSendError.message();
+          return true;
+        }
+        success_msg_writer() << "Banking fee burn transaction sent successfully";
+      }
+
       CryptoNote::WalletHelper::SendCompleteResultObserver sent;
       WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-      CryptoNote::TransactionId txId = m_wallet->deposit(burn_term, burn_amount, fee + banking_fee, extraString, 0);
+      CryptoNote::TransactionId txId = m_wallet->deposit(burn_term, burn_amount, fee, extraString, 0);
 
       if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
         fail_msg_writer() << "Sending deposit transaction failed";
@@ -235,7 +258,7 @@ namespace CryptoNote
   //----------------------------------------------------------------------------------------------------
   bool CryptoNote::testnet_wallet::cold(const std::vector<std::string> &args)
   {
-    // COLD deposit - testnet version with term code validation
+    // CD deposit - testnet version with term code validation
     if (args.size() != 2)
     {
       fail_msg_writer() << "Usage: cold <amount> <term_code>";
@@ -310,7 +333,7 @@ namespace CryptoNote
       success_msg_writer() << "  Term: " << term_label << " (" << cold_term << " blocks)";
       success_msg_writer() << "  Banking Fee: " << m_currency.formatAmount(banking_fee) << " TEST (0.1% of amount to stakers)";
       success_msg_writer() << "  Network Fee: " << m_currency.formatAmount(fee) << " TEST (minimum txn fee to miners)";
-      success_msg_writer() << "  Commitment Type:【COLD】 ▋ Off-chain (CD) interest yield";
+      success_msg_writer() << "  Commitment Type:【CD】 ▋ Off-chain (CD) interest yield";
       success_msg_writer() << "";
       success_msg_writer() << "Confirm? (1) OK  (2) NO  ";
 
@@ -322,7 +345,7 @@ namespace CryptoNote
         return true;
       }
 
-      // Generate unified STARK commitment (v3) for testnet COLD deposit
+      // Generate unified STARK commitment (v3) for testnet CD deposit
       auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
           cold_amount,
           cold_term,
@@ -362,12 +385,35 @@ namespace CryptoNote
 
       std::string extraString = std::string(extra.begin(), extra.end());
 
-      success_msg_writer() << "Creating COLD transaction: " << m_currency.formatAmount(cold_amount) << " TEST for " << term_label;
+      success_msg_writer() << "Creating CD transaction: " << m_currency.formatAmount(cold_amount) << " TEST for " << term_label;
+
+      // First send the banking fee as a HEAT burn if > 0
+      if (banking_fee > 0) {
+        CryptoNote::TransactionExtraHeatCommitment heatCommitment;
+        std::vector<uint8_t> heatExtra;
+        CryptoNote::addHeatCommitmentToExtra(heatExtra, heatCommitment);
+        std::string heatExtraString(heatExtra.begin(), heatExtra.end());
+
+        CryptoNote::WalletHelper::SendCompleteResultObserver burnSent;
+        WalletHelper::IWalletRemoveObserverGuard burnRemoveGuard(*m_wallet, burnSent);
+        CryptoNote::TransactionId burnTxId = m_wallet->deposit(CryptoNote::parameters::DEPOSIT_TERM_FOREVER, banking_fee, m_currency.minimumFee(), heatExtraString, 0);
+        if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == burnTxId) {
+          fail_msg_writer() << "Sending banking fee burn transaction failed";
+          return true;
+        }
+        std::error_code burnSendError = burnSent.wait(burnTxId);
+        burnRemoveGuard.removeObserver();
+        if (burnSendError) {
+          fail_msg_writer() << "Banking fee burn transaction failed: " << burnSendError.message();
+          return true;
+        }
+        success_msg_writer() << "Banking fee burn transaction sent successfully";
+      }
 
       CryptoNote::WalletHelper::SendCompleteResultObserver sent;
       WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-      CryptoNote::TransactionId txId = m_wallet->deposit(cold_term, cold_amount, fee + banking_fee, extraString, 0);
+      CryptoNote::TransactionId txId = m_wallet->deposit(cold_term, cold_amount, fee, extraString, 0);
 
       if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
         fail_msg_writer() << "Sending deposit transaction failed";
@@ -378,19 +424,19 @@ namespace CryptoNote
       removeGuard.removeObserver();
 
       if (sendError) {
-        fail_msg_writer() << "COLD transaction failed: " << sendError.message();
+        fail_msg_writer() << "CD transaction failed: " << sendError.message();
         return true;
       }
 
-      success_msg_writer() << "COLD txn created. TX ID: " << txId;
+      success_msg_writer() << "CD txn created. TX ID: " << txId;
       return true;
       */
     }
     catch (const std::exception& e)
     {
       fail_msg_writer() << "Error: " << e.what();
-      return true;
     }
+    return true;
   }
 
   //----------------------------------------------------------------------------------------------------

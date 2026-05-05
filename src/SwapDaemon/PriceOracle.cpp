@@ -66,6 +66,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::ETH: return SEED_ETH_USD / SEED_XFG_USD;  // 214,000
     case SwapPair::BCH: return SEED_BCH_USD / SEED_XFG_USD;  //  46,900
     case SwapPair::XMR: return SEED_XMR_USD / SEED_XFG_USD;  //  34,300
+    case SwapPair::CD:  return 1.0;                          //  1:1
     default:            return 0.0;
   }
 }
@@ -80,6 +81,7 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::ETH: return 1e18;  // wei
     case SwapPair::BCH: return 1e8;   // satoshi
     case SwapPair::XMR: return 1e12;  // piconero
+    case SwapPair::CD:  return 1e7;   // atomic XFG (1 CD = 1e7 atomic XFG)
     default:            return 1e8;
   }
 }

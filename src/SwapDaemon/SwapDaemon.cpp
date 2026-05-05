@@ -446,7 +446,7 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
       m_logger(Logging::INFO) << "  Escrow funded (tx: "
         << Common::podToHex(params.escrowTxHash) << ").";
       // Phase 1: 1% sender surcharge added to escrow amount (total swap fee = 2%: 1% init + 1% claim)
-      if (params.xfgAmount > 0) {
+      if (params.xfgAmount > 0 && params.pair != SwapPair::CD) {
         uint64_t senderSurcharge = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) 
                                  / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
         if (senderSurcharge > 0) {

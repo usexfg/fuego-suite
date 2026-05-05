@@ -1473,11 +1473,34 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 
     std::string extraString(extra.begin(), extra.end());
 
+    // First send the banking fee as a HEAT burn if > 0
+    if (banking_fee > 0) {
+      CryptoNote::TransactionExtraHeatCommitment heatCommitment;
+      std::vector<uint8_t> heatExtra;
+      CryptoNote::addHeatCommitmentToExtra(heatExtra, heatCommitment);
+      std::string heatExtraString(heatExtra.begin(), heatExtra.end());
+
+      CryptoNote::WalletHelper::SendCompleteResultObserver burnSent;
+      WalletHelper::IWalletRemoveObserverGuard burnRemoveGuard(*m_wallet, burnSent);
+      CryptoNote::TransactionId burnTxId = m_wallet->deposit(CryptoNote::parameters::DEPOSIT_TERM_FOREVER, banking_fee, m_currency.minimumFee(), heatExtraString, 0);
+      if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == burnTxId) {
+        fail_msg_writer() << "Sending banking fee burn transaction failed";
+        return true;
+      }
+      std::error_code burnSendError = burnSent.wait(burnTxId);
+      burnRemoveGuard.removeObserver();
+      if (burnSendError) {
+        fail_msg_writer() << "Banking fee burn transaction failed: " << burnSendError.message();
+        return true;
+      }
+      success_msg_writer() << "Banking fee burn transaction sent successfully";
+    }
+
     // Send the burn deposit transaction
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet->deposit(burn_term, burn_amount, fee + banking_fee, extraString, 0);
+    CryptoNote::TransactionId txId = m_wallet->deposit(burn_term, burn_amount, fee, extraString, 0);
 
     if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
       fail_msg_writer() << "Sending burn transaction failed";
@@ -1505,7 +1528,7 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::cold(const std::vector<std::string> &args)
 {
-  // Simplified COLD deposit command - amount + term code (3 or 12)
+  // Simplified CD deposit command - amount + term code (3 or 12)
   if (args.size() != 2)
   {
     fail_msg_writer() << "Usage: cold <amount> <term_code>";
@@ -1572,8 +1595,8 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       term_label = "1 year";
     } else {
       fail_msg_writer() << "Invalid term code. Valid terms:";
-      fail_msg_writer() << "  (3) for 3-month COLD term";
-      fail_msg_writer() << "  (12) for 1-year COLD term";
+      fail_msg_writer() << "  (3) for 3-month CD term";
+      fail_msg_writer() << "  (12) for 1-year CD term";
       return true;
     }
 
@@ -1597,7 +1620,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     success_msg_writer() << "  Term: " << term_label << " (" << cold_term << " blocks)";
     success_msg_writer() << "  Banking Fee: " << m_currency.formatAmount(banking_fee) << " XFG (0.1% of amount)";
     success_msg_writer() << "  Network Fee: " << m_currency.formatAmount(m_currency.minimumFee()) << " XFG (minimum txn fee to miners)";
-    success_msg_writer() << "  Commitment Type: 【COLD】 ▋ Off-chain (CD) interest yield";
+    success_msg_writer() << "  Commitment Type: 【CD】 ▋ Off-chain (CD) interest yield";
     success_msg_writer() << "";
 
     success_msg_writer() << "Confirm? (1) OK  (2) NO  ";
@@ -1610,7 +1633,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       return true;
     }
 
-    // Generate unified STARK commitment (v3) for COLD deposit
+    // Generate unified STARK commitment (v3) for CD deposit
     auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
         cold_amount,
         cold_term,
@@ -1651,11 +1674,34 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 
     std::string extraString(extra.begin(), extra.end());
 
-    // Send the COLD deposit transaction
+    // First send the banking fee as a HEAT burn if > 0
+    if (banking_fee > 0) {
+      CryptoNote::TransactionExtraHeatCommitment heatCommitment;
+      std::vector<uint8_t> heatExtra;
+      CryptoNote::addHeatCommitmentToExtra(heatExtra, heatCommitment);
+      std::string heatExtraString(heatExtra.begin(), heatExtra.end());
+
+      CryptoNote::WalletHelper::SendCompleteResultObserver burnSent;
+      WalletHelper::IWalletRemoveObserverGuard burnRemoveGuard(*m_wallet, burnSent);
+      CryptoNote::TransactionId burnTxId = m_wallet->deposit(CryptoNote::parameters::DEPOSIT_TERM_FOREVER, banking_fee, m_currency.minimumFee(), heatExtraString, 0);
+      if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == burnTxId) {
+        fail_msg_writer() << "Sending banking fee burn transaction failed";
+        return true;
+      }
+      std::error_code burnSendError = burnSent.wait(burnTxId);
+      burnRemoveGuard.removeObserver();
+      if (burnSendError) {
+        fail_msg_writer() << "Banking fee burn transaction failed: " << burnSendError.message();
+        return true;
+      }
+      success_msg_writer() << "Banking fee burn transaction sent successfully";
+    }
+
+    // Send the CD transaction
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet->deposit(cold_term, cold_amount, fee + banking_fee, extraString, 0);
+    CryptoNote::TransactionId txId = m_wallet->deposit(cold_term, cold_amount, fee, extraString, 0);
 
     if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
       fail_msg_writer() << "Sending deposit transaction failed";
@@ -1666,19 +1712,19 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     removeGuard.removeObserver();
 
     if (sendError) {
-      fail_msg_writer() << "COLD transaction failed: " << sendError.message();
+      fail_msg_writer() << "CD transaction failed: " << sendError.message();
       return true;
     }
 
-    success_msg_writer() << "COLD transaction sent! ID: " << txId;
+    success_msg_writer() << "CD transaction sent! ID: " << txId;
     return true;
     */
   }
   catch (const std::exception& e)
   {
     fail_msg_writer() << "Error: " << e.what();
-    return true;
   }
+  return true;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -1934,7 +1980,7 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
        }
      }
 
-     fail_msg_writer() << "No HEAT (burn) or COLD commitment found in transaction: " << tx_hash;
+     fail_msg_writer() << "No HEAT (burn) or CD commitment found in transaction: " << tx_hash;
      return true;
    } catch (const std::exception& e) {
      fail_msg_writer() << "Error processing transaction: " << e.what();
@@ -2238,7 +2284,7 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
       return true;
     }
 
-    // Must be a COLD deposit (not HEAT burn or legacy staking)
+    // Must be a CD deposit (not HEAT burn or legacy staking)
     if (deposit.depositType == CryptoNote::Deposit::Type::HEAT) {
       fail_msg_writer() << "Deposit " << depositId << " is a HEAT burn. Use burn_info to view it.";
       fail_msg_writer() << "HEAT burns already have v3 commitments if created after the v3 upgrade.";

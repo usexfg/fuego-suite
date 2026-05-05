@@ -1756,8 +1756,31 @@ namespace PaymentService
         std::string & transactionHash)
 
     {
-      // TODO try and catch
-      wallet.withdrawDeposit(depositId, transactionHash);
+      try
+      {
+        uint64_t knownBlockCount = node.getKnownBlockCount();
+        uint64_t localBlockCount = node.getLocalBlockCount();
+        uint64_t diff = knownBlockCount - localBlockCount;
+        if ((localBlockCount == 0) || (diff > 2))
+        {
+          logger(Logging::WARNING) << "Daemon is not synchronized";
+          return make_error_code(CryptoNote::error::DAEMON_NOT_SYNCED);
+        }
+
+        System::EventLock lk(readyEvent);
+        wallet.withdrawDeposit(depositId, transactionHash);
+      }
+      catch (std::system_error &x)
+      {
+        logger(Logging::WARNING) << "Error: " << x.what();
+        return x.code();
+      }
+      catch (std::exception &x)
+      {
+        logger(Logging::WARNING) << "Error : " << x.what();
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+
       return std::error_code();
     }
 

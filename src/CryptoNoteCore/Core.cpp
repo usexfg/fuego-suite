@@ -106,14 +106,14 @@ bool core::handle_command_line(const boost::program_options::variables_map& vm) 
 }
 
 uint32_t core::get_current_blockchain_height() {
-  return m_blockchain.getCurrentBlockchainHeight();
+  return m_blockchain.getCurrentBlockchainSize();
 }
 uint8_t core::getCurrentBlockMajorVersion() {
-  assert(m_blockchain.getCurrentBlockchainHeight() > 0);
-  return m_blockchain.getBlockMajorVersionForHeight(m_blockchain.getCurrentBlockchainHeight());
+  assert(m_blockchain.getCurrentBlockchainSize() > 0);
+  return m_blockchain.getBlockMajorVersionForHeight(m_blockchain.getCurrentBlockchainSize());
 }
 void core::get_blockchain_top(uint32_t& height, Crypto::Hash& top_id) {
-  assert(m_blockchain.getCurrentBlockchainHeight() > 0);
+  assert(m_blockchain.getCurrentBlockchainSize() > 0);
   top_id = m_blockchain.getTailId(height);
 }
 
@@ -274,7 +274,7 @@ bool core::handle_incoming_tx(const BinaryArray& tx_blob, tx_verification_contex
 bool core::get_stat_info(core_stat_info& st_inf) {
   st_inf.mining_speed = m_miner->get_speed();
   st_inf.alternative_blocks = m_blockchain.getAlternativeBlocksCount();
-  st_inf.blockchain_height = m_blockchain.getCurrentBlockchainHeight();
+  st_inf.blockchain_height = m_blockchain.getCurrentBlockchainSize();
   st_inf.tx_pool_size = m_mempool.get_transactions_count();
   st_inf.top_block_id_str = Common::podToHex(m_blockchain.getTailId());
   return true;
@@ -446,7 +446,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
   {
     LockedBlockchainStorage blockchainLock(m_blockchain);
-    height = m_blockchain.getCurrentBlockchainHeight();
+    height = m_blockchain.getCurrentBlockchainSize();
     diffic = m_blockchain.getDifficultyForNextBlock();
     if (!(diffic)) {
       logger(ERROR, BRIGHT_RED) << "difficulty overhead.";
@@ -726,7 +726,7 @@ bool core::handle_incoming_block(const Block& b, block_verification_context& bvc
 
       NOTIFY_NEW_BLOCK::request arg;
       arg.hop = 0;
-      arg.current_blockchain_height = m_blockchain.getCurrentBlockchainHeight();
+      arg.current_blockchain_height = m_blockchain.getCurrentBlockchainSize();
       BinaryArray blockBa;
       bool r = toBinaryArray(b, blockBa);
       if (!(r)) { logger(ERROR, BRIGHT_RED) << "failed to serialize block"; return false; }
@@ -775,7 +775,7 @@ std::vector<Transaction> core::getPoolTransactions() {
 
 
 std::vector<Crypto::Hash> core::buildSparseChain() {
-  assert(m_blockchain.getCurrentBlockchainHeight() != 0);
+  assert(m_blockchain.getCurrentBlockchainSize() != 0);
   return m_blockchain.buildSparseChain();
 }
 
@@ -791,7 +791,7 @@ bool core::handle_get_objects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTIFY_R
 
 Crypto::Hash core::getBlockIdByHeight(uint32_t height) {
   LockedBlockchainStorage lbs(m_blockchain);
-  if (height < m_blockchain.getCurrentBlockchainHeight()) {
+  if (height < m_blockchain.getCurrentBlockchainSize()) {
     return m_blockchain.getBlockIdByHeight(height);
   } else {
     return NULL_HASH;
@@ -873,7 +873,7 @@ bool core::queryBlocks(const std::vector<Crypto::Hash>& knownBlockIds, uint64_t 
 
   LockedBlockchainStorage lbs(m_blockchain);
 
-  uint32_t currentHeight = lbs->getCurrentBlockchainHeight();
+  uint32_t currentHeight = lbs->getCurrentBlockchainSize();
   uint32_t startOffset = 0;
   uint32_t startFullOffset = 0;
 
@@ -965,7 +965,7 @@ bool core::queryBlocksLite(const std::vector<Crypto::Hash>& knownBlockIds, uint6
   uint32_t& resCurrentHeight, uint32_t& resFullOffset, std::vector<BlockShortInfo>& entries) {
   LockedBlockchainStorage lbs(m_blockchain);
 
-  resCurrentHeight = lbs->getCurrentBlockchainHeight();
+  resCurrentHeight = lbs->getCurrentBlockchainSize();
   resStartHeight = 0;
   resFullOffset = 0;
 

@@ -20,7 +20,7 @@
   "navigation": [
     {
       "group": "",
-      "pages": ["introduction"]
+      "pages": ["introduction", "changelog"]
     },
     {
       "group": "Getting started",
@@ -65,6 +65,12 @@
         "features/lp-pool/how-liquidity-works",
         "features/lp-pool/providing-liquidity",
         "features/lp-pool/fee-earning"
+      ]
+    },
+    {
+      "group": "DIGM",
+      "pages": [
+        "digm/digm-overview"
       ]
     },
     {

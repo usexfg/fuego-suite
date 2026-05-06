@@ -1,54 +1,120 @@
 ---
 title: "Installation"
-description: "Build Fuego from source or run with Docker on Linux, macOS, or Windows."
-keywords: ["install", "build", "docker", "fuego", "xfg"]
+description: "Get set up by downloading, building, and running Fuego Suite on your preferred platform."
+keywords: ["install", "build", "docker", "fuego", "xfg", "windows", "linux", "macos", "raspberry pi", "termux"]
 ---
 
-## Prerequisites
+Fuego is supported across a variety of platforms including Linux, macOS, Windows, Raspberry Pi, and Android (Termux). You can build Fuego from source or run a node via Docker.
 
-<Tabs>
-  <Tab title="Linux / macOS">
-    ```bash
-    # Ubuntu / Debian
-    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev
-
-    # macOS (Homebrew)
-    brew install cmake boost openssl
-    ```
-  </Tab>
-  <Tab title="Windows">
-    Install [Visual Studio 2019+](https://visualstudio.microsoft.com/) with the C++ workload, then install [CMake](https://cmake.org/download/) and [Boost](https://www.boost.org/users/download/).
-  </Tab>
-</Tabs>
-
-## Build from source
+## Windows
 
 <Steps>
-  <Step title="Clone the repository">
+  <Step title="Prerequisites">
+    Install [Visual Studio 2019+](https://visualstudio.microsoft.com/) with the "Desktop development with C++" workload (ensure MSVC v142 - VS 2019 C++ build tools are selected).
+    Then, install [CMake](https://cmake.org/download/) and [Boost 1.73.0 (MSVC 14.2)](https://sourceforge.net/projects/boost/files/boost-binaries/1.73.0/).
+  </Step>
+  <Step title="Clone and Build">
+    Open the "x64 Native Tools Command Prompt for VS 2019" and run:
     ```bash
     git clone https://github.com/usexfg/fuego-suite.git
     cd fuego-suite
+    mkdir build
+    cd build
+    cmake .. -G "Visual Studio 16 2019" -A x64 -DBOOST_LIBRARYDIR="c:\local\boost_1_73_0\lib64-msvc-14.2"
+    msbuild fuegoX.sln /p:Configuration=Release /m
+    ```
+    The compiled binaries will be located in the `src/Release` directory.
+  </Step>
+</Steps>
+
+## Linux (Ubuntu / Debian)
+
+<Steps>
+  <Step title="Prerequisites">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev git
     ```
   </Step>
-  <Step title="Configure and build">
+  <Step title="Clone and Build">
     ```bash
-    mkdir build && cd build
-    cmake ..
-    make -j$(nproc)   # Linux
-    make -j$(sysctl -n hw.ncpu)   # macOS
+    git clone https://github.com/usexfg/fuego-suite.git
+    cd fuego-suite
+    make -j$(nproc)
     ```
-
     Binaries are placed in `build/release/src/`.
   </Step>
-  <Step title="Verify the build">
+</Steps>
+
+## macOS
+
+<Steps>
+  <Step title="Prerequisites">
+    Install Xcode command line tools and Homebrew, then install dependencies:
     ```bash
-    ./build/release/src/fuegod --version
-    ./build/release/src/simplewallet --version
+    xcode-select --install
+    brew install cmake boost openssl git
+    ```
+  </Step>
+  <Step title="Clone and Build">
+    ```bash
+    git clone https://github.com/usexfg/fuego-suite.git
+    cd fuego-suite
+    make -j$(sysctl -n hw.ncpu)
+    ```
+    Binaries are placed in `build/release/src/`.
+  </Step>
+</Steps>
+
+## Raspberry Pi (ARM64)
+
+Running Fuego on a Raspberry Pi is officially supported (Raspberry Pi 4B/4GB RAM minimum, Pi 5/8GB RAM recommended).
+
+<Steps>
+  <Step title="Prerequisites">
+    Make sure you are running a 64-bit Raspberry Pi OS. Update your system and install the required build tools:
+    ```bash
+    sudo apt-get update && sudo apt-get upgrade -y
+    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev git
+    ```
+  </Step>
+  <Step title="Configure and Build">
+    ```bash
+    git clone https://github.com/usexfg/fuego-suite.git
+    cd fuego-suite
+    mkdir build && cd build
+    cmake -DCMAKE_TOOLCHAIN_FILE=../arm.cmake ..
+    make -j4
+    ```
+  </Step>
+</Steps>
+
+## Termux (Android Mobile)
+
+You can run Fuego directly on Android devices via Termux.
+
+<Steps>
+  <Step title="Prerequisites">
+    Open Termux and install the required packages:
+    ```bash
+    pkg update && pkg upgrade
+    pkg install git cmake clang boost openssl build-essential
+    ```
+  </Step>
+  <Step title="Clone and Build">
+    ```bash
+    git clone https://github.com/usexfg/fuego-suite.git
+    cd fuego-suite
+    mkdir build && cd build
+    cmake ..
+    make -j$(nproc)
     ```
   </Step>
 </Steps>
 
 ## Docker
+
+If you prefer containerization, Fuego provides Docker configuration.
 
 ```bash
 # Run a testnet node
@@ -58,35 +124,25 @@ docker compose -f docker/docker-compose-testnet.yml up -d
 docker compose -f docker/docker-compose-testnet.yml logs -f fuegod
 ```
 
-See `docker/README.md` for full Docker configuration options and environment variables.
+See the `docker/` directory for full configuration options.
 
-## Mainnet vs testnet
+---
 
-| | Mainnet | Testnet |
-|--|---------|---------|
-| Default RPC port | 28080 | 28280 |
-| Epoch duration | 900 blocks (~1 day) | 10 blocks (~30 sec) |
-| Flag | (none) | `--testnet` |
-| Data dir | `~/.fuego` | `~/.fuego-testnet` |
+## Running the Node
 
-<Tip>
-  Start on testnet first. Everything works identically but epochs are faster, making it practical to test CD maturity and interest without waiting days.
-</Tip>
-
-## Run the daemon
+Once built, you can run the node. By default, testnet synchronization is much faster.
 
 ```bash
 # Mainnet
-./fuegod --data-dir ~/.fuego
+./build/release/src/fuegod --data-dir ~/.fuego
 
 # Testnet
-./fuegod --testnet --data-dir ~/.fuego-testnet
+./build/release/src/fuegod --testnet --data-dir ~/.fuego-testnet
 ```
 
-Wait for the daemon to sync before using the wallet. Check sync status:
+Wait for the daemon to fully sync before relying on accurate wallet information. You can check the synchronization status from another terminal using:
 
 ```bash
-curl -s http://127.0.0.1:28080/get_info | python3 -m json.tool
+curl -s http://127.0.0.1:28080/get_info | grep synced
 ```
-
-Look for `"synced": true` in the response.
+Look for `"synced": true`.

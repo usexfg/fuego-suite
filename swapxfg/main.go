@@ -61,7 +61,7 @@ func main() {
 			fmt.Println("  --daemon, -d    Fuego daemon RPC (default: http://127.0.0.1:18180)")
 			fmt.Println("                  Aliases: --efier, -e")
 			fmt.Println("  --wallet, -w    Wallet RPC endpoint (optional, enables balance + swap signing)")
-		fmt.Println("  --testnet       Use testnet defaults (:28280 daemon, :28282 wallet)")
+			fmt.Println("  --testnet       Use testnet defaults (:28280 daemon, :28282 wallet)")
 			fmt.Println()
 			fmt.Println("Display:")
 			fmt.Println("  --pair, -p      Starting pair: sol, eth, xmr, bch (default: sol)")

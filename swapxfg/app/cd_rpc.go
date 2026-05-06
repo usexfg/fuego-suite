@@ -7,11 +7,11 @@ import "fmt"
 type CdOffer struct {
 	OfferID      string `json:"offerId"`
 	IsSell       bool   `json:"isSell"`
-	CdAmount     uint64 `json:"cdAmount"`   // atomic units
-	CdTerm       uint32 `json:"cdTerm"`     // months
+	CdAmount     uint64 `json:"cdAmount"` // atomic units
+	CdTerm       uint32 `json:"cdTerm"`   // months
 	CdEpoch      uint32 `json:"cdEpoch"`
 	CdKeyImage   string `json:"cdKeyImage"`
-	AskPrice     uint64 `json:"askPrice"`   // atomic units XFG
+	AskPrice     uint64 `json:"askPrice"` // atomic units XFG
 	MakerPubKey  string `json:"makerPubKey"`
 	Timestamp    uint64 `json:"timestamp"`
 	TTLBlocks    uint32 `json:"ttlBlocks"`

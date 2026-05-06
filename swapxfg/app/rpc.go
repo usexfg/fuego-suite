@@ -82,19 +82,19 @@ type SwapPriceResponse struct {
 	CompositeRate string             `json:"compositeRate"`
 	SourceCount   uint32             `json:"sourceCount"`
 	Sources       []PriceSourceEntry `json:"sources"`
-	XfgUsdLow     string            `json:"xfgUsdLow"`
-	XfgUsdHigh    string            `json:"xfgUsdHigh"`
-	XfgUsdMid     string            `json:"xfgUsdMid"`
-	PairImplied   []PairImplied     `json:"pairImplied"`
-	Status        string            `json:"status"`
+	XfgUsdLow     string             `json:"xfgUsdLow"`
+	XfgUsdHigh    string             `json:"xfgUsdHigh"`
+	XfgUsdMid     string             `json:"xfgUsdMid"`
+	PairImplied   []PairImplied      `json:"pairImplied"`
+	Status        string             `json:"status"`
 }
 
 // SwapStatus represents the state of an active adaptor-signature swap.
 type SwapStatus struct {
 	SwapID    string `json:"swapId"`
 	Pair      uint8  `json:"pair"`
-	Role      string `json:"role"`      // "ALICE" or "BOB"
-	State     string `json:"state"`     // INITIATED, KEYS_EXCHANGED, ESCROW_FUNDED, PRESIGS_READY, CTR_LOCKED, SECRET_REVEALED, XFG_SPENT, REFUNDED, FAILED
+	Role      string `json:"role"`  // "ALICE" or "BOB"
+	State     string `json:"state"` // INITIATED, KEYS_EXCHANGED, ESCROW_FUNDED, PRESIGS_READY, CTR_LOCKED, SECRET_REVEALED, XFG_SPENT, REFUNDED, FAILED
 	XfgAmount uint64 `json:"xfgAmount"`
 	CtrAmount uint64 `json:"ctrAmount"`
 	Rate      string `json:"rate"`

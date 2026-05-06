@@ -5,17 +5,17 @@ import "github.com/charmbracelet/lipgloss"
 
 // Palette from spec §7
 var (
-	ColorAccent     = lipgloss.Color("#FF5500") // Fuego orange
-	ColorBullish    = lipgloss.Color("#00CC66") // green
-	ColorBearish    = lipgloss.Color("#FF3344") // red
-	ColorSpread     = lipgloss.Color("#FFAA00") // yellow
-	ColorMuted      = lipgloss.Color("#555555") // gray
-	ColorActiveTab  = lipgloss.Color("#FFFFFF") // white text
-	ColorInactive   = lipgloss.Color("#777777")
-	ColorOwn        = lipgloss.Color("#00CCCC") // cyan
-	ColorEscrow     = lipgloss.Color("#FFDD00") // pulsing yellow (escrow state)
-	ColorConnOK     = lipgloss.Color("#00FF00")
-	ColorConnLost   = lipgloss.Color("#FF0000")
+	ColorAccent    = lipgloss.Color("#FF5500") // Fuego orange
+	ColorBullish   = lipgloss.Color("#00CC66") // green
+	ColorBearish   = lipgloss.Color("#FF3344") // red
+	ColorSpread    = lipgloss.Color("#FFAA00") // yellow
+	ColorMuted     = lipgloss.Color("#555555") // gray
+	ColorActiveTab = lipgloss.Color("#FFFFFF") // white text
+	ColorInactive  = lipgloss.Color("#777777")
+	ColorOwn       = lipgloss.Color("#00CCCC") // cyan
+	ColorEscrow    = lipgloss.Color("#FFDD00") // pulsing yellow (escrow state)
+	ColorConnOK    = lipgloss.Color("#00FF00")
+	ColorConnLost  = lipgloss.Color("#FF0000")
 )
 
 // Reusable styles

@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
 // ethBridgeHTML returns the inline HTML for the ETH MetaMask bridge page.
@@ -183,43 +186,37 @@ func (b *BridgeServer) OpenEthBridge() error {
 }
 
 // buildHTLCLockCalldata encodes calldata for an HTLC lock(bytes32,uint256) call.
-//
-// TODO: use go-ethereum/abi (github.com/ethereum/go-ethereum/accounts/abi) for
-// proper ABI encoding once go-ethereum is added to go.mod without CGO issues.
-// Until then we hand-assemble: 4-byte selector + 32-byte hashlock + 32-byte timeout.
-//
-// The function selector is keccak256("lock(bytes32,uint256)")[0:4] = 0x84cc9dfb.
-// Both arguments are right-padded/left-padded to 32 bytes per ABI spec:
-//   - bytes32 is already 32 bytes (passed as 64 hex chars, zero-right-padded)
-//   - uint256 is left-padded to 32 bytes (big-endian)
-//
-// Returns an error if hashlock is not 64 hex chars or timeout is not ≤ 64 hex chars.
 func buildHTLCLockCalldata(hashlockHex, timeoutHex string) (string, error) {
-	// Strip optional 0x prefixes
 	hashlockHex = strings.TrimPrefix(hashlockHex, "0x")
 	timeoutHex = strings.TrimPrefix(timeoutHex, "0x")
 
 	if len(hashlockHex) != 64 {
 		return "", fmt.Errorf("buildHTLCLockCalldata: hashlock must be 64 hex chars (bytes32), got %d", len(hashlockHex))
 	}
-	if len(timeoutHex) == 0 || len(timeoutHex) > 64 {
-		return "", fmt.Errorf("buildHTLCLockCalldata: timeout must be 1–64 hex chars (uint256), got %d", len(timeoutHex))
-	}
-	// Validate hex characters
-	for _, c := range hashlockHex + timeoutHex {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return "", fmt.Errorf("buildHTLCLockCalldata: non-hex character %q in input", c)
-		}
+
+	hashlockBytes, err := hex.DecodeString(hashlockHex)
+	if err != nil {
+		return "", fmt.Errorf("buildHTLCLockCalldata: invalid hashlock hex: %v", err)
 	}
 
-	// 4-byte selector for lock(bytes32,uint256): keccak256 = 0x84cc9dfb…
-	const selector = "84cc9dfb"
-	// bytes32 arg: already 32 bytes — no padding needed
-	hashArg := hashlockHex
-	// uint256 arg: left-pad with zeros to 64 hex chars (32 bytes)
-	timeoutArg := fmt.Sprintf("%064s", timeoutHex)
-	// Replace spaces with zeros (fmt.Sprintf pads with spaces for strings)
-	timeoutArg = strings.ReplaceAll(timeoutArg, " ", "0")
+	var hashlock [32]byte
+	copy(hashlock[:], hashlockBytes)
 
-	return "0x" + selector + hashArg + timeoutArg, nil
+	timeoutBig := new(big.Int)
+	timeoutBig, ok := timeoutBig.SetString(timeoutHex, 16)
+	if !ok {
+		return "", fmt.Errorf("buildHTLCLockCalldata: invalid timeout hex")
+	}
+
+	parsedABI, err := abi.JSON(strings.NewReader(`[{"constant":false,"inputs":[{"name":"_hashlock","type":"bytes32"},{"name":"_timeout","type":"uint256"}],"name":"lock","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`))
+	if err != nil {
+		return "", fmt.Errorf("buildHTLCLockCalldata: failed to parse ABI: %v", err)
+	}
+
+	data, err := parsedABI.Pack("lock", hashlock, timeoutBig)
+	if err != nil {
+		return "", fmt.Errorf("buildHTLCLockCalldata: failed to pack calldata: %v", err)
+	}
+
+	return "0x" + hex.EncodeToString(data), nil
 }

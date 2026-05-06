@@ -293,8 +293,7 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // tea.Cmd for any asynchronous work that must not mutate model state directly.
 // Goroutines that previously wrote m.statusMsg / m.ethAddr / m.bchBal directly
 // have been converted to tea.Cmd functions that return typed messages handled
-// in Update().  Remaining single-field statusMsg goroutines are tagged below
-// with TODO comments for a follow-up conversion pass.
+// in Update().
 func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
@@ -318,7 +317,7 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			return nil
 		}
 		amtXfg, amtCtr, pair, timeout := parts[1], parts[2], parts[3], parts[4]
-		m.statusMsg = fmt.Sprintf("offer %s XFG for %s %s (%s hrs) | enter 'confirm-offer %s %s %s %s' to lock", 
+		m.statusMsg = fmt.Sprintf("offer %s XFG for %s %s (%s hrs) | enter 'confirm-offer %s %s %s %s' to lock",
 			amtXfg, amtCtr, pair, timeout, amtXfg, amtCtr, pair, timeout)
 	case "confirm-offer":
 		// Usage: confirm-offer <amount_xfg> <amount_target> <pair> <timeout_hrs> [soft_order: true/false]
@@ -358,25 +357,27 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			ctrFloat, _ := strconv.ParseFloat(amtCtr, 64)
 			rateFloat := (float64(xfgAtomic) / 1e7) / ctrFloat
 			rateNum := uint64(rateFloat * 1e7)
-			
+
 			if isSoftOrder {
-				res, err := wallet.SignOffer(xfgAtomic, rateNum, pairToID(pair), timeoutHrs * 30, true) // ~30 blocks per hour
+				res, err := wallet.SignOffer(xfgAtomic, rateNum, pairToID(pair), timeoutHrs*30, true) // ~30 blocks per hour
 				if err != nil {
 					return statusUpdateMsg{"sign_offer failed: " + err.Error()}
 				}
 
 				// Submit soft AFK offer to daemon
 				offerReq := map[string]interface{}{
-					"offerId":      res.OfferID,
-					"xfgAmount":    xfgAtomic,
-					"rateNum":      rateNum,
-					"pair":         pairToID(pair),
-					"makerPubKey":  res.MakerPubKey,
-					"signature":    res.Signature,
-					"ttlBlocks":    timeoutHrs * 30,
-					"isSoftOrder":  true,
+					"offerId":     res.OfferID,
+					"xfgAmount":   xfgAtomic,
+					"rateNum":     rateNum,
+					"pair":        pairToID(pair),
+					"makerPubKey": res.MakerPubKey,
+					"signature":   res.Signature,
+					"ttlBlocks":   timeoutHrs * 30,
+					"isSoftOrder": true,
 				}
-				var submitResp struct{ Status string `json:"status"` }
+				var submitResp struct {
+					Status string `json:"status"`
+				}
 				if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
 					return statusUpdateMsg{"submit failed: " + err.Error()}
 				}
@@ -399,7 +400,9 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 					"isSell":       true,
 					"isSoftOrder":  false,
 				}
-				var submitResp struct{ Status string `json:"status"` }
+				var submitResp struct {
+					Status string `json:"status"`
+				}
 				if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
 					return statusUpdateMsg{"submit failed: " + err.Error()}
 				}
@@ -562,7 +565,9 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			txid, vout := parts[2], parts[3]
 			client := m.client
 			return func() tea.Msg {
-				var refundResp struct{ Status string `json:"status"` }
+				var refundResp struct {
+					Status string `json:"status"`
+				}
 				req := map[string]interface{}{"swap_id": txid + ":" + vout}
 				if err := client.post("/refundswap", req, &refundResp); err != nil {
 					return statusUpdateMsg{"bch refund failed: " + err.Error()}

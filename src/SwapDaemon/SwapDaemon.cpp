@@ -1280,7 +1280,55 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   // Create the AFK Lock using wallet RPC (auto-execute)
   // And start the swap state machine
   m_logger(Logging::INFO) << "Received swap request for offer " << offerId << " amount " << amount;
+
+  if (!m_swapRelay) {
+    m_logger(Logging::ERROR) << "Swap relay not configured, cannot handle swap request";
+    return false;
+  }
+
+  auto offers = m_swapRelay->getOffers(0); // Assuming pair is not strict right now or need lookup
+  // Better to iterate all to find it or modify getOffers to get by ID, but for now we iterate all pairs or have a specific method.
+  // Actually, we can just get the offer from m_swapRelay directly if we expose a method, or just try to match it.
+
+  CryptoNote::SwapOfferMsg targetOffer;
+  bool found = false;
+  for (int pair = 0; pair <= 2; ++pair) {
+    auto pairOffers = m_swapRelay->getOffers(pair);
+    for (const auto& offer : pairOffers) {
+      if (offer.offerId == offerId) {
+        targetOffer = offer;
+        found = true;
+        break;
+      }
+    }
+    if (found) break;
+  }
+
+  if (!found) {
+    m_logger(Logging::ERROR) << "Offer " << offerId << " not found";
+    return false;
+  }
+
+  if (!targetOffer.isSoftOrder) {
+    m_logger(Logging::ERROR) << "Offer " << offerId << " is not a soft order";
+    return false;
+  }
+
+  std::string lockId;
+  std::string adaptorPoint;
+  std::string preSig;
+
+  // Create AFK lock (short timeout for taker, e.g., 1 hour)
+  if (!m_rpc.createAfkLock(targetOffer.xfgAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig)) {
+    m_logger(Logging::ERROR) << "Failed to create AFK lock for offer " << offerId;
+    return false;
+  }
+
+  m_logger(Logging::INFO) << "Successfully created AFK lock " << lockId << " for soft order " << offerId;
+
+  // State machine will pick up the new lock
   return true;
 }
+
 
 } // namespace XfgSwap

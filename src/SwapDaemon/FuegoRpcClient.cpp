@@ -336,4 +336,52 @@ bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& address
   } catch (const std::exception&) { return false; }
 }
 
+
+bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) {
+  if (m_walletHost.empty() || m_walletPort == 0) {
+    throw std::runtime_error("Wallet RPC not configured (call setWalletRpc first)");
+  }
+
+  std::stringstream params;
+  params << "{"
+         << "\"amount\": " << amount << ","
+         << "\"timeout_hours\": " << timeout_hours << ","
+         << "\"pair\": " << static_cast<int>(pair)
+         << "}";
+
+  std::string respBody = walletJsonRpc("create_afk_lock", params.str());
+  if (respBody.empty()) {
+    return false;
+  }
+
+  size_t lockIdPos = respBody.find("\"lockId\":\"");
+  if (lockIdPos != std::string::npos) {
+    lockIdPos += 11;
+    size_t lockIdEnd = respBody.find("\"", lockIdPos);
+    lockId = respBody.substr(lockIdPos, lockIdEnd - lockIdPos);
+  } else {
+      return false;
+  }
+
+  size_t apPos = respBody.find("\"adaptorPoint\":\"");
+  if (apPos != std::string::npos) {
+    apPos += 17;
+    size_t apEnd = respBody.find("\"", apPos);
+    adaptorPoint = respBody.substr(apPos, apEnd - apPos);
+  } else {
+      return false;
+  }
+
+  size_t psPos = respBody.find("\"preSig\":\"");
+  if (psPos != std::string::npos) {
+    psPos += 11;
+    size_t psEnd = respBody.find("\"", psPos);
+    preSig = respBody.substr(psPos, psEnd - psPos);
+  } else {
+      return false;
+  }
+
+  return true;
+}
+
 } // namespace XfgSwap

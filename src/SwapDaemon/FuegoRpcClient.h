@@ -72,6 +72,9 @@ public:
   bool sendTransfer(const std::string& address, uint64_t amount,
                     uint64_t mixin, TransferResult& result);
 
+  // Call create_afk_lock on the wallet RPC
+  bool createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig);
+
   // ── Daemon RPC for tx inspection ──
 
   // Fetch a transaction by hash and extract its outputs.

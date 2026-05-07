@@ -537,7 +537,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("stop_mining", boost::bind(&simple_wallet::stop_mining, this, boost::arg<1>()), "stop_mining - Stop mining");
 
   // Deposit commands
-  m_consoleHandler.setHandler("deposit", boost::bind(&simple_wallet::deposit, this, boost::arg<1>()), "deposit <amount> <epochs> - Create CD / Certificate of Deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks or about 5 days and 72 is about 1yr).");
+  m_consoleHandler.setHandler("deposit", boost::bind(&simple_wallet::deposit, this, boost::arg<1>()), "deposit <amount> <epochs> - Create a HEAT CD / Certificate of Deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks or about 5 days and 72 is about 1yr).");
   m_consoleHandler.setHandler("rollover", boost::bind(&simple_wallet::rollover, this, boost::arg<1>()), "rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).");
   m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all CD (Certificate of Deposit) yield accounts");
   m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Get detailed info on CD by ID");
@@ -1526,9 +1526,9 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::cold(const std::vector<std::string> &args)
+/* bool simple_wallet::cold(const std::vector<std::string> &args) 
 {
-  // Simplified CD deposit command - amount + term code (3 or 12)
+  // COLD deposit command - amount + term code (3 or 12)
   if (args.size() != 2)
   {
     fail_msg_writer() << "Usage: cold <amount> <term_code>";
@@ -1595,8 +1595,8 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       term_label = "1 year";
     } else {
       fail_msg_writer() << "Invalid term code. Valid terms:";
-      fail_msg_writer() << "  (3) for 3-month CD term";
-      fail_msg_writer() << "  (12) for 1-year CD term";
+      fail_msg_writer() << "  (3) for 3-month C0LD term";
+      fail_msg_writer() << "  (12) for 1-year C0LD term";
       return true;
     }
 
@@ -1620,7 +1620,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     success_msg_writer() << "  Term: " << term_label << " (" << cold_term << " blocks)";
     success_msg_writer() << "  Banking Fee: " << m_currency.formatAmount(banking_fee) << " XFG (0.1% of amount)";
     success_msg_writer() << "  Network Fee: " << m_currency.formatAmount(m_currency.minimumFee()) << " XFG (minimum txn fee to miners)";
-    success_msg_writer() << "  Commitment Type: 【CD】 ▋ Off-chain (CD) interest yield";
+    success_msg_writer() << "  Commitment Type: 【C0LD】 ▋ Off-chain interest yield";
     success_msg_writer() << "";
 
     success_msg_writer() << "Confirm? (1) OK  (2) NO  ";
@@ -1633,7 +1633,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       return true;
     }
 
-    // Generate unified STARK commitment (v3) for CD deposit
+    // Generate unified STARK commitment (v3) for C0LD deposit
     auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
         cold_amount,
         cold_term,
@@ -1643,7 +1643,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 
     // Display secret — user's claim ticket for xfg-stark-cli proof generation
     success_msg_writer() << "";
-    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
+    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim C0LD interest):";
     success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
     success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
     success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
@@ -1659,7 +1659,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 
     CryptoNote::addColdCommitmentToExtra(extra, coldCommitment);
 
-    // Encrypt STARK secret into tx extra (0xD5) so cd_info can retrieve it
+    // Encrypt STARK secret into tx extra (0xD5) so cold_info can retrieve it
     CryptoNote::AccountKeys walletKeys;
     m_wallet->getAccountKeys(walletKeys);
     CryptoNote::DepositSecretPayload secretPayload;
@@ -1697,7 +1697,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       success_msg_writer() << "Banking fee burn transaction sent successfully";
     }
 
-    // Send the CD transaction
+    // Send the C0LD transaction
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
@@ -1712,13 +1712,13 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     removeGuard.removeObserver();
 
     if (sendError) {
-      fail_msg_writer() << "CD transaction failed: " << sendError.message();
+      fail_msg_writer() << "C0LD transaction failed: " << sendError.message();
       return true;
     }
 
-    success_msg_writer() << "CD transaction sent! ID: " << txId;
+    success_msg_writer() << "C0LD transaction sent! ID: " << txId;
     return true;
-    */
+  
   }
   catch (const std::exception& e)
   {
@@ -1726,7 +1726,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
   }
   return true;
 }
-
+*/
 //----------------------------------------------------------------------------------------------------
 
 
@@ -2514,7 +2514,7 @@ static std::string findSwapxfg() {
     std::string dir(self);
     auto pos = dir.rfind('\\');
     if (pos != std::string::npos) {
-      std::string candidate = dir.substr(0, pos + 1) + "xfg-swap.exe";
+      std::string candidate = dir.substr(0, pos + 1) + "xfg-swapd.exe";
       if (GetFileAttributesA(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
         return candidate;
     }
@@ -2541,16 +2541,16 @@ static std::string findSwapxfg() {
   if (!self.empty()) {
     std::string dir = self;
     dir = dir.substr(0, dir.rfind('/'));
-    std::string candidate = dir + "/xfg-swap";
+    std::string candidate = dir + "/xfg-swapd";
     if (access(candidate.c_str(), X_OK) == 0) return candidate;
   }
 
   // 1.5. Current working directory fallback
-  if (access("./xfg-swap", X_OK) == 0) return "./xfg-swap";
+  if (access("./xfg-swapd", X_OK) == 0) return "./xfg-swapd";
 
   // 2. PATH fallback
-  if (system("which xfg-swap > /dev/null 2>&1") == 0)
-    return "xfg-swap";
+  if (system("which xfg-swapd > /dev/null 2>&1") == 0)
+    return "xfg-swapd";
   return "";
 #endif
 }
@@ -2558,11 +2558,11 @@ static std::string findSwapxfg() {
 void simple_wallet::launchSwapxfg(bool testnet) {
   std::string swapxfgPath = findSwapxfg();
   if (swapxfgPath.empty()) {
-    logger(Logging::WARNING) << "xfg-swap not found. To use the swap terminal, install xfg-swap:";
+    logger(Logging::WARNING) << "xfg-swapd not found. To use the swapXFG terminal, install xfg-swapd:";
     logger(Logging::WARNING) << "  - Download from https://github.com/usexfg/fuego-suite/releases";
-    logger(Logging::WARNING) << "  - Place xfg-swap in the same directory as fire_wallet";
+    logger(Logging::WARNING) << "  - Place xfg-swapd in the same directory as fire_wallet";
     logger(Logging::INFO)    << "Alternatively, run manually:";
-    logger(Logging::INFO)    << "  xfg-swap --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
+    logger(Logging::INFO)    << "  xfg-swapd --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
     return;
   }
 
@@ -2583,22 +2583,22 @@ void simple_wallet::launchSwapxfg(bool testnet) {
     if (m_wallet_rpc_port) {
       std::string walletEndpoint = "http://127.0.0.1:" + std::to_string(m_wallet_rpc_port);
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     } else {
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     }
@@ -2651,9 +2651,10 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     XfgSwap::SwapPair pair;
     if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
     else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
+    else if (pairStr == "SOL") pair = XfgSwap::SwapPair::SOL;
     else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
     else {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use XMR, ETH, or BCH.";
+      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use SOL, XMR, ETH, or BCH.";
       return true;
     }
 

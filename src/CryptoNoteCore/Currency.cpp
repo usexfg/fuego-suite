@@ -1119,7 +1119,7 @@ double Currency::getBurnPercentage() const {
 	   		   uint64_t difficulty_plate = isTestnet() ? 10000 : 100000;
 
 
-			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
+			   assert(timestamps.size() == cumulativeDifficulties.size());
 
 			   // If it's a new coin, do startup code. Do not remove in case other coins copy your code.
 			   // uint64_t difficulty_guess = 10000;

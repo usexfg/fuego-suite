@@ -177,11 +177,6 @@ public:
         // v10+: LWMA-1 with N=39. Provide N+1=40 timestamps.
         return 40;
       }
-      else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7)
-      {
-        // v7-v9: single-window LWMA, DIFFICULTY_WINDOW_V4=45 is correct here
-        return difficultyBlocksCount4() + 1;
-      }
       else if (blockMajorVersion >= BLOCK_MAJOR_VERSION_3)
       {
         return difficultyBlocksCount3() + 1;

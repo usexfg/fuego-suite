@@ -759,8 +759,11 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
 
     // Re-populate CommitmentIndex from block transaction extras.
     // rebuildCache() only rebuilds basic output indices; CommitmentIndex needs extra parsing.
-    logger(INFO, BRIGHT_WHITE) << "Rebuilding commitment index from block history...";
-    for (uint32_t b = 0; b < m_blocks.size(); ++b) {
+    // Only scan blocks at or above V10 — no commitment extras exist before
+    const uint32_t v10Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10);
+    const uint32_t commitScanStart = (v10Height < m_blocks.size()) ? v10Height : static_cast<uint32_t>(m_blocks.size());
+    logger(INFO, BRIGHT_WHITE) << "Rebuilding commitment index from block " << commitScanStart << "...";
+    for (uint32_t b = commitScanStart; b < m_blocks.size(); ++b) {
       const BlockEntry& block = m_blocks[b];
       for (uint16_t t = 0; t < block.transactions.size(); ++t) {
         const Transaction& tx = block.transactions[t].tx;
@@ -2718,8 +2721,15 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
   auto longhashTimeStart = std::chrono::steady_clock::now();
   Crypto::Hash proof_of_work = NULL_HASH;
-  if (m_checkpoints.is_in_checkpoint_zone(height)) {
-    if (!m_checkpoints.check_block(height, blockHash)) {
+  //
+  // Use m_blocks.size() (the height the new block will occupy), matching v1.9.3
+  // mainnet behavior. `height` parameter from callers is m_blocks.size()+1
+  // due to a `++height` in addNewBlock/addBlocksToChain, which would shift every
+  // checkpoint comparison by one (block N hash compared to checkpoint[N+1]).
+  // 
+  uint32_t newBlockHeight = static_cast<uint32_t>(m_blocks.size());
+  if (m_checkpoints.is_in_checkpoint_zone(newBlockHeight)) {
+    if (!m_checkpoints.check_block(newBlockHeight, blockHash)) {
       logger(ERROR, BRIGHT_RED) <<
         "CHECKPOINT VALIDATION FAILED";
       bvc.m_verification_failed = true;
@@ -2751,7 +2761,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   block.transactions.resize(1);
   block.transactions[0].tx = blockData.baseTransaction;
   TransactionIndex transactionIndex = { block.height, static_cast<uint16_t>(0) };
-  pushTransaction(block, minerTransactionHash, transactionIndex);
+  if (!pushTransaction(block, minerTransactionHash, transactionIndex)) {
+    logger(ERROR, BRIGHT_RED) << "Block " << blockHash
+      << " failed to push miner transaction (duplicate in m_transactionMap — likely corrupted DB state)";
+    bvc.m_verification_failed = true;
+    return false;
+  }
 
   size_t coinbase_blob_size = getObjectBinarySize(blockData.baseTransaction);
   size_t cumulative_block_size = coinbase_blob_size;
@@ -2796,7 +2811,15 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     }
 
     ++transactionIndex.transaction;
-    pushTransaction(block, tx_id, transactionIndex);
+    if (!pushTransaction(block, tx_id, transactionIndex)) {
+      logger(ERROR, BRIGHT_RED) << "Block " << blockHash
+        << " failed to push transaction " << tx_id
+        << " (duplicate in m_transactionMap — likely corrupted DB state)";
+      bvc.m_verification_failed = true;
+      block.transactions.pop_back();
+      popTransactions(block, minerTransactionHash);
+      return false;
+    }
 
     cumulative_block_size += blob_size;
     fee_summary += fee;
@@ -2976,6 +2999,13 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
       // Parse transaction extra to detect burn types (0X08 0xEF)
       std::vector<TransactionExtraField> extraFields;
       if (parseTransactionExtra(tx.tx.extra, extraFields)) {
+        // Only process v10+ extra types (HEAT 0x08, CD 0xCD, Alias 0xEA, Migration 0xCE)
+        // for blocks at or above V10 activation. Before V10, these tags could be false
+        // positives from random bytes in old transaction extras (especially 0x08).
+        const uint32_t v10Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10);
+        const bool isV10Block = (block.height >= v10Height);
+
+        if (isV10Block) {
         logger(DEBUGGING, "Blockchain") << "Transaction " << getObjectHash(tx.tx)
                                  << " extra: Found " << extraFields.size() << " fields";
         for (size_t i = 0; i < extraFields.size(); ++i) {
@@ -3010,27 +3040,27 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                              << " amount=" << heatCommit.amount;
           }
           // Check for CD commitment (0xCD) - term deposit
-          else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-            const auto& coldCommit = boost::get<TransactionExtraSimpleCD>(field);
+          else if (field.type() == typeid(TransactionExtraCDCommitment)) {
+            const auto& cdCommit = boost::get<TransactionExtraCDCommitment>(field);
 
             // Index the CD commitment for RPC queries
             Crypto::Hash txHash = getObjectHash(tx.tx);
             CommitmentEntry entry;
-            entry.commitment = coldCommit.commitment;
+            entry.commitment = cdCommit.commitment;
             entry.txHash = txHash;
             entry.blockHeight = block.height;
-            entry.amount = coldCommit.amount;
-            entry.term = coldCommit.term;
-            entry.type = CommitmentEntry::Type::COLD;
+            entry.amount = cdCommit.amount;
+            entry.term = cdCommit.term;
+            entry.type = CommitmentEntry::Type::CD;
             entry.targetChainId = 1; // Default to ETH
             m_commitmentIndex.addCommitment(entry);
 
-            logger(DEBUGGING) << "CD commitment indexed: " << Common::podToHex(coldCommit.commitment)
-                              << " amount=" << coldCommit.amount << " term=" << coldCommit.term;
+            logger(DEBUGGING) << "CD commitment indexed: " << Common::podToHex(cdCommit.commitment)
+                              << " amount=" << cdCommit.amount << " term=" << cdCommit.term;
           }
-          // 0xCE: COLD migration — register v3 commitment for a pre-v3 legacy deposit
-          else if (field.type() == typeid(TransactionExtraColdMigration)) {
-            const auto& migration = boost::get<TransactionExtraColdMigration>(field);
+          // 0xCE: CD migration — register v3 commitment for a pre-v3 legacy deposit
+          else if (field.type() == typeid(TransactionExtraCDMigration)) {
+            const auto& migration = boost::get<TransactionExtraCDMigration>(field);
 
             // Validate: the referenced original tx must exist and contain a legacy
             // deposit output (MultisignatureOutput) with matching amount.
@@ -3067,21 +3097,21 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                 entry.blockHeight = originalBlockHeight;  // Original deposit block, not migration block
                 entry.amount = migration.amount;
                 entry.term = migration.term;
-                entry.type = CommitmentEntry::Type::COLD;
+                entry.type = CommitmentEntry::Type::CD;
                 entry.targetChainId = migration.targetChainId;
                 entry.isLegacyMigration = true;  // Confirmed: original tx has MultisignatureOutput
                 m_commitmentIndex.addCommitment(entry);
 
-                logger(DEBUGGING) << "COLD migration indexed: original=" << Common::podToHex(migration.originalTxHash)
+                logger(DEBUGGING) << "CD migration indexed: original=" << Common::podToHex(migration.originalTxHash)
                                   << " commitment=" << Common::podToHex(migration.commitment)
                                   << " amount=" << migration.amount
                                   << " originalBlock=" << originalBlockHeight;
               } else if (!depositFound) {
-                logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
+                logger(WARNING) << "CD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
                                 << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
               }
             } else {
-              logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
+              logger(WARNING) << "CD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
                               << " not found in blockchain";
             }
           }
@@ -3166,6 +3196,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
           }
         }
       }
+        } // isV10Block guard
 
       for (const auto &in : tx.tx.inputs)
       {
@@ -3177,7 +3208,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
             deposit -= multisign.amount;
           }
         }
-        // Commitment withdrawals (ring-sig COLD): reduce deposit balance
+        // Commitment withdrawals (ring-sig CD): reduce deposit balance
         else if (in.type() == typeid(TransactionInputCommitmentSpend))
         {
           deposit -= boost::get<TransactionInputCommitmentSpend>(in).amount;
@@ -3193,7 +3224,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
             deposit += out.amount;
           }
         }
-        // COLD commitment outputs: add to deposit balance (HEAT/FOREVER burns tracked separately)
+        // CD commitment outputs: add to deposit balance (HEAT/FOREVER burns tracked separately)
         else if (out.target.type() == typeid(TransactionOutputCommitment))
         {
           const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);

@@ -70,7 +70,7 @@ namespace CryptoNote
   {
     // Add testnet-specific deposit commands (in addition to inherited ones)
     m_consoleHandler.setHandler("burn", boost::bind(&testnet_wallet::burn, this, boost::arg<1>()), "burn <amount> - Create a HEAT burn (0.8, 8, 80, 800 TEST)");
-    // m_consoleHandler.setHandler("cold", boost::bind(&testnet_wallet::cold, this, boost::arg<1>()), "cold <amount> <term_code> - Create a Certificate of Ledger Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)");
+    // m_consoleHandler.setHandler("cd", boost::bind(&testnet_wallet::cd, this, boost::arg<1>()), "cd <amount> <term_code> - Create a Certificate of Deposit (0.8, 8, 80, 800 TEST with terms 3 (3months) or 12 (1yr)");
     // m_consoleHandler.setHandler("elderking_ceremony", boost::bind(&testnet_wallet::elderking_ceremony, this, boost::arg<1>()), "elderking_ceremony - (DEPRECATED)");
     // m_consoleHandler.setHandler("unstake", boost::bind(&testnet_wallet::unstake, this, boost::arg<1>()), "unstake - (DEPRECATED)");
     m_consoleHandler.setHandler("list_burns", boost::bind(&testnet_wallet::list_burns, this, boost::arg<1>()), "list_burns - List all burn transactions.");
@@ -233,9 +233,16 @@ namespace CryptoNote
   }
 
   //----------------------------------------------------------------------------------------------------
-  bool CryptoNote::testnet_wallet::cold(const std::vector<std::string> &args)
+  bool CryptoNote::testnet_wallet::cd(const std::vector<std::string> &args)
   {
-    // COLD deposit - testnet version with term code validation
+    // DEPRECATED: This function was written for the old COLD/STARK commitment model
+    // which used TransactionExtraColdCommitment (with claimChainCode, metadata, gift_secret).
+    // That struct has been deleted. The new CD model uses the simple 44-byte
+    // TransactionExtraCDCommitment format (commitment + amount + term only).
+    // The commented-out transaction-sending block below references deleted APIs
+    // (addColdCommitmentToExtra, TransactionExtraColdCommitment) -may be useful for zkEvent / BridgeLock_term deposits
+
+    // CD deposit - testnet version with term code validation
     if (args.size() != 2)
     {
       fail_msg_writer() << "Usage: cold <amount> <term_code>";
@@ -338,6 +345,9 @@ namespace CryptoNote
       success_msg_writer() << "";
 
       /*
+      // TODO: This block used the old COLD/STARK API (TransactionExtraColdCommitment,
+      // addColdCommitmentToExtra) which has been deleted. Rewrite using the new CD model:
+      //   createTxExtraWithCDCommitment(starkResult.commitment, cd_amount, cd_term, extra)
       std::vector<uint8_t> extra;
       CryptoNote::TransactionExtraColdCommitment coldCommitment;
       coldCommitment.commitment = starkResult.commitment;

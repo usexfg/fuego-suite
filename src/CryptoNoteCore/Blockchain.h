@@ -156,7 +156,7 @@ namespace CryptoNote {
   //  bool getElderfierBySigningPubkey(const Crypto::PublicKey& pubkey, ElderfierRegistration& out) const;
     CommitmentIndex::Height getCommitmentHighestBlock() const;
 
-    // Banking fee computation (routed to miners? may need for zkProvers, instead of EFiers; 0.1% on HEAT/COLD commitments)
+    // Banking fee computation (route?? may need for zkProvers, 1% on CDs)
     static uint64_t computeBankingFeesFromTransactions(const std::vector<Transaction>& txs, uint32_t activeEfierCount = 0);
 
     // Access CommitmentIndex for epoch boundary checks and fee tracking

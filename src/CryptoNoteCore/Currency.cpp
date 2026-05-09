@@ -1116,10 +1116,10 @@ double Currency::getBurnPercentage() const {
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V4; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
-	   		   uint64_t difficulty_plate = isTestnet() ? 10000 : 100000;
+				   uint64_t difficulty_plate = 100000;
 
 
-			   assert(timestamps.size() == cumulativeDifficulties.size());
+			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
 
 			   // If it's a new coin, do startup code. Do not remove in case other coins copy your code.
 			   // uint64_t difficulty_guess = 10000;
@@ -1141,39 +1141,13 @@ double Currency::getBurnPercentage() const {
 			   }
 			   if (L < N*N*T/20 ) { L =  N*N*T/20; }
 
-			   // Fix array bounds issue - prevent accessing beyond array bounds
-			   if (cumulativeDifficulties.size() > N) {
-			       avg_D = ( cumulativeDifficulties[N] - cumulativeDifficulties[0] )/ N;
-			   } else if (cumulativeDifficulties.size() > 0) {
-			       // Fallback to last available difficulty if not enough data
-			       avg_D = cumulativeDifficulties.back();
-			   } else {
-			       avg_D = 10000; // Minimum difficulty fallback
-			   }
+				   avg_D = ( cumulativeDifficulties[N] - cumulativeDifficulties[0] )/ N;
 
 			   // Prevent round off error for small D and overflow for large D.
 			   if (avg_D > 2000000*N*N*T) {
 			       next_D = (avg_D/(200*L))*(N*(N+1)*T*97);
 			   }
 			   else {    next_D = (avg_D*N*(N+1)*T*97)/(200*L);    }
-
-			   // DEBUG: Log difficulty calculation details
-			   logger(DEBUGGING) << "LWMA V5 Calculation - Height: " << height
-			                     << ", N: " << N << ", T: " << T
-			                     << ", L: " << L << ", avg_D: " << avg_D
-			                     << ", next_D: " << next_D;
-
-
-
-			   // Add overflow protection for extreme hash rate changes
-			   // If solve times are extremely fast, limit difficulty adjustment
-			   if (L < N * T / 100) { // If average solve time is < 1% of target
-			       // Cap the difficulty increase to prevent overflow
-			       uint64_t maxDifficulty = avg_D * 1000; // Maximum 1000x increase
-			       if (next_D > maxDifficulty) {
-			           next_D = maxDifficulty;
-			       }
-			   }
 
 			   // Optional. Make all insignificant digits zero for easy reading.
 			   i = 1000000000;

@@ -542,11 +542,11 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all CD (Certificate of Deposit) yield accounts");
   // m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Get detailed info on CD by ID");
   // m_consoleHandler.setHandler("withdraw", boost::bind(&simple_wallet::withdraw, this, boost::arg<1>()), "withdraw <id> - Withdraw a matured CD");
-  // Cold/off-chain STARK commands - hidden
+  // CD/off-chain STARK commands - hidden
   // m_consoleHandler.setHandler("list_burns", boost::bind(&simple_wallet::list_burns, this, boost::arg<1>()), "list_burns - List all XFG burn transactions (HEAT)");
   // m_consoleHandler.setHandler("burn_info", boost::bind(&simple_wallet::burn_info, this, boost::arg<1>()), "burn_info <id> - Get detailed info of burn by ID");
   // m_consoleHandler.setHandler("migrate_legacy_deposit", boost::bind(&simple_wallet::migrate_legacy_deposit, this, boost::arg<1>()), "migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format");
-  // m_consoleHandler.setHandler("create_cold_secret", boost::bind(&simple_wallet::create_cold_secret, this, boost::arg<1>()), "create_cold_secret <amount> <term_blocks> <chain_code> <metadata> - Create COLD commitment");
+  // m_consoleHandler.setHandler("create_cd_secret", boost::bind(&simple_wallet::create_cd_secret, this, boost::arg<1>()), "create_cd_secret <amount> <term_blocks> <chain_code> - Create CD commitment");
   // m_consoleHandler.setHandler("gen_proof", boost::bind(&simple_wallet::gen_proof, this, boost::arg<1>()), "gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)");
 
   // @ Alias system commands
@@ -1122,101 +1122,7 @@ success_msg_writer(true) << "CD deposit transaction created successfully!";
 }
 
 //----------------------------------------------------------------------------------------------------
-// DISABLED: Internal command - users should not create their own commitments
-
-bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
- // ETH address recipient binding at STARK proof generation time for privacy
- if (args.size() != 3) {
-   fail_msg_writer() << "usage: create_cold_secret <amount> <term_blocks> <chain_code>";
-   fail_msg_writer() << "  amount: amount in atomic XFG (e.g., 80000000 for 8 XFG)";
-   fail_msg_writer() << "  term_blocks: deposit term in blocks (e.g., 16440 for 3 months)";
-   fail_msg_writer() << "  chain_code: target claim chain (1=ETH, 2=ARB)";
-   fail_msg_writer() << "";
-   fail_msg_writer() << "PRIVACY NOTE: ETH address NOT required for XFG deposits.";
-   fail_msg_writer() << "         You will provide your ETH address when generating the STARK proof.";
-   fail_msg_writer() << "";
-   fail_msg_writer() << "Example: create_cold_secret 80000000 16440 1";
-   return true;
- }
-
- try {
-   uint64_t amount = boost::lexical_cast<uint64_t>(args[0]);
-   uint32_t term_blocks = boost::lexical_cast<uint32_t>(args[1]);
-   uint8_t chain_code = boost::lexical_cast<uint8_t>(args[2]);
-
-   // Validate amount is a valid tier
-   if (!CryptoNote::BurnProofDataFileGenerator::isValidXfgAmount(amount)) {
-     fail_msg_writer() << "Invalid amount. Must be one of: 8000000 (0.8 XFG), 80000000 (8 XFG), 800000000 (80 XFG), 8000000000 (800 XFG)";
-     return true;
-   }
-
-   // Generate a random secret key
-   Crypto::PublicKey public_key;
-   Crypto::SecretKey secret_key;
-   Crypto::generate_keys(public_key, secret_key);
-
-   // Convert secret to array for commitment computation
-   std::array<uint8_t, 32> secret_array;
-   std::copy(secret_key.data, secret_key.data + 32, secret_array.begin());
-
-   // Placeholder tx_hash for standalone commitment generation
-   // Use secret-derived hash since we don't have actual tx yet
-   Crypto::Hash placeholder_tx_hash;
-   {
-     std::vector<uint8_t> binding_data;
-     binding_data.insert(binding_data.end(), secret_key.data, secret_key.data + 32);
-     // Add term to binding for uniqueness
-     binding_data.insert(binding_data.end(),
-       reinterpret_cast<const uint8_t*>(&term_blocks),
-       reinterpret_cast<const uint8_t*>(&term_blocks) + sizeof(term_blocks));
-     keccak(binding_data.data(), binding_data.size(), placeholder_tx_hash.data, sizeof(placeholder_tx_hash.data));
-   }
-
-   // PRIVACY MODEL: Compute COLD commitment WITHOUT recipient (ETH address)
-   // Recipient binding happens at STARK proof generation time
-   uint32_t network_id = 1;
-   uint32_t target_chain_id = chain_code;  // Use chain_code as target chain
-   uint32_t commitment_version = 1;
-
-   Crypto::Hash commitment = CryptoNote::computeColdCommitment(
-     secret_array, amount, placeholder_tx_hash,
-     network_id, target_chain_id, commitment_version, term_blocks
-   );
-
-   if (commitment == Crypto::Hash{}) {
-     fail_msg_writer() << "Failed to compute COLD commitment";
-     return true;
-   }
-
-   // Empty metadata - no ETH address stored on-chain for privacy
-   std::vector<uint8_t> metadata;
-   std::vector<uint8_t> gift_secret; // Empty - not gifting
-
-   // Create the transaction extra with COLD commitment
-   std::vector<uint8_t> extra;
-   if (!CryptoNote::createTxExtraWithColdCommitment(commitment, amount, term_blocks, chain_code, metadata, gift_secret, extra)) {
-     fail_msg_writer() << "Failed to create COLD commitment data";
-     return true;
-   }
-
-   success_msg_writer() << "COLD commitment created successfully:";
-   success_msg_writer() << "Commitment: " << Common::podToHex(commitment);
-   success_msg_writer() << "Secret Key (STORE SECURELY): " << Common::podToHex(secret_key);
-   success_msg_writer() << "Amount: " << amount << " atomic XFG (" << (amount / 10000000.0) << " XFG)";
-   success_msg_writer() << "Term: " << term_blocks << " blocks";
-   success_msg_writer() << "Chain Code: " << static_cast<int>(chain_code);
-   success_msg_writer() << "";
-   success_msg_writer() << "For privacy, your ETH address is added during zkSTARK generation & never in Fuego blockchain.";
-   success_msg_writer() << "IMPORTANT: Save the secret key! You will need it when generating";
-   success_msg_writer() << "           your STARK proof for interest redemption using xfg-stark-cli.";
-
- } catch (const std::exception& e) {
-   fail_msg_writer() << "Failed to parse arguments: " << e.what();
-   return true;
- }
-
- return true;
-}
+// create_cold_secret() removed — old STARK model. CDs use deposit() + epoch swap-fee yield.
 
 
 //----------------------------------------------------------------------------------------------------
@@ -1288,9 +1194,9 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
              const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
              key_image_str = Common::podToHex(heatCommit.commitment);
              break;
-           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-             key_image_str = Common::podToHex(coldCommit.commitment);
+           } else if (field.type() == typeid(CryptoNote::TransactionExtraCDCommitment)) {
+             const auto& cdCommit = boost::get<CryptoNote::TransactionExtraCDCommitment>(field);
+             key_image_str = Common::podToHex(cdCommit.commitment);
              break;
            }
          }
@@ -1506,184 +1412,7 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
   }
 }
 
-//----------------------------------------------------------------------------------------------------
-bool simple_wallet::cold(const std::vector<std::string> &args)
-{
-  // Simplified COLD deposit command - amount + term code (3 or 12)
-  if (args.size() != 2)
-  {
-    fail_msg_writer() << "Usage: cold <amount> <term_code>";
-    fail_msg_writer() << "Valid amounts: 0.8, 8, 80, 800 XFG";
-    fail_msg_writer() << "Valid term codes: 3 (3 months) or 12 (1 year)";
-    fail_msg_writer() << "";
-    return true;
-  }
-
-  try
-  {
-    // Parse and validate amount
-    uint64_t cold_amount = 0;
-    bool ok = m_currency.parseAmount(args[0], cold_amount);
-
-    if (!ok || 0 == cold_amount)
-    {
-      fail_msg_writer() << "Invalid amount format: " << args[0];
-      return true;
-    }
-
-    // Validate amount is one of the allowed tiers
-    std::vector<uint64_t> valid_amounts = {
-      CryptoNote::parameters::AMOUNT_TIER_0,  // 0.8 XFG
-      CryptoNote::parameters::AMOUNT_TIER_1,  // 8 XFG
-      CryptoNote::parameters::AMOUNT_TIER_2,  // 80 XFG
-      CryptoNote::parameters::AMOUNT_TIER_3   // 800 XFG
-    };
-
-    std::vector<std::string> amount_labels = {
-      "0.8 XFG",
-      "8 XFG",
-      "80 XFG",
-      "800 XFG"
-    };
-
-    auto it = std::find(valid_amounts.begin(), valid_amounts.end(), cold_amount);
-    if (it == valid_amounts.end()) {
-      fail_msg_writer() << "Invalid amount. Valid tiers:";
-      for (const auto& label : amount_labels) {
-        fail_msg_writer() << "  " << label;
-      }
-      return true;
-    }
-
-    size_t amount_index = std::distance(valid_amounts.begin(), it);
-    std::string amount_label = amount_labels[amount_index];
-
-    // Parse term code
-    uint32_t term_code = boost::lexical_cast<uint32_t>(args[1]);
-    uint32_t cold_term = 0;
-    std::string term_label = "";
-
-    // Define valid terms based on network
-    uint32_t min_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-    uint32_t max_term = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM : CryptoNote::parameters::DEPOSIT_MAX_TERM;
-
-    // Validate term codes - only 3 or 12
-    if (term_code == 3) {
-      cold_term = min_term;
-      term_label = "3 months";
-    } else if (term_code == 12) {
-      cold_term = max_term;
-      term_label = "1 year";
-    } else {
-      fail_msg_writer() << "Invalid term code. Valid terms:";
-      fail_msg_writer() << "  (3) for 3-month COLD term";
-      fail_msg_writer() << "  (12) for 1-year COLD term";
-      return true;
-    }
-
-    // Determine banking fee based on amount tier
-    uint64_t banking_fee = 0;
-    if (cold_amount == CryptoNote::parameters::AMOUNT_TIER_0) {
-      banking_fee = CryptoNote::parameters::BANK_FEE_TIER_0;
-    } else if (cold_amount == CryptoNote::parameters::AMOUNT_TIER_1) {
-      banking_fee = CryptoNote::parameters::BANK_FEE_TIER_1;
-    } else if (cold_amount == CryptoNote::parameters::AMOUNT_TIER_2) {
-      banking_fee = CryptoNote::parameters::BANK_FEE_TIER_2;
-    } else if (cold_amount == CryptoNote::parameters::AMOUNT_TIER_3) {
-      banking_fee = CryptoNote::parameters::BANK_FEE_TIER_3;
-    }
-    uint64_t fee = m_currency.minimumFee();
-
-    // Confirmation
-    success_msg_writer() << "";
-    success_msg_writer() << "Your XFG Certificate Of Ledger Deposit Summary:";
-    success_msg_writer() << "  Amount: " << m_currency.formatAmount(cold_amount) << " XFG";
-    success_msg_writer() << "  Term: " << term_label << " (" << cold_term << " blocks)";
-    success_msg_writer() << "  Banking Fee: " << m_currency.formatAmount(banking_fee) << " XFG (0.1% of amount)";
-    success_msg_writer() << "  Network Fee: " << m_currency.formatAmount(m_currency.minimumFee()) << " XFG (minimum txn fee to miners)";
-    success_msg_writer() << "  Commitment Type: 【COLD】 ▋ Off-chain (CD) interest yield";
-    success_msg_writer() << "";
-
-    success_msg_writer() << "Confirm? (1) OK  (2) NO  ";
-
-    std::string confirm;
-    m_consoleHandler.readLine(confirm);
-
-    if (confirm != "1" && confirm != "OK" && confirm != "Ok" && confirm != "ok") {
-      success_msg_writer() << "Cancelled.";
-      return true;
-    }
-
-    // Generate unified STARK commitment (v3) for COLD deposit
-    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
-        cold_amount,
-        cold_term,
-        CryptoNote::parameters::STARK_NETWORK_ID_MAINNET,
-        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
-        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
-
-    // Display secret — user's claim ticket for xfg-stark-cli proof generation
-    success_msg_writer() << "";
-    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
-    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
-    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
-    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
-    success_msg_writer() << "";
-
-    /*
-    std::vector<uint8_t> extra;
-    CryptoNote::TransactionExtraColdCommitment coldCommitment;
-    coldCommitment.commitment = starkResult.commitment;
-    coldCommitment.amount = cold_amount;
-    coldCommitment.term = cold_term;
-    coldCommitment.claimChainCode = 1;  // Default to ETH chain
-
-    CryptoNote::addColdCommitmentToExtra(extra, coldCommitment);
-
-    // Encrypt STARK secret into tx extra (0xD5) so cd_info can retrieve it
-    CryptoNote::AccountKeys walletKeys;
-    m_wallet->getAccountKeys(walletKeys);
-    CryptoNote::DepositSecretPayload secretPayload;
-    secretPayload.depositType = 0xCD; // COLD
-    secretPayload.amount = cold_amount;
-    secretPayload.term = cold_term;
-    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
-    CryptoNote::TransactionExtraDepositSecret encSecret;
-    if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
-      CryptoNote::addDepositSecretToExtra(extra, encSecret);
-    }
-
-    std::string extraString(extra.begin(), extra.end());
-
-    // Send the COLD deposit transaction
-    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-    CryptoNote::TransactionId txId = m_wallet->deposit(cold_term, cold_amount, fee + banking_fee, extraString, 0);
-
-    if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
-      fail_msg_writer() << "Sending deposit transaction failed";
-      return true;
-    }
-
-    std::error_code sendError = sent.wait(txId);
-    removeGuard.removeObserver();
-
-    if (sendError) {
-      fail_msg_writer() << "COLD transaction failed: " << sendError.message();
-      return true;
-    }
-
-    success_msg_writer() << "COLD transaction sent! ID: " << txId;
-    return true;
-    */
-  }
-  catch (const std::exception& e)
-  {
-    fail_msg_writer() << "Error: " << e.what();
-    return true;
-  }
-}
+// cold() removed — old STARK model. CDs use deposit() + epoch swap-fee yield.
 
 //----------------------------------------------------------------------------------------------------
 
@@ -1922,18 +1651,18 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
            return true;
          }
           // Check for CD deposit commitment (0xCD = 205 tag in tx_extra)
-          else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-            const auto& coldDeposit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+          else if (field.type() == typeid(CryptoNote::TransactionExtraCDCommitment)) {
+            const auto& cdDeposit = boost::get<CryptoNote::TransactionExtraCDCommitment>(field);
 
             success_msg_writer() << "Found CD transaction: " << tx_hash;
-            success_msg_writer() << "Amount: " << m_currency.formatAmount(coldDeposit.amount);
-            success_msg_writer() << "Term: " << coldDeposit.term << " blocks";
+            success_msg_writer() << "Amount: " << m_currency.formatAmount(cdDeposit.amount);
+            success_msg_writer() << "Term: " << cdDeposit.term << " blocks";
 
-            std::cout << "\n=== XFG CERTIFICATE OF LEDGER DEPOSIT PROOF ===" << std::endl;
+            std::cout << "\n=== XFG CERTIFICATE OF DEPOSIT PROOF ===" << std::endl;
             std::cout << "Transaction Hash: " << tx_hash << std::endl;
-            std::cout << "Commitment: " << Common::podToHex(coldDeposit.commitment) << std::endl;
-            std::cout << "Amount: " << coldDeposit.amount << " heat (atomic XFG)" << std::endl;
-            std::cout << "Term: " << coldDeposit.term << " blocks" << std::endl;
+            std::cout << "Commitment: " << Common::podToHex(cdDeposit.commitment) << std::endl;
+            std::cout << "Amount: " << cdDeposit.amount << " heat (atomic XFG)" << std::endl;
+            std::cout << "Term: " << cdDeposit.term << " blocks" << std::endl;
             std::cout << "=================================" << std::endl;
 
             logger(INFO, BRIGHT_GREEN) << "Proof data generated for CD transaction " << tx_hash;
@@ -1942,7 +1671,7 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
        }
      }
 
-     fail_msg_writer() << "No HEAT (burn) or COLD commitment found in transaction: " << tx_hash;
+     fail_msg_writer() << "No HEAT (burn) or CD commitment found in transaction: " << tx_hash;
      return true;
    } catch (const std::exception& e) {
      fail_msg_writer() << "Error processing transaction: " << e.what();
@@ -1990,7 +1719,7 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
         depositType = "XFG Burn (HEAT/0x08)";
         typeDescription = "Permanent 'forever' deposit - removed from circulation";
         break;
-      case CryptoNote::Deposit::Type::COLD:
+      case CryptoNote::Deposit::Type::CD:
         depositType = "CD (Certificate of Deposit)";
         typeDescription = "On-chain yield deposit - locked for your specified term, earns interest from fee pool";
         break;
@@ -2046,9 +1775,9 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
              if (field.type() == typeid(TransactionExtraHeatCommitment)) {
                const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
                success_msg_writer() << "Key Image:     " << Common::podToHex(heatCommit.commitment);
-             } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-               const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-               success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
+             } else if (field.type() == typeid(CryptoNote::TransactionExtraCDCommitment)) {
+               const auto& cdCommit = boost::get<CryptoNote::TransactionExtraCDCommitment>(field);
+               success_msg_writer() << "Key Image:     " << Common::podToHex(cdCommit.commitment);
              }
         }
       }
@@ -2246,7 +1975,7 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
       return true;
     }
 
-    // Must be a COLD deposit (not HEAT burn or legacy staking)
+    // Must be a CD deposit (not HEAT burn or legacy staking)
     if (deposit.depositType == CryptoNote::Deposit::Type::HEAT) {
       fail_msg_writer() << "Deposit " << depositId << " is a HEAT burn. Use burn_info to view it.";
       fail_msg_writer() << "HEAT burns already have v3 commitments if created after the v3 upgrade.";
@@ -2266,7 +1995,7 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
     std::vector<CryptoNote::TransactionExtraField> extraFields;
     if (CryptoNote::parseTransactionExtra(extraBytes, extraFields)) {
       for (const auto& field : extraFields) {
-        if (field.type() == typeid(CryptoNote::TransactionExtraColdMigration)) {
+        if (field.type() == typeid(CryptoNote::TransactionExtraCDMigration)) {
           fail_msg_writer() << "Deposit " << depositId << " already has a migration tag.";
           return true;
         }
@@ -2275,7 +2004,7 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
 
     // Display deposit info and confirm
     success_msg_writer() << "";
-    success_msg_writer() << "=== Legacy COLD Deposit Migration ===";
+    success_msg_writer() << "=== Legacy CD Deposit Migration ===";
     success_msg_writer() << "";
     success_msg_writer() << "Deposit ID:    " << depositId;
     success_msg_writer() << "Amount:        " << m_currency.formatAmount(deposit.amount) << " XFG";
@@ -2323,19 +2052,19 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
     std::vector<uint8_t> migrationExtra;
 
     // 0xCE migration tag — references original deposit
-    CryptoNote::TransactionExtraColdMigration migration;
+    CryptoNote::TransactionExtraCDMigration migration;
     migration.originalTxHash = deposit.transactionHash;
     migration.commitment = starkResult.commitment;
     migration.amount = deposit.amount;
     migration.term = deposit.term;
     migration.targetChainId = 1; // ETH
-    CryptoNote::addColdMigrationToExtra(migrationExtra, migration);
+    CryptoNote::addCDMigrationToExtra(migrationExtra, migration);
 
     // 0xD5 encrypted secret — so cd_info can decrypt it later
     CryptoNote::AccountKeys walletKeys;
     m_wallet->getAccountKeys(walletKeys);
     CryptoNote::DepositSecretPayload secretPayload;
-    secretPayload.depositType = 0xCD; // COLD
+    secretPayload.depositType = 0xCD; // CD
     secretPayload.amount = deposit.amount;
     secretPayload.term = deposit.term;
     memcpy(secretPayload.depositSecret, &starkResult.secret, 32);

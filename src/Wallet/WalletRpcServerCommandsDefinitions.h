@@ -544,7 +544,7 @@ using CryptoNote::ISerializer;
     };
   };
 
-  // ── Phase 7: CD / COLD wallet RPC bridges ─────────────────────────────────
+  // ── Phase 7: CD wallet RPC bridges ─────────────────────────────────────────
 
   struct COMMAND_RPC_CREATE_AFK_LOCK {
     struct request {
@@ -607,7 +607,7 @@ using CryptoNote::ISerializer;
       uint32_t term;
       uint64_t unlock_height;
       uint64_t creation_height;
-      std::string deposit_type;  // "COLD" or "HEAT"
+      std::string deposit_type;  // "CD" or "HEAT"
       bool locked;
 
       void serialize(ISerializer& s) {

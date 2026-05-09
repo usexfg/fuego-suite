@@ -28,7 +28,7 @@
 namespace CryptoNote {
 
 // ============================================================
-// StarkCommitmentGenerator — v3 unified HEAT+COLD relay format
+// StarkCommitmentGenerator — v3 unified HEAT+CD relay format
 // ============================================================
 
 StarkCommitmentResult StarkCommitmentGenerator::generate(
@@ -87,7 +87,7 @@ Crypto::Hash StarkCommitmentGenerator::computeCommitment(
   memcpy(preimage + offset, &version, 4);
   offset += 4;
 
-  // term (4 bytes LE) — 0xFFFFFFFF for HEAT, actual blocks for COLD
+  // term (4 bytes LE) — 0xFFFFFFFF for HEAT, actual blocks for CD
   memcpy(preimage + offset, &term, 4);
   offset += 4;
 
@@ -220,7 +220,7 @@ bool DepositCommitmentGenerator::validateCommitment(const DepositCommitment& com
     switch (commitment.type) {
         case CommitmentType::HEAT:
             return !commitment.metadata.empty();
-        case CommitmentType::COLD:
+        case CommitmentType::CD:
         case CommitmentType::YIELD:
             return commitment.metadata.size() >= sizeof(uint64_t);
         default:

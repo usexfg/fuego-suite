@@ -155,7 +155,7 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "estimate_fusion"  , makeMemberMethod(&wallet_rpc_server::on_estimate_fusion) },
       { "send_fusion"      , makeMemberMethod(&wallet_rpc_server::on_send_fusion) },
       { "reset", makeMemberMethod(&wallet_rpc_server::on_reset) },
-      // Phase 7: CD / COLD wallet RPC bridges
+      // Phase 7: CD wallet RPC bridges
       { "list_cds",           makeMemberMethod(&wallet_rpc_server::on_list_cds) },
       { "create_cd",          makeMemberMethod(&wallet_rpc_server::on_create_cd) },
       { "withdraw_cd",        makeMemberMethod(&wallet_rpc_server::on_withdraw_cd) },
@@ -750,7 +750,7 @@ bool wallet_rpc_server::on_reset(const wallet_rpc::COMMAND_RPC_RESET::request& r
   return true;
 }
 
-// ── Phase 7: CD / COLD wallet RPC bridges ────────────────────────────────────
+// ── Phase 7: CD wallet RPC bridges ───────────────────────────────────────────
 
 bool wallet_rpc_server::on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::request& req, wallet_rpc::COMMAND_RPC_LIST_CDS::response& res) {
   size_t count = m_wallet.getDepositCount();
@@ -770,7 +770,7 @@ bool wallet_rpc_server::on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::requ
       case CryptoNote::Deposit::Type::HEAT:
         entry.deposit_type = "HEAT"; break;
       default:
-        entry.deposit_type = "COLD"; break;
+        entry.deposit_type = "CD"; break;
     }
 
     res.deposits.push_back(std::move(entry));
@@ -807,7 +807,7 @@ bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::re
     CryptoNote::CommitmentType commitType =
         (req.deposit_type == 0x08) ? CryptoNote::CommitmentType::HEAT :
         (req.deposit_type == 0x07) ? CryptoNote::CommitmentType::YIELD :
-                                     CryptoNote::CommitmentType::COLD;
+                                     CryptoNote::CommitmentType::CD;
     CryptoNote::DepositCommitment commitment(commitType, Crypto::Hash{});
 
     std::string txHash;

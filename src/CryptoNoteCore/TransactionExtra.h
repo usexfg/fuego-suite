@@ -58,17 +58,17 @@
 #define TX_EXTRA_DIGM_CURATOR               0x0C  // Curator operations
 #define TX_EXTRA_DIGM_CURATOR_COIN          0x1C  // CURA coin operations
 
-// 0xCD tag: COLD (CD) deposits
-#define TX_EXTRA_SIMPLE_CD                0xCD  // Simple CD deposits
-#define TX_EXTRA_COLD_COMMITMENT            0xCD  // Alias for simple CD
-#define TX_EXTRA_COLD_RECEIPT               0x69  // All Deposits receipt
+// 0xCD tag: CD (Commitment Deposit) — on-chain term deposits earning swap-fee yield
+#define TX_EXTRA_CD_COMMITMENT              0xCD  // CD commitment (on-chain deposit)
+#define TX_EXTRA_SIMPLE_CD                  TX_EXTRA_CD_COMMITMENT  // Legacy alias
+#define TX_EXTRA_DEPOSIT_RECEIPT            0x69  // All Deposits receipt
 #define TX_EXTRA_YIELD_COMMITMENT           0x07  // yield commitment
 #define TX_EXTRA_ALIAS                      0xEA  // @ alias registration
-// 
-// 0xCE tag: COLD migration (register v3 commitment for a pre-v3 legacy deposit)
-#define TX_EXTRA_COLD_MIGRATION             0xCE
+//
+// 0xCE tag: CD migration (register v3 commitment for a pre-v3 legacy deposit)
+#define TX_EXTRA_CD_MIGRATION               0xCE
 
-// 0xD5 tag: Encrypted deposit secret (for COLD withdrawal_commitment_output recovery from seed)
+// 0xD5 tag: Encrypted deposit secret (for CD withdrawal_commitment_output recovery from seed)
 #define TX_EXTRA_DEPOSIT_SECRET             0xD5
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
@@ -115,25 +115,27 @@ struct TransactionExtraHeatCommitment {
   bool serialize(ISerializer& serializer);
 };
 
-// Simple on-chain CD commitment - minimal fields for fee pool interest calculation
-// No off-chain claim fields (claim_chain_code, CIA ID, etc.) - those are for FuCIA/COLD
-struct TransactionExtraSimpleCD {
+// On-chain CD (Commitment Deposit) — minimal fields for fee pool interest calculation.
+// No off-chain claim fields — those belonged to the deprecated COLD/STARK model.
+struct TransactionExtraCDCommitment {
   Crypto::Hash commitment;       // Commitment hash for tracking
   uint64_t amount;               // Principal amount in atomic units
   uint32_t term;                 // Deposit term in blocks (for maturity check)
 
   bool serialize(ISerializer& serializer);
 };
+// Legacy alias — existing code may still reference the old name
+using TransactionExtraSimpleCD = TransactionExtraCDCommitment;
 
-struct TransactionExtraColdCommitment {
+// DEPRECATED: Old COLD/STARK model struct. Not in TransactionExtraField variant.
+// Kept only for reference — use TransactionExtraCDCommitment for on-chain CDs.
+struct [[deprecated("Use TransactionExtraCDCommitment")]] TransactionExtraColdCommitment {
   Crypto::Hash commitment;
   uint64_t amount;
   uint32_t term;
   uint8_t claimChainCode;
   std::vector<uint8_t> metadata;
   std::vector<uint8_t> gift_secret;
-
-  bool serialize(ISerializer& serializer);
 };
 
 struct TransactionExtraYieldCommitment {
@@ -169,7 +171,7 @@ struct TransactionExtraAliasRegistration {
 // CD migration: register a v3 commitment for a pre-v3 legacy deposit.
 // Attached to a regular self-transfer (no deposit output needed).
 // Blockchain validates that originalTxHash is a real deposit with matching amount/term.
-struct TransactionExtraColdMigration {
+struct TransactionExtraCDMigration {
   Crypto::Hash originalTxHash;    // 32 bytes: tx hash of the original pre-v3 deposit
   Crypto::Hash commitment;        // 32 bytes: v3 commitment (keccak256 of preimage)
   uint64_t amount;                // 8 bytes: original deposit amount (must match)
@@ -178,6 +180,7 @@ struct TransactionExtraColdMigration {
 
   bool serialize(ISerializer& serializer);
 };
+using TransactionExtraColdMigration = TransactionExtraCDMigration;  // Legacy alias
 
 
 // ============================================================
@@ -200,20 +203,20 @@ struct DepositCommitmentKeys {
 
 // Derive all commitment keys from a 32-byte deposit secret.
 // For HEAT burns: caller discards keyScalar (permanently non-spendable).
-// For COLD/EFier: store depositSecret encrypted in tx_extra (TX_EXTRA_DEPOSIT_SECRET).
+// For CD/EFier: store depositSecret encrypted in tx_extra (TX_EXTRA_DEPOSIT_SECRET).
 // The masks let the wallet compute + verify amountCommitment and termCommitment.
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
 // ============================================================
 // Unified Deposit Secret for v10+ Commitment Outputs (0xD5)
 // ============================================================
-// All v10+ deposit types (COLD, HEAT, EFier, Yield) write a SINGLE 0xD5 tag.
+// All v10+ deposit types (CD, HEAT, EFier, Yield) write a SINGLE 0xD5 tag.
 // The deposit type is encoded inside the encrypted payload — no type-revealing
 // tag appears on-chain. Old tags (0x08, 0xCD, 0xEF) remain for legacy multisig
 // deposits only.
 
 enum class DepositType : uint8_t {
-  // COLD      = 0x01,  // COLD CD deposit — withdrawable after term
+  // CD        = 0x01,  // CD deposit — withdrawable after term
   HEAT      = 0x02,  // HEAT burn — permanent, key discarded
   // YIELD     = 0x03,  // Yield / CIA deposit
 };
@@ -258,7 +261,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraCDCommitment, CryptoNote::TransactionExtraCDMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt> TransactionExtraField;
 
 
 
@@ -284,7 +287,8 @@ void setPaymentIdToTransactionExtraNonce(BinaryArray& extra_nonce, const Crypto:
 bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypto::Hash& payment_id);
 bool appendMergeMiningTagToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMergeMiningTag& mm_tag);
 bool append_message_to_extra(std::vector<uint8_t>& tx_extra, const tx_extra_message& message);
-bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration);
+bool addCDMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCDMigration& migration);
+inline bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCDMigration& m) { return addCDMigrationToExtra(tx_extra, m); } // Legacy alias
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);
 void appendTTLToExtra(std::vector<uint8_t>& tx_extra, uint64_t ttl);
 bool getMergeMiningTagFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMergeMiningTag& mm_tag);
@@ -307,18 +311,11 @@ bool getYieldCommitmentFromExtra(const std::vector<uint8_t>& tx_extra, Transacti
 bool addAliasToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRegistration& alias);
 bool getAliasFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRegistration& alias);
 // DIGM helper functions will be implemented later
-// COLD Commitment helper functions (unified with HEAT style)
-bool createTxExtraWithColdCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, uint8_t claimChainCode, const std::vector<uint8_t>& metadata, const std::vector<uint8_t>& gift_secret, std::vector<uint8_t>& extra);
-bool addColdCommitmentToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdCommitment& commitment);
-bool getColdCommitmentFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraColdCommitment& commitment);
-// Legacy aliases for backward compatibility
+// CD Commitment helper functions
+// NOTE: createTxExtraWithColdCommitment / addColdCommitmentToExtra / getColdCommitmentFromExtra
+// have been removed — they used the deprecated ColdCommitment struct with off-chain STARK fields.
+// Use createTxExtraWithCDCommitment() for on-chain CD deposits.
 /*
-inline bool addCDDepositSecretToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdCommitment& c) {
-  return addColdCommitmentToExtra(tx_extra, c);
-}
-inline bool getCDDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraColdCommitment& c) {
-  return getColdCommitmentFromExtra(tx_extra, c);
-}
 */
 // Secret encryption helper functions
 bool encryptSecretWithViewKey(const std::vector<uint8_t>& secret, const Crypto::PublicKey& recipientViewKey, std::vector<uint8_t>& gift_secret);
@@ -326,25 +323,19 @@ bool decryptSecretWithViewKey(const std::vector<uint8_t>& gift_secret, const Cry
 // Helper functions for handling gift_secret field
 bool isDummyGiftSecret(const std::vector<uint8_t>& gift_secret);
 std::vector<uint8_t> createDummyGiftSecret();
-// COLD Deposit validation and utility functions
-// Note: APR is now derived from tier in smart contract, not stored on-chain
-/*
-uint64_t getColdTermBlocks(uint8_t term_code);
-uint64_t getColdTermDays(uint8_t term_code);
-*/
 // ---------------- UNIFIED COMMITMENT FORMAT ----------------
-// Both HEAT and COLD use the SAME 88-byte preimage:
+// Both HEAT and CD use the SAME 88-byte preimage:
 //   keccak256(secret || le64(amount) || tx_prefix_hash || network_id || target_chain_id || version || le32(term))
 //
 // HEAT burns use term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
-// COLD deposits use their actual term in blocks
+// CD deposits use their actual term in blocks
 //
 // PRIVACY MODEL: No recipient in commitment - contract mints to msg.sender, nullifier prevents replay
 //
-// Unified commitment computation for BOTH HEAT and COLD
+// Unified commitment computation for BOTH HEAT and CD
 // Uses 88-byte preimage: 32 + 8 + 32 + 4 + 4 + 4 + 4 = 88 bytes
 // For HEAT: pass term = parameters::DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
-// For COLD: pass actual term in blocks
+// For CD: pass actual term in blocks
 Crypto::Hash computeCommitment(const std::array<uint8_t, 32>& secret,
                                 uint64_t amount_atomic,
                                 const Crypto::Hash& tx_prefix_hash,
@@ -373,29 +364,20 @@ bool buildHeatExtra(const std::array<uint8_t, 32>& secret,
                     const std::vector<uint8_t>& metadata,
                     std::vector<uint8_t>& extra);
 
-// COLD convenience wrapper - same as computeCommitment but named for clarity
+// CD convenience wrapper - same as computeCommitment but named for clarity
 // Computes: keccak256(secret || amount || tx_hash || network || chain || version || term)
-Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32>& secret,
-                                   uint64_t amount_atomic,
-                                   const Crypto::Hash& tx_prefix_hash,
-                                   uint32_t network_id,
-                                   uint32_t target_chain_id,
-                                   uint32_t commitment_version,
-                                   uint32_t term);
-
-// Builds tx.extra with TX_EXTRA_COLD_COMMITMENT (0xCD) given inputs
-// PRIVACY MODEL: No recipient - contract mints to msg.sender
-bool buildColdExtra(const std::array<uint8_t, 32>& secret,
-                    uint64_t amount_atomic,
-                    const Crypto::Hash& tx_prefix_hash,
-                    uint32_t network_id,
-                    uint32_t target_chain_id,
-                    uint32_t commitment_version,
-                    uint32_t term,
-                    uint8_t claimChainCode,
-                    const std::vector<uint8_t>& metadata,
-                    const std::vector<uint8_t>& gift_secret,
-                    std::vector<uint8_t>& extra);
+Crypto::Hash computeCDCommitment(const std::array<uint8_t, 32>& secret,
+                                 uint64_t amount_atomic,
+                                 const Crypto::Hash& tx_prefix_hash,
+                                 uint32_t network_id,
+                                 uint32_t target_chain_id,
+                                 uint32_t commitment_version,
+                                 uint32_t term);
+// Legacy alias
+inline Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32>& s, uint64_t a,
+    const Crypto::Hash& t, uint32_t n, uint32_t c, uint32_t v, uint32_t term) {
+  return computeCDCommitment(s, a, t, n, c, v, term);
+}
 
 
 
@@ -414,25 +396,11 @@ bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, Transactio
 bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt);
 bool createTxExtraWithDepositReceipt(const TransactionExtraDepositReceipt& depositReceipt, std::vector<uint8_t>& extra);
 
-// Simple on-chain CD commitment (no off-chain fields)
-bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra);
-
-// Cold Deposit (CD) term codes and APR rates
-enum CDTermCode {
-  CD_TERM_3MO_8PCT = 1,      // 3 months / 8% APR (90 days)
-  CD_TERM_9MO_18PCT = 2,     // 9 months / 18% APR (270 days)
-  CD_TERM_1YR_21PCT = 3,     // 1 year / 21% APR (365 days)
-  CD_TERM_3YR_33PCT = 4,     // 3 years / 33% APR (1095 days)
-  CD_TERM_5YR_80PCT = 5      // 5 years / 80% APR (1825 days)
-};
-
-// Cold Deposit APR rates in basis points (1% = 100 basis points)
-enum CDAPRRate {
-  CD_APR_8PCT = 800,         // 8% APR = 800 basis points
-  CD_APR_18PCT = 1800,       // 18% APR = 1800 basis points
-  CD_APR_21PCT = 2100,       // 21% APR = 2100 basis points
-  CD_APR_33PCT = 3300,       // 33% APR = 3300 basis points
-  CD_APR_80PCT = 8000        // 80% APR = 8000 basis points
-};
+// On-chain CD commitment (44 bytes: commitment[32] + amount[8 LE] + term[4 LE])
+bool createTxExtraWithCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra);
+// Legacy alias
+inline bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& c, uint64_t a, uint32_t t, std::vector<uint8_t>& e) {
+  return createTxExtraWithCDCommitment(c, a, t, e);
+}
 
 }

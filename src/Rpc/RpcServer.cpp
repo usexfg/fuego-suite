@@ -2075,7 +2075,7 @@ bool RpcServer::on_get_commitment_stats(const COMMAND_RPC_GET_COMMITMENT_STATS::
   try {
     res.total_commitments = m_core.getCommitmentCount();
     res.heat_commitments = m_core.getHeatCommitmentCount();
-    res.cold_commitments = m_core.getColdCommitmentCount();
+    res.cd_commitments = m_core.getCDCommitmentCount();
     res.highest_block = static_cast<uint32_t>(m_core.getCommitmentHighestBlock());
     res.merkle_root = Common::podToHex(m_core.getCommitmentMerkleRoot());
     res.status = CORE_RPC_STATUS_OK;

@@ -109,7 +109,7 @@ public:
   virtual void depositsUpdated(const std::vector<DepositId>& depositIds) {}
   virtual void burnSecretCreated(const std::string& txHash) {}
   virtual void burnProofGenerated(const std::string& txHash) {}
-  virtual void coldDepositSecretCreated(const std::string& txHash) {}
+  virtual void cdDepositSecretCreated(const std::string& txHash) {}
 };
 
 class IWalletLegacy {

@@ -100,13 +100,13 @@ void findMyOutputs(
      }
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // Re-derive commitKey via ECDH and compare (works for COLD, HEAT, Elderfier).
+      // Re-derive commitKey via ECDH and compare (works for CD, HEAT, Elderfier).
       // depositSecret = cn_fast_hash(derivation || outputIndex_LE32)
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // All commitment types (COLD, HEAT/FOREVER, Elderfier) use deterministic ECDH:
+      // All commitment types (CD, HEAT/FOREVER, Elderfier) use deterministic ECDH:
       // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
       // so all are recoverable on rescan. No term filter needed.
       {
@@ -510,7 +510,7 @@ std::error_code createTransfers(
       info.term = out.term;
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // COLD commitment deposit output.
+      // CD commitment deposit output.
       // Re-derive depositSecret to get keyImage for SpentOutputDescriptor tracking.
       uint64_t amount;
       TransactionOutputCommitment out;

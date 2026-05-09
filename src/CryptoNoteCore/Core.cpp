@@ -1358,8 +1358,8 @@ size_t core::getHeatCommitmentCount() const {
   return m_blockchain.getHeatCommitmentCount();
 }
 
-size_t core::getColdCommitmentCount() const {
-  return m_blockchain.getColdCommitmentCount();
+size_t core::getCDCommitmentCount() const {
+  return m_blockchain.getCDCommitmentCount();
 }
 
 Crypto::Hash core::getCommitmentMerkleRoot() const {

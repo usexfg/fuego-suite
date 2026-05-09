@@ -781,15 +781,15 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             entry.type          = CommitmentEntry::Type::HEAT;
             entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
             m_commitmentIndex.addCommitment(entry);
-          } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-            const auto& c = boost::get<TransactionExtraSimpleCD>(field);
+          } else if (field.type() == typeid(TransactionExtraCDCommitment)) {
+            const auto& c = boost::get<TransactionExtraCDCommitment>(field);
             CommitmentEntry entry;
             entry.commitment    = c.commitment;
             entry.txHash        = getObjectHash(tx);
             entry.blockHeight   = b;
             entry.amount        = c.amount;
             entry.term          = c.term;
-            entry.type          = CommitmentEntry::Type::COLD; // Keep type COLD for internal tracking
+            entry.type          = CommitmentEntry::Type::CD;
             entry.targetChainId = 1; // Default to ETH
             m_commitmentIndex.addCommitment(entry);
           }
@@ -2280,7 +2280,7 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
         // overflow guard: if creationHeight + term wraps around, treat as immature
         if (maturityHeight < creationHeight || currentHeight < maturityHeight) {
           logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
-                       << " is an immature COLD deposit (matures at block "
+                       << " is an immature CD deposit (matures at block "
                        << maturityHeight << ", current " << currentHeight << ")";
           return false;
         }
@@ -2937,9 +2937,9 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
     return m_commitmentIndex.heatCount();
   }
 
-  size_t Blockchain::getColdCommitmentCount() const {
+  size_t Blockchain::getCDCommitmentCount() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-    return m_commitmentIndex.coldCount();
+    return m_commitmentIndex.cdCount();
   }
 
   Crypto::Hash Blockchain::getCommitmentMerkleRoot() const {
@@ -2969,7 +2969,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
 
   uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs, uint32_t activeEfierCount) {
     // Banking fees now go to miners instead of EFiers
-    // Fixed rate: 0.1% on HEAT/COLD commitments and Elderfier deposits
+    // Fixed rate: 0.1% on HEAT/CD commitments and Elderfier deposits
     uint64_t totalBankingFees = 0;
     for (const auto& tx : txs) {
       std::vector<TransactionExtraField> extraFields;
@@ -2978,8 +2978,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
         if (field.type() == typeid(TransactionExtraHeatCommitment)) {
           const auto& heat = boost::get<TransactionExtraHeatCommitment>(field);
           totalBankingFees += heat.amount / 1000;
-        } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-          const auto& cd = boost::get<TransactionExtraSimpleCD>(field);
+        } else if (field.type() == typeid(TransactionExtraCDCommitment)) {
+          const auto& cd = boost::get<TransactionExtraCDCommitment>(field);
           totalBankingFees += cd.amount / 1000;
         }
       }

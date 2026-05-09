@@ -49,9 +49,9 @@ struct MultisignatureOutput {
 };
 
 // v10+ ring-signature deposit output.
-// Replaces MultisignatureOutput for ALL deposit types: COLD, HEAT burns, Elderfier stakes.
+// Replaces MultisignatureOutput for ALL deposit types: CD, HEAT burns, Elderfier stakes.
 // HEAT burns use throwaway commitKey (secret discarded) and never withdraw but
-// serve as excellent decoys, bulking up decoy pool for COLD/EF withdrawal rings.
+// serve as excellent decoys, bulking up decoy pool for CD/EF withdrawal rings.
 // Ring selection draws from the global CommitmentIndex by amount —
 // all commitment outputs of matching amount are eligible decoys regardless of term.
 //
@@ -68,7 +68,7 @@ struct TransactionOutputCommitment {
 };
 
 // v10+ ring-signature withdrawal input.
-// Replaces MultisignatureInput for COLD/Elderfier withdrawals.
+// Replaces MultisignatureInput for CD/Elderfier withdrawals.
 // outputIndexes are GLOBAL commitment output indices (like KeyInput for key outputs).
 struct TransactionInputCommitmentSpend {
   uint64_t amount;                      // must match referenced commitment output amount

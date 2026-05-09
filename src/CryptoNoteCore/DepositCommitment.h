@@ -33,7 +33,7 @@ namespace CryptoNote {
 //   secret[32] || le64(amount) || le32(network_id) || le32(chain_id) || le32(version) || le32(term)
 //
 // HEAT burns:  term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
-// COLD deposits: term = actual lock duration in blocks
+// CD deposits: term = actual lock duration in blocks
 //
 // Nullifier (49 bytes):
 //   secret[32] || "nullifier"[9] || le64(amount)
@@ -48,15 +48,15 @@ struct StarkCommitmentResult {
   Crypto::SecretKey secret;      // 32-byte random secret — user's claim ticket for xfg-stark-cli
 };
 
-// Unified STARK commitment generator for both HEAT burns and COLD deposits.
+// Unified STARK commitment generator for both HEAT burns and CD deposits.
 // Matches the xfg-stark-cli AIR (burn_mint_air.rs compute_commitment).
 class StarkCommitmentGenerator {
 public:
   // Generate fresh secret + commitment + nullifier.
-  // This is what burn() and cold() wallet commands call.
+  // This is what burn() and cd() wallet commands call.
   static StarkCommitmentResult generate(
       uint64_t amount,
-      uint32_t term,        // DEPOSIT_TERM_FOREVER for HEAT, actual blocks for COLD
+      uint32_t term,        // DEPOSIT_TERM_FOREVER for HEAT, actual blocks for CD
       uint32_t networkId,   // STARK_NETWORK_ID_MAINNET or _TESTNET
       uint32_t chainId,     // STARK_TARGET_CHAIN_ETH, _ARB, etc.
       uint32_t version);    // STARK_COMMITMENT_VERSION (currently 3)
@@ -85,7 +85,7 @@ public:
 
 enum class CommitmentType : uint8_t {
     HEAT  = 0,   // 0x08 — permanent burn (FOREVER term)
-    COLD  = 1,   // 0xCD — term-locked deposit (finite term, earns CD interest)
+    CD    = 1,   // 0xCD — term-locked deposit (finite term, earns CD interest)
     YIELD = 2    // 0x07 — interest-bearing (FuCIA custom interest assets)
 };
 

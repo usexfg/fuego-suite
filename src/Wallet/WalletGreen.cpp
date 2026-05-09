@@ -587,9 +587,9 @@ namespace CryptoNote
       return false;
     }
 
-    // Only COLD deposits can be rolled over (not HEAT)
-    if (deposit.depositType != Deposit::Type::COLD) {
-      m_logger(ERROR) << "Rollover failed: only COLD deposits can be rolled over";
+    // Only CD deposits can be rolled over (not HEAT)
+    if (deposit.depositType != Deposit::Type::CD) {
+      m_logger(ERROR) << "Rollover failed: only CD deposits can be rolled over";
       return false;
     }
 
@@ -632,7 +632,7 @@ namespace CryptoNote
     m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
       << " term=" << newTerm << " from rollover";
 
-    // Create new COLD commitment output (will accumulate interest on reinvestedAmount)
+    // Create new CD commitment output (will accumulate interest on reinvestedAmount)
     std::array<uint8_t, 32> newDepositSecret;
     generate_random_bytes(sizeof(newDepositSecret), newDepositSecret.data());
     CryptoNote::DepositCommitmentKeys newCommitKeys = CryptoNote::deriveCommitmentKeys(newDepositSecret);
@@ -801,8 +801,8 @@ namespace CryptoNote
       return false;
     }
 
-    if (deposit.depositType != Deposit::Type::COLD) {
-      m_logger(ERROR) << "Rollover failed: only COLD deposits can be rolled over";
+    if (deposit.depositType != Deposit::Type::CD) {
+      m_logger(ERROR) << "Rollover failed: only CD deposits can be rolled over";
       return false;
     }
 
@@ -1123,7 +1123,7 @@ namespace CryptoNote
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "HEAT commitment added to burn deposit transaction: " << amount << " XFG = " << heatAmount << " HEAT";
     } else {
-      m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating COLD deposit for " << amount << " XFG term=" << term;
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating CD deposit for " << amount << " XFG term=" << term;
 
       /* Use provided commitment or generate one */
       DepositCommitment finalCommitment = commitment;
@@ -1131,20 +1131,20 @@ namespace CryptoNote
         finalCommitment = DepositCommitmentGenerator::generateYieldCommitment(
           term, amount, commitment.metadata);
 
-        m_logger(DEBUGGING, BRIGHT_GREEN) << "Generated COLD commitment: " << Common::podToHex(finalCommitment.commitment);
+        m_logger(DEBUGGING, BRIGHT_GREEN) << "Generated CD commitment: " << Common::podToHex(finalCommitment.commitment);
       }
 
-      /* Add COLD commitment to transaction extra (tag 0xCD) */
+      /* Add CD commitment to transaction extra (tag 0xCD) */
       std::vector<uint8_t> extra;
       std::vector<uint8_t> gift_secret;
-       if (!CryptoNote::createTxExtraWithSimpleCDCommitment(finalCommitment.commitment, amount, term, extra))
+       if (!CryptoNote::createTxExtraWithCDCommitment(finalCommitment.commitment, amount, term, extra))
        {
-         throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "Failed to create SimpleCD commitment in transaction extra");
+         throw std::system_error(make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR), "Failed to create CD commitment in transaction extra");
        }
 
       transaction->appendExtra(extra);
 
-      m_logger(DEBUGGING, BRIGHT_GREEN) << "COLD commitment (0xCD) added to deposit transaction: " << amount << " XFG term=" << term;
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "CD commitment (0xCD) added to deposit transaction: " << amount << " XFG term=" << term;
     }
 
     /* Add the transaction extra for messages (if any) */
@@ -4106,14 +4106,14 @@ namespace CryptoNote
         if (field.type() == typeid(TransactionExtraHeatCommitment)) {
           deposit.depositType = Deposit::Type::HEAT;
           break;
-        } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-          deposit.depositType = Deposit::Type::COLD;
+        } else if (field.type() == typeid(TransactionExtraCDCommitment)) {
+          deposit.depositType = Deposit::Type::CD;
           break;
         }
       }
     } else {
-      // Default to COLD if parsing fails (better UX - don't scare users by defaulting to HEAT/burn)
-      deposit.depositType = Deposit::Type::COLD;
+      // Default to CD if parsing fails (better UX - don't scare users by defaulting to HEAT/burn)
+      deposit.depositType = Deposit::Type::CD;
     }
 
     return insertDeposit(deposit, depositOutput.outputInTransaction, depositOutput.transactionHash);

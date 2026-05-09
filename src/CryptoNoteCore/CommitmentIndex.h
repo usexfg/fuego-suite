@@ -38,7 +38,7 @@ struct CommitmentEntry {
 
   enum class Type : uint8_t {
     HEAT = 0,
-    COLD = 1
+    CD = 1
   };
 
   Type type = Type::HEAT;
@@ -102,7 +102,7 @@ public:
   bool hasCommitment(const Crypto::Hash& commitment) const;
   size_t size() const;
   size_t heatCount() const;
-  size_t coldCount() const;
+  size_t cdCount() const;
 
   // Generate an epoch report covering [startBlock, endBlock]
   // Called by Blockchain.cpp at each EPOCH_DURATION_BLOCKS boundary
@@ -139,7 +139,7 @@ private:
   std::vector<Crypto::Hash> m_merkle_leaves;
   std::map<uint32_t, std::vector<std::string>> m_heightIndex;
   size_t m_heat_count = 0;
-  size_t m_cold_count = 0;
+  size_t m_cd_count = 0;
 
   const CryptoNote::Currency& m_currency;
 

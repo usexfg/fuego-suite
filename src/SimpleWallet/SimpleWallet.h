@@ -122,9 +122,7 @@ namespace CryptoNote
     // Deposit commands
     bool deposit(const std::vector<std::string> &args);
     bool rollover(const std::vector<std::string> &args);  // Rollover matured CD with compound interest
-    // Hidden cold commands - kept for internal use but not exposed in help
     bool burn(const std::vector<std::string> &args);
-    bool cold(const std::vector<std::string> &args);
     // bool elderking_ceremony(const std::vector<std::string> &args);
     bool withdraw(const std::vector<std::string> &args);
     // bool unstake(const std::vector<std::string> &args);  // Removed - not implemented
@@ -149,7 +147,7 @@ namespace CryptoNote
 
   private:
 
-     bool create_cold_secret(const std::vector<std::string> &args);
+     // create_cold_secret() removed — old STARK model. CDs use deposit() + epoch yield.
 
     // USER-FACING: Proof generation from deposits
     // Users generate STARKs from deposit transactions with xfg-stark-cli for L2 claims

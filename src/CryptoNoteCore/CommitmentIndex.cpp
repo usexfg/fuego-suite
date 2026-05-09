@@ -66,8 +66,8 @@ void CommitmentIndex::addCommitment(const CommitmentEntry& entry) {
     case CommitmentEntry::Type::HEAT:
       m_heat_count++;
       break;
-    case CommitmentEntry::Type::COLD:
-      m_cold_count++;
+    case CommitmentEntry::Type::CD:
+      m_cd_count++;
       break;
   }
 
@@ -211,7 +211,7 @@ size_t CommitmentIndex::rollbackToHeight(Height h) {
       if (it != m_commitments.end()) {
         switch (it->second.type) {
           case CommitmentEntry::Type::HEAT: m_heat_count--; break;
-          case CommitmentEntry::Type::COLD: m_cold_count--; break;
+          case CommitmentEntry::Type::CD: m_cd_count--; break;
         }
         m_commitments.erase(it);
         removed++;
@@ -246,7 +246,7 @@ void CommitmentIndex::clear() {
   m_merkle_leaves.clear();
   m_heightIndex.clear();
   m_heat_count = 0;
-  m_cold_count = 0;
+  m_cd_count = 0;
   m_blockBankingFees.clear();
   m_current_merkle_root = Crypto::Hash();
   m_merkleDirty = false;  // leaves are empty; root is already the zero hash
@@ -281,9 +281,9 @@ size_t CommitmentIndex::heatCount() const {
   return m_heat_count;
 }
 
-size_t CommitmentIndex::coldCount() const {
+size_t CommitmentIndex::cdCount() const {
   std::lock_guard<std::mutex> lock(m_mutex);
-  return m_cold_count;
+  return m_cd_count;
 }
 
 // ============================================================================
@@ -389,7 +389,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
     m_heightIndex.clear();
     m_txHashToCommitHash.clear();
     m_heat_count = 0;
-    m_cold_count = 0;
+    m_cd_count = 0;
     m_current_block_height = 0;
 
     for (const auto& kv : m_commitments) {
@@ -399,7 +399,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
       m_txHashToCommitHash[Common::podToHex(entry.txHash)] = kv.first;
       switch (entry.type) {
         case CommitmentEntry::Type::HEAT: m_heat_count++; break;
-        case CommitmentEntry::Type::COLD: m_cold_count++; break;
+        case CommitmentEntry::Type::CD: m_cd_count++; break;
       }
       if (entry.blockHeight > m_current_block_height)
         m_current_block_height = entry.blockHeight;

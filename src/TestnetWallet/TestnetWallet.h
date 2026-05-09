@@ -31,13 +31,13 @@ namespace CryptoNote
 
   protected:
     // Testnet-specific deposit command overrides
-    // These add burn, cold support to testnet
+    // These add burn, CD support to testnet
     void register_testnet_commands();
 
   private:
     // Testnet deposit implementations
     bool burn(const std::vector<std::string> &args);
-    bool cold(const std::vector<std::string> &args);
+    // cold() removed — old STARK model. CDs use deposit() + epoch swap-fee yield.
     // bool elderking_ceremony(const std::vector<std::string> &args);  // Removed
     // bool unstake(const std::vector<std::string> &args);  // Removed
     bool list_burns(const std::vector<std::string> &args);

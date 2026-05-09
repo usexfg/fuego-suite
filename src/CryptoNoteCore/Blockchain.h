@@ -147,7 +147,7 @@ namespace CryptoNote {
     bool hasCommitment(const Crypto::Hash& commitment) const;
     size_t getCommitmentCount() const;
     size_t getHeatCommitmentCount() const;
-    size_t getColdCommitmentCount() const;
+    size_t getCDCommitmentCount() const;
     Crypto::Hash getCommitmentMerkleRoot() const;
     std::vector<Crypto::Hash> getCommitmentMerkleProof(const Crypto::Hash& commitment) const;
     int64_t getCommitmentLeafIndex(const Crypto::Hash& commitment) const;

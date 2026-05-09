@@ -67,7 +67,7 @@ struct Deposit
   // Deposit type enum
   enum class Type : uint8_t {
     HEAT = 0x08,        // HEAT burn deposit (0x08)
-    COLD = 0xCD,        // COLD yield deposit (0xCD)
+    CD = 0xCD,          // CD yield deposit (0xCD)
   //  ELDERFIER = 0xEC    // ELDERFIER staking deposit (0xEC)
   };
 
@@ -83,7 +83,7 @@ struct Deposit
   Crypto::Hash transactionHash;
   std::string address;
   std::string extra;    // Transaction extra field (contains commitment info)
-  Type depositType = Type::COLD;  // Default to COLD (less scary than defaulting to HEAT/burn)
+  Type depositType = Type::CD;  // Default to CD (less scary than defaulting to HEAT/burn)
 };
 
 struct WalletTransactionUpdatedData

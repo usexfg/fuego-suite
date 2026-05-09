@@ -1182,7 +1182,7 @@ struct COMMAND_RPC_GET_COMMITMENT {
     uint32_t block_height;
     uint64_t amount;
     uint32_t term;
-    uint8_t type;               // 0=HEAT, 1=YIELD/COLD
+    uint8_t type;               // 0=HEAT, 1=YIELD/CD
     uint32_t target_chain_id;
     uint32_t leaf_index;
     bool is_legacy;         // true only for 0xCE migrations (original tx had MultisignatureOutput)
@@ -1210,7 +1210,7 @@ struct COMMAND_RPC_GET_COMMITMENT_STATS {
   struct response {
     uint64_t total_commitments;
     uint64_t heat_commitments;
-    uint64_t cold_commitments;
+    uint64_t cd_commitments;
     uint32_t highest_block;
     std::string merkle_root;
     std::string status;
@@ -1218,7 +1218,7 @@ struct COMMAND_RPC_GET_COMMITMENT_STATS {
     void serialize(ISerializer& s) {
       KV_MEMBER(total_commitments)
       KV_MEMBER(heat_commitments)
-      KV_MEMBER(cold_commitments)
+      KV_MEMBER(cd_commitments)
       KV_MEMBER(highest_block)
       KV_MEMBER(merkle_root)
       KV_MEMBER(status)

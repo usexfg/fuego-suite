@@ -145,10 +145,45 @@ namespace CryptoNote
           transactionExtraFields.push_back(heatCommitment);
           break;
         }
-        case TX_EXTRA_COLD_MIGRATION:
+
+        case TX_EXTRA_CD_COMMITMENT:  // 0xCD — on-chain CD commitment
+        {
+          // Format: [commitment: 32] [amount: 8 LE] [term: 4 LE]
+          TransactionExtraCDCommitment simpleCD;
+          read(iss, simpleCD.commitment.data, sizeof(simpleCD.commitment.data));
+          simpleCD.amount = 0;
+          for (int i = 0; i < 8; ++i) {
+            simpleCD.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          simpleCD.term = 0;
+          for (int i = 0; i < 4; ++i) {
+            simpleCD.term |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          transactionExtraFields.push_back(simpleCD);
+          break;
+        }
+
+        case TX_EXTRA_ALIAS:  // 0xEA — @ alias registration
+        {
+          uint64_t aliasSize = 0;
+          readVarint(iss, aliasSize);
+          if (aliasSize > 0 && aliasSize < 1024) {  // sanity cap
+            std::vector<uint8_t> aliasBuf(aliasSize);
+            read(iss, aliasBuf.data(), aliasSize);
+            TransactionExtraAliasRegistration aliasReg;
+            MemoryInputStream aliasStream(aliasBuf.data(), aliasBuf.size());
+            BinaryInputStreamSerializer aliasAr(aliasStream);
+            if (aliasReg.serialize(aliasAr)) {
+              transactionExtraFields.push_back(aliasReg);
+            }
+          }
+          break;
+        }
+
+        case TX_EXTRA_CD_MIGRATION:
         {
           // Format: [originalTxHash: 32] [commitment: 32] [amount: 8 LE] [term: 4 LE] [chain: 1]
-          TransactionExtraColdMigration migration;
+          TransactionExtraCDMigration migration;
           read(iss, migration.originalTxHash.data, sizeof(migration.originalTxHash.data));
           read(iss, migration.commitment.data, sizeof(migration.commitment.data));
           migration.amount = 0;
@@ -186,6 +221,11 @@ namespace CryptoNote
           }
           break;
         }
+
+        default:
+          // Unknown tag — can't determine payload length, stop parsing.
+          // Return what we have so far (consistent with CryptoNote behavior).
+          return true;
       }
     }
     }
@@ -250,25 +290,16 @@ namespace CryptoNote
       return addBurnReceiptToExtra(extra, t);
     }
     
-    bool operator()(const TransactionExtraSimpleCD &t)
+    bool operator()(const TransactionExtraCDCommitment &t)
     {
-      // Simple CD uses a helper not explicitly named 'addSimpleCDToExtra' but we can define it or use a lambda.
-      // Wait, let's see if there's an addSimpleCDToExtra.
-      // If not, I'll implement the serialization here or create the function.
-      // Let's check if it exists.
-      // Actually, I can just implement it here:
-      extra.push_back(TX_EXTRA_SIMPLE_CD);
+      // CD commitment: [tag 0xCD] [commitment: 32] [amount: 8 LE] [term: 4 LE]
+      extra.push_back(TX_EXTRA_CD_COMMITMENT);
       extra.insert(extra.end(), t.commitment.data, t.commitment.data + sizeof(t.commitment.data));
       uint64_t amount = t.amount;
       for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
       uint32_t term = t.term;
       for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>(term & 0xFF)); term >>= 8; }
       return true;
-    }
-
-    bool operator()(const TransactionExtraColdCommitment &t)
-    {
-      return addColdCommitmentToExtra(extra, t);
     }
 
     bool operator()(const TransactionExtraDepositReceipt &t)
@@ -281,9 +312,9 @@ namespace CryptoNote
       return addAliasToExtra(extra, t);
     }
 
-    bool operator()(const TransactionExtraColdMigration &t)
+    bool operator()(const TransactionExtraCDMigration &t)
     {
-      return addColdMigrationToExtra(extra, t);
+      return addCDMigrationToExtra(extra, t);
     }
 
   };
@@ -586,18 +617,7 @@ namespace CryptoNote
     return true;
   }
 
-  bool TransactionExtraColdCommitment::serialize(ISerializer &s)
-  {
-    s(commitment, "commitment");
-    s(amount, "amount");
-    s(term, "term");
-    s(claimChainCode, "claimChainCode");
-    s(metadata, "metadata");
-    s(gift_secret, "gift_secret");
-    return true;
-  }
-
-  bool TransactionExtraColdMigration::serialize(ISerializer &s)
+  bool TransactionExtraCDMigration::serialize(ISerializer &s)
   {
     s(originalTxHash, "originalTxHash");
     s(commitment, "commitment");
@@ -832,9 +852,9 @@ namespace CryptoNote
   //   keccak256(secret || le64(amount) || tx_prefix_hash || network_id || target_chain_id || version || le32(term))
   //
   // HEAT burns use: term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
-  // COLD deposits use: actual term in blocks
+  // CD deposits use: actual term in blocks
   //
-  // This unified format allows both HEAT and COLD to use the same verification logic,
+  // This unified format allows both HEAT and CD to use the same verification logic,
   // differing only in the term value.
 
   Crypto::Hash computeCommitment(const std::array<uint8_t, 32> &secret,
@@ -885,9 +905,9 @@ namespace CryptoNote
       version >>= 8;
     }
 
-    // Term (4 bytes, LE) - UNIFIED for HEAT and COLD
+    // Term (4 bytes, LE) - UNIFIED for HEAT and CD
     // HEAT: 0xFFFFFFFF (DEPOSIT_TERM_FOREVER)
-    // COLD: actual term in blocks
+    // CD: actual term in blocks
     uint32_t t = term;
     for (int i = 0; i < 4; ++i) {
       preimage.push_back(static_cast<uint8_t>(t & 0xFF));
@@ -936,89 +956,21 @@ namespace CryptoNote
     return CryptoNote::createTxExtraWithHeatCommitment(commitment, amount_atomic, metadata, extra);
   }
 
-  // COLD convenience wrapper - same as computeCommitment, named for clarity
-  Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32> &secret,
-                                     uint64_t amount_atomic,
-                                     const Crypto::Hash &tx_prefix_hash,
-                                     uint32_t network_id,
-                                     uint32_t target_chain_id,
-                                     uint32_t commitment_version,
-                                     uint32_t term)
+  // CD convenience wrapper - same as computeCommitment, named for clarity
+  Crypto::Hash computeCDCommitment(const std::array<uint8_t, 32> &secret,
+                                   uint64_t amount_atomic,
+                                   const Crypto::Hash &tx_prefix_hash,
+                                   uint32_t network_id,
+                                   uint32_t target_chain_id,
+                                   uint32_t commitment_version,
+                                   uint32_t term)
   {
     // Use the unified commitment format
     return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
   }
 
-  // Builds tx.extra with TX_EXTRA_COLD_COMMITMENT (0xCD)
-  // PRIVACY MODEL: No ETH address parameter - recipient binding at STARK proof time
-  bool buildColdExtra(const std::array<uint8_t, 32> &secret,
-                      uint64_t amount_atomic,
-                      const Crypto::Hash &tx_prefix_hash,
-                      uint32_t network_id,
-                      uint32_t target_chain_id,
-                      uint32_t commitment_version,
-                      uint32_t term,
-                      uint8_t claimChainCode,
-                      const std::vector<uint8_t> &metadata,
-                      const std::vector<uint8_t> &gift_secret,
-                      std::vector<uint8_t> &extra)
-  {
-    // Compute commitment (no recipient - privacy preserving)
-    Crypto::Hash commitment = computeColdCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
-
-    // If commitment is zero (failed), bail
-    const Crypto::Hash zero = {};
-    if (!memcmp(&commitment, &zero, sizeof(zero))) {
-      return false;
-    }
-
-    return CryptoNote::createTxExtraWithColdCommitment(commitment, amount_atomic, term, claimChainCode, metadata, gift_secret, extra);
-  }
-
-  // COLD Commitment helper functions - unified format matching HEAT style
-  bool addColdCommitmentToExtra(std::vector<uint8_t> &tx_extra, const CryptoNote::TransactionExtraColdCommitment &commitment)
-  {
-    tx_extra.push_back(TX_EXTRA_COLD_COMMITMENT);
-
-    // Commitment hash (32 bytes) - real keccak256 hash, not dummy zeros
-    tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + 32);
-
-    // Amount (8 bytes, little-endian)
-    uint64_t amount = commitment.amount;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
-      amount >>= 8;
-    }
-
-    // Term (4 bytes, little-endian) - in blocks
-    uint32_t term = commitment.term;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
-      term >>= 8;
-    }
-
-    // Chain code (1 byte)
-    tx_extra.push_back(commitment.claimChainCode);
-
-    // Metadata size and data
-    uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
-    tx_extra.push_back(metadataSize);
-    if (metadataSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
-    }
-
-    // Gift secret size and data (0 if not gifting)
-    uint8_t giftSecretSize = static_cast<uint8_t>(commitment.gift_secret.size());
-    tx_extra.push_back(giftSecretSize);
-    if (giftSecretSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.gift_secret.begin(), commitment.gift_secret.end());
-    }
-
-    return true;
-  }
-
-  bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration) {
-    tx_extra.push_back(TX_EXTRA_COLD_MIGRATION);
+  bool addCDMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCDMigration& migration) {
+    tx_extra.push_back(TX_EXTRA_CD_MIGRATION);
 
     // Original tx hash (32 bytes)
     tx_extra.insert(tx_extra.end(), migration.originalTxHash.data, migration.originalTxHash.data + 32);
@@ -1047,104 +999,9 @@ namespace CryptoNote
     return true;
   }
 
-  bool createTxExtraWithColdCommitment(const Crypto::Hash &commitment, uint64_t amount, uint32_t term,
-                                        uint8_t claimChainCode, const std::vector<uint8_t> &metadata,
-                                        const std::vector<uint8_t> &gift_secret, std::vector<uint8_t> &extra)
-  {
-    TransactionExtraColdCommitment coldCommitment;
-    coldCommitment.commitment = commitment;
-    coldCommitment.amount = amount;
-    coldCommitment.term = term;
-    coldCommitment.claimChainCode = claimChainCode;
-    coldCommitment.metadata = metadata;
-    coldCommitment.gift_secret = gift_secret;
-
-    return addColdCommitmentToExtra(extra, coldCommitment);
-  }
-
-  bool getColdCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraColdCommitment &commitment)
-  {
-    // Find the 0xCD tag in tx_extra
-    size_t pos = 0;
-    bool found = false;
-
-    while (pos < tx_extra.size()) {
-      if (tx_extra[pos] == TX_EXTRA_COLD_COMMITMENT) {
-        found = true;
-        pos++; // Skip tag
-        break;
-      }
-      // Skip other tags (simplified - just look for 0xCD)
-      pos++;
-    }
-
-    if (!found || pos >= tx_extra.size()) {
-      return false;
-    }
-
-    // Parse COLD commitment data in new format:
-    // [commitment: 32 bytes]
-    // [amount: 8 bytes LE]
-    // [term: 4 bytes LE]
-    // [chain_code: 1 byte]
-    // [metadata_len: 1 byte]
-    // [metadata: variable]
-    // [gift_secret_len: 1 byte]
-    // [gift_secret: variable]
-
-    // Commitment hash (32 bytes)
-    if (pos + 32 > tx_extra.size()) return false;
-    std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
-    pos += 32;
-
-    // Amount (8 bytes, little-endian)
-    if (pos + 8 > tx_extra.size()) return false;
-    commitment.amount = 0;
-    for (int i = 0; i < 8; ++i) {
-      commitment.amount |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 8;
-
-    // Term (4 bytes, little-endian)
-    if (pos + 4 > tx_extra.size()) return false;
-    commitment.term = 0;
-    for (int i = 0; i < 4; ++i) {
-      commitment.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 4;
-
-    // Chain code (1 byte)
-    if (pos >= tx_extra.size()) return false;
-    commitment.claimChainCode = tx_extra[pos];
-    pos += 1;
-
-    // Metadata size and data
-    if (pos >= tx_extra.size()) return false;
-    uint8_t metadataSize = tx_extra[pos];
-    pos += 1;
-
-    if (pos + metadataSize > tx_extra.size()) return false;
-    if (metadataSize > 0) {
-      commitment.metadata.assign(&tx_extra[pos], &tx_extra[pos] + metadataSize);
-      pos += metadataSize;
-    } else {
-      commitment.metadata.clear();
-    }
-
-    // Gift secret size and data
-    if (pos >= tx_extra.size()) return false;
-    uint8_t giftSecretSize = tx_extra[pos];
-    pos += 1;
-
-    if (pos + giftSecretSize > tx_extra.size()) return false;
-    if (giftSecretSize > 0) {
-      commitment.gift_secret.assign(&tx_extra[pos], &tx_extra[pos] + giftSecretSize);
-    } else {
-      commitment.gift_secret.clear();
-    }
-
-    return true;
-  }
+  // Old COLD commitment functions (createTxExtraWithColdCommitment, addColdCommitmentToExtra,
+  // getColdCommitmentFromExtra) removed — deprecated off-chain STARK model.
+  // Use TransactionExtraCDCommitment and createTxExtraWithCDCommitment for on-chain CDs.
 
 
 
@@ -1275,7 +1132,7 @@ namespace CryptoNote
   // Deposit receipt functions
   bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt)
   {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_RECEIPT) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_DEPOSIT_RECEIPT) {
       return false;
     }
 
@@ -1326,7 +1183,7 @@ namespace CryptoNote
 
   bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt)
   {
-    tx_extra.push_back(TX_EXTRA_COLD_RECEIPT);
+    tx_extra.push_back(TX_EXTRA_DEPOSIT_RECEIPT);
 
     // Add proof_pubkey
     tx_extra.insert(tx_extra.end(), reinterpret_cast<const uint8_t*>(&depositReceipt.proof_pubkey),
@@ -1377,29 +1234,8 @@ namespace CryptoNote
     return addDepositReceiptToExtra(extra, depositReceipt);
   }
 
-  // COLD Deposit term utility functions
-  // Note: APR is now derived from tier in smart contract, not stored on-chain
-  uint64_t getColdTermBlocks(uint8_t term_code) {
-    switch (term_code) {
-      case 1: return 16440;   // 3 months (~5480 blocks/month)
-      case 2: return 49320;   // 9 months
-      case 3: return 65760;   // 1 year
-      case 4: return 197280;  // 3 years
-      case 5: return 328800;  // 5 years
-      default: return 0;
-    }
-  }
-
-  uint64_t getColdTermDays(uint8_t term_code) {
-    switch (term_code) {
-      case 1: return 90;    // 3 months
-      case 2: return 270;   // 9 months
-      case 3: return 365;   // 1 year
-      case 4: return 1095;  // 3 years
-      case 5: return 1825;  // 5 years
-      default: return 0;
-    }
-  }
+  // Old COLD term utility functions (getColdTermBlocks, getColdTermDays) removed —
+  // deprecated off-chain STARK model. CD terms are epoch-based.
 
   // ============================================================================
   // @ ALIAS REGISTRATION (0xEA)
@@ -1629,9 +1465,9 @@ bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
   return false;
 }
 
-// Simple on-chain CD commitment - minimal fields for fee pool interest calculation
-bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra) {
-  extra.push_back(TX_EXTRA_COLD_COMMITMENT);  // Reuse COLD tag (0xCD)
+// On-chain CD commitment — 44 bytes: [commitment:32] [amount:8 LE] [term:4 LE]
+bool createTxExtraWithCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra) {
+  extra.push_back(TX_EXTRA_CD_COMMITMENT);  // 0xCD
   
   // Commitment hash (32 bytes)
   extra.insert(extra.end(), commitment.data, commitment.data + 32);
@@ -1648,7 +1484,7 @@ bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_
     term >>= 8;
   }
   
-  // No chain_code, metadata, or gift_secret for simple on-chain CDs
+  // No chain_code, metadata, or gift_secret — those were old COLD model fields
   
   return true;
 }

@@ -679,9 +679,9 @@ namespace CryptoNote
       std::vector<uint64_t> decomposedChange = splitAmount(context->foundMoney - totalAmount, context->dustPolicy.dustThreshold);
 
       // --- Fuego Ring-Signature Commitment Output ---
-      // Derive the deposit secret deterministically (COLD) or discard it (HEAT burns).
+      // Derive the deposit secret deterministically (CD) or discard it (HEAT burns).
       //
-      // COLD deposits (finite term): depositSecret = H("fuego_commit_v1" || ECDH || outputIndex)
+      // CD deposits (finite term): depositSecret = H("fuego_commit_v1" || ECDH || outputIndex)
       //   where ECDH = txSecretKey * viewPublicKey — the same shared secret used by CryptoNote
       //   stealth address scanning. The depositor can re-derive this with their view key + the
       //   tx public key found in the blockchain, so it is fully recoverable from seed.
@@ -691,7 +691,7 @@ namespace CryptoNote
       const uint32_t commitOutputIndex = static_cast<uint32_t>(transaction->getOutputCount());
       std::array<uint8_t, 32> depositSecret;
 
-      // All deposit types (COLD, HEAT/burn, special staking) use deterministic ECDH derivation.
+      // All deposit types (CD, HEAT/burn, special staking) use deterministic ECDH derivation.
       // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
       // This makes every commitment output re-detectable on wallet rescan using the view key.
       // HEAT burns are "permanent" because term=FOREVER has no withdrawal path in the UI,
@@ -759,14 +759,14 @@ namespace CryptoNote
 
       // Deposit commitment detection:
       // - 0x08 (HEAT) for FOREVER/burn deposits
-      // - 0xCD (COLD) for term deposits
+      // - 0xCD (CD) for term deposits
       // The wallet already created and appended the commitment to context->extra (line 551-554).
       // Detect the type directly from the tag byte — parseTransactionExtra has stream
       // position issues with commitment-only extras that cause silent failures.
 
       bool isHeatDeposit = false;
-      bool isColdDeposit = false;
-      Deposit::Type detectedType = Deposit::Type::COLD;
+      bool isCDDeposit = false;
+      Deposit::Type detectedType = Deposit::Type::CD;
 
       if (!context->extra.empty()) {
         uint8_t tag = static_cast<uint8_t>(context->extra[0]);
@@ -774,8 +774,8 @@ namespace CryptoNote
           detectedType = Deposit::Type::HEAT;
           isHeatDeposit = true;
          } else if (tag == TX_EXTRA_SIMPLE_CD) {
-           detectedType = Deposit::Type::COLD;
-           isColdDeposit = true;
+           detectedType = Deposit::Type::CD;
+           isCDDeposit = true;
          }
       } else {
         // No wallet-provided commitment — generate one based on deposit term
@@ -800,13 +800,13 @@ namespace CryptoNote
 
           std::vector<uint8_t> emptyMetadata;
           std::vector<uint8_t> emptyGiftSecret;
-          if (!CryptoNote::createTxExtraWithSimpleCDCommitment(commitment.commitment, depositAmount, context->depositTerm, generatedExtra)) {
-            throw std::runtime_error("Failed to generate SimpleCD commitment for term deposit");
+          if (!CryptoNote::createTxExtraWithCDCommitment(commitment.commitment, depositAmount, context->depositTerm, generatedExtra)) {
+            throw std::runtime_error("Failed to generate CD commitment for term deposit");
           }
 
           transaction->appendExtra(generatedExtra);
-          detectedType = Deposit::Type::COLD;
-          isColdDeposit = true;
+          detectedType = Deposit::Type::CD;
+          isCDDeposit = true;
         }
       }
 
@@ -842,13 +842,13 @@ namespace CryptoNote
 
       // HEAT secret notification: the wallet that created the burn commitment
       // holds the secret key. We only emit this event for completeness.
-      if (isHeatDeposit || isColdDeposit) {
+      if (isHeatDeposit || isCDDeposit) {
         std::string txHashStr = Common::podToHex(transactionInfo.hash);
         // Store the ECDH-derived commitKeys.keyScalar for future withdrawals
         // This secret is deterministically derived from: H(ECDH(txSecretKey, viewPubKey) || outputIndex)
         std::vector<uint8_t> secretMetadata;
-        if (isColdDeposit) {
-          // For COLD deposits, store commitment metadata if available
+        if (isCDDeposit) {
+          // For CD deposits, store commitment metadata if available
           secretMetadata.assign(context->extra.begin(), context->extra.end());
         }
         events.push_back(std::unique_ptr<WalletBurnDepositSecretCreatedEvent>(

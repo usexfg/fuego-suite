@@ -125,8 +125,7 @@ bool constructTransaction(
     in_contexts.push_back(input_generation_context_data());
     KeyPair& in_ephemeral = in_contexts.back().in_ephemeral;
     KeyImage img;
-    const AccountKeys& inputKeys = src_entr.hasCustomKeys ? src_entr.customKeys : sender_account_keys;
-    if (!generate_key_image_helper(inputKeys, src_entr.realTransactionPublicKey, src_entr.realOutputIndexInTransaction, in_ephemeral, img))
+    if (!generate_key_image_helper(sender_account_keys, src_entr.realTransactionPublicKey, src_entr.realOutputIndexInTransaction, in_ephemeral, img))
       return false;
 
     //check that derived key is equal with real output key
@@ -141,6 +140,7 @@ bool constructTransaction(
     //put key image into tx input
     KeyInput input_to_key;
     input_to_key.amount = src_entr.amount;
+    input_to_key.assetId = src_entr.assetId;
     input_to_key.keyImage = img;
 
     //fill outputs array and use relative offsets
@@ -199,6 +199,7 @@ bool constructTransaction(
 
     TransactionOutput out;
     out.amount = dst_entr.amount;
+    out.assetId = dst_entr.assetId;
     KeyOutput tk;
     tk.key = out_eph_public_key;
     out.target = tk;
@@ -277,10 +278,6 @@ bool get_inputs_money_amount(const Transaction& tx, uint64_t& money) {
       amount = boost::get<KeyInput>(in).amount;
     } else if (in.type() == typeid(MultisignatureInput)) {
       amount = boost::get<MultisignatureInput>(in).amount;
-    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
-      amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
-    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
-      amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
     }
 
     money += amount;
@@ -302,15 +299,11 @@ uint32_t get_block_height(const Block& b) {
 bool check_inputs_types_supported(const TransactionPrefix& tx) {
   for (const auto& in : tx.inputs) {
     const auto& inputType = in.type();
-    if (inputType == typeid(MultisignatureInput) || inputType == typeid(TransactionInputCommitmentSpend)) {
+    if (inputType == typeid(MultisignatureInput)) {
       if (tx.version < TRANSACTION_VERSION_2) {
         return false;
       }
-    } else if (inputType == typeid(TransactionInputCommitmentTransfer)) {
-      if (tx.version < TRANSACTION_VERSION_2) {
-        return false;
-      }
-    } else if (inputType != typeid(KeyInput) && inputType != typeid(BaseInput)) {
+    } else if (in.type() != typeid(KeyInput) && in.type() != typeid(MultisignatureInput)) {
       return false;
     }
   }
@@ -355,20 +348,6 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
           return false;
         }
       }
-    } else if (out.target.type() == typeid(TransactionOutputCommitment)) {
-      if (tx.version < TRANSACTION_VERSION_2) {
-        if (error) {
-          *error = "Transaction contains commitment output but its version is less than 2";
-        }
-        return false;
-      }
-      const TransactionOutputCommitment& commitment = ::boost::get<TransactionOutputCommitment>(out.target);
-      if (!check_key(commitment.commitKey)) {
-        if (error) {
-          *error = "Commitment output with invalid commit key";
-        }
-        return false;
-      }
     } else {
       if (error) {
         *error = "Output with invalid type";
@@ -407,10 +386,6 @@ bool check_inputs_overflow(const TransactionPrefix &tx) {
       amount = boost::get<KeyInput>(in).amount;
     } else if (in.type() == typeid(MultisignatureInput)) {
       amount = boost::get<MultisignatureInput>(in).amount;
-    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
-      amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
-    } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
-      amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
     }
 
     if (money > amount + money)

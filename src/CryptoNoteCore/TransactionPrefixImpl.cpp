@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,7 +17,6 @@
 
 #include "ITransaction.h"
 
-#include <memory>
 #include <numeric>
 #include <system_error>
 
@@ -62,7 +61,7 @@ public:
   virtual TransactionTypes::OutputType getOutputType(size_t index) const override;
   virtual void getOutput(size_t index, KeyOutput& output, uint64_t& amount) const override;
   virtual void getOutput(size_t index, MultisignatureOutput& output, uint64_t& amount) const override;
-  virtual void getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const override;
+  virtual uint8_t getOutputAssetId(size_t index) const override;
 
   // signatures
   virtual size_t getRequiredSignaturesCount(size_t inputIndex) const override;
@@ -197,10 +196,8 @@ void TransactionPrefixImpl::getOutput(size_t index, MultisignatureOutput& output
   amount = out.amount;
 }
 
-void TransactionPrefixImpl::getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const {
-  const auto& out = getOutputChecked(m_txPrefix, index, TransactionTypes::OutputType::Commitment);
-  output = boost::get<TransactionOutputCommitment>(out.target);
-  amount = out.amount;
+uint8_t TransactionPrefixImpl::getOutputAssetId(size_t index) const {
+  return m_txPrefix.outputs.at(index).assetId;
 }
 
 size_t TransactionPrefixImpl::getRequiredSignaturesCount(size_t inputIndex) const {

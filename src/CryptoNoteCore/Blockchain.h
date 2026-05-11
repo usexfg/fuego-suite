@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2014-2017 XDN developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
@@ -19,31 +19,34 @@
 #pragma once
 
 #include <atomic>
-#include <deque>
 
-#include "../../external/parallel_hashmap/phmap.h"
+#include "google/sparse_hash_set"
+#include "google/sparse_hash_map"
+#include <parallel_hashmap/phmap.h>
 
-#include "../Common/ObserverManager.h"
-#include "../Common/Util.h"
-#include "BlockIndex.h"
-#include "Checkpoints.h"
-#include "Currency.h"
-#include "BankingIndex.h"
-#include "CommitmentIndex.h"
-#include "IBlockchainStorageObserver.h"
-#include "ITransactionValidator.h"
-#include "SwappedVector.h"
-#include "UpgradeDetector.h"
-#include "CryptoNoteFormatUtils.h"
-#include "TransactionPool.h"
-#include "AliasIndex.h"
-#include "BlockchainIndices.h"
+#include "Common/ObserverManager.h"
+#include "Common/Util.h"
+#include "CryptoNoteCore/BlockIndex.h"
+#include "CryptoNoteCore/Checkpoints.h"
+#include "CryptoNoteCore/Currency.h"
+#include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/HeatMintEngine.h"
+#include "CryptoNoteCore/PiController.h"
+#include "Common/FixedPoint.h"
+#include "CryptoNoteCore/DepositIndex.h"
+#include "CryptoNoteCore/IBlockchainStorageObserver.h"
+#include "CryptoNoteCore/ITransactionValidator.h"
+#include "CryptoNoteCore/SwappedVector.h"
+#include "CryptoNoteCore/UpgradeDetector.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/TransactionPool.h"
+#include "CryptoNoteCore/BlockchainIndices.h"
 
-#include "MessageQueue.h"
-#include "BlockchainMessages.h"
-#include "IntrusiveLinkedList.h"
+#include "CryptoNoteCore/MessageQueue.h"
+#include "CryptoNoteCore/BlockchainMessages.h"
+#include "CryptoNoteCore/IntrusiveLinkedList.h"
 
-#include "../Logging/LoggerRef.h"
+#include <Logging/LoggerRef.h>
 
 #undef ERROR
 using phmap::parallel_flat_hash_map;
@@ -53,7 +56,6 @@ namespace CryptoNote {
   struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request;
   struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response;
   struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount;
-  struct COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry;
 
   using CryptoNote::BlockInfo;
   class Blockchain : public CryptoNote::ITransactionValidator {
@@ -78,7 +80,7 @@ namespace CryptoNote {
     bool getLowerBound(uint64_t timestamp, uint64_t startOffset, uint32_t& height);
     std::vector<Crypto::Hash> getBlockIds(uint32_t startHeight, uint32_t maxCount);
 
-    void setCheckpoints(Checkpoints&& chk_pts) { m_checkpoints = std::move(chk_pts); }
+    void setCheckpoints(Checkpoints&& chk_pts) { m_checkpoints = chk_pts; }
     bool getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks, std::list<Transaction>& txs);
     bool getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks);
     bool getAlternativeBlocks(std::list<Block>& blocks);
@@ -99,10 +101,6 @@ namespace CryptoNote {
     difficulty_type getDifficultyForNextBlock();
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
-    uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
-    uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
-    uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
-    uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
     uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);
@@ -116,7 +114,6 @@ namespace CryptoNote {
       uint32_t& totalBlockCount, uint32_t& startBlockIndex);
     bool handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS_request& arg, NOTIFY_RESPONSE_GET_OBJECTS_request& rsp); //Deprecated. Should be removed with CryptoNoteProtocolHandler.
     bool getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response& res);
-    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result);
     bool getBackwardBlocksSize(size_t from_height, std::vector<size_t>& sz, size_t count);
     bool getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs);
     bool get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out);
@@ -135,35 +132,9 @@ namespace CryptoNote {
     uint64_t fullDepositAmount() const;
     uint64_t depositAmountAtHeight(size_t height) const;
     uint64_t depositInterestAtHeight(size_t height) const;
-    uint64_t getBurnedXfgAtHeight(size_t height) const;
-
     uint64_t coinsEmittedAtHeight(uint64_t height);
     uint64_t difficultyAtHeight(uint64_t height);
     bool isInCheckpointZone(const uint32_t height);
-
-    // Commitment index accessors
-    std::optional<CommitmentEntry> getCommitmentByHash(const Crypto::Hash& commitment) const;
-    bool hasCommitment(const Crypto::Hash& commitment) const;
-    size_t getCommitmentCount() const;
-    size_t getHeatCommitmentCount() const;
-    size_t getColdCommitmentCount() const;
-    Crypto::Hash getCommitmentMerkleRoot() const;
-    std::vector<Crypto::Hash> getCommitmentMerkleProof(const Crypto::Hash& commitment) const;
-    int64_t getCommitmentLeafIndex(const Crypto::Hash& commitment) const;
-    std::vector<Crypto::Hash> getCommitmentLeaves() const;
- //   bool getElderfierSigningPubkey(uint8_t efid, Crypto::PublicKey& pubkey_out) const;
-  //  bool getElderfierBySigningPubkey(const Crypto::PublicKey& pubkey, ElderfierRegistration& out) const;
-    CommitmentIndex::Height getCommitmentHighestBlock() const;
-
-    // Banking fee computation (routed to miners? may need for zkProvers, instead of EFiers; 0.1% on HEAT/COLD commitments)
-    static uint64_t computeBankingFeesFromTransactions(const std::vector<Transaction>& txs, uint32_t activeEfierCount = 0);
-
-    // Access CommitmentIndex for epoch boundary checks and fee tracking
-    CommitmentIndex& getCommitmentIndex() { return m_commitmentIndex; }
-    const CommitmentIndex& getCommitmentIndex() const { return m_commitmentIndex; }
-
-    // Data directory (for broadcaster sign-lock file placement)
-    const std::string& getConfigFolder() const { return m_config_folder; }
 
     template <class visitor_t>
     bool scanOutputKeysForIndexes(const KeyInput &tx_in_to_key, visitor_t &vis, uint32_t *pmax_related_block_height = NULL);
@@ -237,30 +208,18 @@ namespace CryptoNote {
     bool rollbackBlockchainTo(uint32_t height);
     bool have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im);
 
-    // Elderfier consensus accessors
-  //  std::vector<uint8_t> getCommitmentSignedElderfierIds() const;
-  //  std::vector<uint8_t> getCommitmentPendingElderfierIds() const;
-    uint64_t getCommitmentConsensusPercentage() const;
-  //  std::vector<CommitmentIndex::ElderfierSignatureBundle> getSignaturesForCurrentRoot() const;
-
-    // Elderfier fee tracking
-  //  size_t getActiveElderfierCount() const;
-
-    // Elderfier registration lifecycle
- //   bool canAddressRegisterElderfier(const std::string& address) const;
-
-    // @ Alias system
-    bool aliasExists(const std::string& alias) const;
-    std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
-    std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
-    std::vector<AliasEntry> getAllAliases() const;
-
-    // Elderfier signature cache accessors
-  //  void addSignatureToCache(const CachedElderfierSignature& sig);
-    void updateCurrentMerkleRoot(const Crypto::Hash& root);
-    uint64_t getConsensusPercentageForCurrentRoot() const;
-  //  std::vector<uint8_t> getSignedElderfierIds() const;
-  //  std::vector<uint8_t> getPendingElderfierIds() const;
+    // HEAT + Hearth AMM public queries
+    uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getBurnedXfg() const { return m_burnedXfg; }
+    uint64_t heatRedemptionPriceNum() const {
+      // Extract num/den from FixedPoint64
+      // Return raw ratio: num_den stored in 128-bit, extract approximate uint64 ratio
+      return parameters::HEAT_INITIAL_REDEMPTION_PRICE_NUM;
+    }
+    uint64_t heatRedemptionPriceDen() const { return parameters::HEAT_INITIAL_REDEMPTION_PRICE_DENOM; }
+    uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
+    uint64_t getEpochSwapFees() const { return m_currentEpochSwapFees; }
+    const AmmPoolState& getAmmPool() const { return m_ammPool; }
 
   private:
 
@@ -309,26 +268,6 @@ namespace CryptoNote {
     typedef parallel_flat_hash_map<uint64_t, std::vector<std::pair<TransactionIndex, uint16_t>>> outputs_container; //Crypto::Hash - tx hash, size_t - index of out in transaction
     typedef parallel_flat_hash_map<uint64_t, std::vector<MultisignatureOutputUsage>> MultisignatureOutputsContainer;
 
-    // Fuego commitment output index for ring-signature deposit/burn outputs.
-    // indexed by amount (like m_outputs for KeyOutput ring sigs).
-    // stores the commitKey cached for ring signature verification.
-    struct CommitmentOutputRef {
-      TransactionIndex  transactionIndex;
-      uint16_t          outputInTransaction;
-      Crypto::PublicKey commitKey;  // cached for ring signature verification
-      uint32_t          term;       // lock term in blocks; 0xFFFFFFFF = FOREVER (HEAT burns, never unlocked)
-      bool              isSlashed = false;  // true = forbidden ring member (slashed stake)
-
-      void serialize(ISerializer& s) {
-        s(transactionIndex, "txindex");
-        s(outputInTransaction, "outindex");
-        s(commitKey, "commitKey");
-        s(term, "term");
-        s(isSlashed, "is_slashed");
-      }
-    };
-    typedef parallel_flat_hash_map<uint64_t, std::vector<CommitmentOutputRef>> CommitmentOutputsContainer;
-
     const Currency& m_currency;
     tx_memory_pool& m_tx_pool;
     mutable std::recursive_mutex m_blockchain_lock; // TODO: add here reader/writer lock
@@ -354,29 +293,9 @@ namespace CryptoNote {
 
     Blocks m_blocks;
     CryptoNote::BlockIndex m_blockIndex;
-    CryptoNote::BankingIndex m_bankingIndex;
-    CryptoNote::CommitmentIndex m_commitmentIndex;
-    CryptoNote::AliasIndex m_aliasIndex;
+    CryptoNote::DepositIndex m_depositIndex;
     TransactionMap m_transactionMap;
     MultisignatureOutputsContainer m_multisignatureOutputs;
-    CommitmentOutputsContainer     m_commitmentOutputs;
-
-    // Fee pool: accumulates swap fees, distributed as interest to CD holders.
-    uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts
-    uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
-    uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
-    // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
-    std::deque<uint64_t> m_blockSwapFeeContributions;
-
-    // Cumulative fee pool accounting (lifetime totals, never reset)
-    uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool
-    uint64_t m_totalCdInterestPaid = 0;       // total interest paid out to CD holders
-    uint64_t m_totalTreasuryAccrued = 0;      // total 10% accumulated to treasury
-
-
-
-    // Treasury: 20% of swap fees accumulates for protocol use
-    uint64_t m_treasuryBalance = 0;
     UpgradeDetector m_upgradeDetectorV2;
     UpgradeDetector m_upgradeDetectorV3;
     UpgradeDetector m_upgradeDetectorV4;
@@ -386,6 +305,24 @@ namespace CryptoNote {
     UpgradeDetector m_upgradeDetectorV8;
     UpgradeDetector m_upgradeDetectorV9;
     UpgradeDetector m_upgradeDetectorV10;
+
+    // HEAT colored coin state
+    uint64_t m_heatSupply = 0;
+    uint64_t m_burnedXfg = 0;
+    HeatMintEngine m_heatMintEngine;
+    PiController m_piController;
+
+    // Hearth AMM pool state
+    AmmPoolState m_ammPool;
+
+    // PI Controller + epoch state
+    FixedPoint64 m_heatRedemptionPrice = FixedPoint64::fromRatio(
+      parameters::HEAT_INITIAL_REDEMPTION_PRICE_NUM,
+      parameters::HEAT_INITIAL_REDEMPTION_PRICE_DENOM);
+    FixedPoint64 m_heatIntegralError;
+    FixedPoint64 m_heatRedemptionRate;
+    uint64_t m_currentEpochSwapFees = 0;
+    uint64_t m_treasuryBalance = 0;
 
 
     bool m_blockchainIndexesEnabled;
@@ -403,9 +340,9 @@ namespace CryptoNote {
     bool switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator> &alt_chain, bool discard_disconnected_chain);
     bool handle_alternative_block(const Block &b, const Crypto::Hash &id, block_verification_context &bvc, bool sendNewAlternativeBlockMessage = true);
     difficulty_type get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator> &alt_chain, BlockEntry &bei);
-    void pushToBankingIndex(const BlockEntry &block, uint64_t interest);
+    void pushToDepositIndex(const BlockEntry &block, uint64_t interest);
     bool prevalidate_miner_transaction(const Block &b, uint32_t height);
-    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {});
+    bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange);
     bool rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height);
     bool get_last_n_blocks_sizes(std::vector<size_t> &sz, size_t count);
     bool add_out_to_get_random_outs(std::vector<std::pair<TransactionIndex, uint16_t>> &amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount &result_outs, uint64_t amount, size_t i);
@@ -414,7 +351,7 @@ namespace CryptoNote {
     bool check_block_timestamp_main(const Block &b);
     bool check_block_timestamp(std::vector<uint64_t> timestamps, const Block &b);
     uint64_t get_adjusted_time();
-    bool complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_height, std::vector<uint64_t>& timestamps);
+    bool complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_height, std::vector<uint64_t>& timestamps); 
     bool checkBlockVersion(const Block& b, const Crypto::Hash& blockHash);
     bool checkParentBlockSize(const Block& b, const Crypto::Hash& blockHash);
     bool checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cumulativeBlockSize, uint64_t height);
@@ -434,8 +371,6 @@ namespace CryptoNote {
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
-    bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
-    bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
     bool removeLastBlock();
     bool checkCheckpoints(uint32_t &lastValidCheckpointHeight);
     bool checkUpgradeHeight(const UpgradeDetector& upgradeDetector);
@@ -447,9 +382,6 @@ namespace CryptoNote {
     void saveTransactions(const std::vector<Transaction>& transactions, uint32_t height);
 
     void sendMessage(const BlockchainMessage& message);
-
-    // Elderfier consensus check (called after each block)
-  //  void checkElderfierConsensusThreshold();
 
     friend class LockedBlockchainStorage;
   };
@@ -472,7 +404,8 @@ namespace CryptoNote {
 
   template<class visitor_t> bool Blockchain::scanOutputKeysForIndexes(const KeyInput& tx_in_to_key, visitor_t& vis, uint32_t* pmax_related_block_height) {
     std::lock_guard<std::recursive_mutex> lk(m_blockchain_lock);
-    auto it = m_outputs.find(tx_in_to_key.amount);
+    uint64_t lookupKey = (tx_in_to_key.amount << 8) | (uint64_t)tx_in_to_key.assetId;
+    auto it = m_outputs.find(lookupKey);
     if (it == m_outputs.end() || !tx_in_to_key.outputIndexes.size())
       return false;
 

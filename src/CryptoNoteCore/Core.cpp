@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -22,7 +22,7 @@
 #include "../CryptoNoteConfig.h"
 #include "../Common/CommandLine.h"
 #include "../Common/Util.h"
-#include "../Common/MathUtils.h"
+#include "../Common/Math.h"
 #include "../Common/StringTools.h"
 #include "../crypto/crypto.h"
 #include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
@@ -35,19 +35,6 @@
 #include "Miner.h"
 #include "TransactionExtra.h"
 #include "IBlock.h"
-#include "Currency.h"
-#include <vector>
-#include <functional>
-#include <array>
-#include <list>
-#include <string>
-#include <memory>
-#include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
-#include "../Rpc/CoreRpcServerCommandsDefinitions.h"
-#include "../crypto/hash.h"
-#include "../CryptoNoteCore/CryptoNoteBasic.h"
-#include "../CryptoNoteCore/Difficulty.h"
-#include "../../include/CryptoNote.h"
 
 #undef ERROR
 
@@ -293,7 +280,7 @@ bool core::get_stat_info(core_stat_info& st_inf) {
   return true;
 }
 
-bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion) {
+bool core::check_tx_mixin(const Transaction& tx) {
   size_t inputIndex = 0;
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
@@ -303,10 +290,8 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
-      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(blockMajorVersion)) {
-        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count " << txMixin
-                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
-                      << " for block version " << (int)blockMajorVersion << ", rejected";
+      if (getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin() && txMixin != 1) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count below the required minimum, rejected";
         return false;
       }
     }
@@ -314,7 +299,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion) {
   return true;
 }
 
-bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMajorVersion, tx_verification_context& tvc) {
+bool core::check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_context& tvc) {
 	uint64_t inputs_amount = 0;
 	if (!get_inputs_money_amount(tx, inputs_amount)) {
 		tvc.m_verification_failed = true;
@@ -334,11 +319,9 @@ bool core::check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMaj
 	getObjectHash(tx, h, blobSize);
 	const uint64_t fee = inputs_amount - outputs_amount;
 	bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
-
-	// Use flat minimum fee (no dynamic calculation)
-	if (!isFusionTransaction && fee < m_currency.minimumFee(blockMajorVersion)) {
+	if (!isFusionTransaction && fee < m_currency.minimumFee()) {
 		logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee(blockMajorVersion));
+			", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
 		tvc.m_verification_failed = true;
 		tvc.m_tx_fee_too_small = true;
 		return false;
@@ -475,9 +458,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
         if (b.majorVersion == BLOCK_MAJOR_VERSION_1) {
       b.minorVersion = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_2) == UpgradeDetectorBase::UNDEF_HEIGHT ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
-    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) { // upgradekit
-            if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10) == UpgradeDetectorBase::UNDEF_HEIGHT) {
-          b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_9 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
+    } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
              if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_9) == UpgradeDetectorBase::UNDEF_HEIGHT) {
         b.minorVersion = b.majorVersion == BLOCK_MAJOR_VERSION_8 ? BLOCK_MINOR_VERSION_1 : BLOCK_MINOR_VERSION_0;
       } else if (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_8) == UpgradeDetectorBase::UNDEF_HEIGHT) {
@@ -495,10 +476,9 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       } else {
         b.minorVersion = BLOCK_MINOR_VERSION_0;
       }
-    }
 
-    b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
-      b.parentBlock.minorVersion = BLOCK_MINOR_VERSION_0;
+      b.parentBlock.majorVersion = BLOCK_MAJOR_VERSION_1;
+      b.parentBlock.majorVersion = BLOCK_MINOR_VERSION_0;
       b.parentBlock.transactionCount = 1;
       TransactionExtraMergeMiningTag mm_tag = boost::value_initialized<decltype(mm_tag)>();
 
@@ -512,15 +492,15 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
     b.timestamp = time(NULL);
 
 
-
+    
     // Courtesy of Jagerman
     // https://github.com/graft-project/GraftNetwork/pull/118/commits
-
+ 
     // If some other node has submitted enough blocks with forged future
     // timestamps, legitimate nodes end up providing their pools with a block
     // template that cannot be accepted -- it fails the requirement that a block
     // timestamp be greater than the median of the recent block window.
-    //
+    // 
     // This fix allows the node to increase the timestamp to the median (i.e. the
     // minimum required) if the timestamp would be rejected so that it doesn't
     // end up handing out impossible-to-accept block templates.
@@ -531,7 +511,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     if(height >= m_currency.timestampCheckWindow(b.majorVersion)) {
       std::vector<uint64_t> timestamps;
-      for(size_t offset = height - m_currency.timestampCheckWindow(b.majorVersion); offset < height; ++offset) {
+      for(size_t offset = height - m_currency.timestampCheckWindow(b.majorVersion); offset < height; ++offset) { 
 
         timestamps.push_back(m_blockchain.getBlockTimestamp(offset));
       }
@@ -540,7 +520,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
           b.timestamp = median_ts;
       }
     }
-//
+//	
     median_size = m_blockchain.getCurrentCumulativeBlocksizeLimit() / 2;
     already_generated_coins = m_blockchain.getCoinsInCirculation();
   }
@@ -548,60 +528,26 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
   size_t txs_size;
   uint64_t fee;
   if (!m_mempool.fill_block_template(b, median_size, m_currency.maxBlockCumulativeSize(height), already_generated_coins, txs_size, fee, height)) {
-    logger(ERROR, BRIGHT_RED) << "fill_block_template failed - median_size=" << median_size
-      << ", max_block_size=" << m_currency.maxBlockCumulativeSize(height)
-      << ", already_generated_coins=" << already_generated_coins;
     return false;
   }
-    logger(DEBUGGING) << "Block template: height=" << height << ", majorVersion=" << (int)b.majorVersion
-      << ", difficulty=" << diffic << ", txs_size=" << txs_size << ", fee=" << fee;
 
   /*
      two-phase miner transaction generation: we don't know exact block size until we prepare block, but we don't know reward until we know
      block size, so first miner transaction generated with fake amount of money, and with phase we know think we know expected block size
      */
-  // Use deterministic height-indexed burn amount for reward calculation
-  // Burns through block N-1 determine the reward for block N
-  uint64_t burnedCoins = (height > 0) ? m_blockchain.getBurnedXfgAtHeight(height - 1) : 0;
-
-  // V10+: Compute banking fees from block template transactions for coinbase split
-  uint64_t bankingFeesInBlock = 0;
-  if (b.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-    // Fetch transactions from mempool to compute banking fees
-    std::vector<Transaction> blockTxs;
-    std::vector<Crypto::Hash> missed;
-    m_mempool.getTransactions(b.transactionHashes, blockTxs, missed);
-    bankingFeesInBlock = Blockchain::computeBankingFeesFromTransactions(blockTxs, 0);
-
-    if (bankingFeesInBlock > 0) {
-      logger(DEBUGGING) << "Block template banking fees: " << bankingFeesInBlock;
-    }
-  }
-
-  //make block's coinbase tx look more like real coinbase txs to get truthful blob size
-  size_t maxCoinbaseOuts = (b.majorVersion >= BLOCK_MAJOR_VERSION_11) ? 33 : 11;
-  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
-  if (!r) {
-    logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, first chance";
-    return false;
+  //make blocks coin-base tx looks close to real coinbase tx to get truthful blob size
+  bool r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, txs_size, fee, adr, b.baseTransaction, ex_nonce, 11);
+  if (!r) { 
+    logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, first chance"; 
+    return false; 
   }
 
   size_t cumulative_size = txs_size + getObjectBinarySize(b.baseTransaction);
-  size_t try_count = 0;
-  for (; try_count != 10; ++try_count) {
-    logger(TRACE) << "constructMinerTx attempt " << try_count << ": height=" << height << ", majorVersion=" << (int)b.majorVersion
-      << ", median_size=" << median_size << ", cumulative_size=" << cumulative_size
-      << ", already_generated_coins=" << already_generated_coins << ", fee=" << fee;
-    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, maxCoinbaseOuts, burnedCoins, bankingFeesInBlock);
+  for (size_t try_count = 0; try_count != 10; ++try_count) {
+    r = m_currency.constructMinerTx(b.majorVersion, height, median_size, already_generated_coins, cumulative_size, fee, adr, b.baseTransaction, ex_nonce, 11);
 
-    if (!(r)) {
-      logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance. height=" << height
-        << ", majorVersion=" << (int)b.majorVersion << ", cumulative_size=" << cumulative_size
-        << ", fee=" << fee << ", already_generated_coins=" << already_generated_coins;
-      return false;
-    }
+    if (!(r)) { logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, second chance"; return false; }
     size_t coinbase_blob_size = getObjectBinarySize(b.baseTransaction);
-    logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << ", cumulative_size=" << cumulative_size << ", txs_size=" << txs_size;
     if (coinbase_blob_size > cumulative_size - txs_size) {
       cumulative_size = txs_size + coinbase_blob_size;
       continue;
@@ -609,11 +555,10 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
 
     if (coinbase_blob_size < cumulative_size - txs_size) {
       size_t delta = cumulative_size - txs_size - coinbase_blob_size;
-      logger(TRACE) << "Try " << try_count << ": coinbase_blob_size=" << coinbase_blob_size << " < expected=" << (cumulative_size - txs_size) << ", delta=" << delta;
       b.baseTransaction.extra.insert(b.baseTransaction.extra.end(), delta, 0);
       //here  could be 1 byte difference, because of extra field counter is varint, and it can become from 1-byte len to 2-bytes len.
       if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
-        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size + 1 << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
+        if (!(cumulative_size + 1 == txs_size + getObjectBinarySize(b.baseTransaction))) { logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " + 1 is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction); return false; }
           b.baseTransaction.extra.resize(b.baseTransaction.extra.size() - 1);
           if (cumulative_size != txs_size + getObjectBinarySize(b.baseTransaction)) {
             //fuck, not lucky, -1 makes varint-counter size smaller, in that case we continue to grow with cumulative_size
@@ -628,38 +573,22 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
       }
     }
 
-    if (cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction)) {
-      // SUCCESS: Sizes match exactly, we're done
-      logger(TRACE) << "Mining transaction size adjustment successful for height=" << height;
-      break;
+    if (!(cumulative_size == txs_size + getObjectBinarySize(b.baseTransaction))) {
+      logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
+      return false;
     }
 
-    // Unexpected case - sizes don't match after all adjustment attempts
-    logger(ERROR, BRIGHT_RED) << "unexpected case: cumulative_size=" << cumulative_size << " is not equal txs_cumulative_size=" << txs_size << " + get_object_blobsize(b.baseTransaction)=" << getObjectBinarySize(b.baseTransaction);
-    return false;
+    return true;
   }
 
-  // After loop: check if we used all 10 attempts
-  if (try_count >= 10) {
-    size_t final_coinbase_size = getObjectBinarySize(b.baseTransaction);
-    logger(ERROR, BRIGHT_RED) << "Failed to create_block_template after 10 tries. Last error: cumulative_size=" << cumulative_size
-      << " vs txs_size + coinbase_blob=" << (txs_size + final_coinbase_size);
-    logger(ERROR, BRIGHT_RED) << "Block info: height=" << height << ", majorVersion=" << (int)b.majorVersion
-      << ", median_size=" << median_size << ", already_generated_coins=" << already_generated_coins;
-    logger(ERROR, BRIGHT_RED) << "Fee=" << fee << ", txs_size=" << txs_size;
-    return false;
-  }
+  logger(ERROR, BRIGHT_RED) <<
+    "Failed to create_block_template with " << 10 << " tries";
 
-  return true;
+  return false;
 }
 
-
-
-std::vector<Crypto::Hash> core::findBlockchainSupplement(
-    const std::vector<Crypto::Hash>& remoteBlockIds,
-    size_t maxCount,
-    uint32_t& totalBlockCount,
-    uint32_t& startBlockIndex) {
+std::vector<Crypto::Hash> core::findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
+  uint32_t& totalBlockCount, uint32_t& startBlockIndex) {
 
   assert(!remoteBlockIds.empty());
   assert(remoteBlockIds.back() == m_blockchain.getBlockIdByHeight(0));
@@ -681,10 +610,6 @@ void core::print_blockchain_outs(const std::string& file) {
 
 bool core::get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res) {
   return m_blockchain.getRandomOutsByAmount(req, res);
-}
-
-bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
-  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result);
 }
 
 bool core::get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
@@ -806,10 +731,9 @@ bool core::handle_incoming_block(const Block& b, block_verification_context& bvc
       bool r = toBinaryArray(b, blockBa);
       if (!(r)) { logger(ERROR, BRIGHT_RED) << "failed to serialize block"; return false; }
       arg.b.block = asString(blockBa);
-
-              for (auto& tx : txs) {
-                arg.b.txs.push_back(asString(toBinaryArray(tx)));
-              }
+      for (auto& tx : txs) {
+        arg.b.txs.push_back(asString(toBinaryArray(tx)));
+      }
 
       m_pprotocol->relay_block(arg);
     }
@@ -907,9 +831,9 @@ bool core::on_idle() {
   if (!m_starter_message_showed) {
     logger(INFO, BRIGHT_YELLOW)
       << "**********************************************************************" << ENDL
-      << "Your Fuego daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
-      << "Bootstrap file of Fuego blockchain is available at https://github.com/usexfg/fuego-data/releases - though, full sync using network peers is best practice. "<< ENDL
-      << "You can use \"set_log <level>\" command for a more detailed view of the process."<< ENDL
+      << "Your daemon will now begin synchronizing with the network's historical chain of data blocks. It may take some time." << ENDL
+      << "Fuego blockchain can also be downloaded at https://github.com/usexfg/XFG-data/releases "<< ENDL
+      << "You can use the \"set_log <level>\" command for a more detailed view of the process."<< ENDL
       << "Using <level> option from 0 (no details) up to 4 (very verbose)." << ENDL
       << "Use \"help\" command to see a list of available commands." << ENDL
       << "Note: in case you need to interrupt the process, use \"exit\" command,"<<ENDL
@@ -1320,83 +1244,45 @@ bool core::removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
   return m_blockchain.removeMessageQueue(messageQueue);
 }
 
-uint64_t core::getBurnedXfgAtHeight(size_t height) const {
-  return m_blockchain.getBurnedXfgAtHeight(height);
+core::HeatMetrics core::getHeatMetrics() {
+  HeatMetrics m;
+  m.heatSupply = m_blockchain.getHeatSupply();
+  m.burnedXfg = m_blockchain.getBurnedXfg();
+  m.redemptionPriceNum = m_blockchain.heatRedemptionPriceNum();
+  m.redemptionPriceDenom = m_blockchain.heatRedemptionPriceDen();
+  m.redemptionRateNum = 0;
+  m.redemptionRateDenom = 1;
+  m.treasuryBalance = m_blockchain.getTreasuryBalance();
+  m.epochSwapFees = m_blockchain.getEpochSwapFees();
+  return m;
 }
 
-// --- Commitment Index Accessors ---
+core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) {
+  AmmQuote q;
+  const auto& pool = m_blockchain.getAmmPool();
+  if (pool.isEmpty()) return q;
 
-std::optional<CommitmentEntry> core::getCommitmentByHash(const Crypto::Hash& commitment) const {
-  return m_blockchain.getCommitmentByHash(commitment);
+  uint64_t reserveIn, reserveOut;
+  if (direction == 0) { reserveIn = pool.reserveXfg; reserveOut = pool.reserveHeat; }
+  else               { reserveIn = pool.reserveHeat; reserveOut = pool.reserveXfg; }
+
+  uint64_t outputNoFee = ammGetOutputAmount(inputAmount, reserveIn, reserveOut, 0);
+  q.expectedOutput = ammGetOutputAmount(inputAmount, reserveIn, reserveOut, parameters::SWAP_FEE_RATE_BPS);
+  q.fee = outputNoFee > q.expectedOutput ? outputNoFee - q.expectedOutput : 0;
+  q.priceImpactBps = reserveIn > 0 ? (uint64_t)((unsigned __int128)inputAmount * 10000 / reserveIn) : 0;
+  return q;
 }
 
-bool core::hasCommitment(const Crypto::Hash& commitment) const {
-  return m_blockchain.hasCommitment(commitment);
-}
-
-const CommitmentIndex& core::getCommitmentIndex() const {
-  return m_blockchain.getCommitmentIndex();
-}
-
-std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
-                                           uint32_t currentHeight, uint64_t& outInterest) {
-  outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
-                                               m_blockchain.getCommitmentIndex());
-  return {};
-}
-
-std::error_code core::getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
-  outFeeRate = m_blockchain.getCommitmentIndex().getEpochFeeRate(epoch);
-  return {};
-}
-
-size_t core::getCommitmentCount() const {
-  return m_blockchain.getCommitmentCount();
-}
-
-size_t core::getHeatCommitmentCount() const {
-  return m_blockchain.getHeatCommitmentCount();
-}
-
-size_t core::getColdCommitmentCount() const {
-  return m_blockchain.getColdCommitmentCount();
-}
-
-Crypto::Hash core::getCommitmentMerkleRoot() const {
-  return m_blockchain.getCommitmentMerkleRoot();
-}
-
-std::vector<Crypto::Hash> core::getCommitmentMerkleProof(const Crypto::Hash& commitment) const {
-  return m_blockchain.getCommitmentMerkleProof(commitment);
-}
-
-int64_t core::getCommitmentLeafIndex(const Crypto::Hash& commitment) const {
-  return m_blockchain.getCommitmentLeafIndex(commitment);
-}
-
-uint64_t core::getCommitmentHighestBlock() const {
-  return m_blockchain.getCommitmentHighestBlock();
-}
-
-std::vector<Crypto::Hash> core::getCommitmentLeaves() const {
-  return m_blockchain.getCommitmentLeaves();
-}
-
-// @ Alias system proxies
-bool core::aliasExists(const std::string& alias) const {
-  return m_blockchain.aliasExists(alias);
-}
-
-std::optional<AliasEntry> core::getAliasByName(const std::string& alias) const {
-  return m_blockchain.getAliasByName(alias);
-}
-
-std::optional<AliasEntry> core::getAliasByAddress(const std::string& address) const {
-  return m_blockchain.getAliasByAddress(address);
-}
-
-std::vector<AliasEntry> core::getAllAliases() const {
-  return m_blockchain.getAllAliases();
+core::AmmPoolInfo core::getAmmPoolInfo() {
+  AmmPoolInfo info;
+  const auto& pool = m_blockchain.getAmmPool();
+  info.reserveXfg = pool.reserveXfg;
+  info.reserveHeat = pool.reserveHeat;
+  info.totalLpShares = pool.totalLpShares;
+  info.spotPrice = pool.reserveHeat > 0 ? ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat) : 0;
+  info.feeAccumulator = pool.feeAccumulator;
+  info.epochSwapFees = m_blockchain.getEpochSwapFees();
+  return info;
 }
 
 }

@@ -1,5 +1,5 @@
-// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2012-2018 The CryptoNote developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <limits>
 #include <vector>
-#include "../src/crypto/hash.h"
+#include "crypto/hash.h"
 #include "ITransaction.h"
 #include "IObservable.h"
 #include "IStreamSerializable.h"
@@ -51,6 +51,7 @@ namespace CryptoNote
     uint64_t amount;
     uint32_t globalOutputIndex;
     uint32_t outputInTransaction;
+    uint8_t assetId = 0;   // AssetId::XFG
 
     // transaction info
     Crypto::Hash transactionHash;
@@ -85,7 +86,7 @@ namespace CryptoNote
       IncludeStateUnlocked = 0x01,
       IncludeStateLocked = 0x02,
       IncludeStateSoftLocked = 0x04,
-      IncludeStateSpent = 0x24,
+      IncludeStateSpent = 0x08,
       // output type
       IncludeTypeKey = 0x100,
       IncludeTypeMultisignature = 0x200,

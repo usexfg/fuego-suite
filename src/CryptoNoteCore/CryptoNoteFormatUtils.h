@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -18,12 +18,12 @@
 #pragma once
 
 #include <boost/utility/value_init.hpp>
-#include "../../include/CryptoNote.h"
+#include <CryptoNote.h>
 #include "CryptoNoteBasic.h"
 #include "CryptoNoteSerialization.h"
 
-#include "../Serialization/BinaryOutputStreamSerializer.h"
-#include "../Serialization/BinaryInputStreamSerializer.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
 
 namespace Logging {
 class ILogger;
@@ -41,19 +41,17 @@ struct TransactionSourceEntry {
   Crypto::PublicKey realTransactionPublicKey; //incoming real tx public key
   size_t realOutputIndexInTransaction;        //index in transaction outputs vector
   uint64_t amount;                            //money
-
-  // for sub-address inputs spend key= b_ij as opposed to main wallet key b.
-  // hasCustomKeys = true for sub-address AccountKeys so constructTransaction signs with the correct key image for the input
-  bool hasCustomKeys = false; // Defaults to false (main address inputs use sender_account_keys as normal)
-  AccountKeys customKeys;
+  uint8_t assetId = 0;                        //AssetId::XFG
 };
 
 struct TransactionDestinationEntry {
   uint64_t amount;                    //money
+  uint8_t assetId = 0;               //AssetId::XFG
   AccountPublicAddress addr;          //destination address
 
-  TransactionDestinationEntry() : amount(0), addr(boost::value_initialized<AccountPublicAddress>()) {}
-  TransactionDestinationEntry(uint64_t amount, const AccountPublicAddress &addr) : amount(amount), addr(addr) {}
+  TransactionDestinationEntry() : amount(0), assetId(0), addr(boost::value_initialized<AccountPublicAddress>()) {}
+  TransactionDestinationEntry(uint64_t amount, const AccountPublicAddress &addr) : amount(amount), assetId(0), addr(addr) {}
+  TransactionDestinationEntry(uint64_t amount, uint8_t aId, const AccountPublicAddress &addr) : amount(amount), assetId(aId), addr(addr) {}
 };
 
 struct tx_message_entry
@@ -139,42 +137,6 @@ void decompose_amount_into_digits(uint64_t amount, uint64_t dust_threshold, cons
 
   if (!is_dust_handled && 0 != dust) {
     dust_handler(dust);
-  }
-}
-
-// Uniform denomination decomposition for coinbase privacy.
-// Breaks amount into multiple outputs at power-of-10 tiers (>= dust_threshold).
-// Unlike decompose_amount_into_digits which produces one output per decimal digit,
-// this produces N outputs at each tier, making all coinbase outputs indistinguishable
-// across blocks regardless of varying reward amounts.
-inline void decompose_amount_uniform(uint64_t amount, uint64_t dust_threshold, std::vector<uint64_t>& out) {
-  if (amount == 0) return;
-
-  // Find the largest power-of-10 tier <= amount >= dust_threshold
-  // 1 COIN = 10,000,000 ℏeat so max tier is 10Mℏ (1 XFG), ((really moreso ~1M (0.1 XFG) in this case, unless burns push blkrewards > COIN))
-  static const uint64_t tiers[] = {
-    10000000, // 1.0 XFG
-    1000000,  // 0.1 XFG
-    100000,   // 0.01 XFG
-    10000,    // 0.001 XFG
-    1000,     // 0.0001 XFG (dust threshold)
-  };
-
-  for (uint64_t tier : tiers) {
-    if (tier < dust_threshold) break;
-    while (amount >= tier) {
-      out.push_back(tier);
-      amount -= tier;
-    }
-  }
-
-  // Sub-dust remainder: merge into last output (shouldn't happen with 1000 dust)
-  if (amount > 0) {
-    if (!out.empty()) {
-      out.back() += amount;
-    } else {
-      out.push_back(amount);
-    }
   }
 }
 

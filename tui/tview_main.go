@@ -133,16 +133,10 @@ func buildMainMenu() {
 	list.AddItem("[::b]--- Transfer ---", "", 0, nil)
 	list.AddItem("  Send Transaction", fmt.Sprintf("Send %s to an address", CurrentConfig.CoinName), 's', uiSendForm)
 
-	list.AddItem("[::b]--- Ethereal Mint (HEAT Burns) ---", "", 0, nil)
-	list.AddItem("  Burn (HEAT)", "Permanently burn coins (0.8/8/80/800)", 'h', uiBurnMenu)
-	list.AddItem("  Generate Proof", "Generate STARK proof from burn tx hash", 0, uiGenerateProofForm)
-	list.AddItem("  List Burns", "Show all burn transactions", 0, cmdListBurns)
-	list.AddItem("  Burn Info", "Detailed info for a burn by ID", 0, uiBurnInfoForm)
-
-	list.AddItem("[::b]--- COLD Interest Banking ---", "", 0, nil)
-	list.AddItem("  List Deposits", "Show all COLD/Elderfier deposits", 0, cmdListDeposits)
-	list.AddItem("  Deposit Info", "Detailed info for a deposit by ID", 0, uiDepositInfoForm)
-	list.AddItem("  Withdraw Deposit", "Withdraw a matured deposit", 0, uiWithdrawForm)
+	list.AddItem("[::b]--- HEAT Colored Coin (v10+) ---", "", 0, nil)
+	list.AddItem("  Mint HEAT", "Burn XFG to mint HEAT at current redemption price", 'h', uiHeatMint)
+	list.AddItem("  Hearth Swap", "Swap XFG/HEAT on Hearth AMM", 0, uiHearthSwap)
+	list.AddItem("  Pool Info", "Show Hearth AMM pool state", 0, cmdPoolInfo)
 
 	list.AddItem("[::b]--- Ξlderfiers ---", "", 0, nil)
 	list.AddItem("  Elderking Ceremony", "Register as Elderfier (5x 800 deposits)", 'e', cmdElderkingCeremony)
@@ -514,41 +508,8 @@ func cmdListBurns() {
 	}()
 }
 
-func cmdListDeposits() {
-	if !needWallet() { return }
-	go func() {
-		lines := walletExec("list_deposits", 3)
-		appState.app.QueueUpdateDraw(func() { scrollBox("COLD Deposits", lines) })
-	}()
-}
-
-func cmdListAliases() {
-	if !needWallet() { return }
-	go func() {
-		lines := walletExec("list_aliases", 3)
-		appState.app.QueueUpdateDraw(func() { scrollBox("Registered Aliases", lines) })
-	}()
-}
-
-func cmdElderkingCeremony() {
-	if !needWallet() { return }
-	modal := tview.NewModal().
-		SetText("Elderking Ceremony\n\nThis will create 5x 800 " + CurrentConfig.CoinName + " deposits\n(4000 " + CurrentConfig.CoinName + " total) to register as an Elderfier.\n\nProceed?").
-		AddButtons([]string{"Begin Ceremony", "Cancel"}).
-		SetDoneFunc(func(_ int, label string) {
-			if label == "Begin Ceremony" {
-				go func() {
-					lines := walletExec("elderking_ceremony", 10)
-					appState.app.QueueUpdateDraw(func() { scrollBox("Elderking Ceremony", lines) })
-				}()
-			} else {
-				appState.pages.SwitchToPage("main")
-			}
-		})
-	appState.pages.AddPage("elderkingConfirm", modal, true, true)
-	appState.pages.SwitchToPage("elderkingConfirm")
-}
-
+// ============================================================================
+// Aliases
 // ============================================================================
 // Transfer UI
 // ============================================================================
@@ -901,4 +862,98 @@ func fetchNodeInfo() (*NodeInfo, error) {
 	}
 	info.Peers = peers
 	return info, nil
+}
+
+// HEAT Colored Coin — Mint
+func uiHeatMint() {
+	if !appState.isWalletOpen {
+		appState.app.QueueUpdateDraw(func() {
+			msgBox("Wallet Not Open - Open or create a wallet first.")
+		})
+		return
+	}
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle("Mint HEAT — Burn XFG to receive HEAT")
+	form.AddInputField("XFG Amount", "", 20, nil, nil)
+	form.AddButton("Mint", func() {
+		amount := form.GetFormItem(0).(*tview.InputField).GetText()
+		if amount == "" {
+			return
+		}
+		walletExec(fmt.Sprintf("mint_heat %s", amount), 10)
+		appState.pages.SwitchToPage("main")
+	})
+	form.AddButton("Cancel", func() { appState.pages.SwitchToPage("main") })
+	appState.pages.AddAndSwitchToPage("heat_mint", form, true)
+}
+
+// Hearth AMM — Swap
+func uiHearthSwap() {
+	if !appState.isWalletOpen {
+		appState.app.QueueUpdateDraw(func() {
+			msgBox("Wallet Not Open - Open or create a wallet first.")
+		})
+		return
+	}
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle("Hearth AMM Swap")
+	form.AddDropDown("Direction", []string{"XFG to HEAT (0)", "HEAT to XFG (1)"}, 0, nil)
+	form.AddInputField("Amount", "", 20, nil, nil)
+	form.AddInputField("Min Output (slippage)", "", 20, nil, nil)
+	form.AddButton("Swap", func() {
+		_, dirStr := form.GetFormItem(0).(*tview.DropDown).GetCurrentOption()
+		amount := form.GetFormItem(1).(*tview.InputField).GetText()
+		minOut := form.GetFormItem(2).(*tview.InputField).GetText()
+		if amount == "" || minOut == "" {
+			return
+		}
+		dir := "0"
+		if strings.Contains(dirStr, "1") || strings.Contains(dirStr, "HEAT to") {
+			dir = "1"
+		}
+		walletExec(fmt.Sprintf("swap %s %s %s", dir, amount, minOut), 15)
+		appState.pages.SwitchToPage("main")
+	})
+	form.AddButton("Cancel", func() { appState.pages.SwitchToPage("main") })
+	appState.pages.AddAndSwitchToPage("hearth_swap", form, true)
+}
+
+// Hearth AMM — Pool Info
+func cmdPoolInfo() {
+	if !appState.isWalletOpen {
+		appState.app.QueueUpdateDraw(func() {
+			msgBox("Wallet Not Open - Open or create a wallet first.")
+		})
+		return
+	}
+	walletExec("pool_info", 5)
+}
+
+func cmdListAliases() {
+	if !needWallet() { return }
+	go func() {
+		lines := walletExec("list_aliases", 3)
+		appState.app.QueueUpdateDraw(func() { scrollBox("Registered Aliases", lines) })
+	}()
+}
+
+func cmdElderkingCeremony() {
+	if !needWallet() { return }
+	modal := tview.NewModal().
+		SetText("Elderking Ceremony\n\nThis will create 5x 800 " + CurrentConfig.CoinName + " deposits\n(4000 " + CurrentConfig.CoinName + " total) to register as an Elderfier.\n\nProceed?").
+		AddButtons([]string{"Begin Ceremony", "Cancel"}).
+		SetDoneFunc(func(_ int, label string) {
+			if label == "Begin Ceremony" {
+				go func() {
+					lines := walletExec("elderking_ceremony", 10)
+					appState.app.QueueUpdateDraw(func() { scrollBox("Elderking Ceremony", lines) })
+				}()
+			} else {
+				appState.pages.SwitchToPage("main")
+			}
+		})
+	appState.pages.AddPage("elderkingConfirm", modal, true, true)
+	appState.pages.SwitchToPage("elderkingConfirm")
 }

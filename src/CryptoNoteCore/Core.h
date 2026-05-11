@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -21,24 +21,22 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 
-#include "../P2p/NetNodeCommon.h"
-#include "../CryptoNoteProtocol/CryptoNoteProtocolHandlerCommon.h"
+#include "P2p/NetNodeCommon.h"
+#include "CryptoNoteProtocol/CryptoNoteProtocolHandlerCommon.h"
 #include "Currency.h"
 #include "TransactionPool.h"
 #include "Blockchain.h"
-#include "IMinerHandler.h"
-#include "MinerConfig.h"
+#include "CryptoNoteCore/IMinerHandler.h"
+#include "CryptoNoteCore/MinerConfig.h"
 #include "ICore.h"
 #include "ICoreObserver.h"
-#include "../Common/ObserverManager.h"
+#include "Common/ObserverManager.h"
 
 #include "System/Dispatcher.h"
-#include "MessageQueue.h"
-#include "BlockchainMessages.h"
-#include "BankingIndex.h"
-#include "CommitmentIndex.h"
+#include "CryptoNoteCore/MessageQueue.h"
+#include "CryptoNoteCore/BlockchainMessages.h"
 
-#include "../Logging/LoggerMessage.h"
+#include <Logging/LoggerMessage.h>
 
 namespace CryptoNote {
 
@@ -92,7 +90,7 @@ namespace CryptoNote {
      virtual std::unique_ptr<IBlock> getBlock(const Crypto::Hash& blocksId) override;
      virtual bool handleIncomingTransaction(const Transaction& tx, const Crypto::Hash& txHash, size_t blobSize, tx_verification_context& tvc, bool keptByBlock, uint32_t height) override;
      virtual std::error_code executeLocked(const std::function<std::error_code()>& func) override;
-
+     
      virtual bool addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) override;
      virtual bool removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) override;
 
@@ -141,13 +139,42 @@ namespace CryptoNote {
                                                                uint32_t &totalBlockCount, uint32_t &startBlockIndex) override;
     bool get_stat_info(core_stat_info &st_inf) override;
 
+    // HEAT + Hearth AMM queries
+    struct HeatMetrics {
+      uint64_t heatSupply = 0;
+      uint64_t burnedXfg = 0;
+      uint64_t redemptionPriceNum = 1;
+      uint64_t redemptionPriceDenom = 2;
+      uint64_t redemptionRateNum = 0;
+      uint64_t redemptionRateDenom = 1;
+      uint64_t treasuryBalance = 0;
+      uint64_t epochSwapFees = 0;
+    };
+    HeatMetrics getHeatMetrics();
+
+    struct AmmQuote {
+      uint64_t expectedOutput = 0;
+      uint64_t priceImpactBps = 0;
+      uint64_t fee = 0;
+    };
+    AmmQuote getAmmQuote(uint64_t inputAmount, uint8_t direction);
+
+    struct AmmPoolInfo {
+      uint64_t reserveXfg = 0;
+      uint64_t reserveHeat = 0;
+      uint64_t totalLpShares = 0;
+      uint64_t spotPrice = 0;
+      uint64_t feeAccumulator = 0;
+      uint64_t epochSwapFees = 0;
+    };
+    AmmPoolInfo getAmmPoolInfo();
+
     virtual bool get_tx_outputs_gindexs(const Crypto::Hash &tx_id, std::vector<uint32_t> &indexs) override;
     Crypto::Hash get_tail_id();
     virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request &req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response &res) override;
-    bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result);
     void pause_mining() override;
     void update_block_template_and_resume_mining() override;
-    Blockchain& get_blockchain_storage(){return m_blockchain;}
+    //Blockchain& get_blockchain_storage(){return m_blockchain;}
     //debug functions
     void print_blockchain(uint32_t start_index, uint32_t end_index);
     void print_blockchain_index();
@@ -165,39 +192,7 @@ namespace CryptoNote {
     uint64_t getTotalGeneratedAmount();
     uint64_t fullDepositAmount() const;
     uint64_t depositAmountAtHeight(size_t height) const;
-    uint64_t getBurnedXfgAtHeight(size_t height) const;
-
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
-
-    // Commitment index accessors
-    std::optional<CommitmentEntry> getCommitmentByHash(const Crypto::Hash& commitment) const;
-    bool hasCommitment(const Crypto::Hash& commitment) const;
-    size_t getCommitmentCount() const;
-    size_t getHeatCommitmentCount() const;
-    size_t getColdCommitmentCount() const;
-    Crypto::Hash getCommitmentMerkleRoot() const;
-    std::vector<Crypto::Hash> getCommitmentMerkleProof(const Crypto::Hash& commitment) const;
-    int64_t getCommitmentLeafIndex(const Crypto::Hash& commitment) const;
-    uint64_t getCommitmentHighestBlock() const;
-    std::vector<Crypto::Hash> getCommitmentLeaves() const;
-
-    // Direct CommitmentIndex access (for epoch reports, slash queries)
-    const CommitmentIndex& getCommitmentIndex() const;
-
-    // ICore overrides: CD interest and epoch fee rate via CommitmentIndex
-    virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
-                                                 uint32_t currentHeight,
-                                                 uint64_t& outInterest) override;
-    virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
-                                                       uint64_t& outFeeRate) override;
-
-
-
-    // @ Alias system proxies
-    bool aliasExists(const std::string& alias) const;
-    std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
-    std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
-    std::vector<AliasEntry> getAllAliases() const;
 
     bool is_key_image_spent(const Crypto::KeyImage &key_im);
 
@@ -205,12 +200,12 @@ namespace CryptoNote {
     bool add_new_tx(const Transaction &tx, const Crypto::Hash &tx_hash, size_t blob_size, tx_verification_context &tvc, bool keeped_by_block, uint32_t height);
     bool load_state_data();
     bool parse_tx_from_blob(Transaction &tx, Crypto::Hash &tx_hash, Crypto::Hash &tx_prefix_hash, const BinaryArray &blob);
-    bool handle_incoming_block(const Block &b, block_verification_context &bvc, bool control_miner, bool relay_block) override;
+    bool handle_incoming_block(const Block &b, block_verification_context &bvc, bool control_miner, bool relay_block);
 
     bool check_tx_syntax(const Transaction &tx);  //check correct values, amounts and all lightweight checks not related with database
     bool check_tx_semantic(const Transaction &tx, bool keeped_by_block, uint32_t &height); //check if tx already in memory pool or in main blockchain
-    bool check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion);   //check if the mixin is not too large
-    bool check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMajorVersion, tx_verification_context& tvc); //check for proper tx fee
+    bool check_tx_mixin(const Transaction& tx);   //check if the mixin is not too large
+    bool check_tx_fee(const Transaction& tx, size_t blobSize, tx_verification_context& tvc); //check for proper tx fee
 
     bool check_tx_ring_signature(const KeyInput &tx, const Crypto::Hash &tx_prefix_hash, const std::vector<Crypto::Signature> &sig);
     bool is_tx_spendtime_unlocked(uint64_t unlock_time);

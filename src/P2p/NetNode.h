@@ -1,4 +1,3 @@
-// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2011-2017 The Cryptonote developers
 // Copyright (c) 2017-2018 The Circle Foundation & Conceal Devs
 // Copyright (c) 2018-2019 The TurtleCoin developers
@@ -11,23 +10,24 @@
 
 #include <functional>
 #include <unordered_map>
+#include <map>
 
 #include <boost/functional/hash.hpp>
 #include <list>
 #include <boost/uuid/uuid.hpp>
 
-#include "../System/Context.h"
-#include "../System/ContextGroup.h"
-#include "../System/Dispatcher.h"
-#include "../System/Event.h"
-#include "../System/Timer.h"
-#include "../System/TcpConnection.h"
-#include "../System/TcpListener.h"
+#include <System/Context.h>
+#include <System/ContextGroup.h>
+#include <System/Dispatcher.h>
+#include <System/Event.h>
+#include <System/Timer.h>
+#include <System/TcpConnection.h>
+#include <System/TcpListener.h>
 
-#include "../CryptoNoteCore/OnceInInterval.h"
-#include "../CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
-#include "../Common/CommandLine.h"
-#include "../Logging/LoggerRef.h"
+#include "CryptoNoteCore/OnceInInterval.h"
+#include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
+#include "Common/CommandLine.h"
+#include "Logging/LoggerRef.h"
 
 #include "ConnectionContext.h"
 #include "LevinProtocol.h"
@@ -114,6 +114,46 @@ namespace CryptoNote
     bool stopped;
   };
 
+  typedef std::unordered_map<boost::uuids::uuid, P2pConnectionContext, boost::hash<boost::uuids::uuid>> ConnectionContainer;
+  typedef ConnectionContainer::iterator ConnectionIterator;
+
+  struct NetworkZone
+  {
+    Zone zone;
+    PeerlistManager peerlist;
+    ConnectionContainer connections;
+    std::vector<NetworkAddress> seedNodes;
+    std::vector<NetworkAddress> priorityNodes;
+    std::vector<NetworkAddress> exclusiveNodes;
+    std::list<PeerlistEntry> commandLinePeers;
+    OnceInInterval connectionsMakerInterval;
+    size_t expectedOutgoingConnectionsCount;
+
+    NetworkZone() : zone(Zone::Invalid), connectionsMakerInterval(1), expectedOutgoingConnectionsCount(8) {}
+    NetworkZone(Zone z) : zone(z), connectionsMakerInterval(1) {
+      expectedOutgoingConnectionsCount = P2P_DEFAULT_CONNECTIONS_COUNT;
+      if (z == Zone::I2P || z == Zone::Tor) {
+        expectedOutgoingConnectionsCount = 4; // fewer on anonymity nets
+      }
+    }
+
+    size_t outgoingConnectionsCount() const {
+      size_t count = 0;
+      for (const auto& c : connections) {
+        if (!c.second.m_is_income) ++count;
+      }
+      return count;
+    }
+
+    size_t totalConnectionsCount() const {
+      return connections.size();
+    }
+
+    bool isPrivacyZone() const {
+      return zone == Zone::I2P || zone == Zone::Tor;
+    }
+  };
+
   class NodeServer :  public IP2pEndpoint
   {
   public:
@@ -138,7 +178,11 @@ namespace CryptoNote
     virtual uint64_t get_connections_count() override;
     size_t get_outgoing_connections_count();
 
-    CryptoNote::PeerlistManager& getPeerlistManager() { return m_peerlist; }
+    CryptoNote::PeerlistManager& getPeerlistManager() { return m_network_zones[Zone::Public].peerlist; }
+    CryptoNote::PeerlistManager& getPeerlistManager(Zone z) { return m_network_zones[z].peerlist; }
+    NetworkZone& getZone(Zone z) { return m_network_zones[z]; }
+    const NetworkZone& getZone(Zone z) const { return m_network_zones.at(z); }
+    Zone zoneForOutgoing() const;
     bool ban_host(const uint32_t address_ip, time_t seconds = P2P_IP_BLOCKTIME) override;
     bool unban_host(const uint32_t address_ip) override;
     std::map<uint32_t, time_t> get_blocked_hosts() override { return m_blocked_hosts; };
@@ -151,12 +195,12 @@ namespace CryptoNote
       gray
     };
     int handleCommand(const LevinProtocol::Command& cmd, BinaryArray& buff_out, P2pConnectionContext& context, bool& handled);
+    bool is_filtered_command(Zone zone, int command) const;
 
     //----------------- commands handlers ----------------------------------------------
     int handle_handshake(int command, COMMAND_HANDSHAKE::request& arg, COMMAND_HANDSHAKE::response& rsp, P2pConnectionContext& context);
     int handle_timed_sync(int command, COMMAND_TIMED_SYNC::request& arg, COMMAND_TIMED_SYNC::response& rsp, P2pConnectionContext& context);
     int handle_ping(int command, COMMAND_PING::request& arg, COMMAND_PING::response& rsp, P2pConnectionContext& context);
-
 
 #ifdef ALLOW_DEBUG_COMMANDS
     int handle_get_stat_info(int command, COMMAND_REQUEST_STAT_INFO::request& arg, COMMAND_REQUEST_STAT_INFO::response& rsp, P2pConnectionContext& context);
@@ -167,7 +211,9 @@ namespace CryptoNote
     bool init_config();
     bool make_default_config();
     bool store_config();
+#ifdef ALLOW_DEBUG_COMMANDS
     bool check_trust(const proof_of_trust& tr);
+#endif
     void initUpnp();
 
     bool handshake(CryptoNote::LevinProtocol& proto, P2pConnectionContext& context, bool just_take_peerlist = false);
@@ -185,11 +231,6 @@ namespace CryptoNote
     virtual void for_each_connection(std::function<void(CryptoNote::CryptoNoteConnectionContext&, PeerIdType)> f) override;
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override;
-#ifdef ENABLE_FUEGOMESH
-    virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) override;
-    virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) override;
-    virtual bool isMeshtasticEnabled() const override;
-#endif
     //-----------------------------------------------------------------------------------------------
     bool add_host_fail(const uint32_t address_ip);
     bool block_host(const uint32_t address_ip, time_t seconds = P2P_IP_BLOCKTIME);
@@ -202,18 +243,17 @@ namespace CryptoNote
     bool idle_worker();
     bool handle_remote_peerlist(const std::list<PeerlistEntry>& peerlist, time_t local_time, const CryptoNoteConnectionContext& context);
     bool get_local_node_data(basic_node_data& node_data);
-    bool merge_peerlist_with_local(const std::list<PeerlistEntry>& bs);
+    bool merge_peerlist_with_local(const std::list<PeerlistEntry>& bs, Zone zone);
     bool fix_time_delta(std::list<PeerlistEntry>& local_peerlist, time_t local_time, int64_t& delta);
 
     bool connections_maker();
-    bool make_new_connection_from_peerlist(bool use_white_list);
-    bool make_new_connection_from_anchor_peerlist(const std::vector<AnchorPeerlistEntry> &anchor_peerlist);
-    bool try_to_connect_and_handshake_with_new_peer(const NetworkAddress &na, bool just_take_peerlist = false, uint64_t last_seen_stamp = 0, PeerType peer_type = white, uint64_t first_seen_stamp = 0);
-    bool is_peer_used(const PeerlistEntry &peer);
-    bool is_peer_used(const AnchorPeerlistEntry &peer);
-    bool is_addr_connected(const NetworkAddress& peer);
-    bool try_ping(basic_node_data& node_data, P2pConnectionContext& context);
-    bool make_expected_connections_count(PeerType peer_type, size_t expected_connections);
+    bool make_new_connection_from_peerlist(Zone zone, bool use_white_list);
+    bool make_new_connection_from_anchor_peerlist(Zone zone, const std::vector<AnchorPeerlistEntry> &anchor_peerlist);
+    bool try_to_connect_and_handshake_with_new_peer(Zone zone, const NetworkAddress &na, bool just_take_peerlist = false, uint64_t last_seen_stamp = 0, PeerType peer_type = white, uint64_t first_seen_stamp = 0);
+    bool is_peer_used(Zone zone, const PeerlistEntry &peer);
+    bool is_peer_used(Zone zone, const AnchorPeerlistEntry &peer);
+    bool is_addr_connected(Zone zone, const NetworkAddress& peer);
+    bool make_expected_connections_count(Zone zone, PeerType peer_type, size_t expected_connections);
     bool is_priority_node(const NetworkAddress& na);
 
     bool connect_to_peerlist(const std::vector<NetworkAddress>& peers);
@@ -225,8 +265,8 @@ namespace CryptoNote
     std::string print_connections_container();
 
     typedef std::unordered_map<boost::uuids::uuid, P2pConnectionContext, boost::hash<boost::uuids::uuid>> ConnectionContainer;
-    typedef ConnectionContainer::iterator ConnectionIterator;
-    ConnectionContainer m_connections;
+
+    std::map<Zone, NetworkZone> m_network_zones;
 
     void acceptLoop();
     void connectionHandler(const boost::uuids::uuid& connectionId, P2pConnectionContext& connection);
@@ -234,7 +274,6 @@ namespace CryptoNote
     void onIdle();
     void timedSyncLoop();
     void timeoutLoop();
-    void connectionWorker();
 
     template<typename T>
     void safeInterrupt(T& obj);
@@ -266,17 +305,14 @@ namespace CryptoNote
     System::ContextGroup m_workingContextGroup;
     System::Event m_stopEvent;
     System::Timer m_idleTimer;
-    System::Timer m_connTimer;
     System::Timer m_timeoutTimer;
     System::TcpListener m_listener;
     Logging::LoggerRef logger;
     std::atomic<bool> m_stop;
 
     CryptoNoteProtocolHandler& m_payload_handler;
-    PeerlistManager m_peerlist;
 
     // OnceInInterval m_peer_handshake_idle_maker_interval;
-    OnceInInterval m_connections_maker_interval;
     OnceInInterval m_peerlist_store_interval;
     System::Timer m_timedSyncTimer;
 
@@ -285,25 +321,11 @@ namespace CryptoNote
 #ifdef ALLOW_DEBUG_COMMANDS
     uint64_t m_last_stat_request_time;
 #endif
-    std::vector<NetworkAddress> m_priority_peers;
-    std::vector<NetworkAddress> m_exclusive_peers;
-    std::vector<NetworkAddress> m_seed_nodes;
-    std::list<PeerlistEntry> m_command_line_peers;
     uint64_t m_peer_livetime;
     boost::uuids::uuid m_network_id;
     std::map<uint32_t, time_t> m_blocked_hosts;
     std::map<uint32_t, uint64_t> m_host_fails_score;
     mutable std::mutex mutex;
-
-#ifdef ENABLE_FUEGOMESH
-    bool initMeshtastic(const MeshtasticConfig& config);
-    void shutdownMeshtastic();
-    bool connectViaMeshtastic(const NetworkAddress& na);
-    void relayBlockViaMeshtastic(const BinaryArray& blockData);
-    void relayTransactionViaMeshtastic(const BinaryArray& txData);
-    std::unique_ptr<MeshtasticIntegration> m_meshtastic;
-    bool m_meshtasticEnabled;
-    bool m_meshtasticFallbackMode;
-#endif
+    PrivacyNetConfig m_privacyNetConfig;
   };
 }

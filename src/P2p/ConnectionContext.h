@@ -15,6 +15,7 @@
 #include <boost/uuid/uuid.hpp>
 #include "Common/StringTools.h"
 #include "P2p/PendingLiteBlock.h"
+#include "P2p/P2pProtocolTypes.h"
 #include "crypto/hash.h"
 
 namespace CryptoNote {
@@ -26,6 +27,7 @@ struct CryptoNoteConnectionContext {
   uint32_t m_remote_port = 0;
   bool m_is_income = false;
   time_t m_started = 0;
+  Zone m_zone = Zone::Public;
 
   enum state {
     state_befor_handshake = 0, //default state
@@ -70,7 +72,10 @@ inline std::string get_protocol_state_string(CryptoNoteConnectionContext::state 
 
 namespace std {
 inline std::ostream& operator << (std::ostream& s, const CryptoNote::CryptoNoteConnectionContext& context) {
+  const char* zoneStr = "PUB";
+  if (context.m_zone == CryptoNote::Zone::I2P) zoneStr = "I2P";
+  else if (context.m_zone == CryptoNote::Zone::Tor) zoneStr = "TOR";
   return s << "[" << Common::ipAddressToString(context.m_remote_ip) << ":" << 
-    context.m_remote_port << (context.m_is_income ? " INC" : " OUT") << "] ";
+    context.m_remote_port << (context.m_is_income ? " INC" : " OUT") << " " << zoneStr << "] ";
 }
 }

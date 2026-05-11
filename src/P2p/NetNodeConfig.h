@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -24,10 +24,6 @@
 #include <boost/program_options.hpp>
 #include "P2pProtocolTypes.h"
 
-#ifdef ENABLE_FUEGOMESH
-#include "FuegoMeshtastic/MeshtasticIntegration.h"
-#endif
-
 namespace CryptoNote {
 
 class NetNodeConfig {
@@ -49,13 +45,14 @@ public:
   bool getHideMyPort() const;
   std::string getConfigFolder() const;
 
-#ifdef ENABLE_FUEGOMESH
-  bool getMeshtasticEnabled() const;
-  std::string getMeshtasticHost() const;
-  uint16_t getMeshtasticPort() const;
-  std::string getMeshtasticDevice() const;
-  MeshtasticConfig getMeshtasticConfig() const;
-#endif
+  const PrivacyNetConfig& getPrivacyNetConfig() const;
+  bool getUseI2P() const;
+  std::string getI2PSocksHost() const;
+  uint16_t getI2PSocksPort() const;
+  bool getUseTor() const;
+  std::string getTorSocksHost() const;
+  uint16_t getTorSocksPort() const;
+  bool getRestrictToPrivacyNet() const;
 
   void setP2pStateFilename(const std::string& filename);
   void setTestnet(bool isTestnet);
@@ -70,9 +67,13 @@ public:
   void setHideMyPort(bool hide);
   void setConfigFolder(const std::string& folder);
 
-#ifdef ENABLE_FUEGOMESH
-  void setMeshtasticConfig(const MeshtasticConfig& config);
-#endif
+  void setUseI2P(bool use);
+  void setI2PSocksHost(const std::string& host);
+  void setI2PSocksPort(uint16_t port);
+  void setUseTor(bool use);
+  void setTorSocksHost(const std::string& host);
+  void setTorSocksPort(uint16_t port);
+  void setRestrictToPrivacyNet(bool restrict);
 
 private:
   std::string bindIp;
@@ -87,14 +88,7 @@ private:
   std::string configFolder;
   std::string p2pStateFilename;
   bool testnet;
-
-#ifdef ENABLE_FUEGOMESH
-  bool meshtasticEnabled;
-  std::string meshtasticHost;
-  uint16_t meshtasticPort;
-  std::string meshtasticDevice;
-  MeshtasticConfig meshtasticConfig;
-#endif
+  PrivacyNetConfig privacyNetConfig;
 };
 
 } //namespace nodetool

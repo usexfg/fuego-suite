@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -39,12 +39,13 @@ const command_line::arg_descriptor<std::vector<std::string> > arg_p2p_add_exclus
 const command_line::arg_descriptor<std::vector<std::string> > arg_p2p_seed_node   = {"seed-node", "Connect to a node to retrieve peer addresses, and disconnect"};
 const command_line::arg_descriptor<bool> arg_p2p_hide_my_port   =    {"hide-my-port", "Do not announce yourself as peerlist candidate", false, true};
 
-#ifdef ENABLE_FUEGOMESH
-const command_line::arg_descriptor<bool> arg_meshtastic_enabled = {"meshtastic-enabled", "Enable meshtastic fallback for off-grid connectivity", false};
-const command_line::arg_descriptor<std::string> arg_meshtastic_host = {"meshtastic-host", "Meshtastic MQTT bridge host", "127.0.0.1"};
-const command_line::arg_descriptor<uint16_t> arg_meshtastic_port = {"meshtastic-port", "Meshtastic MQTT bridge port", 1883};
-const command_line::arg_descriptor<std::string> arg_meshtastic_device = {"meshtastic-device", "Meshtastic serial device path", "/dev/ttyUSB0"};
-#endif
+const command_line::arg_descriptor<bool>        arg_p2p_use_i2p        = {"p2p-use-i2p", "Route P2P connections through I2P SOCKS5 proxy", false};
+const command_line::arg_descriptor<std::string> arg_i2p_socks_host     = {"i2p-socks-host", "I2P SOCKS5 proxy host", "127.0.0.1"};
+const command_line::arg_descriptor<uint16_t>    arg_i2p_socks_port     = {"i2p-socks-port", "I2P SOCKS5 proxy port (i2pd default: 4447)", 4447};
+const command_line::arg_descriptor<bool>        arg_p2p_use_tor        = {"p2p-use-tor", "Route P2P connections through Tor SOCKS5 proxy", false};
+const command_line::arg_descriptor<std::string> arg_tor_socks_host     = {"tor-socks-host", "Tor SOCKS5 proxy host", "127.0.0.1"};
+const command_line::arg_descriptor<uint16_t>    arg_tor_socks_port     = {"tor-socks-port", "Tor SOCKS5 proxy port", 9050};
+const command_line::arg_descriptor<bool>        arg_p2p_restrict_privacy = {"p2p-restrict-to-privacy-net", "Disable clearnet P2P; only use I2P/Tor", false};
 
 bool parsePeerFromString(NetworkAddress& pe, const std::string& node_addr) {
   return Common::parseIpAddressAndPort(pe.ip, pe.port, node_addr);
@@ -78,12 +79,13 @@ void NetNodeConfig::initOptions(boost::program_options::options_description& des
   command_line::add_arg(desc, arg_p2p_add_exclusive_node);
   command_line::add_arg(desc, arg_p2p_seed_node);
   command_line::add_arg(desc, arg_p2p_hide_my_port);
-#ifdef ENABLE_FUEGOMESH
-  command_line::add_arg(desc, arg_meshtastic_enabled);
-  command_line::add_arg(desc, arg_meshtastic_host);
-  command_line::add_arg(desc, arg_meshtastic_port);
-  command_line::add_arg(desc, arg_meshtastic_device);
-#endif
+  command_line::add_arg(desc, arg_p2p_use_i2p);
+  command_line::add_arg(desc, arg_i2p_socks_host);
+  command_line::add_arg(desc, arg_i2p_socks_port);
+  command_line::add_arg(desc, arg_p2p_use_tor);
+  command_line::add_arg(desc, arg_tor_socks_host);
+  command_line::add_arg(desc, arg_tor_socks_port);
+  command_line::add_arg(desc, arg_p2p_restrict_privacy);
 }
 
 NetNodeConfig::NetNodeConfig() {
@@ -94,16 +96,6 @@ NetNodeConfig::NetNodeConfig() {
   hideMyPort = false;
   configFolder = Tools::getDefaultDataDirectory();
   testnet = false;
-#ifdef ENABLE_FUEGOMESH
-  meshtasticEnabled = false;
-  meshtasticHost = "127.0.0.1";
-  meshtasticPort = 1883;
-  meshtasticDevice = "/dev/ttyUSB0";
-  meshtasticConfig.enabled = false;
-  meshtasticConfig.host = meshtasticHost;
-  meshtasticConfig.port = meshtasticPort;
-  meshtasticConfig.devicePath = meshtasticDevice;
-#endif
 }
 
 bool NetNodeConfig::init(const boost::program_options::variables_map& vm)
@@ -162,27 +154,19 @@ bool NetNodeConfig::init(const boost::program_options::variables_map& vm)
     hideMyPort = true;
   }
 
-#ifdef ENABLE_FUEGOMESH
-  if (command_line::has_arg(vm, arg_meshtastic_enabled)) {
-    meshtasticEnabled = command_line::get_arg(vm, arg_meshtastic_enabled);
-    meshtasticConfig.enabled = meshtasticEnabled;
+  privacyNetConfig.useI2P = command_line::get_arg(vm, arg_p2p_use_i2p);
+  if (privacyNetConfig.useI2P) {
+    privacyNetConfig.i2pSocksHost = command_line::get_arg(vm, arg_i2p_socks_host);
+    privacyNetConfig.i2pSocksPort = command_line::get_arg(vm, arg_i2p_socks_port);
   }
 
-  if (vm.count(arg_meshtastic_host.name)) {
-    meshtasticHost = command_line::get_arg(vm, arg_meshtastic_host);
-    meshtasticConfig.host = meshtasticHost;
+  privacyNetConfig.useTor = command_line::get_arg(vm, arg_p2p_use_tor);
+  if (privacyNetConfig.useTor) {
+    privacyNetConfig.torSocksHost = command_line::get_arg(vm, arg_tor_socks_host);
+    privacyNetConfig.torSocksPort = command_line::get_arg(vm, arg_tor_socks_port);
   }
 
-  if (vm.count(arg_meshtastic_port.name)) {
-    meshtasticPort = command_line::get_arg(vm, arg_meshtastic_port);
-    meshtasticConfig.port = meshtasticPort;
-  }
-
-  if (vm.count(arg_meshtastic_device.name)) {
-    meshtasticDevice = command_line::get_arg(vm, arg_meshtastic_device);
-    meshtasticConfig.devicePath = meshtasticDevice;
-  }
-#endif
+  privacyNetConfig.restrictToPrivacyNet = command_line::get_arg(vm, arg_p2p_restrict_privacy);
 
   return true;
 }
@@ -287,34 +271,22 @@ void NetNodeConfig::setConfigFolder(const std::string& folder) {
   configFolder = folder;
 }
 
-#ifdef ENABLE_FUEGOMESH
-bool NetNodeConfig::getMeshtasticEnabled() const {
-  return meshtasticEnabled;
-}
+const PrivacyNetConfig& NetNodeConfig::getPrivacyNetConfig() const { return privacyNetConfig; }
+bool NetNodeConfig::getUseI2P() const { return privacyNetConfig.useI2P; }
+std::string NetNodeConfig::getI2PSocksHost() const { return privacyNetConfig.i2pSocksHost; }
+uint16_t NetNodeConfig::getI2PSocksPort() const { return privacyNetConfig.i2pSocksPort; }
+bool NetNodeConfig::getUseTor() const { return privacyNetConfig.useTor; }
+std::string NetNodeConfig::getTorSocksHost() const { return privacyNetConfig.torSocksHost; }
+uint16_t NetNodeConfig::getTorSocksPort() const { return privacyNetConfig.torSocksPort; }
+bool NetNodeConfig::getRestrictToPrivacyNet() const { return privacyNetConfig.restrictToPrivacyNet; }
 
-std::string NetNodeConfig::getMeshtasticHost() const {
-  return meshtasticHost;
-}
+void NetNodeConfig::setUseI2P(bool use) { privacyNetConfig.useI2P = use; }
+void NetNodeConfig::setI2PSocksHost(const std::string& host) { privacyNetConfig.i2pSocksHost = host; }
+void NetNodeConfig::setI2PSocksPort(uint16_t port) { privacyNetConfig.i2pSocksPort = port; }
+void NetNodeConfig::setUseTor(bool use) { privacyNetConfig.useTor = use; }
+void NetNodeConfig::setTorSocksHost(const std::string& host) { privacyNetConfig.torSocksHost = host; }
+void NetNodeConfig::setTorSocksPort(uint16_t port) { privacyNetConfig.torSocksPort = port; }
+void NetNodeConfig::setRestrictToPrivacyNet(bool restrict) { privacyNetConfig.restrictToPrivacyNet = restrict; }
 
-uint16_t NetNodeConfig::getMeshtasticPort() const {
-  return meshtasticPort;
-}
-
-std::string NetNodeConfig::getMeshtasticDevice() const {
-  return meshtasticDevice;
-}
-
-MeshtasticConfig NetNodeConfig::getMeshtasticConfig() const {
-  return meshtasticConfig;
-}
-
-void NetNodeConfig::setMeshtasticConfig(const MeshtasticConfig& config) {
-  meshtasticConfig = config;
-  meshtasticEnabled = config.enabled;
-  meshtasticHost = config.host;
-  meshtasticPort = config.port;
-  meshtasticDevice = config.devicePath;
-}
-#endif
 
 } //namespace nodetool

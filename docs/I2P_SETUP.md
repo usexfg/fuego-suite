@@ -54,26 +54,24 @@ i2pd --daemon
 
 ## Configuration
 
-### 1. Configure i2pd
+### 1. Configure i2pd SOCKS5 Proxy
 
 Edit `/etc/i2pd/i2pd.conf` (or `~/.i2pd/i2pd.conf`):
 
 ```ini
-# Enable SOCKS5 proxy (required for Fuego)
-socksport = 9150
+# Enable SOCKS5 proxy (required for Fuego outbound connections)
+socksproxyenabled = true
+socksport = 4447
 
 # HTTP proxy (optional, for browsing I2P sites)
 httpport = 4444
 
-# SAM bridge (advanced)
+# SAM bridge (for inbound I2P connections - future feature)
 samport = 7656
 
-# I2P data directory (optional)
-# i2pdir = /var/lib/i2pd
-
 # Bandwidth limits (adjust for your connection)
-# bandwidth = O
 # Options: K (56KB/s), L (256KB/s), O (2048KB/s), P (8192KB/s), X (unlimited)
+bandwidth = O
 ```
 
 Restart i2pd after configuration changes:
@@ -87,87 +85,103 @@ sudo systemctl restart i2pd
 # Check if i2pd is running
 curl -s http://localhost:7070/info | head
 
-# Expected output should show router status
+# Check SOCKS5 proxy is listening
+ss -tlnp | grep 4447
 ```
 
 ### 3. Configure Fuego
 
-Create or edit `~/.fuego/fuego.conf`:
+Start fuegod with I2P routing:
 
-```ini
-# Network privacy settings
-p2p-use-i2p = true
-i2p-socks-host = 127.0.0.1
-i2p-socks-port = 9150
+```bash
+# Basic I2P outbound routing
+./fuegod --p2p-use-i2p --i2p-socks-host 127.0.0.1 --i2p-socks-port 4447
 
-# Standard P2P settings
-p2p-bind-port = 19994
-allow-local-ip = false
+# With Tor fallback
+./fuegod --p2p-use-i2p --i2p-socks-port 4447 --p2p-use-tor --tor-socks-port 9050
 
-# Optional: Add I2P seed nodes
-seed-node = xfg.i2p
-# seed-node = another-peer.i2p
+# Clearnet isolation mode (I2P/Tor ONLY, no clearnet exposure)
+./fuegod --p2p-use-i2p --i2p-socks-port 4447 --p2p-restrict-to-privacy-net
 
-# Logging
-log-level = INFO
-log-file = ~/.fuego/fuego.log
+# With custom port and seed nodes
+./fuegod --p2p-use-i2p --i2p-socks-port 4447 --p2p-bind-port 19994 \
+  --seed-node 123.456.78.90:19994 --seed-node 98.76.54.32:19994
 ```
+
+### CLI Flags Reference
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--p2p-use-i2p` | `false` | Route outbound P2P connections through I2P SOCKS5 proxy |
+| `--i2p-socks-host` | `127.0.0.1` | I2P SOCKS5 proxy host |
+| `--i2p-socks-port` | `4447` | I2P SOCKS5 proxy port (i2pd default) |
+| `--p2p-use-tor` | `false` | Route outbound P2P connections through Tor SOCKS5 proxy |
+| `--tor-socks-host` | `127.0.0.1` | Tor SOCKS5 proxy host |
+| `--tor-socks-port` | `9050` | Tor SOCKS5 proxy port |
+| `--p2p-restrict-to-privacy-net` | `false` | Disable clearnet P2P listener; use only I2P/Tor |
+| `--p2p-bind-port` | `10808` | P2P listening port (disabled when restrict-to-privacy-net) |
+| `--seed-node` | (none) | Manual seed nodes (IP:port); needed when DNS is disabled |
 
 ## Connecting I2P Peers
 
-### Finding I2P Peers
+### Finding Peers
 
-I2P uses destinations (like `xfg123abc.i2p`) instead of IP addresses. You'll need to bootstrap connections somehow:
+When I2P is enabled, Fuego routes all outbound P2P connections through the i2pd SOCKS5 proxy. The proxy transparently handles I2P network routing.
 
-1. **Initial peer exchange via clearnet** (first connection only):
-   ```bash
-   # Add a trusted clearnet peer to bootstrap
-   ./fuegod --add-peer 123.456.78.90:19994
-   ```
+**Important**: When `--p2p-use-i2p` is active:
+- DNS seed resolution is automatically disabled (prevents DNS leaks)
+- UPnP port mapping is automatically disabled (prevents real IP exposure)
+- You **must** provide manual seed nodes via `--seed-node` to bootstrap
 
-2. **After first connection**, Fuego will discover I2P peers automatically.
-
-3. **I2P address book** - Once connected to I2P peers, Fuego can use the distributed peer table.
-
-### Sharing Your I2P Address
-
-To share your node's I2P address for others to connect:
+### Bootstrapping
 
 ```bash
-# Get your I2P destination (SAM API required)
-curl -s "http://localhost:7656/samjs/destination.js?echo=1"
+# Option 1: Add known I2P-side peers (reachable through the I2P SOCKS5 proxy)
+./fuegod --p2p-use-i2p --seed-node 10.11.12.13:10808 --seed-node 10.14.15.16:10808
+
+# Option 2: Bootstrap via clearnet once, then switch to I2P-only
+# First run (clearnet, builds peerlist):
+./fuegod --add-peer 123.456.78.90:10808
+# Second run (I2P, uses cached peerlist):
+./fuegod --p2p-use-i2p --p2p-restrict-to-privacy-net
 ```
 
-## Advanced Configuration
+### I2P Port Reference
 
-### FuegoTor Fallback
+| Service | Default Port |
+|---------|-------------|
+| i2pd SOCKS5 proxy | **4447** |
+| i2pd HTTP proxy | 4444 |
+| i2pd SAM bridge | 7656 |
+| i2pd Web console | 7070 |
+| Java I2P SOCKS5 | 4447 |
+| Tor SOCKS5 (system) | 9050 |
+| Tor Browser SOCKS5 | 9150 |
 
-If I2P is unavailable, Fuego can fall back to Tor:
+**Note**: The SOCKS5 port for i2pd is **4447**, not 9150 (which is Tor Browser's SOCKS port).
 
-```ini
-p2p-use-tor = true
-tor-socks-host = 127.0.0.1
-tor-socks-port = 9050
+## Privacy Hardening
 
-# Priority: I2P first, then Tor
-privacy-network-priority = i2p,tor
-```
+### What Fuego does automatically
 
-### Multiple Privacy Networks
+- **UPnP disabled**: When I2P or Tor is active, UPnP port mapping is skipped (prevents real IP leak to local router)
+- **DNS seeds skipped**: DNS-based seed resolution is disabled (prevents DNS leak)
+- **SOCKS5 for all P2P**: All outbound connections go through the SOCKS5 proxy, not direct TCP
 
-Run both Tor and I2P simultaneously:
+### Clearnet Isolation Mode
 
-```ini
-# I2P configuration
-p2p-use-i2p = true
-i2p-socks-host = 127.0.0.1
-i2p-socks-port = 9150
+`--p2p-restrict-to-privacy-net` provides maximum privacy:
+- Clearnet TCP listener is **not bound** (no clearnet peers can connect to you)
+- All P2P communication goes through I2P/Tor exclusively
+- Your real IP address is never exposed to the Fuego network
 
-# Tor configuration
-p2p-use-tor = true
-tor-socks-host = 127.0.0.1
-tor-socks-port = 9050
-```
+**Recommended for privacy-critical users.**
+
+### What Fuego does NOT yet do (future)
+
+- **Zone-separated peerlists**: I2P and clearnet peers are not strictly separated
+- **I2P inbound connections**: SAM bridge for receiving I2P connections is not yet implemented
+- **I2P destination addresses**: `.b32.i2p` addresses in the peerlist format
 
 ## Troubleshooting
 
@@ -180,48 +194,45 @@ tor-socks-port = 9050
 
 2. Check SOCKS5 proxy is listening:
    ```bash
-   ss -tlnp | grep 9150
+   ss -tlnp | grep 4447
    ```
 
 3. Test SOCKS5 connection:
    ```bash
-   curl --socks5 127.0.0.1:9150 http://check.i2p
+   curl --socks5 127.0.0.1:4447 http://check.i2p
    ```
 
-### "I2P peer not found"
+### "No peers to connect to"
 
+- DNS seeds are disabled when I2P is active. Provide `--seed-node` addresses.
 - I2P takes time to build tunnels. Wait 5-10 minutes after starting i2pd.
 - Check i2pd logs: `journalctl -u i2pd -f`
-- Verify your I2P subscription is working
 
 ### Slow connections
 
-- I2P is inherently slower than clearnet due to routing.
+- I2P is inherently slower than clearnet due to garlic routing.
 - Increase i2pd bandwidth settings in i2pd.conf
 - Restart i2pd after changing settings.
 
+### Verification Checklist
+
+Before trusting I2P for privacy:
+
+- [ ] i2pd is running and has established tunnels (check web console)
+- [ ] Fuego is started with `--p2p-use-i2p`
+- [ ] UPnP is disabled (check Fuego logs: "Privacy network active — skipping UPnP")
+- [ ] DNS seeds are skipped (check Fuego logs: "skipping DNS seed resolution")
+- [ ] For maximum privacy: use `--p2p-restrict-to-privacy-net`
+- [ ] Seed nodes are provided via `--seed-node`
+- [ ] Check logs show "Privacy network enabled: I2P via proxy 127.0.0.1:4447"
+
 ## Security Notes
 
-1. **Always use strong anonymity settings in i2pd** for maximum privacy
-2. **Don't mix I2P and clearnet identities** if privacy is critical
-3. **Keep i2pd updated** for security patches
-4. **Verify your I2P tunnel** is working correctly before transacting
-
-## Command Reference
-
-```bash
-# Start fuegod with I2P
-./fuegod --p2p-use-i2p --i2p-socks-host 127.0.0.1 --i2p-socks-port 9150
-
-# Check node status
-./fuegod --status
-
-# View connected peers (including I2P)
-./fuegod --get_peer_list | grep "\.i2p"
-
-# Force peer exchange
-./fuegod --refresh_peer_list
-```
+1. Keep i2pd updated for security patches
+2. Use `--p2p-restrict-to-privacy-net` if you want zero clearnet exposure
+3. I2P outbound only (inbound SAM support is planned for a future release)
+4. Peerlist is shared between I2P and clearnet sessions; for strict isolation, use separate data directories
+5. Transactions relayed through I2P still use the same RingCT privacy model
 
 ## Further Reading
 
@@ -229,6 +240,7 @@ tor-socks-port = 9050
 - [i2pd GitHub](https://github.com/PurpleI2P/i2pd)
 - [Fuego Wiki](https://github.com/usexfg/fuego-suite/wiki)
 - [I2P Router Configuration](https://i2pd.readthedocs.io/en/latest/user-guide/configuration/)
+- [Monero I2P/Tor Integration](https://github.com/monero-project/monero) (reference architecture)
 
 ## Support
 

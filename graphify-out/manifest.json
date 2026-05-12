@@ -1,66 +1,74 @@
 {
   "/Users/aejt/fuego/analyze_fuego_code.py": {
-    "mtime": 1776680930.0246904,
+    "mtime": 1778554752.7844527,
     "hash": "24aeaeb63ad0cf72565405ecd9b49827"
   },
   "/Users/aejt/fuego/peg_strategy.py": {
-    "mtime": 1778495318.5705793,
+    "mtime": 1778554754.08152,
     "hash": "9c74eff9b115aff8a7f6cd5c3adfdf2c"
   },
   "/Users/aejt/fuego/rag_system.py": {
-    "mtime": 1776671141.62298,
+    "mtime": 1778554754.0818393,
     "hash": "0f260145be87c167aca75d950e89c826"
   },
   "/Users/aejt/fuego/burn_test.py": {
-    "mtime": 1778504151.7730675,
+    "mtime": 1778554752.7851784,
     "hash": "bb0c07e12fb14b2d9e16f0371a05b71f"
   },
   "/Users/aejt/fuego/fuego_mcp_server.py": {
-    "mtime": 1778255247.5227041,
+    "mtime": 1778554752.8217716,
     "hash": "3f7b9e6a6ac823d3a342066699317079"
   },
   "/Users/aejt/fuego/fuego_monte_carlo.py": {
-    "mtime": 1778484934.299381,
+    "mtime": 1778554752.8223257,
     "hash": "093da2541bbeb67d5159b299807ed84e"
   },
   "/Users/aejt/fuego/codebase_mapper.py": {
-    "mtime": 1776678236.901918,
+    "mtime": 1778554752.785796,
     "hash": "e1ebccf0cd3a9b7eaa46043935924e25"
   },
+  "/Users/aejt/fuego/treasury_optimizer.py": {
+    "mtime": 1778554754.5235016,
+    "hash": "6fb2f5685ec6a2c347d0bb40b17c4596"
+  },
   "/Users/aejt/fuego/xfg_moon_problem.py": {
-    "mtime": 1778496152.6600862,
+    "mtime": 1778554754.7179055,
     "hash": "001f96d1a9075a27b704d75041957d46"
   },
   "/Users/aejt/fuego/peg_optimizer.py": {
-    "mtime": 1778491117.7207305,
+    "mtime": 1778554754.081023,
     "hash": "12644d208ef09596ef7f7fffa9ba5e63"
   },
+  "/Users/aejt/fuego/insane_vol_test.py": {
+    "mtime": 1778554753.9532247,
+    "hash": "b1019aa4b078825d0ef610295f959f34"
+  },
   "/Users/aejt/fuego/no_gov_pegs.py": {
-    "mtime": 1778498539.1989157,
+    "mtime": 1778554754.080528,
     "hash": "35e7a97610dee92e08ccd0885c0907f4"
   },
   "/Users/aejt/fuego/simple_rag.py": {
-    "mtime": 1776671380.2037745,
+    "mtime": 1778554754.0852277,
     "hash": "da63eead59a9452c20e5762390ab43b2"
   },
   "/Users/aejt/fuego/test_mapper.py": {
-    "mtime": 1776679975.3159697,
+    "mtime": 1778554754.5142472,
     "hash": "e76c1c8c4d069e9adca1f650cdb5bf16"
   },
   "/Users/aejt/fuego/test_fuego_specialist.py": {
-    "mtime": 1776679950.5635636,
+    "mtime": 1778554754.5141065,
     "hash": "42549fcbf0ea55cbf5b56567913a2cfe"
   },
   "/Users/aejt/fuego/simple_mapper.py": {
-    "mtime": 1776678842.2720053,
+    "mtime": 1778554754.0849798,
     "hash": "0f1714315b39761997063884a94563a3"
   },
   "/Users/aejt/fuego/fuego_blockchain_specialist.py": {
-    "mtime": 1776678617.2003527,
+    "mtime": 1778554752.820096,
     "hash": "7aac775ad9ac7e0ff074f5beba36f4ab"
   },
   "/Users/aejt/fuego/mcp_server.py": {
-    "mtime": 1776679796.4752882,
+    "mtime": 1778554753.953409,
     "hash": "756fcb5006e41991f1f9d0ab31d865fb"
   },
   "/Users/aejt/fuego/tui-testnet/main.go": {
@@ -68,7 +76,7 @@
     "hash": "dc0df576649de246d97d784469c83e38"
   },
   "/Users/aejt/fuego/swapxfg/main.go": {
-    "mtime": 1775452178.513295,
+    "mtime": 1778552232.5800288,
     "hash": "ccc4b33245bf8aee3e6a1ed830968480"
   },
   "/Users/aejt/fuego/swapxfg/app/bridge_sol.go": {
@@ -84,11 +92,11 @@
     "hash": "3b5c9d8ed36a693b200a2a04458fe471"
   },
   "/Users/aejt/fuego/swapxfg/app/config.go": {
-    "mtime": 1776642080.7679133,
+    "mtime": 1778552232.5739348,
     "hash": "e055b561e0dda978eaab37d6c22cd534"
   },
   "/Users/aejt/fuego/swapxfg/app/bridge_eth.go": {
-    "mtime": 1776642080.7659461,
+    "mtime": 1778552232.5721648,
     "hash": "cf4f353b51dfa2524c3daf68c49be35b"
   },
   "/Users/aejt/fuego/swapxfg/app/cd_orderbook.go": {
@@ -116,7 +124,7 @@
     "hash": "a389ce630338f83f803a18d00f595ce5"
   },
   "/Users/aejt/fuego/swapxfg/app/styles.go": {
-    "mtime": 1778503545.943924,
+    "mtime": 1778552232.5745194,
     "hash": "b8d7c386c9ac4d7206473a5cc2f7b953"
   },
   "/Users/aejt/fuego/swapxfg/app/app.go": {
@@ -124,7 +132,7 @@
     "hash": "d2ca5e1a34fa312046baf4146d3f9ffb"
   },
   "/Users/aejt/fuego/swapxfg/app/tui.go": {
-    "mtime": 1778501521.843439,
+    "mtime": 1778552232.5754156,
     "hash": "e8b8792c0004cd21aa46d5d1eae51203"
   },
   "/Users/aejt/fuego/swapxfg/app/input.go": {
@@ -136,7 +144,7 @@
     "hash": "c0289e4c9a1a7f25be305466061f8fad"
   },
   "/Users/aejt/fuego/swapxfg/app/rpc.go": {
-    "mtime": 1776642080.768386,
+    "mtime": 1778552232.574284,
     "hash": "19495c148ee32500fc917e87f544a084"
   },
   "/Users/aejt/fuego/swapxfg/app/validate.go": {
@@ -156,7 +164,7 @@
     "hash": "0cce5b63572297646be743c4c063b653"
   },
   "/Users/aejt/fuego/swapxfg/app/wallet.go": {
-    "mtime": 1776642080.769807,
+    "mtime": 1778552232.5759962,
     "hash": "6d96459f6eba4ddfc3ab72324068ebf9"
   },
   "/Users/aejt/fuego/swapxfg/app/splash.go": {
@@ -164,7 +172,7 @@
     "hash": "4c6b69389e1088edc6226f8bf743e4e9"
   },
   "/Users/aejt/fuego/swapxfg/app/cd_rpc.go": {
-    "mtime": 1776642080.7673044,
+    "mtime": 1778552232.5726526,
     "hash": "97d76cd7a194561f211555a80a16b2bb"
   },
   "/Users/aejt/fuego/swapxfg/app/bch_rpc.go": {
@@ -180,7 +188,7 @@
     "hash": "9fb31eed3533b65c80a54e1c1cd4beab"
   },
   "/Users/aejt/fuego/tui/tview_main.go": {
-    "mtime": 1778503545.950352,
+    "mtime": 1778551931.7378,
     "hash": "3695d64a2c7b1d6c1b2ddbd7e9491cbc"
   },
   "/Users/aejt/fuego/fuegosite/js/three-scene.js": {
@@ -192,27 +200,27 @@
     "hash": "ad635d61c2f4cce98fdf5e79717a65f1"
   },
   "/Users/aejt/fuego/include/IObservable.h": {
-    "mtime": 1778380444.4597192,
+    "mtime": 1778554753.9503267,
     "hash": "21085f008289614ce200acbefaa104d4"
   },
   "/Users/aejt/fuego/include/INode.h": {
-    "mtime": 1778380444.4595914,
+    "mtime": 1778554753.9500496,
     "hash": "4347cd5e276cf9d93dd7b3b5ad3bc234"
   },
   "/Users/aejt/fuego/include/CryptoTypes.h": {
-    "mtime": 1778500496.8673017,
+    "mtime": 1778554753.949444,
     "hash": "79f04ea7d40e4b1f3232759abb78bf80"
   },
   "/Users/aejt/fuego/include/IWallet.h": {
-    "mtime": 1778477621.315359,
+    "mtime": 1778554753.9525309,
     "hash": "977a9f80c89fa43ec63effbf56b163c8"
   },
   "/Users/aejt/fuego/include/IBlockchainExplorer.h": {
-    "mtime": 1778380444.4594421,
+    "mtime": 1778554753.9496624,
     "hash": "c557978b674d0f5094f0811b3d134869"
   },
   "/Users/aejt/fuego/include/ITransaction.h": {
-    "mtime": 1778480050.413961,
+    "mtime": 1778554753.9512336,
     "hash": "4e6e5614fd336bc72d73331063cbbd1f"
   },
   "/Users/aejt/fuego/include/OSPEADDecoySelection.h": {
@@ -224,7 +232,7 @@
     "hash": "a20f1c51da761b4f7f0d2938732f68dd"
   },
   "/Users/aejt/fuego/include/ITransfersContainer.h": {
-    "mtime": 1778477532.5120018,
+    "mtime": 1778554753.9517894,
     "hash": "b566b6ee7f72e38e8c44258cbe599622"
   },
   "/Users/aejt/fuego/include/BurnDepositValidationService.h": {
@@ -232,15 +240,15 @@
     "hash": "94a18f63e42343f2ffa4876ee95e5792"
   },
   "/Users/aejt/fuego/include/IStreamSerializable.h": {
-    "mtime": 1778380444.4599931,
+    "mtime": 1778554753.9505365,
     "hash": "c4b70e21cc7e632dcc86b4d5dc0b3ff2"
   },
   "/Users/aejt/fuego/include/BlockchainExplorerData.h": {
-    "mtime": 1778380444.4565773,
+    "mtime": 1778554753.9474013,
     "hash": "f730fca62f4e33312fe677ee8dfd0f36"
   },
   "/Users/aejt/fuego/include/IWalletLegacy.h": {
-    "mtime": 1778380444.4607809,
+    "mtime": 1778554753.9527614,
     "hash": "3d4fd9dbc5cf921ed21c2f508898aafc"
   },
   "/Users/aejt/fuego/include/BurnTransactionHandler.h": {
@@ -252,11 +260,11 @@
     "hash": "858d8e9ff0ef9e6f1872574cd2a88269"
   },
   "/Users/aejt/fuego/include/ITransfersSynchronizer.h": {
-    "mtime": 1778380444.4604523,
+    "mtime": 1778554753.952009,
     "hash": "9b171f498c8b8f23aacecf7dde0d4853"
   },
   "/Users/aejt/fuego/include/CryptoNote.h": {
-    "mtime": 1778421570.24809,
+    "mtime": 1778554753.9489062,
     "hash": "3356a2cf26130d4274cb64453c35f8e5"
   },
   "/Users/aejt/fuego/tests/HashTarget.cpp": {
@@ -264,7 +272,7 @@
     "hash": "2f0275a220b80198dc3a628bc9d52a40"
   },
   "/Users/aejt/fuego/tests/DIGMTestSuite.cpp": {
-    "mtime": 1778380444.5654967,
+    "mtime": 1778554754.5198674,
     "hash": "b560e0f9e493e1461dba66e02b856c7e"
   },
   "/Users/aejt/fuego/tests/mlsag_test.cpp": {
@@ -280,7 +288,7 @@
     "hash": "040182dcabee2deb50645eab7c0db435"
   },
   "/Users/aejt/fuego/tests/DIGMIntegrationTest.cpp": {
-    "mtime": 1778380444.5653155,
+    "mtime": 1778554754.5195873,
     "hash": "a9b3fddf38e1ef5ab02856ccbd1c2de5"
   },
   "/Users/aejt/fuego/tests/crypto/test_bpdf_validation.cpp": {
@@ -396,19 +404,19 @@
     "hash": "6840257ea243d85084f8c62e170735a2"
   },
   "/Users/aejt/fuego/tests/Difficulty/generate-data": {
-    "mtime": 1778380399.8134217,
+    "mtime": 1778552232.5830956,
     "hash": "c87416525b55012fade9a4bdf4c70c1b"
   },
   "/Users/aejt/fuego/tests/Difficulty/DMWDA_TestSuite.cpp": {
-    "mtime": 1776644878.1831954,
+    "mtime": 1778552232.5820258,
     "hash": "90b7031cb24bbfe6b3991669319a160a"
   },
   "/Users/aejt/fuego/tests/NodeRpcProxyTests/NodeRpcProxyTests.cpp": {
-    "mtime": 1778380444.5659862,
+    "mtime": 1778554754.5206437,
     "hash": "5653e08e7f8339fa53c1c4039c57e95f"
   },
   "/Users/aejt/fuego/tests/CoreTests/HeatAmm.cpp": {
-    "mtime": 1778497579.9072893,
+    "mtime": 1778554754.5190234,
     "hash": "ef2c86cdcd1dbb8dced0bba07011d180"
   },
   "/Users/aejt/fuego/tests/CoreTests/ChaingenMain.cpp": {
@@ -428,7 +436,7 @@
     "hash": "b78a375a2c8180d419422133f24de8af"
   },
   "/Users/aejt/fuego/tests/CoreTests/BlockValidation.h": {
-    "mtime": 1778380444.5647006,
+    "mtime": 1778554754.5179482,
     "hash": "a7be0be54dedbab6b67c33853e20a467"
   },
   "/Users/aejt/fuego/tests/CoreTests/TransactionTests.h": {
@@ -436,7 +444,7 @@
     "hash": "24e00ebe4a86a99d7421872704b4c3aa"
   },
   "/Users/aejt/fuego/tests/CoreTests/TransactionTests.cpp": {
-    "mtime": 1778380399.8123934,
+    "mtime": 1778554754.5193224,
     "hash": "66060f34bd94cf5eb3666132c59d66e5"
   },
   "/Users/aejt/fuego/tests/CoreTests/Upgrade.h": {
@@ -496,7 +504,7 @@
     "hash": "a7593f5d6a4baa1791f94de8f4fba24b"
   },
   "/Users/aejt/fuego/tests/CoreTests/Deposit.h": {
-    "mtime": 1778380444.5651019,
+    "mtime": 1778554754.5183516,
     "hash": "4b16da24c6da90d3c3c8683851a11eda"
   },
   "/Users/aejt/fuego/tests/CoreTests/DoubleSpend.cpp": {
@@ -516,7 +524,7 @@
     "hash": "1901d19832729ef33ecf6f85cb287754"
   },
   "/Users/aejt/fuego/tests/CoreTests/FixedPoint.cpp": {
-    "mtime": 1778421034.2888002,
+    "mtime": 1778551909.8139188,
     "hash": "9216f7203b9c0fcd1cef58003e0849ef"
   },
   "/Users/aejt/fuego/tests/CoreTests/RandomOuts.cpp": {
@@ -544,7 +552,7 @@
     "hash": "816556ac689a255e2a61da68963bc71e"
   },
   "/Users/aejt/fuego/tests/CoreTests/BlockReward.cpp": {
-    "mtime": 1778380399.8119323,
+    "mtime": 1778554754.5174692,
     "hash": "7583b2ebe89a13889999b09ada7f3b4e"
   },
   "/Users/aejt/fuego/tests/CoreTests/AccountBoostSerialization.h": {
@@ -760,7 +768,7 @@
     "hash": "188f49f140c5deac6b2aae56ce1b46fe"
   },
   "/Users/aejt/fuego/tests/UnitTests/TestDepositIndex.cpp": {
-    "mtime": 1778380444.5677595,
+    "mtime": 1778554754.5228257,
     "hash": "a5e5e52860e05eaf34bc89a51f02bbba"
   },
   "/Users/aejt/fuego/tests/UnitTests/TestBcS.cpp": {
@@ -768,7 +776,7 @@
     "hash": "b6ecc8838e18600bed34de0ec2ae0739"
   },
   "/Users/aejt/fuego/tests/UnitTests/INodeStubs.h": {
-    "mtime": 1778380444.5675812,
+    "mtime": 1778554754.522601,
     "hash": "011892bb1a777617e6202af280a754d2"
   },
   "/Users/aejt/fuego/tests/UnitTests/TestTransfersConsumer.cpp": {
@@ -860,7 +868,7 @@
     "hash": "5ee59f863c1455b537b01763b95fc523"
   },
   "/Users/aejt/fuego/tests/UnitTests/BlockReward.cpp": {
-    "mtime": 1778380399.8156366,
+    "mtime": 1778554754.5222049,
     "hash": "d312cdabedc4961cbd1377d648812fc7"
   },
   "/Users/aejt/fuego/tests/UnitTests/main.cpp": {
@@ -876,7 +884,7 @@
     "hash": "6daea4622e7a4eed6e86a5341937c669"
   },
   "/Users/aejt/fuego/tests/TestGenerator/TestGenerator.cpp": {
-    "mtime": 1778380399.814775,
+    "mtime": 1778554754.5217836,
     "hash": "56fd2917bcd6481122cc874f9059716f"
   },
   "/Users/aejt/fuego/tests/IntegrationTests/MultiVersion.cpp": {
@@ -904,7 +912,7 @@
     "hash": "5a000b0342363d4a352f32c9832ee3f9"
   },
   "/Users/aejt/fuego/tests/IntegrationTests/main.cpp": {
-    "mtime": 1778380399.8139544,
+    "mtime": 1778552232.5848277,
     "hash": "c2affa5f7f54b114bda42585658a5b12"
   },
   "/Users/aejt/fuego/tests/System/EventLockTests.cpp": {
@@ -976,19 +984,19 @@
     "hash": "c87e167c72bee29f8c2994c9aec73a42"
   },
   "/Users/aejt/fuego/fuego-prover/fuego-core/src/lib.rs": {
-    "mtime": 1776080815.630184,
+    "mtime": 1778552232.5079043,
     "hash": "49ed2f8bb23e44490d7c299ebeca9b34"
   },
   "/Users/aejt/fuego/fuego-prover/fuego-circuit/src/main.rs": {
-    "mtime": 1775280887.0815325,
+    "mtime": 1778552232.5053434,
     "hash": "cdb42c07210e4dcf4e1e6a0523616f8b"
   },
   "/Users/aejt/fuego/fuego-prover/fuego-prover-cli/src/main.rs": {
-    "mtime": 1775397418.935038,
+    "mtime": 1778552232.508617,
     "hash": "8396d8cdb690e0614e56dff6f112f134"
   },
   "/Users/aejt/fuego/fuego-prover/fuego-cn/src/lib.rs": {
-    "mtime": 1775397418.9346168,
+    "mtime": 1778552232.506953,
     "hash": "5c8dde8c6c6ed93d362fe00932fd0c73"
   },
   "/Users/aejt/fuego/scripts/dmwda_analysis.py": {
@@ -996,7 +1004,7 @@
     "hash": "f2ef97614ac46a57471589f2e1e7c8e8"
   },
   "/Users/aejt/fuego/scripts/fuego-mcp/fuego_mcp_server.py": {
-    "mtime": 1778276272.0270443,
+    "mtime": 1778554754.0840557,
     "hash": "3f7b9e6a6ac823d3a342066699317079"
   },
   "/Users/aejt/fuego/external/parallel_hashmap/phmap_config.h": {
@@ -1040,7 +1048,7 @@
     "hash": "f85c7272c2b077ce5a33d6f73dbcc6c2"
   },
   "/Users/aejt/fuego/external/miniupnpc/minisoap.c": {
-    "mtime": 1778380444.445864,
+    "mtime": 1778554752.8029974,
     "hash": "b6c6ece2cf02fdd8e4b8a43a92877813"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpc_declspec.h": {
@@ -1048,47 +1056,47 @@
     "hash": "21e626364af112eb59f31c4f6829a332"
   },
   "/Users/aejt/fuego/external/miniupnpc/wingenminiupnpcstrings.c": {
-    "mtime": 1778380444.4557707,
+    "mtime": 1778554752.8181937,
     "hash": "18a6cee4d4c815b5195993d1a9b9b1af"
   },
   "/Users/aejt/fuego/external/miniupnpc/declspec.h": {
-    "mtime": 1778380444.4441645,
+    "mtime": 1778554752.799115,
     "hash": "2ab6d947006580d9c81014855a97a99e"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpcommands.h": {
-    "mtime": 1778380444.4551203,
+    "mtime": 1778554752.8170164,
     "hash": "8f549873c3add36c6752ade933464490"
   },
   "/Users/aejt/fuego/external/miniupnpc/testupnpreplyparse.c": {
-    "mtime": 1778380444.4539168,
+    "mtime": 1778554752.814583,
     "hash": "14e3809937e9332bbc55d97b243f8945"
   },
   "/Users/aejt/fuego/external/miniupnpc/setupmingw32.py": {
-    "mtime": 1778380444.4511693,
+    "mtime": 1778554752.8109686,
     "hash": "8b15f0aa40b6ff74b94edfb0e741b385"
   },
   "/Users/aejt/fuego/external/miniupnpc/testminiwget.c": {
-    "mtime": 1778380444.4517882,
+    "mtime": 1778554752.8114781,
     "hash": "afe500cc1583961a32268fee46f68f54"
   },
   "/Users/aejt/fuego/external/miniupnpc/portlistingparse.c": {
-    "mtime": 1778380444.449958,
+    "mtime": 1778554752.809387,
     "hash": "7b9faa79f9cae6ec1bc11e2df9cdbbab"
   },
   "/Users/aejt/fuego/external/miniupnpc/testminixml.c": {
-    "mtime": 1778380444.4520814,
+    "mtime": 1778554752.8118453,
     "hash": "4c35f2b2d40e3246454127caa20eb98e"
   },
   "/Users/aejt/fuego/external/miniupnpc/connecthostport.c": {
-    "mtime": 1778380444.4439352,
+    "mtime": 1778554752.7988126,
     "hash": "647d636c049f6c2500e5a9e9193297b4"
   },
   "/Users/aejt/fuego/external/miniupnpc/pymoduletest.py": {
-    "mtime": 1778380444.4505713,
+    "mtime": 1778554752.8099763,
     "hash": "9289b02bcd13f95bb1183fe287dcefa8"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpcmodule.c": {
-    "mtime": 1778380444.4474416,
+    "mtime": 1778554752.8061357,
     "hash": "2ae348515b1bff6aa86887cfcaa69c1d"
   },
   "/Users/aejt/fuego/external/miniupnpc/listdevices.c": {
@@ -1096,11 +1104,11 @@
     "hash": "3e3aa9d79de0e8e9c91649bf2804e917"
   },
   "/Users/aejt/fuego/external/miniupnpc/testupnpigd.py": {
-    "mtime": 1778380444.4537857,
+    "mtime": 1778554752.8143988,
     "hash": "f111a67ba2893d8443ad606bb64d2821"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpreplyparse.c": {
-    "mtime": 1778380444.4555132,
+    "mtime": 1778554752.8177185,
     "hash": "1f7f6fcc5913ba5ad3de6899fa923537"
   },
   "/Users/aejt/fuego/external/miniupnpc/pymoduletest3.py": {
@@ -1108,11 +1116,11 @@
     "hash": "ddf7b1280a2deb0f6df03119c30297c3"
   },
   "/Users/aejt/fuego/external/miniupnpc/minixml.h": {
-    "mtime": 1778380444.4489386,
+    "mtime": 1778554752.8083284,
     "hash": "6dd687c8cbdbbeb34e1623a9a2ef0b5e"
   },
   "/Users/aejt/fuego/external/miniupnpc/receivedata.c": {
-    "mtime": 1778380444.4507492,
+    "mtime": 1778554752.8104064,
     "hash": "92edbded8d2ef3e9fc1923a9e4a96f50"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpc_socketdef.h": {
@@ -1120,15 +1128,15 @@
     "hash": "ddb19c32171b4a847ccb7fc5e2a64ffd"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniwget.c": {
-    "mtime": 1778380444.4483232,
+    "mtime": 1778554752.8076882,
     "hash": "00bdefcb269399136ca4fb2bdbea73cc"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnperrors.h": {
-    "mtime": 1778380444.4553835,
+    "mtime": 1778554752.8173895,
     "hash": "0b527ccb139c629289593397f8127bd6"
   },
   "/Users/aejt/fuego/external/miniupnpc/igd_desc_parse.h": {
-    "mtime": 1778380444.4446318,
+    "mtime": 1778554752.7999973,
     "hash": "c419042943f3bbf929259a6dfedd979c"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpdev.c": {
@@ -1136,75 +1144,75 @@
     "hash": "dd3d30e4c8d8a0edbe90dadeac9a453e"
   },
   "/Users/aejt/fuego/external/miniupnpc/minissdpc.h": {
-    "mtime": 1778380444.4464655,
+    "mtime": 1778554752.8042655,
     "hash": "5437a3995dcd536a03c786f9f17cf6bb"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpc.h": {
-    "mtime": 1778380444.447075,
+    "mtime": 1778554752.8057196,
     "hash": "643e87760317e0f53e4b32132a6edd65"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpctypes.h": {
-    "mtime": 1778380444.4480956,
+    "mtime": 1778554752.807104,
     "hash": "8b44bb883ddb2ad7ffd40b892e8e1fa3"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpcommands.c": {
-    "mtime": 1778380444.4549768,
+    "mtime": 1778554752.8166618,
     "hash": "b11b0b19f56826fe21dfe978866ea81a"
   },
   "/Users/aejt/fuego/external/miniupnpc/testigddescparse.c": {
-    "mtime": 1778380444.4514658,
+    "mtime": 1778554752.8112993,
     "hash": "c784c953c663b3d2a4b9a574f18a41b8"
   },
   "/Users/aejt/fuego/external/miniupnpc/bsdqueue.h": {
-    "mtime": 1778380444.4436173,
+    "mtime": 1778554752.7982528,
     "hash": "4df05b5ff0368e2e475f38e9c68881a6"
   },
   "/Users/aejt/fuego/external/miniupnpc/setup.py": {
-    "mtime": 1778380444.4510279,
+    "mtime": 1778554752.8107858,
     "hash": "03f6cc0a3970b1689b0c183d7ba8650b"
   },
   "/Users/aejt/fuego/external/miniupnpc/minisoap.h": {
-    "mtime": 1778380444.446069,
+    "mtime": 1778554752.8031864,
     "hash": "389ae4fd1eff03597c8d923c209c89ae"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpc.c": {
-    "mtime": 1778380444.4545815,
+    "mtime": 1778554752.8156478,
     "hash": "d73b60380b0facd66dceb77cf67f4d71"
   },
   "/Users/aejt/fuego/external/miniupnpc/portlistingparse.h": {
-    "mtime": 1778380444.4503696,
+    "mtime": 1778554752.8097825,
     "hash": "61be93c15a83dd0b2d8855084515c40c"
   },
   "/Users/aejt/fuego/external/miniupnpc/minihttptestserver.c": {
-    "mtime": 1778380444.4455955,
+    "mtime": 1778554752.8027778,
     "hash": "1a341aa2ed757562e9a84c0e79a3dc05"
   },
   "/Users/aejt/fuego/external/miniupnpc/connecthostport.h": {
-    "mtime": 1778380444.4440775,
+    "mtime": 1778554752.7990022,
     "hash": "9c95eb92a4bf4e1ec176df0b9b6e35b3"
   },
   "/Users/aejt/fuego/external/miniupnpc/minixmlvalid.c": {
-    "mtime": 1778380444.4490814,
+    "mtime": 1778554752.808534,
     "hash": "18d6e53af161349dee07a6ca0505749b"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnperrors.c": {
-    "mtime": 1778380444.4552484,
+    "mtime": 1778554752.8172023,
     "hash": "ec2ed7e3ebd341e7365a4e2d71d196ec"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniwget.h": {
-    "mtime": 1778380444.448534,
+    "mtime": 1778554752.8078933,
     "hash": "2857344ea75eae7510f3dc325fd66e9d"
   },
   "/Users/aejt/fuego/external/miniupnpc/codelength.h": {
-    "mtime": 1778380444.443777,
+    "mtime": 1778554752.7985744,
     "hash": "144daee2cd96d41757b861639c837441"
   },
   "/Users/aejt/fuego/external/miniupnpc/minixml.c": {
-    "mtime": 1778380444.4487972,
+    "mtime": 1778554752.8081286,
     "hash": "e10a3b59eda938a7b559557b76354335"
   },
   "/Users/aejt/fuego/external/miniupnpc/receivedata.h": {
-    "mtime": 1778380444.4508917,
+    "mtime": 1778554752.8105967,
     "hash": "3f01510d398c0d917a5545603ae1e074"
   },
   "/Users/aejt/fuego/external/miniupnpc/testportlistingparse.c": {
@@ -1212,15 +1220,15 @@
     "hash": "17165b20a6a6983cf885876bb6b2a3f0"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpreplyparse.h": {
-    "mtime": 1778380444.4556398,
+    "mtime": 1778554752.8179092,
     "hash": "a3e822533d4b495ba4f7c4884668db86"
   },
   "/Users/aejt/fuego/external/miniupnpc/minissdpc.c": {
-    "mtime": 1778380444.4463322,
+    "mtime": 1778554752.8038669,
     "hash": "20c0d3197a027c7aaed9c0d1f2ec7a6a"
   },
   "/Users/aejt/fuego/external/miniupnpc/miniupnpc.c": {
-    "mtime": 1778380444.4467702,
+    "mtime": 1778554752.8048964,
     "hash": "0ba0470bd6b705ce721aae8d9f46af38"
   },
   "/Users/aejt/fuego/external/miniupnpc/upnpdev.h": {
@@ -1228,11 +1236,11 @@
     "hash": "08a945d7504e83fc9125a808f1711f3a"
   },
   "/Users/aejt/fuego/external/miniupnpc/igd_desc_parse.c": {
-    "mtime": 1778380444.4444718,
+    "mtime": 1778554752.7998116,
     "hash": "97a94ab8fac15b6b62587f4885541fc1"
   },
   "/Users/aejt/fuego/external/miniupnpc/java/JavaBridgeTest.java": {
-    "mtime": 1778380444.4447901,
+    "mtime": 1778554752.8011627,
     "hash": "b82e90c44adffecf63a887981398fe0e"
   },
   "/Users/aejt/fuego/external/google/type_traits.h": {
@@ -2188,7 +2196,7 @@
     "hash": "f63a6876f5929f9a83871d7cdf76154f"
   },
   "/Users/aejt/fuego/src/CryptoNoteConfig.h": {
-    "mtime": 1778502677.083856,
+    "mtime": 1778554754.104709,
     "hash": "cbae57b306f9887a67302c624bb9bf54"
   },
   "/Users/aejt/fuego/src/EldernodeIndexManager.h": {
@@ -2196,7 +2204,7 @@
     "hash": "519f05f816717aaa44fd1a8e428b14d5"
   },
   "/Users/aejt/fuego/src/BurnTransactionHandler.cpp": {
-    "mtime": 1778502614.9012368,
+    "mtime": 1778552232.511086,
     "hash": "6fa8a52141f349ea2d99f2f12a356bfc"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ProofStructures.cpp": {
@@ -2204,27 +2212,27 @@
     "hash": "d62dd995dc4ff5ce355c616dbe0b5ba0"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockchainIndices.cpp": {
-    "mtime": 1778380444.477926,
+    "mtime": 1778554754.111279,
     "hash": "6df94de435177601540cd00f27407850"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/VerificationContext.h": {
-    "mtime": 1778380444.4932365,
+    "mtime": 1778554754.1378887,
     "hash": "0a04317056d34ab6b93cd5224bdcf4ea"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwappedMap.cpp": {
-    "mtime": 1778380444.4890442,
+    "mtime": 1778554754.1327362,
     "hash": "1a837760b3fd4b652a85a29e523e4066"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockchainIndices.h": {
-    "mtime": 1778380444.4780772,
+    "mtime": 1778554754.111499,
     "hash": "bd5365f1ea48bece4d120c338e424dbe"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Blockchain.cpp": {
-    "mtime": 1778498879.821846,
+    "mtime": 1778554754.1095335,
     "hash": "14e4f8b9819ffcccf53f13808d0d113e"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwapOfferRelay.h": {
-    "mtime": 1778500053.043802,
+    "mtime": 1778552232.5262327,
     "hash": "9b4e892fe672793115e59b09030c8d97"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ProofStructures.h": {
@@ -2232,31 +2240,31 @@
     "hash": "3e96b50186ac8bac3ba5f9e864264fd5"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionUtils.h": {
-    "mtime": 1778380444.4927278,
+    "mtime": 1778554754.1369727,
     "hash": "138b3715ae6398ef789e1f44d9438083"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CommitmentIndex.cpp": {
-    "mtime": 1778502561.8387334,
+    "mtime": 1778552232.5198977,
     "hash": "f653ffcfebafbbecc602dbb6202eee0b"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Difficulty.cpp": {
-    "mtime": 1778380444.4856927,
+    "mtime": 1778554754.123949,
     "hash": "9e3b6f814420428ab98cc0eac6b6ac26"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DepositIndex.cpp": {
-    "mtime": 1778380444.4854796,
+    "mtime": 1778554754.123213,
     "hash": "cf0e29d60c85a9e0836790a1cc478e29"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Core.h": {
-    "mtime": 1778472297.373412,
+    "mtime": 1778554479.1313345,
     "hash": "950d725d20246f082ba77641efe68d99"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/IBlock.h": {
-    "mtime": 1778380444.48634,
+    "mtime": 1778554754.1255507,
     "hash": "e485c4dff7e3f375d8db787c839bb68f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ITimeProvider.cpp": {
-    "mtime": 1778380444.4870834,
+    "mtime": 1778554754.1268322,
     "hash": "68d1c1c57b3a84e6113fb40d9ff1d809"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BankingIndex.h": {
@@ -2264,23 +2272,23 @@
     "hash": "cf1466a0af055f8cd0db5b96194cc2cd"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwappedVector.cpp": {
-    "mtime": 1778380444.4894607,
+    "mtime": 1778554754.1332974,
     "hash": "6a6815917dfaba090c91797ac07b0777"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwapOfferRelay.cpp": {
-    "mtime": 1778500053.0267382,
+    "mtime": 1778552232.5259807,
     "hash": "dad7351b0be512ae70193eb1000b5ec1"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Account.h": {
-    "mtime": 1778380444.4759576,
+    "mtime": 1778554754.105165,
     "hash": "a516889cdea3f686bfb4f952f437de1e"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/InvestmentIndex.cpp": {
-    "mtime": 1778380444.487829,
+    "mtime": 1778554754.1286752,
     "hash": "b6bf7bf474fcd7e1b13b4fd5a0c604cb"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/PiController.h": {
-    "mtime": 1778497298.9264283,
+    "mtime": 1778554754.132528,
     "hash": "9c1644d96f1c1a72e49f8d9dedac93e0"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BankingIndex.cpp": {
@@ -2288,63 +2296,63 @@
     "hash": "60b13a29d1f2428c9dd2dc810f425bf4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/MinerConfig.cpp": {
-    "mtime": 1778380444.4886532,
+    "mtime": 1778554754.129959,
     "hash": "e3f1795fc3e26fe02f50bb5a615b4731"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Blockchain.h": {
-    "mtime": 1778497446.5637882,
+    "mtime": 1778554754.110745,
     "hash": "18853042981e20c36e8361da993b96e3"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Core.cpp": {
-    "mtime": 1778491686.5625181,
+    "mtime": 1778554754.1137028,
     "hash": "3ca444a74a33f6307b64fe07d0adf99d"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CoreConfig.cpp": {
-    "mtime": 1778380444.4795308,
+    "mtime": 1778554754.114035,
     "hash": "62b7287983e2bafc0dcc7720bafb7f04"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockIndex.h": {
-    "mtime": 1778380444.476236,
+    "mtime": 1778554754.1055553,
     "hash": "5a49518e05c8f2aede520ecf91dad66a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteFormatUtils.cpp": {
-    "mtime": 1778477301.644308,
+    "mtime": 1778551909.8009763,
     "hash": "3f68392b530d1463c5ebb6827eaaa827"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/UpgradeDetector.h": {
-    "mtime": 1778380444.4931052,
+    "mtime": 1778554754.137615,
     "hash": "b1199fc65713dc323bd34f345b84965e"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ICoreObserver.h": {
-    "mtime": 1778380444.4868243,
+    "mtime": 1778554754.126455,
     "hash": "525effb9beaf65d586357fe3af8c7562"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AmmPool.h": {
-    "mtime": 1778426541.8282344,
+    "mtime": 1778551909.7957,
     "hash": "12d6162b17041cc6b4c1aa79a978138b"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/InvestmentIndex.h": {
-    "mtime": 1778380444.4879537,
+    "mtime": 1778554754.1288621,
     "hash": "e1a8d991346a46bcdcae22a439381095"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Currency.h": {
-    "mtime": 1778502730.489741,
+    "mtime": 1778554754.1197405,
     "hash": "d92e4ae8a2d2c87e7716095e18c4ca55"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CommitmentIndex.h": {
-    "mtime": 1778502561.8404138,
+    "mtime": 1778552232.5201695,
     "hash": "442bb080d97192b18727896f39a7bd5c"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteBasicImpl.h": {
-    "mtime": 1778500820.171092,
+    "mtime": 1778554754.1151586,
     "hash": "0ce34e29d9c719c73dc358a61409339a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionPool.cpp": {
-    "mtime": 1778380444.492032,
+    "mtime": 1778554754.135967,
     "hash": "7b9a0302cc792510b7594e5263b267e1"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ElderfierAudioIndex.cpp": {
-    "mtime": 1778380444.4859092,
+    "mtime": 1778554754.124748,
     "hash": "c0e4e043dd25906dea9815efe2bac04d"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/StagedUnlockStorage.cpp": {
@@ -2352,15 +2360,15 @@
     "hash": "4868fd3e88d6d4f539a382d1ea7b1d8f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteTools.h": {
-    "mtime": 1778380444.4842503,
+    "mtime": 1778554754.1163225,
     "hash": "7cb9b21b242c97a230dac74c3f001908"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Checkpoints.h": {
-    "mtime": 1778380444.478624,
+    "mtime": 1778554754.112364,
     "hash": "d406542f047ced006ad2f4ab1f1dc89d"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockIndex.cpp": {
-    "mtime": 1778380444.4760978,
+    "mtime": 1778554754.1053545,
     "hash": "e065cb7b3bacb362a41335073ccd868f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BurnProofDataFileGenerator.h": {
@@ -2368,39 +2376,39 @@
     "hash": "632411ca2e85010f6d9c46b6a8ca2cf4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionExtra.cpp": {
-    "mtime": 1778495448.372102,
+    "mtime": 1778554754.1348958,
     "hash": "70283e300d96918ffc4448e883deb487"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ICore.h": {
-    "mtime": 1778380444.4867039,
+    "mtime": 1778554754.1261706,
     "hash": "6eee52aaeec5abcdae3a96cdac3d6001"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/MinerConfig.h": {
-    "mtime": 1778380444.4887714,
+    "mtime": 1778554754.1301472,
     "hash": "f2fc1344b0ccc5e3190f4b6c5b16ac9b"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Currency.cpp": {
-    "mtime": 1778416416.0933483,
+    "mtime": 1778554754.1182845,
     "hash": "2962ca62d87db189628b5fe45071ff20"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/OracleEngine.cpp": {
-    "mtime": 1778498841.6813023,
+    "mtime": 1778554754.1310086,
     "hash": "b41e120297ea90d92c9cca7bae8643dc"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteBasic.h": {
-    "mtime": 1778380444.479987,
+    "mtime": 1778554754.1145954,
     "hash": "5496f51c5dac0c9375eda2f4dffbb025"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteBasicImpl.cpp": {
-    "mtime": 1778380444.480228,
+    "mtime": 1778554754.1148398,
     "hash": "8fa1269d9dd3b2225a3dce831eee46de"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DIGMToken.h": {
-    "mtime": 1778380444.4853933,
+    "mtime": 1778554754.1220264,
     "hash": "6a6e4f8d71305067c52c569bf61dd9ee"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionApi.h": {
-    "mtime": 1778380444.4905322,
+    "mtime": 1778554754.133935,
     "hash": "032a3c7d80401d5e9e2383657209c20a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DynamicRingSize.cpp": {
@@ -2408,7 +2416,7 @@
     "hash": "d273bed44d859ddea426bd02974b5aec"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteTools.cpp": {
-    "mtime": 1778380444.484096,
+    "mtime": 1778554754.1161094,
     "hash": "7931db96b24aff87d30323f9c0ac12a4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/StagedDepositUnlock.h": {
@@ -2416,7 +2424,7 @@
     "hash": "1198a3048b5baf8743f4d553aa11987f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/IBlock.cpp": {
-    "mtime": 1778380444.4861317,
+    "mtime": 1778554754.1252468,
     "hash": "d85783665091cda8220ec5bfeb3141d6"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AdaptiveDifficulty.cpp": {
@@ -2424,43 +2432,43 @@
     "hash": "d3c233cee93f76c8f145d8bba9abb8b2"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Miner.h": {
-    "mtime": 1778380444.488533,
+    "mtime": 1778554754.1297755,
     "hash": "5befa9dfbf13f26302a39cbb9eb409c7"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/HeatMintEngine.h": {
-    "mtime": 1778474991.8728783,
+    "mtime": 1778551909.8039777,
     "hash": "6f7d9a51c9d870a48e1676febf932c74"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BurnProofDataFileGenerator.cpp": {
-    "mtime": 1778502614.929581,
+    "mtime": 1778552232.519258,
     "hash": "e45003ad84a6d412c1af7e7093385d38"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/IBlockchainStorageObserver.h": {
-    "mtime": 1778380444.4865625,
+    "mtime": 1778554754.1257467,
     "hash": "82313bda7922d0a4252d8da36374e1e6"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwappedMap.h": {
-    "mtime": 1778380444.4893372,
+    "mtime": 1778554754.133097,
     "hash": "fa12a502e284f50d67147901c463b1a8"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteSerialization.cpp": {
-    "mtime": 1778474146.47359,
+    "mtime": 1778551909.801942,
     "hash": "28af20cf1f6a5124df8f0781667b8dcd"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DepositIndex.h": {
-    "mtime": 1778380444.485563,
+    "mtime": 1778554754.1233582,
     "hash": "f3af4c5a254eb0773c99b640f75447c9"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ITimeProvider.h": {
-    "mtime": 1778380444.4872963,
+    "mtime": 1778554754.12702,
     "hash": "184b3fc0eaabe36dfd293b04bc3b35ed"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ITransactionValidator.h": {
-    "mtime": 1778380444.4874206,
+    "mtime": 1778554754.1273136,
     "hash": "67a2bbb03987ec253d2a81bcd547b669"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionExtra.h": {
-    "mtime": 1778494942.8980613,
+    "mtime": 1778554754.1354752,
     "hash": "7fcab4715577a4a035b85cc6f5eacbe4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AliasIndex.cpp": {
@@ -2468,27 +2476,27 @@
     "hash": "083997108b7805d6872719a30a627722"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/SwappedVector.h": {
-    "mtime": 1778380444.489599,
+    "mtime": 1778554754.133753,
     "hash": "09dcc32e4f04498d51889cb7298f28ac"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionPrefixImpl.cpp": {
-    "mtime": 1778480463.9997132,
+    "mtime": 1778551909.8074431,
     "hash": "29f985bff25f276e8ee25133168e0bb3"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AmmPool.cpp": {
-    "mtime": 1778474622.188371,
+    "mtime": 1778551909.795465,
     "hash": "4198a0c523d610def2ce98d887ec6326"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionApiExtra.h": {
-    "mtime": 1778380444.4906645,
+    "mtime": 1778554754.1341286,
     "hash": "1066aff33845098feda83aba643d4cd4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Account.cpp": {
-    "mtime": 1778380444.4758203,
+    "mtime": 1778554754.1049762,
     "hash": "85c18d908f1227d9d70ad667a3e4dbd8"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/OnceInInterval.h": {
-    "mtime": 1778380444.4889073,
+    "mtime": 1778554754.1304417,
     "hash": "b634fca273856e924733629332894ff4"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/OSPEADDecoySelection.cpp": {
@@ -2504,31 +2512,31 @@
     "hash": "311d3a3043e62a41bcd18e5f6f5721a0"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/MessageQueue.h": {
-    "mtime": 1778380444.4880757,
+    "mtime": 1778554754.1290448,
     "hash": "02163731d004bfa2411d3f36f650d72f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteStatInfo.h": {
-    "mtime": 1778380444.4838288,
+    "mtime": 1778554754.1158955,
     "hash": "f09569eb842b14e3db59b54581ba4a8a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Difficulty.h": {
-    "mtime": 1778380444.485819,
+    "mtime": 1778554754.124152,
     "hash": "a3ebca1a07ba04256dad2263076317a7"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AssetId.h": {
-    "mtime": 1778421486.425025,
+    "mtime": 1778551909.7959168,
     "hash": "58b6c8ccedc9ce42d6bff2969c59a906"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ITxPoolObserver.h": {
-    "mtime": 1778380444.4875414,
+    "mtime": 1778554754.1275208,
     "hash": "422f80875c69e8096cf01f7e852e34c1"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/IntrusiveLinkedList.h": {
-    "mtime": 1778380444.4876935,
+    "mtime": 1778554754.1277773,
     "hash": "9655a2519068919b0bf67abce3b7216a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Transaction.cpp": {
-    "mtime": 1778480110.3351831,
+    "mtime": 1778551909.8054683,
     "hash": "f16b034bad60a87f322de7c342e2284b"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/StagedUnlock.h": {
@@ -2536,7 +2544,7 @@
     "hash": "950c82cbe1f88de7176a4e998017f80c"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockchainMessages.h": {
-    "mtime": 1778380444.4783514,
+    "mtime": 1778554754.1119044,
     "hash": "e4f35c0ea3136f3db1652502c2aa5283"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/StagedUnlockStorage.h": {
@@ -2544,7 +2552,7 @@
     "hash": "f4004292621a9e9d857112d6c1ad4b77"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/ElderfierAudioIndex.h": {
-    "mtime": 1778380444.4859967,
+    "mtime": 1778554754.1250398,
     "hash": "00c6b728bcb6b3e44c876bd68d5368cf"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/AliasIndex.h": {
@@ -2552,103 +2560,103 @@
     "hash": "4fb1159f382ea9af96a4068b5f633b0a"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteFormatUtils.h": {
-    "mtime": 1778477174.1951287,
+    "mtime": 1778551909.801541,
     "hash": "f3febeb919d8be376bf4363456a9703f"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DepositCommitment.cpp": {
-    "mtime": 1778502561.8408875,
+    "mtime": 1778552232.5248592,
     "hash": "2c661868cc91fe873508401f45649298"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DIGMMinting.h": {
-    "mtime": 1778380444.485214,
+    "mtime": 1778554754.1210322,
     "hash": "36ec790a126629e8b8b9a578bb65c9eb"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DepositCommitment.h": {
-    "mtime": 1778502561.8410165,
+    "mtime": 1778552232.5251465,
     "hash": "240d1ddf974d41f68a91e787b9501943"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CoreConfig.h": {
-    "mtime": 1778380444.4796588,
+    "mtime": 1778554754.1142268,
     "hash": "11bbdb5131b68daf5fd88dcdcd7bb9c2"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DIGMToken.cpp": {
-    "mtime": 1778380444.4853058,
+    "mtime": 1778554754.1215277,
     "hash": "b00a5ad8b190439879eb8c760cd9ce38"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/HeatMintEngine.cpp": {
-    "mtime": 1778475025.271704,
+    "mtime": 1778551909.8036785,
     "hash": "bc12f02fb127fb96b768db429dfee261"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/IMinerHandler.h": {
-    "mtime": 1778380444.4869475,
+    "mtime": 1778554754.1266415,
     "hash": "2890c5ce9b7da08a52816cdbb25c6306"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Checkpoints.cpp": {
-    "mtime": 1778380444.4784918,
+    "mtime": 1778554754.1121764,
     "hash": "aee16d01893f670b545a2da5eeb46e54"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteBasic.cpp": {
-    "mtime": 1778380444.479837,
+    "mtime": 1778554754.1144135,
     "hash": "d55cb77ce49e7df383b891f21332c9a2"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionPool.h": {
-    "mtime": 1778380444.4923236,
+    "mtime": 1778554754.13631,
     "hash": "889c0eb1a2149397375cbec5fd16bdfd"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/UpgradeDetector.cpp": {
-    "mtime": 1778380444.4928546,
+    "mtime": 1778554754.137326,
     "hash": "71e8ecf884463f9a35c45c836238865c"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/PiController.cpp": {
-    "mtime": 1778497376.9433072,
+    "mtime": 1778554754.1320882,
     "hash": "7716e8665f9819d46fa75f003221c554"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/BlockchainMessages.cpp": {
-    "mtime": 1778380444.4782186,
+    "mtime": 1778554754.1117125,
     "hash": "3513c5f096a80fb1ed4e518731877c00"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/Miner.cpp": {
-    "mtime": 1778380444.4883952,
+    "mtime": 1778554754.1295738,
     "hash": "bb3c8fd435d01a1530ffce7cf4691b88"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/CryptoNoteSerialization.h": {
-    "mtime": 1778380444.4836648,
+    "mtime": 1778554754.1156795,
     "hash": "82a9cc49ff097e674d0c4f25002c26f6"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/TransactionUtils.cpp": {
-    "mtime": 1778380444.4926016,
+    "mtime": 1778554754.1366682,
     "hash": "cfcebca40d0cde06efc2af69f42d8a10"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/OracleEngine.h": {
-    "mtime": 1778498815.2237754,
+    "mtime": 1778554754.1314871,
     "hash": "42f99d934ffb7bbfbc0dd3a4a4240471"
   },
   "/Users/aejt/fuego/src/CryptoNoteCore/DIGMMinting.cpp": {
-    "mtime": 1778380444.4851282,
+    "mtime": 1778554754.1205661,
     "hash": "87d84bda5c0e1881316c7accf0bdd940"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/CryptoNoteProtocolHandler.h": {
-    "mtime": 1778380444.494581,
+    "mtime": 1778554754.1404226,
     "hash": "13441e4159229d56eeb5858dc4b17d66"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp": {
-    "mtime": 1778380444.494365,
+    "mtime": 1778554754.1400352,
     "hash": "e31b56d713bc1adee4ad2daaab874133"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h": {
-    "mtime": 1778380444.4939458,
+    "mtime": 1778554754.1389594,
     "hash": "d0b0fae005b6b9c1d173369c6a6b53dc"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/CryptoNoteProtocolHandlerCommon.h": {
-    "mtime": 1778380444.4947307,
+    "mtime": 1778554754.1407745,
     "hash": "7b3bdfa109c6f4304846335c350e060b"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/ICryptoNoteProtocolObserver.h": {
-    "mtime": 1778380444.494876,
+    "mtime": 1778554754.1410158,
     "hash": "35943eed0aaea21d2c53b73a01176d7a"
   },
   "/Users/aejt/fuego/src/CryptoNoteProtocol/ICryptoNoteProtocolQuery.h": {
-    "mtime": 1778380444.4950068,
+    "mtime": 1778554754.1412206,
     "hash": "34c4ebaeae766d8af311f9a4a77d7427"
   },
   "/Users/aejt/fuego/src/crypto/keccak.c": {
@@ -2664,7 +2672,7 @@
     "hash": "83dc01f52b708e83821aca08caff7f44"
   },
   "/Users/aejt/fuego/src/crypto/adaptor.h": {
-    "mtime": 1778500055.1976085,
+    "mtime": 1778552232.5707402,
     "hash": "f03c29a2f48f064d14c56339393d6e9d"
   },
   "/Users/aejt/fuego/src/crypto/oaes_config.h": {
@@ -2676,7 +2684,7 @@
     "hash": "4a10ba10f74e5ca7334ccc8f27c20f22"
   },
   "/Users/aejt/fuego/src/crypto/hash-extra-groestl.c": {
-    "mtime": 1778380444.5605812,
+    "mtime": 1778554754.2308023,
     "hash": "9a35d4edce634694601112c28ab4ece3"
   },
   "/Users/aejt/fuego/src/crypto/jh.h": {
@@ -2688,15 +2696,15 @@
     "hash": "14c11ff64a9bb329ed23065ec45e2dcf"
   },
   "/Users/aejt/fuego/src/crypto/randomize.h": {
-    "mtime": 1778380444.5630696,
+    "mtime": 1778554754.2351809,
     "hash": "3d78546329cd940863107c0b08f7b5b6"
   },
   "/Users/aejt/fuego/src/crypto/chacha8.h": {
-    "mtime": 1778380444.558989,
+    "mtime": 1778554754.2296367,
     "hash": "b3c2242e9eb784249f9ad4e0f9801490"
   },
   "/Users/aejt/fuego/src/crypto/hash-extra-blake.c": {
-    "mtime": 1778380444.5604632,
+    "mtime": 1778554754.2306187,
     "hash": "d187488d0cdf5708a0c75a7f2bf77a32"
   },
   "/Users/aejt/fuego/src/crypto/variant2_int_sqrt.h": {
@@ -2708,7 +2716,7 @@
     "hash": "1a3176d0c6b8f44e5f3a9e389b890972"
   },
   "/Users/aejt/fuego/src/crypto/adaptor.cpp": {
-    "mtime": 1778500055.1828747,
+    "mtime": 1778552232.5703208,
     "hash": "31634142d3b1c37a9d425d32386c081a"
   },
   "/Users/aejt/fuego/src/crypto/blake256.c": {
@@ -2736,7 +2744,7 @@
     "hash": "6db02a22d533f0f960adc8e11611cb02"
   },
   "/Users/aejt/fuego/src/crypto/oaes_lib.c": {
-    "mtime": 1778492455.5879664,
+    "mtime": 1778554754.2344115,
     "hash": "bd3952c522aca4ceabee3574682b2fb0"
   },
   "/Users/aejt/fuego/src/crypto/aesb.h": {
@@ -2744,7 +2752,7 @@
     "hash": "58195b4d843fa8aa07a58951b0478f75"
   },
   "/Users/aejt/fuego/src/crypto/random.c": {
-    "mtime": 1778380444.5628085,
+    "mtime": 1778554754.2346509,
     "hash": "aeb89781ccc9a7e36a12253c4ae785ea"
   },
   "/Users/aejt/fuego/src/crypto/crypto-ops.c": {
@@ -2756,7 +2764,7 @@
     "hash": "24ff8969432a5d7a16f9ad43b5000f59"
   },
   "/Users/aejt/fuego/src/crypto/generic-ops.h": {
-    "mtime": 1778380444.5603352,
+    "mtime": 1778554754.2304084,
     "hash": "9414a073a5e145bb9644c45a30e42829"
   },
   "/Users/aejt/fuego/src/crypto/hash.c": {
@@ -2764,11 +2772,11 @@
     "hash": "d9f69ad26c8ef5a42f9e214350c3624a"
   },
   "/Users/aejt/fuego/src/crypto/crypto.h": {
-    "mtime": 1778380444.5602088,
+    "mtime": 1778554754.2301774,
     "hash": "93a0c7949beaa47d81bf43eb4c244f7b"
   },
   "/Users/aejt/fuego/src/crypto/hash-extra-jh.c": {
-    "mtime": 1778380444.5607057,
+    "mtime": 1778554754.230981,
     "hash": "566c0937bb3d92732c8e3ac4ceae76e7"
   },
   "/Users/aejt/fuego/src/crypto/musig2.h": {
@@ -2780,7 +2788,7 @@
     "hash": "585f441647348ed0cc78a455a530f9f6"
   },
   "/Users/aejt/fuego/src/crypto/hash-ops.h": {
-    "mtime": 1778380444.5609667,
+    "mtime": 1778554754.231352,
     "hash": "b13586b7a3706cc75e5b431739641d19"
   },
   "/Users/aejt/fuego/src/crypto/groestl.c": {
@@ -2788,7 +2796,7 @@
     "hash": "4c1aa17b4377dbf3f28d42d19e9c532a"
   },
   "/Users/aejt/fuego/src/crypto/mlsag.h": {
-    "mtime": 1778500263.8428035,
+    "mtime": 1778554754.2327733,
     "hash": "9f5054b18e8e90b2ed0a429784c0608f"
   },
   "/Users/aejt/fuego/src/crypto/keccak.h": {
@@ -2800,11 +2808,11 @@
     "hash": "d15869fbaae84bf003c9c4f6fdae6159"
   },
   "/Users/aejt/fuego/src/crypto/tree-hash.c": {
-    "mtime": 1778380444.5637453,
+    "mtime": 1778554754.2363193,
     "hash": "98aa9f4029c1b98f43001777da396328"
   },
   "/Users/aejt/fuego/src/crypto/initializer.h": {
-    "mtime": 1778380444.562553,
+    "mtime": 1778554754.232382,
     "hash": "992bf40f922f4d209b7daf5b14633db6"
   },
   "/Users/aejt/fuego/src/crypto/dleq.h": {
@@ -2812,11 +2820,11 @@
     "hash": "f91c8f48f3577baf9076397ce4ffbe39"
   },
   "/Users/aejt/fuego/src/crypto/slow-hash.cpp": {
-    "mtime": 1778491796.1798775,
+    "mtime": 1778554754.2356074,
     "hash": "60ba6fd98d46619d0720cc184731bd41"
   },
   "/Users/aejt/fuego/src/crypto/crypto-util.h": {
-    "mtime": 1778380444.559427,
+    "mtime": 1778554754.229824,
     "hash": "4dd8c6840d2b60ecef233ec27b5a936c"
   },
   "/Users/aejt/fuego/src/crypto/pedersen.cpp": {
@@ -2824,11 +2832,11 @@
     "hash": "8d8b55e1ef7f4a49efad4fdcca9f60d7"
   },
   "/Users/aejt/fuego/src/crypto/chacha8.c": {
-    "mtime": 1778380444.5585856,
+    "mtime": 1778554754.2291436,
     "hash": "d14187e3fd4a32c77209a6b8ba16ac46"
   },
   "/Users/aejt/fuego/src/crypto/hash-extra-skein.c": {
-    "mtime": 1778380444.5608406,
+    "mtime": 1778554754.2311685,
     "hash": "2194630173046624fd24129c2e90d51e"
   },
   "/Users/aejt/fuego/src/crypto/crypto.cpp": {
@@ -2860,7 +2868,7 @@
     "hash": "8f635fa9d629a5908fdf3e0ab3ebd01c"
   },
   "/Users/aejt/fuego/src/crypto/hash.h": {
-    "mtime": 1778380444.5619931,
+    "mtime": 1778554754.2321975,
     "hash": "4a535c344c58c5f0bbbd20c7597960d7"
   },
   "/Users/aejt/fuego/src/crypto/crypto-ops.h": {
@@ -2868,7 +2876,7 @@
     "hash": "8a4b6ba92f2dc402329c2c1f0117aad4"
   },
   "/Users/aejt/fuego/src/crypto/random.h": {
-    "mtime": 1778380444.5629363,
+    "mtime": 1778554754.2348862,
     "hash": "b2058aa23428416242f334393a132d7b"
   },
   "/Users/aejt/fuego/src/crypto/slow-hash.c": {
@@ -2880,19 +2888,19 @@
     "hash": "c05866f1b610e7ef91a05346dafefca8"
   },
   "/Users/aejt/fuego/src/NodeRpcProxy/NodeErrors.h": {
-    "mtime": 1778380444.5077717,
+    "mtime": 1778554754.1542585,
     "hash": "b93f32787db90b2f01474008fb29f92b"
   },
   "/Users/aejt/fuego/src/NodeRpcProxy/NodeErrors.cpp": {
-    "mtime": 1778380444.5076354,
+    "mtime": 1778554754.153838,
     "hash": "85fc6fbc6bf20de50ee578e8ecfef102"
   },
   "/Users/aejt/fuego/src/NodeRpcProxy/NodeRpcProxy.h": {
-    "mtime": 1778380444.5082169,
+    "mtime": 1778554754.1561053,
     "hash": "85773dcec49869b883ca051e232767d4"
   },
   "/Users/aejt/fuego/src/NodeRpcProxy/NodeRpcProxy.cpp": {
-    "mtime": 1778380444.5080564,
+    "mtime": 1778554754.1555798,
     "hash": "8aaf66535c76e3e4f3d48c1f92627a73"
   },
   "/Users/aejt/fuego/src/FuegoTor/include/Fuegotor.h": {
@@ -2900,7 +2908,7 @@
     "hash": "9429af99d81a853bf0d3409e1ff8c4a8"
   },
   "/Users/aejt/fuego/src/FuegoTor/include/TorIntegration.h": {
-    "mtime": 1778500053.2737849,
+    "mtime": 1778552232.5354576,
     "hash": "5278a7b629318a4c09897978240edb61"
   },
   "/Users/aejt/fuego/src/FuegoTor/src/Fuegotor.cpp": {
@@ -2920,7 +2928,7 @@
     "hash": "ee005ef96384e31064cc003704048a06"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapStateMachine.cpp": {
-    "mtime": 1778500054.5332263,
+    "mtime": 1778552232.5569632,
     "hash": "d0602bd41d32439da5df1c0b103037a7"
   },
   "/Users/aejt/fuego/src/SwapDaemon/PoolP2P.cpp": {
@@ -2960,7 +2968,7 @@
     "hash": "62af53b0cec6b2e758015d6e19658f41"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapTypes.h": {
-    "mtime": 1778500054.6111991,
+    "mtime": 1778552232.5578842,
     "hash": "affee3c9c25b3cb2f284ee7f5d077d9b"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapP2P.cpp": {
@@ -2968,15 +2976,15 @@
     "hash": "0533b88cac4d0dd1074421cc9b0d40a5"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapDaemon.cpp": {
-    "mtime": 1778500054.410331,
+    "mtime": 1778552232.5552335,
     "hash": "02608f767047129dd43a3fb78d0501c1"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapDaemon.h": {
-    "mtime": 1778500054.4251804,
+    "mtime": 1778552232.5558379,
     "hash": "a0336a74ee3303b04b350f90d2cdf8cd"
   },
   "/Users/aejt/fuego/src/SwapDaemon/FuegoRpcClient.h": {
-    "mtime": 1778500054.0829308,
+    "mtime": 1778552232.553826,
     "hash": "649219690a8345773978ccb0375a707a"
   },
   "/Users/aejt/fuego/src/SwapDaemon/PoolAttestation.h": {
@@ -3024,7 +3032,7 @@
     "hash": "90f829139d5e2814f72af37427015f63"
   },
   "/Users/aejt/fuego/src/SwapDaemon/main.cpp": {
-    "mtime": 1778500054.627132,
+    "mtime": 1778552232.5582402,
     "hash": "0ad8bc56a5dba44b3467957f4bcf5195"
   },
   "/Users/aejt/fuego/src/SwapDaemon/PoolAMM.h": {
@@ -3032,7 +3040,7 @@
     "hash": "d0e5541e17398e4e1c48f564899cd842"
   },
   "/Users/aejt/fuego/src/SwapDaemon/FuegoRpcClient.cpp": {
-    "mtime": 1778500054.068347,
+    "mtime": 1778552232.5535653,
     "hash": "74194ff576e687e5632afc234dfb3291"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapTxBuilder.h": {
@@ -3040,7 +3048,7 @@
     "hash": "6f82a81e1cbd7795e645c3fefa548308"
   },
   "/Users/aejt/fuego/src/SwapDaemon/SwapStateMachine.h": {
-    "mtime": 1778500054.5489433,
+    "mtime": 1778552232.5574367,
     "hash": "0a342a0fed2b64f544437c0232eec6e8"
   },
   "/Users/aejt/fuego/src/SwapDaemon/PoolTypes.cpp": {
@@ -3192,95 +3200,95 @@
     "hash": "c67d20b53b8eeef6244b6f89a8fe6b19"
   },
   "/Users/aejt/fuego/src/Serialization/BinaryOutputStreamSerializer.cpp": {
-    "mtime": 1778380444.5324323,
+    "mtime": 1778554754.1856534,
     "hash": "50b46651449913bdc6ea828b0f747a77"
   },
   "/Users/aejt/fuego/src/Serialization/MemoryStream.h": {
-    "mtime": 1778380444.5362508,
+    "mtime": 1778554754.1922183,
     "hash": "1f6cb436ab4598d52c4c31b097aafcb3"
   },
   "/Users/aejt/fuego/src/Serialization/BinarySerializationTools.h": {
-    "mtime": 1778380444.5327907,
+    "mtime": 1778554754.1860242,
     "hash": "2565957c7d8fd3603f3d1025157ad816"
   },
   "/Users/aejt/fuego/src/Serialization/KVBinaryInputStreamSerializer.h": {
-    "mtime": 1778380444.5354495,
+    "mtime": 1778554754.191345,
     "hash": "caa307559aa48d97adc2becd7d432207"
   },
   "/Users/aejt/fuego/src/Serialization/JsonInputValueSerializer.h": {
-    "mtime": 1778380444.5345633,
+    "mtime": 1778554754.1881666,
     "hash": "967252d8706010e00880bae483f8e6b2"
   },
   "/Users/aejt/fuego/src/Serialization/BinaryInputStreamSerializer.cpp": {
-    "mtime": 1778380444.5318823,
+    "mtime": 1778554754.185262,
     "hash": "d8a15ed128d19751839b481429d0da04"
   },
   "/Users/aejt/fuego/src/Serialization/KVBinaryInputStreamSerializer.cpp": {
-    "mtime": 1778380444.5351973,
+    "mtime": 1778554754.1911316,
     "hash": "a42efbc5687f8876f6fe1a99470bcfbc"
   },
   "/Users/aejt/fuego/src/Serialization/SerializationTools.h": {
-    "mtime": 1778380444.536737,
+    "mtime": 1778554754.1935074,
     "hash": "eafbf32f5896f9c29d8c1586e4568943"
   },
   "/Users/aejt/fuego/src/Serialization/MemoryStream.cpp": {
-    "mtime": 1778380444.5360324,
+    "mtime": 1778554754.1920097,
     "hash": "fe17076744abbb55c15f8fe385d5330d"
   },
   "/Users/aejt/fuego/src/Serialization/ISerializer.h": {
-    "mtime": 1778380444.5329564,
+    "mtime": 1778554754.1862204,
     "hash": "9e7ed69b061e54910aca55758b3cc53a"
   },
   "/Users/aejt/fuego/src/Serialization/JsonInputStreamSerializer.cpp": {
-    "mtime": 1778380444.533837,
+    "mtime": 1778554754.186745,
     "hash": "7eecda6da4210c582ccb9c187c0e70a9"
   },
   "/Users/aejt/fuego/src/Serialization/JsonInputStreamSerializer.h": {
-    "mtime": 1778380444.5340986,
+    "mtime": 1778554754.1872058,
     "hash": "cf5159c9f096c0af32026f4c38d1344e"
   },
   "/Users/aejt/fuego/src/Serialization/BinaryOutputStreamSerializer.h": {
-    "mtime": 1778380444.532561,
+    "mtime": 1778554754.1858292,
     "hash": "6acb0b13ba0036045e7bc707b8dc2b86"
   },
   "/Users/aejt/fuego/src/Serialization/KVBinaryOutputStreamSerializer.h": {
-    "mtime": 1778380444.5359056,
+    "mtime": 1778554754.1918006,
     "hash": "6adf75ef02509c9e46d89665f10b0337"
   },
   "/Users/aejt/fuego/src/Serialization/SerializationOverloads.h": {
-    "mtime": 1778380444.536605,
+    "mtime": 1778554754.1932757,
     "hash": "8433e81417ca2c83dea54d7946e80b79"
   },
   "/Users/aejt/fuego/src/Serialization/JsonOutputStreamSerializer.cpp": {
-    "mtime": 1778380444.5347154,
+    "mtime": 1778554754.1887026,
     "hash": "9b3b5e939ff8a5512cf5c7a98ea59d33"
   },
   "/Users/aejt/fuego/src/Serialization/SerializationOverloads.cpp": {
-    "mtime": 1778380444.5363832,
+    "mtime": 1778554754.1924152,
     "hash": "abbef9d4a0f9157d2be2088944213c4e"
   },
   "/Users/aejt/fuego/src/Serialization/IStream.h": {
-    "mtime": 1778380444.5334861,
+    "mtime": 1778554754.1864212,
     "hash": "fe16a61860c7b04e5813fd8848db4d7c"
   },
   "/Users/aejt/fuego/src/Serialization/KVBinaryOutputStreamSerializer.cpp": {
-    "mtime": 1778380444.535613,
+    "mtime": 1778554754.1916032,
     "hash": "7c317b4a93152dc96b933eeaa2c2bc01"
   },
   "/Users/aejt/fuego/src/Serialization/KVBinaryCommon.h": {
-    "mtime": 1778380444.534993,
+    "mtime": 1778554754.1908214,
     "hash": "c9c10fd7c9274533ecc2882b8c30c29a"
   },
   "/Users/aejt/fuego/src/Serialization/JsonOutputStreamSerializer.h": {
-    "mtime": 1778380444.5348518,
+    "mtime": 1778554754.1905487,
     "hash": "749adca313645327a202e73eb860ed18"
   },
   "/Users/aejt/fuego/src/Serialization/JsonInputValueSerializer.cpp": {
-    "mtime": 1778380444.5343356,
+    "mtime": 1778554754.1877904,
     "hash": "25bce307e53d8990dd7652593b45001c"
   },
   "/Users/aejt/fuego/src/Serialization/BinaryInputStreamSerializer.h": {
-    "mtime": 1778380444.532282,
+    "mtime": 1778554754.185458,
     "hash": "87ae695fce006290eac4875944ac4dd8"
   },
   "/Users/aejt/fuego/src/Platform/Posix/System/MemoryMappedFile.cpp": {
@@ -3408,15 +3416,15 @@
     "hash": "684b737dffe93b1f8d9716eb352ba39b"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/Timer.cpp": {
-    "mtime": 1778380444.5262551,
+    "mtime": 1778554754.1777923,
     "hash": "ad81e1652c019a446e0dc170c85cf8f9"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpListener.cpp": {
-    "mtime": 1778380444.5260854,
+    "mtime": 1778554754.1774848,
     "hash": "3b2459ce0892a32de6b204f988d2e81e"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpListener.h": {
-    "mtime": 1778380444.526159,
+    "mtime": 1778554754.177589,
     "hash": "ec4803fb77ffd3c3942283918463a34b"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/Ipv4Resolver.cpp": {
@@ -3424,11 +3432,11 @@
     "hash": "c527acadab521a5b6db69cd045fe58ba"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/Dispatcher.h": {
-    "mtime": 1778380444.5246665,
+    "mtime": 1778554754.176523,
     "hash": "14da774d56c138135667e8135def57c6"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/Timer.h": {
-    "mtime": 1778380444.5263298,
+    "mtime": 1778554754.1779046,
     "hash": "5bae0bf739c898dc07afd3f9a30e562c"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/MemoryMappedFile.cpp": {
@@ -3436,11 +3444,11 @@
     "hash": "53902c22d6ee88ed24be0310978196fc"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpConnector.h": {
-    "mtime": 1778380444.52599,
+    "mtime": 1778554754.1773005,
     "hash": "9631187683a848c97447ab4073158fbb"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/Dispatcher.cpp": {
-    "mtime": 1778380444.5245862,
+    "mtime": 1778554754.1763842,
     "hash": "7cfbcff3d357b2ab1f515b82f9b03641"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/ErrorMessage.h": {
@@ -3448,7 +3456,7 @@
     "hash": "1f2dcb77fd962735408e89b0f4343b13"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpConnection.cpp": {
-    "mtime": 1778380444.5257359,
+    "mtime": 1778554754.1768832,
     "hash": "f413121cf09b69e56494d795845029dc"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/MemoryMappedFile.h": {
@@ -3464,11 +3472,11 @@
     "hash": "4cf436ab6c5a10cfbd4f7f670da2d1b5"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpConnection.h": {
-    "mtime": 1778380444.5258207,
+    "mtime": 1778554754.1770022,
     "hash": "e9d047335146f255f3867cd27c940942"
   },
   "/Users/aejt/fuego/src/Platform/Windows/System/TcpConnector.cpp": {
-    "mtime": 1778380444.5259142,
+    "mtime": 1778554754.1771824,
     "hash": "0401e4a13b81cd31cc0f0be6722e319c"
   },
   "/Users/aejt/fuego/src/BlockchainExplorer/BlockchainExplorer.cpp": {
@@ -3476,7 +3484,7 @@
     "hash": "4f98cf5be5882f648477aa9bc7f621e2"
   },
   "/Users/aejt/fuego/src/BlockchainExplorer/BlockchainExplorerDataBuilder.cpp": {
-    "mtime": 1778380444.4611902,
+    "mtime": 1778554754.0859063,
     "hash": "2e9f4374f3f9712128227d6ae5955350"
   },
   "/Users/aejt/fuego/src/BlockchainExplorer/BlockchainExplorerErrors.h": {
@@ -3496,19 +3504,19 @@
     "hash": "9e4d0ecab3f00c87b038f2709e7f953c"
   },
   "/Users/aejt/fuego/src/SimpleWallet/PasswordContainer.cpp": {
-    "mtime": 1778380444.5371544,
+    "mtime": 1778554754.1952763,
     "hash": "558b78a44f5b3bdaae2868f7968b2878"
   },
   "/Users/aejt/fuego/src/SimpleWallet/PasswordContainer.h": {
-    "mtime": 1778380444.5372887,
+    "mtime": 1778554754.195476,
     "hash": "9e194b4aef5904758f4dc9b233fefa9b"
   },
   "/Users/aejt/fuego/src/SimpleWallet/ClientHelper.cpp": {
-    "mtime": 1778502090.3787239,
+    "mtime": 1778554754.1941621,
     "hash": "d62db348049f56a876686795c88f51d9"
   },
   "/Users/aejt/fuego/src/SimpleWallet/DIGMSimpleWalletExtension.cpp": {
-    "mtime": 1778417657.8994195,
+    "mtime": 1778554754.194562,
     "hash": "0d9428efb2ea25d5b0000ba5649bd294"
   },
   "/Users/aejt/fuego/src/SimpleWallet/TransferCmd.h": {
@@ -3520,7 +3528,7 @@
     "hash": "bdd529b3db4c9821717c8ca0d94aa0b5"
   },
   "/Users/aejt/fuego/src/SimpleWallet/SimpleWallet.h": {
-    "mtime": 1778478782.4732835,
+    "mtime": 1778552232.5524485,
     "hash": "db55bc14d64bb72a59b8c5aa3cf0b11c"
   },
   "/Users/aejt/fuego/src/SimpleWallet/TransferCmd.cpp": {
@@ -3528,11 +3536,11 @@
     "hash": "0c9ddad7048bc972462d391825797494"
   },
   "/Users/aejt/fuego/src/SimpleWallet/SimpleWallet.cpp": {
-    "mtime": 1778495666.084629,
+    "mtime": 1778554754.199736,
     "hash": "75fd51dc83fb1e22f5e5d9eecb24f183"
   },
   "/Users/aejt/fuego/src/SimpleWallet/DIGMSimpleWalletExtension.h": {
-    "mtime": 1778417125.8548155,
+    "mtime": 1778554754.1948702,
     "hash": "2314e79369127eaedd5da40a62f96ef6"
   },
   "/Users/aejt/fuego/src/SimpleWallet/Const.h": {
@@ -3540,67 +3548,67 @@
     "hash": "a31b3f51d3a6646f3226b91d91068b8d"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersContainer.h": {
-    "mtime": 1778380444.5440078,
+    "mtime": 1778554754.2042923,
     "hash": "a9c8825f20d4053db4f68b7abb21ceb1"
   },
   "/Users/aejt/fuego/src/Transfers/BlockchainSynchronizer.cpp": {
-    "mtime": 1778380444.5410104,
+    "mtime": 1778554754.200435,
     "hash": "89f4def69e5f25f38fbe71473c9330e3"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersSynchronizer.cpp": {
-    "mtime": 1778380444.5448308,
+    "mtime": 1778554754.2051182,
     "hash": "1968f0a6f398e636f92f5cd28daa6568"
   },
   "/Users/aejt/fuego/src/Transfers/SynchronizationState.cpp": {
-    "mtime": 1778380444.5417588,
+    "mtime": 1778554754.2017086,
     "hash": "13056cc348b0565ecb6a97745cab6728"
   },
   "/Users/aejt/fuego/src/Transfers/IObservableImpl.h": {
-    "mtime": 1778380444.5416296,
+    "mtime": 1778554754.2013834,
     "hash": "331def4e9226c3084f975c91a8764026"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersContainer.cpp": {
-    "mtime": 1778380444.5436094,
+    "mtime": 1778554754.2039762,
     "hash": "827d1103cee029c652710edff3001317"
   },
   "/Users/aejt/fuego/src/Transfers/SynchronizationState.h": {
-    "mtime": 1778380444.5418775,
+    "mtime": 1778554754.2019079,
     "hash": "698c48a40140270ed036253c5add0c95"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersSynchronizer.h": {
-    "mtime": 1778380444.5449836,
+    "mtime": 1778554754.2053142,
     "hash": "84140318fea97d0d3e4523cac2a603c4"
   },
   "/Users/aejt/fuego/src/Transfers/CommonTypes.h": {
-    "mtime": 1778380444.5413826,
+    "mtime": 1778554754.20087,
     "hash": "f3d8459e64b90ab1694472b484d424d8"
   },
   "/Users/aejt/fuego/src/Transfers/TypeHelpers.h": {
-    "mtime": 1778380444.545213,
+    "mtime": 1778554754.2055213,
     "hash": "0cbfcb70142ebd21b2e1328ace38ad14"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersConsumer.h": {
-    "mtime": 1778380444.542376,
+    "mtime": 1778554754.2030487,
     "hash": "f22b095f0edf77639994369bfa06ce55"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersSubscription.cpp": {
-    "mtime": 1778380444.5441349,
+    "mtime": 1778554754.204517,
     "hash": "feb3cb01ca507b5ad4633ba1de0bba56"
   },
   "/Users/aejt/fuego/src/Transfers/BlockchainSynchronizer.h": {
-    "mtime": 1778380444.5412595,
+    "mtime": 1778554754.2006721,
     "hash": "a62f05f24c7f5b2cada7dea4d06e70f9"
   },
   "/Users/aejt/fuego/src/Transfers/IBlockchainSynchronizer.h": {
-    "mtime": 1778380444.5415132,
+    "mtime": 1778554754.201077,
     "hash": "0dc8ae75709fb2f20c5b1da4586a1070"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersSubscription.h": {
-    "mtime": 1778380444.5443485,
+    "mtime": 1778554754.2048721,
     "hash": "2c2b2a43b070692b8243c4159e98f6f7"
   },
   "/Users/aejt/fuego/src/Transfers/TransfersConsumer.cpp": {
-    "mtime": 1778480123.0979164,
+    "mtime": 1778554754.2028222,
     "hash": "9f5ddd427d0d3c47a82394e32e1d48fa"
   },
   "/Users/aejt/fuego/src/System/NativeContext.h": {
@@ -3740,7 +3748,7 @@
     "hash": "6b3ebcc32c25db44d439da8896138cef"
   },
   "/Users/aejt/fuego/src/Common/BinaryArray.hpp": {
-    "mtime": 1778380444.4639773,
+    "mtime": 1778554754.0893672,
     "hash": "9e786c01079caf2abbf75ece32bc83a7"
   },
   "/Users/aejt/fuego/src/Common/FileSystem.h": {
@@ -3748,199 +3756,199 @@
     "hash": "d6cddcf7ad4c0cf8daf3d6a59c093cd0"
   },
   "/Users/aejt/fuego/src/Common/Varint.h": {
-    "mtime": 1778380444.4739466,
+    "mtime": 1778554754.1011598,
     "hash": "8ee73e8c17a685d551f3c168552df39a"
   },
   "/Users/aejt/fuego/src/Common/FileMappedVector.h": {
-    "mtime": 1778380444.4666524,
+    "mtime": 1778554754.0924988,
     "hash": "3c3213597fbdba6d00ea2f0c79a6d41c"
   },
   "/Users/aejt/fuego/src/Common/StdOutputStream.h": {
-    "mtime": 1778380444.4715068,
+    "mtime": 1778554754.097819,
     "hash": "ed83f3c1f1822c43bad0348efd54db55"
   },
   "/Users/aejt/fuego/src/Common/Util.cpp": {
-    "mtime": 1778380444.4735231,
+    "mtime": 1778554754.1006415,
     "hash": "7c338281c9fb0b783f81fc0d4a7849af"
   },
   "/Users/aejt/fuego/src/Common/StringInputStream.cpp": {
-    "mtime": 1778380444.472157,
+    "mtime": 1778554754.099305,
     "hash": "f47e2146b5be6f165b440b6f286ee3c1"
   },
   "/Users/aejt/fuego/src/Common/Base64.h": {
-    "mtime": 1778380444.4637797,
+    "mtime": 1778554754.089165,
     "hash": "7a4a6929e833bf073ce3172ecaaa93da"
   },
   "/Users/aejt/fuego/src/Common/DnsTools.h": {
-    "mtime": 1778380444.465868,
+    "mtime": 1778554754.0918605,
     "hash": "5d8265d3f755064369db077e357f6c13"
   },
   "/Users/aejt/fuego/src/Common/Base58.cpp": {
-    "mtime": 1778380444.4631128,
+    "mtime": 1778554754.0885477,
     "hash": "a4b9057cda5be77c2c00ef01c9359c64"
   },
   "/Users/aejt/fuego/src/Common/pod-class.h": {
-    "mtime": 1778380444.4747586,
+    "mtime": 1778554754.1022356,
     "hash": "24c9e178c9f28d68d83d8485e539bde3"
   },
   "/Users/aejt/fuego/src/Common/Base64.cpp": {
-    "mtime": 1778380444.4636517,
+    "mtime": 1778554754.0889814,
     "hash": "326d231a5aafd27c109f446d02ea35ee"
   },
   "/Users/aejt/fuego/src/Common/IInputStream.cpp": {
-    "mtime": 1778380444.467038,
+    "mtime": 1778554754.092718,
     "hash": "5f2686f005addf1415a932b84af5b81d"
   },
   "/Users/aejt/fuego/src/Common/ArrayView.h": {
-    "mtime": 1778380444.4629645,
+    "mtime": 1778554754.0879388,
     "hash": "c7a2b1d315504c1944e5e10637ecc34b"
   },
   "/Users/aejt/fuego/src/Common/ConsoleTools.cpp": {
-    "mtime": 1778380444.4654005,
+    "mtime": 1778554754.0911334,
     "hash": "79da9f130c6459a119ee2619544bee76"
   },
   "/Users/aejt/fuego/src/Common/MemoryInputStream.cpp": {
-    "mtime": 1778380444.468895,
+    "mtime": 1778554754.0950155,
     "hash": "4e839c5cbe5ef86f81f480a811a3b00b"
   },
   "/Users/aejt/fuego/src/Common/StringBuffer.h": {
-    "mtime": 1778380444.4720168,
+    "mtime": 1778554754.099057,
     "hash": "87611ba5e360b0dda4d493dc9ed2dbfc"
   },
   "/Users/aejt/fuego/src/Common/Base58.h": {
-    "mtime": 1778380444.46343,
+    "mtime": 1778554754.0887802,
     "hash": "4dc0e29c22f41f5b7914da798b038534"
   },
   "/Users/aejt/fuego/src/Common/Math.cpp": {
-    "mtime": 1778380444.468611,
+    "mtime": 1778554754.094676,
     "hash": "1aa09129fa8c33e292dc63837a793ac0"
   },
   "/Users/aejt/fuego/src/Common/DnsTools.cpp": {
-    "mtime": 1778380444.4657214,
+    "mtime": 1778554754.091662,
     "hash": "c035e6460d3b2e28d2fdaa404c4d96a4"
   },
   "/Users/aejt/fuego/src/Common/SignalHandler.cpp": {
-    "mtime": 1778380444.4705567,
+    "mtime": 1778554754.0968885,
     "hash": "9ce0a5baaee27803b2531750dfaa8eb8"
   },
   "/Users/aejt/fuego/src/Common/StringInputStream.h": {
-    "mtime": 1778380444.4722955,
+    "mtime": 1778554754.0995116,
     "hash": "4bbfd84ad7426695375ea6beae6e5113"
   },
   "/Users/aejt/fuego/src/Common/StdInputStream.cpp": {
-    "mtime": 1778380444.4708745,
+    "mtime": 1778554754.0972695,
     "hash": "4ddc56e7eeb86946ccb1ebbcefe7a692"
   },
   "/Users/aejt/fuego/src/Common/ConsoleHandler.h": {
-    "mtime": 1778380444.4652574,
+    "mtime": 1778554754.0909173,
     "hash": "2b34f11b33f383b5859e31c3aa1edd70"
   },
   "/Users/aejt/fuego/src/Common/ConsoleTools.h": {
-    "mtime": 1778380444.4655557,
+    "mtime": 1778554754.0914357,
     "hash": "b5d395856e5565c69f0e7e5f622fc574"
   },
   "/Users/aejt/fuego/src/Common/VectorOutputStream.h": {
-    "mtime": 1778380444.4742196,
+    "mtime": 1778554754.1016827,
     "hash": "bdfcb5daf024b80850a4f3d47b42a472"
   },
   "/Users/aejt/fuego/src/Common/ObserverManager.h": {
-    "mtime": 1778380444.46932,
+    "mtime": 1778554754.0957155,
     "hash": "9d00975d2d156c5c544fdc9aea7bb463"
   },
   "/Users/aejt/fuego/src/Common/StdInputStream.h": {
-    "mtime": 1778380444.471025,
+    "mtime": 1778554754.097462,
     "hash": "5ae11d00081900ae4e0716f6b3f5f052"
   },
   "/Users/aejt/fuego/src/Common/StreamTools.h": {
-    "mtime": 1778380444.4717946,
+    "mtime": 1778554754.0983696,
     "hash": "f00996b30fd09d1bb491afe470a7f70b"
   },
   "/Users/aejt/fuego/src/Common/ArrayRef.h": {
-    "mtime": 1778380444.4624898,
+    "mtime": 1778554754.0874333,
     "hash": "7c44416768027a8a293d6f41a7b5d559"
   },
   "/Users/aejt/fuego/src/Common/JsonValue.h": {
-    "mtime": 1778380444.468451,
+    "mtime": 1778554754.0943527,
     "hash": "7656fdb859655a0956ef830896552101"
   },
   "/Users/aejt/fuego/src/Common/MemoryInputStream.h": {
-    "mtime": 1778380444.4691584,
+    "mtime": 1778554754.095289,
     "hash": "d1e6150962354d469e057352b4e19a22"
   },
   "/Users/aejt/fuego/src/Common/static_assert.h": {
-    "mtime": 1778380444.4748907,
+    "mtime": 1778554754.1024475,
     "hash": "12540629e2526698431d60befacd5afa"
   },
   "/Users/aejt/fuego/src/Common/FileMappedVector.cpp": {
-    "mtime": 1778380444.466167,
+    "mtime": 1778554754.0920916,
     "hash": "4f1d76289f61dc08b52f4e6b22b9d7a6"
   },
   "/Users/aejt/fuego/src/Common/JsonValue.cpp": {
-    "mtime": 1778380444.4682746,
+    "mtime": 1778554754.0940652,
     "hash": "67c0a9dd316b42bf8e8417aa5dd9a873"
   },
   "/Users/aejt/fuego/src/Common/IOutputStream.cpp": {
-    "mtime": 1778380444.4675653,
+    "mtime": 1778554754.0931041,
     "hash": "57a9dcdf9d9a4f0dd61592f7137e1e3a"
   },
   "/Users/aejt/fuego/src/Common/ShuffleGenerator.h": {
-    "mtime": 1778380444.4703193,
+    "mtime": 1778554754.0966802,
     "hash": "c08c66e34754b96467c1670577a19319"
   },
   "/Users/aejt/fuego/src/Common/StringOutputStream.cpp": {
-    "mtime": 1778380444.472433,
+    "mtime": 1778554754.0997024,
     "hash": "9e2464ba193394cb755ef09c141d19a6"
   },
   "/Users/aejt/fuego/src/Common/StringView.h": {
-    "mtime": 1778380444.473305,
+    "mtime": 1778554754.1003413,
     "hash": "68d4171b6503783e23e3b9c467e06a8b"
   },
   "/Users/aejt/fuego/src/Common/FixedPoint.cpp": {
-    "mtime": 1778474243.0937562,
+    "mtime": 1778551909.7937248,
     "hash": "cbe0e3a14793b7deafdfb64c3f628a65"
   },
   "/Users/aejt/fuego/src/Common/StdOutputStream.cpp": {
-    "mtime": 1778380444.471357,
+    "mtime": 1778554754.0976348,
     "hash": "0eda6fbbc76c4bd8aa05fe61125e3a9a"
   },
   "/Users/aejt/fuego/src/Common/PathTools.h": {
-    "mtime": 1778380444.4697235,
+    "mtime": 1778554754.0961127,
     "hash": "196e9d9362d8f9b21b8b6fe63b69de45"
   },
   "/Users/aejt/fuego/src/Common/Util.h": {
-    "mtime": 1778380444.4737997,
+    "mtime": 1778554754.100958,
     "hash": "d16684723f130543125a444dccce8572"
   },
   "/Users/aejt/fuego/src/Common/PathTools.cpp": {
-    "mtime": 1778380444.4695787,
+    "mtime": 1778554754.0959084,
     "hash": "a22b13d3b5ce165b3d0bbc978d244aaa"
   },
   "/Users/aejt/fuego/src/Common/StringView.cpp": {
-    "mtime": 1778380444.4731712,
+    "mtime": 1778554754.1001036,
     "hash": "a048511cf0ffac37bddf83505d08b130"
   },
   "/Users/aejt/fuego/src/Common/ScopeExit.h": {
-    "mtime": 1778380444.4701529,
+    "mtime": 1778554754.096494,
     "hash": "cd0f383e65e488bfe249a03a641ecfb9"
   },
   "/Users/aejt/fuego/src/Common/Math.h": {
-    "mtime": 1778380444.4687514,
+    "mtime": 1778554754.0948062,
     "hash": "b2713eb6e0a507472d8fbe935d6c3e0e"
   },
   "/Users/aejt/fuego/src/Common/IOutputStream.h": {
-    "mtime": 1778380444.4677129,
+    "mtime": 1778554754.0932853,
     "hash": "b2d56880e019894114c1b0dc8bb0c6d5"
   },
   "/Users/aejt/fuego/src/Common/IInputStream.h": {
-    "mtime": 1778380444.4672713,
+    "mtime": 1778554754.0929077,
     "hash": "9c6d987476ee58a10e96f248dd8dfee1"
   },
   "/Users/aejt/fuego/src/Common/BlockingQueue.h": {
-    "mtime": 1778380444.4644566,
+    "mtime": 1778554754.0897753,
     "hash": "aa51bfa4ef1a671b98146b9ef9493c94"
   },
   "/Users/aejt/fuego/src/Common/CommandLine.h": {
-    "mtime": 1778380444.4648764,
+    "mtime": 1778554754.0903277,
     "hash": "56ff569f4a54d824d80799beb705ea3a"
   },
   "/Users/aejt/fuego/src/Common/StringTools.cpp": {
@@ -3948,31 +3956,31 @@
     "hash": "300655505cedeab0a91d18a516b75585"
   },
   "/Users/aejt/fuego/src/Common/SignalHandler.h": {
-    "mtime": 1778380444.4707174,
+    "mtime": 1778554754.0970745,
     "hash": "5e62c18682ee5fe9a4e0222208a252dd"
   },
   "/Users/aejt/fuego/src/Common/StringOutputStream.h": {
-    "mtime": 1778380444.4725618,
+    "mtime": 1778554754.0998845,
     "hash": "ccf4280bc22f7039bcb80cd7856a8088"
   },
   "/Users/aejt/fuego/src/Common/int-util.h": {
-    "mtime": 1778380444.474357,
+    "mtime": 1778554754.1019385,
     "hash": "c515ce5e02715ef634eb254cd6bd9995"
   },
   "/Users/aejt/fuego/src/Common/CommandLine.cpp": {
-    "mtime": 1778380444.4645987,
+    "mtime": 1778554754.0899613,
     "hash": "5a5e870c5521dd71756f57f2c3a0387f"
   },
   "/Users/aejt/fuego/src/Common/BlockingQueue.cpp": {
-    "mtime": 1778380444.4641545,
+    "mtime": 1778554754.0895803,
     "hash": "4aa14072e6b8ace82d82c340424c32ea"
   },
   "/Users/aejt/fuego/src/Common/StreamTools.cpp": {
-    "mtime": 1778380444.4716606,
+    "mtime": 1778554754.0981674,
     "hash": "059a82fe9b4948bba5283875b34f677a"
   },
   "/Users/aejt/fuego/src/Common/ScopeExit.cpp": {
-    "mtime": 1778380444.4699664,
+    "mtime": 1778554754.0963018,
     "hash": "d6a1d25abb2c14d331f4fa3a32b2e85b"
   },
   "/Users/aejt/fuego/src/Common/StringTools.h": {
@@ -3980,11 +3988,11 @@
     "hash": "9b1bbb2c4460e0c9e6ae1819a535472d"
   },
   "/Users/aejt/fuego/src/Common/FixedPoint.h": {
-    "mtime": 1778420615.41052,
+    "mtime": 1778551909.794014,
     "hash": "5bc8fa29e4ad573d361122b765f25cff"
   },
   "/Users/aejt/fuego/src/Common/VectorOutputStream.cpp": {
-    "mtime": 1778380444.47409,
+    "mtime": 1778554754.1013343,
     "hash": "9b2c6f31d7de2fab0f746fb71401ea9d"
   },
   "/Users/aejt/fuego/src/Common/MathUtils.h": {
@@ -3992,11 +4000,11 @@
     "hash": "2e103bf3808f906ad8a30fc94236fa95"
   },
   "/Users/aejt/fuego/src/Common/ConsoleHandler.cpp": {
-    "mtime": 1778380444.465087,
+    "mtime": 1778554754.090721,
     "hash": "2a38a4bdfa653100b3c4e4e359b61ba1"
   },
   "/Users/aejt/fuego/src/PaymentGateService/RpcNodeConfiguration.cpp": {
-    "mtime": 1778380444.5193722,
+    "mtime": 1778554754.174948,
     "hash": "a20fd720857240bed11054561f28f7ab"
   },
   "/Users/aejt/fuego/src/PaymentGateService/InteractiveWalletDaemon.h": {
@@ -4004,15 +4012,15 @@
     "hash": "f4088096f5397579e7fd33d7d9dc2bae"
   },
   "/Users/aejt/fuego/src/PaymentGateService/ConfigurationManager.cpp": {
-    "mtime": 1778380444.5184548,
+    "mtime": 1778554754.173575,
     "hash": "32d7700c040cbaf4ecdf88335c7c1ac3"
   },
   "/Users/aejt/fuego/src/PaymentGateService/PaymentServiceConfiguration.cpp": {
-    "mtime": 1778380444.519116,
+    "mtime": 1778554754.174545,
     "hash": "720afb42c5a1652948d1bcbadafe0ff6"
   },
   "/Users/aejt/fuego/src/PaymentGateService/PaymentGateService.cpp": {
-    "mtime": 1778380444.5187287,
+    "mtime": 1778554754.1739836,
     "hash": "b8c580ca2b8b2396a649e0715fcf2175"
   },
   "/Users/aejt/fuego/src/PaymentGateService/InteractiveWalletDaemon.cpp": {
@@ -4020,23 +4028,23 @@
     "hash": "18bb0e7d9d7a163656dff471f5f2a9e2"
   },
   "/Users/aejt/fuego/src/PaymentGateService/ConfigurationManager.h": {
-    "mtime": 1778380444.5185828,
+    "mtime": 1778554754.1737678,
     "hash": "a3e1f6131b5a8330e4ab69943a84802d"
   },
   "/Users/aejt/fuego/src/PaymentGateService/PaymentGateService.h": {
-    "mtime": 1778380444.5189583,
+    "mtime": 1778554754.1741817,
     "hash": "7924fd9f654b2c2e721348d582d708a9"
   },
   "/Users/aejt/fuego/src/PaymentGateService/main.cpp": {
-    "mtime": 1778380444.5198047,
+    "mtime": 1778554754.1755447,
     "hash": "351eca6bfd68931bcde7ca650dbc47eb"
   },
   "/Users/aejt/fuego/src/PaymentGateService/PaymentServiceConfiguration.h": {
-    "mtime": 1778380444.5192463,
+    "mtime": 1778554754.1747532,
     "hash": "b76c96742476d9d07dc5c02476f9d27f"
   },
   "/Users/aejt/fuego/src/PaymentGateService/RpcNodeConfiguration.h": {
-    "mtime": 1778380444.5196333,
+    "mtime": 1778554754.1751301,
     "hash": "8cc689e2c84caa6e4b9db8a449bd3685"
   },
   "/Users/aejt/fuego/src/PaymentGate/StagedDepositRpc.h": {
@@ -4044,23 +4052,23 @@
     "hash": "1a08aff880530a455ae9e83a9e0f9b24"
   },
   "/Users/aejt/fuego/src/PaymentGate/NodeFactory.h": {
-    "mtime": 1778380444.5156012,
+    "mtime": 1778554754.1682723,
     "hash": "7dc6ac349f0145f879ac8fe1a47cefa1"
   },
   "/Users/aejt/fuego/src/PaymentGate/PaymentServiceJsonRpcMessages.cpp": {
-    "mtime": 1778380444.5158563,
+    "mtime": 1778554754.16877,
     "hash": "2c7034df9b588e9dec6927b98eeba665"
   },
   "/Users/aejt/fuego/src/PaymentGate/PaymentServiceJsonRpcServer.cpp": {
-    "mtime": 1778380444.5166194,
+    "mtime": 1778554754.1695688,
     "hash": "ee492cf7a143bcfac90cadcfabec0da0"
   },
   "/Users/aejt/fuego/src/PaymentGate/WalletServiceErrorCategory.cpp": {
-    "mtime": 1778380444.5181637,
+    "mtime": 1778554754.173161,
     "hash": "dae31f26c88569ceec266235c1f8db21"
   },
   "/Users/aejt/fuego/src/PaymentGate/WalletService.cpp": {
-    "mtime": 1778380444.5177076,
+    "mtime": 1778554754.1724603,
     "hash": "cdb7ca0f67066a1f1b65668ba24cd82e"
   },
   "/Users/aejt/fuego/src/PaymentGate/StagedDepositRpc.cpp": {
@@ -4068,43 +4076,43 @@
     "hash": "082e76c5bd1ff351a639bf1b78d5ab6f"
   },
   "/Users/aejt/fuego/src/PaymentGate/PaymentServiceJsonRpcServer.h": {
-    "mtime": 1778380444.5170548,
+    "mtime": 1778554754.1699862,
     "hash": "ca4009f5b669d5d940c0de28cb5fa1fc"
   },
   "/Users/aejt/fuego/src/PaymentGate/PaymentServiceJsonRpcMessages.h": {
-    "mtime": 1778380444.5161815,
+    "mtime": 1778554754.1692276,
     "hash": "9b8f0860fa53206e1b780cdf92ff635e"
   },
   "/Users/aejt/fuego/src/PaymentGate/WalletService.h": {
-    "mtime": 1778380444.518012,
+    "mtime": 1778554754.1729324,
     "hash": "fc945c926c87e23f366d85564b009def"
   },
   "/Users/aejt/fuego/src/PaymentGate/NodeFactory.cpp": {
-    "mtime": 1778380444.5154047,
+    "mtime": 1778554754.167982,
     "hash": "4bde21c9f8e53dc16d2f8ef4ebfd4bd4"
   },
   "/Users/aejt/fuego/src/PaymentGate/WalletServiceErrorCategory.h": {
-    "mtime": 1778380444.5183055,
+    "mtime": 1778554754.1733692,
     "hash": "05e3c721ca93e06eabc8a806d272e45c"
   },
   "/Users/aejt/fuego/src/Daemon/DaemonCommandsHandler.h": {
-    "mtime": 1778380444.4960494,
+    "mtime": 1778554754.142797,
     "hash": "ec3482f3f5122d01e94fc44b9614bca6"
   },
   "/Users/aejt/fuego/src/Daemon/Daemon.cpp": {
-    "mtime": 1778380444.4954495,
+    "mtime": 1778554754.1419494,
     "hash": "71fd1f3271fb20d997f54affc8f7a1ce"
   },
   "/Users/aejt/fuego/src/Daemon/DaemonCommandsHandler.cpp": {
-    "mtime": 1778380444.4958744,
+    "mtime": 1778554754.1425645,
     "hash": "b90f0767d783eb3cb8b87c870f9b2338"
   },
   "/Users/aejt/fuego/src/JsonRpcServer/JsonRpcServer.h": {
-    "mtime": 1778380444.503061,
+    "mtime": 1778554754.1470406,
     "hash": "0ea6fd7e4ba1dbf75cf879e2dd06ff6f"
   },
   "/Users/aejt/fuego/src/JsonRpcServer/JsonRpcServer.cpp": {
-    "mtime": 1778380444.5026262,
+    "mtime": 1778554754.1468437,
     "hash": "665e99c062138b52852bc33b2a8dae2c"
   },
   "/Users/aejt/fuego/src/HTTP/httplib.h": {
@@ -4112,51 +4120,51 @@
     "hash": "902313c4275f89995c0bc0f666646d32"
   },
   "/Users/aejt/fuego/src/HTTP/HttpParserErrorCodes.h": {
-    "mtime": 1778380444.4968178,
+    "mtime": 1778554754.1442065,
     "hash": "8739746747424e938b27de2d9935ced3"
   },
   "/Users/aejt/fuego/src/HTTP/HttpParser.cpp": {
-    "mtime": 1778380444.4962919,
+    "mtime": 1778554754.1432111,
     "hash": "70595c84d992c6d0b688f5f6ee241519"
   },
   "/Users/aejt/fuego/src/HTTP/HttpResponse.cpp": {
-    "mtime": 1778380444.4978185,
+    "mtime": 1778554754.1449492,
     "hash": "4f5495854b4f5797f8947b6e7a3690a8"
   },
   "/Users/aejt/fuego/src/HTTP/HttpResponse.h": {
-    "mtime": 1778380444.4988077,
+    "mtime": 1778554754.1451502,
     "hash": "1beb15185a3af185270a31087ca4f3a5"
   },
   "/Users/aejt/fuego/src/HTTP/HttpRequest.h": {
-    "mtime": 1778380444.497421,
+    "mtime": 1778554754.1447527,
     "hash": "e41d361baaa39256ba5d679eef00c920"
   },
   "/Users/aejt/fuego/src/HTTP/HttpParser.h": {
-    "mtime": 1778380444.4965332,
+    "mtime": 1778554754.1434236,
     "hash": "43f7017cca5e99ca460d1167d1d8c2f5"
   },
   "/Users/aejt/fuego/src/HTTP/HttpParserErrorCodes.cpp": {
-    "mtime": 1778380444.4966779,
+    "mtime": 1778554754.1439772,
     "hash": "0f5d62be572d719d63f12beb548d1599"
   },
   "/Users/aejt/fuego/src/HTTP/HttpRequest.cpp": {
-    "mtime": 1778380444.4969733,
+    "mtime": 1778554754.1444151,
     "hash": "a578b847a304470fc9c39a5372cf6a4a"
   },
   "/Users/aejt/fuego/src/InProcessNode/InProcessNodeErrors.h": {
-    "mtime": 1778380444.5023425,
+    "mtime": 1778554754.146489,
     "hash": "3659336970da851577c06ef04452797c"
   },
   "/Users/aejt/fuego/src/InProcessNode/InProcessNode.h": {
-    "mtime": 1778380444.5004156,
+    "mtime": 1778554754.146111,
     "hash": "92b750dda97b3f2bb30fb2709d2c6b47"
   },
   "/Users/aejt/fuego/src/InProcessNode/InProcessNode.cpp": {
-    "mtime": 1778380444.4997585,
+    "mtime": 1778554754.1458838,
     "hash": "1571a6788cae3b93dd861a372f2283b3"
   },
   "/Users/aejt/fuego/src/InProcessNode/InProcessNodeErrors.cpp": {
-    "mtime": 1778380444.500758,
+    "mtime": 1778554754.1462998,
     "hash": "b016b5f77deaf01f91363b2c84aaaecc"
   },
   "/Users/aejt/fuego/src/P2p/P2pNodeConfig.cpp": {
@@ -4164,31 +4172,31 @@
     "hash": "5f893acc81cf099245b1fd28422975bf"
   },
   "/Users/aejt/fuego/src/P2p/P2pProtocolDefinitions.h": {
-    "mtime": 1778500932.2838998,
+    "mtime": 1778552232.5415254,
     "hash": "948c662ffea072169c96172500d07cbc"
   },
   "/Users/aejt/fuego/src/P2p/IP2pNodeInternal.cpp": {
-    "mtime": 1778380444.5083625,
+    "mtime": 1778554754.157259,
     "hash": "2a28f8ab3d54af8faaa618d1c8387099"
   },
   "/Users/aejt/fuego/src/P2p/NetNodeCommon.h": {
-    "mtime": 1778380444.5106165,
+    "mtime": 1778554754.161281,
     "hash": "104e64f5737a1132d0600979bdc65606"
   },
   "/Users/aejt/fuego/src/P2p/ConnectionContext.h": {
-    "mtime": 1778491204.402425,
+    "mtime": 1778554754.157033,
     "hash": "91a931bb0b72dce1eb1fae4f3b6b5fc8"
   },
   "/Users/aejt/fuego/src/P2p/P2pConnectionProxy.h": {
-    "mtime": 1778380444.5112996,
+    "mtime": 1778554754.1633735,
     "hash": "eb16f5a7a32d3896b09afa5bc68f4298"
   },
   "/Users/aejt/fuego/src/P2p/P2pConnectionProxy.cpp": {
-    "mtime": 1778380444.511143,
+    "mtime": 1778554754.1631649,
     "hash": "c32e999e352cedb20c7e536891cb801d"
   },
   "/Users/aejt/fuego/src/P2p/NetNodeConfig.cpp": {
-    "mtime": 1778484670.1006591,
+    "mtime": 1778554754.1623316,
     "hash": "a11ee5efe442e8d5b95ffe7d14d8a50e"
   },
   "/Users/aejt/fuego/src/P2p/PendingLiteBlock.h": {
@@ -4196,87 +4204,87 @@
     "hash": "d81f96ba021399b163b8c281f9733c38"
   },
   "/Users/aejt/fuego/src/P2p/P2pContextOwner.cpp": {
-    "mtime": 1778380444.512667,
+    "mtime": 1778554754.164169,
     "hash": "4bb429cf4f7366d645382f7e2dbc3418"
   },
   "/Users/aejt/fuego/src/P2p/P2pInterfaces.cpp": {
-    "mtime": 1778380444.512936,
+    "mtime": 1778554754.164657,
     "hash": "3adcd89865611094fe8f1b21347199e5"
   },
   "/Users/aejt/fuego/src/P2p/Socks5Client.cpp": {
-    "mtime": 1778484483.567995,
+    "mtime": 1778552232.5426164,
     "hash": "98ef64f9e63c42318d4aaa025cb91718"
   },
   "/Users/aejt/fuego/src/P2p/Socks5Client.h": {
-    "mtime": 1778484389.0143716,
+    "mtime": 1778552232.543142,
     "hash": "2485f3f01b0f0c18772214b5e8812ddb"
   },
   "/Users/aejt/fuego/src/P2p/P2pNode.h": {
-    "mtime": 1778380444.5139494,
+    "mtime": 1778554754.1659157,
     "hash": "d552c647c312efbea1ee2ccb102248f6"
   },
   "/Users/aejt/fuego/src/P2p/P2pContext.h": {
-    "mtime": 1778380444.512518,
+    "mtime": 1778554754.1639607,
     "hash": "2e99d7b46d4a6cec5722ebf9810d70d8"
   },
   "/Users/aejt/fuego/src/P2p/P2pNetworks.h": {
-    "mtime": 1778380444.5133965,
+    "mtime": 1778554754.1652052,
     "hash": "39bb271c84c4d3dec351746c97fba4ee"
   },
   "/Users/aejt/fuego/src/P2p/P2pInterfaces.h": {
-    "mtime": 1778380444.5130765,
+    "mtime": 1778554754.1648493,
     "hash": "0dc5c483f5076d6376722ac4aaf98964"
   },
   "/Users/aejt/fuego/src/P2p/NetNode.cpp": {
-    "mtime": 1778501635.7093692,
+    "mtime": 1778554754.1605694,
     "hash": "0e37a616976ad58c5419ba9532c39e25"
   },
   "/Users/aejt/fuego/src/P2p/PeerListManager.h": {
-    "mtime": 1778380444.5152125,
+    "mtime": 1778554754.1674042,
     "hash": "b1387fa7afa36bace156c59da2e20c19"
   },
   "/Users/aejt/fuego/src/P2p/P2pProtocolTypes.h": {
-    "mtime": 1778484301.2979681,
+    "mtime": 1778554754.1666317,
     "hash": "d199c99ca174055b82cf24cccb25f09e"
   },
   "/Users/aejt/fuego/src/P2p/PeerListManager.cpp": {
-    "mtime": 1778380444.5150502,
+    "mtime": 1778554754.1670024,
     "hash": "95d537f6d3f5b5bdce27d6285c3d9756"
   },
   "/Users/aejt/fuego/src/P2p/P2pContext.cpp": {
-    "mtime": 1778380444.511917,
+    "mtime": 1778554754.163752,
     "hash": "8da02140d4ae2eec79d0c3909a8b50dc"
   },
   "/Users/aejt/fuego/src/P2p/NetNodeConfig.h": {
-    "mtime": 1778484592.121995,
+    "mtime": 1778554754.1628525,
     "hash": "43927eb77ab57c94767f6a52b67d3b8b"
   },
   "/Users/aejt/fuego/src/P2p/P2pNodeConfig.h": {
-    "mtime": 1778380444.5142734,
+    "mtime": 1778554754.1661208,
     "hash": "b479e513f5a2afcfad97b4fb5f756fa7"
   },
   "/Users/aejt/fuego/src/P2p/NetNode.h": {
-    "mtime": 1778502962.9844003,
+    "mtime": 1778554754.1610663,
     "hash": "d7442ac16bb4f00387cfcaadae6586dc"
   },
   "/Users/aejt/fuego/src/P2p/P2pNode.cpp": {
-    "mtime": 1778380444.5137079,
+    "mtime": 1778554754.1656735,
     "hash": "5bcead6a9b202dc1f95baed742eeda51"
   },
   "/Users/aejt/fuego/src/P2p/LevinProtocol.h": {
-    "mtime": 1778380444.5090866,
+    "mtime": 1778554754.1581347,
     "hash": "6245209f26812b8f129fda94eeafa135"
   },
   "/Users/aejt/fuego/src/P2p/IP2pNodeInternal.h": {
-    "mtime": 1778380444.5085835,
+    "mtime": 1778554754.1574616,
     "hash": "81b821941a525913e945c555ee740777"
   },
   "/Users/aejt/fuego/src/P2p/LevinProtocol.cpp": {
-    "mtime": 1778380444.5089447,
+    "mtime": 1778554754.157848,
     "hash": "9526095a127a2db27800463ee0342026"
   },
   "/Users/aejt/fuego/src/P2p/P2pContextOwner.h": {
-    "mtime": 1778380444.5128016,
+    "mtime": 1778554754.1644588,
     "hash": "7ca924a7a9e5bc799eb3251e72c7f929"
   },
   "/Users/aejt/fuego/src/P2p/Meshtastic/MeshtasticIntegration.cpp": {
@@ -4288,107 +4296,107 @@
     "hash": "1188732ba0129f9e6e71884c964cbefe"
   },
   "/Users/aejt/fuego/src/Wallet/WalletErrors.cpp": {
-    "mtime": 1778380444.548863,
+    "mtime": 1778554754.2092748,
     "hash": "b146dce9509ba1abd9c5db4c06b37c57"
   },
   "/Users/aejt/fuego/src/Wallet/WalletRpcServerCommandsDefinitions.h": {
-    "mtime": 1778380444.5520334,
+    "mtime": 1778554754.215509,
     "hash": "4a9c361ee6e100c61ef37820170f9b56"
   },
   "/Users/aejt/fuego/src/Wallet/WalletAsyncContextCounter.cpp": {
-    "mtime": 1778380444.548496,
+    "mtime": 1778554754.2088845,
     "hash": "5b7a6a652e7feb7339a49213cf9d0ae9"
   },
   "/Users/aejt/fuego/src/Wallet/PoolRpcServer.h": {
-    "mtime": 1778380444.5483177,
+    "mtime": 1778554754.2085695,
     "hash": "4f8aabff03ff3e933f9d620afc09d773"
   },
   "/Users/aejt/fuego/src/Wallet/IFusionManager.h": {
-    "mtime": 1778380444.545727,
+    "mtime": 1778554754.2072093,
     "hash": "9ddde13bae064706a0b5e553c1ac3d32"
   },
   "/Users/aejt/fuego/src/Wallet/WalletGreen.h": {
-    "mtime": 1778380444.551135,
+    "mtime": 1778554754.2138922,
     "hash": "d8dcfdd84ab6617a8e0f87accc938e05"
   },
   "/Users/aejt/fuego/src/Wallet/DIGMWalletScanner.cpp": {
-    "mtime": 1778380444.545509,
+    "mtime": 1778554754.2068298,
     "hash": "663cfc6f65977a4a61d8d14ce9193f71"
   },
   "/Users/aejt/fuego/src/Wallet/WalletErrors.h": {
-    "mtime": 1778380444.5490172,
+    "mtime": 1778554754.2096062,
     "hash": "21635b53d84c7612f8a2ac1b109a3227"
   },
   "/Users/aejt/fuego/src/Wallet/WalletUtils.h": {
-    "mtime": 1778380444.5537255,
+    "mtime": 1778554754.2181635,
     "hash": "d0d3b94b04d65b9bd89d231895c3ec9e"
   },
   "/Users/aejt/fuego/src/Wallet/WalletRpcServerErrorCodes.h": {
-    "mtime": 1778380444.5521607,
+    "mtime": 1778554754.2157276,
     "hash": "329fb934ba6b1c88f19e2281b39628af"
   },
   "/Users/aejt/fuego/src/Wallet/LegacyKeysImporter.h": {
-    "mtime": 1778380444.5461967,
+    "mtime": 1778554754.20767,
     "hash": "72e03c45a79f58b05f14d2480dddfef1"
   },
   "/Users/aejt/fuego/src/Wallet/WalletRpcServer.cpp": {
-    "mtime": 1778380444.5517266,
+    "mtime": 1778554754.2146993,
     "hash": "5a6dd3cf30653eff0a530eb59c18f75a"
   },
   "/Users/aejt/fuego/src/Wallet/WalletIndices.h": {
-    "mtime": 1778480210.534577,
+    "mtime": 1778554754.2142358,
     "hash": "8341147de58d11a9e3480e12821ededc"
   },
   "/Users/aejt/fuego/src/Wallet/DIGMWalletScanner.h": {
-    "mtime": 1778380444.545598,
+    "mtime": 1778554754.2069812,
     "hash": "b2aed0e57e9c31429c773d5ecf1f025d"
   },
   "/Users/aejt/fuego/src/Wallet/DIGMWalletExtension.h": {
-    "mtime": 1778380444.5453262,
+    "mtime": 1778554754.205928,
     "hash": "6b3af33ca6f5d51a625e698a9559b802"
   },
   "/Users/aejt/fuego/src/Wallet/PoolRpcServer.cpp": {
-    "mtime": 1778380444.5480988,
+    "mtime": 1778554754.2082796,
     "hash": "79c452032aba09a7259c08842c3ae46e"
   },
   "/Users/aejt/fuego/src/Wallet/WalletSerializationV2.cpp": {
-    "mtime": 1778380444.5532281,
+    "mtime": 1778554754.2175684,
     "hash": "fc8a0785f738c7f36c481c31ddf811de"
   },
   "/Users/aejt/fuego/src/Wallet/WalletGreen.cpp": {
-    "mtime": 1778380444.5507026,
+    "mtime": 1778554754.2128322,
     "hash": "65a0f4cc18ca5819b4e20e53d69ff573"
   },
   "/Users/aejt/fuego/src/Wallet/WalletSerializationV1.h": {
-    "mtime": 1778380444.5530043,
+    "mtime": 1778554754.2169328,
     "hash": "74d7d6cdfbc1b76a4bc7d28529d5f863"
   },
   "/Users/aejt/fuego/src/Wallet/WalletSerializationV1.cpp": {
-    "mtime": 1778380444.5528553,
+    "mtime": 1778554754.2164302,
     "hash": "9a53457b4398ca2d0e60165e79126c35"
   },
   "/Users/aejt/fuego/src/Wallet/WalletRpcServer.h": {
-    "mtime": 1778380444.5518892,
+    "mtime": 1778554754.2151382,
     "hash": "fd99d5b1cc36e6a73efcc502c0ff951b"
   },
   "/Users/aejt/fuego/src/Wallet/WalletAsyncContextCounter.h": {
-    "mtime": 1778380444.5486612,
+    "mtime": 1778554754.2090852,
     "hash": "4a2a001cc02c2a054adb7aae61001485"
   },
   "/Users/aejt/fuego/src/Wallet/WalletSerializationV2.h": {
-    "mtime": 1778380444.5533628,
+    "mtime": 1778554754.2177773,
     "hash": "6917cc484b30b8cb46211cecffe859a6"
   },
   "/Users/aejt/fuego/src/Wallet/DIGMWalletIntegration.h": {
-    "mtime": 1778417252.8176649,
+    "mtime": 1778554754.2065108,
     "hash": "506e74ba5ca21b54d9e303aaf30f7eff"
   },
   "/Users/aejt/fuego/src/Wallet/WalletUtils.cpp": {
-    "mtime": 1778380444.5535057,
+    "mtime": 1778554754.2179694,
     "hash": "ed39cd13ec907f209f918e5362f983f9"
   },
   "/Users/aejt/fuego/src/Wallet/LegacyKeysImporter.cpp": {
-    "mtime": 1778380444.545959,
+    "mtime": 1778554754.2074676,
     "hash": "2759936a9880bc61704f7f7f5741376b"
   },
   "/Users/aejt/fuego/src/Mnemonics/electrum-words.cpp": {
@@ -4460,63 +4468,63 @@
     "hash": "79483b256ea10a1e06c47f66cb47708f"
   },
   "/Users/aejt/fuego/src/Rpc/JsonRpc.cpp": {
-    "mtime": 1778380444.5295427,
+    "mtime": 1778554754.181864,
     "hash": "90f05d63d86b6ed232b23c59275d0b23"
   },
   "/Users/aejt/fuego/src/Rpc/CoreRpcServerCommandsDefinitions.h": {
-    "mtime": 1778477327.0344152,
+    "mtime": 1778554754.1793568,
     "hash": "0be83e2e5904db623be8511f154eb0ac"
   },
   "/Users/aejt/fuego/src/Rpc/RpcServerConfig.cpp": {
-    "mtime": 1778380444.5313501,
+    "mtime": 1778554754.184869,
     "hash": "bb83a3d8c556dbbe2fc66d2e67fb536a"
   },
   "/Users/aejt/fuego/src/Rpc/DIGMRpcServer.cpp": {
-    "mtime": 1778380444.5285087,
+    "mtime": 1778554754.1806004,
     "hash": "6981853b6268a4f9a9db834edbdc43c3"
   },
   "/Users/aejt/fuego/src/Rpc/RpcServerConfig.h": {
-    "mtime": 1778380444.5315895,
+    "mtime": 1778554754.185051,
     "hash": "84083e41ab92b4d69b12cded6b037493"
   },
   "/Users/aejt/fuego/src/Rpc/HttpServer.cpp": {
-    "mtime": 1778380444.5292158,
+    "mtime": 1778554754.1814685,
     "hash": "409521b21119e12780956c18bf5a3f49"
   },
   "/Users/aejt/fuego/src/Rpc/HttpServer.h": {
-    "mtime": 1778380444.52941,
+    "mtime": 1778554754.1816566,
     "hash": "21103ab1157728f06ffe3593def3d3ff"
   },
   "/Users/aejt/fuego/src/Rpc/HttpClient.h": {
-    "mtime": 1778380444.5290778,
+    "mtime": 1778554754.1812217,
     "hash": "9fa68b21a75d5bf527096dc817b9446f"
   },
   "/Users/aejt/fuego/src/Rpc/DIGMRpcHandler.h": {
-    "mtime": 1778417215.1004424,
+    "mtime": 1778554754.180202,
     "hash": "2f18dbc26e626d7b5301ac2291bc9247"
   },
   "/Users/aejt/fuego/src/Rpc/HttpClient.cpp": {
-    "mtime": 1778380444.5288396,
+    "mtime": 1778554754.1809807,
     "hash": "42dbe7f5db7bf1e138673f7ae80f19b4"
   },
   "/Users/aejt/fuego/src/Rpc/RpcServer.h": {
-    "mtime": 1778472433.5165806,
+    "mtime": 1778551909.8095365,
     "hash": "c74573d6e4854217a01fd32d0b5de888"
   },
   "/Users/aejt/fuego/src/Rpc/RpcServer.cpp": {
-    "mtime": 1778493556.2158954,
+    "mtime": 1778554754.1846514,
     "hash": "e4982a76880af10419eb2983773e9716"
   },
   "/Users/aejt/fuego/src/Rpc/CoreRpcServerErrorCodes.h": {
-    "mtime": 1778380444.5282366,
+    "mtime": 1778554754.1796076,
     "hash": "1d99163ca2c066cce1c96adf40092b80"
   },
   "/Users/aejt/fuego/src/Rpc/JsonRpc.h": {
-    "mtime": 1778380444.529938,
+    "mtime": 1778554754.182406,
     "hash": "4fe0e85e8b0cb06b5ec72aeb6fc29213"
   },
   "/Users/aejt/fuego/src/Rpc/DIGMRpcServer.h": {
-    "mtime": 1778380444.5286021,
+    "mtime": 1778554754.180776,
     "hash": "b2cf1e0a7b86976f85e2471a505aac48"
   },
   "/Users/aejt/fuego/src/TestnetDaemon/TestnetDaemon.cpp": {
@@ -4524,87 +4532,87 @@
     "hash": "da10e3188b6ff192fdc9e373bc0c0a51"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacy.h": {
-    "mtime": 1778380444.555253,
+    "mtime": 1778554754.2210252,
     "hash": "316708fbd5948696f2e2f851d46a5b8d"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacySerializer.cpp": {
-    "mtime": 1778380444.555986,
+    "mtime": 1778554754.2227437,
     "hash": "6b05cef30fe9cb76fa121afa2bd38213"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletHelper.h": {
-    "mtime": 1778380444.5546257,
+    "mtime": 1778554754.2192144,
     "hash": "e3b161f2412151f42741a6e154c92a9d"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletUserTransactionsCache.h": {
-    "mtime": 1778380444.558004,
+    "mtime": 1778554754.2282534,
     "hash": "5e887da16b6f0c2e943fc64e23878720"
   },
   "/Users/aejt/fuego/src/WalletLegacy/KeysStorage.cpp": {
-    "mtime": 1778380444.5540047,
+    "mtime": 1778554754.218376,
     "hash": "36d247de467bbfdc94a979f7679284ca"
   },
   "/Users/aejt/fuego/src/WalletLegacy/KeysStorage.h": {
-    "mtime": 1778380444.5541327,
+    "mtime": 1778554754.218564,
     "hash": "559cc9d3e3ef9f7143603c16e36ff993"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletRequest.h": {
-    "mtime": 1778380444.5562794,
+    "mtime": 1778554754.223849,
     "hash": "445542d2e3c6b12942e105c0dcd7c5e7"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletTransactionSender.cpp": {
-    "mtime": 1778477546.10718,
+    "mtime": 1778554754.225588,
     "hash": "d57d4b23171b0ed79fb446cab0eaf162"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletUtils.h": {
-    "mtime": 1778380444.558141,
+    "mtime": 1778554754.2284594,
     "hash": "8bd0cb693b73cbf9a681f566831a2e8b"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacySerialization.cpp": {
-    "mtime": 1778380444.5556784,
+    "mtime": 1778554754.2220466,
     "hash": "cce3df006e87c5250ee4d89b00cc1601"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacySerialization.h": {
-    "mtime": 1778380444.5558283,
+    "mtime": 1778554754.222298,
     "hash": "f08b71a55b2ddfdfcacfb87852d33005"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletDepositInfo.h": {
-    "mtime": 1778380444.554261,
+    "mtime": 1778554754.2187688,
     "hash": "cc4a97f87308a79437dc0887532261a0"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletUnconfirmedTransactions.cpp": {
-    "mtime": 1778380444.5572426,
+    "mtime": 1778554754.2263246,
     "hash": "6e733679b69bad26ef1d324f4bcf1284"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletUnconfirmedTransactions.h": {
-    "mtime": 1778380444.557386,
+    "mtime": 1778554754.2265613,
     "hash": "f9231794cbe96e2bebc8dd3fd5b9b365"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacyEvent.h": {
-    "mtime": 1778380444.555512,
+    "mtime": 1778554754.2214448,
     "hash": "d8605f124f8706a667a1c19762dbe182"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletHelper.cpp": {
-    "mtime": 1778380444.5544882,
+    "mtime": 1778554754.2189968,
     "hash": "7d74c1450db356ac58f72de29d52ef92"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletTransactionSender.h": {
-    "mtime": 1778380444.5570798,
+    "mtime": 1778554754.2260053,
     "hash": "346d106f8290abfdf210bf4180c35581"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletUserTransactionsCache.cpp": {
-    "mtime": 1778380444.5578368,
+    "mtime": 1778554754.2279909,
     "hash": "10507aa944232202ba2238d725510937"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacySerializer.h": {
-    "mtime": 1778380444.5561376,
+    "mtime": 1778554754.2230897,
     "hash": "7a7d31ebe6f94a66637185ed9798b2ce"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletLegacy.cpp": {
-    "mtime": 1778380444.5551074,
+    "mtime": 1778554754.2204843,
     "hash": "260a4811ad2718863d4b68b1ce984170"
   },
   "/Users/aejt/fuego/src/WalletLegacy/WalletSendTransactionContext.h": {
-    "mtime": 1778380444.5564334,
+    "mtime": 1778554754.2240577,
     "hash": "f5844603814726bd330ad4998ad6ae75"
   },
   "/Users/aejt/fuego/src/BurnDepositValidationService/BurnDepositValidationService.cpp": {
@@ -4612,87 +4620,87 @@
     "hash": "bdeba77135d7e3858eed922ca1ef123b"
   },
   "/Users/aejt/fuego/src/Logging/CommonLogger.h": {
-    "mtime": 1778380444.5033596,
+    "mtime": 1778554754.1475728,
     "hash": "cef7ff8c6ebaa46b3999f0642e0ab846"
   },
   "/Users/aejt/fuego/src/Logging/LoggerManager.h": {
-    "mtime": 1778380444.5050821,
+    "mtime": 1778554754.1494665,
     "hash": "b67c582eeaf95f199ca5359f966fa6dd"
   },
   "/Users/aejt/fuego/src/Logging/ConsoleLogger.h": {
-    "mtime": 1778380444.5037603,
+    "mtime": 1778554754.1479478,
     "hash": "f8574072b0e78f06aa778ef1548fc0e6"
   },
   "/Users/aejt/fuego/src/Logging/FileLogger.h": {
-    "mtime": 1778380444.5041287,
+    "mtime": 1778554754.148313,
     "hash": "80b64e528f7b8da1a3438f1b63ea3471"
   },
   "/Users/aejt/fuego/src/Logging/ILogger.h": {
-    "mtime": 1778380444.5043976,
+    "mtime": 1778554754.1486843,
     "hash": "e3fa71872e5266d6cf410fe6f2a64519"
   },
   "/Users/aejt/fuego/src/Logging/LoggerMessage.h": {
-    "mtime": 1778380444.5053477,
+    "mtime": 1778554754.1498377,
     "hash": "48a2a47849301fd0847f1438128fc5bf"
   },
   "/Users/aejt/fuego/src/Logging/LoggerManager.cpp": {
-    "mtime": 1778380444.5049214,
+    "mtime": 1778554754.149285,
     "hash": "421a7fb5cca9801de6fdf91fbdf5f157"
   },
   "/Users/aejt/fuego/src/Logging/LoggerRef.cpp": {
-    "mtime": 1778380444.5054882,
+    "mtime": 1778554754.1500266,
     "hash": "a6ad989637e34ff68daf494132bbe26a"
   },
   "/Users/aejt/fuego/src/Logging/LoggerMessage.cpp": {
-    "mtime": 1778380444.5052176,
+    "mtime": 1778554754.149664,
     "hash": "730b92b23e08e408cc7a525e33a9b1c5"
   },
   "/Users/aejt/fuego/src/Logging/LoggerRef.h": {
-    "mtime": 1778380444.5056155,
+    "mtime": 1778554754.1502106,
     "hash": "b10b79b598156fa5ba6fce73222a6f6c"
   },
   "/Users/aejt/fuego/src/Logging/ConsoleLogger.cpp": {
-    "mtime": 1778380444.5034993,
+    "mtime": 1778554754.147767,
     "hash": "bf12090e1639984f2301b999a360bc21"
   },
   "/Users/aejt/fuego/src/Logging/StreamLogger.cpp": {
-    "mtime": 1778380444.5057733,
+    "mtime": 1778554754.150406,
     "hash": "33399754c15d2f695a68a7c3529825d4"
   },
   "/Users/aejt/fuego/src/Logging/LoggerGroup.cpp": {
-    "mtime": 1778380444.5045319,
+    "mtime": 1778554754.1488702,
     "hash": "8dba56315723a249774a06e3bbcc6cd4"
   },
   "/Users/aejt/fuego/src/Logging/ILogger.cpp": {
-    "mtime": 1778380444.5042658,
+    "mtime": 1778554754.1484926,
     "hash": "05722494524c5d5022e077ce7bc6a7f3"
   },
   "/Users/aejt/fuego/src/Logging/StreamLogger.h": {
-    "mtime": 1778380444.5059006,
+    "mtime": 1778554754.1505978,
     "hash": "29d036e9acbf36795eb292029b3c5587"
   },
   "/Users/aejt/fuego/src/Logging/LoggerGroup.h": {
-    "mtime": 1778380444.5046709,
+    "mtime": 1778554754.1490521,
     "hash": "4f460ac690e2dccf525f4fd6b7830257"
   },
   "/Users/aejt/fuego/src/Logging/CommonLogger.cpp": {
-    "mtime": 1778380444.5032234,
+    "mtime": 1778554754.1473763,
     "hash": "95bc85d6ebb8023413d441643b684949"
   },
   "/Users/aejt/fuego/src/Logging/FileLogger.cpp": {
-    "mtime": 1778380444.5039902,
+    "mtime": 1778554754.148134,
     "hash": "7f1e02a34fcba0eafb4bf5a5130577c5"
   },
   "/Users/aejt/fuego/src/ConnectivityTool/ConnectivityTool.cpp": {
-    "mtime": 1778380444.475121,
+    "mtime": 1778554754.1028955,
     "hash": "03d2ca9777fe179266a714b52500c024"
   },
   "/Users/aejt/fuego/src/TestnetWallet/TestnetWallet.cpp": {
-    "mtime": 1778500055.136393,
+    "mtime": 1778552232.5588064,
     "hash": "28f74ccf049302d639a81fbb36c407e4"
   },
   "/Users/aejt/fuego/src/TestnetWallet/TestnetWallet.h": {
-    "mtime": 1778500055.1510806,
+    "mtime": 1778552232.5590262,
     "hash": "bb733e727dd01b4ee8cfcf5f95c33a4c"
   },
   "/Users/aejt/fuego/src/TestnetWallet/main.cpp": {
@@ -4712,119 +4720,123 @@
     "hash": "25c8a489c62354a9907081e16b1544a2"
   },
   "/Users/aejt/fuego/src/Miner/BlockchainMonitor.h": {
-    "mtime": 1778380444.5061872,
+    "mtime": 1778554754.151105,
     "hash": "5bd86de2510ab286fa4f5ffe937785e5"
   },
   "/Users/aejt/fuego/src/Miner/MiningConfig.cpp": {
-    "mtime": 1778380444.5071712,
+    "mtime": 1778554754.152857,
     "hash": "bdd2d8911811988950fc432a173e9793"
   },
   "/Users/aejt/fuego/src/Miner/MiningConfig.h": {
-    "mtime": 1778380444.5073004,
+    "mtime": 1778554754.153142,
     "hash": "ff4c9416c6bf6f1554c5559bff85c901"
   },
   "/Users/aejt/fuego/src/Miner/BlockchainMonitor.cpp": {
-    "mtime": 1778380444.5060582,
+    "mtime": 1778554754.1507967,
     "hash": "109f6f3014d4325723637c3547d9a315"
   },
   "/Users/aejt/fuego/src/Miner/MinerManager.cpp": {
-    "mtime": 1778380444.5068974,
+    "mtime": 1778554754.1521955,
     "hash": "664f4cebec5ae126d51a5881ac017ecc"
   },
   "/Users/aejt/fuego/src/Miner/Miner.h": {
-    "mtime": 1778380444.5064619,
+    "mtime": 1778554754.1516795,
     "hash": "dc30ed939c46bd39178362064a6e76c8"
   },
   "/Users/aejt/fuego/src/Miner/MinerEvent.h": {
-    "mtime": 1778380444.5066824,
+    "mtime": 1778554754.1518657,
     "hash": "8d10656c4f5317c3238243b4edfa9669"
   },
   "/Users/aejt/fuego/src/Miner/MinerManager.h": {
-    "mtime": 1778380444.507031,
+    "mtime": 1778554754.1523845,
     "hash": "5f86ed87b82791959f5056730526d9d4"
   },
   "/Users/aejt/fuego/src/Miner/main.cpp": {
-    "mtime": 1778380444.5074797,
+    "mtime": 1778554754.1533494,
     "hash": "99c13cf20e73b47dda3bdb4f424b7a91"
   },
   "/Users/aejt/fuego/src/Miner/Miner.cpp": {
-    "mtime": 1778380444.5063245,
+    "mtime": 1778554754.1513798,
     "hash": "a8be5af440ee20263dd2a1888e061269"
   },
   "/Users/aejt/fuego/test_specialist_report.txt": {
-    "mtime": 1776680151.6181135,
+    "mtime": 1778554754.5143857,
     "hash": "a84b3b2a8d105adf14304dfa7081fd17"
   },
   "/Users/aejt/fuego/fuego-tri-tokendev.md": {
-    "mtime": 1778381823.098622,
+    "mtime": 1778554752.8198476,
     "hash": "ff256404f4f7ce69162b960de84793d0"
   },
   "/Users/aejt/fuego/CODEBASE_MAPPER_README.md": {
-    "mtime": 1776680402.9443624,
+    "mtime": 1778554752.7743094,
     "hash": "e0f9b6d9685e670f62c8ca9086fff09b"
   },
   "/Users/aejt/fuego/CMakeLists.txt": {
-    "mtime": 1778501807.75927,
+    "mtime": 1778554752.7740068,
     "hash": "3d77d28ab8b6baf2d78ef54a3c8e0f06"
   },
   "/Users/aejt/fuego/fuego-two-coin-plan.md": {
-    "mtime": 1778407223.8400872,
+    "mtime": 1778551909.7902045,
     "hash": "a47eab5fcdc817f822b585c08acae099"
   },
   "/Users/aejt/fuego/requirements.txt": {
-    "mtime": 1776680021.267834,
+    "mtime": 1778554754.081971,
     "hash": "b9051135b439ed0cf049824dd585541e"
   },
   "/Users/aejt/fuego/IMPLEMENTATION_SUMMARY.md": {
-    "mtime": 1776680741.7979631,
+    "mtime": 1778554752.7768874,
     "hash": "4cab6942459f4524e20093a0574ed980"
   },
   "/Users/aejt/fuego/SPECIALIST_AGENT_README.md": {
-    "mtime": 1776679485.7414882,
+    "mtime": 1778554752.7805443,
     "hash": "e9b09010c5093464fc66ee074add0a48"
   },
   "/Users/aejt/fuego/README.md": {
-    "mtime": 1778475330.4021564,
+    "mtime": 1778554752.7802684,
     "hash": "74a682499e17b7144ffce31ae3c9ce46"
   },
   "/Users/aejt/fuego/FUEGO_BLOCKCHAIN_SPECIALIST_SUMMARY.md": {
-    "mtime": 1776681381.6648479,
+    "mtime": 1778554752.77673,
     "hash": "1505c92dcf7056a8f66f1dd477efb3cb"
   },
   "/Users/aejt/fuego/heath-bridge-analysis.md": {
-    "mtime": 1778411961.653467,
+    "mtime": 1778551909.790993,
     "hash": "7ea2b5b13efa483877e59ded8166d06d"
   },
   "/Users/aejt/fuego/CONTRIBUTING.md": {
-    "mtime": 1778380444.4381008,
+    "mtime": 1778554752.7746134,
     "hash": "08f71ff4ab97fa16c19e5fb0437e66eb"
   },
   "/Users/aejt/fuego/RAG_README.md": {
-    "mtime": 1776671558.5233557,
+    "mtime": 1778554752.7795255,
     "hash": "9037af62a1496895d21d5947aa6c515a"
   },
   "/Users/aejt/fuego/_config.yml": {
-    "mtime": 1778380444.4396832,
+    "mtime": 1778554752.7842197,
     "hash": "2d2776841d6164413357f7f227b722a7"
   },
   "/Users/aejt/fuego/COPYING.md": {
-    "mtime": 1778380444.4382207,
+    "mtime": 1778554752.7747421,
     "hash": "35b797d458e26208ec78113887d85e64"
   },
   "/Users/aejt/fuego/docker-compose.yml": {
-    "mtime": 1778380444.4397626,
+    "mtime": 1778554752.7861042,
     "hash": "d2a22d159b895ff99047c4fb0eb2b6a6"
   },
   "/Users/aejt/fuego/AGENTS.md": {
-    "mtime": 1778506871.463923,
-    "hash": "da79aa9343cd2b362206f03762160abc"
+    "mtime": 1778556894.7809954,
+    "hash": "552e497e0dc139d9ae5626a2adcd8508"
+  },
+  "/Users/aejt/fuego/EXPORT.md": {
+    "mtime": 1778554752.776374,
+    "hash": "a5513a2bdea448d5c36380e8e5685ad9"
   },
   "/Users/aejt/fuego/fuego-cd-yield-plan.md": {
-    "mtime": 1778494834.4096286,
+    "mtime": 1778554752.8188233,
     "hash": "9177f4aabbfdf1f1c4f30e0605a5841c"
   },
   "/Users/aejt/fuego/SECURITY.md": {
-    "mtime": 1778380444.4396155,
+    "mtime": 1778554752.780389,
     "hash": "7a8d733911dee25a7fce6ff1f3fc3e8f"
   },
   "/Users/aejt/fuego/docker/README-TESTNET.md": {
@@ -4836,7 +4848,7 @@
     "hash": "3cbbce45f78da3291724d5933baecc0a"
   },
   "/Users/aejt/fuego/docker/README.md": {
-    "mtime": 1778380444.4400387,
+    "mtime": 1778554752.7865803,
     "hash": "413202a87c0f140888f5dcde73bb4c46"
   },
   "/Users/aejt/fuego/docker/README-fuego-docker.md": {
@@ -4844,7 +4856,7 @@
     "hash": "093c13eb1351b0e0668e83bcabd4d2d7"
   },
   "/Users/aejt/fuego/docker/TEST-RESULTS.md": {
-    "mtime": 1775280887.0366428,
+    "mtime": 1778552232.49611,
     "hash": "fe0ab07bf9a902fe677ca4f86522dc1d"
   },
   "/Users/aejt/fuego/docker/docker-compose.yml": {
@@ -4872,7 +4884,7 @@
     "hash": "ba27b44c1c8db5fcde74b59004fc8277"
   },
   "/Users/aejt/fuego/tui-testnet/README.md": {
-    "mtime": 1775452178.5150037,
+    "mtime": 1778552232.585243,
     "hash": "a21ea3cab9d38e728fd6e0fcbf7d0f7a"
   },
   "/Users/aejt/fuego/swapxfg/README.md": {
@@ -4884,7 +4896,7 @@
     "hash": "ba27b44c1c8db5fcde74b59004fc8277"
   },
   "/Users/aejt/fuego/tui/README_TVIEW.md": {
-    "mtime": 1775452178.518317,
+    "mtime": 1778552232.585631,
     "hash": "1869c84c5e65c09ff0a8ccd17baa9ec5"
   },
   "/Users/aejt/fuego/tui/README.md": {
@@ -4904,7 +4916,7 @@
     "hash": "c984a70862951bda4a87bd09ff5ce24b"
   },
   "/Users/aejt/fuego/tests/CMakeLists.txt": {
-    "mtime": 1778380444.564186,
+    "mtime": 1778554754.5163164,
     "hash": "3d2afd8bc850b20f743412d05d175179"
   },
   "/Users/aejt/fuego/tests/crypto/tests.txt": {
@@ -4912,11 +4924,11 @@
     "hash": "85f289bfda654e1fb05dd42ccca4b832"
   },
   "/Users/aejt/fuego/tests/Difficulty/README_DMWDA_TESTS.md": {
-    "mtime": 1775280887.2547803,
+    "mtime": 1778552232.5822887,
     "hash": "1198ab46bddd26037a820bbe11d999b9"
   },
   "/Users/aejt/fuego/tests/Difficulty/data.txt": {
-    "mtime": 1778380399.8131254,
+    "mtime": 1778552232.582653,
     "hash": "b20da478bc7094e33aac84791e3a5cdd"
   },
   "/Users/aejt/fuego/tests/Hash/tests-extra-groestl.txt": {
@@ -4948,7 +4960,7 @@
     "hash": "9d8d72dc0f5c255aca7c5cdb17fe7b0a"
   },
   "/Users/aejt/fuego/docs/I2P_SETUP.md": {
-    "mtime": 1778485153.5571516,
+    "mtime": 1778552232.4981632,
     "hash": "f67403e2d07307de66ac6fcfc9790d32"
   },
   "/Users/aejt/fuego/docs/MEMORY_OPTIMIZATION_STRATEGY.md": {
@@ -4960,7 +4972,7 @@
     "hash": "b19d801c3b3a6d0b4273c1f0974d2f18"
   },
   "/Users/aejt/fuego/docs/I2P_IMPLEMENTATION_PLAN.md": {
-    "mtime": 1778483688.3389778,
+    "mtime": 1778552232.4974098,
     "hash": "14d1bcc30c6e0af8caec8780367583ac"
   },
   "/Users/aejt/fuego/docs/private-lp-pool-zk.md": {
@@ -4968,7 +4980,7 @@
     "hash": "7387284e28c6a17a72277b4d460ed264"
   },
   "/Users/aejt/fuego/docs/zkLP-pool-proof-system-design.md": {
-    "mtime": 1776080815.6276362,
+    "mtime": 1778554752.7934725,
     "hash": "1a14825477379a378710ec8872089a46"
   },
   "/Users/aejt/fuego/docs/README-WALLETD.md": {
@@ -5004,7 +5016,7 @@
     "hash": "51c5b650b926ce93343c1bc8d1fb68fa"
   },
   "/Users/aejt/fuego/docs/heat-vs-lp-proofs.md": {
-    "mtime": 1776080815.6271892,
+    "mtime": 1778552232.499718,
     "hash": "a571b0281219502aa07f5536b8eb9ab7"
   },
   "/Users/aejt/fuego/docs/about.txt": {
@@ -5016,7 +5028,7 @@
     "hash": "10eccc1b2ef9ca1d9c84dd8545ea8e83"
   },
   "/Users/aejt/fuego/docs/minimizing-prover-exposure.md": {
-    "mtime": 1778500052.881588,
+    "mtime": 1778552232.5006225,
     "hash": "943fcb40cab0e35ff40d850d1080914d"
   },
   "/Users/aejt/fuego/docs/CONTRIBUTING.md": {
@@ -5052,7 +5064,7 @@
     "hash": "3bc931343ea9e0c4c44dc2fda1c0d4cb"
   },
   "/Users/aejt/fuego/docs/lp-pool-proof-system-design.md": {
-    "mtime": 1778500052.8646262,
+    "mtime": 1778552232.5001252,
     "hash": "1a14825477379a378710ec8872089a46"
   },
   "/Users/aejt/fuego/docs/DYNAMIC_RING_SIZE.md": {
@@ -5060,7 +5072,7 @@
     "hash": "b35dabccadf0215deaab92fd3ea696a0"
   },
   "/Users/aejt/fuego/docs/ATOMIC_SWAP_PLAN.md": {
-    "mtime": 1776899729.2868288,
+    "mtime": 1778554752.7881198,
     "hash": "a55d7245bedbab79423e838a17be51b5"
   },
   "/Users/aejt/fuego/docs/STAGED_DEPOSIT_UNLOCKING.md": {
@@ -5068,11 +5080,11 @@
     "hash": "095d96f1cfbb0f2691d0a63a8704cd82"
   },
   "/Users/aejt/fuego/docs/FUEGO_AI_WORKFLOW_ARCHITECTURE.md": {
-    "mtime": 1776674795.1884682,
+    "mtime": 1778554752.7884588,
     "hash": "5cd3083dd22666fe7fe33624302fb7c2"
   },
   "/Users/aejt/fuego/docs/ATOMIC_SWAP_FEE_IMPLEMENTATION.md": {
-    "mtime": 1776659913.3314364,
+    "mtime": 1778554752.787102,
     "hash": "691ce1cc7964c935697f56655ae80b50"
   },
   "/Users/aejt/fuego/docs/SECURITY.md": {
@@ -5080,15 +5092,15 @@
     "hash": "7a8d733911dee25a7fce6ff1f3fc3e8f"
   },
   "/Users/aejt/fuego/docs/design/2026-03-22-transferable-cd-fee-pool.md": {
-    "mtime": 1775853193.2628818,
+    "mtime": 1778554752.7910101,
     "hash": "1b1b93e7290cd1fa2db2c4d4b633d7e2"
   },
   "/Users/aejt/fuego/docs/design/2026-03-22-transferable-cd-fee-pool-design.md": {
-    "mtime": 1776900317.5311894,
+    "mtime": 1778554752.7886782,
     "hash": "482e0a231e6f47aa0fc8e381e630297b"
   },
   "/Users/aejt/fuego/docs/design/minimizing-prover-exposure.md": {
-    "mtime": 1776080815.627786,
+    "mtime": 1778554752.7921412,
     "hash": "943fcb40cab0e35ff40d850d1080914d"
   },
   "/Users/aejt/fuego/docs/design/group-aliases-plan.md": {
@@ -5136,15 +5148,15 @@
     "hash": "1306afb58472557cc707ce957e663abf"
   },
   "/Users/aejt/fuego/docs/features/heat-burns/what-are-burns.mdx": {
-    "mtime": 1778503545.9388564,
+    "mtime": 1778552232.4989586,
     "hash": "94c2c717bee5ede12adef385343db530"
   },
   "/Users/aejt/fuego/docs/features/heat-burns/burning-xfg.mdx": {
-    "mtime": 1778503545.9385245,
+    "mtime": 1778552232.49857,
     "hash": "17d05637d4d3f949f242eb61378378b9"
   },
   "/Users/aejt/fuego/docs/features/heat-burns/generating-proofs.mdx": {
-    "mtime": 1778503545.9386795,
+    "mtime": 1778552232.4987657,
     "hash": "eb877f7466c1cfe21e77e9596c352bc0"
   },
   "/Users/aejt/fuego/docs/features/atomic-swaps/step-by-step-guide.mdx": {
@@ -5212,7 +5224,7 @@
     "hash": "d11f188a2dc57da899db56f435bd554f"
   },
   "/Users/aejt/fuego/docs/getting-started/installation.mdx": {
-    "mtime": 1776080815.6265845,
+    "mtime": 1778552232.4992778,
     "hash": "1ebef784025051008d9d427dc1fd0c0a"
   },
   "/Users/aejt/fuego/docs/review/xfgCdswaps-fix-plan.md": {
@@ -5224,7 +5236,7 @@
     "hash": "23eb18563f5fb9ec3aa257d16d84d344"
   },
   "/Users/aejt/fuego/docs/review/2026-04-16-xfgCdswaps-remaining-fixes.md": {
-    "mtime": 1776642080.727273,
+    "mtime": 1778554752.7931502,
     "hash": "d6be1dcf6b0962e7d1e24971fd004ab7"
   },
   "/Users/aejt/fuego/docs/implementation/tanda-dev-guide.md": {
@@ -5244,19 +5256,19 @@
     "hash": "8662114afb6342698ec2450dc78696be"
   },
   "/Users/aejt/fuego/docs/superpowers/plans/2026-04-16-xfgCdswaps-remaining-fixes.md": {
-    "mtime": 1778500052.897251,
+    "mtime": 1778552232.5016487,
     "hash": "d6be1dcf6b0962e7d1e24971fd004ab7"
   },
   "/Users/aejt/fuego/fuego-prover/noble-mixing-stroustrup.md": {
-    "mtime": 1776080815.6305041,
+    "mtime": 1778552232.508796,
     "hash": "a5ea8b481454a182537b7ec2f2effe97"
   },
   "/Users/aejt/fuego/scripts/fuego-mcp/README.md": {
-    "mtime": 1778276293.2433171,
+    "mtime": 1778554754.0831063,
     "hash": "87b01f818b09db093bd0998957eb9e72"
   },
   "/Users/aejt/fuego/external/CMakeLists.txt": {
-    "mtime": 1778380444.4408748,
+    "mtime": 1778554752.793975,
     "hash": "7f65003617f685574a4b6b8b7839206f"
   },
   "/Users/aejt/fuego/external/parallel_hashmap/conanfile.py.txt": {
@@ -5264,19 +5276,19 @@
     "hash": "4210dd02eef1f23ea55616d1c1b2e4c0"
   },
   "/Users/aejt/fuego/external/miniupnpc/CMakeLists.txt": {
-    "mtime": 1778380444.4418073,
+    "mtime": 1778554752.7957106,
     "hash": "82cb6994b5d7548e8a654fa332a92bb5"
   },
   "/Users/aejt/fuego/external/miniupnpc/apiversions.txt": {
-    "mtime": 1778380444.4431577,
+    "mtime": 1778554752.7977066,
     "hash": "7ec4b4a719897fe5a9cb7a123b8349f0"
   },
   "/Users/aejt/fuego/external/miniupnpc/Changelog.txt": {
-    "mtime": 1778380444.442187,
+    "mtime": 1778554752.7963986,
     "hash": "295797c60bb8fc885df8d73d5ffb1e34"
   },
   "/Users/aejt/fuego/external/miniupnpc/testreplyparse/readme.txt": {
-    "mtime": 1778380444.453663,
+    "mtime": 1778554752.8142064,
     "hash": "025234db58cea559c7a38266df2c3420"
   },
   "/Users/aejt/fuego/external/secp256k1/CMakeLists.txt": {
@@ -5364,7 +5376,7 @@
     "hash": "fb8ef12b9052b8f737eb5f4db91d4d3c"
   },
   "/Users/aejt/fuego/src/CMakeLists.txt": {
-    "mtime": 1778503366.9405725,
+    "mtime": 1778554754.0866241,
     "hash": "5ab954bbafa0f164c2ffcdc0907ad61f"
   },
   "/Users/aejt/fuego/src/FuegoTor/CMakeLists.txt": {

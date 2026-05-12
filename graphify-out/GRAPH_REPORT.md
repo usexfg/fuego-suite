@@ -1,21 +1,23 @@
-# Graph Report - .  (2026-05-11)
+# Graph Report - fuego  (2026-05-12)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 1308 files · ~1,596,440 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6376 nodes · 15467 edges · 354 communities (332 shown, 22 thin omitted)
-- Extraction: 80% EXTRACTED · 20% INFERRED · 0% AMBIGUOUS · INFERRED: 3063 edges (avg confidence: 0.8)
+- 13135 nodes · 28498 edges · 855 communities (796 shown, 59 thin omitted)
+- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 4896 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7ffc8034`
+- Built from commit: `361f6904`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Community 0|Community 0]]
 - [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
 - [[_COMMUNITY_Community 3|Community 3]]
 - [[_COMMUNITY_Community 4|Community 4]]
 - [[_COMMUNITY_Community 5|Community 5]]
@@ -186,6 +188,7 @@
 - [[_COMMUNITY_Community 170|Community 170]]
 - [[_COMMUNITY_Community 171|Community 171]]
 - [[_COMMUNITY_Community 172|Community 172]]
+- [[_COMMUNITY_Community 173|Community 173]]
 - [[_COMMUNITY_Community 174|Community 174]]
 - [[_COMMUNITY_Community 175|Community 175]]
 - [[_COMMUNITY_Community 176|Community 176]]
@@ -198,6 +201,7 @@
 - [[_COMMUNITY_Community 183|Community 183]]
 - [[_COMMUNITY_Community 184|Community 184]]
 - [[_COMMUNITY_Community 185|Community 185]]
+- [[_COMMUNITY_Community 186|Community 186]]
 - [[_COMMUNITY_Community 187|Community 187]]
 - [[_COMMUNITY_Community 188|Community 188]]
 - [[_COMMUNITY_Community 189|Community 189]]
@@ -215,883 +219,2722 @@
 - [[_COMMUNITY_Community 201|Community 201]]
 - [[_COMMUNITY_Community 202|Community 202]]
 - [[_COMMUNITY_Community 203|Community 203]]
+- [[_COMMUNITY_Community 204|Community 204]]
 - [[_COMMUNITY_Community 205|Community 205]]
 - [[_COMMUNITY_Community 206|Community 206]]
 - [[_COMMUNITY_Community 207|Community 207]]
 - [[_COMMUNITY_Community 208|Community 208]]
+- [[_COMMUNITY_Community 209|Community 209]]
 - [[_COMMUNITY_Community 210|Community 210]]
 - [[_COMMUNITY_Community 211|Community 211]]
 - [[_COMMUNITY_Community 212|Community 212]]
 - [[_COMMUNITY_Community 213|Community 213]]
 - [[_COMMUNITY_Community 214|Community 214]]
+- [[_COMMUNITY_Community 215|Community 215]]
 - [[_COMMUNITY_Community 216|Community 216]]
+- [[_COMMUNITY_Community 217|Community 217]]
 - [[_COMMUNITY_Community 218|Community 218]]
 - [[_COMMUNITY_Community 219|Community 219]]
 - [[_COMMUNITY_Community 220|Community 220]]
+- [[_COMMUNITY_Community 221|Community 221]]
 - [[_COMMUNITY_Community 222|Community 222]]
 - [[_COMMUNITY_Community 223|Community 223]]
 - [[_COMMUNITY_Community 224|Community 224]]
+- [[_COMMUNITY_Community 225|Community 225]]
+- [[_COMMUNITY_Community 226|Community 226]]
 - [[_COMMUNITY_Community 227|Community 227]]
 - [[_COMMUNITY_Community 228|Community 228]]
 - [[_COMMUNITY_Community 229|Community 229]]
 - [[_COMMUNITY_Community 230|Community 230]]
+- [[_COMMUNITY_Community 231|Community 231]]
+- [[_COMMUNITY_Community 232|Community 232]]
+- [[_COMMUNITY_Community 233|Community 233]]
+- [[_COMMUNITY_Community 234|Community 234]]
+- [[_COMMUNITY_Community 235|Community 235]]
+- [[_COMMUNITY_Community 236|Community 236]]
+- [[_COMMUNITY_Community 237|Community 237]]
+- [[_COMMUNITY_Community 238|Community 238]]
+- [[_COMMUNITY_Community 239|Community 239]]
+- [[_COMMUNITY_Community 240|Community 240]]
+- [[_COMMUNITY_Community 241|Community 241]]
+- [[_COMMUNITY_Community 242|Community 242]]
+- [[_COMMUNITY_Community 243|Community 243]]
+- [[_COMMUNITY_Community 244|Community 244]]
+- [[_COMMUNITY_Community 245|Community 245]]
+- [[_COMMUNITY_Community 246|Community 246]]
+- [[_COMMUNITY_Community 247|Community 247]]
+- [[_COMMUNITY_Community 248|Community 248]]
+- [[_COMMUNITY_Community 249|Community 249]]
+- [[_COMMUNITY_Community 250|Community 250]]
+- [[_COMMUNITY_Community 251|Community 251]]
+- [[_COMMUNITY_Community 252|Community 252]]
+- [[_COMMUNITY_Community 253|Community 253]]
+- [[_COMMUNITY_Community 254|Community 254]]
+- [[_COMMUNITY_Community 255|Community 255]]
+- [[_COMMUNITY_Community 256|Community 256]]
+- [[_COMMUNITY_Community 257|Community 257]]
+- [[_COMMUNITY_Community 258|Community 258]]
+- [[_COMMUNITY_Community 259|Community 259]]
+- [[_COMMUNITY_Community 260|Community 260]]
+- [[_COMMUNITY_Community 261|Community 261]]
+- [[_COMMUNITY_Community 262|Community 262]]
+- [[_COMMUNITY_Community 263|Community 263]]
+- [[_COMMUNITY_Community 264|Community 264]]
+- [[_COMMUNITY_Community 265|Community 265]]
+- [[_COMMUNITY_Community 266|Community 266]]
+- [[_COMMUNITY_Community 267|Community 267]]
+- [[_COMMUNITY_Community 268|Community 268]]
+- [[_COMMUNITY_Community 269|Community 269]]
+- [[_COMMUNITY_Community 270|Community 270]]
+- [[_COMMUNITY_Community 271|Community 271]]
+- [[_COMMUNITY_Community 272|Community 272]]
+- [[_COMMUNITY_Community 273|Community 273]]
+- [[_COMMUNITY_Community 274|Community 274]]
+- [[_COMMUNITY_Community 275|Community 275]]
+- [[_COMMUNITY_Community 276|Community 276]]
+- [[_COMMUNITY_Community 277|Community 277]]
+- [[_COMMUNITY_Community 278|Community 278]]
+- [[_COMMUNITY_Community 279|Community 279]]
+- [[_COMMUNITY_Community 280|Community 280]]
+- [[_COMMUNITY_Community 281|Community 281]]
+- [[_COMMUNITY_Community 282|Community 282]]
+- [[_COMMUNITY_Community 283|Community 283]]
+- [[_COMMUNITY_Community 284|Community 284]]
+- [[_COMMUNITY_Community 285|Community 285]]
+- [[_COMMUNITY_Community 286|Community 286]]
+- [[_COMMUNITY_Community 287|Community 287]]
+- [[_COMMUNITY_Community 288|Community 288]]
+- [[_COMMUNITY_Community 289|Community 289]]
+- [[_COMMUNITY_Community 290|Community 290]]
+- [[_COMMUNITY_Community 291|Community 291]]
+- [[_COMMUNITY_Community 292|Community 292]]
+- [[_COMMUNITY_Community 293|Community 293]]
+- [[_COMMUNITY_Community 294|Community 294]]
+- [[_COMMUNITY_Community 296|Community 296]]
+- [[_COMMUNITY_Community 297|Community 297]]
+- [[_COMMUNITY_Community 298|Community 298]]
+- [[_COMMUNITY_Community 299|Community 299]]
+- [[_COMMUNITY_Community 300|Community 300]]
+- [[_COMMUNITY_Community 301|Community 301]]
+- [[_COMMUNITY_Community 302|Community 302]]
 - [[_COMMUNITY_Community 303|Community 303]]
 - [[_COMMUNITY_Community 304|Community 304]]
 - [[_COMMUNITY_Community 305|Community 305]]
+- [[_COMMUNITY_Community 306|Community 306]]
+- [[_COMMUNITY_Community 307|Community 307]]
+- [[_COMMUNITY_Community 308|Community 308]]
+- [[_COMMUNITY_Community 309|Community 309]]
+- [[_COMMUNITY_Community 310|Community 310]]
+- [[_COMMUNITY_Community 311|Community 311]]
+- [[_COMMUNITY_Community 312|Community 312]]
+- [[_COMMUNITY_Community 313|Community 313]]
+- [[_COMMUNITY_Community 314|Community 314]]
+- [[_COMMUNITY_Community 315|Community 315]]
+- [[_COMMUNITY_Community 316|Community 316]]
+- [[_COMMUNITY_Community 317|Community 317]]
+- [[_COMMUNITY_Community 318|Community 318]]
+- [[_COMMUNITY_Community 319|Community 319]]
+- [[_COMMUNITY_Community 320|Community 320]]
+- [[_COMMUNITY_Community 321|Community 321]]
+- [[_COMMUNITY_Community 322|Community 322]]
+- [[_COMMUNITY_Community 323|Community 323]]
+- [[_COMMUNITY_Community 324|Community 324]]
+- [[_COMMUNITY_Community 325|Community 325]]
+- [[_COMMUNITY_Community 326|Community 326]]
+- [[_COMMUNITY_Community 327|Community 327]]
+- [[_COMMUNITY_Community 328|Community 328]]
+- [[_COMMUNITY_Community 329|Community 329]]
+- [[_COMMUNITY_Community 330|Community 330]]
+- [[_COMMUNITY_Community 331|Community 331]]
+- [[_COMMUNITY_Community 332|Community 332]]
+- [[_COMMUNITY_Community 333|Community 333]]
+- [[_COMMUNITY_Community 334|Community 334]]
+- [[_COMMUNITY_Community 335|Community 335]]
+- [[_COMMUNITY_Community 336|Community 336]]
+- [[_COMMUNITY_Community 337|Community 337]]
+- [[_COMMUNITY_Community 338|Community 338]]
+- [[_COMMUNITY_Community 339|Community 339]]
+- [[_COMMUNITY_Community 340|Community 340]]
+- [[_COMMUNITY_Community 341|Community 341]]
+- [[_COMMUNITY_Community 342|Community 342]]
+- [[_COMMUNITY_Community 343|Community 343]]
+- [[_COMMUNITY_Community 344|Community 344]]
+- [[_COMMUNITY_Community 345|Community 345]]
+- [[_COMMUNITY_Community 346|Community 346]]
+- [[_COMMUNITY_Community 347|Community 347]]
+- [[_COMMUNITY_Community 348|Community 348]]
+- [[_COMMUNITY_Community 349|Community 349]]
+- [[_COMMUNITY_Community 350|Community 350]]
+- [[_COMMUNITY_Community 351|Community 351]]
+- [[_COMMUNITY_Community 352|Community 352]]
+- [[_COMMUNITY_Community 353|Community 353]]
+- [[_COMMUNITY_Community 354|Community 354]]
+- [[_COMMUNITY_Community 355|Community 355]]
+- [[_COMMUNITY_Community 356|Community 356]]
+- [[_COMMUNITY_Community 357|Community 357]]
+- [[_COMMUNITY_Community 358|Community 358]]
+- [[_COMMUNITY_Community 359|Community 359]]
+- [[_COMMUNITY_Community 360|Community 360]]
+- [[_COMMUNITY_Community 361|Community 361]]
+- [[_COMMUNITY_Community 362|Community 362]]
+- [[_COMMUNITY_Community 363|Community 363]]
+- [[_COMMUNITY_Community 364|Community 364]]
+- [[_COMMUNITY_Community 365|Community 365]]
+- [[_COMMUNITY_Community 366|Community 366]]
+- [[_COMMUNITY_Community 367|Community 367]]
+- [[_COMMUNITY_Community 368|Community 368]]
+- [[_COMMUNITY_Community 369|Community 369]]
+- [[_COMMUNITY_Community 370|Community 370]]
+- [[_COMMUNITY_Community 371|Community 371]]
+- [[_COMMUNITY_Community 372|Community 372]]
+- [[_COMMUNITY_Community 373|Community 373]]
+- [[_COMMUNITY_Community 374|Community 374]]
+- [[_COMMUNITY_Community 375|Community 375]]
+- [[_COMMUNITY_Community 376|Community 376]]
+- [[_COMMUNITY_Community 377|Community 377]]
+- [[_COMMUNITY_Community 378|Community 378]]
+- [[_COMMUNITY_Community 379|Community 379]]
+- [[_COMMUNITY_Community 380|Community 380]]
+- [[_COMMUNITY_Community 381|Community 381]]
+- [[_COMMUNITY_Community 382|Community 382]]
+- [[_COMMUNITY_Community 383|Community 383]]
+- [[_COMMUNITY_Community 384|Community 384]]
+- [[_COMMUNITY_Community 385|Community 385]]
+- [[_COMMUNITY_Community 386|Community 386]]
+- [[_COMMUNITY_Community 387|Community 387]]
+- [[_COMMUNITY_Community 388|Community 388]]
+- [[_COMMUNITY_Community 389|Community 389]]
+- [[_COMMUNITY_Community 390|Community 390]]
+- [[_COMMUNITY_Community 391|Community 391]]
+- [[_COMMUNITY_Community 392|Community 392]]
+- [[_COMMUNITY_Community 393|Community 393]]
+- [[_COMMUNITY_Community 394|Community 394]]
+- [[_COMMUNITY_Community 395|Community 395]]
+- [[_COMMUNITY_Community 396|Community 396]]
+- [[_COMMUNITY_Community 397|Community 397]]
+- [[_COMMUNITY_Community 398|Community 398]]
+- [[_COMMUNITY_Community 399|Community 399]]
+- [[_COMMUNITY_Community 400|Community 400]]
+- [[_COMMUNITY_Community 401|Community 401]]
+- [[_COMMUNITY_Community 402|Community 402]]
+- [[_COMMUNITY_Community 403|Community 403]]
+- [[_COMMUNITY_Community 404|Community 404]]
+- [[_COMMUNITY_Community 405|Community 405]]
+- [[_COMMUNITY_Community 406|Community 406]]
+- [[_COMMUNITY_Community 407|Community 407]]
+- [[_COMMUNITY_Community 408|Community 408]]
+- [[_COMMUNITY_Community 409|Community 409]]
+- [[_COMMUNITY_Community 410|Community 410]]
+- [[_COMMUNITY_Community 411|Community 411]]
+- [[_COMMUNITY_Community 412|Community 412]]
+- [[_COMMUNITY_Community 413|Community 413]]
+- [[_COMMUNITY_Community 414|Community 414]]
+- [[_COMMUNITY_Community 415|Community 415]]
+- [[_COMMUNITY_Community 416|Community 416]]
+- [[_COMMUNITY_Community 417|Community 417]]
+- [[_COMMUNITY_Community 418|Community 418]]
+- [[_COMMUNITY_Community 419|Community 419]]
+- [[_COMMUNITY_Community 420|Community 420]]
+- [[_COMMUNITY_Community 421|Community 421]]
+- [[_COMMUNITY_Community 422|Community 422]]
+- [[_COMMUNITY_Community 423|Community 423]]
+- [[_COMMUNITY_Community 424|Community 424]]
+- [[_COMMUNITY_Community 425|Community 425]]
+- [[_COMMUNITY_Community 426|Community 426]]
+- [[_COMMUNITY_Community 427|Community 427]]
+- [[_COMMUNITY_Community 428|Community 428]]
+- [[_COMMUNITY_Community 429|Community 429]]
+- [[_COMMUNITY_Community 430|Community 430]]
+- [[_COMMUNITY_Community 431|Community 431]]
+- [[_COMMUNITY_Community 432|Community 432]]
+- [[_COMMUNITY_Community 433|Community 433]]
+- [[_COMMUNITY_Community 434|Community 434]]
+- [[_COMMUNITY_Community 435|Community 435]]
+- [[_COMMUNITY_Community 436|Community 436]]
+- [[_COMMUNITY_Community 437|Community 437]]
+- [[_COMMUNITY_Community 438|Community 438]]
+- [[_COMMUNITY_Community 439|Community 439]]
+- [[_COMMUNITY_Community 440|Community 440]]
+- [[_COMMUNITY_Community 441|Community 441]]
+- [[_COMMUNITY_Community 442|Community 442]]
+- [[_COMMUNITY_Community 443|Community 443]]
+- [[_COMMUNITY_Community 444|Community 444]]
+- [[_COMMUNITY_Community 445|Community 445]]
+- [[_COMMUNITY_Community 446|Community 446]]
+- [[_COMMUNITY_Community 447|Community 447]]
+- [[_COMMUNITY_Community 448|Community 448]]
+- [[_COMMUNITY_Community 449|Community 449]]
+- [[_COMMUNITY_Community 450|Community 450]]
+- [[_COMMUNITY_Community 451|Community 451]]
+- [[_COMMUNITY_Community 452|Community 452]]
+- [[_COMMUNITY_Community 453|Community 453]]
+- [[_COMMUNITY_Community 454|Community 454]]
+- [[_COMMUNITY_Community 455|Community 455]]
+- [[_COMMUNITY_Community 456|Community 456]]
+- [[_COMMUNITY_Community 457|Community 457]]
+- [[_COMMUNITY_Community 458|Community 458]]
+- [[_COMMUNITY_Community 459|Community 459]]
+- [[_COMMUNITY_Community 460|Community 460]]
+- [[_COMMUNITY_Community 462|Community 462]]
+- [[_COMMUNITY_Community 463|Community 463]]
+- [[_COMMUNITY_Community 464|Community 464]]
+- [[_COMMUNITY_Community 465|Community 465]]
+- [[_COMMUNITY_Community 466|Community 466]]
+- [[_COMMUNITY_Community 467|Community 467]]
+- [[_COMMUNITY_Community 468|Community 468]]
+- [[_COMMUNITY_Community 469|Community 469]]
+- [[_COMMUNITY_Community 470|Community 470]]
+- [[_COMMUNITY_Community 471|Community 471]]
+- [[_COMMUNITY_Community 472|Community 472]]
+- [[_COMMUNITY_Community 473|Community 473]]
+- [[_COMMUNITY_Community 474|Community 474]]
+- [[_COMMUNITY_Community 475|Community 475]]
+- [[_COMMUNITY_Community 476|Community 476]]
+- [[_COMMUNITY_Community 477|Community 477]]
+- [[_COMMUNITY_Community 478|Community 478]]
+- [[_COMMUNITY_Community 479|Community 479]]
+- [[_COMMUNITY_Community 480|Community 480]]
+- [[_COMMUNITY_Community 481|Community 481]]
+- [[_COMMUNITY_Community 482|Community 482]]
+- [[_COMMUNITY_Community 483|Community 483]]
+- [[_COMMUNITY_Community 484|Community 484]]
+- [[_COMMUNITY_Community 485|Community 485]]
+- [[_COMMUNITY_Community 486|Community 486]]
+- [[_COMMUNITY_Community 487|Community 487]]
+- [[_COMMUNITY_Community 488|Community 488]]
+- [[_COMMUNITY_Community 489|Community 489]]
+- [[_COMMUNITY_Community 490|Community 490]]
+- [[_COMMUNITY_Community 491|Community 491]]
+- [[_COMMUNITY_Community 492|Community 492]]
+- [[_COMMUNITY_Community 493|Community 493]]
+- [[_COMMUNITY_Community 494|Community 494]]
+- [[_COMMUNITY_Community 495|Community 495]]
+- [[_COMMUNITY_Community 496|Community 496]]
+- [[_COMMUNITY_Community 497|Community 497]]
+- [[_COMMUNITY_Community 498|Community 498]]
+- [[_COMMUNITY_Community 499|Community 499]]
+- [[_COMMUNITY_Community 500|Community 500]]
+- [[_COMMUNITY_Community 501|Community 501]]
+- [[_COMMUNITY_Community 502|Community 502]]
+- [[_COMMUNITY_Community 503|Community 503]]
+- [[_COMMUNITY_Community 504|Community 504]]
+- [[_COMMUNITY_Community 505|Community 505]]
+- [[_COMMUNITY_Community 506|Community 506]]
+- [[_COMMUNITY_Community 507|Community 507]]
+- [[_COMMUNITY_Community 508|Community 508]]
+- [[_COMMUNITY_Community 509|Community 509]]
+- [[_COMMUNITY_Community 510|Community 510]]
+- [[_COMMUNITY_Community 511|Community 511]]
+- [[_COMMUNITY_Community 512|Community 512]]
+- [[_COMMUNITY_Community 513|Community 513]]
+- [[_COMMUNITY_Community 514|Community 514]]
+- [[_COMMUNITY_Community 515|Community 515]]
+- [[_COMMUNITY_Community 516|Community 516]]
+- [[_COMMUNITY_Community 517|Community 517]]
+- [[_COMMUNITY_Community 518|Community 518]]
+- [[_COMMUNITY_Community 519|Community 519]]
+- [[_COMMUNITY_Community 520|Community 520]]
+- [[_COMMUNITY_Community 521|Community 521]]
+- [[_COMMUNITY_Community 522|Community 522]]
+- [[_COMMUNITY_Community 523|Community 523]]
+- [[_COMMUNITY_Community 524|Community 524]]
+- [[_COMMUNITY_Community 525|Community 525]]
+- [[_COMMUNITY_Community 526|Community 526]]
+- [[_COMMUNITY_Community 527|Community 527]]
+- [[_COMMUNITY_Community 528|Community 528]]
+- [[_COMMUNITY_Community 529|Community 529]]
+- [[_COMMUNITY_Community 530|Community 530]]
+- [[_COMMUNITY_Community 531|Community 531]]
+- [[_COMMUNITY_Community 532|Community 532]]
+- [[_COMMUNITY_Community 533|Community 533]]
+- [[_COMMUNITY_Community 534|Community 534]]
+- [[_COMMUNITY_Community 535|Community 535]]
+- [[_COMMUNITY_Community 536|Community 536]]
+- [[_COMMUNITY_Community 537|Community 537]]
+- [[_COMMUNITY_Community 538|Community 538]]
+- [[_COMMUNITY_Community 539|Community 539]]
+- [[_COMMUNITY_Community 540|Community 540]]
+- [[_COMMUNITY_Community 541|Community 541]]
+- [[_COMMUNITY_Community 542|Community 542]]
+- [[_COMMUNITY_Community 543|Community 543]]
+- [[_COMMUNITY_Community 545|Community 545]]
+- [[_COMMUNITY_Community 546|Community 546]]
+- [[_COMMUNITY_Community 547|Community 547]]
+- [[_COMMUNITY_Community 548|Community 548]]
+- [[_COMMUNITY_Community 549|Community 549]]
+- [[_COMMUNITY_Community 550|Community 550]]
+- [[_COMMUNITY_Community 551|Community 551]]
+- [[_COMMUNITY_Community 552|Community 552]]
+- [[_COMMUNITY_Community 553|Community 553]]
+- [[_COMMUNITY_Community 554|Community 554]]
+- [[_COMMUNITY_Community 555|Community 555]]
+- [[_COMMUNITY_Community 556|Community 556]]
+- [[_COMMUNITY_Community 557|Community 557]]
+- [[_COMMUNITY_Community 558|Community 558]]
+- [[_COMMUNITY_Community 559|Community 559]]
+- [[_COMMUNITY_Community 560|Community 560]]
+- [[_COMMUNITY_Community 561|Community 561]]
+- [[_COMMUNITY_Community 562|Community 562]]
+- [[_COMMUNITY_Community 563|Community 563]]
+- [[_COMMUNITY_Community 564|Community 564]]
+- [[_COMMUNITY_Community 565|Community 565]]
+- [[_COMMUNITY_Community 566|Community 566]]
+- [[_COMMUNITY_Community 567|Community 567]]
+- [[_COMMUNITY_Community 568|Community 568]]
+- [[_COMMUNITY_Community 569|Community 569]]
+- [[_COMMUNITY_Community 570|Community 570]]
+- [[_COMMUNITY_Community 571|Community 571]]
+- [[_COMMUNITY_Community 572|Community 572]]
+- [[_COMMUNITY_Community 573|Community 573]]
+- [[_COMMUNITY_Community 574|Community 574]]
+- [[_COMMUNITY_Community 575|Community 575]]
+- [[_COMMUNITY_Community 576|Community 576]]
+- [[_COMMUNITY_Community 577|Community 577]]
+- [[_COMMUNITY_Community 580|Community 580]]
+- [[_COMMUNITY_Community 583|Community 583]]
+- [[_COMMUNITY_Community 584|Community 584]]
+- [[_COMMUNITY_Community 585|Community 585]]
+- [[_COMMUNITY_Community 586|Community 586]]
+- [[_COMMUNITY_Community 587|Community 587]]
+- [[_COMMUNITY_Community 588|Community 588]]
+- [[_COMMUNITY_Community 589|Community 589]]
+- [[_COMMUNITY_Community 592|Community 592]]
+- [[_COMMUNITY_Community 593|Community 593]]
+- [[_COMMUNITY_Community 594|Community 594]]
+- [[_COMMUNITY_Community 597|Community 597]]
+- [[_COMMUNITY_Community 598|Community 598]]
+- [[_COMMUNITY_Community 599|Community 599]]
+- [[_COMMUNITY_Community 600|Community 600]]
+- [[_COMMUNITY_Community 601|Community 601]]
+- [[_COMMUNITY_Community 602|Community 602]]
+- [[_COMMUNITY_Community 603|Community 603]]
+- [[_COMMUNITY_Community 604|Community 604]]
+- [[_COMMUNITY_Community 605|Community 605]]
+- [[_COMMUNITY_Community 606|Community 606]]
+- [[_COMMUNITY_Community 607|Community 607]]
+- [[_COMMUNITY_Community 608|Community 608]]
+- [[_COMMUNITY_Community 609|Community 609]]
+- [[_COMMUNITY_Community 610|Community 610]]
+- [[_COMMUNITY_Community 611|Community 611]]
+- [[_COMMUNITY_Community 614|Community 614]]
+- [[_COMMUNITY_Community 615|Community 615]]
+- [[_COMMUNITY_Community 623|Community 623]]
+- [[_COMMUNITY_Community 625|Community 625]]
+- [[_COMMUNITY_Community 638|Community 638]]
+- [[_COMMUNITY_Community 639|Community 639]]
+- [[_COMMUNITY_Community 640|Community 640]]
+- [[_COMMUNITY_Community 641|Community 641]]
+- [[_COMMUNITY_Community 642|Community 642]]
+- [[_COMMUNITY_Community 643|Community 643]]
+- [[_COMMUNITY_Community 644|Community 644]]
+- [[_COMMUNITY_Community 645|Community 645]]
+- [[_COMMUNITY_Community 646|Community 646]]
+- [[_COMMUNITY_Community 647|Community 647]]
+- [[_COMMUNITY_Community 648|Community 648]]
+- [[_COMMUNITY_Community 649|Community 649]]
+- [[_COMMUNITY_Community 650|Community 650]]
+- [[_COMMUNITY_Community 696|Community 696]]
+- [[_COMMUNITY_Community 774|Community 774]]
+- [[_COMMUNITY_Community 775|Community 775]]
+- [[_COMMUNITY_Community 776|Community 776]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `main()` - 369 edges
-2. `Assert()` - 261 edges
+1. `Assert()` - 429 edges
+2. `main()` - 370 edges
 3. `TEST_F()` - 212 edges
-4. `Test()` - 171 edges
-5. `Check()` - 156 edges
-6. `Init()` - 145 edges
-7. `size()` - 95 edges
-8. `getTransaction()` - 78 edges
-9. `secp256k1_gej_neg()` - 64 edges
-10. `secp256k1_memcmp_var()` - 63 edges
+4. `Check()` - 177 edges
+5. `Test()` - 171 edges
+6. `Init()` - 146 edges
+7. `size()` - 108 edges
+8. `getTransaction()` - 79 edges
+9. `secp256k1_memcmp_var()` - 76 edges
+10. `getObjectHash()` - 75 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `check_split_switched_back_1()` --calls--> `getBlockHashes()`  [INFERRED]
-  tests/CoreTests/ChainSplit1.cpp → src/Wallet/WalletGreen.cpp
-- `TEST_F()` --calls--> `TestCase()`  [INFERRED]
-  tests/UnitTests/Shuffle.cpp → external/gtest/src/gtest.cc
-- `BinaryOutputArchive()` --calls--> `dump()`  [INFERRED]
-  external/parallel_hashmap/phmap_dump.h → src/Serialization/KVBinaryOutputStreamSerializer.cpp
-- `handle_file_request()` --calls--> `true()`  [INFERRED]
-  external/httplib/httplib.h → src/Common/FileMappedVector.h
-- `Test()` --calls--> `ammValidateDepositRatio()`  [INFERRED]
-  external/gtest/src/gtest.cc → src/CryptoNoteCore/AmmPool.cpp
+- `RenderCdOrderbook()` --calls--> `Repeat`  [INFERRED]
+  swapxfg/app/cd_orderbook.go → docs/tutorials/earning-interest.mdx
+- `RenderChart()` --calls--> `Repeat`  [INFERRED]
+  swapxfg/app/chart.go → docs/tutorials/earning-interest.mdx
+- `RenderTape()` --calls--> `Repeat`  [INFERRED]
+  swapxfg/app/tape.go → docs/tutorials/earning-interest.mdx
+- `RenderInputBar()` --calls--> `Repeat`  [INFERRED]
+  swapxfg/app/input.go → docs/tutorials/earning-interest.mdx
+- `RenderOrderbook()` --calls--> `Repeat`  [INFERRED]
+  swapxfg/app/orderbook.go → docs/tutorials/earning-interest.mdx
 
-## Communities (354 total, 22 thin omitted)
+## Communities (855 total, 59 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.03
-Nodes (126): Run(), AddTestInfo(), AddTestPartResult(), AppendUserMessage(), ArrayAsVector(), CaseInsensitiveCStringEquals(), ChopLowBits(), CodePointToUtf8() (+118 more)
+Cohesion: 0.02
+Nodes (155): Run(), AddTestInfo(), AddTestPartResult(), ArrayAsVector(), ChopLowBits(), ClassUniqueToAlwaysTrue, CodePointToUtf8(), ColoredPrintf() (+147 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (76): CalculateOptimalEdits(), CreateUnifiedDiff(), Test(), TestEventListeners(), DirectoryCreationTest, GetAbsolutePathOf(), XmlOutputChangeDirTest, FatalFailure() (+68 more)
+Nodes (135): create_client_socket(), load_certs(), set_address_family(), set_basic_auth(), set_compress(), set_connection_timeout(), set_decompress(), set_digest_auth() (+127 more)
+
+### Community 2 - "Community 2"
+Cohesion: 0.01
+Nodes (4): _mm_div_ps(), _mm_div_ss(), _mm_sqrt_ps(), _mm_sqrt_ss()
 
 ### Community 3 - "Community 3"
-Cohesion: 0.06
-Nodes (93): ecdsa_signature_parse_der_lax(), ec_privkey_import_der(), derivePublicKeyCompressed(), signRecoverable(), secp256k1_ecdh(), run_ecdh_tests(), test_bad_scalar(), test_ecdh_api() (+85 more)
+Cohesion: 0.04
+Nodes (136): decomposeAmount(), isFusionTransaction(), setViewKey(), shutdown(), Reset(), removeObserver(), addWallet(), calculateDonationAmount() (+128 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.03
-Nodes (52): copy_settings(), create_client_socket(), detail(), is_readable(), redirect(), set_address_family(), set_basic_auth(), set_ca_cert_store() (+44 more)
+Nodes (84): asString(), add_new_tx(), addChain(), addObserver(), BlockWithTransactions, buildSparseChain(), check_tx_mixin(), check_tx_syntax() (+76 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.05
-Nodes (82): printIGD(), soapPostSubmit(), getDevicesFromMiniSSDPD(), FreeUPNPUrls(), GetUPNPUrls(), parseMSEARCHReply(), parserootdesc(), simpleUPnPcommand() (+74 more)
+Cohesion: 0.03
+Nodes (84): fromHex(), getBinaryArrayHash(), toBinaryArray(), addOutput(), createTransaction(), derivePublicKey(), getExtra(), getExtraNonce() (+76 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.03
-Nodes (66): generate_and_print_keys(), handle_get_daemon_info(), buildLoggerConfiguration(), command_line_preprocessor(), print_genesis_tx_hex(), renameDataDir(), print_hex(), secure_erase() (+58 more)
+Cohesion: 0.05
+Nodes (87): add_out_to_get_random_outs(), addNewBlock(), appendPath(), BlockCacheSerializer, BlockchainIndicesSerializer, blockDifficulty(), buildSparseChain(), calc_poisson_ln() (+79 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (87): bench_ecdh(), bench_ecdh_setup(), bench_ellswift_create(), bench_ellswift_decode(), bench_ellswift_encode(), bench_ellswift_setup(), bench_ellswift_xdh(), secp256k1_ellswift_decode() (+79 more)
+Cohesion: 0.02
+Nodes (4): CryptoNote(), front(), Event(), TEST()
 
 ### Community 8 - "Community 8"
-Cohesion: 0.07
-Nodes (87): setViewKey(), addWallet(), calculateDonationAmount(), changePassword(), commitTransaction(), convertAndLoadWalletFile(), convertOrdersToTransfers(), copyContainerStorageKeys() (+79 more)
+Cohesion: 0.04
+Nodes (81): run_ecdh_bench(), run_ellswift_bench(), add_device(), free_device(), main(), main(), set_process_affinity(), set_thread_high_priority() (+73 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.05
-Nodes (68): chacha8(), loadTransactions(), saveTransactions(), getSignaturesCount(), getVariantValue(), serializeVarintVector(), WalletTransferType(), serialize() (+60 more)
+Cohesion: 0.04
+Nodes (65): testing(), AppendUserMessage(), AssertionFailure(), AssertionResult(), AssertionSuccess(), CalculateOptimalEdits(), CaseInsensitiveCStringEquals(), CmpHelperEQ() (+57 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.08
-Nodes (75): secp256k1_ellswift_elligatorswift_var(), secp256k1_ellswift_swiftec_var(), secp256k1_ellswift_xswiftec_frac_var(), test_exhaustive_extrakeys(), secp256k1_ecdsa_sig_recover(), bench_field_inverse(), bench_field_is_square_var(), bench_field_mul() (+67 more)
+Cohesion: 0.04
+Nodes (60): blockchainUpdated(), getOutByMSigGIndex(), CryptoNote(), createTransactionPrefix(), doQueryBlocksLite(), getBlocksAsync(), getNewBlocksAsync(), peerCountUpdated() (+52 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.1
-Nodes (70): bench_ecmult_multi_teardown(), secp256k1_ecdsa_sig_verify(), secp256k1_ecmult_compute_table(), secp256k1_ecmult_const_odd_multiples_table_globalz(), secp256k1_ecmult_gen_compute_table(), secp256k1_ecmult_gen(), secp256k1_ecmult_gen_context_build(), secp256k1_ecmult_gen_context_clear() (+62 more)
+Cohesion: 0.02
+Nodes (71): FormatEpochTimeInMillisAsIso8601(), FormatIntWidth2(), PortableLocaltime(), TestCase(), TestEventListeners(), TEST(), TestException, FooTest (+63 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.04
-Nodes (56): GenerateTransactionWithZeroFee(), appendExtra(), getExtra(), getInput(), getInputCount(), getInputTotalAmount(), getInputType(), getOutput() (+48 more)
+Cohesion: 0.05
+Nodes (89): DepositTestsBase(), EmissionTest(), setAccountKeys(), addObserver(), calculateDepositsAmount(), synchronizationCompleted(), synchronizationProgressUpdated(), actualBalance() (+81 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.06
-Nodes (58): getType(), addNewBlock(), appendPath(), BlockCacheSerializer, BlockchainIndicesSerializer, blockDifficulty(), check_block_timestamp(), check_tx_input() (+50 more)
+Cohesion: 0.07
+Nodes (82): loadTransactions(), saveTransactions(), serialize(), load(), save(), deserialize(), incIv(), initTransactionPool() (+74 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.05
-Nodes (56): bytesEqual(), eip55ChecksumValid(), keccak256Checksum(), keccak256Hex(), parseAmount(), validateAddress(), validateBCHAddress(), validateETHAddress() (+48 more)
+Nodes (90): bench_ecdh(), bench_ecdh_setup(), bench_ellswift_create(), bench_ellswift_decode(), bench_ellswift_encode(), bench_ellswift_xdh(), bench_recover(), recovery_test_nonce_function() (+82 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.06
-Nodes (49): addCallback(), addCheckAccepted(), addCheckPurged(), add_new_tx(), BlockWithTransactions, check_tx_syntax(), coinsEmittedAtHeight(), difficultyAtHeight() (+41 more)
+Cohesion: 0.07
+Nodes (81): ecdsa_signature_parse_der_lax(), ec_privkey_export_der(), ec_privkey_import_der(), derivePublicKey(), derivePublicKeyCompressed(), Secp256k1Signer(), signRecoverable(), secp256k1_ecdh() (+73 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.05
-Nodes (46): addressHasAlias(), getAliasByAddress(), getAllAliases(), isValidRegularAlias(), registerAlias(), reserveDevTeamAliases(), computeMerkleRootInternal(), getEpochCount() (+38 more)
+Cohesion: 0.08
+Nodes (83): secp256k1_ellswift_swiftec_var(), secp256k1_ellswift_xswiftec_frac_var(), secp256k1_ellswift_xswiftec_inv_var(), secp256k1_ellswift_xswiftec_var(), bench_field_half(), bench_field_inverse(), bench_field_inverse_var(), bench_field_is_square_var() (+75 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.05
-Nodes (48): fill_random(), fillRandomString(), TimerTests, PrematureExitTest, PropertyOne, PropertyTwo, NodeTxPoolSyncTest, PaymentGateTest (+40 more)
+Cohesion: 0.08
+Nodes (76): test_result_basepoint(), main(), secp256k1_extrakeys_ge_even_y(), secp256k1_keypair_create(), secp256k1_keypair_load(), secp256k1_keypair_pub(), secp256k1_keypair_save(), secp256k1_keypair_sec() (+68 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.05
-Nodes (53): DepositTestsBase(), EmissionTest(), setAccountKeys(), generateDeterministicTransactionKeys(), resetWallet(), shutdown(), Reset(), removeObserver() (+45 more)
+Nodes (72): add_host_fail(), append_net_address(), ban_host(), block_host(), check_trust(), connect_to_peerlist(), connectionHandler(), connections_maker() (+64 more)
 
 ### Community 19 - "Community 19"
 Cohesion: 0.04
-Nodes (3): ipAddressToString(), std(), make_error_code()
+Nodes (61): beginsWith(), contains(), endsWith(), find(), findLast(), getSize(), head(), isEmpty() (+53 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.05
-Nodes (55): LogToStderr(), AlwaysTrue(), ClassUniqueToAlwaysTrue, Arguments, AssumeRole(), DeathTest(), DeathTestAbort(), DeathTestImpl (+47 more)
+Cohesion: 0.04
+Nodes (66): getChainSwitch(), testing(), AutoHandle(), FlushInfoLog(), LogToStderr(), AddArguments(), Arguments, AssumeRole() (+58 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.06
-Nodes (40): distribution(), randomBytes(), applySmoothing(), calculateEmergencyDifficulty(), calculateLWMA(), calculateMultiWindowDifficulty(), calculateNextDifficulty(), detectBlockStealingAttempt() (+32 more)
+Cohesion: 0.13
+Nodes (77): secp256k1_ecdsa_sig_recover(), bench_ecmult_multi_teardown(), bench_group_add_var(), bench_group_add_zinv_var(), bench_group_double_var(), bench_setup(), secp256k1_ecdsa_sig_verify(), secp256k1_eckey_pubkey_serialize() (+69 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.08
-Nodes (39): blockchainUpdated(), core(), getOutByMSigGIndex(), set_cryptonote_protocol(), worker_thread(), getNewBlocksAsync(), queryBlocksLiteAsync(), binaryCommand() (+31 more)
+Cohesion: 0.05
+Nodes (50): erase(), extract(), begin(), end(), blake256_compress(), _mm_movemask_epi8(), rbegin(), key() (+42 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.06
-Nodes (45): findSubscriberForConsumer(), findViewKeyForConsumer(), blocksAdded(), getDeposit(), getDepositsInBlocks(), getUnconfirmedTransactions(), insertDeposit(), insertNewDeposit() (+37 more)
+Nodes (61): AlwaysTrue(), Abort(), DeathTest(), DeathTestAbort(), DeathTestImpl, ExecDeathTest, ExecDeathTestChildMain(), ExecDeathTestSpawnChild() (+53 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.06
-Nodes (46): FlushInfoLog(), Abort(), AssertHeld(), AtomMatchesChar(), AutoHandle(), BoolFromGTestEnv(), CaptureStderr(), CaptureStdout() (+38 more)
+Cohesion: 0.07
+Nodes (61): validateAddress(), addPaymentIdToExtra(), checkPaymentId(), collectDestinationAddresses(), collectMessages(), convertTransactionsInBlockInfoToTransactionHashesInBlockRpcInfo(), convertTransactionsInBlockInfoToTransactionsInBlockRpcInfo(), convertTransactionWithTransfersToTransactionRpcInfo() (+53 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.06
-Nodes (44): recalculateMaxObservedHeight(), add_host_fail(), ban_host(), block_host(), check_trust(), connect_to_peerlist(), connectionHandler(), connections_maker() (+36 more)
+Cohesion: 0.05
+Nodes (48): BeautifyCode(), ConvertFromPumpSource(), Cursor, Env, Eof(), FindFirst(), FindFirstInLine(), IsHeaderGuardIncludeOrOneLineIWYUPragma() (+40 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.06
-Nodes (36): check_block_rewards(), gen_block_reward(), get_tx_out_amount(), rewind_blocks(), clearTransaction(), lift_up_difficulty(), addDepositOutput(), check_tx_verification_context() (+28 more)
+Cohesion: 0.04
+Nodes (40): makeCenteredString(), setFeeAddress(), ArgumentReader, askAliasesTransfersConfirmation(), buildLoggerConfiguration(), close_wallet(), connectionStatusUpdated(), deinit() (+32 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (27): Tests that the flag overrides the environment variable., Runs gtest_break_on_failure_unittest_ and verifies that it does     (or does not, Runs the test program and returns its exit code and a list of tests run., Tests the env variable or the command line flag to filter tests., Asserts that two sets are equal., Asserts that list_of_sets is a valid partition of set_var., Adjust tests_to_run in case value parameterized tests are disabled., Checks that the binary runs correct set of tests for a given filter. (+19 more)
+Cohesion: 0.05
+Nodes (52): generate(), construct_tx_to_key(), construct_tx_with_fee(), fill_tx_destination(), fill_tx_sources_and_destinations(), main(), addDepositOutput(), check_tx_verification_context() (+44 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.14
-Nodes (47): check_adaptor_signature(), hash_data_to_ec(), equal(), fe_0(), fe_1(), fe_add(), fe_cmov(), fe_copy() (+39 more)
+Cohesion: 0.07
+Nodes (54): advance_past_empty_and_deleted(), begin(), bucket(), bucket_size(), clear_deleted(), clear_no_resize(), copy_from(), count() (+46 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.11
-Nodes (34): check_key(), check_ring_signature(), check_scalar(), check_signature(), check_tx_proof(), derivation_to_scalar(), derive_public_key(), derive_secret_key() (+26 more)
+Cohesion: 0.04
+Nodes (28): true_type(), internal(), FormatForComparisonFailureMessage(), ScopedTrace(), internal(), TestPartResultArray(), TestPartResultReporterInterface(), testing() (+20 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.07
-Nodes (38): generator(), getAccountAddressAsStr(), getPenalizedAmount(), decomposeAmount(), accountAddressAsString(), blockGrantedFullRewardZoneByBlockVersion(), calculateInterest(), calculateTotalTransactionInterest() (+30 more)
+Cohesion: 0.05
+Nodes (46): getAllowLocalIp(), getBindIp(), getBindPort(), getConfigFolder(), getExclusiveNodes(), getExternalPort(), getHideMyPort(), getI2PSocksHost() (+38 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.07
-Nodes (30): FuegoRAGSystem, Chunk C++ code by functions and classes, Chunk Go code by functions, Chunk markdown by headers, Generic chunking by paragraphs, Discover all relevant documents in the Fuego project, Build the RAG index from all documents, Save metadata about the RAG index (+22 more)
+Cohesion: 0.05
+Nodes (43): addForeverDeposit(), BankingIndex(), BankingIndexEntry::serialize(), BurnedXfgEntry::serialize(), depositAmountAtHeight(), depositInterestAtHeight(), fullDepositAmount(), getBurnedXfgAmount() (+35 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.07
-Nodes (38): balances(), addUnlockJob(), advanceHeight(), assign(), copyToSpent(), createTransferIteratorList(), deleteTransactionTransfers(), deleteUnconfirmedTransaction() (+30 more)
+Nodes (46): getPaymentIdFromTxExtra(), TEST_F(), WalletUserTransactionsCacheTest, on_get_transfers(), insertDeposit(), insertNewDeposit(), onTransactionDeleted(), onTransactionUpdated() (+38 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.07
-Nodes (26): erase(), extract(), isEmpty(), make_tuple(), Alignment(), max_size_impl(), CapacityToGrowth(), const_iterator() (+18 more)
+Cohesion: 0.1
+Nodes (55): ecdh_hash_function_sha256(), bench_ellswift_setup(), ellswift_xdh_hash_function_bip324(), ellswift_xdh_hash_function_prefix(), secp256k1_ellswift_create(), secp256k1_ellswift_decode(), secp256k1_ellswift_elligatorswift_var(), secp256k1_ellswift_encode() (+47 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.06
-Nodes (26): split_miner_tx_outs(), check_tx_fee(), print_pool(), parse_hash256(), get_inputs_money_amount(), get_outs_money_amount(), binMethod(), f_on_block_json() (+18 more)
+Cohesion: 0.05
+Nodes (27): secp256k1_fe_from_signed30(), secp256k1_fe_impl_inv(), secp256k1_fe_impl_inv_var(), secp256k1_fe_impl_set_b32_limit(), secp256k1_fe_impl_set_b32_mod(), secp256k1_fe_impl_sqr(), secp256k1_fe_sqr_inner(), secp256k1_fe_to_signed30() (+19 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.07
-Nodes (22): checkFullyUnlocked(), checkHalfUnlocked(), System(), checkSocks5Response(), readExactly(), socks5ConnectDomain(), socks5ConnectIPv4(), socks5Handshake() (+14 more)
+Cohesion: 0.06
+Nodes (44): build(), fillInputs(), fillOutputs(), setVersion(), signSources(), TransactionBuilder(), absolute_output_offsets_to_relative(), constructTransaction() (+36 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.05
-Nodes (31): SetUp(), SetUpEnvironment(), Sets up test case.      Determines whether value-parameterized tests are enabled, BcSTest, ConsumerStub, createTx(), FunctorialBlockhainConsumerStub, FunctorialPoolConsumerStub (+23 more)
+Cohesion: 0.06
+Nodes (41): statusUpdateMsg, send(), acceptLoop(), authenticate(), fillUnauthorizedResponse(), AbstractRpcServer, ClientLoginError, EncodeMultipartFormData() (+33 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.05
-Nodes (33): Config, DefaultConfig(), AtomicSwapAnalyzer, CDFeePoolConfig, CDInterestCalculator, CryptographicPrimitives, FeeDistributionAnalyzer, P2PConsensusAnalyzer (+25 more)
+Cohesion: 0.11
+Nodes (52): check_adaptor_signature(), equal(), fe_0(), fe_1(), fe_add(), fe_cmov(), fe_copy(), fe_divpowm1() (+44 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.15
-Nodes (42): Join(), sleep(), Timer(), AppState, addLog(), buildMainMenu(), closeWallet(), cmdAddress() (+34 more)
+Cohesion: 0.08
+Nodes (33): GTestFilterUnitTest, InvokeWithModifiedEnv(), Sets the env variable to 'value'; unsets it when 'value' is None., Runs the test program and returns its exit code and a list of tests run., Runs the given function and arguments in a modified environment., Runs a test program shard and returns exit code and a list of tests run., Tests the env variable or the command line flag to filter tests., Asserts that two sets are equal. (+25 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.06
-Nodes (21): true_type(), internal(), FormatForComparisonFailureMessage(), os(), ScopedTrace(), DataSink(), ArrayEq(), CopyArray() (+13 more)
+Cohesion: 0.07
+Nodes (38): FuegoRAGSystem, main(), Chunk C++ code by functions and classes, Chunk Go code by functions, Chunk markdown by headers, Generic chunking by paragraphs, Discover all relevant documents in the Fuego project, Build the RAG index from all documents (+30 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.05
-Nodes (17): makeCenteredString(), setFeeAddress(), ArgumentReader, askAliasesTransfersConfirmation(), connectionStatusUpdated(), export_keys(), generate_mnemonic(), is_valid_mnemonic() (+9 more)
+Cohesion: 0.1
+Nodes (53): os(), DataSink(), Delete(), get_multipart_content_provider(), Patch(), Put(), send_with_content_provider(), write() (+45 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.09
-Nodes (37): getByCommitment(), aes_expand_key(), aes_expand_test(), aes_sbox(), aesb_pseudo_round(), aesb_single_round(), BlockHeader, CircuitWitness (+29 more)
+Cohesion: 0.08
+Nodes (41): check_double_spend(), addCallback(), addCheckAccepted(), addCheckPurged(), TestGenerator(), generator(), getMultisigOutputReference(), print_blockchain_outs() (+33 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.08
-Nodes (24): FuegoCodeAnalyzer, Analyze cryptographic primitives, Analyze Fuego source code for blockchain mechanics, Analyze fee distribution code, Save analysis report to JSON file, Analyze CD interest calculation code, Extract interest calculation formulas from Currency.cpp, Extract configuration values from CryptoNoteConfig.h (+16 more)
+Cohesion: 0.11
+Nodes (49): addFeeRecordToTree(), addLPShareToTree(), bufferEncryptedEvent(), createPool(), deriveEpochKey(), executeSwap(), generateCheckpoint(), getBufferedEvents() (+41 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.08
-Nodes (36): ecdh_hash_function_sha256(), ellswift_xdh_hash_function_bip324(), ellswift_xdh_hash_function_prefix(), secp256k1_ellswift_sha256_init_bip324(), secp256k1_nonce_function_bip340_sha256_tagged(), nonce_function_0(), run_nonce_function_bip340_tests(), bench_ecmult_wnaf() (+28 more)
+Cohesion: 0.1
+Nodes (50): secp256k1_scalar_add(), secp256k1_scalar_cadd_bit(), secp256k1_scalar_check_overflow(), secp256k1_scalar_cmov(), secp256k1_scalar_cond_negate(), secp256k1_scalar_eq(), secp256k1_scalar_from_signed30(), secp256k1_scalar_get_b32() (+42 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.09
-Nodes (31): Estimate Annual Percentage Yield based on current epoch fees.                  F, Calculate swap fee and net amount.                  Args:             xfg_amount, Calculate CD interest based on epoch fee rates.                  Formula: intere, analyze_peer_health(), analyze_swap_fee(), calculate_block_reward_at(), calculate_cd_interest(), calculate_emission_at() (+23 more)
+Cohesion: 0.1
+Nodes (44): wait(), TEST_F(), compareTransactionsWithTransfers(), compareWalletsActualBalance(), compareWalletsAddresses(), compareWalletsPendingBalance(), compareWalletsTransactionTransfers(), createExtraNonce() (+36 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.1
-Nodes (37): pop(), BeautifyCode(), CodeNode, ConvertFromPumpSource(), ExpNode, ForNode, IfNode, IsHeaderGuardIncludeOrOneLineIWYUPragma() (+29 more)
+Cohesion: 0.12
+Nodes (33): check_key(), check_ring_signature(), check_signature(), check_tx_proof(), derivation_to_scalar(), derive_public_key(), derive_secret_key(), EllipticCurveScalar2SecretKey() (+25 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.06
-Nodes (5): NodeInitObserver, NodeRpcStub, PaymentService(), Request::serialize(), Response::serialize()
+Cohesion: 0.1
+Nodes (40): addTransaction(), addTransactionInputs(), addTransactionOutputs(), addUnlockJob(), advanceHeight(), assign(), balance(), copyToSpent() (+32 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.06
-Nodes (22): LeakChecker, Water, QueueTestSmpl3, PrimeTableTest, PrimeTableTestSmpl7, HybridPrimeTable, TersePrinter, DisabledTestsTest (+14 more)
+Cohesion: 0.07
+Nodes (35): address(), TransactionSendingWaiter(), waitForSynchronizationToHeight(), wallet(), ActualBalanceChangedScopedObserver, calculateTotalDepositAmount(), DepositsActualBalanceChangedScopedObserver, DepositsPendingBalanceChangedScopedObserver (+27 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.1
-Nodes (31): NodeRequest, poolUpdateEndHandler(), PoolUpdateGuard::beginUpdate(), PoolUpdateGuard::endUpdate(), ScopeExitHandler, getPoolTransaction(), lastKnownBlockHeightUpdated(), actualizeFutureState() (+23 more)
+Cohesion: 0.08
+Nodes (26): FuegoCodeAnalyzer, main(), Analyze cryptographic primitives, Analyze Fuego source code for blockchain mechanics, Analyze fee distribution code, Generate comprehensive analysis report, Save analysis report to JSON file, Analyze CD interest calculation code (+18 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.11
-Nodes (28): ErrorExit(), GitVCS, GuessVCS(), MercurialVCS, Get relative path of a file according to the current directory,     given its lo, Print an error message to stderr and exit., Helper to guess the version control system.    This examines the current directo, The real main function.    Args:     argv: Command line arguments.     data: Dif (+20 more)
+Cohesion: 0.09
+Nodes (28): ErrorExit(), GitVCS, GuessVCS(), MercurialVCS, Implementation of the VersionControlSystem interface for Mercurial., Get relative path of a file according to the current directory,     given its lo, Return a list of files unknown to the VCS., Print an error message to stderr and exit. (+20 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.06
-Nodes (15): _mm_movemask_epi8(), match(), crend(), destruct(), front(), key(), noexcept(), remove_suffix() (+7 more)
+Cohesion: 0.05
+Nodes (26): addObserver(), CryptoNote(), doGetNewBlocks(), doGetRandomOutsByAmounts(), doGetTransaction(), doGetTransactionOutsGlobalIndices(), doGetTransactions(), doGetTransactionsByPaymentId() (+18 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.14
-Nodes (33): construct(), checkIfEnoughMixins(), countNeededMoney(), prepareMultisignatureInputs(), selectTransfers(), splitAmount(), splitDestinations(), notifyIfBalanceChanged() (+25 more)
+Cohesion: 0.06
+Nodes (28): hash_tree(), main(), CallbackHeightChangeObserver, ConfigurationError, SimpleTest, SimpleTestCase, TEST_F(), WaitForActualDwindleObserver (+20 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.08
-Nodes (35): check_host_name(), Delete(), send_socket(), set_bearer_token_auth(), verify_host(), verify_host_with_common_name(), verify_host_with_subject_alt_name(), write_content_with_provider() (+27 more)
+Cohesion: 0.05
+Nodes (9): Common(), true(), Common(), endOfStream(), getPosition(), readSome(), readSome(), writeSome() (+1 more)
 
 ### Community 53 - "Community 53"
-Cohesion: 0.1
-Nodes (30): Initialize the mapper database, close_socket(), connect_with_proxy(), getline(), handle_request(), process_and_close_socket(), process_request(), process_socket() (+22 more)
+Cohesion: 0.04
+Nodes (48): 1. CD Interest Calculator, 1. CD Investment Analysis, 2. Atomic Swap Analyzer, 2. Network Monitoring, 3. P2P Consensus Analyzer, 3. Swap Planning, 4. Cryptographic Primitives, 4. Security Analysis (+40 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.14
-Nodes (32): addFeeRecordToTree(), addLPShareToTree(), bufferEncryptedEvent(), deriveEpochKey(), getBufferedEvents(), getEpochNumber(), getEpochRange(), getFeeTreeLeaves() (+24 more)
+Cohesion: 0.06
+Nodes (26): allocate(), allocate_impl(), begin(), container_internal(), crbegin(), crend(), deallocate(), Destroy() (+18 more)
 
 ### Community 55 - "Community 55"
-Cohesion: 0.18
-Nodes (28): secp256k1_jacobi32_maybe_var(), secp256k1_modinv32(), secp256k1_modinv32_divsteps_30(), secp256k1_modinv32_mul_cmp_30(), secp256k1_modinv32_normalize_30(), secp256k1_modinv32_update_de_30(), secp256k1_jacobi64_maybe_var(), secp256k1_modinv64() (+20 more)
+Cohesion: 0.12
+Nodes (41): construct(), checkIfEnoughMixins(), countNeededMoney(), selectTransfers(), splitAmount(), splitDestinations(), checkDepositsAndCalculateAmount(), checkIfEnoughMixins() (+33 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.08
-Nodes (19): calc_poisson_ln(), FuegoCodebaseMapperServer, Get file structure as text, MCP Server for Fuego Codebase Mapper, Set up MCP server handlers, Log(), Configuration(), initOptions() (+11 more)
+Cohesion: 0.09
+Nodes (38): prevalidate_miner_transaction(), validateInput(), check_tx_inputs_keyimages_diff(), check_tx_semantic(), check_inputs_overflow(), check_inputs_types_supported(), check_money_overflow(), check_outs_overflow() (+30 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.09
-Nodes (28): address(), ActualBalanceChangedScopedObserver, calculateTotalDepositAmount(), DepositsActualBalanceChangedScopedObserver, DepositsPendingBalanceChangedScopedObserver, DepositsUpdatedScopedObserver, GenerateOneBlockRewardAndUnlock(), generateWallet() (+20 more)
+Nodes (38): checkpointDir(), deletePool(), ensureDirectory(), listLPShares(), listPools(), loadLatestCheckpoint(), loadLPShare(), loadPool() (+30 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.13
-Nodes (28): generate_incomplete_key_image(), hash_to_ec(), load_3(), load_4(), sc_0(), sc_add(), sc_mulsub(), sc_reduce() (+20 more)
+Cohesion: 0.04
+Nodes (46): **1. P2P Network**, **1. Tor Integration Layer**, **2. Component Structure**, **2. RPC Interface**, **3. Wallet Integration**, 🏗️ **Architecture Design**, code:block1 (┌─────────────────────────────────────────┐), code:ini ([tor]) (+38 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.08
-Nodes (18): gen_block_invalid_binary_format(), gen_simple_chain_001(), one_block(), register_callback(), verify(), check_split_switched_back_1(), gen_simple_chain_split_1(), gen_chain_switch_1() (+10 more)
+Cohesion: 0.05
+Nodes (19): CatchCxxExceptionsTest, CatchSehExceptionsTest, CxxExceptionInConstructorTest, CxxExceptionInDestructorTest, CxxExceptionInSetUpTest, CxxExceptionInSetUpTestCaseTest, CxxExceptionInTearDownTest, CxxExceptionInTearDownTestCaseTest (+11 more)
 
 ### Community 60 - "Community 60"
-Cohesion: 0.1
-Nodes (12): buildHTLCLockCalldata(), ethBridgeHTML(), newReqID(), NewBridgeServer(), newSessionToken(), openURL(), solBridgeHTML(), waitForServerReady() (+4 more)
+Cohesion: 0.09
+Nodes (31): asBinaryArray(), get_stat_info(), all_connections(), CryptoNote(), doPushLiteBlock(), get_current_blockchain_height(), get_payload_sync_data(), handle_notify_missing_txs() (+23 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.15
-Nodes (27): BaseGenerator(), advance_past_empty_and_deleted(), bucket(), clear_deleted(), clear_no_resize(), copy_from(), count(), destroy_buckets() (+19 more)
+Cohesion: 0.09
+Nodes (41): aesb_pseudo_round(), aesb_single_round(), aes_expand_key(), aes_expand_test(), aes_sbox(), aesb_pseudo_round(), aesb_single_round(), BlockHeader (+33 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 0.16
-Nodes (24): readVarint(), Stream(), checkedRead(), checkedWrite(), beginArray(), beginObject(), binary(), endArray() (+16 more)
+Cohesion: 0.09
+Nodes (34): rewind_blocks(), generate(), fill_tx_sources(), find_block_chain(), get_balance(), get_confirmed_txs(), init_output_indices(), init_spent_output_indices() (+26 more)
 
 ### Community 63 - "Community 63"
-Cohesion: 0.12
-Nodes (31): ExitSummary(), FormatDeathTestOutput(), disabled_test_count(), elapsed_time(), Failed(), failed_test_count(), FormatTimeInMillisAsSeconds(), GetTestCase() (+23 more)
+Cohesion: 0.15
+Nodes (44): Join(), sleep(), AppState, NodeInfo, addLog(), buildMainMenu(), closeWallet(), cmdAddress() (+36 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 0.11
-Nodes (24): Tests using the --gtest_break_on_failure flag., GTestColorTest, Tests the case when there are both GTEST_COLOR and --gtest_color., Tests using aliases in specifying --gtest_color., Sets the env variable to 'value'; unsets it when 'value' is None., Runs gtest_color_test_ and returns its exit code., Tests the case when there's neither GTEST_COLOR nor --gtest_color., Tests the case when there's --gtest_color but not GTEST_COLOR. (+16 more)
+Cohesion: 0.04
+Nodes (44): 1. Computing the Greatest Common Divisor (GCD) using divsteps, 2. From GCDs to modular inverses, 3. Batching multiple divsteps, 4. Avoiding modulus operations, 5. Constant-time operation, 6. Variable-time optimizations, 7. Final Python version, 8. From GCDs to Jacobi symbol (+36 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.11
-Nodes (26): calculateBurnHash(), calculateConsensusMessageHash(), checkConsensusThreshold(), extractBurnAmountFromTransaction(), extractCommitmentFromTxExtra(), generateBurnProof(), getEldernodeConsensusParticipants(), isProofExpired() (+18 more)
+Cohesion: 0.08
+Nodes (26): secp256k1_i128_accum_mul(), secp256k1_i128_check_pow2(), secp256k1_i128_det(), secp256k1_i128_eq_var(), secp256k1_i128_from_i64(), secp256k1_i128_load(), secp256k1_i128_to_i64(), secp256k1_i128_to_u64() (+18 more)
 
 ### Community 66 - "Community 66"
-Cohesion: 0.1
-Nodes (24): add_out_to_get_random_outs(), prevalidate_miner_transaction(), check_tx_inputs_keyimages_diff(), check_tx_mixin(), check_tx_semantic(), getCurrentBlockMajorVersion(), parse_tx_from_blob(), check_inputs_overflow() (+16 more)
+Cohesion: 0.09
+Nodes (40): generate_and_print_keys(), handle_get_daemon_info(), handle_request_stat(), main(), withTimeout(), close_socket(), connect_with_proxy(), handle_request() (+32 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 0.12
-Nodes (19): begin(), end(), AddTestPattern(), CreateTestFactory(), IsValidParamName(), ParameterizedTestCaseRegistry(), RegisterTests(), AbslHashValue() (+11 more)
+Cohesion: 0.06
+Nodes (19): Increment(), Print(), AllowsGenericStreaming, AllowsGenericStreamingAndImplicitConversionTemplate, AllowsGenericStreamingTemplate, Big(), BiggestIntConvertible, PathLike (+11 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 0.1
-Nodes (22): Cursor, Eof(), FindFirst(), FindFirstInLine(), MakeToken(), ParseExpTokenInParens(), ParseToken(), Returns a copy of self. (+14 more)
+Cohesion: 0.06
+Nodes (25): WalletTransferType(), SetUp(), SetUpEnvironment(), PaymentGateTest, TEST_F(), createWalletService(), generateRandomHash(), isEquivalent() (+17 more)
 
 ### Community 69 - "Community 69"
-Cohesion: 0.07
-Nodes (23): CommentTest, CustomFunctionNamingTest, CustomFunctorNamingTest, CustomIntegerNamingTest, CustomLambdaNamingTest, CustomStructNamingTest, DogAdder, ExternalGeneratorTest (+15 more)
+Cohesion: 0.05
+Nodes (42): Branch: HE4T | Date: 2026-03-07, code:block1 (C_pseudo = amount*H + z*G     (z chosen freely by spender)), code:block10 (C_pseudo - C_real = (amount_fake - amount_real)*H + (z - mas), code:block11 (C_v10 = amount * H + 0 * G     (mask = 0, publicly computabl), code:block12 (sum(C_pseudo[j] for each input j) - sum(C_output[k] for each), code:cpp (bool checkCommitmentBalance(const Transaction& tx) {), code:block14 (C_key_input = keyInput.amount * H + 0*G), code:block15 (TransactionPrefix already has no fee field — fee is inferred) (+34 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.13
-Nodes (25): secp256k1_pippenger_bucket_window(), secp256k1_pippenger_max_points(), secp256k1_scratch_alloc(), secp256k1_scratch_checkpoint(), secp256k1_scratch_create(), secp256k1_scratch_destroy(), secp256k1_scratch_max_allocation(), run_ctz_tests() (+17 more)
+Cohesion: 0.06
+Nodes (30): AdHocTest(), ATypedDeathTest, ATypeParamDeathTest, BarEnvironment, DeathTestAndMultiThreadsTest, ExpectFailureTest, ExpectFailureWithThreadsTest, FailingParamTest (+22 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 0.19
-Nodes (27): adapt_signature(), adaptor_random_scalar(), extract_adaptor_secret(), generate_adaptor_signature(), musig2_aggregate(), musig2_key_agg(), musig2_nonce_agg(), musig2_nonce_gen() (+19 more)
+Cohesion: 0.05
+Nodes (41): **Access the API**, 📚 **Additional Resources**, **Check Supply Metrics**, code:bash (# Navigate to the docker directory), code:bash (# Monitor resource usage), code:bash (# Check logs for errors), code:bash (# Fix volume permissions), code:bash (# Clean and rebuild) (+33 more)
+
+### Community 72 - "Community 72"
+Cohesion: 0.07
+Nodes (29): amountFound(), AutoPrintTimer, AutoTimer, createTransactionTo(), getAccountKeysWithViewKey(), getAccountSubscription(), getAccountSubscriptionWithSyncStart(), INodeGlobalIndexStub (+21 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.08
-Nodes (22): SkipSpaces(), SplitIntoTestNames(), VerifyRegisteredTestNames(), AtomicCounterWithMutex, Castable, ConstAndNonConstCastable, ConstCastable, Derived (+14 more)
+Cohesion: 0.1
+Nodes (32): relayTransactionViaMesh(), isRunning(), broadcastBlock(), buildMeshPacket(), calculateCrc(), connectSerial(), connectTcp(), connectToDevice() (+24 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.1
-Nodes (16): cancelOffer(), cleanupThread(), getCompositePrice(), getCtrUsdPrice(), getNativeXfgPrice(), handleCancelMessage(), handleOfferMessage(), submitOffer() (+8 more)
+Nodes (31): acceptLoop(), makeRequest(), acceptLoop(), connectorLoop(), connectPeerList(), connectPeers(), createProxy(), CryptoNote() (+23 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 0.14
-Nodes (20): get_random_index_with_fixed_probability(), connectorLoop(), connectPeers(), createProxy(), doWithTimeoutAndThrow(), enqueueConnection(), fetchPeerList(), getNodeData() (+12 more)
+Cohesion: 0.05
+Nodes (40): Advanced Implementation, Algorithm, Anonymity Set, Backwards Compatibility, BlockMajorVersion 10+, code:cpp (// Minimum ring size for V10+), code:cpp (std::vector<size_t> targetRingSizes = {18, 15, 12, 10, 8};), code:cpp (// Automatically selects optimal ring size) (+32 more)
 
 ### Community 76 - "Community 76"
-Cohesion: 0.2
-Nodes (25): Update(), binPath(), burn2MintMenu(), createWalletCmd(), elderfierMenu(), getBalanceCmd(), initialModel(), initVersionInfo() (+17 more)
+Cohesion: 0.07
+Nodes (14): CLogger(), disableCategory(), doLogString(), enableCategory(), formatPattern(), operator()(), setMaxLevel(), setPattern() (+6 more)
 
 ### Community 77 - "Community 77"
-Cohesion: 0.12
-Nodes (28): AssertionFailure(), AssertionResult(), AssertionSuccess(), CmpHelperEQ(), DoubleNearPredFormat(), EqFailure(), FloatingPointLE(), FormatHexInt() (+20 more)
+Cohesion: 0.06
+Nodes (16): print_pool(), print_pool(), binMethod(), fill_block_header_response(), isCoreReady(), jsonMethod(), on_get_block_header_by_hash(), on_get_block_header_by_height() (+8 more)
 
 ### Community 78 - "Community 78"
-Cohesion: 0.16
-Nodes (27): Secp256k1Signer(), run_ecdh_bench(), run_ellswift_bench(), run_recovery_bench(), have_flag(), bench_context(), secp256k1_heap_child1(), secp256k1_heap_down() (+19 more)
+Cohesion: 0.11
+Nodes (32): addExternalSource(), cancelOffer(), cleanupThread(), getAllOffers(), getCompositePrice(), getCtrUsdPrice(), getNativeXfgPrice(), getRecentTrades() (+24 more)
 
 ### Community 79 - "Community 79"
 Cohesion: 0.12
-Nodes (16): random_seed(), AlsoRunDisabledTestsFlag(), CalculateTestLists(), FilterFlag(), GetTestCases(), GetTestsForAllIterations(), GTestShuffleUnitTest, Returns a list of test cases in the given full test names.    Args:     tests: a (+8 more)
+Nodes (28): hash_extra_skein(), Final(), Init(), Skein_Get64_LSB_First(), Skein_Put64_LSB_First(), Skein1024_Final(), Skein1024_Final_Pad(), Skein1024_Init() (+20 more)
 
 ### Community 80 - "Community 80"
-Cohesion: 0.13
-Nodes (15): FuegoClient, get_multipart_content_provider(), Patch(), Post(), Put(), send_with_content_provider(), compress(), is_multipart_boundary_chars_valid() (+7 more)
+Cohesion: 0.05
+Nodes (39): 1.1 Aliases parser fix + default skip-TLV, 1.2 Aliases fee enforcement at block-import, 1.3 `generateEpochReport` missing return, 2.1 DLEQ proof verification in `verifyAdaptor`, 2.2 Adaptor-secret persistence in `SwapStateMachine`, 2.3 EthRpcClient EIP-155 signing, 2.4 PoolAMM 128-bit overflow protection, 3.1 WebSocket origin pin + per-session token + reject duplicate connections (+31 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 0.12
-Nodes (21): AsyncConsoleReader(), consoleThread(), handlerThread(), requestStop(), runCommand(), stopped(), waitInput(), fields() (+13 more)
+Cohesion: 0.05
+Nodes (39): 1. Configure i2pd SOCKS5 Proxy, 2. Verify i2pd is Running, 3. Configure Fuego, Bootstrapping, Clearnet Isolation Mode, CLI Flags Reference, code:bash (sudo apt update), code:bash (# Option 1: Add known I2P-side peers (reachable through the ) (+31 more)
 
 ### Community 82 - "Community 82"
-Cohesion: 0.11
-Nodes (14): handleSignal(), posixHandler(), winHandler(), Tools(), build_chunked_response(), build_content(), build_crap(), handle_http_connection() (+6 more)
+Cohesion: 0.07
+Nodes (25): RecordProperty(), DisabledTestsTest, PropertyTwo, TEST_F(), DisabledTest, ExternalUtilityThatCallsRecordProperty(), FailedTest, GTestXMLOutputUnitTest (+17 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.09
-Nodes (19): asString(), fromHex(), is_base64(), handle_get_objects(), toBinaryArray(), generateGenesisBlock(), addAmmAddLiquidityToExtra(), addAmmRemoveLiquidityToExtra() (+11 more)
+Cohesion: 0.19
+Nodes (38): base58Decode(), anchorDiscriminator(), appendU64LE(), b64_decode_char(), base58Decode(), base58Encode(), base64Decode(), base64Encode() (+30 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 0.14
-Nodes (25): Arity(), GenerateFile(), GenerateHeader(), GenerateUnitTest(), HeaderPostamble(), HeaderPreamble(), ImplementationForArity(), Iter() (+17 more)
+Cohesion: 0.17
+Nodes (35): adaptor_random_scalar(), extract_adaptor_secret(), generate_adaptor_signature(), sc_reduce(), random_scalar(), check_dleq_proof(), dleq_random_scalar(), generate_dleq_proof() (+27 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.15
-Nodes (16): Skein_Get64_LSB_First(), Skein_Put64_LSB_First(), Skein1024_Final(), Skein1024_Init(), Skein1024_Output(), Skein1024_Process_Block(), Skein1024_Update(), Skein_256_Final() (+8 more)
+Cohesion: 0.05
+Nodes (38): 📚 **Additional Resources**, 🛠️ **Advanced Usage**, 📋 **Available Images**, **Basic Setup**, code:bash (# Pull the latest image), code:bash (# Fix volume permissions), code:bash (# Check logs), code:bash (# Limit CPU and memory usage) (+30 more)
 
 ### Community 86 - "Community 86"
-Cohesion: 0.08
-Nodes (19): Increment(), Print(), Notify(), AllowsGenericStreaming, AllowsGenericStreamingAndImplicitConversionTemplate, AllowsGenericStreamingTemplate, Big(), BiggestIntConvertible (+11 more)
+Cohesion: 0.05
+Nodes (37): 2% Fee with Bug Fixes, Atomic Swap Fee Implementation Plan, Bug #1: Nothing Feeds `m_currentEpochSwapFees`, Bug #2: Epoch Distribution Doesn't Add to Fee Pool, code:cpp (// CryptoNoteConfig.h - DEFINED), code:cpp (bool SwapDaemon::initiate(const std::string& swapId, SwapPar), code:cpp (struct SwapStatus {), code:cpp (// tests/UnitTests/SwapFeeTests.cpp) (+29 more)
 
 ### Community 87 - "Community 87"
-Cohesion: 0.17
-Nodes (25): base58Decode(), base64Decode(), Claimed, HtlcError, HtlcState, Locked, anchorDiscriminator(), appendU64LE() (+17 more)
+Cohesion: 0.11
+Nodes (32): beginsWith(), Common(), contains(), endsWith(), fill(), find(), findLast(), head() (+24 more)
 
 ### Community 88 - "Community 88"
-Cohesion: 0.16
-Nodes (23): amount_to_scalar(), pedersen_commit(), pedersen_init(), pedersen_verify(), adaptor_aggregate(), adaptor_extract_secret(), adaptor_generate_adaptor(), adaptor_generate_keys() (+15 more)
+Cohesion: 0.14
+Nodes (30): keccak(), keccak1600(), keccakf(), calculateCommitment(), calculateNetworkValidationHash(), calculateNullifier(), calculateRecipientHash(), calculateTxExtraHash() (+22 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.14
-Nodes (17): asBinaryArray(), get_stat_info(), all_connections(), doPushLiteBlock(), handle_notify_new_block(), handle_notify_new_lite_block(), handle_notify_new_transactions(), handle_response_chain_entry() (+9 more)
+Cohesion: 0.08
+Nodes (23): AcceptCdResponse, newCdMarketModel(), RenderCdMarket(), RenderCdTicker(), RenderCdDetail(), RenderCdOrderbook(), sortCdOffers(), CdDiscount() (+15 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.16
-Nodes (22): oaes_alloc(), oaes_decrypt(), oaes_decrypt_block(), oaes_encrypt(), oaes_encrypt_block(), oaes_encryption_round(), oaes_free(), oaes_get_seed() (+14 more)
+Cohesion: 0.05
+Nodes (37): Audit: what v1 called out that is already done, Chunk 1 — Phase X: XMR adaptor spend-key combine, Chunk 2 — Phase S: web-bridge SRI hashes, Chunk 3 — Phase E: `isDummyGiftSecret` heuristic cleanup, Chunk 4 — Phase T: TUI stale TODO cleanup, Chunk 5 — Phase V: testnet validation + review doc, code:bash (cmake --build /home/ar/fuego/build --target SwapDaemonTests ), code:bash (git commit -m "fix(extra): replace isDummyGiftSecret statist) (+29 more)
 
 ### Community 91 - "Community 91"
-Cohesion: 0.13
-Nodes (12): destructValue(), isNil(), readArray(), readChar(), readFalse(), readNonWsChar(), readNull(), readNumber() (+4 more)
+Cohesion: 0.05
+Nodes (37): Audit: what v1 called out that is already done, Chunk 1 — Phase X: XMR adaptor spend-key combine, Chunk 2 — Phase S: web-bridge SRI hashes, Chunk 3 — Phase E: `isDummyGiftSecret` heuristic cleanup, Chunk 4 — Phase T: TUI stale TODO cleanup, Chunk 5 — Phase V: testnet validation + review doc, code:bash (cmake --build /home/ar/fuego/build --target SwapDaemonTests ), code:bash (git commit -m "fix(extra): replace isDummyGiftSecret statist) (+29 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.1
-Nodes (22): CallbackHeightChangeObserver, ConfigurationError, SimpleTest, SimpleTestCase, WaitForActualDwindleObserver, WaitForActualGrowObserver, WaitForBlockchainHeightChangeObserver, WaitForConfirmationObserver (+14 more)
+Cohesion: 0.08
+Nodes (18): createConnection(), createSocksConnection(), FuegoI2PManager(), initialize(), isI2PInstalled(), shutdown(), testSocksConnection(), updateConfig() (+10 more)
 
 ### Community 93 - "Community 93"
-Cohesion: 0.13
-Nodes (15): getPeers(), isRunning(), broadcastBlock(), buildMeshPacket(), calculateCrc(), connectSerial(), connectTcp(), connectToDevice() (+7 more)
+Cohesion: 0.09
+Nodes (22): gen_block_reward(), test_chain_unit_base(), check_all_blocks_purged(), check_block_verification_context(), clearTransaction(), corrupt_blocks_boundary(), gen_block_invalid_binary_format(), generate() (+14 more)
 
 ### Community 94 - "Community 94"
-Cohesion: 0.11
-Nodes (11): FuegoI2PManager(), isI2PInstalled(), createConnection(), createSocksConnection(), FuegoTorManager(), getConfig(), getDefaultConfig(), getHiddenServiceAddress() (+3 more)
+Cohesion: 0.1
+Nodes (27): acceptLoop(), parseMessage(), PoolP2P(), readFramedMessage(), recvAll(), serializeMessage(), setMessageCallback(), stop() (+19 more)
 
 ### Community 95 - "Community 95"
-Cohesion: 0.12
-Nodes (23): _extract_config(), SSLClient(), write(), create_decompressor(), data(), decompress(), divide(), normalize_query_string() (+15 more)
+Cohesion: 0.19
+Nodes (31): Update(), binPath(), burn2MintMenu(), createWalletCmd(), elderfierMenu(), getBalanceCmd(), getInfo(), initialModel() (+23 more)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.09
-Nodes (19): ATypedDeathTest, ATypeParamDeathTest, BarEnvironment, DeathTestAndMultiThreadsTest, ExpectFailureTest, ExpectFailureWithThreadsTest, FailingParamTest, FatalFailureInFixtureConstructorTest (+11 more)
+Cohesion: 0.1
+Nodes (27): rollback_chain_to(), calculatePercent(), DaemonCommandsHandler(), get_commands_str(), get_mining_speed(), get_sync_percentage(), help(), hide_hr() (+19 more)
 
 ### Community 97 - "Community 97"
-Cohesion: 0.16
-Nodes (20): checkpointDir(), deletePool(), ensureDirectory(), listLPShares(), loadLatestCheckpoint(), loadLPShare(), loadPool(), lpShareFilePath() (+12 more)
+Cohesion: 0.05
+Nodes (36): 1. CD Interest Analysis, 1. CD Interest Calculation System, 1. Core Agent System (`fuego_blockchain_specialist.py`), 2. Atomic Swap Analysis, 2. Configuration & Documentation, 2. Full Expert Report, 3. Analysis Tools, 3. P2P Network Monitoring (+28 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.13
-Nodes (12): add(), div(), exp_approx(), fromUint64(), ln_approx(), sub(), remove(), mul() (+4 more)
+Nodes (31): calculateBurnHash(), calculateConsensusMessageHash(), checkConsensusThreshold(), extractBurnAmountFromTransaction(), extractCommitmentFromTxExtra(), failure(), generateBurnProof(), getDefault() (+23 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.14
-Nodes (20): aes_pseudo_round(), aligned_free(), aligned_malloc(), check_aes_hw(), cn_slow_hash(), copy_block(), cpuid(), e2i() (+12 more)
+Cohesion: 0.06
+Nodes (20): BcSTest, ConsumerStub, createTx(), FunctorialBlockhainConsumerStub, FunctorialPoolConsumerStub, IBlockchainSynchronizerFunctorialObserver, IBlockchainSynchronizerTrivialObserver, INodeFunctorialStub (+12 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.1
-Nodes (3): Common(), readSome(), writeSome()
+Cohesion: 0.07
+Nodes (22): AccountGroup, createTransferFromMultisignature(), createTransferToMultisignature(), FutureGuard, IInterruptable, Interrupter, MultisignatureTest, submitTransaction() (+14 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.12
-Nodes (15): allocate(), delete_internal_node(), delete_leaf_node(), EmptyNode(), height(), leftmost(), mutable_allocator(), new_internal_node() (+7 more)
+Cohesion: 0.06
+Nodes (35): 1. Core Mapping Engine (`simple_mapper.py`), 2. MCP Server (`mcp_server.py`), 3. Advanced Parser (`codebase_mapper.py`), 4. Configuration and Documentation, code:sql (-- Core file metadata), code:block2 (Tools available via MCP:), code:bash (# Quick stats), code:json ({) (+27 more)
 
 ### Community 102 - "Community 102"
-Cohesion: 0.12
-Nodes (13): rollback_chain_to(), calculatePercent(), get_mining_speed(), get_sync_percentage(), print_as_json(), print_block(), print_block_by_hash(), print_block_by_height() (+5 more)
+Cohesion: 0.16
+Nodes (32): lastKnownBlockHeightUpdated(), actualizeFutureState(), addConsumer(), addUnconfirmedTransaction(), BlockchainSynchronizer(), checkIfShouldStop(), checkIfStopped(), doAddUnconfirmedTransaction() (+24 more)
 
 ### Community 103 - "Community 103"
-Cohesion: 0.16
-Nodes (18): createNodeConfiguration(), getNodeTransactionPool(), launchInprocTestnet(), launchTestnet(), launchTestnetWithInprocNode(), makeWallet(), mineBlock(), prepareAndSubmitBlock() (+10 more)
+Cohesion: 0.06
+Nodes (35): ✅ **1. Script Syntax Validation**, ✅ **2. Docker Compose Configuration**, ✅ **3. Setup Script Functionality**, ✅ **4. Configuration Files Generated**, ✅ **5. Utility Scripts**, ✅ **6. Backup System**, **Backup System**, **CLI Interface** (+27 more)
 
 ### Community 104 - "Community 104"
-Cohesion: 0.17
-Nodes (17): readStrict(), sendReply(), writeStrict(), acceptLoop(), readCommand(), parseMessage(), PoolP2P(), readFramedMessage() (+9 more)
+Cohesion: 0.13
+Nodes (32): addFeeRecordToTree(), addLPShareToTree(), bufferEncryptedEvent(), createPool(), deriveEpochKey(), executeSwap(), generateCheckpoint(), getBufferedEvents() (+24 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.12
-Nodes (19): decode(), Blake256State, bincode_encode(), BlockRangeResponse, ClaimArgs, ClaimOutput, Commands, commit_public_values() (+11 more)
+Cohesion: 0.06
+Nodes (35): [0.1.0] - 2013-03-05 to 2021-12-25, [0.2.0] - 2022-12-12, [0.3.0] - 2023-03-08, [0.3.1] - 2023-04-10, [0.3.2] - 2023-05-13, [0.4.0] - 2023-09-04, [0.4.1] - 2023-12-21, [0.5.0] - 2025-05-06 (+27 more)
 
 ### Community 106 - "Community 106"
-Cohesion: 0.12
-Nodes (7): disableCategory(), formatPattern(), setMaxLevel(), Logging(), addLogger(), configure(), doLogString()
+Cohesion: 0.1
+Nodes (27): handleCreateAddress(), handleCreateDelayedTransaction(), handleCreateDeposit(), handleCreateIntegrated(), handleDeleteAddress(), handleDeleteDelayedTransaction(), handleEstimateFusion(), handleExportWallet() (+19 more)
 
 ### Community 107 - "Community 107"
-Cohesion: 0.12
-Nodes (13): RenderChart(), RenderInputBar(), RenderOrderbook(), truncPad(), PairShort(), dHW(), dPixel(), splashModel (+5 more)
+Cohesion: 0.09
+Nodes (24): AbslHashValue(), allocate(), begin(), deallocate(), delete_internal_node(), delete_leaf_node(), EmptyNode(), end() (+16 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.1
-Nodes (13): CatchCxxExceptionsTest, CatchSehExceptionsTest, CxxExceptionInDestructorTest, CxxExceptionInSetUpTest, CxxExceptionInTearDownTest, CxxExceptionInTestBodyTest, Tests C++ exception-catching behavior.       Tests in this test case verify that, Tests exception-catching behavior. (+5 more)
+Cohesion: 0.12
+Nodes (26): ~BaseFunctionalTests(), createNodeConfiguration(), getNodeTransactionPool(), launchInprocTestnet(), launchTestnet(), launchTestnetWithInprocNode(), makeWallet(), mineBlock() (+18 more)
 
 ### Community 109 - "Community 109"
-Cohesion: 0.1
-Nodes (17): stopTestnet(), createBlocks(), UpgradeDetector_upgradeHeight_init, UpgradeDetector_voting_init, UpgradeTest, createBlocksV10WithDetector(), createSimpleV10Chain(), popBlocksV10() (+9 more)
+Cohesion: 0.09
+Nodes (12): ethBridgeHTML(), newReqID(), NewBridgeServer(), newSessionToken(), openURLOS(), openURL(), solBridgeHTML(), waitForServerReady() (+4 more)
 
 ### Community 110 - "Community 110"
-Cohesion: 0.29
-Nodes (18): buildSignedTx(), callContract(), deployContract(), deployHtlc(), EthRpcClient(), getBlockNumber(), getNonce(), getTransactionReceipt() (+10 more)
+Cohesion: 0.06
+Nodes (34): Binary Not Found, Building, 🔥➡️💎 Burn2Mint Menu, Code Structure, code:bash (cd /home/ar/fuego), code:bash (# Build mainnet TUI), code:bash (# Build mainnet TUI), code:bash (cd tui) (+26 more)
 
 ### Community 111 - "Community 111"
-Cohesion: 0.2
-Nodes (19): secp256k1_i128_accum_mul(), secp256k1_i128_check_pow2(), secp256k1_i128_det(), secp256k1_i128_eq_var(), secp256k1_i128_from_i64(), secp256k1_i128_load(), secp256k1_i128_to_i64(), secp256k1_i128_to_u64() (+11 more)
+Cohesion: 0.06
+Nodes (34): code:block1 (Alice: has XMR, wants XFG), code:block2 (Alice: has ETH, wants XFG), code:block3 (XMR pair: T_xfg < T_xmr   (XFG timeout expires first)), code:block4 (1. Counterparty proposes: "I'll give X ETH for Y XFG"), code:block5 ([price]), code:block6 (xfg-swap/), code:block7 (INITIATED), code:cpp (// DLEQ proof: prove that log_G(A) == log_G(A') without reve) (+26 more)
 
 ### Community 112 - "Community 112"
-Cohesion: 0.15
-Nodes (14): getGeneratedTransactionsNumber(), getPoolTransactionsByTimestamp(), addGenesisBlock(), addMiningBlock(), addToBlockchain(), addTx(), cutBlockchain(), generateEmptyBlocks() (+6 more)
+Cohesion: 0.14
+Nodes (29): addAudioService(), clear(), empty(), endAudioService(), getActiveServices(), getServiceByCommitment(), getServiceCount(), getServicedTrackCount() (+21 more)
 
 ### Community 113 - "Community 113"
-Cohesion: 0.18
-Nodes (10): addForeverDeposit(), depositInterestAtHeight(), depositAmountAtHeight(), fullDepositAmount(), fullInterestAmount(), reserve(), sumWillOverflow(), upperBound() (+2 more)
+Cohesion: 0.12
+Nodes (17): random_seed(), AlsoRunDisabledTestsFlag(), CalculateTestLists(), FilterFlag(), GetTestCases(), GetTestsForAllIterations(), GTestShuffleUnitTest, RandomSeedFlag() (+9 more)
 
 ### Community 114 - "Community 114"
-Cohesion: 0.14
-Nodes (16): init_spent_output_indices(), build(), fillInputs(), fillOutputs(), signSources(), absolute_output_offsets_to_relative(), addInput(), addTransactionPublicKeyToExtra() (+8 more)
+Cohesion: 0.07
+Nodes (18): Tests the behavior of not specifying the filter., FooTest, GTestListTestsUnitTest, MyArray, MyType, Runs gtest_list_tests_unittest_ and returns the list of tests printed., Tests using the --gtest_list_tests flag to list all tests., Runs gtest_list_tests_unittest_ and verifies that it prints     the correct test (+10 more)
 
 ### Community 115 - "Community 115"
-Cohesion: 0.14
-Nodes (16): statusUpdateMsg, authenticate(), AbstractRpcServer, ClientLoginError, HttpRpcServer, Raised to indicate there was an error authenticating with ClientLogin., Provides a common interface for a simple RPC server., Returns an OpenerDirector for making HTTP requests.      Returns:       A urllib (+8 more)
+Cohesion: 0.15
+Nodes (32): secp256k1_ecmult_multi_batch_size_helper(), secp256k1_ecmult_pippenger_batch(), secp256k1_ecmult_pippenger_batch_single(), secp256k1_ecmult_strauss_batch(), secp256k1_ecmult_strauss_batch_single(), secp256k1_ecmult_table_get_ge(), secp256k1_ecmult_table_get_ge_storage(), secp256k1_ecmult_table_verify() (+24 more)
 
 ### Community 116 - "Community 116"
-Cohesion: 0.21
-Nodes (19): base58CheckDecode(), base58CheckEncode(), buildP2shScriptPubKey(), buildRawTransaction(), computeP2shAddress(), createClaimScriptSig(), createRedeemScript(), createRefundScriptSig() (+11 more)
+Cohesion: 0.14
+Nodes (22): Stream(), beginArray(), beginObject(), binary(), endArray(), endObject(), getValue(), operator()() (+14 more)
 
 ### Community 117 - "Community 117"
-Cohesion: 0.16
-Nodes (12): BurnTransactionManager(), extractEthereumAddress(), generateStarkProof(), getStarkCliPath(), isAutoGenerateProofsEnabled(), isBurnTransaction(), parseBurnTransaction(), parseYieldCommitment() (+4 more)
+Cohesion: 0.12
+Nodes (23): GTestColorTest, Tests the case when there are both GTEST_COLOR and --gtest_color., Tests using aliases in specifying --gtest_color., Sets the env variable to 'value'; unsets it when 'value' is None., Runs gtest_color_test_ and returns its exit code., Tests the case when there's neither GTEST_COLOR nor --gtest_color., Tests the case when there's --gtest_color but not GTEST_COLOR., Tests the case when there's GTEST_COLOR but not --gtest_color. (+15 more)
 
 ### Community 118 - "Community 118"
-Cohesion: 0.26
-Nodes (15): beginsWith(), contains(), endsWith(), fill(), find(), findLast(), range(), slice() (+7 more)
+Cohesion: 0.09
+Nodes (24): addObserver(), BlockchainExplorer(), blockchainSynchronized(), ContextCounterHolder, CryptoNote(), getBlockchainTop(), getBlocks(), getFullRewardMaxBlockSize() (+16 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.15
-Nodes (15): reverse(), construct_tx_to_key(), construct_tx_with_fee(), fill_tx_destination(), fill_tx_sources(), fill_tx_sources_and_destinations(), find_block_chain(), get_confirmed_txs() (+7 more)
+Cohesion: 0.06
+Nodes (32): code:block1 (User burns 100 HEAT on Fuego), code:cpp (// New, separate pool — NOT BankingIndex:), code:cpp (#define TX_EXTRA_HEAT_BRIDGE_BURN  0xD6   // HEAT bridge bur), code:block4 (total_HEAT_minted_on_Fuego = HEAT_in_circulation + HEAT_in_b), code:block5 (Alice has 100 HEAT on Fuego), Comparison, Comparison to existing Burn2Mint (old HEAT), Current State (+24 more)
 
 ### Community 120 - "Community 120"
-Cohesion: 0.15
-Nodes (12): AcceptCdResponse, newCdMarketModel(), RenderCdMarket(), RenderCdTicker(), RenderCdDetail(), RenderCdOrderbook(), sortCdOffers(), CdDiscount() (+4 more)
+Cohesion: 0.07
+Nodes (7): Configuration(), initOptions(), PaymentService(), PaymentService(), Request::serialize(), Response::serialize(), getBindAddress()
 
 ### Community 121 - "Community 121"
-Cohesion: 0.12
-Nodes (10): Tests using the GTEST_BREAK_ON_FAILURE environment variable or   the --gtest_bre, testCatchExceptionsDoesNotInterfere(), Tests the behavior of not specifying the filter., Tests the behavior of the default mode., Tests using the GTEST_THROW_ON_FAILURE environment variable., Tests using the --gtest_throw_on_failure flag., Tests that --gtest_throw_on_failure overrides GTEST_THROW_ON_FAILURE., Tests the throw-on-failure mode. (+2 more)
+Cohesion: 0.13
+Nodes (22): addGenesisBlock(), addMiningBlock(), addOrphan(), addToBlockchain(), addTx(), addTxToBlockchain(), clearTxPool(), cutBlockchain() (+14 more)
 
 ### Community 122 - "Community 122"
+Cohesion: 0.06
+Nodes (31): 1. Full RAG System (`rag_system.py`), 2. Simple RAG System (`simple_rag.py`), Adding New Document Types, Architecture, Available Implementations, Blockchain Features, CD (Certificate of Deposit) System, Codebase Navigation (+23 more)
+
+### Community 123 - "Community 123"
+Cohesion: 0.06
+Nodes (31): Can I use Google Test on MinGW? ##, Does Google Test support running tests in parallel? ##, How can my code detect if it is running in a test? ##, How do I build Google Testing Framework with Xcode 4? ##, How do I easily discover the flags needed for GoogleTest? ##, How do I generate 64-bit binaries on Windows (using Visual Studio 2008)? ##, How do I jump to the line of a failure in Emacs directly? ##, How do I suppress the memory leak messages on Windows? ## (+23 more)
+
+### Community 124 - "Community 124"
+Cohesion: 0.11
+Nodes (24): AsyncConsoleReader(), ~ConsoleHandler(), consoleThread(), getline(), getUsage(), handleCommand(), handlerThread(), requestStop() (+16 more)
+
+### Community 125 - "Community 125"
+Cohesion: 0.06
+Nodes (13): AtomicCounterWithMutex, Base, Castable, ConstAndNonConstCastable, ConstCastable, Derived, DestructorCall, DestructorTracker (+5 more)
+
+### Community 126 - "Community 126"
+Cohesion: 0.09
+Nodes (20): pop(), CodeNode, ElseNode, ExpNode, ForNode, IfNode, LiteralDollarNode, ParseAtomicCodeNode() (+12 more)
+
+### Community 127 - "Community 127"
+Cohesion: 0.15
+Nodes (29): Crypto(), aes_256_assist1(), aes_256_assist2(), aes_expand_key(), aes_pseudo_round(), aes_pseudo_round_xor(), aligned_free(), aligned_malloc() (+21 more)
+
+### Community 128 - "Community 128"
+Cohesion: 0.32
+Nodes (29): simpleUPnPcommand(), UPnP_getgenericportmapping(), UPnP_getspecificportmapping(), GetFirewallStatus(), my_atoui(), UPNP_AddPinhole(), UPNP_AddPortMapping(), UPNP_CheckPinholeWorking() (+21 more)
+
+### Community 129 - "Community 129"
+Cohesion: 0.07
+Nodes (16): TEST(), ContextGroupTimeoutTest, TEST_F(), DispatcherTests, TEST_F(), fillRandomBuf(), fillRandomString(), TcpConnectionTests (+8 more)
+
+### Community 130 - "Community 130"
+Cohesion: 0.11
+Nodes (26): createBlocks(), popBlocks(), TEST_F(), UpgradeDetector_upgradeHeight_init, UpgradeDetector_voting, UpgradeDetector_voting_init, UpgradeTest, createBlocksV10() (+18 more)
+
+### Community 131 - "Community 131"
+Cohesion: 0.14
+Nodes (26): get_block_template(), on_synchronized(), do_print_hashrate(), find_nonce_for_given_block(), get_speed(), is_mining(), merge_hr(), millisecondsSinceEpoch() (+18 more)
+
+### Community 132 - "Community 132"
+Cohesion: 0.09
+Nodes (13): BlockchainMonitor(), requestLastBlockHash(), waitBlockchainUpdate(), Miner(), timedSyncLoop(), isIncoming(), P2pContext(), setPeerInfo() (+5 more)
+
+### Community 133 - "Community 133"
+Cohesion: 0.07
+Nodes (3): System(), System(), System()
+
+### Community 134 - "Community 134"
+Cohesion: 0.13
+Nodes (26): oaes_alloc(), oaes_decrypt(), oaes_decrypt_block(), oaes_encrypt(), oaes_encrypt_block(), oaes_encryption_round(), oaes_free(), oaes_get_seed() (+18 more)
+
+### Community 135 - "Community 135"
+Cohesion: 0.11
+Nodes (28): secp256k1_scalar_add(), secp256k1_scalar_cadd_bit(), secp256k1_scalar_check_overflow(), secp256k1_scalar_cmov(), secp256k1_scalar_cond_negate(), secp256k1_scalar_eq(), secp256k1_scalar_from_signed62(), secp256k1_scalar_get_b32() (+20 more)
+
+### Community 136 - "Community 136"
+Cohesion: 0.24
+Nodes (27): adapt_signature(), ge_p3_tobytes(), sc_reduce32(), point_add(), adaptorChallenge(), adaptSignature(), aliceInitialize(), asBytes() (+19 more)
+
+### Community 137 - "Community 137"
+Cohesion: 0.13
+Nodes (23): getDIGMBalance(), parseDIGMAmount(), format_digm_amount(), format_digm_transaction(), get_digm_balance_str(), get_digm_commands_str(), get_digm_transaction_history_str(), parse_digm_amount() (+15 more)
+
+### Community 138 - "Community 138"
+Cohesion: 0.07
+Nodes (29): All 53 Tools, Architecture, Atomic Swaps, Blockchain Core, CLI — direct calls, no MCP client needed, Codebase Explorer, Codebase Mapper, code:bash (python3 scripts/fuego-mcp/fuego_mcp_server.py get_chain_info) (+21 more)
+
+### Community 139 - "Community 139"
+Cohesion: 0.07
+Nodes (29): 1. Block Cache Optimization (Priority: High), 1. Block Size Limits (COMPLETED), 2. Block Reward Zone (COMPLETED), 2. Transaction Pool Size Limits (Priority: High), 3. Lazy Loading for Non-Critical Data (Priority: Medium), 3. Mempool Index Removal (COMPLETED), 4. Memory Pool Optimization (Priority: Medium), code:cpp (// Block size limit reduced from 500MB to 8MB) (+21 more)
+
+### Community 140 - "Community 140"
+Cohesion: 0.07
+Nodes (29): Architecture, Binary Detection, Build, Burn2Mint Flow Diagram, 🔥➡️💎 Burn2Mint Menu, Burn2Mint Menu, code:bash (cd tui-testnet), code:bash (./fuego-tui-testnet) (+21 more)
+
+### Community 141 - "Community 141"
+Cohesion: 0.07
+Nodes (29): Basic Usage (CLI Only), Basic Wallet Options, code:bash (# Start wallet in interactive CLI mode only), code:bash (# Start wallet with integrated RPC server), code:bash (# Start wallet with RPC server on default settings), code:block4 ([wallet abc123]: rpc_status), code:bash (# Get wallet balance via RPC), Command Line Options (+21 more)
+
+### Community 142 - "Community 142"
+Cohesion: 0.12
+Nodes (22): addPublicKeysSeen(), findSubscriberForConsumer(), findViewKeyForConsumer(), getObjectState(), getSubscription(), getSubscriptions(), load(), onBlockchainDetach() (+14 more)
+
+### Community 143 - "Community 143"
+Cohesion: 0.09
+Nodes (16): add_tx(), addTransactionInputs(), BlockTemplate, fill_block_template(), get_difference(), have_tx(), haveSpentInputs(), init() (+8 more)
+
+### Community 144 - "Community 144"
+Cohesion: 0.13
+Nodes (20): addNode(), addNodes(), build(), buildNodeConfiguration(), copyBlockchainFiles(), startDaemon(), TestNetworkBuilder(), waitDaemonReady() (+12 more)
+
+### Community 145 - "Community 145"
+Cohesion: 0.13
+Nodes (21): accept(), checkStuckSwaps(), checkTimeouts(), generateSwapId(), getActivePools(), getLPShares(), initiate(), listSwaps() (+13 more)
+
+### Community 146 - "Community 146"
+Cohesion: 0.07
+Nodes (28): Branch: HE4T | Updated: 2026-03-13, code:block1 (Hidden amounts require:), code:block2 (sum(input_pseudo_C) = sum(output_C) + fee*H), code:block3 (Per transaction (2 outputs, 2 inputs, ring size 11):), code:block4 (clsag.h/.cpp:), code:block5 (triptych.h/.cpp:), Crypto Primitives Status, Current Roadmap (ordered by dependency) (+20 more)
+
+### Community 147 - "Community 147"
+Cohesion: 0.1
+Nodes (18): BurnTransactionHandler::Impl, BurnTransactionManager(), BurnTransactionManager::Impl, extractEthereumAddress(), generateStarkProof(), getStarkCliPath(), initialize(), isAutoGenerateProofsEnabled() (+10 more)
+
+### Community 148 - "Community 148"
+Cohesion: 0.12
+Nodes (28): Arity(), GenerateFile(), GenerateHeader(), GenerateUnitTest(), HeaderPostamble(), HeaderPreamble(), ImplementationForArity(), Iter() (+20 more)
+
+### Community 149 - "Community 149"
+Cohesion: 0.12
+Nodes (19): CommentTest, CustomFunctionNamingTest, CustomFunctorNamingTest, CustomIntegerNamingTest, CustomLambdaNamingTest, CustomParamNameFunction(), CustomStruct(), CustomStructNamingTest (+11 more)
+
+### Community 150 - "Community 150"
+Cohesion: 0.14
+Nodes (23): getUnconfirmedTransactions(), add(), addDepositSpendingTransaction(), collectUsedOutputs(), countCreatedDepositsSum(), countSpentDepositsProfit(), countSpentDepositsTotalAmount(), countUnconfirmedOutsAmount() (+15 more)
+
+### Community 151 - "Community 151"
+Cohesion: 0.15
+Nodes (24): addCommitment(), clear(), coldCount(), computeMerkleRoot(), computeMerkleRootInternal(), generateEpochReport(), getAllLeaves(), getByCommitment() (+16 more)
+
+### Community 152 - "Community 152"
+Cohesion: 0.11
+Nodes (23): Run N_SIMS using TWAP from swapxfg atomic swap executions., Oracle-based dynamic peg for comparison., XFG starts at $5.  Random walk with drift (could moon or crash)., Use TWAP of atomic swap execution prices from swapxfg.          swapxfg records, run_fixed(), run_oracle(), run_swap_twap(), sim_swap_twap() (+15 more)
+
+### Community 153 - "Community 153"
+Cohesion: 0.09
+Nodes (17): Bool(), PredFormatFunction1(), PredFormatFunction2(), PredFormatFunction3(), PredFormatFunction4(), PredFormatFunction5(), PredFunction1(), PredFunction2() (+9 more)
+
+### Community 154 - "Community 154"
+Cohesion: 0.07
+Nodes (27): Architecture, Binary Detection, Build, Burn2Mint Flow Diagram, 🔥➡️💎 Burn2Mint Menu, Burn2Mint Menu, code:bash (cd tui), code:bash (./fuego-tui) (+19 more)
+
+### Community 155 - "Community 155"
+Cohesion: 0.12
+Nodes (20): getPenalizedAmount(), blockGrantedFullRewardZoneByBlockVersion(), calculateInterest(), calculateTotalTransactionInterest(), constructMinerTx(), generateGenesisBlock(), generateGenesisTransaction(), getBlockReward() (+12 more)
+
+### Community 156 - "Community 156"
+Cohesion: 0.15
+Nodes (15): checkFullyUnlocked(), checkHalfUnlocked(), GetRandomOutputs(), request(), checkSocks5Response(), connect(), readExactly(), socks5ConnectDomain() (+7 more)
+
+### Community 157 - "Community 157"
+Cohesion: 0.07
+Nodes (26): Assertions #, Basic Assertions ##, Basic Concepts #, Beware of the nomenclature #, Binary Comparison ##, code:block1 (ASSERT_EQ(x.size(), y.size()) << "Vectors x and y are of une), code:block10 (__declspec(dllexport) int PullInMyLibrary() { return 0; }), code:block11 (int PullInMyLibrary();) (+18 more)
+
+### Community 158 - "Community 158"
+Cohesion: 0.12
+Nodes (13): Scan the entire codebase and build the map, CodebaseStats, main(), Process a single file, Build hierarchical file tree, Parse C++ files for include statements, Get codebase statistics, Get file tree as text (+5 more)
+
+### Community 159 - "Community 159"
+Cohesion: 0.07
+Nodes (26): CD Creation and Withdrawal, code:block1 (m_currentEpochSwapFees (XFG)), code:block2 (Error = (HearthTWAP − RedemptionPrice) / RedemptionPrice), code:cpp (// HEAT CD locked total), code:cpp (// In pushBlock(BlockEntry&), at epoch boundary (height % 90), code:cpp (if (out.assetId == AssetId::HEAT && out.term > 0) {), code:cpp (// Validate enough HEAT in fee pool), code:cpp (uint64_t computeCdYield(uint64_t amount, uint64_t creationEp) (+18 more)
+
+### Community 160 - "Community 160"
+Cohesion: 0.22
+Nodes (17): cn_context(), Close the database connection, Close database connection, close(), mmap(), open(), Create(), close() (+9 more)
+
+### Community 161 - "Community 161"
+Cohesion: 0.16
+Nodes (17): JsonValue(), readString(), read(), readVarint(), write(), loadArray(), loadEntry(), loadSection() (+9 more)
+
+### Community 162 - "Community 162"
+Cohesion: 0.13
+Nodes (14): CodebaseMapper, FileInfo, main(), Initialize the SQLite database, Process a single file, Metadata for a file in the codebase, Parse file content to extract functions, classes, etc., Parse TypeScript file (same as JS for now) (+6 more)
+
+### Community 163 - "Community 163"
+Cohesion: 0.2
+Nodes (21): adaptor_aggregate(), adaptor_extract_secret(), adaptor_generate_keys(), adaptor_key_aggregate(), adaptor_nonce_generate(), adaptor_partial_sign(), adaptor_partial_verify(), adaptor_session_init() (+13 more)
+
+### Community 164 - "Community 164"
+Cohesion: 0.18
+Nodes (17): analyze_peer_health(), analyze_swap_fee(), calculate_block_reward_at(), calculate_cd_interest(), calculate_emission_at(), calculate_tx_fee(), _chunk(), cli() (+9 more)
+
+### Community 165 - "Community 165"
+Cohesion: 0.12
+Nodes (12): LoggerMessage(), Logging(), operator()(), dumpBuffer(), overflow(), SocketStreambuf(), sync(), dumpBuffer() (+4 more)
+
+### Community 166 - "Community 166"
+Cohesion: 0.12
+Nodes (11): destructValue(), readArray(), readChar(), readFalse(), readNonWsChar(), readNull(), readNumber(), readObject() (+3 more)
+
+### Community 167 - "Community 167"
+Cohesion: 0.08
+Nodes (22): Architecture, Checkpoint State Hash Definition, code:block1 (FUEGO NODE (RPC)), code:block2 (fuego-prover/), code:block3 (prev_checkpoint_hash: [u8; 32]), code:block4 (blocks: Vec<(BlockHeader, Vec<Transaction>)>), code:block5 (fuego-prover prove \), code:solidity (struct Checkpoint {) (+14 more)
+
+### Community 168 - "Community 168"
+Cohesion: 0.08
+Nodes (10): LeakChecker, main(), Water, QueueTestSmpl3, PrimeTableTest, PrimeTableTest2, HybridPrimeTable, PrimeTableTest (+2 more)
+
+### Community 169 - "Community 169"
+Cohesion: 0.16
+Nodes (21): main(), print_table(), main(), print_table(), print_two_tables(), run_ctz_tests(), run_secp256k1_byteorder_tests(), checked_malloc() (+13 more)
+
+### Community 170 - "Community 170"
+Cohesion: 0.28
+Nodes (24): buildSignedTx(), bytesToHex(), callContract(), claimHtlc(), deployContract(), deployHtlc(), EthRpcClient(), getBalance() (+16 more)
+
+### Community 171 - "Community 171"
+Cohesion: 0.18
+Nodes (23): base58CheckDecode(), base58CheckEncode(), buildP2pkhScriptPubKey(), buildP2shScriptPubKey(), buildRawTransaction(), computeP2shAddress(), createClaimScriptSig(), createRedeemScript() (+15 more)
+
+### Community 172 - "Community 172"
+Cohesion: 0.17
+Nodes (17): getMessagesFromExtra(), addUnconfirmedTransaction(), checkOutputKey(), createTransfers(), findMyOutputs(), getBlockHashes(), getGlobalIndices(), getSubscription() (+9 more)
+
+### Community 173 - "Community 173"
+Cohesion: 0.12
+Nodes (14): getType(), BlockchainMessage(), ChainSwitchMessage(), get(), getNewAlternativeBlockHash(), getNewBlockHash(), NewAlternativeBlockMessage(), NewBlockMessage() (+6 more)
+
+### Community 174 - "Community 174"
+Cohesion: 0.16
+Nodes (20): decode(), libc_allocator_with_realloc(), Blake256State, bincode_encode(), BlockRangeResponse, ClaimArgs, ClaimOutput, Commands (+12 more)
+
+### Community 175 - "Community 175"
+Cohesion: 0.11
+Nodes (16): AtomicSwapAnalyzer, CryptographicPrimitives, FeeDistributionAnalyzer, Expert system for atomic swap mechanics, Validate swap state machine transition.                  Args:             curre, Expert system for cryptographic primitives, Analyze adaptor signature protocol used in atomic swaps.                  Args:, Expert system for fee distribution mechanisms (+8 more)
+
+### Community 176 - "Community 176"
+Cohesion: 0.16
+Nodes (15): JavaBridgeTest, getDevicesFromMiniSSDPD(), FreeUPNPUrls(), GetUPNPUrls(), parseMSEARCHReply(), parserootdesc(), UPNP_GetIGDFromUrl(), UPNP_GetValidIGD() (+7 more)
+
+### Community 177 - "Community 177"
+Cohesion: 0.08
+Nodes (23): Adding New Features, Architecture, Binary Not Found, Building, Burn2Mint Process, code:bash (cd tui), code:bash (./fuego-tui-tview), Connection Issues (+15 more)
+
+### Community 178 - "Community 178"
+Cohesion: 0.09
+Nodes (8): CryptoNote(), invokeJsonRpcCommand(), JsonRpcError(), processRequest(), handle_command_line(), init(), on_get_payments(), processRequest()
+
+### Community 179 - "Community 179"
+Cohesion: 0.12
+Nodes (15): init_options(), sendStopSignal(), on_get_height(), handle_command_line(), init(), on_create_integrated(), on_get_messages(), on_get_outputs() (+7 more)
+
+### Community 180 - "Community 180"
+Cohesion: 0.17
+Nodes (18): append_with_peer_anchor(), append_with_peer_gray(), append_with_peer_white(), get_and_empty_anchor_peerlist(), get_gray_peer_by_index(), get_peerlist_full(), get_peerlist_head(), get_white_peer_by_index() (+10 more)
+
+### Community 181 - "Community 181"
+Cohesion: 0.13
+Nodes (21): size(), copy_settings(), redirect(), send_socket(), set_bearer_token_auth(), set_ca_cert_store(), create_redirect_client(), encoding_type() (+13 more)
+
+### Community 182 - "Community 182"
+Cohesion: 0.23
+Nodes (19): addLeaf(), buildCheckpoint(), computeCheckpointHash(), computeFeeRecordLeaf(), computeLPShareLeaf(), computeReserveCommit(), computeRoot(), getProof() (+11 more)
+
+### Community 183 - "Community 183"
+Cohesion: 0.16
+Nodes (18): Print(), PrintTo(), ConditionalPrintAsText(), ContainsUnprintableControlCodes(), IsPrintableAscii(), IsUTF8TrailByte(), IsValidUTF8(), PrintAsCharLiteralTo() (+10 more)
+
+### Community 184 - "Community 184"
+Cohesion: 0.17
+Nodes (18): FormatBchBalance(), TestFormatBchBalance(), buildHTLCLockCalldata(), PairFromString(), pairToID(), fields(), handleCommand(), handleCommand() (+10 more)
+
+### Community 185 - "Community 185"
+Cohesion: 0.09
+Nodes (22): Architecture: How It Works, Circuit Design: `fuego-lp-circuit`, code:block1 (TRANSPARENT POOL (BAD):), code:block10 (┌───────────────────────────────────────────────────────────), code:block2 (┌───────────────────────────────────────────────────────────), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (┌───────────────────────────────────────────────────────────), code:block5 (┌───────────────────────────────────────────────────────────) (+14 more)
+
+### Community 186 - "Community 186"
+Cohesion: 0.1
+Nodes (11): remove(), CryptoNote(), Head(), Clear(), Last(), next(), Clear(), ClearResult() (+3 more)
+
+### Community 187 - "Community 187"
+Cohesion: 0.11
+Nodes (8): parse_peer_from_string(), startMining(), stopMining(), workerThread(), getLocalHeight(), getTailBlockId(), makeINode(), stopDaemon()
+
+### Community 188 - "Community 188"
+Cohesion: 0.14
+Nodes (12): ExitWithExceptionCode(), GTestBreakOnFailureUnitTest, Tests the behavior of the default mode., Tests using the GTEST_BREAK_ON_FAILURE environment variable., Tests using the --gtest_break_on_failure flag., Tests that the flag overrides the environment variable., Tests that gtest_break_on_failure overrides gtest_throw_on_failure., Runs a command; returns 1 if it was killed by a signal, or 0 otherwise. (+4 more)
+
+### Community 190 - "Community 190"
+Cohesion: 0.16
+Nodes (21): GetCommandOutput(), Runs the shell command and returns its stdout as a list of lines., Normalize(), GetCommandOutput(), GetOutputOfAllCommands(), GetShellCommandOutput(), NormalizeOutput(), Removes all stack traces from a Google Test program's output. (+13 more)
+
+### Community 191 - "Community 191"
+Cohesion: 0.14
+Nodes (13): div128_32(), div_with_reminder(), hi_dword(), lo_dword(), mem_inplace_swap32(), mem_inplace_swap64(), memcpy_swap32(), memcpy_swap64() (+5 more)
+
+### Community 192 - "Community 192"
+Cohesion: 0.14
+Nodes (15): decode_block(), encode(), encode_addr(), encode_block(), uint_64_to_8be(), uint_8be_to_64(), do_test_decode_block_neg(), do_test_decode_block_pos() (+7 more)
+
+### Community 193 - "Community 193"
+Cohesion: 0.09
+Nodes (21): Advanced Options, Basic Options, code:bash (# Make sure you're in the Fuego project root), code:bash (# Generate a new wallet container (if needed)), code:bash (curl -X POST http://localhost:8070/json_rpc \), Command-Line Options, Common Issues, Example RPC Call (+13 more)
+
+### Community 194 - "Community 194"
+Cohesion: 0.19
+Nodes (16): handler_class, CheckPinhole(), DisplayInfos(), GetConnectionStatus(), GetPinholeAndUpdate(), GetPinholeOutboundTimeout(), GetPinholePackets(), ListRedirections() (+8 more)
+
+### Community 195 - "Community 195"
+Cohesion: 0.14
+Nodes (14): parseatt(), parseelt(), parsexml(), endelt(), evtlistcmp(), main(), startelt(), testxmlparser() (+6 more)
+
+### Community 196 - "Community 196"
+Cohesion: 0.09
+Nodes (21): code:block1 (CENTRALIZED ORGANIZER (BAD):), code:block2 (┌───────────────────────────────────────────────────────────), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (┌───────────────────────────────────────────────────────────), code:block5 (┌───────────────────────────────────────────────────────────), code:block6 (┌───────────────────────────────────────────────────────────), code:block7 (┌───────────────────────────────────────────────────────────), code:block8 (┌──────────────────────┬─────────────────────┬──────────────) (+13 more)
+
+### Community 197 - "Community 197"
+Cohesion: 0.09
+Nodes (21): Advanced Features (codebase_mapper.py), Architecture, Basic Usage, Codebase Statistics (Current Scan), code:bash (# Scan the codebase), code:bash (pip install mcp), code:bash (python3 mcp_server.py --mcp), code:block4 (User: Can you scan the Fuego codebase and show me statistics) (+13 more)
+
+### Community 198 - "Community 198"
+Cohesion: 0.14
+Nodes (15): SkipSpaces(), SplitIntoTestNames(), VerifyRegisteredTestNames(), CommonTest, DerivedTest, GetTestName(), NumericTest, TrimmedTest (+7 more)
+
+### Community 199 - "Community 199"
+Cohesion: 0.1
+Nodes (4): ipAddressToString(), std(), std(), make_error_code()
+
+### Community 200 - "Community 200"
+Cohesion: 0.26
+Nodes (18): checkAddressBalance(), claimAdaptor(), createSharedAddress(), getHeight(), getTransaction(), httpPost(), jsonRpc(), lockAdaptor() (+10 more)
+
+### Community 201 - "Community 201"
+Cohesion: 0.19
+Nodes (16): F512(), Final(), groestl(), Init(), OutputTransformation(), RND512P(), RND512Q(), Transform() (+8 more)
+
+### Community 202 - "Community 202"
+Cohesion: 0.1
+Nodes (20): Catching Failures #, code:block32 (TEST_F(WidgetUsageTest, MinAndMaxWidgets) {), code:block33 (...), code:block34 (class FooTest : public ::testing::Test {), code:block35 (class Environment {), code:block36 (Environment* AddGlobalTestEnvironment(Environment* env);), code:block37 (::testing::Environment* const foo_env = ::testing::AddGlobal), code:block44 (template <typename T>) (+12 more)
+
+### Community 203 - "Community 203"
+Cohesion: 0.3
+Nodes (20): blake224_final(), blake224_hash(), blake224_init(), blake224_update(), blake256_final(), blake256_final_h(), blake256_hash(), blake256_init() (+12 more)
+
+### Community 204 - "Community 204"
+Cohesion: 0.24
+Nodes (17): balances(), confirm_deposit(), deposit_amount(), deposit_creating_tx_id(), deposit_height(), deposit_interest(), deposit_spending_tx_id(), deposit_status() (+9 more)
+
+### Community 205 - "Community 205"
+Cohesion: 0.26
+Nodes (19): addTimer(), arm_wake_timer_if_needed(), clear(), contextProcedure(), contextProcedureStatic(), dispatch(), Dispatcher(), ensureIoContextReady() (+11 more)
+
+### Community 206 - "Community 206"
+Cohesion: 0.19
+Nodes (16): analyze_peer_health(), analyze_swap_fee(), calculate_block_reward_at(), calculate_cd_interest(), calculate_emission_at(), calculate_tx_fee(), _chunk(), cli() (+8 more)
+
+### Community 207 - "Community 207"
+Cohesion: 0.1
+Nodes (20): 1. TransactionInputCommitmentTransfer, 2. Fee Pool Accumulator, 3. Interest at Redemption ("Declare and Verify" Model), 4. Auto-Rollover (Wallet-Level Only), 5. On-Chain XFG/CD Swap Market, code:cpp (// include/CryptoNote.h — added to TransactionInput variant), code:block2 (swap_fee_event = amount * SWAP_FEE_RATE_BPS / SWAP_FEE_RATE_), code:block3 (Adaptor-sig initiation (Bob): 100.0000000 XFG deposited; fee) (+12 more)
+
+### Community 208 - "Community 208"
+Cohesion: 0.1
+Nodes (13): TEST_F(), TransfersContainer_addTransaction, TransfersContainer_advanceHeight, TransfersContainer_balance, TransfersContainer_deleteUnconfirmedTransaction, TransfersContainer_depositBalance, TransfersContainer_detach, TransfersContainer_getOutputs (+5 more)
+
+### Community 209 - "Community 209"
+Cohesion: 0.28
+Nodes (15): adjustBlockTemplate(), adjustMergeMiningTag(), BlockchainUpdatedEvent(), BlockMinedEvent(), eventLoop(), pushEvent(), requestMiningParameters(), start() (+7 more)
+
+### Community 210 - "Community 210"
+Cohesion: 0.1
+Nodes (19): Approach 1: Commitment-Based Proving (Recommended), Approach 2: Range Proofs Instead of Exact Values, Approach 3: Oblivious State Updates, Approach 4: Split Proving (Information Compartmentalization), code:block1 (┌───────────────────────────────────────────────────────────), code:block2 (1. Pool state is stored as Pedersen commitments:), code:block3 (Even with commitments, the prover can observe:), code:block4 (┌───────────────────────────────────────────────────────────) (+11 more)
+
+### Community 211 - "Community 211"
+Cohesion: 0.12
+Nodes (18): AliasResult, AllPairData, NodeInfo, PairImplied, PriceSourceEntry, NewFuegoClient(), NewFuegoClientAuth(), SignedOffer (+10 more)
+
+### Community 212 - "Community 212"
+Cohesion: 0.1
+Nodes (19): Approach 1: Commitment-Based Proving (Recommended), Approach 2: Range Proofs Instead of Exact Values, Approach 3: Oblivious State Updates, Approach 4: Split Proving (Information Compartmentalization), code:block1 (┌───────────────────────────────────────────────────────────), code:block2 (1. Pool state is stored as Pedersen commitments:), code:block3 (Even with commitments, the prover can observe:), code:block4 (┌───────────────────────────────────────────────────────────) (+11 more)
+
+### Community 213 - "Community 213"
+Cohesion: 0.24
+Nodes (17): generate_incomplete_key_image(), hash_to_ec(), signerIndex(), aggregateKeyImages(), buildUnsignedEscrowSpend(), computePartialKeyImage(), deterministicScalar(), hashToEc() (+9 more)
+
+### Community 214 - "Community 214"
+Cohesion: 0.19
+Nodes (13): AdaptiveDifficulty(), applySmoothing(), calculateConfidenceScore(), calculateEMA(), calculateEmergencyDifficulty(), calculateLWMA(), calculateMultiWindowDifficulty(), calculateNextDifficulty() (+5 more)
+
+### Community 215 - "Community 215"
+Cohesion: 0.15
+Nodes (11): poolGetEffectivePrice(), poolGetInputAmount(), poolGetOutputAmount(), poolGetSpotPrice(), poolGetWithdrawalAmounts(), poolHasSufficientLiquidity(), poolMintLPShares(), poolValidateDepositRatio() (+3 more)
+
+### Community 216 - "Community 216"
+Cohesion: 0.1
+Nodes (19): Advanced Build Options, Block Explorers, Build & Run, Build Status, code:bash (# Prerequisites: GCC 4.7.3+, CMake 2.8.6+, Boost 1.55+), code:bash (git clone https://github.com/usexfg/fuego), Community & Resources, Currently Working (v10) (+11 more)
+
+### Community 217 - "Community 217"
+Cohesion: 0.1
+Nodes (19): code:block1 (balance), code:block10 (balance), code:bash (curl -s http://127.0.0.1:28280/get_info | python3 -c "import), code:block3 (deposit 1 3), code:block4 (Deposit created.), code:block5 (list_cold), code:block6 (cold_info 0), code:bash (watch -n 5 'curl -s http://127.0.0.1:28280/get_info | python) (+11 more)
+
+### Community 218 - "Community 218"
+Cohesion: 0.18
+Nodes (11): PrimeTableTestSmpl7, CheckCounts(), main(), MyParamTest, ResetCounts(), TestRepeat(), TestRepeatUnspecified(), TestRepeatWithEmptyFilter() (+3 more)
+
+### Community 219 - "Community 219"
+Cohesion: 0.3
+Nodes (18): bytesToHex(), decodeGetContract(), encodeBytes32(), encodeClaim(), encodeGetContract(), encodeLock(), encodeRefund(), encodeUint256() (+10 more)
+
+### Community 220 - "Community 220"
+Cohesion: 0.26
+Nodes (18): base64Encode(), BchRpcClient(), claim(), decodeRawTransaction(), getBalance(), getBlockCount(), getTransaction(), httpPost() (+10 more)
+
+### Community 221 - "Community 221"
+Cohesion: 0.22
+Nodes (16): directoryExists(), ConcatPaths(), CreateDirectoriesRecursively(), CreateFolder(), DirectoryExists(), FileOrDirectoryExists(), FindLastPathSeparator(), GenerateUniqueFileName() (+8 more)
+
+### Community 222 - "Community 222"
 Cohesion: 0.13
 Nodes (7): isValidDIGMOutput(), isValidDIGMTransaction(), mintDIGMTokens(), transferDIGMTokens(), validateDIGMAmount(), validateDIGMMintTransaction(), validateDIGMTransferTransaction()
 
-### Community 123 - "Community 123"
-Cohesion: 0.18
-Nodes (16): on_synchronized(), get_speed(), is_mining(), merge_hr(), millisecondsSinceEpoch(), on_block_chain_update(), pause(), request_block_template() (+8 more)
-
-### Community 124 - "Community 124"
-Cohesion: 0.12
-Nodes (16): createTransaction(), AccountGroup, createTransferFromMultisignature(), createTransferToMultisignature(), FutureGuard, IInterruptable, MultisignatureTest, submitTransaction() (+8 more)
-
-### Community 125 - "Community 125"
-Cohesion: 0.12
-Nodes (10): interrupt(), TearDown(), TearDownEnvironment(), wait(), GTestXMLOutFilesTest, Unit test for Google Test's XML output functionality., addMessageQueue(), removeMessageQueue() (+2 more)
-
-### Community 126 - "Community 126"
-Cohesion: 0.14
-Nodes (12): handle_timed_sync(), timedSyncLoop(), ban(), handleHandshakeRequest(), handleHandshakeResponse(), processIncomingHandshake(), writeHandshake(), isIncoming() (+4 more)
-
-### Community 127 - "Community 127"
-Cohesion: 0.32
-Nodes (18): ge_p3_tobytes(), point_add(), adaptorChallenge(), aliceInitialize(), asBytes(), computeSharedSpendPub(), createAdaptor(), createDleqProof() (+10 more)
-
-### Community 128 - "Community 128"
-Cohesion: 0.13
-Nodes (6): decode_block(), encode(), encode_addr(), encode_block(), uint_64_to_8be(), uint_8be_to_64()
-
-### Community 129 - "Community 129"
-Cohesion: 0.15
-Nodes (8): append_with_peer_anchor(), append_with_peer_gray(), append_with_peer_white(), is_ip_allowed(), merge_peerlist(), set_peer_just_seen(), trim_gray_peerlist(), trim_white_peerlist()
-
-### Community 130 - "Community 130"
-Cohesion: 0.25
-Nodes (16): calculateCommitment(), calculateNetworkValidationHash(), calculateNullifier(), calculateRecipientHash(), calculateTxExtraHash(), extractBPDFData(), generateBPDF(), isValidArbitrumAddress() (+8 more)
-
-### Community 131 - "Community 131"
-Cohesion: 0.12
-Nodes (16): AliasResult, AllPairData, NodeInfo, PairImplied, PriceSourceEntry, NewFuegoClient(), SignedOffer, SwapInitResult (+8 more)
-
-### Community 132 - "Community 132"
-Cohesion: 0.21
-Nodes (16): ConditionalPrintAsText(), ContainsUnprintableControlCodes(), IsPrintableAscii(), IsUTF8TrailByte(), IsValidUTF8(), PrintAsCharLiteralTo(), PrintAsStringLiteralTo(), PrintByteSegmentInObjectTo() (+8 more)
-
-### Community 133 - "Community 133"
+### Community 223 - "Community 223"
 Cohesion: 0.2
-Nodes (14): formatTimestamp(), deposit_amount(), deposit_height(), deposit_interest(), deposit_status(), deposit_term(), deposit_unlock_height(), get_deposit_info() (+6 more)
+Nodes (9): DMWDAAnalyzer, main(), Calculate Linear Weighted Moving Average, Analyze a specific scenario, Generate comprehensive test scenarios for DMWDA, Calculate stability score (0-10), Calculate how quickly the algorithm responds to changes, Generate visualization plots (+1 more)
 
-### Community 134 - "Community 134"
-Cohesion: 0.19
-Nodes (13): getDIGMBalance(), parseDIGMAmount(), format_digm_amount(), format_digm_transaction(), refresh_digm_balance(), show_digm_balance(), show_digm_outputs(), show_digm_transactions() (+5 more)
-
-### Community 135 - "Community 135"
-Cohesion: 0.26
-Nodes (17): decodeGetContract(), encodeBytes32(), encodeClaim(), encodeGetContract(), encodeLock(), encodeRefund(), encodeUint256(), functionSelector() (+9 more)
-
-### Community 136 - "Community 136"
-Cohesion: 0.18
+### Community 224 - "Community 224"
+Cohesion: 0.17
 Nodes (8): GTestHelpTest, Verifies correct behavior when help flag is specified.      The right message mu, Verifies correct behavior when no help flag is specified.      Verifies that whe, Verifies that when no help flag is specified, the tests are run     and the help, Verifies that the tests are run and no help message is printed when     a flag s, Runs gtest_help_test_ with the given flag.    Returns:     the exit code and the, Tests the --help flag and its equivalent forms., RunWithFlag()
 
-### Community 138 - "Community 138"
-Cohesion: 0.33
-Nodes (16): blake224_final(), blake224_hash(), blake224_init(), blake224_update(), blake256_final(), blake256_init(), blake256_update(), hmac_blake224_hash() (+8 more)
+### Community 225 - "Community 225"
+Cohesion: 0.11
+Nodes (18): code:block1 (┌───────────────────────────────────────────────────────────), code:block2 (┌───────────────────────────────────────────────────────────), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (Trust model: You trust ONE entity (the organizer) not to lea), code:block5 (Trust model: You trust that AT LEAST ONE prover is honest), code:block6 (Trust model: You trust YOURSELF.), code:block7 (┌───────────────────────────────────────────────────────────), Decentralized Proving = More Eyes on Plaintext (+10 more)
 
-### Community 139 - "Community 139"
-Cohesion: 0.18
-Nodes (10): div128_32(), div_with_reminder(), hi_dword(), lo_dword(), mem_inplace_swap32(), memcpy_swap32(), memcpy_swap64(), swap32() (+2 more)
+### Community 226 - "Community 226"
+Cohesion: 0.11
+Nodes (17): Correct I2P Port Reference, Current State, Fuego I2P Integration: Implementation Plan, Implementation Plan, Implementation Priority, Key Design Decisions, Phase 1: Address Types & Network Zone Foundation, Phase 2: SOCKS5 Transport & Proxy Connector (+9 more)
 
-### Community 140 - "Community 140"
-Cohesion: 0.14
-Nodes (15): getNewBlockHash(), load_certs(), add_certs_to_x509_store(), is_running(), load_system_certs_on_macos(), load_system_certs_on_windows(), MD5(), message_digest() (+7 more)
+### Community 227 - "Community 227"
+Cohesion: 0.11
+Nodes (17): code:block1 (Banking Transaction (e.g. deposit/withdraw)), code:block2 (Time ───────────────────────────────────────────────────────), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (┌───────────────────────────────────────────────────────────), code:block5 (┌───────────────────────────────────────────────────────────), code:block6 (┌───────────────────────────────────────────────────────────), code:block7 (Block 1000 (epoch start)), code:block8 (1. FIXED EPOCH INTERVALS (not event-triggered)) (+9 more)
 
-### Community 141 - "Community 141"
-Cohesion: 0.25
-Nodes (15): directoryExists(), ConcatPaths(), CreateDirectoriesRecursively(), CreateFolder(), FileOrDirectoryExists(), FindLastPathSeparator(), GenerateUniqueFileName(), IsAbsolutePath() (+7 more)
+### Community 228 - "Community 228"
+Cohesion: 0.16
+Nodes (7): AddTestPattern(), Begin(), CreateTestFactory(), End(), IsValidParamName(), ParameterizedTestCaseRegistry(), RegisterTests()
 
-### Community 142 - "Community 142"
-Cohesion: 0.19
-Nodes (14): check_split_switched(), check_balances_1(), test_block_creation(), test_transaction_generation_and_ring_signature(), test_transactions(), is_out_to_acc(), lookup_acc_outs(), addOutput() (+6 more)
+### Community 229 - "Community 229"
+Cohesion: 0.16
+Nodes (11): Tests the behavior of the default mode., Tests using the GTEST_THROW_ON_FAILURE environment variable., Tests using the --gtest_throw_on_failure flag., Tests that --gtest_throw_on_failure overrides GTEST_THROW_ON_FAILURE., Sets an environment variable to a given value; unsets it when the   given value, Runs a command; returns True/False if its exit code is/isn't 0., Tests the throw-on-failure mode., Runs gtest_throw_on_failure_test_ and verifies that it does     (or does not) ex (+3 more)
 
-### Community 143 - "Community 143"
-Cohesion: 0.14
-Nodes (15): EncodeMultipartFormData(), GetContentType(), GetEmail(), GetRpcServer(), # NOTE: for proper handling of moved/copied files, we have to use, # HACK: strip error message about missing file/directory if it isn't in, # NOTE: The SplitPatch function is duplicated in engine.py, keep them in sync., Uploads a separate patch for each file in the diff output.    Returns a list of (+7 more)
+### Community 230 - "Community 230"
+Cohesion: 0.12
+Nodes (17): Assertion Placement ##, code:block1 (switch(expression) {), code:block10 (EXPECT_PRED_FORMAT2(::testing::FloatLE, val1, val2);), code:block11 (CComPtr shell;), code:block12 (::testing::StaticAssertTypeEq<T1, T2>();), code:block13 (template <typename T> class Foo {), code:block14 (void Test1() { Foo<bool> foo; }), code:block15 (void Test2() { Foo<bool> foo; foo.Bar(); }) (+9 more)
 
-### Community 144 - "Community 144"
-Cohesion: 0.17
-Nodes (8): get_block_template(), appendMergeMiningTagToExtra(), Tests(), getLocalHeight(), getTailBlockId(), makeINode(), stopDaemon(), on_submitblock()
+### Community 231 - "Community 231"
+Cohesion: 0.24
+Nodes (13): buildCheckpoint(), computeCheckpointHash(), computeFeeRecordLeaf(), computeLPShareLeaf(), computeReserveCommit(), computeRoot(), getProof(), hashPair() (+5 more)
 
-### Community 145 - "Community 145"
-Cohesion: 0.22
-Nodes (12): init_options(), sendStopSignal(), on_get_height(), on_create_integrated(), on_get_messages(), on_get_outputs(), on_get_payments(), on_get_transfers() (+4 more)
+### Community 232 - "Community 232"
+Cohesion: 0.28
+Nodes (12): toHex(), array_eq(), CapturingClient, l_minus(), small_scalar(), test_claim_combines_before_sweep(), test_claim_rejects_zero_combine(), test_combine_near_order_reduces() (+4 more)
 
-### Community 146 - "Community 146"
-Cohesion: 0.23
-Nodes (14): checkAddressBalance(), claimAdaptor(), lockAdaptor(), MoneroRpcClient(), parseJsonRpcResult(), refundAdaptor(), sweepSharedAddress(), transferToShared() (+6 more)
+### Community 234 - "Community 234"
+Cohesion: 0.21
+Nodes (9): fillJsonResponse(), makeErrorResponse(), makeGenericErrorReponse(), makeJsonParsingErrorResponse(), makeMethodNotFoundResponse(), prepareJsonResponse(), processRequest(), processJsonRpcRequest() (+1 more)
 
-### Community 147 - "Community 147"
-Cohesion: 0.25
-Nodes (12): checkStuckSwaps(), checkTimeouts(), generateSwapId(), getActivePools(), initiate(), listSwaps(), processSwap(), resolveAddressOrAlias() (+4 more)
+### Community 235 - "Community 235"
+Cohesion: 0.16
+Nodes (7): BaseGenerator(), Begin(), Clone(), ComputeCurrentValue(), End(), Equals(), Iterator()
 
-### Community 148 - "Community 148"
-Cohesion: 0.25
-Nodes (13): buildCheckpoint(), computeFeeRecordLeaf(), computeLPShareLeaf(), computeReserveCommit(), computeRoot(), getProof(), hashPair(), verifyProof() (+5 more)
-
-### Community 149 - "Community 149"
-Cohesion: 0.15
-Nodes (9): Metadata for a file in the codebase, CodebaseStats, FileInfo, Get codebase statistics, Search for files by name, Get file tree as text, Get C++ dependency information, Export codebase map to JSON (+1 more)
-
-### Community 150 - "Community 150"
-Cohesion: 0.22
-Nodes (13): FormatBchBalance(), NewBchClient(), bchMockServer(), TestBchBroadcastTx(), TestBchErrorResponse(), TestBchGetBalance(), TestBchGetBalanceUnconfirmed(), TestBchIsConnected() (+5 more)
-
-### Community 151 - "Community 151"
-Cohesion: 0.22
-Nodes (11): true(), cn_context(), Close the database connection, Close database connection, close(), mmap(), open(), Create() (+3 more)
-
-### Community 152 - "Community 152"
-Cohesion: 0.3
-Nodes (14): adjustBlockTemplate(), adjustMergeMiningTag(), BlockchainUpdatedEvent(), BlockMinedEvent(), eventLoop(), requestMiningParameters(), startBlockchainMonitoring(), startMining() (+6 more)
-
-### Community 153 - "Community 153"
-Cohesion: 0.15
-Nodes (8): Dependency, Initialize the SQLite database, Parse C++ file for functions, classes, and includes, Dependency relationship between files, Search for functions by name, Main codebase mapping engine, Get all dependencies for a file, Get statistics about the codebase
-
-### Community 154 - "Community 154"
-Cohesion: 0.22
-Nodes (9): get_resizing_parameters(), enlarge_size(), reset_thresholds(), set_consider_shrink(), set_enlarge_factor(), set_enlarge_threshold(), set_shrink_factor(), set_shrink_threshold() (+1 more)
-
-### Community 155 - "Community 155"
+### Community 236 - "Community 236"
 Cohesion: 0.2
-Nodes (13): FuseGTest(), FuseGTestAllCc(), Makes sure gtest_root points to a valid gtest root directory.    The function ab, Verifies that the given output file path is valid.    relative_path is relative, Makes sure output_dir points to a valid output directory.    The function aborts, Scans folder gtest_root to generate gtest/gtest.h in output_dir., Scans folder gtest_root to generate gtest/gtest-all.cc in output_file., Fuses gtest.h and gtest-all.cc. (+5 more)
+Nodes (10): get_resizing_parameters(), enlarge_size(), reset_thresholds(), set_consider_shrink(), set_enlarge_factor(), set_enlarge_threshold(), set_resizing_parameters(), set_shrink_factor() (+2 more)
 
-### Community 156 - "Community 156"
-Cohesion: 0.18
-Nodes (9): bchConnectedMsg, cursorBlinkMsg, ethConnectedMsg, HotkeyPair(), PairFromString(), refreshMsg, nextPair(), pairToID() (+1 more)
+### Community 237 - "Community 237"
+Cohesion: 0.22
+Nodes (10): doSerialize(), getSignaturesCount(), getVariantValue(), serialize(), serializeBlockHeader(), serializePod(), serializeVarintVector(), VariantSerializer() (+2 more)
 
-### Community 157 - "Community 157"
-Cohesion: 0.15
-Nodes (11): GetBuildDir(), GetExitStatus(), GetSourceDir(), GetTestExecutablePath(), _ParseAndStripGTestFlags(), Returns the absolute path of the directory where the .py files are., Returns the absolute path of the directory where the test binaries are., Returns the absolute path of the test binary given its name.    The function wil (+3 more)
-
-### Community 158 - "Community 158"
-Cohesion: 0.33
-Nodes (11): toHex(), array_eq(), CapturingClient, l_minus(), small_scalar(), test_claim_combines_before_sweep(), test_claim_rejects_zero_combine(), test_combine_near_order_reduces() (+3 more)
-
-### Community 159 - "Community 159"
+### Community 238 - "Community 238"
 Cohesion: 0.19
-Nodes (8): ClassInfo, FunctionInfo, Information about a function in the codebase, Parse Go file for functions and structs, Parse Python file using ast module, Information about a class in the codebase, Parse JavaScript/TypeScript file (simplified), Parse TypeScript file (same as JS for now)
+Nodes (15): FuseGTest(), FuseGTestAllCc(), FuseGTestAllCcToFile(), FuseGTestH(), main(), Makes sure gtest_root points to a valid gtest root directory.    The function ab, Verifies that the given output file path is valid.    relative_path is relative, Scans folder gtest_root to generate gtest/gtest.h in output_dir. (+7 more)
 
-### Community 160 - "Community 160"
+### Community 239 - "Community 239"
+Cohesion: 0.15
+Nodes (11): GetNextPrime(), OnTheFlyPrimeTable(), PreCalculatedPrimeTable(), PrimeTable(), Factorial(), IsPrime(), TEST(), IntegerFunctionTest (+3 more)
+
+### Community 240 - "Community 240"
+Cohesion: 0.14
+Nodes (13): GetBuildDir(), GetExitStatus(), GetSourceDir(), GetTestExecutablePath(), Main(), _ParseAndStripGTestFlags(), Returns the absolute path of the directory where the .py files are., Returns the absolute path of the directory where the test binaries are. (+5 more)
+
+### Community 241 - "Community 241"
+Cohesion: 0.27
+Nodes (11): Log(), changeDirectory(), getCurrency(), getWalletConfig(), init(), run(), runInProcess(), runRpcProxy() (+3 more)
+
+### Community 242 - "Community 242"
+Cohesion: 0.24
+Nodes (12): httpPost(), daemonPost(), getHeight(), getInfo(), getRandomOutputs(), getTransactionOutputs(), httpPost(), resolveAlias() (+4 more)
+
+### Community 243 - "Community 243"
+Cohesion: 0.12
+Nodes (16): 4a. ParaDio Reward Model (the only reward source), Artist "reign tax" on late-entry stakes, code:block3 (1 verified ParaDio listen), code:block4 (┌──────────────────────┐), code:block5 (TIMELINE OF A DYNASTY), Epoch, Open sub-questions (see §11), PARA flow: earning is global, staking is per-album (+8 more)
+
+### Community 244 - "Community 244"
+Cohesion: 0.16
+Nodes (10): ClassInfo, Dependency, FunctionInfo, Parse C++ file for functions, classes, and includes, Information about a function in the codebase, Parse Go file for functions and structs, Parse Python file using ast module, Information about a class in the codebase (+2 more)
+
+### Community 246 - "Community 246"
+Cohesion: 0.12
+Nodes (15): Atomic swaps, Certificates of Deposit (CDs), Completeness gaps, Completeness gaps, Completeness gaps, Completeness gaps, Executive summary (original findings), Fix status — `fix/xfgCdswaps-criticals` (+7 more)
+
+### Community 247 - "Community 247"
+Cohesion: 0.12
+Nodes (15): code:block1 (Think of it like currency denominations:), code:block2 (ATTACK: Type Confusion), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (Standard Pedersen commitment:), code:block5 (The circuit checks types at every operation:), code:rust (// From fuego-core/src/lib.rs (current):), Commitment Types Explained, Common Commitment Types in an LP Pool (+7 more)
+
+### Community 248 - "Community 248"
+Cohesion: 0.28
+Nodes (11): addressHasAlias(), addressHasAliasByHash(), aliasExists(), AliasIndex(), getAliasByAddress(), getAliasByName(), getAllAliases(), isValidRegularAlias() (+3 more)
+
+### Community 249 - "Community 249"
+Cohesion: 0.16
+Nodes (6): check_block_rewards(), get_tx_out_amount(), markInvalidBlock(), block_reward_and_current_block_size, block_reward_and_height, block_reward_and_last_block_sizes
+
+### Community 250 - "Community 250"
+Cohesion: 0.34
+Nodes (14): secp256k1_jacobi64_maybe_var(), secp256k1_modinv64(), secp256k1_modinv64_abs(), secp256k1_modinv64_det_check_pow2(), secp256k1_modinv64_divsteps_59(), secp256k1_modinv64_divsteps_62_var(), secp256k1_modinv64_mul_62(), secp256k1_modinv64_mul_cmp_62() (+6 more)
+
+### Community 251 - "Community 251"
+Cohesion: 0.29
+Nodes (14): load_3(), load_4(), sc_0(), sc_add(), sc_mulsub(), sc_sub(), sc_mul(), sc_muladd() (+6 more)
+
+### Community 252 - "Community 252"
+Cohesion: 0.16
+Nodes (9): check_scalar(), hash_to_point(), padd(), place_length(), main(), deinit_random(), generate_system_random_bytes(), init_random() (+1 more)
+
+### Community 253 - "Community 253"
+Cohesion: 0.13
+Nodes (14): Code ##, code:block1 ($var n = 3     $$ Defines a meta variable n.), code:block2 (// Foo0 does blah for 0-ary predicates.), code:block3 ($range i 1..n), code:block4 (Func();              // If n is 0.), code:block5 (code ::= atomic_code*), Constructs ##, Examples ## (+6 more)
+
+### Community 254 - "Community 254"
+Cohesion: 0.14
+Nodes (14): code:bash (curl -X POST http://localhost:8070/createDeposit \), code:json ({), code:bash (curl -X POST http://localhost:8070/getDeposit \), code:json ({), code:bash (curl -X POST http://localhost:28180/getStagedUnlockSchedule ), code:json ({), code:bash (curl -X POST http://localhost:28180/getStagedDeposits \), code:bash (curl -X POST http://localhost:28180/processStagedUnlocks \) (+6 more)
+
+### Community 255 - "Community 255"
+Cohesion: 0.19
+Nodes (3): Ipv4Resolver(), resolve(), System()
+
+### Community 256 - "Community 256"
+Cohesion: 0.26
+Nodes (11): ban(), handleHandshakeRequest(), handleHandshakeResponse(), handleTimedSync(), P2pConnectionProxy(), processIncomingHandshake(), read(), stop() (+3 more)
+
+### Community 257 - "Community 257"
+Cohesion: 0.33
+Nodes (10): test_exhaustive_recovery(), test_exhaustive_recovery_sign(), test_exhaustive_recovery_verify(), main(), r_from_k(), skip_section(), test_exhaustive_ecmult_multi(), test_exhaustive_endomorphism() (+2 more)
+
+### Community 258 - "Community 258"
+Cohesion: 0.26
+Nodes (9): bchConnectedMsg, cursorBlinkMsg, ethConnectedMsg, refreshMsg, refreshTickMsg, cursorBlink(), nextPair(), refreshTick() (+1 more)
+
+### Community 259 - "Community 259"
 Cohesion: 0.23
-Nodes (12): fillBlockDetails(), fillTransactionDetails(), fillTxExtra(), median(), setPaymentId(), getAlbumLicenseFromExtra(), getCuraColoredCoinFromExtra(), getDigmAlbumRecordFromExtra() (+4 more)
+Nodes (11): TEST(), ammGetOutputAmount(), ammGetSpotPrice(), ammGetWithdrawalAmounts(), ammMintLpShares(), ammValidateDepositRatio(), ammValidateSwap(), isqrt128() (+3 more)
 
-### Community 161 - "Community 161"
+### Community 260 - "Community 260"
+Cohesion: 0.18
+Nodes (9): FuegoMapperMCPServer, main(), MCP Server implementation for Fuego Codebase Mapper, Main entry point for standalone execution, Set up MCP server handlers, Test basic mapper functionality, Test MCP server initialization, test_basic_functionality() (+1 more)
+
+### Community 261 - "Community 261"
+Cohesion: 0.25
+Nodes (11): cn_fast_hash(), Crypto(), hash_permutation(), hash_process(), tree_branch(), tree_hash(), tree_hash_from_branch(), tree_branch() (+3 more)
+
+### Community 262 - "Community 262"
+Cohesion: 0.14
+Nodes (13): 6. Implementation Roadmap, 8.1 Technical Risks, 8.2 Organizational Risks, 8. Risk Mitigation, 9. Conclusion, Appendix C: Skill Registry Format, code:yaml (skill_registry:), Executive Summary (+5 more)
+
+### Community 263 - "Community 263"
+Cohesion: 0.15
+Nodes (9): Config, DefaultConfig(), CDConfig, CDFeePoolConfig, Calculate swap fee and net amount.                  Args:             xfg_amount, CD Fee Pool Configuration, Certificate of Deposit Configuration, main() (+1 more)
+
+### Community 264 - "Community 264"
+Cohesion: 0.14
+Nodes (13): As a Shared Library (DLL) ###, Avoiding Macro Name Clashes ###, Build ####, Choosing a TR1 Tuple Library ###, Generic Build Instructions ###, Incorporating Into An Existing CMake Project ####, Legacy Build Scripts ###, Multi-threaded Tests ### (+5 more)
+
+### Community 265 - "Community 265"
+Cohesion: 0.14
+Nodes (13): 11. Key Design Decisions, 12. Dependencies, 13. Testing Strategy, 1. Architecture Overview, 8.1 Verification Contract (Pseudocode), 8. On-Chain Verification, 9. File Structure, code:block1 (┌───────────────────────────────────────────────────────────) (+5 more)
+
+### Community 266 - "Community 266"
+Cohesion: 0.26
+Nodes (10): connecthostport(), soapPostSubmit(), simpleUPnPcommand2(), getHTTPResponse(), miniwget(), miniwget2(), miniwget3(), miniwget_getaddr() (+2 more)
+
+### Community 267 - "Community 267"
+Cohesion: 0.14
+Nodes (13): UPnP_addportmapping(), UPnP_connectiontype(), UPnP_deleteportmapping(), UPnP_discover(), UPnP_externalipaddress(), UPnP_getportmappingnumberofentries(), UPnP_selectigd(), UPnP_statusinfo() (+5 more)
+
+### Community 268 - "Community 268"
+Cohesion: 0.14
+Nodes (13): Autotools ###, CMake ###, code:block1 (cmake_minimum_required(VERSION 3.0)), code:block2 (AC_PREREQ([2.69])), code:block3 (check_PROGRAMS = testapp), code:block4 (project('my_gtest_pkgconfig', 'cpp', version : '0.0.1')), code:block5 (GTEST_CFLAGS = `pkg-config --cflags gtest_main`), code:block6 (-- Checking for one of the modules 'gtest_main') (+5 more)
+
+### Community 269 - "Community 269"
+Cohesion: 0.14
+Nodes (13): code:bash (./simplewallet --generate-new-wallet my-wallet.keys), code:bash (./simplewallet --wallet-file my-wallet.keys), code:bash (./simplewallet --wallet-file my-wallet.keys --testnet --daem), code:bash (./simplewallet --restore-deterministic-wallet), code:block5 (fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH), code:block6 (register_alias myname), Connect to testnet, Create a new wallet (+5 more)
+
+### Community 270 - "Community 270"
+Cohesion: 0.14
+Nodes (13): Build, Build targets, code:bash (sudo apt-get update), code:bash (brew install cmake boost openssl pkg-config), code:bash (git clone https://github.com/usexfg/fuego-suite.git), code:bash (make fuegod         # Daemon only), code:bash (cmake .. -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl), code:bash (cd swapxfg) (+5 more)
+
+### Community 272 - "Community 272"
+Cohesion: 0.15
+Nodes (13): 3A — AMM State, 3B — Transaction Extra Tags, 3C — Consensus Validation & Serialization, 3D — LP Token Tracking, 3E — Pool Bootstrapping, 3F — Privacy Model, code:cpp (struct AmmPoolState {), code:cpp (#define TX_EXTRA_AMM_SWAP       0xF0   // AMM swap) (+5 more)
+
+### Community 273 - "Community 273"
+Cohesion: 0.33
+Nodes (12): GTEST_10_TYPENAMES_(), GTEST_1_TYPENAMES_(), GTEST_2_TYPENAMES_(), GTEST_3_TYPENAMES_(), GTEST_4_TYPENAMES_(), GTEST_5_TYPENAMES_(), GTEST_6_TYPENAMES_(), GTEST_7_TYPENAMES_() (+4 more)
+
+### Community 274 - "Community 274"
+Cohesion: 0.36
+Nodes (11): analyzeSpendPatterns(), calculateSpendProbability(), createLogarithmicAgeBins(), createSpendPatternFromHistory(), filterNonCoinbaseOutputs(), loadPattern(), normalizeProbabilities(), savePattern() (+3 more)
+
+### Community 275 - "Community 275"
+Cohesion: 0.21
+Nodes (5): addHeader(), setBody(), getErrorBody(), setBody(), setStatus()
+
+### Community 276 - "Community 276"
+Cohesion: 0.27
+Nodes (9): Command::needReply(), LevinProtocol(), readCommand(), readStrict(), sendMessage(), sendReply(), writeStrict(), readCommand() (+1 more)
+
+### Community 277 - "Community 277"
 Cohesion: 0.24
-Nodes (8): keccak(), keccakf(), computeCommitment(), computeNullifier(), generateCommitment(), generateHeatCommitment(), generateHeatCommitmentWithSecret(), generateYieldCommitment()
+Nodes (9): findExtensionPosition(), GetExtension(), GetPathDirectory(), GetPathFilename(), RemoveExtension(), ReplaceExtenstion(), SplitPath(), Splits a patch into separate pieces for each file.    Args:     data: A string c (+1 more)
 
-### Community 162 - "Community 162"
+### Community 278 - "Community 278"
+Cohesion: 0.29
+Nodes (8): add(), div(), exp_approx(), fromUint64(), ln_approx(), mul(), sub(), mul()
+
+### Community 279 - "Community 279"
+Cohesion: 0.15
+Nodes (12): code:block1 (deposit 10 3), code:bash (curl -X POST http://127.0.0.1:28080/get_fee_pool_info \), code:bash (curl -X POST http://127.0.0.1:28080/estimate_cd_yield \), code:bash (curl -X POST http://127.0.0.1:28080/get_maturing_deposits \), code:bash (curl -X POST http://127.0.0.1:28080/rollover_deposit \), code:json ({), code:bash (curl -X POST http://127.0.0.1:28080/estimate_cd_yield \), Create an initial deposit (+4 more)
+
+### Community 280 - "Community 280"
+Cohesion: 0.15
+Nodes (13): Caveats ##, code:block19 (::testing::ExitedWithCode(exit_code)), code:block20 (::testing::KilledBySignal(signal_number)  // Not available o), code:block21 (TEST(MyDeathTest, Foo) {), code:block22 (class FooTest : public ::testing::Test { ... };), code:block23 (::testing::FLAGS_gtest_death_test_style = "threadsafe";), code:block24 (TEST(MyDeathTest, TestOne) {), Death Test Styles ## (+5 more)
+
+### Community 281 - "Community 281"
+Cohesion: 0.37
+Nodes (12): secp256k1_jacobi32_maybe_var(), secp256k1_modinv32(), secp256k1_modinv32_divsteps_30(), secp256k1_modinv32_divsteps_30_var(), secp256k1_modinv32_mul_30(), secp256k1_modinv32_mul_cmp_30(), secp256k1_modinv32_normalize_30(), secp256k1_modinv32_posdivsteps_30_var() (+4 more)
+
+### Community 282 - "Community 282"
+Cohesion: 0.15
+Nodes (13): 11. Open Questions, Already decided (inherited from DIGM-origins, see body), App Engineering, Decisions made in this revision, Dynasty + ride-the-wave — direction locked, numbers parked, Epoch & timing edges (still open, mostly in-app), HEAT cross-chain token, Identity / sybil (direction flipped — wallet = user) (+5 more)
+
+### Community 283 - "Community 283"
+Cohesion: 0.15
+Nodes (13): code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({) (+5 more)
+
+### Community 284 - "Community 284"
+Cohesion: 0.15
+Nodes (12): Checking epoch history, Claiming interest, code:block1 (your_interest = (your_cd_amount / total_cd_locked) × epoch_s), code:bash (curl -X POST http://127.0.0.1:28080/estimate_cd_yield \), code:json ({), code:bash (curl -X POST http://127.0.0.1:28080/get_epoch_history \), code:bash (curl -X POST http://127.0.0.1:28080/get_fee_pool_info \), Epoch distribution (+4 more)
+
+### Community 285 - "Community 285"
+Cohesion: 0.15
+Nodes (12): Adding new functionality or modules, Benchmarks, code:C (void secp256k_foo(void) {), Coding conventions, Communication channels, Contributing to libsecp256k1, Contributor workflow & peer review, Coverage (+4 more)
+
+### Community 286 - "Community 286"
+Cohesion: 0.15
+Nodes (12): 1. Introduction, 2.1 Decoding for `secp256k1`, 2. The decoding function, 3.1 Switching to *v, w* coordinates, 3.2 Avoiding computing all inverses, 3.3 Finding the inverse, 3.4 Dealing with special cases, 3.5 Encoding for `secp256k1` (+4 more)
+
+### Community 287 - "Community 287"
+Cohesion: 0.15
+Nodes (12): code:block1 (deposit <amount> <term>), code:block2 (deposit 10 3), code:block3 (cold 10 3), code:block4 (list_cold), code:block5 (cold_info 0), code:bash (curl -X POST http://127.0.0.1:28080/estimate_cd_yield \), Create a deposit — CLI, Estimate your yield first (+4 more)
+
+### Community 288 - "Community 288"
+Cohesion: 0.15
+Nodes (12): code:block1 (┌───────────────────────────────────────────────────────────), code:block2 (┌───────────────────────────────────────────────────────────), code:block3 (┌───────────────────────────────────────────────────────────), code:block4 (┌───────────────────────────────────────────────────────────), code:block5 (HEAT proof  = "These commitments are in real blockchain bloc), Diagram: Two Different Worlds, HEAT vs LP Pool ZK Proofs — Why Separate, How They Connect (Fee Routing to fuego-prover) (+4 more)
+
+### Community 289 - "Community 289"
+Cohesion: 0.15
+Nodes (12): After the swap, code:block1 (initiate <counterparty_address_or_alias> <xfg_amount> XMR), code:block2 (initiate @bob 25 XMR), code:bash (curl -X POST http://127.0.0.1:28080/getswapstatus \), code:bash (curl -X POST http://127.0.0.1:28080/listswaps \), code:bash (# Refund your locked XFG after timeout), code:block6 (balance), If the counterparty disappears (+4 more)
+
+### Community 290 - "Community 290"
+Cohesion: 0.15
+Nodes (12): Build from source, code:bash (# Ubuntu / Debian), code:bash (git clone https://github.com/usexfg/fuego-suite.git), code:bash (mkdir build && cd build), code:bash (./build/release/src/fuegod --version), code:bash (# Run a testnet node), code:bash (# Mainnet), code:bash (curl -s http://127.0.0.1:28080/get_info | python3 -m json.to) (+4 more)
+
+### Community 291 - "Community 291"
 Cohesion: 0.17
-Nodes (11): GetOutputOfAllCommands(), GTestOutputTest, NormalizeToCurrentPlatform(), Removes compiler-specific type info from Google Test program's output.    Args:, Normalizes platform specific output details for easier comparison., Removes test counts from a Google Test program's output., Removes output of specified tests from a Google Test program's output.    This f, Returns concatenated output from several representative commands. (+3 more)
+Nodes (11): Benefits, Conclusion, For Network, For Users, Interest Payment System, Key Features, Key Metrics, Logging (+3 more)
 
-### Community 163 - "Community 163"
-Cohesion: 0.3
-Nodes (10): F512(), OutputTransformation(), RND512P(), RND512Q(), Transform(), E8(), F8(), Final() (+2 more)
+### Community 292 - "Community 292"
+Cohesion: 0.18
+Nodes (7): test_chain_unit_base(), MultiSigTx_Input(), CurrencyBuilder(), PaymentGateService(), single_tx_test_base(), init(), single_tx_test_base()
 
-### Community 164 - "Community 164"
-Cohesion: 0.24
-Nodes (8): findExtensionPosition(), GetExtension(), GetPathDirectory(), GetPathFilename(), RemoveExtension(), ReplaceExtenstion(), Splits a patch into separate pieces for each file.    Args:     data: A string c, SplitPatch()
+### Community 293 - "Community 293"
+Cohesion: 0.48
+Nodes (9): getBodyLen(), parseResponseStatusFromString(), readBody(), readHeader(), readHeaders(), readWord(), receiveRequest(), receiveResponse() (+1 more)
 
-### Community 165 - "Community 165"
-Cohesion: 0.17
-Nodes (9): FooTest, MyArray, MyType, Tests that --gtest_list_tests overrides the non-filter flags., Tests that --gtest_list_tests takes into account the     --gtest_filter flag., TypeParamTest, ValueParamTest, VeryLoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooogName (+1 more)
-
-### Community 166 - "Community 166"
+### Community 294 - "Community 294"
 Cohesion: 0.29
 Nodes (9): encodeBigEndian(), endList(), RlpEncoder(), writeBytes(), writeEncodedBytes(), writeListPrefix(), writeStringPrefix(), writeUint() (+1 more)
 
-### Community 167 - "Community 167"
-Cohesion: 0.23
-Nodes (11): GetCommandOutput(), GetSvnInfo(), GetSvnTrunk(), IsInGMockSvn(), IsInGTestSvn(), Runs the shell command and returns its stdout as a list of lines., Returns the project name and the current SVN workspace's root path., Returns the current SVN workspace's trunk root path. (+3 more)
+### Community 296 - "Community 296"
+Cohesion: 0.17
+Nodes (12): 1. Build Failures, 2. Memory Issues, 3. Network Issues, 4. Performance Issues, code:bash (# Clear build cache), code:bash (# Increase swap space), code:bash (# Check network connectivity), code:bash (# Monitor system resources) (+4 more)
 
-### Community 168 - "Community 168"
-Cohesion: 0.25
-Nodes (9): ammGetOutputAmount(), ammGetWithdrawalAmounts(), ammMintLpShares(), ammValidateDepositRatio(), ammValidateSwap(), isqrt128(), pushTransaction(), getAmmQuote() (+1 more)
+### Community 297 - "Community 297"
+Cohesion: 0.17
+Nodes (11): code:block12 (fuego/), code:bash (# Fork and clone), 🤝 Contributing, Development Setup, 📁 Directory Structure, 🐳 Fuego Docker - Super Easy Setup Guide, 📄 License, 🔒 Security Features (+3 more)
 
-### Community 169 - "Community 169"
+### Community 298 - "Community 298"
+Cohesion: 0.24
+Nodes (7): object, DropWikiSuffix(), main(), Returns a list of .wiki file names that need to be branched., Branches the .wiki files needed to be branched., Removes the .wiki suffix (if any) from the given filename., WikiBrancher
+
+### Community 299 - "Community 299"
 Cohesion: 0.29
-Nodes (10): aes_256_assist1(), _rotr(), soft_aesenc(), soft_aeskeygenassist(), sub_word(), _mm_aeskeygenassist_si128(), _mm_cvtsi128_si32(), _mm_set_epi8() (+2 more)
+Nodes (8): add_checkpoint(), check_block(), getCheckpointHeights(), is_alternative_block_allowed(), is_in_checkpoint_zone(), load_checkpoints(), load_checkpoints_from_dns(), load_checkpoints_from_file()
 
-### Community 170 - "Community 170"
+### Community 300 - "Community 300"
+Cohesion: 0.17
+Nodes (12): Adding Traces to Assertions ##, Asserting on Subroutines ###, Checking for Failures in the Current Test ###, code:block25 (10: void Sub1(int n) {), code:block26 (path/to/foo_test.cc:11: Failure), code:block27 (void Subroutine() {), code:block28 (ASSERT_NO_FATAL_FAILURE(Foo());), code:block29 (class Test {) (+4 more)
+
+### Community 301 - "Community 301"
+Cohesion: 0.17
+Nodes (12): code:block62 (int main(int argc, char** argv) {), code:block68 (#include "gtest/gtest.h"), code:block69 (void TestFooDoesBar() {), code:block70 (TEST(A, V)), Controlling How Failures Are Reported ##, Disabling Catching Test-Thrown Exceptions ###, Distributing Test Functions to Multiple Machines ##, Letting Another Testing Framework Drive ### (+4 more)
+
+### Community 302 - "Community 302"
+Cohesion: 0.17
+Nodes (12): 2A. AMM State, 2B. New Transaction Extra Tags, 2C. Consensus Validation, 2D. LP Token Tracking, 2E. Privacy Model for AMM, code:cpp (enum class PoolPair : uint8_t {), code:cpp (#define TX_EXTRA_AMM_SWAP      0xEC   // AMM swap operation), code:cpp (struct TransactionExtraAmmSwap {) (+4 more)
+
+### Community 303 - "Community 303"
+Cohesion: 0.32
+Nodes (10): buildLoggerConfiguration(), command_line_preprocessor(), main(), print_genesis_tx_hex(), renameDataDir(), buildLoggerConfiguration(), command_line_preprocessor(), generate_new_testnet_genesis() (+2 more)
+
+### Community 304 - "Community 304"
+Cohesion: 0.17
+Nodes (12): 4.1 MCP (Model Context Protocol) Architecture, 4.3.1 CD Management Server, 4.3.2 Swap Management Server, 4.3 Fuego-Specific MCP Extensions, 4.4 MCP Integration Patterns, 4. MCP Server Integration Points, code:typescript (interface CDMCPServer {), code:typescript (interface SwapMCPServer {) (+4 more)
+
+### Community 305 - "Community 305"
+Cohesion: 0.3
+Nodes (8): FuegoBlockchainSpecialist, main(), Main expert system integrating all Fuego blockchain analysis tools, Analyze CD interest scenario, Calculate effective APY from actual interest earned, Generate comprehensive expert analysis report, Test the complete specialist system, test_complete_specialist()
+
+### Community 306 - "Community 306"
+Cohesion: 0.21
+Nodes (8): mode: 'noburn', 'treasury_burn', 'divert_burn, sim(), xfg_paths(), frun(), health(), main(), health(), sim()
+
+### Community 307 - "Community 307"
+Cohesion: 0.17
+Nodes (11): Architecture, CLI Commands, code:block1 (┌───────────────────────────────────────────────────────────), code:block18 (Create → WAITING (need 2 payments from all)), Core Parameters (Locked), Implementation Decision Points, Overview, Protocol Flow Summary (+3 more)
+
+### Community 308 - "Community 308"
+Cohesion: 0.23
+Nodes (6): IGDdata(), IGDendelt(), IGDstartelt(), printIGD(), burptest(), main()
+
+### Community 309 - "Community 309"
+Cohesion: 0.24
+Nodes (5): BchBalance, BchClient, bchRpcRequest, bchRpcResponse, BchUtxo
+
+### Community 310 - "Community 310"
+Cohesion: 0.26
+Nodes (11): bytesEqual(), eip55ChecksumValid(), keccak256Checksum(), keccak256Hex(), parseAmount(), parseAmountAtomic(), validateBCHAddress(), validateETHAddress() (+3 more)
+
+### Community 311 - "Community 311"
+Cohesion: 0.17
+Nodes (11): Add the Framework to Your Project #, Build and Go #, code:block1 (svn checkout http://googletest.googlecode.com/svn/trunk/ goo), code:block2 ([Computer:svn] user$ svn propget svn:externals trunk), code:block3 ([Session started at 2008-08-15 06:23:57 -0600.]), code:block4 ([Session started at 2008-08-06 06:36:13 -0600.]), Get the Source #, Make a Test Target # (+3 more)
+
+### Community 312 - "Community 312"
+Cohesion: 0.17
+Nodes (11): Agree on terms off-chain, code:block1 (initiate <counterparty_fuego_address_or_alias> <xfg_amount> ), code:bash (curl -X POST http://127.0.0.1:28080/getswapstatus \), code:block3 (refund YOUR_SWAP_ID), Expected timeline, If the counterparty goes offline, Initiate the swap (XFG side), Monitor progress (+3 more)
+
+### Community 313 - "Community 313"
+Cohesion: 0.17
+Nodes (11): code:shell (./autogen.sh && ./configure --enable-dev-mode && make distch), code:shell (dir=$(mktemp -d)), code:shell (dir=$(mktemp -d)), code:shell (tools/check-abi.sh), code:block5 (RELEASE_COMMIT=<merge commit of step 1>), code:block6 (git checkout -b $MAJOR.$MINOR v$MAJOR.$MINOR.$((PATCH - 1))), code:block7 (git checkout $MAJOR.$MINOR && git pull), Maintenance release (+3 more)
+
+### Community 314 - "Community 314"
+Cohesion: 0.24
+Nodes (11): CryptoNote(), check_host_name(), verify_host(), verify_host_with_common_name(), verify_host_with_subject_alt_name(), coalesce_ranges(), if(), range_error() (+3 more)
+
+### Community 315 - "Community 315"
+Cohesion: 0.35
+Nodes (9): AssertNoFatalFailureIgnoresFailuresInOtherThreads(), CheckTestFailureCount(), ExpectKeyAndValueWereRecordedForId(), FailingThread(), GenerateFatalFailureInAnotherThread(), IdToKey(), IdToString(), ManyAsserts() (+1 more)
+
+### Community 316 - "Community 316"
+Cohesion: 0.24
+Nodes (7): chacha8(), encrypt(), importLegacyKeys(), loadKeysFromFile(), verify_keys(), encryptAndSaveContainerData(), loadAndDecryptContainerData()
+
+### Community 317 - "Community 317"
+Cohesion: 0.27
+Nodes (5): createdAt(), currentState(), isTerminal(), isValidTransition(), transition()
+
+### Community 318 - "Community 318"
+Cohesion: 0.18
+Nodes (11): code:bash (curl -X POST http://localhost:8070/getDeposit \), code:json ({), code:json ({), code:cpp (// Create staged unlock for a deposit), code:cpp (// Process unlocks at current height), code:cpp (// Convert basic deposits to enhanced deposits), Enhanced Deposit Management, Processing Unlocks (+3 more)
+
+### Community 319 - "Community 319"
+Cohesion: 0.35
+Nodes (7): fillBlockDetails(), fillTransactionDetails(), fillTxExtra(), getMixin(), getPaymentId(), median(), f_getMixin()
+
+### Community 320 - "Community 320"
+Cohesion: 0.27
+Nodes (4): TearDown(), TearDownEnvironment(), GTestXMLOutFilesTest, Unit test for Google Test's XML output functionality.
+
+### Community 321 - "Community 321"
+Cohesion: 0.18
+Nodes (4): NodeObserver, NodeRpcProxyTest, PoolChangedObserver, TEST_F()
+
+### Community 322 - "Community 322"
 Cohesion: 0.33
 Nodes (10): deserializePeerMessage(), dleqToHex(), hexPod(), hexToDleq(), hexToNonce(), hexToPartialSig(), nonceToHex(), partialSigToHex() (+2 more)
 
-### Community 171 - "Community 171"
-Cohesion: 0.31
-Nodes (10): checkOutputKey(), createTransfers(), findMyOutputs(), getGlobalIndices(), getSyncStart(), onNewBlocks(), onPoolUpdated(), preprocessOutputs() (+2 more)
-
-### Community 172 - "Community 172"
-Cohesion: 0.27
-Nodes (5): analyzeSpendPatterns(), createLogarithmicAgeBins(), createSpendPatternFromHistory(), normalizeProbabilities(), updatePattern()
-
-### Community 174 - "Community 174"
+### Community 323 - "Community 323"
 Cohesion: 0.18
-Nodes (11): Normalize(), Removes all stack traces from a Google Test program's output., Removes all traces of stack traces from a Google Test program's output., Removes all time information from a Google Test program's output., Normalizes output (the output of gtest_output_test_.exe)., Changes all Windows/Mac line endings in s to UNIX line endings., Removes all file location info from a Google Test program's output.    Args:, RemoveLocations() (+3 more)
+Nodes (10): 11. Key Design Decisions, 12. Dependencies, 13. Testing Strategy, 1. Architecture Overview, 9. File Structure, code:block1 (┌───────────────────────────────────────────────────────────), code:block15 (fuego-prover/), code:toml (# fuego-lp-circuit/Cargo.toml) (+2 more)
 
-### Community 176 - "Community 176"
+### Community 324 - "Community 324"
+Cohesion: 0.33
+Nodes (7): IWalletRemoveObserverGuard::removeObserver(), openOutputFileStream(), prepareFileNames(), SendCompleteResultObserver::sendTransactionCompleted(), SendCompleteResultObserver::wait(), storeWallet(), walletSaveWrapper()
+
+### Community 325 - "Community 325"
+Cohesion: 0.31
+Nodes (8): testnet_wallet::burn(), testnet_wallet::cold(), testnet_wallet::elderking_ceremony(), testnet_wallet::list_burns(), testnet_wallet::register_testnet_commands(), testnet_wallet::swap_tui(), testnet_wallet::testnet_wallet(), testnet_wallet::unstake()
+
+### Community 326 - "Community 326"
+Cohesion: 0.18
+Nodes (11): 🎛️ Available Profiles, Basic Node (Default), code:bash (./fuego-docker-setup.sh start node), code:bash (./fuego-docker-setup.sh start wallet), code:bash (./fuego-docker-setup.sh start web), code:bash (./fuego-docker-setup.sh start monitoring), code:bash (./fuego-docker-setup.sh start full), Everything (Full Stack) (+3 more)
+
+### Community 327 - "Community 327"
+Cohesion: 0.18
+Nodes (11): Check Status, Clean Up (Remove Everything), code:bash (./fuego-docker-setup.sh restart), code:bash (./fuego-docker-setup.sh clean), code:bash (./fuego-docker-setup.sh status), code:bash (# Node logs), code:bash (./fuego-docker-setup.sh stop), 🛠️ Management Commands (+3 more)
+
+### Community 328 - "Community 328"
+Cohesion: 0.24
+Nodes (6): clear(), init(), load(), save(), setStagedUnlockPreference(), StagedUnlockStorage()
+
+### Community 329 - "Community 329"
+Cohesion: 0.29
+Nodes (6): dHW(), dPixel(), newSplashModel(), splashTick(), splashModel, splashTickMsg
+
+### Community 330 - "Community 330"
+Cohesion: 0.2
+Nodes (9): GTestOutputTest, NormalizeToCurrentPlatform(), Removes compiler-specific type info from Google Test program's output.    Args:, Normalizes platform specific output details for easier comparison., Removes test counts from a Google Test program's output., Removes output of specified tests from a Google Test program's output.    This f, RemoveMatchingTests(), RemoveTestCounts() (+1 more)
+
+### Community 331 - "Community 331"
+Cohesion: 0.18
+Nodes (11): code:block3 (// Returns true iff m and n have no common divisors except 1), code:block4 (namespace testing {), code:block5 (::testing::AssertionResult IsEven(int n) {), code:block6 (bool IsEven(int n) {), code:block7 (::testing::AssertionResult IsEven(int n) {), code:block8 (// Returns the smallest prime common divisor of m and n,), code:block9 (EXPECT_PRED_FORMAT2(AssertMutuallyPrime, b, c);), Predicate Assertions for Better Error Messages ## (+3 more)
+
+### Community 332 - "Community 332"
+Cohesion: 0.38
+Nodes (8): Map file extension to language, bytes_to_words(), checksum_test(), create_checksum_index(), find_seed_language(), get_is_old_style_seed(), get_language_list(), words_to_bytes()
+
+### Community 333 - "Community 333"
+Cohesion: 0.18
+Nodes (11): 10. Burn-to-Mint iMOB is Sufficient Backstop at Launch, 1. All Three AMM Pools at Launch, 2. Defer Path B (CDP Loans) to Post-Launch, 3. Defer Maelisandra & wHEAT Bridge to Post-Launch, 4. Defer JIT Zaps to Post-Launch, 5. Public AMM Swap Amounts in v1, 6. iMOB DAO Governance Limited to Treasury Fee Routing Only, 7. Hard-Code Initial AMM Pool Bootstrapping (+3 more)
+
+### Community 334 - "Community 334"
+Cohesion: 0.18
+Nodes (10): Architecture, Build, code:bash (# Connect to local node), code:block2 (swapxfg/), code:bash (cd swapxfg), Commands, Features, Protocol (+2 more)
+
+### Community 335 - "Community 335"
 Cohesion: 0.22
-Nodes (7): Bool(), PredFormatFunction1(), PredFunction1(), Predicate1Test, Predicate2Test, Predicate3Test, Predicate4Test
+Nodes (8): getAccountAddressAsStr(), is_coinbase(), parse_hash256(), parseAccountAddressString(), accountAddressAsString(), print_tx(), get_tx_proof(), on_get_tx_proof()
 
-### Community 177 - "Community 177"
-Cohesion: 0.27
-Nodes (10): withTimeout(), externalRelayNotifyToAll(), forEachConnection(), invoke_notify_to_peer(), pushMessage(), relay_notify_to_all(), timedSync(), f() (+2 more)
+### Community 336 - "Community 336"
+Cohesion: 0.18
+Nodes (11): 5.1 Multi-Agent Architecture, 5.3.1 CD Interest Agent, 5.3.2 Privacy Feature Agent, 5.3 Agent Specializations for Fuego, 5.4 Coordination Strategies, 5.5 Failure Handling and Recovery, 5. Agent Orchestration Patterns, code:block18 (┌───────────────────────────────────────────────────────────) (+3 more)
 
-### Community 179 - "Community 179"
-Cohesion: 0.36
-Nodes (6): GetRandomOutputs(), getHeight(), httpPost(), daemonPost(), sendTransfer(), walletJsonRpc()
+### Community 337 - "Community 337"
+Cohesion: 0.18
+Nodes (10): code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), GET /get_all_aliases, POST /get_alias (+2 more)
 
-### Community 180 - "Community 180"
-Cohesion: 0.36
-Nodes (10): BchRpcClient(), decodeRawTransaction(), importAddress(), listUnspent(), lockHtlc(), rpcCall(), signBchInput(), wifToPrivKey() (+2 more)
+### Community 338 - "Community 338"
+Cohesion: 0.18
+Nodes (10): Check incoming transactions, Check your balance, code:block1 (balance), code:block2 (transfer <address> <amount>), code:block3 (transfer fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pn), code:block4 (transfer @alice 1.5), code:bash (curl -s http://127.0.0.1:28280/get_transaction_details_by_ha), code:block6 (show_incoming_transfers) (+2 more)
 
-### Community 181 - "Community 181"
-Cohesion: 0.49
-Nodes (9): getBodyLen(), parseResponseStatusFromString(), readBody(), readHeader(), readHeaders(), readWord(), receiveRequest(), receiveResponse() (+1 more)
+### Community 339 - "Community 339"
+Cohesion: 0.18
+Nodes (10): code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), GET /get_epoch_history, GET /get_fee_pool_info (+2 more)
 
-### Community 182 - "Community 182"
+### Community 340 - "Community 340"
+Cohesion: 0.18
+Nodes (9): Adding a new daemon endpoint, code:block1 (src/Rpc/CoreRpcServerCommandsDefinitions.h), code:cpp ({"/your_endpoint", {&RpcServer::on_your_endpoint, false}},), code:cpp (// Fee pool state), code:cpp (// In command struct request/response:), Command definitions, Key access patterns, Serialization macros (+1 more)
+
+### Community 341 - "Community 341"
+Cohesion: 0.33
+Nodes (10): detail(), is_readable(), detail(), duration(), is_readable(), is_socket_alive(), is_ssl_peer_could_be_closed(), select_read() (+2 more)
+
+### Community 342 - "Community 342"
 Cohesion: 0.22
-Nodes (5): Scan the entire codebase and build the map, Build dependency graph from parsed information, Build hierarchical file tree, Parse C++ files for include statements, Scan the entire codebase
+Nodes (4): endArray(), endObject(), insertOrPush(), operator()()
 
-### Community 183 - "Community 183"
+### Community 343 - "Community 343"
+Cohesion: 0.24
+Nodes (3): binary(), checkedRead(), operator()()
+
+### Community 344 - "Community 344"
+Cohesion: 0.2
+Nodes (10): 2A — Asset Identification, 2B — HEAT Minting Engine, 2C — Per-Asset Decoy Pool Design, 2D — Privacy Unification, 2E — Fail-Safe Isolation (Mandatory Consensus Rules), code:cpp (const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_NUM = 1;   // 0), code:cpp (enum class AssetId : uint8_t {), code:block9 (HEAT_minted = XFG_burned / RedemptionPrice) (+2 more)
+
+### Community 345 - "Community 345"
+Cohesion: 0.2
+Nodes (9): code:block20 (Phase 0  ██                           v11 Fork Scaffolding  ), Deferred to Post-Launch (v12+), File Inventory, Fuego Two-Coin Ecosystem — Phased Development Plan, Go Files Modified, Modified Files (13 key files), New Files (11 total), References (+1 more)
+
+### Community 346 - "Community 346"
+Cohesion: 0.2
+Nodes (10): 0A — Define v11 fork height, 0B — Tag space audit, 0C — Verify COLD decoy pool, code:cpp (const uint32_t UPGRADE_HEIGHT_V11 = <TBD>;  // Set before te), code:cpp (uint32_t m_upgradeHeightV11;), code:cpp (uint32_t upgradeHeightV11 = std::numeric_limits<uint32_t>::m), code:cpp (case BLOCK_MAJOR_VERSION_11: return m_upgradeHeightV11;), code:cpp (m_upgradeHeightV11 = <next sequential testnet height>;) (+2 more)
+
+### Community 347 - "Community 347"
+Cohesion: 0.2
+Nodes (9): code:bash (cmake /home/ar/fuego -B /home/ar/fuego/build -j$(nproc)), code:bash (git commit -m "test: validate transferable CD + fee pool on ), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), code:cpp (// CD Fee Pool — funded by atomic swap (HTLC) fees, distribu), code:bash (git add src/CryptoNoteConfig.h), Task 13: Testnet Validation, Task 1.5: Propagate New Type Through All Variant Visitors, Task 2: Add Fee Pool Constants (+1 more)
+
+### Community 348 - "Community 348"
+Cohesion: 0.22
+Nodes (7): CDInterestCalculator, Estimate Annual Percentage Yield based on current epoch fees.                  F, Expert system for CD interest calculations, Calculate epoch fee rate based on swap fees and total CD locked., Calculate CD interest based on epoch fee rates.                  Formula: intere, Test CD interest calculations, test_cd_interest_calculator()
+
+### Community 349 - "Community 349"
+Cohesion: 0.2
+Nodes (9): Clarification: On-Fuego-Chain Aliases for Elderfiers, code:block1 (Elderfier address: XFG1a2b3c4d5e6f...), code:cpp (std::set<std::string> RESERVED_ALIASES = {), code:cpp (// In CommitmentIndex.h), Fuego Chain Alias System (On-Blockchain), Part 12: Comparison: On-Fuego vs. L1/L2, Part 3: Storage in CommitmentIndex, Part 9: Reserved Aliases (+1 more)
+
+### Community 350 - "Community 350"
+Cohesion: 0.2
+Nodes (9): 12.1 For Discussion, 12. Open Questions & Design Decisions, 13.1 Potential Features, 13.2 Integration Points, 13. Future Enhancements, 14. File Modifications Summary, 15. Success Criteria, Fuego Group Aliases (Multi-Sig Aliases) Implementation Plan (+1 more)
+
+### Community 351 - "Community 351"
+Cohesion: 0.42
+Nodes (7): clear(), getch(), is_cin_tty(), PasswordContainer(), read_from_file(), read_from_tty(), read_password()
+
+### Community 352 - "Community 352"
+Cohesion: 0.38
+Nodes (8): decrypt(), deserialize(), encrypt(), loadKeys(), saveKeys(), serialize(), throwIfKeysMissmatch(), verifyKeys()
+
+### Community 353 - "Community 353"
+Cohesion: 0.2
+Nodes (9): code:block1 (gen_proof <burn_id>), code:block2 (gen_proof 0), code:bash (./xfg-stark-cli prove --input <proof_data_file> --output my_), Overview, Proof validity, Step 1: Generate proof data from simplewallet, Step 2: Generate the STARK proof, Step 3: Submit to COLDAO (+1 more)
+
+### Community 354 - "Community 354"
+Cohesion: 0.2
+Nodes (9): code:bash (curl -X POST http://127.0.0.1:28080/rollover_deposit \), code:json ({), code:bash (curl -X POST http://127.0.0.1:28080/get_maturing_deposits \), Concrete example, Deposit must be mature, How to rollover, Privacy of rollover, Rollover vs withdraw comparison (+1 more)
+
+### Community 355 - "Community 355"
+Cohesion: 0.2
+Nodes (9): code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), GET /get_maturing_deposits, GET /getdeposits, POST /estimate_cd_yield (+1 more)
+
+### Community 356 - "Community 356"
+Cohesion: 0.24
+Nodes (3): poolEventTypeToString(), poolIdFromHex(), poolIdToHex()
+
+### Community 357 - "Community 357"
+Cohesion: 0.2
+Nodes (9): After the burn, Burn command, code:block1 (burn <amount>), code:block2 (burn 8), code:block3 (list_burns), code:block4 (burn_info 0), Store your deposit secret, Verify the burn was recorded (+1 more)
+
+### Community 358 - "Community 358"
+Cohesion: 0.2
+Nodes (9): Address validation, Alias security, code:bash (# Do NOT do this on a public server), code:bash (# Example valid address (98 chars, starts with f)), code:block3 (# Resolve an alias before sending), Daemon RPC port, Privacy model, Seed phrase (+1 more)
+
+### Community 360 - "Community 360"
+Cohesion: 0.28
+Nodes (3): binary(), checkedWrite(), operator()()
+
+### Community 361 - "Community 361"
+Cohesion: 0.36
+Nodes (5): cadc(), cadd(), check_hash(), mul(), main()
+
+### Community 362 - "Community 362"
+Cohesion: 0.22
+Nodes (9): 5A — HEAT-Denominated CDs, 5B — Epoch Boundary Buyback (Core Mechanism), 5C — Yield Currency Rule, 5D — Behavior Table, code:cpp (const uint64_t HEAT_CD_TIER_0 =  16,000,000;    // 1.6 HEAT), code:block19 (1. m_currentEpochSwapFees (XFG) accumulated from atomic swap), Modify, Phase 5: HEAT-Denominated CDs & PI-Modulated Buyback (+1 more)
+
+### Community 363 - "Community 363"
+Cohesion: 0.22
+Nodes (9): 10. Implementation Phases, Phase 1: Core Types (Week 1-2), Phase 2: Merkle Trees (Week 2-3), Phase 3: SP1 Circuit (Week 3-5), Phase 4: PoolOrganizer Integration (Week 5-6), Phase 5: Prover CLI (Week 6-7), Phase 6: On-Chain Verification (Week 7-8), Phase 7: Privacy Hardening (Week 8-9) (+1 more)
+
+### Community 364 - "Community 364"
+Cohesion: 0.22
+Nodes (9): 1. Create Data Directory, 2. Create Configuration File, 3. Start the Daemon, 4. Verify Node Status, code:bash (# Create data directory), code:bash (# Create config file), code:bash (# Start daemon in background), code:bash (# Check if daemon is responding) (+1 more)
+
+### Community 365 - "Community 365"
+Cohesion: 0.22
+Nodes (9): 1. First Boot, 2. Update System, 3. Configure System, 4. Set Hostname, code:bash (# Connect to your Pi via SSH or monitor), code:bash (# Update package lists), code:bash (# Run configuration tool), code:bash (# Set hostname to fuego-node) (+1 more)
+
+### Community 366 - "Community 366"
+Cohesion: 0.22
+Nodes (9): code:bash (# Check what's using the port), code:bash (# Fix volume permissions), code:bash (# Check logs), code:bash (# Clean up Docker), code:bash (# Add to docker-compose.fuego-docker.yml), code:bash (# Use faster storage), Common Issues, Performance Tuning (+1 more)
+
+### Community 367 - "Community 367"
+Cohesion: 0.28
+Nodes (3): createNode(), NodeInitObserver, NodeRpcStub
+
+### Community 368 - "Community 368"
+Cohesion: 0.25
+Nodes (4): Build a simple text-based index, Create a simple index of key Fuego files, Simple keyword search, SimpleFuegoRAG
+
+### Community 369 - "Community 369"
+Cohesion: 0.22
+Nodes (5): Claimed, HtlcError, HtlcState, Locked, Refunded
+
+### Community 370 - "Community 370"
+Cohesion: 0.25
+Nodes (3): base64Decode(), formatTimestamp(), is_base64()
+
+### Community 371 - "Community 371"
+Cohesion: 0.42
+Nodes (8): _rotr(), soft_aesenc(), soft_aeskeygenassist(), sub_word(), _mm_aeskeygenassist_si128(), _mm_cvtsi128_si32(), _mm_set_epi32(), _mm_set_epi8()
+
+### Community 372 - "Community 372"
 Cohesion: 0.33
 Nodes (7): Candle, BucketCandles(), TestBucketCandles(), TestBucketCandlesEmpty(), TestBucketCandlesGapFilling(), TestBucketCandlesOrdering(), TestBucketCandlesSingleTrade()
 
-### Community 184 - "Community 184"
-Cohesion: 0.28
-Nodes (6): padd(), place_length(), deinit_random(), generate_system_random_bytes(), init_random(), setup_random()
-
-### Community 185 - "Community 185"
-Cohesion: 0.39
-Nodes (7): cn_fast_hash(), hash_permutation(), hash_process(), tree_branch(), tree_hash(), tree_hash_from_branch(), tree_depth()
-
-### Community 187 - "Community 187"
-Cohesion: 0.31
-Nodes (4): addHeader(), setBody(), getErrorBody(), setStatus()
-
-### Community 188 - "Community 188"
+### Community 373 - "Community 373"
 Cohesion: 0.25
 Nodes (5): GTestXMLTestCase, Fetches all of the child nodes of element, a DOM Element object.     Returns the, Normalizes Google Test's XML output to eliminate references to transient     inf, Base class for tests of Google Test's XML output functionality., Asserts that actual_node (a DOM node object) is equivalent to     expected_node
 
-### Community 189 - "Community 189"
-Cohesion: 0.29
-Nodes (4): Build a simple text-based index, Create a simple index of key Fuego files, Simple keyword search, SimpleFuegoRAG
+### Community 374 - "Community 374"
+Cohesion: 0.22
+Nodes (9): code:block38 (TEST(MyCodeTest, TestFoo) {), code:block39 (void TestFooHelper(bool flag_value) {), code:block40 (class FooTest : public ::testing::TestWithParam<const char*>), code:block41 (TEST_P(FooTest, DoesBlah) {), code:block42 (INSTANTIATE_TEST_CASE_P(InstantiationName,), code:block43 (const char* pets[] = {"cat", "dog"};), Creating Value-Parameterized Abstract Tests ##, How to Write Value-Parameterized Tests ## (+1 more)
 
-### Community 191 - "Community 191"
+### Community 375 - "Community 375"
+Cohesion: 0.22
+Nodes (9): 4. The Listener Platform (RP1/Oasis Vibes), Identity, Interactions, Leaderboards, Philosophy, Quadratic cluster-decay (deferred research fallback, not primary), Research: prior art for "wallet = user" sunk-cost identity, Sybil Defense: Wallet = User, and using the same wallet is the path of least resistance (decided) (+1 more)
+
+### Community 376 - "Community 376"
+Cohesion: 0.22
+Nodes (9): 8. App Architecture: Mobile-First Full Node, code:block10 (┌─────────────────────────────────────┐), code:block11 (libfuego_core (Rust workspace)), code:block12 (1. Launch app                                  (~0.5s)), Desktop (Secondary Build of Same Core), Mobile (PRIMARY TARGET), Shared Rust Core (`libfuego` + companions), Startup Sequence (+1 more)
+
+### Community 377 - "Community 377"
+Cohesion: 0.22
+Nodes (9): code:cpp (static uint64_t computeSwapFee(uint64_t claimAmount) {), code:cpp (// Accumulate swap fees from HTLC claims/refunds into the fe), code:cpp (for (const auto& input : transaction.tx.inputs) {), code:cpp (if (out.target.type() == typeid(TransactionOutputCommitment)), code:cpp (if (output.target.type() == typeid(TransactionOutputCommitme), code:cpp (if (input.type() == typeid(TransactionInputCommitmentSpend))), code:bash (git add src/CryptoNoteCore/Blockchain.h src/CryptoNoteCore/B), code:cpp (// Fee pool: accumulates swap fees from HTLC claims, distrib) (+1 more)
+
+### Community 378 - "Community 378"
+Cohesion: 0.22
+Nodes (9): **1. Normal Operation**, **2. Hash Rate Spike**, **3. Hash Rate Drop**, **4. Block Stealing Attempt**, **5. Oscillating Hash Rate**, **6. Gradual Hash Rate Change**, **7. Edge Cases**, **8. Stress Test** (+1 more)
+
+### Community 379 - "Community 379"
+Cohesion: 0.22
+Nodes (9): 10. Implementation Phases, Phase 1: Core Types (Week 1-2), Phase 2: Merkle Trees (Week 2-3), Phase 3: SP1 Circuit (Week 3-5), Phase 4: PoolOrganizer Integration (Week 5-6), Phase 5: Prover CLI (Week 6-7), Phase 6: On-Chain Verification (Week 7-8), Phase 7: Privacy Hardening (Week 8-9) (+1 more)
+
+### Community 380 - "Community 380"
+Cohesion: 0.22
+Nodes (9): code:block11 (Error: Tor is not installed on this system), code:block12 (Tor Error: Failed to connect to Tor), code:block13 (Connection Error: Failed to connect to SOCKS5 proxy), code:block14 (Hidden service creation failed), **Common Issues**, **Connection Failed**, **Hidden Service Issues**, **SOCKS5 Proxy Error** (+1 more)
+
+### Community 381 - "Community 381"
+Cohesion: 0.22
+Nodes (9): Bundling Logic, code:cpp (std::error_code TandaManager::createJointCd(uint64_t groupId), code:cpp (uint64_t TandaManager::calculateProRataPayout(const Tanda& t), code:cpp (std::error_code TandaManager::distributePenalties(uint64_t g), code:cpp (bool TandaManager::isCDTermExpired(const Tanda& tanda, uint3), Key Algorithms, Lock Check, Penalty Distribution (+1 more)
+
+### Community 382 - "Community 382"
+Cohesion: 0.22
+Nodes (9): Implementation Steps, Phase 1: Core Module (Weeks 1-2), Phase 2: CD Integration (Week 2), Phase 3: Payout Logic (Week 3), Phase 4: Withdrawal Logic (Week 3), Phase 5: RPC Endpoints (Week 4), Phase 6: CLI Integration (Weeks 4-5), Phase 7: Gossip & Sync (Week 5) (+1 more)
+
+### Community 383 - "Community 383"
+Cohesion: 0.31
+Nodes (5): BlockchainDataProvider, calculateOptimalRingSize(), getTargetRingSizes(), isApprovedRingSize(), isRingSizeAchievable()
+
+### Community 384 - "Community 384"
+Cohesion: 0.22
+Nodes (8): Check your LP share, code:bash (curl -X POST http://127.0.0.1:28080/lp_deposit \), code:bash (curl -X POST http://127.0.0.1:28080/get_lp_position \), code:bash (curl -X POST http://127.0.0.1:28080/lp_withdraw \), Deposit into the pool, Impermanent loss, When to provide liquidity, Withdraw liquidity
+
+### Community 385 - "Community 385"
 Cohesion: 0.25
-Nodes (6): InvokeWithModifiedEnv(), Runs the given function and arguments in a modified environment., Runs a test program shard and returns exit code and a list of tests run., Tests that the shard file is created if specified in the environment., Tests that the shard file is created with the "list_tests" flag., RunWithSharding()
+Nodes (3): main(), test_parsing(), DisplayNameValueList()
 
-### Community 192 - "Community 192"
+### Community 386 - "Community 386"
+Cohesion: 0.42
+Nodes (6): build_chunked_response(), build_content(), build_crap(), handle_http_connection(), main(), send_response()
+
+### Community 387 - "Community 387"
+Cohesion: 0.47
+Nodes (8): NewBchClient(), bchMockServer(), TestBchBroadcastTx(), TestBchErrorResponse(), TestBchGetBalance(), TestBchGetBalanceUnconfirmed(), TestBchIsConnected(), TestBchIsConnectedFail()
+
+### Community 388 - "Community 388"
+Cohesion: 0.22
+Nodes (8): Base URL, code:bash (curl -X POST http://127.0.0.1:28080/endpoint_name \), code:json ({), code:python (# Convert XFG to atomic units), Endpoint groups, Request format, Response format, Units
+
+### Community 389 - "Community 389"
+Cohesion: 0.42
+Nodes (8): canConnect(), getWalletsAddresses(), isWalletEligible(), main(), optimizeWallet(), processWallets(), run_optimizer(), validAddress()
+
+### Community 390 - "Community 390"
 Cohesion: 0.29
-Nodes (7): amountFound(), AutoPrintTimer, AutoTimer, getAccountSubscription(), getAccountSubscriptionWithSyncStart(), INodeGlobalIndexStub, TransfersConsumerPerformanceTest
+Nodes (4): main(), MyEnvironment, RunAllTests(), MyEnvironment
 
-### Community 193 - "Community 193"
-Cohesion: 0.32
-Nodes (7): TestNetworkBuilder(), dumpBlockchainInfo(), loadBlockchainInfo(), NodeTest, readBlockchainInfo(), startNetworkWithBlockchain(), storeBlockchainInfo()
+### Community 391 - "Community 391"
+Cohesion: 0.29
+Nodes (5): EnvironmentInvocationCatcher, EventRecordingListener, ListenerTest, main(), VerifyResults()
 
-### Community 194 - "Community 194"
-Cohesion: 0.32
-Nodes (3): openOutputFileStream(), storeWallet(), walletSaveWrapper()
+### Community 392 - "Community 392"
+Cohesion: 0.57
+Nodes (5): appendCompactSize(), appendLE32(), appendLE64(), computeForP2sh(), hash256()
 
-### Community 195 - "Community 195"
+### Community 393 - "Community 393"
+Cohesion: 0.25
+Nodes (7): 🔧 Hardware Requirements, Minimum Requirements, 🎯 Next Steps, 🍓 Raspberry Pi Fuego Node Setup Guide, Recommended Setup, 📞 Support, 📋 Table of Contents
+
+### Community 394 - "Community 394"
+Cohesion: 0.25
+Nodes (8): Architecture, code:block1 (xfg-stark-cli), code:block2 (Input: "I burned X XFG and got Y HEAT tokens"), code:block3 (Input: "I locked X XFG for Y term and got Z CD tokens"), code:block4 (Proof Data (JSON)), Part 1: Current xfg-stark Capabilities, What xfg-stark Currently Does, What xfg-stark Proves Today
+
+### Community 395 - "Community 395"
+Cohesion: 0.25
+Nodes (8): 1. ECDSA in Zero-Knowledge, 2. Proof Size & Verification Time, 3. Winterfell Framework Limitations, code:block5 (Input: "My alias is FIRENODE"), Part 2: Can We Adapt xfg-stark for Alias Proofs?, Technical Challenges, What We'd Need to Prove, Why This is Harder Than Burn/Cold Proofs
+
+### Community 396 - "Community 396"
+Cohesion: 0.25
+Nodes (7): Conclusion, Executive Summary, Part 10: Decision Matrix, Part 8: Can We Extend xfg-stark Instead?, What Would Be Required, Why This Is Suboptimal, ZK-STARK Alias System Feasibility Analysis
+
+### Community 397 - "Community 397"
+Cohesion: 0.25
+Nodes (7): code:bash (# Safe — localhost only (default)), code:bash (ssh -L 28080:127.0.0.1:28080 user@your-server), Deposit secrets, RPC port, Seed phrase, Verify addresses before sending, Wallet file
+
+### Community 398 - "Community 398"
 Cohesion: 0.36
 Nodes (5): get_nix_version_display_string(), get_os_version_string(), get_special_folder_path(), get_windows_version_display_string(), getDefaultDataDirectory()
 
-### Community 196 - "Community 196"
+### Community 399 - "Community 399"
+Cohesion: 0.25
+Nodes (8): code:block65 (<testsuites name="AllTests" ...>), code:block66 (TEST(MathTest, Addition) { ... }), code:block67 (<?xml version="1.0" encoding="UTF-8"?>), Colored Terminal Output ###, Controlling Test Output ##, Generating an XML Report ###, Suppressing the Elapsed Time ###, Suppressing UTF-8 Text Output
+
+### Community 400 - "Community 400"
+Cohesion: 0.25
+Nodes (7): 1. The Decision, 5. Where Things Live, 9. What We Shelved (Can Revisit Later), DIGM App Layer (off-chain, anchored), DIGM on Fuego: Architecture Quick Guide, Fuego L1 (consensus-level), HEAT clarification (updated)
+
+### Community 401 - "Community 401"
+Cohesion: 0.25
+Nodes (8): 7. Audio Storage: Invisible P2P over I2P (Decided), Availability Model, code:block8 (┌─────────────────────────────────────────────────────────┐), code:block9 (Album published → artist node is sole seeder), How It Works, Seeding Rules (All Automatic, No User Config), Technical Stack, Why Not Something Else
+
+### Community 402 - "Community 402"
+Cohesion: 0.25
+Nodes (7): Context, Fuego Tri-Token Dev Guide: HEAT Colored Coin, Grand Central DEX, iMOB Inverse Token, Key Design Decisions (Resolved), Launch Order, Summary: All New Files, Summary: Key Modified Files, Why 0.5 XFG per HEAT (Not 1:1)
+
+### Community 403 - "Community 403"
+Cohesion: 0.25
+Nodes (8): code:block8 (Error = (MarketPrice - RedemptionPrice) / RedemptionPrice), code:cpp (// PI Controller tuning for 8.8M XFG supply), Constants (add to `src/CryptoNoteConfig.h`), Core Logic, Create, Modify, Phase 3: PI Controller (Epoch-Based Redemption Rate), Verify Phase 3
+
+### Community 404 - "Community 404"
+Cohesion: 0.25
+Nodes (8): 1A. Asset Identification, 1B. HEAT Minting Engine, 1C. Privacy Unification (0xD5 Decoy Pool), 1D. Fail-Safe Isolation (Mandatory), code:cpp (enum class AssetId : uint8_t {), code:block3 (HEAT_TIER_0 =  16,000,000   // 1.6 HEAT (0.8 XFG worth at in), Phase 1: HEAT as a Native Colored Coin (Hard Fork v11), Verify Phase 1
+
+### Community 405 - "Community 405"
+Cohesion: 0.25
+Nodes (8): 4A. iMOB Asset Type, 4B. iMOB Minting Engine, 4C. Privacy & Governance Isolation, code:cpp (const uint64_t IMOB_TIER_0 = AMOUNT_TIER_0;   // Same atomic), code:cpp (#define TX_EXTRA_IMOB_MINT   0xD6   // Burn HEAT to mint iMO), Modify, Phase 4: iMOB Inverse Token, Verify Phase 4
+
+### Community 406 - "Community 406"
+Cohesion: 0.25
+Nodes (8): 5A. HEAT-Denominated CDs, 5B. Yield Currency Rule, 5C. PI-Modulated Yield, Behavior, code:cpp (const uint64_t HEAT_CD_TIER_0 =  16,000,000;    // 1.6 HEAT), Modify, Phase 5: HEAT-Denominated CDs & PI-Modulated Yield, Verify Phase 5
+
+### Community 407 - "Community 407"
+Cohesion: 0.25
+Nodes (7): 🔧 **Configuration**, DMWDA Test Suite, Dynamic Multi-Window Difficulty Algorithm Comprehensive Testing, 📚 **References**, 🎯 **Success Criteria**, 🎯 **Test Objectives**, 📋 **Test Reports**
+
+### Community 408 - "Community 408"
+Cohesion: 0.25
+Nodes (8): 3.1 Skill Definition Schema, 3.2 Skill Development Pipeline, 3.3 Skill Categories for Fuego, 3.4 Skill Composition, 3. Skill Creation Pipeline, code:yaml (skill:), code:block7 (1. Skill Discovery), code:python (class SkillComposer:)
+
+### Community 409 - "Community 409"
+Cohesion: 0.25
+Nodes (8): 2.1 Hierarchical Context Stack, 2.2 Context Window Management, 2.3 Context Types for Fuego Development, 2.4 Context Switching Strategies, 2. Context Management Strategies, code:block3 (Project Context), code:python (class ContextManager:), code:python (def predict_context_needs(task_type):)
+
+### Community 410 - "Community 410"
+Cohesion: 0.29
+Nodes (5): P2PConsensusAnalyzer, Expert system for P2P networking and consensus, Analyze P2P network health.                  Args:             peer_count: Numbe, Test P2P network analysis, test_p2p_consensus_analyzer()
+
+### Community 411 - "Community 411"
+Cohesion: 0.5
+Nodes (5): ParallelProcessor, spawn(), TEST(), TestQueue_MPSC(), TestQueue_SPMC()
+
+### Community 412 - "Community 412"
+Cohesion: 0.25
+Nodes (8): **Basic Usage**, code:bash (# Ubuntu/Debian), code:bash (# Start Tor service), code:bash (# Copy configuration file), code:cpp (#include "TorIntegration.h"), **Installation**, **Prerequisites**, 🚀 **Quick Start**
+
+### Community 413 - "Community 413"
+Cohesion: 0.25
+Nodes (7): **Expected Overhead**, FuegoTor - Tor Integration for Fuego, 📄 **License**, 🔗 **Links**, **Optimization Tips**, 🌐 **Overview**, 📈 **Performance**
+
+### Community 414 - "Community 414"
 Cohesion: 0.29
 Nodes (6): camera, canvas, initHeroParticles(), onResize(), renderer, scene
 
-### Community 197 - "Community 197"
-Cohesion: 0.46
-Nodes (7): canConnect(), getWalletsAddresses(), isWalletEligible(), optimizeWallet(), processWallets(), run_optimizer(), validAddress()
+### Community 415 - "Community 415"
+Cohesion: 0.25
+Nodes (7): Claiming fees on withdrawal, code:bash (curl -X POST http://127.0.0.1:28080/get_epoch_history \), Estimating returns, Fee rate, Fee reinvestment, How fees accumulate, Viewing epoch fee history
 
-### Community 198 - "Community 198"
-Cohesion: 0.36
-Nodes (5): BlockchainDataProvider, calculateOptimalRingSize(), getTargetRingSizes(), isApprovedRingSize(), isRingSizeAchievable()
+### Community 416 - "Community 416"
+Cohesion: 0.25
+Nodes (8): code:cpp (bool IsPositive(int n) {), code:cpp (EXPECT_PRED1(IsPositive, 5);), code:cpp (EXPECT_PRED1(static_cast<bool (*)(int)>(IsPositive), 5);), code:cpp (template <typename T>), code:cpp (ASSERT_PRED1(IsNegative<int>, -5);), code:cpp (ASSERT_PRED2(GreaterThan<int, int>, 5, 0);), code:cpp (ASSERT_PRED2((GreaterThan<int, int>), 5, 0);), The compiler complains "no matching function to call" when I use ASSERT\_PREDn. How do I fix it? ##
 
-### Community 199 - "Community 199"
-Cohesion: 0.38
-Nodes (4): isInCheckpointZone(), add_checkpoint(), is_alternative_block_allowed(), load_checkpoints()
+### Community 417 - "Community 417"
+Cohesion: 0.25
+Nodes (7): Alias support, Available pairs, code:bash (# XFG ↔ XMR example), code:block2 (initiate @alice 10 XMR), Confirmation requirements, On-chain price discovery, Running a swap daemon
 
-### Community 200 - "Community 200"
-Cohesion: 0.52
-Nodes (5): bytes_to_words(), checksum_test(), create_checksum_index(), find_seed_language(), words_to_bytes()
+### Community 418 - "Community 418"
+Cohesion: 0.25
+Nodes (7): code:block1 (maturity_height = creation_height + (term_epochs × epoch_dur), code:block2 (Create deposit), Epoch and maturity, How interest is funded, Lifecycle, On-chain representation, What makes a CD different from staking
 
-### Community 201 - "Community 201"
+### Community 419 - "Community 419"
+Cohesion: 0.25
+Nodes (7): code:bash (curl -X POST http://127.0.0.1:28080/transfer_deposit \), How it works on-chain, Pricing a transfer, Privacy in transfers, Risks for buyers, Transfer process, What CD transfer enables
+
+### Community 420 - "Community 420"
+Cohesion: 0.25
+Nodes (7): code:bash (curl -X POST http://127.0.0.1:28080/refund_swap \), code:block2 (refund YOUR_SWAP_ID), Counterparty chain fees, Initiating a refund, Monitoring for stuck swaps, Swap persistence, XFG-side fee
+
+### Community 421 - "Community 421"
 Cohesion: 0.29
-Nodes (3): PrimeTable(), Factorial(), IsPrime()
+Nodes (7): code:cpp (class StagedDepositUnlock {), code:cpp (struct UnlockStage {), code:cpp (struct EnhancedDeposit {), EnhancedDeposit Structure, Implementation Details, StagedDepositUnlock Class, UnlockStage Structure
 
-### Community 202 - "Community 202"
-Cohesion: 0.48
-Nodes (6): getAccountInfo(), jsonGetBool(), jsonGetString(), jsonGetUint64(), loadChainClientConfig(), validateHex()
+### Community 422 - "Community 422"
+Cohesion: 0.29
+Nodes (7): code:bash (curl -X POST http://localhost:8070/createDeposit \), code:json ({), code:bash (curl -X POST http://localhost:8070/createDeposit \), code:json ({), Creating a Deposit with Optional Staged Unlock, Staged Unlock Deposit (Optional), Traditional Deposit (Default)
 
-### Community 205 - "Community 205"
+### Community 423 - "Community 423"
+Cohesion: 0.43
+Nodes (6): get_inputs_amount(), getInputAmount(), getInputsAmounts(), getOutputAmount(), getOutputCount(), f_on_transactions_pool_json()
+
+### Community 424 - "Community 424"
+Cohesion: 0.29
+Nodes (7): 4A — Core Algorithm, 4B — Constants, 4C — Integration, code:block16 (Error = (MarketPrice - RedemptionPrice) / RedemptionPrice), code:cpp (// PI Controller — hard-coded at launch, not governance-adju), Phase 4: PI Controller (Epoch-Based Redemption Rate), Verify Phase 4
+
+### Community 425 - "Community 425"
+Cohesion: 0.29
+Nodes (6): 1A — Create library, API, Modify, Phase 1: Fixed-Point Math Library (Q64.64), Rules, Verify
+
+### Community 426 - "Community 426"
+Cohesion: 0.29
+Nodes (6): 5.1 Circuit Entry Point, 5.2 AMM Invariant Verification (Commitment-Based), 5.3 Fee Verification, 5. SP1 Circuit Design, code:rust (// fuego-lp-circuit/src/main.rs), code:rust (fn verify_fees(state: &LpPoolState, events: &[DecryptedLpEve)
+
+### Community 427 - "Community 427"
+Cohesion: 0.29
+Nodes (7): 1. Monitoring Scripts, 2. Log Rotation, 3. Automatic Updates, code:bash (# Create monitoring script), code:bash (# Create logrotate configuration), code:bash (# Create update script), 📊 Monitoring & Maintenance
+
+### Community 428 - "Community 428"
+Cohesion: 0.29
+Nodes (7): 1. Clone Repository, 2. Create Build Directory, 3. Install Binaries, 🔨 Building Fuego, code:bash (# Create directory for Fuego), code:bash (# Create build directory), code:bash (# Create installation directory)
+
+### Community 429 - "Community 429"
+Cohesion: 0.29
+Nodes (7): 1. Install Build Tools, 2. Install Boost 1.86 (if needed), 3. Install Additional Dependencies, code:bash (# Install Python and other utilities), code:bash (# Install essential build tools), code:bash (# Check current Boost version), 📦 Dependencies Installation
+
+### Community 430 - "Community 430"
+Cohesion: 0.29
+Nodes (7): 1. Download Raspberry Pi OS, 2. Flash the OS, 3. Enable SSH (Optional), code:bash (# Download Raspberry Pi OS Lite (64-bit) from:), code:bash (# Using Raspberry Pi Imager (recommended)), code:bash (# Create empty 'ssh' file in boot partition), 🖥️ Operating System Setup
+
+### Community 431 - "Community 431"
+Cohesion: 0.29
+Nodes (7): 1. Firewall Setup, 2. Port Forwarding (Router), 3. Systemd Service (Optional), code:bash (# Install UFW if not present), code:block19 (Forward these ports to your Pi's IP:), code:bash (# Create systemd service file), ⚙️ Configuration
+
+### Community 432 - "Community 432"
+Cohesion: 0.29
+Nodes (7): code:block12 (npm install circom snarkjs), code:circom (// circuits/zkAlias.circom), code:bash (# One-time ceremony (can use public MPC)), code:solidity (// ZkAliasVerifier.sol (auto-generated from circuit)), code:solidity (// ElderfiersPrivacyRegistry.sol), If We Choose circom Route, Part 7: Integration Path for Phase 2
+
+### Community 433 - "Community 433"
+Cohesion: 0.29
+Nodes (7): code:block6 (Week 1: Learn Winterfell ECDSA constraints), code:block7 (Week 1: Learn circom + snarkjs), code:block8 (MVP (Weeks 1-4): Dynamigo + HEAT/COLD with hashed aliases), If We Defer Zk-Proofs (Recommended), If We Extend xfg-stark (Not Recommended), If We Use Hybrid (circom + snarkjs), Part 4: Timeline Analysis
+
+### Community 435 - "Community 435"
+Cohesion: 0.29
+Nodes (7): 🔧 Advanced Usage, code:bash (# Build image manually), code:bash (# Start development environment), code:bash (# Build for multiple platforms), Development Mode, Manual Docker Commands, Multi-Architecture Builds
+
+### Community 436 - "Community 436"
+Cohesion: 0.29
+Nodes (6): Available terms, Choosing a term, code:block1 (maturity_height = creation_height + (term_epochs × blocks_pe), Locked until maturity, Maturity height, What is an epoch
+
+### Community 437 - "Community 437"
+Cohesion: 0.43
+Nodes (6): GetSvnInfo(), GetSvnTrunk(), IsInGMockSvn(), IsInGTestSvn(), Returns the project name and the current SVN workspace's root path., Returns the current SVN workspace's trunk root path.
+
+### Community 438 - "Community 438"
+Cohesion: 0.29
+Nodes (7): code:block63 (TestCase1.), code:block64 (// Tests that Foo does Abc.), Listing Test Names ###, Running a Subset of the Tests ###, Selecting Tests ##, Temporarily Disabling Tests ###, Temporarily Enabling Disabled Tests ###
+
+### Community 439 - "Community 439"
+Cohesion: 0.29
+Nodes (7): code:block53 (FRIEND_TEST(TestCaseName, TestName);), code:block54 (// foo.h), code:block55 (namespace my_namespace {), code:block56 (namespace my_namespace {), Private Class Members ##, Static Functions ##, Testing Private Code #
+
+### Community 440 - "Community 440"
+Cohesion: 0.29
+Nodes (7): code:block59 (class MinimalistPrinter : public ::testing::EmptyTestEventLi), code:block60 (int main(int argc, char** argv) {), code:block61 (...), Defining Event Listeners ##, Extending Google Test by Handling Test Events #, Generating Failures in Listeners ##, Using Event Listeners ##
+
+### Community 441 - "Community 441"
+Cohesion: 0.29
+Nodes (7): code:block47 (template <typename T>), code:block48 (TYPED_TEST_CASE_P(FooTest);), code:block49 (TYPED_TEST_P(FooTest, DoesBlah) {), code:block50 (REGISTER_TYPED_TEST_CASE_P(FooTest,), code:block51 (typedef ::testing::Types<char, int, unsigned int> MyTypes;), code:block52 (INSTANTIATE_TYPED_TEST_CASE_P(My, FooTest, int);), Type-Parameterized Tests #
+
+### Community 442 - "Community 442"
+Cohesion: 0.29
+Nodes (7): code:cpp (uint64_t swapFeesCollected = 0;       // total swap fees fro), code:cpp (std::vector<uint64_t> m_epochFeeRates;  // indexed by epoch ), code:cpp (uint64_t getEpochFeeRate(uint64_t epochNumber) const;), code:cpp (// At epoch boundary, snapshot the fee rate), code:cpp (void CommitmentIndex::recordEpochFeeRate(uint64_t epochNumbe), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 4: Per-Epoch Fee Rate in CommitmentIndex
+
+### Community 443 - "Community 443"
+Cohesion: 0.38
+Nodes (4): FuegoCodebaseMapperServer, Get file structure as text, MCP Server for Fuego Codebase Mapper, Set up MCP server handlers
+
+### Community 444 - "Community 444"
+Cohesion: 0.29
+Nodes (7): API, code:block1 (add(a, b), sub(a, b), mul(a, b), div(a, b)), Create, Modify, Phase 0: Fixed-Point Math Library (Q64.64), Rules, Verify
+
+### Community 445 - "Community 445"
+Cohesion: 0.29
+Nodes (7): 6A. Daemon RPC, 6B. SimpleWallet CLI, 6C. Wallet Backend, 6D. TUI (Go), 6E. UI Viewpoint Shift: HEAT-Based Pricing (Note for Future), Phase 6: RPC, Wallet, and TUI Integration, Verify Phase 6
+
+### Community 446 - "Community 446"
+Cohesion: 0.29
+Nodes (7): **Advanced Analysis**, code:bash (# Run comprehensive test suite), code:bash (# Run Python analysis (requires numpy, matplotlib)), code:bash (# Build and run individual tests), **Manual Testing**, **Quick Start**, 🚀 **Running the Tests**
+
+### Community 447 - "Community 447"
+Cohesion: 0.29
+Nodes (7): **Block Stealing Attempt**, code:block4 (Average block time: 8.00 minutes (target: 8.0 minutes)), code:block5 (Average block time: 4.80 minutes (target: 8.0 minutes)), code:block6 (Average block time: 7.20 minutes (target: 8.0 minutes)), 📈 **Expected Results**, **Hash Rate Spike**, **Normal Operation**
+
+### Community 448 - "Community 448"
+Cohesion: 0.29
+Nodes (7): Appendix B: MCP Server Configuration, Build MCP Server Config, code:yaml (git_mcp_server:), code:yaml (build_mcp_server:), code:yaml (test_mcp_server:), Git MCP Server Config, Test MCP Server Config
+
+### Community 449 - "Community 449"
+Cohesion: 0.29
+Nodes (7): 4.2.1 Git MCP Server, 4.2.2 Build MCP Server, 4.2.3 Test MCP Server, 4.2 Core MCP Servers, code:typescript (interface GitMCPServer {), code:typescript (interface BuildMCPServer {), code:typescript (interface TestMCPServer {)
+
+### Community 450 - "Community 450"
+Cohesion: 0.29
+Nodes (7): 5.2.1 Request-Response Pattern, 5.2.2 Publish-Subscribe Pattern, 5.2.3 Workflow Pattern, 5.2 Agent Communication Patterns, code:python (class RequestResponseOrchestrator:), code:python (class PubSubOrchestrator:), code:python (class WorkflowOrchestrator:)
+
+### Community 451 - "Community 451"
+Cohesion: 0.29
+Nodes (6): 5.1 Circuit Entry Point, 5.2 AMM Invariant Verification (Commitment-Based), 5.3 Fee Verification, 5. SP1 Circuit Design, code:rust (// fuego-lp-circuit/src/main.rs), code:rust (fn verify_fees(state: &LpPoolState, events: &[DecryptedLpEve)
+
+### Community 452 - "Community 452"
+Cohesion: 0.29
+Nodes (7): 1. Get Alias by Name, 2. Get Alias by Address, 3. List All Aliases, code:bash (POST http://localhost:18180/json_rpc), code:bash (Request:), code:bash (Request:), Part 4: RPC Endpoints
+
+### Community 453 - "Community 453"
+Cohesion: 0.29
+Nodes (7): code:bash ($ xfg-stark-cli elderfier-stake get-alias --address XFG1a2b3), code:bash ($ xfg-stark-cli elderfier-alias list), code:bash ($ xfg-stark-cli elderfier-stake set-alias \), List All Aliases, Part 5: CLI Integration, Query Alias Command, Register Alias Command
+
+### Community 454 - "Community 454"
+Cohesion: 0.29
+Nodes (7): 2.1 New Transaction Extra Tag, 2.2 Group Alias Entry (On-Chain), 2.3 Transaction Extra Structure, 2. Data Structures, code:cpp (// New tag for Group Alias operations), code:cpp (// Stored in Blockchain (in-memory index + on-chain via tx_e), code:cpp (// For registration)
+
+### Community 455 - "Community 455"
+Cohesion: 0.29
+Nodes (7): 🔧 **API Reference**, code:cpp (class TorManager {), code:cpp (class TorConnection {), code:cpp (namespace TorUtils {), **TorConnection Class**, **TorManager Class**, **TorUtils Namespace**
+
+### Community 456 - "Community 456"
+Cohesion: 0.29
+Nodes (7): **Basic Tor Connection**, code:cpp (// Create Tor configuration), code:cpp (// Enable hidden service), code:cpp (// Set up status callback), 📚 **Examples**, **Hidden Service**, **Status Monitoring**
+
+### Community 457 - "Community 457"
+Cohesion: 0.43
+Nodes (3): parse(), parseDaemonAddress(), printHelp()
+
+### Community 458 - "Community 458"
+Cohesion: 0.52
+Nodes (4): handleSignal(), install(), posixHandler(), winHandler()
+
+### Community 459 - "Community 459"
+Cohesion: 0.29
+Nodes (6): code:block1 (your_lp_fee = (your_lp_share / total_lp_shares) × epoch_trad), Epoch-based fee distribution, Price curve and slippage, Separate from CD interest, What the LP pool is, ZK proofs for LP positions
+
+### Community 460 - "Community 460"
+Cohesion: 0.29
+Nodes (6): Adaptor signatures, code:block1 (ADAPTOR_KEYS_EXCHANGED (10)), State machine, The core guarantee, Timeout and refund, XFG-side fee
+
+### Community 462 - "Community 462"
+Cohesion: 0.29
+Nodes (6): code:json ({), code:json ({), code:json ({), GET /listswaps, POST /getswapstatus, Swap states
+
+### Community 465 - "Community 465"
 Cohesion: 0.33
-Nodes (4): Parse file content to extract functions, classes, etc., Process a single file, Map file extension to language, get_language_list()
+Nodes (3): make_tuple(), BigTupleTest, TEST()
 
-### Community 206 - "Community 206"
-Cohesion: 0.67
-Nodes (5): GTEST_1_TYPENAMES_(), GTEST_3_TYPENAMES_(), GTEST_4_TYPENAMES_(), GTEST_6_TYPENAMES_(), T()
+### Community 466 - "Community 466"
+Cohesion: 0.47
+Nodes (5): GetCurrentExecutableName(), GetAbsolutePathOf(), TEST(), TEST_F(), XmlOutputChangeDirTest
 
-### Community 208 - "Community 208"
-Cohesion: 0.67
-Nodes (5): appendCompactSize(), appendLE32(), appendLE64(), computeForP2sh(), hash256()
+### Community 468 - "Community 468"
+Cohesion: 0.33
+Nodes (4): TEST_F(), TransfersContainerKeyImage, TransfersContainerKeyImage_Remove, TransfersContainerKeyImage_Spend
 
-### Community 210 - "Community 210"
+### Community 470 - "Community 470"
+Cohesion: 0.33
+Nodes (6): 6A — Daemon RPC, 6B — Wallet Backend (Multi-Asset Pipeline), 6C — SimpleWallet CLI, 6D — TUI (Go), Phase 6: RPC, Wallet, and TUI Integration, Verify Phase 6
+
+### Community 471 - "Community 471"
+Cohesion: 0.33
+Nodes (6): 7A — Testnet Deployment, 7B — Monte Carlo Simulation, 7C — Consensus Fork Detection, 7D — Security Audit Focus Areas, 7E — Documentation, Phase 7: Integration Testing, Simulation & Security Audit
+
+### Community 472 - "Community 472"
+Cohesion: 0.33
+Nodes (6): 2.1 Pedersen Commitments with Type Separation, 2.2 Commitment Types, 2.3 Commitment Structure, 2. Commitment Scheme, code:rust (// fuego-core/src/lib.rs — add to existing CommitmentType en), code:rust (// fuego-core/src/lib.rs)
+
+### Community 474 - "Community 474"
+Cohesion: 0.47
+Nodes (3): addAsyncContext(), delAsyncContext(), waitAsyncContextsFinish()
+
+### Community 477 - "Community 477"
+Cohesion: 0.33
+Nodes (6): code:block17 (Alias: FIRENODE (public, human-readable)), code:block18 (Zk-Proof: Cryptographic proof of ownership), MVP (Weeks 1-4), Part 9: Final Recommendation Summary, Phase 2+ (Optional), Why NOT Extend xfg-stark
+
+### Community 479 - "Community 479"
+Cohesion: 0.33
+Nodes (6): 6. The Flywheels, code:block6 (Users want to hold / pay privately), code:block7 (Listeners stream via ParaDio), Flywheel 1: Fuego core (CD ↔ swaps ↔ privacy), Flywheel 2: DIGM (ParaDio ↔ staking ↔ discovery), Where the two touch
+
+### Community 480 - "Community 480"
+Cohesion: 0.33
+Nodes (6): code:cpp (// v10+ commitment deposit transfer — transfers CD ownership), code:cpp (struct TransactionInputCommitmentSpend {), code:cpp (typedef boost::variant<), code:cpp (void serialize(TransactionInputCommitmentTransfer& in, ISeri), code:bash (git add include/CryptoNote.h src/CryptoNoteCore/CryptoNoteSe), Task 1: Add TransactionInputCommitmentTransfer Type
+
+### Community 481 - "Community 481"
+Cohesion: 0.33
+Nodes (6): code:cpp (// Compute max possible interest from oldest ring member), code:cpp (// For CommitmentSpend inputs: effective input = amount + cl), code:cpp (if (input.type() == typeid(TransactionInputCommitmentSpend))), code:cpp (if (input.type() == typeid(TransactionInputCommitmentSpend))), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 8: Interest Payout — Declare and Verify Model
+
+### Community 482 - "Community 482"
+Cohesion: 0.33
+Nodes (6): **Build Issues**, code:bash (# Ensure all dependencies are installed), code:bash (# Install required packages), **Python Analysis Issues**, **Test Failures**, 🛠️ **Troubleshooting**
+
+### Community 483 - "Community 483"
+Cohesion: 0.33
+Nodes (6): Appendix A: CD Interest Calculation Reference, code:block25 (interest = amount × Σ (fee_pool_epoch[i] / total_locked_cd[i), Core Formula, Implementation Components, Performance Considerations, Testing Strategy
+
+### Community 484 - "Community 484"
+Cohesion: 0.33
+Nodes (6): 1.1 Multi-Tier Memory Architecture, 1.2 CD Interest Calculation Memory Schema, 1.3 Memory Persistence Strategies, 1. Persistent Memory Layers for CD Interest Tracking, code:block1 (┌───────────────────────────────────────────────────────────), code:json ({)
+
+### Community 485 - "Community 485"
+Cohesion: 0.33
+Nodes (6): 2.1 Pedersen Commitments with Type Separation, 2.2 Commitment Types, 2.3 Commitment Structure, 2. Commitment Scheme, code:rust (// fuego-core/src/lib.rs — add to existing CommitmentType en), code:rust (// fuego-core/src/lib.rs)
+
+### Community 486 - "Community 486"
+Cohesion: 0.33
+Nodes (6): code:cpp (// In TransactionExtra.h - NEW tag), code:cpp (bool validateElderfierAlias(const Transaction& tx) {), code:cpp (// In CoreRpcServerCommandsDefinitions.h), Option A: Add to TransactionExtra, Option B: Dedicated RPC Endpoint, Part 2: Implementation on Fuego Chain
+
+### Community 487 - "Community 487"
+Cohesion: 0.33
+Nodes (6): 8. Implementation Phases, Phase 1: Core Infrastructure (Foundation), Phase 2: Registration & On-Chain (Core), Phase 3: RPC & Network Layer, Phase 4: Wallet Integration, Phase 5: Testing & Hardening
+
+### Community 488 - "Community 488"
+Cohesion: 0.33
+Nodes (6): 3.1 Why Musig2?, 3.2 Key Derivation, 3.3 Transaction Authorization, 3. Musig2 Integration, code:cpp (// Group pubkey derivation (Musig2 style)), code:cpp (// Sign a transaction prefix hash with M-of-N threshold)
+
+### Community 489 - "Community 489"
+Cohesion: 0.33
+Nodes (6): C++ Structures (Core), code:cpp (#pragma once), code:go (type TandaState struct {), Data Structures, Go Structures (CLI), Tanda.h
+
+### Community 490 - "Community 490"
+Cohesion: 0.33
+Nodes (5): Atomic swaps, Commitment deposits (CDs), General, HEAT burns, LP swap pool
+
+### Community 491 - "Community 491"
+Cohesion: 0.33
+Nodes (4): DogAdder, IntWrapper, TEST(), VerifyGeneratorIsEmpty()
+
+### Community 493 - "Community 493"
+Cohesion: 0.33
+Nodes (5): POOL_* states in SwapStateMachine, Reintegration, Status, What's here, zkLPswap — Trustless Pool Trading (v11)
+
+### Community 497 - "Community 497"
+Cohesion: 0.5
+Nodes (3): createError(), TEST_F(), TransfersSubscriptionTest
+
+### Community 498 - "Community 498"
 Cohesion: 0.4
-Nodes (4): Test basic mapper functionality, Test MCP server initialization, test_basic_functionality(), test_mcp_server()
+Nodes (5): 6.1 New Methods in PoolOrganizer, 6.2 Epoch Lifecycle in PoolOrganizer, 6. PoolOrganizer Integration, code:cpp (// src/SwapDaemon/PoolOrganizer.h — additions), code:cpp (// src/SwapDaemon/PoolOrganizer.cpp — additions)
 
-### Community 211 - "Community 211"
-Cohesion: 0.6
-Nodes (4): ShuffleTests(), checkEngine(), checkUniqueness(), consume()
+### Community 499 - "Community 499"
+Cohesion: 0.4
+Nodes (5): 7.1 SP1 Prover CLI Extension, 7.2 Proof Structure, 7. Prover Infrastructure, code:rust (// fuego-prover/fuego-prover-cli/src/main.rs — add LP subcom), code:rust (// fuego-core/src/lib.rs)
 
-### Community 212 - "Community 212"
+### Community 500 - "Community 500"
+Cohesion: 0.4
+Nodes (5): 4.1 Event Types, 4.2 Encryption Scheme, 4. Encrypted Events, code:rust (// fuego-core/src/lib.rs), code:rust (// Pool key derivation)
+
+### Community 503 - "Community 503"
+Cohesion: 0.4
+Nodes (5): 1. Overclocking (Optional), 2. SSD Setup (Advanced), code:bash (# Edit config), code:bash (# If using USB SSD, ensure it's mounted properly), 📈 Performance Optimization
+
+### Community 504 - "Community 504"
+Cohesion: 0.4
+Nodes (5): code:block10 (User: 0x1234567890abcdef...), code:block9 (User: 0x1234567890abcdef...), For MVP (Weeks 1-4): Use Simple Privacy Model, For Phase 2 (Post-Launch): Upgrade to ZK-Proofs, Part 5: Recommendation
+
+### Community 505 - "Community 505"
+Cohesion: 0.4
+Nodes (5): code:bash (# Data paths), code:ini (# Example custom configuration), ⚙️ Configuration, Custom Configuration, Environment Variables
+
+### Community 506 - "Community 506"
+Cohesion: 0.4
+Nodes (5): 📚 API Reference, code:bash (# Get node info), code:bash (# Get wallet info), Node RPC Endpoints, Wallet RPC Endpoints
+
+### Community 507 - "Community 507"
+Cohesion: 0.7
+Nodes (4): jsonGetStr(), jsonGetUint(), loadChainClientConfig(), validateHex()
+
+### Community 509 - "Community 509"
+Cohesion: 0.4
+Nodes (5): 10. Token Tracking: Hybrid Anchoring (Decided), code:block13 (DIGM app tracks all balances in real-time (fast, flexible)), How It Works, On-Chain vs App-Layer per Asset, Why This Works
+
+### Community 510 - "Community 510"
+Cohesion: 0.4
+Nodes (5): 2. The Eight Assets, Asset Flow Diagram, code:block1 (Mining/Swaps ──→ XFG ──→ Buy albums (artist gets 100%)), In-App (DIGM platform layer, anchored on-chain), On-Chain (Fuego L1)
+
+### Community 511 - "Community 511"
+Cohesion: 0.4
+Nodes (5): 3. Album Pool Mechanics, code:block2 (┌─────────────────────────────────────────────┐), How Staking Works, Non-winning Pools, When an Album Hits #1 (Epoch Winner)
+
+### Community 512 - "Community 512"
+Cohesion: 0.4
+Nodes (5): code:cpp (// Get fee pool state), code:cpp ({ "/getfeepool", { jsonMethod<COMMAND_RPC_GET_FEE_POOL>(&Rpc), code:cpp (bool RpcServer::on_get_fee_pool(const COMMAND_RPC_GET_FEE_PO), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 11: RPC Endpoints
+
+### Community 513 - "Community 513"
+Cohesion: 0.4
+Nodes (4): code:cpp (bool checkCommitmentTransferInput(const TransactionInputComm), code:cpp (else if (txin.type() == typeid(TransactionInputCommitmentTra), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 6: Validate CommitmentTransfer Inputs
+
+### Community 514 - "Community 514"
+Cohesion: 0.4
+Nodes (5): code:block30 (HTLC output:      100.0000000 XFG), code:cpp (// For HTLC claim transactions:), code:cpp (// For transactions with HTLC inputs:), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 7: Swap Fee Deduction from Claimer's Output
+
+### Community 515 - "Community 515"
+Cohesion: 0.4
+Nodes (5): Consensus Fork Detection, Monte Carlo Simulation, Phase 7: Integration Testing & Simulation, Security Audit Focus Areas, Testnet Deployment
+
+### Community 516 - "Community 516"
+Cohesion: 0.4
+Nodes (5): **Block Stealing Detection**, **Emergency Activations**, 📊 **Performance Metrics**, **Response Time (blocks)**, **Stability Score (0-10)**
+
+### Community 517 - "Community 517"
+Cohesion: 0.4
+Nodes (5): **1. Core Test Suite (`DMWDA_TestSuite.cpp`)**, **2. Test Runner (`scripts/run_dmwda_tests.sh`)**, **3. Advanced Analysis (`scripts/dmwda_analysis.py`)**, **4. Configuration (`tests/dmwda_test_config.json`)**, 📁 **Test Suite Components**
+
+### Community 518 - "Community 518"
+Cohesion: 0.4
+Nodes (5): 7.1 Development Efficiency, 7.2 Code Quality, 7.3 System Performance, 7.4 User Satisfaction, 7. Success Metrics
+
+### Community 519 - "Community 519"
+Cohesion: 0.4
+Nodes (5): 7.1 SP1 Prover CLI Extension, 7.2 Proof Structure, 7. Prover Infrastructure, code:rust (// fuego-prover/fuego-prover-cli/src/main.rs — add LP subcom), code:rust (// fuego-core/src/lib.rs)
+
+### Community 520 - "Community 520"
+Cohesion: 0.4
+Nodes (5): 6.1 New Methods in PoolOrganizer, 6.2 Epoch Lifecycle in PoolOrganizer, 6. PoolOrganizer Integration, code:cpp (// src/SwapDaemon/PoolOrganizer.h — additions), code:cpp (// src/SwapDaemon/PoolOrganizer.cpp — additions)
+
+### Community 521 - "Community 521"
+Cohesion: 0.4
+Nodes (5): 4.1 Event Types, 4.2 Encryption Scheme, 4. Encrypted Events, code:rust (// fuego-core/src/lib.rs), code:rust (// Pool key derivation)
+
+### Community 522 - "Community 522"
+Cohesion: 0.4
+Nodes (5): CLI Layer (Rust), Fuego Blockchain Layer (C++), Part 8: Implementation Checklist, RPC Layer (C++), Testing
+
+### Community 523 - "Community 523"
+Cohesion: 0.4
+Nodes (5): Alias Registration Flow, code:block12 (User Creates Elderfier Stake (0xEF)), code:bash ($ xfg-stark-cli elderfier-stake status), Part 6: Integration with Dynamigo, Status Display After Alias Registration
+
+### Community 524 - "Community 524"
+Cohesion: 0.4
+Nodes (5): 4.1 Creating a Group Alias, 4.2 Registration Transaction, 4. Registration Flow, code:block6 (┌───────────────────────────────────────────────────────────), code:cpp (// Wallet-side registration flow)
+
+### Community 525 - "Community 525"
+Cohesion: 0.4
+Nodes (5): 6.1 Spending from Group Alias, 6.2 Key Image Handling, 6. Transaction Authorization, code:block10 (┌───────────────────────────────────────────────────────────), code:cpp (// Each group alias has a key image derived from groupPubKey)
+
+### Community 526 - "Community 526"
+Cohesion: 0.4
+Nodes (5): 7.1 SimpleWallet Extensions, 7.2 Example CLI Commands, 7. Wallet Integration, code:cpp (// New wallet commands for group aliases), code:bash (# Create a group alias (requires coordination with members))
+
+### Community 527 - "Community 527"
+Cohesion: 0.4
+Nodes (5): 5.1 Extended AliasIndex, 5.2 RPC Endpoints, 5. Alias Resolution & Validation, code:cpp (class AliasIndex {), code:cpp (// New RPC commands for group aliases)
+
+### Community 528 - "Community 528"
+Cohesion: 0.4
+Nodes (5): 11.1 Registration Fee, 11.2 Update Fees, 11. Fee Structure, code:block15 (Group Alias Registration Fee = (N + M) * BASE_FEE), code:block16 (Member Add/Remove = BASE_FEE * 2)
+
+### Community 529 - "Community 529"
+Cohesion: 0.4
+Nodes (5): code:ini ([tor]), code:bash (# Test SOCKS5 proxy), **Debug Mode**, **Testing Tor Connection**, 🔍 **Troubleshooting**
+
+### Community 530 - "Community 530"
+Cohesion: 0.4
+Nodes (5): code:cpp (struct TorStats {), code:cpp (enum class TorStatus {), 📊 **Status and Statistics**, **TorStats Structure**, **TorStatus Enumeration**
+
+### Community 531 - "Community 531"
+Cohesion: 0.4
+Nodes (5): code:bash (# Run unit tests), 🤝 **Contributing**, **Development Setup**, **Reporting Issues**, **Testing**
+
+### Community 532 - "Community 532"
+Cohesion: 0.4
+Nodes (4): Core properties, Fee structure, Get started, What you can do with Fuego
+
+### Community 534 - "Community 534"
+Cohesion: 0.4
+Nodes (4): HEAT vs LP pool — they are different systems, How HEAT is used, Overview, Why burn XFG
+
+### Community 535 - "Community 535"
+Cohesion: 0.4
+Nodes (4): Core components, Detailed technical documentation, Fee pool mechanics, Transaction types
+
+### Community 537 - "Community 537"
 Cohesion: 0.5
-Nodes (3): append_net_address(), hostToNetwork(), networkToHost()
+Nodes (4): Architecture, code:block1 (Stage 1 (Day 30):  25% Principal + 0% Interest), Core Components, Unlock Schedule
 
-### Community 213 - "Community 213"
+### Community 541 - "Community 541"
 Cohesion: 0.5
-Nodes (3): IntegerFunctionTest, QueueTest, QuickTest
+Nodes (4): code:block1 (Osavvirsak = alreadyGeneratedCoins - eternalFlame), How the EternalFlame recycling works (existing mechanism), Key Design Decisions, The Two Assets
+
+### Community 542 - "Community 542"
+Cohesion: 0.5
+Nodes (4): 3.1 On-Chain Pool State, 3.2 Merkle Trees, 3. Pool State, code:rust (// fuego-core/src/lib.rs)
+
+### Community 545 - "Community 545"
+Cohesion: 0.5
+Nodes (4): Option A: Use Zk-SNARKs Instead (Different Library), Option B: Use Stark-Proof Libraries for ECDSA, Option C: Hybrid Approach (Most Practical), Part 3: Alternative ZK Approaches (Not xfg-stark)
+
+### Community 546 - "Community 546"
+Cohesion: 0.5
+Nodes (4): code:javascript (// circuit.circom - Prove I own address with given alias), How to Use Circom for Zk-Alias, Part 6: Detailed Technical Comparison, STARK (Winterfell) vs. SNARK (circom)
+
+### Community 548 - "Community 548"
+Cohesion: 0.5
+Nodes (3): Runs the test program and returns its output., Sets up test case.      Determines whether value-parameterized tests are enabled, RunAndReturnOutput()
+
+### Community 550 - "Community 550"
+Cohesion: 0.5
+Nodes (4): Built-in Health Checks, Custom Metrics, 📊 Monitoring & Health Checks, Monitoring Stack (Optional)
+
+### Community 551 - "Community 551"
+Cohesion: 0.5
+Nodes (4): code:bash (# Clone the repository), One-Command Setup, Prerequisites, 🚀 Quick Start (5 Minutes Setup)
+
+### Community 555 - "Community 555"
+Cohesion: 0.5
+Nodes (4): code:block16 (#include <iostream>), code:block17 (#include <iostream>), code:block18 (vector<pair<Bar, int> > bar_ints = GetBarIntVector();), Teaching Google Test How to Print Your Values #
+
+### Community 556 - "Community 556"
+Cohesion: 0.5
+Nodes (4): code:cpp (m_consoleHandler.setHandler("transfer_cd",), code:cpp (bool SimpleWallet::transfer_cd(const std::vector<std::string), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 9: Wallet — transfer_cd Command
+
+### Community 557 - "Community 557"
+Cohesion: 0.5
+Nodes (4): code:go (type FeePoolResponse struct {), code:go (// Fee Pool section), code:bash (cd /home/ar/fuego/xfg-eth-swap && go build -o xfg-eth-swap .), Task 12: Update Swap TUI Clients
+
+### Community 558 - "Community 558"
+Cohesion: 0.5
+Nodes (4): code:cpp (// Fee-pool-aware interest: returns accrued interest from sw), code:cpp (uint64_t Currency::calculateInterest(uint64_t amount, uint32), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 5: Implement calculateInterest() from Fee Pool
+
+### Community 559 - "Community 559"
+Cohesion: 0.5
+Nodes (4): code:cpp (m_consoleHandler.setHandler("redeem_cd",), code:block43 (CD #47 matured: 100.0000000 XFG + 0.3000000 XFG interest), code:bash (cmake --build /home/ar/fuego/build -j$(nproc) 2>&1 | tail -2), Task 10: Wallet — redeem_cd and Auto-Rollover
+
+### Community 561 - "Community 561"
+Cohesion: 0.5
+Nodes (4): **Response Requirements**, **Safety Requirements**, **Stability Requirements**, 🔍 **Validation Criteria**
+
+### Community 562 - "Community 562"
+Cohesion: 0.5
+Nodes (4): 3.1 On-Chain Pool State, 3.2 Merkle Trees, 3. Pool State, code:rust (// fuego-core/src/lib.rs)
+
+### Community 563 - "Community 563"
+Cohesion: 0.67
+Nodes (3): insane_xfg_path(), XFG price: extreme boom/bust cycles.     Pattern: 5→0.01→20→0.04→82→0.34→48→1.45, sim_twap()
+
+### Community 564 - "Community 564"
+Cohesion: 0.67
+Nodes (3): insane_path(), strategy: 'reserve', 'amm_lp', 'yield_boost', 'price_floor, sim()
+
+### Community 565 - "Community 565"
+Cohesion: 0.5
+Nodes (4): code:block14 (Alias: FIRENODE (public, anyone can see)), Options for Address Privacy, Part 7: Privacy Considerations, What's Public (On-Chain)
+
+### Community 566 - "Community 566"
+Cohesion: 0.5
+Nodes (4): 9.1 On-Chain Privacy, 9.2 Off-Chain Privacy, 9.3 Comparison with Regular Aliases, 9. Privacy Considerations
+
+### Community 567 - "Community 567"
+Cohesion: 0.5
+Nodes (4): 1.1 What is a Group Alias?, 1.2 Key Properties, 1.3 Comparison with Existing Aliases, 1. Core Concepts
+
+### Community 568 - "Community 568"
+Cohesion: 0.5
+Nodes (4): 10.1 Existing Aliases, 10.2 Version Handling, 10. Backward Compatibility, code:cpp (// Version field in TransactionExtraGroupAliasRegistration)
+
+### Community 569 - "Community 569"
+Cohesion: 0.5
+Nodes (4): **Censorship Resistance**, **IP Address Protection**, 🔒 **Privacy Benefits**, **Traffic Analysis Resistance**
+
+### Community 570 - "Community 570"
+Cohesion: 0.5
+Nodes (4): code:ini ([tor]), ⚙️ **Configuration**, **Configuration File** (`tor.conf`), **Configuration Options**
+
+### Community 571 - "Community 571"
+Cohesion: 0.5
+Nodes (4): **Best Practices**, **Privacy Benefits**, 🛡️ **Security Considerations**, **Security Measures**
+
+### Community 572 - "Community 572"
+Cohesion: 0.5
+Nodes (4): 🔄 **Integration with Fuego**, **P2P Network Integration**, **RPC Interface**, **Wallet Integration**
+
+### Community 573 - "Community 573"
+Cohesion: 0.5
+Nodes (4): code:cpp (void test_full_lifecycle() {), Integration Test Scenario, Testing Strategy, Unit Tests
+
+### Community 575 - "Community 575"
+Cohesion: 0.5
+Nodes (4): code:block32 (-DGTEST_DONT_DEFINE_FOO=1), code:cpp (GTEST_TEST(SomeTest, DoesThis) { ... }), code:cpp (TEST(SomeTest, DoesThis) { ... }), Google Test defines a macro that clashes with one defined by another library. How do I deal with that? ##
+
+### Community 576 - "Community 576"
+Cohesion: 0.5
+Nodes (4): code:cpp (class Foo {), code:cpp (class Foo {), code:cpp (class YourClass {), How do I test private class members without writing FRIEND\_TEST()s? ##
+
+### Community 577 - "Community 577"
+Cohesion: 0.5
+Nodes (3): Reporting a Vulnerability, Security Policy, Supported Versions
+
+### Community 580 - "Community 580"
+Cohesion: 0.5
+Nodes (3): Building on POSIX systems, Building on Windows, Cross compiling
+
+### Community 583 - "Community 583"
+Cohesion: 0.5
+Nodes (3): Reporting a Vulnerability, Security Policy, Supported Versions
+
+### Community 584 - "Community 584"
+Cohesion: 0.67
+Nodes (3): Backward Compatibility, Gradual Rollout, Migration Strategy
+
+### Community 585 - "Community 585"
+Cohesion: 0.67
+Nodes (3): code:cpp (namespace StagedUnlockConfig {), Configuration, StagedUnlockConfig
+
+### Community 586 - "Community 586"
+Cohesion: 0.67
+Nodes (3): Integration Tests, Testing, Unit Tests
+
+### Community 587 - "Community 587"
+Cohesion: 0.67
+Nodes (3): Blockchain Integration, Integration Points, Wallet Integration
+
+### Community 588 - "Community 588"
+Cohesion: 0.67
+Nodes (3): Advanced Features, Future Enhancements, Potential Improvements
+
+### Community 589 - "Community 589"
+Cohesion: 0.67
+Nodes (3): Fee Structure, Staged Unlock (Optional), Traditional Unlock (Default)
+
+### Community 594 - "Community 594"
+Cohesion: 0.67
+Nodes (3): 8.1 Verification Contract (Pseudocode), 8. On-Chain Verification, code:solidity (// LpPoolVerifier.sol (conceptual — actual implementation de)
+
+### Community 597 - "Community 597"
+Cohesion: 0.67
+Nodes (3): File Map, Modified Files, New Files
+
+### Community 599 - "Community 599"
+Cohesion: 0.67
+Nodes (3): Parallel with Dynamigo, Part 10: Total Effort, Time Estimate (Single Developer)
+
+### Community 600 - "Community 600"
+Cohesion: 0.67
+Nodes (3): L1/L2 Approach (What I Was Overcomplicating), On-Fuego Approach (What You're Asking), Part 1: Why This is Better
+
+### Community 601 - "Community 601"
+Cohesion: 0.67
+Nodes (3): code:block16 (Day 1: User creates 0xEF stake deposit), Complete Elderfier Registration Journey, Part 11: User Experience
+
+### Community 602 - "Community 602"
+Cohesion: 0.67
+Nodes (3): Files to Create/Modify, Modified Files, New Files
+
+### Community 603 - "Community 603"
+Cohesion: 0.67
+Nodes (3): code:cpp (class TandaManager {), Module Design, TandaManager Class
+
+### Community 605 - "Community 605"
+Cohesion: 0.67
+Nodes (3): code:cpp (return RUN_ALL_TESTS();), code:cpp (RUN_ALL_TESTS();), My compiler complains about "ignoring return value" when I call RUN\_ALL\_TESTS(). Why? ##
+
+### Community 606 - "Community 606"
+Cohesion: 0.67
+Nodes (3): code:cpp (namespace foo {), code:cpp (namespace foo {), Is it OK if I have two separate `TEST(Foo, Bar)` test methods defined in different namespaces? ##
+
+### Community 607 - "Community 607"
+Cohesion: 0.67
+Nodes (3): code:cpp (class FooTest : public ::testing::Test {};), code:cpp (typedef ::testing::Test FooTest;), Why do we use two different macros for tests with and without fixtures? ##
+
+### Community 608 - "Community 608"
+Cohesion: 0.67
+Nodes (3): code:cpp (if (FooCondition()) {), code:cpp (const int count = GetCount();  // Only known at run time.), Why are death tests implemented as assertions instead of using a test runner? ##
+
+### Community 609 - "Community 609"
+Cohesion: 0.67
+Nodes (3): code:cpp (// foo.h), code:cpp (const int Foo::kBar;  // No initializer here.), The compiler complains about "undefined references" to some static const member variables, but I did define them in the class body. What's wrong? ##
+
+### Community 610 - "Community 610"
+Cohesion: 0.67
+Nodes (3): code:cpp (class FooTest : public BaseTest {};), code:cpp (typedef BaseTest FooTest;), I have several test cases which share the same test fixture logic, do I have to define a new test fixture class for each of them? This seems pretty tedious. ##
+
+### Community 611 - "Community 611"
+Cohesion: 0.67
+Nodes (3): code:cpp (// foo.h), code:cpp (// foo.h), How do I test private class static members without writing FRIEND\_TEST()s? ##
 
 ## Knowledge Gaps
-- **606 isolated node(s):** `Analyze Fuego source code for blockchain mechanics`, `Analyze CD interest calculation code`, `Analyze atomic swap implementation code`, `Analyze P2P networking code`, `Analyze cryptographic primitives` (+601 more)
+- **2339 isolated node(s):** `Analyze Fuego source code for blockchain mechanics`, `Analyze CD interest calculation code`, `Analyze atomic swap implementation code`, `Analyze P2P networking code`, `Analyze cryptographic primitives` (+2334 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **22 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **59 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `main()` connect `Community 6` to `Community 0`, `Community 1`, `Community 3`, `Community 5`, `Community 133`, `Community 7`, `Community 10`, `Community 11`, `Community 12`, `Community 143`, `Community 16`, `Community 17`, `Community 146`, `Community 148`, `Community 149`, `Community 21`, `Community 151`, `Community 153`, `Community 26`, `Community 27`, `Community 156`, `Community 29`, `Community 158`, `Community 31`, `Community 157`, `Community 30`, `Community 155`, `Community 37`, `Community 38`, `Community 165`, `Community 40`, `Community 42`, `Community 43`, `Community 45`, `Community 47`, `Community 49`, `Community 177`, `Community 53`, `Community 182`, `Community 56`, `Community 184`, `Community 59`, `Community 64`, `Community 69`, `Community 70`, `Community 71`, `Community 197`, `Community 76`, `Community 78`, `Community 79`, `Community 81`, `Community 82`, `Community 84`, `Community 88`, `Community 216`, `Community 92`, `Community 96`, `Community 98`, `Community 105`, `Community 108`, `Community 115`, `Community 117`, `Community 121`, `Community 25`?**
-  _High betweenness centrality (0.339) - this node is a cross-community bridge._
-- **Why does `Assert()` connect `Community 30` to `Community 128`, `Community 4`, `Community 6`, `Community 8`, `Community 9`, `Community 139`, `Community 140`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 142`, `Community 19`, `Community 12`, `Community 18`, `Community 22`, `Community 23`, `Community 152`, `Community 25`, `Community 154`, `Community 26`, `Community 28`, `Community 29`, `Community 151`, `Community 32`, `Community 33`, `Community 160`, `Community 35`, `Community 34`, `Community 38`, `Community 39`, `Community 41`, `Community 171`, `Community 44`, `Community 48`, `Community 50`, `Community 51`, `Community 52`, `Community 53`, `Community 56`, `Community 57`, `Community 184`, `Community 185`, `Community 61`, `Community 62`, `Community 66`, `Community 67`, `Community 71`, `Community 75`, `Community 76`, `Community 80`, `Community 81`, `Community 83`, `Community 88`, `Community 89`, `Community 145`, `Community 91`, `Community 95`, `Community 98`, `Community 99`, `Community 100`, `Community 101`, `Community 103`, `Community 112`, `Community 113`, `Community 114`, `Community 118`, `Community 123`, `Community 125`?**
-  _High betweenness centrality (0.209) - this node is a cross-community bridge._
-- **Why does `Init()` connect `Community 56` to `Community 0`, `Community 129`, `Community 133`, `Community 6`, `Community 5`, `Community 9`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 145`, `Community 18`, `Community 142`, `Community 149`, `Community 22`, `Community 21`, `Community 24`, `Community 153`, `Community 25`, `Community 156`, `Community 157`, `Community 30`, `Community 31`, `Community 29`, `Community 163`, `Community 37`, `Community 40`, `Community 42`, `Community 44`, `Community 45`, `Community 46`, `Community 48`, `Community 49`, `Community 57`, `Community 59`, `Community 189`, `Community 190`, `Community 66`, `Community 68`, `Community 199`, `Community 72`, `Community 76`, `Community 81`, `Community 83`, `Community 212`, `Community 85`, `Community 106`, `Community 107`, `Community 114`, `Community 115`, `Community 123`?**
-  _High betweenness centrality (0.126) - this node is a cross-community bridge._
-- **Are the 94 inferred relationships involving `main()` (e.g. with `SimpleFuegoMapper` and `DefaultConfig()`) actually correct?**
+- **Why does `main()` connect `Community 8` to `Community 0`, `Community 9`, `Community 11`, `Community 14`, `Community 15`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 24`, `Community 25`, `Community 26`, `Community 27`, `Community 33`, `Community 547`, `Community 36`, `Community 38`, `Community 39`, `Community 48`, `Community 560`, `Community 51`, `Community 59`, `Community 61`, `Community 63`, `Community 66`, `Community 70`, `Community 82`, `Community 84`, `Community 92`, `Community 95`, `Community 113`, `Community 114`, `Community 115`, `Community 117`, `Community 126`, `Community 128`, `Community 132`, `Community 147`, `Community 148`, `Community 149`, `Community 158`, `Community 160`, `Community 162`, `Community 163`, `Community 168`, `Community 169`, `Community 174`, `Community 175`, `Community 176`, `Community 182`, `Community 184`, `Community 186`, `Community 188`, `Community 194`, `Community 195`, `Community 204`, `Community 214`, `Community 218`, `Community 223`, `Community 232`, `Community 238`, `Community 240`, `Community 252`, `Community 257`, `Community 260`, `Community 263`, `Community 266`, `Community 292`, `Community 298`, `Community 303`, `Community 305`, `Community 306`, `Community 308`, `Community 315`, `Community 321`, `Community 361`, `Community 385`, `Community 386`, `Community 389`, `Community 390`, `Community 391`, `Community 410`, `Community 443`, `Community 457`, `Community 464`, `Community 495`?**
+  _High betweenness centrality (0.147) - this node is a cross-community bridge._
+- **Why does `Assert()` connect `Community 19` to `Community 1`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 12`, `Community 13`, `Community 15`, `Community 17`, `Community 18`, `Community 20`, `Community 22`, `Community 24`, `Community 27`, `Community 28`, `Community 29`, `Community 31`, `Community 32`, `Community 35`, `Community 36`, `Community 37`, `Community 40`, `Community 41`, `Community 44`, `Community 45`, `Community 46`, `Community 47`, `Community 50`, `Community 52`, `Community 54`, `Community 55`, `Community 56`, `Community 60`, `Community 61`, `Community 62`, `Community 63`, `Community 66`, `Community 74`, `Community 77`, `Community 79`, `Community 84`, `Community 87`, `Community 92`, `Community 93`, `Community 95`, `Community 102`, `Community 107`, `Community 108`, `Community 116`, `Community 118`, `Community 121`, `Community 124`, `Community 126`, `Community 127`, `Community 129`, `Community 130`, `Community 131`, `Community 132`, `Community 133`, `Community 142`, `Community 143`, `Community 144`, `Community 145`, `Community 150`, `Community 155`, `Community 156`, `Community 160`, `Community 164`, `Community 172`, `Community 178`, `Community 179`, `Community 181`, `Community 186`, `Community 187`, `Community 191`, `Community 192`, `Community 201`, `Community 205`, `Community 208`, `Community 209`, `Community 236`, `Community 252`, `Community 255`, `Community 261`, `Community 314`, `Community 335`, `Community 342`, `Community 343`, `Community 360`?**
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
+- **Why does `TEST_F()` connect `Community 44` to `Community 0`, `Community 129`, `Community 130`, `Community 3`, `Community 4`, `Community 5`, `Community 6`, `Community 133`, `Community 391`, `Community 9`, `Community 10`, `Community 11`, `Community 15`, `Community 144`, `Community 19`, `Community 149`, `Community 23`, `Community 24`, `Community 153`, `Community 538`, `Community 539`, `Community 27`, `Community 540`, `Community 29`, `Community 31`, `Community 32`, `Community 25`, `Community 35`, `Community 164`, `Community 38`, `Community 423`, `Community 168`, `Community 41`, `Community 173`, `Community 46`, `Community 47`, `Community 51`, `Community 56`, `Community 186`, `Community 59`, `Community 574`, `Community 321`, `Community 68`, `Community 70`, `Community 198`, `Community 72`, `Community 74`, `Community 591`, `Community 208`, `Community 593`, `Community 82`, `Community 592`, `Community 468`, `Community 465`, `Community 466`, `Community 99`, `Community 100`, `Community 108`, `Community 495`, `Community 496`, `Community 497`, `Community 113`, `Community 114`, `Community 239`, `Community 249`, `Community 124`, `Community 255`?**
+  _High betweenness centrality (0.079) - this node is a cross-community bridge._
+- **Are the 427 inferred relationships involving `Assert()` (e.g. with `startNode()` and `stopNode()`) actually correct?**
+  _`Assert()` has 427 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 94 inferred relationships involving `main()` (e.g. with `compute_merkle_root()` and `compute_checkpoint_hash()`) actually correct?**
   _`main()` has 94 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 259 inferred relationships involving `Assert()` (e.g. with `.GetBlockCount()` and `startNode()`) actually correct?**
-  _`Assert()` has 259 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 43 inferred relationships involving `TEST_F()` (e.g. with `TestNetworkBuilder()` and `launchTestnet()`) actually correct?**
   _`TEST_F()` has 43 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 63 inferred relationships involving `Test()` (e.g. with `ConstructTransaction.h` and `ParsePortListing()`) actually correct?**
-  _`Test()` has 63 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 175 inferred relationships involving `Check()` (e.g. with `checkHalfUnlocked()` and `checkFullyUnlocked()`) actually correct?**
+  _`Check()` has 175 INFERRED edges - model-reasoned connections that need verification._

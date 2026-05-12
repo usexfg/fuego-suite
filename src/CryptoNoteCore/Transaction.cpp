@@ -102,12 +102,14 @@ namespace CryptoNote {
     // Inputs/Outputs 
     virtual size_t addInput(const KeyInput& input) override;
     virtual size_t addInput(const MultisignatureInput& input) override;
+    virtual size_t addInput(const TransactionInputCommitmentSpend& input) override;
     virtual size_t addInput(const AccountKeys& senderKeys, const TransactionTypes::InputKeyInfo& info, KeyPair& ephKeys) override;
 
     virtual size_t addOutput(uint64_t amount, const AccountPublicAddress& to, uint8_t assetId = 0) override;
     virtual size_t addOutput(uint64_t amount, const std::vector<AccountPublicAddress>& to, uint32_t requiredSignatures, uint32_t term = 0) override;
     virtual size_t addOutput(uint64_t amount, const KeyOutput& out, uint8_t assetId = 0) override;
     virtual size_t addOutput(uint64_t amount, const MultisignatureOutput& out, uint8_t assetId = 0) override;
+    virtual size_t addOutput(uint64_t amount, const TransactionOutputCommitment& out, uint8_t assetId = 0) override;
 
     virtual void signInputKey(size_t input, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) override;
     virtual void signInputMultisignature(size_t input, const PublicKey& sourceTransactionKey, size_t outputIndex, const AccountKeys& accountKeys) override;
@@ -284,6 +286,14 @@ namespace CryptoNote {
     return transaction.inputs.size() - 1;
   }
 
+  size_t TransactionImpl::addInput(const TransactionInputCommitmentSpend& input) {
+    checkIfSigning();
+    transaction.inputs.push_back(input);
+    transaction.version = TRANSACTION_VERSION_2;
+    invalidateHash();
+    return transaction.inputs.size() - 1;
+  }
+
   size_t TransactionImpl::addOutput(uint64_t amount, const AccountPublicAddress& to, uint8_t assetId) {
     checkIfSigning();
 
@@ -328,6 +338,15 @@ namespace CryptoNote {
   }
 
   size_t TransactionImpl::addOutput(uint64_t amount, const MultisignatureOutput& out, uint8_t assetId) {
+    checkIfSigning();
+    size_t outputIndex = transaction.outputs.size();
+    TransactionOutput realOut = { amount, assetId, out };
+    transaction.outputs.emplace_back(realOut);
+    invalidateHash();
+    return outputIndex;
+  }
+
+  size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputCommitment& out, uint8_t assetId) {
     checkIfSigning();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, assetId, out };

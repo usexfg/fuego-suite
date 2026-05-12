@@ -50,6 +50,7 @@ size_t getSignaturesCount(const TransactionInput& input) {
     size_t operator()(const BaseInput& txin) const { return 0; }
     size_t operator()(const KeyInput& txin) const { return txin.outputIndexes.size(); }
     size_t operator()(const MultisignatureInput& txin) const { return txin.signatureCount; }
+    size_t operator()(const TransactionInputCommitmentSpend& txin) const { return txin.outputIndexes.size(); }
   };
 
   return boost::apply_visitor(txin_signature_size_visitor(), input);
@@ -59,8 +60,10 @@ struct BinaryVariantTagGetter: boost::static_visitor<uint8_t> {
   uint8_t operator()(const CryptoNote::BaseInput) { return  0xff; }
   uint8_t operator()(const CryptoNote::KeyInput) { return  0x2; }
   uint8_t operator()(const CryptoNote::MultisignatureInput) { return  0x3; }
+  uint8_t operator()(const CryptoNote::TransactionInputCommitmentSpend) { return  0x4; }
   uint8_t operator()(const CryptoNote::KeyOutput) { return  0x2; }
   uint8_t operator()(const CryptoNote::MultisignatureOutput) { return  0x3; }
+  uint8_t operator()(const CryptoNote::TransactionOutputCommitment) { return  0x4; }
   uint8_t operator()(const CryptoNote::Transaction) { return  0xcc; }
   uint8_t operator()(const CryptoNote::Block) { return  0xbb; }
 };
@@ -95,6 +98,12 @@ void getVariantValue(CryptoNote::ISerializer& serializer, uint8_t tag, CryptoNot
     in = v;
     break;
   }
+  case 0x4: {
+    CryptoNote::TransactionInputCommitmentSpend v;
+    serializer(v, "value");
+    in = v;
+    break;
+  }
   default:
     throw std::runtime_error("Unknown variant tag");
   }
@@ -110,6 +119,12 @@ void getVariantValue(CryptoNote::ISerializer& serializer, uint8_t tag, CryptoNot
   }
   case 0x3: {
     CryptoNote::MultisignatureOutput v;
+    serializer(v, "data");
+    out = v;
+    break;
+  }
+  case 0x4: {
+    CryptoNote::TransactionOutputCommitment v;
     serializer(v, "data");
     out = v;
     break;
@@ -313,6 +328,19 @@ void serialize(MultisignatureOutput& multisignature, ISerializer& serializer) {
   serializer(multisignature.keys, "keys");
   serializer(multisignature.requiredSignatureCount, "required_signatures");
   serializer(multisignature.term, "term");
+}
+
+void serialize(TransactionInputCommitmentSpend& commitment, ISerializer& serializer) {
+  serializer(commitment.amount, "amount");
+  serializeVarintVector(commitment.outputIndexes, serializer, "key_offsets");
+  serializer(commitment.keyImage, "k_image");
+  serializer(commitment.claimedInterest, "claimed_interest");
+}
+
+void serialize(TransactionOutputCommitment& commitment, ISerializer& serializer) {
+  serializer(commitment.amount, "amount");
+  serializer(commitment.key, "key");
+  serializer(commitment.term, "term");
 }
 
 void serialize(ParentBlockSerializer& pbs, ISerializer& serializer) {

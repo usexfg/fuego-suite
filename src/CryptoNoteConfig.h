@@ -183,17 +183,17 @@ namespace CryptoNote
                 const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_DENOM = 5;
                 const uint8_t  HEAT_DECIMALS = 7;                       // same as XFG
 
-                // HEAT denomination tiers (distinct from XFG tiers)
-                const uint64_t HEAT_TIER_0 = 16000000ULL;    // 1.6 HEAT
-                const uint64_t HEAT_TIER_1 = 160000000ULL;    // 16 HEAT
-                const uint64_t HEAT_TIER_2 = 1600000000ULL;   // 160 HEAT
-                const uint64_t HEAT_TIER_3 = 16000000000ULL;  // 1600 HEAT
+                // HEAT denomination tiers (match XFG tiers to prevent fingerprinting)
+                const uint64_t HEAT_TIER_0 = 8000000ULL;     // 0.8 HEAT
+                const uint64_t HEAT_TIER_1 = 80000000ULL;    // 8 HEAT
+                const uint64_t HEAT_TIER_2 = 800000000ULL;   // 80 HEAT
+                const uint64_t HEAT_TIER_3 = 8000000000ULL;  // 800 HEAT
 
-                // HEAT CD tiers (denominated in HEAT, distinct from XFG CDs)
-                const uint64_t HEAT_CD_TIER_0 = 16000000ULL;   // 1.6 HEAT
-                const uint64_t HEAT_CD_TIER_1 = 160000000ULL;   // 16 HEAT
-                const uint64_t HEAT_CD_TIER_2 = 1600000000ULL;  // 160 HEAT
-                const uint64_t HEAT_CD_TIER_3 = 16000000000ULL; // 1600 HEAT
+                // HEAT CD tiers (match XFG CD tiers)
+                const uint64_t HEAT_CD_TIER_0 = 8000000ULL;    // 0.8 HEAT
+                const uint64_t HEAT_CD_TIER_1 = 80000000ULL;   // 8 HEAT
+                const uint64_t HEAT_CD_TIER_2 = 800000000ULL;  // 80 HEAT
+                const uint64_t HEAT_CD_TIER_3 = 8000000000ULL; // 800 HEAT
 
 		const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
 		const size_t UPGRADE_VOTING_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;

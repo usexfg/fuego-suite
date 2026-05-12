@@ -86,6 +86,10 @@ private:
                         std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,
                         std::vector<TransactionSourceEntry>& sources,
                         uint64_t mixIn);
+  void prepareCommitmentInputs(const std::vector<TransactionOutputInformation>& selectedTransfers,
+                               std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,
+                               std::vector<TransactionSourceEntry>& sources,
+                               uint64_t mixIn);
   std::vector<TransactionTypes::InputKeyInfo> prepareKeyInputs(const std::vector<TransactionOutputInformation>& selectedTransfers,
                                                                std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,
                                                                uint64_t mixIn);

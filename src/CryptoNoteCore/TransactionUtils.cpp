@@ -99,6 +99,9 @@ TransactionTypes::OutputType getTransactionOutputType(const TransactionOutputTar
   if (out.type() == typeid(MultisignatureOutput)) {
     return TransactionTypes::OutputType::Multisignature;
   }
+  if (out.type() == typeid(TransactionOutputCommitment)) {
+    return TransactionTypes::OutputType::Commitment;
+  }
   return TransactionTypes::OutputType::Invalid;
 }
 

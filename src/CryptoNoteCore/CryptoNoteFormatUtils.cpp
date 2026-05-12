@@ -303,7 +303,7 @@ bool check_inputs_types_supported(const TransactionPrefix& tx) {
       if (tx.version < TRANSACTION_VERSION_2) {
         return false;
       }
-    } else if (in.type() != typeid(KeyInput) && in.type() != typeid(MultisignatureInput)) {
+    } else if (in.type() != typeid(KeyInput) && in.type() != typeid(MultisignatureInput) && in.type() != typeid(TransactionInputCommitmentSpend)) {
       return false;
     }
   }

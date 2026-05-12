@@ -18,6 +18,7 @@
 #include "INode.h"
 #include "crypto/crypto.h" //for rand()
 #include "CryptoNoteCore/Account.h"
+#include "CryptoNoteCore/AssetId.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionApi.h"
@@ -735,6 +736,55 @@ namespace CryptoNote
       }
 
       //paste real transaction to the random index
+      auto it_to_insert = std::find_if(src.outputs.begin(), src.outputs.end(), [&](const TransactionSourceEntry::OutputEntry &a) { return a.first >= td.globalOutputIndex; });
+
+      TransactionSourceEntry::OutputEntry real_oe;
+      real_oe.first = td.globalOutputIndex;
+      real_oe.second = td.outputKey;
+
+      auto interted_it = src.outputs.insert(it_to_insert, real_oe);
+
+      src.realTransactionPublicKey = td.transactionPublicKey;
+      src.realOutput = interted_it - src.outputs.begin();
+      src.realOutputIndexInTransaction = td.outputInTransaction;
+      ++i;
+    }
+  }
+
+  void WalletTransactionSender::prepareCommitmentInputs(
+      const std::vector<TransactionOutputInformation> &selectedTransfers,
+      std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> &outs,
+      std::vector<TransactionSourceEntry> &sources, uint64_t mixIn)
+  {
+    size_t i = 0;
+
+    for (const auto &td : selectedTransfers)
+    {
+      assert(td.type == TransactionTypes::OutputType::Commitment);
+
+      sources.resize(sources.size() + 1);
+      TransactionSourceEntry &src = sources.back();
+
+      src.amount = td.amount;
+      src.assetId = static_cast<uint8_t>(AssetId::XFG);
+
+      if (outs.size())
+      {
+        std::sort(outs[i].outs.begin(), outs[i].outs.end(),
+                  [](const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry &a, const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry &b) { return a.global_amount_index < b.global_amount_index; });
+        for (auto &daemon_oe : outs[i].outs)
+        {
+          if (td.globalOutputIndex == daemon_oe.global_amount_index)
+            continue;
+          TransactionSourceEntry::OutputEntry oe;
+          oe.first = static_cast<uint32_t>(daemon_oe.global_amount_index);
+          oe.second = daemon_oe.out_key;
+          src.outputs.push_back(oe);
+          if (src.outputs.size() >= mixIn)
+            break;
+        }
+      }
+
       auto it_to_insert = std::find_if(src.outputs.begin(), src.outputs.end(), [&](const TransactionSourceEntry::OutputEntry &a) { return a.first >= td.globalOutputIndex; });
 
       TransactionSourceEntry::OutputEntry real_oe;

@@ -30,6 +30,7 @@
 #include "CryptoNoteCore/Checkpoints.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "CryptoNoteCore/AssetId.h"
 #include "CryptoNoteCore/HeatMintEngine.h"
 #include "CryptoNoteCore/PiController.h"
 #include "CryptoNoteCore/OracleEngine.h"
@@ -139,6 +140,11 @@ namespace CryptoNote {
 
     template <class visitor_t>
     bool scanOutputKeysForIndexes(const KeyInput &tx_in_to_key, visitor_t &vis, uint32_t *pmax_related_block_height = NULL);
+
+    template <class visitor_t>
+    bool scanOutputKeysForIndexes(const TransactionInputCommitmentSpend &tx_in, visitor_t &vis, uint32_t *pmax_related_block_height = NULL);
+
+    bool check_tx_input_commitment(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = NULL);
 
     bool addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue);
     bool removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue);
@@ -451,6 +457,47 @@ namespace CryptoNote {
       }
 
       if(count++ == absolute_offsets.size()-1 && pmax_related_block_height) {
+        if (*pmax_related_block_height < amount_outs_vec[i].first.block) {
+          *pmax_related_block_height = amount_outs_vec[i].first.block;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  template<class visitor_t> bool Blockchain::scanOutputKeysForIndexes(const TransactionInputCommitmentSpend& tx_in, visitor_t& vis, uint32_t* pmax_related_block_height) {
+    std::lock_guard<std::recursive_mutex> lk(m_blockchain_lock);
+    uint64_t lookupKey = (tx_in.amount << 8) | (uint64_t)AssetId::XFG;
+    auto it = m_outputs.find(lookupKey);
+    if (it == m_outputs.end() || !tx_in.outputIndexes.size())
+      return false;
+
+    std::vector<uint32_t> absolute_offsets = relative_output_offsets_to_absolute(tx_in.outputIndexes);
+    std::vector<std::pair<TransactionIndex, uint16_t>>& amount_outs_vec = it->second;
+    size_t count = 0;
+    for (uint64_t i : absolute_offsets) {
+      if (i >= amount_outs_vec.size()) {
+        logger(Logging::INFO) << "Wrong index in transaction inputs: " << i << ", expected maximum " << amount_outs_vec.size() - 1;
+        return false;
+      }
+
+      const TransactionEntry& tx = transactionByIndex(amount_outs_vec[i].first);
+
+      if (!(amount_outs_vec[i].second < tx.tx.outputs.size())) {
+        logger(Logging::ERROR, Logging::BRIGHT_RED)
+            << "Wrong index in transaction outputs: "
+            << amount_outs_vec[i].second << ", expected less then "
+            << tx.tx.outputs.size();
+        return false;
+      }
+
+      if (!vis.handle_output(tx.tx, tx.tx.outputs[amount_outs_vec[i].second], amount_outs_vec[i].second)) {
+        logger(Logging::INFO) << "Failed to handle_output for output no = " << count << ", with absolute offset " << i;
+        return false;
+      }
+
+      if (count++ == absolute_offsets.size() - 1 && pmax_related_block_height) {
         if (*pmax_related_block_height < amount_outs_vec[i].first.block) {
           *pmax_related_block_height = amount_outs_vec[i].first.block;
         }

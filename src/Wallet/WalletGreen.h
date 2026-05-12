@@ -49,6 +49,10 @@ public:
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) override;
   std::vector<MultisignatureInput> prepareMultisignatureInputs(const std::vector<TransactionOutputInformation> &selectedTransfers);
 
+  /* HEAT + AMM — Commitment Output Model (v1) */
+  void createHeatMintTransaction(uint64_t xfgAmount, const std::string& sourceAddress, std::string& transactionHash);
+  void createAmmSwapTransaction(uint8_t direction, uint64_t inputAmount, uint64_t minOutput, const std::string& sourceAddress, std::string& transactionHash);
+
   
   virtual void initialize(const std::string& path, const std::string& password) override;
   virtual void initializeWithViewKey(const std::string& path, const std::string& password, const Crypto::SecretKey& viewSecretKey) override;

@@ -37,6 +37,7 @@
 #include "Common/StdOutputStream.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/Account.h"
+#include "CryptoNoteCore/AssetId.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -630,6 +631,126 @@ namespace CryptoNote
     /* Return the transaction hash */
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
+  }
+
+  void WalletGreen::createHeatMintTransaction(uint64_t xfgAmount, const std::string& sourceAddress, std::string& transactionHash) {
+    throwIfNotInitialized();
+    throwIfTrackingMode();
+    throwIfStopped();
+
+    std::string src = sourceAddress.empty() ? getAddress(0) : sourceAddress;
+    validateSourceAddresses({src});
+    AccountPublicAddress srcAddr = parseAddress(src);
+
+    std::vector<WalletOuts> wallets = pickWallets({src});
+    uint64_t fee = parameters::MINIMUM_FEE;
+    uint64_t neededMoney = xfgAmount + fee;
+    std::vector<OutputToTransfer> selectedTransfers;
+    uint64_t foundMoney = selectTransfers(neededMoney, true, m_currency.defaultDustThreshold(),
+                                          std::move(wallets), selectedTransfers);
+    if (foundMoney < neededMoney)
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT));
+
+    uint64_t heatAmount = xfgAmount * parameters::HEAT_INITIAL_REDEMPTION_PRICE_DENOM
+                          / parameters::HEAT_INITIAL_REDEMPTION_PRICE_NUM;
+
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    Crypto::SecretKey transactionSK;
+    transaction->getTransactionSecretKey(transactionSK);
+    Crypto::KeyDerivation derivation;
+    generate_key_derivation(srcAddr.viewPublicKey, transactionSK, derivation);
+    Crypto::PublicKey derivedKey;
+    derive_public_key(derivation, 0, srcAddr.spendPublicKey, derivedKey);
+
+    TransactionOutputCommitment commitment;
+    commitment.amount = heatAmount;
+    commitment.key = derivedKey;
+    commitment.term = 0;
+    transaction->addOutput(0, commitment, static_cast<uint8_t>(AssetId::XFG));
+
+    std::vector<uint64_t> amounts;
+    decompose_amount_into_digits(foundMoney - neededMoney, m_currency.defaultDustThreshold(),
+        [&](uint64_t chunk) { amounts.push_back(chunk); },
+        [&](uint64_t dust) { amounts.push_back(dust); });
+    for (const auto& a : amounts)
+      transaction->addOutput(a, srcAddr);
+
+    transaction->setUnlockTime(0);
+
+    typedef COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
+    std::vector<outs_for_amount> mixinResult;
+    std::vector<InputInfo> keysInfo;
+    prepareInputs(selectedTransfers, mixinResult, 4, keysInfo);
+    for (auto& input : keysInfo)
+      transaction->addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
+    size_t i = 0;
+    for (auto& input : keysInfo)
+      transaction->signInputKey(i++, input.keyInfo, input.ephKeys);
+
+    transactionHash = Common::podToHex(transaction->getTransactionHash());
+    validateSaveAndSendTransaction(*transaction, {}, false, true);
+  }
+
+  void WalletGreen::createAmmSwapTransaction(uint8_t direction, uint64_t inputAmount, uint64_t minOutput,
+                                              const std::string& sourceAddress, std::string& transactionHash) {
+    throwIfNotInitialized();
+    throwIfTrackingMode();
+    throwIfStopped();
+
+    std::string src = sourceAddress.empty() ? getAddress(0) : sourceAddress;
+    validateSourceAddresses({src});
+    AccountPublicAddress srcAddr = parseAddress(src);
+
+    std::vector<WalletOuts> wallets = pickWallets({src});
+    uint64_t fee = parameters::MINIMUM_FEE;
+    uint64_t neededMoney = inputAmount + fee;
+    std::vector<OutputToTransfer> selectedTransfers;
+    uint64_t foundMoney = selectTransfers(neededMoney, true, m_currency.defaultDustThreshold(),
+                                          std::move(wallets), selectedTransfers);
+    if (foundMoney < neededMoney)
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT));
+
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    Crypto::SecretKey transactionSK;
+    transaction->getTransactionSecretKey(transactionSK);
+    Crypto::KeyDerivation derivation;
+    generate_key_derivation(srcAddr.viewPublicKey, transactionSK, derivation);
+    Crypto::PublicKey derivedKey;
+    derive_public_key(derivation, 0, srcAddr.spendPublicKey, derivedKey);
+
+    TransactionOutputCommitment commitment;
+    commitment.amount = minOutput;
+    commitment.key = derivedKey;
+    commitment.term = 0;
+    transaction->addOutput(0, commitment, static_cast<uint8_t>(AssetId::XFG));
+
+    std::vector<uint8_t> extra;
+    CryptoNote::addAmmSwapToExtra(extra, direction, inputAmount, minOutput);
+    transaction->appendExtra(extra);
+
+    std::vector<uint64_t> amounts;
+    decompose_amount_into_digits(foundMoney - neededMoney, m_currency.defaultDustThreshold(),
+        [&](uint64_t chunk) { amounts.push_back(chunk); },
+        [&](uint64_t dust) { amounts.push_back(dust); });
+    for (const auto& a : amounts)
+      transaction->addOutput(a, srcAddr);
+
+    transaction->setUnlockTime(0);
+
+    typedef COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
+    std::vector<outs_for_amount> mixinResult;
+    std::vector<InputInfo> keysInfo;
+    prepareInputs(selectedTransfers, mixinResult, 4, keysInfo);
+    for (auto& input : keysInfo)
+      transaction->addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
+    size_t i = 0;
+    for (auto& input : keysInfo)
+      transaction->signInputKey(i++, input.keyInfo, input.ephKeys);
+
+    transactionHash = Common::podToHex(transaction->getTransactionHash());
+    validateSaveAndSendTransaction(*transaction, {}, false, true);
   }
 
   void WalletGreen::validateOrders(const std::vector<WalletOrder> &orders) const

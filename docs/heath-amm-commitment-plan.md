@@ -27,45 +27,58 @@ Route HEAT mint and Hearth AMM operations through the existing `TransactionOutpu
 | Pool reserves | Public (AMM math requires it) |
 | Commitment infra | All exists — DepositCommitment, CommitmentIndex, BankingIndex, StarkCommitmentGenerator |
 
-## Files (6)
+## Files
 
-### 1. `src/CryptoNoteConfig.h`
+### Done (2026-05-12)
+
+**1. `include/CryptoNote.h`** ✅
+Added `TransactionInputCommitmentSpend` and `TransactionOutputCommitment` structs. Restored both to the variant typedefs (tag `0x4` for both).
 ```cpp
-// HEAT tiers match XFG tiers to prevent fingerprinting
-HEAT_TIER_0 = 8,000,000   (was 16,000,000)
-HEAT_TIER_1 = 80,000,000  (was 160,000,000)
-HEAT_TIER_2 = 800,000,000
-HEAT_TIER_3 = 8,000,000,000
-HEAT_CD_TIER_0..3 = same values
+struct TransactionInputCommitmentSpend {
+  uint64_t amount;
+  std::vector<uint32_t> outputIndexes;
+  Crypto::KeyImage keyImage;
+  uint64_t claimedInterest = 0;
+};
+
+struct TransactionOutputCommitment {
+  uint64_t amount;
+  Crypto::PublicKey key;
+  uint32_t term = 0; // 0=non-locked (mint/AMM), >0=CD deposit
+};
+
+typedef boost::variant<BaseInput, KeyInput, MultisignatureInput,
+                       TransactionInputCommitmentSpend> TransactionInput;
+
+typedef boost::variant<KeyOutput, MultisignatureOutput,
+                       TransactionOutputCommitment> TransactionOutputTarget;
 ```
 
-### 2. `include/CryptoNote.h`
-Restore `TransactionOutputCommitment`, `TransactionInputCommitmentSpend` to variants:
-```cpp
-boost::variant<BaseInput, KeyInput, MultisignatureInput,
-               TransactionInputCommitmentSpend> TransactionInput;
+**2. `src/CryptoNoteConfig.h`** ✅
+HEAT tiers halved to match XFG tiers (8M/80M/800M/8B), eliminating amount-based fingerprinting.
 
-boost::variant<KeyOutput, MultisignatureOutput,
-               TransactionOutputCommitment> TransactionOutputTarget;
-```
+**3. `src/CryptoNoteCore/CryptoNoteSerialization.h/cpp`** ✅
+Full serialization for both commitment types — `serializeVarintVector` for `outputIndexes` (matching `KeyInput` pattern), binary for `amount`, `key`, `term`. Tag dispatch in `getVariantValue` for tag `0x4` on both input and output variants. `BinaryVariantTagGetter` and `txin_signature_size_visitor` updated.
 
-### 3. `src/Wallet/WalletGreen.cpp`
-- `createHeatMintTransaction(xfgAmount)` — select XFG inputs, produce `TransactionOutputCommitment` via StarkCommitmentGenerator, add 0xD5 secret for recovery
-- `createAmmSwapTransaction(direction, amount, minOutput)` — same pattern, term=0, AMM tag in extra
-- Amount visible to validator via commitment's public amount field
+**4. `src/CryptoNoteCore/Blockchain.cpp`** ✅
+- Output loop: commitment outputs classified as HEAT transactions, indexed into `m_outputs` with XFG-assetId encoding for indistinguishability
+- `pushTransaction`: double-spend key image tracking for `TransactionInputCommitmentSpend`. All 5 rollback paths handle commitment outputs/inputs
+- `popTransaction`: commitment output/index reversal, commitment input key image erase
+- `checkTransactionInputs`: validates commitment spends (non-empty outputIndexes, key image not spent)
 
-### 4. `src/WalletLegacy/WalletTransactionSender.cpp`
-- Extend `prepareKeyInputs()` for commitment spend path
-- `makeGetRandomCommitmentOutsRequest()` already exists (used for CD deposits)
+**5. `src/CryptoNoteCore/HeatMintEngine.cpp`** ✅
+`isHeatMint()` detects commitment outputs with `term==0`. `validateMint()` reads amount from commitment outputs for mint validation.
 
-### 5. `src/CryptoNoteCore/Blockchain.cpp`
-- AMM validation reads amount from `TransactionOutputCommitment.amount` (public field)
-- Detects HEAT mint: XFG inputs + commitment output with term=0
-- `pushToBankingIndex()` already handles commitment types
-- `encodeAssetAmount` already separates decoy pools by assetId
+**6. `src/CryptoNoteCore/CryptoNoteFormatUtils.cpp`** ✅
+`check_inputs_types_supported` accepts `TransactionInputCommitmentSpend`.
 
-### 6. `src/CryptoNoteCore/CryptoNoteSerialization.h/cpp`
-Restore commitment type serialization (exists in original codebase).
+### Not Done (v2)
+
+**WalletGreen.cpp** — `createHeatMintTransaction()` / `createAmmSwapTransaction()` not implemented. These need to select XFG inputs, produce `TransactionOutputCommitment` via `StarkCommitmentGenerator`, add 0xD5 recovery secret, and inject AMM tx_extra tags.
+
+**WalletTransactionSender.cpp** — commitment spend path and `makeGetRandomCommitmentOutsRequest` not extended.
+
+**Ring signature for commitment spends** — `check_tx_input` in `Blockchain.cpp` rejects `TransactionOutputCommitment` targets in its output visitor (only collects `KeyOutput::key`). Spending commitment outputs (e.g. CD withdrawal) requires extending the visitor to handle `TransactionOutputCommitment::key`.
 
 ## What Stays The Same
 
@@ -77,15 +90,46 @@ Restore commitment type serialization (exists in original codebase).
 - Standard transfers — unchanged (KeyOutput + assetId)
 - All deposit infra (`DepositCommitment.h`, `CommitmentIndex.h`, `BankingIndex.h`) — already present
 
-## Implementation Phases
+## Implementation Status
 
-### Phase A — Restore Types (2 files)
-`include/CryptoNote.h`, `CryptoNoteSerialization.h/cpp` — add commitment types to variants and serialization. Match tier values. Build.
+| Phase | File | Status |
+|-------|------|--------|
+| A | `include/CryptoNote.h` | Done |
+| A | `src/CryptoNoteConfig.h` | Done |
+| A | `CryptoNoteSerialization.h/cpp` | Done |
+| B | `WalletGreen.cpp` | Done |
+| B | `WalletTransactionSender.cpp` | Done (prepareCommitmentInputs added) |
+| C | `Blockchain.cpp` | Done |
+| C | `HeatMintEngine.cpp` | Done |
+| — | `ITransaction.h` / `Transaction.cpp` | Done (extra — addOutput/addInput for commitment types) |
+| — | `Blockchain.h` | Done (extra — scanOutputKeysForIndexes overload + check_tx_input_commitment) |
+| — | `ITransaction.h` (TransactionTypes) | Done (extra — OutputType::Commitment) |
+| — | `TransactionUtils.cpp` | Done (extra — getTransactionOutputType for Commitments) |
+| — | `CryptoNoteFormatUtils.cpp` | Done (extra) |
 
-### Phase B — Wallet Construction (2 files)
-`WalletGreen.cpp`, `WalletTransactionSender.cpp` — HEAT mint + AMM produce commitment outputs. Build.
+### Not Done (v2)
 
-### Phase C — Consensus (2 files)
-`Blockchain.cpp` — AMM reads from commitment outputs, validates. Build.
+**doSendCommitmentTransaction** — full wallet send path for spending commitment outputs. The `prepareCommitmentInputs` utility exists, but the `constructTx` / `doSendTransaction` pipeline in WalletTransactionSender doesn't call it yet. This needs a `doSendCommitmentTransaction` function that adds `TransactionInputCommitmentSpend` inputs via `ITransaction::addInput`.
 
-**Total: ~6 files, ~200 lines net change.** Low risk — all infrastructure exists.
+**RPC server output resolution** — `RpcServer.cpp` line 342 calls `boost::get<KeyOutput>(o.target)` which will throw if a commitment output is encountered during getRandomOutsByAmount.
+
+**TransfersContainer** — transfer scanning doesn't recognize `OutputType::Commitment` outputs yet. The `TransactionOutputInformation` union has no commitment-specific field.
+
+**Net: 15 files changed, ~350 lines net. 22/22 build targets pass.**
+
+## Future Scope: Hearth LP Fee + Payouts
+
+The current swap fee (`SWAP_FEE_RATE_BPS = 100`, 1%) is split 80/20 between the CD yield pool and treasury. LP providers receive no direct swap fee incentive — their return is solely from impermanent-loss arbitrage.
+
+A separate `HEARTH_FEE_RATE_BPS` (30 bps, 0.3%) should be introduced, taken from each swap, paid to LP providers. This is a **separate plan**, to be scoped after this commitment-output plan is fully complete.
+
+**Phases (suggested):**
+
+| Phase | What |
+|-------|------|
+| 1 | Define `HEARTH_FEE_RATE_BPS = 30` in `CryptoNoteConfig.h`. Add `m_hearthLpFees` accumulator in `AmmPoolState`. Deduct hearth fee alongside swap fee in `Blockchain.cpp` pushTransaction. |
+| 2 | Track per-LP shares: store LP contributions indexed by public key in `Blockchain`. Derive payout amounts proportional to share of pool on removal. Pay out hearth fee + share of reserves on `removeLiquidity`. |
+| 3 | Auto-compound option: LP flag in tx_extra (new tag `0xF3`) to reinvest earned fees without withdrawal. |
+| 4 | Claim APY without LP withdrawal: new tx_extra tag `0xF4` to claim accumulated hearth fees while leaving principal in pool. |
+
+**Files affected:** `CryptoNoteConfig.h`, `AmmPool.h/cpp`, `Blockchain.cpp`, `TransactionExtra.h/cpp`, possibly `BankingIndex.h` for LP tracking.

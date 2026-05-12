@@ -17,10 +17,14 @@ namespace CryptoNote {
 HeatMintEngine::HeatMintEngine() = default;
 
 bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
-  uint64_t xfgOutTotal = 0;
   for (const auto& out : tx.outputs) {
     if (out.assetId == static_cast<uint8_t>(AssetId::HEAT)) {
       if (out.amount > 0)
+        return true;
+    }
+    if (out.target.type() == typeid(TransactionOutputCommitment)) {
+      const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
+      if (commitment.amount > 0 && commitment.term == 0)
         return true;
     }
   }
@@ -56,7 +60,14 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   }
 
   for (const auto& out : tx.outputs) {
-    if (out.assetId == static_cast<uint8_t>(AssetId::HEAT)) {
+    if (out.target.type() == typeid(TransactionOutputCommitment)) {
+      const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
+      if (commitment.term == 0) {
+        heatOutputs += commitment.amount;
+      } else {
+        xfgOutputs += commitment.amount;
+      }
+    } else if (out.assetId == static_cast<uint8_t>(AssetId::HEAT)) {
       heatOutputs += out.amount;
     } else {
       xfgOutputs += out.amount;

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -66,12 +66,7 @@ public:
 
   void start(bool startThread = true, const std::string& prompt = "", Console::Color promptColor = Console::Color::Default);
   void stop();
-  void wait();
-
-  // Read one line of user input from within a command handler.
-  // Uses the same queue as handlerThread so there is no race with
-  // AsyncConsoleReader::consoleThread (which owns std::cin).
-  bool readLine(std::string& line) { return m_consoleReader.getline(line); }
+  void wait(); 
 
 private:
 

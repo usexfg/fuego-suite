@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -20,7 +20,7 @@
 #include <string>
 #include <cstdint>
 
-#include "../Common/StringView.h"
+#include <Common/StringView.h>
 
 namespace CryptoNote {
 
@@ -51,7 +51,7 @@ public:
   virtual bool operator()(double& value, Common::StringView name) = 0;
   virtual bool operator()(bool& value, Common::StringView name) = 0;
   virtual bool operator()(std::string& value, Common::StringView name) = 0;
-
+  
   // read/write binary block
   virtual bool binary(void* value, size_t size, Common::StringView name) = 0;
   virtual bool binary(std::string& value, Common::StringView name) = 0;
@@ -78,7 +78,6 @@ bool serialize(T& value, Common::StringView name, ISerializer& serializer) {
 
 template<typename T>
 void serialize(T& value, ISerializer& serializer) {
-  // Call the object's serialize method if it exists
   value.serialize(serializer);
 }
 

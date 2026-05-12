@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -134,8 +134,6 @@ struct TransactionOutputInformationEx : public TransactionOutputInformationIn {
       s(outputKey, "");
     } else if (type == TransactionTypes::OutputType::Multisignature) {
       s(requiredSignatures, "");
-      s(term, "");
-    } else if (type == TransactionTypes::OutputType::Commitment) {
       s(term, "");
     }
   }

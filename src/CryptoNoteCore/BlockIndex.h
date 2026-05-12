@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -19,7 +19,7 @@
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/random_access_index.hpp>
 
-#include "../crypto/hash.h"
+#include "crypto/hash.h"
 #include <vector>
 
 namespace CryptoNote
@@ -30,7 +30,7 @@ namespace CryptoNote
 
   public:
 
-    BlockIndex() :
+    BlockIndex() : 
       m_index(m_container.get<1>()) {}
 
     void pop() {

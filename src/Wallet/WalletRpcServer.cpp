@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -16,23 +16,15 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletRpcServer.h"
-#include "Wallet/WalletGreen.h"
-#include "IWallet.h"
 
 #include <fstream>
-#include <ctime>
-#include <cstring>
 #include "Common/CommandLine.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/Account.h"
 #include "crypto/hash.h"
-#include "crypto/crypto.h"
-#include "SwapDaemon/SwapTypes.h"
-#include "SwapDaemon/AdaptorSwap.h"
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
@@ -135,11 +127,6 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
     static std::unordered_map<std::string, JsonMemberMethod> s_methods = {
       { "create_integrated", makeMemberMethod(&wallet_rpc_server::on_create_integrated) },  
       { "getbalance", makeMemberMethod(&wallet_rpc_server::on_getbalance) },
-      { "get_address", makeMemberMethod(&wallet_rpc_server::on_get_address) },
-      { "sign_offer",    makeMemberMethod(&wallet_rpc_server::on_sign_offer)    },
-      { "initiate_swap", makeMemberMethod(&wallet_rpc_server::on_initiate_swap) },
-      { "complete_swap", makeMemberMethod(&wallet_rpc_server::on_complete_swap) },
-      { "refund_swap",   makeMemberMethod(&wallet_rpc_server::on_refund_swap)   },
       { "transfer", makeMemberMethod(&wallet_rpc_server::on_transfer) },
       { "store", makeMemberMethod(&wallet_rpc_server::on_store) },
       { "get_messages", makeMemberMethod(&wallet_rpc_server::on_get_messages) },
@@ -152,13 +139,7 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "optimize", makeMemberMethod(&wallet_rpc_server::on_optimize) },
       { "estimate_fusion"  , makeMemberMethod(&wallet_rpc_server::on_estimate_fusion) },
       { "send_fusion"      , makeMemberMethod(&wallet_rpc_server::on_send_fusion) },
-      { "reset", makeMemberMethod(&wallet_rpc_server::on_reset) },
-      // Phase 7: CD / COLD wallet RPC bridges
-      { "list_cds",           makeMemberMethod(&wallet_rpc_server::on_list_cds) },
-      { "create_cd",          makeMemberMethod(&wallet_rpc_server::on_create_cd) },
-      { "withdraw_cd",        makeMemberMethod(&wallet_rpc_server::on_withdraw_cd) },
-      { "rollover_cd",        makeMemberMethod(&wallet_rpc_server::on_rollover_cd) },
-      { "estimate_cd_yield",  makeMemberMethod(&wallet_rpc_server::on_estimate_cd_yield) }
+      { "reset", makeMemberMethod(&wallet_rpc_server::on_reset) }
     };
 
     auto it = s_methods.find(jsonRequest.getMethod());
@@ -183,138 +164,6 @@ bool wallet_rpc_server::on_getbalance(const wallet_rpc::COMMAND_RPC_GET_BALANCE:
   res.available_balance = m_wallet.actualBalance();
   res.balance = res.locked_amount + res.available_balance;
   res.unlocked_balance = res.available_balance;
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-bool wallet_rpc_server::on_get_address(const wallet_rpc::COMMAND_RPC_GET_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS::response& res) {
-  res.address = m_wallet.getAddress();
-  res.status = WALLET_RPC_STATUS_OK;
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-bool wallet_rpc_server::on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_OFFER::response& res) {
-  // Get wallet keys
-  CryptoNote::AccountKeys keys;
-  m_wallet.getAccountKeys(keys);
-
-  // Build offer ID: SHA-256 of (spendPubKey || pair || xfgAmount || rateNum || timestamp)
-  uint64_t ts = static_cast<uint64_t>(std::time(nullptr));
-
-  struct OfferIdInput {
-    uint8_t  spendPubKey[32];
-    uint8_t  pair;
-    uint8_t  isSell;
-    uint64_t xfgAmount;
-    uint64_t rateNum;
-    uint64_t timestamp;
-  } offerIdInput;
-
-  std::memcpy(offerIdInput.spendPubKey, &keys.address.spendPublicKey, 32);
-  offerIdInput.pair      = req.pair;
-  offerIdInput.isSell    = req.isSell ? 1 : 0;
-  offerIdInput.xfgAmount = req.xfgAmount;
-  offerIdInput.rateNum   = req.rateNum;
-  offerIdInput.timestamp = ts;
-
-  Crypto::Hash offerIdHash;
-  Crypto::cn_fast_hash(&offerIdInput, sizeof(offerIdInput), offerIdHash);
-
-  // Sign the offer ID hash with spend key
-  Crypto::Signature sig;
-  Crypto::generate_signature(offerIdHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
-
-  res.offerId     = Common::podToHex(offerIdHash);
-  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
-  res.signature   = Common::podToHex(sig);
-  res.timestamp   = ts;
-  res.status      = WALLET_RPC_STATUS_OK;
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-bool wallet_rpc_server::on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res) {
-  try {
-    XfgSwap::SwapParams params;
-
-    // Parse pair
-    std::string pairUpper = req.pair;
-    std::transform(pairUpper.begin(), pairUpper.end(), pairUpper.begin(), ::toupper);
-    params.pair = XfgSwap::swapPairFromString(pairUpper);
-
-    // Parse role
-    std::string roleLower = req.role.empty() ? "alice" : req.role;
-    std::transform(roleLower.begin(), roleLower.end(), roleLower.begin(), ::tolower);
-    params.role = (roleLower == "bob") ? XfgSwap::SwapRole::BOB : XfgSwap::SwapRole::ALICE;
-
-    params.xfgAmount = req.xfgAmount;
-
-    // Parse peer pubkey
-    if (!Common::podFromHex(req.peerPubKey, params.peerSwapPubKey)) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid peerPubKey hex");
-    }
-
-    // Step 1: Generate our swap keypair
-    XfgSwap::adaptor_generate_keys(params);
-
-    // Step 2: Musig2 key aggregation
-    if (!XfgSwap::adaptor_key_aggregate(params)) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Key aggregation failed (invalid peer pubkey?)");
-    }
-
-    // Step 3: Generate nonces
-    XfgSwap::adaptor_nonce_generate(params);
-
-    // Step 4 (Bob only): Generate adaptor secret + DLEQ proof
-    if (params.role == XfgSwap::SwapRole::BOB) {
-      Crypto::PublicKey dleqBase;
-      Crypto::hash_data_to_ec(reinterpret_cast<const uint8_t*>(&params.escrowPubKey), 32, dleqBase);
-      if (!XfgSwap::adaptor_generate_adaptor(params, dleqBase)) {
-        throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to generate adaptor point");
-      }
-    }
-
-    // Derive swap ID from escrow key hash
-    Crypto::Hash swapIdHash;
-    Crypto::cn_fast_hash(&params.escrowPubKey, sizeof(params.escrowPubKey), swapIdHash);
-    params.swapId = Common::podToHex(swapIdHash).substr(0, 16);
-
-    res.swapId    = params.swapId;
-    res.ourPubKey = Common::podToHex(params.ourSwapPubKey);
-    res.nonce0    = Common::podToHex(params.musig2.ourPubNonce.R[0]);
-    res.nonce1    = Common::podToHex(params.musig2.ourPubNonce.R[1]);
-    res.escrowKey = Common::podToHex(params.escrowPubKey);
-    if (params.role == XfgSwap::SwapRole::BOB) {
-      res.adaptorPoint  = Common::podToHex(params.adaptorPoint);
-      res.dleqChallenge = Common::podToHex(params.adaptorDleqProof.challenge);
-      res.dleqResponse  = Common::podToHex(params.adaptorDleqProof.response);
-    }
-    res.status = WALLET_RPC_STATUS_OK;
-  } catch (const JsonRpc::JsonRpcError&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
-  }
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-bool wallet_rpc_server::on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res) {
-  // TODO: requires SwapDaemon IPC channel
-  // complete_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
-  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
-  // Use /processswap via fuegod RPC until the IPC channel is implemented.
-  (void)req;
-  res.txHash = "";
-  res.status = "not yet implemented — SwapDaemon IPC not wired";
-  return true;
-}
-//------------------------------------------------------------------------------------------------------------------------------
-bool wallet_rpc_server::on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res) {
-  // TODO: requires SwapDaemon IPC channel
-  // refund_swap needs full MuSig2 session state that lives in SwapDaemon (M5).
-  // The wallet RPC layer does not have a wired IPC path to SwapDaemon yet.
-  // Use /refundswap via fuegod RPC until the IPC channel is implemented.
-  (void)req;
-  res.txHash = "";
-  res.status = "not yet implemented — SwapDaemon IPC not wired";
   return true;
 }
 //------------------------------------------------------------------------------------------------------------------------------
@@ -359,7 +208,7 @@ bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::requ
     ttl = static_cast<uint64_t>(time(nullptr)) + req.ttl;
   }
 
-  uint64_t actualFee = m_currency.minimumFee();
+  uint64_t actualFee = CryptoNote::parameters::MINIMUM_FEE_V2;
 
   std::string extraString;
   std::copy(extra.begin(), extra.end(), std::back_inserter(extraString));
@@ -457,7 +306,7 @@ bool wallet_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::requ
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;
   std::vector<CryptoNote::TransactionMessage> messages;
   std::string extraString;
-  uint64_t fee = m_currency.minimumFee();
+  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
   uint64_t mixIn = 0;
   uint64_t unlockTimestamp = 0;
   uint64_t ttl = 0;
@@ -716,198 +565,6 @@ bool wallet_rpc_server::on_get_outputs(const wallet_rpc::COMMAND_RPC_GET_OUTPUTS
 
 bool wallet_rpc_server::on_reset(const wallet_rpc::COMMAND_RPC_RESET::request& req, wallet_rpc::COMMAND_RPC_RESET::response& res) {
   m_wallet.reset();
-  return true;
-}
-
-// ── Phase 7: CD / COLD wallet RPC bridges ────────────────────────────────────
-
-bool wallet_rpc_server::on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::request& req, wallet_rpc::COMMAND_RPC_LIST_CDS::response& res) {
-  size_t count = m_wallet.getDepositCount();
-  for (size_t i = 0; i < count; ++i) {
-    CryptoNote::Deposit dep;
-    if (!m_wallet.getDeposit(static_cast<CryptoNote::DepositId>(i), dep)) continue;
-
-    wallet_rpc::COMMAND_RPC_LIST_CDS::deposit_entry entry;
-    entry.deposit_id     = static_cast<uint64_t>(i);
-    entry.amount         = dep.amount;
-    entry.term           = dep.term;
-    entry.unlock_height  = dep.unlockHeight;
-    entry.creation_height = dep.height;
-    entry.locked         = dep.locked;
-
-    switch (dep.depositType) {
-      case CryptoNote::Deposit::Type::HEAT:
-        entry.deposit_type = "HEAT"; break;
-      default:
-        entry.deposit_type = "COLD"; break;
-    }
-
-    res.deposits.push_back(std::move(entry));
-  }
-  res.status = WALLET_RPC_STATUS_OK;
-  return true;
-}
-
-bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::request& req, wallet_rpc::COMMAND_RPC_CREATE_CD::response& res) {
-  try {
-    CryptoNote::WalletGreen* wg = dynamic_cast<CryptoNote::WalletGreen*>(&m_wallet);
-    if (!wg) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "create_cd requires WalletGreen");
-    }
-    if (req.amount == 0) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
-    }
-    if (req.term == 0) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term must be > 0");
-    }
-
-    // Validate deposit_type: only HEAT=0x08, xCD=0xCD, YIELD=0x07 are permitted
-    static const std::initializer_list<uint32_t> validDepositTypes = {0x07, 0x08, 0xCD};
-    bool typeValid = false;
-    for (uint32_t v : validDepositTypes) {
-      if (req.deposit_type == v) { typeValid = true; break; }
-    }
-    if (!typeValid) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-          "deposit_type must be one of: 0x07 (YIELD), 0x08 (HEAT), 0xCD (xCD)");
-    }
-
-    // Map wire deposit_type to internal CommitmentType
-    CryptoNote::CommitmentType commitType =
-        (req.deposit_type == 0x08) ? CryptoNote::CommitmentType::HEAT :
-        (req.deposit_type == 0x07) ? CryptoNote::CommitmentType::YIELD :
-                                     CryptoNote::CommitmentType::COLD;
-    CryptoNote::DepositCommitment commitment(commitType, Crypto::Hash{});
-
-    std::string txHash;
-    CryptoNote::IWallet* iwallet = static_cast<CryptoNote::IWallet*>(wg);
-    std::string addr = iwallet->getAddress(0);
-    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash, commitment);
-
-    // Deposit ID is the new last index after creation
-    size_t depositId = iwallet->getWalletDepositCount() - 1;
-    CryptoNote::Deposit dep = iwallet->getDeposit(depositId);
-
-    res.tx_hash       = txHash;
-    res.deposit_id    = static_cast<uint64_t>(depositId);
-    res.unlock_height = dep.unlockHeight;
-    res.status        = WALLET_RPC_STATUS_OK;
-  } catch (const JsonRpc::JsonRpcError&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
-  }
-  return true;
-}
-
-bool wallet_rpc_server::on_withdraw_cd(const wallet_rpc::COMMAND_RPC_WITHDRAW_CD::request& req, wallet_rpc::COMMAND_RPC_WITHDRAW_CD::response& res) {
-  try {
-    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
-    CryptoNote::Deposit dep;
-    if (!m_wallet.getDeposit(depId, dep)) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
-    }
-    if (dep.locked) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit is not yet mature");
-    }
-
-    CryptoNote::TransactionId txId = m_wallet.withdrawDeposits({depId}, 0);
-    CryptoNote::WalletLegacyTransaction txInfo;
-    m_wallet.getTransaction(txId, txInfo);
-    res.tx_hash = Common::podToHex(txInfo.hash);
-    res.status  = WALLET_RPC_STATUS_OK;
-  } catch (const JsonRpc::JsonRpcError&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
-  }
-  return true;
-}
-
-bool wallet_rpc_server::on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD::request& req, wallet_rpc::COMMAND_RPC_ROLLOVER_CD::response& res) {
-  try {
-    CryptoNote::WalletGreen* wg = dynamic_cast<CryptoNote::WalletGreen*>(&m_wallet);
-    if (!wg) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Rollover requires WalletGreen");
-    }
-
-    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
-    CryptoNote::Deposit dep;
-    if (!m_wallet.getDeposit(depId, dep)) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
-    }
-    if (dep.locked) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit is not yet mature");
-    }
-
-    uint32_t newTerm = (req.new_term == 0) ? dep.term : req.new_term;
-    std::string txHash;
-
-    // Obtain accumulated CD interest via INode (delegates to CommitmentIndex in the Core).
-    uint32_t currentHeight = m_node.getLastLocalBlockHeight();
-    uint64_t interest = 0;
-    std::error_code ec = m_node.getCdInterest(dep.amount, dep.height, currentHeight, interest);
-    if (ec) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-                                  "getCdInterest failed: " + ec.message());
-    }
-
-    if (!wg->rolloverDeposit(depId, newTerm, interest, txHash)) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR,
-                                  "rolloverDeposit failed");
-    }
-
-    // Get new deposit info (last created)
-    size_t newDepId = m_wallet.getDepositCount() - 1;
-    CryptoNote::Deposit newDep;
-    m_wallet.getDeposit(static_cast<CryptoNote::DepositId>(newDepId), newDep);
-
-    res.tx_hash    = txHash;
-    res.new_amount = newDep.amount;
-    res.status     = WALLET_RPC_STATUS_OK;
-  } catch (const JsonRpc::JsonRpcError&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
-  }
-  return true;
-}
-
-bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::response& res) {
-  try {
-    if (req.amount == 0) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
-    }
-
-    uint32_t currentHeight = (req.current_height == 0)
-      ? m_node.getLastLocalBlockHeight()
-      : req.current_height;
-
-    uint32_t heightDiff = (currentHeight > req.creation_height)
-      ? (currentHeight - req.creation_height) : 0;
-
-    // Epoch duration constants
-    const uint32_t epochDuration = m_currency.isTestnet()
-      ? static_cast<uint32_t>(CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS)
-      : static_cast<uint32_t>(CryptoNote::parameters::EPOCH_DURATION_BLOCKS);
-
-    res.effective_epochs = heightDiff / epochDuration;
-
-    // Delegate to INode which in turn calls CommitmentIndex via Core.
-    uint64_t interest = 0;
-    std::error_code ec = m_node.getCdInterest(req.amount, req.creation_height,
-                                               currentHeight, interest);
-    if (ec) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-                                  "getCdInterest failed: " + ec.message());
-    }
-    res.estimated_interest = interest;
-    res.status = WALLET_RPC_STATUS_OK;
-  } catch (const JsonRpc::JsonRpcError&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
-  }
   return true;
 }
 

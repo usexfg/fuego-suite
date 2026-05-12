@@ -1,0 +1,14 @@
+2026-Apr-21 22:54:24.867947 INFO [main] PaymentService  vDYNAMIGO || v1.10.00.1150(0.2)
+2026-Apr-21 22:54:24.868427 INFO [generateNewWallet] Generating new deterministic wallet
+2026-Apr-21 22:54:24.917219 INFO [WalletGreen/97ce3] Container initialized with view secret key, public view key 97ce3e9004bd3c608d1138bc47a483e4e99da80c9b3090e1dc887ea7c81e0e8e
+2026-Apr-21 22:54:24.917568 INFO [WalletGreen/97ce3] New wallet added TESTmWA63BREvaewgBE9AvdLPnVBzvXs8VbA91KLVbrPKSKEzMF41ibYepqYQKi1f4UX1DDvTMphG989jLUaNHt3294fYoXGvq, creation timestamp 1776826464
+2026-Apr-21 22:54:24.917651 INFO [generateNewWallet] New deterministic wallet is generated. Address: TESTmWA63BREvaewgBE9AvdLPnVBzvXs8VbA91KLVbrPKSKEzMF41ibYepqYQKi1f4UX1DDvTMphG989jLUaNHt3294fYoXGvq
+2026-Apr-21 22:54:24.917692 INFO [generateNewWallet] New wallet generated.
+2026-Apr-21 22:54:24.917723 INFO [generateNewWallet] Address: TESTmWA63BREvaewgBE9AvdLPnVBzvXs8VbA91KLVbrPKSKEzMF41ibYepqYQKi1f4UX1DDvTMphG989jLUaNHt3294fYoXGvq
+2026-Apr-21 22:54:24.917759 INFO [generateNewWallet] Secret spend key: adeb592fc4c617d663ee6de14a8ac7e980ed8231a33eabfd4ca5c71d9dd1bd09
+2026-Apr-21 22:54:24.917786 INFO [generateNewWallet] Secret view key: 407b19385a9dca314a260eddf7884ca5180c15236d868a96ae85b1eecc677204
+2026-Apr-21 22:54:24.917812 INFO [WalletGreen/97ce3] Saving container...
+2026-Apr-21 22:54:24.917864 INFO [WalletGreen/97ce3] Saving cache...
+2026-Apr-21 22:54:24.918680 INFO [WalletGreen/97ce3] Container saving finished
+2026-Apr-21 22:54:24.918760 INFO [WalletGreen/97ce3] Container saved
+2026-Apr-21 22:54:24.918788 INFO [generateNewWallet] Wallet is saved

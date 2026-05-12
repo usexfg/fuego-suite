@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -18,12 +18,11 @@
 #include "CryptoNoteBasicImpl.h"
 #include "CryptoNoteFormatUtils.h"
 #include "CryptoNoteTools.h"
-#include "../CryptoNoteConfig.h"
-// #include "CryptoNoteSerialization.h"
+#include "CryptoNoteSerialization.h"
 
-#include "../Common/Base58.h"
-#include "../crypto/hash.h"
-#include "../Common/int-util.h"
+#include "Common/Base58.h"
+#include "crypto/hash.h"
+#include "Common/int-util.h"
 
 using namespace Crypto;
 using namespace Common;
@@ -34,50 +33,38 @@ namespace CryptoNote {
   /* CryptoNote helper functions                                          */
   /************************************************************************/
   //-----------------------------------------------------------------------------------------------
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize, uint8_t blockMajorVersion) {
-      static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
-      assert(currentBlockSize <= 2 * medianSize);
-      assert(medianSize <= std::numeric_limits<uint32_t>::max());
-      assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize) {
+    static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
+    assert(currentBlockSize <= 2 * medianSize);
+    assert(medianSize <= std::numeric_limits<uint32_t>::max());
+    assert(currentBlockSize <= std::numeric_limits<uint32_t>::max());
 
-      if (amount == 0) {
-        return 0;
-      }
-
-      if (currentBlockSize <= medianSize) {
-        return amount;
-      }
-
-      uint64_t productHi;
-      uint64_t productLo;
-
-      if (blockMajorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_10) {
-        // Monero bugfix: prevent 32-bit intermediate overflow on ARM/32-bit platforms
-        uint64_t multiplicand = UINT64_C(2) * medianSize - currentBlockSize;
-        multiplicand *= currentBlockSize;
-        productLo = mul128(amount, multiplicand, &productHi);
-      } else {
-        // Original CryptoNote formula — must be preserved for pre-v10 historical blocks
-        // because all pre-v10 blocks were mined and validated using this exact expression
-        productLo = mul128(amount, currentBlockSize * (UINT64_C(2) * medianSize - currentBlockSize), &productHi);
-      }
-
-      uint64_t penalizedAmountHi;
-      uint64_t penalizedAmountLo;
-      div128_32(productHi, productLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
-      div128_32(penalizedAmountHi, penalizedAmountLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
-
-      assert(0 == penalizedAmountHi);
-      assert(penalizedAmountLo < amount);
-
-      return penalizedAmountLo;
+    if (amount == 0) {
+      return 0;
     }
+
+    if (currentBlockSize <= medianSize) {
+      return amount;
+    }
+
+    uint64_t productHi;
+    uint64_t productLo = mul128(amount, currentBlockSize * (UINT64_C(2) * medianSize - currentBlockSize), &productHi);
+
+    uint64_t penalizedAmountHi;
+    uint64_t penalizedAmountLo;
+    div128_32(productHi, productLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
+    div128_32(penalizedAmountHi, penalizedAmountLo, static_cast<uint32_t>(medianSize), &penalizedAmountHi, &penalizedAmountLo);
+
+    assert(0 == penalizedAmountHi);
+    assert(penalizedAmountLo < amount);
+
+    return penalizedAmountLo;
+  }
   //-----------------------------------------------------------------------
   std::string getAccountAddressAsStr(uint64_t prefix, const AccountPublicAddress& adr) {
     BinaryArray ba;
     bool r = toBinaryArray(adr, ba);
     assert(r);
-    (void)r; // Suppress unused variable warning
     return Tools::Base58::encode_addr(prefix, Common::asString(ba));
   }
   //-----------------------------------------------------------------------
@@ -102,12 +89,6 @@ namespace CryptoNote {
       // ::serialization::parse_binary(data, adr) &&
       check_key(adr.spendPublicKey) &&
       check_key(adr.viewPublicKey);
-  }
-  //-----------------------------------------------------------------------
-  bool isSubAddressStr(const std::string& str, uint64_t subaddrPrefix) {
-    uint64_t prefix;
-    std::string data;
-    return Tools::Base58::decode_addr(str, prefix, data) && prefix == subaddrPrefix;
   }
   //-----------------------------------------------------------------------
   bool operator ==(const CryptoNote::Transaction& a, const CryptoNote::Transaction& b) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -38,7 +38,7 @@
 namespace CryptoNote {
 
 JsonRpcServer::JsonRpcServer(System::Dispatcher& sys, System::Event& stopEvent, Logging::ILogger& loggerGroup) :
-  HttpServer(sys, loggerGroup),
+  HttpServer(sys, loggerGroup), 
   system(sys),
   stopEvent(stopEvent),
   logger(loggerGroup, "JsonRpcServer")
@@ -95,7 +95,7 @@ void JsonRpcServer::prepareJsonResponse(const Common::JsonValue& req, Common::Js
   if (req.contains("id")) {
     resp.insert("id", req("id"));
   }
-
+  
   resp.insert("jsonrpc", "2.0");
 }
 

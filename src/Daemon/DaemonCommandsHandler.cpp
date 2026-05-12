@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2019-2021 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,16 +17,15 @@
 
 #include "DaemonCommandsHandler.h"
 #include <ctime>
-#include "../P2p/NetNode.h"
+#include "P2p/NetNode.h"
 #include "CryptoNoteCore/Miner.h"
 #include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
 #include "Serialization/SerializationTools.h"
-#include "../version.h.in"
+#include "version.h"
 #include <boost/format.hpp>
-#include "Common/MathUtils.h"
-#include "Common/ConsoleTools.h"
+#include "math.h"
 
 namespace
 {
@@ -61,15 +60,13 @@ DaemonCommandsHandler::DaemonCommandsHandler(CryptoNote::core& core, CryptoNote:
   m_consoleHandler.setHandler("print_ban", boost::bind(&DaemonCommandsHandler::print_ban, this, boost::arg<1>()), "Print banned nodes");
   m_consoleHandler.setHandler("ban", boost::bind(&DaemonCommandsHandler::ban, this, boost::arg<1>()), "Ban a given <IP> for a given amount of <seconds>, ban <IP> [<seconds>]");
   m_consoleHandler.setHandler("unban", boost::bind(&DaemonCommandsHandler::unban, this, boost::arg<1>()), "Unban a given <IP>, unban <IP>");
-  m_consoleHandler.setHandler("getburnedxfg", boost::bind(&DaemonCommandsHandler::get_burned_xfg, this, boost::arg<1>()), "Get total burned XFG amount");
 }
 
 //--------------------------------------------------------------------------------
 std::string DaemonCommandsHandler::get_commands_str()
 {
   std::stringstream ss;
-  // Add bright orange color code directly to stringstream
-  ss << "\033[1;33mFUEGO  ||  " << PROJECT_VERSION_LONG << "\033[0m" << ENDL;
+  ss << "FUEGO  ||  " << PROJECT_VERSION_LONG << ENDL;
   ss << "Commands: " << ENDL;
   std::string usage = m_consoleHandler.getUsage();
   boost::replace_all(usage, "\n", "\n  ");
@@ -327,25 +324,20 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
   bool synced = ((uint32_t)height == (uint32_t)last_known_block_index);
   uint64_t totalCoinsInNetwork = m_core.coinsEmittedAtHeight(height);
   uint64_t totalCoinsOnDeposits = m_core.depositAmountAtHeight(height);
-  uint64_t totalCoinsEthereal = m_core.getBurnedXfgAtHeight(height);
   uint64_t amountOfActiveCoins = totalCoinsInNetwork - totalCoinsOnDeposits;
 
 
 std::cout << std::endl
-         << "FUEGO |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
-         << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index
+         << "FUEGO |" << (m_core.currency().isTestnet() ? " LOCAL Testnet - " : " MAINNET | ")
+         << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index 
          << " (" << get_sync_percentage(height, last_known_block_index) << "%) "<< std::endl;
 std::cout << "**************************************************"<< std::endl;
 std::cout << "Network Hashrate: " << get_mining_speed(hashrate) << ", Difficulty: " << difficulty << std::endl;
 std::cout << "Block Major version: " << (int)majorVersion << ", " << "Alt Blocks: " << alt_blocks_count << std::endl;
 const auto &currency = m_core.currency();
-std::cout << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " minted to date:  " << currency.formatAmount(totalCoinsInNetwork) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
-std::cout << "Total Ethereal (burned) : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (reborn coinbase rewards)" << std::endl;
-std::cout << "Locked in COLD Banking : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
-uint64_t actualTotalSupply = (totalCoinsInNetwork > totalCoinsEthereal) ? (totalCoinsInNetwork - totalCoinsEthereal) : 0;
-uint64_t actualCircSupply = (actualTotalSupply > totalCoinsOnDeposits) ? (actualTotalSupply - totalCoinsOnDeposits) : 0;
-std::cout << "Circulating (unbanked) : " << currency.formatAmount(actualCircSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, actualCircSupply, actualTotalSupply)) << "%)" << std::endl;
-std::cout << "Total Supply (minus burns): " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+std::cout << "Total active (unlocked) XFG :  " << currency.formatAmount(amountOfActiveCoins) << " (" << currency.formatAmount(calculatePercent(currency, amountOfActiveCoins, totalCoinsInNetwork)) << "%)" << std::endl;
+std::cout << "Total XFG locked in COLD : " << currency.formatAmount(totalCoinsOnDeposits) << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
+std::cout << "Current amount of XFG in Network :  " << currency.formatAmount(totalCoinsInNetwork)<<" XFG"<< std::endl;
 std::cout << "**************************************************"<< std::endl;
   return true;
 }
@@ -472,7 +464,7 @@ bool DaemonCommandsHandler::ban(const std::vector<std::string>& args)
     if (seconds == 0) {
       return false;
     }
-  }
+  } 
   try {
     ip = Common::stringToIpAddress(addr);
   } catch (const std::exception &e) {
@@ -494,9 +486,4 @@ bool DaemonCommandsHandler::unban(const std::vector<std::string>& args)
     return false;
   }
   return m_srv.unban_host(ip);
-}
-bool DaemonCommandsHandler::get_burned_xfg(const std::vector<std::string>& args) {
-  uint64_t burnedXFG = m_core.currency().getEternalFlame();
-  std::cout << "Total burned XFG: " << m_core.currency().formatAmount(burnedXFG) << " XFG" << std::endl;
-  return true;
 }

@@ -2077,7 +2077,7 @@ bool simple_wallet::transfer(const std::vector<std::string> &args) {
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
     /* set static mixin of 2*/
-    cmd.fake_outs_count = CryptoNote::parameters::MINIMUM_MIXIN;
+    cmd.fake_outs_count = CryptoNote::parameters::MINIMUM_MIXIN + 2;
 
     /* force minimum fee */
     if (cmd.fee < CryptoNote::parameters::MINIMUM_FEE_V2) {
@@ -2403,7 +2403,7 @@ bool simple_wallet::refresh_digm(const std::vector<std::string>& args) {
 
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT colored coin (v10+)";
-  success_msg_writer() << "  Initial redemption price: 0.5 XFG per HEAT";
+  success_msg_writer() << "  Initial redemption price: 0.2 XFG per HEAT";
   success_msg_writer() << "  Mint: burn XFG → mint HEAT at current redemption price";
   success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM";
   success_msg_writer() << "  Query daemon for live metrics: /get_heat_metrics";
@@ -2414,7 +2414,7 @@ bool simple_wallet::pool_info(const std::vector<std::string>& args) {
   success_msg_writer() << "Hearth AMM pool (v10+)";
   success_msg_writer() << "  Pool: XFG/HEAT constant-product (X * Y = K)";
   success_msg_writer() << "  Fee: 1% (100 bps), routed to epoch CD pool";
-  success_msg_writer() << "  Bootstrap: 100 XFG + 200 HEAT at v10 fork";
+  success_msg_writer() << "  Bootstrap: 100 XFG + 500 HEAT at v10 fork";
   success_msg_writer() << "  Query daemon for live state: /amm_pool_info";
   success_msg_writer() << "  Add liquidity: add_liq <xfg> <heat>";
   success_msg_writer() << "  Remove liquidity: remove_liq <lp_shares> <min_xfg> <min_heat>";

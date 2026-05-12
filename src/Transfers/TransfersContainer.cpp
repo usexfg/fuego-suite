@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -103,7 +103,7 @@ namespace {
 
     uint32_t unlockTime = static_cast<uint32_t>(output.unlockTime == 0 ? output.blockHeight : output.unlockTime);
 
-    if ((output.type == TransactionTypes::OutputType::Multisignature || output.type == TransactionTypes::OutputType::Commitment) && output.term != 0) {
+    if (output.type == TransactionTypes::OutputType::Multisignature && output.term != 0) {
       job.unlockHeight = std::max({ unlockTime, output.blockHeight + output.term, output.blockHeight + transactionSpendableAge + 1 });
     } else {
       job.unlockHeight = std::max(unlockTime, output.blockHeight + transactionSpendableAge + 1);
@@ -137,9 +137,6 @@ SpentOutputDescriptor::SpentOutputDescriptor(const TransactionOutputInformationI
   } else if (m_type == TransactionTypes::OutputType::Multisignature) {
     m_amount = transactionInfo.amount;
     m_globalOutputIndex = transactionInfo.globalOutputIndex;
-  } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    // Commitment outputs use keyImage for double-spend tracking (same as Key).
-    m_keyImage = &transactionInfo.keyImage;
   } else {
     assert(false);
   }
@@ -173,8 +170,6 @@ bool SpentOutputDescriptor::operator==(const SpentOutputDescriptor& other) const
     return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
   } else if (m_type == TransactionTypes::OutputType::Multisignature) {
     return other.m_type == m_type && other.m_amount == m_amount && other.m_globalOutputIndex == m_globalOutputIndex;
-  } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    return other.m_type == m_type && *other.m_keyImage == *m_keyImage;
   } else {
     assert(false);
     return false;
@@ -189,9 +184,6 @@ size_t SpentOutputDescriptor::hash() const {
     size_t hashValue = boost::hash_value(m_amount);
     boost::hash_combine(hashValue, m_globalOutputIndex);
     return hashValue;
-  } else if (m_type == TransactionTypes::OutputType::Commitment) {
-    static_assert(sizeof(size_t) < sizeof(*m_keyImage), "sizeof(size_t) < sizeof(*m_keyImage)");
-    return *reinterpret_cast<const size_t*>(m_keyImage->data);
   } else {
     assert(false);
     return 0;
@@ -295,8 +287,7 @@ bool TransfersContainer::addTransactionOutputs(const TransactionBlockInfo& block
       (void)result; // Disable unused warning
       assert(result.second);
     } else {
-      if (info.type == TransactionTypes::OutputType::Multisignature ||
-          info.type == TransactionTypes::OutputType::Commitment) {
+      if (info.type == TransactionTypes::OutputType::Multisignature) {
         SpentOutputDescriptor descriptor(transfer);
         if (m_availableTransfers.get<SpentOutputDescriptorIndex>().count(descriptor) > 0 ||
             m_spentTransfers.get<SpentOutputDescriptorIndex>().count(descriptor) > 0) {
@@ -387,48 +378,6 @@ bool TransfersContainer::addTransactionInputs(const TransactionBlockInfo& block,
 
         inputsAdded = true;
       }
-    } else if (inputType == TransactionTypes::InputType::CommitmentSpend) {
-      // Commitment withdrawal: lookup by keyImage (same as Key inputs)
-      auto inputs = tx.getInputs();
-      const auto& csInput = boost::get<TransactionInputCommitmentSpend>(inputs[i]);
-
-      SpentOutputDescriptor descriptor(&csInput.keyImage);
-      auto spentRange = m_spentTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      if (std::distance(spentRange.first, spentRange.second) > 0) {
-        throw std::runtime_error("Spending already spent commitment transfer");
-      }
-
-      auto availableRange = m_availableTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      auto unconfirmedRange = m_unconfirmedTransfers.get<SpentOutputDescriptorIndex>().equal_range(descriptor);
-      size_t availableCount = std::distance(availableRange.first, availableRange.second);
-      size_t unconfirmedCount = std::distance(unconfirmedRange.first, unconfirmedRange.second);
-
-      if (availableCount == 0) {
-        if (unconfirmedCount > 0) {
-          throw std::runtime_error("Spending unconfirmed commitment transfer");
-        } else {
-          continue;
-        }
-      }
-
-      auto& outputDescriptorIndex = m_availableTransfers.get<SpentOutputDescriptorIndex>();
-      auto availableOutputsRange = outputDescriptorIndex.equal_range(SpentOutputDescriptor(&csInput.keyImage));
-
-      auto iteratorList = createTransferIteratorList(availableOutputsRange);
-      iteratorList.sort();
-      auto spendingTransferIt = iteratorList.findFirstByAmount(csInput.amount);
-
-      if (spendingTransferIt == availableOutputsRange.second) {
-        throw std::runtime_error("CommitmentSpend input has invalid amount, corresponding output isn't found");
-      }
-
-      assert(spendingTransferIt->keyImage == csInput.keyImage);
-      deleteUnlockJob(*spendingTransferIt);
-      copyToSpent(block, tx, i, *spendingTransferIt);
-      outputDescriptorIndex.erase(spendingTransferIt);
-      updateTransfersVisibility(csInput.keyImage);
-
-      inputsAdded = true;
     } else {
       assert(inputType == TransactionTypes::InputType::Generating);
     }
@@ -993,11 +942,8 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
     return current_time + m_currency.lockedTxAllowedDeltaSeconds_v2() >= info.unlockTime;
   }
 
-  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0) {
-    // Deposit matures when currentHeight >= creationHeight + term.
-    // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
-    // which also requires currentHeight >= maturityHeight (strict >=, no off-by-one).
-    isOuputUnlocked = m_currentHeight >= info.blockHeight + info.term;
+  if (isOuputUnlocked && info.type == TransactionTypes::OutputType::Multisignature && info.term != 0) {
+    isOuputUnlocked = m_currentHeight + 1 >= info.blockHeight + info.term;
   }
 
   return isOuputUnlocked;
@@ -1022,8 +968,7 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
     (
     ((flags & IncludeTypeKey) != 0            && output.type == TransactionTypes::OutputType::Key) ||
     ((flags & IncludeTypeMultisignature) != 0 && output.type == TransactionTypes::OutputType::Multisignature && output.term == 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0)
+    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0)
     )
     &&
     // filter by state
@@ -1061,10 +1006,8 @@ std::vector<TransactionOutputInformation> TransfersContainer::getUnlockingTransf
   }
 
   auto& index = m_transfersUnlockJobs.get<TransferUnlockHeightIndex>();
-  // Use upper_bound(currentHeight) so a deposit with unlockHeight=H unlocks
-  // when currentHeight >= H (consistent with consensus >= check, no off-by-one).
-  auto start = (prevHeight == 0) ? index.begin() : index.upper_bound(prevHeight);
-  auto end = index.upper_bound(currentHeight);
+  auto start = (prevHeight == 0) ? index.begin() : index.upper_bound(prevHeight + 1);
+  auto end = index.upper_bound(currentHeight + 1);
 
   if (start == end) {
     //no transfers to unlock
@@ -1093,10 +1036,8 @@ void TransfersContainer::getLockingTransfers(uint32_t prevHeight, uint32_t curre
   }
 
   auto& index = m_transfersUnlockJobs.get<TransferUnlockHeightIndex>();
-  // Mirror the getUnlockingTransfers fix: use upper_bound(H) so rollback
-  // re-locks exactly the transfers that were unlocked at prevHeight.
-  auto start = index.upper_bound(currentHeight);
-  auto end = index.upper_bound(prevHeight);
+  auto start = index.upper_bound(currentHeight + 1);
+  auto end = index.upper_bound(prevHeight + 1);
 
   if (start == end) {
     //no transfers to lock

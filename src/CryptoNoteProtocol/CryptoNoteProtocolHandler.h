@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -65,7 +65,7 @@ namespace CryptoNote
     virtual bool removeObserver(ICryptoNoteProtocolObserver* observer) override;
 
     void set_p2p_endpoint(IP2pEndpoint* p2p);
-    ICore& get_core() { return m_core; }
+    // ICore& get_core() { return m_core; }
     virtual bool isSynchronized() const override { return m_synchronized; }
     void log_connections();
     std::vector<std::string> all_connections();

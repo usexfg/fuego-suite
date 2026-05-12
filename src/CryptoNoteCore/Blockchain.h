@@ -32,6 +32,7 @@
 #include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/HeatMintEngine.h"
 #include "CryptoNoteCore/PiController.h"
+#include "CryptoNoteCore/OracleEngine.h"
 #include "Common/FixedPoint.h"
 #include "CryptoNoteCore/DepositIndex.h"
 #include "CryptoNoteCore/IBlockchainStorageObserver.h"
@@ -319,10 +320,23 @@ namespace CryptoNote {
     FixedPoint64 m_heatRedemptionPrice = FixedPoint64::fromRatio(
       parameters::HEAT_INITIAL_REDEMPTION_PRICE_NUM,
       parameters::HEAT_INITIAL_REDEMPTION_PRICE_DENOM);
-    FixedPoint64 m_heatIntegralError;
+    FixedPoint64 m_heatIntegralDeviation;
     FixedPoint64 m_heatRedemptionRate;
     uint64_t m_currentEpochSwapFees = 0;
     uint64_t m_treasuryBalance = 0;
+
+    // HEAT CD yield state
+    uint64_t m_heatCdLockedTotal = 0;                          // total HEAT in CDs
+    uint64_t m_heatCdFeePool = 0;                              // accumulated HEAT for CD yields
+    std::map<uint64_t, uint64_t> m_heatCdEpochRates;           // epoch → HEAT fee pool snapshot
+    uint64_t m_cdReserve = 0;                                  // XFG held over from low-rate periods
+
+    // TWAP: time-weighted average price accumulator
+    unsigned __int128 m_twapAccumulator = 0;
+    uint64_t m_twapBlockCount = 0;
+
+    // Oracle: XFG/USD price feed for HEAT USD target
+    OracleEngine m_oracle;
 
 
     bool m_blockchainIndexesEnabled;

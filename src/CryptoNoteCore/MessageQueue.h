@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -21,8 +21,8 @@
 
 #include "IntrusiveLinkedList.h"
 
-#include "../System/Event.h"
-#include "../System/InterruptedException.h"
+#include "System/Event.h"
+#include "System/InterruptedException.h"
 
 namespace CryptoNote {
 
@@ -37,7 +37,7 @@ public:
   void stop();
 
   typename IntrusiveLinkedList<MessageQueue<MessageType>>::hook& getHook();
-
+  
 private:
   void wait();
   std::queue<MessageType> messageQueue;

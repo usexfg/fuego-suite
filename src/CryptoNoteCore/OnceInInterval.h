@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -25,7 +25,7 @@ namespace CryptoNote
 class OnceInInterval {
 public:
 
-  OnceInInterval(unsigned interval, bool startNow = true)
+  OnceInInterval(unsigned interval, bool startNow = true) 
     : m_interval(interval), m_lastCalled(startNow ? 0 : time(nullptr)) {}
 
   template<class F>

@@ -1,4 +1,3 @@
-// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2011-2017 The Cryptonote developers
 // Copyright (c) 2017-2018 The Circle Foundation & Conceal Devs
 // Copyright (c) 2018-2019 The TurtleCoin developers
@@ -10,12 +9,12 @@
 #pragma once
 
 #include <list>
-#include "../CryptoNoteCore/CryptoNoteBasic.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
 
 // ISerializer-based serialization
-#include "../Serialization/ISerializer.h"
-#include "../Serialization/SerializationOverloads.h"
-#include "../CryptoNoteCore/CryptoNoteSerialization.h"
+#include "Serialization/ISerializer.h"
+#include "Serialization/SerializationOverloads.h"
+#include "CryptoNoteCore/CryptoNoteSerialization.h"
 
 namespace CryptoNote
 {
@@ -245,3 +244,4 @@ namespace CryptoNote
     typedef NOTIFY_MISSING_TXS_request request;
   };
 } // namespace CryptoNote
+

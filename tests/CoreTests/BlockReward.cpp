@@ -5,7 +5,7 @@
 
 #include "BlockReward.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
-#include <Common/MathUtils.h>
+#include <Common/Math.h>
 
 using namespace CryptoNote;
 

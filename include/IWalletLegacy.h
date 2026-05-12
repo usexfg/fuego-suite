@@ -1,6 +1,6 @@
 // Copyright (c) 2012-2018 The CryptoNote developers
 // Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //
@@ -26,8 +26,8 @@
 #include <list>
 #include <boost/optional.hpp>
 #include "CryptoNote.h"
-#include "../src/CryptoNoteCore/CryptoNoteBasic.h"
-#include "../src/Rpc/CoreRpcServerCommandsDefinitions.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
+#include "Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "ITransfersContainer.h"
 #include "IWallet.h"
 
@@ -102,14 +102,11 @@ public:
   virtual void actualDepositBalanceUpdated(uint64_t actualDepositBalance) {}
   virtual void pendingDepositBalanceUpdated(uint64_t pendingDepositBalance) {}
   virtual void actualInvestmentBalanceUpdated(uint64_t actualInvestmentBalance) {}
-  virtual void pendingInvestmentBalanceUpdated(uint64_t pendingInvestmentBalance) {}
+  virtual void pendingInvestmentBalanceUpdated(uint64_t pendingInvestmentBalance) {}  
   virtual void externalTransactionCreated(TransactionId transactionId) {}
   virtual void sendTransactionCompleted(TransactionId transactionId, std::error_code result) {}
   virtual void transactionUpdated(TransactionId transactionId) {}
   virtual void depositsUpdated(const std::vector<DepositId>& depositIds) {}
-  virtual void burnSecretCreated(const std::string& txHash) {}
-  virtual void burnProofGenerated(const std::string& txHash) {}
-  virtual void coldDepositSecretCreated(const std::string& txHash) {}
 };
 
 class IWalletLegacy {
@@ -139,7 +136,7 @@ public:
   virtual uint64_t actualInvestmentBalance() = 0;
   virtual uint64_t getWalletMaximum() = 0;
   virtual uint64_t pendingDepositBalance() = 0;
-  virtual uint64_t pendingInvestmentBalance() = 0;
+  virtual uint64_t pendingInvestmentBalance() = 0;  
 
   virtual size_t getTransactionCount() = 0;
   virtual size_t getTransferCount() = 0;
@@ -163,13 +160,8 @@ public:
   virtual std::list<TransactionOutputInformation> selectFusionTransfersToSend(uint64_t threshold, size_t minInputCount, size_t maxInputCount) = 0;
   virtual TransactionId sendFusionTransaction(const std::list<TransactionOutputInformation>& fusionInputs, uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0) = 0;
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 0) = 0;
-  virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 0) = 0;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
-
-  // Sub-address support: subscribe the wallet scanner to this (major, minor) index.
-  // Returns the encoded sub-address string. Idempotent.
-  virtual std::string registerSubAddress(uint32_t major, uint32_t minor) = 0;
 
 };
 

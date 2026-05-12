@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -31,7 +31,6 @@ enum class Color : uint8_t {
   White,
   Cyan,
   Magenta,
-  Grey,
 
   BrightBlue,
   BrightGreen,
@@ -39,8 +38,7 @@ enum class Color : uint8_t {
   BrightYellow,
   BrightWhite,
   BrightCyan,
-  BrightMagenta,
-  BrightOrange
+  BrightMagenta
 };
 
 void setTextColor(Color color);

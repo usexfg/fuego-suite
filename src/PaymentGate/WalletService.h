@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -23,7 +23,6 @@
 #include "IWallet.h"
 #include "INode.h"
 #include "CryptoNoteCore/Currency.h"
-#include "CryptoNoteCore/StagedUnlockStorage.h"
 #include "PaymentServiceJsonRpcMessages.h"
 #undef ERROR //TODO: workaround for windows build. fix it
 #include "Logging/LoggerRef.h"
@@ -64,10 +63,6 @@ public:
   void saveWallet();
 
   std::error_code saveWalletNoThrow();
-  
-  // Public access to currency for network ID access
-  const CryptoNote::Currency &getCurrency() const { return currency; }
-
   std::error_code resetWallet();
   std::error_code resetWallet(const uint32_t scanHeight);
   std::error_code exportWallet(const std::string& fileName);
@@ -101,37 +96,11 @@ std::error_code getViewKey(std::string &viewSecretKey);
   std::error_code deleteDelayedTransaction(const std::string &transactionHash);
   std::error_code sendDelayedTransaction(const std::string &transactionHash);
   std::error_code getUnconfirmedTransactionHashes(const std::vector<std::string> &addresses, std::vector<std::string> &transactionHashes);
-  std::error_code getStatus(uint32_t &blockCount, uint32_t &knownBlockCount, std::string &lastBlockHash, uint32_t &peerCount, uint32_t &depositCount, uint32_t &transactionCount, uint32_t &addressCount, std::string &networkId);
-  std::error_code createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string &transactionHash, const CryptoNote::DepositCommitment& commitment = CryptoNote::DepositCommitment(), bool useStagedUnlock = false);
-  std::error_code storeBurnDepositSecret(const std::string& transactionHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
-  std::error_code getBurnDepositSecret(const std::string& transactionHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
-  std::error_code markBurnDepositBPDFGenerated(const std::string& transactionHash);
-  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata, const std::string& networkId);
-  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const std::string& networkId);
-  std::string getDefaultWalletPath();
-
+  std::error_code getStatus(uint32_t &blockCount, uint32_t &knownBlockCount, std::string &lastBlockHash, uint32_t &peerCount, uint32_t &depositCount, uint32_t &transactionCount, uint32_t &addressCount);
+  std::error_code createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string &transactionHash);
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);
-  std::error_code giftDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
+  std::error_code sendDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
   std::error_code getDeposit(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address);
-  std::error_code getDepositWithStagedInfo(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address, bool &useStagedUnlock);
-
-  // New methods for dynamic money supply
-  std::error_code getMoneySupplyStats(GetMoneySupplyStats::Response &response);
-  std::error_code getBaseTotalSupply(GetBaseTotalSupply::Response &response);
-  std::error_code getRealTotalSupply(GetRealTotalSupply::Response &response);
-  std::error_code getTotalDepositAmount(GetTotalDepositAmount::Response &response);
-  std::error_code getCirculatingSupply(GetCirculatingSupply::Response &response);
-  std::error_code getEternalFlame(GetEthernalXFG::Response &response);
-  std::error_code getDynamicSupplyOverview(GetDynamicSupplyOverview::Response &response);
-  std::error_code getBaseMoneySupply(uint64_t &baseMoneySupply);
-  std::error_code getCirculatingSupply(uint64_t &circulatingSupply);
-  std::error_code getEternalFlame(uint64_t &ethereal_xfg);
-  std::error_code getTotalRebornXfg(uint64_t &totalRebornXfg);
-  std::error_code getBurnPercentage(double &burnPercentage);
-  std::error_code getRebornPercentage(double &rebornPercentage);
-  std::error_code getSupplyIncreasePercentage(double &supplyIncreasePercentage);
-
-  std::string formatAmount(uint64_t amount);
 
   std::error_code getMessagesFromExtra(const std::string &extra, std::vector<std::string> &messges);
   std::error_code estimateFusion(uint64_t threshold, const std::vector<std::string> &addresses, uint32_t &fusionReadyCount, uint32_t &totalOutputCount);
@@ -171,9 +140,6 @@ private:
   System::ContextGroup refreshContext;
 
   std::map<std::string, size_t> transactionIdIndex;
-  
-  // Staged unlock storage
-  CryptoNote::StagedUnlockStorage m_stagedUnlockStorage;
 };
 
 } //namespace PaymentService

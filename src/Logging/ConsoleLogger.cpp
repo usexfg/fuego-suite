@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -42,7 +42,6 @@ void ConsoleLogger::doLogString(const std::string& message) {
     { WHITE, Color::White },
     { CYAN, Color::Cyan },
     { MAGENTA, Color::Magenta },
-    { GREY, Color::Grey },
 
     { BRIGHT_BLUE, Color::BrightBlue },
     { BRIGHT_GREEN, Color::BrightGreen },

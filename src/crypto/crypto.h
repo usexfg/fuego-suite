@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -23,7 +23,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "../../include/CryptoTypes.h"
+#include <CryptoTypes.h>
 
 #include "generic-ops.h"
 #include "hash.h"
@@ -85,7 +85,7 @@ namespace Crypto {
 	  static void generate_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const SecretKey &, Signature &);
 	friend void generate_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const SecretKey &, Signature &);
 	static bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);
-	friend bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);
+	friend bool check_tx_proof(const Hash &, const PublicKey &, const PublicKey &, const PublicKey &, const Signature &);      
 
     friend void generate_ring_signature(const Hash &, const KeyImage &,
       const PublicKey *const *, size_t, const SecretKey &, size_t, Signature *);
@@ -228,7 +228,7 @@ namespace Crypto {
   }
   inline bool check_tx_proof(const Hash &prefix_hash, const PublicKey &R, const PublicKey &A, const PublicKey &D, const Signature &sig) {
     return crypto_ops::check_tx_proof(prefix_hash, R, A, D, sig);
-  }
+  }	
 
   /* To send money to a key:
    * * The sender generates an ephemeral key and includes it in transaction output.

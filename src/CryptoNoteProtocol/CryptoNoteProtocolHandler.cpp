@@ -3,7 +3,7 @@
 // Copyright (c) 2018-2019 The TurtleCoin developers
 // Copyright (c) 2016-2020 The Karbo developers
 // Copyright (c) 2018-2021 Conceal Network & Conceal Devs
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -200,7 +200,7 @@ bool CryptoNoteProtocolHandler::process_payload_sync_data(const CORE_SYNC_DATA &
 
     logger(diff >= 0 ? (is_inital ? Logging::INFO : DEBUGGING) : Logging::TRACE)  << context << "Unknown top block: " << get_current_blockchain_height() << " -> " << hshd.current_height
                                                                                           << std::endl
-
+                                                                                          
                                                                                           << "Synchronization started";
 
     logger(DEBUGGING) << "Remote top block height: " << hshd.current_height << ", id: " << hshd.top_id;
@@ -685,18 +685,17 @@ bool CryptoNoteProtocolHandler::on_connection_synchronized()
 {
   bool val_expected = false;
   if (m_synchronized.compare_exchange_strong(val_expected, true)) {
-    std::string networkName = m_core.currency().isTestnet() ? "Fuego TESTNET" : "Fuego Network";
-    std::string walletName = m_core.currency().isTestnet() ? "test_wallet" : "fire_wallet";
     logger(Logging::INFO, Logging::BRIGHT_CYAN)
       << "**********************************************************************" << ENDL
-      << "You are synchronized with " << networkName << "." << ENDL
-      << walletName << " is at your service now, m'lorde." << ENDL
-      << "Type \"help\" to see available daemon commands." << ENDL
+      << "You are synchronized with the Fuego network." << ENDL
+      << "fuego-wallet-cli is now at your service, m'lorde." << ENDL
+      << "Type \"help\" to see Fango daemon commands." << ENDL
       << ENDL
-      << "Please note, " << networkName << " blockchain will only be saved after" << ENDL
+      << "Please note, the Fuego blockchain will only be saved after" << ENDL
       << "you quit the daemon with \"exit\" command" << ENDL
       << "Better yet use the \"save\" command." << ENDL
-      << "Otherwise, it may be necessary to re-sync." << ENDL
+      << "Otherwise, it may be necessary to re-sync.";
+      logger(Logging::INFO, Logging::BRIGHT_CYAN)
       << "**********************************************************************";
     m_core.on_synchronized();
 

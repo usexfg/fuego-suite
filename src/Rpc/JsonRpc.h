@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -22,14 +22,14 @@
 #include <functional>
 
 #include "CoreRpcServerCommandsDefinitions.h"
-#include "../Common/JsonValue.h"
-#include "../Serialization/ISerializer.h"
-#include "../Serialization/SerializationTools.h"
+#include <Common/JsonValue.h>
+#include "Serialization/ISerializer.h"
+#include "Serialization/SerializationTools.h"
 
 namespace CryptoNote {
 
 class HttpClient;
-
+  
 namespace JsonRpc {
 
 const int errParseError = -32700;
@@ -65,7 +65,7 @@ typedef boost::optional<Common::JsonValue> OptionalId;
 
 class JsonRpcRequest {
 public:
-
+  
   JsonRpcRequest() : psReq(Common::JsonValue::OBJECT) {}
 
   bool parseRequest(const std::string& requestBody) {
@@ -90,7 +90,7 @@ public:
 
   template <typename T>
   bool loadParams(T& v) const {
-    loadFromJsonValue(v, psReq.contains("params") ?
+    loadFromJsonValue(v, psReq.contains("params") ? 
       psReq("params") : Common::JsonValue(Common::JsonValue::NIL));
     return true;
   }

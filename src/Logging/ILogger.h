@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -48,7 +48,6 @@ extern const std::string BRIGHT_YELLOW;
 extern const std::string BRIGHT_WHITE;
 extern const std::string BRIGHT_CYAN;
 extern const std::string BRIGHT_MAGENTA;
-extern const std::string GREY;
 extern const std::string DEFAULT;
 
 class ILogger {

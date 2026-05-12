@@ -181,6 +181,7 @@ bool writeTransactionExtra(std::vector<uint8_t>& tx_extra, const std::vector<Tra
 Crypto::PublicKey getTransactionPublicKeyFromExtra(const std::vector<uint8_t>& tx_extra);
 bool addTransactionPublicKeyToExtra(std::vector<uint8_t>& tx_extra, const Crypto::PublicKey& tx_pub_key);
 bool addExtraNonceToTransactionExtra(std::vector<uint8_t>& tx_extra, const BinaryArray& extra_nonce);
+[[deprecated("Unencrypted Payment IDs are deprecated and leak privacy. Use encrypted Payment IDs instead.")]]
 void setPaymentIdToTransactionExtraNonce(BinaryArray& extra_nonce, const Crypto::Hash& payment_id);
 bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypto::Hash& payment_id);
 bool appendMergeMiningTagToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMergeMiningTag& mm_tag);
@@ -195,6 +196,7 @@ bool getAlbumLicenseFromExtra(const std::vector<uint8_t>& tx_extra, TransactionE
 bool appendDigmAlbumRecordToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDigmAlbumRecord& rec);
 bool getDigmAlbumRecordFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDigmAlbumRecord& rec);
 
+[[deprecated("Unencrypted Payment IDs are deprecated and leak privacy. Use encrypted Payment IDs instead.")]]
 bool createTxExtraWithPaymentId(const std::string& paymentIdString, std::vector<uint8_t>& extra);
 //returns false if payment id is not found or parse error
 bool getPaymentIdFromTxExtra(const std::vector<uint8_t>& extra, Crypto::Hash& paymentId);

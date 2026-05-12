@@ -1,4 +1,5 @@
-// Copyright (c) 2017-2025 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
@@ -20,13 +21,11 @@
 #include <System/Ipv4Resolver.h>
 #include <System/Ipv4Address.h>
 #include <System/TcpConnector.h>
-#include <System/ContextGroup.h>
-#include <System/ContextGroupTimeout.h>
 
 namespace CryptoNote {
 
-HttpClient::HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port, uint32_t timeout) :
-  m_dispatcher(dispatcher), m_address(address), m_port(port), m_timeout(timeout) {
+HttpClient::HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port) :
+  m_dispatcher(dispatcher), m_address(address), m_port(port) {
 }
 
 HttpClient::~HttpClient() {
@@ -55,20 +54,7 @@ void HttpClient::request(const HttpRequest &req, HttpResponse &res) {
 void HttpClient::connect() {
   try {
     auto ipAddr = System::Ipv4Resolver(m_dispatcher).resolve(m_address);
-    System::TcpConnector connector(m_dispatcher);
-    
-    // If timeout is specified, use it
-    if (m_timeout > 0) {
-      System::ContextGroup cg(m_dispatcher);
-      System::ContextGroupTimeout cgTimeout(m_dispatcher, cg, std::chrono::nanoseconds(m_timeout * 1000000));
-      
-      m_connection = connector.connect(ipAddr, m_port);
-      cg.interrupt();
-    } else {
-      // No timeout, connect directly
-      m_connection = connector.connect(ipAddr, m_port);
-    }
-    
+    m_connection = System::TcpConnector(m_dispatcher).connect(ipAddr, m_port);
     m_streamBuf.reset(new System::TcpStreambuf(m_connection));
     m_connected = true;
   } catch (const std::exception& e) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -22,7 +22,6 @@
 #include <Common/Base64.h>
 #include <HTTP/HttpRequest.h>
 #include <HTTP/HttpResponse.h>
-#include <System/Dispatcher.h>
 #include <System/TcpConnection.h>
 #include <System/TcpStream.h>
 #include "JsonRpc.h"
@@ -39,7 +38,7 @@ public:
 class HttpClient {
 public:
 
-  HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port, uint32_t timeout = 0);
+  HttpClient(System::Dispatcher& dispatcher, const std::string& address, uint16_t port);
   ~HttpClient();
   void request(const HttpRequest& req, HttpResponse& res);
   
@@ -51,7 +50,6 @@ private:
 
   const std::string m_address;
   const uint16_t m_port;
-  const uint32_t m_timeout;
 
   bool m_connected = false;
   System::Dispatcher& m_dispatcher;

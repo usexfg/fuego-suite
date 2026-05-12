@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -18,7 +18,7 @@
 #pragma once
 
 #include <boost/utility/value_init.hpp>
-#include "../../include/CryptoNote.h"
+#include <CryptoNote.h>
 
 namespace CryptoNote {
   const Crypto::Hash NULL_HASH = boost::value_initialized<Crypto::Hash>();

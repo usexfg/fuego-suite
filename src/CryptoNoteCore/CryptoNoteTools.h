@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -18,11 +18,11 @@
 #pragma once
 
 #include <limits>
-#include "../Common/MemoryInputStream.h"
-#include "../Common/StringTools.h"
-#include "../Common/VectorOutputStream.h"
-#include "../Serialization/BinaryOutputStreamSerializer.h"
-#include "../Serialization/BinaryInputStreamSerializer.h"
+#include "Common/MemoryInputStream.h"
+#include "Common/StringTools.h"
+#include "Common/VectorOutputStream.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
 #include "CryptoNoteSerialization.h"
 
 namespace CryptoNote {
@@ -44,7 +44,7 @@ bool toBinaryArray(const T& object, BinaryArray& binaryArray) {
 }
 
 template<>
-bool toBinaryArray(const BinaryArray& object, BinaryArray& binaryArray);
+bool toBinaryArray(const BinaryArray& object, BinaryArray& binaryArray); 
 
 template<class T>
 BinaryArray toBinaryArray(const T& object) {

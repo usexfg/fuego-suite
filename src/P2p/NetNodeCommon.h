@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,30 +17,11 @@
 
 #pragma once
 
-#include "../../include/CryptoNote.h"
-#include "../CryptoNoteConfig.h"
+#include "CryptoNote.h"
+#include "CryptoNoteConfig.h"
 #include "P2pProtocolTypes.h"
 #include <list>
 #include <boost/uuid/uuid.hpp>
-
-#pragma once
-
-#include "../../include/CryptoNote.h"
-#include "../CryptoNoteConfig.h"
-#include "P2pProtocolTypes.h"
-#include <list>
-#include <boost/uuid/uuid.hpp>
-
-// #ifdef ENABLE_FUEGOMESH
-// #include "FuegoMeshtastic/MeshtasticIntegration.h"
-// #endif
-
-namespace CryptoNote {
-
-  // Forward declarations
-  class MeshPeerManager;
-
-} // namespace CryptoNote
 
 namespace CryptoNote {
 
@@ -58,11 +39,6 @@ namespace CryptoNote {
     // can be called from external threads
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) = 0;
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) = 0;
-#ifdef ENABLE_FUEGOMESH
-    virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) = 0;
-    virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) = 0;
-    virtual bool isMeshtasticEnabled() const = 0;
-#endif
   };
 
   struct p2p_endpoint_stub: public IP2pEndpoint {
@@ -76,10 +52,5 @@ namespace CryptoNote {
     virtual uint64_t get_connections_count() override { return 0; }
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override {}
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override {}
-#ifdef ENABLE_FUEGOMESH
-    virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) override { return false; }
-    virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) override { return false; }
-    virtual bool isMeshtasticEnabled() const override { return false; }
-#endif
   };
 }

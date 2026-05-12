@@ -12,8 +12,8 @@ docker pull ghcr.io/usexfg/fuego:latest
 # Run a Fuego node
 docker run -d \
   --name fuego-node \
-  -p 10808:10808 \
-  -p 18180:18180 \
+  -p 20808:20808 \
+  -p 28180:28180 \
   -v fuego-data:/home/fuego/.fuego \
   ghcr.io/usexfg/fuego:latest
 ```
@@ -43,9 +43,9 @@ docker-compose up -d
 - `ENABLE_OPTIMIZATIONS` - Enable performance optimizations (ON/OFF)
 
 ### **Ports**
-- `10808` - P2P networking port
-- `18180` - RPC API port
-- `1007` - Wallet service port (walletd)
+- `20808` - P2P networking port
+- `28180` - RPC API port
+- `8070` - Wallet service port (walletd)
 
 ### **Volumes**
 - `/home/fuego/.fuego` - Blockchain data directory

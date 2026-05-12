@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -19,8 +19,8 @@
 
 #include <list>
 #include <vector>
-#include "../Common/MemoryInputStream.h"
-#include "../Common/StringOutputStream.h"
+#include <Common/MemoryInputStream.h>
+#include <Common/StringOutputStream.h>
 #include "JsonInputStreamSerializer.h"
 #include "JsonOutputStreamSerializer.h"
 #include "KVBinaryInputStreamSerializer.h"
@@ -112,7 +112,7 @@ template <typename T>
 std::string storeToBinaryKeyValue(const T& v) {
   KVBinaryOutputStreamSerializer s;
   serialize(const_cast<T&>(v), s);
-
+  
   std::string result;
   Common::StringOutputStream stream(result);
   s.dump(stream);

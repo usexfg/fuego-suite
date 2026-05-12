@@ -1,153 +1,108 @@
-<img title="The Long Night Is Coming" src="https://github.com/usexfg/fuego-data/blob/master/fuego-images/fuegoline.gif?raw=true"><img/>
-### Fuego is open-source peer-to-peer decentralized private cryptocurrency built by advocates of freedom thru sound money and free open-source software .
+# Fuego (XFG) — Decentralized Privacy Blockchain with Native Yield-Bearing CDs & Algorithmic Stablecoin
 
-Based upon the CryptoNote protocol & philosophy.
+<img title="Fuego Blockchain" src="https://raw.githubusercontent.com/usexfg/fuego-data/master/images/fuegoline.gif">
 
-#### Resources
+**Fuego is an open-source, community-driven, decentralized P2P blockchain network and privacy cryptocurrency.** Built on the CryptoNote protocol, Fuego has evolved into a multi-asset L1 platform featuring native Certificate of Deposit (CD) yield-bearing accounts, cross-chain atomic swaps, a planned consensus-embedded AMM, and an algorithmic stablecoin (HEAT) governed by a PI controller.
 
--   [Website](https://usexfg.org)
--   Explorer: <http://fuego.spaceportx.net>
--   Explorer: <https://explore-xfg.loudmining.com>
--   Explorer: [http://radioactive.sytes.net](http://radioactive.sytes.net:8000/index.html)
--   [Discord](https://discord.gg/5UJcJJg)
--   [Twitter](https://twitter.com/useXFG)
--   [Medium](https://medium.com/@usexfg)
--   [Bitcoin Talk](https://bitcointalk.org/index.php?topic=2712001)
+## Key Highlights
 
- ______________________________
- 
+| Attribute | Detail |
+|-----------|--------|
+| **Ticker** | XFG |
+| **Max Supply** | ~8,000,008.8 XFG (80,000,088,000,008 atomic units) |
+| **Decimals** | 7 |
+| **Consensus** | Proof of Work (CryptoNote-based) |
+| **Block Time** | 480 seconds (8 minutes) |
+| **Privacy** | Ring signatures (mixin 8-18), stealth addresses, I2P support |
+| **Current Version** | v1.9.3 "GODFLAME" (v10) |
+| **Active Since** | 2017 |
+| **License** | Open Source (BSD 3-Clause, MIT, LGPLv3) |
+| **AI Tooling** | Built-in RAG system, MCP server, blockchain specialist agent |
 
-<sup>"Working software is the primary measure of progress." [‣]</sup>
+## What Makes Fuego Unique
 
-##### Master Status   
-[![Build check](https://github.com/usexfg/fuego/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/check.yml)
+- **Native Certificate of Deposit (CD) Yield**: Lock XFG for ~3 months (16,440 blocks) and earn 80% of all swap fees distributed per epoch (900 blocks / ~5 days). No staking, no validator risk — pure on-chain, non-custodial yield.
+- **EternalFlame Tokenomics**: Burned XFG (e.g., for HEAT minting) recycles into future block rewards, maintaining long-term miner security budget instead of permanently destroying supply.
+- **Dual-Token Economy (v11 planned)**: XFG (privacy reserve) + HEAT (algorithmic stablecoin via PI controller).
+- **Consensus-Embedded AMM (v11 planned)**: "Hearth" AMM with trustless XFG/HEAT swaps directly in consensus rules.
+- **Cross-Chain Atomic Swaps**: HTLC/adaptor-signature based swaps compatible with COMIT protocol — XMR, ETH, BCH supported.
+- **Privacy Roadmap**: CLSAG ring signatures + Bulletproofs+ range proofs (hidden amounts, ~1.9 KB tx size) planned for v11; Triptych logarithmic ring proofs for full anonymity set in v12.
+- **DIGM Platform**: Music/audio use-case layer driving swap volume and CD yield sustainability.
 
-[![macOS](https://github.com/usexfg/fuego/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml)
+## Tokenomics
 
-[![AppImage Linux](https://github.com/usexfg/fuego/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/appimage.yml)
+- **Hard cap**: ~8,000,008.8 XFG (8M8) — sound money, no inflation, no tail emission
+- **EternalFlame**: Burned XFG recycles into miner rewards instead of destroying supply
+- **Fee distribution**: 80% to CD holders, 20% to treasury
+- **HEAT**: Algorithmic stablecoin minted by burning XFG at floating redemption price (starting at 0.5 XFG/HEAT), governed by PI controller with proportional and integral error correction
 
-[![Ubuntu 24.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
+## Privacy Features
 
-### Build Requirements  
+### Currently Working (v10)
+- Ring signatures (dynamic mixin 8-18 via OSPEAD adaptive decoy selection)
+- Stealth addresses (one-time keys per transaction)
+- Key images (double-spend prevention)
+- CommitmentIndex per-amount decoy selection
+- HEAT burns as permanent decoys
+- I2P network-level privacy
+- Dynamic ring size (OSPEAD algorithm with logarithmic age bins)
 
-**Boost Version**: Fuego requires Boost 1.86 or below (for io_service compatibility)  
-- **macOS**: Builds Boost 1.86 from source automatically  
-- **Linux**: Uses system packages (1.74+ on Ubuntu 22.04, 1.83+ on Ubuntu 24.04)  
-- **Windows**: Uses vcpkg packages (1.84+)
+### Roadmap
+| Phase | Feature | Privacy Gain |
+|-------|---------|-------------|
+| Phase 3-4 | 2-output uniformity, Dandelion++ relay | Hides tx origin IP |
+| v11 fork | CLSAG + Bulletproofs+ range proofs | Hidden amounts, global ring pool, ~1.9 KB tx |
+| v12 fork | Triptych logarithmic ring proofs | Full output set anonymity (10k-1M+) |
 
-[![Ubuntu 22.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
+## Community & Resources
 
-[![Windows](https://github.com/usexfg/fuego/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml)
+| Resource | Link |
+|----------|------|
+| **Website** | https://usexfg.org |
+| **Discord** | https://discord.gg/5UJcJJg |
+| **Twitter / X** | https://twitter.com/useXFG |
+| **Medium** | https://medium.com/@usexfg |
+| **BitcoinTalk** | https://bitcointalk.org/index.php?topic=2712001 |
+| **Reddit** | https://reddit.com/r/Fango |
+| **GitHub** | https://github.com/usexfg/fuego |
 
-[![Docker Images](https://github.com/usexfg/fuego/actions/workflows/docker.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/docker.yml)
+### Block Explorers
+- http://fuego.spaceportx.net
+- http://radioactive.sytes.net:8000
+- https://explore-xfg.loudmining.com
 
-[![Android (Termux)](https://github.com/usexfg/fuego/actions/workflows/termux.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/termux.yml)
+## Build Status
 
-[![Raspberry Pi (ARM64)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml)
+| Platform | Status |
+|----------|--------|
+| macOS | [![macOS](https://github.com/usexfg/fuego/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml) |
+| Ubuntu 20.04 | [![Ubuntu 20.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu20.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu20.yml) |
+| Ubuntu 22.04 | [![Ubuntu 22.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml) |
+| Windows | [![Windows](https://github.com/usexfg/fuego/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml) |
 
-[‣]:http://agilemanifesto.org/
+## Development Activity
 
-#### Building On *nix
+- **Active contributors**: Core development team plus community contributors
+- **Recent focus**: v10 HEAT colored coin, atomic swap infrastructure, PI controller development, ZK prover system (Rust)
+- **AI infrastructure**: RAG system for semantic codebase search, MCP server for AI agent integration, blockchain specialist agent for automated analysis
+- **Codebase**: C++ core (CryptoNote), Go swap daemon, Rust ZK prover, Python AI tooling
 
-1. Dependencies: GCC 4.7.3 or later, CMake 2.8.6 or later, and Boost 1.55.
+## Build & Run
 
-You may download them from:
+### Linux / macOS
 
-* http://gcc.gnu.org/
-* http://www.cmake.org/
-* http://www.boost.org/
+```bash
+# Prerequisites: GCC 4.7.3+, CMake 2.8.6+, Boost 1.55+
+sudo apt-get install build-essential git cmake libboost-all-dev  # Linux
+brew install git python cmake gcc boost                          # macOS
 
-
-*** Alternatively, it may be possible to install them using a package manager by
-executing the following command.
- ```
- sudo apt-get install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
-```
-
-2. Clone Fuego repository
-```
 git clone https://github.com/usexfg/fuego
-
-```
-3. Open folder with copied repository
-```
 cd fuego
-```
-4. Building (Compiling)
-    (resulting programs will be found in build/release/src)
-
-```
 make
+./build/release/src/fuegod
 ```
 
-The TUI will be automatically built and placed with other binaries if Go 1.24+ is installed.
-
-5. Starting Fuego daemon
-```
-cd fuego/build/release/src `
-./fuegod
-````
-try --help from within dæmon for a full list of available commands
-or <code>./fuegod --help</code> when outside of dæmon
-
-### Terminal User Interface (TUI)
-
-Fuego includes a Go-based Terminal User Interface for atomic swaps, wallet management, and Certificate of Deposit (CD) operations.
-
-#### Building the TUI
-
-If you have Go 1.24+ installed, the TUI will be built automatically when running `make`. You can also build it separately:
-
-```bash
-make build-tui
-```
-
-#### Running the TUI
-
-```bash
-./tui/build/fuego-tui
-```
-
-Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
-
-#### TUI Features
-
-- Start/Stop Node
-- Start Wallet RPC
-- Create Wallet
-- Get Balance
-- Send Transaction
-- Elderfier Menu (staking and voting)
-- Burn2Mint Menu (XFG→HEAT conversion)
-
-For detailed documentation, see `tui/README.md`.
-_________________________________________________________
-For the most user-friendly graphic interface experience
-
-see [Fuego Desktop Wallet](https://github.com/usexfg/fuego-wallet). 
-_________________________________________________________
-
-_________________________________________________________
-**Advanced options:**
-
-* Parallel build: run `make -j<number of threads>` instead of `make`.
-* Debug build: run `make build-debug`.
-* Test suite: run `make test-release` to run tests in addition to building. Running `make test-debug` will do the same to the debug version.
-* Building with Clang: it may be possible to use Clang instead of GCC, but this may not work everywhere. To build, run `export CC=clang CXX=clang++` before running `make`.
-
-**************************************************************************************************
-### Windows 10
-
-#### Prerequisites
-
-- Install [Visual Studio 2019 Community Edition](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=16)
-- Install [CMake](https://cmake.org/download/)
-- When installing Visual Studio, you need to install **Desktop development with C++** and the **MSVC v142 - VS 2019 C++ x64/x86 build tools** components. The option to install the v142 build tools can be found by expanding the "Desktop development with C++" node on the right. You will need this for the project to build correctly.
-- Install [Boost 1.73.0](https://sourceforge.net/projects/boost/files/boost-binaries/1.73.0/boost_1_73_0-msvc-14.2-64.exe/download), **ensuring** you download the installer for **MSVC 14.2**.
-
-#### Building
-
-From the start menu, open 'x64 Native Tools Command Prompt for vs2019' or run "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7\Tools\VsMSBuildCmd.bat" from any command prompt.
+### Windows (Visual Studio 2019)
 
 ```bash
 git clone https://github.com/usexfg/fuego
@@ -157,43 +112,22 @@ cmake .. -G "Visual Studio 16 2019" -A x64 -DBOOST_LIBRARYDIR="c:\local\boost_1_
 msbuild fuegoX.sln /p:Configuration=Release /m
 ```
 
-If the build is successful the binaries will be in the `src/Release` folder.
+### Desktop Wallet
 
-### macOS
+For the most user-friendly GUI experience, use the [Fuego Desktop Wallet](https://github.com/usexfg/fuego-wallet).
 
-#### Prerequisites
+## How to Get Involved
 
-In order to install prerequisites, [XCode](https://developer.apple.com/xcode/) and [Homebrew](https://brew.sh/) needs to be installed.
-Once both are ready, open Terminal app and run the following command to install additional tools:
+1. **Join the community**: [Discord](https://discord.gg/5UJcJJg) — developers, miners, and holders welcome
+2. **Run a node**: Build from source and run `fuegod`
+3. **Mine XFG**: Connect your miner to the network — block time is 8 minutes with LWMA difficulty adjustment
+4. **Earn CD yield**: Lock XFG in a Certificate of Deposit for ~3 months to earn 80% of swap fees
+5. **Contribute code**: PRs welcome — check open issues and development roadmap
+6. **Follow development**: [Twitter](https://twitter.com/useXFG), [Medium](https://medium.com/@usexfg)
 
-```bash
-$ xcode-select --install
-```
+## Advanced Build Options
 
-On newer macOS versions (v10.14 and higher) this step is done through Software Update in System Preferences.
-
-After that, proceed with installing dependencies:
-
-```bash
-$ brew install git python cmake gcc boost
-```
-
-#### Building
-
-When all dependencies are installed, build Fuego core binaries:
-
-```bash
-$ git clone https://github.com/usexfg/fuego
-$ cd fuego
-$ mkdir build && cd $_
-$ cmake ..
-$ make
-```
-
-If the build is successful the binaries will be located in `src` directory.
-*******************************
-
-Join our ever-expanding community of Fuego holders thru [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
-
-
-
+- Parallel build: `make -j<threads>`
+- Debug build: `make build-debug`
+- Test suite: `make test-release`
+- Clang build: `export CC=clang CXX=clang++` before `make`

@@ -487,21 +487,19 @@ namespace CryptoNote
 
   bool createTxExtraWithPaymentId(const std::string &paymentIdString, std::vector<uint8_t> &extra)
   {
+    // WARNING: Unencrypted Payment IDs are deprecated and leak privacy.
+    // Future versions will require encrypted Payment IDs.
     Hash paymentIdBin;
-
     if (!parsePaymentId(paymentIdString, paymentIdBin))
     {
       return false;
     }
-
     std::vector<uint8_t> extraNonce;
     CryptoNote::setPaymentIdToTransactionExtraNonce(extraNonce, paymentIdBin);
-
     if (!CryptoNote::addExtraNonceToTransactionExtra(extra, extraNonce))
     {
       return false;
     }
-
     return true;
   }
 

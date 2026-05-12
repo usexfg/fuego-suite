@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,9 +17,7 @@
 
 #include "BlockchainSynchronizer.h"
 
-#include <chrono>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <sstream>
 #include <thread>

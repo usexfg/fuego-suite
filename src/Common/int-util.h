@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -21,9 +21,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#ifndef _WIN32
 #include <sys/param.h>
-#endif
 
 #if defined(_MSC_VER)
 #include <stdlib.h>
@@ -181,24 +179,8 @@ static inline void memcpy_swap64(void *dst, const void *src, size_t n) {
 
 
 
-// Define byte order for Windows/MSVC which doesn't have BYTE_ORDER
-#if defined(_WIN32) || defined(_WIN64) || defined(WIN32) || defined(_MSC_VER)
-#define LITTLE_ENDIAN 1234
-#define BIG_ENDIAN 4321
-#define BYTE_ORDER LITTLE_ENDIAN
-#endif
-
 #if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
-#if defined(__BYTE_ORDER__) && defined(__LITTLE_ENDIAN__) && defined(__BIG_ENDIAN__)
-#define BYTE_ORDER __BYTE_ORDER__
-#define LITTLE_ENDIAN __LITTLE_ENDIAN__
-#define BIG_ENDIAN __BIG_ENDIAN__
-#else
-// Assume little endian as default for most modern systems
-#define LITTLE_ENDIAN 1234
-#define BIG_ENDIAN 4321
-#define BYTE_ORDER LITTLE_ENDIAN
-#endif
+static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN

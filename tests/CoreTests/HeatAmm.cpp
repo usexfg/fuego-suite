@@ -99,7 +99,7 @@ TEST(PiController, at_peg) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(price, price, integral, rate, 900);
+  ctrl.calculate(price, 0, price, integral, rate, 900);
 
   // At peg → error = 0 → rate = 0
   EXPECT_TRUE(rate.isZero());
@@ -112,7 +112,7 @@ TEST(PiController, above_peg) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
 
   // Market > redemption → positive error → positive rate (boost redemption price)
   EXPECT_TRUE(rate.isPositive());
@@ -125,7 +125,7 @@ TEST(PiController, below_peg) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
 
   // Market < redemption → negative error → negative rate (reduce redemption price)
   EXPECT_TRUE(rate.isNegative());
@@ -138,11 +138,11 @@ TEST(PiController, integral_accumulates) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
   EXPECT_TRUE(integral.isPositive());
 
   FixedPoint64 prevIntegral = integral;
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
   EXPECT_GT(integral, prevIntegral); // integral grows with persistent error
 }
 
@@ -153,7 +153,7 @@ TEST(PiController, rate_clamped) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
 
   // Rate should be clamped at PI_MAX_RATE
   FixedPoint64 maxRate = FixedPoint64::fromRatio(parameters::PI_MAX_RATE_NUM,
@@ -168,7 +168,7 @@ TEST(PiController, price_floor) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(marketPrice, redemptionPrice, integral, rate, 900);
+  ctrl.calculate(marketPrice, 0, redemptionPrice, integral, rate, 900);
 
   // Price should not go below floor (1e-6)
   FixedPoint64 floor = FixedPoint64::fromRatio(1, 1000000);
@@ -181,7 +181,7 @@ TEST(PiController, zero_blocks_no_change) {
   FixedPoint64 integral;
   FixedPoint64 rate;
 
-  ctrl.calculate(price, price, integral, rate, 0);
+  ctrl.calculate(price, 0, price, integral, rate, 0);
   EXPECT_TRUE(rate.isZero());
 }
 
@@ -201,8 +201,8 @@ TEST(Integration, price_convergence_simulation) {
   FixedPoint64 belowPeg = FixedPoint64::fromRatio(45, 100); // 0.45
 
   for (int epoch = 0; epoch < 5; ++epoch) {
-    ctrl.calculate(abovePeg, redemptionPrice, integral, rate, 900);
-    ctrl.calculate(belowPeg, redemptionPrice, integral, rate, 900);
+    ctrl.calculate(abovePeg, 0, redemptionPrice, integral, rate, 900);
+    ctrl.calculate(belowPeg, 0, redemptionPrice, integral, rate, 900);
   }
 
   // Redemption price should remain positive and in a reasonable range

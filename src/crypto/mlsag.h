@@ -20,6 +20,9 @@
 
 #pragma once
 
+#pragma once
+
+#include <cstddef>
 #include "../../include/CryptoTypes.h"
 
 namespace Crypto {

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -65,8 +65,7 @@ enum WalletErrorCodes {
   DEPOSIT_WRONG_TERM,
   DESTINATION_ADDRESS_REQUIRED,
   DESTINATION_ADDRESS_NOT_FOUND,
-  DAEMON_NOT_SYNCED,
-  INSUFFICIENT_OUTPUTS_FOR_RING_SIZE
+  DAEMON_NOT_SYNCED
 };
 
 // custom category:
@@ -124,7 +123,6 @@ public:
     case DEPOSIT_LOCKED:           return "Deposit is locked";
     case DEPOSIT_WRONG_TERM:       return "Incorrect term";
     case DAEMON_NOT_SYNCED:        return "Daemon is not synchronized";
-    case INSUFFICIENT_OUTPUTS_FOR_RING_SIZE: return "Insufficient outputs for transaction amount. Please run wallet optimizer to consolidate outputs.";
         default:
       return "Unknown error";
     }
@@ -145,6 +143,6 @@ inline std::error_code make_error_code(CryptoNote::error::WalletErrorCodes e) {
 namespace std {
 
 template <>
-struct is_error_code_enum<CryptoNote::error::WalletErrorCodes>: public ::std::true_type {};
+struct is_error_code_enum<CryptoNote::error::WalletErrorCodes>: public true_type {};
 
 }

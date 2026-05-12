@@ -59,18 +59,18 @@ struct DepositTestsBase : public test_chain_unit_base {
   std::size_t emission = 0;
 };
 
-struct BankingIndexTest : public DepositTestsBase {
+struct DepositIndexTest : public DepositTestsBase {
   using Block = CryptoNote::Block;
   using Core = CryptoNote::core;
   using Events = std::vector<test_event_entry>;
-  BankingIndexTest() {
+  DepositIndexTest() {
     m_currency = CryptoNote::CurrencyBuilder(m_logger).upgradeHeightV2(0).depositMinTerm(10).depositMinTotalRateFactor(100).minimumFee(1000).currency();
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, interestZero);
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, interestOneMinimal);
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, interestTwoMininmal);
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, amountZero);
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, amountOneMinimal);
-    REGISTER_CALLBACK_METHOD(BankingIndexTest, amountThreeMinimal);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, interestZero);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, interestOneMinimal);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, interestTwoMininmal);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, amountZero);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, amountOneMinimal);
+    REGISTER_CALLBACK_METHOD(DepositIndexTest, amountThreeMinimal);
   }
 
   bool amountZero(const Core& c, std::size_t ev_index, const Events& events) {
@@ -235,35 +235,35 @@ struct TransactionWithAmountThatHasAlreadyFinishedWillBeAccepted : public Deposi
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositExtendsTotalDeposit : public BankingIndexTest {
+struct TransactionWithDepositExtendsTotalDeposit : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithMultipleDepositOutsExtendsTotalDeposit : public BankingIndexTest {
+struct TransactionWithMultipleDepositOutsExtendsTotalDeposit : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositIsClearedAfterInputSpend : public BankingIndexTest {
+struct TransactionWithDepositIsClearedAfterInputSpend : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositUpdatesInterestAfterDepositUnlock : public BankingIndexTest {
+struct TransactionWithDepositUpdatesInterestAfterDepositUnlock : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain : public BankingIndexTest{
+struct TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain : public DepositIndexTest{
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain : public BankingIndexTest {
+struct TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple : public BankingIndexTest {
+struct TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 
-struct TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain : public BankingIndexTest {
+struct TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain : public DepositIndexTest {
   bool generate(std::vector<test_event_entry>& events);
 };
 

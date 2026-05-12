@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -21,12 +21,12 @@
 #include <cstdint>
 #include <ctime>
 
-#include "../Common/StringTools.h"
-#include "CryptoNoteBasicImpl.h"
-#include "CryptoNoteFormatUtils.h"
-#include "Currency.h"
-#include "../CryptoNoteConfig.h"
-#include "../Logging/LoggerRef.h"
+#include "Common/StringTools.h"
+#include "CryptoNoteCore/CryptoNoteBasicImpl.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/Currency.h"
+#include "CryptoNoteConfig.h"
+#include <Logging/LoggerRef.h>
 
 namespace CryptoNote {
   class UpgradeDetectorBase {
@@ -86,10 +86,6 @@ namespace CryptoNote {
         } else {
           int blockVersionAtUpgradeHeight = m_blockchain[upgradeHeight].bl.majorVersion;
           if (blockVersionAtUpgradeHeight != m_targetVersion - 1) {
-            logger(Logging::ERROR, Logging::BRIGHT_RED) << "Internal error: block at height " << upgradeHeight <<
-              " has invalid version " << blockVersionAtUpgradeHeight <<
-              ", expected " << static_cast<int>(m_targetVersion - 1);
-            return false;
           }
 
           int blockVersionAfterUpgradeHeight = m_blockchain[upgradeHeight + 1].bl.majorVersion;

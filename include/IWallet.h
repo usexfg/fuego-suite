@@ -1,5 +1,5 @@
-// Copyright (c) 2017-2026 Fuego Developers
 // Copyright (c) 2012-2018 The CryptoNote developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //
@@ -19,9 +19,7 @@
 #include <vector>
 #include <boost/optional.hpp>
 #include "CryptoNote.h"
-#include "../src/CryptoNoteConfig.h"
-#include "../src/CryptoNoteCore/CryptoNoteBasic.h"
-#include "../src/CryptoNoteCore/DepositCommitment.h"
+#include "CryptoNoteConfig.h"
 
 namespace CryptoNote
 {
@@ -64,16 +62,9 @@ struct WalletTransactionCreatedData
 
 struct Deposit
 {
-  // Deposit type enum
-  enum class Type : uint8_t {
-    HEAT = 0x08,        // HEAT burn deposit (0x08)
-    COLD = 0xCD,        // COLD yield deposit (0xCD)
-  //  ELDERFIER = 0xEC    // ELDERFIER staking deposit (0xEC)
-  };
-
   size_t creatingTransactionId;
   size_t spendingTransactionId;
-  uint32_t term;        // User-defined unlock time (independent of type)
+  uint32_t term;
   uint64_t amount;
   uint64_t interest;
   uint64_t height;
@@ -82,8 +73,6 @@ struct Deposit
   uint32_t outputInTransaction;
   Crypto::Hash transactionHash;
   std::string address;
-  std::string extra;    // Transaction extra field (contains commitment info)
-  Type depositType = Type::COLD;  // Default to COLD (less scary than defaulting to HEAT/burn)
 };
 
 struct WalletTransactionUpdatedData
@@ -135,6 +124,7 @@ struct WalletOrder
 {
   std::string address;
   uint64_t amount;
+  uint8_t  assetId = 0;
 };
 
 struct WalletMessage
@@ -161,8 +151,8 @@ struct TransactionParameters
   std::vector<std::string> sourceAddresses;
   std::vector<WalletOrder> destinations;
   std::vector<WalletMessage> messages;
-  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE;
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  uint64_t fee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  uint64_t mixIn = CryptoNote::parameters::MINIMUM_MIXIN;
   std::string extra;
   DepositId firstDepositId = WALLET_INVALID_DEPOSIT_ID;
   size_t depositCount = 0;
@@ -195,9 +185,9 @@ public:
   virtual ~IWallet() {}
 
   virtual void initialize(const std::string& path, const std::string& password) = 0;
-  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash, const DepositCommitment& commitment = DepositCommitment(), bool useStagedUnlock = false)=0;
+  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash) = 0;
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) = 0;
-  virtual Deposit getDeposit(size_t bankingIndex) const = 0;
+  virtual Deposit getDeposit(size_t depositIndex) const = 0;
   virtual void initializeWithViewKey(const std::string& path, const std::string& password, const Crypto::SecretKey& viewSecretKey) = 0;
   virtual void load(const std::string& path, const std::string& password, std::string& extra) = 0;
   virtual void load(const std::string& path, const std::string& password) = 0;
@@ -211,7 +201,7 @@ public:
 
   virtual size_t getAddressCount() const = 0;
 
-  virtual size_t getWalletDepositCount() const = 0;
+  virtual size_t getWalletDepositCount() const = 0;  
   virtual std::vector<DepositsInBlockInfo> getDeposits(const Crypto::Hash &blockHash, size_t count) const = 0;
   virtual std::vector<DepositsInBlockInfo> getDeposits(uint32_t blockIndex, size_t count) const = 0;
 

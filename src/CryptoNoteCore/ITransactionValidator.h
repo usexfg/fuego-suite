@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "CryptoNoteBasic.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
 
 namespace CryptoNote {
 
@@ -42,7 +42,7 @@ namespace CryptoNote {
   class ITransactionValidator {
   public:
     virtual ~ITransactionValidator() {}
-
+    
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock) = 0;
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) = 0;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) = 0;

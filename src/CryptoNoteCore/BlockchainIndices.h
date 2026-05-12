@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -20,8 +20,8 @@
 #include <string>
 #include <unordered_map>
 #include <map>
-#include "../../external/parallel_hashmap/phmap.h"
-#include "../crypto/hash.h"
+#include <parallel_hashmap/phmap.h>
+#include "crypto/hash.h"
 #include "CryptoNoteBasic.h"
 using phmap::flat_hash_map;
 namespace CryptoNote {
@@ -39,7 +39,7 @@ public:
 
   void serialize(ISerializer& s);
 
-  template<class Archive>
+  template<class Archive> 
   void serialize(Archive& archive, unsigned int version) {
     archive & index;
   }
@@ -58,7 +58,7 @@ public:
 
   void serialize(ISerializer& s);
 
-  template<class Archive>
+  template<class Archive> 
   void serialize(Archive& archive, unsigned int version) {
     archive & index;
   }
@@ -96,7 +96,7 @@ public:
 
   void serialize(ISerializer& s);
 
-  template<class Archive>
+  template<class Archive> 
   void serialize(Archive& archive, unsigned int version) {
     archive & index;
     archive & lastGeneratedTxNumber;

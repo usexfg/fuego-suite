@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -67,18 +67,6 @@ namespace CryptoNote
           (void)r; //just to make compiler to shut up
           assert(r.second);
         }
-        else if (in.type() == typeid(TransactionInputCommitmentSpend))
-        {
-          auto r = m_keyImages.insert(boost::get<TransactionInputCommitmentSpend>(in).keyImage);
-          (void)r;
-          assert(r.second);
-        }
-        else if (in.type() == typeid(TransactionInputCommitmentTransfer))
-        {
-          auto r = m_keyImages.insert(boost::get<TransactionInputCommitmentTransfer>(in).keyImage);
-          (void)r;
-          assert(r.second);
-        }
         else if (in.type() == typeid(MultisignatureInput))
         {
           const auto &msig = boost::get<MultisignatureInput>(in);
@@ -105,20 +93,6 @@ namespace CryptoNote
         if (in.type() == typeid(KeyInput))
         {
           if (m_keyImages.count(boost::get<KeyInput>(in).keyImage))
-          {
-            return false;
-          }
-        }
-        else if (in.type() == typeid(TransactionInputCommitmentSpend))
-        {
-          if (m_keyImages.count(boost::get<TransactionInputCommitmentSpend>(in).keyImage))
-          {
-            return false;
-          }
-        }
-        else if (in.type() == typeid(TransactionInputCommitmentTransfer))
-        {
-          if (m_keyImages.count(boost::get<TransactionInputCommitmentTransfer>(in).keyImage))
           {
             return false;
           }
@@ -222,16 +196,6 @@ namespace CryptoNote
       }
     }
 
-    // Check minimum fee based on current block version
-    // For mempool transactions, use the latest version rules
-    if (!isFusionTransaction && fee < m_currency.minimumFee()) {
-      logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
-        ", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
-      tvc.m_verification_failed = true;
-      tvc.m_tx_fee_too_small = true;
-      return false;
-    }
-
     //check key images for transaction if it is not kept by block
     if (!keptByBlock)
     {
@@ -317,7 +281,7 @@ namespace CryptoNote
 
     if (height >= parameters::UPGRADE_HEIGHT_V8) {
       tvc.m_added_to_pool = true;
-      tvc.m_should_be_relayed = inputsValid && (fee >= m_currency.minimumFee() || isFusionTransaction || isWithdrawalTransaction || ttl.ttl != 0);
+      tvc.m_should_be_relayed = inputsValid && (fee == CryptoNote::parameters::MINIMUM_FEE || isFusionTransaction || isWithdrawalTransaction || ttl.ttl != 0);
       tvc.m_verification_failed = true;
     } else {
       tvc.m_added_to_pool = true;

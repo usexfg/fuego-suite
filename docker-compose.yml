@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  fuego-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_TYPE: Release
+        ENABLE_OPTIMIZATIONS: "ON"
+    container_name: fuego-node
+    restart: unless-stopped
+    ports:
+      - "20808:20808"  # P2P port
+      - "28180:28180"  # RPC port
+    volumes:
+      - fuego-data:/home/fuego/.fuego
+      - ./config:/home/fuego/config:ro
+    environment:
+      - FUEGO_LOG_LEVEL=2
+    networks:
+      - fuego-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:28180/getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  fuego-wallet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fuego-wallet
+    restart: unless-stopped
+    ports:
+      - "8070:8070"   # Wallet RPC port
+    volumes:
+      - fuego-wallet-data:/home/fuego/.fuego-wallet
+    environment:
+      - FUEGO_LOG_LEVEL=2
+    networks:
+      - fuego-network
+    depends_on:
+      - fuego-node
+    entrypoint: ["walletd"]
+    command: [
+      "--daemon-host=fuego-node",
+      "--daemon-port=28180",
+      "--bind-port=8070",
+      "--bind-ip=0.0.0.0",
+      "--wallet-dir=/home/fuego/.fuego-wallet"
+    ]
+
+  # Optional: Nginx reverse proxy for web access
+  nginx:
+    image: nginx:alpine
+    container_name: fuego-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - fuego-network
+    depends_on:
+      - fuego-node
+      - fuego-wallet
+    profiles:
+      - web
+
+volumes:
+  fuego-data:
+    driver: local
+  fuego-wallet-data:
+    driver: local
+
+networks:
+  fuego-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 

@@ -1,6 +1,5 @@
-// Copyright (c) 2017-2025 Fuego Developers
-// Copyright (c) 2020-2025 Elderfire Privacy Group
 // Copyright (c) 2011-2017 The Cryptonote developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //
@@ -40,20 +39,13 @@ struct TransactionOutputMultisignatureDetails {
   uint32_t requiredSignatures;
 };
 
-struct TransactionOutputCommitmentDetails {
-  Crypto::PublicKey commitKey;
-  uint32_t term;
-};
-
 struct TransactionOutputDetails {
   uint64_t amount;
   uint32_t globalIndex;
-  uint32_t creationHeight; // used in decoy analysis | available from v10+ | 0 if unknown
 
   boost::variant<
     TransactionOutputToKeyDetails,
-    TransactionOutputMultisignatureDetails,
-    TransactionOutputCommitmentDetails> output;
+    TransactionOutputMultisignatureDetails> output;
 };
 
 struct TransactionOutputReferenceDetails {
@@ -77,28 +69,13 @@ struct TransactionInputMultisignatureDetails {
   TransactionOutputReferenceDetails output;
 };
 
-struct TransactionInputCommitmentSpendDetails {
-  std::vector<uint32_t> outputIndexes;
-  Crypto::KeyImage keyImage;
-  uint64_t ringSize;
-};
-
-struct TransactionInputCommitmentTransferDetails {
-  std::vector<uint32_t> outputIndexes;
-  Crypto::KeyImage keyImage;
-  uint32_t newTerm;
-  uint64_t ringSize;
-};
-
 struct TransactionInputDetails {
   uint64_t amount;
 
   boost::variant<
     TransactionInputGenerateDetails,
     TransactionInputToKeyDetails,
-    TransactionInputMultisignatureDetails,
-    TransactionInputCommitmentSpendDetails,
-    TransactionInputCommitmentTransferDetails> input;
+    TransactionInputMultisignatureDetails> input;
 };
 
 struct TransactionExtraDetails {

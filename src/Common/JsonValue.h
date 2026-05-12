@@ -3,7 +3,7 @@
 // Copyright (c) 2016-2017 BXC developers
 // Copyright (c) 2017-2017 UltraNote developers
 // Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //

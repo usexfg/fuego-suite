@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "fuego-codebase-mapper": {
+      "command": "python3",
+      "args": [
+        "/Users/aejt/fuego/mcp_server.py",
+        "--mcp"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/aejt/fuego"
+      }
+    }
+  }
+}
+
+/*
+To use this with Claude Desktop:
+
+1. Copy this file to Claude Desktop's MCP configuration:
+   - macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+   - Windows: %APPDATA%/Claude/claude_desktop_config.json
+   - Linux: ~/.config/Claude/claude_desktop_config.json
+
+2. Restart Claude Desktop
+
+3. Available tools in Claude:
+   - fuego_scan_codebase: Scan the Fuego codebase
+   - fuego_get_stats: Get codebase statistics
+   - fuego_search_files: Search for files
+   - fuego_get_file_tree: Get file tree structure
+   - fuego_get_dependencies: Get C++ dependencies
+   - fuego_analyze_structure: Analyze codebase structure
+   - fuego_find_by_type: Find files by type
+
+Example usage in Claude:
+   "Can you scan the Fuego codebase and show me the statistics?"
+   "Search for files containing 'wallet' in the path"
+   "Show me the file tree structure of the src directory"
+   "What are the dependencies of src/CryptoNoteCore/CryptoNoteBasicImpl.cpp?"
+*/

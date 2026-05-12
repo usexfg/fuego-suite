@@ -1,0 +1,106 @@
+2026-04-22 02:46:59.281	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-04-22 02:46:59.281	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:INFO,global:INFO,stacktrace:INFO,logging:INFO,msgwriter:INFO,perf.*:DEBUG
+2026-04-22 02:46:59.281	     0x20b5aec40	INFO	global	src/daemon/main.cpp:309	Monero 'Fluorine Fermi' (v0.18.4.6-unknown)
+2026-04-22 02:46:59.281	     0x20b5aec40	INFO	daemon	src/daemon/main.cpp:371	Moving from main() into the daemonize now.
+2026-04-22 02:46:59.282	     0x20b5aec40	INFO	global	src/daemon/protocol.h:53	Initializing cryptonote protocol...
+2026-04-22 02:46:59.282	     0x20b5aec40	INFO	global	src/daemon/protocol.h:58	Cryptonote protocol initialized OK
+2026-04-22 02:46:59.283	     0x20b5aec40	INFO	global	src/daemon/core.h:64	Initializing core...
+2026-04-22 02:46:59.284	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:508	Loading blockchain from folder /Users/aejt/fuego/monerotestnet/testnet/lmdb ...
+2026-04-22 02:46:59.285	     0x20b5aec40	INFO	blockchain.db.lmdb	src/blockchain_db/lmdb/db_lmdb.cpp:1464	LMDB memory map size: 1073741824
+2026-04-22 02:46:59.286	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:348	Blockchain not loaded, generating genesis block.
+2026-04-22 02:46:59.349	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:120	PERF             ----------
+2026-04-22 02:46:59.349	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:156	PERF      176    get_next_long_term_block_weight
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:120	PERF             ----------
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:156	PERF      186    update_next_cumulative_weight_limit
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:4488	+++++ BLOCK SUCCESSFULLY ADDED
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:4488	id:	<48ca7cd3c8de5b6a4d53d2861fbdaedca141553559f9be9520068053cda8430b>
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:4488	PoW:	<6d408ba49e2bf86ec18644626be8e9b325ed800d5fb25d8ce4ce3e7074a07257>
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:4488	HEIGHT 0, difficulty:	1
+2026-04-22 02:46:59.350	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:4488	block reward: 17.592186044415(17.592186044415 + 0.000000000000), coinbase_weight: 80, cumulative weight: 80, 30(0/30)ms
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	blockchain.db.lmdb	src/blockchain_db/lmdb/db_lmdb.cpp:3940	batch transaction mode already enabled, but asked to enable batch mode
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	blockchain.db.lmdb	src/blockchain_db/lmdb/db_lmdb.cpp:3943	batch transactions enabled
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	blockchain	src/cryptonote_core/blockchain.cpp:389	Blockchain initialized. last block: 0, d4386.h15.m58.s6 time ago, current difficulty: 1
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:120	PERF             ----------
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	perf.blockchain	src/common/perf_timer.cpp:156	PERF       21    update_next_cumulative_weight_limit
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	txpool	src/cryptonote_core/tx_pool.cpp:1705	Validating txpool contents for v1
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:683	Loading checkpoints
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	global	src/daemon/core.h:81	Core initialized OK
+2026-04-22 02:46:59.351	     0x20b5aec40	INFO	global	src/daemon/p2p.h:64	Initializing p2p server...
+2026-04-22 02:46:59.360	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 8192 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:2935	Set limit-up to 8192 kB/s
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 32768 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 32768 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:2947	Set limit-down to 32768 kB/s
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 8192 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:2969	Set limit-up to 8192 kB/s
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 32768 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.throttle	contrib/epee/src/network_throttle-detail.cpp:150	Setting LIMIT: 32768 kbps
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:2973	Set limit-down to 32768 kB/s
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net	contrib/epee/include/net/abstract_tcp_server2.inl:1430	Set server type to: 2 from name: P2P, prefix_name = P2P
+2026-04-22 02:46:59.361	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:1002	Binding (IPv4) on 0.0.0.0:28080
+2026-04-22 02:46:59.363	     0x20b5aec40	INFO	net.p2p	src/p2p/net_node.inl:1015	Net service bound (IPv4) to 0.0.0.0:28080
+2026-04-22 02:46:59.363	     0x20b5aec40	INFO	global	src/daemon/p2p.h:69	p2p server initialized OK
+2026-04-22 02:46:59.364	     0x20b5aec40	INFO	global	src/daemon/rpc.h:63	Initializing core RPC server...
+2026-04-22 02:46:59.364	     0x20b5aec40	INFO	net	contrib/epee/include/net/abstract_tcp_server2.inl:1430	Set server type to: 1 from name: RPC, prefix_name = RPC
+2026-04-22 02:46:59.364	     0x20b5aec40	ERROR	default	src/rpc/rpc_args.cpp:165	--rpc-bind-ip permits inbound unencrypted external connections. Consider SSH tunnel or SSL proxy instead. Override with --confirm-external-bind
+2026-04-22 02:46:59.364	     0x20b5aec40	INFO	global	src/daemon/p2p.h:91	Deinitializing p2p...
+2026-04-22 02:46:59.364	     0x20b5aec40	INFO	net	src/p2p/net_node.h:430	Killing the net_node
+2026-04-22 02:46:59.364	     0x20b5aec40	INFO	net	src/p2p/net_node.h:434	Joined extra background net_node threads
+2026-04-22 02:46:59.365	     0x20b5aec40	INFO	global	src/daemon/core.h:102	Deinitializing core...
+2026-04-22 02:46:59.366	     0x20b5aec40	INFO	global	src/daemon/protocol.h:75	Stopping cryptonote protocol...
+2026-04-22 02:46:59.366	     0x20b5aec40	INFO	global	src/daemon/protocol.h:79	Cryptonote protocol stopped successfully
+2026-04-22 02:46:59.366	     0x20b5aec40	ERROR	daemon	src/daemon/main.cpp:377	Exception in main! Failed to initialize core RPC server.
+2026-04-22 02:47:19.064	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-04-22 02:47:19.065	     0x20b5aec40	INFO	global	src/daemon/main.cpp:309	Monero 'Fluorine Fermi' (v0.18.4.6-unknown)
+2026-04-22 02:47:19.065	     0x20b5aec40	INFO	global	src/daemon/protocol.h:53	Initializing cryptonote protocol...
+2026-04-22 02:47:19.065	     0x20b5aec40	INFO	global	src/daemon/protocol.h:58	Cryptonote protocol initialized OK
+2026-04-22 02:47:19.065	     0x20b5aec40	INFO	global	src/daemon/core.h:64	Initializing core...
+2026-04-22 02:47:19.065	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:508	Loading blockchain from folder /Users/aejt/fuego/monerotestnet/testnet/lmdb ...
+2026-04-22 02:47:19.067	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:683	Loading checkpoints
+2026-04-22 02:47:19.067	     0x20b5aec40	INFO	global	src/daemon/core.h:81	Core initialized OK
+2026-04-22 02:47:19.067	     0x20b5aec40	INFO	global	src/daemon/p2p.h:64	Initializing p2p server...
+2026-04-22 02:47:19.076	     0x20b5aec40	INFO	global	src/daemon/p2p.h:69	p2p server initialized OK
+2026-04-22 02:47:19.077	     0x20b5aec40	INFO	global	src/daemon/rpc.h:63	Initializing core RPC server...
+2026-04-22 02:47:19.077	     0x20b5aec40	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):28081
+2026-04-22 02:47:19.627	     0x20b5aec40	INFO	global	src/daemon/rpc.h:69	core RPC server initialized OK on port: 28081
+2026-04-22 02:47:19.629	     0x20b5aec40	INFO	global	src/daemon/rpc.h:74	Starting core RPC server...
+2026-04-22 02:47:19.629	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:79	core RPC server started ok
+2026-04-22 02:47:19.629	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:79	Starting p2p net loop...
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	The daemon will start synchronizing with the network. This may take a long time to complete.
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	You can set the level of process detailization through "set_log <level|categories>" command,
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	where <level> is between 0 (no details) and 4 (very verbose), or custom category based levels (eg, *:WARNING).
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use the "help" command to see the list of available commands.
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use "help <command>" to see a command's documentation.
+2026-04-22 02:47:20.631	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:47:26.632	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	[88.99.173.38:28080 OUT] Sync data returned a new top block candidate: 1 -> 2987187 [Your node is 2987186 blocks (10.2 years) behind] 
+2026-04-22 02:47:26.632	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	SYNCHRONIZATION started
+2026-04-22 02:47:28.448	[P2P3]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 101/2987187 (0%, 2987086 left)
+2026-04-22 02:47:29.524	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 201/2987187 (0%, 2986986 left)
+2026-04-22 02:47:30.933	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 301/2987187 (0%, 2986886 left)
+2026-04-22 02:47:32.185	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 401/2987187 (0%, 2986786 left)
+2026-04-22 02:47:33.604	[P2P9]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 501/2987187 (0%, 2986686 left)
+2026-04-22 02:47:35.029	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 601/2987187 (0%, 2986586 left)
+2026-04-22 02:47:36.373	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 701/2987187 (0%, 2986486 left)
+2026-04-22 02:47:37.830	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 801/2987187 (0%, 2986386 left)
+2026-04-22 02:47:39.056	[P2P1]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 901/2987187 (0%, 2986286 left)
+2026-04-22 02:47:40.267	[P2P6]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1001/2987187 (0%, 2986186 left)
+2026-04-22 02:47:41.547	[P2P2]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1101/2987187 (0%, 2986086 left)
+2026-04-22 02:47:42.756	[P2P8]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1201/2987187 (0%, 2985986 left)
+2026-04-22 02:47:44.017	[P2P5]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1301/2987187 (0%, 2985886 left)
+2026-04-22 02:47:45.218	[P2P2]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1401/2987187 (0%, 2985786 left)
+2026-04-22 02:47:46.324	[P2P8]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1501/2987187 (0%, 2985686 left)
+2026-04-22 02:47:47.181	[P2P8]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1601/2987187 (0%, 2985586 left)
+2026-04-22 02:47:48.032	[P2P8]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1701/2987187 (0%, 2985486 left)
+2026-04-22 02:47:48.896	[P2P8]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:1619	Synced 1801/2987187 (0%, 2985386 left)
+2026-04-22 02:47:50.219	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:81	p2p net loop stopped
+2026-04-22 02:47:50.221	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:84	Stopping core RPC server...
+2026-04-22 02:47:50.221	[SRV_MAIN]	INFO	global	src/daemon/daemon.cpp:228	Node stopped.
+2026-04-22 02:47:50.221	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:96	Deinitializing core RPC server...
+2026-04-22 02:47:50.222	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:91	Deinitializing p2p...
+2026-04-22 02:47:50.225	[SRV_MAIN]	INFO	global	src/daemon/core.h:102	Deinitializing core...
+2026-04-22 02:47:50.234	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:75	Stopping cryptonote protocol...
+2026-04-22 02:47:50.234	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:79	Cryptonote protocol stopped successfully

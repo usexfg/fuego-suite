@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -175,7 +175,6 @@ std::string ConsoleHandler::getUsage() const {
       return a.first.size() < b.first.size(); })->first.size();
 
   for (auto& x : m_handlers) {
-    if (x.second.second.empty()) continue;  // hidden commands (no usage string)
     ss << std::left << std::setw(maxlen + 3) << x.first << x.second.second << std::endl;
   }
 

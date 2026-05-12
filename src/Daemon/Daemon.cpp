@@ -1,11 +1,9 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2019-2025 Fuego Developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
 //
-//
 // This file is part of Fuego.
-//
 //
 // Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
@@ -17,42 +15,27 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
-#include "version.h"
+
 
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
-#include <thread>
-#include <chrono>
-#include <locale.h>
-
-#ifdef _WIN32
-  #ifdef _MSC_VER
-    #include <crtdbg.h>
-  #endif
-#endif
 
 #include "DaemonCommandsHandler.h"
 
 #include "Common/SignalHandler.h"
 #include "Common/PathTools.h"
-#include "Common/ConsoleTools.h"
 #include "crypto/hash.h"
 #include "CryptoNoteCore/Core.h"
 #include "CryptoNoteCore/CoreConfig.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/MinerConfig.h"
-#include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
 #include "CryptoNoteProtocol/ICryptoNoteProtocolQuery.h"
 #include "P2p/NetNode.h"
 #include "P2p/NetNodeConfig.h"
 #include "Rpc/RpcServer.h"
 #include "Rpc/RpcServerConfig.h"
-#include "CryptoNoteCore/SwapOfferRelay.h"
-#include "SwapDaemon/SwapDaemon.h"
-#include "SwapDaemon/SwapDatabase.h"
-#include "Common/StringTools.h"
 #include "version.h"
 
 #include "Logging/ConsoleLogger.h"
@@ -71,28 +54,17 @@ namespace po = boost::program_options;
 namespace
 {
   const command_line::arg_descriptor<std::string> arg_config_file = {"config-file", "Specify configuration file", std::string(CryptoNote::CRYPTONOTE_NAME) + ".conf"};
-
-  // Stake verification functions for private blockchain
- // bool verifyMinimumStakeWithWallet(const std::string& address, uint64_t minimumStake,
- //                                  const CryptoNote::core& ccore, const CryptoNote::Currency& currency);
- // bool verifyMinimumStakeWithProof(const std::string& address, uint64_t minimumStake);
- // bool verifyMinimumStakeWithExternalService(const std::string& address, uint64_t minimumStake);
- // bool verifyStakeWithDaemonWallet(const CryptoNote::AccountPublicAddress& acc,
-  //                                uint64_t minimumStake, const CryptoNote::core& ccore);
   const command_line::arg_descriptor<bool>        arg_os_version  = {"os-version", ""};
   const command_line::arg_descriptor<std::string> arg_log_file    = {"log-file", "", ""};
   const command_line::arg_descriptor<std::string> arg_set_fee_address = { "fee-address", "Set a fee address for remote nodes", "" };
   const command_line::arg_descriptor<std::string> arg_set_view_key = { "view-key", "Set secret view-key for remote node fee confirmation", "" };
-
   const command_line::arg_descriptor<bool>        arg_restricted_rpc = {"restricted-rpc", "Restrict RPC to view only commands to prevent abuse"};
   const command_line::arg_descriptor<std::string> arg_enable_cors = { "enable-cors", "Adds header 'Access-Control-Allow-Origin' to the daemon's RPC responses. Uses the value as domain. Use * for all", "" };
   const command_line::arg_descriptor<int>         arg_log_level   = {"log-level", "", 2}; // info level
   const command_line::arg_descriptor<bool>        arg_console     = {"no-console", "Disable daemon console commands"};
-  const command_line::arg_descriptor<bool> arg_testnet_on = {
-    "testnet",
-    "Used to deploy test nets. Checkpoints and hardcoded seeds are ignored. Testnet uses different default ports: P2P=20808, RPC=28280.",
-    false
-};
+  const command_line::arg_descriptor<bool>        arg_testnet_on  = {"testnet", "Used to deploy test nets. Checkpoints and hardcoded seeds are ignored, "
+    "network id is changed. Use it with --data-dir flag. The wallet must be launched with --testnet flag. "
+    "Testnet uses different default ports: P2P=20808, RPC=28180", false};
   const command_line::arg_descriptor<bool>        arg_print_genesis_tx = { "print-genesis-tx", "Prints genesis' block tx hex to insert it to config and exits" };
 }
 
@@ -128,22 +100,38 @@ JsonValue buildLoggerConfiguration(Level level, const std::string& logfile) {
   return loggerConfiguration;
 }
 
+void renameDataDir() {
+  std::string concealXDir = Tools::getDefaultDataDirectory();
+  boost::filesystem::path concealXDirPath(concealXDir);
+  if (boost::filesystem::exists(concealXDirPath)) {
+    return;
+  }
+
+  std::string dataDirPrefix = concealXDir.substr(0, concealXDir.size() + 1 - sizeof(CRYPTONOTE_NAME));
+  boost::filesystem::path cediDirPath(dataDirPrefix + "BXC");
+
+  if (boost::filesystem::exists(cediDirPath)) {
+    boost::filesystem::rename(cediDirPath, concealXDirPath);
+  } else {
+    boost::filesystem::path BcediDirPath(dataDirPrefix + "Bcedi");
+    if (boost::filesystem::exists(boost::filesystem::path(BcediDirPath))) {
+		boost::filesystem::rename(BcediDirPath, concealXDirPath);
+    }
+  }
+}
 
 int main(int argc, char* argv[])
 {
-  // Set locale for UTF-8 support
- // setlocale(LC_ALL, "");
 
 #ifdef _WIN32
-  #ifdef _MSC_VER
-    _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
-  #endif
+  _CrtSetDbgFlag ( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
 #endif
 
   LoggerManager logManager;
   LoggerRef logger(logManager, "daemon");
 
   try {
+    renameDataDir();
 
     po::options_description desc_cmd_only("Command line options");
     po::options_description desc_cmd_sett("Command line options and settings options");
@@ -163,11 +151,11 @@ int main(int argc, char* argv[])
    command_line::add_arg(desc_cmd_sett, arg_log_level);
    command_line::add_arg(desc_cmd_sett, arg_console);
    command_line::add_arg(desc_cmd_sett, arg_set_view_key);
-
    command_line::add_arg(desc_cmd_sett, arg_testnet_on);
    command_line::add_arg(desc_cmd_sett, arg_enable_cors);
 
    command_line::add_arg(desc_cmd_sett, arg_print_genesis_tx);
+   //command_line::add_arg(desc_cmd_sett, arg_genesis_block_reward_address);
 
    RpcServerConfig::initOptions(desc_cmd_sett);
    CoreConfig::initOptions(desc_cmd_sett);
@@ -235,17 +223,17 @@ int main(int argc, char* argv[])
 
     // configure logging
 	    logManager.configure(buildLoggerConfiguration(cfgLogLevel, cfgLogFile));
-		logger(INFO, BRIGHT_YELLOW) <<
+		logger(INFO, BRIGHT_MAGENTA) <<
 #ifdef _WIN32
-" \n"
-"       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n"
+" \n"		
+"       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n" 
 "       888        888     888 888       d88P  Y88b d88P` `Y88b  \n"
 "       888        888     888 888       888    888 888     888  \n"
 "       8888888    888     888 8888888   888        888     888  \n"
 "       888        888     888 888       888  88888 888     888  \n"
 "       888        888     888 888       888    888 888     888  \n"
 "       888        Y88b. .d88P 888       Y88b  d88P Y88b. .d88P  \n"
-"       888         `Y88888P`  8888888888 `Y8888P88  `Y88888P`   \n"
+"       888         `Y88888P`  8888888888 `Y8888P88  `Y88888P`   \n"                                                   
 #else
 " \n"
 " ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░  \n"
@@ -288,17 +276,27 @@ int main(int argc, char* argv[])
     NetNodeConfig netNodeConfig;
     netNodeConfig.init(vm);
     netNodeConfig.setTestnet(testnet_mode);
-
-    // Set mainnet default port if not explicitly configured
-    if (netNodeConfig.getBindPort() == 0) {
-      netNodeConfig.setBindPort(P2P_DEFAULT_PORT);
+    
+    // Set testnet-specific default ports if not explicitly configured
+    if (testnet_mode) {
+      if (netNodeConfig.getBindPort() == 0) {
+        netNodeConfig.setBindPort(P2P_DEFAULT_PORT_TESTNET);
+      }
+    } else {
+      if (netNodeConfig.getBindPort() == 0) {
+        netNodeConfig.setBindPort(P2P_DEFAULT_PORT);
+      }
     }
-
+    
     MinerConfig minerConfig;
     minerConfig.init(vm);
     RpcServerConfig rpcConfig;
     rpcConfig.init(vm);
-
+    
+    // Set testnet-specific RPC port if not explicitly configured
+    if (testnet_mode && rpcConfig.bindPort == RPC_DEFAULT_PORT) {
+      rpcConfig.bindPort = RPC_DEFAULT_PORT_TESTNET;
+    }
 
     if (!coreConfig.configFolderDefaulted) {
       if (!Tools::directoryExists(coreConfig.configFolder)) {
@@ -338,23 +336,6 @@ int main(int argc, char* argv[])
 
     logger(INFO) << "Core initialized OK";
 
-    // Initialize swap offer relay (always runs — relays offers for the network)
-    auto swapRelay = std::make_unique<CryptoNote::SwapOfferRelay>(ccore, p2psrv, &p2psrv);
-    swapRelay->start();
-    rpcServer.setSwapRelay(swapRelay.get());
-    logger(INFO) << "Swap offer relay started";
-
-    // Initialize SwapDaemon (embedded — replaces standalone swapdaemon binary)
-    std::string swapDataDir = coreConfig.configFolder + "/swaps";
-    boost::filesystem::create_directories(swapDataDir);
-    auto swapDb = std::make_unique<XfgSwap::SwapDatabase>(swapDataDir);
-    auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
-      "127.0.0.1", rpcConfig.bindPort, swapDataDir, logManager);
-    swapDaemon->start();
-    rpcServer.setSwapDb(swapDb.get());
-    rpcServer.setSwapDaemon(swapDaemon.get());
-    logger(INFO) << "SwapDaemon started";
-
     // start components
     if (!command_line::has_arg(vm, arg_console)) {
       dch.start_handling();
@@ -376,9 +357,9 @@ int main(int argc, char* argv[])
 
       }
 	  }
-
-    /* This sets view-key so we can confirm that
-       the fee is part of the transaction blob */
+  
+    /* This sets the view-key so we can confirm that
+       the fee is part of the transaction blob */       
     if (command_line::has_arg(vm, arg_set_view_key)) {
       std::string vk_str = command_line::get_arg(vm, arg_set_view_key);
 	    if (!vk_str.empty()) {
@@ -403,20 +384,6 @@ int main(int argc, char* argv[])
 
     dch.stop_handling();
 
-    // Stop SwapDaemon before tearing down core/p2p
-    if (swapDaemon) {
-      logger(INFO) << "Stopping SwapDaemon...";
-      swapDaemon.reset();
-    }
-    swapDb.reset();
-
-    // Stop swap relay before tearing down core/p2p
-    if (swapRelay) {
-      logger(INFO) << "Stopping swap offer relay...";
-      swapRelay->stop();
-      swapRelay.reset();
-    }
-
     //stop components
     logger(INFO) << "Stopping core rpc server...";
     rpcServer.stop();
@@ -439,7 +406,6 @@ int main(int argc, char* argv[])
   return 0;
 }
 
-
 bool command_line_preprocessor(const boost::program_options::variables_map &vm, LoggerRef &logger) {
   bool exit = false;
 
@@ -459,6 +425,3 @@ bool command_line_preprocessor(const boost::program_options::variables_map &vm, 
 
   return false;
 }
-
-
-

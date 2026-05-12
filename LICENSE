@@ -1,5 +1,4 @@
-Copyright (c) 2017-2025, Fuego Developers
-Copyright (c) 2022-2025, Elderfire Privacy Group
+Copyright (c) 2017-2022, Fuego Developers
 
 Fuego is free & open software distributed in the hope that it
 will be useful, but WITHOUT ANY WARRANTY; without even the
@@ -12,7 +11,7 @@ along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 ****************************************************************
 
-Fuego does include sections of third-party software in accordance
+Fuego does include parts of third-party software in accordance
 with the following licenses:
 
 ****************************************************************
@@ -831,3 +830,4 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
+

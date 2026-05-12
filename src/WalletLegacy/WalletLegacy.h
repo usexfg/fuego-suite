@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -39,8 +39,6 @@
 
 #include "Transfers/BlockchainSynchronizer.h"
 #include "Transfers/TransfersSynchronizer.h"
-#include "BurnTransactionHandler.h"
-#include "crypto/subaddress.h"
 
 namespace CryptoNote {
 
@@ -74,9 +72,9 @@ public:
   virtual uint64_t actualBalance() override;
   virtual uint64_t pendingBalance() override;
   virtual uint64_t actualDepositBalance() override;
-  virtual uint64_t actualInvestmentBalance() override;
+  virtual uint64_t actualInvestmentBalance() override;  
   virtual uint64_t pendingDepositBalance() override;
-  virtual uint64_t pendingInvestmentBalance() override;
+  virtual uint64_t pendingInvestmentBalance() override;  
 
   virtual size_t getTransactionCount() override;
   virtual size_t getTransferCount() override;
@@ -114,23 +112,10 @@ public:
   virtual std::list<TransactionOutputInformation> selectFusionTransfersToSend(uint64_t threshold, size_t minInputCount, size_t maxInputCount);
   virtual TransactionId sendFusionTransaction(const std::list<TransactionOutputInformation>& fusionInputs, uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0);
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
-  virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 4);
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
   virtual std::error_code cancelTransaction(size_t transactionId) override;
 
   virtual void getAccountKeys(AccountKeys& keys) override;
-
-  // Burn deposit secret management
-  void storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
-  bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
-  bool hasBurnDepositSecret(const std::string& txHash);
-
-  // Sub-address registration.
-  // Derives the sub-address at (major, minor), subscribes it to the chain scanner
-  // and returns the sub-address string. Outputs received at this address contribute
-  // to actualBalance() and are selectable as transaction inputs (spend key b_ij used).
-  // Idempotent: calling with a previously-registered index is a no-op and returns the address.
-  virtual std::string registerSubAddress(uint32_t major, uint32_t minor) override;
 
 private:
 
@@ -155,7 +140,7 @@ private:
   void notifyClients(std::deque<std::unique_ptr<WalletLegacyEvent> >& events);
   void notifyIfBalanceChanged();
   void notifyIfDepositBalanceChanged();
-  void notifyIfInvestmentBalanceChanged();
+  void notifyIfInvestmentBalanceChanged();  
 
   std::unique_ptr<WalletLegacyEvent> getActualInvestmentBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingInvestmentBalanceChangedEvent();
@@ -182,15 +167,6 @@ private:
 
   std::vector<uint32_t> getTransactionHeights(std::vector<TransactionOutputInformation> transfers);
 
-  // Burn transaction management
-  void initializeBurnTransactionManager();
-  void setBurnTransactionCallbacks();
-  void processTransactionForBurnDetection(const std::string& txHash, const std::vector<uint8_t>& txExtra, uint64_t amount);
-  bool isBurnTransaction(const std::vector<uint8_t>& txExtra);
-  BurnTransactionHandler::BurnTransactionData parseBurnTransaction(const std::vector<uint8_t>& txExtra);
-  void generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount);
-
-
 
   enum WalletState
   {
@@ -206,7 +182,7 @@ private:
   std::string m_password;
   const CryptoNote::Currency& m_currency;
   INode& m_node;
-  Logging::ILogger& m_loggerGroup;
+  Logging::ILogger& m_loggerGroup;  
   bool m_isStopping;
 
   std::atomic<uint64_t> m_lastNotifiedActualBalance;
@@ -215,40 +191,11 @@ private:
   std::atomic<uint64_t> m_lastNotifiedActualDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedPendingDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedActualInvestmentBalance;
-  std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;
-
-  // Burn deposit secrets storage
-  struct BurnDepositSecret {
-    Crypto::SecretKey secret;
-    uint64_t amount;
-    std::vector<uint8_t> metadata;
-    time_t timestamp;
-
-    BurnDepositSecret() : amount(0), timestamp(0) {}
-    BurnDepositSecret(const Crypto::SecretKey& s, uint64_t a, const std::vector<uint8_t>& m)
-      : secret(s), amount(a), metadata(m), timestamp(std::time(nullptr)) {}
-  };
-
-  std::map<std::string, BurnDepositSecret> m_burnDepositSecrets;
-
-  // Pending burn deposit secrets (before transaction hash is known)
-  Crypto::SecretKey m_pendingBurnSecret;
-  uint64_t m_pendingBurnAmount;
-  bool m_hasPendingBurnSecret;
+  std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;  
 
   BlockchainSynchronizer m_blockchainSync;
   TransfersSyncronizer m_transfersSync;
   ITransfersContainer* m_transferDetails;
-
-  // Registered sub-addresses: (AccountKeys with b_ij, container*).
-  // Populated by registerSubAddress(); persisted via the sidecar .subaddresses file.
-  struct SubAddressEntry {
-    uint32_t major;
-    uint32_t minor;
-    AccountKeys keys;
-    ITransfersContainer* container;
-  };
-  std::vector<SubAddressEntry> m_subAddresses;
 
   WalletUserTransactionsCache m_transactionsCache;
   std::unique_ptr<WalletTransactionSender> m_sender;
@@ -257,9 +204,6 @@ private:
   Tools::ObserverManager<CryptoNote::IWalletLegacyObserver> m_observerManager;
 
   std::unique_ptr<SyncStarter> m_onInitSyncStarter;
-
-  // Burn transaction management
-  std::unique_ptr<CryptoNote::BurnTransactionManager> m_burnTransactionManager;
 };
 
 } //namespace CryptoNote

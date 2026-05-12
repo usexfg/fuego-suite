@@ -1152,13 +1152,11 @@ bool RpcServer::f_on_transactions_pool_json(const F_COMMAND_RPC_GET_POOL::reques
         f_transaction_short_response transaction_short;
         uint64_t amount_in = getInputAmount(tx);
         uint64_t amount_out = getOutputAmount(tx);
-
+        
         transaction_short.hash = Common::podToHex(getObjectHash(tx));
-        transaction_short.fee =
-			amount_in < amount_out + parameters::MINIMUM_FEE //account for interest in output, it always has minimum fee
-			? parameters::MINIMUM_FEE
-			: amount_in - amount_out;
-        transaction_short.amount_out = amount_out;
+        // amount_out and fee are restricted for privacy
+        transaction_short.amount_out = 0;
+        transaction_short.fee = 0;
         transaction_short.size = getObjectBinarySize(tx);
         res.transactions.push_back(transaction_short);
     }

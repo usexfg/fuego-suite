@@ -299,14 +299,6 @@ bool BlockchainExplorerDataBuilder::fillTransactionDetails(const Transaction& tr
       txInMultisigDetails.output.number = outputReference.second;
       txInMultisigDetails.output.transactionHash = outputReference.first;
       txInDetails.input = txInMultisigDetails;
-    } else if (txIn.type() == typeid(TransactionInputCommitmentSpend)) {
-      const auto& csIn = boost::get<TransactionInputCommitmentSpend>(txIn);
-      txInDetails.amount = csIn.amount;
-      TransactionInputCommitmentSpendDetails csDetails;
-      csDetails.outputIndexes = csIn.outputIndexes;
-      csDetails.keyImage = csIn.keyImage;
-      csDetails.ringSize = csIn.outputIndexes.size();
-      txInDetails.input = csDetails;
     } else {
       return false;
     }
@@ -342,12 +334,6 @@ bool BlockchainExplorerDataBuilder::fillTransactionDetails(const Transaction& tr
       }
       txOutMultisigDetails.requiredSignatures = txOutMultisig.requiredSignatureCount;
       txOutDetails.output = txOutMultisigDetails;
-    } else if (txOutput.get<0>().target.type() == typeid(TransactionOutputCommitment)) {
-      TransactionOutputCommitmentDetails txOutCommitDetails;
-      const auto& commitment = boost::get<TransactionOutputCommitment>(txOutput.get<0>().target);
-      txOutCommitDetails.commitKey = commitment.commitKey;
-      txOutCommitDetails.term = commitment.term;
-      txOutDetails.output = txOutCommitDetails;
     } else {
       return false;
     }

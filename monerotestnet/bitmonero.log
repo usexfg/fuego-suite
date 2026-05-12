@@ -1,0 +1,115 @@
+2026-04-22 02:48:07.123	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-04-22 02:48:07.123	     0x20b5aec40	INFO	global	src/daemon/main.cpp:309	Monero 'Fluorine Fermi' (v0.18.4.6-unknown)
+2026-04-22 02:48:07.123	     0x20b5aec40	INFO	global	src/daemon/protocol.h:53	Initializing cryptonote protocol...
+2026-04-22 02:48:07.123	     0x20b5aec40	INFO	global	src/daemon/protocol.h:58	Cryptonote protocol initialized OK
+2026-04-22 02:48:07.124	     0x20b5aec40	INFO	global	src/daemon/core.h:64	Initializing core...
+2026-04-22 02:48:07.124	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:508	Loading blockchain from folder /Users/aejt/fuego/monerotestnet/fake/lmdb ...
+2026-04-22 02:48:07.182	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:683	Loading checkpoints
+2026-04-22 02:48:07.182	     0x20b5aec40	INFO	global	src/daemon/core.h:81	Core initialized OK
+2026-04-22 02:48:07.182	     0x20b5aec40	INFO	global	src/daemon/p2p.h:64	Initializing p2p server...
+2026-04-22 02:48:07.186	     0x20b5aec40	INFO	global	src/daemon/p2p.h:69	p2p server initialized OK
+2026-04-22 02:48:07.186	     0x20b5aec40	INFO	global	src/daemon/rpc.h:63	Initializing core RPC server...
+2026-04-22 02:48:07.186	     0x20b5aec40	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):28081
+2026-04-22 02:48:08.524	     0x20b5aec40	INFO	global	src/daemon/rpc.h:69	core RPC server initialized OK on port: 28081
+2026-04-22 02:48:08.525	     0x20b5aec40	INFO	global	src/daemon/rpc.h:74	Starting core RPC server...
+2026-04-22 02:48:08.525	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:79	core RPC server started ok
+2026-04-22 02:48:08.525	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:79	Starting p2p net loop...
+2026-04-22 02:48:09.526	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	The daemon will start synchronizing with the network. This may take a long time to complete.
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	You can set the level of process detailization through "set_log <level|categories>" command,
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	where <level> is between 0 (no details) and 4 (very verbose), or custom category based levels (eg, *:WARNING).
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use the "help" command to see the list of available commands.
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use "help <command>" to see a command's documentation.
+2026-04-22 02:48:09.527	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:48:10.926	[P2P9]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	[44.201.99.63:18080 OUT] Sync data returned a new top block candidate: 1 -> 3657697 [Your node is 3657696 blocks (7.0 years) behind] 
+2026-04-22 02:48:10.926	[P2P9]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	SYNCHRONIZATION started
+2026-04-22 02:48:11.617	[P2P9]	WARNING	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:2861	monerod is now disconnected from the network
+2026-04-22 02:48:11.740	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	[15.235.229.148:18080 OUT] Sync data returned a new top block candidate: 1 -> 3657697 [Your node is 3657696 blocks (7.0 years) behind] 
+2026-04-22 02:48:11.740	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	SYNCHRONIZATION started
+2026-04-22 02:48:14.172	[P2P7]	WARNING	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:2861	monerod is now disconnected from the network
+2026-04-22 02:48:19.086	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	[3.103.117.214:18080 OUT] Sync data returned a new top block candidate: 1 -> 3657697 [Your node is 3657696 blocks (7.0 years) behind] 
+2026-04-22 02:48:19.087	[P2P7]	INFO	global	src/cryptonote_protocol/cryptonote_protocol_handler.inl:506	SYNCHRONIZATION started
+2026-04-22 02:49:19.496	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-04-22 02:49:19.496	     0x20b5aec40	INFO	global	src/daemon/main.cpp:309	Monero 'Fluorine Fermi' (v0.18.4.6-unknown)
+2026-04-22 02:49:19.497	     0x20b5aec40	INFO	global	src/daemon/protocol.h:53	Initializing cryptonote protocol...
+2026-04-22 02:49:19.497	     0x20b5aec40	INFO	global	src/daemon/protocol.h:58	Cryptonote protocol initialized OK
+2026-04-22 02:49:19.498	     0x20b5aec40	INFO	global	src/daemon/core.h:64	Initializing core...
+2026-04-22 02:49:19.499	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:508	Loading blockchain from folder /Users/aejt/fuego/monerotestnet/fake/lmdb ...
+2026-04-22 02:49:19.568	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:683	Loading checkpoints
+2026-04-22 02:49:19.569	     0x20b5aec40	INFO	global	src/daemon/core.h:81	Core initialized OK
+2026-04-22 02:49:19.569	     0x20b5aec40	INFO	global	src/daemon/p2p.h:64	Initializing p2p server...
+2026-04-22 02:49:19.577	     0x20b5aec40	INFO	global	src/daemon/p2p.h:69	p2p server initialized OK
+2026-04-22 02:49:19.578	     0x20b5aec40	INFO	global	src/daemon/rpc.h:63	Initializing core RPC server...
+2026-04-22 02:49:19.578	     0x20b5aec40	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):28081
+2026-04-22 02:49:19.595	     0x20b5aec40	INFO	global	src/daemon/rpc.h:69	core RPC server initialized OK on port: 28081
+2026-04-22 02:49:19.599	     0x20b5aec40	INFO	global	src/daemon/rpc.h:74	Starting core RPC server...
+2026-04-22 02:49:19.599	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:79	core RPC server started ok
+2026-04-22 02:49:19.599	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:79	Starting p2p net loop...
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	The daemon is running offline and will not attempt to sync to the Monero network.
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	You can set the level of process detailization through "set_log <level|categories>" command,
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	where <level> is between 0 (no details) and 4 (very verbose), or custom category based levels (eg, *:WARNING).
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use the "help" command to see the list of available commands.
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use "help <command>" to see a command's documentation.
+2026-04-22 02:49:20.600	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:49:33.471	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:81	p2p net loop stopped
+2026-04-22 02:49:33.473	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:84	Stopping core RPC server...
+2026-04-22 02:49:33.474	[SRV_MAIN]	INFO	global	src/daemon/daemon.cpp:228	Node stopped.
+2026-04-22 02:49:33.474	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:96	Deinitializing core RPC server...
+2026-04-22 02:49:33.475	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:91	Deinitializing p2p...
+2026-04-22 02:49:33.648	[SRV_MAIN]	INFO	global	src/daemon/core.h:102	Deinitializing core...
+2026-04-22 02:49:33.649	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:75	Stopping cryptonote protocol...
+2026-04-22 02:49:33.649	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:79	Cryptonote protocol stopped successfully
+2026-04-22 02:50:15.863	     0x20b5aec40	INFO	logging	contrib/epee/src/mlog.cpp:274	New log categories: *:WARNING,net:FATAL,net.http:FATAL,net.ssl:FATAL,net.p2p:FATAL,net.cn:FATAL,daemon.rpc:FATAL,global:INFO,verify:FATAL,serialization:FATAL,daemon.rpc.payment:ERROR,stacktrace:INFO,logging:INFO,msgwriter:INFO
+2026-04-22 02:50:15.863	     0x20b5aec40	INFO	global	src/daemon/main.cpp:309	Monero 'Fluorine Fermi' (v0.18.4.6-unknown)
+2026-04-22 02:50:15.863	     0x20b5aec40	INFO	global	src/daemon/protocol.h:53	Initializing cryptonote protocol...
+2026-04-22 02:50:15.863	     0x20b5aec40	INFO	global	src/daemon/protocol.h:58	Cryptonote protocol initialized OK
+2026-04-22 02:50:15.865	     0x20b5aec40	INFO	global	src/daemon/core.h:64	Initializing core...
+2026-04-22 02:50:15.866	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:508	Loading blockchain from folder /Users/aejt/fuego/monerotestnet/fake/lmdb ...
+2026-04-22 02:50:15.925	     0x20b5aec40	INFO	global	src/cryptonote_core/cryptonote_core.cpp:683	Loading checkpoints
+2026-04-22 02:50:15.925	     0x20b5aec40	INFO	global	src/daemon/core.h:81	Core initialized OK
+2026-04-22 02:50:15.925	     0x20b5aec40	INFO	global	src/daemon/p2p.h:64	Initializing p2p server...
+2026-04-22 02:50:15.930	     0x20b5aec40	INFO	global	src/daemon/p2p.h:69	p2p server initialized OK
+2026-04-22 02:50:15.931	     0x20b5aec40	INFO	global	src/daemon/rpc.h:63	Initializing core RPC server...
+2026-04-22 02:50:15.931	     0x20b5aec40	INFO	global	contrib/epee/include/net/http_server_impl_base.h:94	Binding on 127.0.0.1 (IPv4):28081
+2026-04-22 02:50:15.944	     0x20b5aec40	INFO	global	src/daemon/rpc.h:69	core RPC server initialized OK on port: 28081
+2026-04-22 02:50:15.947	     0x20b5aec40	INFO	global	src/daemon/rpc.h:74	Starting core RPC server...
+2026-04-22 02:50:15.947	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:79	core RPC server started ok
+2026-04-22 02:50:15.947	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:79	Starting p2p net loop...
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	The daemon is running offline and will not attempt to sync to the Monero network.
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	You can set the level of process detailization through "set_log <level|categories>" command,
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	where <level> is between 0 (no details) and 4 (very verbose), or custom category based levels (eg, *:WARNING).
+2026-04-22 02:50:16.948	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	
+2026-04-22 02:50:16.949	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use the "help" command to see the list of available commands.
+2026-04-22 02:50:16.949	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	Use "help <command>" to see a command's documentation.
+2026-04-22 02:50:16.949	[P2P1]	INFO	global	src/cryptonote_core/cryptonote_core.cpp:1587	**********************************************************************
+2026-04-24 07:12:33.377	[P2P6]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 08:42:38.164	[P2P8]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 08:52:39.165	[P2P0]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:02:39.832	[P2P4]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:12:40.359	[P2P3]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:22:40.908	[P2P7]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:32:41.433	[P2P6]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:42:41.965	[P2P0]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 09:52:42.519	[P2P0]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 10:02:43.069	[P2P6]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 10:12:43.633	[P2P4]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 10:22:44.247	[P2P7]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 10:32:44.812	[P2P7]	WARNING	global	src/cryptonote_core/cryptonote_core.cpp:1758	Free space is below 1 GB on /Users/aejt/fuego/monerotestnet
+2026-04-24 10:34:54.386	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:81	p2p net loop stopped
+2026-04-24 10:34:54.446	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:84	Stopping core RPC server...
+2026-04-24 10:34:54.451	[SRV_MAIN]	INFO	global	src/daemon/daemon.cpp:228	Node stopped.
+2026-04-24 10:34:54.451	[SRV_MAIN]	INFO	global	src/daemon/rpc.h:96	Deinitializing core RPC server...
+2026-04-24 10:34:54.479	[SRV_MAIN]	INFO	global	src/daemon/p2p.h:91	Deinitializing p2p...
+2026-04-24 10:34:54.731	[SRV_MAIN]	INFO	global	src/daemon/core.h:102	Deinitializing core...
+2026-04-24 10:34:54.736	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:75	Stopping cryptonote protocol...
+2026-04-24 10:34:54.736	[SRV_MAIN]	INFO	global	src/daemon/protocol.h:79	Cryptonote protocol stopped successfully

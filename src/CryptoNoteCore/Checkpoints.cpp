@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -25,18 +25,18 @@
 #include <string.h>
 #include <sstream>
 #include <vector>
-// #include <iterator>
+#include <iterator>
 
 #include "Checkpoints.h"
 #include "../CryptoNoteConfig.h"
-#include "../Common/StringTools.h"
-#include "../Common/DnsTools.h"
+#include "Common/StringTools.h"
+#include "Common/DnsTools.h"
 
 using namespace Logging;
 
 namespace CryptoNote {
 //---------------------------------------------------------------------------
-Checkpoints::Checkpoints(Logging::ILogger &log, const Currency* currency) : logger(log, "checkpoints"), m_currency(currency) {}
+Checkpoints::Checkpoints(Logging::ILogger &log) : logger(log, "checkpoints") {}
 //---------------------------------------------------------------------------
 bool Checkpoints::add_checkpoint(uint32_t height, const std::string &hash_str) {
   Crypto::Hash h = NULL_HASH;
@@ -60,18 +60,12 @@ bool Checkpoints::is_in_checkpoint_zone(uint32_t  height) const {
 }
 //---------------------------------------------------------------------------
 bool Checkpoints::check_block(uint32_t  height, const Crypto::Hash &h, bool &is_a_checkpoint) const {
-    // Bypass checkpoints in testnet mode
-     if (m_currency && m_currency->isTestnet()) {
-       is_a_checkpoint = false;
-       return true;
-     }
-
-    auto it = m_points.find(height);
+  auto it = m_points.find(height);
   is_a_checkpoint = it != m_points.end();
   if (!is_a_checkpoint)
     return true;
 
-  if (it->second == h) {
+  if (it->second == h) {    
     return true;
   } else {
     logger(Logging::ERROR) << "<< Checkpoints.cpp << " << "Checkpoint failed for height " << height
@@ -156,9 +150,9 @@ bool Checkpoints::load_checkpoints_from_dns()
 
 bool Checkpoints::load_checkpoints()
 {
-  for (const auto& cp : CryptoNote::CHECKPOINTS)
+  for (const auto& cp : CryptoNote::CHECKPOINTS) 
   {
-    add_checkpoint(cp.height, cp.blockId);
+    add_checkpoint(cp.height, cp.blockId);    
   }
   return true;
 }

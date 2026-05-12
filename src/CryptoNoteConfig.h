@@ -29,8 +29,8 @@ namespace CryptoNote
 	{
 		const uint64_t DIFFICULTY_TARGET = 480;	
 		const uint64_t CRYPTONOTE_MAX_BLOCK_NUMBER = 500000000;
-		const size_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE = 500000000;
-		const size_t CRYPTONOTE_MAX_TX_SIZE = 1000000000;
+		const size_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE = 1000000; // 1MB
+		const size_t CRYPTONOTE_MAX_TX_SIZE = 200000; // 200KB
                 const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 1753191; /* "fire" address prefix */
 		const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW = 60;	
 		const uint64_t DIFFICULTY_TARGET_DRGL = 81;
@@ -75,12 +75,46 @@ namespace CryptoNote
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
+		// DMWDA parameters
+		const uint32_t DMWDA_SHORT_WINDOW                            = 15;
+		const uint32_t DMWDA_MEDIUM_WINDOW                           = 45;
+		const uint32_t DMWDA_LONG_WINDOW                             = 120;
+		const uint32_t DMWDA_EMERGENCY_WINDOW                        = 5;
+		const double   DMWDA_MIN_ADJUSTMENT                          = 0.5;
+		const double   DMWDA_MAX_ADJUSTMENT                          = 4.0;
+		const double   DMWDA_EMERGENCY_THRESHOLD                     = 0.1;
+		const double   DMWDA_SMOOTHING_FACTOR                        = 0.3;
+		const double   DMWDA_WEIGHT_SHORT                            = 0.4;
+		const double   DMWDA_WEIGHT_MEDIUM                           = 0.4;
+		const double   DMWDA_WEIGHT_LONG                             = 0.2;
+		const double   DMWDA_CONFIDENCE_MIN                          = 0.1;
+		const double   DMWDA_CONFIDENCE_MAX                          = 1.0;
+		const double   DMWDA_ADJUSTMENT_RANGE                        = 0.3;
+		const double   DMWDA_HASH_RATE_CHANGE_THRESHOLD              = 10.0;
+		const double   DMWDA_DEFAULT_CONFIDENCE                      = 0.5;
+		const double   DMWDA_BLOCK_STEALING_TIME_THRESHOLD           = 0.05;
+		const uint32_t DMWDA_RECENT_WINDOW_SIZE                      = 5;
+		const uint32_t DMWDA_HISTORICAL_WINDOW_SIZE                  = 20;
+		const uint32_t DMWDA_BLOCK_STEALING_CHECK_BLOCKS             = 5;
+		const uint32_t DMWDA_BLOCK_STEALING_THRESHOLD                = 2;
+
+		// Amount tiers
+        const uint64_t AMOUNT_TIER_0 =     8000000;
+        const uint64_t AMOUNT_TIER_1 =    80000000;
+        const uint64_t AMOUNT_TIER_2 =   800000000;
+        const uint64_t AMOUNT_TIER_3 =  8000000000;
+        const uint64_t TEST_AMOUNT_TIER_0 =     800000;
+        const uint64_t TEST_AMOUNT_TIER_1 =    8000000;
+        const uint64_t TEST_AMOUNT_TIER_2 =   80000000;
+        const uint64_t TEST_AMOUNT_TIER_3 =  800000000;
+
 		const uint64_t DEPOSIT_MIN_AMOUNT = 800 * COIN;
 		const uint32_t DEPOSIT_MIN_TERM_v1 = 5480;  //blocks
                 const uint32_t DEPOSIT_MAX_TERM_v1 = 5480; 
                 const uint32_t DEPOSIT_MIN_TERM = 16440;  //blocks		 /* one month=5480 ( 3 months (16440) for release ) OverviewFrame::depositParamsChanged */
                 const uint32_t DEPOSIT_MAX_TERM = 16440;  		 /* 3 month standard */
                 const uint32_t DEPOSIT_TERM_LP = 0xFFFFFFFD;        /* LP share marker */
+                const uint32_t DEPOSIT_TERM_FOREVER = ((uint32_t)(-1));  /* Forever term for burn */
 
                 // Epoch & fee system
                 const uint32_t EPOCH_DURATION_BLOCKS = 900;         // 5 days @ 180 blocks/day
@@ -99,6 +133,12 @@ namespace CryptoNote
                 const uint64_t PI_MAX_RATE_DENOM = 100;
                 const uint64_t PI_INTEGRAL_CLAMP = 100;    // integral wind-up in %
                 const uint64_t BLOCKS_PER_YEAR = 65700;    // ~180 blocks/day × 365
+
+                // Oracle: XFG/USD price feed (0 = disabled, PI runs in XFG-only mode)
+                // Value: XFG atomic units per $1.00
+                //   XFG = $400 → 10000000/400 = 25000
+                //   XFG = $0.10 → 10000000/0.10 = 100000000
+                const uint64_t ORACLE_XFG_PER_USD = 0;
 
 		static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");
@@ -139,8 +179,8 @@ namespace CryptoNote
 		const uint32_t UPGRADE_HEIGHT_V10                            = 0;      // HEAT colored coin (set by CurrencyBuilder)
 
                 // HEAT colored coin parameters
-                const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_NUM = 1;   // 0.5 XFG per HEAT
-                const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_DENOM = 2;
+                const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_NUM = 1;   // 0.2 XFG per HEAT (1/5)
+                const uint64_t HEAT_INITIAL_REDEMPTION_PRICE_DENOM = 5;
                 const uint8_t  HEAT_DECIMALS = 7;                       // same as XFG
 
                 // HEAT denomination tiers (distinct from XFG tiers)
@@ -174,6 +214,7 @@ namespace CryptoNote
 
         const char CRYPTONOTE_NAME[] = "fuego";
 	const char GENESIS_COINBASE_TX_HEX[] = "013c01ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101bd4e0bf284c04d004fd016a21405046e8267ef81328cabf3017c4c24b273b25a";
+        const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
 
 	const uint8_t  TRANSACTION_VERSION_1                         =  1;
 	const uint8_t  TRANSACTION_VERSION_2                         =  2;
@@ -218,7 +259,7 @@ namespace CryptoNote
 	const size_t P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT = 2;
 	const size_t P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT = 70; // percent
 	const uint32_t P2P_DEFAULT_HANDSHAKE_INTERVAL = 60;			 // seconds
-	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 50000000;		 // 50000000 bytes maximum packet size
+	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 5000000;		 // 5MB maximum packet size
 	const uint32_t P2P_DEFAULT_PEERS_IN_HANDSHAKE = 250;
 	const uint32_t P2P_DEFAULT_CONNECTION_TIMEOUT = 5000;	   // 5 seconds
 	const uint32_t P2P_DEFAULT_PING_CONNECTION_TIMEOUT = 2000; // 2 seconds

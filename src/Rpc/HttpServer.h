@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -15,14 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
-#pragma once
+#pragma once 
 
 #include <unordered_set>
 
-#include "../HTTP/HttpRequest.h"
-#include "../HTTP/HttpResponse.h"
+#include <HTTP/HttpRequest.h>
+#include <HTTP/HttpResponse.h>
 
-#include "../System/ContextGroup.h"
+#include <System/ContextGroup.h>
 #include <System/Dispatcher.h>
 #include <System/TcpListener.h>
 #include <System/TcpConnection.h>

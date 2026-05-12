@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -23,7 +23,6 @@
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "IWalletLegacy.h"
 #include "ITransfersContainer.h"
-#include "Rpc/CoreRpcServerCommandsDefinitions.h"
 
 namespace CryptoNote {
 
@@ -48,10 +47,6 @@ struct SendTransactionContext
   std::vector<tx_message_entry> messages;
   uint64_t ttl;
   uint32_t depositTerm;
-  std::string extra;
-  bool dynamicRingSize = false; // true: select optimal ring size from actual daemon-returned outs
-  std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> commitmentOuts; // ring decoys for CommitmentSpend
-
 };
 
 } //namespace CryptoNote

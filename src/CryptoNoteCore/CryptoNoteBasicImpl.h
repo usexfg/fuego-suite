@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,10 +17,10 @@
 
 #pragma once
 
-#include "../Common/StringTools.h"
-#include "../crypto/crypto.h"
-#include "../crypto/hash.h"
-#include "CryptoNoteBasic.h"
+#include "Common/StringTools.h"
+#include "crypto/crypto.h"
+#include "crypto/hash.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
 
 
 namespace CryptoNote {
@@ -39,10 +39,9 @@ namespace CryptoNote {
   /************************************************************************/
   /* CryptoNote helper functions                                          */
   /************************************************************************/
-  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize, uint8_t blockMajorVersion = 0);
+  uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize);
   std::string getAccountAddressAsStr(uint64_t prefix, const AccountPublicAddress& adr);
   bool parseAccountAddressString(uint64_t& prefix, AccountPublicAddress& adr, const std::string& str);
-  bool isSubAddressStr(const std::string& str, uint64_t subaddrPrefix);
   bool is_coinbase(const Transaction& tx);
 
   bool operator ==(const CryptoNote::Transaction& a, const CryptoNote::Transaction& b);

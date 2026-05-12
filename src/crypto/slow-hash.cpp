@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -63,9 +63,9 @@ namespace Crypto {
   }
 
   cn_context::~cn_context() {
-    //if (munmap(data, MAP_SIZE) != 0) {
-    //  throw bad_alloc();
-    //}
+    if (munmap(data, MAP_SIZE) != 0) {
+      throw bad_alloc();
+    }
   }
 
 #endif

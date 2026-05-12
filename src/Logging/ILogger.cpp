@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -33,7 +33,6 @@ const std::string BRIGHT_YELLOW = "\x1F""BRIGHT_YELLOW\x1F";
 const std::string BRIGHT_WHITE = "\x1F""BRIGHT_WHITE\x1F";
 const std::string BRIGHT_CYAN = "\x1F""BRIGHT_CYAN\x1F";
 const std::string BRIGHT_MAGENTA = "\x1F""BRIGHT_MAGENTA\x1F";
-const std::string GREY = "\x1F""GREY\x1F";
 const std::string DEFAULT = "\x1F""DEFAULT\x1F";
 
 const char ILogger::COLOR_DELIMETER = '\x1F';

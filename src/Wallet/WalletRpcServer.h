@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -62,11 +62,6 @@ namespace Tools
 
     //json_rpc
     bool on_getbalance(const wallet_rpc::COMMAND_RPC_GET_BALANCE::request& req, wallet_rpc::COMMAND_RPC_GET_BALANCE::response& res);
-    bool on_get_address(const wallet_rpc::COMMAND_RPC_GET_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS::response& res);
-    bool on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_OFFER::response& res);
-    bool on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res);
-    bool on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res);
-    bool on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res);
     bool on_create_integrated(const wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::request& req, wallet_rpc::COMMAND_RPC_CREATE_INTEGRATED::response& res);
     bool on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res);
     bool on_store(const wallet_rpc::COMMAND_RPC_STORE::request& req, wallet_rpc::COMMAND_RPC_STORE::response& res);
@@ -81,13 +76,6 @@ namespace Tools
     bool on_estimate_fusion(const wallet_rpc::COMMAND_RPC_ESTIMATE_FUSION::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_FUSION::response& res);
     bool on_send_fusion(const wallet_rpc::COMMAND_RPC_SEND_FUSION::request& req, wallet_rpc::COMMAND_RPC_SEND_FUSION::response& res);
     bool on_reset(const wallet_rpc::COMMAND_RPC_RESET::request& req, wallet_rpc::COMMAND_RPC_RESET::response& res);
-
-    // Phase 7: CD / COLD wallet RPC bridges
-    bool on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::request& req, wallet_rpc::COMMAND_RPC_LIST_CDS::response& res);
-    bool on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::request& req, wallet_rpc::COMMAND_RPC_CREATE_CD::response& res);
-    bool on_withdraw_cd(const wallet_rpc::COMMAND_RPC_WITHDRAW_CD::request& req, wallet_rpc::COMMAND_RPC_WITHDRAW_CD::response& res);
-    bool on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD::request& req, wallet_rpc::COMMAND_RPC_ROLLOVER_CD::response& res);
-    bool on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
 
     bool handle_command_line(const boost::program_options::variables_map& vm);
 

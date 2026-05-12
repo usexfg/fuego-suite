@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -18,8 +18,6 @@
 #include "WalletLegacy.h"
 
 #include <algorithm>
-#include <memory>
-#include <sstream>
 #include <numeric>
 #include <random>
 #include <set>
@@ -39,15 +37,6 @@
 #include "WalletLegacy/WalletUtils.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
-#include "BurnTransactionHandler.h"
-#include "CryptoNoteCore/DepositCommitment.h"
-#include "WalletLegacy/WalletLegacyEvent.h"
-#include "WalletLegacy/WalletLegacy.h"
-
-// Forward declarations
-namespace CryptoNote {
-  class WalletBurnDepositSecretCreatedEvent;
-}
 
 #include "CryptoNoteConfig.h"
 
@@ -114,7 +103,7 @@ private:
 uint64_t calculateDepositsAmount(const std::vector<CryptoNote::TransactionOutputInformation>& transfers, const CryptoNote::Currency& currency, const std::vector<uint32_t> heights) {
 	int index = 0;
   return std::accumulate(transfers.begin(), transfers.end(), static_cast<uint64_t>(0), [&currency, &index, heights] (uint64_t sum, const CryptoNote::TransactionOutputInformation& deposit) {
-    if (deposit.term % 64800 != 0)
+    if (deposit.term % 64800 != 0) 
     {
       return sum + deposit.amount;
     }
@@ -122,14 +111,14 @@ uint64_t calculateDepositsAmount(const std::vector<CryptoNote::TransactionOutput
     {
       return sum;
     }
-
+    
   });
 }
 
 uint64_t calculateInvestmentsAmount(const std::vector<CryptoNote::TransactionOutputInformation>& transfers, const CryptoNote::Currency& currency, const std::vector<uint32_t> heights) {
 	int index = 0;
   return std::accumulate(transfers.begin(), transfers.end(), static_cast<uint64_t>(0), [&currency, &index, heights] (uint64_t sum, const CryptoNote::TransactionOutputInformation& deposit) {
-    if (deposit.term % 64800 == 0)
+    if (deposit.term % 64800 == 0) 
     {
       return sum + deposit.amount;
     }
@@ -137,7 +126,7 @@ uint64_t calculateInvestmentsAmount(const std::vector<CryptoNote::TransactionOut
     {
       return sum;
     }
-
+    
   });
 }
 
@@ -164,26 +153,22 @@ WalletLegacy::WalletLegacy(const CryptoNote::Currency& currency, INode& node, Lo
   m_state(NOT_INITIALIZED),
   m_currency(currency),
   m_node(node),
-  m_loggerGroup(loggerGroup),
+  m_loggerGroup(loggerGroup),  
   m_isStopping(false),
   m_lastNotifiedActualBalance(0),
   m_lastNotifiedPendingBalance(0),
   m_lastNotifiedActualDepositBalance(0),
   m_lastNotifiedPendingDepositBalance(0),
   m_lastNotifiedActualInvestmentBalance(0),
-  m_lastNotifiedPendingInvestmentBalance(0),
+  m_lastNotifiedPendingInvestmentBalance(0),  
   m_blockchainSync(node, currency.genesisBlockHash()),
   m_transfersSync(currency, m_loggerGroup, m_blockchainSync, node),
   m_transferDetails(nullptr),
   m_transactionsCache(m_currency.mempoolTxLiveTime()),
   m_sender(nullptr),
-  m_onInitSyncStarter(new SyncStarter(m_blockchainSync)),
-  m_burnTransactionManager(std::unique_ptr<CryptoNote::BurnTransactionManager>(new CryptoNote::BurnTransactionManager())),
-  m_pendingBurnAmount(0),
-  m_hasPendingBurnSecret(false)
+  m_onInitSyncStarter(new SyncStarter(m_blockchainSync))
 {
   addObserver(m_onInitSyncStarter.get());
-  initializeBurnTransactionManager();
 }
 
 WalletLegacy::~WalletLegacy() {
@@ -282,11 +267,11 @@ void WalletLegacy::doLoad(std::istream& source) {
   ContextCounterHolder counterHolder(m_asyncContextCounter);
   try {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-
+    
     std::string cache;
     WalletLegacySerializer serializer(m_account, m_transactionsCache);
     serializer.deserialize(source, m_password, cache);
-
+      
     initSync();
 
     try {
@@ -297,10 +282,6 @@ void WalletLegacy::doLoad(std::istream& source) {
     } catch (const std::exception&) {
       // ignore cache loading errors
     }
-
-    // Re-subscribe sub-addresses that were registered before this load
-    // (populated by fire_wallet's loadSubAddresses() calling registerSubAddress() after doLoad).
-    // Sub-addresses registered after initSync are already subscribed
 	// Read all output keys cache
     std::vector<TransactionOutputInformation> allTransfers;
     m_transferDetails->getOutputs(allTransfers, ITransfersContainer::IncludeAll);
@@ -357,16 +338,6 @@ void WalletLegacy::shutdown() {
     subObject->removeObserver(this);
     m_transfersSync.removeSubscription(accountAddress);
     m_transferDetails = nullptr;
-
-    // Unsubscribe all registered sub-addresses.
-    for (auto& sa : m_subAddresses) {
-      auto saSubObject = m_transfersSync.getSubscription(sa.keys.address);
-      if (saSubObject) {
-        saSubObject->removeObserver(this);
-        m_transfersSync.removeSubscription(sa.keys.address);
-      }
-    }
-    m_subAddresses.clear();
 
     m_transactionsCache.reset();
     m_lastNotifiedActualBalance = 0;
@@ -452,7 +423,6 @@ void WalletLegacy::doSave(std::ostream& destination, bool saveDetailed, bool sav
     return;
   }
 
-  // Notify that save completed successfully, even if sync restart failed
   m_observerManager.notify(&IWalletLegacyObserver::saveCompleted, std::error_code());
 }
 
@@ -464,7 +434,7 @@ std::error_code WalletLegacy::changePassword(const std::string& oldPassword, con
   if (m_password.compare(oldPassword))
     return make_error_code(CryptoNote::error::WRONG_PASSWORD);
 
-  //we don't let the user change the password while saving
+  //we don't let the user to change the password while saving
   m_password = newPassword;
 
   return std::error_code();
@@ -603,25 +573,27 @@ TransactionId WalletLegacy::sendTransaction(Crypto::SecretKey& transactionSK,
                                             uint64_t mixIn,
                                             uint64_t unlockTimestamp,
                                             const std::vector<TransactionMessage>& messages,
-                                            uint64_t ttl)
+                                            uint64_t ttl) 
                                             {
-
-  /* ensure that it is not a self-destructive message, which will have a TTL > 0 */
-  if (ttl == 0)
+  
+  /* Regular transaction fees should be at least 1000 X as of Consensus 2019. In this case we also check
+     to ensure that it is not a self-destructive message, which will have a TTL that
+     is larger than 0 */
+  if (ttl == 0) 
   {
-    fee = m_currency.minimumFee();
+    fee = CryptoNote::parameters::MINIMUM_FEE_V2;
   }
 
   /* This is the logic that determins if it is an optimization transaction */
   bool optimize = false;
-  if (transfers.empty())
+  if (transfers.empty()) 
   {
     CryptoNote::WalletLegacyTransfer transfer;
     transfer.address = getAddress();
     transfer.amount = 0;
     transfers.push_back(transfer);
     optimize = true;
-    fee = m_currency.minimumFee();
+    fee = CryptoNote::parameters::MINIMUM_FEE_V2;
   }
 
   TransactionId txId = 0;
@@ -670,19 +642,19 @@ uint64_t WalletLegacy::getWalletMaximum()
   std::vector<TransactionOutputInformation> outputs;
   m_transferDetails->getOutputs(outputs, ITransfersContainer::IncludeKeyUnlocked);
 
-  /** Split the inputs into buckets based on what power of ten they are in
+  /** Split the inputs into buckets based on what power of ten they are in 
      * (For example, [1, 2, 5, 7], [20, 50, 80, 80], [100, 600, 700]), though
      * we will ignore dust for the time being. */
   std::unordered_map<uint64_t, std::vector<TransactionOutputInformation>> buckets;
 
   for (const auto &walletAmount : outputs)
   {
-    /** Use the number of digits to determine in which bucket they fit */
+    /** Use the number of digits to determine which buck they fit in */
     int numberOfDigits = floor(log10(walletAmount.amount)) + 1;
 
-    /** If the amount is larger than the current dust threshold
+    /** If the amount is larger than the current dust threshold 
        * insert the amount into the correct bucket */
-    if (walletAmount.amount > 1000)
+    if (walletAmount.amount > 10)
     {
       buckets[numberOfDigits].push_back(walletAmount);
     }
@@ -791,8 +763,8 @@ TransactionId WalletLegacy::sendFusionTransaction(const std::list<TransactionOut
   destination.amount = 0;
 
   /* For transaction pool differentiation, fusion and optimization should be 50 X */
-  fee = m_currency.minimumFee();
-
+  fee = CryptoNote::parameters::MINIMUM_FEE_V2;
+  
   for (auto& out : fusionInputs) {
     destination.amount += out.amount;
   }
@@ -815,21 +787,17 @@ TransactionId WalletLegacy::sendFusionTransaction(const std::list<TransactionOut
 }
 
 TransactionId WalletLegacy::deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn) {
-  return deposit(term, amount, fee, "", mixIn);
-}
-
-TransactionId WalletLegacy::deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn) {
   throwIfNotInitialised();
 
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
-  fee = m_currency.minimumFee(); // BMV10+: 8 Kħ (0.0008 XFG), BMV8+: 80 Kħ (0.008 XFG)
+  fee = CryptoNote::parameters::MINIMUM_FEE_V2;
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeDepositRequest(txId, events, term, amount, fee, extra, mixIn);
+    request = m_sender->makeDepositRequest(txId, events, term, amount, fee, mixIn);
 
     if (request != nullptr) {
       pushBalanceUpdatedEvents(events);
@@ -853,7 +821,7 @@ TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depos
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
-  fee = m_currency.minimumFee(); // BMV10+: 8 Kħ (0.0008 XFG)
+  fee = CryptoNote::parameters::MINIMUM_FEE;
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
@@ -874,21 +842,21 @@ TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depos
   return txId;
 }
 
-/* go through all unlocked outputs and return a total of
+/* go through all unlocked outputs and return a total of 
   everything below the dust threshold */
-uint64_t WalletLegacy::dustBalance()
+uint64_t WalletLegacy::dustBalance() 
 {
 	std::unique_lock<std::mutex> lock(m_cacheMutex);
 	throwIfNotInitialised();
 	std::vector<TransactionOutputInformation> outputs;
 	m_transferDetails->getOutputs(outputs, ITransfersContainer::IncludeKeyUnlocked);
 	uint64_t money = 0;
-	for (size_t i = 0; i < outputs.size(); ++i)
+	for (size_t i = 0; i < outputs.size(); ++i) 
   {
 		const auto& out = outputs[i];
-		if (!m_transactionsCache.isUsed(out))
+		if (!m_transactionsCache.isUsed(out)) 
     {
-			if (out.amount < m_currency.defaultDustThreshold())
+			if (out.amount < m_currency.defaultDustThreshold()) 
       {
 				money += out.amount;
 			}
@@ -982,48 +950,16 @@ void WalletLegacy::synchronizationCompleted(std::error_code result) {
 void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Hash& transactionHash) {
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
 
-  // Aggregate balance across ALL containers (primary + sub-addresses).
-  // A cross-container spend (e.g. subaddress input → primary change output)
-  // fires onTransactionUpdated once per container.  Each container only sees
-  // its own inputs/outputs, so a single-container view gives a wrong net.
-  // We query every container for this txHash and sum up.
   TransactionInformation txInfo;
-  bool haveTxInfo = false;
-  uint64_t totalIn = 0;
-  uint64_t totalOut = 0;
-  std::vector<TransactionOutputInformation> allDepositOuts;
-  std::vector<TransactionOutputInformation> allSpentDeposits;
-
-  auto queryContainer = [&](ITransfersContainer& c) {
-    TransactionInformation ti;
-    uint64_t cIn = 0, cOut = 0;
-    if (c.getTransactionInformation(transactionHash, ti, &cIn, &cOut)) {
-      if (!haveTxInfo) { txInfo = ti; haveTxInfo = true; }
-      totalIn  += cIn;
-      totalOut += cOut;
-      auto deps = c.getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
-      allDepositOuts.insert(allDepositOuts.end(), deps.begin(), deps.end());
-      auto spent = c.getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
-      allSpentDeposits.insert(allSpentDeposits.end(), spent.begin(), spent.end());
-    }
-  };
-
-  // Primary container
-  if (m_transferDetails) {
-    queryContainer(*m_transferDetails);
-  }
-  // Sub-address containers
-  for (const auto& sa : m_subAddresses) {
-    if (sa.container) {
-      queryContainer(*sa.container);
-    }
-  }
-
-  if (haveTxInfo) {
+  uint64_t amountIn;
+  uint64_t amountOut;
+  if (m_transferDetails->getTransactionInformation(transactionHash, txInfo, &amountIn, &amountOut)) {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
 
-    int64_t txBalance = static_cast<int64_t>(totalOut) - static_cast<int64_t>(totalIn);
-    events = m_transactionsCache.onTransactionUpdated(txInfo, txBalance, allDepositOuts, allSpentDeposits, m_currency);
+    auto newDepositOuts = m_transferDetails->getTransactionOutputs(transactionHash, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateAll);
+    auto spentDeposits = m_transferDetails->getTransactionInputs(transactionHash, ITransfersContainer::IncludeTypeDeposit);
+
+    events = m_transactionsCache.onTransactionUpdated(txInfo, static_cast<int64_t>(amountOut)-static_cast<int64_t>(amountIn), newDepositOuts, spentDeposits, m_currency);
 
     auto actualDepositBalanceChangedEvent = getActualDepositBalanceChangedEvent();
     auto pendingDepositBalanceChangedEvent = getPendingDepositBalanceChangedEvent();
@@ -1034,11 +970,6 @@ void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Ha
 
     if (pendingDepositBalanceChangedEvent) {
       events.push_back(std::move(pendingDepositBalanceChangedEvent));
-    }
-
-    // Process transaction for burn detection
-    if (txInfo.totalAmountOut > 0) {
-      processTransactionForBurnDetection(Common::toHex(transactionHash.data, 32), txInfo.extra, txInfo.totalAmountOut);
     }
   }
 
@@ -1102,7 +1033,6 @@ void WalletLegacy::throwIfNotInitialised() {
 void WalletLegacy::notifyClients(std::deque<std::unique_ptr<WalletLegacyEvent>>& events) {
   while (!events.empty()) {
     std::unique_ptr<WalletLegacyEvent>& event = events.front();
-    event->process(this);
     event->notify(m_observerManager);
     events.pop_front();
   }
@@ -1250,69 +1180,6 @@ void WalletLegacy::getAccountKeys(AccountKeys& keys) {
   keys = m_account.getAccountKeys();
 }
 
-std::string WalletLegacy::registerSubAddress(uint32_t major, uint32_t minor) {
-  throwIfNotInitialised();
-
-  if (major == 0 && minor == 0) {
-    throw std::runtime_error("Sub-address index (0,0) is reserved for the primary address");
-  }
-
-  // Idempotent: if already registered, return cached address string.
-  for (const auto& sa : m_subAddresses) {
-    if (sa.major == major && sa.minor == minor) {
-      return m_currency.subAddressAsString({sa.keys.address.spendPublicKey, sa.keys.address.viewPublicKey});
-    }
-  }
-
-  const AccountKeys& master = m_account.getAccountKeys();
-  Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
-      master.viewSecretKey,
-      master.address.spendPublicKey,
-      &master.spendSecretKey,
-      major, minor);
-
-  // Build AccountKeys for this sub-address.
-  AccountKeys subAccountKeys;
-  subAccountKeys.address.spendPublicKey = subKeys.spendPublicKey;
-  subAccountKeys.address.viewPublicKey  = subKeys.viewPublicKey;
-  subAccountKeys.spendSecretKey         = subKeys.hasSpendSecretKey ? subKeys.spendSecretKey : NULL_SECRET_KEY;
-  subAccountKeys.viewSecretKey          = master.viewSecretKey;
-
-  AccountSubscription sub;
-  sub.keys = subAccountKeys;
-  sub.transactionSpendableAge = CryptoNote::parameters::CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
-  sub.syncStart.height = 0;
-  sub.syncStart.timestamp = m_account.get_createtime() - ACCOUN_CREATE_TIME_ACCURACY;
-
-  // Stop blockchain synchronizer before adding subscription
-  m_blockchainSync.stop();
-
-  try {
-    auto& subObject = m_transfersSync.addSubscription(sub);
-    ITransfersContainer* container = &subObject.getContainer();
-    subObject.addObserver(this);
-
-    SubAddressEntry entry;
-    entry.major     = major;
-    entry.minor     = minor;
-    entry.keys      = subAccountKeys;
-    entry.container = container;
-    m_subAddresses.push_back(entry);
-
-    // Update the sender with the new sub-address data.
-    if (m_sender) {
-      m_sender->addSubAddress(subAccountKeys, *container);
-    }
-
-    m_blockchainSync.start(); //XXX: start can throw. what to do in this case?
-    return m_currency.subAddressAsString({subKeys.spendPublicKey, subKeys.viewPublicKey});
-  } catch (...) {
-    // Ensure we restart the synchronizer even on error
-    m_blockchainSync.start();
-    throw;
-  }
-}
-
 bool WalletLegacy::isTrackingWallet() {
   AccountKeys keys;
   getAccountKeys(keys);
@@ -1371,20 +1238,15 @@ uint64_t WalletLegacy::calculatePendingInvestmentBalance() {
 }
 
 uint64_t WalletLegacy::calculateActualBalance() {
-  uint64_t total = m_transferDetails->balance(ITransfersContainer::IncludeKeyUnlocked);
-  for (const auto& sa : m_subAddresses) {
-    total += sa.container->balance(ITransfersContainer::IncludeKeyUnlocked);
-  }
-  return total - m_transactionsCache.unconfrimedOutsAmount();
+  return m_transferDetails->balance(ITransfersContainer::IncludeKeyUnlocked) -
+    m_transactionsCache.unconfrimedOutsAmount();
 }
 
 uint64_t WalletLegacy::calculatePendingBalance() {
   uint64_t change = m_transactionsCache.unconfrimedOutsAmount() - m_transactionsCache.unconfirmedTransactionsAmount();
   uint64_t spentDeposits = m_transactionsCache.countUnconfirmedSpentDepositsProfit();
   uint64_t container = m_transferDetails->balance(ITransfersContainer::IncludeKeyNotUnlocked);
-  for (const auto& sa : m_subAddresses) {
-    container += sa.container->balance(ITransfersContainer::IncludeKeyNotUnlocked);
-  }
+
   return container + change + spentDeposits;
 }
 
@@ -1510,7 +1372,7 @@ std::string WalletLegacy::getReserveProof(const uint64_t &reserve, const std::st
 	// determine which outputs to include in the proof
 	std::vector<TransactionOutputInformation> selected_transfers;
 	m_transferDetails->getOutputs(selected_transfers, ITransfersContainer::IncludeAllUnlocked);
-
+	
 	// minimize the number of outputs included in the proof, by only picking the N largest outputs that can cover the requested min reserve amount
 	std::sort(selected_transfers.begin(), selected_transfers.end(), compareTransactionOutputInformationByAmount);
 	while (selected_transfers.size() >= 2 && selected_transfers[1].amount >= reserve)
@@ -1522,11 +1384,11 @@ std::string WalletLegacy::getReserveProof(const uint64_t &reserve, const std::st
 		++sz;
 	}
 	selected_transfers.resize(sz);
-
+	
 	// compute signature prefix hash
 	std::string prefix_data = message;
 	prefix_data.append((const char*)&keys.address, sizeof(CryptoNote::AccountPublicAddress));
-
+	
 	std::vector<Crypto::KeyImage> kimages;
 	CryptoNote::KeyPair ephemeral;
 
@@ -1552,7 +1414,7 @@ std::string WalletLegacy::getReserveProof(const uint64_t &reserve, const std::st
 
 	// generate proof entries
 	std::vector<reserve_proof_entry> proofs(selected_transfers.size());
-
+	
 	for (size_t i = 0; i < selected_transfers.size(); ++i) {
 		const TransactionOutputInformation &td = selected_transfers[i];
 		reserve_proof_entry& proof = proofs[i];
@@ -1619,108 +1481,5 @@ bool WalletLegacy::checkWalletPassword(std::istream& source, const std::string& 
 
 //KK
 
-// Burn transaction management implementation
-void WalletLegacy::initializeBurnTransactionManager() {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->initialize();
-    setBurnTransactionCallbacks();
-  }
-}
-
-void WalletLegacy::setBurnTransactionCallbacks() {
-  if (!m_burnTransactionManager) {
-    return;
-  }
-
-  // Set up callbacks for burn detection and STARK proof generation
-  m_burnTransactionManager->setBurnDetectedCallback([this](const std::string& txHash, uint64_t amount, const std::string& ethAddress) {
-    // Log burn transaction detection
-    std::stringstream ss;
-    ss << "Burn transaction detected: " << txHash
-       << ", amount: " << amount
-       << ", ETH address: " << ethAddress;
-    m_loggerGroup("Wallet", Logging::INFO, boost::posix_time::microsec_clock::universal_time(), ss.str());
-
-    // Notify observerMangager about burn transaction
-    // NOTE : Find way to properly disclose network burns/reborn coinbase rewards..
-    // perhaps per epoch (instead of per-burn/block)
-  });
-
-  m_burnTransactionManager->setStarkProofGeneratedCallback([this](const std::string& txHash, const std::string& proofData) {
-    // Log STARK proof generation
-    std::stringstream ss;
-    ss << "STARK proof generated for burn transaction: " << txHash;
-    m_loggerGroup("Wallet", Logging::INFO, boost::posix_time::microsec_clock::universal_time(), ss.str());
-
-    // Notify about STARK proof generation
-  });
-
-  m_burnTransactionManager->setErrorCallback([this](const std::string& error) {
-    // Log errors
-    std::stringstream ss;
-    ss << "Burn transaction error: " << error;
-    m_loggerGroup("Wallet", Logging::ERROR, boost::posix_time::microsec_clock::universal_time(), ss.str());
-  });
-}
-
-void WalletLegacy::processTransactionForBurnDetection(const std::string& txHash, const std::vector<uint8_t>& txExtra, uint64_t amount) {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->processTransaction(txHash, txExtra, amount);
-  }
-}
-
-bool WalletLegacy::isBurnTransaction(const std::vector<uint8_t>& txExtra) {
-  if (m_burnTransactionManager) {
-    return m_burnTransactionManager->getHandler().isBurnTransaction(txExtra);
-  }
-  return false;
-}
-
-// Burn deposit secret management implementation
-void WalletLegacy::storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata) {
-  std::unique_lock<std::mutex> lock(m_cacheMutex);
-  m_burnDepositSecrets[txHash] = BurnDepositSecret(secret, amount, metadata);
-
-  // Notify observerManager that burn secret was created
-  m_observerManager.notify(&IWalletLegacyObserver::burnSecretCreated, txHash);
-}
-
-bool WalletLegacy::getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata) {
-  std::unique_lock<std::mutex> lock(m_cacheMutex);
-  auto it = m_burnDepositSecrets.find(txHash);
-  if (it == m_burnDepositSecrets.end()) {
-    return false;
-  }
-
-  const BurnDepositSecret& burnInfo = it->second;
-  secret = burnInfo.secret;
-  amount = burnInfo.amount;
-  metadata = burnInfo.metadata;
-
-  return true;
-}
-
-bool WalletLegacy::hasBurnDepositSecret(const std::string& txHash) {
-  std::unique_lock<std::mutex> lock(m_cacheMutex);
-  return m_burnDepositSecrets.find(txHash) != m_burnDepositSecrets.end();
-}
-
-BurnTransactionHandler::BurnTransactionData WalletLegacy::parseBurnTransaction(const std::vector<uint8_t>& txExtra) {
-  if (m_burnTransactionManager) {
-    return m_burnTransactionManager->getHandler().parseBurnTransaction(txExtra);
-  }
-  return BurnTransactionHandler::BurnTransactionData();
-}
-
-void WalletLegacy::generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount) {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->getHandler().generateStarkProof(txHash, ethAddress, amount);
-  }
-}
-
-// Implementation of process method for WalletBurnDepositSecretCreatedEvent
-void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wallet) {
-  wallet->storeBurnDepositSecret(getTxHash(), getSecret(), getAmount(), getMetadata());
-}
 
 } //namespace CryptoNote

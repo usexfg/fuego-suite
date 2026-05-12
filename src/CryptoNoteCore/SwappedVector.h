@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -27,10 +27,10 @@
 #include <string>
 #include <vector>
 #include <cstdio>
-#include "../Common/StdInputStream.h"
-#include "../Common/StdOutputStream.h"
-#include "../Serialization/BinaryInputStreamSerializer.h"
-#include "../Serialization/BinaryOutputStreamSerializer.h"
+#include "Common/StdInputStream.h"
+#include "Common/StdOutputStream.h"
+#include "Serialization/BinaryInputStreamSerializer.h"
+#include "Serialization/BinaryOutputStreamSerializer.h"
 
 template<class T> class SwappedVector {
 public:
@@ -292,7 +292,7 @@ template<class T> const T& SwappedVector<T>::operator[](uint64_t index) {
 
   m_itemsFile.seekg(m_offsets[index]);
   T tempItem;
-
+  
   Common::StdInputStream stream(m_itemsFile);
   CryptoNote::BinaryInputStreamSerializer archive(stream);
   serialize(tempItem, archive);

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -43,7 +43,7 @@ void setTextColor(Color color) {
     return;
   }
 
-  if (color > Color::BrightOrange) {
+  if (color > Color::BrightMagenta) {
     color = Color::Default;
   }
 
@@ -60,8 +60,6 @@ void setTextColor(Color color) {
     FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
     FOREGROUND_GREEN | FOREGROUND_BLUE,
     FOREGROUND_RED | FOREGROUND_BLUE,
-    // grey
-    FOREGROUND_INTENSITY,
     // bright
     FOREGROUND_BLUE | FOREGROUND_INTENSITY,
     FOREGROUND_GREEN | FOREGROUND_INTENSITY,
@@ -69,9 +67,7 @@ void setTextColor(Color color) {
     FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,
     FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
     FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
-    FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
-    // bright orange (red + yellow + intensity)
-    FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY
+    FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY
   };
 
   SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), winColors[static_cast<size_t>(color)]);
@@ -89,8 +85,6 @@ void setTextColor(Color color) {
     "\033[0;37m",
     "\033[0;36m",
     "\033[0;35m",
-    // grey
-    "\033[0;37m",
     // bright
     "\033[1;34m",
     "\033[1;32m",
@@ -98,9 +92,7 @@ void setTextColor(Color color) {
     "\033[1;33m",
     "\033[1;37m",
     "\033[1;36m",
-    "\033[1;35m",
-    // bright orange
-    "\033[1;33m"
+    "\033[1;35m"
   };
 
   std::cout << ansiColors[static_cast<size_t>(color)];

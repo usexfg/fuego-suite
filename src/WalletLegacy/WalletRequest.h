@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -55,28 +55,6 @@ public:
 
 private:
   std::vector<uint64_t> m_amounts;
-  uint64_t m_outsCount;
-  std::shared_ptr<SendTransactionContext> m_context;
-  Callback m_cb;
-};
-
-class WalletGetRandomCommitmentOutsRequest: public WalletRequest
-{
-public:
-  WalletGetRandomCommitmentOutsRequest(uint64_t amount, uint64_t outsCount,
-      std::shared_ptr<SendTransactionContext> context, Callback cb)
-    : m_amount(amount), m_outsCount(outsCount), m_context(context), m_cb(cb) {}
-
-  virtual ~WalletGetRandomCommitmentOutsRequest() {}
-
-  virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
-  {
-    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount,
-      std::ref(m_context->commitmentOuts), std::bind(cb, m_cb, std::placeholders::_1));
-  }
-
-private:
-  uint64_t m_amount;
   uint64_t m_outsCount;
   std::shared_ptr<SendTransactionContext> m_context;
   Callback m_cb;

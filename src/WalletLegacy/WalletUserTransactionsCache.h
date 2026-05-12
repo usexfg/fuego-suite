@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -107,7 +107,7 @@ public:
 
   std::vector<TransactionId> deleteOutdatedTransactions();
 
-  DepositId insertDeposit(const Deposit& deposit, size_t bankingIndexInTransaction, const Crypto::Hash& transactionHash);
+  DepositId insertDeposit(const Deposit& deposit, size_t depositIndexInTransaction, const Crypto::Hash& transactionHash);
   bool getDepositInTransactionInfo(DepositId depositId, Crypto::Hash& transactionHash, uint32_t& outputInTransaction);
 
   std::vector<Payments> getTransactionsByPaymentIds(const std::vector<PaymentId>& paymentIds) const;
@@ -119,7 +119,7 @@ private:
   TransferId insertTransfers(const std::vector<WalletLegacyTransfer>& transfers);
   void updateUnconfirmedTransactions();
 
-  void restoreTransactionOutputToBankingIndex();
+  void restoreTransactionOutputToDepositIndex();
   std::vector<DepositId> createNewDeposits(TransactionId creatingTransactionId,
                                            const std::vector<TransactionOutputInformation>& depositOutputs,
                                            const Currency& currency,
@@ -150,7 +150,7 @@ private:
   UserDeposits m_deposits;
   WalletUnconfirmedTransactions m_unconfirmedTransactions;
   //tuple<Creating transaction hash, outputIndexInTransaction> -> depositId
-  std::unordered_map<std::tuple<Crypto::Hash, uint32_t>, DepositId> m_transactionOutputToBankingIndex;
+  std::unordered_map<std::tuple<Crypto::Hash, uint32_t>, DepositId> m_transactionOutputToDepositIndex;
   UserPaymentIndex m_paymentsIndex;
 };
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "../Serialization/ISerializer.h"
+#include "Serialization/ISerializer.h"
 
 namespace CryptoNote
 {
@@ -28,7 +28,7 @@ namespace CryptoNote
     uint64_t mining_speed;
     uint64_t alternative_blocks;
     std::string top_block_id_str;
-
+    
     void serialize(ISerializer& s) {
       KV_MEMBER(tx_pool_size)
       KV_MEMBER(blockchain_height)

@@ -18,6 +18,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Blockchain.h"
+#include "OSPEADDecoySelection.h"
 
 #include <algorithm>
 #include <numeric>
@@ -649,10 +650,12 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_heatRedemptionPrice = FixedPoint64::fromRatio(
       parameters::HEAT_INITIAL_REDEMPTION_PRICE_NUM,
       parameters::HEAT_INITIAL_REDEMPTION_PRICE_DENOM);
-    m_heatIntegralError = FixedPoint64::zero();
+    m_heatIntegralDeviation = FixedPoint64::zero();
     m_heatRedemptionRate = FixedPoint64::zero();
     m_currentEpochSwapFees = 0;
     m_treasuryBalance = 0;
+    m_twapAccumulator = 0;
+    m_twapBlockCount = 0;
     for (uint32_t b = 0; b < m_blocks.size(); ++b)
     {
       if (b % 1000 == 0)
@@ -1596,13 +1599,12 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
     size_t up_index_limit = find_end_of_allowed_index(amount_outs);
     if (!(up_index_limit <= amount_outs.size())) { logger(ERROR, BRIGHT_RED) << "internal error: find_end_of_allowed_index returned wrong index=" << up_index_limit << ", with amount_outs.size = " << amount_outs.size(); return false; }
 
-    	if(amount_outs.size() > req.outs_count)
+    if(amount_outs.size() > req.outs_count)
     {
       std::set<size_t> used;
       size_t try_count = 0;
       for(uint64_t j = 0; j != req.outs_count && try_count < up_index_limit;)
       {
-	    // triangular distribution over [a,b) with a=0, mode c=b=up_index_limit
         uint64_t r = Crypto::rand<uint64_t>() % ((uint64_t)1 << 53);
         double frac = std::sqrt((double)r / ((uint64_t)1 << 53));
         size_t i = (size_t)(frac*up_index_limit);
@@ -1610,11 +1612,10 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
           continue;
         bool added = add_out_to_get_random_outs(amount_outs, result_outs, amount, i);
         used.insert(i);
-        if(added)
-          ++j;
+        if(added) ++j;
         ++try_count;
       }
-    } 
+    }
      else {
       for(size_t i = 0; i != up_index_limit; i++)
         add_out_to_get_random_outs(amount_outs, result_outs, amount, i);
@@ -2412,7 +2413,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
   // Bootstrap Hearth pool at v10 fork activation
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && m_ammPool.isEmpty()) {
     m_ammPool.reserveXfg  = 1000000000ULL;   // 100 XFG seed
-    m_ammPool.reserveHeat = 2000000000ULL;   // 200 HEAT (0.5 ratio)
+    m_ammPool.reserveHeat = 5000000000ULL;   // 500 HEAT (0.2 ratio)
   }
 
   m_blocks.push_back(block);
@@ -2423,6 +2424,13 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
   assert(m_blockIndex.size() == m_blocks.size());
 
+  // Accumulate TWAP spot price each block (v10+)
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && m_ammPool.reserveHeat > 0) {
+    uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+    m_twapAccumulator += spotPrice;
+    m_twapBlockCount++;
+  }
+
   // Epoch boundary: PI controller + fee distribution
   if (m_blocks.size() > 0) {
     uint32_t height = static_cast<uint32_t>(m_blocks.size()) - 1;
@@ -2431,23 +2439,95 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       parameters::EPOCH_DURATION_BLOCKS;
 
     if (height > 0 && height % epochDuration == 0) {
-      // Run PI controller: read Hearth spot price, adjust redemption rate
-      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-        uint64_t spotPriceRaw = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        FixedPoint64 spotPrice = FixedPoint64::fromRatio(spotPriceRaw, 1000000000000000000ULL);
+      // Run PI controller with TWAP smoothed price
+      if (m_twapBlockCount > 0 && m_ammPool.reserveHeat > 0) {
+        FixedPoint64 twapPrice = FixedPoint64::fromRatio(
+          (uint64_t)(m_twapAccumulator / m_twapBlockCount),
+          1000000000000000000ULL);
 
-        m_piController.calculate(spotPrice,
-                                   m_heatRedemptionPrice,
-                                   m_heatIntegralError,
-                                   m_heatRedemptionRate,
-                                   epochDuration);
+        m_piController.calculate(twapPrice,
+                                  m_oracle.getXfgPerUsd(),
+                                  m_heatRedemptionPrice,
+                                  m_heatIntegralDeviation,
+                                  m_heatRedemptionRate,
+                                  epochDuration);
       }
 
-      // Distribute swap fees: 80% CD pool / 20% treasury
+      // Reset TWAP accumulator for next epoch
+      m_twapAccumulator = 0;
+      m_twapBlockCount = 0;
+
+      // HEAT CD yield distribution
       if (m_currentEpochSwapFees > 0) {
         uint64_t treasuryShare = (m_currentEpochSwapFees * parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
         m_treasuryBalance += treasuryShare;
-        // CD pool share (80%) is tracked for future CD yield distribution (Phase 5)
+        uint64_t cdPool = m_currentEpochSwapFees - treasuryShare;
+
+        // Compute spend rate from PI controller
+        // spendRate = 1.0 + clamp(redemptionRate, -0.5, +2.0)
+        FixedPoint64 spendRate = FixedPoint64::one();
+        if (m_heatRedemptionRate.isPositive()) {
+          FixedPoint64 clamp2 = FixedPoint64::fromUint64(2);
+          FixedPoint64 capped = m_heatRedemptionRate > clamp2 ? clamp2 : m_heatRedemptionRate;
+          spendRate = FixedPoint64::one().add(capped);
+        } else if (!m_heatRedemptionRate.isZero()) {
+          FixedPoint64 negFloor = FixedPoint64::fromRatio(5, 10); // 0.5
+          FixedPoint64 absRate  = m_heatRedemptionRate.negate();
+          FixedPoint64 capped   = absRate > negFloor ? negFloor : absRate;
+          spendRate = FixedPoint64::one().sub(capped);
+        }
+
+        // Compute spend amount
+        uint64_t spend = spendRate.mulToUint64(cdPool);
+
+        // Draw from reserve if spending more than pool
+        if (spend > cdPool) {
+          uint64_t draw = spend - cdPool;
+          if (draw > m_cdReserve) draw = m_cdReserve;
+          spend = cdPool + draw;
+          m_cdReserve -= draw;
+        }
+
+        // Save remainder to reserve if spending less than pool
+        if (spend < cdPool) {
+          uint64_t save = cdPool - spend;
+          m_cdReserve += save;
+          uint64_t cap = cdPool * 2;
+          if (m_cdReserve > cap) {
+            m_treasuryBalance += (m_cdReserve - cap);
+            m_cdReserve = cap;
+          }
+        }
+
+        // Buy HEAT from Hearth for CD yields
+        if (spend > 0 && m_ammPool.reserveHeat > 0) {
+          uint64_t heatReceived = ammGetOutputAmount(
+            spend, m_ammPool.reserveXfg, m_ammPool.reserveHeat,
+            parameters::SWAP_FEE_RATE_BPS);
+
+          if (heatReceived > 0) {
+            m_ammPool.reserveXfg += spend;
+            m_ammPool.reserveHeat -= heatReceived;
+            m_heatCdFeePool += heatReceived;
+          } else {
+            // Extreme slippage: add XFG to reserve
+            m_cdReserve += spend;
+          }
+        } else if (spend > 0) {
+          // No HEAT in pool: add to reserve
+          m_cdReserve += spend;
+        }
+
+        // Record per-epoch HEAT CD rate
+        if (m_heatCdLockedTotal > 0 && m_heatCdFeePool > 0) {
+          uint32_t height = static_cast<uint32_t>(m_blocks.size()) - 1;
+          uint32_t epochDuration = m_currency.isTestnet() ?
+            parameters::TESTNET_EPOCH_DURATION_BLOCKS :
+            parameters::EPOCH_DURATION_BLOCKS;
+          uint64_t currentEpoch = height / epochDuration;
+          m_heatCdEpochRates[currentEpoch] = m_heatCdFeePool;
+        }
+
         m_currentEpochSwapFees = 0;
       }
     }

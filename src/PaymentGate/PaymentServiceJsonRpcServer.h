@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -95,23 +95,13 @@ private:
   std::error_code handleGetViewKey(const GetViewKey::Request& request, GetViewKey::Response& response);
   std::error_code handleGetStatus(const GetStatus::Request& request, GetStatus::Response& response);
   std::error_code handleCreateDeposit(const CreateDeposit::Request& request, CreateDeposit::Response& response);
-  std::error_code handleGiftDeposit(const GiftDeposit::Request& request, GiftDeposit::Response& response);
+  std::error_code handleSendDeposit(const SendDeposit::Request& request, SendDeposit::Response& response);
   std::error_code handleWithdrawDeposit(const WithdrawDeposit::Request &request, WithdrawDeposit::Response &response);
   std::error_code handleGetDeposit(const GetDeposit::Request& request, GetDeposit::Response& response);
   std::error_code handleGetAddresses(const GetAddresses::Request& request, GetAddresses::Response& response);
   std::error_code handleGetMessagesFromExtra(const GetMessagesFromExtra::Request& request, GetMessagesFromExtra::Response& response);
   std::error_code handleEstimateFusion(const EstimateFusion::Request& request, EstimateFusion::Response& response);
   std::error_code handleSendFusionTransaction(const SendFusionTransaction::Request& request, SendFusionTransaction::Response& response);
-
-  // Burn deposit handlers
-  std::error_code handleCreateBurnDeposit(const CreateBurnDeposit::Request& request, CreateBurnDeposit::Response& response);
-  std::error_code handleCreateBurnDepositWithProof(const CreateBurnDepositWithProof::Request& request, CreateBurnDepositWithProof::Response& response);
-  std::error_code handleCreateBurnDepositLarge(const CreateBurnDepositLarge::Request& request, CreateBurnDepositLarge::Response& response);
-  std::error_code handleCreateBurnDepositLargeWithProof(const CreateBurnDepositLargeWithProof::Request& request, CreateBurnDepositLargeWithProof::Response& response);
-  std::error_code handleGenerateBurnProofDataFile(const GenerateBurnProofDataFile::Request& request, GenerateBurnProofDataFile::Response& response);
-  std::error_code handleGenerateBurnProofDataFileAuto(const GenerateBurnProofDataFileAuto::Request& request, GenerateBurnProofDataFileAuto::Response& response);
-  std::error_code handleGetEthernalXFG(const GetEthernalXFG::Request& request, GetEthernalXFG::Response& response);
-
 };
 
 }//namespace PaymentService

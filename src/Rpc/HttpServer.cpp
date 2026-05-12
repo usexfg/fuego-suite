@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -19,7 +19,7 @@
 #include <boost/scope_exit.hpp>
 
 #include <Common/Base64.h>
-#include "HTTP/HttpParser.h"
+#include <HTTP/HttpParser.h>
 #include <System/InterruptedException.h>
 #include <System/TcpStream.h>
 #include <System/Ipv4Address.h>
@@ -45,7 +45,7 @@ HttpServer::HttpServer(System::Dispatcher& dispatcher, Logging::ILogger& log)
 void HttpServer::start(const std::string& address, uint16_t port, const std::string& user, const std::string& password) {
   m_listener = System::TcpListener(m_dispatcher, System::Ipv4Address(address), port);
   workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
-
+  
   		if (!user.empty() || !password.empty()) {
 			m_credentials = Tools::Base64::encode(user + ":" + password);
 		}
@@ -57,9 +57,8 @@ void HttpServer::stop() {
 }
 
 void HttpServer::acceptLoop() {
-
   try {
-    System::TcpConnection connection;
+    System::TcpConnection connection; 
     bool accepted = false;
 
     while (!accepted) {
@@ -74,7 +73,7 @@ void HttpServer::acceptLoop() {
     }
 
     m_connections.insert(&connection);
-    BOOST_SCOPE_EXIT_ALL(this, &connection) {
+    BOOST_SCOPE_EXIT_ALL(this, &connection) { 
       m_connections.erase(&connection); };
 
 	workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
@@ -98,7 +97,7 @@ void HttpServer::acceptLoop() {
       HttpResponse resp;
 	  resp.addHeader("Access-Control-Allow-Origin", "*");
 	  resp.addHeader("content-type", "application/json");
-
+	
       parser.receiveRequest(stream, req);
 				if (authenticate(req)) {
 					processRequest(req, resp);

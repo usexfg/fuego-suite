@@ -1,5 +1,5 @@
 // Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 //
 // This file is part of Fuego.
 //
@@ -18,6 +18,7 @@
 #include <mutex>
 #include <sstream>
 #include <functional>
+#include <iostream>
 #include <cstring>
 #include <string>
 #include <map>
@@ -99,10 +100,7 @@ namespace Common {
 				return false;
 		}
 
-		// DISABLED: ns_initparse not available on macOS
-	// ns_initparse(query_buffer, response, &nsMsg);
-	// Returning false - DNS TXT resolution not supported on this platform
-	return false;
+		ns_initparse(query_buffer, response, &nsMsg);
 
 		map<ns_type, function<void(const ns_rr &rr)>> callbacks;
 

@@ -13,7 +13,7 @@ Adding HTLCs also enables swaps with ETH and BCH.
 |--------------------|----------------------|--------------------------|
 | Curve              | Ed25519              | Ed25519 (same!)          |
 | Scripting          | None                 | None                     |
-| HTLC support       | No                   | Yes (v10, TransactionOutputHashLock) |
+| Adaptor-sig support| No                   | Yes (v10, TransactionOutputHashLock) |
 | Timelocks          | `unlock_time`        | `unlock_time` + `term`   |
 | Multisig           | N-of-N (Musig-style) | `MultisignatureOutput`   |
 | Ring sigs          | CLSAG (16 decoys)    | Basic ring sig (mixin 8) |
@@ -49,14 +49,14 @@ Phase 2 — Key Exchange
           ◄───── B ─────────
 
 Phase 3 — Lock XFG (Bob goes first)
-    Bob creates XFG HTLC output:
+    Bob creates XFG adaptor-sig output:
       amount: agreed XFG amount
-      hash_lock: h = H(s)
+      adaptor_lock: h = H(s)
       timeout: T_xfg (e.g., current_height + 180 blocks ≈ 24h)
       recipient: Alice's XFG address
-          ◄── XFG HTLC tx ──
+           ◄── XFG adaptor-sig tx ──
 
-    Alice verifies HTLC on XFG chain ✓
+    Alice verifies adaptor-sig on XFG chain ✓
 
 Phase 4 — Lock XMR (Alice locks second)
     Alice sends XMR to a joint address:
@@ -64,7 +64,7 @@ Phase 4 — Lock XMR (Alice locks second)
       (spending requires both a and b)
       with adaptor: encrypted signature using s
       timeout: T_xmr (e.g., current_height + 720 blocks ≈ 24h)
-          ── XMR lock tx ──►
+          ── XMR adaptor-sig tx ──►
 
     Bob verifies XMR locked ✓
 
@@ -86,7 +86,7 @@ Timeout paths:
   - If Bob disappears after Phase 4: Alice reclaims XMR after T_xmr
 ```
 
-## Protocol: ETH ↔ XFG (Standard HTLC)
+## Protocol: ETH ↔ XFG (Adaptor-Sig)
 
 Both sides have HTLC capability. Straightforward hash-locked swap.
 
@@ -95,9 +95,9 @@ Alice: has ETH, wants XFG
 Bob:   has XFG, wants ETH
 
 Phase 1 — Bob generates secret s, h = keccak(s)
-Phase 2 — Bob locks XFG in HTLC (hashLock=h, timeout=T_xfg, recipient=Alice)
-Phase 3 — Alice locks ETH in Solidity HTLC (hashLock=h, timeout=T_eth, recipient=Bob)
-Phase 4 — Bob claims ETH by revealing s to Solidity contract
+Phase 2 — Bob locks XFG adaptor-sig output (adaptor_lock=h, timeout=T_xfg, recipient=Alice)
+Phase 3 — Alice locks ETH adaptor-sig output (adaptor_lock=h, timeout=T_eth, recipient=Bob)
+Phase 4 — Bob claims ETH by revealing s through adaptor-sig flow
 Phase 5 — Alice sees s on Ethereum, claims XFG with preimage
 Timeout: both sides refund if counterparty disappears
 ```
@@ -105,21 +105,11 @@ Timeout: both sides refund if counterparty disappears
 ETH-side contract is ~50 lines of Solidity (standard HashedTimelock pattern).
 `T_eth < T_xfg` — ETH timeout must expire first (opposite direction from XMR pair since Bob initiates here).
 
-## Protocol: BCH ↔ XFG (Standard HTLC)
+## Protocol: BCH ↔ XFG (Adaptor-Sig)
 
-BCH has OP_HASH160 + OP_CHECKLOCKTIMEVERIFY — textbook HTLC scripting.
+BCH adaptor-sig uses script-like constructs but leverages adaptor signatures instead of classical HTLC scripting.
 
-```
-Alice: has BCH, wants XFG
-Bob:   has XFG, wants BCH
-
-Same flow as ETH↔XFG, but BCH HTLC uses Bitcoin Script:
-  OP_IF
-    OP_HASH160 <hash_lock> OP_EQUALVERIFY <alice_pubkey> OP_CHECKSIG
-  OP_ELSE
-    <timeout> OP_CHECKLOCKTIMEVERIFY OP_DROP <bob_pubkey> OP_CHECKSIG
-  OP_ENDIF
-```
+BCH adaptor-sig flow: the BCH side locks via adaptor-sig output compatible with the shared pool, mirroring the ETH adaptor-sig flow.
 
 BCH block time = 10 min. Timelocks: T_bch = 144 blocks (~24h), T_xfg = 180 blocks (~24h).
 
@@ -144,11 +134,11 @@ Recommended:
 ## Privacy: Unified Ring Pool (v10 staging → v11 activation)
 
 ### Problem
-HTLC outputs are transparent — anyone can see which output is being claimed/refunded. Ring sigs need 9+ outputs of the same amount as decoys (mixin=8). Few HTLCs exist initially → no decoys → no privacy.
+Adaptor-sig outputs are transparent — anyone can see which output is being claimed/refunded. Ring sigs need 9+ outputs of the same amount as decoys (mixin=8). Few adaptor-sig outputs exist initially → no decoys → no privacy.
 
 ### Solution: Shared Commitment Pool
 
-HTLC outputs are added to the same per-amount ring pool (`m_commitmentOutputs`) as deposit outputs. This is implemented in v10 — HTLC outputs automatically seed the commitment pool.
+Adaptor-sig outputs are added to the same per-amount ring pool (`m_commitmentOutputs`) as deposit outputs. This is implemented in v10 — adaptor-sig outputs automatically seed the commitment pool.
 
 **How it works:**
 - Every `TransactionOutputHashLock` at amount X also creates a `CommitmentOutputRef` in `m_commitmentOutputs[X]`
@@ -156,9 +146,9 @@ HTLC outputs are added to the same per-amount ring pool (`m_commitmentOutputs`) 
 - `getRandomCommitmentOutputsForAmount()` already serves from this pool — no new RPC needed
 - EFier staking seeds 40+ outputs per amount tier → immediate mixin coverage
 
-**What this hides (when ring sig HTLCs land in v11):**
-- Which specific output is being spent (hidden in ring of deposits + HTLCs)
-- Link between HTLC creator and claimer (ring sigs break the graph)
+**What this hides (when adaptor-sig outputs land in v11):**
+- Which specific output is being spent (hidden in ring of deposits + adaptor-sigs)
+- Link between adaptor-sig creator and claimer (ring sigs break the graph)
 - Amount (once BP+ lands)
 
 **What remains visible:**
@@ -211,26 +201,26 @@ If either source hasn't updated in >staleness_max_seconds, widen slippage tolera
 
 ## Implementation Plan
 
-### Phase 1: HTLC Output Type (consensus) — DONE ✓
+### Phase 1: Adaptor-Sig Output Type (consensus) — DONE ✓
 
 New structures added to XFG protocol in v10:
 - `TransactionOutputHashLock` (recipientKey, refundKey, hashLock, timeoutHeight)
 - `TransactionInputHashLockClaim` (amount, outputIndex, preimage)
 - `TransactionInputHashLockRefund` (amount, outputIndex)
 - Validation: preimage check, timeout enforcement, Ed25519 signatures
-- Unified ring pool: HTLC outputs share `m_commitmentOutputs` with deposits
+- Unified ring pool: adaptor-sig outputs share `m_commitmentOutputs` with deposits
 
-### Phase 2: Wallet HTLC Commands — DONE ✓
+### Phase 2: Wallet adaptor-sig Commands — DONE ✓
 
 SimpleWallet commands implemented:
-- `create_htlc <amount> <recipient_pubkey> <preimage_hex> <timeout_blocks>`
-- `claim_htlc <htlc_index> <amount> <preimage_hex>`
-- `refund_htlc <htlc_index> <amount>`
+- `create_adaptor_swap <amount> <recipient_pubkey> <preimage_hex> <timeout_blocks>`
+- `claim_adaptor_swap <swap_index> <amount> <preimage_hex>`
+- `refund_adaptor_swap <swap_index> <amount>`
 
-RPC endpoints:
-- `/gethtlc` — query HTLC output by index
-- `/gethtlccount` — total HTLC output count
-- `/getrandom_commitment_outs.bin` — serves decoys from unified pool (deposits + HTLCs)
+- RPC endpoints:
+- `/getadaptorout` — query adaptor-sig output by index
+- `/getadaptoroutcount` — total adaptor-sig output count
+- `/getrandom_commitment_outs.bin` — serves decoys from unified pool (deposits + adaptor-sigs)
 
 ### Phase 3: Swap Daemon (`xfg-swap`)
 

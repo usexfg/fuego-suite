@@ -455,7 +455,7 @@ OAES_RET oaes_sprintf(
 	
 	for( _i = 0; _i < data_len; _i++ )
 	{
-		sprintf( _temp, "%02x ", data[_i] );
+		snprintf( _temp, sizeof(_temp), "%02x ", data[_i] );
 		strcat( buf, _temp );
 		if( _i && 0 == ( _i + 1 ) % OAES_BLOCK_SIZE )
 			strcat( buf, "\n" );
@@ -475,7 +475,7 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 	ftime (&timer);
 	gmTimer = gmtime( &timer.time );
 	_test = (char *) calloc( sizeof( char ), timer.millitm );
-	sprintf( buf, "%04d%02d%02d%02d%02d%02d%03d%p%d",
+	snprintf( buf, 128, "%04d%02d%02d%02d%02d%02d%03d%p%d",
 		gmTimer->tm_year + 1900, gmTimer->tm_mon + 1, gmTimer->tm_mday,
 		gmTimer->tm_hour, gmTimer->tm_min, gmTimer->tm_sec, timer.millitm,
 		_test + timer.millitm, getpid() );

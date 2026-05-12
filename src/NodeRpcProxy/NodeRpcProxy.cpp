@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -148,10 +148,7 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
       m_cv_initialized.notify_all();
     }
 
-    std::cout << "NodeRpcProxy initialized, calling callback" << std::endl;
-    std::cout << "About to call initialized_callback" << std::endl;
     initialized_callback(std::error_code());
-    std::cout << "Finished calling initialized_callback" << std::endl;
 
     contextGroup.spawn([this]() {
       Timer pullTimer(*m_dispatcher);
@@ -493,34 +490,6 @@ std::error_code NodeRpcProxy::doGetRandomOutsByAmounts(std::vector<uint64_t>& am
   std::error_code ec = binaryCommand("/getrandom_outs.bin", req, rsp);
   if (!ec) {
     outs = std::move(rsp.outs);
-  }
-
-  return ec;
-}
-
-void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount,
-                                                    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result,
-                                                    const Callback& callback) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state != STATE_INITIALIZED) {
-    callback(make_error_code(error::NOT_INITIALIZED));
-    return;
-  }
-
-  scheduleRequest(std::bind(&NodeRpcProxy::doGetRandomCommitmentOutsForAmount, this, amount, outsCount, std::ref(result)),
-    callback);
-}
-
-std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount,
-                                                                  std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result) {
-  COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request req = AUTO_VAL_INIT(req);
-  COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response rsp = AUTO_VAL_INIT(rsp);
-  req.amount = amount;
-  req.outs_count = outsCount;
-
-  std::error_code ec = binaryCommand("/getrandom_commitment_outs.bin", req, rsp);
-  if (!ec) {
-    result = std::move(rsp.outs);
   }
 
   return ec;

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2017-2025 Elderfire Privacy Council
 // Copyright (c) 2018-2019 Conceal Network & Conceal Devs
 // Copyright (c) 2016-2019 The Karbowanec developers
 // Copyright (c) 2012-2018 The CryptoNote developers
@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include "CryptoNoteBasic.h"
-#include "../crypto/crypto.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
+#include "crypto/crypto.h"
 
 namespace CryptoNote {
 

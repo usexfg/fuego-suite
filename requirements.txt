@@ -1,0 +1,9 @@
+# Fuego Blockchain Specialist Agent Requirements
+# No external dependencies required - uses Python standard library only
+
+# Optional dependencies for enhanced features:
+# numpy>=1.21.0  # For advanced mathematical calculations
+# matplotlib>=3.5.0  # For visualization tools
+# pandas>=1.3.0  # For data analysis
+
+# The agent works with Python 3.8+ standard library

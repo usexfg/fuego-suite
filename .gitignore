@@ -38,4 +38,10 @@ Thumbs.db
 /build
 /build-check/
 /build_swap_daemon/
-/xfg-stark-v3
+/xfg-stark-v3build_tests/
+test_hash/
+*.patch
+*.sh
+diff_*.txt
+*.rej
+*.orig

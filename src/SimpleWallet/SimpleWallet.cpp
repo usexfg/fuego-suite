@@ -4300,21 +4300,30 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     fail_msg_writer() << "Invalid amount or term";
     return false;
   }
+
+  uint64_t bankingFee = amount / 1000;  // 0.1% banking fee → Fuego dev fund
+  if (bankingFee == 0) bankingFee = 1;   // minimum 1 atomic unit
+
   uint64_t fee = m_currency.minimumFee();
   uint64_t balance = m_wallet->actualBalance();
-  if (balance < amount + fee) {
-    fail_msg_writer() << "Insufficient balance";
+  if (balance < amount + bankingFee + fee) {
+    fail_msg_writer() << "Insufficient balance (includes 0.1% banking fee)";
     return false;
   }
+
   std::string myAddress = m_wallet->getAddress();
   std::vector<CryptoNote::WalletLegacyTransfer> transfers;
   transfers.push_back({myAddress, static_cast<int64_t>(amount)});
+  transfers.push_back({CryptoNote::FUEGO_DEV_FUND_ADDRESS, static_cast<int64_t>(bankingFee)});
+
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
   Crypto::SecretKey txSK;
   CryptoNote::TransactionId tx = m_wallet->sendTransaction(txSK, transfers, fee, "", mixIn, 0, {}, 0);
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
     success_msg_writer() << "HEAT CD | " << m_currency.formatAmount(amount)
-                         << " HEAT | " << termEpochs << " epochs | tx: " << tx;
+                         << " HEAT | " << termEpochs << " epochs | fee: "
+                         << m_currency.formatAmount(bankingFee)
+                         << " | tx: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";

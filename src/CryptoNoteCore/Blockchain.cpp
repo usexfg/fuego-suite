@@ -2819,9 +2819,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (m_heatMintEngine.isHeatMint(transactions[i])) {
-        FixedPoint64 redemptionPrice = FixedPoint64::fromRatio(
-          parameters::HEAT_LAUNCH_RATIO_NUM,
-          parameters::HEAT_LAUNCH_RATIO_DENOM);
+        FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
         uint64_t xfgBurned = 0, heatMinted = 0;
         if (!m_heatMintEngine.validateMint(transactions[i], fee, redemptionPrice, xfgBurned, heatMinted)) {
           isTransactionValid = false;
@@ -3509,6 +3507,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
       FixedPoint64 poolFp = FixedPoint64::fromUint64(m_cdYieldPool);
       uint64_t xfgToSpend = poolFp.mul(spendRate).toUint64();
+      uint64_t preMintPool = m_cdYieldPool;
 
       if (xfgToSpend > m_cdYieldPool && m_cdReserve > 0) {
         uint64_t draw = std::min(xfgToSpend - m_cdYieldPool, m_cdReserve);
@@ -3531,7 +3530,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
         }
       }
 
-      uint64_t reserveCap = m_cdYieldPool * parameters::CD_RESERVE_CAP / 100;
+      uint64_t reserveCap = (preMintPool) * parameters::CD_RESERVE_CAP / 100;
       if (m_cdReserve > reserveCap) {
         m_treasuryBalance += (m_cdReserve - reserveCap);
         m_cdReserve = reserveCap;
@@ -3827,16 +3826,18 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           uint64_t outputAmount = 0;
           if (swap.direction == 0) {
             outputAmount = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
-            uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
+            uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+            uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
             m_ammPool.reserveXfg += swap.inputAmount;
             m_ammPool.reserveHeat -= outputAmount;
-            m_ammPool.accumulatedLpFees += feeAmount;
+            m_ammPool.accumulatedLpFees += actualFee;
           } else {
             outputAmount = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
-            uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
+            uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
+            uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
             m_ammPool.reserveHeat += swap.inputAmount;
             m_ammPool.reserveXfg -= outputAmount;
-            m_ammPool.accumulatedLpFees += feeAmount;
+            m_ammPool.accumulatedLpFees += actualFee;
           }
         } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
           const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
@@ -4041,8 +4042,9 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
           uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveHeat
             * swap.inputAmount * feeAdj) / ((unsigned __int128)preXfg * parameters::HEARTH_FEE_DIVISOR));
-          uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
-          if (m_ammPool.accumulatedLpFees >= feeAmount) m_ammPool.accumulatedLpFees -= feeAmount;
+          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, m_ammPool.reserveHeat, 0);
+          uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
+          if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;
           m_ammPool.reserveHeat += outputAmount;
           m_ammPool.reserveXfg -= swap.inputAmount;
         } else {
@@ -4050,8 +4052,9 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
           uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveXfg
             * swap.inputAmount * feeAdj) / ((unsigned __int128)preHeat * parameters::HEARTH_FEE_DIVISOR));
-          uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
-          if (m_ammPool.accumulatedLpFees >= feeAmount) m_ammPool.accumulatedLpFees -= feeAmount;
+          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, m_ammPool.reserveXfg, 0);
+          uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
+          if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;
           m_ammPool.reserveXfg += outputAmount;
           m_ammPool.reserveHeat -= swap.inputAmount;
         }

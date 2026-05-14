@@ -333,9 +333,8 @@ double Currency::getBurnPercentage() const {
     uint64_t interest = 0;
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
       uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
-      // interest += amount * epochRate / RATE_PRECISION
-      // max: 8e9 * 1e6 = 8e15 < 2^63, safe in 64-bit
-      interest += (amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION;
+      // Use 128-bit intermediate to prevent overflow for large deposits
+      interest += (uint64_t)(((__uint128_t)amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION);
     }
 
     return interest;

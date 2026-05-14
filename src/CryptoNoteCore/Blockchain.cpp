@@ -3037,22 +3037,20 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           parameters::PROTOCOL_LP_MAX_FRACTION) / 100;
         if (m_protocolLpShares < protocolMaxShares) {
           if (poolIsXfgHeavy) {
-            // Pool XFG-heavy: burn protocol LP shares → withdraw XFG only
-            // (no HEAT minted — removes excess XFG without creating new supply)
-            if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0) {
-              uint64_t sharesToBurn = (m_protocolLpShares * depositAmount)
-                                    / m_ammPool.reserveXfg;
-              if (sharesToBurn > 0 && sharesToBurn <= m_protocolLpShares) {
-                uint64_t xfgWithdrawn = (uint64_t)(
-                  ((unsigned __int128)sharesToBurn * m_ammPool.reserveXfg)
-                  / m_ammPool.totalLpShares);
-                if (xfgWithdrawn > 0 && xfgWithdrawn <= m_ammPool.reserveXfg) {
-                  m_ammPool.reserveXfg -= xfgWithdrawn;
-                  m_ammPool.totalLpShares -= sharesToBurn;
-                  m_protocolLpShares -= sharesToBurn;
-                  m_treasuryBalance += xfgWithdrawn;
-                }
-              }
+            // Pool XFG-heavy: mint HEAT from treasury XFG, deposit HEAT single-sided
+            // (counter-weight to CD yield buy pressure = controlled supply growth)
+            FixedPoint64 heatFp = FixedPoint64::fromUint64(depositAmount)
+                                 .div(m_piState.redemptionPrice);
+            uint64_t heatDeposit = heatFp.toUint64();
+            if (heatDeposit > 0) {
+              m_ammPool.reserveHeat += heatDeposit;
+              uint64_t newShares = ammMintLpShares(0, heatDeposit,
+                m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+              m_ammPool.totalLpShares += newShares;
+              m_protocolLpShares += newShares;
+              m_treasuryBalance -= depositAmount;
+              m_heatSupply += heatDeposit;
+              m_bankingIndex.addForeverDeposit(depositAmount, block.height);
             }
           } else {
             // Pool HEAT-heavy: deposit XFG from treasury single-sided

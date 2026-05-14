@@ -24,27 +24,31 @@ To ensure maximum cryptographic security and binary determinism, users are encou
 * C++ Toolchain: Standard `build-essential` or `clang` required for backend node core IPC compilation.
 
 ### Step 1: Clone and Compile
-Navigate to the root directory of your project workspace and build the terminal target:
+Navigate to the `tui/` directory of your project workspace and run the dedicated build automation script:
 
 ```bash
 # Clone source repository (ensure recursive submodule initialization)
 git clone --recursive https://github.com/fuego-project/xfgo.git
-cd xfgo
+cd xfgo/tui
 
-# Compile the terminal binary target via the integrated Makefile
-make build-tui
+# Compile the terminal executable target
+./build.sh
 ```
 
-Upon successful compilation, the optimized terminal executable will be deposited directly into your `build/bin/` folder as `fuego-tui`.
+Upon successful compilation, the optimized dynamic terminal executable will be deposited directly into your `tui/` folder as `fuego_suite`.
 
 ---
 
 ## Navigating the Terminal Workspace
 
-Launch the interface by pointing the binary to your active synchronization node RPC port (or run in embedded local daemon mode):
+Launch the interface in your preferred operating mode using the compiled executable:
 
 ```bash
-./build/bin/fuego-tui --daemon-address=127.0.0.1:18081 --colors=true
+# Launch in native Mainnet configuration
+./fuego_suite
+
+# Launch with automated Testnet configuration and dedicated routing
+./fuego_suite --testnet
 ```
 
 ### The Interface Layout
@@ -144,12 +148,12 @@ sequenceDiagram
     {
       "@type": "HowToStep",
       "name": "Clone and Compile",
-      "text": "Clone the source repository and run make build-tui to compile the terminal executable."
+      "text": "Clone the source repository and run ./build.sh inside the tui directory to compile the dynamic terminal executable."
     },
     {
       "@type": "HowToStep",
       "name": "Launch Terminal Client",
-      "text": "Execute the binary pointing to your active daemon RPC endpoint to load the dual-asset workspace."
+      "text": "Execute ./fuego_suite for Mainnet or ./fuego_suite --testnet to load the tailored multi-network workspace."
     },
     {
       "@type": "HowToStep",

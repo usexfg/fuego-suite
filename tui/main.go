@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	menuStyle   = lipgloss.NewStyle().Padding(1, 2)
-	activeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	logStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF4500")) // Fuego orange-red
+	menuStyle   = lipgloss.NewStyle().Padding(1, 2).Foreground(lipgloss.Color("#7F7F7F")) // Charcoal text
+	activeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF4500")).Background(lipgloss.Color("#111111")) // Fuego orange on dark black
+	logStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#4F4F4F")) // Deep charcoal logs
 )
 
 // VersionInfo holds dynamic version information
@@ -154,13 +154,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	modeColor := "205" // pink for mainnet
+	modeColor := "#FF4500" // Fuego orange-red for mainnet
 	if CurrentConfig.IsTestnet {
-		modeColor = "43" // cyan/green for testnet
+		modeColor = "#CC5500" // Burnt orange for testnet
 	}
-	customTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(modeColor))
+	customTitleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(modeColor)).Background(lipgloss.Color("#050505"))
 
-	s := customTitleStyle.Render(fmt.Sprintf("🔥 %s TUI", verInfo.projectName)) + "\n"
+	s := customTitleStyle.Render(fmt.Sprintf("🔥 %s TUI [PRIVACY PROTOCOL]", strings.ToUpper(verInfo.projectName))) + "\n"
 	s += menuStyle.Render(verInfo.fullVersion) + "\n\n"
 	for i, it := range menu {
 		line := fmt.Sprintf("  %s", it)
@@ -169,11 +169,11 @@ func (m model) View() string {
 		}
 		s += menuStyle.Render(line) + "\n"
 	}
-	s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Render("Status: ") + m.statusMsg + "\n"
+	s += "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Render("SYSTEM STATE: ") + lipgloss.NewStyle().Foreground(lipgloss.Color("#FF4500")).Render(m.statusMsg) + "\n"
 	if m.runningNode {
-		s += lipgloss.NewStyle().Render(fmt.Sprintf("Node: running | Height: %d | Peers: %d\n", m.height, m.peers))
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("#7F7F7F")).Render(fmt.Sprintf("CORE DEEP-SYNC: ACTIVE | HEIGHT: %d | PEER-GRID: %d SECURE NODES\n", m.height, m.peers))
 	} else {
-		s += lipgloss.NewStyle().Render("Node: stopped\n")
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("#4F4F4F")).Render("CORE DEEP-SYNC: TERMINATED / OFFLINE\n")
 	}
 	return s
 }

@@ -63,11 +63,18 @@ uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {
   if (totalShares == 0) {
+    if (amountA == 0 && amountB > 0) return amountB;
+    if (amountB == 0 && amountA > 0) return amountA;
     unsigned __int128 product = (unsigned __int128)amountA * amountB;
     uint64_t shares = isqrt128(product);
     const uint64_t MIN_LIQUIDITY = 1000;
     return shares > MIN_LIQUIDITY ? shares - MIN_LIQUIDITY : 0;
   }
+
+  if (amountA == 0 && amountB > 0 && reserveB > 0)
+    return (uint64_t)((unsigned __int128)amountB * totalShares / reserveB);
+  if (amountB == 0 && amountA > 0 && reserveA > 0)
+    return (uint64_t)((unsigned __int128)amountA * totalShares / reserveA);
 
   unsigned __int128 sharesA = (unsigned __int128)amountA * totalShares / reserveA;
   unsigned __int128 sharesB = (unsigned __int128)amountB * totalShares / reserveB;

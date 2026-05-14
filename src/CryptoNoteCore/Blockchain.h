@@ -115,7 +115,14 @@ namespace CryptoNote {
     // Returns false if pool already has reserves or amounts are zero.
     // Caller must ensure funds are escrowed before calling — this does NOT move funds.
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
-    void setXfgMarketValue(uint64_t val) { m_xfgMarketValue = val; m_xfgMarketValueHeight = static_cast<uint32_t>(m_blocks.size()); }
+    void setXfgMarketValue(uint64_t val) {
+      if (val == 0) return;  // zero only via epoch staleness timeout
+      if (m_xfgMarketValue > 0) {
+        if (val < m_xfgMarketValue / 5 || val > m_xfgMarketValue * 5) return;
+      }
+      m_xfgMarketValue = val;
+      m_xfgMarketValueHeight = static_cast<uint32_t>(m_blocks.size());
+    }
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     uint64_t getRolloverVaultBalance() const { return m_rolloverVaultBalance; }
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;

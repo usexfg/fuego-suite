@@ -271,10 +271,12 @@ struct DepositSecretPayload {
 #pragma pack(pop)
 static_assert(sizeof(DepositSecretPayload) == 45, "DepositSecretPayload size mismatch");
 
-// On-chain representation: ephemeral pubkey (32) + encrypted payload (45) = 77 bytes.
-// Node stores without decrypting; only the owning wallet can read.
+// On-chain representation: ephemeral pubkey (32) + checksum (4) + encrypted payload (45) = 81 bytes.
+// Checksum = first 4 bytes of keccak(encryptedPayload) — provides integrity protection.
+// Node stores without decrypting; only the owning wallet can read and verify.
 struct TransactionExtraDepositSecret {
   Crypto::PublicKey ephPubKey;            // one-time key for ECDH
+  unsigned char     checksum[4];          // keccak(encryptedPayload)[0..3] for integrity
   std::vector<uint8_t> encryptedPayload; // exactly 45 bytes (sizeof DepositSecretPayload)
 };
 

@@ -1657,6 +1657,11 @@ bool encryptDepositSecret(const DepositSecretPayload& plaintext,
   Crypto::chacha8(&plaintext, sizeof(DepositSecretPayload),
                   encKey, encIV,
                   reinterpret_cast<char*>(out.encryptedPayload.data()));
+
+  // Compute integrity checksum: first 4 bytes of keccak(encryptedPayload)
+  Crypto::Hash ckHash;
+  keccak(out.encryptedPayload.data(), out.encryptedPayload.size(), ckHash.data, sizeof(ckHash.data));
+  memcpy(out.checksum, ckHash.data, 4);
   return true;
 }
 
@@ -1664,6 +1669,13 @@ bool decryptDepositSecret(const TransactionExtraDepositSecret& encrypted,
                           const Crypto::SecretKey& walletViewSecKey,
                           DepositSecretPayload& out) {
   if (encrypted.encryptedPayload.size() != sizeof(DepositSecretPayload))
+    return false;
+
+  // Verify integrity checksum before decrypting
+  Crypto::Hash ckHash;
+  keccak(encrypted.encryptedPayload.data(), encrypted.encryptedPayload.size(),
+         ckHash.data, sizeof(ckHash.data));
+  if (memcmp(encrypted.checksum, ckHash.data, 4) != 0)
     return false;
 
   Crypto::KeyDerivation derivation;
@@ -1681,14 +1693,15 @@ bool decryptDepositSecret(const TransactionExtraDepositSecret& encrypted,
 
 bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
                              const TransactionExtraDepositSecret& secret) {
-  // Format: [0xD5][len=77][ephPubKey:32][ciphertext:45]
+  // Format: [0xD5][len=81][ephPubKey:32][checksum:4][ciphertext:45]
   if (secret.encryptedPayload.size() != sizeof(DepositSecretPayload))
     return false;
-  const uint8_t totalLen = 32 + static_cast<uint8_t>(secret.encryptedPayload.size()); // 77
+  const uint8_t totalLen = 32 + 4 + static_cast<uint8_t>(secret.encryptedPayload.size()); // 81
   tx_extra.push_back(TX_EXTRA_DEPOSIT_SECRET);
   tx_extra.push_back(totalLen);
   const auto* pubBytes = reinterpret_cast<const uint8_t*>(&secret.ephPubKey);
   tx_extra.insert(tx_extra.end(), pubBytes, pubBytes + 32);
+  tx_extra.insert(tx_extra.end(), secret.checksum, secret.checksum + 4);
   tx_extra.insert(tx_extra.end(),
                   secret.encryptedPayload.begin(),
                   secret.encryptedPayload.end());
@@ -1697,8 +1710,8 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                TransactionExtraDepositSecret& out) {
-  // Format: [0xD5][len=77][ephPubKey:32][ciphertext:45]
-  const size_t expectedLen = 32 + sizeof(DepositSecretPayload); // 77
+  // Format: [0xD5][len=81][ephPubKey:32][checksum:4][ciphertext:45]
+  const size_t expectedLen = 32 + 4 + sizeof(DepositSecretPayload); // 81
   for (size_t i = 0; i + 1 < tx_extra.size(); ++i) {
     if (tx_extra[i] != TX_EXTRA_DEPOSIT_SECRET)
       continue;
@@ -1706,7 +1719,8 @@ bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
     if (len != expectedLen || i + 2 + len > tx_extra.size())
       return false;
     memcpy(&out.ephPubKey, &tx_extra[i + 2], 32);
-    out.encryptedPayload.assign(tx_extra.begin() + i + 2 + 32,
+    memcpy(out.checksum,  &tx_extra[i + 2 + 32], 4);
+    out.encryptedPayload.assign(tx_extra.begin() + i + 2 + 32 + 4,
                                 tx_extra.begin() + i + 2 + len);
     return true;
   }

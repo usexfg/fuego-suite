@@ -37,8 +37,8 @@ struct CompletedSwapTrade {
 // Swap rate validation result
 enum class RateCheck {
   OK,                // rate is acceptable
-  BELOW_FLOOR,       // rate is >= 50% below TWAP — REJECT
-  ABOVE_MARKET,      // rate is significantly above TWAP — WARN but allow
+  BELOW_FLOOR,       // proposed rate too LOW (XFG too cheap → REJECT, protects sellers)
+  ABOVE_MARKET,      // proposed rate too HIGH (XFG too expensive → WARN, protects buyers)
   RATE_NO_DATA       // no TWAP yet, allow freely (bootstrap phase)
 };
 

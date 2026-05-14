@@ -118,7 +118,6 @@ namespace CryptoNote {
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
-    uint64_t getRolloverVaultBalance() const { return m_rolloverVaultBalance; }
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
     uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);
@@ -434,13 +433,11 @@ namespace CryptoNote {
     // Cumulative fee pool accounting (lifetime totals, never reset)
     uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool
     uint64_t m_totalCdInterestPaid = 0;       // total interest paid out to CD holders
-    uint64_t m_totalTreasuryAccrued = 0;      // total 20% treasury share accrued
-    uint64_t m_totalRolloverAccrued = 0;      // total 10% rollover vault share accrued
-
-    // Treasury: 20% of swap fees accumulates for protocol use
+    uint64_t m_totalTreasuryAccrued = 0;
+    uint64_t m_totalRolloverAccrued = 0;       // deprecated, kept for serialization compat
     uint64_t m_treasuryBalance = 0;
-    // Rollover Vault: 10% of swap fees for promotional interest bonuses
-    uint64_t m_rolloverVaultBalance = 0;
+    uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat
+    // HEAT stablecoin state
     UpgradeDetector m_upgradeDetectorV2;
     UpgradeDetector m_upgradeDetectorV3;
     UpgradeDetector m_upgradeDetectorV4;

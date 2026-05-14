@@ -154,10 +154,9 @@ namespace CryptoNote
          const std::vector<uint32_t> CD_ALLOWED_TIERS = {1, 18, 36, 72};
 
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
-        // Swap fee split: 69% CD Yield / 21% Treasury Reserve / 10% Rollover Vault
-        const uint64_t SWAP_FEE_CD_SHARE_PCT = 69;           // 69% of epoch swap fees → CD Yield Pool
-        const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 21;     // 21% of epoch swap fees → Treasury Reserve
-        const uint64_t SWAP_FEE_ROLLOVER_SHARE_PCT = 10;     // 10% of epoch swap fees → Rollover Vault
+        // Swap fee split: 80% CD Yield / 20% Treasury Reserve
+        const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
+        const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
         // MAINNET DEPOSITS
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 0.8 XFG

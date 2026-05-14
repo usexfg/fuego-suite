@@ -2200,7 +2200,7 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
   const uint64_t height = m_core.get_current_blockchain_height();
   res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
-  res.rollover_vault_balance = m_core.get_blockchain_storage().getRolloverVaultBalance();
+  res.rollover_vault_balance = 0;
   res.current_epoch_swap_fees = m_core.get_blockchain_storage().getCurrentEpochSwapFees();
   res.total_cd_locked = m_core.get_blockchain_storage().getTotalCdLocked();
   res.current_epoch_number = (epochDuration > 0) ? (height / epochDuration) : 0;

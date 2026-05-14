@@ -3480,7 +3480,6 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     uint64_t epochCdLocked = m_totalCdLocked;
     uint64_t cdShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_CD_SHARE_PCT) / 100;
     uint64_t treasuryShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
-    uint64_t rolloverShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_ROLLOVER_SHARE_PCT) / 100;
 
     // Compute fee rate for this epoch on CD share only.
     // Use __uint128_t for the intermediate product to prevent uint64_t overflow
@@ -3491,28 +3490,15 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     }
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, cdShare, epochCdLocked);
 
-    // Cumulative accounting: track lifetime swap fees entering the pool
+    // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
-    
-    // Add epoch swap fees to fee pool, then distribute treasury and rollover
-    m_feePoolBalance += epochSwapFees;
 
-    // Distribute shares: treasury and rollover are moved out, CD share stays
-    if (treasuryShare > 0 && m_feePoolBalance >= treasuryShare) {
-      m_feePoolBalance -= treasuryShare;
-      m_treasuryBalance += treasuryShare;
-      m_totalTreasuryAccrued += treasuryShare;
-    }
-    if (rolloverShare > 0 && m_feePoolBalance >= rolloverShare) {
-      m_feePoolBalance -= rolloverShare;
-      m_rolloverVaultBalance += rolloverShare;
-      m_totalRolloverAccrued += rolloverShare;
-    }
-    // CD share (69%) — allocate to yield pool for HEAT minting
-    if (cdShare > 0 && m_feePoolBalance >= cdShare) {
-      m_feePoolBalance -= cdShare;
-      m_cdYieldPool += cdShare;
-    }
+    // Route treasury share to treasury balance
+    m_treasuryBalance += treasuryShare;
+    m_totalTreasuryAccrued += treasuryShare;
+
+    // Route CD share to yield pool for HEAT minting
+    m_cdYieldPool += cdShare;
 
     // CD yield: burn accumulated XFG pool → mint HEAT at PI redemption rate
     if (m_cdYieldPool > 0 && !m_piState.redemptionPrice.isZero()) {
@@ -3583,7 +3569,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // Record the full epoch accumulator as this block's contribution before resetting.
     // popBlock will subtract this value and pop the matching m_epochFeeRates entry.
     m_blockSwapFeeContributions.push_back(epochSwapFees);
-    m_blockEpochDistributions.push_back({treasuryShare, rolloverShare});
+    m_blockEpochDistributions.push_back({treasuryShare, 0});
     m_epochSnapshots.push_back({newHeight, preEpoch});
     while (m_epochSnapshots.size() > 100)
       m_epochSnapshots.pop_front();
@@ -3601,16 +3587,14 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     report.totalCdLockedAtStart = epochCdLocked;
     report.feeRateFixedPoint = epochFeeRate;
     report.treasuryBalance = m_treasuryBalance;
-    report.rolloverVaultBalance = m_rolloverVaultBalance;
+    report.rolloverVaultBalance = 0;
     m_commitmentIndex.storeEpochReport(report);
     logger(INFO) << "=== Epoch " << epochNumber << " Report ==="
                  << " blocks=" << epochStart << "-" << epochEnd
                  << " swapFees=" << epochSwapFees
-                 << " cdShare(69%)=" << cdShare
-                 << " treasuryShare(21%)=" << treasuryShare
-                 << " rolloverShare(10%)=" << rolloverShare
+                 << " cdShare(80%)=" << cdShare
+                 << " treasuryShare(20%)=" << treasuryShare
                  << " treasuryBal=" << m_treasuryBalance
-                 << " rolloverVaultBal=" << m_rolloverVaultBalance
                  << " feePoolBal=" << m_feePoolBalance
                  << " cdLocked=" << epochCdLocked
                  << " feeRate=" << epochFeeRate;
@@ -3683,21 +3667,13 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_totalSwapFeesCollected -= contribution;
       m_commitmentIndex.popEpochFeeRate();
       
-      // Reverse treasury and rollover vault distributions
+      // Reverse treasury distribution
       if (!m_blockEpochDistributions.empty()) {
         auto dist = m_blockEpochDistributions.back();
         m_blockEpochDistributions.pop_back();
-        // Reverse treasury
         if (dist.first > 0 && m_treasuryBalance >= dist.first) {
           m_treasuryBalance -= dist.first;
           m_totalTreasuryAccrued -= dist.first;
-          m_feePoolBalance += dist.first;  // Return to fee pool
-        }
-        // Reverse rollover vault
-        if (dist.second > 0 && m_rolloverVaultBalance >= dist.second) {
-          m_rolloverVaultBalance -= dist.second;
-          m_totalRolloverAccrued -= dist.second;
-          m_feePoolBalance += dist.second;  // Return to fee pool
         }
       }
     } else {
@@ -3847,7 +3823,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       amountOutputs.push_back(ref);
       // Track total XFG locked in CDs
       m_totalCdLocked += transaction.tx.outputs[output].amount;
-      // Track HEAT supply for burn-to-mint outputs
+      // Track HEAT supply for burn-to-mint outputs (validated by HeatMintEngine before push)
       if (commitOut.term == parameters::DEPOSIT_TERM_FOREVER) {
         m_heatSupply += transaction.tx.outputs[output].amount;
       }

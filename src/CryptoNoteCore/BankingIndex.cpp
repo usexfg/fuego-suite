@@ -92,19 +92,19 @@ void BankingIndex::pushBlock(DepositAmount amount, DepositInterest interest) {
 void BankingIndex::popBlock() {
   assert(blockCount > 0);
 
-  // Calculate burned amount (if any) in block before popping
+  --blockCount;
+
   uint64_t burnedInBlock = 0;
   if (!m_burnedXfgEntries.empty() && m_burnedXfgEntries.back().height == blockCount) {
     uint64_t currentTotal = m_ethereal_xfg;
     uint64_t previousTotal = (m_burnedXfgEntries.size() > 1) ?
-      (--m_burnedXfgEntries.end() - 1)->cumulative_burned : 0;
+      (m_burnedXfgEntries.end() - 2)->cumulative_burned : 0;
     burnedInBlock = currentTotal - previousTotal;
 
     m_burnedXfgEntries.pop_back();
-    m_ethereal_xfg -= burnedInBlock;  // Update total
+    m_ethereal_xfg -= burnedInBlock;
   }
 
-  --blockCount;
   if (!index.empty() && index.back().height == blockCount) {
     index.pop_back();
   }
@@ -138,8 +138,13 @@ size_t BankingIndex::popBlocks(DepositHeight from) {
 
   // Also pop burned XFG entries from this height
   auto burnedIt = m_burnedXfgEntries.begin();
-  while (burnedIt != m_burnedXfgEntries.end() && burnedIt->height >= from) {
+  while (burnedIt != m_burnedXfgEntries.end() && burnedIt->height < from) {
     ++burnedIt;
+  }
+  if (!m_burnedXfgEntries.empty() && burnedIt != m_burnedXfgEntries.begin()) {
+    m_ethereal_xfg = (burnedIt - 1)->cumulative_burned;
+  } else if (burnedIt == m_burnedXfgEntries.begin()) {
+    m_ethereal_xfg = 0;
   }
   m_burnedXfgEntries.erase(burnedIt, m_burnedXfgEntries.end());
 

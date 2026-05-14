@@ -427,6 +427,26 @@ bool core::check_tx_inputs_keyimages_diff(const Transaction& tx) {
         logger(ERROR) << "Transaction has identical output indexes";
         return false;
       }
+    } else if (input.type() == typeid(TransactionInputCommitmentSpend)) {
+      const auto& cin = boost::get<TransactionInputCommitmentSpend>(input);
+      if (!ki.insert(cin.keyImage).second) {
+        logger(ERROR) << "Transaction has identical commitment spend key images";
+        return false;
+      }
+      if (cin.outputIndexes.empty()) {
+        logger(ERROR) << "Transaction's commitment spend input uses empty output";
+        return false;
+      }
+    } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
+      const auto& xfer = boost::get<TransactionInputCommitmentTransfer>(input);
+      if (!ki.insert(xfer.keyImage).second) {
+        logger(ERROR) << "Transaction has identical commitment transfer key images";
+        return false;
+      }
+      if (xfer.outputIndexes.empty()) {
+        logger(ERROR) << "Transaction's commitment transfer input uses empty output";
+        return false;
+      }
     }
   }
   return true;

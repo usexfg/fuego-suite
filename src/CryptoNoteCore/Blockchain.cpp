@@ -2878,6 +2878,21 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM withdrawal below minimum";
               break;
             }
+          } else if (field.type() == typeid(TransactionExtraAmmCompound)) {
+            // Compound: always valid, no-op (fees already in reserves)
+          } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
+            const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
+            if (claim.lpShares == 0 || claim.lpShares > m_ammPool.totalLpShares) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim LP shares invalid";
+              break;
+            }
+            uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
+            if (feeXfg < claim.minAmountXfg) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim below minimum";
+              break;
+            }
           }
         }
       }
@@ -2967,6 +2982,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
       computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration);
     }
+    int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : 0;
     // Reset TWAP for next epoch
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
@@ -3041,9 +3057,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     // Protocol pool rebalancing: single-sided LP add when pool drifts beyond basin band.
     // Protocol-only — external actors cannot rebalance single-sided.
-    if (m_piState.basinPhase == BASIN_LOCKED && !m_ammPool.isEmpty() && m_treasuryBalance > 0) {
-      FixedPoint64 currentSpot = FixedPoint64::fromRaw(
-        (int128_t)(m_twapAccumulator / m_twapBlockCount));
+    if (m_piState.basinPhase == BASIN_LOCKED && !m_ammPool.isEmpty() && m_treasuryBalance > 0
+        && epochTwapAvg > 0) {
+      FixedPoint64 currentSpot = FixedPoint64::fromRaw(epochTwapAvg);
       FixedPoint64 reserveRatio = FixedPoint64::fromRatio(
         m_ammPool.reserveXfg, m_ammPool.reserveHeat);
       FixedPoint64 treasuryAvail = FixedPoint64::fromUint64(
@@ -3830,17 +3846,13 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           m_ammPool.reserveHeat -= amountHeat;
           m_ammPool.totalLpShares -= rem.lpSharesBurned;
         } else if (field.type() == typeid(TransactionExtraAmmCompound)) {
-          m_ammPool.accumulatedLpFees = 0;
+          // Auto-compound: accumulated fees are already in reserves. No state change needed.
         } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
           const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
           uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
-          uint64_t amountXfg = 0, amountHeat = 0;
-          ammGetWithdrawalAmounts(claim.lpShares, m_ammPool.totalLpShares,
-            m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-          m_ammPool.reserveXfg -= amountXfg;
-          m_ammPool.reserveHeat -= amountHeat;
           if (m_ammPool.accumulatedLpFees >= feeXfg)
             m_ammPool.accumulatedLpFees -= feeXfg;
+          // Fee-only: principal stays in pool, LP keeps shares. No reserve drain.
         }
       }
     }
@@ -3982,6 +3994,14 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           m_totalCdInterestPaid -= cin.claimedInterest;
         }
       }
+      // Reverse claimerFee
+      uint64_t claimerFee = (cin.amount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                          / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+      if (claimerFee > 0) {
+        if (m_feePoolBalance >= claimerFee) m_feePoolBalance -= claimerFee;
+        if (m_currentEpochSwapFees >= claimerFee) m_currentEpochSwapFees -= claimerFee;
+        if (m_totalSwapFeesCollected >= claimerFee) m_totalSwapFeesCollected -= claimerFee;
+      }
     } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(input);
       size_t count = m_spent_keys.erase(xfer.keyImage);
@@ -4009,15 +4029,19 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         const auto& swap = boost::get<TransactionExtraAmmSwap>(field);
         uint32_t feeBps = parameters::HEARTH_FEE_BPS;
         if (swap.direction == 0) {
-          uint64_t outputAmount = ammGetOutputAmount(swap.inputAmount,
-            m_ammPool.reserveXfg, m_ammPool.reserveHeat + swap.inputAmount, feeBps);
+          uint64_t preXfg = m_ammPool.reserveXfg - swap.inputAmount;
+          uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
+          uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveHeat
+            * swap.inputAmount * feeAdj) / ((unsigned __int128)preXfg * parameters::HEARTH_FEE_DIVISOR));
           uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
           if (m_ammPool.accumulatedLpFees >= feeAmount) m_ammPool.accumulatedLpFees -= feeAmount;
           m_ammPool.reserveHeat += outputAmount;
           m_ammPool.reserveXfg -= swap.inputAmount;
         } else {
-          uint64_t outputAmount = ammGetOutputAmount(swap.inputAmount,
-            m_ammPool.reserveHeat, m_ammPool.reserveXfg + swap.inputAmount, feeBps);
+          uint64_t preHeat = m_ammPool.reserveHeat - swap.inputAmount;
+          uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
+          uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveXfg
+            * swap.inputAmount * feeAdj) / ((unsigned __int128)preHeat * parameters::HEARTH_FEE_DIVISOR));
           uint64_t feeAmount = (swap.inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
           if (m_ammPool.accumulatedLpFees >= feeAmount) m_ammPool.accumulatedLpFees -= feeAmount;
           m_ammPool.reserveXfg += outputAmount;
@@ -4038,6 +4062,12 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         m_ammPool.totalLpShares += rem.lpSharesBurned;
         m_ammPool.reserveHeat += amountHeat;
         m_ammPool.reserveXfg += amountXfg;
+      } else if (field.type() == typeid(TransactionExtraAmmCompound)) {
+        // Compound was a no-op in forward; no reversal needed
+      } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
+        const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
+        uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
+        m_ammPool.accumulatedLpFees += feeXfg;
       }
     }
   }

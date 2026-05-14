@@ -369,6 +369,20 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
         }
         return false;
       }
+      if (out.amount == 0) {
+        if (error) {
+          *error = "Commitment output amount is zero";
+        }
+        return false;
+      }
+      if (commitment.term != parameters::DEPOSIT_TERM_FOREVER &&
+          commitment.term != parameters::DEPOSIT_TERM_LP &&
+          commitment.term < parameters::CD_TRANSFER_MIN_REMAINING_TERM) {
+        if (error) {
+          *error = "Commitment output has invalid term";
+        }
+        return false;
+      }
     } else {
       if (error) {
         *error = "Output with invalid type";

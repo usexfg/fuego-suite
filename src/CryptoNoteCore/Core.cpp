@@ -1345,6 +1345,10 @@ uint64_t core::getBurnedXfgAtHeight(size_t height) const {
   return m_blockchain.getBurnedXfgAtHeight(height);
 }
 
+void core::addSwapFee(uint64_t amount) {
+  m_blockchain.addSwapFee(amount);
+}
+
 // --- Commitment Index Accessors ---
 
 std::optional<CommitmentEntry> core::getCommitmentByHash(const Crypto::Hash& commitment) const {

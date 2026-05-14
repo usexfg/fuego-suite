@@ -165,6 +165,24 @@ bool FuegoRpcClient::sendRawTransaction(const std::string& txHex) {
   }
 }
 
+bool FuegoRpcClient::addSwapFee(uint64_t amount) {
+  try {
+    Common::JsonValue reqJson(Common::JsonValue::OBJECT);
+    reqJson.insert("amount", static_cast<int64_t>(amount));
+
+    std::string responseBody = daemonPost("/addswapfee", reqJson.toString());
+    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+
+    if (!json.isObject() || !json.contains("status")) {
+      return false;
+    }
+
+    return json("status").getString() == "OK";
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 bool FuegoRpcClient::getInfo(NodeInfo& info) {
   try {
     std::string responseBody = daemonPost("/getinfo", "{}");

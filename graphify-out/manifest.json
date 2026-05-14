@@ -2252,8 +2252,8 @@
     "hash": "69a995742ed4a7bb947675eda2644fb2"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.cpp": {
-    "mtime": 1778751490.199332,
-    "hash": "7c29fb25091c9b3547ed7e3ab1c6f3cd"
+    "mtime": 1778751568.5356479,
+    "hash": "aa365246e9e6229c7a1b5c1970504791"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/SwapOfferRelay.h": {
     "mtime": 1778216352.385769,
@@ -2320,8 +2320,8 @@
     "hash": "1d6a3ae15ad5bb5b741d922e0ea60e6b"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.h": {
-    "mtime": 1778751539.7846467,
-    "hash": "5528c13542b5af057e1e82782f5894af"
+    "mtime": 1778751608.4739184,
+    "hash": "6fe80f68e972f2657ec7c9aa283d0fb4"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Core.cpp": {
     "mtime": 1778749253.33088,
@@ -5068,8 +5068,8 @@
     "hash": "3b419f9d1025775b7502da1773c7d938"
   },
   "/Users/aejt/xfgo/docs/features/heat-burns/burn2mint-manifesto.mdx": {
-    "mtime": 1778751521.8386085,
-    "hash": "b30593b753f11b6cdf8026b214674e31"
+    "mtime": 1778751770.969546,
+    "hash": "4d644b96a92fc654db8a25efa42902ee"
   },
   "/Users/aejt/xfgo/docs/features/heat-burns/burning-xfg.mdx": {
     "mtime": 1778216352.291342,

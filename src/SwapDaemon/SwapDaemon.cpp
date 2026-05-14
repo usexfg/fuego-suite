@@ -451,10 +451,9 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
                                  / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
         if (senderSurcharge > 0) {
           params.xfgAmount += senderSurcharge;
-          m_feePoolBalance += senderSurcharge;
-          m_currentEpochSwapFees += senderSurcharge;
+          m_rpc.addSwapFee(senderSurcharge);
           m_logger(Logging::INFO) << "  Swap initiation fee (1%): " << senderSurcharge 
-                                   << " XFG added to fee pool";
+                                   << " XFG reported to daemon fee pool";
         }
       }
       m_logger(Logging::INFO) << "  Next: exchange Musig2 nonces and create adaptor pre-sigs.";
@@ -1137,6 +1136,18 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
   }
 
   m_logger(Logging::INFO) << "  " << txType << " tx broadcast successfully!";
+
+  // Phase 2: 1% claim fee reported to daemon (total swap fee = 2%: 1% init + 1% claim)
+  if (params.xfgAmount > 0) {
+    uint64_t claimFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                      / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+    if (claimFee > 0) {
+      m_rpc.addSwapFee(claimFee);
+      m_logger(Logging::INFO) << "  Swap claim fee (1%): " << claimFee
+                               << " XFG reported to daemon fee pool";
+    }
+  }
+
   return true;
 }
 

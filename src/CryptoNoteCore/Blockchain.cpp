@@ -4426,4 +4426,10 @@ void Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
   }
 }
 
+void Blockchain::addSwapFee(uint64_t amount) {
+  if (amount == 0) return;
+  m_currentEpochSwapFees += amount;
+  m_totalSwapFeesCollected += amount;
+}
+
 }  // namespace CryptoNote

@@ -170,6 +170,7 @@ namespace CryptoNote {
     uint64_t fullDepositAmount() const;
     uint64_t depositAmountAtHeight(size_t height) const;
     uint64_t getBurnedXfgAtHeight(size_t height) const;
+    void addSwapFee(uint64_t amount);
 
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
 

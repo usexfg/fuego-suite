@@ -61,6 +61,9 @@ public:
   // Relay via /sendrawtransaction
   bool sendRawTransaction(const std::string& txHex);
 
+  // Report atomic swap fee to daemon → blockchain fee pool
+  bool addSwapFee(uint64_t amount);
+
   // Query /getinfo
   bool getInfo(NodeInfo& info);
 

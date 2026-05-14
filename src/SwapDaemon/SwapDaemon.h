@@ -224,10 +224,7 @@ public:
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};
    std::mutex            m_tickMutex;
-   std::condition_variable m_tickCv;
-
-   uint64_t m_feePoolBalance = 0;
-   uint64_t m_currentEpochSwapFees = 0;
+    std::condition_variable m_tickCv;
 };
 
 // Load a ChainClientConfig from a JSON file.

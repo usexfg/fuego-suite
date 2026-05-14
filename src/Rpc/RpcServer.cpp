@@ -132,6 +132,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/start_mining", { jsonMethod<COMMAND_RPC_START_MINING>(&RpcServer::on_start_mining), false } },
   { "/stop_mining", { jsonMethod<COMMAND_RPC_STOP_MINING>(&RpcServer::on_stop_mining), false } },
   { "/stop_daemon", { jsonMethod<COMMAND_RPC_STOP_DAEMON>(&RpcServer::on_stop_daemon), true } },
+  { "/addswapfee",  { jsonMethod<COMMAND_RPC_ADD_SWAP_FEE>(&RpcServer::on_add_swap_fee), false } },
 
   // HEAT / Hearth AMM endpoints (v11+)
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
@@ -2390,6 +2391,17 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.spot_price = info.spotPrice;
   res.accumulated_lp_fees = info.accumulatedLpFees;
   res.epoch_swap_fees = info.epochSwapFees;
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req,
+                                 COMMAND_RPC_ADD_SWAP_FEE::response& res) {
+  if (req.amount == 0 || req.amount > 100000000000000ULL) {
+    res.status = "Invalid fee amount";
+    return false;
+  }
+  m_core.addSwapFee(req.amount);
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

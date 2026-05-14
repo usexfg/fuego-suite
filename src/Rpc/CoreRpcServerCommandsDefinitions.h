@@ -2055,4 +2055,20 @@ struct COMMAND_RPC_AMM_POOL_INFO {
   };
 };
 
+struct COMMAND_RPC_ADD_SWAP_FEE {
+  struct request {
+    uint64_t amount;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(amount)
+    }
+  };
+
+  struct response {
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
 }

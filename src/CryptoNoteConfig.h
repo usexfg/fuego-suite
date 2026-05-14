@@ -185,8 +185,8 @@ namespace CryptoNote
         // Mode 1: Value-band only ($1–$3, requires oracle)
         // Mode 2: Auto (basin > oracle > launch-ratio > fixed 0.2)
         const uint8_t  HEAT_STABILITY_MODE = 2;                    // 0=launch, 1=oracle, 2=auto
-        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 XFG per HEAT at launch
-        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
+        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.1 XFG per HEAT at launch (10 HEAT per 1 XFG)
+        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 10;              // target = 0.1 × launch_twap / current_twap
         const uint64_t HEAT_VALUE_FLOOR = 100;                     // 1.00 (scaled by VALUE_SCALE)
         const uint64_t HEAT_VALUE_CEILING = 300;                   // 3.00 (scaled by VALUE_SCALE)
         const uint64_t VALUE_SCALE = 100;                          // 2 decimal places

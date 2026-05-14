@@ -3498,11 +3498,12 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     m_treasuryBalance += treasuryShare;
     m_totalTreasuryAccrued += treasuryShare;
 
-    // Route CD share to yield pool for HEAT minting
+    // Route CD share to yield pool for HEAT buyback
     m_cdYieldPool += cdShare;
 
-    // CD yield: burn accumulated XFG pool → mint HEAT at PI redemption rate
-    if (m_cdYieldPool > 0 && !m_piState.redemptionPrice.isZero()) {
+    // CD yield: buy HEAT from Hearth (fee-free) and distribute to CD holders.
+    // Treasury rebalancer handles any pool lopsidedness from sustained buys.
+    if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
       FixedPoint64 one = FixedPoint64::one();
       FixedPoint64 srFloor = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_FLOOR, 100);
       FixedPoint64 srCap = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_CAP, 100);
@@ -3512,7 +3513,6 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
       FixedPoint64 poolFp = FixedPoint64::fromUint64(m_cdYieldPool);
       uint64_t xfgToSpend = poolFp.mul(spendRate).toUint64();
-      uint64_t preMintPool = m_cdYieldPool;
 
       if (xfgToSpend > m_cdYieldPool && m_cdReserve > 0) {
         uint64_t draw = std::min(xfgToSpend - m_cdYieldPool, m_cdReserve);
@@ -3523,22 +3523,15 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       }
       if (xfgToSpend > m_cdYieldPool) xfgToSpend = m_cdYieldPool;
 
-      if (xfgToSpend > 0 && !m_piState.redemptionPrice.isZero()) {
-        FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToSpend);
-        FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);
-        uint64_t heatMinted = heatFp.toUint64();
-        if (heatMinted > 0) {
-          m_cdYieldPool -= xfgToSpend;
-          m_heatSupply += heatMinted;
-          m_heatCdFeePool += heatMinted;
-          m_bankingIndex.addForeverDeposit(xfgToSpend, newHeight);
-        }
-      }
+      // Buy HEAT from Hearth (fee-free, protocol CD buy)
+      uint64_t heatBought = ammGetOutputAmount(xfgToSpend,
+        m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
 
-      uint64_t reserveCap = (preMintPool) * parameters::CD_RESERVE_CAP / 100;
-      if (m_cdReserve > reserveCap) {
-        m_treasuryBalance += (m_cdReserve - reserveCap);
-        m_cdReserve = reserveCap;
+      if (heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
+        m_ammPool.reserveXfg += xfgToSpend;
+        m_ammPool.reserveHeat -= heatBought;
+        m_cdYieldPool -= xfgToSpend;
+        m_heatCdFeePool += heatBought;
       }
     }
 

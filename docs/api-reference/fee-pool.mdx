@@ -1,0 +1,119 @@
+---
+title: "Fee pool API"
+description: "RPC endpoints for fee pool state, epoch history, yield estimation, and treasury."
+keywords: ["fee pool", "epoch", "treasury", "yield", "API", "RPC", "fuego"]
+---
+
+## GET /get_fee_pool_info
+
+Returns the current state of the CD interest pool.
+
+**Request:** `{}`
+
+**Response:**
+
+```json
+{
+  "fee_pool_balance": 5000000000,
+  "current_epoch_swap_fees": 125000000,
+  "total_cd_locked": 100000000000,
+  "current_epoch_number": 42,
+  "efier_swap_reward_per_block": 0,
+  "status": "OK"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fee_pool_balance` | uint64 | Current total in the CD interest pool (atomic units) |
+| `current_epoch_swap_fees` | uint64 | Swap fees accumulated so far in the current epoch |
+| `total_cd_locked` | uint64 | Total XFG locked in active CDs (atomic units) |
+| `current_epoch_number` | uint64 | Current epoch index |
+
+---
+
+## GET /get_epoch_history
+
+Returns historical epoch data. Maximum 100 epochs per request.
+
+**Request:**
+
+```json
+{
+  "count": 10
+}
+```
+
+**Response:**
+
+```json
+{
+  "epochs": [
+    {
+      "epoch_number": 41,
+      "swap_fees_collected": 200000000,
+      "total_cd_locked_at_start": 95000000000,
+      "fee_rate_fixed_point": 2105263,
+      "total_fees_distributed": 200000000,
+      "active_efier_count": 0
+    }
+  ],
+  "total_epochs": 42,
+  "status": "OK"
+}
+```
+
+Returns epochs in descending order (most recent first), up to `count` entries.
+
+---
+
+## POST /estimate_cd_yield
+
+Estimates interest for a deposit based on recent epoch history.
+
+**Request:**
+
+```json
+{
+  "amount": 10000000000,
+  "creation_height": 90000,
+  "current_height": 0
+}
+```
+
+Set `current_height` to `0` to use the current block height.
+
+**Response:**
+
+```json
+{
+  "estimated_interest": 125000000,
+  "effective_epochs": 12,
+  "status": "OK"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `amount` | uint64 | Deposit amount in atomic units |
+| `estimated_interest` | uint64 | Estimated interest in atomic units |
+| `effective_epochs` | uint32 | Number of epochs the estimate covers |
+
+---
+
+## GET /get_treasury_info
+
+Returns the current treasury balance.
+
+**Request:** `{}`
+
+**Response:**
+
+```json
+{
+  "treasury_balance": 1000000000,
+  "status": "OK"
+}
+```
+
+The treasury receives a portion of epoch swap fees. It is read-only — no spending mechanism is currently implemented.

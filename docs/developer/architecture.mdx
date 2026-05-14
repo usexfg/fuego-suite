@@ -1,0 +1,50 @@
+---
+title: "Architecture overview"
+description: "Key components of the Fuego codebase and how they interact."
+keywords: ["architecture", "developer", "fuego", "CryptoNote", "blockchain"]
+---
+
+Fuego is a C++17 CryptoNote-based blockchain with significant extensions for commitment deposits, adaptor-signature atomic swaps, and zero-knowledge proofs.
+
+## Core components
+
+| Component | Path | Description |
+|-----------|------|-------------|
+| Blockchain | `src/CryptoNoteCore/Blockchain.cpp` | Consensus, fee pool, epoch accounting |
+| CommitmentIndex | `src/CryptoNoteCore/CommitmentIndex.*` | CD state tracking, epoch reports |
+| Currency | `src/CryptoNoteCore/Currency.*` | `calculateCdInterest()`, network parameters |
+| WalletGreen | `src/Wallet/WalletGreen.*` | Wallet operations, deposit management |
+| RpcServer | `src/Rpc/RpcServer.*` | HTTP JSON-RPC endpoints |
+| SwapDaemon | `src/SwapDaemon/` | Adaptor-signature swap state machine |
+| AliasIndex | `src/CryptoNoteCore/AliasIndex.*` | On-chain alias registry |
+
+## Transaction types
+
+Fuego extends CryptoNote with custom transaction inputs and outputs:
+
+| Type | Tag | Description |
+|------|-----|-------------|
+| `TransactionOutputCommitment` | — | Creates a CD or burn deposit |
+| `TransactionInputCommitmentSpend` | 0x7 | Spends a mature CD (with `claimedInterest`) |
+| `TransactionInputCommitmentTransfer` | 0x8 | Transfers a CD before maturity |
+
+See `include/CryptoNote.h` for full struct definitions.
+
+## Fee pool mechanics
+
+1. Every XFG-side atomic swap adds 1% to `m_currentEpochSwapFees`
+2. At each epoch boundary (block height % `epochDuration == 0`), fees distribute to all locked CDs
+3. Treasury receives its share at the same boundary
+4. `CommitmentIndex` stores per-epoch reports for auditing
+
+## Detailed technical documentation
+
+The following developer design documents are in `/docs/`:
+
+- [`commitment-types.md`](/commitment-types) — CD type system and on-chain representation
+- [`lp-pool-proof-system-design.md`](/lp-pool-proof-system-design) — LP pool AMM and ZK proof architecture
+- [`heat-vs-lp-proofs.md`](/heat-vs-lp-proofs) — Differences between HEAT and LP proof circuits
+- [`private-lp-pool-zk.md`](/private-lp-pool-zk) — Privacy model for LP positions
+- [`decentralized-lp-organizer.md`](/decentralized-lp-organizer) — Decentralized prover coordination
+- [`ATOMIC_SWAP_PLAN.md`](/ATOMIC_SWAP_PLAN) — Adaptor signature protocol design
+- [`FUEGO_CHAIN_ALIAS_SYSTEM.md`](/FUEGO_CHAIN_ALIAS_SYSTEM) — Alias system specification

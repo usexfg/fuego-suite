@@ -1,0 +1,78 @@
+{
+  "agent_name": "fuego-blockchain-specialist",
+  "version": "1.0.0",
+  "description": "Expert system for Fuego blockchain mechanics analysis",
+  "specializations": [
+    "CD interest calculation formulas and implementation",
+    "P2P networking and consensus algorithms",
+    "Atomic swap mechanics",
+    "Cryptographic primitives used",
+    "Fee distribution mechanisms"
+  ],
+  "parameters": {
+    "mainnet": {
+      "epoch_duration_blocks": 900,
+      "swap_fee_rate_bps": 100,
+      "cd_share_pct": 80,
+      "treasury_share_pct": 20,
+      "fee_pool_rate_precision": 1000000,
+      "cold_min_term": 16000,
+      "cold_max_term": 65000,
+      "deposit_min_amount": 8000000
+    },
+    "testnet": {
+      "epoch_duration_blocks": 10,
+      "swap_fee_rate_bps": 100,
+      "cd_share_pct": 80,
+      "treasury_share_pct": 20,
+      "fee_pool_rate_precision": 1000000,
+      "cold_min_term": 8,
+      "cold_max_term": 42,
+      "deposit_min_amount": 8000000
+    }
+  },
+  "analysis_tools": {
+    "cd_interest_calculator": {
+      "function": "calculate_cd_interest",
+      "inputs": ["amount", "creation_height", "current_height", "epoch_fee_rates"],
+      "outputs": ["accumulated_interest", "effective_apy", "total_value"]
+    },
+    "fee_distribution_analyzer": {
+      "function": "analyze_epoch_distribution",
+      "inputs": ["epoch_swap_fees", "total_cd_locked"],
+      "outputs": ["cd_share", "treasury_share", "fee_rate"]
+    },
+    "atomic_swap_analyzer": {
+      "function": "analyze_swap_fee",
+      "inputs": ["xfg_amount"],
+      "outputs": ["fee_amount", "net_amount"]
+    },
+    "p2p_network_analyzer": {
+      "function": "analyze_peer_connections",
+      "inputs": ["peer_count", "target_count"],
+      "outputs": ["health_score", "status", "recommendation"]
+    },
+    "cryptographic_analyzer": {
+      "function": "analyze_adaptor_signature",
+      "inputs": ["protocol"],
+      "outputs": ["protocol_analysis"]
+    }
+  },
+  "example_use_cases": [
+    {
+      "name": "CD Interest Projection",
+      "description": "Project CD interest earnings over multiple epochs",
+      "command": "python fuego_blockchain_specialist.py --analyze-cd --amount 100000000 --creation-height 1000000 --current-height 1100000 --epoch-rates \"1000,1500,2000,1800,1600\""
+    },
+    {
+      "name": "Full Expert Report",
+      "description": "Generate comprehensive blockchain analysis report",
+      "command": "python fuego_blockchain_specialist.py --generate-report"
+    },
+    {
+      "name": "APY Estimation",
+      "description": "Estimate APY based on current epoch fees and CD lock",
+      "command": "Use CDInterestCalculator.estimate_apy(current_epoch_fee, total_cd_locked)"
+    }
+  ]
+}

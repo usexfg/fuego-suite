@@ -1,0 +1,88 @@
+---
+title: "Interest and yield"
+description: "How CD interest is calculated, distributed, and claimed from the fee pool."
+keywords: ["interest", "yield", "fee pool", "APY", "epoch", "fuego", "xfg"]
+---
+
+## Source of yield
+
+CD interest comes entirely from atomic swap activity. Every swap that uses XFG charges a **1% fee on the XFG side**. These fees accumulate in the CD interest pool throughout each epoch.
+
+This means:
+- More swaps = higher yield for CD holders
+- Quiet periods with few swaps produce lower yield
+- Yield is variable and cannot be guaranteed in advance
+
+<Info>
+  LP pool fees (0.3% per trade) are a completely separate pool that goes to liquidity providers, not CD holders.
+</Info>
+
+## Epoch distribution
+
+At each epoch boundary (every 900 blocks on mainnet), the protocol distributes the accumulated swap fees proportionally across all locked CDs:
+
+```
+your_interest = (your_cd_amount / total_cd_locked) × epoch_swap_fees
+```
+
+If you hold 10% of all locked XFG, you receive 10% of that epoch's fee pool.
+
+## Privacy
+
+Your exact interest amount is hidden behind the same cryptographic commitment as your principal. An observer on-chain can see that a deposit exists and when it matures — not how much it holds or how much interest it has accrued.
+
+## Estimating yield
+
+Before locking, query the daemon for an estimate based on recent epoch history:
+
+```bash
+curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "amount": 10000000000,
+    "creation_height": 0,
+    "current_height": 0
+  }'
+```
+
+Response:
+
+```json
+{
+  "estimated_interest": 125000000,
+  "effective_epochs": 12,
+  "status": "OK"
+}
+```
+
+`amount` and `estimated_interest` are in atomic units (1 XFG = 1,000,000,000).
+
+## Checking epoch history
+
+To see actual historical fee rates:
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_epoch_history \
+  -H 'Content-Type: application/json' \
+  -d '{"count": 10}'
+```
+
+This returns the last 10 epochs with `swap_fees_collected`, `total_cd_locked_at_start`, and `fee_rate_fixed_point` for each.
+
+## Claiming interest
+
+Interest is claimed atomically when you withdraw or roll over your deposit. The withdrawal transaction includes a `claimedInterest` field. The blockchain validates that this matches the fee pool accounting for your deposit's history.
+
+You do not need to "claim" interest in a separate step — it is embedded in the withdrawal or rollover transaction.
+
+## Fee pool info
+
+To see the current state of the fee pool:
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_fee_pool_info \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Response includes `fee_pool_balance`, `current_epoch_swap_fees`, `total_cd_locked`, and `current_epoch_number`.

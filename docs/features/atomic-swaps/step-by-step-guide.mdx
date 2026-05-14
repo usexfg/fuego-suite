@@ -1,0 +1,97 @@
+---
+title: "Step-by-step swap guide"
+description: "Initiate and complete a cross-chain atomic swap from start to finish."
+keywords: ["swap guide", "initiate swap", "atomic swap", "XFG", "XMR"]
+---
+
+This guide walks through a complete XFG ↔ XMR swap. The flow is identical for other pairs.
+
+## Prerequisites
+
+- `fuegod` running and synced
+- `xmrd` (Monero daemon) running and synced
+- `xfg-xmr-swap` daemon running
+- XFG in your Fuego wallet
+- Counterparty: someone with XMR willing to swap
+
+## Initiate the swap
+
+In the TUI or via CLI, run:
+
+```
+initiate <counterparty_address_or_alias> <xfg_amount> XMR
+```
+
+Example:
+
+```
+initiate @bob 25 XMR
+```
+
+If you used an alias, the daemon resolves it first and shows you the full address. Confirm it matches what you expect before proceeding.
+
+The daemon outputs a **swap ID** — save it. You will use it to monitor and complete the swap.
+
+## Monitor swap progress
+
+```bash
+curl -X POST http://127.0.0.1:28080/getswapstatus \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+Or list all active swaps:
+
+```bash
+curl -X POST http://127.0.0.1:28080/listswaps \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+## Swap state progression
+
+<Steps>
+  <Step title="Keys exchanged">
+    Both daemons exchange adaptor public keys. State: `ADAPTOR_KEYS_EXCHANGED`.
+  </Step>
+  <Step title="Escrow funded">
+    Your XFG is locked in a time-locked output. State: `ADAPTOR_ESCROW_FUNDED`.
+
+    The counterparty can now see your locked XFG but cannot spend it without the adaptor secret.
+  </Step>
+  <Step title="Pre-signatures ready">
+    Both parties prepare adaptor-signed transactions. State: `ADAPTOR_PRESIGS_READY`.
+  </Step>
+  <Step title="Counterparty locks XMR">
+    The counterparty locks their XMR. State: `ADAPTOR_CTR_LOCKED`.
+  </Step>
+  <Step title="Secret revealed">
+    One party broadcasts their transaction, revealing the adaptor secret on-chain. State: `ADAPTOR_SECRET_REVEALED`.
+  </Step>
+  <Step title="Complete">
+    Both parties claim their funds. Final state: `ADAPTOR_XFG_SPENT`.
+
+    The 1% XFG fee is deducted and credited to the CD interest pool at this point.
+  </Step>
+</Steps>
+
+## If the counterparty disappears
+
+If the swap stalls in any state for too long, initiate a cooperative refund:
+
+```bash
+# Refund your locked XFG after timeout
+refund YOUR_SWAP_ID
+```
+
+This reclaims your XFG via the timelock. You cannot refund before the timelock expires — attempting to do so returns an error. Check `getswapstatus` to see the expiry height.
+
+## After the swap
+
+Your XFG is either spent (successful swap) or returned (refund). Check your wallet balance:
+
+```
+balance
+```
+
+The swap daemon keeps a record of all completed and refunded swaps. Query with `listswaps` to see history.

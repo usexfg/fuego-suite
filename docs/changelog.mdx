@@ -1,0 +1,39 @@
+---
+title: "Changelog"
+description: "Fuego Suite Updates & Features"
+---
+
+<CodeGroup>
+```text Changelog
+v1.10.01 (Current)
+* Clean up repo for release.
+* Fix stream tools endianness conversion for integers.
+
+v1.9.3
+* Intent-based soft orders for AFK atomic swaps.
+* Implement AFK Adaptor Swaps: Taker flow, monitoring view, and refund mechanism.
+* TUI Updates.
+* ZK prover for HEAT merkle.
+* Elderfier broadcast fix to keep merkle as source of truth not p2pmsg.
+* Update Boost dependency to 1.86.
+* RPC Server Modernization.
+* Implement CD banking fee burn and SwapDaemon CD support.
+
+v1.9.2
+* Add subaddresses support to core and simplewallet.
+* Initialize Fuego Flutter Wallet project.
+* Add Elderfier CLI menu system.
+* Digm coin branch integration.
+
+v1.9.1
+* Add comprehensive walletd build workflow.
+* Update difficulty calculation adjustments.
+
+v1.9.0
+* Add comprehensive simplewallet functionality for checking CDs, Burns, and Aliases.
+* Dandelion++ support (Upgrade Height v10).
+* (FuegoMeshtastic and FuegoI2P components exist but are in integration phases, see codebase).
+```
+</CodeGroup>
+
+> **Privacy Note:** Fuego relies on Ring Signatures and stealth addresses to provide privacy by hiding the sender, receiver, and breaking transaction linkage. Fuego uses per-amount decoy selection, and HEAT burns provide permanent decoys that bulk up the ring pool. Amounts transferred are currently visible on-chain. Deposit types are also visible (HEAT=0x08, CD=0xCD, YIELD=0x07) unless obscured.

@@ -1,0 +1,64 @@
+---
+title: "Wallet safety"
+description: "Protect your seed phrase, wallet file, and RPC access."
+keywords: ["security", "wallet", "seed phrase", "private key", "fuego", "xfg"]
+---
+
+## Seed phrase
+
+Your 25-word seed phrase is the only way to recover your wallet if you lose your wallet file. Anyone who obtains your seed phrase has full control of your funds.
+
+<Warning>
+  Write your seed phrase on paper. Store it in a physically secure location. Make a second copy and store it separately from the first. Never photograph it. Never type it into any device connected to the internet.
+</Warning>
+
+There is no "forgot my seed phrase" recovery. If you lose both your wallet file and your seed phrase, your XFG is permanently inaccessible.
+
+## Wallet file
+
+The wallet file (`.keys`) is AES-encrypted with your password. A strong, unique password protects against an attacker who obtains the file.
+
+Back up your wallet file to:
+- An encrypted external drive
+- Offline cold storage
+
+Re-backup after every significant transaction or deposit creation, as wallet files contain deposit secrets required for CD withdrawal.
+
+## RPC port
+
+The daemon RPC port has no authentication. Restrict it to localhost:
+
+```bash
+# Safe — localhost only (default)
+./fuegod --rpc-bind-ip 127.0.0.1
+
+# Dangerous — never do this on a public server
+./fuegod --rpc-bind-ip 0.0.0.0
+```
+
+If you need remote RPC access, use an SSH tunnel:
+
+```bash
+ssh -L 28080:127.0.0.1:28080 user@your-server
+```
+
+Then connect locally to `127.0.0.1:28080`.
+
+## Verify addresses before sending
+
+Fuego transactions are irreversible. Before sending any amount:
+
+1. Verify the recipient address is exactly 98 characters long
+2. Verify it starts with lowercase `f`
+3. For large amounts, send a small test amount first and verify receipt
+
+If sending to an alias, resolve it first with `/get_alias` and verify the returned address matches your expectation.
+
+## Deposit secrets
+
+When you create a commitment deposit, your wallet stores a deposit secret. This secret is required to:
+- Withdraw the deposit at maturity
+- Transfer the deposit before maturity
+- Generate STARK proofs for HEAT burns
+
+Your wallet file contains these secrets. If you lose your wallet file and cannot restore from seed phrase, those deposits become inaccessible. **Back up your wallet file** after every deposit creation.

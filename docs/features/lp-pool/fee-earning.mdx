@@ -1,0 +1,46 @@
+---
+title: "Earning fees as an LP"
+description: "How 0.3% trade fees accumulate and are distributed to liquidity providers."
+keywords: ["LP fees", "0.3%", "fee distribution", "epoch", "fuego", "xfg"]
+---
+
+## Fee rate
+
+Every trade through the LP pool charges **0.3% of the trade amount**. This fee goes entirely to the liquidity providers — there is no protocol cut on LP pool trades.
+
+This is separate from the 1% atomic swap fee that funds CD interest. The two pools are independent.
+
+## How fees accumulate
+
+Trade fees accumulate in the LP fee pool throughout each epoch. At the epoch boundary (every 900 blocks on mainnet), accumulated fees are distributed to all current LPs in proportion to their pool share.
+
+If you deposit midway through an epoch, you earn fees proportionally from the time of your deposit within that epoch.
+
+## Viewing epoch fee history
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_epoch_history \
+  -H 'Content-Type: application/json' \
+  -d '{"count": 10}'
+```
+
+The response includes per-epoch fee data. LP fees are tracked separately from CD swap fees in the epoch reports.
+
+## Fee reinvestment
+
+Earned fees are credited to your LP position automatically at each epoch boundary. They compound into your pool share, so subsequent epochs earn fees on the larger amount.
+
+You do not need to take any action to reinvest fees — it happens automatically.
+
+## Claiming fees on withdrawal
+
+When you withdraw liquidity, your principal plus all accumulated fees are returned in a single transaction. There is no separate "claim fees" step — fees and principal come out together.
+
+## Estimating returns
+
+Estimate returns by looking at recent epoch history:
+1. Query `get_epoch_history` to see recent per-epoch LP fee totals
+2. Estimate your pool share: `your_deposit / total_pool_depth`
+3. Multiply: `epoch_lp_fees × your_share × epochs_in_period`
+
+This is an estimate — actual fees depend on trade volume and your share at the time of distribution.

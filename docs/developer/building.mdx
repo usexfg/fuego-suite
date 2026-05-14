@@ -1,0 +1,90 @@
+---
+title: "Building from source"
+description: "Complete build instructions for developers on Linux, macOS, and Windows."
+keywords: ["build", "cmake", "developer", "compile", "fuego", "xfg"]
+---
+
+## Dependencies
+
+| Dependency | Minimum version | Notes |
+|------------|----------------|-------|
+| CMake | 3.10 | Build system |
+| GCC / Clang | GCC 7 / Clang 6 | C++17 required |
+| Boost | 1.65 | All components |
+| OpenSSL | 1.1 | For SwapDaemon |
+| Go | 1.24 | For swapxfg TUI only |
+
+<Tabs>
+  <Tab title="Ubuntu / Debian">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y \
+      build-essential cmake \
+      libboost-all-dev \
+      libssl-dev \
+      pkg-config
+    ```
+  </Tab>
+  <Tab title="macOS">
+    ```bash
+    brew install cmake boost openssl pkg-config
+    # OpenSSL path for CMake:
+    export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Install Visual Studio 2019+ with C++ workload. Install CMake, Boost (prebuilt binaries from boost.org), and OpenSSL (Win32/Win64 OpenSSL from slproweb.com).
+  </Tab>
+</Tabs>
+
+## Build
+
+```bash
+git clone https://github.com/usexfg/fuego-suite.git
+cd fuego-suite
+mkdir build && cd build
+cmake ..
+make -j$(nproc)        # Linux
+make -j$(sysctl -n hw.ncpu)  # macOS
+```
+
+Binaries are in `build/release/src/`:
+- `fuegod` — daemon
+- `simplewallet` — CLI wallet
+- `testnetd` — testnet daemon variant
+- `xfg-swap` — swap daemon (all pairs)
+
+## Build targets
+
+```bash
+make fuegod         # Daemon only
+make simplewallet   # Wallet only
+make xfg-swap       # Swap daemon only
+```
+
+## SwapDaemon dependencies
+
+The swap daemon links OpenSSL via CMake imported targets (`OpenSSL::SSL`, `OpenSSL::Crypto`). If CMake cannot find OpenSSL:
+
+```bash
+cmake .. -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl
+```
+
+## Go TUI (optional)
+
+```bash
+cd swapxfg
+go build ./...
+```
+
+Requires Go 1.24+. The TUI connects to `fuegod` via HTTP RPC.
+
+## Running tests
+
+```bash
+cd build
+make tests
+ctest --output-on-failure
+```
+
+Integration tests require a running testnet node. See `tests/EndToEnd/` for setup.

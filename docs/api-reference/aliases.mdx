@@ -1,0 +1,96 @@
+---
+title: "Aliases API"
+description: "Resolve on-chain aliases to Fuego addresses and perform reverse lookups."
+keywords: ["alias", "resolve", "address", "fuego", "xfg", "API"]
+---
+
+## POST /get_alias
+
+Resolves an alias to a Fuego address.
+
+**Request:**
+
+```json
+{
+  "alias": "alice"
+}
+```
+
+The `@` prefix is optional — both `"alice"` and `"@alice"` resolve the same way.
+
+**Response (found):**
+
+```json
+{
+  "found": true,
+  "alias": "alice",
+  "address": "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp",
+  "status": "OK"
+}
+```
+
+**Response (not found):**
+
+```json
+{
+  "found": false,
+  "alias": "alice",
+  "address": "",
+  "status": "OK"
+}
+```
+
+Check `found` before using `address`. A `found: false` response with `status: "OK"` means the alias does not exist on-chain — it is not an error.
+
+---
+
+## POST /get_alias_by_address
+
+Reverse lookup: find the alias registered for a given address.
+
+**Request:**
+
+```json
+{
+  "address": "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp"
+}
+```
+
+**Response (found):**
+
+```json
+{
+  "found": true,
+  "alias": "alice",
+  "address": "fireVHx...",
+  "status": "OK"
+}
+```
+
+---
+
+## GET /get_all_aliases
+
+Returns all registered aliases. Use sparingly — on a large network this can be a large response.
+
+**Request:** `{}`
+
+**Response:**
+
+```json
+{
+  "aliases": [
+    {
+      "alias": "alice",
+      "address": "fireVHx..."
+    }
+  ],
+  "status": "OK"
+}
+```
+
+---
+
+## Privacy note
+
+Aliases are stored on-chain as a **hash of the address**, not the address itself. An observer who knows only the alias cannot derive the address from on-chain data. Resolution requires querying a node that has the full alias index. Your address is only revealed when you respond to a resolution request.

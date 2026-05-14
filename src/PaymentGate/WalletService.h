@@ -1,0 +1,179 @@
+// Copyright (c) 2017-2022 Fuego Developers
+// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
+// Copyright (c) 2016-2019 The Karbowanec developers
+// Copyright (c) 2012-2018 The CryptoNote developers
+//
+// This file is part of Fuego.
+//
+// Fuego is free software distributed in the hope that it
+// will be useful, but WITHOUT ANY WARRANTY; without even the
+// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+// PURPOSE. You can redistribute it and/or modify it under the terms
+// of the GNU General Public License v3 or later versions as published
+// by the Free Software Foundation. Fuego includes elements written
+// by third parties. See file labeled LICENSE for more details.
+// You should have received a copy of the GNU General Public License
+// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
+
+#pragma once
+
+#include <System/ContextGroup.h>
+#include <System/Dispatcher.h>
+#include <System/Event.h>
+#include "IWallet.h"
+#include "INode.h"
+#include "CryptoNoteCore/Currency.h"
+#include "CryptoNoteCore/StagedUnlockStorage.h"
+#include "PaymentServiceJsonRpcMessages.h"
+#undef ERROR //TODO: workaround for windows build. fix it
+#include "Logging/LoggerRef.h"
+
+#include <fstream>
+#include <memory>
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/member.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+
+namespace CryptoNote
+{
+class IFusionManager;
+}
+
+namespace PaymentService
+{
+
+struct WalletConfiguration
+{
+  std::string walletFile;
+  std::string walletPassword;
+  std::string secretSpendKey;
+  std::string secretViewKey;
+};
+
+void generateNewWallet(const CryptoNote::Currency &currency, const WalletConfiguration &conf, Logging::ILogger &logger, System::Dispatcher &dispatcher);
+
+struct TransactionsInBlockInfoFilter;
+
+class WalletService
+{
+public:
+  WalletService(const CryptoNote::Currency &currency, System::Dispatcher &sys, CryptoNote::INode &node, CryptoNote::IWallet &wallet, CryptoNote::IFusionManager &fusionManager, const WalletConfiguration &conf, Logging::ILogger &logger);
+  virtual ~WalletService();
+
+  void init();
+  void saveWallet();
+
+  std::error_code saveWalletNoThrow();
+  
+  // Public access to currency for network ID access
+  const CryptoNote::Currency &getCurrency() const { return currency; }
+
+  std::error_code resetWallet();
+  std::error_code resetWallet(const uint32_t scanHeight);
+  std::error_code exportWallet(const std::string& fileName);
+  std::error_code exportWalletKeys(const std::string &fileName);
+  std::error_code replaceWithNewWallet(const std::string &viewSecretKey);
+  std::error_code createAddress(const std::string &spendSecretKeyText, std::string &address);
+  std::error_code createAddress(std::string &address);
+  std::error_code createAddressList(const std::vector<std::string> &spendSecretKeysText, bool reset, std::vector<std::string> &addresses);
+  std::error_code createTrackingAddress(const std::string &spendPublicKeyText, std::string &address);
+  std::error_code deleteAddress(const std::string &address);
+  std::error_code getSpendkeys(const std::string &address, std::string &publicSpendKeyText, std::string &secretSpendKeyText);
+  std::error_code getBalance(const std::string &address, uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance);
+  std::error_code getBalance(uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance);
+  std::error_code getBlockHashes(uint32_t firstBlockIndex, uint32_t blockCount, std::vector<std::string> &blockHashes);
+std::error_code getViewKey(std::string &viewSecretKey);
+  std::error_code getTransactionHashes(const std::vector<std::string> &addresses, const std::string &blockHash,
+                                       uint32_t blockCount, const std::string &paymentId, std::vector<TransactionHashesInBlockRpcInfo> &transactionHashes);
+  std::error_code getTransactionHashes(const std::vector<std::string> &addresses, uint32_t firstBlockIndex,
+                                       uint32_t blockCount, const std::string &paymentId, std::vector<TransactionHashesInBlockRpcInfo> &transactionHashes);
+  std::error_code getTransactions(const std::vector<std::string> &addresses, const std::string &blockHash,
+                                  uint32_t blockCount, const std::string &paymentId, std::vector<TransactionsInBlockRpcInfo> &transactionHashes);
+  std::error_code getTransactions(const std::vector<std::string> &addresses, uint32_t firstBlockIndex,
+                                  uint32_t blockCount, const std::string &paymentId, std::vector<TransactionsInBlockRpcInfo> &transactionHashes);
+  std::error_code getTransaction(const std::string &transactionHash, TransactionRpcInfo &transaction);
+  std::error_code getAddresses(std::vector<std::string> &addresses);
+  std::error_code sendTransaction(const SendTransaction::Request &request, std::string &transactionHash, std::string &transactionSecretKey);
+  std::error_code createDelayedTransaction(const CreateDelayedTransaction::Request &request, std::string &transactionHash);
+  std::error_code createIntegratedAddress(const CreateIntegrated::Request &request, std::string &integrated_address);
+  std::error_code splitIntegratedAddress(const SplitIntegrated::Request &request, std::string &address, std::string &payment_id);
+  std::error_code getDelayedTransactionHashes(std::vector<std::string> &transactionHashes);
+  std::error_code deleteDelayedTransaction(const std::string &transactionHash);
+  std::error_code sendDelayedTransaction(const std::string &transactionHash);
+  std::error_code getUnconfirmedTransactionHashes(const std::vector<std::string> &addresses, std::vector<std::string> &transactionHashes);
+  std::error_code getStatus(uint32_t &blockCount, uint32_t &knownBlockCount, std::string &lastBlockHash, uint32_t &peerCount, uint32_t &depositCount, uint32_t &transactionCount, uint32_t &addressCount, std::string &networkId);
+  std::error_code createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string &transactionHash, const CryptoNote::DepositCommitment& commitment = CryptoNote::DepositCommitment(), bool useStagedUnlock = false);
+  std::error_code storeBurnDepositSecret(const std::string& transactionHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
+  std::error_code getBurnDepositSecret(const std::string& transactionHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
+  std::error_code markBurnDepositBPDFGenerated(const std::string& transactionHash);
+  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata, const std::string& networkId);
+  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const std::string& networkId);
+  std::string getDefaultWalletPath();
+
+  std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);
+  std::error_code giftDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
+  std::error_code getDeposit(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address);
+  std::error_code getDepositWithStagedInfo(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address, bool &useStagedUnlock);
+
+  // New methods for dynamic money supply
+  std::error_code getMoneySupplyStats(GetMoneySupplyStats::Response &response);
+  std::error_code getBaseTotalSupply(GetBaseTotalSupply::Response &response);
+  std::error_code getRealTotalSupply(GetRealTotalSupply::Response &response);
+  std::error_code getTotalDepositAmount(GetTotalDepositAmount::Response &response);
+  std::error_code getCirculatingSupply(GetCirculatingSupply::Response &response);
+  std::error_code getEternalFlame(GetEthernalXFG::Response &response);
+  std::error_code getDynamicSupplyOverview(GetDynamicSupplyOverview::Response &response);
+  std::error_code getBaseMoneySupply(uint64_t &baseMoneySupply);
+  std::error_code getCirculatingSupply(uint64_t &circulatingSupply);
+  std::error_code getEternalFlame(uint64_t &ethereal_xfg);
+  std::error_code getTotalRebornXfg(uint64_t &totalRebornXfg);
+  std::error_code getBurnPercentage(double &burnPercentage);
+  std::error_code getRebornPercentage(double &rebornPercentage);
+  std::error_code getSupplyIncreasePercentage(double &supplyIncreasePercentage);
+
+  std::string formatAmount(uint64_t amount);
+
+  std::error_code getMessagesFromExtra(const std::string &extra, std::vector<std::string> &messges);
+  std::error_code estimateFusion(uint64_t threshold, const std::vector<std::string> &addresses, uint32_t &fusionReadyCount, uint32_t &totalOutputCount);
+  std::error_code sendFusionTransaction(uint64_t threshold, uint32_t anonymity, const std::vector<std::string> &addresses,
+                                        const std::string &destinationAddress, std::string &transactionHash);
+
+private:
+  void refresh();
+  void reset();
+
+  void loadWallet();
+  void loadTransactionIdIndex();
+
+  void replaceWithNewWallet(const Crypto::SecretKey &viewSecretKey);
+
+  std::vector<CryptoNote::TransactionsInBlockInfo> getTransactions(const Crypto::Hash &blockHash, size_t blockCount) const;
+  std::vector<CryptoNote::TransactionsInBlockInfo> getTransactions(uint32_t firstBlockIndex, size_t blockCount) const;
+
+  std::vector<CryptoNote::DepositsInBlockInfo> getDeposits(const Crypto::Hash &blockHash, size_t blockCount) const;
+  std::vector<CryptoNote::DepositsInBlockInfo> getDeposits(uint32_t firstBlockIndex, size_t blockCount) const;
+
+  std::vector<TransactionHashesInBlockRpcInfo> getRpcTransactionHashes(const Crypto::Hash &blockHash, size_t blockCount, const TransactionsInBlockInfoFilter &filter) const;
+  std::vector<TransactionHashesInBlockRpcInfo> getRpcTransactionHashes(uint32_t firstBlockIndex, size_t blockCount, const TransactionsInBlockInfoFilter &filter) const;
+
+  std::vector<TransactionsInBlockRpcInfo> getRpcTransactions(const Crypto::Hash &blockHash, size_t blockCount, const TransactionsInBlockInfoFilter &filter) const;
+  std::vector<TransactionsInBlockRpcInfo> getRpcTransactions(uint32_t firstBlockIndex, size_t blockCount, const TransactionsInBlockInfoFilter &filter) const;
+
+  const CryptoNote::Currency &currency;
+  CryptoNote::IWallet &wallet;
+  CryptoNote::IFusionManager &fusionManager;
+  CryptoNote::INode &node;
+  const WalletConfiguration &config;
+  bool inited;
+  Logging::LoggerRef logger;
+  System::Dispatcher &dispatcher;
+  System::Event readyEvent;
+  System::ContextGroup refreshContext;
+
+  std::map<std::string, size_t> transactionIdIndex;
+  
+  // Staged unlock storage
+  CryptoNote::StagedUnlockStorage m_stagedUnlockStorage;
+};
+
+} //namespace PaymentService

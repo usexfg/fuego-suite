@@ -1,0 +1,56 @@
+---
+title: "Fees and timeouts"
+description: "XFG swap fees, timelock durations, and what happens when a swap times out."
+keywords: ["swap fees", "timeout", "refund", "timelock", "fuego", "xfg"]
+---
+
+## XFG-side fee
+
+Every completed swap deducts **1% from the XFG amount**. This fee:
+- Is charged on the XFG side only (not the counterparty chain)
+- Is credited to the CD interest pool
+- Is not paid to the counterparty
+- Is not configurable or negotiable
+
+If you swap 100 XFG for XMR, you pay 100 XFG and the counterparty receives the XMR equivalent. The 1 XFG fee goes to CD holders.
+
+## Counterparty chain fees
+
+You also pay the counterparty chain's standard network transaction fee (gas for ETH, mining fee for XMR/BCH, etc.). These fees are separate from the Fuego protocol fee and vary by chain conditions.
+
+## Monitoring for stuck swaps
+
+The swap daemon's built-in watchdog logs warnings when swaps stall:
+
+| Phase | Timeout threshold | Warning logged |
+|-------|-------------------|---------------|
+| Key exchange | 10 minutes | Swap stuck in `ADAPTOR_KEYS_EXCHANGED` |
+| Escrow funded | 30 minutes | Swap stuck in `ADAPTOR_ESCROW_FUNDED` or later |
+
+These are warnings only — no automatic action is taken. You decide whether to wait or refund.
+
+## Initiating a refund
+
+After the timelock expires, reclaim your XFG:
+
+```bash
+curl -X POST http://127.0.0.1:28080/refund_swap \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+Or via the TUI:
+
+```
+refund YOUR_SWAP_ID
+```
+
+Check the timelock expiry height first with `getswapstatus`. Attempting to refund before expiry returns an error — you must wait.
+
+## Swap persistence
+
+All swap state is persisted to disk after every state transition. If the swap daemon crashes or is restarted, it automatically resumes all non-terminal swaps from their last known state.
+
+<Tip>
+  Run `listswaps` after restarting the daemon to confirm all active swaps are correctly resumed before taking any action.
+</Tip>

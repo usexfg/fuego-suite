@@ -1,0 +1,103 @@
+---
+title: "Tutorial: your first commitment deposit"
+description: "Lock XFG, wait for maturity, and withdraw principal plus interest."
+keywords: ["tutorial", "CD", "deposit", "withdraw", "fuego", "xfg"]
+---
+
+This tutorial walks through the complete CD lifecycle on testnet: create a deposit, wait for maturity, withdraw with interest.
+
+## What you need
+
+- `fuegod --testnet` running and synced
+- `simplewallet` connected to testnet
+- At least 1 XFG in your testnet wallet
+
+## Step 1: Check your balance
+
+```
+balance
+```
+
+Make sure you have enough to lock. You also need a small amount for transaction fees (a few milliXFG).
+
+## Step 2: Check the current block height
+
+```bash
+curl -s http://127.0.0.1:28280/get_info | python3 -c "import json,sys; d=json.load(sys.stdin); print('Height:', d['height'])"
+```
+
+Note this height — you can calculate when your deposit matures.
+
+## Step 3: Create the deposit
+
+Lock 1 XFG for approximately 3 months (testnet terms are much shorter):
+
+```
+deposit 1 3
+```
+
+The wallet outputs:
+```
+Deposit created.
+Deposit ID: 0
+Maturity height: 1234
+```
+
+Note the deposit ID and maturity height.
+
+## Step 4: Verify the deposit
+
+```
+list_cold
+```
+
+Your deposit appears with status `locked`.
+
+```
+cold_info 0
+```
+
+Shows amount, maturity height, and current interest accrued.
+
+## Step 5: Wait for maturity
+
+On testnet, epochs are 10 blocks — maturity arrives quickly. Watch the block height:
+
+```bash
+watch -n 5 'curl -s http://127.0.0.1:28280/get_info | python3 -c "import json,sys; print(json.load(sys.stdin)[\"height\"])"'
+```
+
+When the current height reaches or exceeds your maturity height, proceed.
+
+## Step 6: Check estimated interest
+
+```bash
+curl -X POST http://127.0.0.1:28280/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{"amount": 1000000000, "creation_height": YOUR_CREATION_HEIGHT}'
+```
+
+## Step 7: Withdraw
+
+```
+withdraw 0
+```
+
+The wallet broadcasts a withdrawal transaction claiming your principal plus interest. On success it outputs a transaction hash and the total amount received.
+
+```
+balance
+```
+
+Your balance reflects the returned XFG including interest.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Compound with rollover" icon="refresh-cw" href="/features/commitment-deposits/compound-interest">
+    Instead of withdrawing, roll into a new deposit to compound.
+  </Card>
+  <Card title="Try a longer term" icon="calendar" href="/features/commitment-deposits/understanding-terms">
+    Longer terms accumulate more epochs of interest.
+  </Card>
+</Columns>

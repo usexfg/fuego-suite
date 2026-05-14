@@ -1,0 +1,41 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Cargo
+Cargo.lock
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/
+.opencode/
+.zed/
+/usexfg-website
+/digm-platform
+/CMakeFiles
+/competitor_data
+/monerotestnet
+/testnet-data
+/testnet-data2
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+.dsp
+
+
+/CMakeFiles/
+/src/CMakeFiles/*
+/build
+/build-check/
+/build_swap_daemon/
+/xfg-stark-v3

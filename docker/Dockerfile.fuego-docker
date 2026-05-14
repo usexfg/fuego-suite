@@ -1,0 +1,108 @@
+# 🐳 Fuego Docker - Enhanced Multi-Stage Build
+# Optimized for production and development use
+
+# Stage 1: Base development environment
+FROM ubuntu:22.04 as base
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    libboost-all-dev \
+    pkg-config \
+    ca-certificates \
+    curl \
+    wget \
+    nano \
+    htop \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Stage 2: Builder environment
+FROM base as builder
+
+# Set working directory
+WORKDIR /src
+
+# Copy source code
+COPY . .
+
+# Build arguments with defaults
+ARG BUILD_TYPE=Release
+ARG ENABLE_OPTIMIZATIONS=ON
+ARG BUILD_TESTS=OFF
+ARG STATIC_BUILD=ON
+ARG PARALLEL_BUILD=4
+
+# Build Fuego with optimizations
+RUN mkdir -p build && cd build && \
+    cmake \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+        -DBUILD_PERFORMANCE_TOOLS=${ENABLE_OPTIMIZATIONS} \
+        -DBUILD_TESTS=${BUILD_TESTS} \
+        -DSTATIC=${STATIC_BUILD} \
+        .. && \
+    make -j${PARALLEL_BUILD} && \
+    strip src/fuegod src/walletd || true
+
+# Stage 3: Runtime environment
+FROM ubuntu:22.04 as runtime
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create fuego user and group
+RUN groupadd -r fuego && useradd -r -g fuego -u 1000 -s /bin/bash fuego
+
+# Copy binaries from builder stage
+COPY --from=builder /src/build/src/fuegod /usr/local/bin/
+COPY --from=builder /src/build/src/walletd /usr/local/bin/
+
+# Set executable permissions
+RUN chmod +x /usr/local/bin/fuegod /usr/local/bin/walletd
+
+# Create necessary directories
+RUN mkdir -p /home/fuego/.fuego /home/fuego/.fuego-wallet /home/fuego/logs && \
+    chown -R fuego:fuego /home/fuego
+
+# Switch to fuego user
+USER fuego
+WORKDIR /home/fuego
+
+# Create volume for blockchain data
+VOLUME ["/home/fuego/.fuego", "/home/fuego/.fuego-wallet", "/home/fuego/logs"]
+
+# Expose ports
+# 20808 - P2P port
+# 28280 - RPC port
+# 8070 - Wallet RPC port
+EXPOSE 20808 28280 8070
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:28280/getinfo || exit 1
+
+# Default command
+ENTRYPOINT ["fuegod"]
+CMD ["--data-dir=/home/fuego/.fuego", "--rpc-bind-ip=0.0.0.0", "--rpc-bind-port=28280"]
+
+# Labels for metadata
+LABEL maintainer="Fuego Development Team"
+LABEL description="Fuego Cryptocurrency Node - Enhanced Docker Version"
+LABEL version="latest"
+LABEL org.opencontainers.image.source="https://github.com/usexfg/fuego"
+LABEL org.opencontainers.image.documentation="https://github.com/usexfg/fuego"
+LABEL org.opencontainers.image.licenses="GPL-3.0"
+LABEL org.opencontainers.image.title="Fuego Docker"
+LABEL org.opencontainers.image.vendor="Fuego Project"

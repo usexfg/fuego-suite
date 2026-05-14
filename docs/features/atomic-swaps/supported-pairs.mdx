@@ -1,0 +1,58 @@
+---
+title: "Supported pairs"
+description: "Which chains you can swap XFG with and their respective confirmation requirements."
+keywords: ["swap pairs", "XMR", "ETH", "SOL", "BCH", "fuego", "xfg"]
+---
+
+## Available pairs
+
+| Pair | Counterparty chain | Daemon binary |
+|------|--------------------|---------------|
+| XFG ↔ XMR | Monero | `xfg-xmr-swap` |
+| XFG ↔ ETH | Ethereum | `xfg-eth-swap` |
+| XFG ↔ SOL | Solana | `xfg-sol-swap` |
+| XFG ↔ BCH | Bitcoin Cash | `xfg-bch-swap` |
+
+Each pair has a dedicated swap daemon binary. You only need to run the daemon for the pair you are using.
+
+## On-chain price discovery
+
+XFG also has on-chain swaps for price discovery. These operate within the Fuego chain itself and feed into the fee pool. Cross-chain swaps (the table above) use adaptor signatures with the counterparty chain's native transaction format.
+
+## Running a swap daemon
+
+Start the swap daemon for your chosen pair alongside `fuegod`:
+
+```bash
+# XFG ↔ XMR example
+./xfg-xmr-swap \
+  --fuego-rpc http://127.0.0.1:28080 \
+  --xmr-rpc http://127.0.0.1:18081 \
+  --data-dir ~/.xfg-xmr-swap
+```
+
+The daemon connects to both the Fuego node and the counterparty chain's node. Both nodes must be synced before initiating a swap.
+
+## Confirmation requirements
+
+Confirmation counts vary by chain to account for different reorganization risks:
+
+| Chain | Typical confirmations |
+|-------|-----------------------|
+| XFG | 10 blocks |
+| XMR | 10 blocks |
+| ETH | 30 blocks |
+| SOL | Finalized slot |
+| BCH | 6 blocks |
+
+These values may be configurable in the swap daemon — check the daemon's `--help` output for your pair.
+
+## Alias support
+
+When initiating a swap, you can use a Fuego alias instead of a full 98-character address:
+
+```
+initiate @alice 10 XMR
+```
+
+The swap daemon resolves the alias to a full address via the daemon's `/get_alias` endpoint before initiating.

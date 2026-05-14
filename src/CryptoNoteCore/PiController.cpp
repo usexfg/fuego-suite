@@ -133,6 +133,16 @@ FixedPoint64 computeTargetRatio(
         parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
   }
 
+  // ── Priority 2b: Activity-anchored (Mode 3) — on-chain metrics, no oracle ──
+  if (stabilityMode == 3 && xfgMarketValue > 0) {
+    FixedPoint64 activityRatio = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+    if (!activityRatio.isZero() && !currentTwap.isZero()) {
+      FixedPoint64 launchRatio = FixedPoint64::fromRatio(
+        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+      return launchRatio.mul(activityRatio);
+    }
+  }
+
   // ── Priority 3: Launch TWAP → self-referencing formula ──
   if (!currentTwap.isZero() && !launchTwap.isZero()) {
     FixedPoint64 launchRatio = FixedPoint64::fromRatio(

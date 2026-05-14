@@ -396,6 +396,9 @@ namespace CryptoNote {
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
     CryptoNote::HeatMintEngine m_heatMintEngine;
+    uint64_t m_activitySmoothed = 0;
+    uint64_t m_activityBaseline = 0;
+    bool     m_activityBaselineSet = false;
 
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;

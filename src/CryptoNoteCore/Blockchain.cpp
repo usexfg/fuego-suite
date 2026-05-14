@@ -224,6 +224,9 @@ public:
 
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
+      s(m_bs.m_activitySmoothed, "activity_smoothed");
+      s(m_bs.m_activityBaseline, "activity_baseline");
+      s(m_bs.m_activityBaselineSet, "activity_baseline_set");
       s(m_bs.m_ammPool, "amm_pool");
       s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
       s(m_bs.m_twapBlockCount, "twap_block_count");
@@ -2980,10 +2983,30 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           oracleValue = m_xfgMarketValue;
       }
 
+      // Mode 3: activity-anchored ratio (on-chain metrics only)
+      if (parameters::HEAT_STABILITY_MODE == 3 && m_activityBaselineSet
+          && m_activityBaseline > 0 && m_activitySmoothed > 0) {
+        oracleValue = (uint64_t)(((unsigned __int128)m_activityBaseline
+          * parameters::VALUE_SCALE) / m_activitySmoothed);
+      }
+
       FixedPoint64 targetRatio = computeTargetRatio(
         m_piState, parameters::HEAT_STABILITY_MODE, launchTwap, currentTwap, oracleValue);
 
       computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration);
+
+      // Activity tracking for Mode 3 (activity-anchored formula)
+      uint64_t epochActivity = m_currentEpochSwapFees + m_ammPool.reserveXfg / 100
+                             + m_ammPool.reserveHeat / 100;
+      if (m_activitySmoothed == 0)
+        m_activitySmoothed = epochActivity;
+      else
+        m_activitySmoothed = (m_activitySmoothed * (100 - parameters::ACTIVITY_SMOOTH_WEIGHT)
+                           + epochActivity * parameters::ACTIVITY_SMOOTH_WEIGHT) / 100;
+      if (!m_activityBaselineSet) {
+        m_activityBaseline = m_activitySmoothed;
+        m_activityBaselineSet = true;
+      }
     }
     int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : 0;
     // Reset TWAP for next epoch

@@ -181,10 +181,13 @@ namespace CryptoNote
         const uint32_t STARK_TARGET_CHAIN_ARB    = 42161; // Arbitrum One
 
         // HEAT stability mode — data-driven auto-selection
-        // Mode 0: Launch-ratio only (0.2 × launch / current — self-referencing)
-        // Mode 1: Value-band only ($1–$3, requires oracle)
-        // Mode 2: Auto (basin > oracle > launch-ratio > fixed 0.2)
-        const uint8_t  HEAT_STABILITY_MODE = 2;                    // 0=launch, 1=oracle, 2=auto
+        // Mode 0: Launch-ratio only (self-referencing via Hearth TWAP)
+        // Mode 1: Value-band only (requires swapxfg oracle)
+        // Mode 2: Auto (basin > oracle > launch-ratio > fixed)
+        // Mode 3: Activity-anchored (on-chain metrics, no oracle)
+        const uint8_t  HEAT_STABILITY_MODE = 2;                    // 0=launch, 1=oracle, 2=auto, 3=activity
+        const uint64_t ACTIVITY_SMOOTH_WEIGHT = 5;                // 5% weight to current epoch activity
+        const uint32_t ACTIVITY_BASELINE_EPOCHS = 55;             // snap after ~9 months (55 epochs
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.1 XFG per HEAT at launch (10 HEAT per 1 XFG)
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 10;              // target = 0.1 × launch_twap / current_twap
         const uint64_t HEAT_VALUE_FLOOR = 100;                     // 1.00 (scaled by VALUE_SCALE)

@@ -2987,73 +2987,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
 
-    // CD yield distribution: buy HEAT from Hearth fee-free for CD holders
-    uint64_t epochFees = m_currentEpochSwapFees;
-    if (epochFees > 0) {
-      m_blockEpochDistributions.push_back(
-        std::make_pair(m_currentEpochSwapFees, block.height));
-      while (m_blockEpochDistributions.size() > 100)
-        m_blockEpochDistributions.pop_front();
-
-      uint64_t cdShare = (epochFees * parameters::SWAP_FEE_CD_SHARE_PCT) / 100;
-      uint64_t treasuryShare = (epochFees * parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
-      m_cdYieldPool += cdShare;
-      m_treasuryBalance += treasuryShare;
-      m_currentEpochSwapFees = 0;
-
-      // Mint HEAT for CD yield — protocol burns accumulated XFG revenue
-      // at the current PI redemption rate. Pool is NOT touched.
-      if (m_cdYieldPool > 0 && !m_piState.redemptionPrice.isZero()) {
-        FixedPoint64 one = FixedPoint64::one();
-        FixedPoint64 spendRateFloor = FixedPoint64::fromRatio(
-          parameters::CD_YIELD_SPEND_RATE_FLOOR, 100);
-        FixedPoint64 spendRateCap = FixedPoint64::fromRatio(
-          parameters::CD_YIELD_SPEND_RATE_CAP, 100);
-        FixedPoint64 spendRate = one.add(m_piState.redemptionRate);
-        if (spendRate > spendRateCap) spendRate = spendRateCap;
-        if (spendRate < spendRateFloor) spendRate = spendRateFloor;
-
-        FixedPoint64 poolFp = FixedPoint64::fromUint64(m_cdYieldPool);
-        FixedPoint64 spend = poolFp.mul(spendRate);
-        uint64_t xfgToSpend = spend.toUint64();
-
-        // Smooth with reserve
-        if (xfgToSpend > m_cdYieldPool && m_cdReserve > 0) {
-          uint64_t draw = std::min(xfgToSpend - m_cdYieldPool, m_cdReserve);
-          m_cdReserve -= draw;
-          xfgToSpend = m_cdYieldPool + draw;
-        } else if (xfgToSpend < m_cdYieldPool) {
-          m_cdReserve += (m_cdYieldPool - xfgToSpend);
-        } else {
-          xfgToSpend = m_cdYieldPool;
-        }
-        if (xfgToSpend > m_cdYieldPool) xfgToSpend = m_cdYieldPool;
-
-        // Burn XFG → mint HEAT at current PI redemption price
-        if (xfgToSpend > 0) {
-          FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToSpend);
-          FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);  // HEAT = XFG / price
-          uint64_t heatMinted = heatFp.toUint64();
-
-          if (heatMinted > 0) {
-            m_cdYieldPool -= xfgToSpend;
-            m_heatSupply += heatMinted;
-            m_heatCdFeePool += heatMinted;
-            // Track burned XFG in BankingIndex for supply accounting
-            m_bankingIndex.addForeverDeposit(xfgToSpend, block.height);
-          }
-        }
-
-        // Cap reserve at 2× pool
-        uint64_t reserveCap = m_cdYieldPool * parameters::CD_RESERVE_CAP / 100;
-        if (m_cdReserve > reserveCap) {
-          m_treasuryBalance += (m_cdReserve - reserveCap);
-          m_cdReserve = reserveCap;
-        }
-      }
-    } else {
-      m_currentEpochSwapFees = 0;
-    }
+    // CD yield is processed in pushBlock (consolidated epoch processing).
+    // m_currentEpochSwapFees is already consumed+reset by pushBlock at this point.
 
     // Protocol pool rebalancing: single-sided LP add when pool drifts beyond basin band.
     // Protocol-only — external actors cannot rebalance single-sided.
@@ -3553,7 +3488,51 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       m_rolloverVaultBalance += rolloverShare;
       m_totalRolloverAccrued += rolloverShare;
     }
-    // CD share (80%) remains in m_feePoolBalance for interest payouts
+    // CD share (69%) — allocate to yield pool for HEAT minting
+    if (cdShare > 0 && m_feePoolBalance >= cdShare) {
+      m_feePoolBalance -= cdShare;
+      m_cdYieldPool += cdShare;
+    }
+
+    // CD yield: burn accumulated XFG pool → mint HEAT at PI redemption rate
+    if (m_cdYieldPool > 0 && !m_piState.redemptionPrice.isZero()) {
+      FixedPoint64 one = FixedPoint64::one();
+      FixedPoint64 srFloor = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_FLOOR, 100);
+      FixedPoint64 srCap = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_CAP, 100);
+      FixedPoint64 spendRate = one.add(m_piState.redemptionRate);
+      if (spendRate > srCap) spendRate = srCap;
+      if (spendRate < srFloor) spendRate = srFloor;
+
+      FixedPoint64 poolFp = FixedPoint64::fromUint64(m_cdYieldPool);
+      uint64_t xfgToSpend = poolFp.mul(spendRate).toUint64();
+
+      if (xfgToSpend > m_cdYieldPool && m_cdReserve > 0) {
+        uint64_t draw = std::min(xfgToSpend - m_cdYieldPool, m_cdReserve);
+        m_cdReserve -= draw;
+        xfgToSpend = m_cdYieldPool + draw;
+      } else if (xfgToSpend < m_cdYieldPool) {
+        m_cdReserve += (m_cdYieldPool - xfgToSpend);
+      }
+      if (xfgToSpend > m_cdYieldPool) xfgToSpend = m_cdYieldPool;
+
+      if (xfgToSpend > 0 && !m_piState.redemptionPrice.isZero()) {
+        FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToSpend);
+        FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);
+        uint64_t heatMinted = heatFp.toUint64();
+        if (heatMinted > 0) {
+          m_cdYieldPool -= xfgToSpend;
+          m_heatSupply += heatMinted;
+          m_heatCdFeePool += heatMinted;
+          m_bankingIndex.addForeverDeposit(xfgToSpend, newHeight);
+        }
+      }
+
+      uint64_t reserveCap = m_cdYieldPool * parameters::CD_RESERVE_CAP / 100;
+      if (m_cdReserve > reserveCap) {
+        m_treasuryBalance += (m_cdReserve - reserveCap);
+        m_cdReserve = reserveCap;
+      }
+    }
 
     // Record the full epoch accumulator as this block's contribution before resetting.
     // popBlock will subtract this value and pop the matching m_epochFeeRates entry.

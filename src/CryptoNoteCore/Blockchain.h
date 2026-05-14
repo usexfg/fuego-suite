@@ -419,6 +419,8 @@ namespace CryptoNote {
     TransactionMap m_transactionMap;
     MultisignatureOutputsContainer m_multisignatureOutputs;
     CommitmentOutputsContainer     m_commitmentOutputs;
+    // LP share tracking: maps global commitment output index → LP shares held
+    parallel_flat_hash_map<uint64_t, uint64_t> m_lpCommitmentShares;
 
     // Fee pool: accumulates swap fees, distributed as interest to CD holders.
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)

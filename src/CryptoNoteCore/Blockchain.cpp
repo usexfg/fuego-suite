@@ -225,6 +225,7 @@ public:
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
       s(m_bs.m_ammPool, "amm_pool");
+      s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
       s(m_bs.m_twapBlockCount, "twap_block_count");
       {
         uint64_t twap_lo = (uint64_t)(m_bs.m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
@@ -3863,6 +3864,17 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           m_ammPool.reserveXfg += add.amountXfg;
           m_ammPool.reserveHeat += add.amountHeat;
           m_ammPool.totalLpShares += shares;
+          // Track LP shares by global commitment output index for per-user fee claims
+          for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
+            if (transaction.tx.outputs[o].target.type() == typeid(TransactionOutputCommitment)) {
+              const auto& co = boost::get<TransactionOutputCommitment>(transaction.tx.outputs[o].target);
+              if (co.term == parameters::DEPOSIT_TERM_LP) {
+                uint64_t gidx = transaction.m_global_output_indexes[o];
+                m_lpCommitmentShares[gidx] = shares;
+                break;
+              }
+            }
+          }
         } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
           const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
           uint64_t amountXfg = 0, amountHeat = 0;

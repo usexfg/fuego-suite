@@ -243,6 +243,10 @@ public:
       s(m_bs.m_cdReserve, "cd_reserve");
       s(m_bs.m_heatCdFeePool, "heat_cd_fee_pool");
       s(m_bs.m_protocolLpShares, "protocol_lp_shares");
+      s(m_bs.m_treasuryLpYield, "treasury_lp_yield");
+      s(m_bs.m_bootstrapRepaid, "bootstrap_repaid");
+      s(m_bs.m_bootstrapXfgOwed, "bootstrap_xfg_owed");
+      s(m_bs.m_bootstrapRepaymentVault, "bootstrap_repayment_vault");
 
     auto dur = std::chrono::steady_clock::now() - start;
 
@@ -3534,6 +3538,31 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       }
     }
 
+    // Treasury LP yield: protocol claims its proportional share of accumulated LP fees
+    if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0
+        && m_ammPool.accumulatedLpFees > 0) {
+      uint64_t treasuryFeeShare = (m_ammPool.accumulatedLpFees * m_protocolLpShares)
+                                / m_ammPool.totalLpShares;
+      m_ammPool.accumulatedLpFees -= treasuryFeeShare;
+      m_treasuryBalance += treasuryFeeShare;
+      m_treasuryLpYield += treasuryFeeShare;
+    }
+
+    // Bootstrap repayment: 20% of treasury inflow → repayment vault
+    if (!m_bootstrapRepaid && m_bootstrapXfgOwed > 0 && treasuryShare > 0) {
+      uint64_t repayShare = (treasuryShare * parameters::TREASURY_REPAYMENT_PCT) / 100;
+      if (repayShare > 0 && m_treasuryBalance >= repayShare) {
+        m_treasuryBalance -= repayShare;
+        m_bootstrapRepaymentVault += repayShare;
+        if (m_bootstrapRepaymentVault >= m_bootstrapXfgOwed) {
+          m_bootstrapRepaid = true;
+          logger(INFO) << "=== Bootstrap liquidity repaid ==="
+                       << " vault=" << m_bootstrapRepaymentVault
+                       << " owed=" << m_bootstrapXfgOwed;
+        }
+      }
+    }
+
     // Record the full epoch accumulator as this block's contribution before resetting.
     // popBlock will subtract this value and pop the matching m_epochFeeRates entry.
     m_blockSwapFeeContributions.push_back(epochSwapFees);
@@ -4387,6 +4416,14 @@ bool Blockchain::isBlockInMainChain(const Crypto::Hash& blockId) {
 
 bool Blockchain::isInCheckpointZone(const uint32_t height) {
   return m_checkpoints.is_in_checkpoint_zone(height);
+}
+
+void Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
+  if (!m_bootstrapRepaid && m_bootstrapXfgOwed == 0) {
+    m_bootstrapXfgOwed = xfg;
+    (void)heat;
+    m_bootstrapRepaymentVault = 0;
+  }
 }
 
 }  // namespace CryptoNote

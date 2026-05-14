@@ -116,13 +116,17 @@ namespace CryptoNote {
     // Caller must ensure funds are escrowed before calling — this does NOT move funds.
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     void setXfgMarketValue(uint64_t val) {
-      if (val == 0) return;  // zero only via epoch staleness timeout
+      if (val == 0) return;
       if (m_xfgMarketValue > 0) {
         if (val < m_xfgMarketValue / 5 || val > m_xfgMarketValue * 5) return;
       }
       m_xfgMarketValue = val;
       m_xfgMarketValueHeight = static_cast<uint32_t>(m_blocks.size());
     }
+    void setBootstrapAmount(uint64_t xfg, uint64_t heat);
+    uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
+    uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
+    bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     uint64_t getRolloverVaultBalance() const { return m_rolloverVaultBalance; }
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
@@ -400,6 +404,10 @@ namespace CryptoNote {
     uint64_t m_cdReserve = 0;
     uint64_t m_heatCdFeePool = 0;
     uint64_t m_protocolLpShares = 0;
+    uint64_t m_treasuryLpYield = 0;
+    bool     m_bootstrapRepaid = false;
+    uint64_t m_bootstrapXfgOwed = 0;
+    uint64_t m_bootstrapRepaymentVault = 0;
     TransactionMap m_transactionMap;
     MultisignatureOutputsContainer m_multisignatureOutputs;
     CommitmentOutputsContainer     m_commitmentOutputs;

@@ -32,6 +32,12 @@
       ]
     },
     {
+      "group": "Core architecture",
+      "pages": [
+        "fuego-dual-asset-architecture"
+      ]
+    },
+    {
       "group": "Commitment deposits (CDs)",
       "pages": [
         "features/commitment-deposits/how-cds-work",
@@ -54,6 +60,7 @@
     {
       "group": "HEAT burns",
       "pages": [
+        "features/heat-burns/burn2mint-manifesto",
         "features/heat-burns/what-are-burns",
         "features/heat-burns/burning-xfg",
         "features/heat-burns/generating-proofs"
@@ -77,6 +84,8 @@
       "group": "Tutorials",
       "pages": [
         "tutorials/your-first-deposit",
+        "tutorials/hearth-amm-cd-real-yield",
+        "tutorials/fuego-tui-node-management",
         "tutorials/earning-interest",
         "tutorials/swapping-chains"
       ]

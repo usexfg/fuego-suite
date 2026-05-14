@@ -222,6 +222,8 @@ namespace CryptoNote
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
         const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum pool depth for stability
         const uint64_t HEARTH_MIN_HEAT_DEPTH = 25000;              // 25,000 HEAT (at launch ratio 0.2)
+        const uint64_t TREASURY_REPAYMENT_PCT = 20;                // 20% of treasury inflow → bootstrap repayment
+        const uint64_t TREASURY_LP_YIELD_PCT = 100;                // 100% of protocol LP fees → treasury balance
 
         // Hearth pool governance bootstrap (one-time initialization at v11 activation)
         const uint64_t HEARTH_INITIAL_XFG  = 100U * 10000000U;      // 100 XFG @ 10M atomic/XFG

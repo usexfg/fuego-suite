@@ -160,8 +160,8 @@
     "hash": "9fb31eed3533b65c80a54e1c1cd4beab"
   },
   "/Users/aejt/xfgo/tui/main.go": {
-    "mtime": 1778747934.410901,
-    "hash": "6fd6aa5e1251e5704958e62d28bd5fb0"
+    "mtime": 1778750327.897023,
+    "hash": "3fca684b32da154494cf799e4a1f3c72"
   },
   "/Users/aejt/xfgo/include/BinaryArray.hpp": {
     "mtime": 1778216352.3508842,
@@ -2220,8 +2220,8 @@
     "hash": "f63a6876f5929f9a83871d7cdf76154f"
   },
   "/Users/aejt/xfgo/src/CryptoNoteConfig.h": {
-    "mtime": 1778744598.8787818,
-    "hash": "942dafc9cb71f0ef99a65bcefc85e385"
+    "mtime": 1778751409.9750817,
+    "hash": "11fc2ad3b43c5c1cb744f9d6e274f09b"
   },
   "/Users/aejt/xfgo/src/EldernodeIndexManager.h": {
     "mtime": 1778216352.391582,
@@ -2252,8 +2252,8 @@
     "hash": "69a995742ed4a7bb947675eda2644fb2"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.cpp": {
-    "mtime": 1778749869.8205807,
-    "hash": "9b6b6d86ef553f9fc9b03dc02f1ed143"
+    "mtime": 1778751490.199332,
+    "hash": "7c29fb25091c9b3547ed7e3ab1c6f3cd"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/SwapOfferRelay.h": {
     "mtime": 1778216352.385769,
@@ -2320,8 +2320,8 @@
     "hash": "1d6a3ae15ad5bb5b741d922e0ea60e6b"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.h": {
-    "mtime": 1778729522.7297733,
-    "hash": "ff0eec4db7ec82997f0aa5d0dbdec2d2"
+    "mtime": 1778751539.7846467,
+    "hash": "5528c13542b5af057e1e82782f5894af"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Core.cpp": {
     "mtime": 1778749253.33088,
@@ -2488,8 +2488,8 @@
     "hash": "5f70cb4c0c4f58ee72ac0a1ffaa5b6fb"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/AmmPool.cpp": {
-    "mtime": 1778706431.941522,
-    "hash": "4077311c623c9cfaa3964d7633689ed2"
+    "mtime": 1778750489.8621233,
+    "hash": "52cf97b6c18eba9bdb524f0394ba4c43"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/TransactionApiExtra.h": {
     "mtime": 1778216352.3868523,
@@ -5067,6 +5067,10 @@
     "mtime": 1778216352.2915123,
     "hash": "3b419f9d1025775b7502da1773c7d938"
   },
+  "/Users/aejt/xfgo/docs/features/heat-burns/burn2mint-manifesto.mdx": {
+    "mtime": 1778751521.8386085,
+    "hash": "b30593b753f11b6cdf8026b214674e31"
+  },
   "/Users/aejt/xfgo/docs/features/heat-burns/burning-xfg.mdx": {
     "mtime": 1778216352.291342,
     "hash": "7113af1de7ea3cca8a3f351f4e7dadcc"
@@ -5164,8 +5168,8 @@
     "hash": "fa0851ba5804c2c582750eecb96a2d9a"
   },
   "/Users/aejt/xfgo/docs/tutorials/fuego-tui-node-management.mdx": {
-    "mtime": 1778750205.112028,
-    "hash": "c4f1ada6dedc32ed2d92b4ee36fcfbf8"
+    "mtime": 1778750835.8643265,
+    "hash": "4d9d97fc67a69d546d6ad072b0fb98fe"
   },
   "/Users/aejt/xfgo/docs/tutorials/swapping-chains.mdx": {
     "mtime": 1778216352.2962494,
@@ -5174,6 +5178,10 @@
   "/Users/aejt/xfgo/docs/tutorials/earning-interest.mdx": {
     "mtime": 1778216352.2961721,
     "hash": "8662114afb6342698ec2450dc78696be"
+  },
+  "/Users/aejt/xfgo/docs/tutorials/hearth-amm-cd-real-yield.mdx": {
+    "mtime": 1778751467.263228,
+    "hash": "12a7fac3cd4dea386a86f934c56264e8"
   },
   "/Users/aejt/xfgo/external/CMakeLists.txt": {
     "mtime": 1778661119.9461339,

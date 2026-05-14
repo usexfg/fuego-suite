@@ -188,8 +188,9 @@ namespace CryptoNote
         const uint8_t  HEAT_STABILITY_MODE = 2;                    // 0=launch, 1=oracle, 2=auto, 3=activity
         const uint64_t ACTIVITY_SMOOTH_WEIGHT = 5;                // 5% weight to current epoch activity
         const uint32_t ACTIVITY_BASELINE_EPOCHS = 55;             // snap after ~9 months (55 epochs
-        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.01 XFG per HEAT (100 HEAT per 1 XFG at launch)
-        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 100;              // HEAT = 100× more numerous than XFG (MoE design)
+        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 1.0 (1 XFG = 1 HEAT at launch parity)
+        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 1;                // target = (launch_twap/current_twap) ^ DAMPING
+        const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 25% the rate of XFG
         const uint64_t HEAT_VALUE_FLOOR = 100;                     // 1.00 (scaled by VALUE_SCALE)
         const uint64_t HEAT_VALUE_CEILING = 300;                   // 3.00 (scaled by VALUE_SCALE)
         const uint64_t VALUE_SCALE = 100;                          // 2 decimal places

@@ -143,11 +143,18 @@ FixedPoint64 computeTargetRatio(
     }
   }
 
-  // ── Priority 3: Launch TWAP → self-referencing formula ──
+  // ── Priority 3: Launch TWAP → damped self-referencing formula ──
+  // target = LAUNCH_RATIO × (launch_twap / current_twap) ^ DAMPING
+  // HEAT appreciates with XFG but slower (DAMPING=0.25 → 1/4 the rate)
   if (!currentTwap.isZero() && !launchTwap.isZero()) {
     FixedPoint64 launchRatio = FixedPoint64::fromRatio(
       parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
-    return launchRatio.mul(launchTwap).div(currentTwap);
+    FixedPoint64 priceRatio = launchTwap.div(currentTwap);
+    FixedPoint64 dampingFp = FixedPoint64::fromRatio(
+      parameters::PI_DAMPING_FACTOR, 100);
+    FixedPoint64 dampedRatio = FixedPoint64::exp_approx(
+      dampingFp.mul(FixedPoint64::ln_approx(priceRatio)));
+    return launchRatio.mul(dampedRatio);
   }
 
   // ── Priority 4: Bootstrap ──

@@ -1484,7 +1484,7 @@ double Currency::getBurnPercentage() const {
 
     depositTermForever(parameters::DEPOSIT_TERM_FOREVER);
 
-    // HEAT conversion rate (0.8 XFG = 8M HEAT)
+    // HEAT conversion rate (1 XFG = 5 HEAT at launch ratio)
     heatConversionRate(10000000);
 
     // Dynamic money supply initialization

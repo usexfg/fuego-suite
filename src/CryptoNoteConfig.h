@@ -122,18 +122,18 @@ namespace CryptoNote
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
-		// MAINNET BURN/COLD/LP TIERS
-        const uint64_t AMOUNT_TIER_0 =     8000000;  // 0.8 XFG (8,000,000 atomic heat) 8M HEAT
-        const uint64_t AMOUNT_TIER_1 =    80000000;  // 8 XFG (80,000,000 atomic heat) 80M HEAT
-        const uint64_t AMOUNT_TIER_2 =   800000000;  // 80 XFG (800,000,000 atomic heat) 800M HEAT
-        const uint64_t AMOUNT_TIER_3 =  8000000000;  // 800 XFG (8,000,000,000 atomic heat) 8B HEAT
-        // TESTNET BURN/COLD/LP TIERS
-        const uint64_t TEST_AMOUNT_TIER_0 =     800000;  //0.08 TEST (800,000 atomic units)
-        const uint64_t TEST_AMOUNT_TIER_1 =    8000000;  //0.8 TEST (8,000,000 atomic units)
-        const uint64_t TEST_AMOUNT_TIER_2 =   80000000;  // 8 TEST (80,000,000 atomic units)
-        const uint64_t TEST_AMOUNT_TIER_3 =  800000000;  // 80 TEST (800,000,000 atomic units)
+		// HEAT CD denominations (atomic units, 7 decimal places)
+        const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 HEAT
+        const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 HEAT
+        const uint64_t AMOUNT_TIER_2 =  8000000000;  // 800 HEAT
+        const uint64_t AMOUNT_TIER_3 = 80000000000;  // 8,000 HEAT
+        // TESTNET TIERS
+        const uint64_t TEST_AMOUNT_TIER_0 =    8000000;  // 0.8 HEAT
+        const uint64_t TEST_AMOUNT_TIER_1 =   80000000;  // 8 HEAT
+        const uint64_t TEST_AMOUNT_TIER_2 =  800000000;  // 80 HEAT
+        const uint64_t TEST_AMOUNT_TIER_3 = 8000000000;  // 800 HEAT
 
-        // Epoch duration for XFG_CD terms & fees/interest distribution
+        // Epoch duration for HEAT CD terms & fees/interest distribution
         const uint64_t EPOCH_DURATION_BLOCKS = 900;  // 5 days (180 blks/day)        // Mainnet: 900 blocks (5 days at 480s/block)
         const uint64_t TESTNET_EPOCH_DURATION_BLOCKS = 10;       // Testnet: 10 blocks (fast epochs for testing)
 
@@ -158,9 +158,9 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
-        // MAINNET DEPOSITS
-        const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 0.8 XFG
-        const uint64_t BURN_DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;  // 0.8 XFG (8,000,000 heat units) 8M HEAT
+        // HEAT Deposits
+        const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 8 HEAT minimum CD
+        const uint64_t BURN_DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;  // 8 HEAT minimum burn
         // CD term limits in blocks (derived from epochs)
         const uint32_t DEPOSIT_MIN_TERM = CD_MIN_EPOCHS * EPOCH_DURATION_BLOCKS;  // 900 blocks (~5 days mainnet)
         const uint32_t DEPOSIT_MAX_TERM = CD_MAX_EPOCHS * EPOCH_DURATION_BLOCKS;  // 64,800 blocks (~1 year)

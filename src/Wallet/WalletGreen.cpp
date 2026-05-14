@@ -1109,7 +1109,7 @@ namespace CryptoNote
         m_logger(DEBUGGING, BRIGHT_GREEN) << "Generated HEAT commitment: " << Common::podToHex(finalCommitment.commitment);
       }
 
-      /* Calculate HEAT amount based on XFG amount (0.8 XFG = 8M HEAT) */
+      /* Calculate HEAT amount based on XFG amount at PI redemption rate */
       uint64_t heatAmount = DepositCommitmentGenerator::convertXfgToHeat(amount);
 
       /* Add HEAT commitment to transaction extra */

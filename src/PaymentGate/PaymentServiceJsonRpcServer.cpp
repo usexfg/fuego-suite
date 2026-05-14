@@ -328,7 +328,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
 
   if (!result) {
     response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 0.8 XFG = 8M HEAT
+    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
 
     // Store secret locally
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
@@ -406,7 +406,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositWithProof(co
 
   if (!result) {
     response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 0.8 XFG = 8M HEAT
+    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
 
     // Generate BPDF with network ID
     std::string outputPath = service.getDefaultWalletPath() + "/bpdf/" + response.transactionHash + ".json";
@@ -448,7 +448,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const 
 
   if (!result) {
     response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 800 XFG = 8,000,000,000 HEAT
+    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
 
     //  ADD: Store secret locally (never on blockchain)
     service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
@@ -510,7 +510,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLargeWithPro
 
   if (!result) {
     response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);  // 800 XFG = 8,000,000,000 HEAT
+    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
 
     //  ADD: Generate BPDF with network ID
     std::string outputPath = service.getDefaultWalletPath() + "/bpdf/" + response.transactionHash + ".json";

@@ -366,6 +366,25 @@ namespace CryptoNote {
     typedef parallel_flat_hash_map<Crypto::Hash, TransactionIndex> TransactionMap;
     typedef BasicUpgradeDetector<Blocks> UpgradeDetector;
 
+    // Stores epoch-level state before processing for popBlock reversal
+    struct EpochStateSnapshot {
+      uint64_t heatSupply;
+      uint64_t heatCdFeePool;
+      uint64_t cdYieldPool;
+      uint64_t cdReserve;
+      uint64_t treasuryBalance;
+      uint64_t protocolLpShares;
+      uint64_t treasuryLpYield;
+      uint64_t bootstrapRepaymentVault;
+      uint64_t twapAccumulatorLo;
+      uint64_t twapAccumulatorHi;
+      uint64_t twapBlockCount;
+      uint64_t ammReserveXfg;
+      uint64_t ammReserveHeat;
+      uint64_t ammTotalLpShares;
+      uint64_t ammAccumulatedLpFees;
+    };
+
     friend class BlockCacheSerializer;
     friend class BlockchainIndicesSerializer;
 
@@ -408,7 +427,9 @@ namespace CryptoNote {
     uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
     // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
     std::deque<uint64_t> m_blockSwapFeeContributions;
-    std::deque<std::pair<uint64_t, uint64_t>> m_blockEpochDistributions;  // <treasuryShare, rolloverShare> for epoch boundaries
+    std::deque<std::pair<uint64_t, uint64_t>> m_blockEpochDistributions;  // <treasuryShare, rolloverShare>
+    // Epoch state snapshots for popBlock reversal
+    std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)
     uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool

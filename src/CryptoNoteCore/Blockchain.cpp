@@ -3454,6 +3454,24 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
       : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
   if (newHeight > 0 && newHeight % epochDuration == 0) {
+    // Save pre-epoch snapshot for popBlock reversal
+    EpochStateSnapshot preEpoch;
+    preEpoch.heatSupply = m_heatSupply;
+    preEpoch.heatCdFeePool = m_heatCdFeePool;
+    preEpoch.cdYieldPool = m_cdYieldPool;
+    preEpoch.cdReserve = m_cdReserve;
+    preEpoch.treasuryBalance = m_treasuryBalance;
+    preEpoch.protocolLpShares = m_protocolLpShares;
+    preEpoch.treasuryLpYield = m_treasuryLpYield;
+    preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
+    preEpoch.twapAccumulatorLo = (uint64_t)(m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
+    preEpoch.twapAccumulatorHi = (uint64_t)(m_twapAccumulator >> 64);
+    preEpoch.twapBlockCount = m_twapBlockCount;
+    preEpoch.ammReserveXfg = m_ammPool.reserveXfg;
+    preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
+    preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
+    preEpoch.ammAccumulatedLpFees = m_ammPool.accumulatedLpFees;
+
     uint64_t epochNumber = newHeight / epochDuration;
     uint64_t epochStart = (epochNumber - 1) * epochDuration;
     uint64_t epochEnd = epochStart + epochDuration - 1;
@@ -3566,6 +3584,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // popBlock will subtract this value and pop the matching m_epochFeeRates entry.
     m_blockSwapFeeContributions.push_back(epochSwapFees);
     m_blockEpochDistributions.push_back({treasuryShare, rolloverShare});
+    m_epochSnapshots.push_back({newHeight, preEpoch});
+    while (m_epochSnapshots.size() > 100)
+      m_epochSnapshots.pop_front();
 
     // Reset epoch accumulator for next epoch
     m_currentEpochSwapFees = 0;
@@ -3683,6 +3704,26 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
       // Non-boundary block: simply subtract the fee delta that was added.
       m_currentEpochSwapFees -= contribution;
     }
+  }
+
+  // Restore epoch-level state if the popped block was an epoch boundary
+  if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight) {
+    const auto& snap = m_epochSnapshots.back().second;
+    m_heatSupply = snap.heatSupply;
+    m_heatCdFeePool = snap.heatCdFeePool;
+    m_cdYieldPool = snap.cdYieldPool;
+    m_cdReserve = snap.cdReserve;
+    m_treasuryBalance = snap.treasuryBalance;
+    m_protocolLpShares = snap.protocolLpShares;
+    m_treasuryLpYield = snap.treasuryLpYield;
+    m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;
+    m_twapAccumulator = ((unsigned __int128)snap.twapAccumulatorHi << 64) | snap.twapAccumulatorLo;
+    m_twapBlockCount = snap.twapBlockCount;
+    m_ammPool.reserveXfg = snap.ammReserveXfg;
+    m_ammPool.reserveHeat = snap.ammReserveHeat;
+    m_ammPool.totalLpShares = snap.ammTotalLpShares;
+    m_ammPool.accumulatedLpFees = snap.ammAccumulatedLpFees;
+    m_epochSnapshots.pop_back();
   }
 
   m_blocks.pop_back();

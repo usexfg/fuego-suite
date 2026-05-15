@@ -147,6 +147,9 @@ if(STATIC)
 endif()
 
 #set(Boost_DEBUG on)
+if(APPLE)
+  set(Boost_NO_BOOST_CMAKE ON)
+endif()
 find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 

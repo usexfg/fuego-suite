@@ -3525,16 +3525,34 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       m_cdYieldPool += cdShare;
     }
 
-    // CD yield: buy HEAT from Hearth (fee-free) using accumulated CD pool.
+    // CD yield: buy HEAT from Hearth, or mint if pool too lopsided.
     if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
       uint64_t heatBought = ammGetOutputAmount(m_cdYieldPool,
         m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
 
-      if (heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
+      // Check if buying would make pool too XFG-heavy
+      uint64_t postBuyXfg = m_ammPool.reserveXfg + m_cdYieldPool;
+      uint64_t postBuyHeat = (heatBought > 0 && heatBought <= m_ammPool.reserveHeat)
+                           ? m_ammPool.reserveHeat - heatBought : m_ammPool.reserveHeat;
+      uint64_t postBuyRatio = postBuyHeat > 0 ? (postBuyXfg * 100) / postBuyHeat : 999;
+      bool poolCanHandleBuy = postBuyRatio <= 400; // 4:1 threshold
+
+      if (poolCanHandleBuy && heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
+        // Buy from Hearth — structural demand, LP fees, pool stays healthy
         m_ammPool.reserveXfg += m_cdYieldPool;
         m_ammPool.reserveHeat -= heatBought;
-        m_cdYieldPool = 0;
         m_heatCdFeePool += heatBought;
+        m_cdYieldPool = 0;
+      } else if (!m_piState.redemptionPrice.isZero()) {
+        // Pool too lopsided — mint HEAT at PI rate, skip pool interaction
+        FixedPoint64 xfgFp = FixedPoint64::fromUint64(m_cdYieldPool);
+        FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);
+        uint64_t heatMinted = heatFp.toUint64();
+        if (heatMinted > 0) {
+          m_heatSupply += heatMinted;
+          m_heatCdFeePool += heatMinted;
+          m_cdYieldPool = 0;
+        }
       }
     }
 

@@ -180,14 +180,16 @@ namespace CryptoNote
         const uint32_t STARK_TARGET_CHAIN_ETH    = 1;     // Ethereum mainnet
         const uint32_t STARK_TARGET_CHAIN_ARB    = 42161; // Arbitrum One
 
-        // HEAT stability mode — simple, transparent, anchored
-        // Mode 0: Fixed ratio (0.2 forever, no adjustments)
-        // Mode 1: Oracle-only (price-anchored via swapxfg, falls to 0.2 if no data)
-        // Mode 2: Auto — basin > oracle > fixed (DEFAULT)
+        // HEAT stability — two-phase bootstrap-to-band model
+        // Phase 1: fixed 0.2 (until XFG ≥ $3 AND oracle data exists)
+        // Phase 2: $1-$3 floating band (PI maintains HEAT in value band)
         const uint8_t  HEAT_STABILITY_MODE = 2;
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT)
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
-        const uint64_t VALUE_SCALE = 100;                          // scale for oracle XFG market value
+        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 300;       // $3.00 (scaled by VALUE_SCALE)
+        const uint64_t HEAT_VALUE_FLOOR = 100;                     // $1.00 band floor
+        const uint64_t HEAT_VALUE_CEILING = 300;                   // $3.00 band ceiling
+        const uint64_t VALUE_SCALE = 100;                          // cents scale for oracle values
 
         // PI Controller gains (simulation-validated: insane_vol_test.py)
         const uint64_t PI_KP_NUM = 8,  PI_KP_DENOM = 100;          // 0.08

@@ -110,32 +110,26 @@ FixedPoint64 computeTargetRatio(
 
   updateBasin(state, currentTwap);
 
-  // ── Priority 1: Basin locked → discovered equilibrium ──
-  if (stabilityMode != 0 && state.basinPhase == BASIN_LOCKED && !state.basinCenter.isZero()) {
-    return state.basinCenter;
-  }
+  // Two-phase stability model:
+  // Phase 1: Fixed 0.2 (until XFG ≥ activation threshold AND oracle data exists)
+  // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)
 
-  // ── Priority 2: Oracle active → price-anchored via swapxfg data ──
-  // target = LAUNCH_RATIO × launch_oracle_value / current_oracle_value
-  if (stabilityMode >= 1 && xfgMarketValue > 0) {
-    if (state.launchOracleValue == 0)
-      state.launchOracleValue = xfgMarketValue;
-    if (state.launchOracleValue > 0 && xfgMarketValue > 0) {
-      FixedPoint64 launchRatio = FixedPoint64::fromRatio(
-        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
-      FixedPoint64 launchOracle = FixedPoint64::fromRatio(
-        state.launchOracleValue, parameters::VALUE_SCALE);
-      FixedPoint64 currentOracle = FixedPoint64::fromRatio(
-        xfgMarketValue, parameters::VALUE_SCALE);
-      if (!currentOracle.isZero())
-        return launchRatio.mul(launchOracle).div(currentOracle);
+  if (xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
+    // Phase 2 — oracle data is valid and XFG has meaningful market value
+    FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+    if (!xfgPrice.isZero()) {
+      FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
+      FixedPoint64 floorV  = FixedPoint64::fromRatio(parameters::HEAT_VALUE_FLOOR,   parameters::VALUE_SCALE);
+      FixedPoint64 ceilV   = FixedPoint64::fromRatio(parameters::HEAT_VALUE_CEILING, parameters::VALUE_SCALE);
+      FixedPoint64 targetValue;
+      if      (heatValue < floorV) targetValue = floorV;
+      else if (heatValue > ceilV)  targetValue = ceilV;
+      else                          targetValue = heatValue;
+      return targetValue.div(xfgPrice);
     }
-    if (stabilityMode == 1)
-      return FixedPoint64::fromRatio(
-        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
   }
 
-  // ── Priority 3: Fixed ratio (bootstrap, no oracle, no basin) ──
+  // Phase 1 — bootstrap (fixed 0.2)
   return FixedPoint64::fromRatio(
     parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
 }

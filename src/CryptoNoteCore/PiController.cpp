@@ -110,6 +110,22 @@ FixedPoint64 computeTargetRatio(
 
   updateBasin(state, currentTwap);
 
+  // Experimental damped formula (testnet only, controlled by config bool)
+  if (parameters::HEAT_USE_DAMPED_FORMULA) {
+    if (!currentTwap.isZero() && !launchTwap.isZero()) {
+      FixedPoint64 launchRatio = FixedPoint64::fromRatio(
+        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+      FixedPoint64 priceRatio = launchTwap.div(currentTwap);
+      FixedPoint64 dampingFp = FixedPoint64::fromRatio(
+        parameters::PI_DAMPING_FACTOR, 100);
+      FixedPoint64 dampedRatio = FixedPoint64::exp_approx(
+        dampingFp.mul(FixedPoint64::ln_approx(priceRatio)));
+      return launchRatio.mul(dampedRatio);
+    }
+    return FixedPoint64::fromRatio(
+      parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+  }
+
   // Two-phase stability model:
   // Phase 1: Fixed 0.2 (until XFG ≥ activation threshold AND oracle data exists)
   // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)

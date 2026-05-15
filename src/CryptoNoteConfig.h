@@ -184,8 +184,10 @@ namespace CryptoNote
         // Phase 1: fixed 0.2 (until XFG ≥ $5 AND oracle data exists)
         // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)
         const uint8_t  HEAT_STABILITY_MODE = 2;
+        const bool     HEAT_USE_DAMPED_FORMULA = false;            // true on testnet for experimental damped model
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT)
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
+        const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 1/4 XFG rate
         const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (5:1 ratio match)
         const uint64_t HEAT_VALUE_FLOOR = 100;                     // $1.00 band floor
         const uint64_t HEAT_VALUE_CEILING = 300;                   // $3.00 band ceiling

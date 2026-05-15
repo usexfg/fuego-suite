@@ -115,49 +115,27 @@ FixedPoint64 computeTargetRatio(
     return state.basinCenter;
   }
 
-  // ── Priority 2: Oracle active → value-band ──
+  // ── Priority 2: Oracle active → price-anchored via swapxfg data ──
+  // target = LAUNCH_RATIO × launch_oracle_value / current_oracle_value
   if (stabilityMode >= 1 && xfgMarketValue > 0) {
-    FixedPoint64 xfgMarket = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
-    if (!xfgMarket.isZero()) {
-      FixedPoint64 heatValue = currentTwap.mul(xfgMarket);
-      FixedPoint64 floorV    = FixedPoint64::fromRatio(parameters::HEAT_VALUE_FLOOR,   parameters::VALUE_SCALE);
-      FixedPoint64 ceilV     = FixedPoint64::fromRatio(parameters::HEAT_VALUE_CEILING, parameters::VALUE_SCALE);
-      FixedPoint64 targetV;
-      if      (heatValue < floorV) targetV = floorV;
-      else if (heatValue > ceilV)  targetV = ceilV;
-      else                          targetV = heatValue;
-      return targetV.div(xfgMarket);
+    if (state.launchOracleValue == 0)
+      state.launchOracleValue = xfgMarketValue;
+    if (state.launchOracleValue > 0 && xfgMarketValue > 0) {
+      FixedPoint64 launchRatio = FixedPoint64::fromRatio(
+        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+      FixedPoint64 launchOracle = FixedPoint64::fromRatio(
+        state.launchOracleValue, parameters::VALUE_SCALE);
+      FixedPoint64 currentOracle = FixedPoint64::fromRatio(
+        xfgMarketValue, parameters::VALUE_SCALE);
+      if (!currentOracle.isZero())
+        return launchRatio.mul(launchOracle).div(currentOracle);
     }
     if (stabilityMode == 1)
       return FixedPoint64::fromRatio(
         parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
   }
 
-  // ── Priority 2b: Activity-anchored (Mode 3) — on-chain metrics, no oracle ──
-  if (stabilityMode == 3 && xfgMarketValue > 0) {
-    FixedPoint64 activityRatio = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
-    if (!activityRatio.isZero() && !currentTwap.isZero()) {
-      FixedPoint64 launchRatio = FixedPoint64::fromRatio(
-        parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
-      return launchRatio.mul(activityRatio);
-    }
-  }
-
-  // ── Priority 3: Launch TWAP → damped self-referencing formula ──
-  // target = LAUNCH_RATIO × (launch_twap / current_twap) ^ DAMPING
-  // HEAT appreciates with XFG but slower (DAMPING=0.25 → 1/4 the rate)
-  if (!currentTwap.isZero() && !launchTwap.isZero()) {
-    FixedPoint64 launchRatio = FixedPoint64::fromRatio(
-      parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
-    FixedPoint64 priceRatio = launchTwap.div(currentTwap);
-    FixedPoint64 dampingFp = FixedPoint64::fromRatio(
-      parameters::PI_DAMPING_FACTOR, 100);
-    FixedPoint64 dampedRatio = FixedPoint64::exp_approx(
-      dampingFp.mul(FixedPoint64::ln_approx(priceRatio)));
-    return launchRatio.mul(dampedRatio);
-  }
-
-  // ── Priority 4: Bootstrap ──
+  // ── Priority 3: Fixed ratio (bootstrap, no oracle, no basin) ──
   return FixedPoint64::fromRatio(
     parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
 }
@@ -297,6 +275,7 @@ void PiControllerState::serialize(ISerializer& s) {
   s(basinObservedEpochs, "basinObservedEpochs");
   s(basinStableEpochs, "basinStableEpochs");
   s(basinExitEpochs, "basinExitEpochs");
+  s(launchOracleValue, "launchOracleValue");
   if (s.type() == ISerializer::INPUT) {
     redemptionPrice   = FixedPoint64::fromRaw(rp);
     integralDeviation = FixedPoint64::fromRaw(id);

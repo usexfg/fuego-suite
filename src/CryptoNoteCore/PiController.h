@@ -30,13 +30,16 @@ struct PiControllerState {
 
   // Basin discovery — market-validated equilibrium
   uint8_t      basinPhase = BASIN_BOOTSTRAP;
-  FixedPoint64 basinCenter;         // discovered equilibrium (XFG/HEAT)
-  FixedPoint64 basinHalfWidth;      // stability half-range
-  FixedPoint64 basinMinSeen;        // lowest spot during observation
-  FixedPoint64 basinMaxSeen;        // highest spot during observation
-  uint32_t     basinObservedEpochs; // epochs in current phase
-  uint32_t     basinStableEpochs;   // consecutive stable epochs
-  uint32_t     basinExitEpochs;     // consecutive epochs outside basin
+  FixedPoint64 basinCenter;
+  FixedPoint64 basinHalfWidth;
+  FixedPoint64 basinMinSeen;
+  FixedPoint64 basinMaxSeen;
+  uint32_t     basinObservedEpochs;
+  uint32_t     basinStableEpochs;
+  uint32_t     basinExitEpochs;
+
+  // Oracle anchor — snapshot of first valid swapxfg data
+  uint64_t     launchOracleValue = 0;
 
   void serialize(ISerializer& s);
 };

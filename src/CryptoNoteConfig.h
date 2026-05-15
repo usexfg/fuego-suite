@@ -183,11 +183,12 @@ namespace CryptoNote
         // Milæsandra — testnet atomic swap fee simulator (self-contained testing)
         // Enables full protocol testing (CD yield, treasury, rebalancer, PI, oracle)
         // without requiring real cross-chain atomic swap activity.
-        const bool     MILAESANDRA_SIMULATE_FEES = false;          // true on testnet
+        const bool     MILAESANDRA_SIMULATE_FEES = true;           // true on testnet — active at block 638
         const uint64_t MILAESANDRA_BASE_FEES_ATOMIC = 2'000'000'000; // 2,000 XFG/epoch base
         const uint64_t MILAESANDRA_FEE_MULTIPLIER = 100;           // 1.0× scale factor
         const uint64_t MILAESANDRA_INITIAL_XFG_PRICE = 500;        // $5.00 initial (triggers activation)
         const bool     MILAESANDRA_GROWING_PRICE = false;          // true to simulate price growth
+        const uint32_t MILAESANDRA_ACTIVATION_HEIGHT = 645;       // block to start fee simulation
 
         // HEAT stability — two-phase bootstrap-to-band model
         // Phase 1: fixed 0.2 (until XFG ≥ $5 AND oracle data exists)

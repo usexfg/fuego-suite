@@ -42,8 +42,8 @@ public:
   // Simulates a price trajectory: starts low, grows over time.
   uint64_t simulateXfgPrice(const Currency& currency, uint32_t blockHeight) const;
 
-  // Returns true if fee simulation is active
-  bool isActive(const Currency& currency) const;
+  // Returns true if fee simulation is active at current block
+  bool isActive(const Currency& currency, uint32_t blockHeight = 0) const;
 
 private:
   // Internal randomness for fee variation

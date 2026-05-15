@@ -10,8 +10,10 @@ namespace CryptoNote {
 
 Milaesandra::Milaesandra() = default;
 
-bool Milaesandra::isActive(const Currency& currency) const {
-  return parameters::MILAESANDRA_SIMULATE_FEES && currency.isTestnet();
+bool Milaesandra::isActive(const Currency& currency, uint32_t blockHeight) const {
+  return parameters::MILAESANDRA_SIMULATE_FEES
+      && currency.isTestnet()
+      && blockHeight >= parameters::MILAESANDRA_ACTIVATION_HEIGHT;
 }
 
 uint64_t Milaesandra::simulateEpochFees(const Currency& currency) const {

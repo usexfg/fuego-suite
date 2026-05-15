@@ -2981,7 +2981,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       }
 
       // Milæsandra: inject simulated fees + oracle data for testnet testing
-      if (m_milaesandra.isActive(m_currency)) {
+      if (m_milaesandra.isActive(m_currency, block.height)) {
         uint64_t simFees = m_milaesandra.simulateEpochFees(m_currency);
         if (simFees > 0)
           m_currentEpochSwapFees += simFees;

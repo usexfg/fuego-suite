@@ -35,7 +35,7 @@ def red(s): return f"\033[31m{s}\033[0m"
 def green(s): return f"\033[32m{s}\033[0m"
 def cyan(s): return f"\033[36m{s}\033[0m"
 def yellow(s): return f"\033[33m{s}\033[0m"
-def clear(): os.system('clear' 2>/dev/null or True)
+def clear(): os.system('clear') if os.name == 'posix' else os.system('cls')
 
 while True:
     clear()

@@ -3502,36 +3502,17 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // Route CD share to yield pool for HEAT buyback
     m_cdYieldPool += cdShare;
 
-    // CD yield: buy HEAT from Hearth (fee-free) and distribute to CD holders.
-    // Treasury rebalancer handles any pool lopsidedness from sustained buys.
+    // CD yield: buy HEAT from Hearth (fee-free) at fixed 1.0× spend rate.
+    // PI controller adjusts mint rate only — no feedback into CD yield buying.
+    // Treasury rebalancer handles pool defense separately.
     if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
-      FixedPoint64 one = FixedPoint64::one();
-      FixedPoint64 srFloor = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_FLOOR, 100);
-      FixedPoint64 srCap = FixedPoint64::fromRatio(parameters::CD_YIELD_SPEND_RATE_CAP, 100);
-      FixedPoint64 spendRate = one.add(m_piState.redemptionRate);
-      if (spendRate > srCap) spendRate = srCap;
-      if (spendRate < srFloor) spendRate = srFloor;
-
-      FixedPoint64 poolFp = FixedPoint64::fromUint64(m_cdYieldPool);
-      uint64_t xfgToSpend = poolFp.mul(spendRate).toUint64();
-
-      if (xfgToSpend > m_cdYieldPool && m_cdReserve > 0) {
-        uint64_t draw = std::min(xfgToSpend - m_cdYieldPool, m_cdReserve);
-        m_cdReserve -= draw;
-        xfgToSpend = m_cdYieldPool + draw;
-      } else if (xfgToSpend < m_cdYieldPool) {
-        m_cdReserve += (m_cdYieldPool - xfgToSpend);
-      }
-      if (xfgToSpend > m_cdYieldPool) xfgToSpend = m_cdYieldPool;
-
-      // Buy HEAT from Hearth (fee-free, protocol CD buy)
-      uint64_t heatBought = ammGetOutputAmount(xfgToSpend,
+      uint64_t heatBought = ammGetOutputAmount(m_cdYieldPool,
         m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
 
       if (heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
-        m_ammPool.reserveXfg += xfgToSpend;
+        m_ammPool.reserveXfg += m_cdYieldPool;
         m_ammPool.reserveHeat -= heatBought;
-        m_cdYieldPool -= xfgToSpend;
+        m_cdYieldPool = 0;
         m_heatCdFeePool += heatBought;
       }
     }

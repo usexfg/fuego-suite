@@ -2977,7 +2977,17 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       if (m_xfgMarketValueHeight > 0) {
         uint32_t epochsSinceUpdate = (block.height - m_xfgMarketValueHeight) / epochDuration;
         if (epochsSinceUpdate < parameters::MAX_ORACLE_STALE_EPOCHS)
-           oracleValue = m_xfgMarketValue;
+          oracleValue = m_xfgMarketValue;
+      }
+
+      // Milæsandra: inject simulated fees + oracle data for testnet testing
+      if (m_milaesandra.isActive(m_currency)) {
+        uint64_t simFees = m_milaesandra.simulateEpochFees(m_currency);
+        if (simFees > 0)
+          m_currentEpochSwapFees += simFees;
+        uint64_t simPrice = m_milaesandra.simulateXfgPrice(m_currency, block.height);
+        if (simPrice > 0)
+          oracleValue = simPrice;
       }
 
       FixedPoint64 targetRatio = computeTargetRatio(

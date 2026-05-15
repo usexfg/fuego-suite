@@ -180,6 +180,15 @@ namespace CryptoNote
         const uint32_t STARK_TARGET_CHAIN_ETH    = 1;     // Ethereum mainnet
         const uint32_t STARK_TARGET_CHAIN_ARB    = 42161; // Arbitrum One
 
+        // Milæsandra — testnet atomic swap fee simulator (self-contained testing)
+        // Enables full protocol testing (CD yield, treasury, rebalancer, PI, oracle)
+        // without requiring real cross-chain atomic swap activity.
+        const bool     MILAESANDRA_SIMULATE_FEES = false;          // true on testnet
+        const uint64_t MILAESANDRA_BASE_FEES_ATOMIC = 2'000'000'000; // 2,000 XFG/epoch base
+        const uint64_t MILAESANDRA_FEE_MULTIPLIER = 100;           // 1.0× scale factor
+        const uint64_t MILAESANDRA_INITIAL_XFG_PRICE = 500;        // $5.00 initial (triggers activation)
+        const bool     MILAESANDRA_GROWING_PRICE = false;          // true to simulate price growth
+
         // HEAT stability — two-phase bootstrap-to-band model
         // Phase 1: fixed 0.2 (until XFG ≥ $5 AND oracle data exists)
         // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)

@@ -33,6 +33,7 @@
 #include "HeatMintEngine.h"
 #include "AmmPool.h"
 #include "PiController.h"
+#include "Milaesandra.h"
 #include "IBlockchainStorageObserver.h"
 #include "ITransactionValidator.h"
 #include "SwappedVector.h"
@@ -401,6 +402,9 @@ namespace CryptoNote {
     CryptoNote::AmmPoolState m_ammPool;
     unsigned __int128 m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
+
+    // Milæsandra — testnet fee simulator
+    CryptoNote::Milaesandra m_milaesandra;
 
     // PI Controller + CD yield state
     CryptoNote::PiControllerState m_piState;

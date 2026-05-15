@@ -198,8 +198,8 @@ namespace CryptoNote
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
         const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 1/4 XFG rate
         const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (5:1 ratio match)
-        const uint64_t HEAT_VALUE_FLOOR = 100;                     // $1.00 band floor
-        const uint64_t HEAT_VALUE_CEILING = 1000;                   // $10.00 band ceiling
+        const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor
+        const uint64_t HEAT_VALUE_CEILING = 250;                   // $2.50 band ceiling
         const uint64_t VALUE_SCALE = 100;                          // cents scale for oracle values
 
         // PI Controller gains (simulation-validated: insane_vol_test.py)

@@ -62,7 +62,7 @@ while True:
 
     pool_ratio = rsv_xfg / max(rsv_heat, 1)
     cov = treas / max(0.2, 1) / max(heat_sup, 1) * 100
-    activated = rp_num > 0 and rp_den > 0 and (rp_num / rp_den) < 0.5
+    activated = rp_num > 0 and rp_den > 0 and (rp_num / rp_den) <= 0.5  # band targets lower ratio than launch 0.2
 
     print(bold(cyan("╔══════════════════════════════════════════════════════════════╗")))
     print(bold(cyan("║")) + bold("  Milæsandra Dashboard — Testnet Live          ").center(58) + bold(cyan("║")))
@@ -73,7 +73,7 @@ while True:
     print(bold(cyan("║")) + f"  Supply: {fmt(heat_sup).rjust(30)} HEAT".ljust(61) + bold(cyan("║")))
     print(bold(cyan("║")) + f"  Burned XFG: {fmt(burned).rjust(26)} XFG".ljust(61) + bold(cyan("║")))
     print(bold(cyan("║")) + f"  Redemption: {rp:.6f} XFG/HEAT  (1 XFG = {1/rp:.0f} HEAT)".ljust(61) + bold(cyan("║")))
-    act_state = green("ACTIVATED ($1-$10 band)") if activated else yellow("BOOTSTRAP (fixed 0.2)")
+    act_state = green("ACTIVATED ($1.50-$2.50 band)") if activated else yellow("BOOTSTRAP (fixed 0.2)")
     print(bold(cyan("║")) + f"  Phase: {act_state}".ljust(61) + bold(cyan("║")))
     print(bold(cyan("╠══════════════════════════════════════════════════════════════╣")))
     print(bold(cyan("║")) + bold("  Hearth AMM Pool").ljust(60) + bold(cyan("║")))

@@ -195,7 +195,7 @@ FixedPoint64 computeNewRedemptionPrice(
   state.redemptionRate = rate;
 
   FixedPoint64 adjustment = rate.mul(blocksFrac);
-  FixedPoint64 multiplier = FixedPoint64::one().add(adjustment);
+  FixedPoint64 multiplier = FixedPoint64::one().sub(adjustment);
   FixedPoint64 newPrice = targetRatio.mul(multiplier);
 
   FixedPoint64 minPrice = FixedPoint64::fromRatio(1, 1000000);

@@ -216,8 +216,7 @@ namespace CryptoNote
         const uint64_t ORACLE_DEVIATION_CAP = 500;                  // reject if > 5× from Hearth-implied value
 
         // CD Yield Pipeline
-        const uint64_t CD_YIELD_SPEND_RATE_CAP = 300;               // max spend rate 3.0x (scaled by 100)
-        const uint64_t CD_YIELD_SPEND_RATE_FLOOR = 50;              // min spend rate 0.5x (scaled by 100)
+        const uint64_t CD_YIELD_TREASURY_ROUTE_PCT = 40;          // 40% → treasury when pool is XFG-heavy >2:1
         const uint64_t CD_RESERVE_CAP = 200;                        // 2× base pool (scaled by 100)
         const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
         const uint64_t HEARTH_FEE_DIVISOR = 10000;

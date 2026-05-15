@@ -3499,12 +3499,23 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     m_treasuryBalance += treasuryShare;
     m_totalTreasuryAccrued += treasuryShare;
 
-    // Route CD share to yield pool for HEAT buyback
-    m_cdYieldPool += cdShare;
+    // Route CD share: to yield pool for HEAT buyback, or to treasury when pool lopsided.
+    // Gives rebalancer more firepower when pool is XFG-heavy from sustained CD buying.
+    if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+      uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 100) / m_ammPool.reserveHeat;
+      if (poolRatioScaled > 200) {
+        // Pool XFG-heavy: route portion of CD share to treasury for rebalancing
+        uint64_t routeAmount = (cdShare * parameters::CD_YIELD_TREASURY_ROUTE_PCT) / 100;
+        m_cdYieldPool += (cdShare - routeAmount);
+        m_treasuryBalance += routeAmount;
+      } else {
+        m_cdYieldPool += cdShare;
+      }
+    } else {
+      m_cdYieldPool += cdShare;
+    }
 
-    // CD yield: buy HEAT from Hearth (fee-free) at fixed 1.0× spend rate.
-    // PI controller adjusts mint rate only — no feedback into CD yield buying.
-    // Treasury rebalancer handles pool defense separately.
+    // CD yield: buy HEAT from Hearth (fee-free) using accumulated CD pool.
     if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
       uint64_t heatBought = ammGetOutputAmount(m_cdYieldPool,
         m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);

@@ -144,5 +144,12 @@ echo ""
 echo "  Press Ctrl+C to stop all services"
 echo "══════════════════════════════════════════════════════"
 
+# Launch dashboard if python3 available
+if command -v python3 &> /dev/null; then
+    log "Starting Milæsandra dashboard..."
+    "${SCRIPT_DIR}/milaesandra-dashboard.py" &
+    PIDS+=($!)
+fi
+
 # Wait for any process to exit
 wait

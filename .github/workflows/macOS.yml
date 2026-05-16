@@ -59,11 +59,11 @@ jobs:
           # Clear any existing CMake cache to avoid ccache detection
           rm -rf CMakeCache.txt CMakeFiles/ 2>/dev/null || true
           if [ "${{ matrix.arch }}" == "apple" ]; then
-            export BOOST_ROOT="/opt/homebrew"
-            export BOOST_INCLUDEDIR="/opt/homebrew/include"
-            export BOOST_LIBRARYDIR="/opt/homebrew/lib"
+            export BOOST_OPTS="-DBOOST_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib"
+          else
+            export BOOST_OPTS=""
           fi
-          cmake -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} -DCMAKE_C_COMPILER_LAUNCHER="" -DCMAKE_CXX_COMPILER_LAUNCHER="" ..
+          cmake $BOOST_OPTS -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_CXX_FLAGS="-mmacosx-version-min=10.12" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} -DCMAKE_C_COMPILER_LAUNCHER="" -DCMAKE_CXX_COMPILER_LAUNCHER="" ..
           make -j4
           mkdir "$release_name"
           exeFiles=()

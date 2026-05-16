@@ -174,7 +174,14 @@ jobs:
 
           mkdir "$build_folder"
           cd "$build_folder"
-          cmake .. \
+
+          if [ "${{ matrix.arch }}" == "apple" ]; then
+            export BOOST_OPTS="-DBOOST_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib"
+          else
+            export BOOST_OPTS=""
+          fi
+
+          cmake $BOOST_OPTS .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch_flag }} \
             -DCMAKE_C_FLAGS="-mmacosx-version-min=10.12" \

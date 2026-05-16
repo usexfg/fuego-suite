@@ -72,7 +72,10 @@ while True:
     print(bold(cyan("║")) + bold("  HEAT Supply").ljust(60) + bold(cyan("║")))
     print(bold(cyan("║")) + f"  Supply: {fmt(heat_sup).rjust(30)} HEAT".ljust(61) + bold(cyan("║")))
     print(bold(cyan("║")) + f"  Burned XFG: {fmt(burned).rjust(26)} XFG".ljust(61) + bold(cyan("║")))
-    print(bold(cyan("║")) + f"  Redemption: {rp:.6f} XFG/HEAT  (1 XFG = {1/rp:.0f} HEAT)".ljust(61) + bold(cyan("║")))
+    if rp > 0:
+        print(bold(cyan("║")) + f"  Redemption: {rp:.6f} XFG/HEAT  (1 XFG = {1/rp:.0f} HEAT)".ljust(61) + bold(cyan("║")))
+    else:
+        print(bold(cyan("║")) + f"  Redemption: — (not yet active)".ljust(61) + bold(cyan("║")))
     act_state = green("ACTIVATED ($1.50-$2.50 band)") if activated else yellow("BOOTSTRAP (fixed 0.2)")
     print(bold(cyan("║")) + f"  Phase: {act_state}".ljust(61) + bold(cyan("║")))
     print(bold(cyan("╠══════════════════════════════════════════════════════════════╣")))

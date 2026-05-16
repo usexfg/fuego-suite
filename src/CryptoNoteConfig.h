@@ -281,7 +281,6 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
         const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //ÆzorAhai  (fire aliases|dynamaxin|dandelion+|CD|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //HearthAMM + HEAT stablecoin + PI controller
-        const uint32_t UPGRADE_HEIGHT_V12                            = 1200000; //Per-asset balance + AMM swap auth (M3 fix)
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
@@ -319,9 +318,8 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_7                         =  7;
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
-	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // HEAT mint activation
+	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // Per-asset balance + AMM swap auth + HEAT mint auth (M3 fix)
 	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // HearthAMM + PI controller + CD yield pipeline
-	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Per-asset balance + AMM swap auth + HEAT mint auth
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;
@@ -386,7 +384,7 @@ namespace CryptoNote
 //                           TESTNET parameters
 //--------------------------------------------------------------------------------------------------------------------------
 
-    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101eae9a3035cf3facc4a723c8334d5d3836950188703b407793c020741c46c1466";
+    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712701c9cd7a687c8bdd622f1ec6c2531116f9c93dfa88ced8267500a70f1849416a2b0204e0c81000";
  	const int P2P_DEFAULT_PORT_TESTNET = 20808;
  	const int RPC_DEFAULT_PORT_TESTNET = 28280;
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */

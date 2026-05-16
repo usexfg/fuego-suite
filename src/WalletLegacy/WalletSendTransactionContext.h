@@ -52,6 +52,16 @@ struct SendTransactionContext
   bool dynamicRingSize = false; // true: select optimal ring size from actual daemon-returned outs
   std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> commitmentOuts; // ring decoys for CommitmentSpend
 
+  // v10 auth context
+  bool isV10HeatMint = false;
+  uint64_t v10XfgBurned = 0;
+  uint64_t v10HeatMinted = 0;
+  bool isV10AmmSwap = false;
+  uint8_t v10SwapDirection = 0;
+  uint64_t v10SwapInput = 0;
+  uint64_t v10SwapOutput = 0;
+  uint64_t v10SwapMinOutput = 0;
+
 };
 
 } //namespace CryptoNote

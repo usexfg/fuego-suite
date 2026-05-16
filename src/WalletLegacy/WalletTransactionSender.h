@@ -72,6 +72,22 @@ public:
                                                     const std::string& extra,
                                                     uint64_t mixIn);
 
+  std::unique_ptr<WalletRequest> makeHeatMintV10Request(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t xfgBurned,
+                                                         uint64_t heatMinted,
+                                                         uint64_t fee,
+                                                         uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeAmmSwapV10Request(TransactionId& transactionId,
+                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                        uint8_t direction,
+                                                        uint64_t inputAmount,
+                                                        uint64_t outputAmount,
+                                                        uint64_t minOutput,
+                                                        uint64_t fee,
+                                                        uint64_t mixIn);
+
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                             const std::vector<DepositId>& depositIds,
@@ -94,6 +110,16 @@ private:
   std::unique_ptr<WalletRequest> doSendCommitmentWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                      const std::vector<DepositId>& depositIds);
+  std::unique_ptr<WalletRequest> doSendHeatMintV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t xfgBurned,
+                                                               uint64_t heatMinted);
+  std::unique_ptr<WalletRequest> doSendAmmSwapV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                              uint8_t direction,
+                                                              uint64_t inputAmount,
+                                                              uint64_t outputAmount,
+                                                              uint64_t minOutput);
   void sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                          std::shared_ptr<SendTransactionContext> context,
                                          Crypto::SecretKey& transactionSK,

@@ -4107,30 +4107,17 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
+  // Query daemon for current redemption price
   uint64_t heatAmount = xfgAmount * parameters::HEAT_LAUNCH_RATIO_DENOM
                         / parameters::HEAT_LAUNCH_RATIO_NUM;
 
-  success_msg_writer() << "HEAT Mint:";
+  success_msg_writer() << "HEAT Mint (v10 auth):";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
-  success_msg_writer() << "  Rate: " << parameters::HEAT_LAUNCH_RATIO_DENOM << "/"
-                       << parameters::HEAT_LAUNCH_RATIO_NUM << " HEAT per XFG";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  CryptoNote::WalletLegacyTransfer selfTransfer;
-  selfTransfer.address = myAddress;
-  selfTransfer.amount = static_cast<int64_t>(xfgAmount - fee);
-  transfers.push_back(selfTransfer);
-
-  std::vector<uint8_t> extra;
-  addAmmSwapToExtra(extra, 0, xfgAmount - fee, 1);
-  std::string extraStr(extra.begin(), extra.end());
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::TransactionId tx = m_wallet->mintHeatV10(xfgAmount, heatAmount, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
     success_msg_writer() << "Transaction submitted: " << tx;
@@ -4141,9 +4128,10 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::swap(const std::vector<std::string>& args) {
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: swap <direction> <amount> <min_output>";
+  if (args.size() < 4) {
+    fail_msg_writer() << "Usage: swap <direction> <input_amount> <expected_output> <min_output>";
     fail_msg_writer() << "  direction: 0 = XFG->HEAT, 1 = HEAT->XFG";
+    fail_msg_writer() << "  expected_output: query via 'amm_quote' on daemon RPC";
     return false;
   }
 
@@ -4153,15 +4141,16 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t amount;
-  if (!m_currency.parseAmount(args[1], amount)) {
-    fail_msg_writer() << "Invalid amount";
+  uint64_t amount, expectedOutput, minOutput;
+  if (!m_currency.parseAmount(args[1], amount) ||
+      !m_currency.parseAmount(args[2], expectedOutput) ||
+      !m_currency.parseAmount(args[3], minOutput)) {
+    fail_msg_writer() << "Invalid amount(s)";
     return false;
   }
 
-  uint64_t minOutput;
-  if (!m_currency.parseAmount(args[2], minOutput)) {
-    fail_msg_writer() << "Invalid min_output";
+  if (expectedOutput < minOutput) {
+    fail_msg_writer() << "Expected output below minimum";
     return false;
   }
 
@@ -4173,26 +4162,17 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  std::vector<uint8_t> extra;
-  addAmmSwapToExtra(extra, direction, amount, minOutput);
-  std::string extraStr(extra.begin(), extra.end());
+  success_msg_writer() << "AMM Swap (v10): " << m_currency.formatAmount(amount)
+                        << (direction == 0 ? " XFG → " : " HEAT → ")
+                        << m_currency.formatAmount(expectedOutput)
+                        << (direction == 0 ? " HEAT" : " XFG")
+                        << " | min: " << m_currency.formatAmount(minOutput);
+
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  CryptoNote::WalletLegacyTransfer selfTransfer;
-  selfTransfer.address = myAddress;
-  selfTransfer.amount = static_cast<int64_t>(amount);
-  transfers.push_back(selfTransfer);
-
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::TransactionId tx = m_wallet->ammSwapV10(direction, amount, expectedOutput, minOutput, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Swap submitted: " << m_currency.formatAmount(amount)
-                         << (direction == 0 ? " XFG to HEAT" : " HEAT to XFG")
-                         << " | min output: " << m_currency.formatAmount(minOutput)
-                         << " | tx: " << tx;
+    success_msg_writer() << "Transaction submitted: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";

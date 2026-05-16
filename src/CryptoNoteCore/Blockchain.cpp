@@ -386,7 +386,6 @@ private:
                          m_upgradeDetectorV9(currency, m_blocks, BLOCK_MAJOR_VERSION_9, logger),
                         m_upgradeDetectorV10(currency, m_blocks, BLOCK_MAJOR_VERSION_10, logger),
                         m_upgradeDetectorV11(currency, m_blocks, BLOCK_MAJOR_VERSION_11, logger),
-                        m_upgradeDetectorV12(currency, m_blocks, BLOCK_MAJOR_VERSION_12, logger),
                         m_commitmentIndex(currency),
                         m_aliasIndex() {
   m_piState.redemptionPrice = FixedPoint64::fromRatio(
@@ -2822,9 +2821,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     bool hasAmmSwapAuth = false;
     uint8_t swapDirection = 0;
     uint64_t swapInputAmount = 0, swapOutputAmount = 0, swapMinOutput = 0;
-    Crypto::Hash poolDepositHash, userReceiveHash;
 
-    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
       outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i]);
 
@@ -2845,8 +2843,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             swapInputAmount = auth.inputAmount;
             swapOutputAmount = auth.outputAmount;
             swapMinOutput = auth.minOutput;
-            poolDepositHash = auth.poolDepositOutputHash;
-            userReceiveHash = auth.userReceiveOutputHash;
           }
         }
       }
@@ -2855,7 +2851,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     bool isTransactionValid = true;
 
     // v12 per-asset balance check (replaces flat fee calculation for v12+)
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       uint64_t xfgFee = fee;
       if (hasHeatMintAuth) {
         if (inAssets.xfg < outAssets.xfg + xfgFee + authXfgBurned ||
@@ -2902,7 +2898,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
     }
 
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
         FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
         if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, redemptionPrice,
@@ -2923,8 +2919,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     }
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-      // v12 AMM swap auth validation
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12 && hasAmmSwapAuth) {
+      // v11 AMM swap auth validation
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasAmmSwapAuth) {
         uint32_t feeBps = parameters::HEARTH_FEE_BPS;
         uint64_t expectedOutput;
         if (swapDirection == 0) {
@@ -2940,14 +2936,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         // Verify pool-deposit output exists with correct term and amount
         bool foundPoolDeposit = false;
         Crypto::PublicKey poolKey = computePoolCommitKey();
+        uint32_t expectedTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_POOL_XFG
+                                                     : parameters::DEPOSIT_TERM_POOL_HEAT;
         for (const auto& out : transactions[i].outputs) {
-          Crypto::Hash outHash = hashOutput(out);
           if (out.target.type() == typeid(TransactionOutputCommitment)) {
             const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-            uint32_t expectedTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_POOL_XFG
-                                                         : parameters::DEPOSIT_TERM_POOL_HEAT;
-            if (outHash == poolDepositHash && co.term == expectedTerm &&
-                co.commitKey == poolKey && out.amount == swapInputAmount) {
+            if (co.term == expectedTerm && co.commitKey == poolKey && out.amount == swapInputAmount) {
               foundPoolDeposit = true;
             }
           }
@@ -2956,23 +2950,15 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap missing pool-deposit output";
         }
-        // Verify user-receive output term
+        // Verify user-receive output
         bool foundUserReceive = false;
+        uint32_t expectedReceiveTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_FOREVER
+                                                            : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
         for (const auto& out : transactions[i].outputs) {
-          Crypto::Hash outHash = hashOutput(out);
-          if (outHash == userReceiveHash) {
-            foundUserReceive = true;
-            if (out.target.type() == typeid(TransactionOutputCommitment)) {
-              const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-              uint32_t expectedTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_FOREVER
-                                                           : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
-              if (co.term != expectedTerm || out.amount != swapOutputAmount) {
-                isTransactionValid = false;
-                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap user-receive output mismatch";
-              }
-            } else {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap user-receive output not commitment";
+          if (out.target.type() == typeid(TransactionOutputCommitment)) {
+            const auto& co = boost::get<TransactionOutputCommitment>(out.target);
+            if (co.term == expectedReceiveTerm && out.amount == swapOutputAmount) {
+              foundUserReceive = true;
             }
           }
         }
@@ -3241,7 +3227,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   m_upgradeDetectorV9.blockPushed();
   m_upgradeDetectorV10.blockPushed();
   m_upgradeDetectorV11.blockPushed();
-  m_upgradeDetectorV12.blockPushed();
 
   update_next_comulative_size_limit();
 
@@ -3889,7 +3874,6 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
   m_upgradeDetectorV9.blockPopped();
   m_upgradeDetectorV10.blockPopped();
   m_upgradeDetectorV11.blockPopped();
-  m_upgradeDetectorV12.blockPopped();
 
 
 }

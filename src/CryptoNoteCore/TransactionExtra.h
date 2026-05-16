@@ -231,14 +231,12 @@ struct TransactionExtraHeatMintAuth {
   bool serialize(ISerializer& serializer);
 };
 
-// v12 AMM swap authorisation — output-bound per-asset swap validation
+// v12 AMM swap authorisation — pool-output binding via term + commitKey
 struct TransactionExtraAmmSwapAuth {
   uint8_t  direction;
   uint64_t inputAmount;
-  uint64_t outputAmount;     // computed by validator; not user-chosen
+  uint64_t outputAmount;     // computed by wallet via RPC; matched by validator
   uint64_t minOutput;        // slippage protection
-  Crypto::Hash poolDepositOutputHash;    // commits to pool-deposit output in this tx
-  Crypto::Hash userReceiveOutputHash;    // commits to user-receive output in this tx
   bool serialize(ISerializer& serializer);
 };
 
@@ -360,8 +358,7 @@ bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint6
 // v12 auth tag builders
 bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted);
 bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
-                           uint64_t outputAmount, uint64_t minOutput,
-                           const Crypto::Hash& poolDepositHash, const Crypto::Hash& userReceiveHash);
+                           uint64_t outputAmount, uint64_t minOutput);
 
 // v12 deterministic pool commit key — no spendable scalar (term-based unspendability)
 Crypto::PublicKey computePoolCommitKey();

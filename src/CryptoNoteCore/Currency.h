@@ -428,7 +428,6 @@ private:
   uint32_t m_upgradeHeightV9;
   uint32_t m_upgradeHeightV10; // upgradekit
    uint32_t m_upgradeHeightV11; // HearthAMM + HEAT
-   uint32_t m_upgradeHeightV12; // Per-asset balance + AMM swap auth
 
   unsigned int m_upgradeVotingThreshold;
   uint32_t m_upgradeVotingWindow;
@@ -564,7 +563,6 @@ public:
   CurrencyBuilder& upgradeHeightV9(uint64_t val) { m_currency.m_upgradeHeightV9 = static_cast<uint32_t>(val); return *this; }
   CurrencyBuilder& upgradeHeightV10(uint64_t val) { m_currency.m_upgradeHeightV10 = static_cast<uint32_t>(val); return *this; }//upgradekit
    CurrencyBuilder& upgradeHeightV11(uint64_t val) { m_currency.m_upgradeHeightV11 = static_cast<uint32_t>(val); return *this; }//HearthAMM+HEAT
-   CurrencyBuilder& upgradeHeightV12(uint64_t val) { m_currency.m_upgradeHeightV12 = static_cast<uint32_t>(val); return *this; }//Per-asset balance + AMM auth
 
 
   CurrencyBuilder& upgradeVotingThreshold(unsigned int val);

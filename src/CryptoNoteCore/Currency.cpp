@@ -92,7 +92,6 @@ namespace CryptoNote
 		m_upgradeHeightV9 = 19;
 		m_upgradeHeightV10 = 20;
 		m_upgradeHeightV11 = 21;
-		m_upgradeHeightV12 = 22;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
@@ -180,9 +179,6 @@ namespace CryptoNote
 		else if (majorVersion == BLOCK_MAJOR_VERSION_11) {
 			return m_upgradeHeightV11;
 		}  // HearthAMM+HEAT
-		else if (majorVersion == BLOCK_MAJOR_VERSION_12) {
-			return m_upgradeHeightV12;
-		}  // Per-asset balance + AMM auth
 		else {
 			return static_cast<uint32_t>(-1);
 		}
@@ -190,10 +186,7 @@ namespace CryptoNote
 
 	uint8_t Currency::blockMajorVersionAtHeight(uint32_t height) const {
 		// Check from highest version to lowest
-		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
-			return BLOCK_MAJOR_VERSION_12;
-		}
-		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
 			return BLOCK_MAJOR_VERSION_11;
 		}
 		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
@@ -1584,7 +1577,6 @@ double Currency::getBurnPercentage() const {
     upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
     upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10); // upgradekit
     upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11); // HearthAMM+HEAT
-    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12); // Per-asset balance + AMM auth
 
     upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
     upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);
@@ -1607,7 +1599,13 @@ double Currency::getBurnPercentage() const {
 	Transaction CurrencyBuilder::generateGenesisTransaction() {
 		CryptoNote::Transaction tx;
 		CryptoNote::AccountPublicAddress ac = boost::value_initialized<CryptoNote::AccountPublicAddress>();
-		m_currency.constructMinerTx(1, 0, 0, 0, 0, 0, ac, tx); // zero fee in genesis
+		BinaryArray extraNonce;
+		if (m_currency.m_testnet) {
+			uint32_t nonce = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_10);
+			extraNonce.resize(4);
+			memcpy(extraNonce.data(), &nonce, 4);
+		}
+		m_currency.constructMinerTx(1, 0, 0, 0, 0, 0, ac, tx, extraNonce);
 		return tx;
 	}
 	CurrencyBuilder& CurrencyBuilder::emissionSpeedFactor(unsigned int val) {

@@ -277,12 +277,6 @@ namespace CryptoNote
              auth.minOutput = 0;
              for (int i = 0; i < 8; ++i)
                auth.minOutput |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-             // poolDepositOutputHash: 32 bytes
-             for (int i = 0; i < 32; ++i)
-               auth.poolDepositOutputHash.data[i] = read<uint8_t>(iss);
-             // userReceiveOutputHash: 32 bytes
-             for (int i = 0; i < 32; ++i)
-               auth.userReceiveOutputHash.data[i] = read<uint8_t>(iss);
              transactionExtraFields.push_back(auth);
              break;
            }
@@ -422,7 +416,7 @@ namespace CryptoNote
     bool operator()(const TransactionExtraAmmSwapAuth &t)
     {
       return addAmmSwapAuthToExtra(extra, t.direction, t.inputAmount, t.outputAmount,
-                                   t.minOutput, t.poolDepositOutputHash, t.userReceiveOutputHash);
+                                   t.minOutput);
     }
 
   };
@@ -1906,8 +1900,6 @@ bool TransactionExtraAmmSwapAuth::serialize(ISerializer &s) {
   s(inputAmount, "inputAmount");
   s(outputAmount, "outputAmount");
   s(minOutput, "minOutput");
-  s(poolDepositOutputHash, "poolDepositHash");
-  s(userReceiveOutputHash, "userReceiveHash");
   return true;
 }
 
@@ -1925,8 +1917,7 @@ bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, 
 }
 
 bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
-                           uint64_t outputAmount, uint64_t minOutput,
-                           const Crypto::Hash& poolDepositHash, const Crypto::Hash& userReceiveHash) {
+                           uint64_t outputAmount, uint64_t minOutput) {
   tx_extra.push_back(TX_EXTRA_AMM_SWAP_AUTH);
   tx_extra.push_back(direction);
   for (int i = 0; i < 8; ++i) {
@@ -1941,10 +1932,6 @@ bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, ui
     tx_extra.push_back(static_cast<uint8_t>(minOutput & 0xFF));
     minOutput >>= 8;
   }
-  for (int i = 0; i < 32; ++i)
-    tx_extra.push_back(poolDepositHash.data[i]);
-  for (int i = 0; i < 32; ++i)
-    tx_extra.push_back(userReceiveHash.data[i]);
   return true;
 }
 

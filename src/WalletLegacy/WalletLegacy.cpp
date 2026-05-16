@@ -847,6 +847,57 @@ TransactionId WalletLegacy::deposit(uint32_t term, uint64_t amount, uint64_t fee
   return txId;
 }
 
+TransactionId WalletLegacy::mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+
+  fee = m_currency.minimumFee();
+
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeHeatMintV10Request(txId, events, xfgBurned, heatMinted, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+
+  notifyClients(events);
+
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+
+  return txId;
+}
+
+TransactionId WalletLegacy::ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
+                                        uint64_t minOutput, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+
+  fee = m_currency.minimumFee();
+
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeAmmSwapV10Request(txId, events, direction, inputAmount, outputAmount, minOutput, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+
+  notifyClients(events);
+
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+
+  return txId;
+}
+
 TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) {
   throwIfNotInitialised();
 

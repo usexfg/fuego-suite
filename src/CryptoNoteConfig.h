@@ -172,6 +172,9 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_LP      = 0xFFFFFFFD;         // LP share marker (term for Hearth liquidity)
         const uint32_t DEPOSIT_TERM_YIELD = DEPOSIT_MIN_TERM;  // CD minimum term for FuCIA deposits
         const uint32_t DEPOSIT_TERM_BURN = DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
+        const uint32_t DEPOSIT_TERM_POOL_XFG = 0x504F4C58;  // 'POLX' — AMM pool receives XFG (unspendable)
+        const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
+        const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
 
         // XFG-STARK commitment constants (unified format for xfg-stark-cli relay)
         const uint32_t STARK_NETWORK_ID_MAINNET  = 1;
@@ -278,6 +281,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
         const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //ÆzorAhai  (fire aliases|dynamaxin|dandelion+|CD|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //HearthAMM + HEAT stablecoin + PI controller
+        const uint32_t UPGRADE_HEIGHT_V12                            = 1200000; //Per-asset balance + AMM swap auth (M3 fix)
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
@@ -317,6 +321,7 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
 	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // HEAT mint activation
 	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // HearthAMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Per-asset balance + AMM swap auth + HEAT mint auth
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;
@@ -337,8 +342,8 @@ namespace CryptoNote
 	const uint8_t P2P_MINIMUM_VERSION = 1;
 	const uint8_t P2P_UPGRADE_WINDOW = 2;
 
-	// This defines minimum P2P version required for lite blocks propogation
-	const uint8_t P2P_LITE_BLOCKS_PROPOGATION_VERSION = 3;
+	// This defines minimum P2P version required for lite blocks propagation
+	const uint8_t P2P_LITE_BLOCKS_PROPAGATION_VERSION = 3;
 
 	const size_t P2P_LOCAL_WHITE_PEERLIST_LIMIT = 1000;
 	const size_t P2P_LOCAL_GRAY_PEERLIST_LIMIT = 5000;

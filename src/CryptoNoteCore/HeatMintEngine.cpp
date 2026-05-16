@@ -81,4 +81,23 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   return true;
 }
 
+bool HeatMintEngine::validateMintAuth(const Transaction& tx,
+                                       uint64_t fee,
+                                       FixedPoint64 redemptionPrice,
+                                       uint64_t xfgBurned,
+                                       uint64_t heatMinted) const {
+  if (redemptionPrice.isZero())
+    return false;
+  if (xfgBurned == 0 || heatMinted == 0)
+    return false;
+
+  FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
+  FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
+  uint64_t expectedHeat = heatFp.toUint64();
+
+  uint64_t delta = (heatMinted > expectedHeat) ? (heatMinted - expectedHeat)
+                                               : (expectedHeat - heatMinted);
+  return delta <= 1;
+}
+
 } // namespace CryptoNote

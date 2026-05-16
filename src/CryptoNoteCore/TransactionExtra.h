@@ -78,6 +78,10 @@
 #define TX_EXTRA_AMM_COMPOUND               0xF3
 #define TX_EXTRA_AMM_CLAIM                  0xF4
 
+// 0xF_ tags: v12 per-asset auth (M3 fix)
+#define TX_EXTRA_HEAT_MINT_AUTH             0xF5
+#define TX_EXTRA_AMM_SWAP_AUTH              0xF6
+
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 
 namespace CryptoNote {
@@ -220,6 +224,24 @@ struct TransactionExtraAmmClaim {
   bool serialize(ISerializer& serializer);
 };
 
+// v12 HEAT mint authorisation — replaces implicit fee-fallback path
+struct TransactionExtraHeatMintAuth {
+  uint64_t xfgBurned;    // exact XFG consumed (above XFG fee + change)
+  uint64_t heatMinted;   // exact HEAT created
+  bool serialize(ISerializer& serializer);
+};
+
+// v12 AMM swap authorisation — output-bound per-asset swap validation
+struct TransactionExtraAmmSwapAuth {
+  uint8_t  direction;
+  uint64_t inputAmount;
+  uint64_t outputAmount;     // computed by validator; not user-chosen
+  uint64_t minOutput;        // slippage protection
+  Crypto::Hash poolDepositOutputHash;    // commits to pool-deposit output in this tx
+  Crypto::Hash userReceiveOutputHash;    // commits to user-receive output in this tx
+  bool serialize(ISerializer& serializer);
+};
+
 
 // ============================================================
 // Fuego Ring-Signature Commitment Key Derivation
@@ -301,7 +323,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth> TransactionExtraField;
 
 
 
@@ -334,6 +356,19 @@ bool addAmmAddLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXf
 bool addAmmRemoveLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned, uint64_t minXfg, uint64_t minHeat);
 bool addAmmCompoundToExtra(std::vector<uint8_t>& tx_extra);
 bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint64_t minXfg, uint64_t minHeat);
+
+// v12 auth tag builders
+bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted);
+bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
+                           uint64_t outputAmount, uint64_t minOutput,
+                           const Crypto::Hash& poolDepositHash, const Crypto::Hash& userReceiveHash);
+
+// v12 deterministic pool commit key — no spendable scalar (term-based unspendability)
+Crypto::PublicKey computePoolCommitKey();
+
+// v12 output hash binding helper
+Crypto::Hash hashOutput(const TransactionOutput& output);
+
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);
 void appendTTLToExtra(std::vector<uint8_t>& tx_extra, uint64_t ttl);
 bool getMergeMiningTagFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMergeMiningTag& mm_tag);

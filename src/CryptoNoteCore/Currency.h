@@ -26,6 +26,7 @@
 #include "../Logging/LoggerRef.h"
 #include "CryptoNoteBasic.h"
 #include "Difficulty.h"
+#include "AssetType.h"
 
 namespace CryptoNote {
 
@@ -258,6 +259,9 @@ public:
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
+
+    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
+    AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 
   bool constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
@@ -423,7 +427,8 @@ private:
   uint32_t m_upgradeHeightV8;
   uint32_t m_upgradeHeightV9;
   uint32_t m_upgradeHeightV10; // upgradekit
-  uint32_t m_upgradeHeightV11; // HearthAMM + HEAT
+   uint32_t m_upgradeHeightV11; // HearthAMM + HEAT
+   uint32_t m_upgradeHeightV12; // Per-asset balance + AMM swap auth
 
   unsigned int m_upgradeVotingThreshold;
   uint32_t m_upgradeVotingWindow;
@@ -558,7 +563,8 @@ public:
   CurrencyBuilder& upgradeHeightV8(uint64_t val) { m_currency.m_upgradeHeightV8 = static_cast<uint32_t>(val); return *this; }
   CurrencyBuilder& upgradeHeightV9(uint64_t val) { m_currency.m_upgradeHeightV9 = static_cast<uint32_t>(val); return *this; }
   CurrencyBuilder& upgradeHeightV10(uint64_t val) { m_currency.m_upgradeHeightV10 = static_cast<uint32_t>(val); return *this; }//upgradekit
-  CurrencyBuilder& upgradeHeightV11(uint64_t val) { m_currency.m_upgradeHeightV11 = static_cast<uint32_t>(val); return *this; }//HearthAMM+HEAT
+   CurrencyBuilder& upgradeHeightV11(uint64_t val) { m_currency.m_upgradeHeightV11 = static_cast<uint32_t>(val); return *this; }//HearthAMM+HEAT
+   CurrencyBuilder& upgradeHeightV12(uint64_t val) { m_currency.m_upgradeHeightV12 = static_cast<uint32_t>(val); return *this; }//Per-asset balance + AMM auth
 
 
   CurrencyBuilder& upgradeVotingThreshold(unsigned int val);

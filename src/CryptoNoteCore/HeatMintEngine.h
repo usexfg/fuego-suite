@@ -27,6 +27,13 @@ public:
                     uint64_t& xfgBurned,
                     uint64_t& heatMinted) const;
 
+  // v12 auth-tag mint validation — math-only check on declared burn/mint amounts
+  bool validateMintAuth(const Transaction& tx,
+                        uint64_t fee,
+                        FixedPoint64 redemptionPrice,
+                        uint64_t xfgBurned,
+                        uint64_t heatMinted) const;
+
   bool isHeatMint(const Transaction& tx) const;
 };
 

@@ -92,6 +92,7 @@ namespace CryptoNote
 		m_upgradeHeightV9 = 19;
 		m_upgradeHeightV10 = 20;
 		m_upgradeHeightV11 = 21;
+		m_upgradeHeightV12 = 22;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
@@ -179,6 +180,9 @@ namespace CryptoNote
 		else if (majorVersion == BLOCK_MAJOR_VERSION_11) {
 			return m_upgradeHeightV11;
 		}  // HearthAMM+HEAT
+		else if (majorVersion == BLOCK_MAJOR_VERSION_12) {
+			return m_upgradeHeightV12;
+		}  // Per-asset balance + AMM auth
 		else {
 			return static_cast<uint32_t>(-1);
 		}
@@ -186,7 +190,10 @@ namespace CryptoNote
 
 	uint8_t Currency::blockMajorVersionAtHeight(uint32_t height) const {
 		// Check from highest version to lowest
-		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
+			return BLOCK_MAJOR_VERSION_12;
+		}
+		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
 			return BLOCK_MAJOR_VERSION_11;
 		}
 		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
@@ -411,6 +418,53 @@ double Currency::getBurnPercentage() const {
     }
 
     return amount;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
+    if (target.type() == typeid(KeyOutput)) {
+      return AssetType::XFG;
+    }
+    if (target.type() == typeid(MultisignatureOutput)) {
+      return AssetType::XFG;
+    }
+    if (target.type() == typeid(TransactionOutputCommitment)) {
+      if (term == parameters::DEPOSIT_TERM_FOREVER)
+        return AssetType::HEAT;
+      if (term == parameters::DEPOSIT_TERM_LP)
+        return AssetType::LP;
+      if (term == parameters::DEPOSIT_TERM_POOL_XFG)
+        return AssetType::XFG;
+      if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
+        return AssetType::HEAT;
+      if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+        return AssetType::XFG;
+      return AssetType::XFG;  // CD deposits
+    }
+    if (target.type() == typeid(TransactionOutputUnified)) {
+      return AssetType::XFG;  // unified outputs default to XFG
+    }
+    return AssetType::XFG;
+  }
+
+  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx) const {
+    AssetBalance bal;
+    for (const auto& out : tx.outputs) {
+      AssetType asset = AssetType::XFG;
+      uint32_t term = 0;
+      if (out.target.type() == typeid(TransactionOutputCommitment)) {
+        const auto& co = boost::get<TransactionOutputCommitment>(out.target);
+        term = co.term;
+      }
+      asset = classifyOutputAsset(out.target, term);
+      switch (asset) {
+        case AssetType::HEAT: bal.heat += out.amount; break;
+        case AssetType::LP:   bal.lp   += out.amount; break;
+        default:              bal.xfg  += out.amount; break;
+      }
+    }
+    return bal;
   }
 
   /* ---------------------------------------------------------------------------------------------------- */
@@ -1529,6 +1583,8 @@ double Currency::getBurnPercentage() const {
     upgradeHeightV8(parameters::UPGRADE_HEIGHT_V8);
     upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
     upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10); // upgradekit
+    upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11); // HearthAMM+HEAT
+    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12); // Per-asset balance + AMM auth
 
     upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
     upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);

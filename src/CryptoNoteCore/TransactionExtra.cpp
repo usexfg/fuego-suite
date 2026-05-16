@@ -251,6 +251,42 @@ namespace CryptoNote
              break;
            }
 
+           case TX_EXTRA_HEAT_MINT_AUTH:
+           {
+             TransactionExtraHeatMintAuth auth;
+             auth.xfgBurned = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.xfgBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.heatMinted = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.heatMinted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
+           case TX_EXTRA_AMM_SWAP_AUTH:
+           {
+             TransactionExtraAmmSwapAuth auth;
+             auth.direction = read<uint8_t>(iss);
+             auth.inputAmount = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.inputAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.outputAmount = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.outputAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.minOutput = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.minOutput |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             // poolDepositOutputHash: 32 bytes
+             for (int i = 0; i < 32; ++i)
+               auth.poolDepositOutputHash.data[i] = read<uint8_t>(iss);
+             // userReceiveOutputHash: 32 bytes
+             for (int i = 0; i < 32; ++i)
+               auth.userReceiveOutputHash.data[i] = read<uint8_t>(iss);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
            default:
              return false; // unknown extra tag — reject
        }
@@ -376,6 +412,17 @@ namespace CryptoNote
     bool operator()(const TransactionExtraAmmClaim &t)
     {
       return addAmmClaimToExtra(extra, t.lpShares, t.minAmountXfg, t.minAmountHeat);
+    }
+
+    bool operator()(const TransactionExtraHeatMintAuth &t)
+    {
+      return addHeatMintAuthToExtra(extra, t.xfgBurned, t.heatMinted);
+    }
+
+    bool operator()(const TransactionExtraAmmSwapAuth &t)
+    {
+      return addAmmSwapAuthToExtra(extra, t.direction, t.inputAmount, t.outputAmount,
+                                   t.minOutput, t.poolDepositOutputHash, t.userReceiveOutputHash);
     }
 
   };
@@ -1846,6 +1893,72 @@ bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint6
     minHeat >>= 8;
   }
   return true;
+}
+
+bool TransactionExtraHeatMintAuth::serialize(ISerializer &s) {
+  s(xfgBurned, "xfgBurned");
+  s(heatMinted, "heatMinted");
+  return true;
+}
+
+bool TransactionExtraAmmSwapAuth::serialize(ISerializer &s) {
+  s(direction, "direction");
+  s(inputAmount, "inputAmount");
+  s(outputAmount, "outputAmount");
+  s(minOutput, "minOutput");
+  s(poolDepositOutputHash, "poolDepositHash");
+  s(userReceiveOutputHash, "userReceiveHash");
+  return true;
+}
+
+bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted) {
+  tx_extra.push_back(TX_EXTRA_HEAT_MINT_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(xfgBurned & 0xFF));
+    xfgBurned >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(heatMinted & 0xFF));
+    heatMinted >>= 8;
+  }
+  return true;
+}
+
+bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
+                           uint64_t outputAmount, uint64_t minOutput,
+                           const Crypto::Hash& poolDepositHash, const Crypto::Hash& userReceiveHash) {
+  tx_extra.push_back(TX_EXTRA_AMM_SWAP_AUTH);
+  tx_extra.push_back(direction);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(inputAmount & 0xFF));
+    inputAmount >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(outputAmount & 0xFF));
+    outputAmount >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(minOutput & 0xFF));
+    minOutput >>= 8;
+  }
+  for (int i = 0; i < 32; ++i)
+    tx_extra.push_back(poolDepositHash.data[i]);
+  for (int i = 0; i < 32; ++i)
+    tx_extra.push_back(userReceiveHash.data[i]);
+  return true;
+}
+
+Crypto::PublicKey computePoolCommitKey() {
+  static const char SEED[] = "fuego.hearth.pool.commit.key.v1";
+  Crypto::Hash h;
+  Crypto::cn_fast_hash(SEED, sizeof(SEED) - 1, h);
+  Crypto::PublicKey pub;
+  Crypto::secret_key_to_public_key(reinterpret_cast<const Crypto::SecretKey&>(h), pub);
+  return pub;
+}
+
+Crypto::Hash hashOutput(const TransactionOutput& output) {
+  return getObjectHash(output);
 }
 
 } // namespace CryptoNote

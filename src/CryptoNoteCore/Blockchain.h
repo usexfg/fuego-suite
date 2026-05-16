@@ -109,6 +109,10 @@ namespace CryptoNote {
     uint64_t getHeatSupply() const { return m_heatSupply; }
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
     const AmmPoolState& getAmmPool() const { return m_ammPool; }
+    uint64_t getPoolLockedXfg() const { return m_poolLockedXfg; }
+    uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
+    AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
+    AssetType classifyInputAsset(const TransactionInput& in) const;
     const PiControllerState& getPiState() const { return m_piState; }
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
@@ -400,6 +404,8 @@ namespace CryptoNote {
 
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;
+    uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
+    uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     unsigned __int128 m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
 
@@ -453,6 +459,8 @@ namespace CryptoNote {
     UpgradeDetector m_upgradeDetectorV8;
     UpgradeDetector m_upgradeDetectorV9;
     UpgradeDetector m_upgradeDetectorV10;
+    UpgradeDetector m_upgradeDetectorV11;
+    UpgradeDetector m_upgradeDetectorV12;
 
 
     bool m_blockchainIndexesEnabled;

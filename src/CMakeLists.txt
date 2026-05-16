@@ -169,11 +169,17 @@ add_dependencies(CryptoNoteCore version)
 # Always try to enable AES-NI for GCC/Clang on non-Android x86_64 systems
 if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT ANDROID)
     if (CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"))
-        # Apple Silicon: skip AES/SSE flags, use software AES
+        # Apple Silicon: enable ARM crypto extensions for hardware AES.
+        # Apple M-series CPUs have ARMv8 crypto extensions (AES, PMULL, SHA1, SHA2).
+        # We MUST use hardware AES on ARM64, not the NO_AES software fallback —
+        # the portable software path in slow-hash.c produces CryptoNight hashes
+        # that diverge from the x86_64/ARM hardware paths used by network miners,
+        # causing "too weak proof of work" rejections when syncing the mainnet chain.
         # FORCE_USE_HEAP: allocate cn_slow_hash scratchpad on heap instead of stack
-        # to avoid stack overflow (2MB buffer vs 512KB default thread stack size)
-        target_compile_definitions(Crypto PRIVATE NO_AES FORCE_USE_HEAP)
-        message(STATUS "Apple Silicon detected, using software AES with heap allocation for Crypto library")
+        # to avoid stack overflow (2MB buffer vs 512KB default thread stack size).
+        target_compile_options(Crypto PRIVATE -march=armv8-a+crypto)
+        target_compile_definitions(Crypto PRIVATE FORCE_USE_HEAP)
+        message(STATUS "Apple Silicon detected, using ARM hardware AES (armv8-a+crypto) with heap allocation for Crypto library")
     else()
         # Enable AES-NI and SSE instructions for cryptographic operations
         target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)

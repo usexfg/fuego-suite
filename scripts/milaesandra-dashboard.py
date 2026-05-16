@@ -10,6 +10,7 @@ import urllib.request, json, time, os, sys
 from datetime import datetime
 
 RPC = "http://localhost:28280"
+COIN = 10_000_000
 
 def rpc(endpoint, method="GET", data=None):
     try:
@@ -46,19 +47,19 @@ while True:
     height = info.get("height", "?")
     status = info.get("status", "?")
 
-    heat_sup = heat.get("heat_supply", 0)
-    burned   = heat.get("burned_xfg", 0)
+    heat_sup = heat.get("heat_supply", 0) / COIN
+    burned   = heat.get("burned_xfg", 0) / COIN
     rp_num   = heat.get("redemption_price_num", 0)
     rp_den   = heat.get("redemption_price_denom", 1)
     rp       = rp_num / max(rp_den, 1)
-    treas    = heat.get("treasury_balance", 0)
-    epoch_fees = heat.get("epoch_swap_fees", 0)
+    treas    = heat.get("treasury_balance", 0) / COIN
+    epoch_fees = heat.get("epoch_swap_fees", 0) / COIN
 
-    rsv_xfg  = amm.get("reserve_xfg", 0)
-    rsv_heat = amm.get("reserve_heat", 0)
+    rsv_xfg  = amm.get("reserve_xfg", 0) / COIN
+    rsv_heat = amm.get("reserve_heat", 0) / COIN
     spot     = amm.get("spot_price", 0)
     lp_share = amm.get("total_lp_shares", 0)
-    lp_fees  = amm.get("accumulated_lp_fees", 0)
+    lp_fees  = amm.get("accumulated_lp_fees", 0) / COIN
 
     pool_ratio = rsv_xfg / max(rsv_heat, 1)
     cov = treas / max(0.2, 1) / max(heat_sup, 1) * 100

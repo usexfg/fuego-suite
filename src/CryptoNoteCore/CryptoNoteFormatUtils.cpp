@@ -565,16 +565,6 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     if (!get_block_hashing_blob(b, bd)) {
       return false;
     }
-  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_9) {
-    // v9+ blocks are PoW-hashed over get_block_hashing_blob (block header + tree
-    // root + tx count) rather than get_parent_block_hashing_blob. The parent-
-    // block serializer prepends parentBlock.{major,minor}Version/timestamp/
-    // prevId/nonce/merkleRoot, which yields the wrong byte prefix for v9 blocks
-    // and causes "too weak proof of work" rejections when syncing mainnet
-    // (network miners hash the block-header blob, not the parent blob).
-    if (!get_block_hashing_blob(b, bd)) {
-      return false;
-    }
   } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
     if (!get_parent_block_hashing_blob(b, bd)) {
       return false;

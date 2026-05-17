@@ -1,20 +1,6 @@
 # Security Policy
 
-## Supported Versions
+### Reporting a Vulnerability
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.4.3 | :white_check_mark: |
-| 5.4.1   | :white_check_mark: |
-| 5.4.1 Alpha   | :x: |               |
-
-## Reporting a Vulnerability
-
-Use this section to tell people how to report a vulnerability.
-
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+For responsible disclosure of any Fuego (XFG) blockchain network or wallet(s) vulnerabilty, please use a direct channel of private communication via simplex to [this address](https://simplex.chat/contact#/?v=2-7&smp=smp%3A%2F%2F6iIcWT_dF2zN_w5xzZEY7HI2Prbh3ldP07YTyDexPjE%3D%40smp10.simplex.im%2F06I4VSJHctkwe1YLPwpdkF3qSlAEbCfE%23%2F%3Fv%3D1-3%26dh%3DMCowBQYDK2VuAyEAdnzjDcBCVhGHEGWLrRsdb5OUKyTbVVHkqdiDCVLt9Rg%253D%26srv%3Drb2pbttocvnbrngnwziclp2f4ckjq65kebafws6g4hy22cdaiv5dwjqd.onion) 
+Someone will review disclosure report and respond in a most timely manner. (please allow up to 48hrs for response) 

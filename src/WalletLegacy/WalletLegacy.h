@@ -77,6 +77,8 @@ public:
   virtual uint64_t actualInvestmentBalance() override;
   virtual uint64_t pendingDepositBalance() override;
   virtual uint64_t pendingInvestmentBalance() override;
+  virtual uint64_t actualHeatBalance() override;
+  virtual uint64_t pendingHeatBalance() override;
 
   virtual size_t getTransactionCount() override;
   virtual size_t getTransferCount() override;
@@ -148,13 +150,18 @@ public:
   std::unique_ptr<WalletLegacyEvent> getPendingInvestmentBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getActualDepositBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingDepositBalanceChangedEvent();
+  void notifyIfHeatBalanceChanged();
+  std::unique_ptr<WalletLegacyEvent> getActualHeatBalanceChangedEvent();
+  std::unique_ptr<WalletLegacyEvent> getPendingHeatBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getActualBalanceChangedEvent();
   std::unique_ptr<WalletLegacyEvent> getPendingBalanceChangedEvent();
   uint64_t calculateActualDepositBalance();
   uint64_t calculateActualInvestmentBalance();
+  uint64_t calculateActualHeatBalance();
   uint64_t calculatePendingDepositBalance();
   uint64_t calculatePendingInvestmentBalance();
-  uint64_t getWalletMaximum() override;
+  uint64_t calculatePendingHeatBalance();
+  uint64_t getWalletMaximum();
   uint64_t dustBalance() override;
 
   uint64_t calculateActualBalance();
@@ -200,6 +207,8 @@ public:
   std::atomic<uint64_t> m_lastNotifiedPendingDepositBalance;
   std::atomic<uint64_t> m_lastNotifiedActualInvestmentBalance;
   std::atomic<uint64_t> m_lastNotifiedPendingInvestmentBalance;
+  std::atomic<uint64_t> m_lastNotifiedActualHeatBalance;
+  std::atomic<uint64_t> m_lastNotifiedPendingHeatBalance;
 
   // Burn deposit secrets storage
   struct BurnDepositSecret {

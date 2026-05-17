@@ -3045,6 +3045,12 @@ void simple_wallet::synchronizationProgressUpdated(uint32_t current, uint32_t to
 bool simple_wallet::show_balance(const std::vector<std::string>& args) {
   success_msg_writer() << "available balance: " << m_currency.formatAmount(m_wallet->actualBalance()) <<
     ", locked amount: " << m_currency.formatAmount(m_wallet->pendingBalance());
+  uint64_t heatActual = m_wallet->actualHeatBalance();
+  uint64_t heatPending = m_wallet->pendingHeatBalance();
+  if (heatActual > 0 || heatPending > 0) {
+    success_msg_writer() << "HEAT balance: " << m_currency.formatAmount(heatActual) <<
+      " (locked: " << m_currency.formatAmount(heatPending) << ")";
+  }
   return true;
 }
 
@@ -4320,6 +4326,13 @@ bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_list(const std::vector<std::string>& args) {
-  success_msg_writer() << "HEAT CDs earn interest from epoch swap fees (distributed as HEAT)";
+  uint64_t heatActual = m_wallet->actualHeatBalance();
+  uint64_t heatPending = m_wallet->pendingHeatBalance();
+  success_msg_writer() << "HEAT Balance:";
+  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HEAT";
+  if (heatPending > 0)
+    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HEAT";
+  if (heatActual == 0 && heatPending == 0)
+    success_msg_writer() << "  (no HEAT outputs detected)";
   return true;
 }

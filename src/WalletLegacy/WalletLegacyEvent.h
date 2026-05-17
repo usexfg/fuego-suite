@@ -210,6 +210,36 @@ private:
   uint64_t m_balance;
 };
 
+/* HEAT balance */
+
+class WalletActualHeatBalanceUpdatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletActualHeatBalanceUpdatedEvent(uint64_t balance) : m_balance(balance) {}
+  virtual ~WalletActualHeatBalanceUpdatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer)
+  {
+    observer.notify(&IWalletLegacyObserver::actualHeatBalanceUpdated, m_balance);
+  }
+private:
+  uint64_t m_balance;
+};
+
+class WalletPendingHeatBalanceUpdatedEvent : public WalletLegacyEvent
+{
+public:
+  WalletPendingHeatBalanceUpdatedEvent(uint64_t balance) : m_balance(balance) {}
+  virtual ~WalletPendingHeatBalanceUpdatedEvent() {}
+
+  virtual void notify(Tools::ObserverManager<CryptoNote::IWalletLegacyObserver>& observer)
+  {
+    observer.notify(&IWalletLegacyObserver::pendingHeatBalanceUpdated, m_balance);
+  }
+private:
+  uint64_t m_balance;
+};
+
 class WalletBurnDepositSecretCreatedEvent : public WalletLegacyEvent
 {
 public:

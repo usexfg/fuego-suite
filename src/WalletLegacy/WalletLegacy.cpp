@@ -142,6 +142,15 @@ uint64_t calculateInvestmentsAmount(const std::vector<CryptoNote::TransactionOut
   });
 }
 
+uint64_t calculateHeatAmount(const std::vector<CryptoNote::TransactionOutputInformation>& transfers) {
+  return std::accumulate(transfers.begin(), transfers.end(), static_cast<uint64_t>(0),
+    [](uint64_t sum, const CryptoNote::TransactionOutputInformation& output) {
+      if (output.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER)
+        return sum + output.amount;
+      return sum;
+    });
+}
+
 
 } //namespace
 
@@ -519,6 +528,20 @@ uint64_t WalletLegacy::pendingDepositBalance() {
   throwIfNotInitialised();
 
   return calculatePendingDepositBalance();
+}
+
+uint64_t WalletLegacy::actualHeatBalance() {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  throwIfNotInitialised();
+
+  return calculateActualHeatBalance();
+}
+
+uint64_t WalletLegacy::pendingHeatBalance() {
+  std::unique_lock<std::mutex> lock(m_cacheMutex);
+  throwIfNotInitialised();
+
+  return calculatePendingHeatBalance();
 }
 
 size_t WalletLegacy::getTransactionCount() {
@@ -1128,6 +1151,7 @@ void WalletLegacy::onTransfersUnlocked(ITransfersSubscription* object, const std
 
     notifyIfDepositBalanceChanged();
     notifyIfInvestmentBalanceChanged();
+    notifyIfHeatBalanceChanged();
   }
 }
 
@@ -1141,6 +1165,7 @@ void WalletLegacy::onTransfersLocked(ITransfersSubscription* object, const std::
 
     notifyIfDepositBalanceChanged();
     notifyIfInvestmentBalanceChanged();
+    notifyIfHeatBalanceChanged();
   }
 }
 
@@ -1267,6 +1292,44 @@ std::unique_ptr<WalletLegacyEvent> WalletLegacy::getPendingInvestmentBalanceChan
 
 
 
+
+
+void WalletLegacy::notifyIfHeatBalanceChanged() {
+  auto actualHeatEvent = getActualHeatBalanceChangedEvent();
+  if (actualHeatEvent) {
+    actualHeatEvent->notify(m_observerManager);
+  }
+  auto pendingHeatEvent = getPendingHeatBalanceChangedEvent();
+  if (pendingHeatEvent) {
+    pendingHeatEvent->notify(m_observerManager);
+  }
+}
+
+std::unique_ptr<WalletLegacyEvent> WalletLegacy::getActualHeatBalanceChangedEvent() {
+  auto actual = calculateActualHeatBalance();
+  auto prevActual = m_lastNotifiedActualHeatBalance.exchange(actual);
+
+  std::unique_ptr<WalletLegacyEvent> event;
+
+  if (actual != prevActual) {
+    event = std::unique_ptr<WalletLegacyEvent>(new WalletActualHeatBalanceUpdatedEvent(actual));
+  }
+
+  return event;
+}
+
+std::unique_ptr<WalletLegacyEvent> WalletLegacy::getPendingHeatBalanceChangedEvent() {
+  auto pending = calculatePendingHeatBalance();
+  auto prevPending = m_lastNotifiedPendingHeatBalance.exchange(pending);
+
+  std::unique_ptr<WalletLegacyEvent> event;
+
+  if (pending != prevPending) {
+    event = std::unique_ptr<WalletLegacyEvent>(new WalletPendingHeatBalanceUpdatedEvent(pending));
+  }
+
+  return event;
+}
 
 std::unique_ptr<WalletLegacyEvent> WalletLegacy::getActualBalanceChangedEvent() {
   auto actual = calculateActualBalance();
@@ -1422,6 +1485,20 @@ uint64_t WalletLegacy::calculatePendingInvestmentBalance() {
   return calculateInvestmentsAmount(transfers, m_currency, heights);
 }
 
+uint64_t WalletLegacy::calculateActualHeatBalance() {
+  std::vector<TransactionOutputInformation> transfers;
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit | ITransfersContainer::IncludeStateUnlocked);
+  return calculateHeatAmount(transfers) - m_transactionsCache.countUnconfirmedSpentDepositsTotalAmount();
+}
+
+uint64_t WalletLegacy::calculatePendingHeatBalance() {
+  std::vector<TransactionOutputInformation> transfers;
+  m_transferDetails->getOutputs(transfers, ITransfersContainer::IncludeTypeDeposit
+                                | ITransfersContainer::IncludeStateLocked
+                                | ITransfersContainer::IncludeStateSoftLocked);
+  return calculateHeatAmount(transfers);
+}
+
 uint64_t WalletLegacy::calculateActualBalance() {
   uint64_t total = m_transferDetails->balance(ITransfersContainer::IncludeKeyUnlocked);
   for (const auto& sa : m_subAddresses) {
@@ -1459,6 +1536,16 @@ void WalletLegacy::pushBalanceUpdatedEvents(std::deque<std::unique_ptr<WalletLeg
   auto pendingInvestmentBalanceUpdated = getPendingInvestmentBalanceChangedEvent();
   if (pendingInvestmentBalanceUpdated != nullptr) {
     eventsQueue.push_back(std::move(pendingInvestmentBalanceUpdated));
+  }
+
+  auto actualHeatBalanceUpdated = getActualHeatBalanceChangedEvent();
+  if (actualHeatBalanceUpdated != nullptr) {
+    eventsQueue.push_back(std::move(actualHeatBalanceUpdated));
+  }
+
+  auto pendingHeatBalanceUpdated = getPendingHeatBalanceChangedEvent();
+  if (pendingHeatBalanceUpdated != nullptr) {
+    eventsQueue.push_back(std::move(pendingHeatBalanceUpdated));
   }
 
   auto actualBalanceUpdated = getActualBalanceChangedEvent();

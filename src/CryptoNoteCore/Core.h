@@ -115,6 +115,7 @@ namespace CryptoNote {
        uint32_t& start_height, uint32_t& current_height, uint32_t& full_offset, std::vector<BlockFullInfo>& entries) override;
     virtual bool queryBlocksLite(const std::vector<Crypto::Hash>& knownBlockIds, uint64_t timestamp,
       uint32_t& resStartHeight, uint32_t& resCurrentHeight, uint32_t& resFullOffset, std::vector<BlockShortInfo>& entries) override;
+    virtual bool getBlocksFast(const std::vector<Crypto::Hash>& knownBlockIds, std::vector<block_complete_entry>& newBlocks, uint32_t& startHeight, uint32_t& currentHeight) override;
     virtual Crypto::Hash getBlockIdByHeight(uint32_t height) override;
     virtual bool getTransaction(const Crypto::Hash &id, Transaction &tx, bool checkTxPool = false) override;
     void getTransactions(const std::vector<Crypto::Hash> &txs_ids, std::list<Transaction> &txs, std::list<Crypto::Hash> &missed_txs, bool checkTxPool = false) override;

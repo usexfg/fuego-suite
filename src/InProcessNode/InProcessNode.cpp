@@ -145,32 +145,9 @@ std::error_code InProcessNode::doGetNewBlocks(std::vector<Crypto::Hash>&& knownB
   }
 
   try {
-    // TODO code duplication see RpcServer::on_get_blocks()
-    if (knownBlockIds.empty()) {
+    uint32_t currentHeight;
+    if (!core.getBlocksFast(knownBlockIds, newBlocks, startHeight, currentHeight)) {
       return make_error_code(CryptoNote::error::REQUEST_ERROR);
-    }
-
-    if (knownBlockIds.back() != core.getBlockIdByHeight(0)) {
-      return make_error_code(CryptoNote::error::REQUEST_ERROR);
-    }
-
-    uint32_t totalBlockCount;
-    std::vector<Crypto::Hash> supplement = core.findBlockchainSupplement(knownBlockIds, CryptoNote::COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT, totalBlockCount, startHeight);
-
-    for (const auto& blockId : supplement) {
-      assert(core.have_block(blockId));
-      auto completeBlock = core.getBlock(blockId);
-      assert(completeBlock != nullptr);
-
-      CryptoNote::block_complete_entry be;
-      be.block = asString(toBinaryArray(completeBlock->getBlock()));
-
-      be.txs.reserve(completeBlock->getTransactionCount());
-      for (size_t i = 0; i < completeBlock->getTransactionCount(); ++i) {
-        be.txs.push_back(asString(toBinaryArray(completeBlock->getTransaction(i))));
-      }
-
-      newBlocks.push_back(std::move(be));
     }
   } catch (std::system_error& e) {
     return e.code();

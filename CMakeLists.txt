@@ -16,6 +16,14 @@ set(CMAKE_SKIP_INSTALL_RULES ON)
 set(CMAKE_SKIP_PACKAGE_ALL_DEPENDENCY ON)
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
+
+if(APPLE)
+  list(APPEND CMAKE_PREFIX_PATH /opt/homebrew)
+endif()
+
 project(fuegoX)
 
 include_directories(include src external "${CMAKE_BINARY_DIR}/version")
@@ -146,8 +154,20 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
 endif()
 
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  set(Boost_NO_BOOST_CMAKE ON)
+  # Standard Homebrew location for Boost on Apple Silicon
+  set(BOOST_ROOT "/opt/homebrew")
+  set(BOOST_INCLUDEDIR "/opt/homebrew/include")
+  set(BOOST_LIBRARYDIR "/opt/homebrew/lib")
+endif()
+
 #set(Boost_DEBUG on)
-find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
+if(APPLE)
+  find_package(Boost 1.55 REQUIRED COMPONENTS filesystem thread date_time chrono regex serialization program_options)
+else()
+  find_package(Boost 1.55 REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
+endif()
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 if(MINGW)

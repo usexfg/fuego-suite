@@ -574,7 +574,7 @@ double Currency::getBurnPercentage() const {
 
     // Decompose miner reward into outputs
     std::vector<uint64_t> outAmounts;
-    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_11) {
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10) {
       // V11+: Uniform denomination decomposition for coinbase privacy.
       // Produces multiple outputs at standard power-of-10 tiers so all coinbase
       // outputs are indistinguishable across blocks regardless of reward amount.

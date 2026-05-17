@@ -2918,9 +2918,10 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       }
     }
 
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-      // v11 AMM swap auth validation
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasAmmSwapAuth) {
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+
+      // v10 AMM swap auth validation
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasAmmSwapAuth) {
         uint32_t feeBps = parameters::HEARTH_FEE_BPS;
         uint64_t expectedOutput;
         if (swapDirection == 0) {
@@ -3085,7 +3086,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     pushToBankingIndex(block, interestSummary);
 
   // TWAP accumulation per block (v11+) — spot price stored in Q64.64
-  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty()) {
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && !m_ammPool.isEmpty()) {
     uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     unsigned __int128 q64 = ((unsigned __int128)spotPrice << 64) / 1000000000000000000ULL;
     m_twapAccumulator += q64;
@@ -3096,7 +3097,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   uint32_t epochDuration = m_currency.isTestnet() ?
     parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
   if (block.height > 0 && block.height % epochDuration == 0 &&
-      block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
     // Run PI controller: target = LAUNCH_RATIO × launch_twap / current_twap
     if (m_twapBlockCount > 0 && !m_ammPool.isEmpty()) {
       int128_t avgQ64 = (int128_t)(m_twapAccumulator / m_twapBlockCount);
@@ -3995,7 +3996,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   m_paymentIdIndex.add(transaction.tx);
 
   // AMM state mutation (v11+)
-  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
     std::vector<TransactionExtraField> tx_extra_fields;
     if (parseTransactionExtra(transaction.tx.extra, tx_extra_fields)) {
       for (const auto& field : tx_extra_fields) {

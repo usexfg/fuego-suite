@@ -1396,6 +1396,40 @@ double Currency::getBurnPercentage() const {
 		}
 
 		if (!check_hash(proofOfWork, currentDiffic)) {
+			// DIAGNOSTIC: dump enough of the failing block to reproduce the hash offline.
+			// Lets us compare against a v1.9.3 daemon's view of the same block to
+			// determine whether the mismatch is in (a) the bytes feeding cn_slow_hash
+			// or (b) cn_slow_hash itself producing different output across architectures.
+			BinaryArray bblob;
+			BinaryArray pblob;
+			bool gotB = get_block_hashing_blob(block, bblob);
+			bool gotP = get_parent_block_hashing_blob(block, pblob);
+			const int diag_cn_variant = block.majorVersion < 5 ? 0 : block.majorVersion >= BLOCK_MAJOR_VERSION_6 ? 2 : 1;
+			const int diag_light = (block.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
+			Crypto::Hash diag_blockHash = get_block_hash(block);
+			logger(INFO, BRIGHT_RED)
+				<< "POW_DIAG"
+				<< " block=" << diag_blockHash
+				<< " v=" << static_cast<int>(block.majorVersion) << "." << static_cast<int>(block.minorVersion)
+				<< " prev=" << block.previousBlockHash
+				<< " ts=" << block.timestamp
+				<< " nonce=" << block.nonce
+				<< " parentMaj=" << static_cast<int>(block.parentBlock.majorVersion)
+				<< " parentMin=" << static_cast<int>(block.parentBlock.minorVersion)
+				<< " parentPrev=" << block.parentBlock.previousBlockHash
+				<< " parentTxCount=" << static_cast<int>(block.parentBlock.transactionCount)
+				<< " baseBranchSize=" << block.parentBlock.baseTransactionBranch.size()
+				<< " bcBranchSize=" << block.parentBlock.blockchainBranch.size()
+				<< " variant=" << diag_cn_variant
+				<< " light=" << diag_light
+				<< " powHash=" << proofOfWork
+				<< " diff=" << currentDiffic
+				<< " blockBlob_ok=" << gotB
+				<< " blockBlob_len=" << bblob.size()
+				<< " blockBlob=" << Common::toHex(bblob)
+				<< " parentBlob_ok=" << gotP
+				<< " parentBlob_len=" << pblob.size()
+				<< " parentBlob=" << Common::toHex(pblob);
 			return false;
 		}
 

@@ -384,7 +384,7 @@ namespace CryptoNote
 //                           TESTNET parameters
 //--------------------------------------------------------------------------------------------------------------------------
 
-    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712701c9cd7a687c8bdd622f1ec6c2531116f9c93dfa88ced8267500a70f1849416a2b0204e0c81000";
+    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd08807127019bc1f06b892498a1f911b75af946e91e17efcb6c58be7ce3f2f7efdd1dad51cc0204e0c81000";
  	const int P2P_DEFAULT_PORT_TESTNET = 20808;
  	const int RPC_DEFAULT_PORT_TESTNET = 28280;
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */

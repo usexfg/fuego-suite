@@ -281,6 +281,38 @@ namespace CryptoNote
              break;
            }
 
+           case TX_EXTRA_AMM_LP_ADD_AUTH:
+           {
+             TransactionExtraLpAddAuth auth;
+             auth.amountXfg = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.amountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.amountHeat = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.amountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.lpShares = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.lpShares |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
+           case TX_EXTRA_AMM_LP_REM_AUTH:
+           {
+             TransactionExtraLpRemoveAuth auth;
+             auth.lpSharesBurned = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.lpSharesBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.minAmountXfg = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.minAmountHeat = 0;
+             for (int i = 0; i < 8; ++i)
+               auth.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             transactionExtraFields.push_back(auth);
+             break;
+           }
+
            default:
              return false; // unknown extra tag — reject
        }
@@ -417,6 +449,16 @@ namespace CryptoNote
     {
       return addAmmSwapAuthToExtra(extra, t.direction, t.inputAmount, t.outputAmount,
                                    t.minOutput);
+    }
+
+    bool operator()(const TransactionExtraLpAddAuth &t)
+    {
+      return addLpAddAuthToExtra(extra, t.amountXfg, t.amountHeat, t.lpShares);
+    }
+
+    bool operator()(const TransactionExtraLpRemoveAuth &t)
+    {
+      return addLpRemoveAuthToExtra(extra, t.lpSharesBurned, t.minAmountXfg, t.minAmountHeat);
     }
 
   };
@@ -1946,6 +1988,56 @@ Crypto::PublicKey computePoolCommitKey() {
 
 Crypto::Hash hashOutput(const TransactionOutput& output) {
   return getObjectHash(output);
+}
+
+bool TransactionExtraLpAddAuth::serialize(ISerializer &s) {
+  s(amountXfg, "amountXfg");
+  s(amountHeat, "amountHeat");
+  s(lpShares, "lpShares");
+  return true;
+}
+
+bool TransactionExtraLpRemoveAuth::serialize(ISerializer &s) {
+  s(lpSharesBurned, "lpSharesBurned");
+  s(minAmountXfg, "minAmountXfg");
+  s(minAmountHeat, "minAmountHeat");
+  return true;
+}
+
+bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat,
+                         uint64_t lpShares) {
+  tx_extra.push_back(TX_EXTRA_AMM_LP_ADD_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(amountXfg & 0xFF));
+    amountXfg >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(amountHeat & 0xFF));
+    amountHeat >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(lpShares & 0xFF));
+    lpShares >>= 8;
+  }
+  return true;
+}
+
+bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
+                            uint64_t minXfg, uint64_t minHeat) {
+  tx_extra.push_back(TX_EXTRA_AMM_LP_REM_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(lpSharesBurned & 0xFF));
+    lpSharesBurned >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(minXfg & 0xFF));
+    minXfg >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(minHeat & 0xFF));
+    minHeat >>= 8;
+  }
+  return true;
 }
 
 } // namespace CryptoNote

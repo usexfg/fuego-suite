@@ -2821,12 +2821,16 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     bool hasAmmSwapAuth = false;
     uint8_t swapDirection = 0;
     uint64_t swapInputAmount = 0, swapOutputAmount = 0, swapMinOutput = 0;
+    bool hasLpAddAuth = false;
+    uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
+    bool hasLpRemoveAuth = false;
+    uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
 
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
       outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i]);
 
-      // Scan for v12 auth tags
+       // Scan for v10 auth tags
       std::vector<TransactionExtraField> tx_extra_fields;
       if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
         for (const auto& field : tx_extra_fields) {
@@ -2843,6 +2847,20 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             swapInputAmount = auth.inputAmount;
             swapOutputAmount = auth.outputAmount;
             swapMinOutput = auth.minOutput;
+          }
+          if (field.type() == typeid(TransactionExtraLpAddAuth)) {
+            hasLpAddAuth = true;
+            const auto& auth = boost::get<TransactionExtraLpAddAuth>(field);
+            lpAddAmountXfg = auth.amountXfg;
+            lpAddAmountHeat = auth.amountHeat;
+            lpAddShares = auth.lpShares;
+          }
+          if (field.type() == typeid(TransactionExtraLpRemoveAuth)) {
+            hasLpRemoveAuth = true;
+            const auto& auth = boost::get<TransactionExtraLpRemoveAuth>(field);
+            lpRemoveShares = auth.lpSharesBurned;
+            lpRemoveMinXfg = auth.minAmountXfg;
+            lpRemoveMinHeat = auth.minAmountHeat;
           }
         }
       }
@@ -2918,9 +2936,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       }
     }
 
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-      // v11 AMM swap auth validation
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasAmmSwapAuth) {
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      // v10 AMM swap + LP auth pool-math validation
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasAmmSwapAuth) {
         uint32_t feeBps = parameters::HEARTH_FEE_BPS;
         uint64_t expectedOutput;
         if (swapDirection == 0) {
@@ -2968,7 +2986,37 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
       }
 
-      // Original v11 AMM validation (still runs for v11 and v12 non-auth AMM txs)
+      // v10 LP add auth — pool math validation
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasLpAddAuth) {
+        if (lpAddAmountXfg == 0 && lpAddAmountHeat == 0) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: zero amounts";
+        }
+        uint64_t computedShares = ammMintLpShares(lpAddAmountXfg, lpAddAmountHeat,
+          m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (computedShares != lpAddShares || computedShares == 0) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: share mismatch (computed="
+                                     << computedShares << " declared=" << lpAddShares << ")";
+        }
+      }
+
+      // v10 LP remove auth — pool math validation  
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasLpRemoveAuth) {
+        if (lpRemoveShares == 0 || lpRemoveShares > m_ammPool.totalLpShares) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: invalid shares";
+        }
+        uint64_t amountXfg = 0, amountHeat = 0;
+        ammGetWithdrawalAmounts(lpRemoveShares, m_ammPool.totalLpShares,
+          m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
+        if (amountXfg < lpRemoveMinXfg || amountHeat < lpRemoveMinHeat) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: below minimum";
+        }
+      }
+
+      // Original v11 AMM validation (backward compat for pre-auth-tag txs)
       std::vector<TransactionExtraField> tx_extra_fields;
       if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
         for (const auto& field : tx_extra_fields) {
@@ -3495,7 +3543,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                       // Full enforcement requires the tx public key and is done in wallet scanning.
                       // At consensus level we enforce amount; wallet-level enforces destination.
                       feeOutputFound = true;
-                    } else {
+      } else {
                       feeOutputFound = true; // dev addr parse failed — allow, log warning
                       logger(WARNING) << "@ Could not parse FUEGO_DEV_FUND_ADDRESS for fee check";
                     }

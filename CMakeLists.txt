@@ -106,7 +106,7 @@ if(APPLE OR FREEBSD)
     enable_language(ASM)
 
     # Add macOS specific definitions for Boost.Asio
-    add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1)
+    add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1 -DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=30)
 
     # Fix header search paths for macOS
     if(APPLE)

@@ -81,6 +81,8 @@
 // 0xF_ tags: v12 per-asset auth (M3 fix)
 #define TX_EXTRA_HEAT_MINT_AUTH             0xF5
 #define TX_EXTRA_AMM_SWAP_AUTH              0xF6
+#define TX_EXTRA_AMM_LP_ADD_AUTH            0xF7
+#define TX_EXTRA_AMM_LP_REM_AUTH            0xF8
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 
@@ -240,6 +242,22 @@ struct TransactionExtraAmmSwapAuth {
   bool serialize(ISerializer& serializer);
 };
 
+// v10 LP add authorisation — LP shares created from XFG + HEAT pool deposit
+struct TransactionExtraLpAddAuth {
+  uint64_t amountXfg;
+  uint64_t amountHeat;
+  uint64_t lpShares;          // computed by validator from pool math
+  bool serialize(ISerializer& serializer);
+};
+
+// v10 LP remove authorisation — LP shares burned for XFG + HEAT withdrawal
+struct TransactionExtraLpRemoveAuth {
+  uint64_t lpSharesBurned;
+  uint64_t minAmountXfg;
+  uint64_t minAmountHeat;
+  bool serialize(ISerializer& serializer);
+};
+
 
 // ============================================================
 // Fuego Ring-Signature Commitment Key Derivation
@@ -321,7 +339,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
 
 
 
@@ -359,6 +377,10 @@ bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint6
 bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted);
 bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
                            uint64_t outputAmount, uint64_t minOutput);
+bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat,
+                         uint64_t lpShares);
+bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
+                            uint64_t minXfg, uint64_t minHeat);
 
 // v12 deterministic pool commit key — no spendable scalar (term-based unspendability)
 Crypto::PublicKey computePoolCommitKey();

@@ -4315,8 +4315,33 @@ bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
     fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
     return false;
   }
-  success_msg_writer() << "HEAT CD withdrawal: " << args[0];
-  return true;
+  DepositId id;
+  if (!Common::fromString(args[0], id)) {
+    fail_msg_writer() << "Invalid deposit ID";
+    return false;
+  }
+
+  Deposit deposit;
+  if (!m_wallet->getDeposit(id, deposit)) {
+    fail_msg_writer() << "Deposit not found";
+    return false;
+  }
+  if (deposit.locked) {
+    fail_msg_writer() << "Deposit is locked";
+    return false;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  success_msg_writer() << "Withdrawing HEAT CD #" << id << ": " << m_currency.formatAmount(deposit.amount) << " HEAT";
+
+  std::vector<DepositId> ids{id};
+  CryptoNote::TransactionId tx = m_wallet->withdrawDeposits(ids, fee);
+  if (tx != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Withdrawal submitted: " << tx;
+    return true;
+  }
+  fail_msg_writer() << "Withdrawal failed";
+  return false;
 }
 
 bool simple_wallet::heat_list(const std::vector<std::string>& args) {

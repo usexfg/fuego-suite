@@ -2885,7 +2885,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap balance mismatch (XFG->HEAT)";
           }
         } else {
-          if (inAssets.xfg + swapOutputAmount < outAssets.xfg + xfgFee ||
+          // Direction=1: fee paid from swap output. Override flat-sum fee for block reward.
+          fee = m_currency.minimumFee(blockData.majorVersion);
+          if (inAssets.xfg + swapOutputAmount < outAssets.xfg + fee ||
               inAssets.heat < outAssets.heat) {
             isTransactionValid = false;
             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap balance mismatch (HEAT->XFG)";

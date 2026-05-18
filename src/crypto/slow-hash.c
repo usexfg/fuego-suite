@@ -834,6 +834,89 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
 }
 
 #elif !defined NO_AES && (defined(__arm__) || defined(__aarch64__))
+
+#ifdef __aarch64__
+/* Heap-allocate the 2 MB scratchpad once per thread and keep a TLS pointer to
+ * it. On Apple Silicon (M1/M2) the secondary thread stacks are only ~512 KB,
+ * so placing the scratchpad on the stack reliably overflows it. Ported from
+ * Monero commit 187633c0c "slow_hash: don't blow out Mac stack on ARM64".
+ */
+#include <stdlib.h>
+#include <sys/mman.h>
+
+#if defined(_MSC_VER)
+#define THREADV __declspec(thread)
+#else
+#define THREADV __thread
+#endif
+
+THREADV uint8_t *hp_state = NULL;
+THREADV int hp_malloced = 0;
+
+void slow_hash_allocate_state(void)
+{
+    if (hp_state != NULL)
+        return;
+
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0
+#endif
+#ifndef MAP_ANON
+# ifdef MAP_ANONYMOUS
+#  define MAP_ANON MAP_ANONYMOUS
+# endif
+#endif
+    hp_state = (uint8_t *) mmap(0, MEMORY, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANON | MAP_HUGETLB, -1, 0);
+
+    if (hp_state == MAP_FAILED)
+        hp_state = NULL;
+
+    if (hp_state == NULL)
+    {
+        /* Hugepage mmap failed (likely the common case on macOS); try plain
+         * anonymous mmap before falling back to malloc. */
+        hp_state = (uint8_t *) mmap(0, MEMORY, PROT_READ | PROT_WRITE,
+                                    MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (hp_state == MAP_FAILED)
+            hp_state = NULL;
+    }
+
+    if (hp_state == NULL)
+    {
+        hp_malloced = 1;
+#if defined(_MSC_VER)
+        hp_state = (uint8_t *) _aligned_malloc(MEMORY, 16);
+#else
+        void *aligned = NULL;
+        if (posix_memalign(&aligned, 16, MEMORY) != 0)
+            aligned = NULL;
+        hp_state = (uint8_t *) aligned;
+#endif
+    }
+}
+
+void slow_hash_free_state(void)
+{
+    if (hp_state == NULL)
+        return;
+
+    if (hp_malloced)
+    {
+#if defined(_MSC_VER)
+        _aligned_free(hp_state);
+#else
+        free(hp_state);
+#endif
+    }
+    else
+    {
+        munmap(hp_state, MEMORY);
+    }
+    hp_state = NULL;
+    hp_malloced = 0;
+}
+#else /* !__aarch64__ */
 void slow_hash_allocate_state(void)
 {
   // Do nothing, this is just to maintain compatibility with the upgraded slow-hash.c
@@ -845,6 +928,7 @@ void slow_hash_free_state(void)
   // As above
   return;
 }
+#endif /* __aarch64__ */
 
 #if defined(__GNUC__)
 #define RDATA_ALIGN16 __attribute__ ((aligned(16)))
@@ -1070,11 +1154,14 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
 {
     RDATA_ALIGN16 uint8_t expandedKey[240];
 
-#ifndef FORCE_USE_HEAP
-    RDATA_ALIGN16 uint8_t hp_state[MEMORY];
-#else
-    uint8_t *hp_state = (uint8_t *)aligned_malloc(MEMORY,16);
-#endif
+    /* Scratchpad lives in a thread-local mmapped region (see
+     * slow_hash_allocate_state). Allocate on first call from this thread, then
+     * pin the TLS pointer into a local so macros and tight loops avoid the TLS
+     * dereference. Macros (pre_aes/post_aes/VARIANT2_2) still reference the
+     * file-scope `hp_state` pointer, which targets the same buffer. */
+    if (hp_state == NULL)
+        slow_hash_allocate_state();
+    uint8_t *local_hp_state = hp_state;
 
     uint8_t text[INIT_SIZE_BYTE];
     RDATA_ALIGN16 uint64_t a[2];
@@ -1112,7 +1199,7 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     for(i = 0; i < MEMORY / (light?16:1) / INIT_SIZE_BYTE; i++)
     {
         aes_pseudo_round(text, text, expandedKey, INIT_SIZE_BLK);
-        memcpy(&hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
+        memcpy(&local_hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
     }
 
     U64(a)[0] = U64(&state.k[0])[0] ^ U64(&state.k[32])[0];
@@ -1147,7 +1234,7 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     for(i = 0; i < MEMORY / (light?16:1) / INIT_SIZE_BYTE; i++)
     {
         // add the xor to the pseudo round
-        aes_pseudo_round_xor(text, text, expandedKey, &hp_state[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
+        aes_pseudo_round_xor(text, text, expandedKey, &local_hp_state[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
     }
 
     /* CryptoNight Step 5:  Apply Keccak to the state again, and then
@@ -1161,9 +1248,9 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     hash_permutation(&state.hs);
     extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
 
-#ifdef FORCE_USE_HEAP
-    aligned_free(hp_state);
-#endif
+    /* Scratchpad is intentionally NOT freed here: hp_state is a thread-local
+     * pointer that persists for the lifetime of the calling thread. See
+     * slow_hash_free_state(). */
 }
 #else /* aarch64 && crypto */
 

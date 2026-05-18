@@ -119,7 +119,13 @@ private:
                                                               uint8_t direction,
                                                               uint64_t inputAmount,
                                                               uint64_t outputAmount,
-                                                              uint64_t minOutput);
+                                                               uint64_t minOutput);
+  std::unique_ptr<WalletRequest> doSendAmmSwapV10CommitmentTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                        uint8_t direction,
+                                                                        uint64_t inputAmount,
+                                                                        uint64_t outputAmount,
+                                                                        uint64_t minOutput);
   void sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                          std::shared_ptr<SendTransactionContext> context,
                                          Crypto::SecretKey& transactionSK,

@@ -164,65 +164,17 @@ namespace CryptoNote
         return true;
       }
 
-      // Generate unified STARK commitment (v3) for testnet burn
-      auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
-          burn_amount,
-          CryptoNote::parameters::DEPOSIT_TERM_FOREVER,
-          CryptoNote::parameters::STARK_NETWORK_ID_TESTNET,
-          CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
-          CryptoNote::parameters::STARK_COMMITMENT_VERSION);
+      // v10 HEAT mint via auth tag — no STARK commitment needed on-chain
+      success_msg_writer() << "Creating TEST burn (HEAT v10): " << m_currency.formatAmount(burn_amount) << " TEST";
+      uint64_t heatAmount = burn_amount * parameters::HEAT_LAUNCH_RATIO_DENOM / parameters::HEAT_LAUNCH_RATIO_NUM;
+      success_msg_writer() << "  Minting: " << m_currency.formatAmount(heatAmount) << " HEAT";
 
-      success_msg_writer() << "";
-      success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim HEAT):";
-      success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
-      success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
-      success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
-      success_msg_writer() << "";
-
-      std::vector<uint8_t> extra;
-      CryptoNote::TransactionExtraHeatCommitment heatCommitment;
-      heatCommitment.commitment = starkResult.commitment;
-      heatCommitment.amount = burn_amount;
-      heatCommitment.metadata = {0x08};
-
-      CryptoNote::addHeatCommitmentToExtra(extra, heatCommitment);
-
-      // Encrypt STARK secret into tx extra (0xD5)
-      CryptoNote::AccountKeys walletKeys;
-      m_wallet->getAccountKeys(walletKeys);
-      CryptoNote::DepositSecretPayload secretPayload;
-      secretPayload.depositType = 0x08;
-      secretPayload.amount = burn_amount;
-      secretPayload.term = CryptoNote::parameters::DEPOSIT_TERM_FOREVER;
-      memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
-      CryptoNote::TransactionExtraDepositSecret encSecret;
-      if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
-        CryptoNote::addDepositSecretToExtra(extra, encSecret);
-      }
-
-      std::string extraString = std::string(extra.begin(), extra.end());
-
-      success_msg_writer() << "Creating TEST burn (HEAT): " << m_currency.formatAmount(burn_amount) << " TEST";
-
-      CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-      WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-      CryptoNote::TransactionId txId = m_wallet->deposit(burn_term, burn_amount, fee + banking_fee, extraString, 0);
-
+      CryptoNote::TransactionId txId = m_wallet->mintHeatV10(burn_amount, heatAmount, fee + banking_fee, 0);
       if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
-        fail_msg_writer() << "Sending deposit transaction failed";
+        fail_msg_writer() << "Mint HEAT transaction failed";
         return true;
       }
-
-      std::error_code sendError = sent.wait(txId);
-      removeGuard.removeObserver();
-
-      if (sendError) {
-        fail_msg_writer() << "Burn transaction failed: " << sendError.message();
-        return true;
-      }
-
-      success_msg_writer() << "TEST burn transaction created. TX ID: " << txId;
+      success_msg_writer() << "HEAT mint transaction created. TX ID: " << txId;
       return true;
     }
     catch (const std::exception& e)

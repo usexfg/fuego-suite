@@ -2868,8 +2868,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     bool isTransactionValid = true;
 
-    // v12 per-asset balance check (replaces flat fee calculation for v12+)
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+    // v10 per-asset balance check — skip coinbase (block reward creates coins from nothing)
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && i > 0) {
       uint64_t xfgFee = fee;
       if (hasHeatMintAuth) {
         if (inAssets.xfg < outAssets.xfg + xfgFee + authXfgBurned ||

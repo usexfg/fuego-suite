@@ -188,7 +188,7 @@ HEAT is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to 
 
 ### Certificate of Deposit (CD)
 
-Time-locked HEAT deposits earning yield from swap fees. A 0.1% banking fee is donated to the Fuego Developer Fund.
+Term-locked HEAT deposits earning real yield thru protocol revenue, not inflation. Each CD requires only an upfront banking fee of a mere 0.1% of CD amount (fee also in HEAT) paid at time of creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
 
 | Command | Description |
 |---------|-------------|

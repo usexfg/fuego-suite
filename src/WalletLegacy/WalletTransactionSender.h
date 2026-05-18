@@ -103,6 +103,14 @@ public:
                                                         uint64_t fee,
                                                         uint64_t mixIn);
 
+  std::unique_ptr<WalletRequest> makeHeatDepositV10Request(TransactionId& transactionId,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            uint64_t amount,
+                                                            uint32_t termEpochs,
+                                                            uint64_t bankingFee,
+                                                            uint64_t fee,
+                                                            uint64_t mixIn);
+
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                             const std::vector<DepositId>& depositIds,
@@ -150,6 +158,11 @@ private:
                                                                uint64_t lpShares,
                                                                uint64_t minXfg,
                                                                uint64_t minHeat);
+  std::unique_ptr<WalletRequest> doSendHeatDepositV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  uint64_t cdAmount,
+                                                                  uint64_t bankingFee,
+                                                                  uint32_t termEpochs);
   void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
                                         const std::vector<DepositId> heatIds,
                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,

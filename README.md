@@ -202,7 +202,7 @@ Cross-chain XFG atomic swaps via COMIT protocol with HTLC adaptor signatures. Fe
 
 ### Documentation
 
-Comprehensive docs in `docs/`:
+Comprehensive docs at [docs.usexfg.org](https://docs.usexfg.org) and in `docs/`:
 - `getting-started/` — Onboarding
 - `features/` — Feature guides
 - `api-reference/` — RPC API

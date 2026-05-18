@@ -23,13 +23,12 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Assets** | HEAT Stablecoin | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
 | **Assets** | Hearth AMM | Constant-product XFG/HEAT pool; swap, add/remove liquidity, yield from LP fees |
-| **Assets** | Certificate of Deposit | Time-locked XFG deposits earning yield from swap fees |
+| **Assets** | Certificate of Deposit | HEAT-denominated time-locked deposits earning yield from swap fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
 | **Stability** | Milæsandra Simulator | Testnet-only fee injection for protocol testing without real cross-chain activity |
 | **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with HTLC adaptor signatures |
 | **Swaps** | swapxfg | Integrated Go-based swap engine with inter-chain fee routing |
 | **Network** | I2P / Tor / Meshtastic | Pluggable transport-layer privacy |
-| **Network** | Elderfier Nodes | Staking rewards from swap fees and deposit banking fees |
 | **Wallet** | Fire Wallet CLI | Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
 | **Wallet** | TUI | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
 | **Dev Tools** | Fuego Desktop Wallet | Cross-platform GUI — [fuego-wallet](https://github.com/usexfg/fuego-wallet) |
@@ -189,12 +188,13 @@ HEAT is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to 
 
 ### Certificate of Deposit (CD)
 
-Time-locked XFG deposits earning yield from swap fees. HEAT-denominated CDs earn 0.1% banking fee routed to Elderfier stakers.
+Time-locked HEAT deposits earning yield from swap fees. A 0.1% banking fee is donated to the Fuego Developer Fund.
 
 | Command | Description |
 |---------|-------------|
-| `deposit <term_epochs> <amount>` | Lock XFG for epoch-based yield |
-| `withdraw_deposits <id>` | Redeem matured CD with accrued interest |
+| `heat_deposit <amount> <term_epochs>` | Lock HEAT for epoch-based yield |
+| `heat_withdraw <deposit_id>` | Redeem matured CD with accrued interest |
+| `heat_list` | List active HEAT CDs and balance |
 
 ### Atomic Swaps (swapxfg)
 

@@ -79,6 +79,21 @@ public:
                                                          uint64_t fee,
                                                          uint64_t mixIn);
 
+  std::unique_ptr<WalletRequest> makeLpAddV10Request(TransactionId& transactionId,
+                                                       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                       uint64_t amountXfg,
+                                                       uint64_t amountHeat,
+                                                       uint64_t fee,
+                                                       uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeLpRemoveV10Request(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t lpShares,
+                                                         uint64_t minXfg,
+                                                         uint64_t minHeat,
+                                                         uint64_t fee,
+                                                          uint64_t mixIn);
+
   std::unique_ptr<WalletRequest> makeAmmSwapV10Request(TransactionId& transactionId,
                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                         uint8_t direction,
@@ -126,6 +141,24 @@ private:
                                                                         uint64_t inputAmount,
                                                                         uint64_t outputAmount,
                                                                         uint64_t minOutput);
+  std::unique_ptr<WalletRequest> doSendLpAddV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            uint64_t amountXfg,
+                                                            uint64_t amountHeat);
+  std::unique_ptr<WalletRequest> doSendLpRemoveV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t lpShares,
+                                                               uint64_t minXfg,
+                                                               uint64_t minHeat);
+  void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
+                                        const std::vector<DepositId> heatIds,
+                                        std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                        std::unique_ptr<WalletRequest>& nextRequest,
+                                        std::error_code ec);
+  void sendLpRemoveCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
+                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                           std::unique_ptr<WalletRequest>& nextRequest,
+                                           std::error_code ec);
   void sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                          std::shared_ptr<SendTransactionContext> context,
                                          Crypto::SecretKey& transactionSK,

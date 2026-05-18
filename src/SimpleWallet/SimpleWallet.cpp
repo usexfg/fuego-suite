@@ -4206,23 +4206,20 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
     return false;
   }
 
-  std::vector<uint8_t> extra;
-  addAmmAddLiquidityToExtra(extra, xfgAmount, heatAmount);
-  std::string extraStr(extra.begin(), extra.end());
+  uint64_t heatAvailable = m_wallet->actualHeatBalance();
+  if (heatAvailable < heatAmount) {
+    fail_msg_writer() << "Insufficient HEAT balance. Available: " << m_currency.formatAmount(heatAvailable);
+    return false;
+  }
+
+  success_msg_writer() << "LP Add (v10): " << m_currency.formatAmount(xfgAmount) << " XFG + "
+                        << m_currency.formatAmount(heatAmount) << " HEAT";
+
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  transfers.push_back({myAddress, static_cast<int64_t>(xfgAmount)});
-  transfers.push_back({myAddress, static_cast<int64_t>(heatAmount)});
-
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::TransactionId tx = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Liquidity add submitted: " << m_currency.formatAmount(xfgAmount)
-                         << " XFG + " << m_currency.formatAmount(heatAmount) << " HEAT"
-                         << " | tx: " << tx;
+    success_msg_writer() << "Transaction submitted: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";

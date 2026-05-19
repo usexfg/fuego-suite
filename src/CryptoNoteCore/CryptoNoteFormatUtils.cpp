@@ -566,12 +566,8 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     if (!get_block_hashing_blob(b, bd)) {
       return false;
     }
-  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2 && b.majorVersion <= BLOCK_MAJOR_VERSION_9) {
+  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
     if (!get_parent_block_hashing_blob(b, bd)) {
-      return false;
-    }
-  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-    if (!get_block_hashing_blob(b, bd)) {
       return false;
     }
   } else {

@@ -4011,7 +4011,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   }
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t minMint = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_HEAT_MINT_MIN : CryptoNote::parameters::HEAT_MINT_MIN_XFG;
+  uint64_t minMint = m_currency.isTestnet() ? CryptoNote::TESTNET_HEAT_MINT_MIN : CryptoNote::parameters::HEAT_MINT_MIN_XFG;
   if (xfgAmount < minMint) {
     fail_msg_writer() << "Minimum mint: " << m_currency.formatAmount(minMint) << " XFG. Use hearth_buy for smaller amounts.";
     return false;

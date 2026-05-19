@@ -351,7 +351,7 @@ namespace CryptoNote
 	const size_t P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT = 2;
 	const size_t P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT = 70; // percent
 	const uint32_t P2P_DEFAULT_HANDSHAKE_INTERVAL = 60;			 // seconds
-	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 1000000;		 // 1,000,000 bytes maximum packet size
+	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 50000000;		 // 50 MB max packet size (matches Karbo/Conceal). NetNode.cpp:343 already says "20 MB limit"; 1MB was a regression that paired with the LevinProtocol 1MB cap to abort sync once any peer sent >1MB.
 	const uint32_t P2P_DEFAULT_PEERS_IN_HANDSHAKE = 250;
 	const uint32_t P2P_MAX_INCOMING_CONNECTIONS = 250;			 // max incoming connections
 	const uint32_t P2P_DEFAULT_CONNECTION_TIMEOUT = 5000;	   // 5 seconds

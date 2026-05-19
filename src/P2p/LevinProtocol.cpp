@@ -25,7 +25,7 @@ namespace {
 const uint64_t LEVIN_SIGNATURE = 0x0101010101012101LL;  //Bender's nightmare
 const uint32_t LEVIN_PACKET_REQUEST = 0x00000001;
 const uint32_t LEVIN_PACKET_RESPONSE = 0x00000002;
-const uint32_t LEVIN_DEFAULT_MAX_PACKET_SIZE = 1000000;      //1MB max packet size
+const uint32_t LEVIN_DEFAULT_MAX_PACKET_SIZE = 100000000;    //100MB max packet size (matches Conceal/Karbo/Monero; 1MB was a regression that aborted sync once peers sent block batches larger than 1MB — "Levin packet size is too big")
 const uint32_t LEVIN_PROTOCOL_VER_1 = 1;
 
 #pragma pack(push)

@@ -565,7 +565,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
   // HEAT CD commands (v11+)
-  m_consoleHandler.setHandler("heat_deposit", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_deposit <amount> <term_epochs> - Create HEAT CD");
+  m_consoleHandler.setHandler("create_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "create_cd <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
   m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
   m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List active HEAT CDs");
 }
@@ -4123,10 +4123,10 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  CryptoNote::TransactionId tx = m_wallet->mintHeatV10(xfgAmount, heatAmount, fee, mixIn);
+  CryptoNote::TransactionId txId = m_wallet->mintHeatV10(xfgAmount, heatAmount, fee, mixIn);
 
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Transaction submitted: " << tx;
+  if (txId != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "HEAT mint submitted (ID " << txId << ") — use 'show_transaction " << txId << "' for hash";
     return true;
   }
   fail_msg_writer() << "Transaction failed";
@@ -4178,7 +4178,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
   CryptoNote::TransactionId tx = m_wallet->ammSwapV10(direction, amount, expectedOutput, minOutput, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Transaction submitted: " << tx;
+    success_msg_writer() << "Swap submitted (ID " << tx << ")";
     return true;
   }
   fail_msg_writer() << "Transaction failed";
@@ -4219,7 +4219,7 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   CryptoNote::TransactionId tx = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Transaction submitted: " << tx;
+    success_msg_writer() << "LP add submitted (ID " << tx << ")";
     return true;
   }
   fail_msg_writer() << "Transaction failed";
@@ -4303,7 +4303,7 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   CryptoNote::TransactionId tx = m_wallet->heatDepositV10(amount, termEpochs, bankingFee, fee, mixIn);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Transaction submitted: " << tx;
+    success_msg_writer() << "CD created (ID " << tx << ") — 0.1% fee → @fuegoxfg";
     return true;
   }
   fail_msg_writer() << "Transaction failed";

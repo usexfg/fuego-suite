@@ -68,9 +68,7 @@ namespace CryptoNote
   //----------------------------------------------------------------------------------------------------
   void CryptoNote::testnet_wallet::register_testnet_commands()
   {
-    // Add testnet-specific deposit commands (in addition to inherited ones)
-    m_consoleHandler.setHandler("mint_heat", boost::bind(&testnet_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <amount> - Burn TEST to mint HEAT");
-    m_consoleHandler.setHandler("heat_list", boost::bind(&testnet_wallet::heat_list, this, boost::arg<1>()), "heat_list - List HEAT balance and deposits");
+    // Inherits: mint_heat, create_cd, heat_list, list_heat, list_cds, balance, swap, add_liq from simple_wallet
 
     // @ Alias system commands (inherited from simple_wallet)
     m_consoleHandler.setHandler("register_alias", boost::bind(&testnet_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register a TEST alias (8 chars ONLY: [A-Z0-9] (CAPS-LOCK) req'd, [a-z0-9] (lowercase) for regular user wallets)");

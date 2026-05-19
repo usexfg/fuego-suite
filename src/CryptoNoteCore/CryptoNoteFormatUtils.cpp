@@ -566,37 +566,20 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     if (!get_block_hashing_blob(b, bd)) {
       return false;
     }
-  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_9) {
-    // v9+ blocks are PoW-hashed over get_block_hashing_blob (block header + tree
-    // root + tx count) rather than get_parent_block_hashing_blob. The parent-
-    // block serializer prepends parentBlock.{major,minor}Version/timestamp/
-    // prevId/nonce/merkleRoot, which yields the wrong byte prefix for v9 blocks
-    // and causes "too weak proof of work" rejections when syncing mainnet
-    // (network miners hash the block-header blob, not the parent blob).
-    if (!get_block_hashing_blob(b, bd)) {
+  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2 && b.majorVersion <= BLOCK_MAJOR_VERSION_9) {
+    if (!get_parent_block_hashing_blob(b, bd)) {
       return false;
     }
-  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
-    if (!get_parent_block_hashing_blob(b, bd)) {
+  } else if (b.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+    if (!get_block_hashing_blob(b, bd)) {
       return false;
     }
   } else {
     return false;
   }     // original CryptoNight (0) until v5, anti-ASIC CNv7 var(1), CNv8(2) from v6 thru CNupx/2
   const int cn_variant = b.majorVersion < 5 ? 0 : b.majorVersion >= BLOCK_MAJOR_VERSION_6 ? 2 : 1;
-  const int light = ( b.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
-  // DIAG_HASH: print the exact bytes fed to cn_slow_hash and the exact output.
-  // Outputs to stderr so it bypasses the logger framework entirely. Bracketed
-  // with a unique tag so it's grep-able.
-  std::fprintf(stderr, "[DIAG_HASH] v=%d len=%zu variant=%d light=%d in=",
-               (int)b.majorVersion, bd.size(), cn_variant, light);
-  for (size_t i = 0; i < bd.size(); i++) std::fprintf(stderr, "%02x", bd[i]);
-  std::fputc('\n', stderr);
+  const int light = (b.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
   cn_slow_hash(context, bd.data(), bd.size(), res, light, cn_variant);
-  std::fprintf(stderr, "[DIAG_HASH] out=");
-  for (int i = 0; i < 32; i++) std::fprintf(stderr, "%02x", ((const uint8_t*)&res)[i]);
-  std::fputc('\n', stderr);
-  std::fflush(stderr);
   return true;
 }
 

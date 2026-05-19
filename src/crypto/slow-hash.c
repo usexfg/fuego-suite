@@ -1059,7 +1059,13 @@ __asm__(
  * feeding in a vector of zeros for our first step. Also we have to do our own Xor explicitly
  * at the last step, to provide the AddRoundKey that the ARM instructions omit.
  */
-STATIC INLINE void aes_pseudo_round(const uint8_t *in, uint8_t *out, const uint8_t *expandedKey, int nblocks)
+/* IMPORTANT: must NOT be inlined on Apple clang (any version observed: 17.0).
+ * When inlined into cn_slow_hash, Apple clang at -O1+ miscompiles the
+ * explode/implode loops in cn_slow_hash, producing wrong CN hashes.
+ * Reproducer: every CN v0/v1/v2 canonical vector fails on M1 if this is
+ * STATIC INLINE without the noinline attribute. Keep noinline. */
+__attribute__((noinline))
+STATIC void aes_pseudo_round(const uint8_t *in, uint8_t *out, const uint8_t *expandedKey, int nblocks)
 {
 	const uint8x16_t *k = (const uint8x16_t *)expandedKey, zero = {0};
 	uint8x16_t tmp;
@@ -1093,7 +1099,10 @@ STATIC INLINE void aes_pseudo_round(const uint8_t *in, uint8_t *out, const uint8
 	}
 }
 
-STATIC INLINE void aes_pseudo_round_xor(const uint8_t *in, uint8_t *out, const uint8_t *expandedKey, const uint8_t *xor, int nblocks)
+/* See aes_pseudo_round above for the noinline rationale. Inlining this into
+ * cn_slow_hash's implode loop is also miscompiled by Apple clang. */
+__attribute__((noinline))
+STATIC void aes_pseudo_round_xor(const uint8_t *in, uint8_t *out, const uint8_t *expandedKey, const uint8_t *xor, int nblocks)
 {
 	const uint8x16_t *k = (const uint8x16_t *)expandedKey;
 	const uint8x16_t *x = (const uint8x16_t *)xor;
@@ -1155,13 +1164,19 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     RDATA_ALIGN16 uint8_t expandedKey[240];
 
     /* Scratchpad lives in a thread-local mmapped region (see
-     * slow_hash_allocate_state). Allocate on first call from this thread, then
-     * pin the TLS pointer into a local so macros and tight loops avoid the TLS
-     * dereference. Macros (pre_aes/post_aes/VARIANT2_2) still reference the
-     * file-scope `hp_state` pointer, which targets the same buffer. */
+     * slow_hash_allocate_state). Allocate on first call from this thread.
+     *
+     * IMPORTANT: the macros (pre_aes/post_aes/VARIANT2_2) reference the
+     * file-scope `hp_state` pointer directly. We must do the same here in
+     * the function body — using a separately-named local pointer (e.g.
+     * `local_hp_state = hp_state`) and then writing through it while the
+     * macros read through `hp_state` causes Apple clang at -O2 to apply
+     * TBAA on the two pointer expressions: the explode-loop writes through
+     * `local_hp_state` are not observed by the main-loop reads through
+     * `hp_state`, and the scratchpad is read as zero — producing wrong
+     * hashes for every input. Keep everything on `hp_state`. */
     if (hp_state == NULL)
         slow_hash_allocate_state();
-    uint8_t *local_hp_state = hp_state;
 
     uint8_t text[INIT_SIZE_BYTE];
     RDATA_ALIGN16 uint64_t a[2];
@@ -1199,7 +1214,7 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     for(i = 0; i < MEMORY / (light?16:1) / INIT_SIZE_BYTE; i++)
     {
         aes_pseudo_round(text, text, expandedKey, INIT_SIZE_BLK);
-        memcpy(&local_hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
+        memcpy(&hp_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
     }
 
     U64(a)[0] = U64(&state.k[0])[0] ^ U64(&state.k[32])[0];
@@ -1234,7 +1249,7 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
     for(i = 0; i < MEMORY / (light?16:1) / INIT_SIZE_BYTE; i++)
     {
         // add the xor to the pseudo round
-        aes_pseudo_round_xor(text, text, expandedKey, &local_hp_state[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
+        aes_pseudo_round_xor(text, text, expandedKey, &hp_state[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
     }
 
     /* CryptoNight Step 5:  Apply Keccak to the state again, and then

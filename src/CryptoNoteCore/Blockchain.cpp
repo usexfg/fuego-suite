@@ -2667,14 +2667,20 @@ bool Blockchain::addNewBlock(const Block& bl_, block_verification_context& bvc) 
       }
       else
       {
-        add_result = pushBlock(bl, id, bvc, ++height);
+        // `height` here is m_blocks.size() BEFORE the push — i.e. the index the
+        // new block will occupy after pushBlock returns successfully. This is
+        // what the checkpoint comparator expects: m_points[N] holds the hash of
+        // m_blocks[N]. Passing ++height was an off-by-one that caused
+        // check_block(N+1, hash_of_block_N) at every checkpoint height,
+        // surfacing whenever a checkpoint exists at exactly N+1.
+        add_result = pushBlock(bl, id, bvc, height);
         if (add_result)
         {
           sendMessage(BlockchainMessage(NewBlockMessage(id)));
 
           /** Save the blockchain every 720 blocks if the option is enabled*/
           if (m_blockchainAutosaveEnabled) {
-            if (height % 720 == 0)
+            if (m_blocks.size() % 720 == 0)
             {
               storeCache();
             }

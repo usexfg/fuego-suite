@@ -568,6 +568,9 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("create_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "create_cd <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
   m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
   m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List active HEAT CDs");
+
+  m_consoleHandler.setHandler("list_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "list_heat - List all HEAT balance and transactions");
+  m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List HEAT CDs (active/complete/claimed)");
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -1257,106 +1260,6 @@ bool simple_wallet::save(const std::vector<std::string> &args)
   } catch (const std::exception& e) {
     fail_msg_writer() << e.what();
   }
-
-  return true;
-}
-
-//----------------------------------------------------------------------------------------------------
-bool simple_wallet::list_cds(const std::vector<std::string> &)
-{
-  size_t deposit_count = m_wallet->getDepositCount();
-
-  if (deposit_count == 0)
-  {
-    success_msg_writer() << "No deposits found";
-    return true;
-  }
-
-   success_msg_writer() << "Deposits (" << deposit_count << "):";
-   success_msg_writer() << "ID    | Amount             | Term          | Unlock Height | Status | Key Image";
-   success_msg_writer() << "------|--------------------|---------------|---------------|--------|---------";
-
-   // go through deposits ids for the amount of deposits in wallet
-   for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
-   {
-     // get deposit info from id and store it to deposit
-     CryptoNote::Deposit deposit;
-     if (!m_wallet->getDeposit(id, deposit)) {
-       continue; // Skip invalid deposits
-     }
-
-     // Skip burns / HEAT txns — those belong in list_burns only
-     if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
-       continue;
-     }
-
-     // Extract commitment (Key Image) from transaction extra
-     std::string key_image_str = "";
-     if (!deposit.extra.empty()) {
-       std::vector<TransactionExtraField> extraFields;
-       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-       if (parseTransactionExtra(extraBytes, extraFields)) {
-         for (const auto& field : extraFields) {
-           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-             key_image_str = Common::podToHex(heatCommit.commitment);
-             break;
-           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-             key_image_str = Common::podToHex(coldCommit.commitment);
-             break;
-           }
-         }
-       }
-     }
-
-     // Format amount
-     std::string amount_str = m_currency.formatAmount(deposit.amount);
-
-     // Format term (CD deposits)
-     uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
-                                                 : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-     uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
-                                                 : CryptoNote::parameters::DEPOSIT_MAX_TERM;
-
-     std::string term_str;
-     // Convert blocks to epochs (1 epoch = 900 blocks ≈ 5 days)
-     if (deposit.term >= cdMin && deposit.term <= cdMax) {
-       uint32_t epochs = deposit.term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-       uint32_t days_approx = epochs * 5;
-       term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
-     } else {
-       term_str = std::to_string(deposit.term) + " blocks";
-     }
-
-     // Format unlock height
-     std::string unlock_str = "";
-     if (deposit.locked) {
-       unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
-     } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-       unlock_str = "Withdrawn";
-     } else {
-       unlock_str = "Unlocked";
-     }
-
-     // Format status
-     std::string status_str = "";
-     if (deposit.locked) {
-       status_str = "Locked";
-     } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-       status_str = "Unlocked";
-     } else {
-       status_str = "Withdrawn";
-     }
-
-     success_msg_writer() << std::left <<
-       std::setw(5)  << std::to_string(id) << " | " <<
-       std::setw(18) << amount_str << " | " <<
-       std::setw(13) << term_str << " | " <<
-       std::setw(13) << unlock_str << " | " <<
-       std::setw(8) << status_str << " | " <<
-       key_image_str;
-   }
 
   return true;
 }
@@ -4353,5 +4256,73 @@ bool simple_wallet::heat_list(const std::vector<std::string>& args) {
     success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HEAT";
   if (heatActual == 0 && heatPending == 0)
     success_msg_writer() << "  (no HEAT outputs detected)";
+  return true;
+}
+
+bool simple_wallet::list_heat(const std::vector<std::string>& args) {
+  uint64_t heatActual = m_wallet->actualHeatBalance();
+  uint64_t heatPending = m_wallet->pendingHeatBalance();
+  success_msg_writer() << "";
+  success_msg_writer() << "=== HEAT Transactions ===";
+  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HEAT";
+  if (heatPending > 0)
+    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HEAT";
+  success_msg_writer() << "";
+
+  size_t depositCount = m_wallet->getDepositCount();
+  size_t shown = 0;
+  for (size_t i = 0; i < depositCount; ++i) {
+    Deposit deposit;
+    if (!m_wallet->getDeposit(i, deposit)) continue;
+    if (deposit.term != CryptoNote::parameters::DEPOSIT_TERM_FOREVER) continue;
+    shown++;
+    std::string status = deposit.locked ? "locked" : (deposit.spendingTransactionId != WALLET_LEGACY_INVALID_TRANSACTION_ID ? "spent" : "available");
+    success_msg_writer() << "  [" << i << "] " << m_currency.formatAmount(deposit.amount) << " HEAT"
+                         << " | " << status
+                         << " | tx " << Common::podToHex(deposit.transactionHash).substr(0, 16);
+  }
+  if (shown == 0)
+    success_msg_writer() << "  (no HEAT transactions found)";
+  success_msg_writer() << "";
+  return true;
+}
+
+bool simple_wallet::list_cds(const std::vector<std::string>& args) {
+  success_msg_writer() << "";
+  success_msg_writer() << "=== HEAT Certificates of Deposit ===";
+  success_msg_writer() << "  ID | Status   | Amount      | Interest | Term(ep) | TX Hash";
+  success_msg_writer() << " ----+----------+-------------+----------+----------+------------------";
+
+  size_t depositCount = m_wallet->getDepositCount();
+  size_t shown = 0;
+  uint32_t epochBlocks = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+
+  for (size_t i = 0; i < depositCount; ++i) {
+    Deposit deposit;
+    if (!m_wallet->getDeposit(i, deposit)) continue;
+    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) continue;
+    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_LP) continue;
+    if (deposit.term == 0) continue;  // skip non-deposit outputs
+
+    shown++;
+    std::string status;
+    if (deposit.spendingTransactionId != WALLET_LEGACY_INVALID_TRANSACTION_ID)
+      status = "claimed";
+    else if (!deposit.locked)
+      status = "complete";
+    else
+      status = "active";
+
+    uint32_t termEpochs = (epochBlocks > 0) ? deposit.term / epochBlocks : 0;
+    success_msg_writer() << "  " << std::setw(3) << i
+                         << " | " << std::setw(8) << status
+                         << " | " << std::setw(11) << m_currency.formatAmount(deposit.amount)
+                         << " | " << std::setw(8) << m_currency.formatAmount(deposit.interest)
+                         << " | " << std::setw(8) << termEpochs
+                         << " | " << Common::podToHex(deposit.transactionHash).substr(0, 16);
+  }
+  if (shown == 0)
+    success_msg_writer() << "  (no HEAT CDs found)";
+  success_msg_writer() << "";
   return true;
 }

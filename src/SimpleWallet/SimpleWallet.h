@@ -172,6 +172,7 @@ namespace CryptoNote
     bool heat_deposit(const std::vector<std::string> &args);
     bool heat_withdraw(const std::vector<std::string> &args);
     bool heat_list(const std::vector<std::string> &args);
+    bool list_heat(const std::vector<std::string> &args);
 
     bool ask_wallet_create_if_needed();
     std::string resolveAlias(const std::string& aliasUrl);

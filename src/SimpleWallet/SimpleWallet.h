@@ -165,6 +165,8 @@ namespace CryptoNote
     bool pool_info(const std::vector<std::string> &args);
     bool mint_heat(const std::vector<std::string> &args);
     bool swap(const std::vector<std::string> &args);
+    bool hearth_buy(const std::vector<std::string> &args);
+    bool hearth_sell(const std::vector<std::string> &args);
     bool add_liq(const std::vector<std::string> &args);
     bool remove_liq(const std::vector<std::string> &args);
 

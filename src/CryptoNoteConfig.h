@@ -213,6 +213,7 @@ namespace CryptoNote
         const bool     HEAT_USE_DAMPED_FORMULA = false;            // true on testnet for experimental damped model
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT)
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
+        const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint (disincentivises dust minting, funnels demand to Hearth AMM); testnet overridden
         const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 1/4 XFG rate
         const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (5:1 ratio match)
         const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor
@@ -403,6 +404,7 @@ namespace CryptoNote
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */
 	const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET = CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET;
 	const uint32_t TESTNET_DEPOSIT_TERM_FOREVER = ((uint32_t)(-1));  // Forever term for burn transactions
+    const uint64_t TESTNET_HEAT_MINT_MIN =   800000;  // 0.08 TEST minimum mint (testnet scale)
     const uint32_t TESTNET_DEPOSIT_TERM_BURN = TESTNET_DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
 
 // -------------------------------------- END TESTNET CONFIGS ---------------------------------------------------------

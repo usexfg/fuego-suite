@@ -561,6 +561,8 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
+  m_consoleHandler.setHandler("hearth_buy", boost::bind(&simple_wallet::hearth_buy, this, boost::arg<1>()), "hearth_buy <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
+  m_consoleHandler.setHandler("hearth_sell", boost::bind(&simple_wallet::hearth_sell, this, boost::arg<1>()), "hearth_sell <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth");
   m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq <xfg_amount> <heat_amount> - Add liquidity to Hearth");
   m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
@@ -4009,6 +4011,11 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   }
 
   uint64_t fee = m_currency.minimumFee();
+  uint64_t minMint = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_HEAT_MINT_MIN : CryptoNote::parameters::HEAT_MINT_MIN_XFG;
+  if (xfgAmount < minMint) {
+    fail_msg_writer() << "Minimum mint: " << m_currency.formatAmount(minMint) << " XFG. Use hearth_buy for smaller amounts.";
+    return false;
+  }
   uint64_t available = m_wallet->actualBalance();
   if (available < xfgAmount + fee) {
     fail_msg_writer() << "Insufficient balance. Available: " << m_currency.formatAmount(available)
@@ -4173,6 +4180,26 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   }
   fail_msg_writer() << "Transaction failed";
   return false;
+}
+
+bool simple_wallet::hearth_buy(const std::vector<std::string>& args) {
+  // Wrapper: buy HEAT with XFG (direction=0)
+  if (args.size() < 3) {
+    fail_msg_writer() << "Usage: hearth_buy <xfg_amount> <expected_heat> <min_heat>";
+    return false;
+  }
+  std::vector<std::string> swapArgs = {"0", args[0], args[1], args[2]};
+  return swap(swapArgs);
+}
+
+bool simple_wallet::hearth_sell(const std::vector<std::string>& args) {
+  // Wrapper: sell HEAT for XFG (direction=1)
+  if (args.size() < 3) {
+    fail_msg_writer() << "Usage: hearth_sell <heat_amount> <expected_xfg> <min_xfg>";
+    return false;
+  }
+  std::vector<std::string> swapArgs = {"1", args[0], args[1], args[2]};
+  return swap(swapArgs);
 }
 
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {

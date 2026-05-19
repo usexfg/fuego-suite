@@ -32,7 +32,20 @@ namespace CryptoNote
 		const uint64_t DIFFICULTY_TARGET = 480;
 		const uint64_t CRYPTONOTE_MAX_BLOCK_NUMBER = 500000000;
 		const size_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE = 8000000;
-		const size_t CRYPTONOTE_MAX_TX_SIZE = 1000000000;
+		const size_t CRYPTONOTE_MAX_TX_SIZE = 4000000;          // 4 MB hard cap on a single tx accepted into mempool / relayed.
+		                                                        // Real Fuego txs are 1-2 KB; the biggest legitimate use is a fusion
+		                                                        // tx capped at FUSION_TX_MAX_SIZE (~126 KB). 4 MB leaves 30x headroom
+		                                                        // for any future protocol expansion while closing the 1 GB DoS hole
+		                                                        // that was inherited from Bytecoin's original "no limit" sanity check.
+		const size_t MAX_TX_EXTRA_SIZE = 4096;                  // 4 KB hard cap on tx.extra. Natural protocol uses (tx public key 33B,
+		                                                        // optional payment ID ~65B, merge-mining tag ~70B, plus Fuego-specific
+		                                                        // HEAT/AMM/DIGM commitment tags <256B each) fit comfortably under 1 KB.
+		                                                        // 4 KB gives 4x headroom for future protocol features; anything larger
+		                                                        // is bloat that every full node carries forever — reject it at relay.
+		const size_t MEMPOOL_SIZE_LIMIT = 800 * 1024 * 1024;    // 800 MB total mempool cap. Beyond this, new low-fee txs are rejected
+		                                                        // (txs already accepted into a block and pushed back during reorg are
+		                                                        // bypassed via keptByBlock=true). Without this cap, a low-fee tx flood
+		                                                        // exhausts daemon RAM.
         const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 1753191; /* "fire" address prefix */
         const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX = CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX; // same as main (fire) for max privacy, ie indistinguishable to outside observers.
         // only issue being if user tried to send FROM a sub-addy, which isnt supported by wallets anyway

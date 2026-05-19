@@ -164,6 +164,36 @@ namespace CryptoNote
       return false;
     }
 
+    // DoS hardening — relay-time caps. keptByBlock=true bypasses these because
+    // the tx was already accepted into a block (we'd be re-adding during reorg);
+    // rejecting it now would corrupt mempool recovery.
+    if (!keptByBlock) {
+      // 1) Cap tx.extra: anything that isn't a natural protocol field (tx public
+      //    key, payment ID, MM tag, HEAT/AMM/DIGM commitments) is bloat the
+      //    chain has to carry forever. 4 KB is 4x headroom over real use.
+      if (tx.extra.size() > parameters::MAX_TX_EXTRA_SIZE) {
+        logger(WARNING, BRIGHT_YELLOW) << "tx " << id << " rejected: extra field "
+          << tx.extra.size() << " > " << parameters::MAX_TX_EXTRA_SIZE << " bytes";
+        tvc.m_verification_failed = true;
+        return false;
+      }
+
+      // 2) Cap total mempool bytes. Without this, a low-fee flood exhausts daemon
+      //    RAM. blobSize is summed across all pooled txs; reject if adding this
+      //    one would exceed MEMPOOL_SIZE_LIMIT.
+      size_t current_pool_bytes = 0;
+      for (const auto& item : m_transactions) {
+        current_pool_bytes += item.blobSize;
+      }
+      if (current_pool_bytes + blobSize > parameters::MEMPOOL_SIZE_LIMIT) {
+        logger(WARNING, BRIGHT_YELLOW) << "tx " << id << " rejected: mempool full ("
+          << (current_pool_bytes + blobSize) << " > " << parameters::MEMPOOL_SIZE_LIMIT
+          << " bytes; pool has " << m_transactions.size() << " txs)";
+        tvc.m_verification_failed = true;
+        return false;
+      }
+    }
+
     bool isWithdrawalTransaction = false;
 
     for (const auto &in : tx.inputs)

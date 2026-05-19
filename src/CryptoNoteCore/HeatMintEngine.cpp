@@ -95,9 +95,12 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
   FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
   uint64_t expectedHeat = heatFp.toUint64();
 
-  uint64_t delta = (heatMinted > expectedHeat) ? (heatMinted - expectedHeat)
-                                               : (expectedHeat - heatMinted);
-  return delta <= 1;
+  // Premium allowed: heatMinted can be less than expected (mint premium → burned XFG → treasury).
+  // More than expected would be inflation — rejected.
+  if (heatMinted > expectedHeat + 1)
+    return false;
+
+  return true;
 }
 
 } // namespace CryptoNote

@@ -214,6 +214,7 @@ namespace CryptoNote
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT)
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
         const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint (disincentivises dust minting, funnels demand to Hearth AMM); testnet overridden
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium → treasury (makes Hearth AMM the cheaper default)
         const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 1/4 XFG rate
         const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (5:1 ratio match)
         const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor

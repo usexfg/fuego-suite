@@ -4023,12 +4023,17 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Query daemon for current redemption price
-  uint64_t heatAmount = xfgAmount * parameters::HEAT_LAUNCH_RATIO_DENOM
+  // Apply mint premium — makes Hearth AMM the cheaper default
+  uint64_t premiumBps = CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS;
+  uint64_t effectiveXfg = xfgAmount * (10000 - premiumBps) / 10000;
+  uint64_t heatAmount = effectiveXfg * parameters::HEAT_LAUNCH_RATIO_DENOM
                         / parameters::HEAT_LAUNCH_RATIO_NUM;
+  uint64_t premiumAmount = xfgAmount - effectiveXfg;
 
   success_msg_writer() << "HEAT Mint (v10 auth):";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
+  if (premiumAmount > 0)
+    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% — use hearth_buy to avoid)";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 

@@ -25,11 +25,11 @@ Based upon the CryptoNote protocol & philosophy.
 | **Assets** | Hearth AMM | Constant-product XFG/HEAT pool; swap, add/remove liquidity, yield from LP fees |
 | **Assets** | Certificate of Deposit | HEAT-denominated time-locked deposits earning yield from swap fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
-| **Stability** | Milæsandra Simulator | Testnet-only fee injection for protocol testing without real cross-chain activity |
+| **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |
 | **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with HTLC adaptor signatures |
 | **Swaps** | swapxfg | Integrated Go-based swap engine with inter-chain fee routing |
 | **Network** | I2P / Tor / Meshtastic | Pluggable transport-layer privacy |
-| **Wallet** | Fire Wallet CLI | Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
+| **Wallet** | `fire_wallet`| Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
 | **Wallet** | TUI | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
 | **Dev Tools** | Fuego Desktop Wallet | Cross-platform GUI — [fuego-wallet](https://github.com/usexfg/fuego-wallet) |
 | **Dev Tools** | RPC API | JSON-RPC: heat_metrics, amm_quote, amm_pool_info, swap fees, CD queries |
@@ -97,8 +97,8 @@ brew install git cmake boost
 #### 2. Build
 
 ```bash
-git clone https://github.com/usexfg/fuego
-cd fuego
+git clone https://github.com/usexfg/fuego-suite
+cd fuego-suite
 mkdir build && cd build
 cmake ..
 make
@@ -121,8 +121,8 @@ When installing Visual Studio, include **Desktop development with C++** and **MS
 From `x64 Native Tools Command Prompt for VS 2019`:
 
 ```bash
-git clone https://github.com/usexfg/fuego
-cd fuego
+git clone https://github.com/usexfg/fuego-suite
+cd fuego-suite
 mkdir build && cd build
 cmake .. -G "Visual Studio 16 2019" -A x64 -DBOOST_LIBRARYDIR="c:\local\boost_1_73_0\lib64-msvc-14.2"
 msbuild fuegoX.sln /p:Configuration=Release /m
@@ -162,9 +162,9 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HEAT Stablecoin & Hearth AMM
+### HⲶ∆⟙ Stablecoin & Hearth AMM
 
-HEAT is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
+HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
@@ -181,14 +181,14 @@ HEAT is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to 
 **Key Properties**:
 - Fixed launch ratio 0.2 (1 XFG = 5 HEAT) bootstrapping
 - PI controller with negative feedback converges toward value-band target
-- CD yield buys HEAT from AMM (structural demand, fee-free)
+- Protocol buys HⲶ∆⟙ from Hearth AMM for CD yield payments (structural demand, protocol pays 0% fee)
 - Buy-or-mint safety valve when pool lopsided beyond 4:1
-- Treasury rebalancer single-sided LP for pool defense
+- HEARTH rebalancer LP for pool equilibrium defense
 - Pool reserves tracked on-chain with unspendable pool keys
 
-### Certificate of Deposit (CD)
+### Certificates of Deposit (CD)
 
-Term-locked HEAT deposits earning real yield thru protocol revenue, not inflation. Each CD requires only an upfront banking fee of a mere 0.1% of CD amount (fee also in HEAT) paid at time of creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
+Epoch (900 blocks) term-locked HⲶ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HⲶ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
 
 | Command | Description |
 |---------|-------------|
@@ -223,6 +223,8 @@ Comprehensive docs at [docs.usexfg.org](https://docs.usexfg.org) and in `docs/`:
 
 For the most user-friendly graphic interface experience, see [Fuego Desktop Wallet](https://github.com/usexfg/fuego-wallet).
 
-______
+_____________________________
+<sup>Made with ❤️‍🔥 by Elderfire Mob</sup>
 
-Join our community on [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).
+
+Join Fuego's worldwide community [Discord](https://discordapp.com/invite/5UJcJJg), [Reddit](https://reddit.com/r/Fango), or [Twitter](https://twitter.com/usexfg).

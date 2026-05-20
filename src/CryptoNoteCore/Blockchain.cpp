@@ -387,7 +387,7 @@ bool Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, Block
   //check is ring_signature already checked ?
   if (maxUsedBlock.empty()) {
     //not checked, lets try to check
-    if (!lastFailed.empty() && getCurrentBlockchainHeight() > lastFailed.height && getBlockIdByHeight(lastFailed.height) == lastFailed.id) {
+    if (!lastFailed.empty() && getCurrentBlockchainSize() > lastFailed.height && getBlockIdByHeight(lastFailed.height) == lastFailed.id) {
       return false; //we already sure that this tx is broken for this height
     }
 
@@ -399,7 +399,7 @@ bool Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, Block
     }
     else
     {
-      if (maxUsedBlock.height >= getCurrentBlockchainHeight())
+      if (maxUsedBlock.height >= getCurrentBlockchainSize())
       {
         return false;
       }
@@ -447,7 +447,7 @@ bool Blockchain::have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im) {
   return  m_spent_keys.find(key_im) != m_spent_keys.end();
 }
 
-uint32_t Blockchain::getCurrentBlockchainHeight() {
+uint32_t Blockchain::getCurrentBlockchainSize() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return static_cast<uint32_t>(m_blocks.size());
 }
@@ -720,7 +720,7 @@ bool Blockchain::resetAndSetGenesisBlock(const Block& b) {
 Crypto::Hash Blockchain::getTailId(uint32_t& height) {
   assert(!m_blocks.empty());
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  height = getCurrentBlockchainHeight() - 1;
+  height = getCurrentBlockchainSize() - 1;
   return getTailId();
 }
 
@@ -1261,10 +1261,10 @@ bool Blockchain::handle_alternative_block(const Block& b, const Crypto::Hash& id
     return false;
   }
 
-  if (!m_checkpoints.is_alternative_block_allowed(getCurrentBlockchainHeight(), block_height)) {
+  if (!m_checkpoints.is_alternative_block_allowed(getCurrentBlockchainSize(), block_height)) {
     logger(TRACE) << "Block with id: " << id << std::endl <<
       " can't be accepted for alternative chain, block height: " << block_height << std::endl <<
-      " blockchain height: " << getCurrentBlockchainHeight();
+      " blockchain height: " << getCurrentBlockchainSize();
     bvc.m_verification_failed = true;
     return false;
   }
@@ -1461,7 +1461,7 @@ bool Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Bloc
 
 bool Blockchain::handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTIFY_RESPONSE_GET_OBJECTS::request& rsp) { //Deprecated. Should be removed with CryptoNoteProtocolHandler.
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  rsp.current_blockchain_height = getCurrentBlockchainHeight();
+  rsp.current_blockchain_height = getCurrentBlockchainSize();
   std::list<Block> blocks;
   getBlocks(arg.blocks, blocks, rsp.missed_ids);
 
@@ -1533,7 +1533,7 @@ size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<Transac
   size_t i = amount_outs.size();
   do {
     --i;
-    if (amount_outs[i].first.block + m_currency.minedMoneyUnlockWindow() <= getCurrentBlockchainHeight()) {
+    if (amount_outs[i].first.block + m_currency.minedMoneyUnlockWindow() <= getCurrentBlockchainSize()) {
       return i + 1;
     }
   } while (i != 0);
@@ -1670,7 +1670,7 @@ std::vector<Crypto::Hash> Blockchain::findBlockchainSupplement(const std::vector
   assert(remoteBlockIds.back() == m_blockIndex.getBlockId(0));
 
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  totalBlockCount = getCurrentBlockchainHeight();
+  totalBlockCount = getCurrentBlockchainSize();
   startBlockIndex = findBlockchainSupplement(remoteBlockIds);
 
   return m_blockIndex.getBlockIds(startBlockIndex, static_cast<uint32_t>(maxCount));
@@ -1789,7 +1789,7 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
         return false;
       }
 
-        if (!isInCheckpointZone(getCurrentBlockchainHeight()))
+        if (!isInCheckpointZone(getCurrentBlockchainSize()))
         {
           if (!check_tx_input(in_to_key, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height))
           {
@@ -1802,7 +1802,7 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
       }
       else if (txin.type() == typeid(MultisignatureInput))
       {
-        if (!isInCheckpointZone(getCurrentBlockchainHeight()))
+        if (!isInCheckpointZone(getCurrentBlockchainSize()))
         {
           if (!validateInput(::boost::get<MultisignatureInput>(txin), transactionHash, tx_prefix_hash, tx.signatures[inputIndex]))
           {
@@ -1825,7 +1825,7 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
 bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) {
   if (unlock_time < m_currency.maxBlockHeight()) {
     //interpret as block index
-    if (getCurrentBlockchainHeight() - 1 + m_currency.lockedTxAllowedDeltaBlocks() >= unlock_time)
+    if (getCurrentBlockchainSize() - 1 + m_currency.lockedTxAllowedDeltaBlocks() >= unlock_time)
       return true;
     else
       return false;
@@ -2188,8 +2188,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 auto longhashTimeStart = std::chrono::steady_clock::now();
   Crypto::Hash proof_of_work = NULL_HASH;
 
-  if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainHeight())) {
-    if (!m_checkpoints.check_block(getCurrentBlockchainHeight(), blockHash)) {
+  if (m_checkpoints.is_in_checkpoint_zone(getCurrentBlockchainSize())) {
+    if (!m_checkpoints.check_block(getCurrentBlockchainSize(), blockHash)) {
       logger(ERROR, BRIGHT_RED) <<
         "CHECKPOINT VALIDATION FAILED";
       bvc.m_verification_failed = true;
@@ -2198,9 +2198,9 @@ auto longhashTimeStart = std::chrono::steady_clock::now();
   } else {
     // Skip difficulty validation only for FOUNDATIONAL blocks, ie anything < 800k
     // Fixes daemon's backwards compatibility issues syncing with early blocks
-    if (getCurrentBlockchainHeight() < 800000) {
+    if (getCurrentBlockchainSize() < 800000) {
       logger(INFO, BRIGHT_WHITE) <<
-        "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainHeight();
+        "Skipping difficulty validation for historical block " << blockHash << " at height " << getCurrentBlockchainSize();
     } else {
       if (!m_currency.checkProofOfWork(m_cn_context, blockData, currentDifficulty, proof_of_work)) {
         logger(INFO, BRIGHT_WHITE) <<
@@ -2648,7 +2648,7 @@ bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::H
     return false;
   }
 
-  if (output.term != 0 && outputIndex.transactionIndex.block + output.term > getCurrentBlockchainHeight()) {
+  if (output.term != 0 && outputIndex.transactionIndex.block + output.term > getCurrentBlockchainSize()) {
     logger(DEBUGGING) << "Transaction << " << transactionHash << " contains multisignature input that spends locked deposit output";
     return false;
   }

@@ -1,4 +1,5 @@
 add_definitions(-DSTATICLIB)
+add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
 include_directories(${CMAKE_SOURCE_DIR}/external/parallel_hashmap)
 include_directories(${CMAKE_SOURCE_DIR}/external/httplib)
 

@@ -178,6 +178,10 @@ private:
   std::thread m_cleanupThread;
   void cleanupThread();
 
+  // Exbitron fetcher thread
+  std::thread m_exbitronThread;
+  void exbitronFetchThread();
+
   // Active offers indexed by offerId
   std::map<std::string, SwapOfferMsg> m_offers;
   std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> m_pendingRequests;

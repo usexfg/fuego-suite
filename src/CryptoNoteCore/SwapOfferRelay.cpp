@@ -21,6 +21,8 @@
 #include "crypto/crypto.h"
 #include <algorithm>
 #include <chrono>
+#include <HTTP/httplib.h>
+#include <json/json.h>
 
 namespace CryptoNote {
 
@@ -57,14 +59,21 @@ SwapOfferRelay::~SwapOfferRelay() {
 }
 
 void SwapOfferRelay::start() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (m_running) return;
+
   m_running = true;
   m_cleanupThread = std::thread([this] { cleanupThread(); });
+  m_exbitronThread = std::thread([this] { exbitronFetchThread(); });
 }
 
 void SwapOfferRelay::stop() {
   m_running = false;
   if (m_cleanupThread.joinable()) {
     m_cleanupThread.join();
+  }
+  if (m_exbitronThread.joinable()) {
+    m_exbitronThread.join();
   }
 }
 
@@ -455,6 +464,41 @@ NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
   }
 
   return range;
+}
+
+void SwapOfferRelay::exbitronFetchThread() {
+  // Wait a bit before starting
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  while (m_running) {
+    try {
+      httplib::SSLClient cli("www.exbitron.com");
+      cli.set_connection_timeout(10);
+      cli.set_read_timeout(10);
+      
+      auto res = cli.Get("/api/v2/peatio/public/markets/xfgusdt/tickers");
+      if (res && res->status == 200) {
+        Json::Value root;
+        Json::Reader reader;
+        if (reader.parse(res->body, root) && root.isObject()) {
+          if (root.isMember("ticker") && root["ticker"].isMember("last")) {
+            std::string lastStr = root["ticker"]["last"].asString();
+            double price = std::stod(lastStr);
+            if (price > 0) {
+              updateExternalPrice("exbitron", 255, price);
+            }
+          }
+        }
+      }
+    } catch (...) {
+      // Ignore network errors
+    }
+
+    // Poll every 60 seconds
+    for (int i = 0; i < 60 && m_running; ++i) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  }
 }
 
 }  // namespace CryptoNote

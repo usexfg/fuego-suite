@@ -1050,6 +1050,21 @@ bool RpcServer::on_get_swap_price(const COMMAND_RPC_GET_SWAP_PRICE::request& req
     res.pairImplied.push_back(std::move(e));
   }
 
+  // Calculate Hearth Ratio and HEAT USD
+  auto poolInfo = m_core.getAmmPoolInfo();
+  double hRatio = 0.0;
+  if (poolInfo.reserveXfg > 0) {
+    hRatio = static_cast<double>(poolInfo.reserveHeat) / static_cast<double>(poolInfo.reserveXfg);
+  }
+  res.hearthRatio = std::to_string(hRatio);
+
+  if (hRatio > 0.0 && range.midUsd > 0.0) {
+    // XFG_USD = HEAT_USD * hRatio -> HEAT_USD = XFG_USD / hRatio
+    res.heatUsd = std::to_string(range.midUsd / hRatio);
+  } else {
+    res.heatUsd = "0.0";
+  }
+
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

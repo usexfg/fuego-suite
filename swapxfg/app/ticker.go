@@ -89,12 +89,13 @@ func RenderTickerWithCD(activePair uint8, prices map[uint8]*SwapPriceResponse, c
 	return lipgloss.NewStyle().Width(width).Render(row)
 }
 
-// RenderPriceLine shows TWAP + composite below the chart.
+// RenderPriceLine shows the price beacon, TWAP, and composite below the chart.
 func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse) string {
 	pr := prices[pair]
 	if pr == nil {
-		return StyleMuted.Render("  TWAP: —  Composite: —")
+		return StyleMuted.Render("  XFG — H | XFG $— | HEAT $—  |  TWAP: —  Composite: —")
 	}
+	
 	twap := pr.Twap
 	comp := pr.CompositeRate
 	if twap == "" {
@@ -103,12 +104,37 @@ func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse) string {
 	if comp == "" {
 		comp = "—"
 	}
-	xfgUsd := ""
-	if pr.XfgUsdMid != "" {
-		v, err := strconv.ParseFloat(pr.XfgUsdMid, 64)
-		if err == nil && v > 0 {
-			xfgUsd = fmt.Sprintf("  XFG $%.4f", v)
+
+	hearth := pr.HearthRatio
+	if hearth == "" || hearth == "0.0" {
+		hearth = "—"
+	} else {
+		// Format to 2 decimals
+		if val, err := strconv.ParseFloat(hearth, 64); err == nil {
+			hearth = fmt.Sprintf("%.2f", val)
 		}
 	}
-	return StyleMuted.Render(fmt.Sprintf("  TWAP: %s  Composite: %s%s", twap, comp, xfgUsd))
+
+	xfgUsd := pr.XfgUsdMid
+	if xfgUsd == "" || xfgUsd == "0.000000" {
+		xfgUsd = "—"
+	} else {
+		if val, err := strconv.ParseFloat(xfgUsd, 64); err == nil {
+			xfgUsd = fmt.Sprintf("%.2f", val)
+		}
+	}
+
+	heatUsd := pr.HeatUsd
+	if heatUsd == "" || heatUsd == "0.000000" || heatUsd == "0.0" {
+		heatUsd = "—"
+	} else {
+		if val, err := strconv.ParseFloat(heatUsd, 64); err == nil {
+			heatUsd = fmt.Sprintf("%.2f", val)
+		}
+	}
+
+	beacon := fmt.Sprintf("XFG %s H | XFG $%s | HEAT $%s", hearth, xfgUsd, heatUsd)
+	rates := fmt.Sprintf("TWAP: %s  Composite: %s", twap, comp)
+	
+	return StyleAccent.Render("  " + beacon + "  ") + StyleMuted.Render("|  " + rates)
 }

@@ -1390,6 +1390,9 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
     std::string xfgUsdHigh;
     std::string xfgUsdMid;
     std::vector<pair_implied_rpc_entry> pairImplied;
+    
+    std::string hearthRatio;      // HEAT/XFG ratio from Hearth AMM
+    std::string heatUsd;          // Implicit HEAT USD value
 
     std::string status;
 
@@ -1403,6 +1406,8 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
       KV_MEMBER(xfgUsdHigh)
       KV_MEMBER(xfgUsdMid)
       KV_MEMBER(pairImplied)
+      KV_MEMBER(hearthRatio)
+      KV_MEMBER(heatUsd)
       KV_MEMBER(status)
     }
   };

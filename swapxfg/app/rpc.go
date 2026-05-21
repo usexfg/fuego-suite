@@ -86,6 +86,8 @@ type SwapPriceResponse struct {
 	XfgUsdHigh    string             `json:"xfgUsdHigh"`
 	XfgUsdMid     string             `json:"xfgUsdMid"`
 	PairImplied   []PairImplied      `json:"pairImplied"`
+	HearthRatio   string             `json:"hearthRatio"`
+	HeatUsd       string             `json:"heatUsd"`
 	Status        string             `json:"status"`
 }
 

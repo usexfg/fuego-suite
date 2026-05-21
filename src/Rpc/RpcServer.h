@@ -34,6 +34,7 @@ class core;
 class NodeServer;
 class ICryptoNoteProtocolQuery;
 class SwapOfferRelay;
+class CdOfferRelay;
 
 class RpcServer : public HttpServer {
 public:
@@ -49,6 +50,7 @@ public:
   bool enableCors(const std::string domain);
   bool remotenode_check_incoming_tx(const BinaryArray& tx_blob);
   void setSwapRelay(SwapOfferRelay* relay);
+  void setCdRelay(CdOfferRelay* relay);
   void setSwapDb(XfgSwap::SwapDatabase* db);
   void setSwapDaemon(XfgSwap::SwapDaemon* daemon);
 
@@ -129,6 +131,10 @@ private:
   bool on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req, COMMAND_RPC_GET_EPOCH_HISTORY::response& res);
   bool on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
   bool on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req, COMMAND_RPC_GET_TREASURY_INFO::response& res);
+  
+  bool on_get_cd_offers(const COMMAND_RPC_GET_CD_OFFERS::request& req, COMMAND_RPC_GET_CD_OFFERS::response& res);
+  bool on_submit_cd_offer(const COMMAND_RPC_SUBMIT_CD_OFFER::request& req, COMMAND_RPC_SUBMIT_CD_OFFER::response& res);
+  bool on_cancel_cd_offer(const COMMAND_RPC_CANCEL_CD_OFFER::request& req, COMMAND_RPC_CANCEL_CD_OFFER::response& res);
   bool on_get_maturing_deposits(const COMMAND_RPC_GET_MATURING_DEPOSITS::request& req, COMMAND_RPC_GET_MATURING_DEPOSITS::response& res);
   bool on_rollover_deposit(const COMMAND_RPC_ROLLOVER_DEPOSIT::request& req, COMMAND_RPC_ROLLOVER_DEPOSIT::response& res);
 
@@ -178,6 +184,7 @@ private:
   Crypto::SecretKey m_view_key = NULL_SECRET_KEY;
   AccountPublicAddress m_fee_acc;
   SwapOfferRelay* m_swapRelay = nullptr;
+  CdOfferRelay* m_cdRelay = nullptr;
   XfgSwap::SwapDatabase* m_swapDb = nullptr;
   XfgSwap::SwapDaemon* m_swapDaemon = nullptr;
 

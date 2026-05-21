@@ -54,6 +54,7 @@ struct TransactionPrefixInfo;
 struct tx_verification_context;
 
 class SwapOfferRelay;
+class CdOfferRelay;
 
 class ICore {
 public:
@@ -87,6 +88,7 @@ public:
   virtual bool getOutByMSigGIndex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) = 0;
   virtual i_cryptonote_protocol* get_protocol() = 0;
   virtual SwapOfferRelay& getSwapRelay() = 0;
+  virtual CdOfferRelay& getCdRelay() = 0;
   virtual bool handle_incoming_tx(const BinaryArray& tx_blob, tx_verification_context& tvc, bool keeped_by_block) = 0; //Deprecated. Should be removed with CryptoNoteProtocolHandler.
   virtual std::vector<Transaction> getPoolTransactions() = 0;
   virtual bool getPoolTransaction(const Crypto::Hash &tx_hash, Transaction &transaction) = 0;

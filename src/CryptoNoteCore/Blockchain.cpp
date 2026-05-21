@@ -3188,7 +3188,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       FixedPoint64 targetRatio = computeTargetRatio(
         m_piState, parameters::HEAT_STABILITY_MODE, launchTwap, currentTwap, oracleValue);
 
-      computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration);
+      computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration, parameters::HEAT_STABILITY_MODE);
     }
     int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : 0;
     // Reset TWAP for next epoch
@@ -3854,7 +3854,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
     // Bootstrap repayment: 20% of treasury inflow → repayment vault
     if (!m_bootstrapRepaid && m_bootstrapXfgOwed > 0 && treasuryShare > 0) {
-      uint64_t repayShare = (treasuryShare * parameters::TREASURY_REPAYMENT_PCT) / 100;
+      uint64_t repayShare = (treasuryShare * 20) / 100;
       if (repayShare > 0 && m_treasuryBalance >= repayShare) {
         m_treasuryBalance -= repayShare;
         m_bootstrapRepaymentVault += repayShare;

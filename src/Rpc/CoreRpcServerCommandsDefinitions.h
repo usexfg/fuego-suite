@@ -2074,4 +2074,110 @@ struct COMMAND_RPC_ADD_SWAP_FEE {
   };
 };
 
+struct COMMAND_RPC_GET_CD_OFFERS {
+  struct request {
+    uint64_t amount; // 0 means all
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(amount)
+    }
+  };
+
+  struct cd_offer_entry {
+    std::string offerId;
+    bool isSell;
+    uint64_t cdAmount;
+    uint32_t cdTerm;
+    uint32_t cdEpoch;
+    std::string cdKeyImage;
+    uint64_t askPrice;
+    std::string makerPubKey;
+    uint64_t timestamp;
+    uint32_t ttlBlocks;
+    uint32_t postedHeight;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(isSell)
+      KV_MEMBER(cdAmount)
+      KV_MEMBER(cdTerm)
+      KV_MEMBER(cdEpoch)
+      KV_MEMBER(cdKeyImage)
+      KV_MEMBER(askPrice)
+      KV_MEMBER(makerPubKey)
+      KV_MEMBER(timestamp)
+      KV_MEMBER(ttlBlocks)
+      KV_MEMBER(postedHeight)
+    }
+  };
+
+  struct response {
+    std::vector<cd_offer_entry> offers;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offers)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_SUBMIT_CD_OFFER {
+  struct request {
+    std::string offerId;
+    bool isSell;
+    uint64_t cdAmount;
+    uint32_t cdTerm;
+    uint32_t cdEpoch;
+    std::string cdKeyImage;
+    uint64_t askPrice;
+    std::string makerPubKey;
+    std::string signature;
+    uint32_t ttlBlocks;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(isSell)
+      KV_MEMBER(cdAmount)
+      KV_MEMBER(cdTerm)
+      KV_MEMBER(cdEpoch)
+      KV_MEMBER(cdKeyImage)
+      KV_MEMBER(askPrice)
+      KV_MEMBER(makerPubKey)
+      KV_MEMBER(signature)
+      KV_MEMBER(ttlBlocks)
+    }
+  };
+
+  struct response {
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_CANCEL_CD_OFFER {
+  struct request {
+    std::string offerId;
+    std::string makerPubKey;
+    std::string signature;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(makerPubKey)
+      KV_MEMBER(signature)
+    }
+  };
+
+  struct response {
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
 }

@@ -61,6 +61,9 @@ namespace CryptoNote {
      virtual SwapOfferRelay& getSwapRelay() override { return *m_swapRelay; }
      void setSwapRelay(SwapOfferRelay* relay) { m_swapRelay = relay; }
 
+     virtual CdOfferRelay& getCdRelay() override { return *m_cdRelay; }
+     void setCdRelay(CdOfferRelay* relay) { m_cdRelay = relay; }
+
      //-------------------- IMinerHandler -----------------------
      virtual bool handle_block_found(Block& b) override;
      virtual bool get_block_template(Block& b, const AccountPublicAddress& adr, difficulty_type& diffic, uint32_t& height, const BinaryArray& ex_nonce) override;
@@ -272,6 +275,7 @@ namespace CryptoNote {
     Blockchain m_blockchain;
     i_cryptonote_protocol *m_pprotocol;
     SwapOfferRelay* m_swapRelay = nullptr;
+    CdOfferRelay* m_cdRelay = nullptr;
     std::unique_ptr<miner> m_miner;
     std::string m_config_folder;
     cryptonote_protocol_stub m_protocol_stub;

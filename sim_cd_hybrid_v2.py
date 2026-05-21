@@ -52,11 +52,22 @@ REBAL_SHARE_HYB  = 0.04
 # ── Yield Emission Machine (H3) ──
 YEM_LAG_EPOCHS   = 3
 YEM_ROLLING_WIN  = 3
-YEM_MAX_APY      = 0.40          # 40% annualized cap
-YEM_MAX_EPOCH    = YEM_MAX_APY / EPY
 YEM_SWF_SAVE     = 0.60          # % surplus saved to CD SWF
 YEM_LP_FEED      = 0.75          # % treasury LP yield → CD SWF
 YEM_SWF_PAYOUT   = 0.02          # % of SWF balance distributed per epoch (continuous)
+
+# ── Time-Tiered APY Caps (longer term = higher cap) ──
+#   term (epochs)   |  max APY
+#   1 – 9           |  33%
+#   10 – 30         |  42%
+#   31 – 69         |  69%
+#   69+             |  80%
+TIER_CAPS = [
+    (1,   9,    0.33),   # 1-9 epochs:      max 33% APY
+    (10,  30,   0.42),   # 10-30 epochs:    max 42% APY
+    (31,  71,   0.69),   # 31-71 epochs:    max 69% APY
+    (72,  9999, 0.80),   # 72+ epochs:      max 80% APY
+]
 
 # ── Edition CDs (H3) ──
 EDITION_RATE     = 0.12          # 12% APY guaranteed (above organic avg)
@@ -85,6 +96,7 @@ def xfg_price(t, rng):
 class CDBook:
     def __init__(self, maturity_sched):
         self.locked = 0.0
+        self.tier_locked = [0.0, 0.0, 0.0, 0.0]  # per-tier locked amounts
         self.mat = maturity_sched
 
     def step(self, ep, supply, rng):
@@ -97,6 +109,18 @@ class CDBook:
         mep = ep + dur
         if mep < len(self.mat):
             self.mat[mep] += new_lock
+
+        # Assign to tier based on duration
+        for ti, (lo, hi, _) in enumerate(TIER_CAPS):
+            if lo <= dur <= hi:
+                self.tier_locked[ti] += new_lock
+                break
+
+    def tier_for_dur(self, dur):
+        for ti, (lo, hi, _) in enumerate(TIER_CAPS):
+            if lo <= dur <= hi:
+                return ti
+        return 0
 
 
 # ══════════════════════════════════════════════════════════════
@@ -150,7 +174,7 @@ def dist_h3(book, cd_pool, ep, treasury, rebal_vault, fees, lp_yield, state, rng
     Yield Emission Machine (simplified):
       1. CD SWF accumulates from surplus + LP yield feed
       2. Lag: first YEM_LAG_EPOCHS → no yield, build reserve
-      3. Rolling 3-epoch average → target rate, capped at YEM_MAX_EPOCH
+       3. Rolling 3-epoch average → target rate, per-tier caps (33/42/69/80%)
       4. CD SWF saves surplus, draws deficit
       5. Edition CDs: funded from accumulated CD SWF, not treasury draws
          (treasury is insurance only — not drawn in normal operation)
@@ -193,11 +217,12 @@ def dist_h3(book, cd_pool, ep, treasury, rebal_vault, fees, lp_yield, state, rng
     else:
         edition_yield = 0.0
 
-    # ── Epoch-Yield CDs (YEM) ──
+    # ── Epoch-Yield CDs (YEM with time-tiered caps) ──
+    epoch_fraction = 1.0 - edition_fraction
     epoch_locked = book.locked * epoch_fraction
     yem_cd_pool = cd_pool * epoch_fraction
 
-    # Compute organic rate
+    # Compute organic rate (same for all tiers)
     if epoch_locked > 0:
         organic_rate = yem_cd_pool / epoch_locked
     else:
@@ -217,10 +242,19 @@ def dist_h3(book, cd_pool, ep, treasury, rebal_vault, fees, lp_yield, state, rng
             state['rates'].pop(0)
         target_rate = np.mean(state['rates']) if state['rates'] else organic_rate
 
-        # Cap
-        target_rate = min(target_rate, YEM_MAX_EPOCH)
+        # Apply per-tier caps: longer term → higher cap
+        # Each tier gets target_rate (capped) × tier_locked
+        tier_yields = []
+        for ti in range(4):
+            tier_locked = book.tier_locked[ti] * epoch_fraction
+            if tier_locked > 0:
+                tier_cap = TIER_CAPS[ti][2]  # per-epoch cap
+                effective_rate = min(target_rate, tier_cap)
+                tier_yields.append(effective_rate * tier_locked)
+            else:
+                tier_yields.append(0.0)
 
-        required = target_rate * epoch_locked
+        required = sum(tier_yields)
         available = yem_cd_pool
         surplus = max(0.0, available - required)
         deficit = max(0.0, required - available)
@@ -232,7 +266,6 @@ def dist_h3(book, cd_pool, ep, treasury, rebal_vault, fees, lp_yield, state, rng
             draw = min(deficit, state['swf'])
             state['swf'] -= draw
             deficit -= draw
-        # If still deficit after SWF, treasury covers (capped)
         if deficit > 0:
             treasury_draw = min(deficit, treasury * 0.01)
             treasury -= treasury_draw
@@ -438,7 +471,8 @@ def run():
     print(f"  HEAT CD APY — HYBRID v2 MONTE CARLO ({N_SIMS:,} sims × {N_YEARS-1}yr)")
     print(f"  8:1 Full Float | CD lock={CD_LOCK_RATE*100:.0f}%/epoch | EPY={EPY}")
     print(f"  H1: Baseline (80/20) | H2: M5 Pre-Funded | H3: Hybrid v2 (80/12/8, YEM)")
-    print(f"  YEM: lag={YEM_LAG_EPOCHS}ep win={YEM_ROLLING_WIN}ep cap={YEM_MAX_APY*100:.0f}%/yr")
+    caps_str = "/".join([f"{int(c[2]*EPY*100)}%" for c in TIER_CAPS])
+    print(f"  YEM: lag={YEM_LAG_EPOCHS}ep win={YEM_ROLLING_WIN}ep caps={caps_str}")
     print(f"  Edition: {EDITION_RATE*100:.0f}% rate {EDITION_TERM}ep term {EDITION_DEMAND*100:.0f}% demand")
     print(f"{'='*120}\n")
 

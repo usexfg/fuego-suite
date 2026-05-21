@@ -12,6 +12,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
+#include <HTTP/httplib.h>
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
 #include "SwapTxBuilder.h"

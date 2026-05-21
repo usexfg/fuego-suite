@@ -22,6 +22,7 @@
 
 // CryptoNote
 #include "BlockchainExplorerData.h"
+#include "CryptoNoteCore/CdOfferRelay.h"
 #include "Common/StringTools.h"
 #include "Common/Base58.h"
 #include "CryptoNoteCore/TransactionUtils.h"
@@ -127,6 +128,11 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getswaptrades", { jsonMethod<COMMAND_RPC_GET_SWAP_TRADES>(&RpcServer::on_get_swap_trades), true } },
   { "/submitswap", { jsonMethod<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
   { "/cancelswap", { jsonMethod<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
+
+  // CD secondary market orderbook
+  { "/getcdoffers", { jsonMethod<COMMAND_RPC_GET_CD_OFFERS>(&RpcServer::on_get_cd_offers), true } },
+  { "/submitcd",    { jsonMethod<COMMAND_RPC_SUBMIT_CD_OFFER>(&RpcServer::on_submit_cd_offer), false } },
+  { "/cancelcd",    { jsonMethod<COMMAND_RPC_CANCEL_CD_OFFER>(&RpcServer::on_cancel_cd_offer), false } },
 
   // disabled in restricted rpc mode
   { "/start_mining", { jsonMethod<COMMAND_RPC_START_MINING>(&RpcServer::on_start_mining), false } },
@@ -802,6 +808,10 @@ bool RpcServer::on_get_height(const COMMAND_RPC_GET_HEIGHT::request& req, COMMAN
 
 void RpcServer::setSwapRelay(SwapOfferRelay* relay) {
   m_swapRelay = relay;
+}
+
+void RpcServer::setCdRelay(CdOfferRelay* relay) {
+  m_cdRelay = relay;
 }
 
 void RpcServer::setSwapDb(XfgSwap::SwapDatabase* db) {
@@ -1646,8 +1656,88 @@ bool RpcServer::f_on_transactions_pool_json(const F_COMMAND_RPC_GET_POOL::reques
         res.transactions.push_back(transaction_short);
     }
 
-    res.status = CORE_RPC_STATUS_OK;
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_cd_offers(const COMMAND_RPC_GET_CD_OFFERS::request& req, COMMAND_RPC_GET_CD_OFFERS::response& res) {
+  if (!m_cdRelay) {
+    res.status = "CD offer relay not running";
     return true;
+  }
+  auto offers = m_cdRelay->getOffers(req.amount);
+  for (const auto& o : offers) {
+    COMMAND_RPC_GET_CD_OFFERS::cd_offer_entry e;
+    e.offerId = o.offerId;
+    e.isSell = o.isSell;
+    e.cdAmount = o.cdAmount;
+    e.cdTerm = o.cdTerm;
+    e.cdEpoch = o.cdEpoch;
+    e.cdKeyImage = o.cdKeyImage;
+    e.askPrice = o.askPrice;
+    e.makerPubKey = Common::podToHex(o.makerPubKey);
+    e.timestamp = o.timestamp;
+    e.ttlBlocks = o.ttlBlocks;
+    e.postedHeight = o.postedHeight;
+    res.offers.push_back(std::move(e));
+  }
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_submit_cd_offer(const COMMAND_RPC_SUBMIT_CD_OFFER::request& req, COMMAND_RPC_SUBMIT_CD_OFFER::response& res) {
+  if (!m_cdRelay) {
+    res.status = "CD offer relay not running";
+    return true;
+  }
+  Crypto::PublicKey pubkey;
+  Crypto::Signature sig;
+  if (!Common::podFromHex(req.makerPubKey, pubkey) || !Common::podFromHex(req.signature, sig)) {
+    res.status = "Invalid hex keys";
+    return true;
+  }
+  COMMAND_CD_OFFER::request msg;
+  msg.offerId = req.offerId;
+  msg.isSell = req.isSell;
+  msg.cdAmount = req.cdAmount;
+  msg.cdTerm = req.cdTerm;
+  msg.cdEpoch = req.cdEpoch;
+  msg.cdKeyImage = req.cdKeyImage;
+  msg.askPrice = req.askPrice;
+  msg.makerPubKey = pubkey;
+  msg.signature = sig;
+  msg.timestamp = static_cast<uint64_t>(std::time(nullptr));
+  msg.ttlBlocks = req.ttlBlocks;
+  uint32_t height = 0;
+  Crypto::Hash top;
+  m_core.get_blockchain_top(height, top);
+  msg.postedHeight = height;
+
+  if (!m_cdRelay->submitOffer(msg)) {
+    res.status = "Validation failed";
+    return true;
+  }
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_cancel_cd_offer(const COMMAND_RPC_CANCEL_CD_OFFER::request& req, COMMAND_RPC_CANCEL_CD_OFFER::response& res) {
+  if (!m_cdRelay) {
+    res.status = "CD offer relay not running";
+    return true;
+  }
+  Crypto::PublicKey pubkey;
+  Crypto::Signature sig;
+  if (!Common::podFromHex(req.makerPubKey, pubkey) || !Common::podFromHex(req.signature, sig)) {
+    res.status = "Invalid hex keys";
+    return true;
+  }
+  if (!m_cdRelay->cancelOffer(req.offerId, pubkey, sig)) {
+    res.status = "Validation failed";
+    return true;
+  }
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
 }
 
 bool RpcServer::on_getblockcount(const COMMAND_RPC_GETBLOCKCOUNT::request& req, COMMAND_RPC_GETBLOCKCOUNT::response& res) {

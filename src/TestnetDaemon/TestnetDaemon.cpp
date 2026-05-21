@@ -41,6 +41,7 @@
 #include "../Logging/ConsoleLogger.h"
 #include "../Logging/LoggerManager.h"
 #include "../CryptoNoteCore/SwapOfferRelay.h"
+#include "../CryptoNoteCore/CdOfferRelay.h"
 #include "../Common/StringTools.h"
 
 #if defined(WIN32)
@@ -345,6 +346,12 @@ int main(int argc, char* argv[])
     swapRelay->start();
     rpcServer.setSwapRelay(swapRelay.get());
     logger(INFO) << "Swap offer relay started";
+
+    // Initialize CD offer relay
+    auto cdRelay = std::make_unique<CryptoNote::CdOfferRelay>(ccore, p2psrv, &p2psrv);
+    cdRelay->start();
+    rpcServer.setCdRelay(cdRelay.get());
+    logger(INFO) << "CD offer relay started";
 
     // start components
     if (!command_line::has_arg(vm, arg_console)) {

@@ -418,4 +418,60 @@ namespace CryptoNote
     typedef EMPTY_STRUCT response;
   };
 
+  struct COMMAND_CD_OFFER
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 17 };
+    
+    struct request
+    {
+      std::string offerId;
+      bool        isSell;
+      uint64_t    cdAmount;
+      uint32_t    cdTerm;
+      uint32_t    cdEpoch;
+      std::string cdKeyImage;
+      uint64_t    askPrice;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t    timestamp;
+      uint32_t    ttlBlocks;
+      uint32_t    postedHeight;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(isSell)
+        KV_MEMBER(cdAmount)
+        KV_MEMBER(cdTerm)
+        KV_MEMBER(cdEpoch)
+        KV_MEMBER(cdKeyImage)
+        KV_MEMBER(askPrice)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(postedHeight)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  struct COMMAND_CD_CANCEL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 18 };
+
+    struct request
+    {
+      std::string offerId;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
 }

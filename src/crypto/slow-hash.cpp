@@ -30,7 +30,8 @@ using std::bad_alloc;
 namespace Crypto {
 
   enum {
-    MAP_SIZE = SLOW_HASH_CONTEXT_SIZE + ((-SLOW_HASH_CONTEXT_SIZE) & 0xfff)
+    MAP_SIZE = SLOW_HASH_CONTEXT_SIZE + ((-SLOW_HASH_CONTEXT_SIZE) & 0xfff),
+    MAP_SIZE_IOT_LITE = SLOW_HASH_CONTEXT_SIZE_IOT_LITE + ((-SLOW_HASH_CONTEXT_SIZE_IOT_LITE) & 0xfff)
   };
 
 #ifdef _WIN32

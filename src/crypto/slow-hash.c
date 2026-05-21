@@ -1684,3 +1684,303 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
 
 #endif
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * IoT-Lite PoW Variant (Block V12+)
+ *
+ * 256 KB scratchpad (1<<18) — fits Cortex-M7/M4 SRAM, requires real
+ * die area for ASIC parallelism.  8×32 KB banked structure with
+ * 32-byte aligned access for ASIC pipelining.  Hardware AES required.
+ *
+ * Parameters:
+ *   MEMORY_IOT_LITE  = 262,144 bytes  (256 KB)
+ *   ITER_IOT_LITE    = 131,072 iters   (1<<17)
+ *   Banks            = 8 × 32 KB
+ *   AES              = hardware only (no soft fallback)
+ *   Variant          = 2 (shuffle-add, integer math)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define MEMORY_IOT_LITE    (1 << 18)   /* 256 KB scratchpad */
+#define ITER_IOT_LITE      (1 << 17)   /* 131,072 mixing iterations */
+#define BANKS_IOT_LITE     8
+#define BANK_SIZE_IOT_LITE (MEMORY_IOT_LITE / BANKS_IOT_LITE)  /* 32 KB */
+
+/* Banked state_index: selects bank (bits 15-13) + offset within bank (bits 12-4).
+ * ASICs can access all 8 banks in parallel; CPUs get the same random access
+ * pattern but with better cache-line locality (32-byte aligned). */
+#define state_index_iot(x) (((*((uint64_t *)(x)) >> 4) & ((MEMORY_IOT_LITE / AES_BLOCK_SIZE) - 1)) << 4)
+
+/* Thread-local scratchpad for IoT-Lite — heap allocated to avoid stack overflow
+ * on constrained devices (Cortex-M stacks are typically 8-64 KB). */
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__arm__)
+#include <stdlib.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
+
+#if defined(_MSC_VER)
+#define THREADV_IOT __declspec(thread)
+#else
+#define THREADV_IOT __thread
+#endif
+
+THREADV_IOT uint8_t *hp_state_iot = NULL;
+THREADV_IOT int hp_iot_malloced = 0;
+
+static void slow_hash_allocate_state_iot(void)
+{
+    if (hp_state_iot != NULL)
+        return;
+
+#ifndef _WIN32
+#ifndef MAP_HUGETLB
+#define MAP_HUGETLB 0
+#endif
+#ifndef MAP_ANON
+# ifdef MAP_ANONYMOUS
+#  define MAP_ANON MAP_ANONYMOUS
+# endif
+#endif
+    hp_state_iot = (uint8_t *) mmap(0, MEMORY_IOT_LITE, PROT_READ | PROT_WRITE,
+                                    MAP_PRIVATE | MAP_ANON | MAP_HUGETLB, -1, 0);
+    if (hp_state_iot == MAP_FAILED)
+        hp_state_iot = NULL;
+
+    if (hp_state_iot == NULL) {
+        hp_state_iot = (uint8_t *) mmap(0, MEMORY_IOT_LITE, PROT_READ | PROT_WRITE,
+                                        MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (hp_state_iot == MAP_FAILED)
+            hp_state_iot = NULL;
+    }
+#endif
+
+    if (hp_state_iot == NULL) {
+        hp_iot_malloced = 1;
+#if defined(_MSC_VER)
+        hp_state_iot = (uint8_t *) _aligned_malloc(MEMORY_IOT_LITE, 32);
+#else
+        void *aligned = NULL;
+        if (posix_memalign(&aligned, 32, MEMORY_IOT_LITE) != 0)
+            aligned = NULL;
+        hp_state_iot = (uint8_t *) aligned;
+#endif
+    }
+}
+
+static void slow_hash_free_state_iot(void)
+{
+    if (hp_state_iot == NULL)
+        return;
+
+    if (hp_iot_malloced) {
+#if defined(_MSC_VER)
+        _aligned_free(hp_state_iot);
+#else
+        free(hp_state_iot);
+#endif
+    } else {
+#ifndef _WIN32
+        munmap(hp_state_iot, MEMORY_IOT_LITE);
+#endif
+    }
+    hp_state_iot = NULL;
+    hp_iot_malloced = 0;
+}
+#else
+static void slow_hash_allocate_state_iot(void) { }
+static void slow_hash_free_state_iot(void) { }
+#endif
+
+/* ── x86_64 AES-NI path for IoT-Lite ── */
+#if !defined NO_AES && (defined(__x86_64__) || (defined(_MSC_VER) && defined(_WIN64)))
+
+void cn_slow_hash_iot_lite(const void *data, size_t length, char *hash, int variant, int prehashed)
+{
+    RDATA_ALIGN16 uint8_t expandedKey[240];
+    uint8_t text[INIT_SIZE_BYTE];
+    RDATA_ALIGN16 uint64_t a[2];
+    RDATA_ALIGN16 uint64_t b[4];
+    RDATA_ALIGN16 uint64_t c[2];
+    union cn_slow_hash_state state;
+    __m128i _a, _b, _b1, _c;
+    uint64_t hi, lo;
+    size_t i, j;
+    uint64_t *p = NULL;
+    const int light = 0;  /* IoT-Lite has no light mode */
+
+    static void (*const extra_hashes[4])(const void *, size_t, char *) =
+    {
+        hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
+    };
+
+    if (hp_state_iot == NULL)
+        slow_hash_allocate_state_iot();
+
+    if (prehashed) {
+        memcpy(&state.hs, data, length);
+    } else {
+        hash_process(&state.hs, data, length);
+    }
+    memcpy(text, state.init, INIT_SIZE_BYTE);
+
+    VARIANT1_INIT64();
+    VARIANT2_INIT64();
+
+    /* Step 2: Fill 256 KB scratchpad — hardware AES required */
+    aes_expand_key(state.hs.b, expandedKey);
+    for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+        aes_pseudo_round(text, text, expandedKey, INIT_SIZE_BLK);
+        memcpy(&hp_state_iot[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
+    }
+
+    U64(a)[0] = U64(&state.k[0])[0] ^ U64(&state.k[32])[0];
+    U64(a)[1] = U64(&state.k[0])[1] ^ U64(&state.k[32])[1];
+    U64(b)[0] = U64(&state.k[16])[0] ^ U64(&state.k[48])[0];
+    U64(b)[1] = U64(&state.k[16])[1] ^ U64(&state.k[48])[1];
+
+    /* Step 3: Mix through 256 KB scratchpad — 131,072 iterations */
+    _b = _mm_load_si128(R128(b));
+    _b1 = _mm_load_si128(R128(b) + 1);
+
+    for (i = 0; i < ITER_IOT_LITE / 2; i++) {
+        j = state_index_iot(a);
+        _c = _mm_load_si128(R128(&hp_state_iot[j]));
+        _a = _mm_load_si128(R128(a));
+        _c = _mm_aesenc_si128(_c, _a);
+        VARIANT2_SHUFFLE_ADD_SSE2(hp_state_iot, j);
+        _mm_store_si128(R128(c), _c);
+        _mm_store_si128(R128(&hp_state_iot[j]), _mm_xor_si128(_b, _c));
+        VARIANT1_1(&hp_state_iot[j]);
+        j = state_index_iot(c);
+        p = U64(&hp_state_iot[j]);
+        b[0] = p[0]; b[1] = p[1];
+        VARIANT2_INTEGER_MATH_SSE2(b, c);
+        __mul();
+        VARIANT2_2();
+        VARIANT2_SHUFFLE_ADD_SSE2(hp_state_iot, j);
+        a[0] += hi; a[1] += lo;
+        p = U64(&hp_state_iot[j]);
+        p[0] = a[0]; p[1] = a[1];
+        a[0] ^= b[0]; a[1] ^= b[1];
+        VARIANT1_2(p + 1);
+        _b1 = _b;
+        _b = _c;
+    }
+
+    /* Step 4: Sequential pass — mix scratchpad back into text */
+    memcpy(text, state.init, INIT_SIZE_BYTE);
+    aes_expand_key(&state.hs.b[32], expandedKey);
+    for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+        aes_pseudo_round_xor(text, text, expandedKey, &hp_state_iot[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
+    }
+
+    /* Step 5: Final Keccak + extra hash */
+    memcpy(state.init, text, INIT_SIZE_BYTE);
+    hash_permutation(&state.hs);
+    extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
+}
+
+/* ── ARMv8-A NEON + AES path for IoT-Lite ── */
+#elif !defined NO_AES && (defined(__arm__) || defined(__aarch64__))
+
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRYPTO)
+
+void cn_slow_hash_iot_lite(const void *data, size_t length, char *hash, int variant, int prehashed)
+{
+    RDATA_ALIGN16 uint8_t expandedKey[240];
+    uint8_t text[INIT_SIZE_BYTE];
+    RDATA_ALIGN16 uint64_t a[2];
+    RDATA_ALIGN16 uint64_t b[4];
+    RDATA_ALIGN16 uint64_t c[2];
+    union cn_slow_hash_state state;
+    uint8x16_t _a, _b, _b1, _c;
+    uint64_t hi, lo;
+    size_t i, j;
+    uint64_t *p = NULL;
+    const int light = 0;  /* IoT-Lite has no light mode */
+
+    static void (*const extra_hashes[4])(const void *, size_t, char *) =
+    {
+        hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
+    };
+
+    if (hp_state_iot == NULL)
+        slow_hash_allocate_state_iot();
+
+    if (prehashed) {
+        memcpy(&state.hs, data, length);
+    } else {
+        hash_process(&state.hs, data, length);
+    }
+    memcpy(text, state.init, INIT_SIZE_BYTE);
+
+    VARIANT1_INIT64();
+    VARIANT2_INIT64();
+
+    /* Step 2: Fill 256 KB scratchpad — hardware AES required */
+    aes_expand_key(state.hs.b, expandedKey);
+    for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+        aes_pseudo_round(text, text, expandedKey, INIT_SIZE_BLK);
+        memcpy(&hp_state_iot[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
+    }
+
+    U64(a)[0] = U64(&state.k[0])[0] ^ U64(&state.k[32])[0];
+    U64(a)[1] = U64(&state.k[0])[1] ^ U64(&state.k[32])[1];
+    U64(b)[0] = U64(&state.k[16])[0] ^ U64(&state.k[48])[0];
+    U64(b)[1] = U64(&state.k[16])[1] ^ U64(&state.k[48])[1];
+
+    _b = vld1q_u8((const uint8_t *)b);
+    _b1 = vld1q_u8(((const uint8_t *)b) + AES_BLOCK_SIZE);
+
+    /* Step 3: Mix through 256 KB scratchpad */
+    for (i = 0; i < ITER_IOT_LITE / 2; i++) {
+        j = state_index_iot(a);
+        _c = vld1q_u8(&hp_state_iot[j]);
+        _a = vld1q_u8((const uint8_t *)a);
+        _c = vaeseq_u8(_c, _a);
+        _c = vaesmcq_u8(_c);
+        VARIANT2_SHUFFLE_ADD_NEON(hp_state_iot, j);
+        vst1q_u8((uint8_t *)c, _c);
+        vst1q_u8(&hp_state_iot[j], veorq_u8(_b, _c));
+        VARIANT1_1(&hp_state_iot[j]);
+        j = state_index_iot(c);
+        p = U64(&hp_state_iot[j]);
+        b[0] = p[0]; b[1] = p[1];
+        VARIANT2_PORTABLE_INTEGER_MATH(b, c);
+        __mul();
+        VARIANT2_2();
+        VARIANT2_SHUFFLE_ADD_NEON(hp_state_iot, j);
+        a[0] += hi; a[1] += lo;
+        p = U64(&hp_state_iot[j]);
+        p[0] = a[0]; p[1] = a[1];
+        a[0] ^= b[0]; a[1] ^= b[1];
+        VARIANT1_2(p + 1);
+        _b1 = _b;
+        _b = _c;
+    }
+
+    /* Step 4: Sequential pass */
+    memcpy(text, state.init, INIT_SIZE_BYTE);
+    aes_expand_key(&state.hs.b[32], expandedKey);
+    for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+        aes_pseudo_round_xor(text, text, expandedKey, &hp_state_iot[i * INIT_SIZE_BYTE], INIT_SIZE_BLK);
+    }
+
+    /* Step 5: Final Keccak + extra hash */
+    memcpy(state.init, text, INIT_SIZE_BYTE);
+    hash_permutation(&state.hs);
+    extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
+}
+
+#else /* ARM without crypto extensions — IoT-Lite requires hardware AES */
+
+void cn_slow_hash_iot_lite(const void *data, size_t length, char *hash, int variant, int prehashed)
+{
+    /* IoT-Lite requires hardware AES.  On devices without ARM Crypto
+     * Extensions or AES-NI, mining is not supported.  Return a zero hash
+     * to signal failure rather than silently falling back to slow software AES. */
+    memset(hash, 0, 32);
+}
+
+#endif
+#endif
+

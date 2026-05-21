@@ -3540,7 +3540,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                   bool devAddrParsed = m_currency.parseAccountAddressString(
                     std::string(CryptoNote::FUEGO_DEV_FUND_ADDRESS), devFundAddr);
                   for (const auto& out : tx.tx.outputs) {
-                    if (out.amount != parameters::ALIAS_REGISTRATION_FEE) continue;
+                    if (out.amount < parameters::ALIAS_REGISTRATION_FEE) continue;
                     // Verify output is addressed to the dev fund key.
                     const auto* keyOut = boost::get<KeyOutput>(&out.target);
                     if (!keyOut) continue;
@@ -3582,6 +3582,96 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                   } else {
                     logger(WARNING) << "@ Alias registration rejected in block " << block.height
                                     << ": @" << aliasReg.alias << " (duplicate or invalid)";
+                  }
+                }
+              }
+            }
+          }
+          // Check for @ Alias Release (0xEC)
+          else if (field.type() == typeid(TransactionExtraAliasRelease)) {
+            const auto& aliasRel = boost::get<TransactionExtraAliasRelease>(field);
+            if (!aliasRel.isValid()) {
+              logger(WARNING) << "@ Alias release rejected in block " << block.height << ": invalid data";
+            } else {
+              AccountPublicAddress ownerAddr;
+              if (!m_currency.parseAccountAddressString(aliasRel.ownerAddress, ownerAddr)) {
+                logger(WARNING) << "@ Alias release rejected: cannot parse owner address for @" << aliasRel.alias;
+              } else {
+                uint8_t preimage[64];
+                memcpy(preimage,      &ownerAddr.spendPublicKey, 32);
+                memcpy(preimage + 32, &ownerAddr.viewPublicKey,  32);
+                Crypto::Hash addrHash;
+                Crypto::cn_fast_hash(preimage, 64, addrHash);
+                auto existingEntry = m_aliasIndex.getAliasByName(aliasRel.alias);
+                if (!existingEntry.has_value()) {
+                  logger(WARNING) << "@ Alias release rejected: alias @" << aliasRel.alias << " not found";
+                } else if (memcmp(&existingEntry->addressHash, &addrHash, sizeof(Crypto::Hash)) != 0) {
+                  logger(WARNING) << "@ Alias release rejected: ownership mismatch for @" << aliasRel.alias;
+                } else {
+                  uint8_t cp[8 + 32 + 1];
+                  memcpy(cp,     aliasRel.alias.data(), 8);
+                  memcpy(cp + 8, &addrHash,             32);
+                  cp[40] = 0x00;
+                  Crypto::Hash challenge;
+                  Crypto::cn_fast_hash(cp, sizeof(cp), challenge);
+                  if (!Crypto::check_signature(challenge, ownerAddr.spendPublicKey, aliasRel.proof)) {
+                    logger(WARNING) << "@ Alias release rejected: invalid ownership proof for @" << aliasRel.alias;
+                  } else if (removeAlias(aliasRel.alias)) {
+                    logger(INFO) << "@ Alias released in block " << block.height << ": @" << aliasRel.alias;
+                  } else {
+                    logger(WARNING) << "@ Alias release failed for @" << aliasRel.alias;
+                  }
+                }
+              }
+            }
+          }
+          // Check for @ Alias Transfer (0xED)
+          else if (field.type() == typeid(TransactionExtraAliasTransfer)) {
+            const auto& aliasXfer = boost::get<TransactionExtraAliasTransfer>(field);
+            if (!aliasXfer.isValid()) {
+              logger(WARNING) << "@ Alias transfer rejected in block " << block.height << ": invalid data";
+            } else {
+              AccountPublicAddress oldOwnerAddr;
+              if (!m_currency.parseAccountAddressString(aliasXfer.oldOwnerAddress, oldOwnerAddr)) {
+                logger(WARNING) << "@ Alias transfer rejected: cannot parse old owner address";
+              } else {
+                uint8_t oldprev[64];
+                memcpy(oldprev,      &oldOwnerAddr.spendPublicKey, 32);
+                memcpy(oldprev + 32, &oldOwnerAddr.viewPublicKey,  32);
+                Crypto::Hash oldAddrHash;
+                Crypto::cn_fast_hash(oldprev, 64, oldAddrHash);
+                auto existingEntry = m_aliasIndex.getAliasByName(aliasXfer.alias);
+                if (!existingEntry.has_value()) {
+                  logger(WARNING) << "@ Alias transfer rejected: alias @" << aliasXfer.alias << " not found";
+                } else if (memcmp(&existingEntry->addressHash, &oldAddrHash, sizeof(Crypto::Hash)) != 0) {
+                  logger(WARNING) << "@ Alias transfer rejected: ownership mismatch for @" << aliasXfer.alias;
+                } else {
+                  uint8_t cp[8 + 32 + 32 + 1];
+                  memcpy(cp,      aliasXfer.alias.data(), 8);
+                  memcpy(cp + 8,  &oldAddrHash,           32);
+                  memcpy(cp + 40, &aliasXfer.newAddressHash, 32);
+                  cp[72] = 0x01;
+                  Crypto::Hash challenge;
+                  Crypto::cn_fast_hash(cp, sizeof(cp), challenge);
+                  if (!Crypto::check_signature(challenge, oldOwnerAddr.spendPublicKey, aliasXfer.proof)) {
+                    logger(WARNING) << "@ Alias transfer rejected: invalid ownership proof for @" << aliasXfer.alias;
+                  } else {
+                    AccountPublicAddress newOwnerAddr;
+                    if (!m_currency.parseAccountAddressString(aliasXfer.newOwnerAddress, newOwnerAddr)) {
+                      logger(WARNING) << "@ Alias transfer rejected: cannot parse new owner address";
+                    } else {
+                      uint8_t newprev[64];
+                      memcpy(newprev,      &newOwnerAddr.spendPublicKey, 32);
+                      memcpy(newprev + 32, &newOwnerAddr.viewPublicKey,  32);
+                      Crypto::Hash newAddrHash;
+                      Crypto::cn_fast_hash(newprev, 64, newAddrHash);
+                      if (replaceAliasOwnership(aliasXfer.alias, newAddrHash)) {
+                        logger(INFO) << "@ Alias transferred in block " << block.height
+                                     << ": @" << aliasXfer.alias;
+                      } else {
+                        logger(WARNING) << "@ Alias transfer failed for @" << aliasXfer.alias;
+                      }
+                    }
                   }
                 }
               }

@@ -110,44 +110,70 @@ FixedPoint64 computeTargetRatio(
 
   updateBasin(state, currentTwap);
 
-  // Experimental damped formula (testnet only, controlled by config bool)
-  if (parameters::HEAT_USE_DAMPED_FORMULA) {
-    if (!currentTwap.isZero() && !launchTwap.isZero()) {
+  switch (stabilityMode) {
+
+  case 0: // CPI-adjusted purchasing power + EUR display
+    // Band: $1.50-$2.50 × CPI_current/CPI_launch. CPI auto-inflation drifts band upward.
+    // Falls back to bootstrap 5:1 when CPI inactive or XFG below threshold.
+    if (state.cpiOracleActive
+        && xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
+      FixedPoint64 cpiRatio = state.cpiCurrentValue.div(state.cpiLaunchValue);
+      FixedPoint64 baseFloor = FixedPoint64::fromRatio(parameters::HEAT_CPI_BASE_FLOOR, parameters::VALUE_SCALE);
+      FixedPoint64 baseCeil  = FixedPoint64::fromRatio(parameters::HEAT_CPI_BASE_CEIL,  parameters::VALUE_SCALE);
+      FixedPoint64 floorCPI = baseFloor.mul(cpiRatio);
+      FixedPoint64 ceilCPI  = baseCeil.mul(cpiRatio);
+      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+      if (!xfgPrice.isZero()) {
+        FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
+        FixedPoint64 targetValue;
+        if      (heatValue < floorCPI) targetValue = floorCPI;
+        else if (heatValue > ceilCPI)  targetValue = ceilCPI;
+        else                            targetValue = heatValue;
+        return targetValue.div(xfgPrice);
+      }
+    }
+    // Mode 0 bootstrap: 5:1 launch ratio
+    return FixedPoint64::fromRatio(
+      parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+
+  case 1: // 5:1 self-sovereign (fixed $1.50-$2.50 band, activate at XFG ≥ $5)
+    if (xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
+      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+      if (!xfgPrice.isZero()) {
+        FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
+        FixedPoint64 floorV  = FixedPoint64::fromRatio(parameters::HEAT_VALUE_FLOOR,   parameters::VALUE_SCALE);
+        FixedPoint64 ceilV   = FixedPoint64::fromRatio(parameters::HEAT_VALUE_CEILING, parameters::VALUE_SCALE);
+        FixedPoint64 targetValue;
+        if      (heatValue < floorV) targetValue = floorV;
+        else if (heatValue > ceilV)  targetValue = ceilV;
+        else                          targetValue = heatValue;
+        return targetValue.div(xfgPrice);
+      }
+    } else if (!launchTwap.isZero() && !currentTwap.isZero()) {
+      // Self-referencing: 0.2 × launch_twap / current_twap
       FixedPoint64 launchRatio = FixedPoint64::fromRatio(
         parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
-      FixedPoint64 priceRatio = launchTwap.div(currentTwap);
-      FixedPoint64 dampingFp = FixedPoint64::fromRatio(
-        parameters::PI_DAMPING_FACTOR, 100);
-      FixedPoint64 dampedRatio = FixedPoint64::exp_approx(
-        dampingFp.mul(FixedPoint64::ln_approx(priceRatio)));
-      return launchRatio.mul(dampedRatio);
+      return launchRatio.mul(launchTwap.div(currentTwap));
     }
+    // Bootstrap: 5:1 launch ratio
+    return FixedPoint64::fromRatio(
+      parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
+
+  case 2: // 8:1 full float (PI-only, no band — best APY per Monte Carlo)
+    // Self-referencing: 0.125 × launch_twap / current_twap
+    if (!launchTwap.isZero() && !currentTwap.isZero()) {
+      FixedPoint64 launch8 = FixedPoint64::fromRatio(
+        parameters::HEAT_LAUNCH_RATIO_8X_NUM, parameters::HEAT_LAUNCH_RATIO_8X_DENOM);
+      return launch8.mul(launchTwap.div(currentTwap));
+    }
+    // Bootstrap: 8:1 launch ratio
+    return FixedPoint64::fromRatio(
+      parameters::HEAT_LAUNCH_RATIO_8X_NUM, parameters::HEAT_LAUNCH_RATIO_8X_DENOM);
+
+  default:
     return FixedPoint64::fromRatio(
       parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
   }
-
-  // Two-phase stability model:
-  // Phase 1: Fixed 0.2 (until XFG ≥ activation threshold AND oracle data exists)
-  // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)
-
-  if (xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
-    // Phase 2 — oracle data is valid and XFG has meaningful market value
-    FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
-    if (!xfgPrice.isZero()) {
-      FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
-      FixedPoint64 floorV  = FixedPoint64::fromRatio(parameters::HEAT_VALUE_FLOOR,   parameters::VALUE_SCALE);
-      FixedPoint64 ceilV   = FixedPoint64::fromRatio(parameters::HEAT_VALUE_CEILING, parameters::VALUE_SCALE);
-      FixedPoint64 targetValue;
-      if      (heatValue < floorV) targetValue = floorV;
-      else if (heatValue > ceilV)  targetValue = ceilV;
-      else                          targetValue = heatValue;
-      return targetValue.div(xfgPrice);
-    }
-  }
-
-  // Phase 1 — bootstrap (fixed 0.2)
-  return FixedPoint64::fromRatio(
-    parameters::HEAT_LAUNCH_RATIO_NUM, parameters::HEAT_LAUNCH_RATIO_DENOM);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +183,8 @@ FixedPoint64 computeNewRedemptionPrice(
     PiControllerState& state,
     FixedPoint64 marketPrice,
     FixedPoint64 targetRatio,
-    uint32_t blocksElapsed) {
+    uint32_t blocksElapsed,
+    uint8_t  stabilityMode) {
 
   if (state.redemptionPrice.isZero() || blocksElapsed == 0 || targetRatio.isZero())
     return state.redemptionPrice;
@@ -176,6 +203,22 @@ FixedPoint64 computeNewRedemptionPrice(
   state.integralDeviation = newIntegral;
 
   FixedPoint64 rate = kp.mul(deviation).add(ki.mul(state.integralDeviation));
+
+  // Hill damping (sigmoid-like soft-band for float modes):
+  // damp = (|dev|/M)^n / (1 + (|dev|/M)^n)
+  // PI runs at full power near target, fades smoothly at extremes.
+  // Silent under normal conditions — only activates during black swan events.
+  if (parameters::HEAT_PI_USE_DAMP && stabilityMode != 0) {
+    FixedPoint64 absDev = deviation.isNegative() ? deviation.negate() : deviation;
+    FixedPoint64 M = FixedPoint64::fromRatio(parameters::HEAT_PI_DAMP_M, 100);
+    FixedPoint64 ratio = absDev.div(M);
+    FixedPoint64 ratioN = ratio;
+    for (uint32_t i = 1; i < parameters::HEAT_PI_DAMP_N; ++i)
+      ratioN = ratioN.mul(ratio);
+    FixedPoint64 one = FixedPoint64::one();
+    FixedPoint64 damp = ratioN.div(one.add(ratioN));
+    rate = rate.mul(one.sub(damp));
+  }
 
   // Adaptive rate clamp: scales with |deviation| up to absolute ceiling.
   // Basin locked (small dev): clamp = ±50%/yr. Regime change (large dev): up to ±1000%/yr.
@@ -286,7 +329,15 @@ void PiControllerState::serialize(ISerializer& s) {
   s(basinStableEpochs, "basinStableEpochs");
   s(basinExitEpochs, "basinExitEpochs");
   s(launchOracleValue, "launchOracleValue");
+  int128_t cv = cpiLaunchValue.raw();
+  int128_t cw = cpiCurrentValue.raw();
+  s.binary(&cv, sizeof(cv), "cpiLaunchValue");
+  s.binary(&cw, sizeof(cw), "cpiCurrentValue");
+  s(cpiUpdateHeight, "cpiUpdateHeight");
+  s(cpiOracleActive, "cpiOracleActive");
   if (s.type() == ISerializer::INPUT) {
+    cpiLaunchValue  = FixedPoint64::fromRaw(cv);
+    cpiCurrentValue = FixedPoint64::fromRaw(cw);
     redemptionPrice   = FixedPoint64::fromRaw(rp);
     integralDeviation = FixedPoint64::fromRaw(id);
     redemptionRate    = FixedPoint64::fromRaw(rr);

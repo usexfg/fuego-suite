@@ -1424,6 +1424,15 @@ std::vector<AliasEntry> core::getAllAliases() const {
   return m_blockchain.getAllAliases();
 }
 
+bool core::removeAlias(const std::string& alias) {
+  return m_blockchain.removeAlias(alias);
+}
+
+bool core::replaceAliasOwnership(const std::string& alias,
+                                 const Crypto::Hash& newAddressHash) {
+  return m_blockchain.replaceAliasOwnership(alias, newAddressHash);
+}
+
 core::HeatMetrics core::getHeatMetrics() const {
   HeatMetrics m;
   m.heatSupply = m_blockchain.getHeatSupply();

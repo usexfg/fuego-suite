@@ -57,35 +57,6 @@ enum class SwapState : uint8_t {
   ADAPTOR_XFG_SPENT      = 15,   // adapted sig broadcast, escrow spent
   ADAPTOR_REFUNDED       = 16,   // cooperative refund completed
 
-  // ── zkLPSWAP POOL STATES (v11 — deferred) ────────────────────────────────
-  // These states are reserved for the trustless pool trading subsystem.
-  // Not reachable from any active swap path in v1 builds.
-  // Implementation lives in src/SwapDaemon/pool_v11/ — see README there.
-  POOL_DEPOSIT_INITIATED  = 20,   // LP provider requests deposit
-  POOL_DEPOSIT_LOCKED_A   = 21,   // Asset A locked in escrow
-  POOL_DEPOSIT_LOCKED_B   = 22,   // Asset B locked in escrow
-  POOL_DEPOSIT_CONFIRMED  = 23,   // Both locked, LP shares minted
-  POOL_DEPOSIT_COMPLETE   = 24,   // Escrow spent, reserves updated
-  POOL_DEPOSIT_REFUNDED   = 25,   // Deposit cancelled, assets returned
-
-  POOL_WITHDRAW_INITIATED = 30,   // LP provider requests withdrawal
-  POOL_WITHDRAW_LOCKED    = 31,   // Shares nullified, assets prepared
-  POOL_WITHDRAW_COMPLETE  = 32,   // Assets returned to LP provider
-  POOL_WITHDRAW_REFUNDED  = 33,   // Withdrawal cancelled
-
-  POOL_SWAP_INITIATED     = 40,   // Swap order submitted
-  POOL_SWAP_EXECUTED      = 41,   // Swap processed, reserves updated
-  POOL_SWAP_COMPLETE      = 42,   // Atomic swap finished
-  POOL_SWAP_REFUNDED      = 43,   // Swap cancelled
-
-  POOL_FEE_CLAIM_INITIATED = 50,  // LP provider requests fee claim
-  POOL_FEE_CLAIMED         = 51,  // Fees paid to LP provider
-  POOL_FEE_CLAIM_REFUNDED  = 52,  // Fee claim cancelled
-
-  POOL_CHECKPOINT_GENERATED = 60, // Checkpoint attestation generated
-
-
-
   // ── AFK ADAPTOR SWAP STATES (v2) ───────────────────────────────────────────
   // Non-interactive "Pre-lock" flow for AFK makers
   AFK_OFFER_LOCKED   = 100,  // Maker locked XFG on-chain with adaptor sig
@@ -168,6 +139,20 @@ struct SwapParams {
   // Set when the BCH HTLC is created (lockHtlc) and read on claim/refund.
   // Must be persisted so claim/refund work after a daemon restart.
   std::string bchRedeemScriptHex;
+
+  // ── Collaborative ring signature peer state (persisted for restart resilience)
+  // These are populated by handlePeerMessage() when the peer sends Ring Round 1/2
+  // data.  They survive daemon restarts so the collaborative ring sig can
+  // complete even if the daemon goes down mid-round.
+  Crypto::KeyImage             ringPeerPartialKeyImage;
+  Crypto::PublicKey            ringPeerRingNoncePub;
+  Crypto::EllipticCurvePoint   ringPeerRingNonceHp;
+  Crypto::EllipticCurveScalar  ringPeerPartialResponse;
+  bool ringPeerRound1Received = false;
+  bool ringPeerRound2Received = false;
+  bool ringOurRound1Sent = false;      // we already generated & sent Round 1
+  bool ringOurRound2Sent = false;      // we already generated & sent Round 2
+  bool ringTxBroadcast = false;        // escrow spend/refund tx was broadcast
 };
 
 const char* swapStateToString(SwapState s);

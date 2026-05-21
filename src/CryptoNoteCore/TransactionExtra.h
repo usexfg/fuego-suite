@@ -64,6 +64,8 @@
 #define TX_EXTRA_COLD_RECEIPT               0x69  // All Deposits receipt
 #define TX_EXTRA_YIELD_COMMITMENT           0x07  // yield commitment
 #define TX_EXTRA_ALIAS                      0xEA  // @ alias registration
+#define TX_EXTRA_ALIAS_RELEASE              0xEC  // @ alias release (void/delete) — requires ownership proof
+#define TX_EXTRA_ALIAS_TRANSFER             0xED  // @ alias transfer to new owner — requires ownership proof
 // 
 // 0xCE tag: COLD migration (register v3 commitment for a pre-v3 legacy deposit)
 #define TX_EXTRA_COLD_MIGRATION             0xCE
@@ -165,12 +167,38 @@ struct TransactionExtraYieldCommitment {
 // @ Alias registration structure (0xEA)
 struct TransactionExtraAliasRegistration {
   uint8_t version = 1;             // Schema version
-  std::string alias;               // Exactly 8 chars: [A-Z0-9] for EFiers, [a-z0-9] for regular users
+  std::string alias;               // Exactly 8 chars: [a-z0-9] for regular users
   Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
   std::string ownerAddress;        // Full wallet address (optional: can be empty for privacy)
   uint8_t aliasType = 0;           // 0 = Elderfier (ALLCAPS [A-Z0-9]), 1 = Regular user (lowercase [a-z0-9])
   uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
+
+  bool serialize(ISerializer& serializer);
+  bool isValid() const;
+};
+
+// @ Alias release structure (0xEC) — void/delete an alias, requires ownership proof
+struct TransactionExtraAliasRelease {
+  uint8_t version = 1;
+  std::string alias;               // Exactly 8 chars — the alias to release
+  Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
+  std::string ownerAddress;        // Full wallet address — needed to verify ownership
+  Crypto::Signature proof;         // Signature over cn_fast_hash(alias || addressHash || 0x00) with spend key
+
+  bool serialize(ISerializer& serializer);
+  bool isValid() const;
+};
+
+// @ Alias transfer structure (0xED) — transfer alias to new owner
+struct TransactionExtraAliasTransfer {
+  uint8_t version = 1;
+  std::string alias;               // Exactly 8 chars — the alias to transfer
+  Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
+  std::string oldOwnerAddress;     // Current owner's full address — for ownership verification
+  std::string newOwnerAddress;     // New owner's full address — receives the alias
+  Crypto::Hash newAddressHash;     // cn_fast_hash(newOwnerAddress) — stored in AliasIndex
+  Crypto::Signature proof;         // Signature over cn_fast_hash(alias || oldAddressHash || newAddressHash || 0x01) with spend key
 
   bool serialize(ISerializer& serializer);
   bool isValid() const;
@@ -339,7 +367,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
 
 
 
@@ -409,6 +437,14 @@ bool getYieldCommitmentFromExtra(const std::vector<uint8_t>& tx_extra, Transacti
 // @ Alias registration helper functions
 bool addAliasToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRegistration& alias);
 bool getAliasFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRegistration& alias);
+
+// @ Alias release helper functions
+bool addAliasReleaseToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRelease& release);
+bool getAliasReleaseFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRelease& release);
+
+// @ Alias transfer helper functions
+bool addAliasTransferToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasTransfer& transfer);
+bool getAliasTransferFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasTransfer& transfer);
 // DIGM helper functions will be implemented later
 // COLD Commitment helper functions (unified with HEAT style)
 bool createTxExtraWithColdCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, uint8_t claimChainCode, const std::vector<uint8_t>& metadata, const std::vector<uint8_t>& gift_secret, std::vector<uint8_t>& extra);

@@ -313,6 +313,28 @@ namespace CryptoNote
              break;
            }
 
+           case TX_EXTRA_ALIAS_RELEASE:
+           {
+             TransactionExtraAliasRelease release;
+             if (getAliasReleaseFromExtra(transactionExtra, release)) {
+               transactionExtraFields.push_back(release);
+             } else {
+               return false;
+             }
+             break;
+           }
+
+           case TX_EXTRA_ALIAS_TRANSFER:
+           {
+             TransactionExtraAliasTransfer transfer;
+             if (getAliasTransferFromExtra(transactionExtra, transfer)) {
+               transactionExtraFields.push_back(transfer);
+             } else {
+               return false;
+             }
+             break;
+           }
+
            default:
              return false; // unknown extra tag — reject
        }
@@ -408,6 +430,16 @@ namespace CryptoNote
     bool operator()(const TransactionExtraAliasRegistration &t)
     {
       return addAliasToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraAliasRelease &t)
+    {
+      return addAliasReleaseToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraAliasTransfer &t)
+    {
+      return addAliasTransferToExtra(extra, t);
     }
 
     bool operator()(const TransactionExtraColdMigration &t)
@@ -1602,6 +1634,46 @@ namespace CryptoNote
     return true;
   }
 
+  bool TransactionExtraAliasRelease::serialize(ISerializer& s) {
+    s(version, "version");
+    s(alias, "alias");
+    s(aliasHash, "aliasHash");
+    s(ownerAddress, "ownerAddress");
+    s(proof, "proof");
+    return true;
+  }
+
+  bool TransactionExtraAliasRelease::isValid() const {
+    if (alias.length() != 8) return false;
+    if (ownerAddress.empty()) return false;
+    for (char c : alias) {
+      bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '&');
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  bool TransactionExtraAliasTransfer::serialize(ISerializer& s) {
+    s(version, "version");
+    s(alias, "alias");
+    s(aliasHash, "aliasHash");
+    s(oldOwnerAddress, "oldOwnerAddress");
+    s(newOwnerAddress, "newOwnerAddress");
+    s(newAddressHash, "newAddressHash");
+    s(proof, "proof");
+    return true;
+  }
+
+  bool TransactionExtraAliasTransfer::isValid() const {
+    if (alias.length() != 8) return false;
+    if (oldOwnerAddress.empty() || newOwnerAddress.empty()) return false;
+    for (char c : alias) {
+      bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '&');
+      if (!ok) return false;
+    }
+    return true;
+  }
+
   bool addAliasToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRegistration& alias) {
     if (!alias.isValid()) {
       return false;
@@ -1642,6 +1714,66 @@ namespace CryptoNote
         // Deserialize
         BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
         return fromBinaryArray(alias, ba);
+      }
+    }
+    return false;
+  }
+
+  bool addAliasReleaseToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRelease& release) {
+    if (!release.isValid()) return false;
+
+    tx_extra.push_back(TX_EXTRA_ALIAS_RELEASE);
+    BinaryArray ba;
+    if (!toBinaryArray(release, ba)) return false;
+    Tools::write_varint(std::back_inserter(tx_extra), ba.size());
+    tx_extra.insert(tx_extra.end(), ba.begin(), ba.end());
+    return true;
+  }
+
+  bool getAliasReleaseFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasRelease& release) {
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+      if (tx_extra[i] == TX_EXTRA_ALIAS_RELEASE) {
+        size_t offset = i + 1;
+        if (offset >= tx_extra.size()) return false;
+        uint64_t size = 0;
+        auto begin = tx_extra.begin() + offset;
+        auto end = tx_extra.end();
+        int bytes_read = Tools::read_varint<64, std::vector<uint8_t>::const_iterator, uint64_t>(std::move(begin), std::move(end), size);
+        if (bytes_read <= 0) return false;
+        offset += bytes_read;
+        if (offset + size > tx_extra.size()) return false;
+        BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
+        return fromBinaryArray(release, ba);
+      }
+    }
+    return false;
+  }
+
+  bool addAliasTransferToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasTransfer& transfer) {
+    if (!transfer.isValid()) return false;
+
+    tx_extra.push_back(TX_EXTRA_ALIAS_TRANSFER);
+    BinaryArray ba;
+    if (!toBinaryArray(transfer, ba)) return false;
+    Tools::write_varint(std::back_inserter(tx_extra), ba.size());
+    tx_extra.insert(tx_extra.end(), ba.begin(), ba.end());
+    return true;
+  }
+
+  bool getAliasTransferFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraAliasTransfer& transfer) {
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+      if (tx_extra[i] == TX_EXTRA_ALIAS_TRANSFER) {
+        size_t offset = i + 1;
+        if (offset >= tx_extra.size()) return false;
+        uint64_t size = 0;
+        auto begin = tx_extra.begin() + offset;
+        auto end = tx_extra.end();
+        int bytes_read = Tools::read_varint<64, std::vector<uint8_t>::const_iterator, uint64_t>(std::move(begin), std::move(end), size);
+        if (bytes_read <= 0) return false;
+        offset += bytes_read;
+        if (offset + size > tx_extra.size()) return false;
+        BinaryArray ba(tx_extra.begin() + offset, tx_extra.begin() + offset + size);
+        return fromBinaryArray(transfer, ba);
       }
     }
     return false;

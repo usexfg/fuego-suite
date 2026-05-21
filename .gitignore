@@ -39,3 +39,5 @@ Thumbs.db
 /build-check/
 /build_swap_daemon/
 /xfg-stark-v3
+__pycache__/
+*.pyc

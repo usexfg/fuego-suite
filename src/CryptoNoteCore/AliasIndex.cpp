@@ -46,7 +46,7 @@ void AliasIndex::reserveDevTeamAliases() {
     const std::string name = RESERVED_ALIASES[i].name;
     AliasEntry entry;
     entry.alias = name;
-    entry.ownerAddress = "";  // Not stored on-chain for privacy
+    entry.ownerAddress = "";  // Reserved aliases have no single-owner address
     entry.aliasHash = Crypto::cn_fast_hash(name.data(), name.size());
     entry.addressHash = Crypto::cn_fast_hash(devAddress.data(), devAddress.size());
     entry.aliasType = RESERVED_ALIASES[i].type;
@@ -217,6 +217,61 @@ std::vector<AliasEntry> AliasIndex::getAllAliases() const {
 // ============================================================================
 // STATE
 // ============================================================================
+
+bool AliasIndex::removeAlias(const std::string& alias) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  // Normalize to lowercase
+  std::string normalizedAlias = alias;
+  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
+                 normalizedAlias.begin(), ::tolower);
+
+  auto aliasIt = m_aliases.find(normalizedAlias);
+  if (aliasIt == m_aliases.end()) {
+    return false;  // Alias not found
+  }
+
+  // Remove from address hash → alias reverse map
+  std::string addrHashHex = Common::podToHex(aliasIt->second.addressHash);
+  m_addrHashToAlias.erase(addrHashHex);
+
+  // Remove from alias → entry map
+  m_aliases.erase(aliasIt);
+  return true;
+}
+
+bool AliasIndex::replaceAliasOwnership(const std::string& alias,
+                                       const Crypto::Hash& newAddressHash) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  // Normalize to lowercase
+  std::string normalizedAlias = alias;
+  std::transform(normalizedAlias.begin(), normalizedAlias.end(),
+                 normalizedAlias.begin(), ::tolower);
+
+  auto aliasIt = m_aliases.find(normalizedAlias);
+  if (aliasIt == m_aliases.end()) {
+    return false;  // Alias not found
+  }
+
+  std::string newAddrHashHex = Common::podToHex(newAddressHash);
+
+  // Check new address doesn't already have an alias
+  if (m_addrHashToAlias.find(newAddrHashHex) != m_addrHashToAlias.end()) {
+    return false;  // New address already has an alias
+  }
+
+  // Remove old address hash mapping
+  std::string oldAddrHashHex = Common::podToHex(aliasIt->second.addressHash);
+  m_addrHashToAlias.erase(oldAddrHashHex);
+
+  // Update entry with new address hash
+  aliasIt->second.addressHash = newAddressHash;
+
+  // Add new address hash mapping
+  m_addrHashToAlias[newAddrHashHex] = normalizedAlias;
+  return true;
+}
 
 
 

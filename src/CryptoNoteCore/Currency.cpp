@@ -848,6 +848,28 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  std::string Currency::toEuroDisplay(uint64_t usdCents) const
+  {
+    // EUR display only active in CPI purchasing-power mode (mode 0).
+    // In other modes (self-sovereign), pass through as raw USD cents.
+    if (parameters::HEAT_STABILITY_MODE != 0) {
+      // Raw USD cents — not CPI mode, no EUR conversion
+      return formatAmount(usdCents);
+    }
+
+    // Convert USD cents to EUR at configured rate: EUR = USD × NUM / DEN
+    uint64_t eurCents = usdCents * parameters::EUR_PER_USD_NUM / parameters::EUR_PER_USD_DEN;
+    auto whole = eurCents / 100;
+    auto frac  = eurCents % 100;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\xe2\x82\xac %llu.%02llu",
+             static_cast<unsigned long long>(whole),
+             static_cast<unsigned long long>(frac));
+    return std::string(buf);
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   bool Currency::parseAmount(const std::string &str, uint64_t &amount) const
   {
     std::string strAmount = str;

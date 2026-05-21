@@ -276,6 +276,13 @@ namespace CryptoNote {
     std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
     std::vector<AliasEntry> getAllAliases() const;
 
+    // Release (void/delete) an alias — caller must have verified ownership first
+    bool removeAlias(const std::string& alias);
+
+    // Transfer alias ownership to a new address hash
+    bool replaceAliasOwnership(const std::string& alias,
+                               const Crypto::Hash& newAddressHash);
+
     // Elderfier signature cache accessors
   //  void addSignatureToCache(const CachedElderfierSignature& sig);
     void updateCurrentMerkleRoot(const Crypto::Hash& root);

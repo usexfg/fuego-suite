@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include "CryptoNoteConfig.h"
 #include "Common/FixedPoint.h"
 
 namespace CryptoNote {
@@ -41,6 +42,14 @@ struct PiControllerState {
   // Oracle anchor — snapshot of first valid swapxfg data
   uint64_t     launchOracleValue = 0;
 
+  // CPI-adjusted purchasing power band (Phase 3)
+  // HEAT's nominal USD value rises with CPI: 1 HEAT ≈ constant real value
+  // Both stored as Q64.64 FixedPoint64: launch=100.0, current drifts with inflation
+  FixedPoint64 cpiLaunchValue   = FixedPoint64::fromRatio(parameters::HEAT_CPI_LAUNCH_INDEX, 1);
+  FixedPoint64 cpiCurrentValue  = FixedPoint64::fromRatio(parameters::HEAT_CPI_LAUNCH_INDEX, 1);
+  uint64_t     cpiUpdateHeight  = 0;
+  bool         cpiOracleActive  = false;  // set by Blockchain when mode 0 + CPI auto-inflation active
+
   void serialize(ISerializer& s);
 };
 
@@ -55,7 +64,8 @@ FixedPoint64 computeNewRedemptionPrice(
     PiControllerState& state,
     FixedPoint64 marketPrice,
     FixedPoint64 targetRatio,
-    uint32_t blocksElapsed);
+    uint32_t blocksElapsed,
+    uint8_t  stabilityMode);
 
 FixedPoint64 computeRebalanceAmount(
     const PiControllerState& state,

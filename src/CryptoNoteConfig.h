@@ -83,6 +83,7 @@ namespace CryptoNote
 
 		// Fire Alias registration fee: 1 XFG for regular users, free for Elderfiers
 		const uint64_t ALIAS_REGISTRATION_FEE = COIN;  /* 1 XFG sent to Fuego Development Fund */
+		const uint64_t ALIAS_REGISTRATION_FEE_MAX_RANDOM = 1000;  /* max random dust added to alias fee to prevent fingerprinting */
 
 		const uint64_t DEFAULT_DUST_THRESHOLD_20KH = UINT64_C(20000); /* < 0.002 XFG ( under 20 Kħ is dust) */
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(1000); /* < 0.0001 XFG ( under 1 Kħ is dust) v10 */
@@ -206,20 +207,43 @@ namespace CryptoNote
         const bool     MILAESANDRA_GROWING_PRICE = false;          // true to simulate price growth
         const uint32_t MILAESANDRA_ACTIVATION_HEIGHT = 650;       // block to start fee simulation
 
-        // HEAT stability — two-phase bootstrap-to-band model
-        // Phase 1: fixed 0.2 (until XFG ≥ $5 AND oracle data exists)
-        // Phase 2: $1-$3 floating band (PI maintains HEAT purchasing power)
-        const uint8_t  HEAT_STABILITY_MODE = 2;
-        const bool     HEAT_USE_DAMPED_FORMULA = false;            // true on testnet for experimental damped model
-        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT)
+        // HEAT stability — 3 switchable modes via HEAT_STABILITY_MODE
+        //   0 = CPI-adjusted purchasing power + EUR display
+        //   1 = 5:1 self-sovereign (fixed $1.50-$2.50 band, activate at XFG ≥ $5)
+        //   2 = 8:1 self-sovereign full float (PI-only, best APY per Monte Carlo)
+        const uint8_t  HEAT_STABILITY_MODE = 2;                    // default: 8:1 full float (best APY)
+        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT) — used by modes 0,1
         const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
-        const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint (disincentivises dust minting, funnels demand to Hearth AMM); testnet overridden
-        const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium → treasury (makes Hearth AMM the cheaper default)
-        const uint64_t PI_DAMPING_FACTOR = 25;                    // 0.25 → HEAT appreciates at 1/4 XFG rate
-        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (5:1 ratio match)
-        const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor
-        const uint64_t HEAT_VALUE_CEILING = 250;                   // $2.50 band ceiling
+        const uint64_t HEAT_LAUNCH_RATIO_8X_NUM = 1;               // 0.125 (1 XFG = 8 HEAT) — used by mode 2
+        const uint64_t HEAT_LAUNCH_RATIO_8X_DENOM = 8;
+        const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium
+        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (mode 1 activation)
+        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD_8X = 800;    // $8.00 (mode 2 variant; unused when float)
+        const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor (modes 0,1)
+        const uint64_t HEAT_VALUE_CEILING = 250;                   // $2.50 band ceiling (modes 0,1)
         const uint64_t VALUE_SCALE = 100;                          // cents scale for oracle values
+
+        // CPI-adjusted purchasing power — used by mode 0 only
+        // HEAT targets constant real value: as USD loses purchasing power, HEAT's
+        // nominal USD value rises proportionally. EUR display for public-facing output.
+        const uint64_t HEAT_CPI_BASE_FLOOR     = 150;               // $1.50 at CPI=100 (launch baseline)
+        const uint64_t HEAT_CPI_BASE_CEIL      = 250;               // $2.50 at CPI=100
+        const uint64_t HEAT_CPI_SCALE          = 100;               // CPI index scale (100 = launch baseline)
+        const uint64_t HEAT_CPI_LAUNCH_INDEX   = 100;               // CPI at launch time
+        const uint64_t HEAT_CPI_AUTO_INFLATION_BPS = 250;           // 2.50%/yr simulated CPI drift
+        const uint64_t HEAT_CPI_UPDATE_INTERVAL = 730;               // update CPI every ~4 days
+
+        // PI Hill-damping (sigmoid-like soft-band for float modes 1, 2)
+        // Dampens PI rate when deviation from target is large — circuit breaker
+        // against black swan events without affecting normal operation.
+        const bool     HEAT_PI_USE_DAMP  = true;                    // Hill-damp PI at extremes
+        const uint64_t HEAT_PI_DAMP_M    = 200;                     // midpoint: 200% deviation from target
+        const uint32_t HEAT_PI_DAMP_N    = 4;                       // Hill coefficient: 4 = sigmoid-like
+
+        // EUR display — active when HEAT_STABILITY_MODE == 0
+        const uint64_t EUR_PER_USD_NUM = 92;                        // 0.92 EUR/USD
+        const uint64_t EUR_PER_USD_DEN = 100;
 
         // PI Controller gains (simulation-validated: insane_vol_test.py)
         const uint64_t PI_KP_NUM = 8,  PI_KP_DENOM = 100;          // 0.08
@@ -248,14 +272,12 @@ namespace CryptoNote
         const uint64_t CD_RESERVE_CAP = 200;                        // 2× base pool (scaled by 100)
         const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
-        const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum pool depth for stability
-        const uint64_t HEARTH_MIN_HEAT_DEPTH = 25000;              // 25,000 HEAT (at launch ratio 0.2)
-        const uint64_t TREASURY_REPAYMENT_PCT = 20;                // 20% of treasury inflow → bootstrap repayment
-        const uint64_t TREASURY_LP_YIELD_PCT = 100;                // 100% of protocol LP fees → treasury balance
+        const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum (aspirational depth target)
+        const uint64_t HEARTH_MIN_HEAT_DEPTH = 40000;              // 40,000 HEAT minimum (at 8:1 ratio)
 
         // Hearth pool governance bootstrap (one-time initialization at v11 activation)
-        const uint64_t HEARTH_INITIAL_XFG  = 100U * 10000000U;      // 100 XFG @ 10M atomic/XFG
-        const uint64_t HEARTH_INITIAL_HEAT = 500U * 10000000U;      // 500 HEAT @ 10M atomic/HEAT
+        const uint64_t HEARTH_INITIAL_XFG  = 1000U * 10000000U;     // 1,000 XFG pool side
+        const uint64_t HEARTH_INITIAL_HEAT = 8000U * 10000000U;     // 8,000 HEAT pool side (8:1 ratio)
 
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");
@@ -294,7 +316,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //ÆzorAhai  (fire aliases|dynamaxin|dandelion+|CD|SwapXFG)
+        const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //ÆzorAhai  (@fire aliases|dynamaxin|dandelion+|CD|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //HearthAMM + HEAT stablecoin + PI controller
 // upgradekit
 //
@@ -315,7 +337,9 @@ namespace CryptoNote
 
 	} // namespace parameters
 
-	// Development wallet that receives alias registration fees. investigate mullet-cig opt for 3/5 access
+	// Fuego Developer Fund — receives @ alias registration fees and other network fees.
+	// Standard individual aliases are @fire aliases (V10 feature).
+	// Group/multi-sig "tandalias" are in design phase (see docs/design/group-aliases-plan.md).
 	const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
 
     const char CRYPTONOTE_NAME[] = "fuego";

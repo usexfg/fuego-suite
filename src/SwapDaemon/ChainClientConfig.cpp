@@ -110,6 +110,7 @@ bool loadChainClientConfig(const std::string& path,
   out.solPort       = static_cast<uint16_t>(jsonGetUint(json, "sol_rpc_port", 8899));
   out.solProgramId  = jsonGetStr(json, "sol_program_id");
   out.solKeypairPath = jsonGetStr(json, "sol_keypair_path");
+  out.bchWif          = jsonGetStr(json, "bch_wif");
 
   // ── Signer credentials ──
   out.ethPrivKeyHex  = jsonGetStr(json, "eth_priv_key");

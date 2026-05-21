@@ -5380,7 +5380,7 @@ namespace CryptoNote
       memcpy(preimage + 32, &addr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy
+    aliasReg.ownerAddress = ownerAddress;  // Stored in tx_extra for on-chain resolution
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
@@ -5400,7 +5400,17 @@ namespace CryptoNote
     if (!m_currency.isTestnet()) {
       WalletOrder devFundOutput;
       devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
+      // Random dust prevents fingerprinting of exact 1 XFG alias registration txns
+      uint64_t randomDust = 0;
+      {
+        uint8_t randBytes[8] = {};
+        Crypto::generate_random_bytes(sizeof(randBytes), randBytes);
+        for (int i = 0; i < 8; ++i) {
+          randomDust = (randomDust << 8) | randBytes[i];
+        }
+        randomDust = randomDust % (CryptoNote::parameters::ALIAS_REGISTRATION_FEE_MAX_RANDOM + 1);
+      }
+      devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
       params.destinations.push_back(devFundOutput);
     } else {
       // Testnet: self-transfer of minimum fee

@@ -93,4 +93,10 @@ Returns all registered aliases. Use sparingly — on a large network this can be
 
 ## Privacy note
 
-Aliases are stored on-chain as a **hash of the address**, not the address itself. An observer who knows only the alias cannot derive the address from on-chain data. Resolution requires querying a node that has the full alias index. Your address is only revealed when you respond to a resolution request.
+Aliases are stored on-chain with the full address in the registration transaction extra. The AliasIndex also stores the address hash (`cn_fast_hash(spendKey||viewKey)`) for ownership verification.
+
+- `/get_all_aliases` returns alias names, types, and registration blocks — no addresses.
+- `/get_alias` returns the full address (targeted, single-alias lookup).
+- `/get_alias_by_address` returns the alias name for a given address.
+
+This design blocks mass surveillance while enabling targeted alias resolution for swaps and transfers. An observer must know the alias name to retrieve its address — one at a time, not in bulk.

@@ -1136,13 +1136,11 @@ struct COMMAND_RPC_GET_ALL_ALIASES {
 
 	struct alias_entry {
 		std::string alias;
-		std::string address;
 		uint32_t registered_block;
 		uint8_t alias_type;
 
 		void serialize(ISerializer& s) {
 			KV_MEMBER(alias)
-			KV_MEMBER(address)
 			KV_MEMBER(registered_block)
 			KV_MEMBER(alias_type)
 		}

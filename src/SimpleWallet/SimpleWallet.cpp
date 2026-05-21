@@ -553,6 +553,8 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG).");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
+  m_consoleHandler.setHandler("release_alias", boost::bind(&simple_wallet::release_alias, this, boost::arg<1>()), "release_alias <alias> - Release (delete) your @ alias back to the network");
+  m_consoleHandler.setHandler("transfer_alias", boost::bind(&simple_wallet::transfer_alias, this, boost::arg<1>()), "transfer_alias <alias> <new_address> - Transfer your @ alias to a new owner");
   m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
   m_consoleHandler.setHandler("list_subs", boost::bind(&simple_wallet::list_subs, this, boost::arg<1>()), "list_subs - List all sub-addresses for this wallet");
 
@@ -3677,7 +3679,7 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       memcpy(preimage + 32, &addr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy — addressHash is sufficient
+    aliasReg.ownerAddress = walletAddress;  // Stored in tx_extra for on-chain resolution
     aliasReg.aliasType = aliasType;
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
@@ -3707,10 +3709,21 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       selfTransfer.amount = m_currency.minimumFee();
       transfers.push_back(selfTransfer);
     } else {
-      // Regular alias on mainnet: 1 XFG fee to Fuego Developer Fund
+      // Mainnet: 1 XFG fee + random dust to Fuego Developer Fund
+      // Random dust prevents fingerprinting of exact 1 XFG alias registration txns
+      uint64_t randomDust = 0;
+      {
+        uint8_t randBytes[8] = {};
+        Crypto::generate_random_bytes(sizeof(randBytes), randBytes);
+        randomDust = 0;
+        for (int i = 0; i < 8; ++i) {
+          randomDust = (randomDust << 8) | randBytes[i];
+        }
+        randomDust = randomDust % (CryptoNote::parameters::ALIAS_REGISTRATION_FEE_MAX_RANDOM + 1);
+      }
       CryptoNote::WalletLegacyTransfer devFundTransfer;
       devFundTransfer.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
+      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
       transfers.push_back(devFundTransfer);
     }
 
@@ -3833,8 +3846,7 @@ bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
       std::string typeStr = (entry.alias_type == 0) ? "Sys  " : "User ";
       success_msg_writer() << "  @" << entry.alias
                            << "  [" << typeStr << "]"
-                           << "  Block: " << entry.registered_block
-                           << "  Addr: " << entry.address.substr(0, 12) << "...";
+                           << "  Block: " << entry.registered_block;
     }
 
     success_msg_writer() << "────────────────────────────────────────────────";
@@ -3848,6 +3860,306 @@ bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
 
   return true;
 }
+
+bool simple_wallet::release_alias(const std::vector<std::string> &args) {
+  if (args.size() != 1) {
+    fail_msg_writer() << "Usage: release_alias <alias>";
+    fail_msg_writer() << "  Releases (deletes) your @ alias, making it available for re-registration.";
+    fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
+    return true;
+  }
+
+  std::string alias = args[0];
+  if (alias.length() != 8) {
+    fail_msg_writer() << "Alias must be exactly 8 characters.";
+    return true;
+  }
+
+  try {
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+
+    // Get wallet address
+    std::string walletAddress = m_wallet->getAddress();
+
+    // Verify alias exists and is owned by this wallet
+    COMMAND_RPC_GET_ALIAS::request checkReq;
+    COMMAND_RPC_GET_ALIAS::response checkRes;
+    checkReq.alias = alias;
+    invokeJsonCommand(httpClient, "/get_alias", checkReq, checkRes);
+
+    if (!checkRes.found) {
+      fail_msg_writer() << "Alias @" << alias << " is not registered.";
+      return true;
+    }
+
+    // Verify ownership: compute addressHash from our wallet address and compare
+    CryptoNote::AccountPublicAddress walletAddr;
+    if (!m_currency.parseAccountAddressString(walletAddress, walletAddr)) {
+      fail_msg_writer() << "Cannot parse wallet address.";
+      return true;
+    }
+    uint8_t preimage[64];
+    memcpy(preimage,      &walletAddr.spendPublicKey, 32);
+    memcpy(preimage + 32, &walletAddr.viewPublicKey,  32);
+    Crypto::Hash addrHash;
+    Crypto::cn_fast_hash(preimage, 64, addrHash);
+
+    Crypto::Hash storedHash;
+    if (!Common::podFromHex(checkRes.address_hash, storedHash) ||
+        memcmp(&storedHash, &addrHash, sizeof(Crypto::Hash)) != 0) {
+      fail_msg_writer() << "You do not own alias @" << alias << ".";
+      fail_msg_writer() << "  Release requires the alias owner's wallet.";
+      return true;
+    }
+
+    // Sign the release challenge: cn_fast_hash(alias || addressHash || 0x00)
+    uint8_t challengePreimage[8 + 32 + 1];
+    memcpy(challengePreimage,       alias.data(), 8);
+    memcpy(challengePreimage + 8,   &addrHash,    32);
+    challengePreimage[40] = 0x00;
+    Crypto::Hash challenge;
+    Crypto::cn_fast_hash(challengePreimage, sizeof(challengePreimage), challenge);
+
+    Crypto::Signature proof;
+    CryptoNote::AccountKeys keys;
+    m_wallet->getAccountKeys(keys);
+    Crypto::generate_signature(challenge, keys.spendSecretKey, proof);
+
+    // Build release tx extra (0xEC)
+    CryptoNote::TransactionExtraAliasRelease aliasRel;
+    aliasRel.version = 1;
+    aliasRel.alias = alias;
+    aliasRel.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+    aliasRel.ownerAddress = walletAddress;
+    aliasRel.proof = proof;
+
+    std::vector<uint8_t> extra;
+    if (!CryptoNote::addAliasReleaseToExtra(extra, aliasRel)) {
+      fail_msg_writer() << "Failed to build alias release transaction extra.";
+      return true;
+    }
+
+    std::string extraString(extra.begin(), extra.end());
+
+    // Create a self-transfer with the release extra (minimal fee)
+    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+    CryptoNote::WalletLegacyTransfer selfTransfer;
+    selfTransfer.address = walletAddress;
+    selfTransfer.amount = m_currency.minimumFee();
+    transfers.push_back(selfTransfer);
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+    std::vector<CryptoNote::TransactionMessage> messages;
+    uint64_t fee = m_currency.minimumFee();
+    uint64_t mixIn = 0;
+    uint64_t unlockTimestamp = 0;
+    uint64_t ttl = 0;
+    Crypto::SecretKey transactionSK;
+
+    CryptoNote::TransactionId tx = m_wallet->sendTransaction(
+        transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
+
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      fail_msg_writer() << "Failed to create alias release transaction.";
+      return true;
+    }
+
+    std::error_code sendError = sent.wait(tx);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      fail_msg_writer() << "Alias release failed: " << sendError.message();
+      return true;
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet->getTransaction(tx, txInfo);
+    success_msg_writer(true) << "";
+    success_msg_writer(true) << " XFG Alias released successfully!";
+    success_msg_writer(true) << "  Alias: @" << alias;
+    success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
+    success_msg_writer(true) << "  The alias will be available for re-registration after confirmation.";
+
+    try {
+      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
+    } catch (const std::exception& e) {
+      fail_msg_writer() << e.what();
+    }
+  } catch (const ConnectException&) {
+    printConnectionError();
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Alias release error: " << e.what();
+  }
+
+  return true;
+}
+
+bool simple_wallet::transfer_alias(const std::vector<std::string> &args) {
+  if (args.size() != 2) {
+    fail_msg_writer() << "Usage: transfer_alias <alias> <new_address>";
+    fail_msg_writer() << "  Transfers ownership of your @ alias to another address.";
+    fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
+    return true;
+  }
+
+  std::string alias = args[0];
+  std::string newAddress = args[1];
+  if (alias.length() != 8) {
+    fail_msg_writer() << "Alias must be exactly 8 characters.";
+    return true;
+  }
+
+  try {
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+
+    // Get wallet address
+    std::string walletAddress = m_wallet->getAddress();
+
+    // Verify alias exists and is owned by this wallet
+    COMMAND_RPC_GET_ALIAS::request checkReq;
+    COMMAND_RPC_GET_ALIAS::response checkRes;
+    checkReq.alias = alias;
+    invokeJsonCommand(httpClient, "/get_alias", checkReq, checkRes);
+
+    if (!checkRes.found) {
+      fail_msg_writer() << "Alias @" << alias << " is not registered.";
+      return true;
+    }
+
+    // Verify new address is valid
+    CryptoNote::AccountPublicAddress newAddr;
+    if (!m_currency.parseAccountAddressString(newAddress, newAddr)) {
+      fail_msg_writer() << "Invalid new owner address.";
+      return true;
+    }
+
+    // Check new address doesn't already have an alias
+    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
+    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::response addrRes;
+    addrReq.address = newAddress;
+    invokeJsonCommand(httpClient, "/get_alias_by_address", addrReq, addrRes);
+    if (addrRes.found) {
+      fail_msg_writer() << "The new address already has alias @" << addrRes.alias;
+      fail_msg_writer() << "  Each address can only have one alias. Release the existing one first.";
+      return true;
+    }
+
+    // Verify old ownership
+    CryptoNote::AccountPublicAddress oldAddr;
+    if (!m_currency.parseAccountAddressString(walletAddress, oldAddr)) {
+      fail_msg_writer() << "Cannot parse wallet address.";
+      return true;
+    }
+    uint8_t oldPreimage[64];
+    memcpy(oldPreimage,      &oldAddr.spendPublicKey, 32);
+    memcpy(oldPreimage + 32, &oldAddr.viewPublicKey,  32);
+    Crypto::Hash oldAddrHash;
+    Crypto::cn_fast_hash(oldPreimage, 64, oldAddrHash);
+
+    Crypto::Hash storedHash;
+    if (!Common::podFromHex(checkRes.address_hash, storedHash) ||
+        memcmp(&storedHash, &oldAddrHash, sizeof(Crypto::Hash)) != 0) {
+      fail_msg_writer() << "You do not own alias @" << alias << ".";
+      return true;
+    }
+
+    // Compute new address hash
+    uint8_t newPreimage[64];
+    memcpy(newPreimage,      &newAddr.spendPublicKey, 32);
+    memcpy(newPreimage + 32, &newAddr.viewPublicKey,  32);
+    Crypto::Hash newAddrHash;
+    Crypto::cn_fast_hash(newPreimage, 64, newAddrHash);
+
+    // Sign transfer challenge: cn_fast_hash(alias || oldAddrHash || newAddrHash || 0x01)
+    uint8_t challengePreimage[8 + 32 + 32 + 1];
+    memcpy(challengePreimage,       alias.data(), 8);
+    memcpy(challengePreimage + 8,   &oldAddrHash, 32);
+    memcpy(challengePreimage + 40,  &newAddrHash, 32);
+    challengePreimage[72] = 0x01;
+    Crypto::Hash challenge;
+    Crypto::cn_fast_hash(challengePreimage, sizeof(challengePreimage), challenge);
+
+    Crypto::Signature proof;
+    CryptoNote::AccountKeys keys2;
+    m_wallet->getAccountKeys(keys2);
+    Crypto::generate_signature(challenge, keys2.spendSecretKey, proof);
+
+    // Build transfer tx extra (0xED)
+    CryptoNote::TransactionExtraAliasTransfer aliasXfer;
+    aliasXfer.version = 1;
+    aliasXfer.alias = alias;
+    aliasXfer.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
+    aliasXfer.oldOwnerAddress = walletAddress;
+    aliasXfer.newOwnerAddress = newAddress;
+    aliasXfer.newAddressHash = newAddrHash;
+    aliasXfer.proof = proof;
+
+    std::vector<uint8_t> extra;
+    if (!CryptoNote::addAliasTransferToExtra(extra, aliasXfer)) {
+      fail_msg_writer() << "Failed to build alias transfer transaction extra.";
+      return true;
+    }
+
+    std::string extraString(extra.begin(), extra.end());
+
+    // Create a self-transfer with the transfer extra
+    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+    CryptoNote::WalletLegacyTransfer selfTransfer;
+    selfTransfer.address = walletAddress;
+    selfTransfer.amount = m_currency.minimumFee();
+    transfers.push_back(selfTransfer);
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+    std::vector<CryptoNote::TransactionMessage> messages;
+    uint64_t fee = m_currency.minimumFee();
+    uint64_t mixIn = 0;
+    uint64_t unlockTimestamp = 0;
+    uint64_t ttl = 0;
+    Crypto::SecretKey transactionSK;
+
+    CryptoNote::TransactionId tx = m_wallet->sendTransaction(
+        transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
+
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      fail_msg_writer() << "Failed to create alias transfer transaction.";
+      return true;
+    }
+
+    std::error_code sendError = sent.wait(tx);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      fail_msg_writer() << "Alias transfer failed: " << sendError.message();
+      return true;
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet->getTransaction(tx, txInfo);
+    success_msg_writer(true) << "";
+    success_msg_writer(true) << " XFG Alias transferred successfully!";
+    success_msg_writer(true) << "  Alias: @" << alias;
+    success_msg_writer(true) << "  Old owner: " << walletAddress.substr(0, 12) << "...";
+    success_msg_writer(true) << "  New owner: " << newAddress.substr(0, 12) << "...";
+    success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
+
+    try {
+      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
+    } catch (const std::exception& e) {
+      fail_msg_writer() << e.what();
+    }
+  } catch (const ConnectException&) {
+    printConnectionError();
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Alias transfer error: " << e.what();
+  }
+
+  return true;
+}
+
 
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::printConnectionError() const {
@@ -3977,11 +4289,20 @@ bool simple_wallet::list_subs(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
-  success_msg_writer() << "HEAT algorithmic supply-rate coin (v10+):";
-  success_msg_writer() << "  Initial redemption price: 0.2 XFG per HEAT";
-  success_msg_writer() << "  Mint: burn XFG -> mint HEAT at current redemption price";
+  uint8_t mode = CryptoNote::parameters::HEAT_STABILITY_MODE;
+  success_msg_writer() << "HEAT stability mode: " << (int)mode;
+  switch (mode) {
+    case 0: success_msg_writer() << "  CPI purchasing power + EUR display"; break;
+    case 1: success_msg_writer() << "  5:1 self-sovereign (fixed $1.50-$2.50 band)"; break;
+    case 2: success_msg_writer() << "  8:1 full float (PI-only, best APY)"; break;
+    default: success_msg_writer() << "  Unknown mode"; break;
+  }
+  if (CryptoNote::parameters::HEAT_PI_USE_DAMP)
+    success_msg_writer() << "  PI damp: on (Hill soft-band, M="
+      << CryptoNote::parameters::HEAT_PI_DAMP_M << "% N=" << CryptoNote::parameters::HEAT_PI_DAMP_N << ")";
+  success_msg_writer() << "  Mint: burn XFG -> mint HEAT at PI-adjusted redemption price";
   success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM (0.3% fee to LP providers)";
-  success_msg_writer() << "  PI Controller: value-band target, KP=0.08 KI=0.015";
+  success_msg_writer() << "  PI Controller: KP=0.08 KI=0.015";
   success_msg_writer() << "  Query daemon for live metrics: /heat_metrics";
   return true;
 }
@@ -4033,7 +4354,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT Mint (v10 auth):";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   if (premiumAmount > 0)
-    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% — use hearth_buy to avoid)";
+    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% - use hearth_buy to avoid)";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 

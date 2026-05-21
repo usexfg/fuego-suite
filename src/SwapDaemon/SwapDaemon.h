@@ -51,6 +51,7 @@ struct ChainClientConfig {
   uint16_t    bchPort     = 8332;
   std::string bchRpcUser;
   std::string bchRpcPass;
+  std::string bchWif;          // WIF-encoded private key for HTLC signing
 
   // ETH
   std::string ethHost;
@@ -211,6 +212,7 @@ public:
    PriceOracle m_oracle;
    PoolOrganizer m_poolOrganizer;
    Logging::LoggerRef m_logger;
+   ChainClientConfig m_chainCfg;  // signer credentials for counterparty chains
 
    // Per-chain RPC clients.  Heap-allocated so they are optional (nullptr when
    // the chain endpoint is not configured).
@@ -220,6 +222,7 @@ public:
    std::unique_ptr<MoneroRpcClient> m_xmrClient;
 
    CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
+   std::string           m_solKeypairBase58;  // loaded from solKeypairPath at construction
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

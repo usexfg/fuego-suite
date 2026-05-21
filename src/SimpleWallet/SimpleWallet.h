@@ -79,6 +79,8 @@ namespace CryptoNote
     bool register_alias(const std::vector<std::string> &args);
     bool lookup_alias(const std::vector<std::string> &args);
     bool list_aliases(const std::vector<std::string> &args);
+    bool release_alias(const std::vector<std::string> &args);
+    bool transfer_alias(const std::vector<std::string> &args);
     void printConnectionError() const;
 
   private:

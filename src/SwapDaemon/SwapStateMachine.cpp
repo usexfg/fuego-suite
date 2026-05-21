@@ -40,6 +40,15 @@ SwapStateMachine::SwapStateMachine()
   std::memset(&m_params.escrowTxHash, 0, sizeof(m_params.escrowTxHash));
   std::memset(&m_params.hashLock, 0, sizeof(m_params.hashLock));
   std::memset(&m_params.preimage, 0, sizeof(m_params.preimage));
+  std::memset(&m_params.ringPeerPartialKeyImage, 0, sizeof(m_params.ringPeerPartialKeyImage));
+  std::memset(&m_params.ringPeerRingNoncePub, 0, sizeof(m_params.ringPeerRingNoncePub));
+  std::memset(&m_params.ringPeerRingNonceHp, 0, sizeof(m_params.ringPeerRingNonceHp));
+  std::memset(&m_params.ringPeerPartialResponse, 0, sizeof(m_params.ringPeerPartialResponse));
+  m_params.ringPeerRound1Received = false;
+  m_params.ringPeerRound2Received = false;
+  m_params.ringOurRound1Sent = false;
+  m_params.ringOurRound2Sent = false;
+  m_params.ringTxBroadcast = false;
   m_params.pair = SwapPair::SOL;
   m_params.role = SwapRole::BOB;
   m_params.xfgAmount = 0;
@@ -94,70 +103,6 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
     case SwapState::AFK_OFFER_ACCEPTED:
       return newState == SwapState::AFK_CLAIMED ||
              newState == SwapState::AFK_REFUNDED;
-
-    // ── zkLPSWAP POOL STATES (v11 — deferred) ────────────────────────────────
-    // These transitions are not reachable from any active v1 swap path.
-    // Pool implementation lives in src/SwapDaemon/pool_v11/ — see README there.
-    case SwapState::POOL_DEPOSIT_INITIATED:
-      return newState == SwapState::POOL_DEPOSIT_LOCKED_A;
-
-    case SwapState::POOL_DEPOSIT_LOCKED_A:
-      return newState == SwapState::POOL_DEPOSIT_LOCKED_B;
-
-    case SwapState::POOL_DEPOSIT_LOCKED_B:
-      return newState == SwapState::POOL_DEPOSIT_CONFIRMED;
-
-    case SwapState::POOL_DEPOSIT_CONFIRMED:
-      return newState == SwapState::POOL_DEPOSIT_COMPLETE ||
-             newState == SwapState::POOL_DEPOSIT_REFUNDED;
-
-    case SwapState::POOL_DEPOSIT_COMPLETE:
-      return newState == SwapState::POOL_CHECKPOINT_GENERATED;
-
-    case SwapState::POOL_DEPOSIT_REFUNDED:
-      return newState == SwapState::FAILED;
-
-    case SwapState::POOL_WITHDRAW_INITIATED:
-      return newState == SwapState::POOL_WITHDRAW_LOCKED;
-
-    case SwapState::POOL_WITHDRAW_LOCKED:
-      return newState == SwapState::POOL_WITHDRAW_COMPLETE ||
-             newState == SwapState::POOL_WITHDRAW_REFUNDED;
-
-    case SwapState::POOL_WITHDRAW_COMPLETE:
-      return newState == SwapState::POOL_CHECKPOINT_GENERATED;
-
-    case SwapState::POOL_WITHDRAW_REFUNDED:
-      return newState == SwapState::FAILED;
-
-    case SwapState::POOL_SWAP_INITIATED:
-      return newState == SwapState::POOL_SWAP_EXECUTED;
-
-    case SwapState::POOL_SWAP_EXECUTED:
-      return newState == SwapState::POOL_SWAP_COMPLETE ||
-             newState == SwapState::POOL_SWAP_REFUNDED;
-
-    case SwapState::POOL_SWAP_COMPLETE:
-      return newState == SwapState::POOL_CHECKPOINT_GENERATED;
-
-    case SwapState::POOL_SWAP_REFUNDED:
-      return newState == SwapState::FAILED;
-
-    case SwapState::POOL_FEE_CLAIM_INITIATED:
-      return newState == SwapState::POOL_FEE_CLAIMED;
-
-    case SwapState::POOL_FEE_CLAIMED:
-      return newState == SwapState::POOL_CHECKPOINT_GENERATED;
-
-    case SwapState::POOL_FEE_CLAIM_REFUNDED:
-      return newState == SwapState::FAILED;
-
-    case SwapState::POOL_CHECKPOINT_GENERATED:
-      // Can transition to any new pool operation or back to initiated for new cycle
-      return newState == SwapState::POOL_DEPOSIT_INITIATED ||
-             newState == SwapState::POOL_WITHDRAW_INITIATED ||
-             newState == SwapState::POOL_SWAP_INITIATED ||
-             newState == SwapState::POOL_FEE_CLAIM_INITIATED;
 
     // Terminal states
     case SwapState::ADAPTOR_XFG_SPENT:
@@ -219,15 +164,7 @@ bool SwapStateMachine::isTerminal() const {
           m_state == SwapState::FAILED ||
           m_state == SwapState::AFK_CLAIMED ||
           m_state == SwapState::AFK_REFUNDED ||
-          // Pool refund/failure states are terminal (funds returned or lost)
-          m_state == SwapState::POOL_DEPOSIT_REFUNDED ||
-
-         m_state == SwapState::POOL_WITHDRAW_REFUNDED ||
-         m_state == SwapState::POOL_SWAP_REFUNDED ||
-         m_state == SwapState::POOL_FEE_CLAIM_REFUNDED ||
-         // Pool checkpoint is the final success state after all pool ops complete
-         m_state == SwapState::POOL_CHECKPOINT_GENERATED ||
-         // Legacy HTLC states (protocol v1, inactive but kept for DB compat).
+          // Legacy HTLC states (protocol v1, inactive but kept for DB compat).
          // XFG_CLAIMED and CTR_CLAIMED represent successful completion.
          // XFG_REFUNDED and CTR_REFUNDED represent timeout/refund completion.
          // XFG_LOCKED and CTR_LOCKED are intermediate — NOT included here.
@@ -291,6 +228,17 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrAddress", m_params.ctrAddress);
   root.insert("peerEndpoint", m_params.peerEndpoint);
   root.insert("bchRedeemScriptHex", m_params.bchRedeemScriptHex);
+
+  // Collaborative ring state (peer data, survives daemon restart)
+  root.insert("ringPeerPartialKeyImage", Common::podToHex(m_params.ringPeerPartialKeyImage));
+  root.insert("ringPeerRingNoncePub",    Common::podToHex(m_params.ringPeerRingNoncePub));
+  root.insert("ringPeerRingNonceHp",     Common::podToHex(m_params.ringPeerRingNonceHp));
+  root.insert("ringPeerPartialResponse", Common::podToHex(m_params.ringPeerPartialResponse));
+  root.insert("ringPeerRound1Received", static_cast<int64_t>(m_params.ringPeerRound1Received ? 1 : 0));
+  root.insert("ringPeerRound2Received", static_cast<int64_t>(m_params.ringPeerRound2Received ? 1 : 0));
+  root.insert("ringOurRound1Sent", static_cast<int64_t>(m_params.ringOurRound1Sent ? 1 : 0));
+  root.insert("ringOurRound2Sent", static_cast<int64_t>(m_params.ringOurRound2Sent ? 1 : 0));
+  root.insert("ringTxBroadcast", static_cast<int64_t>(m_params.ringTxBroadcast ? 1 : 0));
 
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
@@ -372,6 +320,27 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   // for older records that pre-date the field.
   try { params.bchRedeemScriptHex = root("bchRedeemScriptHex").getString(); }
   catch (...) { params.bchRedeemScriptHex = ""; }
+
+  // Collaborative ring state (peer data). Gracefully default to zero
+  // for older records that pre-date these fields.
+  try { Common::podFromHex(root("ringPeerPartialKeyImage").getString(), params.ringPeerPartialKeyImage); }
+  catch (...) { std::memset(&params.ringPeerPartialKeyImage, 0, sizeof(params.ringPeerPartialKeyImage)); }
+  try { Common::podFromHex(root("ringPeerRingNoncePub").getString(), params.ringPeerRingNoncePub); }
+  catch (...) { std::memset(&params.ringPeerRingNoncePub, 0, sizeof(params.ringPeerRingNoncePub)); }
+  try { Common::podFromHex(root("ringPeerRingNonceHp").getString(), params.ringPeerRingNonceHp); }
+  catch (...) { std::memset(&params.ringPeerRingNonceHp, 0, sizeof(params.ringPeerRingNonceHp)); }
+  try { Common::podFromHex(root("ringPeerPartialResponse").getString(), params.ringPeerPartialResponse); }
+  catch (...) { std::memset(&params.ringPeerPartialResponse, 0, sizeof(params.ringPeerPartialResponse)); }
+  try { params.ringPeerRound1Received = root("ringPeerRound1Received").getInteger() != 0; }
+  catch (...) { params.ringPeerRound1Received = false; }
+  try { params.ringPeerRound2Received = root("ringPeerRound2Received").getInteger() != 0; }
+  catch (...) { params.ringPeerRound2Received = false; }
+  try { params.ringOurRound1Sent = root("ringOurRound1Sent").getInteger() != 0; }
+  catch (...) { params.ringOurRound1Sent = false; }
+  try { params.ringOurRound2Sent = root("ringOurRound2Sent").getInteger() != 0; }
+  catch (...) { params.ringOurRound2Sent = false; }
+  try { params.ringTxBroadcast = root("ringTxBroadcast").getInteger() != 0; }
+  catch (...) { params.ringTxBroadcast = false; }
 
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));

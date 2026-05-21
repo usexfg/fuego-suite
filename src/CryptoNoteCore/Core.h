@@ -206,6 +206,8 @@ namespace CryptoNote {
       uint64_t redemptionRateDenom = 1;
       uint64_t treasuryBalance = 0;
       uint64_t epochSwapFees = 0;
+      // CPI-adjusted purchasing power (Phase 3)
+      uint64_t heatValueCents  = 0;     // HEAT current USD value in cents (from CPI-adjusted PI band)
     };
     HeatMetrics getHeatMetrics() const;
 
@@ -233,6 +235,9 @@ namespace CryptoNote {
     std::optional<AliasEntry> getAliasByName(const std::string& alias) const;
     std::optional<AliasEntry> getAliasByAddress(const std::string& address) const;
     std::vector<AliasEntry> getAllAliases() const;
+    bool removeAlias(const std::string& alias);
+    bool replaceAliasOwnership(const std::string& alias,
+                               const Crypto::Hash& newAddressHash);
 
     bool is_key_image_spent(const Crypto::KeyImage &key_im);
 

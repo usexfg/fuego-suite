@@ -320,6 +320,13 @@ public:
   std::string formatAmount(int64_t amount) const;
   bool parseAmount(const std::string &str, uint64_t &amount) const;
 
+  // EUR display — all public-facing USD values shown in EUR
+  // GENIUS Act / Clarity Act compliance: HEAT is not pegged to USD,
+  // it targets constant purchasing power via CPI-adjusted band.
+  //   usdCents: USD value in cents (e.g. 150 = $1.50)
+  //   returns: EUR string (e.g. "€1.38")
+  std::string toEuroDisplay(uint64_t usdCents) const;
+
   difficulty_type nextDifficulty(uint32_t height, uint8_t blockMajorVersion, std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
   difficulty_type nextDifficultyV1(std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
   difficulty_type nextDifficultyV2(std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;

@@ -2015,7 +2015,6 @@ bool RpcServer::on_get_all_aliases(const COMMAND_RPC_GET_ALL_ALIASES::request& /
     for (const auto& entry : all) {
       COMMAND_RPC_GET_ALL_ALIASES::alias_entry ae;
       ae.alias = entry.alias;
-      ae.address = entry.ownerAddress;
       ae.registered_block = entry.registeredBlock;
       ae.alias_type = entry.aliasType;
       res.aliases.push_back(ae);

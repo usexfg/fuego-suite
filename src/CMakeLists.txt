@@ -213,60 +213,6 @@ else()
     endif()
 endif()
 
-# ═══════════════════════════════════════════════════════════════════════
-# Cortex-M Cross-Compilation for IoT-Lite PoW (Block V12+)
-# ═══════════════════════════════════════════════════════════════════════
-# Enable with: -DCMAKE_TOOLCHAIN_FILE=arm.cmake -DIOT_LITE=ON
-#
-# Supported targets:
-#   STM32H743 (Cortex-M7, 480MHz, 1MB SRAM)
-#   STM32F407 (Cortex-M4, 168MHz, 192KB SRAM)
-#   Teensy 4.1 (i.MX RT1062, Cortex-M7, 600MHz, 512KB DTCM + 2MB PSRAM)
-#   nRF52840 (Cortex-M4, 64MHz, 256KB SRAM)
-#
-# The IoT-Lite PoW uses 256KB scratchpad — fits on M7/M4 with external RAM
-# or high-SRAM devices.  nRF52840 (256KB) fits exactly.
-# ═══════════════════════════════════════════════════════════════════════
-
-if(IOT_LITE)
-    message(STATUS "=== IoT-Lite PoW Configuration ===")
-    message(STATUS "Building IoT-Lite PoW for Cortex-M target")
-
-    # Cortex-M compiler flags
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-        # Thumb-2 instruction set (smaller code, better performance on M-profile)
-        target_compile_options(Crypto PRIVATE -mthumb)
-
-        # Hardware FPU (single precision) — used for integer sqrt approximation
-        target_compile_options(Crypto PRIVATE -mfpu=fpv5-d16 -mfloat-abi=hard)
-
-        # Enable DSP extensions (SMUAD, SMLAD) for shuffle-add optimization
-        target_compile_options(Crypto PRIVATE -mcpu=cortex-m7 -mdsp)
-
-        # 32-byte alignment for M7 cache lines
-        target_compile_definitions(Crypto PRIVATE CACHE_LINE_SIZE=32)
-
-        message(STATUS "Cortex-M7: Thumb-2, FPU, DSP extensions enabled")
-    endif()
-
-    # IoT-Lite specific definitions
-    target_compile_definitions(Crypto PRIVATE CN_IOT_LITE)
-
-    # Optional: External RAM support (Teensy 4.x PSRAM, STM32H7 FMC SDRAM)
-    if(USE_EXTERNAL_RAM)
-        target_compile_definitions(Crypto PRIVATE USE_EXTERNAL_RAM)
-        message(STATUS "External RAM support enabled")
-    endif()
-
-    # Optional: Hardware AES peripheral (STM32 CRYP/AES, nRF CC310)
-    if(USE_HW_AES_PERIPHERAL)
-        target_compile_definitions(Crypto PRIVATE USE_HW_AES_PERIPHERAL)
-        message(STATUS "Hardware AES peripheral enabled")
-    endif()
-
-    message(STATUS "=== End IoT-Lite Configuration ===")
-endif()
-
 # Platform-specific adjustments handled above
 # No additional flags needed for Darwin/Linux
 

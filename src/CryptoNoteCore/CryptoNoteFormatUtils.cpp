@@ -572,18 +572,9 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     }
   } else {
     return false;
-  }
-
-  // V12+: IoT-Lite PoW (256KB scratchpad, banked memory, HW AES required)
-  if (b.majorVersion >= BLOCK_MAJOR_VERSION_12) {
-    const int cn_variant = 2;
-    cn_slow_hash_iot_lite(bd.data(), bd.size(), reinterpret_cast<char *>(&res), cn_variant, 0);
-    return true;
-  }
-
-  // V1-V11: Standard CryptoNight (2MB scratchpad)
+  }     // original CryptoNight (0) until v5, anti-ASIC CNv7 var(1), CNv8(2) from v6 thru CNupx/2
   const int cn_variant = b.majorVersion < 5 ? 0 : b.majorVersion >= BLOCK_MAJOR_VERSION_6 ? 2 : 1;
-  const int light = (b.majorVersion >= BLOCK_MAJOR_VERSION_9 && b.majorVersion < BLOCK_MAJOR_VERSION_12) ? 1 : 0;
+  const int light = (b.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
   cn_slow_hash(context, bd.data(), bd.size(), res, light, cn_variant);
   return true;
 }

@@ -216,6 +216,37 @@ endif()
 # Platform-specific adjustments handled above
 # No additional flags needed for Darwin/Linux
 
+# ═══════════════════════════════════════════════════════════════════════
+# IoT-Lite PoW (Block V12)
+# ═══════════════════════════════════════════════════════════════════════
+# Cortex-M cross-compilation for the 256 KB IoT-Lite PoW variant.
+# Enable with: -DIOT_LITE=ON -DCMAKE_TOOLCHAIN_FILE=arm.cmake
+#
+# Targets: STM32H743 (M7), STM32F407 (M4), Teensy 4.1 (M7),
+#          nRF52840 (M4), ESP32-S3
+#
+# The IoT-Lite scratchpad (256 KB) fits internal SRAM on M7 devices
+# and external PSRAM on M4 devices.
+# ═══════════════════════════════════════════════════════════════════════
+
+if(IOT_LITE)
+    message(STATUS "=== IoT-Lite PoW Configuration ===")
+
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+        target_compile_options(Crypto PRIVATE -mthumb -mcpu=cortex-m7)
+        message(STATUS "Cortex-M: Thumb-2 enabled")
+    endif()
+
+    target_compile_definitions(Crypto PRIVATE CN_IOT_LITE)
+
+    if(USE_EXTERNAL_RAM)
+        target_compile_definitions(Crypto PRIVATE USE_EXTERNAL_RAM)
+        message(STATUS "External RAM support enabled for scratchpad")
+    endif()
+
+    message(STATUS "=== End IoT-Lite Configuration ===")
+endif()
+
 message(STATUS "=== End AES-NI Configuration ===")
 
 add_library(Http STATIC ${Http})

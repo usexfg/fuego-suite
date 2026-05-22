@@ -1684,3 +1684,193 @@ void cn_slow_hash(const void *data, size_t length, char *hash, int light, int va
 
 #endif
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * IoT-Lite PoW Variant (Block V12+)
+ *
+ * 256 KB scratchpad, 262,144 iterations — shares CryptoNight-R's
+ * sequential-dependent access chain at 1/8 scale.  Fits Cortex-M
+ * SRAM (256 KB) while keeping desktop CPUs competitive via L2 cache.
+ *
+ * Design inherits from CryptoNight-R (V10):
+ *   - Single scratchpad, no banks, no parallel lanes
+ *   - Each read address depends on the previous iteration's output
+ *   - Same AES single-round, shuffle-add, integer math (variant 2)
+ *   - 64-bit multiply with data-dependent operands
+ *
+ * This in-order dependency chain prevents ASIC pipelining — you
+ * cannot parallelize what you cannot predict.  Embedded devices,
+ * GPUs, and CPUs all execute the same serial access pattern.
+ *
+ * Parameters:
+ *   MEMORY_IOT_LITE  = 262,144 bytes  (256 KB)
+ *   ITER_IOT_LITE    = 262,144 iters   (1<<18)
+ *   AES              = any (HW or SW — self-contained portable impl)
+ *   Variant          = 2 (shuffle-add, integer math)
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define MEMORY_IOT_LITE    (1 << 18)   /* 256 KB scratchpad */
+#define ITER_IOT_LITE      (1 << 18)   /* 262,144 mixing iterations */
+
+static size_t e2i_iot(const uint8_t* a) {
+  return (*((uint64_t*)a) / AES_BLOCK_SIZE) & ((MEMORY_IOT_LITE / AES_BLOCK_SIZE) - 1);
+}
+
+static void mul_iot(const uint8_t* a, const uint8_t* b, uint8_t* res) {
+  uint64_t a0, b0, hi, lo;
+  a0 = SWAP64LE(((uint64_t*)a)[0]);
+  b0 = SWAP64LE(((uint64_t*)b)[0]);
+  lo = mul128(a0, b0, &hi);
+  ((uint64_t*)res)[0] = SWAP64LE(hi);
+  ((uint64_t*)res)[1] = SWAP64LE(lo);
+}
+
+/* Self-contained helpers — avoids platform-specific function conflicts */
+static void xor_blocks_iot(uint8_t *a, const uint8_t *b) {
+  ((uint64_t*)a)[0] ^= ((uint64_t*)b)[0];
+  ((uint64_t*)a)[1] ^= ((uint64_t*)b)[1];
+}
+
+static void copy_block_iot(uint8_t *dst, const uint8_t *src) {
+  memcpy(dst, src, AES_BLOCK_SIZE);
+}
+
+static void swap_blocks_iot(uint8_t *a, uint8_t *b) {
+  uint64_t t[2];
+  ((uint64_t*)t)[0] = ((uint64_t*)a)[0];
+  ((uint64_t*)t)[1] = ((uint64_t*)a)[1];
+  ((uint64_t*)a)[0] = ((uint64_t*)b)[0];
+  ((uint64_t*)a)[1] = ((uint64_t*)b)[1];
+  ((uint64_t*)b)[0] = ((uint64_t*)t)[0];
+  ((uint64_t*)b)[1] = ((uint64_t*)t)[1];
+}
+
+static void sum_half_blocks_iot(uint8_t *a, const uint8_t *b) {
+  ((uint64_t*)a)[0] += ((uint64_t*)b)[0];
+  ((uint64_t*)a)[1] += ((uint64_t*)b)[1];
+}
+
+#define VARIANT2_SHUFFLE_ADD_IOT(base_ptr, offset) \
+  do { \
+    uint64_t* chunk1 = U64((base_ptr) + ((offset) ^ 0x10)); \
+    uint64_t* chunk2 = U64((base_ptr) + ((offset) ^ 0x20)); \
+    uint64_t* chunk3 = U64((base_ptr) + ((offset) ^ 0x30)); \
+    const uint64_t chunk1_old[2] = { chunk1[0], chunk1[1] }; \
+    const uint64_t b1[2] = { ((uint64_t*)b)[2], ((uint64_t*)b)[3] }; \
+    chunk1[0] = chunk3[0] + b1[0]; \
+    chunk1[1] = chunk3[1] + b1[1]; \
+    const uint64_t a0[2] = { ((uint64_t*)a)[0], ((uint64_t*)a)[1] }; \
+    chunk3[0] = chunk2[0] + a0[0]; \
+    chunk3[1] = chunk2[1] + a0[1]; \
+    const uint64_t b0[2] = { ((uint64_t*)b)[0], ((uint64_t*)b)[1] }; \
+    chunk2[0] = chunk1_old[0] + b0[0]; \
+    chunk2[1] = chunk1_old[1] + b0[1]; \
+  } while(0)
+
+void cn_slow_hash_iot_lite(const void *data, size_t length, char *hash, int variant, int prehashed) {
+  uint8_t long_state[MEMORY_IOT_LITE];
+  union hash_state state;
+  uint8_t text[INIT_SIZE_BYTE];
+  uint8_t a[AES_BLOCK_SIZE];
+  uint8_t b[AES_BLOCK_SIZE * 2];
+  uint8_t c1[AES_BLOCK_SIZE];
+  uint8_t c2[AES_BLOCK_SIZE];
+  uint8_t d[AES_BLOCK_SIZE];
+  uint64_t division_result = 0;
+  uint64_t sqrt_result = 0;
+  size_t i, j;
+  oaes_ctx *aes_ctx;
+
+  static void (*const extra_hashes[4])(const void *, size_t, char *) = {
+    hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
+  };
+
+  if (prehashed) {
+    memcpy(&state, data, length);
+  } else {
+    hash_process(&state, data, length);
+  }
+  /* state.b[0..63] is the key (k), state.b[64..191] is the init area */
+  memcpy(text, state.b + 64, INIT_SIZE_BYTE);
+
+  if (variant >= 2) {
+    memcpy(b + AES_BLOCK_SIZE, state.b + 64, AES_BLOCK_SIZE);
+    /* xor64 manually — avoids platform-dependent xor64 signature */
+    for (j = 0; j < 8; j++) (b + AES_BLOCK_SIZE)[j] ^= (state.b + 80)[j];
+    for (j = 0; j < 8; j++) (b + AES_BLOCK_SIZE + 8)[j] ^= (state.b + 88)[j];
+    division_result = state.w[12];
+    sqrt_result = state.w[13];
+  }
+
+  /* Step 2: Fill 256 KB scratchpad */
+  aes_ctx = (oaes_ctx *) oaes_alloc();
+  oaes_key_import_data(aes_ctx, state.b, AES_KEY_SIZE);
+  for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+    for (j = 0; j < INIT_SIZE_BLK; j++) {
+      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+    }
+    memcpy(&long_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
+  }
+
+  /* Init a, b from state.b (key area) */
+  for (i = 0; i < AES_BLOCK_SIZE; i++) {
+    a[i] = state.b[i] ^ state.b[AES_BLOCK_SIZE * 2 + i];
+    b[i] = state.b[AES_BLOCK_SIZE + i] ^ state.b[AES_BLOCK_SIZE * 3 + i];
+  }
+
+  /* Step 3: Sequential-dependent mix — 262,144 iterations */
+  for (i = 0; i < ITER_IOT_LITE / 2; i++) {
+    j = e2i_iot(a) * AES_BLOCK_SIZE;
+    copy_block_iot(c1, &long_state[j]);
+    aesb_single_round(c1, c1, a);
+    VARIANT2_SHUFFLE_ADD_IOT(long_state, j);
+    copy_block_iot(&long_state[j], c1);
+    xor_blocks_iot(&long_state[j], b);
+
+    j = e2i_iot(c1) * AES_BLOCK_SIZE;
+    copy_block_iot(c2, &long_state[j]);
+
+    if (variant >= 2) {
+      ((uint64_t*)c2)[0] ^= division_result ^ (sqrt_result << 32);
+      const uint64_t dividend = ((uint64_t*)c1)[1];
+      const uint32_t divisor = (((uint64_t*)c1)[0] + (uint32_t)(sqrt_result << 1)) | 0x80000001UL;
+      division_result = ((uint32_t)(dividend / divisor)) + (((uint64_t)(dividend % divisor)) << 32);
+      const uint64_t sqrt_input = ((uint64_t*)c1)[0] + division_result;
+      sqrt_result = integer_square_root_v2(sqrt_input);
+      ((uint64_t*)c2)[0] ^= sqrt_result;
+    }
+
+    mul_iot(c1, c2, d);
+
+    if (variant >= 2) {
+      xor_blocks_iot(&long_state[j ^ 0x10], d);
+      xor_blocks_iot(d, &long_state[j ^ 0x20]);
+    }
+
+    VARIANT2_SHUFFLE_ADD_IOT(long_state, j);
+    sum_half_blocks_iot(a, d);
+    swap_blocks_iot(a, c1);
+    xor_blocks_iot(a, c2);
+    copy_block_iot(&long_state[j], c2);
+
+    if (variant >= 2) {
+      copy_block_iot(b + AES_BLOCK_SIZE, b);
+    }
+    copy_block_iot(b, a);
+    copy_block_iot(a, c1);
+  }
+
+  /* Step 4: Sequential pass — mix scratchpad back into text */
+  memcpy(text, state.b + 64, INIT_SIZE_BYTE);
+  oaes_key_import_data(aes_ctx, &state.b[32], AES_KEY_SIZE);
+  for (i = 0; i < MEMORY_IOT_LITE / INIT_SIZE_BYTE; i++) {
+    for (j = 0; j < INIT_SIZE_BLK; j++) {
+      xor_blocks_iot(&text[j * AES_BLOCK_SIZE], &long_state[i * INIT_SIZE_BYTE + j * AES_BLOCK_SIZE]);
+      aesb_pseudo_round(&text[AES_BLOCK_SIZE * j], &text[AES_BLOCK_SIZE * j], aes_ctx->key->exp_data);
+    }
+  }
+  memcpy(state.b + 64, text, INIT_SIZE_BYTE);
+  hash_permutation(&state);
+  extra_hashes[state.b[0] & 3](&state, 200, hash);
+  oaes_free((OAES_CTX **) &aes_ctx);
+}
+

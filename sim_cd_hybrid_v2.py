@@ -33,6 +33,9 @@ LAUNCH         = 0.125
 KP, KI         = 0.08, 0.015
 SWAP_FEE       = 0.02
 MINT_PREMIUM   = 0.05
+MINT_PREMIUM_MIN = 0.05               # base floor
+MINT_PREMIUM_MAX = 0.12               # max when severely undervalued
+MINT_PREMIUM_SLOPE = 0.20             # increase per unit of |dev|
 CD_LOCK_RATE   = 0.08
 CD_DUR_MEAN    = 60
 CD_DUR_STD     = 20
@@ -91,6 +94,24 @@ SEED_BASE = 20260520
 def xfg_price(t, rng):
     base = 2.0 + 1.0 * np.exp(0.15 * t)
     return base * float(1.0 + rng.normal(0.0, 0.25))
+
+
+def xfg_price_crash(t, rng, crash_start_yr=10, crash_dur_yr=2, crash_pct=0.60):
+    """XFG price with a bear-market crash window."""
+    base = 2.0 + 1.0 * np.exp(0.15 * t)
+    price = base * float(1.0 + rng.normal(0.0, 0.25))
+    if crash_start_yr <= t <= crash_start_yr + crash_dur_yr:
+        price *= (1.0 - crash_pct)  # -60% crash
+    return price
+
+
+def dynamic_premium(dev):
+    """Mint premium scales with PI deviation when HEAT is undervalued."""
+    if dev >= 0:
+        return MINT_PREMIUM  # base 5% when at or above target
+    # HEAT below peg → premium ramps 5%→12%
+    bump = min(abs(dev) * MINT_PREMIUM_SLOPE, MINT_PREMIUM_MAX - MINT_PREMIUM_MIN)
+    return MINT_PREMIUM_MIN + bump
 
 
 class CDBook:
@@ -289,13 +310,14 @@ def dist_h3(book, cd_pool, ep, treasury, rebal_vault, fees, lp_yield, state, rng
 # ══════════════════════════════════════════════════════════════
 #  SINGLE SIMULATION RUN
 # ══════════════════════════════════════════════════════════════
-def sim_single(rng, dist_func, fee_config, maturity_sched):
+def sim_single(rng, dist_func, fee_config, maturity_sched, crash=False):
+    """One 21-year simulation with integrated market + CD model."""
     px = 5000.0; ph = 25000.0
     redemption = LAUNCH; integral = 0.0
     treasury_bal = 0.0; cd_pool = 0.0; rebal_vault = 0.0
     heat_sup = ph
     lp_yield_acc = 0.0
-    protocol_lp = 0.0   # protocol-owned LP shares (from treasury contributions)
+    protocol_lp = 0.0
     oracle_start = int(rng.randint(EPY//2, EPY*2))
     launch_twap = None
     model_state = {}
@@ -324,7 +346,7 @@ def sim_single(rng, dist_func, fee_config, maturity_sched):
         t = ep / EPY
         epoch_cnt_yr[yr] += 1.0
 
-        xp = xfg_price(t, rng)
+        xp = xfg_price_crash(t, rng) if crash else xfg_price(t, rng)
         oracle_stale = (ep < oracle_start) or (rng.random() < 0.05)
 
         vm = np.clip(xp / 2.0, 0.3, 5.0)
@@ -363,10 +385,12 @@ def sim_single(rng, dist_func, fee_config, maturity_sched):
         red_rate = np.clip(KP * dev + KI * integral, -0.50, 0.50)
         redemption = max(EPS, target * (1.0 + red_rate * dt))
 
-        # Mint
+        # Mint with dynamic premium (5-12%, PI-driven)
         mp = max(0.0, 0.008 - 0.4 * dev)
         mint_vol = vol_e * 0.08 / max(spot, EPS) * mp
-        heat_sup += mint_vol * (1.0 - MINT_PREMIUM)
+        prem = dynamic_premium(dev)
+        heat_sup += mint_vol * (1.0 - prem)
+        mint_premium = mint_vol * prem  # swap-independent yield floor
 
         # CD lifecycle
         book.step(ep, heat_sup, rng)
@@ -466,10 +490,12 @@ def norm(val, all_vals, lower_better):
     if vmax == vmin: return 0.5
     return (vmax - val) / (vmax - vmin) if lower_better else (val - vmin) / (vmax - vmin)
 
-def run():
+def run(crash=False):
+    scenario = "CRASH (-60% yr10-12)" if crash else "NORMAL"
     print(f"\n{'='*120}")
-    print(f"  HEAT CD APY — HYBRID v2 MONTE CARLO ({N_SIMS:,} sims × {N_YEARS-1}yr)")
+    print(f"  HEAT CD APY — HYBRID v2 MONTE CARLO ({N_SIMS:,} sims × {N_YEARS-1}yr) — {scenario}")
     print(f"  8:1 Full Float | CD lock={CD_LOCK_RATE*100:.0f}%/epoch | EPY={EPY}")
+    print(f"  Mint premium: {MINT_PREMIUM_MIN*100:.0f}%-{MINT_PREMIUM_MAX*100:.0f}% dynamic (PI-driven)")
     print(f"  H1: Baseline (80/20) | H2: M5 Pre-Funded | H3: Hybrid v2 (80/12/8, YEM)")
     caps_str = "/".join([f"{int(c[2]*EPY*100)}%" for c in TIER_CAPS])
     print(f"  YEM: lag={YEM_LAG_EPOCHS}ep win={YEM_ROLLING_WIN}ep caps={caps_str}")
@@ -486,7 +512,7 @@ def run():
         for s in range(N_SIMS):
             rng = np.random.RandomState(SEED_BASE + s)
             maturity = np.zeros(N_EPOCHS + 500)
-            r = sim_single(rng, fn, fee_cfg, maturity)
+            r = sim_single(rng, fn, fee_cfg, maturity, crash)
             batch.append(r)
 
             if (s + 1) % 1000 == 0:
@@ -594,5 +620,14 @@ def report(results):
 
 
 if __name__ == '__main__':
-    results = run()
-    report(results)
+    # Normal (bull market) run
+    results_normal = run(crash=False)
+    report(results_normal)
+
+    # Crash stress-test (XFG -60% at years 10-12)
+    print(f"\n{'#'*120}")
+    print(f"  BEAR MARKET STRESS TEST — XFG -60% crash at years 10-12")
+    print(f"  Tests whether dynamic mint premium (5-12%) provides a swap-independent yield floor")
+    print(f"{'#'*120}")
+    results_crash = run(crash=True)
+    report(results_crash)

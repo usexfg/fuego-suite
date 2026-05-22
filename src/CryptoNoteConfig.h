@@ -359,6 +359,7 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
 	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // Per-asset balance + AMM swap auth + HEAT mint auth (M3 fix)
 	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // HearthAMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // IoT-Lite PoW (256KB scratchpad)
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;

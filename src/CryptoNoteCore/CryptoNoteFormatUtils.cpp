@@ -572,7 +572,13 @@ bool get_block_longhash(cn_context &context, const Block& b, Hash& res) {
     }
   } else {
     return false;
-  }     // original CryptoNight (0) until v5, anti-ASIC CNv7 var(1), CNv8(2) from v6 thru CNupx/2
+  }
+  // V12: IoT-Lite PoW (256KB scratchpad, 262K iterations, variant 2)
+  if (b.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+    cn_slow_hash_iot_lite(context, bd.data(), bd.size(), res, 2);
+    return true;
+  }
+  // original CryptoNight (0) until v5, anti-ASIC CNv7 var(1), CNv8(2) from v6 thru CNupx/2
   const int cn_variant = b.majorVersion < 5 ? 0 : b.majorVersion >= BLOCK_MAJOR_VERSION_6 ? 2 : 1;
   const int light = (b.majorVersion >= BLOCK_MAJOR_VERSION_9) ? 1 : 0;
   cn_slow_hash(context, bd.data(), bd.size(), res, light, cn_variant);

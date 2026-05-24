@@ -379,12 +379,21 @@ double Currency::getBurnPercentage() const {
       }
       else
       {
-        return multisignatureInput.amount + calculateInterest(multisignatureInput.amount, multisignatureInput.term, height);
+        uint64_t interest = calculateInterest(multisignatureInput.amount, multisignatureInput.term, height);
+        if (std::numeric_limits<uint64_t>::max() - multisignatureInput.amount < interest) {
+          logger(ERROR, BRIGHT_RED) << "MultisignatureInput amount + interest overflow";
+          return 0; // Or throw, but 0 makes validation fail
+        }
+        return multisignatureInput.amount + interest;
       }
     }
       else if (in.type() == typeid(TransactionInputCommitmentSpend))
     {
       const auto& spend = boost::get<TransactionInputCommitmentSpend>(in);
+      if (std::numeric_limits<uint64_t>::max() - spend.amount < spend.claimedInterest) {
+        logger(ERROR, BRIGHT_RED) << "CommitmentSpend amount + interest overflow";
+        return 0;
+      }
       return spend.amount + spend.claimedInterest;
     }
     else if (in.type() == typeid(TransactionInputCommitmentTransfer))
@@ -1464,6 +1473,7 @@ double Currency::getBurnPercentage() const {
 		case BLOCK_MAJOR_VERSION_8:
 		case BLOCK_MAJOR_VERSION_9:
 		case BLOCK_MAJOR_VERSION_10:  // upgradekit
+		case BLOCK_MAJOR_VERSION_11:  // HearthAMM + HEAT
 
 			return checkProofOfWorkV2(context, block, currentDiffic, proofOfWork);
 		}

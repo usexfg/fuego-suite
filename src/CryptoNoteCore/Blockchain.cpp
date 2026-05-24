@@ -1032,7 +1032,9 @@ uint64_t Blockchain::coinsEmittedAtHeight(uint64_t height) {
   }
 
 uint8_t Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
-  if (height > m_upgradeDetectorV10.upgradeHeight()) {
+  if (height > m_upgradeDetectorV11.upgradeHeight()) {
+    return m_upgradeDetectorV11.targetVersion();
+  } else if (height > m_upgradeDetectorV10.upgradeHeight()) {
     return m_upgradeDetectorV10.targetVersion();
   } else if (height > m_upgradeDetectorV9.upgradeHeight()) {
     return m_upgradeDetectorV9.targetVersion();

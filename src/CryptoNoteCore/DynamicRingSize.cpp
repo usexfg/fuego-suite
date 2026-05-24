@@ -52,7 +52,7 @@ size_t DynamicRingSizeCalculator::calculateOptimalRingSize(
     }
   }
 
-  // No approved ring size ({18,15,12,10,8}) is achievable with current decoy pool.
+  // No approved ring size ({32, 16, 8}) is achievable with current decoy pool.
   // On testnet (minRingSize == 0) allow any ring size so fresh chains can bootstrap.
   if (minRingSize == 0) {
     size_t available = 0;
@@ -69,9 +69,9 @@ size_t DynamicRingSizeCalculator::calculateOptimalRingSize(
 }
 
 std::vector<size_t> DynamicRingSizeCalculator::getTargetRingSizes() {
-  // Only allow specific uniform ring sizes: 18, 15, 12, 10, 8
+  // Only allow specific uniform ring sizes: 32, 16, 8
   // Transactions with other ring sizes will be rejected
-  return {18, 15, 12, 10, 8};
+  return {32, 16, 8};
 }
 
 bool DynamicRingSizeCalculator::isRingSizeAchievable(

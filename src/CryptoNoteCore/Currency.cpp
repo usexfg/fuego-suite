@@ -90,8 +90,8 @@ namespace CryptoNote
 			m_upgradeHeightV7 = 17;
 			m_upgradeHeightV8 = 18;
 		m_upgradeHeightV9 = 19;
-		m_upgradeHeightV10 = 500;
-		m_upgradeHeightV11 = 510;
+		m_upgradeHeightV10 = 25;
+		m_upgradeHeightV11 = 30;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_

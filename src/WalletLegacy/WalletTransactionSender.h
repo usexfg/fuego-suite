@@ -112,9 +112,14 @@ public:
                                                             uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
-                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                            const std::vector<DepositId>& depositIds,
-                                                            uint64_t fee);
+                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                             const std::vector<DepositId>& depositIds,
+                                                             uint64_t fee);
+  std::unique_ptr<WalletRequest> makeWithdrawLegacyBondRequest(TransactionId& transactionId,
+                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                              DepositId depositId,
+                                                              uint64_t interest,
+                                                              uint64_t fee);
 
 std::shared_ptr<WalletRequest> makeSendFusionRequest(TransactionId& transactionId, std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                      const std::vector<WalletLegacyTransfer>& transfers, const std::list<TransactionOutputInformation>& fusionInputs,
@@ -130,6 +135,10 @@ private:
   std::unique_ptr<WalletRequest> doSendDepositWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                   const std::vector<DepositId>& depositIds);
+  std::unique_ptr<WalletRequest> doSendLegacyBondWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                     std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                     DepositId depositId,
+                                                                     uint64_t interest);
   std::unique_ptr<WalletRequest> doSendCommitmentWithdrawTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                      const std::vector<DepositId>& depositIds);

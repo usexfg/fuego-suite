@@ -175,6 +175,7 @@ public:
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 0) = 0;
 
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) = 0;
+  virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
 
   // AFK Adaptor Swaps

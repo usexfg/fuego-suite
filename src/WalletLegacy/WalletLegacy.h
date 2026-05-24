@@ -123,6 +123,7 @@ public:
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
+  virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) override;
   virtual std::error_code cancelTransaction(size_t transactionId) override;
   virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) override;
   virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, std::string& txHash) override;

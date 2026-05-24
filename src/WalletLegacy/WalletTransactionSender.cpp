@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
+#include "CryptoNoteCore/TransactionExtra.h"
 #include "INode.h"
 #include "crypto/crypto.h" //for rand()
 #include <iostream>
@@ -408,6 +409,32 @@ namespace CryptoNote
     }
 
     return doSendDepositWithdrawTransaction(std::move(context), events, depositIds);
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeWithdrawLegacyBondRequest(TransactionId &transactionId,
+                                                                                       std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+                                                                                       DepositId depositId,
+                                                                                       uint64_t interest,
+                                                                                       uint64_t fee)
+  {
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+
+    std::vector<DepositId> depositIds = {depositId};
+    context->foundMoney = selectDepositTransfers(depositIds, context->selectedTransfers);
+    
+    // Total money including interest (for transaction building)
+    uint64_t totalMoney = context->foundMoney + interest;
+    throwIf(totalMoney < fee, error::WRONG_AMOUNT);
+
+    // Add transaction to cache (record the total output amount)
+    transactionId = m_transactionsCache.addNewTransaction(totalMoney, fee, std::string(), {}, 0, {});
+    context->transactionId = transactionId;
+    context->mixIn = 0;
+
+    setSpendingTransactionToDeposits(transactionId, depositIds);
+
+    return doSendLegacyBondWithdrawTransaction(std::move(context), events, depositId, interest);
   }
 
   std::shared_ptr<WalletRequest> WalletTransactionSender::makeSendFusionRequest(TransactionId &transactionId, std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
@@ -974,6 +1001,77 @@ namespace CryptoNote
 
       return std::unique_ptr<WalletRelayDepositTransactionRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction,
                                                                                                             std::bind(&WalletTransactionSender::relayDepositTransactionCallback, this, context, depositIds, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+    }
+    catch (std::system_error &ec)
+    {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, ec.code()));
+    }
+    catch (std::exception &)
+    {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
+    }
+
+    return std::unique_ptr<WalletRequest>();
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendLegacyBondWithdrawTransaction(std::shared_ptr<SendTransactionContext> &&context,
+                                                                                             std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+                                                                                             DepositId depositId,
+                                                                                             uint64_t interest)
+  {
+    if (m_isStoping)
+    {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
+      return std::unique_ptr<WalletRequest>();
+    }
+
+    try
+    {
+      WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
+
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      std::vector<MultisignatureInput> inputs = prepareMultisignatureInputs(context->selectedTransfers);
+
+      // Interest claim 0xCC extra
+      std::vector<uint8_t> extra;
+      TransactionExtraLegacyBondClaim claim;
+      claim.claimedInterest = interest;
+      addLegacyBondClaimToExtra(extra, claim);
+      transaction->appendExtra(extra);
+
+      // Output amount = principal + interest - fee
+      uint64_t totalAmount = context->foundMoney + interest;
+      std::vector<uint64_t> outputAmounts = splitAmount(totalAmount - transactionInfo.fee, context->dustPolicy.dustThreshold);
+
+      for (const auto &input : inputs)
+      {
+        transaction->addInput(input);
+      }
+
+      for (auto amount : outputAmounts)
+      {
+        transaction->addOutput(amount, m_keys.address);
+      }
+
+      transaction->setUnlockTime(transactionInfo.unlockTime);
+
+      assert(inputs.size() == context->selectedTransfers.size());
+      for (size_t i = 0; i < inputs.size(); ++i)
+      {
+        transaction->signInputMultisignature(i, context->selectedTransfers[i].transactionPublicKey, context->selectedTransfers[i].outputInTransaction, m_keys);
+      }
+
+      transactionInfo.hash = transaction->getTransactionHash();
+      Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
+
+      UnconfirmedSpentDepositDetails unconfirmed;
+      unconfirmed.depositsSum = context->foundMoney;
+      unconfirmed.fee = transactionInfo.fee;
+      unconfirmed.transactionId = context->transactionId;
+      m_transactionsCache.addDepositSpendingTransaction(transaction->getTransactionHash(), unconfirmed);
+
+      return std::unique_ptr<WalletRelayDepositTransactionRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction,
+                                                                                                            std::bind(&WalletTransactionSender::relayDepositTransactionCallback, this, context, std::vector<DepositId>{depositId}, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
     }
     catch (std::system_error &ec)
     {

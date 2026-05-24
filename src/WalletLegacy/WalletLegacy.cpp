@@ -999,6 +999,32 @@ TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depos
   return txId;
 }
 
+TransactionId WalletLegacy::withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) {
+  throwIfNotInitialised();
+
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeWithdrawLegacyBondRequest(txId, events, depositId, interest, fee);
+
+    if (request != nullptr) {
+      pushBalanceUpdatedEvents(events);
+    }
+  }
+
+  notifyClients(events);
+
+  if (request != nullptr) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+
+  return txId;
+}
+
 /* go through all unlocked outputs and return a total of
   everything below the dust threshold */
 uint64_t WalletLegacy::dustBalance()

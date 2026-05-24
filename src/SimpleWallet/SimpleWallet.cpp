@@ -546,6 +546,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // m_consoleHandler.setHandler("list_burns", boost::bind(&simple_wallet::list_burns, this, boost::arg<1>()), "list_burns - List all XFG burn transactions (HEAT)");
   // m_consoleHandler.setHandler("burn_info", boost::bind(&simple_wallet::burn_info, this, boost::arg<1>()), "burn_info <id> - Get detailed info of burn by ID");
   m_consoleHandler.setHandler("migrate_deposit", boost::bind(&simple_wallet::migrate_deposit, this, boost::arg<1>()), "migrate_deposit <id> - Convert a bug-era Multisig deposit into a 1-year Legacy Bond earning 50% CD share.");
+  m_consoleHandler.setHandler("withdraw_bond", boost::bind(&simple_wallet::withdraw_bond, this, boost::arg<1>()), "withdraw_bond <id> - Withdraw a mature Legacy Bond and claim accrued fee-pool interest.");
   // m_consoleHandler.setHandler("create_cold_secret", boost::bind(&simple_wallet::create_cold_secret, this, boost::arg<1>()), "create_cold_secret <amount> <term_blocks> <chain_code> <metadata> - Create COLD commitment");
   // m_consoleHandler.setHandler("gen_proof", boost::bind(&simple_wallet::gen_proof, this, boost::arg<1>()), "gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)");
 
@@ -2276,6 +2277,106 @@ bool simple_wallet::migrate_deposit(const std::vector<std::string> &args) {
   } catch (const std::exception& e) {
     fail_msg_writer() << "Migration failed: " << e.what();
     return true;
+  }
+
+  return true;
+}
+
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::withdraw_bond(const std::vector<std::string> &args) {
+  if (args.size() != 1) {
+    fail_msg_writer() << "Usage: withdraw_bond <deposit_id>";
+    return true;
+  }
+
+  try {
+    size_t depositId = std::stoull(args[0]);
+    size_t depositCount = m_wallet->getDepositCount();
+
+    if (depositId >= depositCount) {
+      fail_msg_writer() << "Invalid deposit ID: " << depositId;
+      return true;
+    }
+
+    CryptoNote::Deposit deposit;
+    if (!m_wallet->getDeposit(depositId, deposit)) {
+      fail_msg_writer() << "Failed to retrieve deposit " << depositId;
+      return true;
+    }
+
+    // Must be a Legacy Bond
+    bool isLegacyBond = false;
+    std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+    std::vector<CryptoNote::TransactionExtraField> extraFields;
+    if (CryptoNote::parseTransactionExtra(extraBytes, extraFields)) {
+      for (const auto& field : extraFields) {
+        if (field.type() == typeid(CryptoNote::TransactionExtraLegacyBond)) {
+          isLegacyBond = true;
+          break;
+        }
+      }
+    }
+
+    if (!isLegacyBond) {
+      fail_msg_writer() << "Deposit " << depositId << " is not a registered Legacy Bond. Run 'migrate_deposit' first.";
+      return true;
+    }
+
+    if (deposit.unlockHeight > m_node->getLastLocalBlockHeight()) {
+      fail_msg_writer() << "Legacy Bond is still locked until height " << deposit.unlockHeight 
+                        << " (Current: " << m_node->getLastLocalBlockHeight() << ")";
+      return true;
+    }
+
+    // Calculate accrued interest from fee pool
+    uint64_t accruedInterest = 0;
+    std::error_code ec = m_node->getCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height), 
+                                              m_node->getLastLocalBlockHeight(), accruedInterest, true);
+    if (ec) {
+      fail_msg_writer() << "Failed to calculate bond interest: " << ec.message();
+      return true;
+    }
+
+    success_msg_writer() << "";
+    success_msg_writer() << "=== Legacy Bond Withdrawal ===";
+    success_msg_writer() << "Principal:      " << m_currency.formatAmount(deposit.amount) << " XFG";
+    success_msg_writer() << "Interest:       " << m_currency.formatAmount(accruedInterest) << " XFG";
+    success_msg_writer() << "Total:          " << m_currency.formatAmount(deposit.amount + accruedInterest) << " XFG";
+    success_msg_writer() << "Fee:            0 (Free staged unlock)";
+    success_msg_writer() << "";
+    success_msg_writer() << "Confirm withdrawal? (1) OK  (2) No ";
+
+    std::string confirm;
+    m_consoleHandler.readLine(confirm);
+    if (confirm != "1" && confirm != "OK" && confirm != "ok") {
+      success_msg_writer() << "Cancelled.";
+      return true;
+    }
+
+    // Send withdrawal transaction
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet->withdrawLegacyBond(depositId, accruedInterest, 0);
+    if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
+      removeGuard.removeObserver();
+      fail_msg_writer() << "Failed to create withdrawal transaction.";
+      return true;
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+    if (sendError) {
+      fail_msg_writer() << "Withdrawal failed: " << sendError.message();
+      return true;
+    }
+
+    success_msg_writer(true) << "Legacy Bond withdrawal transaction sent!";
+    success_msg_writer() << "Transaction ID: " << txId;
+    success_msg_writer() << "Withdrawn amount: " << m_currency.formatAmount(deposit.amount + accruedInterest) << " XFG";
+
+  } catch (const std::exception &e) {
+    fail_msg_writer() << "Failed to withdraw bond: " << e.what();
   }
 
   return true;

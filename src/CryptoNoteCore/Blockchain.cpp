@@ -511,6 +511,16 @@ std::vector<AliasEntry> Blockchain::getAllAliases() const {
   return m_aliasIndex.getAllAliases();
 }
 
+bool Blockchain::removeAlias(const std::string& alias) {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  return m_aliasIndex.removeAlias(alias);
+}
+
+bool Blockchain::replaceAliasOwnership(const std::string& alias, const Crypto::Hash& newAddressHash) {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  return m_aliasIndex.replaceAliasOwnership(alias, newAddressHash);
+}
+
 bool Blockchain::init(const std::string& config_folder, bool load_existing) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -2831,6 +2841,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
     bool hasLpRemoveAuth = false;
     uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
+    bool hasLegacyBondClaim = false;
+    uint64_t legacyClaimedInterest = 0;
 
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
@@ -2867,6 +2879,10 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             lpRemoveShares = auth.lpSharesBurned;
             lpRemoveMinXfg = auth.minAmountXfg;
             lpRemoveMinHeat = auth.minAmountHeat;
+          }
+          if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
+            hasLegacyBondClaim = true;
+            legacyClaimedInterest = boost::get<TransactionExtraLegacyBondClaim>(field).claimedInterest;
           }
         }
       }
@@ -3021,6 +3037,75 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         if (amountXfg < lpRemoveMinXfg || amountHeat < lpRemoveMinHeat) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: below minimum";
+        }
+      }
+
+      // Legacy bond interest claim validation (0xCC)
+      if (hasLegacyBondClaim) {
+        bool foundLegacyInput = false;
+        uint32_t creationHeight = 0;
+        uint64_t legacyPrincipal = 0;
+        uint64_t oldInterestToRemove = 0;
+        uint32_t legacyTerm = 0;
+        for (const auto& in : transactions[i].inputs) {
+          if (in.type() == typeid(MultisignatureInput)) {
+            const auto& msIn = boost::get<MultisignatureInput>(in);
+            auto amountOutputs = m_multisignatureOutputs.find(msIn.amount);
+            if (amountOutputs != m_multisignatureOutputs.end() &&
+                msIn.outputIndex < amountOutputs->second.size()) {
+              const auto& usage = amountOutputs->second[msIn.outputIndex];
+              if (!usage.isUsed) {
+                const auto& outTx = m_blocks[usage.transactionIndex.block]
+                    .transactions[usage.transactionIndex.transaction].tx;
+                std::vector<TransactionExtraField> depositExtra;
+                if (parseTransactionExtra(outTx.extra, depositExtra)) {
+                  for (const auto& dField : depositExtra) {
+                    if (dField.type() == typeid(TransactionExtraLegacyBond)) {
+                      const auto& bond = boost::get<TransactionExtraLegacyBond>(dField);
+                      if (bond.amount == msIn.amount) {
+                        foundLegacyInput = true;
+                        creationHeight = bond.originalCreationHeight;
+                        legacyPrincipal = msIn.amount;
+                        legacyTerm = msIn.term;
+                        // Remove old fixed-term interest for this input
+                        if (msIn.term != 0) {
+                          oldInterestToRemove = m_currency.calculateInterest(legacyPrincipal, legacyTerm, block.height);
+                        }
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            if (foundLegacyInput) break;
+          }
+        }
+
+        if (!foundLegacyInput) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has legacy bond claim but no valid legacy bond input";
+        } else {
+          // Remove old fixed interest from in_amount (legacy bonds use fee-pool interest instead)
+          if (oldInterestToRemove > 0 && in_amount >= oldInterestToRemove) {
+            in_amount -= oldInterestToRemove;
+          }
+
+          uint64_t maxInterest = m_currency.calculateCdInterest(
+              legacyPrincipal > 0 ? legacyPrincipal : (legacyClaimedInterest > in_amount ? in_amount : legacyClaimedInterest),
+              creationHeight, block.height, m_commitmentIndex, true);
+          if (maxInterest > m_legacyBondYieldPool) {
+            maxInterest = m_legacyBondYieldPool;
+          }
+          if (legacyClaimedInterest > maxInterest) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                << " legacy bond claim " << legacyClaimedInterest
+                << " exceeds max " << maxInterest;
+          } else {
+            in_amount += legacyClaimedInterest;
+            fee = in_amount < out_amount ? m_currency.minimumFee(blockData.majorVersion) : in_amount - out_amount;
+          }
         }
       }
 
@@ -3505,7 +3590,59 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                                 << " originalBlock=" << originalBlockHeight;
             } else if (!depositFound) {
               logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
-                              << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
+                               << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
+            }
+          }
+          // 0xCB: Legacy Bond migration (v1.10.00) — marks bug-era Multisig deposit for 50% CD share
+          else if (field.type() == typeid(TransactionExtraLegacyBond)) {
+            const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
+
+            // Validate: the referenced original tx must exist with a MultisignatureOutput deposit
+            std::list<Crypto::Hash> txIds = {bond.originalTxHash};
+            std::list<Transaction> txs;
+            std::list<Crypto::Hash> missed;
+            getTransactions(txIds, txs, missed, false);
+            bool depositFound = false;
+            if (!txs.empty()) {
+              const auto& origTx = txs.front();
+              for (const auto& out : origTx.outputs) {
+                if (out.target.type() == typeid(MultisignatureOutput) &&
+                    out.amount == bond.amount) {
+                  depositFound = true;
+                  break;
+                }
+              }
+              if (!depositFound) {
+                logger(INFO, BRIGHT_WHITE) << "Legacy bond: original tx " << Common::podToHex(bond.originalTxHash)
+                  << " has no matching multisig deposit output (amount=" << bond.amount << ")";
+              }
+            } else {
+              logger(WARNING) << "Legacy bond rejected: original tx " << Common::podToHex(bond.originalTxHash)
+                              << " not found in blockchain";
+            }
+
+            if (depositFound) {
+              m_totalLegacyBondLocked += bond.amount;
+              logger(DEBUGGING) << "Legacy bond registered: original=" << Common::podToHex(bond.originalTxHash)
+                                << " amount=" << bond.amount
+                                << " totalLegacyBondLocked=" << m_totalLegacyBondLocked;
+            } else {
+              logger(WARNING) << "Legacy bond rejected: original tx " << Common::podToHex(bond.originalTxHash)
+                              << " — deposit validation failed";
+            }
+          }
+          // 0xCC: Legacy Bond interest claim — debit the yield pool
+          else if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
+            const auto& claim = boost::get<TransactionExtraLegacyBondClaim>(field);
+            if (claim.claimedInterest > 0) {
+              if (m_legacyBondYieldPool >= claim.claimedInterest) {
+                m_legacyBondYieldPool -= claim.claimedInterest;
+                logger(DEBUGGING) << "Legacy bond claim: " << claim.claimedInterest
+                                 << " XFG interest paid, pool remaining=" << m_legacyBondYieldPool;
+              } else {
+                logger(WARNING) << "Legacy bond claim: insufficient pool (have="
+                               << m_legacyBondYieldPool << " need=" << claim.claimedInterest << ")";
+              }
             }
           }
           // Check for @ Alias Registration (0xEA)
@@ -3758,6 +3895,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.heatCdFeePool = m_heatCdFeePool;
     preEpoch.cdYieldPool = m_cdYieldPool;
     preEpoch.cdReserve = m_cdReserve;
+    preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
     preEpoch.treasuryBalance = m_treasuryBalance;
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
@@ -3779,14 +3917,31 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     uint64_t cdShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_CD_SHARE_PCT) / 100;
     uint64_t treasuryShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
 
-    // Compute fee rate for this epoch on CD share only.
+    // Split CD share between regular CDs and legacy bonds (50/50 default)
+    uint64_t regularCdShare = cdShare;
+    uint64_t legacyBondShare = 0;
+    uint64_t epochLegacyBondLocked = m_totalLegacyBondLocked;
+    if (epochLegacyBondLocked > 0 && m_totalCdLocked > 0) {
+      legacyBondShare = (cdShare * CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT) / 100;
+      regularCdShare = cdShare - legacyBondShare;
+    }
+
+    // Compute fee rates for this epoch on both tracks.
     // Use __uint128_t for the intermediate product to prevent uint64_t overflow
     uint64_t epochFeeRate = 0;
-    if (epochCdLocked > 0 && cdShare > 0) {
+    if (epochCdLocked > 0 && regularCdShare > 0) {
       epochFeeRate = static_cast<uint64_t>(
-          (__uint128_t)cdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+          (__uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
-    m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, cdShare, epochCdLocked);
+    m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShare, epochCdLocked);
+
+    // Legacy bond fee rate
+    uint64_t legacyEpochFeeRate = 0;
+    if (epochLegacyBondLocked > 0 && legacyBondShare > 0) {
+      legacyEpochFeeRate = static_cast<uint64_t>(
+          (__uint128_t)legacyBondShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochLegacyBondLocked);
+    }
+    m_commitmentIndex.recordLegacyEpochFeeRate(epochNumber, legacyEpochFeeRate, legacyBondShare, epochLegacyBondLocked);
 
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
@@ -3795,20 +3950,23 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     m_treasuryBalance += treasuryShare;
     m_totalTreasuryAccrued += treasuryShare;
 
-    // Route CD share: to yield pool for HEAT buyback, or to treasury when pool lopsided.
-    // Gives rebalancer more firepower when pool is XFG-heavy from sustained CD buying.
+    // Route regular CD share: to yield pool for HEAT buyback, or to treasury when pool lopsided.
     if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
       uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 100) / m_ammPool.reserveHeat;
       if (poolRatioScaled > 200) {
-        // Pool XFG-heavy: route portion of CD share to treasury for rebalancing
-        uint64_t routeAmount = (cdShare * parameters::CD_YIELD_TREASURY_ROUTE_PCT) / 100;
-        m_cdYieldPool += (cdShare - routeAmount);
+        uint64_t routeAmount = (regularCdShare * parameters::CD_YIELD_TREASURY_ROUTE_PCT) / 100;
+        m_cdYieldPool += (regularCdShare - routeAmount);
         m_treasuryBalance += routeAmount;
       } else {
-        m_cdYieldPool += cdShare;
+        m_cdYieldPool += regularCdShare;
       }
     } else {
-      m_cdYieldPool += cdShare;
+      m_cdYieldPool += regularCdShare;
+    }
+
+    // Route legacy bond share to legacy bond yield pool
+    if (legacyBondShare > 0) {
+      m_legacyBondYieldPool += legacyBondShare;
     }
 
     // CD yield: buy HEAT from Hearth, or mint if pool too lopsided.
@@ -3967,6 +4125,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_currentEpochSwapFees += contribution;
       m_totalSwapFeesCollected -= contribution;
       m_commitmentIndex.popEpochFeeRate();
+      m_commitmentIndex.popLegacyEpochFeeRate();
       
       // Reverse treasury distribution
       if (!m_blockEpochDistributions.empty()) {
@@ -3990,6 +4149,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_heatCdFeePool = snap.heatCdFeePool;
     m_cdYieldPool = snap.cdYieldPool;
     m_cdReserve = snap.cdReserve;
+    m_legacyBondYieldPool = snap.legacyBondYieldPool;
     m_treasuryBalance = snap.treasuryBalance;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
@@ -4424,6 +4584,14 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
         uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
         m_ammPool.accumulatedLpFees += feeXfg;
+      } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
+        const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
+        if (m_totalLegacyBondLocked >= bond.amount) {
+          m_totalLegacyBondLocked -= bond.amount;
+        }
+      } else if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
+        const auto& claim = boost::get<TransactionExtraLegacyBondClaim>(field);
+        m_legacyBondYieldPool += claim.claimedInterest;
       }
     }
   }

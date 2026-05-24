@@ -383,6 +383,7 @@ namespace CryptoNote {
       uint64_t heatCdFeePool;
       uint64_t cdYieldPool;
       uint64_t cdReserve;
+      uint64_t legacyBondYieldPool;
       uint64_t treasuryBalance;
       uint64_t protocolLpShares;
       uint64_t treasuryLpYield;
@@ -443,6 +444,8 @@ namespace CryptoNote {
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
     uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
     uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
+    uint64_t m_totalLegacyBondLocked = 0;  // total XFG in legacy bonds (for separate CD share split)
+    uint64_t m_legacyBondYieldPool = 0;    // accumulated legacy bond share of swap fees
     // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
     std::deque<uint64_t> m_blockSwapFeeContributions;
     std::deque<std::pair<uint64_t, uint64_t>> m_blockEpochDistributions;  // <treasuryShare, rolloverShare>

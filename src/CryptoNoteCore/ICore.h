@@ -133,7 +133,8 @@ public:
   // CD interest calculation delegated to Currency + CommitmentIndex.
   // Non-pure so mock/stub ICore implementations compile without changes.
   virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
-                                               uint32_t currentHeight, uint64_t& outInterest) {
+                                                uint32_t currentHeight, uint64_t& outInterest,
+                                                bool isLegacyBond = false) {
     outInterest = 0;
     return {};
   }

@@ -131,7 +131,7 @@ namespace CryptoNote
 
         // MIXIN
 		const uint64_t MIN_TX_MIXIN_SIZE_V2                          = 2;  // Legacy mixin
-		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // Maxmix min starting from BlockMajorVersion 10
+		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 16;  // Maxmix min starting from BlockMajorVersion 10
         const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;  // Default mixin size
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
@@ -171,6 +171,12 @@ namespace CryptoNote
         // Swap fee split: 80% CD Yield / 20% Treasury Reserve
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
+
+        // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)
+        const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
+        const uint64_t LEGACY_BOND_TARGET_APY = 80;          // 80% target APY on legacy bonds
+        const uint64_t LEGACY_BOND_TERM_EPOCHS = 72;         // 72 epochs (~1 year) lock period
+        const uint64_t LEGACY_BOND_DEBT_CAP = 250000000;     // 250k XFG total debt cap (in ATOMIC units, 10000 per XFG)
 
         // HEAT Deposits
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 8 HEAT minimum CD
@@ -337,10 +343,14 @@ namespace CryptoNote
 
 	} // namespace parameters
 
-	// Fuego Developer Fund — receives @ alias registration fees and other network fees.
+	// Fuego Developer Fund ( @fuegodev ) receives network registration fees for fire aliases.
+	// const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
+
+	// Fuego Development Fund ( @fuegoxfg ) receives network banking fees on HEAT CDs and general donations
+	const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
+
 	// Standard individual aliases are @fire aliases (V10 feature).
 	// Group/multi-sig "tandalias" are in design phase (see docs/design/group-aliases-plan.md).
-	const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
 
     const char CRYPTONOTE_NAME[] = "fuego";
 	const char GENESIS_COINBASE_TX_HEX[] = "013c01ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101bd4e0bf284c04d004fd016a21405046e8267ef81328cabf3017c4c24b273b25a";
@@ -358,7 +368,7 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
 	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // Per-asset balance + AMM swap auth + HEAT mint auth (M3 fix)
-	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // HearthAMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // Hearthbane AMM + PI controller + CD yield pipeline
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;
@@ -423,7 +433,7 @@ namespace CryptoNote
 //                           TESTNET parameters
 //--------------------------------------------------------------------------------------------------------------------------
 
-    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd08807127019bc1f06b892498a1f911b75af946e91e17efcb6c58be7ce3f2f7efdd1dad51cc0204e0c81000";
+    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712701febbfb69c5e4579824b105c4041860afd466176975248042e000479e96f1acb20204e0c81000";
  	const int P2P_DEFAULT_PORT_TESTNET = 20808;
  	const int RPC_DEFAULT_PORT_TESTNET = 28280;
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */

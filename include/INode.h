@@ -101,7 +101,8 @@ public:
   // Default implementations return success with zero so existing INode implementations
   // (e.g. NodeRpcProxy) compile without changes until they override these.
   virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                        uint32_t currentHeight, uint64_t& outInterest) {
+                                        uint32_t currentHeight, uint64_t& outInterest,
+                                        bool isLegacyBond = false) {
     outInterest = 0;
     return {};
   }

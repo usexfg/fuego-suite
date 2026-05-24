@@ -68,6 +68,7 @@ struct Deposit
   enum class Type : uint8_t {
     HEAT = 0x08,        // HEAT burn deposit (0x08)
     COLD = 0xCD,        // COLD yield deposit (0xCD)
+    LEGACY_BOND = 0xCB, // Legacy bond (0xCB) — bug-era migration with 50% CD share
   //  ELDERFIER = 0xEC    // ELDERFIER staking deposit (0xEC)
   };
 

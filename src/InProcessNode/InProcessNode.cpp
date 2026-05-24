@@ -1111,8 +1111,9 @@ void InProcessNode::isSynchronizedAsync(bool& syncStatus, const Callback& callba
 }
 
 std::error_code InProcessNode::getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                              uint32_t currentHeight, uint64_t& outInterest) {
-  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest);
+                                              uint32_t currentHeight, uint64_t& outInterest,
+                                              bool isLegacyBond) {
+  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, isLegacyBond);
 }
 
 std::error_code InProcessNode::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {

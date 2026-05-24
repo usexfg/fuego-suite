@@ -183,7 +183,7 @@ bool constructTransaction(
     if (!(r)) {
       logger(ERROR, BRIGHT_RED)
         << "at creation outs: failed to generate_key_derivation("
-        << dst_entr.addr.viewPublicKey << ", " << txkey.secretKey << ")";
+        << dst_entr.addr.viewPublicKey << ", <secret_key>)";
       return false;
     }
 

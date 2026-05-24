@@ -116,6 +116,12 @@ public:
   // Remove the most-recently recorded epoch fee rate (used by popBlock rollback).
   void popEpochFeeRate();
 
+  // Legacy bond epoch fee rates (separate track from regular CDs, same epoch numbering)
+  void recordLegacyEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
+                                 uint64_t feesCollected, uint64_t totalLocked);
+  uint64_t getLegacyEpochFeeRate(uint64_t epochNumber) const;
+  void popLegacyEpochFeeRate();
+
   void storeEpochReport(const EpochReport& report);
   std::optional<EpochReport> getEpochReport(uint64_t epochNumber) const;
   std::optional<EpochReport> getLatestEpochReport() const;
@@ -126,6 +132,7 @@ private:
   mutable std::mutex m_mutex;
 
   std::vector<uint64_t> m_epochFeeRates;
+  std::vector<uint64_t> m_legacyEpochFeeRates;
 
   mutable Crypto::Hash m_current_merkle_root;
   mutable bool m_merkleDirty = true;

@@ -4132,6 +4132,9 @@ namespace CryptoNote
         if (field.type() == typeid(TransactionExtraHeatCommitment)) {
           deposit.depositType = Deposit::Type::HEAT;
           break;
+        } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
+          deposit.depositType = Deposit::Type::LEGACY_BOND;
+          break;
         } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
           deposit.depositType = Deposit::Type::COLD;
           break;

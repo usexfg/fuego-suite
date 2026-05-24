@@ -351,6 +351,28 @@ void CommitmentIndex::popEpochFeeRate() {
   }
 }
 
+void CommitmentIndex::recordLegacyEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
+                                                uint64_t feesCollected, uint64_t totalLocked) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_legacyEpochFeeRates.size()) {
+    m_legacyEpochFeeRates.resize(epochNumber + 1, 0);
+  }
+  m_legacyEpochFeeRates[epochNumber] = feeRate;
+}
+
+uint64_t CommitmentIndex::getLegacyEpochFeeRate(uint64_t epochNumber) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_legacyEpochFeeRates.size()) return 0;
+  return m_legacyEpochFeeRates[epochNumber];
+}
+
+void CommitmentIndex::popLegacyEpochFeeRate() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (!m_legacyEpochFeeRates.empty()) {
+    m_legacyEpochFeeRates.pop_back();
+  }
+}
+
 void CommitmentIndex::storeEpochReport(const EpochReport& report) {
   std::lock_guard<std::mutex> lock(m_mutex);
   m_epochReports.push_back(report);
@@ -383,6 +405,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
   s(m_epochReports, "epoch_reports");
 
   s(m_epochFeeRates, "epoch_fee_rates");
+  s(m_legacyEpochFeeRates, "legacy_epoch_fee_rates");
 
   if (s.type() == ISerializer::INPUT) {
     m_merkle_leaves.clear();

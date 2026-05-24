@@ -556,7 +556,7 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
                 sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
                 m_db.saveSwap(sm);
               } else {
-                m_logger(Logging::ERROR) << "  BCH lockHtlc failed (stub — not yet implemented)";
+                m_logger(Logging::ERROR) << "  BCH lockHtlc failed";
               }
             }
             break;
@@ -704,7 +704,7 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
                 sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
                 m_db.saveSwap(sm);
               } else {
-                m_logger(Logging::ERROR) << "  BCH claim failed (stub)";
+                m_logger(Logging::ERROR) << "  BCH claim failed";
               }
             }
             break;
@@ -1193,7 +1193,7 @@ bool SwapDaemon::refund(const std::string& swapId) {
           if (ctrRefundOk) {
             m_logger(Logging::INFO) << "  BCH HTLC refunded, txid: " << refundTxId;
           } else {
-            m_logger(Logging::ERROR) << "  BCH refundHtlc failed (stub)";
+            m_logger(Logging::ERROR) << "  BCH refundHtlc failed";
           }
         }
         break;

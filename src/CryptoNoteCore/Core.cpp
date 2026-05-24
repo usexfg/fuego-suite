@@ -389,6 +389,26 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
+  // Determine block major version from the given height
+  uint8_t blockMajorVersion = BLOCK_MAJOR_VERSION_1;
+  uint8_t versionsToCheck[] = {
+    BLOCK_MAJOR_VERSION_11, BLOCK_MAJOR_VERSION_10, BLOCK_MAJOR_VERSION_9,
+    BLOCK_MAJOR_VERSION_8, BLOCK_MAJOR_VERSION_7, BLOCK_MAJOR_VERSION_6,
+    BLOCK_MAJOR_VERSION_5, BLOCK_MAJOR_VERSION_4, BLOCK_MAJOR_VERSION_3,
+    BLOCK_MAJOR_VERSION_2
+  };
+  for (auto v : versionsToCheck) {
+    uint32_t uh = m_currency.upgradeHeight(v);
+    if (uh != UpgradeDetectorBase::UNDEF_HEIGHT && height >= uh) {
+      blockMajorVersion = v;
+      break;
+    }
+  }
+  if (!check_tx_mixin(tx, blockMajorVersion)) {
+    logger(ERROR) << "tx with invalid mixin, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+
   return true;
 }
 
@@ -1364,9 +1384,10 @@ const CommitmentIndex& core::getCommitmentIndex() const {
 }
 
 std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
-                                           uint32_t currentHeight, uint64_t& outInterest) {
+                                           uint32_t currentHeight, uint64_t& outInterest,
+                                           bool isLegacyBond) {
   outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
-                                               m_blockchain.getCommitmentIndex());
+                                               m_blockchain.getCommitmentIndex(), isLegacyBond);
   return {};
 }
 

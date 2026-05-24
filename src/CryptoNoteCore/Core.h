@@ -194,8 +194,9 @@ namespace CryptoNote {
 
     // ICore overrides: CD interest and epoch fee rate via CommitmentIndex
     virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
-                                                 uint32_t currentHeight,
-                                                 uint64_t& outInterest) override;
+                                                  uint32_t currentHeight,
+                                                  uint64_t& outInterest,
+                                                  bool isLegacyBond = false) override;
     virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
                                                        uint64_t& outFeeRate) override;
 

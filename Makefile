@@ -34,10 +34,10 @@ build-tui:
 	@if command -v go >/dev/null 2>&1; then \
 		echo "Building Fuego TUI"; \
 		cd tui && go mod tidy && go build -o fuego-tui; \
-		if [ -f "tui/fuego-tui" ]; then \
-			mkdir -p build/release/src; \
-			cp tui/fuego-tui build/release/src/; \
-			chmod +x build/release/src/fuego-tui; \
+		if [ -f "fuego-tui" ]; then \
+			mkdir -p ../build/release/src; \
+			cp fuego-tui ../build/release/src/; \
+			chmod +x ../build/release/src/fuego-tui; \
 			echo "Fuego TUI built successfully"; \
 		else \
 			echo "Failed to build fuego-tui binary"; \

@@ -545,12 +545,12 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // Cold/off-chain STARK commands - hidden
   // m_consoleHandler.setHandler("list_burns", boost::bind(&simple_wallet::list_burns, this, boost::arg<1>()), "list_burns - List all XFG burn transactions (HEAT)");
   // m_consoleHandler.setHandler("burn_info", boost::bind(&simple_wallet::burn_info, this, boost::arg<1>()), "burn_info <id> - Get detailed info of burn by ID");
-  // m_consoleHandler.setHandler("migrate_legacy_deposit", boost::bind(&simple_wallet::migrate_legacy_deposit, this, boost::arg<1>()), "migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format");
+  m_consoleHandler.setHandler("migrate_deposit", boost::bind(&simple_wallet::migrate_deposit, this, boost::arg<1>()), "migrate_deposit <id> - Convert a bug-era Multisig deposit into a 1-year Legacy Bond earning 50% CD share.");
   // m_consoleHandler.setHandler("create_cold_secret", boost::bind(&simple_wallet::create_cold_secret, this, boost::arg<1>()), "create_cold_secret <amount> <term_blocks> <chain_code> <metadata> - Create COLD commitment");
   // m_consoleHandler.setHandler("gen_proof", boost::bind(&simple_wallet::gen_proof, this, boost::arg<1>()), "gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)");
 
   // @ Alias system commands
-  m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG).");
+  m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> [<address>] - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy.");
   m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
   m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
   m_consoleHandler.setHandler("release_alias", boost::bind(&simple_wallet::release_alias, this, boost::arg<1>()), "release_alias <alias> - Release (delete) your @ alias back to the network");
@@ -2144,10 +2144,10 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args) {
+bool simple_wallet::migrate_deposit(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: migrate_legacy_deposit <deposit_id>";
-    fail_msg_writer() << "Migrates a pre-v3 legacy deposit to v3 format, registering a commitment for L2 claims.";
+    fail_msg_writer() << "Usage: migrate_deposit <deposit_id>";
+    fail_msg_writer() << "Converts a bug-era (v10) Multisig deposit into a 1-year Legacy Bond earning 50% CD share interest.";
     return true;
   }
 
@@ -2166,49 +2166,50 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
       return true;
     }
 
-    // Must be a COLD deposit (not HEAT burn or legacy staking)
+    // Must be a COLD deposit (not HEAT burn)
     if (deposit.depositType == CryptoNote::Deposit::Type::HEAT) {
-      fail_msg_writer() << "Deposit " << depositId << " is a HEAT burn. Use burn_info to view it.";
-      fail_msg_writer() << "HEAT burns already have v3 commitments if created after the v3 upgrade.";
+      fail_msg_writer() << "Deposit " << depositId << " is a HEAT burn, not a legacy Multisig deposit.";
       return true;
     }
 
-    // Check if already has a 0xD5 secret (already v3)
+    // Check if already has a 0xCE migration tag (old L2 format) or 0xCB bond tag
     std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-    CryptoNote::TransactionExtraDepositSecret existingSecret;
-    if (CryptoNote::getDepositSecretFromExtra(extraBytes, existingSecret)) {
-      fail_msg_writer() << "Deposit " << depositId << " already has a STARK secret (v3 format).";
-      fail_msg_writer() << "Use 'cd_info " << depositId << "' to view it.";
-      return true;
-    }
-
-    // Check if already has a 0xCE migration tag
     std::vector<CryptoNote::TransactionExtraField> extraFields;
     if (CryptoNote::parseTransactionExtra(extraBytes, extraFields)) {
       for (const auto& field : extraFields) {
         if (field.type() == typeid(CryptoNote::TransactionExtraColdMigration)) {
-          fail_msg_writer() << "Deposit " << depositId << " already has a migration tag.";
+          fail_msg_writer() << "Deposit " << depositId << " already has an L2 migration tag. Use the old claim path.";
+          return true;
+        }
+        if (field.type() == typeid(CryptoNote::TransactionExtraLegacyBond)) {
+          fail_msg_writer() << "Deposit " << depositId << " already registered as a Legacy Bond.";
           return true;
         }
       }
     }
 
-    // Display deposit info and confirm
+    uint64_t epochDuration = m_currency.isTestnet()
+        ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    uint64_t bondTerm = CryptoNote::parameters::LEGACY_BOND_TERM_EPOCHS * epochDuration;
+
+    // Display deposit info and bond terms
     success_msg_writer() << "";
-    success_msg_writer() << "=== Legacy COLD Deposit Migration ===";
+    success_msg_writer() << "=== Legacy Bond Migration ===";
     success_msg_writer() << "";
-    success_msg_writer() << "Deposit ID:    " << depositId;
-    success_msg_writer() << "Amount:        " << m_currency.formatAmount(deposit.amount) << " XFG";
-    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
-      success_msg_writer() << "Term:          FOREVER";
-    } else {
-      success_msg_writer() << "Term:          " << deposit.term << " blocks";
-    }
-    success_msg_writer() << "TX Hash:       " << Common::podToHex(deposit.transactionHash);
+    success_msg_writer() << "Deposit ID:             " << depositId;
+    success_msg_writer() << "Amount:                 " << m_currency.formatAmount(deposit.amount) << " XFG";
+    success_msg_writer() << "Original TX:            " << Common::podToHex(deposit.transactionHash);
+    success_msg_writer() << "Creation Height:        " << deposit.height;
     success_msg_writer() << "";
-    success_msg_writer() << "This will create a migration transaction that registers a v3";
-    success_msg_writer() << "commitment for this legacy deposit, enabling L2 claims via xfg-stark-cli.";
-    success_msg_writer() << "Cost: network fee only (" << m_currency.formatAmount(m_currency.minimumFee()) << " XFG)";
+    success_msg_writer() << "Legacy Bond Terms:";
+    success_msg_writer() << "  Lock Period:          " << CryptoNote::parameters::LEGACY_BOND_TERM_EPOCHS << " epochs (~" << (bondTerm / 720) << " days)";
+    success_msg_writer() << "  CD Share:             " << CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT << "% of CD yield pool (50/50 split with regular CDs)";
+    success_msg_writer() << "  Target APY:           ~" << CryptoNote::parameters::LEGACY_BOND_TARGET_APY << "% (variable; depends on swap fee volume)";
+    success_msg_writer() << "  Withdrawal Fee:       Free (protocol covers)";
+    success_msg_writer() << "";
+    success_msg_writer() << "This creates a self-transfer with a 0xCB metadata tag. No new deposit output is created.";
+    success_msg_writer() << "Cost: network fee (" << m_currency.formatAmount(m_currency.minimumFee()) << " XFG)";
     success_msg_writer() << "";
     success_msg_writer() << "Confirm? (1) OK  (2) No ";
 
@@ -2220,60 +2221,24 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
       return true;
     }
 
-    // Generate v3 STARK commitment for this legacy deposit
-    uint32_t networkId = m_currency.isTestnet()
-        ? CryptoNote::parameters::STARK_NETWORK_ID_TESTNET
-        : CryptoNote::parameters::STARK_NETWORK_ID_MAINNET;
-    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
-        deposit.amount,
-        deposit.term,
-        networkId,
-        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
-        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
+    // Build 0xCB legacy bond extra
+    std::vector<uint8_t> bondExtra;
+    CryptoNote::TransactionExtraLegacyBond bond;
+    bond.originalTxHash = deposit.transactionHash;
+    bond.amount = deposit.amount;
+    bond.originalCreationHeight = static_cast<uint32_t>(deposit.height);
+    CryptoNote::addLegacyBondToExtra(bondExtra, bond);
 
-    // Display secret
-    success_msg_writer() << "";
-    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
-    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
-    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
-    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
-    success_msg_writer() << "";
+    std::string extraString(bondExtra.begin(), bondExtra.end());
 
-    // Build migration extra data
-    std::vector<uint8_t> migrationExtra;
-
-    // 0xCE migration tag — references original deposit
-    CryptoNote::TransactionExtraColdMigration migration;
-    migration.originalTxHash = deposit.transactionHash;
-    migration.commitment = starkResult.commitment;
-    migration.amount = deposit.amount;
-    migration.term = deposit.term;
-    migration.targetChainId = 1; // ETH
-    CryptoNote::addColdMigrationToExtra(migrationExtra, migration);
-
-    // 0xD5 encrypted secret — so cd_info can decrypt it later
-    CryptoNote::AccountKeys walletKeys;
-    m_wallet->getAccountKeys(walletKeys);
-    CryptoNote::DepositSecretPayload secretPayload;
-    secretPayload.depositType = 0xCD; // COLD
-    secretPayload.amount = deposit.amount;
-    secretPayload.term = deposit.term;
-    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
-    CryptoNote::TransactionExtraDepositSecret encSecret;
-    if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
-      CryptoNote::addDepositSecretToExtra(migrationExtra, encSecret);
-    }
-
-    std::string extraString(migrationExtra.begin(), migrationExtra.end());
-
-    // Send as self-transfer (just carries the extra data, costs only network fee)
+    // Send as self-transfer (tag-only, costs network fee)
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
     std::vector<CryptoNote::WalletLegacyTransfer> transfers;
     CryptoNote::WalletLegacyTransfer selfTransfer;
     selfTransfer.address = m_wallet->getAddress();
-    selfTransfer.amount = m_currency.minimumFee(); // minimum self-transfer
+    selfTransfer.amount = m_currency.minimumFee();
     transfers.push_back(selfTransfer);
 
     std::vector<CryptoNote::TransactionMessage> messages;
@@ -2302,21 +2267,15 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
     m_wallet->getTransaction(tx, txInfo);
 
     success_msg_writer(true) << "";
-    success_msg_writer(true) << "Legacy deposit migrated successfully!";
-    success_msg_writer(true) << "  Migration TX: " << Common::podToHex(txInfo.hash);
-    success_msg_writer(true) << "  Original TX:  " << Common::podToHex(deposit.transactionHash);
+    success_msg_writer(true) << "Legacy Bond registered successfully!";
+    success_msg_writer(true) << "  Bond TX:  " << Common::podToHex(txInfo.hash);
+    success_msg_writer(true) << "  Amount:   " << m_currency.formatAmount(deposit.amount) << " XFG";
     success_msg_writer(true) << "";
-    success_msg_writer(true) << "Once confirmed, use 'gen_proof " << Common::podToHex(deposit.transactionHash) << "' to generate STARK proof data.";
-
-    try {
-      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
-    } catch (const std::exception& e) {
-      fail_msg_writer() << e.what();
-      return true;
-    }
-
-  } catch (const std::exception &e) {
-    fail_msg_writer() << "Migration error: " << e.what();
+    success_msg_writer(true) << "Your deposit now earns " << CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT << "% of the CD yield pool as interest.";
+    success_msg_writer(true) << "After " << CryptoNote::parameters::LEGACY_BOND_TERM_EPOCHS << " epochs you can withdraw fee-free.";
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Migration failed: " << e.what();
+    return true;
   }
 
   return true;
@@ -3531,10 +3490,11 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::register_alias(const std::vector<std::string> &args) {
-  if (args.size() != 1) {
-    fail_msg_writer() << "Usage: register_alias <alias>";
+  if (args.size() < 1 || args.size() > 2) {
+    fail_msg_writer() << "Usage: register_alias <alias> [<address>]";
     fail_msg_writer() << "  Alias must be exactly 8 characters [a-z0-9&] (e.g., firenode)";
-    fail_msg_writer() << "  Alias must use lowercase [a-z0-9&] characters";
+    fail_msg_writer() << "  Address (optional): sub-address to own this alias. Use a sub-address for privacy.";
+    fail_msg_writer() << "  Omitting address registers to your primary address.";
     return true;
   }
 
@@ -3591,7 +3551,8 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
     COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
     COMMAND_RPC_GET_ALIAS_BY_ADDRESS::response addrRes;
-    addrReq.address = m_wallet->getAddress();
+    std::string checkAddr = (args.size() >= 2) ? args[1] : m_wallet->getAddress();
+    addrReq.address = checkAddr;
     invokeJsonCommand(httpClient, "/get_alias_by_address", addrReq, addrRes);
 
     if (addrRes.found) {
@@ -3634,7 +3595,24 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
     return true;
   }
 
-  std::string walletAddress = m_wallet->getAddress();
+  std::string walletAddress = (args.size() >= 2) ? args[1] : m_wallet->getAddress();
+
+  // Validate the address if one was provided
+  if (args.size() >= 2) {
+    CryptoNote::AccountPublicAddress ignore;
+    if (!m_currency.parseAccountAddressString(walletAddress, ignore)) {
+      fail_msg_writer() << "Invalid address: " << walletAddress;
+      return true;
+    }
+  }
+
+  // Show privacy advisory
+  if (args.size() < 2) {
+    success_msg_writer() << "";
+    success_msg_writer() << "  Privacy note: registering to your primary address.";
+    success_msg_writer() << "  Use: register_alias " << alias << " <sub_address>";
+    success_msg_writer() << "  to protect your privacy with a sub-address (gen_new_sub first).";
+  }
 
   // Show confirmation summary
   success_msg_writer() << "";
@@ -3923,7 +3901,7 @@ bool simple_wallet::release_alias(const std::vector<std::string> &args) {
     Crypto::Signature proof;
     CryptoNote::AccountKeys keys;
     m_wallet->getAccountKeys(keys);
-    Crypto::generate_signature(challenge, keys.spendSecretKey, proof);
+    Crypto::generate_signature(challenge, keys.address.spendPublicKey, keys.spendSecretKey, proof);
 
     // Build release tx extra (0xEC)
     CryptoNote::TransactionExtraAliasRelease aliasRel;
@@ -4084,7 +4062,7 @@ bool simple_wallet::transfer_alias(const std::vector<std::string> &args) {
     Crypto::Signature proof;
     CryptoNote::AccountKeys keys2;
     m_wallet->getAccountKeys(keys2);
-    Crypto::generate_signature(challenge, keys2.spendSecretKey, proof);
+    Crypto::generate_signature(challenge, keys2.address.spendPublicKey, keys2.spendSecretKey, proof);
 
     // Build transfer tx extra (0xED)
     CryptoNote::TransactionExtraAliasTransfer aliasXfer;

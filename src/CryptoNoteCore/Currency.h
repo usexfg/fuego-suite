@@ -251,9 +251,11 @@ public:
     // Interest functions
     uint64_t calculateInterest(uint64_t amount, uint32_t term, uint32_t height) const;
     // Fee-pool interest: accrued from swap fees over epochs a CD was locked
+    // isLegacyBond=true uses legacy bond fee rate track (50% CD share for bug-era deposits)
     uint64_t calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                   uint32_t currentHeight,
-                                  const CommitmentIndex& commitmentIndex) const;
+                                  const CommitmentIndex& commitmentIndex,
+                                  bool isLegacyBond = false) const;
     uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;

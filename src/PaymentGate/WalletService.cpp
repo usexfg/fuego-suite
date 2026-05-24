@@ -537,8 +537,8 @@ namespace PaymentService
       //TODO make this a cout
       log(Logging::INFO, Logging::BRIGHT_WHITE) << "New wallet generated.";
       log(Logging::INFO, Logging::BRIGHT_WHITE) << "Address: " << address;
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret spend key: " << Common::podToHex(spendKey.secretKey);
-      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret view key: " << Common::podToHex(private_view_key);
+      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret spend key: <redacted>";
+      log(Logging::INFO, Logging::BRIGHT_WHITE) << "Secret view key: <redacted>";
     }
     /* We need both secret keys to import the wallet and create the container
      so in the absence of either, display and error message and return */

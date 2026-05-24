@@ -69,6 +69,8 @@
 // 
 // 0xCE tag: COLD migration (register v3 commitment for a pre-v3 legacy deposit)
 #define TX_EXTRA_COLD_MIGRATION             0xCE
+#define TX_EXTRA_LEGACY_BOND               0xCB
+#define TX_EXTRA_LEGACY_BOND_CLAIM         0xCC
 
 // 0xD5 tag: Encrypted deposit secret (for COLD withdrawal_commitment_output recovery from seed)
 #define TX_EXTRA_DEPOSIT_SECRET             0xD5
@@ -220,6 +222,27 @@ struct TransactionExtraColdMigration {
   bool serialize(ISerializer& serializer);
 };
 
+// Legacy Bond (v1.10.00+): marks a bug-era Multisig deposit for 50% CD share.
+// Attached to a self-transfer (no new deposit output). Validated by blockchain
+// against the originalMultisig output. Enables 1-year locked XFG earning swap fee interest.
+struct TransactionExtraLegacyBond {
+  Crypto::Hash originalTxHash;         // original deposit tx (must have MultisignatureOutput)
+  uint64_t amount;                     // deposit amount matched to original output
+  uint32_t originalCreationHeight;     // block height where original deposit was created
+
+  bool serialize(ISerializer& serializer);
+};
+
+// Legacy Bond Interest Claim (v1.10.00+): claims accrued fee-pool interest
+// when spending a legacy bond deposit. Wallet calculates the interest from
+// legacy epoch fee rates; blockchain validates the amount is within bounds
+// and debits m_legacyBondYieldPool.
+struct TransactionExtraLegacyBondClaim {
+  uint64_t claimedInterest;            // interest amount claimed (in atomic XFG units)
+
+  bool serialize(ISerializer& serializer);
+};
+
 // Hearth AMM structures (v11+)
 struct TransactionExtraAmmSwap {
   uint8_t  direction;
@@ -367,7 +390,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
 
 
 
@@ -394,6 +417,12 @@ bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypt
 bool appendMergeMiningTagToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMergeMiningTag& mm_tag);
 bool append_message_to_extra(std::vector<uint8_t>& tx_extra, const tx_extra_message& message);
 bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration);
+// Legacy Bond helpers (v1.10.00+)
+bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond);
+bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond);
+// Legacy Bond Claim helpers
+bool addLegacyBondClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBondClaim& claim);
+bool getLegacyBondClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBondClaim& claim);
 
 bool addAmmSwapToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount, uint64_t minOutput);
 bool addAmmAddLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat);

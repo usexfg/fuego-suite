@@ -164,6 +164,35 @@ namespace CryptoNote
           break;
         }
 
+        case TX_EXTRA_LEGACY_BOND:
+        {
+          // Format: [originalTxHash: 32] [amount: 8 LE] [originalCreationHeight: 4 LE]
+          TransactionExtraLegacyBond bond;
+          read(iss, bond.originalTxHash.data, sizeof(bond.originalTxHash.data));
+          bond.amount = 0;
+          for (int i = 0; i < 8; ++i) {
+            bond.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          bond.originalCreationHeight = 0;
+          for (int i = 0; i < 4; ++i) {
+            bond.originalCreationHeight |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          transactionExtraFields.push_back(bond);
+          break;
+        }
+
+        case TX_EXTRA_LEGACY_BOND_CLAIM:
+        {
+          // Format: [claimedInterest: 8 LE]
+          TransactionExtraLegacyBondClaim claim;
+          claim.claimedInterest = 0;
+          for (int i = 0; i < 8; ++i) {
+            claim.claimedInterest |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          transactionExtraFields.push_back(claim);
+          break;
+        }
+
         case TX_EXTRA_BURN_RECEIPT:
         {
           TransactionExtraBurnReceipt burnReceipt;
@@ -445,6 +474,16 @@ namespace CryptoNote
     bool operator()(const TransactionExtraColdMigration &t)
     {
       return addColdMigrationToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraLegacyBond &t)
+    {
+      return addLegacyBondToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraLegacyBondClaim &t)
+    {
+      return addLegacyBondClaimToExtra(extra, t);
     }
 
     bool operator()(const TransactionExtraAmmSwap &t)
@@ -811,6 +850,20 @@ namespace CryptoNote
     s(amount, "amount");
     s(term, "term");
     s(targetChainId, "targetChainId");
+    return true;
+  }
+
+  bool TransactionExtraLegacyBond::serialize(ISerializer &s)
+  {
+    s(originalTxHash, "originalTxHash");
+    s(amount, "amount");
+    s(originalCreationHeight, "originalCreationHeight");
+    return true;
+  }
+
+  bool TransactionExtraLegacyBondClaim::serialize(ISerializer &s)
+  {
+    s(claimedInterest, "claimedInterest");
     return true;
   }
 
@@ -1250,6 +1303,88 @@ namespace CryptoNote
     // Chain code (1 byte)
     tx_extra.push_back(migration.targetChainId);
 
+
+    return true;
+  }
+
+  bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond) {
+    tx_extra.push_back(TX_EXTRA_LEGACY_BOND);
+
+    // Original tx hash (32 bytes)
+    tx_extra.insert(tx_extra.end(), bond.originalTxHash.data, bond.originalTxHash.data + 32);
+
+    // Amount (8 bytes LE)
+    uint64_t amount = bond.amount;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+      amount >>= 8;
+    }
+
+    // Original creation height (4 bytes LE)
+    uint32_t height = bond.originalCreationHeight;
+    for (int i = 0; i < 4; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(height & 0xFF));
+      height >>= 8;
+    }
+
+    return true;
+  }
+
+  bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_LEGACY_BOND) {
+      return false;
+    }
+
+    size_t pos = 1;
+
+    // Parse originalTxHash (32 bytes)
+    if (pos + sizeof(Crypto::Hash) > tx_extra.size()) return false;
+    std::memcpy(&bond.originalTxHash, &tx_extra[pos], sizeof(Crypto::Hash));
+    pos += sizeof(Crypto::Hash);
+
+    // Parse amount (8 bytes LE)
+    if (pos + 8 > tx_extra.size()) return false;
+    bond.amount = 0;
+    for (int i = 0; i < 8; ++i, ++pos) {
+      bond.amount |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
+    }
+
+    // Parse originalCreationHeight (4 bytes LE)
+    if (pos + 4 > tx_extra.size()) return false;
+    bond.originalCreationHeight = 0;
+    for (int i = 0; i < 4; ++i, ++pos) {
+      bond.originalCreationHeight |= static_cast<uint32_t>(tx_extra[pos]) << (i * 8);
+    }
+
+    return true;
+  }
+
+  bool addLegacyBondClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBondClaim& claim) {
+    tx_extra.push_back(TX_EXTRA_LEGACY_BOND_CLAIM);
+
+    // claimedInterest (8 bytes LE)
+    uint64_t v = claim.claimedInterest;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(v & 0xFF));
+      v >>= 8;
+    }
+
+    return true;
+  }
+
+  bool getLegacyBondClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBondClaim& claim) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_LEGACY_BOND_CLAIM) {
+      return false;
+    }
+
+    size_t pos = 1;
+
+    // Parse claimedInterest (8 bytes LE)
+    if (pos + 8 > tx_extra.size()) return false;
+    claim.claimedInterest = 0;
+    for (int i = 0; i < 8; ++i, ++pos) {
+      claim.claimedInterest |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
+    }
 
     return true;
   }

@@ -90,8 +90,8 @@ namespace CryptoNote
 			m_upgradeHeightV7 = 17;
 			m_upgradeHeightV8 = 18;
 		m_upgradeHeightV9 = 19;
-		m_upgradeHeightV10 = 20;
-		m_upgradeHeightV11 = 21;
+		m_upgradeHeightV10 = 500;
+		m_upgradeHeightV11 = 510;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
@@ -320,7 +320,8 @@ double Currency::getBurnPercentage() const {
 
   uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                           uint32_t currentHeight,
-                                          const CommitmentIndex& commitmentIndex) const {
+                                          const CommitmentIndex& commitmentIndex,
+                                          bool isLegacyBond) const {
     if (currentHeight <= creationHeight) return 0;
 
     uint64_t epochDuration = m_testnet
@@ -332,8 +333,9 @@ double Currency::getBurnPercentage() const {
 
     uint64_t interest = 0;
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
-      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
-      // Use 128-bit intermediate to prevent overflow for large deposits
+      uint64_t epochRate = isLegacyBond
+          ? commitmentIndex.getLegacyEpochFeeRate(e)
+          : commitmentIndex.getEpochFeeRate(e);
       interest += (uint64_t)(((__uint128_t)amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION);
     }
 
@@ -611,7 +613,7 @@ double Currency::getBurnPercentage() const {
       {
         logger(ERROR, BRIGHT_RED)
             << "while creating outs: failed to generate_key_derivation("
-            << minerAddress.viewPublicKey << ", " << txkey.secretKey << ")";
+            << minerAddress.viewPublicKey << ", <secret_key>)";
 
         return false;
       }

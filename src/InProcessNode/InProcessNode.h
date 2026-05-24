@@ -82,7 +82,8 @@ public:
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
 
   virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                        uint32_t currentHeight, uint64_t& outInterest) override;
+                                        uint32_t currentHeight, uint64_t& outInterest,
+                                        bool isLegacyBond = false) override;
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
 
 private:

@@ -64,8 +64,8 @@ extern "C" {
 #include <boost/optional.hpp>
 
 // Fuego core includes
-#include "Common/StringTools.h"
-#include "Logging/ILogger.h"
+#include "../../Common/StringTools.h"
+#include "../../Logging/ILogger.h"
 
 namespace CryptoNote {
 

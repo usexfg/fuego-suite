@@ -26,6 +26,14 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Fuego clutter
+graphify-out/
+full_diff.txt
+changed_files.txt
+src_changed.txt
+test_specialist_report.txt
+*.log
+
 # Backup files
 *.bak
 *.backup

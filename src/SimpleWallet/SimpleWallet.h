@@ -76,11 +76,11 @@ namespace CryptoNote
     }
 
     // @ Alias system commands
-    bool register_alias(const std::vector<std::string> &args);
-    bool lookup_alias(const std::vector<std::string> &args);
-    bool list_aliases(const std::vector<std::string> &args);
-    bool release_alias(const std::vector<std::string> &args);
-    bool transfer_alias(const std::vector<std::string> &args);
+    bool alias_register(const std::vector<std::string> &args);
+    bool alias_search(const std::vector<std::string> &args);
+    bool alias_all(const std::vector<std::string> &args);
+    bool alias_release(const std::vector<std::string> &args);
+    bool alias_transfer(const std::vector<std::string> &args);
     void printConnectionError() const;
 
   private:
@@ -123,7 +123,7 @@ namespace CryptoNote
 
     // Deposit commands
     bool deposit(const std::vector<std::string> &args);
-    bool rollover(const std::vector<std::string> &args);  // Rollover matured CD with compound interest
+    bool cd_rollover(const std::vector<std::string> &args);  // Rollover matured CD with compound interest
     // Hidden cold commands - kept for internal use but not exposed in help
     bool burn(const std::vector<std::string> &args);
     bool cold(const std::vector<std::string> &args);
@@ -160,7 +160,7 @@ namespace CryptoNote
     // bool elder_council(const std::vector<std::string> &args); // fier_panel
 
     // Sub-address commands
-    bool gen_new_sub(const std::vector<std::string> &args);
+    bool new_sub(const std::vector<std::string> &args);
     bool list_subs(const std::vector<std::string> &args);
 
     // HEAT / Hearth AMM commands (v11+)
@@ -168,16 +168,18 @@ namespace CryptoNote
     bool pool_info(const std::vector<std::string> &args);
     bool mint_heat(const std::vector<std::string> &args);
     bool swap(const std::vector<std::string> &args);
-    bool hearth_buy(const std::vector<std::string> &args);
-    bool hearth_sell(const std::vector<std::string> &args);
-    bool add_liq(const std::vector<std::string> &args);
-    bool remove_liq(const std::vector<std::string> &args);
+    bool hearth_xfg(const std::vector<std::string> &args);
+    bool hearth_heat(const std::vector<std::string> &args);
+    bool hearth_add(const std::vector<std::string> &args);
+    bool hearth_exit(const std::vector<std::string> &args);
 
     // HEAT CD commands (v11+)
     bool heat_deposit(const std::vector<std::string> &args);
     bool heat_withdraw(const std::vector<std::string> &args);
     bool heat_list(const std::vector<std::string> &args);
     bool list_heat(const std::vector<std::string> &args);
+    bool show_txn(const std::vector<std::string> &args);
+    bool send_heat(const std::vector<std::string> &args);
 
     bool ask_wallet_create_if_needed();
     std::string resolveAlias(const std::string& aliasUrl);

@@ -484,10 +484,101 @@ std::string tryToOpenWalletOrLoadKeysOrThrow(LoggerRef& logger, std::unique_ptr<
 std::string simple_wallet::get_commands_str() {
   std::stringstream ss;
   ss << "Commands: " << ENDL;
-  std::string usage = m_consoleHandler.getUsage();
-  boost::replace_all(usage, "\n", "\n  ");
-  usage.insert(0, "  ");
-  ss << usage << ENDL;
+
+  auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
+    ss << "\n" << cat << "\n" << std::string(cat.size(), '-') << ENDL;
+    
+    std::vector<std::pair<std::string, std::string>> long_cmds;
+    for (const auto& cmd : cmds) {
+      if (cmd.second.find('-') != std::string::npos || cmd.second.find('[') != std::string::npos) {
+        long_cmds.push_back(cmd);
+      } else {
+        ss << "  " << std::setw(20) << std::left << cmd.first << " : " << cmd.second << ENDL;
+      }
+    }
+
+    if (!long_cmds.empty()) {
+      ss << ENDL;
+      for (const auto& cmd : long_cmds) {
+        ss << "  " << cmd.first << " : " << cmd.second << ENDL;
+      }
+    }
+    ss << ENDL;
+  };
+
+  add_cat("Address", {
+    {"address", "Show current wallet public address"},
+    {"list_subs", "list_subs - List all sub-addresses for this wallet"},
+    {"new_sub", "new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N)."}
+  });
+
+  add_cat("Aliases", {
+    {"alias_search", "alias_search <alias_or_address> - Look up an @ alias by name or wallet address"},
+    {"alias_all", "alias_all - List all registered @ aliases on the network"},
+    {"alias_register", "alias_register <alias> [<address>] - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy."},
+    {"alias_release", "alias_release <alias> - Release (delete) your @ alias back to the network"},
+    {"alias_transfer", "alias_transfer <alias> <new_address> - Transfer your @ alias to a new owner"}
+  });
+
+  add_cat("Balance / Outputs", {
+    {"balance", "Show current wallet balance"},
+    {"outputs", "Show the number of unlocked outputs available for a transaction"},
+    {"optimize", "Combine many available outputs into a few by sending a transaction to self"},
+    {"optimize_all", "Optimize your wallet several times so you can send large transactions"},
+    {"show_dust", "Show the number of unmixable dust outputs"}
+  });
+
+  add_cat("CDs / Bonds", {
+    {"cd_create", "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)"},
+    {"cd_claim", "cd_claim <deposit_id> - Withdraw HEAT CD with interest"},
+    {"cd_list", "cd_list - List HEAT CDs (active/complete/claimed)"},
+    {"cd_rollover", "cd_rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested)."},
+    {"migrate_deposit", "migrate_deposit <id> - Convert a bug-era Multisig deposit into a 1-year Legacy Bond earning 50% CD share."},
+    {"withdraw_bond", "withdraw_bond <id> - Withdraw a mature Legacy Bond and claim accrued fee-pool interest."}
+  });
+
+  add_cat("HEAT", {
+    {"info_heat", "Show HEAT stablecoin metrics"},
+    {"mint_heat", "mint_heat <xfg_amount> - Burn XFG to mint HEAT"},
+    {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"},
+    {"view_heat", "view_heat - List all HEAT balance and transactions"}
+  });
+
+  add_cat("Hearth", {
+    {"hearth_add", "hearth_add <xfg_amount> <heat_amount> - Add liquidity to Hearth"},
+    {"hearth_heat", "hearth_heat <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth"},
+    {"hearth_xfg", "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth"},
+    {"hearth_exit", "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth"},
+    {"hearth_info", "Show Hearth AMM pool state"}
+  });
+
+  add_cat("Transfer / Send", {
+    {"balance", "Show current wallet balance"},
+    {"show_txn", "show_txn <txid> - Show detailed information for a specific transaction"},
+    {"list_transfers", "list_transfers <block_height> - Show all known transfers, optionally from a certain block height"},
+    {"transfer", "transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. "},
+    {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"}
+  });
+
+  add_cat("Sign / Keys / Proof", {
+    {"sign_message", "Sign a message with your wallet keys"},
+    {"verify_signature", "Verify a signed message"},
+    {"get_reserve_proof", "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. "},
+    {"get_tx_proof", "Generate a signature to prove payment: <txid> <address> [<txkey>]"},
+    {"export_keys", "Show the secret keys of the current wallet"}
+  });
+
+  add_cat("Blockchain", {
+    {"height", "Show blockchain height"},
+    {"start_mining", "start_mining [<threads>] - Start mining to your wallet"},
+    {"stop_mining", "stop_mining - Stop mining"},
+    {"reset", "Discard cache data and start synchronizing from the start"},
+    {"set_log", "set_log <level> - Change current log level, <level> is a number 0-4"},
+    {"save", "Save wallet synchronized data"},
+    {"swap", "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)"},
+    {"exit", "Close wallet"}
+  });
+
   return ss.str();
 }
 
@@ -509,17 +600,14 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   logger(log, "firewallet"),
   m_refresh_progress_reporter(*this),
   m_walletSynchronized(false) {
-  m_consoleHandler.setHandler("create_integrated", boost::bind(&simple_wallet::create_integrated, this, boost::arg<1>()), "create_integrated <payment_id> - Create an integrated address with a payment ID");
   m_consoleHandler.setHandler("export_keys", boost::bind(&simple_wallet::export_keys, this, boost::arg<1>()), "Show the secret keys of the current wallet");
   m_consoleHandler.setHandler("balance", boost::bind(&simple_wallet::show_balance, this, boost::arg<1>()), "Show current wallet balance");
   m_consoleHandler.setHandler("sign_message", boost::bind(&simple_wallet::sign_message, this, boost::arg<1>()), "Sign a message with your wallet keys");
   m_consoleHandler.setHandler("verify_signature", boost::bind(&simple_wallet::verify_signature, this, boost::arg<1>()), "Verify a signed message");
   m_consoleHandler.setHandler("incoming_transfers", boost::bind(&simple_wallet::show_incoming_transfers, this, boost::arg<1>()), "Show incoming transfers");
   m_consoleHandler.setHandler("list_transfers", boost::bind(&simple_wallet::listTransfers, this, boost::arg<1>()), "list_transfers <block_height> - Show all known transfers, optionally from a certain block height");
-  m_consoleHandler.setHandler("payments", boost::bind(&simple_wallet::show_payments, this, boost::arg<1>()), "payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>");
   m_consoleHandler.setHandler("get_tx_proof", boost::bind(&simple_wallet::get_tx_proof, this, boost::arg<1>()), "Generate a signature to prove payment: <txid> <address> [<txkey>]");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
-  // m_consoleHandler.setHandler("get_swapKey", boost::bind(&simple_wallet::get_swapKey, this, boost::arg<1>()), "Show the public spend key for atomic swaps");
   m_consoleHandler.setHandler("height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
@@ -532,13 +620,12 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("reset", boost::bind(&simple_wallet::reset, this, boost::arg<1>()), "Discard cache data and start synchronizing from the start");
   m_consoleHandler.setHandler("help", boost::bind(&simple_wallet::help, this, boost::arg<1>()), "Show this help");
   m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
-  m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
   m_consoleHandler.setHandler("start_mining", boost::bind(&simple_wallet::start_mining, this, boost::arg<1>()), "start_mining [<threads>] - Start mining to your wallet");
   m_consoleHandler.setHandler("stop_mining", boost::bind(&simple_wallet::stop_mining, this, boost::arg<1>()), "stop_mining - Stop mining");
 
   // Deposit commands
   // m_consoleHandler.setHandler("deposit", boost::bind(&simple_wallet::deposit, this, boost::arg<1>()), "deposit <amount> <epochs> - Create CD / Certificate of Deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks or about 5 days and 72 is about 1yr).");
-  // m_consoleHandler.setHandler("rollover", boost::bind(&simple_wallet::rollover, this, boost::arg<1>()), "rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).");
+  // m_consoleHandler.setHandler("cd_rollover", boost::bind(&simple_wallet::cd_rollover, this, boost::arg<1>()), "cd_rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).");
   // m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all CD (Certificate of Deposit) yield accounts");
   // m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Get detailed info on CD by ID");
   // m_consoleHandler.setHandler("withdraw", boost::bind(&simple_wallet::withdraw, this, boost::arg<1>()), "withdraw <id> - Withdraw a matured CD");
@@ -551,12 +638,12 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // m_consoleHandler.setHandler("gen_proof", boost::bind(&simple_wallet::gen_proof, this, boost::arg<1>()), "gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)");
 
   // @ Alias system commands
-  m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> [<address>] - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy.");
-  m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
-  m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
-  m_consoleHandler.setHandler("release_alias", boost::bind(&simple_wallet::release_alias, this, boost::arg<1>()), "release_alias <alias> - Release (delete) your @ alias back to the network");
-  m_consoleHandler.setHandler("transfer_alias", boost::bind(&simple_wallet::transfer_alias, this, boost::arg<1>()), "transfer_alias <alias> <new_address> - Transfer your @ alias to a new owner");
-  m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
+  m_consoleHandler.setHandler("alias_register", boost::bind(&simple_wallet::alias_register, this, boost::arg<1>()), "alias_register <alias> [<address>] - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy.");
+  m_consoleHandler.setHandler("alias_search", boost::bind(&simple_wallet::alias_search, this, boost::arg<1>()), "alias_search <alias_or_address> - Look up an @ alias by name or wallet address");
+  m_consoleHandler.setHandler("alias_all", boost::bind(&simple_wallet::alias_all, this, boost::arg<1>()), "alias_all - List all registered @ aliases on the network");
+  m_consoleHandler.setHandler("alias_release", boost::bind(&simple_wallet::alias_release, this, boost::arg<1>()), "alias_release <alias> - Release (delete) your @ alias back to the network");
+  m_consoleHandler.setHandler("alias_transfer", boost::bind(&simple_wallet::alias_transfer, this, boost::arg<1>()), "alias_transfer <alias> <new_address> - Transfer your @ alias to a new owner");
+  m_consoleHandler.setHandler("new_sub", boost::bind(&simple_wallet::new_sub, this, boost::arg<1>()), "new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
   m_consoleHandler.setHandler("list_subs", boost::bind(&simple_wallet::list_subs, this, boost::arg<1>()), "list_subs - List all sub-addresses for this wallet");
 
   // HEAT / Hearth AMM commands (v11+)
@@ -564,10 +651,10 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
-  m_consoleHandler.setHandler("hearth_buy", boost::bind(&simple_wallet::hearth_buy, this, boost::arg<1>()), "hearth_buy <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
-  m_consoleHandler.setHandler("hearth_sell", boost::bind(&simple_wallet::hearth_sell, this, boost::arg<1>()), "hearth_sell <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth");
-  m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq <xfg_amount> <heat_amount> - Add liquidity to Hearth");
-  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
+  m_consoleHandler.setHandler("hearth_xfg", boost::bind(&simple_wallet::hearth_xfg, this, boost::arg<1>()), "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
+  m_consoleHandler.setHandler("hearth_heat", boost::bind(&simple_wallet::hearth_heat, this, boost::arg<1>()), "hearth_heat <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth");
+  m_consoleHandler.setHandler("hearth_add", boost::bind(&simple_wallet::hearth_add, this, boost::arg<1>()), "hearth_add <xfg_amount> <heat_amount> - Add liquidity to Hearth");
+  m_consoleHandler.setHandler("hearth_exit", boost::bind(&simple_wallet::hearth_exit, this, boost::arg<1>()), "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
   // HEAT CD commands (v11+)
   m_consoleHandler.setHandler("create_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "create_cd <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
@@ -906,9 +993,9 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     logger(INFO, BRIGHT_GREEN) << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account CANNOT be recovered. Freedom isn't free - the cost is responsibility. Schofield's 2nd Law of Computing states that data doesn't really exist unless you have at least two copies of it-- then keep each somewhere safe & secure.   " << std::endl << std::endl;
 
     std::cout << "Wallet Address: " << m_wallet->getAddress() << std::endl;
-    std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
-    std::cout << "Private view key: " << Common::podToHex(keys.viewSecretKey) << std::endl;
-    std::cout << "Mnemonic Seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl;
+    std::cout << "Private spend key: <redacted>" << std::endl;
+    std::cout << "Private view key: <redacted>" << std::endl;
+    std::cout << "Mnemonic Seed: <redacted>" << std::endl;
 
   }
   catch (const std::exception& e) {
@@ -1123,7 +1210,7 @@ success_msg_writer(true) << "CD deposit transaction created successfully!";
     success_msg_writer() << "Term: " << term_label << " (" << deposit_term << " blocks)";
     success_msg_writer() << "";
     success_msg_writer() << "Your CD will earn interest from the swap fee pool.";
-    success_msg_writer() << "Use 'rollover <id> <epochs>' to compound interest when mature.";
+    success_msg_writer() << "Use 'cd_rollover <id> <epochs>' to compound interest when mature.";
     success_msg_writer() << "Use 'withdraw <id>' to withdraw principal + interest when mature.";
   }
   catch (const std::system_error& e)
@@ -1686,18 +1773,18 @@ bool simple_wallet::withdraw(const std::vector<std::string> &args)
  //----------------------------------------------------------------------------------------------------
  //----------------------------------------------------------------------------------------------------
 // Rollover matured CD with compound interest (principal + interest reinvested)
-bool simple_wallet::rollover(const std::vector<std::string> &args)
+bool simple_wallet::cd_rollover(const std::vector<std::string> &args)
 {
   fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   if (args.size() != 2)
   {
-    fail_msg_writer() << "Usage: rollover <id> <new_epochs>";
-    fail_msg_writer() << "  <id>: Deposit ID to rollover";
+    fail_msg_writer() << "Usage: cd_rollover <id> <new_epochs>";
+    fail_msg_writer() << "  <id>: Deposit ID to cd_rollover";
     fail_msg_writer() << "  <new_epochs>: New term in epochs (1-72, where 1 epoch = 900 blocks ≈ 5 days)";
     fail_msg_writer() << "";
     fail_msg_writer() << "Rollover reinvests principal + accrued interest into a new CD.";
-    fail_msg_writer() << "NOTE: This command shows rollover info. To execute, manually:";
+    fail_msg_writer() << "NOTE: This command shows cd_rollover info. To execute, manually:";
     fail_msg_writer() << "  1. withdraw <id>  (withdraw matured CD)";
     fail_msg_writer() << "  2. deposit <amount> <epochs>  (create new CD with principal+interest)";
     return true;
@@ -1759,7 +1846,7 @@ bool simple_wallet::rollover(const std::vector<std::string> &args)
     success_msg_writer() << "  Term: " << new_epochs << " epoch(s) (" << new_term_blocks << " blocks, ~" << (new_epochs * 5) << " days)";
     success_msg_writer() << "  New unlock height: " << new_unlock_height;
     success_msg_writer() << "";
-    success_msg_writer() << "To execute this rollover:";
+    success_msg_writer() << "To execute this cd_rollover:";
     success_msg_writer() << "  1. withdraw " << deposit_id << "  (withdraw matured CD with interest)";
     success_msg_writer() << "  2. deposit " << total_reinvest << " " << new_epochs << "  (create new CD)";
   }
@@ -3136,19 +3223,9 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
 
   logger(INFO, BRIGHT_GREEN) << std::endl << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility. Protect your keys." << std::endl << std::endl;
 
-  std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
-  std::cout << "Public spend key: " << Common::podToHex(keys.address.spendPublicKey) << std::endl;
-  std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
-
-  Crypto::PublicKey unused_dummy_variable;
-  Crypto::SecretKey deterministic_private_view_key;
-
-  AccountBase::generateViewFromSpend(keys.spendSecretKey, deterministic_private_view_key, unused_dummy_variable);
-
-  bool deterministic_private_keys = deterministic_private_view_key == keys.viewSecretKey;
-
-  if (deterministic_private_keys) {
-    std::cout << "Mnemonic seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl << std::endl;
+    std::cout << "Private spend key: <redacted>" << std::endl;
+    std::cout << "Private view key: <redacted>" << std::endl;
+    std::cout << "Mnemonic seed: <redacted>" << std::endl << std::endl;
   }
   return true;
 }
@@ -3590,9 +3667,9 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::register_alias(const std::vector<std::string> &args) {
+bool simple_wallet::alias_register(const std::vector<std::string> &args) {
   if (args.size() < 1 || args.size() > 2) {
-    fail_msg_writer() << "Usage: register_alias <alias> [<address>]";
+    fail_msg_writer() << "Usage: alias_register <alias> [<address>]";
     fail_msg_writer() << "  Alias must be exactly 8 characters [a-z0-9&] (e.g., firenode)";
     fail_msg_writer() << "  Address (optional): sub-address to own this alias. Use a sub-address for privacy.";
     fail_msg_writer() << "  Omitting address registers to your primary address.";
@@ -3711,8 +3788,8 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   if (args.size() < 2) {
     success_msg_writer() << "";
     success_msg_writer() << "  Privacy note: registering to your primary address.";
-    success_msg_writer() << "  Use: register_alias " << alias << " <sub_address>";
-    success_msg_writer() << "  to protect your privacy with a sub-address (gen_new_sub first).";
+    success_msg_writer() << "  Use: alias_register " << alias << " <sub_address>";
+    success_msg_writer() << "  to protect your privacy with a sub-address (new_sub first).";
   }
 
   // Show confirmation summary
@@ -3850,9 +3927,9 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::lookup_alias(const std::vector<std::string> &args) {
+bool simple_wallet::alias_search(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: lookup_alias <alias_or_address>";
+    fail_msg_writer() << "Usage: alias_search <alias_or_address>";
     return true;
   }
 
@@ -3904,7 +3981,7 @@ bool simple_wallet::lookup_alias(const std::vector<std::string> &args) {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
+bool simple_wallet::alias_all(const std::vector<std::string> &args) {
   try {
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
 
@@ -3940,9 +4017,9 @@ bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
   return true;
 }
 
-bool simple_wallet::release_alias(const std::vector<std::string> &args) {
+bool simple_wallet::alias_release(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: release_alias <alias>";
+    fail_msg_writer() << "Usage: alias_release <alias>";
     fail_msg_writer() << "  Releases (deletes) your @ alias, making it available for re-registration.";
     fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
     return true;
@@ -4075,9 +4152,9 @@ bool simple_wallet::release_alias(const std::vector<std::string> &args) {
   return true;
 }
 
-bool simple_wallet::transfer_alias(const std::vector<std::string> &args) {
+bool simple_wallet::alias_transfer(const std::vector<std::string> &args) {
   if (args.size() != 2) {
-    fail_msg_writer() << "Usage: transfer_alias <alias> <new_address>";
+    fail_msg_writer() << "Usage: alias_transfer <alias> <new_address>";
     fail_msg_writer() << "  Transfers ownership of your @ alias to another address.";
     fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
     return true;
@@ -4277,7 +4354,7 @@ void simple_wallet::saveSubAddresses() const {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
+bool simple_wallet::new_sub(const std::vector<std::string>& args) {
   // Determine index.
   uint32_t major = 0;
   uint32_t minor = 0;
@@ -4287,11 +4364,11 @@ bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
       major = static_cast<uint32_t>(std::stoul(args[0]));
       minor = static_cast<uint32_t>(std::stoul(args[1]));
     } catch (...) {
-      fail_msg_writer() << "Usage: gen_new_sub [major] [minor]";
+      fail_msg_writer() << "Usage: new_sub [major] [minor]";
       return true;
     }
   } else if (args.size() == 1) {
-    fail_msg_writer() << "Usage: gen_new_sub [major] [minor]  (provide both or neither)";
+    fail_msg_writer() << "Usage: new_sub [major] [minor]  (provide both or neither)";
     return true;
   } else {
     // Auto-increment: major=0, minor = next unused
@@ -4356,7 +4433,7 @@ bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::list_subs(const std::vector<std::string>& args) {
   if (m_subAddresses.empty()) {
-    success_msg_writer() << "No sub-addresses generated yet. Use: gen_new_sub";
+    success_msg_writer() << "No sub-addresses generated yet. Use: new_sub";
     return true;
   }
   success_msg_writer() << "Sub-addresses for this wallet:";
@@ -4392,8 +4469,8 @@ bool simple_wallet::pool_info(const std::vector<std::string>& args) {
   success_msg_writer() << "  Fee: 0.3% (30 bps), routed to LP providers";
   success_msg_writer() << "  Bootstrap: first user LP transaction at v11 fork";
   success_msg_writer() << "  Query daemon for live state: /amm_pool_info";
-  success_msg_writer() << "  Add liquidity: add_liq <xfg> <heat>";
-  success_msg_writer() << "  Remove liquidity: remove_liq <lp_shares> <min_xfg> <min_heat>";
+  success_msg_writer() << "  Add liquidity: hearth_add <xfg> <heat>";
+  success_msg_writer() << "  Remove liquidity: hearth_exit <lp_shares> <min_xfg> <min_heat>";
   success_msg_writer() << "  Swap: swap <0|1> <amount> <min_output>";
   return true;
 }
@@ -4413,7 +4490,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   uint64_t fee = m_currency.minimumFee();
   uint64_t minMint = m_currency.isTestnet() ? CryptoNote::TESTNET_HEAT_MINT_MIN : CryptoNote::parameters::HEAT_MINT_MIN_XFG;
   if (xfgAmount < minMint) {
-    fail_msg_writer() << "Minimum mint: " << m_currency.formatAmount(minMint) << " XFG. Use hearth_buy for smaller amounts.";
+    fail_msg_writer() << "Minimum mint: " << m_currency.formatAmount(minMint) << " XFG. Use hearth_xfg for smaller amounts.";
     return false;
   }
   uint64_t available = m_wallet->actualBalance();
@@ -4433,7 +4510,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT Mint (v10 auth):";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   if (premiumAmount > 0)
-    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% - use hearth_buy to avoid)";
+    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% - use hearth_xfg to avoid)";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
@@ -4500,9 +4577,9 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
   return false;
 }
 
-bool simple_wallet::add_liq(const std::vector<std::string>& args) {
+bool simple_wallet::hearth_add(const std::vector<std::string>& args) {
   if (args.size() < 2) {
-    fail_msg_writer() << "Usage: add_liq <xfg_amount> <heat_amount>";
+    fail_msg_writer() << "Usage: hearth_add <xfg_amount> <heat_amount>";
     return false;
   }
 
@@ -4541,9 +4618,9 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   return false;
 }
 
-bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
+bool simple_wallet::hearth_exit(const std::vector<std::string>& args) {
   if (args.size() < 3) {
-    fail_msg_writer() << "Usage: remove_liq <lp_shares> <min_xfg> <min_heat>";
+    fail_msg_writer() << "Usage: hearth_exit <lp_shares> <min_xfg> <min_heat>";
     return false;
   }
 
@@ -4587,20 +4664,20 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   return false;
 }
 
-bool simple_wallet::hearth_buy(const std::vector<std::string>& args) {
+bool simple_wallet::hearth_xfg(const std::vector<std::string>& args) {
   // Wrapper: buy HEAT with XFG (direction=0)
   if (args.size() < 3) {
-    fail_msg_writer() << "Usage: hearth_buy <xfg_amount> <expected_heat> <min_heat>";
+    fail_msg_writer() << "Usage: hearth_xfg <xfg_amount> <expected_heat> <min_heat>";
     return false;
   }
   std::vector<std::string> swapArgs = {"0", args[0], args[1], args[2]};
   return swap(swapArgs);
 }
 
-bool simple_wallet::hearth_sell(const std::vector<std::string>& args) {
+bool simple_wallet::hearth_heat(const std::vector<std::string>& args) {
   // Wrapper: sell HEAT for XFG (direction=1)
   if (args.size() < 3) {
-    fail_msg_writer() << "Usage: hearth_sell <heat_amount> <expected_xfg> <min_xfg>";
+    fail_msg_writer() << "Usage: hearth_heat <heat_amount> <expected_xfg> <min_xfg>";
     return false;
   }
   std::vector<std::string> swapArgs = {"1", args[0], args[1], args[2]};

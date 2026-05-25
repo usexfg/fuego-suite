@@ -18,22 +18,24 @@ Based upon the CryptoNote protocol & philosophy.
 
 | Category | Feature | Description |
 |----------|---------|-------------|
-| **Core** | CryptoNote v8 | Ring-signature privacy at protocol level |
-| **Core** | Dynamic Ring Size | 8–256 decoys per transaction, adaptive to pool depth |
+| **Core** | CryptoNote | Ring-signature privacy at protocol level |
+| **Core** | Dynamic Ring Size | 32, 16, or min 8 decoys per transaction, adaptive to pool depth |
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
-| **Assets** | HEAT Stablecoin | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
-| **Assets** | Hearth AMM | Constant-product XFG/HEAT pool; swap, add/remove liquidity, yield from LP fees |
-| **Assets** | Certificate of Deposit | HEAT-denominated time-locked deposits earning yield from swap fees |
+| **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
+| **Assets** | HⲶ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
+| **Assets** | Hearth AMM | Constant-product XFG/HⲶ∆T pool; swap, add/remove liquidity, yield from LP fees |
+| **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
 | **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |
 | **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with HTLC adaptor signatures |
-| **Swaps** | swapxfg | Integrated Go-based swap engine with inter-chain fee routing |
-| **Network** | I2P / Tor / Meshtastic | Pluggable transport-layer privacy |
+| **Swaps** | ЅШ𑫛𑫒**❋**XFG | Integrated TUI, Go-based swap engine with inter-chain fee routing |
+| **Network** | I2P / Tor / Meshtastic* | Pluggable transport-layer privacy (*)research phase|
 | **Wallet** | `fire_wallet`| Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
-| **Wallet** | TUI | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
-| **Dev Tools** | Fuego Desktop Wallet | Cross-platform GUI — [fuego-wallet](https://github.com/usexfg/fuego-wallet) |
+| **Wallet** | TUI(suite) | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
+| **GUI Wallet/SDK** | Fuego Wallet | Cross-platform GUI — [fuego-wallet](https://github.com/usexfg/fuego-wallet) Fuego SDK |
 | **Dev Tools** | RPC API | JSON-RPC: heat_metrics, amm_quote, amm_pool_info, swap fees, CD queries |
 | **Dev Tools** | MCP Server | AI-agent integration for swap/mint automation |
+| **Dev Tools** | Fuego-Skills | AI-agent tools for codebase analytics, knowledge graph, and specialization |
 
 _____________________________
 
@@ -41,15 +43,15 @@ _____________________________
 
 ##### Build Status [‣]:http://agilemanifesto.org/
 
-[![Build check](https://github.com/usexfg/fuego/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/check.yml)
-[![macOS](https://github.com/usexfg/fuego/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml)
-[![AppImage Linux](https://github.com/usexfg/fuego/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/appimage.yml)
-[![Ubuntu 24.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
-[![Ubuntu 22.04](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
-[![Windows](https://github.com/usexfg/fuego/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml)
-[![Docker Images](https://github.com/usexfg/fuego/actions/workflows/docker.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/docker.yml)
-[![Android (Termux)](https://github.com/usexfg/fuego/actions/workflows/termux.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/termux.yml)
-[![Raspberry Pi (ARM64)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml)
+[![Build check](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/check.yml)
+[![macOS](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml)
+[![AppImage Linux](https://github.com/usexfg/fuego-suite/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/appimage.yml)
+[![Ubuntu 24.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
+[![Ubuntu 22.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
+[![Windows](https://github.com/usexfg/fuego-suite/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml)
+[![Docker Images](https://github.com/usexfg/fuego-suite/actions/workflows/docker.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/docker.yml)
+[![Android (Termux)](https://github.com/usexfg/fuego-suite/actions/workflows/termux.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/termux.yml)
+[![Raspberry Pi (ARM64)](https://github.com/usexfg/fuego-suite/actions/workflows/raspberry-pi.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml)
 
 ### Build Requirements
 
@@ -162,14 +164,14 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HⲶ∆⟙ Stablecoin & Hearth AMM
+### HⲶ∆T Stablecoin & Hearth AMM
 
 HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
 | Mint HEAT | `mint_heat <xfg_amount>` | Burn XFG to create HEAT at PI redemption price |
-| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HEAT on Hearth AMM (0.3% fee to LPs) |
+| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth AMM (0.3% fee to LPs) |
 | Add Liquidity | `add_liq <xfg> <heat>` | Provide both assets to Hearth pool, earn LP fee share |
 | Remove Liquidity | `remove_liq <shares> <min_xfg> <min_heat>` | Burn LP shares for proportional reserves |
 | Pool Info | `pool_info` | Show pool reserves, spot price, LP fees |

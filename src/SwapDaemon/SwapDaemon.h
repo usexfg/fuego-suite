@@ -24,10 +24,7 @@
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
 #include "PoolOrganizer.h"
-#include "BitcoinCash/BchRpcClient.h"
-#include "Ethereum/EthRpcClient.h"
-#include "Solana/SolRpcClient.h"
-#include "Monero/MoneroRpcClient.h"
+#include "ChainRegistry.h"
 
 namespace CryptoNote {
   class SwapOfferRelay;
@@ -212,17 +209,9 @@ public:
    PriceOracle m_oracle;
    PoolOrganizer m_poolOrganizer;
    Logging::LoggerRef m_logger;
-   ChainClientConfig m_chainCfg;  // signer credentials for counterparty chains
-
-   // Per-chain RPC clients.  Heap-allocated so they are optional (nullptr when
-   // the chain endpoint is not configured).
-   std::unique_ptr<BchRpcClient>    m_bchClient;
-   std::unique_ptr<EthRpcClient>    m_ethClient;
-   std::unique_ptr<SolRpcClient>    m_solClient;
-   std::unique_ptr<MoneroRpcClient> m_xmrClient;
+   ChainRegistry m_chainRegistry;
 
    CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
-   std::string           m_solKeypairBase58;  // loaded from solKeypairPath at construction
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

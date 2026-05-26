@@ -49,3 +49,4 @@ test_specialist_report.txt
 /xfg-stark-v3
 __pycache__/
 *.pyc
+.worktrees/

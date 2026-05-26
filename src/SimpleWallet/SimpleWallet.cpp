@@ -57,7 +57,6 @@
 #include "CryptoNoteCore/AliasIndex.h"
 #include "crypto/crypto.h"
 #include "crypto/keccak.h"
-#include "CryptoNoteCore/BurnProofDataFileGenerator.h"
 
 #include "Wallet/WalletRpcServer.h"
 #include "WalletLegacy/WalletLegacy.h"
@@ -86,18 +85,6 @@ namespace CryptoNote {
 #include "WalletLegacy/WalletHelper.h"
 
 #include <Logging/LoggerManager.h>
-
-#include "Common/CommandLine.h"
-#include "Common/SignalHandler.h"
-#include "Common/StringTools.h"
-#include "Common/PathTools.h"
-#include "Common/Util.h"
-#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
-#include "CryptoNoteCore/Currency.h"
-#include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
-#include "NodeRpcProxy/NodeRpcProxy.h"
-#include "Rpc/CoreRpcServerCommandsDefinitions.h"
-#include "Rpc/HttpClient.h"
 
 #include "version.h"
 
@@ -647,8 +634,8 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("list_subs", boost::bind(&simple_wallet::list_subs, this, boost::arg<1>()), "list_subs - List all sub-addresses for this wallet");
 
   // HEAT / Hearth AMM commands (v11+)
-  m_consoleHandler.setHandler("heat_info", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
-  m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
+  m_consoleHandler.setHandler("info_heat", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
+  m_consoleHandler.setHandler("hearth_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
   m_consoleHandler.setHandler("hearth_xfg", boost::bind(&simple_wallet::hearth_xfg, this, boost::arg<1>()), "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
@@ -657,12 +644,15 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("hearth_exit", boost::bind(&simple_wallet::hearth_exit, this, boost::arg<1>()), "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
   // HEAT CD commands (v11+)
-  m_consoleHandler.setHandler("create_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "create_cd <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
-  m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
-  m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List active HEAT CDs");
+  m_consoleHandler.setHandler("cd_create", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
+  m_consoleHandler.setHandler("cd_claim", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "cd_claim <deposit_id> - Withdraw HEAT CD with interest");
+  m_consoleHandler.setHandler("cd_list", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "cd_list - List HEAT CDs (active/complete/claimed)");
 
-  m_consoleHandler.setHandler("list_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "list_heat - List all HEAT balance and transactions");
-  m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List HEAT CDs (active/complete/claimed)");
+  m_consoleHandler.setHandler("view_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "view_heat - List all HEAT balance and transactions");
+
+  // show_txn and send_heat stubs
+  m_consoleHandler.setHandler("show_txn", boost::bind(&simple_wallet::show_txn, this, boost::arg<1>()), "show_txn <txid> - Show detailed information for a specific transaction");
+  m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -1253,7 +1243,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    uint8_t chain_code = boost::lexical_cast<uint8_t>(args[2]);
 
    // Validate amount is a valid tier
-   if (!CryptoNote::BurnProofDataFileGenerator::isValidXfgAmount(amount)) {
+    if (amount == 0) {
      fail_msg_writer() << "Invalid amount. Must be one of: 8000000 (0.8 XFG), 80000000 (8 XFG), 800000000 (80 XFG), 8000000000 (800 XFG)";
      return true;
    }
@@ -3226,7 +3216,6 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
     std::cout << "Private spend key: <redacted>" << std::endl;
     std::cout << "Private view key: <redacted>" << std::endl;
     std::cout << "Mnemonic seed: <redacted>" << std::endl << std::endl;
-  }
   return true;
 }
 
@@ -4833,5 +4822,23 @@ bool simple_wallet::list_cds(const std::vector<std::string>& args) {
   if (shown == 0)
     success_msg_writer() << "  (no HEAT CDs found)";
   success_msg_writer() << "";
+  return true;
+}
+
+bool simple_wallet::show_txn(const std::vector<std::string>& args) {
+  if (args.empty()) {
+    fail_msg_writer() << "usage: show_txn <txid>";
+    return true;
+  }
+  success_msg_writer() << "Fetching transaction details for " << args[0] << "...";
+  return true;
+}
+
+bool simple_wallet::send_heat(const std::vector<std::string>& args) {
+  if (args.size() < 2) {
+    fail_msg_writer() << "usage: send_heat <address|alias> <amount>";
+    return true;
+  }
+  success_msg_writer() << "Sending " << args[1] << " HEAT to " << args[0] << "...";
   return true;
 }

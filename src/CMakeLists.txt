@@ -254,13 +254,18 @@ add_library(SwapDaemonLib STATIC
     # SwapDaemon/pool_v11/PoolDatabase.cpp
     # SwapDaemon/pool_v11/PoolDatabase.cpp
     SwapDaemon/PoolOrganizer.cpp
+    SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
+    SwapDaemon/Monero/XmrChainClient.cpp
     SwapDaemon/Ethereum/EthRpcClient.cpp
     SwapDaemon/Ethereum/ContractAbi.cpp
+    SwapDaemon/Ethereum/EthChainClient.cpp
     SwapDaemon/BitcoinCash/BchRpcClient.cpp
     SwapDaemon/BitcoinCash/HtlcScript.cpp
+    SwapDaemon/BitcoinCash/BchChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
+    SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
@@ -364,13 +369,18 @@ add_executable(SwapDaemon
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
+    SwapDaemon/Monero/XmrChainClient.cpp
     SwapDaemon/Ethereum/EthRpcClient.cpp
     SwapDaemon/Ethereum/ContractAbi.cpp
+    SwapDaemon/Ethereum/EthChainClient.cpp
     SwapDaemon/BitcoinCash/BchRpcClient.cpp
     SwapDaemon/BitcoinCash/HtlcScript.cpp
+    SwapDaemon/BitcoinCash/BchChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
+    SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp

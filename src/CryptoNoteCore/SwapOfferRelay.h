@@ -38,7 +38,7 @@ struct SwapOfferMsg {
   bool        isSell;       // true = selling XFG for CTR
   uint64_t    xfgAmount;    // atomic units (7 decimals)
   uint64_t    rateNum;      // rate numerator (XFG per 1 CTR, scaled by 1e7)
-  uint8_t     pair;         // 0=XMR, 1=ETH, 2=BCH
+  uint8_t     pair;         // 0=SOL, 1=ETH, 2=XMR, 3=BCH
   Crypto::PublicKey makerPubKey;  // maker's wallet pubkey
   Crypto::Signature signature;   // signs (offerId) with maker's key
   uint64_t    timestamp;
@@ -67,7 +67,7 @@ struct SwapTradeRecord {
 // Sources with rate=0 or stale=true are excluded from the composite.
 struct PriceSource {
   std::string name;       // e.g. "atomic_swap", "heat_eth_pool", "coingecko"
-  uint8_t     pair;       // 0=XMR, 1=ETH, 2=BCH, 255=USD (direct)
+  uint8_t     pair;       // 0=SOL, 1=ETH, 2=XMR, 3=BCH, 255=USD (direct)
   double      weight;     // relative weight (higher = more influence)
   double      rate;       // XFG per 1 CTR coin (0 = no data)
   uint64_t    updatedAt;  // unix timestamp of last update

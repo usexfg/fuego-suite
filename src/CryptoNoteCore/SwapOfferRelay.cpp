@@ -28,14 +28,16 @@
 namespace CryptoNote {
 
 // Seed rates: XFG per 1 whole CTR coin (1 XFG = $0.01 USD, March 2026)
-//   XMR = $343   →  34,300 XFG/XMR
-//   ETH = $2,140 → 214,000 XFG/ETH
-//   BCH = $469   →  46,900 XFG/BCH
+//   SOL = $170   →  17,000 XFG/SOL  (pair 0)
+//   ETH = $2,140 → 214,000 XFG/ETH  (pair 1)
+//   XMR = $343   →  34,300 XFG/XMR  (pair 2)
+//   BCH = $469   →  46,900 XFG/BCH  (pair 3)
 double SwapOfferRelay::getSeedRate(uint8_t pair) {
   static const std::map<uint8_t, double> rates = {
-    {0, 34300.0},   // XMR
+    {0, 17000.0},   // SOL
     {1, 214000.0},  // ETH
-    {2, 46900.0},   // BCH
+    {2, 34300.0},   // XMR
+    {3, 46900.0},   // BCH
   };
   auto it = rates.find(pair);
   return (it != rates.end()) ? it->second : 0.0;
@@ -45,9 +47,10 @@ double SwapOfferRelay::getSeedRate(uint8_t pair) {
 // These are bootstrap values; external sources override when available.
 double SwapOfferRelay::getCtrUsdPrice(uint8_t pair) {
   static const std::map<uint8_t, double> prices = {
-    {0, 343.0},    // XMR
+    {0, 170.0},    // SOL
     {1, 2140.0},   // ETH
-    {2, 469.0},    // BCH
+    {2, 343.0},    // XMR
+    {3, 469.0},    // BCH
   };
   auto it = prices.find(pair);
   return (it != prices.end()) ? it->second : 0.0;
@@ -118,7 +121,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0) return false;
   if (offer.rateNum == 0) return false;
-  if (offer.pair > 2) return false;
+  if (offer.pair > 3) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;  // max ~6 days at 8min blocks
 
   // Verify signature: maker signs the offerId hash
@@ -437,7 +440,7 @@ NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
 
   double sum = 0.0;
 
-  for (uint8_t p = 0; p <= 2; ++p) {
+  for (uint8_t p = 0; p <= 3; ++p) {
     CompositePrice cp = getCompositePrice(p);
     if (cp.rate <= 0.0) continue;
 

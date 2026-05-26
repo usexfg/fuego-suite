@@ -8,15 +8,17 @@ BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::str
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
   std::string lockTxId;
+  std::string redeemScriptHex;
   bool ok = m_rpc->lockHtlc(
       m_wif,
       params.ctrAddress,
       Common::podToHex(params.adaptorPoint),
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAmount,
-      lockTxId);
+      lockTxId,
+      redeemScriptHex);
   if (!ok) return ChainClientResult::fail("BCH lockHtlc failed");
-  return ChainClientResult::ok(lockTxId);
+  return ChainClientResult::okWithState(lockTxId, redeemScriptHex);
 }
 
 ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {

@@ -389,7 +389,8 @@ bool BchRpcClient::lockHtlc(const std::string& senderWif,
                              const std::string& hashLockSha256Hex,
                              uint32_t timeoutBlock,
                              uint64_t amountSatoshis,
-                             std::string& lockTxId) {
+                             std::string& lockTxId,
+                             std::string& redeemScriptHex) {
   // Derive compressed sender public key from WIF.
   std::array<uint8_t, 32> senderPrivKey{};
   if (!wifToPrivKey(senderWif, senderPrivKey)) return false;
@@ -419,6 +420,7 @@ bool BchRpcClient::lockHtlc(const std::string& senderWif,
   // Build redeem script and P2SH address.
   auto redeemScript = BchHtlcScript::createRedeemScript(
       hashLockBytes, recipientPubKey, senderPubKey, timeoutBlock);
+  redeemScriptHex = BchHtlcScript::bytesToHex(redeemScript);
   bool testnet = false;  // TODO: derive from config
   std::string htlcAddress = BchHtlcScript::computeP2shAddress(redeemScript, testnet);
 

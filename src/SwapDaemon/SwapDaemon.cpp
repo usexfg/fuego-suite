@@ -560,6 +560,9 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
             m_logger(Logging::INFO) << "  " << client->chainName()
               << " locked, txid: " << result.txId;
             params.ctrLockTxId = result.txId;
+            if (!result.chainState.empty()) {
+              params.chainState = result.chainState;
+            }
             sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
             m_db.saveSwap(sm);
             lockOk = true;
@@ -1324,13 +1327,11 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     return false;
   }
 
-  auto offers = m_swapRelay->getOffers(0); // Assuming pair is not strict right now or need lookup
-  // Better to iterate all to find it or modify getOffers to get by ID, but for now we iterate all pairs or have a specific method.
-  // Actually, we can just get the offer from m_swapRelay directly if we expose a method, or just try to match it.
+  // Search all pairs to find the target offer by ID
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= 2; ++pair) {
+  for (int pair = 0; pair <= 3; ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {

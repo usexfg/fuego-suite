@@ -71,7 +71,8 @@ public:
                 const std::string& hashLockSha256Hex,
                 uint32_t timeoutBlock,
                 uint64_t amountSatoshis,
-                std::string& lockTxId);
+                std::string& lockTxId,
+                std::string& redeemScriptHex);
 
   // Verify that an HTLC locking transaction is confirmed on-chain.
   // htlcAddress: the P2SH address that should hold the funds.

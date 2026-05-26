@@ -51,14 +51,21 @@ const char* swapPairToString(SwapPair p) {
   }
 }
 
-SwapPair swapPairFromString(const std::string& s) {
+bool swapPairFromString(const std::string& s, SwapPair& out) {
   std::string upper = s;
   std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-  if (upper == "SOL") return SwapPair::SOL;
-  if (upper == "ETH") return SwapPair::ETH;
-  if (upper == "XMR") return SwapPair::XMR;
-  if (upper == "BCH") return SwapPair::BCH;
-  throw std::runtime_error("Unknown swap pair: " + s);
+  if (upper == "SOL") { out = SwapPair::SOL; return true; }
+  if (upper == "ETH") { out = SwapPair::ETH; return true; }
+  if (upper == "XMR") { out = SwapPair::XMR; return true; }
+  if (upper == "BCH") { out = SwapPair::BCH; return true; }
+  return false;
+}
+
+SwapPair swapPairFromString(const std::string& s) {
+  SwapPair out;
+  if (!swapPairFromString(s, out))
+    throw std::runtime_error("Unknown swap pair: " + s);
+  return out;
 }
 
 } // namespace XfgSwap

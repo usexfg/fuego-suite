@@ -21,33 +21,36 @@
 #include "crypto/crypto.h"
 #include <algorithm>
 #include <chrono>
+#include <map>
 #include <HTTP/httplib.h>
 #include <json/json.h>
 
 namespace CryptoNote {
 
 // Seed rates: XFG per 1 whole CTR coin (1 XFG = $0.01 USD, March 2026)
+//   XMR = $343   →  34,300 XFG/XMR
 //   ETH = $2,140 → 214,000 XFG/ETH
 //   BCH = $469   →  46,900 XFG/BCH
-//   XMR = $343   →  34,300 XFG/XMR
 double SwapOfferRelay::getSeedRate(uint8_t pair) {
-  switch (pair) {
-    case 1: return 214000.0;  // ETH
-    case 2: return 46900.0;   // BCH
-    case 0: return 34300.0;   // XMR
-    default: return 0.0;
-  }
+  static const std::map<uint8_t, double> rates = {
+    {0, 34300.0},   // XMR
+    {1, 214000.0},  // ETH
+    {2, 46900.0},   // BCH
+  };
+  auto it = rates.find(pair);
+  return (it != rates.end()) ? it->second : 0.0;
 }
 
 // Reference USD prices for counterparty coins (for cross-pair triangulation)
 // These are bootstrap values; external sources override when available.
 double SwapOfferRelay::getCtrUsdPrice(uint8_t pair) {
-  switch (pair) {
-    case 1: return 2140.0;   // ETH
-    case 2: return 469.0;    // BCH
-    case 0: return 343.0;    // XMR
-    default: return 0.0;
-  }
+  static const std::map<uint8_t, double> prices = {
+    {0, 343.0},    // XMR
+    {1, 2140.0},   // ETH
+    {2, 469.0},    // BCH
+  };
+  auto it = prices.find(pair);
+  return (it != prices.end()) ? it->second : 0.0;
 }
 
 SwapOfferRelay::SwapOfferRelay(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint)

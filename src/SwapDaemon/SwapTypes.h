@@ -155,5 +155,6 @@ struct SwapParams {
 const char* swapStateToString(SwapState s);
 const char* swapPairToString(SwapPair p);
 SwapPair swapPairFromString(const std::string& s);
+bool swapPairFromString(const std::string& s, SwapPair& out);
 
 } // namespace XfgSwap

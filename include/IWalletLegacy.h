@@ -169,6 +169,7 @@ public:
    virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 0) = 0;
 
   virtual TransactionId mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 0) = 0;
   virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 0) = 0;
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 0) = 0;

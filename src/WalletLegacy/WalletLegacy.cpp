@@ -40,7 +40,6 @@
 #include "WalletLegacy/WalletUtils.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
-#include "BurnTransactionHandler.h"
 #include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletLegacyEvent.h"
 #include "WalletLegacy/WalletLegacy.h"
@@ -188,12 +187,10 @@ WalletLegacy::WalletLegacy(const CryptoNote::Currency& currency, INode& node, Lo
   m_transactionsCache(m_currency.mempoolTxLiveTime()),
   m_sender(nullptr),
   m_onInitSyncStarter(new SyncStarter(m_blockchainSync)),
-  m_burnTransactionManager(std::unique_ptr<CryptoNote::BurnTransactionManager>(new CryptoNote::BurnTransactionManager())),
   m_pendingBurnAmount(0),
   m_hasPendingBurnSecret(false)
 {
   addObserver(m_onInitSyncStarter.get());
-  initializeBurnTransactionManager();
 }
 
 WalletLegacy::~WalletLegacy() {
@@ -895,6 +892,31 @@ TransactionId WalletLegacy::mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted,
   return txId;
 }
 
+TransactionId WalletLegacy::sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+
+  fee = m_currency.minimumFee();
+
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeHeatTransferV10Request(txId, events, recipient, amount, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+
+  notifyClients(events);
+
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+
+  return txId;
+}
+
 TransactionId WalletLegacy::ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                         uint64_t minOutput, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
@@ -1187,10 +1209,6 @@ void WalletLegacy::onTransactionUpdated(ITransfersSubscription* object, const Ha
       events.push_back(std::move(pendingDepositBalanceChangedEvent));
     }
 
-    // Process transaction for burn detection
-    if (txInfo.totalAmountOut > 0) {
-      processTransactionForBurnDetection(Common::toHex(transactionHash.data, 32), txInfo.extra, txInfo.totalAmountOut);
-    }
   }
 
   notifyClients(events);
@@ -1834,63 +1852,6 @@ bool WalletLegacy::checkWalletPassword(std::istream& source, const std::string& 
 
 //KK
 
-// Burn transaction management implementation
-void WalletLegacy::initializeBurnTransactionManager() {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->initialize();
-    setBurnTransactionCallbacks();
-  }
-}
-
-void WalletLegacy::setBurnTransactionCallbacks() {
-  if (!m_burnTransactionManager) {
-    return;
-  }
-
-  // Set up callbacks for burn detection and STARK proof generation
-  m_burnTransactionManager->setBurnDetectedCallback([this](const std::string& txHash, uint64_t amount, const std::string& ethAddress) {
-    // Log burn transaction detection
-    std::stringstream ss;
-    ss << "Burn transaction detected: " << txHash
-       << ", amount: " << amount
-       << ", ETH address: " << ethAddress;
-    m_loggerGroup("Wallet", Logging::INFO, boost::posix_time::microsec_clock::universal_time(), ss.str());
-
-    // Notify observerMangager about burn transaction
-    // NOTE : Find way to properly disclose network burns/reborn coinbase rewards..
-    // perhaps per epoch (instead of per-burn/block)
-  });
-
-  m_burnTransactionManager->setStarkProofGeneratedCallback([this](const std::string& txHash, const std::string& proofData) {
-    // Log STARK proof generation
-    std::stringstream ss;
-    ss << "STARK proof generated for burn transaction: " << txHash;
-    m_loggerGroup("Wallet", Logging::INFO, boost::posix_time::microsec_clock::universal_time(), ss.str());
-
-    // Notify about STARK proof generation
-  });
-
-  m_burnTransactionManager->setErrorCallback([this](const std::string& error) {
-    // Log errors
-    std::stringstream ss;
-    ss << "Burn transaction error: " << error;
-    m_loggerGroup("Wallet", Logging::ERROR, boost::posix_time::microsec_clock::universal_time(), ss.str());
-  });
-}
-
-void WalletLegacy::processTransactionForBurnDetection(const std::string& txHash, const std::vector<uint8_t>& txExtra, uint64_t amount) {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->processTransaction(txHash, txExtra, amount);
-  }
-}
-
-bool WalletLegacy::isBurnTransaction(const std::vector<uint8_t>& txExtra) {
-  if (m_burnTransactionManager) {
-    return m_burnTransactionManager->getHandler().isBurnTransaction(txExtra);
-  }
-  return false;
-}
-
 // Burn deposit secret management implementation
 void WalletLegacy::storeBurnDepositSecret(const std::string& txHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata) {
   std::unique_lock<std::mutex> lock(m_cacheMutex);
@@ -1920,18 +1881,7 @@ bool WalletLegacy::hasBurnDepositSecret(const std::string& txHash) {
   return m_burnDepositSecrets.find(txHash) != m_burnDepositSecrets.end();
 }
 
-BurnTransactionHandler::BurnTransactionData WalletLegacy::parseBurnTransaction(const std::vector<uint8_t>& txExtra) {
-  if (m_burnTransactionManager) {
-    return m_burnTransactionManager->getHandler().parseBurnTransaction(txExtra);
-  }
-  return BurnTransactionHandler::BurnTransactionData();
-}
-
-void WalletLegacy::generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount) {
-  if (m_burnTransactionManager) {
-    m_burnTransactionManager->getHandler().generateStarkProof(txHash, ethAddress, amount);
-  }
-}
+// Deprecated BPDF/STARK methods removed (C3/C8 security fixes)
 
 // Implementation of process method for WalletBurnDepositSecretCreatedEvent
 void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wallet) {

@@ -62,6 +62,11 @@ struct SendTransactionContext
   uint64_t v10SwapOutput = 0;
   uint64_t v10SwapMinOutput = 0;
 
+  // v10 HEAT transfer
+  bool isV10HeatTransfer = false;
+  AccountPublicAddress v10HeatRecipient;
+  uint64_t v10HeatTransferAmount = 0;
+
 };
 
 } //namespace CryptoNote

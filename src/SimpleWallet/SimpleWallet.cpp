@@ -4826,11 +4826,65 @@ bool simple_wallet::list_cds(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::show_txn(const std::vector<std::string>& args) {
-  if (args.empty()) {
+  if (args.size() < 1) {
     fail_msg_writer() << "usage: show_txn <txid>";
     return true;
   }
-  success_msg_writer() << "Fetching transaction details for " << args[0] << "...";
+
+  Crypto::Hash txid;
+  if (!parse_hash256(args[0], txid)) {
+    fail_msg_writer() << "Failed to parse txid";
+    return true;
+  }
+
+  size_t transactionsCount = m_wallet->getTransactionCount();
+  for (size_t i = 0; i < transactionsCount; ++i) {
+    WalletLegacyTransaction txInfo;
+    m_wallet->getTransaction(i, txInfo);
+    if (txInfo.hash != txid) continue;
+
+    std::string stateStr;
+    switch (txInfo.state) {
+      case WalletLegacyTransactionState::Active: stateStr = "active"; break;
+      case WalletLegacyTransactionState::Deleted: stateStr = "deleted"; break;
+      case WalletLegacyTransactionState::Sending: stateStr = "sending"; break;
+      case WalletLegacyTransactionState::Cancelled: stateStr = "cancelled"; break;
+      case WalletLegacyTransactionState::Failed: stateStr = "failed"; break;
+    }
+
+    char timeBuf[32];
+    time_t ts = static_cast<time_t>(txInfo.timestamp);
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", std::gmtime(&ts));
+
+    success_msg_writer() << "Transaction " << Common::podToHex(txInfo.hash);
+    success_msg_writer() << "  State:      " << stateStr;
+    success_msg_writer() << "  Amount:     " << m_currency.formatAmount(std::llabs(txInfo.totalAmount))
+                         << (txInfo.totalAmount < 0 ? " (outgoing)" : " (incoming)");
+    success_msg_writer() << "  Fee:        " << m_currency.formatAmount(txInfo.fee);
+    success_msg_writer() << "  Height:     " << txInfo.blockHeight;
+    success_msg_writer() << "  Timestamp:  " << timeBuf;
+    success_msg_writer() << "  Unlock:     " << txInfo.unlockTime;
+    success_msg_writer() << "  Coinbase:   " << (txInfo.isCoinbase ? "yes" : "no");
+
+    if (txInfo.totalAmount < 0 && txInfo.transferCount > 0) {
+      success_msg_writer() << "  Transfers:";
+      for (TransferId tid = txInfo.firstTransferId; tid < txInfo.firstTransferId + txInfo.transferCount; ++tid) {
+        WalletLegacyTransfer tr;
+        m_wallet->getTransfer(tid, tr);
+        success_msg_writer() << "    " << tr.address << "  " << m_currency.formatAmount(tr.amount);
+      }
+    }
+
+    if (!txInfo.messages.empty()) {
+      success_msg_writer() << "  Messages:";
+      for (const auto& msg : txInfo.messages)
+        success_msg_writer() << "    " << msg;
+    }
+
+    return true;
+  }
+
+  fail_msg_writer() << "Transaction not found in wallet history";
   return true;
 }
 
@@ -4839,6 +4893,52 @@ bool simple_wallet::send_heat(const std::vector<std::string>& args) {
     fail_msg_writer() << "usage: send_heat <address|alias> <amount>";
     return true;
   }
-  success_msg_writer() << "Sending " << args[1] << " HEAT to " << args[0] << "...";
+
+  std::string address_str = resolveAlias(args[0]);
+  AccountPublicAddress recipient;
+  if (!m_currency.parseAccountAddressString(address_str, recipient)) {
+    fail_msg_writer() << "Invalid address: " << args[0];
+    return true;
+  }
+
+  uint64_t amount = 0;
+  if (!m_currency.parseAmount(args[1], amount)) {
+    fail_msg_writer() << "Invalid HEAT amount: " << args[1];
+    return true;
+  }
+
+  if (amount == 0) {
+    fail_msg_writer() << "Amount must be greater than 0";
+    return true;
+  }
+
+  uint64_t available = m_wallet->actualHeatBalance();
+  if (available < amount) {
+    fail_msg_writer() << "Insufficient HEAT balance. Available: "
+                      << m_currency.formatAmount(available) << " HEAT";
+    return true;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  std::string answer;
+  std::cout << "Confirm sending " << m_currency.formatAmount(amount) << " HEAT to "
+            << address_str << " (y/n): ";
+  std::getline(std::cin, answer);
+  if (answer != "y") {
+    fail_msg_writer() << "Transaction cancelled";
+    return true;
+  }
+
+  CryptoNote::TransactionId txId = m_wallet->sendHeatV10(recipient, amount, fee, mixIn);
+
+  if (txId != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "HEAT transfer submitted (ID " << txId << ")";
+    success_msg_writer() << "Use show_txn to track the transaction status";
+    return true;
+  }
+
+  fail_msg_writer() << "Transaction failed";
   return true;
 }

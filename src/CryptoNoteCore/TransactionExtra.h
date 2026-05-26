@@ -87,6 +87,7 @@
 #define TX_EXTRA_AMM_SWAP_AUTH              0xF6
 #define TX_EXTRA_AMM_LP_ADD_AUTH            0xF7
 #define TX_EXTRA_AMM_LP_REM_AUTH            0xF8
+#define TX_EXTRA_HEAT_SEND_AUTH             0xF9
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 

@@ -109,7 +109,14 @@ public:
                                                             uint32_t termEpochs,
                                                             uint64_t bankingFee,
                                                             uint64_t fee,
-                                                            uint64_t mixIn);
+                                                             uint64_t mixIn);
+
+  std::unique_ptr<WalletRequest> makeHeatTransferV10Request(TransactionId& transactionId,
+                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                             const AccountPublicAddress& recipient,
+                                                             uint64_t amount,
+                                                             uint64_t fee,
+                                                             uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
@@ -171,7 +178,11 @@ private:
                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                   uint64_t cdAmount,
                                                                   uint64_t bankingFee,
-                                                                  uint32_t termEpochs);
+                                                                                                                                     uint32_t termEpochs);
+  std::unique_ptr<WalletRequest> doSendHeatTransferV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                   std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                   const AccountPublicAddress& recipient,
+                                                                   uint64_t amount);
   void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
                                         const std::vector<DepositId> heatIds,
                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,

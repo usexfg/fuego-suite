@@ -39,7 +39,6 @@
 
 #include "Transfers/BlockchainSynchronizer.h"
 #include "Transfers/TransfersSynchronizer.h"
-#include "BurnTransactionHandler.h"
 #include "crypto/subaddress.h"
 
 namespace CryptoNote {
@@ -118,6 +117,7 @@ public:
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId deposit(uint32_t term, uint64_t amount, uint64_t fee, const std::string& extra, uint64_t mixIn = 4) override;
   virtual TransactionId mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId sendHeatV10(const AccountPublicAddress& recipient, uint64_t amount, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 4) override;
@@ -177,12 +177,7 @@ public:
   std::vector<uint32_t> getTransactionHeights(std::vector<TransactionOutputInformation> transfers);
 
   // Burn transaction management
-  void initializeBurnTransactionManager();
-  void setBurnTransactionCallbacks();
-  void processTransactionForBurnDetection(const std::string& txHash, const std::vector<uint8_t>& txExtra, uint64_t amount);
-  bool isBurnTransaction(const std::vector<uint8_t>& txExtra);
-  BurnTransactionHandler::BurnTransactionData parseBurnTransaction(const std::vector<uint8_t>& txExtra);
-  void generateStarkProofForBurn(const std::string& txHash, const std::string& ethAddress, uint64_t amount);
+  // Deprecated BPDF/STARK methods removed (C3/C8 security fixes)
 
 
 
@@ -268,8 +263,6 @@ public:
 
   std::unique_ptr<SyncStarter> m_onInitSyncStarter;
 
-  // Burn transaction management
-  std::unique_ptr<CryptoNote::BurnTransactionManager> m_burnTransactionManager;
 };
 
 } //namespace CryptoNote

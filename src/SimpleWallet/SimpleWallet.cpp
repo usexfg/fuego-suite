@@ -2646,7 +2646,7 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     fail_msg_writer() << "Usage: initiate_swap <amount> <peer_pubkey_hex> <pair> [role]";
     fail_msg_writer() << "  amount:        XFG to lock in Musig2 escrow";
     fail_msg_writer() << "  peer_pubkey:   64-char hex Ed25519 public key of swap counterparty";
-    fail_msg_writer() << "  pair:          XMR, ETH, or BCH";
+    fail_msg_writer() << "  pair:          XMR, ETH, BCH, or SOL";
     fail_msg_writer() << "  role:          alice (default) or bob";
     return true;
   }
@@ -2670,11 +2670,8 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     std::string pairStr = args[2];
     std::transform(pairStr.begin(), pairStr.end(), pairStr.begin(), ::toupper);
     XfgSwap::SwapPair pair;
-    if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
-    else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
-    else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
-    else {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use XMR, ETH, or BCH.";
+    if (!XfgSwap::swapPairFromString(pairStr, pair)) {
+      fail_msg_writer() << "Invalid pair: " << args[2] << ". Supported: XMR, ETH, BCH, SOL";
       return true;
     }
 

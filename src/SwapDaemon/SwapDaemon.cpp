@@ -695,7 +695,7 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
               claimOk = m_bchClient->claim(
                   m_chainCfg.bchWif,
                   params.ctrLockTxId, 0, params.ctrAmount,
-                  params.bchRedeemScriptHex,
+                  params.chainState,
                   Common::podToHex(params.adaptorSecret),
                   params.ctrAddress,
                   claimTxId);
@@ -1187,7 +1187,7 @@ bool SwapDaemon::refund(const std::string& swapId) {
           ctrRefundOk = m_bchClient->refundHtlc(
               m_chainCfg.bchWif,
               params.ctrLockTxId, 0, params.ctrAmount,
-              params.bchRedeemScriptHex,
+              params.chainState,
               params.ctrAddress,
               refundTxId);
           if (ctrRefundOk) {

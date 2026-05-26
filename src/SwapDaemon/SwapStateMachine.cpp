@@ -227,7 +227,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
   root.insert("ctrAddress", m_params.ctrAddress);
   root.insert("peerEndpoint", m_params.peerEndpoint);
-  root.insert("bchRedeemScriptHex", m_params.bchRedeemScriptHex);
+  root.insert("chainState", m_params.chainState);
 
   // Collaborative ring state (peer data, survives daemon restart)
   root.insert("ringPeerPartialKeyImage", Common::podToHex(m_params.ringPeerPartialKeyImage));
@@ -316,10 +316,15 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrLockTxId = root("ctrLockTxId").getString();
   params.ctrAddress = root("ctrAddress").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
-  // bchRedeemScriptHex was added in serialization v2; gracefully default to ""
+  // chainState was added in serialization v2 (previously bchRedeemScriptHex); gracefully default to ""
   // for older records that pre-date the field.
-  try { params.bchRedeemScriptHex = root("bchRedeemScriptHex").getString(); }
-  catch (...) { params.bchRedeemScriptHex = ""; }
+  try {
+    if (root.contains("chainState"))
+      params.chainState = root("chainState").getString();
+    else
+      params.chainState = root("bchRedeemScriptHex").getString();
+  }
+  catch (...) { params.chainState = ""; }
 
   // Collaborative ring state (peer data). Gracefully default to zero
   // for older records that pre-date these fields.

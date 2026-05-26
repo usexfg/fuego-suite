@@ -135,10 +135,7 @@ struct SwapParams {
   std::string ctrAddress;       // counterparty chain address (SOL/ETH/XMR/BCH)
   std::string peerEndpoint;     // swap counterparty's network address
 
-  // BCH-specific: hex-encoded P2SH redeem script for the HTLC.
-  // Set when the BCH HTLC is created (lockHtlc) and read on claim/refund.
-  // Must be persisted so claim/refund work after a daemon restart.
-  std::string bchRedeemScriptHex;
+  std::string chainState;
 
   // ── Collaborative ring signature peer state (persisted for restart resilience)
   // These are populated by handlePeerMessage() when the peer sends Ring Round 1/2

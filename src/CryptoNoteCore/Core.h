@@ -253,7 +253,7 @@ namespace CryptoNote {
 
     bool check_tx_syntax(const Transaction &tx);  //check correct values, amounts and all lightweight checks not related with database
     bool check_tx_semantic(const Transaction &tx, bool keeped_by_block, uint32_t &height); //check if tx already in memory pool or in main blockchain
-    bool check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion);   //check if the mixin is not too large
+    bool check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool keeped_by_block = false);   //check if the mixin is not too large
     bool check_tx_fee(const Transaction& tx, size_t blobSize, uint8_t blockMajorVersion, tx_verification_context& tvc); //check for proper tx fee
 
     bool check_tx_ring_signature(const KeyInput &tx, const Crypto::Hash &tx_prefix_hash, const std::vector<Crypto::Signature> &sig);

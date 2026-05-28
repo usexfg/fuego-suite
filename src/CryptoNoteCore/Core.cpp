@@ -294,13 +294,13 @@ bool core::get_stat_info(core_stat_info& st_inf) {
   return true;
 }
 
-bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion) {
+bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool keeped_by_block) {
   size_t inputIndex = 0;
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
     if (txin.type() == typeid(KeyInput)) {
       uint64_t txMixin = boost::get<KeyInput>(txin).outputIndexes.size();
-            if (txMixin > m_currency.maxMixin()) {
+      if (!keeped_by_block && txMixin > m_currency.maxMixin()) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
@@ -404,7 +404,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
       break;
     }
   }
-  if (!check_tx_mixin(tx, blockMajorVersion)) {
+  if (!check_tx_mixin(tx, blockMajorVersion, keeped_by_block)) {
     logger(ERROR) << "tx with invalid mixin, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
@@ -612,7 +612,7 @@ bool core::get_block_template(Block& b, const AccountPublicAddress& adr, difficu
     std::vector<Transaction> blockTxs;
     std::vector<Crypto::Hash> missed;
     m_mempool.getTransactions(b.transactionHashes, blockTxs, missed);
-    bankingFeesInBlock = Blockchain::computeBankingFeesFromTransactions(blockTxs, 0);
+    bankingFeesInBlock = Blockchain::computeBankingFeesFromTransactions(blockTxs);
 
     if (bankingFeesInBlock > 0) {
       logger(DEBUGGING) << "Block template banking fees: " << bankingFeesInBlock;

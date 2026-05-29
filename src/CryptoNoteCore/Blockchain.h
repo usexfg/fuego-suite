@@ -42,12 +42,16 @@
 #include "TransactionPool.h"
 #include "AliasIndex.h"
 #include "BlockchainIndices.h"
+#include "IndexManager.h"
 
 #include "MessageQueue.h"
 #include "BlockchainMessages.h"
 #include "IntrusiveLinkedList.h"
 
 #include "../Logging/LoggerRef.h"
+
+#include <thread>
+#include <atomic>
 
 #undef ERROR
 using phmap::parallel_flat_hash_map;
@@ -215,8 +219,8 @@ namespace CryptoNote {
       std::lock_guard<decltype(m_blockchain_lock)> bcLock(m_blockchain_lock);
 
       for (const auto& tx_id : txs_ids) {
-        auto it = m_transactionMap.find(tx_id);
-        if (it == m_transactionMap.end()) {
+        auto it = m_indexManager.transactionMap().find(tx_id);
+        if (it == m_indexManager.transactionMap().end()) {
           missed_txs.push_back(tx_id);
         } else {
           txs.push_back(transactionByIndex(it->second).tx);
@@ -245,15 +249,8 @@ namespace CryptoNote {
     void print_blockchain_index();
     void print_blockchain_outs(const std::string& file);
 
-    struct TransactionIndex {
-      uint32_t block;
-      uint16_t transaction;
-
-      void serialize(ISerializer& s) {
-        s(block, "block");
-        s(transaction, "tx");
-      }
-    };
+    // TransactionIndex, MultisignatureOutputUsage, CommitmentOutputRef,
+    // UnifiedOutputRef and container type aliases are now in IndexManager.h.
 
     bool rollbackBlockchainTo(uint32_t height);
     bool have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im);
@@ -292,18 +289,6 @@ namespace CryptoNote {
 
   private:
 
-    struct MultisignatureOutputUsage {
-      TransactionIndex transactionIndex;
-      uint16_t outputIndex;
-      bool isUsed;
-
-      void serialize(ISerializer& s) {
-        s(transactionIndex, "txindex");
-        s(outputIndex, "outindex");
-        s(isUsed, "used");
-      }
-    };
-
     struct TransactionEntry {
       Transaction tx;
       std::vector<uint32_t> m_global_output_indexes;
@@ -332,30 +317,10 @@ namespace CryptoNote {
       }
     };
 
-    typedef parallel_flat_hash_map<Crypto::KeyImage, uint32_t> key_images_container;
-    typedef parallel_flat_hash_map<Crypto::Hash, BlockEntry> blocks_ext_by_hash;
-    typedef parallel_flat_hash_map<uint64_t, std::vector<std::pair<TransactionIndex, uint16_t>>> outputs_container; //Crypto::Hash - tx hash, size_t - index of out in transaction
-    typedef parallel_flat_hash_map<uint64_t, std::vector<MultisignatureOutputUsage>> MultisignatureOutputsContainer;
-
-    // Fuego commitment output index for ring-signature deposit/burn outputs.
-    // indexed by amount (like m_outputs for KeyOutput ring sigs).
-    // stores the commitKey cached for ring signature verification.
-    struct CommitmentOutputRef {
-      TransactionIndex  transactionIndex;
-      uint16_t          outputInTransaction;
-      Crypto::PublicKey commitKey;  // cached for ring signature verification
-      uint32_t          term;       // lock term in blocks; 0xFFFFFFFF = FOREVER (HEAT burns, never unlocked)
-      bool              isSlashed = false;  // true = forbidden ring member (slashed stake)
-
-      void serialize(ISerializer& s) {
-        s(transactionIndex, "txindex");
-        s(outputInTransaction, "outindex");
-        s(commitKey, "commitKey");
-        s(term, "term");
-        s(isSlashed, "is_slashed");
-      }
-    };
-    typedef parallel_flat_hash_map<uint64_t, std::vector<CommitmentOutputRef>> CommitmentOutputsContainer;
+    // BlockEntry uses TransactionEntry. TransactionIndex, MultisignatureOutput-
+    // Usage, CommitmentOutputRef, UnifiedOutputRef, and all container typedefs
+    // (key_images_container, outputs_container, MultisignatureOutputsContainer,
+    // CommitmentOutputsContainer, TransactionMap) are now in IndexManager.h.
 
     const Currency& m_currency;
     tx_memory_pool& m_tx_pool;
@@ -363,10 +328,10 @@ namespace CryptoNote {
     Crypto::cn_context m_cn_context;
     Tools::ObserverManager<IBlockchainStorageObserver> m_observerManager;
 
-    key_images_container m_spent_keys;
+    typedef parallel_flat_hash_map<Crypto::Hash, BlockEntry> blocks_ext_by_hash;
+
     size_t m_current_block_cumul_sz_limit;
     blocks_ext_by_hash m_alternative_chains; // Crypto::Hash -> block_extended_info
-    outputs_container m_outputs;
 
     std::string m_config_folder;
     Checkpoints m_checkpoints;
@@ -374,7 +339,6 @@ namespace CryptoNote {
 
     typedef SwappedVector<BlockEntry> Blocks;
     typedef parallel_flat_hash_map<Crypto::Hash, uint32_t> BlockMap;
-    typedef parallel_flat_hash_map<Crypto::Hash, TransactionIndex> TransactionMap;
     typedef BasicUpgradeDetector<Blocks> UpgradeDetector;
 
     // Stores epoch-level state before processing for popBlock reversal
@@ -424,6 +388,8 @@ namespace CryptoNote {
     CryptoNote::PiControllerState m_piState;
     uint64_t m_heatLaunchTwap = 0;
     bool     m_heatLaunchTwapSet = false;
+    uint64_t m_heatCurrentCpi = 158;   // Dec 2008→Apr 2026 BLS CPI-U: 333.020/210.2 = 1.58x
+    uint64_t m_heatLaunchCpi = 100;    // CPI baseline index (100 = Dec 2008 reference)
     uint64_t m_xfgMarketValue = 0;
     uint32_t m_xfgMarketValueHeight = 0;
     uint64_t m_cdYieldPool = 0;
@@ -434,9 +400,7 @@ namespace CryptoNote {
     bool     m_bootstrapRepaid = false;
     uint64_t m_bootstrapXfgOwed = 0;
     uint64_t m_bootstrapRepaymentVault = 0;
-    TransactionMap m_transactionMap;
-    MultisignatureOutputsContainer m_multisignatureOutputs;
-    CommitmentOutputsContainer     m_commitmentOutputs;
+    IndexManager m_indexManager;
     // LP share tracking: maps global commitment output index → LP shares held
     parallel_flat_hash_map<uint64_t, uint64_t> m_lpCommitmentShares;
 
@@ -478,6 +442,10 @@ namespace CryptoNote {
     TimestampBlocksIndex m_timestampIndex;
     GeneratedTransactionsIndex m_generatedTransactionsIndex;
     OrphanBlocksIndex m_orthanBlocksIndex;
+
+    // Phase 3: async background rebuild thread
+    std::thread        m_rebuildThread;
+    std::atomic<bool>  m_rebuildRunning{false};
 
     IntrusiveLinkedList<MessageQueue<BlockchainMessage>> m_messageQueueList;
 
@@ -557,8 +525,8 @@ namespace CryptoNote {
 
   template<class visitor_t> bool Blockchain::scanOutputKeysForIndexes(const KeyInput& tx_in_to_key, visitor_t& vis, uint32_t* pmax_related_block_height) {
     std::lock_guard<std::recursive_mutex> lk(m_blockchain_lock);
-    auto it = m_outputs.find(tx_in_to_key.amount);
-    if (it == m_outputs.end() || !tx_in_to_key.outputIndexes.size())
+    auto it = m_indexManager.outputs().find(tx_in_to_key.amount);
+    if (it == m_indexManager.outputs().end() || !tx_in_to_key.outputIndexes.size())
       return false;
 
     std::vector<uint32_t> absolute_offsets = relative_output_offsets_to_absolute(tx_in_to_key.outputIndexes);

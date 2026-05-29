@@ -21,7 +21,6 @@ void IndexManager::clear() {
     m_outputs.clear();
     m_multisigOutputs.clear();
     m_commitmentOutputs.clear();
-    m_allUnifiedOutputs.clear();
     m_transactionMap.clear();
 }
 

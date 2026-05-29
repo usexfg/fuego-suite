@@ -22,7 +22,6 @@
 #include "Account.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
-#include "CryptoNoteCore/TransactionExtra.h"
 
 #include <boost/optional.hpp>
 #include <memory>
@@ -82,7 +81,6 @@ namespace CryptoNote {
     virtual void getOutput(size_t index, KeyOutput& output, uint64_t& amount) const override;
     virtual void getOutput(size_t index, MultisignatureOutput& output, uint64_t& amount) const override;
     virtual void getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const override;
-    virtual void getOutput(size_t index, TransactionOutputUnified& output, uint64_t& amount) const override;
 
     virtual size_t getRequiredSignaturesCount(size_t index) const override;
     virtual bool findOutputsToAccount(const AccountPublicAddress& addr, const SecretKey& viewSecretKey, std::vector<uint32_t>& outs, uint64_t& outputAmount) const override;
@@ -114,7 +112,6 @@ namespace CryptoNote {
     virtual size_t addOutput(uint64_t amount, const KeyOutput& out) override;
     virtual size_t addOutput(uint64_t amount, const MultisignatureOutput& out) override;
     virtual size_t addOutput(uint64_t amount, const TransactionOutputCommitment& out) override;
-    virtual size_t addOutput(uint64_t amount, const TransactionOutputUnified& out) override;
     virtual void signInputKey(size_t input, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) override;
     virtual void signInputMultisignature(size_t input, const PublicKey& sourceTransactionKey, size_t outputIndex, const AccountKeys& accountKeys) override;
     virtual void signInputMultisignature(size_t input, const KeyPair& ephemeralKeys) override;
@@ -313,41 +310,12 @@ namespace CryptoNote {
     checkIfSigning();
 
     KeyOutput outKey;
-    size_t outputIndex = transaction.outputs.size();
-    derivePublicKey(to, txSecretKey(), outputIndex, outKey.key);
+    derivePublicKey(to, txSecretKey(), transaction.outputs.size(), outKey.key);
     TransactionOutput out = { amount, outKey };
     transaction.outputs.emplace_back(out);
-
-    // Phase 1: emit paired TransactionOutputUnified (term=0) for dual-write bridge.
-    // Unified output carries amount=0 on wire (real amount on paired KeyOutput).
-    {
-      KeyDerivation derivation;
-      generate_key_derivation(to.viewPublicKey, txSecretKey(), derivation);
-
-      uint8_t preimage[36];
-      memcpy(preimage, &derivation, 32);
-      uint32_t idx32 = static_cast<uint32_t>(outputIndex);
-      preimage[32] = idx32 & 0xFF;
-      preimage[33] = (idx32 >> 8) & 0xFF;
-      preimage[34] = (idx32 >> 16) & 0xFF;
-      preimage[35] = (idx32 >> 24) & 0xFF;
-      Hash secHash = cn_fast_hash(preimage, sizeof(preimage));
-      std::array<uint8_t, 32> depositSecret;
-      memcpy(depositSecret.data(), secHash.data, 32);
-
-      DepositCommitmentKeys ck = deriveCommitmentKeys(depositSecret);
-
-      TransactionOutputUnified unified;
-      unified.key   = ck.commitKey;
-      unified.term  = parameters::TERM_REGULAR;
-
-      TransactionOutput unifiedOut = { 0, unified };
-      transaction.outputs.emplace_back(unifiedOut);
-    }
-
     invalidateHash();
 
-    return outputIndex;
+    return transaction.outputs.size() - 1;
   }
 
   size_t TransactionImpl::addOutput(uint64_t amount, const std::vector<AccountPublicAddress>& to, uint32_t requiredSignatures, uint32_t term) {
@@ -391,16 +359,6 @@ namespace CryptoNote {
   }
 
   size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputCommitment& out) {
-    checkIfSigning();
-    size_t outputIndex = transaction.outputs.size();
-    TransactionOutput realOut = { amount, out };
-    transaction.outputs.emplace_back(realOut);
-    transaction.version = TRANSACTION_VERSION_2;
-    invalidateHash();
-    return outputIndex;
-  }
-
-  size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputUnified& out) {
     checkIfSigning();
     size_t outputIndex = transaction.outputs.size();
     TransactionOutput realOut = { amount, out };
@@ -631,12 +589,6 @@ namespace CryptoNote {
   void TransactionImpl::getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const {
     const auto& out = getOutputChecked(transaction, index, TransactionTypes::OutputType::Commitment);
     output = boost::get<TransactionOutputCommitment>(out.target);
-    amount = out.amount;
-  }
-
-  void TransactionImpl::getOutput(size_t index, TransactionOutputUnified& output, uint64_t& amount) const {
-    const auto& out = getOutputChecked(transaction, index, TransactionTypes::OutputType::Unified);
-    output = boost::get<TransactionOutputUnified>(out.target);
     amount = out.amount;
   }
 

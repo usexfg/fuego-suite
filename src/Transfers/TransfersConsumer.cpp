@@ -100,10 +100,15 @@ void findMyOutputs(
      }
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
+      // Re-derive commitKey via ECDH and compare (works for COLD, HEAT, Elderfier).
+      // depositSecret = cn_fast_hash(derivation || outputIndex_LE32)
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
+      // All commitment types (COLD, HEAT/FOREVER, Elderfier) use deterministic ECDH:
+      // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
+      // so all are recoverable on rescan. No term filter needed.
       {
         uint8_t preimage[36];
         memcpy(preimage, &derivation, 32);
@@ -118,30 +123,6 @@ void findMyOutputs(
 
         CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
         if (ck.commitKey == out.commitKey) {
-          for (const auto& spendKey : spendKeys) {
-            outputs[spendKey].push_back(static_cast<uint32_t>(idx));
-            break;
-          }
-        }
-      }
-    } else if (outType == TransactionTypes::OutputType::Unified) {
-      uint64_t amount;
-      TransactionOutputUnified out;
-      tx.getOutput(idx, out, amount);
-      if (out.term == CryptoNote::parameters::TERM_REGULAR) {
-        uint8_t preimage[36];
-        memcpy(preimage, &derivation, 32);
-        uint32_t outIdx = static_cast<uint32_t>(idx);
-        preimage[32] = outIdx & 0xFF;
-        preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF;
-        preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), secHash.data, 32);
-
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        if (ck.commitKey == out.key) {
           for (const auto& spendKey : spendKeys) {
             outputs[spendKey].push_back(static_cast<uint32_t>(idx));
             break;

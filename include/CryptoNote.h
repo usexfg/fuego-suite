@@ -49,7 +49,7 @@ struct MultisignatureOutput {
 };
 
 // v10+ ring-signature deposit output.
-// Replaces MultisignatureOutput for ALL deposit types: COLD, HEAT burns.
+// Replaces MultisignatureOutput for ALL deposit types: COLD, HEAT burns, Elderfier stakes.
 // HEAT burns use throwaway commitKey (secret discarded) and never withdraw but
 // serve as excellent decoys, bulking up decoy pool for COLD/EF withdrawal rings.
 // Ring selection draws from the global CommitmentIndex by amount —
@@ -68,7 +68,7 @@ struct TransactionOutputCommitment {
 };
 
 // v10+ ring-signature withdrawal input.
-// Replaces MultisignatureInput for COLD withdrawals.
+// Replaces MultisignatureInput for COLD/Elderfier withdrawals.
 // outputIndexes are GLOBAL commitment output indices (like KeyInput for key outputs).
 struct TransactionInputCommitmentSpend {
   uint64_t amount;                      // must match referenced commitment output amount
@@ -88,8 +88,8 @@ struct TransactionInputCommitmentTransfer {
   uint32_t newTerm;                     // new CD's term (spender-declared, >= 1)
 };
 
-// v12+ unified output — replaces KeyOutput + TransactionOutputCommitment.
-// ALL v12 transaction outputs (transfers, deposits, burns) use this type.
+// v11+ unified output — replaces KeyOutput + TransactionOutputCommitment.
+// ALL v11 transaction outputs (transfers, deposits, burns) use this type.
 // Amount hidden in Pedersen commitment; denomination proved by 1-of-N membership proof.
 // term=0: regular transfer. term>0: locked deposit (blocks).
 // TransactionOutput.amount is 0 on the wire for this type (amount is in commitment).
@@ -98,11 +98,10 @@ struct TransactionOutputUnified {
   uint32_t term;                            // 0 = regular transfer, >0 = deposit lock (blocks)
   Crypto::EllipticCurvePoint commitment;    // C = amount*H + mask*G
   Crypto::MembershipProof proof;            // 1-of-N: amount is a valid denomination
-  std::vector<uint8_t> rangeProof;          // BP+ range proof (empty for pre-Phase-2 or CD tier)
 };
 
-// v12+ unified input — replaces KeyInput + TransactionInputCommitmentSpend.
-// ALL v12 inputs (transfers, deposit withdrawals) use this type.
+// v11+ unified input — replaces KeyInput + TransactionInputCommitmentSpend.
+// ALL v11 inputs (transfers, deposit withdrawals) use this type.
 // Amount hidden; MLSAG proves spend authority + commitment balance.
 // MLSAG response scalars stored in tx.signatures[input_idx]:
 //   signatures[input_idx][j] = {s[j][0], s[j][1]} for ring member j

@@ -471,11 +471,6 @@ double Currency::getBurnPercentage() const {
       if (out.target.type() == typeid(TransactionOutputCommitment)) {
         const auto& co = boost::get<TransactionOutputCommitment>(out.target);
         term = co.term;
-      } else if (out.target.type() == typeid(TransactionOutputUnified)) {
-        const auto& unif = boost::get<TransactionOutputUnified>(out.target);
-        term = unif.term;
-        if (unif.term == parameters::TERM_REGULAR && out.amount == 0)
-          continue; // paired unified output — real amount on paired KeyOutput
       }
       asset = classifyOutputAsset(out.target, term);
       switch (asset) {
@@ -558,7 +553,7 @@ double Currency::getBurnPercentage() const {
 
 	bool Currency::constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
 		uint64_t fee, const AccountPublicAddress& minerAddress, Transaction& tx, const BinaryArray& extraNonce/* = BinaryArray()*/, size_t maxOuts/* = 1*/, uint64_t burnedCoinsOverride/* = UINT64_MAX*/,
-		uint64_t bankingFeesInBlock/* = 0*/) const {
+		uint64_t bankingFeesInBlock/* = 0*/, const std::vector<std::pair<AccountPublicAddress, uint64_t>>& efierRewards/* = {}*/) const {
 
 		tx.inputs.clear();
 		tx.outputs.clear();
@@ -585,7 +580,19 @@ double Currency::getBurnPercentage() const {
       return false;
     }
 
+    // V10+: Banking fees from deposits are redirected to active EFiers.
+    // Deduct the actual distributed EFier total from miner's share (not raw banking fees).
+    // When no active EFiers or below dust threshold, efierTotal=0 and miner keeps full reward.
     uint64_t minerReward = blockReward;
+    uint64_t efierTotal = 0;
+    for (const auto& reward : efierRewards) {
+      efierTotal += reward.second;
+    }
+    if (blockMajorVersion >= BLOCK_MAJOR_VERSION_10 && efierTotal > 0) {
+      if (efierTotal <= minerReward) {
+        minerReward -= efierTotal;
+      }
+    }
 
     // Decompose miner reward into outputs
     std::vector<uint64_t> outAmounts;
@@ -653,10 +660,40 @@ double Currency::getBurnPercentage() const {
       outputIndex++;
     }
 
-    if (summaryAmounts != minerReward)
+    // Append EFier reward outputs (only at epoch boundaries, V10+)
+    for (const auto& efierReward : efierRewards) {
+      Crypto::KeyDerivation derivation = boost::value_initialized<Crypto::KeyDerivation>();
+      Crypto::PublicKey outEphemeralPubKey = boost::value_initialized<Crypto::PublicKey>();
+
+      bool r = Crypto::generate_key_derivation(efierReward.first.viewPublicKey, txkey.secretKey, derivation);
+      if (!r) {
+        logger(ERROR, BRIGHT_RED) << "Failed to generate_key_derivation for EFier reward output";
+        return false;
+      }
+
+      r = Crypto::derive_public_key(derivation, outputIndex, efierReward.first.spendPublicKey, outEphemeralPubKey);
+      if (!r) {
+        logger(ERROR, BRIGHT_RED) << "Failed to derive_public_key for EFier reward output";
+        return false;
+      }
+
+      KeyOutput tk;
+      tk.key = outEphemeralPubKey;
+
+      TransactionOutput out;
+      summaryAmounts += out.amount = efierReward.second;
+      out.target = tk;
+      tx.outputs.push_back(out);
+      outputIndex++;
+    }
+
+    // Validate: miner outputs + efier outputs == minerReward + efierTotal
+    uint64_t expectedTotal = minerReward + efierTotal;
+    if (summaryAmounts != expectedTotal)
     {
       logger(ERROR, BRIGHT_RED) << "Failed to construct miner tx, summaryAmounts = " << summaryAmounts
-        << " not equal expected = " << minerReward;
+        << " not equal expected = " << expectedTotal
+        << " (minerReward=" << minerReward << ", efierTotal=" << efierTotal << ")";
       return false;
     }
 

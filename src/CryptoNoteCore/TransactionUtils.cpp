@@ -126,9 +126,6 @@ TransactionTypes::OutputType getTransactionOutputType(const TransactionOutputTar
   if (out.type() == typeid(TransactionOutputCommitment)) {
     return TransactionTypes::OutputType::Commitment;
   }
-  if (out.type() == typeid(TransactionOutputUnified)) {
-    return TransactionTypes::OutputType::Unified;
-  }
   return TransactionTypes::OutputType::Invalid;
 }
 

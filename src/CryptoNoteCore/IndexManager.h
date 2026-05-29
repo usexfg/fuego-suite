@@ -77,18 +77,6 @@ struct CommitmentOutputRef {
     }
 };
 
-// UnifiedOutputRef extends CommitmentOutputRef with the Pedersen commitment
-// and amount needed for Phase 2+ MLSAG ring-member resolution.
-// The amount is zero for fully-hidden Phase 2 outputs (commitment is non-zero);
-// non-zero only for Phase 1 retroactive outputs (commitment is zero, amount is known).
-struct UnifiedOutputRef {
-    TransactionIndex           transactionIndex;
-    uint16_t                   outputInTransaction;
-    Crypto::PublicKey          commitKey;
-    uint32_t                   term;
-    uint64_t                   amount;       // 0 for hidden-amount (Phase 2+), real amount for Phase 1
-    Crypto::EllipticCurvePoint commitment;   // Pedersen commitment C (zero for Phase 1 retroactive)
-};
 
 using key_images_container       = parallel_flat_hash_map<Crypto::KeyImage, uint32_t>;
 using outputs_container          = parallel_flat_hash_map<uint64_t, std::vector<std::pair<TransactionIndex, uint16_t>>>;
@@ -276,8 +264,6 @@ public:
     CommitmentOutputIndex& commitmentOutputs() { return m_commitmentOutputs; }
     const CommitmentOutputIndex& commitmentOutputs() const { return m_commitmentOutputs; }
 
-    std::vector<UnifiedOutputRef>& allUnifiedOutputs() { return m_allUnifiedOutputs; }
-    const std::vector<UnifiedOutputRef>& allUnifiedOutputs() const { return m_allUnifiedOutputs; }
 
     TransactionMapIndex& transactionMap() { return m_transactionMap; }
     const TransactionMapIndex& transactionMap() const { return m_transactionMap; }
@@ -287,7 +273,6 @@ private:
     OutputIndex           m_outputs;
     MultisigOutputIndex   m_multisigOutputs;
     CommitmentOutputIndex m_commitmentOutputs;
-    std::vector<UnifiedOutputRef> m_allUnifiedOutputs;
     TransactionMapIndex   m_transactionMap;
     std::atomic<bool>     m_ready{false};
     std::mutex            m_rebuildMutex;

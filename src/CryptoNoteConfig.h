@@ -185,13 +185,6 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
 
-        // XFG-STARK commitment constants (unified format for xfg-stark-cli relay)
-        const uint32_t STARK_NETWORK_ID_MAINNET  = 1;
-        const uint32_t STARK_NETWORK_ID_TESTNET  = 2;
-        const uint32_t STARK_COMMITMENT_VERSION  = 3;     // v3: unified HEAT+CD relay format (4 tiers)
-        const uint32_t STARK_TARGET_CHAIN_ETH    = 1;     // Ethereum mainnet
-        const uint32_t STARK_TARGET_CHAIN_ARB    = 42161; // Arbitrum One
-
         // Milæsandra — testnet atomic swap fee simulator (self-contained testing)
         // Enables full protocol testing (CD yield, treasury, rebalancer, PI, oracle)
         // without requiring real cross-chain atomic swap activity.

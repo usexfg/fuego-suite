@@ -32,12 +32,14 @@ namespace CryptoNote {
 //   ETH = $2,140 → 214,000 XFG/ETH  (pair 1)
 //   XMR = $343   →  34,300 XFG/XMR  (pair 2)
 //   BCH = $469   →  46,900 XFG/BCH  (pair 3)
+//   ARB = $2,140 → 214,000 XFG/ARB  (pair 4, same asset as ETH)
 double SwapOfferRelay::getSeedRate(uint8_t pair) {
   static const std::map<uint8_t, double> rates = {
     {0, 17000.0},   // SOL
     {1, 214000.0},  // ETH
     {2, 34300.0},   // XMR
     {3, 46900.0},   // BCH
+    {4, 214000.0},  // ARB
   };
   auto it = rates.find(pair);
   return (it != rates.end()) ? it->second : 0.0;
@@ -51,6 +53,7 @@ double SwapOfferRelay::getCtrUsdPrice(uint8_t pair) {
     {1, 2140.0},   // ETH
     {2, 343.0},    // XMR
     {3, 469.0},    // BCH
+    {4, 2140.0},   // ARB
   };
   auto it = prices.find(pair);
   return (it != prices.end()) ? it->second : 0.0;
@@ -121,7 +124,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0) return false;
   if (offer.rateNum == 0) return false;
-  if (offer.pair > 3) return false;
+  if (offer.pair > 4) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;  // max ~6 days at 8min blocks
 
   // Verify signature: maker signs the offerId hash
@@ -136,6 +139,7 @@ void SwapOfferRelay::handleOfferMessage(const SwapOfferMsg& offer) {
   std::lock_guard<std::mutex> lock(m_mutex);
   // Don't replace existing offers — first-seen wins
   if (m_offers.find(offer.offerId) != m_offers.end()) return;
+  if (m_offers.size() >= MAX_OFFERS) return; // DoS protection
   m_offers[offer.offerId] = offer;
 }
 
@@ -260,8 +264,16 @@ bool SwapOfferRelay::submitOffer(const SwapOfferMsg& offer) {
     msg.postedHeight = offer.postedHeight;
     msg.isSoftOrder = offer.isSoftOrder;
 
+    if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
+      msg.dandelion_stem = true;
+    }
+
     auto buf = LevinProtocol::encode(msg);
-    m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    if (msg.dandelion_stem) {
+      m_p2pEndpoint->externalRelayNotifyToStem(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    } else {
+      m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    }
   }
 
   return true;
@@ -440,7 +452,7 @@ NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
 
   double sum = 0.0;
 
-  for (uint8_t p = 0; p <= 3; ++p) {
+  for (uint8_t p = 0; p <= 4; ++p) {
     CompositePrice cp = getCompositePrice(p);
     if (cp.rate <= 0.0) continue;
 

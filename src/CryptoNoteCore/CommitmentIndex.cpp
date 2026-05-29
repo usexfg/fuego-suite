@@ -307,18 +307,6 @@ EpochReport CommitmentIndex::generateEpochReport(uint64_t epochNumber, uint64_t 
   // swapFeesCollected, totalCdLockedAtStart, feeRateFixedPoint are filled by the caller
   // (Blockchain.cpp) immediately after this call — leave them zero here.
 
-  // Count active Elderfier aliases (aliasType == 0) via m_aliasIndex if available.
-  if (m_aliasIndex != nullptr) {
-    const auto allAliases = m_aliasIndex->getAllAliases();
-    uint64_t efierCount = 0;
-    for (const auto& a : allAliases) {
-      if (a.aliasType == 0) {
-        ++efierCount;
-      }
-    }
-    report.activeEfierCount = efierCount;
-  }
-
   return report;
 }
 

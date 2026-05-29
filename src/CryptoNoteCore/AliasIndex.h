@@ -28,11 +28,11 @@ namespace CryptoNote {
 
 // @ Alias entry for on-chain alias registry
 struct AliasEntry {
-  std::string alias;            // "FUEGOXFG" (EFier) or "fuegodev" (regular)
+  std::string alias;            // "fuegodev" (regular)
   std::string ownerAddress;     // Stored for /get_alias resolution. Not returned by /get_all_aliases.
   Crypto::Hash aliasHash;       // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;     // cn_fast_hash(address) for privacy
-  uint8_t aliasType = 1;        // 0 = Elderfier [A-Z0-9&], 1 = Regular [a-z0-9&]
+  uint8_t aliasType = 1;        // 0 = reserved (deprecated), 1 = Regular [a-z0-9&]
   uint32_t registeredBlock = 0;
 };
 

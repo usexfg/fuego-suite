@@ -234,9 +234,11 @@ EthRpcClient::EthRpcClient(const std::string& host, uint16_t port)
 EthRpcClient::EthRpcClient(const std::string& host, uint16_t port,
                             const std::string& privKeyHex,
                             const std::string& signerAddress,
-                            uint64_t chainId)
+                            uint64_t chainId,
+                            EthTxType txType)
   : m_host(host), m_port(port),
-    m_signerAddress(signerAddress), m_chainId(chainId), m_hasSigner(true) {
+    m_signerAddress(signerAddress), m_chainId(chainId), m_hasSigner(true),
+    m_txType(txType) {
   auto keyBytes = hexToBytes(privKeyHex);
   if (keyBytes.size() != 32) {
     throw std::invalid_argument("EthRpcClient: privKeyHex must be 32 bytes (64 hex chars)");
@@ -386,14 +388,14 @@ bool EthRpcClient::getNonce(const std::string& address, uint64_t& nonce) {
 
 // ─── EIP-155 signing internals ──────────────────────────────────────────────
 
-std::vector<uint8_t> EthRpcClient::buildSignedTx(uint64_t nonce,
-                                                   uint64_t gasPriceWei,
-                                                   uint64_t gasLimit,
-                                                   const std::vector<uint8_t>& to,
-                                                   uint64_t valueWei,
-                                                   const std::vector<uint8_t>& data) {
+std::vector<uint8_t> EthRpcClient::buildLegacySignedTx(uint64_t nonce,
+                                                        uint64_t gasPriceWei,
+                                                        uint64_t gasLimit,
+                                                        const std::vector<uint8_t>& to,
+                                                        uint64_t valueWei,
+                                                        const std::vector<uint8_t>& data) {
   if (!m_hasSigner) {
-    throw std::runtime_error("EthRpcClient::buildSignedTx: no signer configured");
+    throw std::runtime_error("EthRpcClient::buildLegacySignedTx: no signer configured");
   }
 
   using namespace CryptoNote::SwapDaemon::Crypto;
@@ -440,6 +442,121 @@ std::vector<uint8_t> EthRpcClient::buildSignedTx(uint64_t nonce,
   return signedEnc.finalize();
 }
 
+// ─── EIP-1559 signing ─────────────────────────────────────────────────────
+
+std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
+                                                         uint64_t maxPriorityFeePerGas,
+                                                         uint64_t maxFeePerGas,
+                                                         uint64_t gasLimit,
+                                                         const std::vector<uint8_t>& to,
+                                                         uint64_t valueWei,
+                                                         const std::vector<uint8_t>& data) {
+  if (!m_hasSigner) {
+    throw std::runtime_error("EthRpcClient::buildEip1559SignedTx: no signer configured");
+  }
+
+  using namespace CryptoNote::SwapDaemon::Crypto;
+
+  // Pre-sign payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
+  //                                 gasLimit, to, value, data, accessList])
+  RlpEncoder preSig;
+  preSig.beginList();
+  preSig.writeUint(m_chainId);
+  preSig.writeUint(nonce);
+  preSig.writeUint(maxPriorityFeePerGas);
+  preSig.writeUint(maxFeePerGas);
+  preSig.writeUint(gasLimit);
+  preSig.writeBytes(to);
+  preSig.writeUint(valueWei);
+  preSig.writeBytes(data);
+  preSig.writeBytes({});            // empty access list
+  preSig.endList();
+  auto preSigBytes = preSig.finalize();
+
+  // Prepend 0x02 type prefix
+  std::vector<uint8_t> sigInput = {0x02};
+  sigInput.insert(sigInput.end(), preSigBytes.begin(), preSigBytes.end());
+
+  // keccak256 of the signing payload
+  std::array<uint8_t, 32> msgHash;
+  keccak(sigInput.data(), static_cast<int>(sigInput.size()), msgHash.data(), 32);
+
+  // sign with secp256k1
+  Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(msgHash, m_privKey);
+
+  // v for EIP-1559 is just the recid (0 or 1)
+  // Build signed payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
+  //                                    gasLimit, to, value, data, v, r, s])
+  RlpEncoder signedEnc;
+  signedEnc.beginList();
+  signedEnc.writeUint(m_chainId);
+  signedEnc.writeUint(nonce);
+  signedEnc.writeUint(maxPriorityFeePerGas);
+  signedEnc.writeUint(maxFeePerGas);
+  signedEnc.writeUint(gasLimit);
+  signedEnc.writeBytes(to);
+  signedEnc.writeUint(valueWei);
+  signedEnc.writeBytes(data);
+  signedEnc.writeUint(sig.recid);
+  signedEnc.writeBytes(sig.r.data(), sig.r.size());
+  signedEnc.writeBytes(sig.s.data(), sig.s.size());
+  signedEnc.endList();
+  auto signedRlp = signedEnc.finalize();
+
+  // Prepend 0x02 type prefix
+  std::vector<uint8_t> result = {0x02};
+  result.insert(result.end(), signedRlp.begin(), signedRlp.end());
+  return result;
+}
+
+// ─── Dynamic fee estimation (EIP-1559) ────────────────────────────────────
+
+bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFeePerGas) {
+  // Query suggested tip from RPC
+  std::string tipResp = jsonRpc("eth_maxPriorityFeePerGas", "[]");
+  if (tipResp.empty() || jsonHasError(tipResp)) return false;
+  std::string tipStr = jsonGetResult(tipResp);
+  if (tipStr.empty()) return false;
+  uint64_t suggestedTip = hexToUint64(tipStr);
+
+  // Floor at 1 gwei
+  const uint64_t minTip = 1000000000ULL; // 1 gwei
+  maxPriorityFeePerGas = (suggestedTip > minTip) ? suggestedTip : minTip;
+
+  // Query latest block to get base fee
+  std::string blockResp = jsonRpc("eth_getBlockByNumber",
+                                   "[\"latest\",false]");
+  if (blockResp.empty() || jsonHasError(blockResp)) {
+    return false;
+  }
+  std::string blockResult = jsonGetResult(blockResp);
+  if (blockResult.empty()) return false;
+
+  std::string baseFeeStr = jsonGetString(blockResult, "baseFeePerGas");
+  if (baseFeeStr.empty()) return false;
+  uint64_t baseFee = hexToUint64(baseFeeStr);
+
+  // maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas
+  maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas;
+  return true;
+}
+
+bool EthRpcClient::estimateGas(const std::string& to, const std::string& data,
+                                uint64_t valueWei, uint64_t& gasEstimate) {
+  // Build eth_estimateGas call
+  (void)valueWei; // value is 0 for most contract calls
+  std::string params = "[{\"to\":\"" + to + "\",\"data\":\"" + data + "\"},\"latest\"]";
+  std::string resp = jsonRpc("eth_estimateGas", params);
+  if (resp.empty() || jsonHasError(resp)) return false;
+  std::string result = jsonGetResult(resp);
+  if (result.empty()) return false;
+  gasEstimate = hexToUint64(result);
+  // Add 20% buffer
+  gasEstimate = gasEstimate + gasEstimate / 5;
+  return true;
+}
+
 bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                                 const std::vector<uint8_t>& data,
                                 uint64_t valueWei,
@@ -456,11 +573,23 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
     return false;
   }
 
-  // Use a fixed gas price of 20 gwei for now; a real implementation would
-  // call eth_gasPrice to fetch the current suggested price.
-  const uint64_t gasPriceWei = 20000000000ULL;  // 20 gwei
+  std::vector<uint8_t> rawTx;
 
-  auto rawTx = buildSignedTx(nonce, gasPriceWei, gasLimit, to, valueWei, data);
+  if (m_txType == EthTxType::Eip1559) {
+    // Dynamic fee estimation for EIP-1559
+    uint64_t maxPriorityFeePerGas = 0;
+    uint64_t maxFeePerGas = 0;
+    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) {
+      return false;
+    }
+    rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
+                                  gasLimit, to, valueWei, data);
+  } else {
+    // Legacy: use 20 gwei fixed gas price
+    const uint64_t gasPriceWei = 20000000000ULL; // 20 gwei
+    rawTx = buildLegacySignedTx(nonce, gasPriceWei, gasLimit, to, valueWei, data);
+  }
+
   std::string rawHex = bytesToHex(rawTx);
   return sendRawTransaction(rawHex, txHash);
 }
@@ -527,9 +656,27 @@ bool EthRpcClient::deployHtlc(const std::string& /*fromAddress*/,
   uint64_t nonce = 0;
   if (!getNonce(m_signerAddress, nonce)) return false;
 
-  const uint64_t gasPriceWei = 20000000000ULL;  // 20 gwei
-  auto rawTx = buildSignedTx(nonce, gasPriceWei, /*gasLimit=*/800000,
-                              /*to=*/{}, valueWei, deployData);
+  uint64_t deployGasLimit = 800000;
+  if (m_txType == EthTxType::Eip1559) {
+    // Try dynamic gas estimation for deploy
+    uint64_t estimated = 0;
+    if (estimateGas("", m_htlcBytecode, valueWei, estimated) && estimated > 0) {
+      deployGasLimit = estimated;
+    }
+  }
+
+  std::vector<uint8_t> rawTx;
+  if (m_txType == EthTxType::Eip1559) {
+    uint64_t maxPriorityFeePerGas = 0;
+    uint64_t maxFeePerGas = 0;
+    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) return false;
+    rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
+                                  deployGasLimit, /*to=*/{}, valueWei, deployData);
+  } else {
+    const uint64_t gasPriceWei = 20000000000ULL; // 20 gwei
+    rawTx = buildLegacySignedTx(nonce, gasPriceWei, deployGasLimit,
+                                /*to=*/{}, valueWei, deployData);
+  }
   std::string txHash;
   std::string rawHex = bytesToHex(rawTx);
   if (!sendRawTransaction(rawHex, txHash)) return false;

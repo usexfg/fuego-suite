@@ -21,12 +21,13 @@ file(GLOB_RECURSE Logging Logging/*)
 # Optimizer sources
 file(GLOB_RECURSE NodeRpcProxy NodeRpcProxy/*)
 file(GLOB_RECURSE P2p P2p/*)
+file(GLOB_RECURSE Net net/*)
 file(GLOB_RECURSE RPC_SOURCES Rpc/*)
 file(GLOB_RECURSE Serialization Serialization/*)
 # Source files defined directly in add_executable calls
 
 file(GLOB_RECURSE Transfers Transfers/*)
-file(GLOB_RECURSE Wallet Wallet/* BurnTransactionHandler.cpp)
+file(GLOB_RECURSE Wallet Wallet/*)
 file(GLOB_RECURSE WalletLegacy WalletLegacy/*)
 file(GLOB_RECURSE JsonRpcServer JsonRpcServer/*)
 file(GLOB_RECURSE PaymentGate PaymentGate/*)
@@ -295,7 +296,7 @@ target_link_libraries(XmrClaimAdaptorTests PRIVATE
 add_library(Rpc STATIC ${RPC_SOURCES})
 target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)
 target_link_libraries(Rpc PUBLIC SwapDaemonLib)
-add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p})
+add_library(P2P STATIC ${CryptoNoteProtocol} ${P2p} ${Net})
 # Check if target exists to prevent duplicate definition
 if(NOT TARGET CryptoNoteCore)
   add_library(CryptoNoteCore STATIC ${CryptoNoteCore})

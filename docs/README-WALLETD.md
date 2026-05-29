@@ -96,7 +96,7 @@ curl -X POST http://localhost:8070/json_rpc \
 
 Fuego includes specialized deposit functionality for banking operations:
 
-1. **Burn Deposits**: Users can create deposits by burning coins, which are then tracked by the Eldernode network
+1. **Burn Deposits**: Users can create deposits by burning coins, tracked on-chain
 2. **Deposit Management**: View and track deposit status through the wallet
 3. **Interest-like Rewards**: Deposits may qualify for network rewards (implementation dependent)
 

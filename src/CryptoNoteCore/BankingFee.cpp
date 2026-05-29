@@ -17,7 +17,7 @@
 
 namespace CryptoNote {
 
-// EFier banking fee removed — banking fee is zero pending v11 governance vote - no. recalculate bankfee
+// Banking fee is zero pending v11 governance vote
 uint64_t Currency::calculateBankingFee(uint64_t /*depositAmount*/) const {
     return 0;
 }

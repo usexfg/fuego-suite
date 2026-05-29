@@ -144,7 +144,7 @@ uint64_t calculateInvestmentsAmount(const std::vector<CryptoNote::TransactionOut
 uint64_t calculateHeatAmount(const std::vector<CryptoNote::TransactionOutputInformation>& transfers) {
   return std::accumulate(transfers.begin(), transfers.end(), static_cast<uint64_t>(0),
     [](uint64_t sum, const CryptoNote::TransactionOutputInformation& output) {
-      if (output.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER)
+      if (output.term == CryptoNote::parameters::HEAT_TERM)
         return sum + output.amount;
       return sum;
     });

@@ -74,7 +74,8 @@ enum class SwapPair : uint8_t {
   SOL = 0,
   ETH = 1,
   XMR = 2,
-  BCH = 3
+  BCH = 3,
+  ARB = 4
 };
 
 // Musig2 session state persisted across swap steps.

@@ -118,6 +118,14 @@ bool loadChainClientConfig(const std::string& path,
   out.ethChainId     = jsonGetUint(json, "eth_chain_id", 1);
   out.ethHtlcBinPath = jsonGetStr(json, "eth_htlc_bin_path");
 
+  // ARB
+  out.arbHost       = jsonGetStr(json, "arb_rpc_host", "127.0.0.1");
+  out.arbPort       = static_cast<uint16_t>(jsonGetUint(json, "arb_rpc_port", 8547));
+  out.arbPrivKeyHex = jsonGetStr(json, "arb_priv_key");
+  out.arbAddress    = jsonGetStr(json, "arb_address");
+  out.arbChainId    = jsonGetUint(json, "arb_chain_id", 42161);
+  out.arbHtlcBinPath = jsonGetStr(json, "arb_htlc_bin_path");
+
   out.xmrSpendKeyHex = jsonGetStr(json, "xmr_spend_key");
   out.xmrViewKeyHex  = jsonGetStr(json, "xmr_view_key");
 
@@ -125,6 +133,11 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;
   if (!out.ethAddress.empty() && (out.ethAddress.size() < 2 || out.ethAddress.substr(0, 2) != "0x")) {
     errorMsg = "eth_address must start with 0x";
+    return false;
+  }
+  if (!validateHex(out.arbPrivKeyHex, 32, "arb_priv_key", errorMsg)) return false;
+  if (!out.arbAddress.empty() && (out.arbAddress.size() < 2 || out.arbAddress.substr(0, 2) != "0x")) {
+    errorMsg = "arb_address must start with 0x";
     return false;
   }
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;

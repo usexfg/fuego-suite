@@ -39,7 +39,6 @@
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/Currency.h"
-#include "CryptoNoteCore/BurnProofDataFileGenerator.h"
 #include "Wallet/WalletErrors.h"
 #include <System/EventLock.h>
 
@@ -842,7 +841,7 @@ namespace PaymentService
       Crypto::SecretKey secretKey;
       if (!Common::podFromHex(spendSecretKeyText, secretKey))
       {
-        logger(Logging::WARNING) << "Wrong key format: " << spendSecretKeyText;
+        logger(Logging::WARNING) << "Wrong key format: <redacted>";
         return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_KEY_FORMAT);
       }
 
@@ -1713,8 +1712,7 @@ namespace PaymentService
         uint32_t &peerCount,
         uint32_t &depositCount,
         uint32_t &transactionCount,
-        uint32_t &addressCount,
-        std::string &networkId)
+        uint32_t &addressCount)
     {
       try
       {
@@ -1729,7 +1727,6 @@ namespace PaymentService
         addressCount = static_cast<uint32_t>(wallet.getAddressCount());
         auto lastHashes = wallet.getBlockHashes(blockCount - 1, 1);
         lastBlockHash = Common::podToHex(lastHashes.back());
-                networkId = currency.getFuegoNetworkIdString();
       }
         catch (std::system_error &x)
         {
@@ -1778,7 +1775,7 @@ namespace PaymentService
         /* Now validate the deposit term and the amount */
 
         /* Check if this is a FOREVER term (burn deposit) */
-        bool isForeverTerm = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+        bool isForeverTerm = (term == CryptoNote::parameters::HEAT_TERM);
 
         if (!isForeverTerm) {
           /* For regular deposits, validate term constraints */
@@ -1791,7 +1788,7 @@ namespace PaymentService
           /* Deposits should be either min_term, max_term, or FOREVER */
           bool isValidTerm = (term == min_term ||
                              term == max_term ||
-                             term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+                             term == CryptoNote::parameters::HEAT_TERM);
 
           if (!isValidTerm) {
             return make_error_code(CryptoNote::error::DEPOSIT_WRONG_TERM);
@@ -1810,7 +1807,7 @@ namespace PaymentService
 
         /* Determine minimum amount based on deposit type */
         uint64_t minAmount;
-        bool isBurnDeposit = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+        bool isBurnDeposit = (term == CryptoNote::parameters::HEAT_TERM);
         if (isBurnDeposit) {
           /* Burn deposits (FOREVER term) use lower minimum: 0.8 XFG */
           minAmount = CryptoNote::parameters::BURN_DEPOSIT_MIN_AMOUNT;
@@ -1889,7 +1886,7 @@ namespace PaymentService
         /* Now validate the deposit term and the amount */
 
         /* Check if this is a FOREVER term (burn deposit) */
-        bool isForeverTerm = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+        bool isForeverTerm = (term == CryptoNote::parameters::HEAT_TERM);
 
         if (!isForeverTerm) {
           /* For regular deposits, validate term constraints */
@@ -1912,7 +1909,7 @@ namespace PaymentService
 
         /* Determine minimum amount based on deposit type */
         uint64_t minAmount;
-        bool isBurnDeposit = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+        bool isBurnDeposit = (term == CryptoNote::parameters::HEAT_TERM);
         if (isBurnDeposit) {
           /* Burn deposits (FOREVER term) use lower minimum: 0.8 XFG */
           minAmount = CryptoNote::parameters::BURN_DEPOSIT_MIN_AMOUNT;
@@ -2125,14 +2122,14 @@ namespace PaymentService
         Crypto::SecretKey viewSecretKey;
         if (!Common::podFromHex(viewSecretKeyText, viewSecretKey))
         {
-          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Cannot restore view secret key: " << viewSecretKeyText;
+          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Cannot restore view secret key: <redacted>";
           return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_KEY_FORMAT);
         }
 
         Crypto::PublicKey viewPublicKey;
         if (!Crypto::secret_key_to_public_key(viewSecretKey, viewPublicKey))
         {
-          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Cannot derive view public key, wrong secret key: " << viewSecretKeyText;
+          logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Cannot derive view public key, wrong secret key: <redacted>";
           return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_KEY_FORMAT);
         }
 
@@ -2345,89 +2342,6 @@ namespace PaymentService
       return std::error_code();
     } catch (std::exception& e) {
       logger(Logging::WARNING) << "Error retrieving burn deposit secret: " << e.what();
-      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
-    }
-  }
-
-  std::error_code WalletService::markBurnDepositBPDFGenerated(
-      const std::string& transactionHash) {
-
-    try {
-      auto& walletGreen = static_cast<CryptoNote::WalletGreen&>(wallet);
-      walletGreen.markBurnDepositBPDFGenerated(transactionHash);
-      return std::error_code();
-    } catch (std::exception& e) {
-      logger(Logging::WARNING) << "Error marking BPDF generated: " << e.what();
-      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
-    }
-  }
-
-  std::error_code WalletService::generateBurnProofDataFile(
-      const std::string& transactionHash,
-      const std::string& recipientAddress,
-      const std::string& outputPath,
-      const Crypto::SecretKey& secret,
-      uint64_t amount,
-      const std::vector<uint8_t>& metadata,
-      const std::string& networkId) {
-
-    try {
-      // Use BurnProofDataFileGenerator to create BPDF
-      std::error_code bpdfResult = CryptoNote::BurnProofDataFileGenerator::generateBPDF(
-        transactionHash,
-        secret,
-        recipientAddress,
-        amount,
-        outputPath
-      );
-
-      if (!bpdfResult) {
-        logger(Logging::INFO) << "Generated BPDF successfully";
-      } else {
-        logger(Logging::WARNING) << "Failed to generate BPDF";
-      }
-      return std::error_code();
-    } catch (std::exception& e) {
-      logger(Logging::WARNING) << "Error generating BPDF: " << e.what();
-      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
-    }
-  }
-
-  std::error_code WalletService::generateBurnProofDataFile(
-      const std::string& transactionHash,
-      const std::string& recipientAddress,
-      const std::string& outputPath,
-      const std::string& networkId) {
-
-    try {
-      // For manual mode, we need to get transaction data and extract commitment
-      // User will provide secret separately (not through RPC for security)
-      // For manual mode, we need to extract secret from transaction first
-      Crypto::SecretKey secret;
-      uint64_t amount;
-      std::error_code extractResult = CryptoNote::BurnProofDataFileGenerator::extractSecretFromTransaction(
-        transactionHash, secret, amount);
-
-      if (extractResult) {
-        return extractResult;
-      }
-
-      std::error_code bpdfResult = CryptoNote::BurnProofDataFileGenerator::generateBPDF(
-        transactionHash,
-        secret,
-        recipientAddress,
-        amount,
-        outputPath
-      );
-
-      if (!bpdfResult) {
-        logger(Logging::INFO) << "Generated BPDF (manual) successfully";
-      } else {
-        logger(Logging::WARNING) << "Failed to generate BPDF (manual)";
-      }
-      return std::error_code();
-    } catch (std::exception& e) {
-      logger(Logging::WARNING) << "Error generating BPDF manually: " << e.what();
       return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
     }
   }

@@ -43,8 +43,6 @@
 #define TX_EXTRA_BURN_RECEIPT               0x18  // Burn transaction receipt
 #define TX_EXTRA_DIGM_MINT                  0xA8  // DIGM coin mint (33% BURN / digm treasury 33% \ devs 33%)
 
-// 0xEF tag: Elderfier staking
-#define TX_EXTRA_ELDERFIER_DEPOSIT          0xEF  // Elderfier staking deposit (no banking fee)
 
 // 0x_A tags: DIGM Artist related meta/msgs/txns
 #define TX_EXTRA_DIGM_ALBUM                 0x0A  // Album metadata
@@ -174,7 +172,7 @@ struct TransactionExtraAliasRegistration {
   Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
   std::string ownerAddress;        // Full wallet address (optional: can be empty for privacy)
-  uint8_t aliasType = 0;           // 0 = Elderfier (ALLCAPS [A-Z0-9]), 1 = Regular user (lowercase [a-z0-9])
+  uint8_t aliasType = 0;           // 0 = reserved (deprecated), 1 = Regular user (lowercase [a-z0-9])
   uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
 
   bool serialize(ISerializer& serializer);
@@ -331,16 +329,16 @@ struct DepositCommitmentKeys {
 
 // Derive all commitment keys from a 32-byte deposit secret.
 // For HEAT burns: caller discards keyScalar (permanently non-spendable).
-// For COLD/EFier: store depositSecret encrypted in tx_extra (TX_EXTRA_DEPOSIT_SECRET).
+// For COLD: store depositSecret encrypted in tx_extra (TX_EXTRA_DEPOSIT_SECRET).
 // The masks let the wallet compute + verify amountCommitment and termCommitment.
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
 // ============================================================
 // Unified Deposit Secret for v10+ Commitment Outputs (0xD5)
 // ============================================================
-// All v10+ deposit types (COLD, HEAT, EFier, Yield) write a SINGLE 0xD5 tag.
+// All v10+ deposit types (COLD, HEAT, Yield) write a SINGLE 0xD5 tag.
 // The deposit type is encoded inside the encrypted payload — no type-revealing
-// tag appears on-chain. Old tags (0x08, 0xCD, 0xEF) remain for legacy multisig
+// tag appears on-chain. Old tags (0x08, 0xCD) remain for legacy multisig
 // deposits only.
 
 enum class DepositType : uint8_t {
@@ -505,14 +503,14 @@ uint64_t getColdTermDays(uint8_t term_code);
 // Both HEAT and COLD use the SAME 88-byte preimage:
 //   keccak256(secret || le64(amount) || tx_prefix_hash || network_id || target_chain_id || version || le32(term))
 //
-// HEAT burns use term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
+// HEAT burns use term = HEAT_TERM (0xFFFFFFFF)
 // COLD deposits use their actual term in blocks
 //
 // PRIVACY MODEL: No recipient in commitment - contract mints to msg.sender, nullifier prevents replay
 //
 // Unified commitment computation for BOTH HEAT and COLD
 // Uses 88-byte preimage: 32 + 8 + 32 + 4 + 4 + 4 + 4 = 88 bytes
-// For HEAT: pass term = parameters::DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
+// For HEAT: pass term = parameters::HEAT_TERM (0xFFFFFFFF)
 // For COLD: pass actual term in blocks
 Crypto::Hash computeCommitment(const std::array<uint8_t, 32>& secret,
                                 uint64_t amount_atomic,
@@ -522,7 +520,7 @@ Crypto::Hash computeCommitment(const std::array<uint8_t, 32>& secret,
                                 uint32_t commitment_version,
                                 uint32_t term);
 
-// HEAT convenience wrapper - uses DEPOSIT_TERM_FOREVER for term
+// HEAT convenience wrapper - uses HEAT_TERM for term
 // Computes: keccak256(secret || amount || tx_hash || network || chain || version || 0xFFFFFFFF)
 Crypto::Hash computeHeatCommitment(const std::array<uint8_t, 32>& secret,
                                    uint64_t amount_atomic,

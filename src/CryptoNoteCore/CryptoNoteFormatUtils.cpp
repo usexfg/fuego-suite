@@ -24,6 +24,7 @@
 #include <Common/int-util.h>
 #include <Common/Varint.h>
 #include "Common/Base58.h"
+#include "../crypto/bulletproofs_plus.h"
 
 #include "Serialization/BinaryOutputStreamSerializer.h"
 #include "Serialization/BinaryInputStreamSerializer.h"
@@ -376,13 +377,35 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
         }
         return false;
       }
-      if (commitment.term != parameters::DEPOSIT_TERM_FOREVER &&
+      if (commitment.term != parameters::HEAT_TERM &&
           commitment.term != parameters::DEPOSIT_TERM_LP &&
           commitment.term < parameters::CD_TRANSFER_MIN_REMAINING_TERM) {
         if (error) {
           *error = "Commitment output has invalid term";
         }
         return false;
+      }
+    } else if (out.target.type() == typeid(TransactionOutputUnified)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        if (error) {
+          *error = "Transaction contains unified output but its version is less than 2";
+        }
+        return false;
+      }
+      const TransactionOutputUnified& unified = ::boost::get<TransactionOutputUnified>(out.target);
+      if (!check_key(unified.key)) {
+        if (error) {
+          *error = "Unified output contains invalid key";
+        }
+        return false;
+      }
+      if (!unified.rangeProof.empty()) {
+        if (!Crypto::bulletproofs_plus_verify(unified.commitment, unified.rangeProof)) {
+          if (error) {
+            *error = "Unified output range proof verification failed";
+          }
+          return false;
+        }
       }
     } else {
       if (error) {

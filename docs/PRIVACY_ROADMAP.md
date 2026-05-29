@@ -13,19 +13,19 @@
 | Encrypted deposit secret (0xD5, chacha8+ECDH) | Implemented | Wallet recovery from seed |
 | Stealth addresses (one-time keys) | Inherited | Hides recipient |
 | Key images (double-spend prevention) | Working | Standard CryptoNote |
-| Elderfier commitment H(spendPub\|\|ephemeralPub) | Working | No raw EFier address on-chain |
+| Commitment H(spendPub\|\|ephemeralPub) | Working | No raw address on-chain |
 | Alias addressHash H(address) | Working | No raw owner address on-chain |
 
 ### What v10 Ring-Sig Deposits Actually Hide
 - An observer sees: "someone withdrew ONE of these 9 commitment outputs of amount X"
 - They cannot tell which one — ring signature hides the real output
-- HEAT burns are indistinguishable from COLD/EFier outputs (same struct)
+- HEAT burns are indistinguishable from COLD outputs (same struct)
 - Term is visible but doesn't leak which ring member is real (all expired)
 
 ### What v10 Does NOT Hide
 - **Amounts are plaintext.** `TransactionOutput.amount` is visible on-chain
 - **Ring pool is per-amount.** Observer knows the amount from the ring members
-- **Deposit type is visible.** tx_extra tags (0x08/0xCD/0xEF) reveal COLD vs HEAT vs EFier.
+- **Deposit type is visible.** tx_extra tags (0x08/0xCD) reveal COLD vs HEAT.
   Only hidden when v11 unified output type makes all outputs structurally identical.
 - **Transaction graph.** Input/output counts reveal tx purpose (deposit vs transfer)
 - **Network layer.** No IP-level privacy (no Dandelion++)

@@ -38,6 +38,7 @@ private:
   std::thread m_cleanupThread;
   void cleanupThread();
 
+  static constexpr size_t MAX_OFFERS = 10000;
   std::map<std::string, COMMAND_CD_OFFER::request> m_offers;
   bool validateOffer(const COMMAND_CD_OFFER::request& offer) const;
 };

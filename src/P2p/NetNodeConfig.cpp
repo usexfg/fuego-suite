@@ -39,6 +39,21 @@ const command_line::arg_descriptor<std::vector<std::string> > arg_p2p_add_exclus
 const command_line::arg_descriptor<std::vector<std::string> > arg_p2p_seed_node   = {"seed-node", "Connect to a node to retrieve peer addresses, and disconnect"};
 const command_line::arg_descriptor<bool> arg_p2p_hide_my_port   =    {"hide-my-port", "Do not announce yourself as peerlist candidate", false, true};
 
+// I2P integration
+const command_line::arg_descriptor<bool>        arg_p2p_use_i2p        = {"p2p-use-i2p", "Enable I2P transport for P2P connections", false};
+const command_line::arg_descriptor<std::string> arg_i2p_socks_host     = {"i2p-socks-host", "I2P SOCKS5 proxy host (i2pd default)", "127.0.0.1"};
+const command_line::arg_descriptor<uint16_t>    arg_i2p_socks_port     = {"i2p-socks-port", "I2P SOCKS5 proxy port (i2pd default: 4447)", 4447};
+
+// Tor integration
+const command_line::arg_descriptor<bool>        arg_p2p_use_tor        = {"p2p-use-tor", "Enable Tor transport for P2P connections", false};
+const command_line::arg_descriptor<std::string> arg_tor_socks_host     = {"tor-socks-host", "Tor SOCKS5 proxy host", "127.0.0.1"};
+const command_line::arg_descriptor<uint16_t>    arg_tor_socks_port     = {"tor-socks-port", "Tor SOCKS5 proxy port (system Tor default: 9050)", 9050};
+
+// Privacy network options
+const command_line::arg_descriptor<bool>        arg_restrict_privacy   = {"p2p-restrict-to-privacy-net", "Only communicate via I2P/Tor — disable clearnet P2P listener", false};
+const command_line::arg_descriptor<std::vector<std::string>> arg_anonymous_inbound = {"anonymous-inbound", "Specify anonymous inbound address: <addr>,<bind:port>[,max_connections]"};
+const command_line::arg_descriptor<std::vector<std::string>> arg_tx_proxy = {"tx-proxy", "Route outbound transactions through proxy: <zone>,<host:port>[,max_connections]"};
+
 #ifdef ENABLE_FUEGOMESH
 const command_line::arg_descriptor<bool> arg_meshtastic_enabled = {"meshtastic-enabled", "Enable meshtastic fallback for off-grid connectivity", false};
 const command_line::arg_descriptor<std::string> arg_meshtastic_host = {"meshtastic-host", "Meshtastic MQTT bridge host", "127.0.0.1"};
@@ -78,6 +93,15 @@ void NetNodeConfig::initOptions(boost::program_options::options_description& des
   command_line::add_arg(desc, arg_p2p_add_exclusive_node);
   command_line::add_arg(desc, arg_p2p_seed_node);
   command_line::add_arg(desc, arg_p2p_hide_my_port);
+  command_line::add_arg(desc, arg_p2p_use_i2p);
+  command_line::add_arg(desc, arg_i2p_socks_host);
+  command_line::add_arg(desc, arg_i2p_socks_port);
+  command_line::add_arg(desc, arg_p2p_use_tor);
+  command_line::add_arg(desc, arg_tor_socks_host);
+  command_line::add_arg(desc, arg_tor_socks_port);
+  command_line::add_arg(desc, arg_restrict_privacy);
+  command_line::add_arg(desc, arg_anonymous_inbound);
+  command_line::add_arg(desc, arg_tx_proxy);
 #ifdef ENABLE_FUEGOMESH
   command_line::add_arg(desc, arg_meshtastic_enabled);
   command_line::add_arg(desc, arg_meshtastic_host);
@@ -94,6 +118,13 @@ NetNodeConfig::NetNodeConfig() {
   hideMyPort = false;
   configFolder = Tools::getDefaultDataDirectory();
   testnet = false;
+  i2pEnabled = false;
+  i2pSocksHost = "127.0.0.1";
+  i2pSocksPort = 4447;
+  torEnabled = false;
+  torSocksHost = "127.0.0.1";
+  torSocksPort = 9050;
+  restrictToPrivacyNet = false;
 #ifdef ENABLE_FUEGOMESH
   meshtasticEnabled = false;
   meshtasticHost = "127.0.0.1";
@@ -160,6 +191,99 @@ bool NetNodeConfig::init(const boost::program_options::variables_map& vm)
 
   if (command_line::has_arg(vm, arg_p2p_hide_my_port)) {
     hideMyPort = true;
+  }
+
+  // I2P configuration
+  if (command_line::has_arg(vm, arg_p2p_use_i2p)) {
+    i2pEnabled = command_line::get_arg(vm, arg_p2p_use_i2p);
+  }
+  if (vm.count(arg_i2p_socks_host.name)) {
+    i2pSocksHost = command_line::get_arg(vm, arg_i2p_socks_host);
+  }
+  if (vm.count(arg_i2p_socks_port.name)) {
+    i2pSocksPort = command_line::get_arg(vm, arg_i2p_socks_port);
+  }
+
+  // Tor configuration
+  if (command_line::has_arg(vm, arg_p2p_use_tor)) {
+    torEnabled = command_line::get_arg(vm, arg_p2p_use_tor);
+  }
+  if (vm.count(arg_tor_socks_host.name)) {
+    torSocksHost = command_line::get_arg(vm, arg_tor_socks_host);
+  }
+  if (vm.count(arg_tor_socks_port.name)) {
+    torSocksPort = command_line::get_arg(vm, arg_tor_socks_port);
+  }
+
+  // Privacy network options
+  if (command_line::has_arg(vm, arg_restrict_privacy)) {
+    restrictToPrivacyNet = command_line::get_arg(vm, arg_restrict_privacy);
+  }
+
+  // Parse --anonymous-inbound entries: <addr>,<bind:port>[,max_connections]
+  if (command_line::has_arg(vm, arg_anonymous_inbound)) {
+    std::vector<std::string> entries = command_line::get_arg(vm, arg_anonymous_inbound);
+    for (const auto& entry : entries) {
+      AnonymousInbound ai;
+      ai.max_connections = 0;
+
+      // Split by commas
+      size_t pos1 = entry.find(',');
+      if (pos1 == std::string::npos) return false;
+      ai.our_address = entry.substr(0, pos1);
+
+      size_t pos2 = entry.find(',', pos1 + 1);
+      ai.bind_address = entry.substr(pos1 + 1, pos2 != std::string::npos ? pos2 - pos1 - 1 : std::string::npos);
+
+      if (pos2 != std::string::npos) {
+        try { ai.max_connections = std::stoul(entry.substr(pos2 + 1)); }
+        catch (...) { return false; }
+      }
+
+      // Detect zone from address
+      if (ai.our_address.find(".b32.i2p") != std::string::npos) {
+        ai.zone = NetworkZone::I2P;
+      } else if (ai.our_address.find(".onion") != std::string::npos) {
+        ai.zone = NetworkZone::Tor;
+      } else {
+        return false;
+      }
+
+      anonymousInbound.push_back(ai);
+    }
+  }
+
+  // Parse --tx-proxy entries: <zone>,<host:port>[,max_connections]
+  if (command_line::has_arg(vm, arg_tx_proxy)) {
+    std::vector<std::string> entries = command_line::get_arg(vm, arg_tx_proxy);
+    for (const auto& entry : entries) {
+      TxProxy tp;
+      tp.max_connections = 0;
+
+      size_t pos1 = entry.find(',');
+      if (pos1 == std::string::npos) return false;
+      std::string zone_str = entry.substr(0, pos1);
+
+      if (zone_str == "i2p") tp.zone = NetworkZone::I2P;
+      else if (zone_str == "tor") tp.zone = NetworkZone::Tor;
+      else return false;
+
+      size_t pos2 = entry.find(',', pos1 + 1);
+      std::string host_port = entry.substr(pos1 + 1, pos2 != std::string::npos ? pos2 - pos1 - 1 : std::string::npos);
+
+      size_t colon = host_port.rfind(':');
+      if (colon == std::string::npos) return false;
+      tp.proxy_host = host_port.substr(0, colon);
+      try { tp.proxy_port = static_cast<uint16_t>(std::stoul(host_port.substr(colon + 1))); }
+      catch (...) { return false; }
+
+      if (pos2 != std::string::npos) {
+        try { tp.max_connections = std::stoul(entry.substr(pos2 + 1)); }
+        catch (...) { return false; }
+      }
+
+      txProxies.push_back(tp);
+    }
   }
 
 #ifdef ENABLE_FUEGOMESH

@@ -61,6 +61,7 @@ void CdOfferRelay::handleOfferMessage(const COMMAND_CD_OFFER::request& offer) {
   if (!validateOffer(offer)) return;
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_offers.find(offer.offerId) != m_offers.end()) return;
+  if (m_offers.size() >= MAX_OFFERS) return; // DoS protection
   m_offers[offer.offerId] = offer;
 }
 

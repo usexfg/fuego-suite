@@ -139,14 +139,12 @@ The fuego-prover already uses commitment types:
 pub enum CommitmentType {
     Heat = 0,           // For HEAT burn commitments
     Cold = 1,           // For COLD burn commitments
-    ElderfierStaking = 2, // Being removed per your note
 }
 
 // For the LP pool, we'd add:
 pub enum CommitmentType {
     Heat = 0,
     Cold = 1,
-    // ElderfierStaking removed
     LpReserveA = 2,
     LpReserveB = 3,
     LpShare = 4,

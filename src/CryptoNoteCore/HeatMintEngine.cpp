@@ -18,7 +18,7 @@ bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
   for (const auto& out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
-      if (out.amount > 0 && commitment.term == parameters::DEPOSIT_TERM_FOREVER)
+      if (out.amount > 0 && commitment.term == parameters::HEAT_TERM)
         return true;
     }
   }
@@ -51,7 +51,7 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   for (const auto& out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
-      if (commitment.term == parameters::DEPOSIT_TERM_FOREVER) {
+      if (commitment.term == parameters::HEAT_TERM) {
         heatOutputs += out.amount;
       } else {
         xfgOutputs += out.amount;
@@ -73,8 +73,9 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
   uint64_t expectedHeat = heatFp.toUint64();
 
-  uint64_t delta = (heatOutputs > expectedHeat) ? (heatOutputs - expectedHeat) : (expectedHeat - heatOutputs);
-  if (delta > 1)
+  // Exact match required — no rounding tolerance. FixedPoint64 truncates,
+  // so heatOutputs <= expectedHeat is the only valid outcome.
+  if (heatOutputs > expectedHeat)
     return false;
 
   heatMinted = heatOutputs;
@@ -91,13 +92,18 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
   if (xfgBurned == 0 || heatMinted == 0)
     return false;
 
-  FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
-  FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
-  uint64_t expectedHeat = heatFp.toUint64();
+  // Defense-in-depth: re-derive amounts from the actual transaction
+  // and verify they match the declared auth-tag values.
+  uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
+  if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted))
+    return false;
+  if (actualXfgBurned != xfgBurned || actualHeatMinted != heatMinted)
+    return false;
 
-  // Premium allowed: heatMinted can be less than expected (mint premium → burned XFG → treasury).
-  // More than expected would be inflation — rejected.
-  if (heatMinted > expectedHeat + 1)
+  // Ratio check: no inflation — heatMinted must not exceed expected
+  FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
+  uint64_t expectedHeat = xfgFp.div(redemptionPrice).toUint64();
+  if (heatMinted > expectedHeat)
     return false;
 
   return true;

@@ -114,6 +114,18 @@ namespace CryptoNote
     int processObjects(CryptoNoteConnectionContext& context, const std::vector<parsed_block_entry>& blocks);
     Logging::LoggerRef logger;
 
+    struct StemTransaction {
+      NOTIFY_NEW_TRANSACTIONS::request request;
+      time_t time_added;
+    };
+    struct HashCompare {
+      bool operator()(const Crypto::Hash& a, const Crypto::Hash& b) const {
+        return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+      }
+    };
+    std::map<Crypto::Hash, StemTransaction, HashCompare> m_stem_transactions;
+    std::mutex m_stem_mutex;
+
   private:
     int doPushLiteBlock(NOTIFY_NEW_LITE_BLOCK::request block, CryptoNoteConnectionContext &context, std::vector<BinaryArray> missingTxs);
 

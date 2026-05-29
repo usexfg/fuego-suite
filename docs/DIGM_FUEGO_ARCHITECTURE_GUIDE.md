@@ -2,18 +2,17 @@
 
 > **Status:** Draft / Brainstorm Output
 > **Date:** 2026-04-02 (rev 2026-04-03: I2P, mobile-first full node, ParaDio-only rewards, per-album pools)
-> **Context:** Fuego drops L2/L3/Elderfier path. Focuses on XFG + CD + atomic swaps + hidden amounts. DIGM becomes the use-case layer that drives swap volume and gives CDs real yield.
+> **Context:** Fuego focuses on XFG + CD + atomic swaps + hidden amounts. DIGM becomes the use-case layer that drives swap volume and gives CDs real yield.
 > **Note:** The .digm audio container / proof-of-origin format from DIGM-origins is NOT part of this design. However, several economic decisions (PARA rate, curator share, audio codec) are inherited from DIGM-origins docs and noted inline.
 
 ---
 
 ## 1. The Decision
 
-**We chose:** XFG + CD + atomic swaps (no L2, no L3, no Elderfiers required)
+**We chose:** XFG + CD + atomic swaps (no L2, no L3)
 
 **Why:**
-- Elderfiers were only consensus-critical for L2 merkle root signing
-- Fee pool is purely algorithmic (consensus rules, no EFier quorum needed)
+- Fee pool is purely algorithmic (consensus rules, no quorum needed)
 - Atomic swaps work P2P (adaptor sigs, indistinguishable from ring spends)
 - Engineering focus shifts to hidden amounts (BP+ / MLSAG) — the real privacy unlock
 - Lower regulatory surface (no bridge, no ERC-20 tokens)
@@ -397,7 +396,7 @@ None of these are decisions. The runtime-signals model stands until a research p
 
 **Bootstrapping new / niche content** (the only case where ambient seeding isn't enough):
 - **Artist bounty** (primary): artist attaches a small XFG bounty to an album or single on publish; the bounty is paid pro-rata to nodes that demonstrably served the chunks (proof via pulled listener receipts). Artist chooses whether to fund it — popular artists can skip it, unknown artists bootstrap with it.
-- **Treasury bounty** (fallback): the Fuego treasury (post-EFier fee pool reassignment — see §11) can top up bounties for content flagged as under-seeded. This is the *only* place the DIGM layer touches any on-chain pool, and even here it's a Fuego treasury call unrelated to CDs.
+- **Treasury bounty** (fallback): the Fuego treasury can top up bounties for content flagged as under-seeded. This is the *only* place the DIGM layer touches any on-chain pool, and even here it's a Fuego treasury call unrelated to CDs.
 - **Neither bounty pays PARA.** Bounties are always in XFG. PARA remains exclusively a listener-earning token.
 
 ---
@@ -550,7 +549,7 @@ Organic CDN: popularity = availability
 | IPFS + pinning | Costs money, IPs exposed, requires infrastructure |
 | Arweave | ~$1600/TB, overkill for streaming audio |
 | Central CDN | Against everything DIGM stands for |
-| Elder Nodes (staked) | Killed with Elderfiers |
+| Elder Nodes (staked) | Deprecated |
 
 ---
 
@@ -665,7 +664,7 @@ First launch on a fresh install: longer (~initial Fuego sync via I2P peers, time
 ## 9. What We Shelved (Can Revisit Later)
 
 - L2/L3 HEAT/COLD token minting (Arbitrum, STARK proofs)
-- Elderfier consensus (merkle root signing, quorum)
+- Staked-node consensus (merkle root signing, quorum)
 - C0DL3 gas token / L3 rollup
 - Celestia DA for audio blob storage
 - EVM composability (NFTs, DeFi on music)
@@ -745,7 +744,7 @@ DIGM app tracks all balances in real-time (fast, flexible)
 
 ### Why This Works
 
-- No EFiers needed — DIGM app publishes the root as a regular Fuego tx
+- No staked-node quorum needed — DIGM app publishes the root as a regular Fuego tx
 - Reuses the CommitmentIndex merkle tree pattern already in the codebase
 - Chain bloat = 1 small tx per epoch (32-byte root), not millions of token ops
 - Disputes are resolved by merkle proof against the on-chain root
@@ -771,7 +770,7 @@ DIGM app tracks all balances in real-time (fast, flexible)
 
 ### Decisions made in this revision
 - **CURA mint = burn VOX only.** DIGM-origins' "burn PARA → CURA" is overridden. VOX is the only path to CURA.
-- **PARA reward split** = listener / artist (curator skims 30% of each share if listened via curator playlist). No Elderfier / LP slice — those DIGM-origins buckets are gone with the rest of the L2/EFier stack.
+- **PARA reward split** = listener / artist (curator skims 30% of each share if listened via curator playlist).
 - **HEAT is both a unit label (on Fuego) and an optional cross-chain token (ERC-20 + SPL).** Premium / reward gate is dual-path: ≥ 0.0008 XFG **or** ≥ 1,000,000 HEAT. No forced conversion between the two.
 - **Seeders earn zero PARA.** Bootstrapping under-seeded content is via artist XFG bounty (primary) or Fuego treasury bounty (fallback). Both paid in XFG, never PARA.
 - **CD fee pool is completely separate from DIGM.** DIGM does not feed or consume CD yield. They share XFG as a medium only.
@@ -839,7 +838,7 @@ Decided (see §4 "Sybil Defense: Wallet = User"): no separate alias layer. The w
 - Does holding HEAT unlock anything beyond the premium gate, or is the gate its only utility?
 
 ### Integration with Fuego Core
-- CD fee pool split now that Elderfiers are gone: (a) 90/10 CD/Treasury, (b) 85/15 CD/Treasury, (c) keep 80/10/10 and reassign the 10% EF slice to something else **unrelated to DIGM** (dev fund? burn? artist-bounty top-up for under-seeded content?). *Note: DIGM is explicitly NOT in scope for the CD fee pool — this is a pure Fuego-core question, though treasury bounties for under-seeded content are one possible home for the reassigned slice.*
+- CD fee pool split: (a) 90/10 CD/Treasury, (b) 85/15 CD/Treasury. *Note: DIGM is explicitly NOT in scope for the CD fee pool — this is a pure Fuego-core question, though treasury bounties for under-seeded content are one possible home for any reassigned slice.*
 - DIGM colored coin tx_extra tag format (transfer rules, 100K mint, hosting-rights enforcement)
 - Merkle anchor tx_extra tag (next available after 0xD5 — pick a value)
 - Authentication for the merkle root publisher tx — dedicated wallet? threshold of DIGM-coin holders?

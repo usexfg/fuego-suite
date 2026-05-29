@@ -73,6 +73,16 @@ struct ChainClientConfig {
   // Optional: path to the pre-compiled HashedTimelock .bin file
   std::string ethHtlcBinPath;
 
+  // ARB
+  std::string arbHost;
+  uint16_t    arbPort     = 8547;
+
+  // ARB signer credentials (reuses ETH private key derivation; separate key optional)
+  std::string arbPrivKeyHex;
+  std::string arbAddress;
+  uint64_t    arbChainId = 42161;
+  std::string arbHtlcBinPath;
+
   // XMR spend/view keys (64 hex chars each)
   std::string xmrSpendKeyHex;
   std::string xmrViewKeyHex;

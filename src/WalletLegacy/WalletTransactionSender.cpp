@@ -340,7 +340,7 @@ namespace CryptoNote
   {
 
     // Skip term range validation for special terms (FOREVER burns)
-    bool isSpecialTerm = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+    bool isSpecialTerm = (term == CryptoNote::parameters::HEAT_TERM);
     if (!isSpecialTerm) {
       throwIf(term < m_currency.depositMinTerm(), error::DEPOSIT_TERM_TOO_SMALL);
       throwIf(term > m_currency.depositMaxTerm(), error::DEPOSIT_TERM_TOO_BIG);
@@ -714,6 +714,33 @@ namespace CryptoNote
     return std::unique_ptr<WalletRequest>();
   }
 
+  // Derive deterministic deposit secret via ECDH for commitment output.
+  // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
+  // Returns a 32-byte secret re-derivable from seed using the view key.
+  static std::array<uint8_t, 32> deriveCommitmentSecret(
+      const ITransaction& tx,
+      const Crypto::PublicKey& viewPublicKey) {
+    Crypto::SecretKey txSecretKey;
+    if (!tx.getTransactionSecretKey(txSecretKey)) {
+      throw std::runtime_error("deposit: could not retrieve tx secret key for commitment derivation");
+    }
+    Crypto::KeyDerivation ecdh;
+    if (!Crypto::generate_key_derivation(viewPublicKey, txSecretKey, ecdh)) {
+      throw std::runtime_error("deposit: ECDH key derivation failed");
+    }
+    const uint32_t commitOutputIndex = static_cast<uint32_t>(tx.getOutputCount());
+    uint8_t preimage[36];
+    memcpy(preimage, &ecdh, 32);
+    preimage[32] = commitOutputIndex & 0xFF;
+    preimage[33] = (commitOutputIndex >> 8) & 0xFF;
+    preimage[34] = (commitOutputIndex >> 16) & 0xFF;
+    preimage[35] = (commitOutputIndex >> 24) & 0xFF;
+    Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> secret;
+    memcpy(secret.data(), h.data, 32);
+    return secret;
+  }
+
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendMultisigTransaction(std::shared_ptr<SendTransactionContext> &&context, std::deque<std::unique_ptr<WalletLegacyEvent>> &events)
   {
     if (m_isStoping)
@@ -724,67 +751,28 @@ namespace CryptoNote
 
     try
     {
-      //TODO decompose this method
       WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
       std::unique_ptr<ITransaction> transaction = createTransaction();
 
       uint64_t totalAmount = std::abs(transactionInfo.totalAmount);
+      uint64_t depositAmount = totalAmount - transactionInfo.fee;
 
-      // Keep TransactionSourceEntry sources so we can read hasCustomKeys/customKeys
-      // for sub-address outputs. convertSources() drops that info into InputKeyInfo.
+      // ── Inputs ──────────────────────────────────────────────────────
       std::vector<TransactionSourceEntry> sources;
       prepareKeyInputs(context->selectedTransfers, context->outs, sources, context->mixIn);
       std::vector<TransactionTypes::InputKeyInfo> inputs = convertSources(std::vector<TransactionSourceEntry>(sources));
 
       std::vector<uint64_t> decomposedChange = splitAmount(context->foundMoney - totalAmount, context->dustPolicy.dustThreshold);
 
-      // --- Fuego Ring-Signature Commitment Output ---
-      // Derive the deposit secret deterministically (COLD) or discard it (HEAT burns).
-      //
-      // COLD deposits (finite term): depositSecret = H("fuego_commit_v1" || ECDH || outputIndex)
-      //   where ECDH = txSecretKey * viewPublicKey — the same shared secret used by CryptoNote
-      //   stealth address scanning. The depositor can re-derive this with their view key + the
-      //   tx public key found in the blockchain, so it is fully recoverable from seed.
-      //
-      // HEAT burns (FOREVER term): random ephemeral key is generated and discarded immediately.
-      //   No one knows the keyScalar → output is permanently non-spendable as a ring member only.
-      const uint32_t commitOutputIndex = static_cast<uint32_t>(transaction->getOutputCount());
-      std::array<uint8_t, 32> depositSecret;
-
-      // All deposit types (COLD, HEAT/burn, special staking) use deterministic ECDH derivation.
-      // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
-      // This makes every commitment output re-detectable on wallet rescan using the view key.
-      // HEAT burns are "permanent" because term=FOREVER has no withdrawal path in the UI,
-      // not because the secret is unrecoverable.
-      {
-        Crypto::SecretKey txSecretKey;
-        if (!transaction->getTransactionSecretKey(txSecretKey)) {
-          throw std::runtime_error("deposit: could not retrieve tx secret key for commitment derivation");
-        }
-        Crypto::KeyDerivation ecdh;
-        if (!Crypto::generate_key_derivation(m_keys.address.viewPublicKey, txSecretKey, ecdh)) {
-          throw std::runtime_error("deposit: ECDH key derivation failed");
-        }
-        // Mix in output index (LE32) so multiple commitment outputs per tx are independent.
-        uint8_t preimage[36];
-        memcpy(preimage, &ecdh, 32);
-        preimage[32] = commitOutputIndex & 0xFF;
-        preimage[33] = (commitOutputIndex >> 8) & 0xFF;
-        preimage[34] = (commitOutputIndex >> 16) & 0xFF;
-        preimage[35] = (commitOutputIndex >> 24) & 0xFF;
-        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        memcpy(depositSecret.data(), h.data, 32);
-      }
-
+      // ── Commitment output ────────────────────────────────────────────
+      auto depositSecret = deriveCommitmentSecret(*transaction, m_keys.address.viewPublicKey);
       CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
 
       CryptoNote::TransactionOutputCommitment commitOut;
       commitOut.commitKey = commitKeys.commitKey;
       commitOut.term      = static_cast<uint32_t>(context->depositTerm);
 
-      auto bankingIndex = transaction->addOutput(
-          std::abs(transactionInfo.totalAmount) - transactionInfo.fee,
-          commitOut);
+      auto bankingIndex = transaction->addOutput(depositAmount, commitOut);
 
       for (uint64_t changeOut : decomposedChange)
       {
@@ -793,15 +781,15 @@ namespace CryptoNote
 
       transaction->setUnlockTime(transactionInfo.unlockTime);
 
-      // Add extra data if provided (for deposit commitments)
+      // ── Extra data ───────────────────────────────────────────────────
       if (!context->extra.empty()) {
         CryptoNote::BinaryArray extraData(context->extra.begin(), context->extra.end());
         transaction->appendExtra(extraData);
       }
 
+      // ── Sign key inputs ──────────────────────────────────────────────
       std::vector<KeyPair> ephKeys;
       ephKeys.reserve(inputs.size());
-
       for (size_t i = 0; i < inputs.size(); ++i)
       {
         KeyPair ephKey;
@@ -811,19 +799,12 @@ namespace CryptoNote
         transaction->addInput(keys, inputs[i], ephKey);
         ephKeys.push_back(std::move(ephKey));
       }
-
       for (size_t i = 0; i < inputs.size(); ++i)
       {
         transaction->signInputKey(i, inputs[i], ephKeys[i]);
       }
 
-      // Deposit commitment detection:
-      // - 0x08 (HEAT) for FOREVER/burn deposits
-      // - 0xCD (COLD) for term deposits
-      // The wallet already created and appended the commitment to context->extra (line 551-554).
-      // Detect the type directly from the tag byte — parseTransactionExtra has stream
-      // position issues with commitment-only extras that cause silent failures.
-
+      // ── Deposit type detection & commitment ──────────────────────────
       bool isHeatDeposit = false;
       bool isColdDeposit = false;
       Deposit::Type detectedType = Deposit::Type::COLD;
@@ -833,37 +814,28 @@ namespace CryptoNote
         if (tag == TX_EXTRA_HEAT_COMMITMENT) {
           detectedType = Deposit::Type::HEAT;
           isHeatDeposit = true;
-         } else if (tag == TX_EXTRA_SIMPLE_CD) {
-           detectedType = Deposit::Type::COLD;
-           isColdDeposit = true;
-         }
+        } else if (tag == TX_EXTRA_SIMPLE_CD) {
+          detectedType = Deposit::Type::COLD;
+          isColdDeposit = true;
+        }
       } else {
-        // No wallet-provided commitment — generate one based on deposit term
         std::vector<uint8_t> generatedExtra;
-
-        if (context->depositTerm == parameters::DEPOSIT_TERM_FOREVER) {
-          uint64_t depositAmount = std::abs(transactionInfo.totalAmount) - transactionInfo.fee;
+        if (context->depositTerm == parameters::HEAT_TERM) {
           auto [commitment, secret] = CryptoNote::DepositCommitmentGenerator::generateHeatCommitmentWithSecret(
             depositAmount, std::vector<uint8_t>());
-
           if (!CryptoNote::createTxExtraWithHeatCommitment(commitment.commitment, depositAmount, commitment.metadata, generatedExtra)) {
             throw std::runtime_error("Failed to generate HEAT commitment for burn deposit");
           }
-
           transaction->appendExtra(generatedExtra);
           isHeatDeposit = true;
           detectedType = Deposit::Type::HEAT;
         } else {
-          uint64_t depositAmount = std::abs(transactionInfo.totalAmount) - transactionInfo.fee;
           auto commitment = CryptoNote::DepositCommitmentGenerator::generateYieldCommitment(
             context->depositTerm, depositAmount, std::vector<uint8_t>());
-
-          std::vector<uint8_t> emptyMetadata;
-          std::vector<uint8_t> emptyGiftSecret;
+          std::vector<uint8_t> emptyMetadata, emptyGiftSecret;
           if (!CryptoNote::createTxExtraWithSimpleCDCommitment(commitment.commitment, depositAmount, context->depositTerm, generatedExtra)) {
             throw std::runtime_error("Failed to generate SimpleCD commitment for term deposit");
           }
-
           transaction->appendExtra(generatedExtra);
           detectedType = Deposit::Type::COLD;
           isColdDeposit = true;
@@ -872,8 +844,9 @@ namespace CryptoNote
 
       transactionInfo.hash = transaction->getTransactionHash();
 
+      // ── Deposit record ───────────────────────────────────────────────
       Deposit deposit;
-      deposit.amount = std::abs(transactionInfo.totalAmount) - transactionInfo.fee;
+      deposit.amount = depositAmount;
       deposit.term = context->depositTerm;
       deposit.creatingTransactionId = context->transactionId;
       deposit.spendingTransactionId = WALLET_LEGACY_INVALID_TRANSACTION_ID;
@@ -883,59 +856,39 @@ namespace CryptoNote
       deposit.transactionHash = transaction->getTransactionHash();
       deposit.outputInTransaction = bankingIndex;
       deposit.depositType = detectedType;
-      deposit.interest = 0; // No interest for any deposits (field kept for compatibility)
-
-      deposit.amount = std::abs(transactionInfo.totalAmount) - transactionInfo.fee;
-
-      // Set extra field
+      deposit.interest = 0;
       if (!context->extra.empty()) {
         deposit.extra = context->extra;
       }
 
-      // For burn deposits, use a special banking index since there's no regular output
-      DepositId depositId = 0;
-      if (context->depositTerm == parameters::DEPOSIT_TERM_FOREVER) {
-        depositId = m_transactionsCache.insertDeposit(deposit, 0, transaction->getTransactionHash());
-      } else {
-        depositId = m_transactionsCache.insertDeposit(deposit, bankingIndex, transaction->getTransactionHash());
-      }
+      DepositId depositId = (context->depositTerm == parameters::HEAT_TERM)
+          ? m_transactionsCache.insertDeposit(deposit, 0, transaction->getTransactionHash())
+          : m_transactionsCache.insertDeposit(deposit, bankingIndex, transaction->getTransactionHash());
 
-      // HEAT secret notification: the wallet that created the burn commitment
-      // holds the secret key. We only emit this event for completeness.
       if (isHeatDeposit || isColdDeposit) {
         std::string txHashStr = Common::podToHex(transactionInfo.hash);
-        // Store the ECDH-derived commitKeys.keyScalar for future withdrawals
-        // This secret is deterministically derived from: H(ECDH(txSecretKey, viewPubKey) || outputIndex)
         std::vector<uint8_t> secretMetadata;
         if (isColdDeposit) {
-          // For COLD deposits, store commitment metadata if available
           secretMetadata.assign(context->extra.begin(), context->extra.end());
         }
         events.push_back(std::unique_ptr<WalletBurnDepositSecretCreatedEvent>(
-          new WalletBurnDepositSecretCreatedEvent(txHashStr, commitKeys.keyScalar, deposit.amount, secretMetadata)));
+          new WalletBurnDepositSecretCreatedEvent(txHashStr, commitKeys.keyScalar, depositAmount, secretMetadata)));
       }
 
       transactionInfo.firstDepositId = depositId;
       transactionInfo.depositCount = 1;
 
+      // ── Finalize ─────────────────────────────────────────────────────
       Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
       m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, totalAmount, context->selectedTransfers);
 
-      // For burn deposits, there's no interest - the full amount is burned
-      uint64_t depositTotal = 0;
-      if (context->depositTerm == parameters::DEPOSIT_TERM_FOREVER) {
-        depositTotal = deposit.amount; // No interest for burn deposits
-      } else {
-        depositTotal = deposit.amount; // No interest for any deposits
-      }
-      m_transactionsCache.addCreatedDeposit(depositId, depositTotal);
-
+      m_transactionsCache.addCreatedDeposit(depositId, depositAmount);
       notifyBalanceChanged(events);
 
       std::vector<DepositId> deposits{depositId};
-
-      return std::unique_ptr<WalletRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction, std::bind(&WalletTransactionSender::relayDepositTransactionCallback, this, context,
-                                                                                                                    deposits, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+      return std::unique_ptr<WalletRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction,
+        std::bind(&WalletTransactionSender::relayDepositTransactionCallback, this, context,
+                  deposits, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
     }
     catch (std::system_error &ec)
     {
@@ -1263,7 +1216,7 @@ namespace CryptoNote
     events.push_back(std::unique_ptr<WalletDepositsUpdatedEvent>(new WalletDepositsUpdatedEvent(std::move(deposits))));
 
     //  Handle burn deposit secrets
-    if (context->depositTerm == parameters::DEPOSIT_TERM_FOREVER) {
+    if (context->depositTerm == parameters::HEAT_TERM) {
       // This is a burn deposit - the secret should be handled by the wallet
       // In a more complete implementation, we would pass the secret back to the wallet
     }
@@ -1663,7 +1616,7 @@ namespace CryptoNote
       CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
       CryptoNote::TransactionOutputCommitment heatOut;
       heatOut.commitKey = commitKeys.commitKey;
-      heatOut.term = parameters::DEPOSIT_TERM_FOREVER;
+      heatOut.term = parameters::HEAT_TERM;
       transaction->addOutput(heatMinted, heatOut);
 
       // Change outputs
@@ -1724,7 +1677,7 @@ namespace CryptoNote
     size_t depositCount = m_transactionsCache.getDepositCount();
     for (size_t i = 0; i < depositCount; ++i) {
       Deposit d;
-      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::DEPOSIT_TERM_FOREVER && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::HEAT_TERM && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
         heatDepositIds.push_back(i);
       }
     }
@@ -1774,7 +1727,7 @@ namespace CryptoNote
     size_t depositCount = m_transactionsCache.getDepositCount();
     for (size_t i = 0; i < depositCount; ++i) {
       Deposit d;
-      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::DEPOSIT_TERM_FOREVER && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::HEAT_TERM && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
         heatDepositIds.push_back(i);
       }
     }
@@ -1826,7 +1779,7 @@ namespace CryptoNote
     size_t depositCount = m_transactionsCache.getDepositCount();
     for (size_t i = 0; i < depositCount; ++i) {
       Deposit d;
-      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::DEPOSIT_TERM_FOREVER && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::HEAT_TERM && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
         heatDepositIds.push_back(i);
       }
     }
@@ -1880,7 +1833,7 @@ namespace CryptoNote
       size_t depositCount = m_transactionsCache.getDepositCount();
       for (size_t i = 0; i < depositCount; ++i) {
         Deposit d;
-        if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::DEPOSIT_TERM_FOREVER && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+        if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::HEAT_TERM && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
           heatDepositIds.push_back(i);
         }
       }
@@ -1967,7 +1920,7 @@ namespace CryptoNote
       transaction->addOutput(inputAmount, poolOut);
 
       // Build user-receive commitment output
-      uint32_t receiveTerm = (direction == 0) ? parameters::DEPOSIT_TERM_FOREVER : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
+      uint32_t receiveTerm = (direction == 0) ? parameters::HEAT_TERM : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
       const uint32_t commitIdx = static_cast<uint32_t>(transaction->getOutputCount());
       std::array<uint8_t, 32> receiveSecret;
       {
@@ -2101,7 +2054,7 @@ namespace CryptoNote
         CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(changeSecret);
         CryptoNote::TransactionOutputCommitment changeOut;
         changeOut.commitKey = cKeys.commitKey;
-        changeOut.term = parameters::DEPOSIT_TERM_FOREVER;
+        changeOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeHeat, changeOut);
       }
 
@@ -2280,7 +2233,7 @@ namespace CryptoNote
       for (size_t depIdx = 0; depIdx < context->selectedTransfers.size(); ++depIdx) {
         const auto& transfer = context->selectedTransfers[depIdx];
         if (transfer.type != TransactionTypes::OutputType::Commitment) continue;
-        if (transfer.term != parameters::DEPOSIT_TERM_FOREVER) continue;
+        if (transfer.term != parameters::HEAT_TERM) continue;
 
         Crypto::KeyDerivation ecdh;
         Crypto::generate_key_derivation(transfer.transactionPublicKey, m_keys.viewSecretKey, ecdh);
@@ -2418,7 +2371,7 @@ namespace CryptoNote
         CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(chSecret);
         CryptoNote::TransactionOutputCommitment chOut;
         chOut.commitKey = cKeys.commitKey;
-        chOut.term = parameters::DEPOSIT_TERM_FOREVER;
+        chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
       }
 
@@ -2539,7 +2492,7 @@ namespace CryptoNote
       CryptoNote::DepositCommitmentKeys rcptKeys = CryptoNote::deriveCommitmentKeys(rcptSecret);
       CryptoNote::TransactionOutputCommitment rcptOut;
       rcptOut.commitKey = rcptKeys.commitKey;
-      rcptOut.term = parameters::DEPOSIT_TERM_FOREVER;
+      rcptOut.term = parameters::HEAT_TERM;
       transaction->addOutput(amount, rcptOut);
 
       // HEAT change (FOREVER term, sender's view key)
@@ -2561,7 +2514,7 @@ namespace CryptoNote
         CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(chSecret);
         CryptoNote::TransactionOutputCommitment chOut;
         chOut.commitKey = cKeys.commitKey;
-        chOut.term = parameters::DEPOSIT_TERM_FOREVER;
+        chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
       }
 

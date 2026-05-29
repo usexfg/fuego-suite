@@ -643,7 +643,6 @@ struct f_transaction_details_response {
   uint64_t mixin;
   uint64_t fee;
   uint64_t amount_out;
-  std::string networkId;  // Added for STARK proof validation
 
   void serialize(ISerializer &s) {
     KV_MEMBER(hash)
@@ -652,7 +651,6 @@ struct f_transaction_details_response {
     KV_MEMBER(mixin)
     KV_MEMBER(fee)
     KV_MEMBER(amount_out)
-    KV_MEMBER(networkId)
   }
 };
 
@@ -1159,140 +1157,6 @@ struct COMMAND_RPC_GET_ALL_ALIASES {
 	};
 };
 
-// ============================================================
-// Commitment Index RPC endpoints (Fuego → EVM bridge support)
-// Used by xfg-stark-cli to fetch commitment data + merkle proofs
-// ============================================================
-
-struct COMMAND_RPC_GET_COMMITMENT {
-  struct request {
-    std::string commitment_hash;  // Hex-encoded commitment hash (64 chars)
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(commitment_hash)
-    }
-  };
-
-  struct response {
-    bool found;
-    std::string commitment_hash;
-    std::string tx_hash;
-    uint32_t block_height;
-    uint64_t amount;
-    uint32_t term;
-    uint8_t type;               // 0=HEAT, 1=YIELD/COLD
-    uint32_t target_chain_id;
-    uint32_t leaf_index;
-    bool is_legacy;         // true only for 0xCE migrations (original tx had MultisignatureOutput)
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(found)
-      KV_MEMBER(commitment_hash)
-      KV_MEMBER(tx_hash)
-      KV_MEMBER(block_height)
-      KV_MEMBER(amount)
-      KV_MEMBER(term)
-      KV_MEMBER(type)
-      KV_MEMBER(target_chain_id)
-      KV_MEMBER(leaf_index)
-      KV_MEMBER(is_legacy)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_COMMITMENT_STATS {
-  typedef EMPTY_STRUCT request;
-
-  struct response {
-    uint64_t total_commitments;
-    uint64_t heat_commitments;
-    uint64_t cold_commitments;
-    uint32_t highest_block;
-    std::string merkle_root;
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(total_commitments)
-      KV_MEMBER(heat_commitments)
-      KV_MEMBER(cold_commitments)
-      KV_MEMBER(highest_block)
-      KV_MEMBER(merkle_root)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT {
-  typedef EMPTY_STRUCT request;
-
-  struct response {
-    std::string merkle_root;    // Hex-encoded current merkle root
-    uint64_t total_leaves;
-    uint32_t highest_block;
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(merkle_root)
-      KV_MEMBER(total_leaves)
-      KV_MEMBER(highest_block)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF {
-  struct request {
-    std::string commitment_hash;  // Hex-encoded commitment hash
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(commitment_hash)
-    }
-  };
-
-  struct response {
-    bool found;
-    std::string merkle_root;              // Current root
-    std::string leaf_hash;                // The commitment being proved
-    std::vector<std::string> proof_path;  // Sibling hashes in hex
-    std::vector<uint32_t> proof_indices;  // Left(0) or right(1) at each level
-    uint32_t leaf_index;
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(found)
-      KV_MEMBER(merkle_root)
-      KV_MEMBER(leaf_hash)
-      KV_MEMBER(proof_path)
-      KV_MEMBER(proof_indices)
-      KV_MEMBER(leaf_index)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_CHECK_COMMITMENT_EXISTS {
-  struct request {
-    std::string commitment_hash;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(commitment_hash)
-    }
-  };
-
-  struct response {
-    bool exists;
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(exists)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-
 // ============================================================================
 // SWAP ORDERBOOK RPC ENDPOINTS
 // ============================================================================
@@ -1550,7 +1414,6 @@ struct COMMAND_RPC_GET_EPOCH_HISTORY {
     uint64_t total_cd_locked_at_start;
     uint64_t fee_rate_fixed_point;
     uint64_t total_fees_distributed;
-    uint64_t active_efier_count;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(epoch_number)
@@ -1558,7 +1421,6 @@ struct COMMAND_RPC_GET_EPOCH_HISTORY {
       KV_MEMBER(total_cd_locked_at_start)
       KV_MEMBER(fee_rate_fixed_point)
       KV_MEMBER(total_fees_distributed)
-      KV_MEMBER(active_efier_count)
     }
   };
 
@@ -1925,22 +1787,6 @@ struct COMMAND_RPC_GET_BLOCK_RANGE {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(blocks)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_COMMITMENT_LEAVES {
-  typedef EMPTY_STRUCT request;
-
-  struct response {
-    std::vector<std::string> leaves; // hex-encoded keccak256 commitment hashes
-    uint64_t count;
-    std::string status;
-
-    void serialize(ISerializer &s) {
-      KV_MEMBER(leaves)
-      KV_MEMBER(count)
       KV_MEMBER(status)
     }
   };

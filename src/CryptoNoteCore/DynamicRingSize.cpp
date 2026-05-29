@@ -78,19 +78,16 @@ bool DynamicRingSizeCalculator::isRingSizeAchievable(
   size_t ringSize,
   const std::vector<OutputInfo>& availableOutputs
 ) {
-  // Check if we have enough outputs of any amount to achieve the ring size
+  // Ring members must be same-amount to preserve privacy.
+  // Cross-amount mixing would reveal which ring member is real
+  // (different amounts are distinguishable on-chain).
   for (const auto& output : availableOutputs) {
     if (output.availableCount >= ringSize) {
       return true;
     }
   }
-  // Check if we can combine outputs from different amounts
-  size_t totalAvailable = 0;
-  for (const auto& output : availableOutputs) {
-    totalAvailable += output.availableCount;
-  }
 
-  return totalAvailable >= ringSize;
+  return false;
 }
 
 // Check if a ring size is one of our approved uniform sizes
@@ -101,20 +98,17 @@ bool DynamicRingSizeCalculator::isApprovedRingSize(size_t ringSize) {
 
 
 std::string DynamicRingSizeCalculator::getPrivacyLevelDescription(size_t ringSize) {
+  // Approved ring sizes: {32, 16, 8} — must match getTargetRingSizes()
   if (ringSize == 0) {
-    return "Transaction Rejected - Use Optimizer (Insufficient outputs for approved ring sizes)";
-  } else if (ringSize == 18) {
-    return "Fuego Max Privacy (Ring Size 18)";
-  } else if (ringSize == 15) {
-    return "Strong Privacy (Ring Size 15)";
-  } else if (ringSize == 12) {
-    return "Better Privacy (Ring Size 12)";
-  } else if (ringSize == 10) {
-    return "Solid Privacy (Ring Size 10)";
+    return "Transaction Rejected (Insufficient outputs for approved ring sizes)";
+  } else if (ringSize == 32) {
+    return "Maximum Privacy (Ring Size 32)";
+  } else if (ringSize == 16) {
+    return "Strong Privacy (Ring Size 16)";
   } else if (ringSize == 8) {
     return "Standard Privacy (Ring Size 8)";
   } else {
-    return "Invalid Ring Size (Ring Size " + std::to_string(ringSize) + ") - Use Optimizer";
+    return "Invalid Ring Size (Ring Size " + std::to_string(ringSize) + ")";
   }
 }
 

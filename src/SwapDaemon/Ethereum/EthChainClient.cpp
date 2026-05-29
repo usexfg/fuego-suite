@@ -4,8 +4,9 @@
 
 namespace XfgSwap {
 
-EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::string& address)
-  : m_rpc(std::move(rpc)), m_address(address) {}
+EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::string& address,
+                               const std::string& chainName)
+  : m_rpc(std::move(rpc)), m_address(address), m_chainName(chainName) {}
 
 ChainClientResult EthChainClient::lock(const SwapParams& params) {
   try {

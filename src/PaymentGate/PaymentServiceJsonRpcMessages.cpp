@@ -77,7 +77,6 @@ void GetStatus::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(depositCount, "depositCount");
   serializer(transactionCount, "transactionCount");
   serializer(addressCount, "addressCount");
-  serializer(networkId, "networkId");
 }
 
 void CreateDeposit::Request::serialize(CryptoNote::ISerializer &serializer)
@@ -573,23 +572,6 @@ void CreateBurnDeposit::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(heatAmount, "heatAmount");
 }
 
-void CreateBurnDepositWithProof::Request::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(amount, "amount");
-  serializer(sourceAddress, "sourceAddress");
-  serializer(recipientAddress, "recipientAddress");
-  serializer(metadata, "metadata");
-}
-
-void CreateBurnDepositWithProof::Response::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(transactionHash, "transactionHash");
-  serializer(term, "term");
-  serializer(heatAmount, "heatAmount");
-  serializer(burnProofDataFile, "burnProofDataFile");
-  serializer(networkId, "networkId");
-}
-
 void CreateBurnDepositLarge::Request::serialize(CryptoNote::ISerializer &serializer)
 {
   serializer(sourceAddress, "sourceAddress");
@@ -601,53 +583,6 @@ void CreateBurnDepositLarge::Response::serialize(CryptoNote::ISerializer &serial
   serializer(transactionHash, "transactionHash");
   serializer(term, "term");
   serializer(heatAmount, "heatAmount");
-}
-
-void CreateBurnDepositLargeWithProof::Request::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(sourceAddress, "sourceAddress");
-  serializer(recipientAddress, "recipientAddress");
-  serializer(metadata, "metadata");
-}
-
-void CreateBurnDepositLargeWithProof::Response::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(transactionHash, "transactionHash");
-  serializer(term, "term");
-  serializer(heatAmount, "heatAmount");
-  serializer(burnProofDataFile, "burnProofDataFile");
-  serializer(networkId, "networkId");
-}
-
-// BPDF RPC serialization
-void GenerateBurnProofDataFile::Request::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(transactionHash, "transactionHash");
-  serializer(recipientAddress, "recipientAddress");
-  serializer(outputPath, "outputPath");
-}
-
-void GenerateBurnProofDataFile::Response::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(burnProofDataFile, "burnProofDataFile");
-  serializer(success, "success");
-  serializer(errorMessage, "errorMessage");
-  serializer(networkId, "networkId");
-}
-
-void GenerateBurnProofDataFileAuto::Request::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(transactionHash, "transactionHash");
-  serializer(recipientAddress, "recipientAddress");
-  serializer(outputPath, "outputPath");
-}
-
-void GenerateBurnProofDataFileAuto::Response::serialize(CryptoNote::ISerializer &serializer)
-{
-  serializer(burnProofDataFile, "burnProofDataFile");
-  serializer(success, "success");
-  serializer(errorMessage, "errorMessage");
-  serializer(networkId, "networkId");
 }
 
 // Dynamic Supply RPC serialization

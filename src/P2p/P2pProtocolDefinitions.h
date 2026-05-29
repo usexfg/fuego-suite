@@ -329,6 +329,8 @@ namespace CryptoNote
       uint32_t    postedHeight;           // Block height when posted
       bool        isSoftOrder;            // True if this is a soft intent order
       uint8_t     allowedSlippagePct;
+      bool        dandelion_stem = false;
+      uint32_t    hop_count = 0;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
@@ -342,6 +344,8 @@ namespace CryptoNote
         KV_MEMBER(postedHeight)
         KV_MEMBER(isSoftOrder)
         KV_MEMBER(allowedSlippagePct)
+        KV_MEMBER(dandelion_stem)
+        KV_MEMBER(hop_count)
       }
     };
     typedef EMPTY_STRUCT response;

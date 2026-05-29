@@ -38,7 +38,7 @@ struct SwapOfferMsg {
   bool        isSell;       // true = selling XFG for CTR
   uint64_t    xfgAmount;    // atomic units (7 decimals)
   uint64_t    rateNum;      // rate numerator (XFG per 1 CTR, scaled by 1e7)
-  uint8_t     pair;         // 0=SOL, 1=ETH, 2=XMR, 3=BCH
+  uint8_t     pair;         // 0=SOL, 1=ETH, 2=XMR, 3=BCH, 4=ARB
   Crypto::PublicKey makerPubKey;  // maker's wallet pubkey
   Crypto::Signature signature;   // signs (offerId) with maker's key
   uint64_t    timestamp;
@@ -111,7 +111,7 @@ struct PoolSourceConfig {
 // Swap offer relay service
 // ============================================================================
 
-// Swap offer relay service — runs alongside ElderfierSignatureBroadcaster in fuegod
+// Swap offer relay service
 class SwapOfferRelay {
 public:
   SwapOfferRelay(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint = nullptr);
@@ -183,6 +183,7 @@ private:
   void exbitronFetchThread();
 
   // Active offers indexed by offerId
+  static constexpr size_t MAX_OFFERS = 10000;
   std::map<std::string, SwapOfferMsg> m_offers;
   std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> m_pendingRequests;
 

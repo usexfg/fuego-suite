@@ -825,58 +825,8 @@ func burn2MintMenu(m model) model {
 	m.appendLog("✅ Elderfier consensus received")
 	m.appendLog("  Proof: " + eldernodeProof[:32] + "...")
 
-	// Step 5: Generate STARK proof using consensus as input
-	m.appendLog("─────────────────────────────────────")
-	m.appendLog("Step 4/4: Generating XFG-STARK proof...")
-
-	xfgStarkPath := binPath("xfg-stark")
-	if _, err := exec.LookPath("xfg-stark"); err == nil || xfgStarkPath != "xfg-stark" {
-		m.appendLog("  → Running: xfg-stark generate-proof")
-
-		// Use elderfier consensus proof as inputs
-		cmd := exec.Command(xfgStarkPath,
-			"generate-proof",
-			"--tx-hash", txHash,
-			"--amount", fmt.Sprintf("%d", amountAtomic),
-			"--eldernode-proof", eldernodeProof,
-		)
-
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			m.appendLog("❌ STARK generation failed: " + err.Error())
-			m.appendLog(string(out))
-			m.statusMsg = "STARK proof failed"
-			return m
-		}
-
-		m.appendLog("✅ STARK proof generated successfully")
-		m.appendLog("  Output: " + string(out)[:min(100, len(out))] + "...")
-
-		// Step 6: Ready for L2 submission
-		m.appendLog("─────────────────────────────────────")
-		m.appendLog("🎉 Burn2Mint preparation complete!")
-		m.appendLog("")
-		m.appendLog("Next steps:")
-		m.appendLog("  1. Estimate L1 gas fees (0.001-0.01 ETH)")
-		m.appendLog("  2. Call claimHEAT() on Arbitrum L2 with:")
-		m.appendLog("     • STARK proof (generated above)")
-		m.appendLog("     • Eldernode proof")
-		m.appendLog("     • L1 gas fees (msg.value)")
-		m.appendLog("  3. Receive HEAT on Ethereum L1")
-		m.appendLog("")
-		m.appendLog("⚠️  Remember: Include 20% gas buffer to avoid restart!")
-
-	} else {
-		m.appendLog("⚠️  xfg-stark CLI not found")
-		m.appendLog("  Please install xfg-stark to generate proofs")
-		m.appendLog("  Manual steps:")
-		m.appendLog("    $ xfg-stark generate-proof \\")
-		m.appendLog("      --tx-hash " + txHash + " \\")
-		m.appendLog("      --eldernode-proof " + eldernodeProof)
-	}
-
 	m.appendLog("═══════════════════════════════════════")
-	m.statusMsg = "Burn2Mint flow complete"
+	m.statusMsg = "Burn flow complete"
 	return m
 }
 

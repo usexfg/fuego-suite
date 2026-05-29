@@ -20,6 +20,7 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/VerificationContext.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
 #include "P2p/LevinProtocol.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
 
@@ -326,8 +327,6 @@ int CryptoNoteProtocolHandler::handle_notify_new_block(int command, NOTIFY_NEW_B
   if (bvc.m_added_to_main_chain)
   {
     ++arg.hop;
-    //TODO: Add here announce protocol usage
-    //relay_post_notify<NOTIFY_NEW_BLOCK>(*m_p2p, arg, &context.m_connection_id);
     relay_block(arg);
     // relay_block(arg, context);
 
@@ -392,8 +391,37 @@ int CryptoNoteProtocolHandler::handle_notify_new_transactions(int command, NOTIF
 
     if (arg.txs.size())
     {
-      //TODO: add announce usage here
-      relay_post_notify<NOTIFY_NEW_TRANSACTIONS>(*m_p2p, arg, &context.m_connection_id);
+      if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
+        if (arg.dandelion_stem) {
+          arg.hop_count++;
+          bool stay_stem = (arg.hop_count < 10) && (Crypto::rand<uint32_t>() % 100 < 90);
+
+          if (stay_stem) {
+            logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying transactions in Dandelion STEM mode (hop " << arg.hop_count << ")";
+
+            {
+              std::lock_guard<std::mutex> lock(m_stem_mutex);
+              for (const auto& tx_blob : arg.txs) {
+                Crypto::Hash tx_hash = Crypto::cn_fast_hash(tx_blob.data(), tx_blob.size());
+                if (m_stem_transactions.find(tx_hash) == m_stem_transactions.end()) {
+                  m_stem_transactions[tx_hash] = {arg, time(nullptr)};
+                }
+              }
+            }
+
+            auto buf = LevinProtocol::encode(arg);
+            m_p2p->relay_notify_stem(NOTIFY_NEW_TRANSACTIONS::ID, buf, &context.m_connection_id);
+          } else {
+            logger(Logging::TRACE, Logging::BRIGHT_CYAN) << context << "Dandelion transition: STEM -> FLUFF (hop " << arg.hop_count << ")";
+            arg.dandelion_stem = false;
+            relay_transactions(arg);
+          }
+        } else {
+          relay_post_notify<NOTIFY_NEW_TRANSACTIONS>(*m_p2p, arg, &context.m_connection_id);
+        }
+      } else {
+        relay_post_notify<NOTIFY_NEW_TRANSACTIONS>(*m_p2p, arg, &context.m_connection_id);
+      }
     }
   }
 
@@ -602,6 +630,27 @@ int CryptoNoteProtocolHandler::processObjects(CryptoNoteConnectionContext& conte
 
 bool CryptoNoteProtocolHandler::on_idle()
 {
+  {
+    std::lock_guard<std::mutex> lock(m_stem_mutex);
+    time_t now = time(nullptr);
+    for (auto it = m_stem_transactions.begin(); it != m_stem_transactions.end(); ) {
+      Transaction tx;
+      if (m_core.getTransaction(it->first, tx, true)) {
+         it = m_stem_transactions.erase(it);
+         continue;
+      }
+
+      if (now - it->second.time_added > 30) {
+        logger(Logging::INFO) << "Fluffing stem transaction " << it->first << " after timeout";
+        it->second.request.dandelion_stem = false;
+        relay_transactions(it->second.request);
+        it = m_stem_transactions.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   return m_core.on_idle();
 }
 
@@ -888,8 +937,18 @@ void CryptoNoteProtocolHandler::relay_block(NOTIFY_NEW_BLOCK::request &arg)
 
 void CryptoNoteProtocolHandler::relay_transactions(NOTIFY_NEW_TRANSACTIONS::request &arg)
 {
-  auto buf = LevinProtocol::encode(arg);
-  m_p2p->externalRelayNotifyToAll(NOTIFY_NEW_TRANSACTIONS::ID, buf, nullptr);
+  if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
+    if (arg.dandelion_stem) {
+      auto buf = LevinProtocol::encode(arg);
+      m_p2p->externalRelayNotifyToStem(NOTIFY_NEW_TRANSACTIONS::ID, buf, nullptr);
+    } else {
+      auto buf = LevinProtocol::encode(arg);
+      m_p2p->externalRelayNotifyToAll(NOTIFY_NEW_TRANSACTIONS::ID, buf, nullptr);
+    }
+  } else {
+    auto buf = LevinProtocol::encode(arg);
+    m_p2p->externalRelayNotifyToAll(NOTIFY_NEW_TRANSACTIONS::ID, buf, nullptr);
+  }
 }
 
 void CryptoNoteProtocolHandler::requestMissingPoolTransactions(const CryptoNoteConnectionContext &context)
@@ -1081,7 +1140,6 @@ int CryptoNoteProtocolHandler::doPushLiteBlock(NOTIFY_NEW_LITE_BLOCK::request ar
     if (bvc.m_added_to_main_chain)
     {
       ++arg.hop;
-      //TODO: Add here announce protocol usage
       relay_post_notify<NOTIFY_NEW_LITE_BLOCK>(*m_p2p, arg, &context.m_connection_id);
 
       if (bvc.m_switched_to_alt_chain)
@@ -1146,6 +1204,31 @@ int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER
   offer.allowedSlippagePct = arg.allowedSlippagePct;
 
   m_core.getSwapRelay().handleOfferMessage(offer);
+
+  if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
+    if (arg.dandelion_stem) {
+      arg.hop_count++;
+      bool stay_stem = (arg.hop_count < 5) && (Crypto::rand<uint32_t>() % 100 < 80);
+
+      if (stay_stem) {
+        logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying swap offer in STEM mode (hop " << arg.hop_count << ")";
+        auto buf = LevinProtocol::encode(arg);
+        m_p2p->relay_notify_stem(COMMAND_SWAP_OFFER::ID, buf, &context.m_connection_id);
+      } else {
+        logger(Logging::TRACE, Logging::BRIGHT_CYAN) << context << "Swap offer transition: STEM -> FLUFF (hop " << arg.hop_count << ")";
+        arg.dandelion_stem = false;
+        auto buf = LevinProtocol::encode(arg);
+        m_p2p->relay_notify_to_all(COMMAND_SWAP_OFFER::ID, buf, &context.m_connection_id);
+      }
+    } else {
+      auto buf = LevinProtocol::encode(arg);
+      m_p2p->relay_notify_to_all(COMMAND_SWAP_OFFER::ID, buf, &context.m_connection_id);
+    }
+  } else {
+    auto buf = LevinProtocol::encode(arg);
+    m_p2p->relay_notify_to_all(COMMAND_SWAP_OFFER::ID, buf, &context.m_connection_id);
+  }
+
   return 1;
 }
 
@@ -1157,6 +1240,9 @@ int CryptoNoteProtocolHandler::handle_swap_cancel(int command, COMMAND_SWAP_CANC
   sig = arg.signature;
 
   m_core.getSwapRelay().handleCancelMessage(arg.offerId, pubkey, sig);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_SWAP_CANCEL::ID, buf, &context.m_connection_id);
   return 1;
 }
 

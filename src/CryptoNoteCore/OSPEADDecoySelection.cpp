@@ -21,7 +21,23 @@
 #include <cmath>
 #include <numeric>
 #include <fstream>
-#include <random>
+
+extern "C" {
+#include "../crypto/random.h"
+}
+
+namespace {
+  // CSPRNG-backed uniform random in [0, max). Rejection sampling to avoid modulo bias.
+  uint32_t csprng_uniform(uint32_t max) {
+    if (max <= 1) return 0;
+    uint32_t threshold = (~max + 1) % max; // 2^32 - max, mod max
+    uint32_t r;
+    do {
+      generate_random_bytes(sizeof(r), &r);
+    } while (r < threshold);
+    return r % max;
+  }
+}
 
 namespace CryptoNote {
 
@@ -88,16 +104,15 @@ std::vector<uint32_t> OSPEADDecoySelector::selectOptimalDecoys(
     return selectedDecoys; // Not enough outputs available
   }
 
-  // Use weighted random selection based on spend probabilities
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  
-  // Create weights vector for discrete_distribution
-  std::vector<double> weights;
+  // Use CSPRNG-backed weighted random selection based on spend probabilities.
+  // Build cumulative distribution from bin probabilities for rejection-free sampling.
+  std::vector<double> cumWeights;
+  cumWeights.reserve(ageBins.size());
+  double cumSum = 0.0;
   for (const auto& bin : ageBins) {
-    weights.push_back(bin.spendProbability);
+    cumSum += bin.spendProbability;
+    cumWeights.push_back(cumSum);
   }
-  std::discrete_distribution<> dist(weights.begin(), weights.end());
 
   // Select decoys using spend pattern distribution
   std::vector<bool> used(availableOutputs.size(), false);
@@ -107,14 +122,27 @@ std::vector<uint32_t> OSPEADDecoySelector::selectOptimalDecoys(
     const size_t maxAttempts = 100;
 
     while (attempts < maxAttempts) {
-      size_t binIndex = dist(gen);
+      // CSPRNG-backed weighted bin selection via cumulative distribution
+      uint32_t rval;
+      generate_random_bytes(sizeof(rval), &rval);
+      double sample = static_cast<double>(rval) / static_cast<double>(UINT32_MAX) * cumSum;
+      size_t binIndex = 0;
+      for (size_t b = 0; b < cumWeights.size(); ++b) {
+        if (sample <= cumWeights[b]) { binIndex = b; break; }
+      }
       const auto& bin = ageBins[binIndex];
 
-      // Find unused outputs in this age bin
+      // Find unused outputs in this age bin.
+      // availableOutputs contains global output indices (uint32_t).
+      // Age is approximated from the index relative to current height.
       std::vector<size_t> candidates;
       for (size_t j = 0; j < availableOutputs.size(); ++j) {
         if (!used[j]) {
-          uint64_t outputAge = currentBlockHeight - (static_cast<uint64_t>(availableOutputs[j]) >> 32); // Extract age from output ID
+          // Global index serves as a height proxy — outputs created at lower
+          // indices are older.  This is an approximation; the OSPEAD pattern
+          // analysis compensates for imprecision.
+          uint64_t outputAge = (availableOutputs[j] < currentBlockHeight)
+            ? (currentBlockHeight - availableOutputs[j]) : 0;
           if (outputAge >= bin.minAge && outputAge <= bin.maxAge) {
             candidates.push_back(j);
           }
@@ -122,8 +150,7 @@ std::vector<uint32_t> OSPEADDecoySelector::selectOptimalDecoys(
       }
 
       if (!candidates.empty()) {
-        std::uniform_int_distribution<> candidateDist(0, candidates.size() - 1);
-        size_t selectedIndex = candidates[candidateDist(gen)];
+        size_t selectedIndex = candidates[csprng_uniform(static_cast<uint32_t>(candidates.size()))];
         selectedDecoys.push_back(availableOutputs[selectedIndex]);
         used[selectedIndex] = true;
         break;

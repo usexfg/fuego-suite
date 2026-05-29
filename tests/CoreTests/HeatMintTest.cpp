@@ -16,7 +16,7 @@ static Transaction makeHeatMintTx(uint64_t xfgIn, uint64_t heatOut, uint64_t fee
   TransactionOutput out;
   out.amount = heatOut;
   TransactionOutputCommitment co;
-  co.term = CryptoNote::parameters::DEPOSIT_TERM_FOREVER;
+  co.term = CryptoNote::parameters::HEAT_TERM;
   out.target = co;
   tx.outputs.push_back(out);
   return tx;
@@ -74,7 +74,7 @@ TEST(HeatMintEngine, InsufficientBalance) {
   TransactionOutput out;
   out.amount = 500;
   TransactionOutputCommitment co;
-  co.term = CryptoNote::parameters::DEPOSIT_TERM_FOREVER;
+  co.term = CryptoNote::parameters::HEAT_TERM;
   out.target = co;
   tx.outputs.push_back(out);
   uint64_t burned, minted;

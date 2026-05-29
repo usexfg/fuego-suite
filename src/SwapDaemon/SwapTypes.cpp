@@ -47,6 +47,7 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::ETH: return "ETH";
     case SwapPair::XMR: return "XMR";
     case SwapPair::BCH: return "BCH";
+    case SwapPair::ARB: return "ARB";
     default:            return "UNKNOWN";
   }
 }
@@ -58,6 +59,7 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (upper == "ETH") { out = SwapPair::ETH; return true; }
   if (upper == "XMR") { out = SwapPair::XMR; return true; }
   if (upper == "BCH") { out = SwapPair::BCH; return true; }
+  if (upper == "ARB") { out = SwapPair::ARB; return true; }
   return false;
 }
 

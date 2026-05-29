@@ -23,12 +23,27 @@
 
 #include <boost/program_options.hpp>
 #include "P2pProtocolTypes.h"
+#include "NetworkAddressTypes.h"
 
 #ifdef ENABLE_FUEGOMESH
 #include "FuegoMeshtastic/MeshtasticIntegration.h"
 #endif
 
 namespace CryptoNote {
+
+struct AnonymousInbound {
+  std::string our_address;  // .b32.i2p or .onion address
+  std::string bind_address; // local loopback bind (e.g. 127.0.0.1:18083)
+  uint32_t max_connections;
+  NetworkZone zone;
+};
+
+struct TxProxy {
+  NetworkZone zone;
+  std::string proxy_host;
+  uint16_t proxy_port;
+  uint32_t max_connections;
+};
 
 class NetNodeConfig {
 public:
@@ -48,6 +63,21 @@ public:
   std::vector<NetworkAddress> getSeedNodes() const;
   bool getHideMyPort() const;
   std::string getConfigFolder() const;
+
+  // I2P configuration
+  bool getI2PEnabled() const { return i2pEnabled; }
+  std::string getI2PSocksHost() const { return i2pSocksHost; }
+  uint16_t getI2PSocksPort() const { return i2pSocksPort; }
+
+  // Tor configuration
+  bool getTorEnabled() const { return torEnabled; }
+  std::string getTorSocksHost() const { return torSocksHost; }
+  uint16_t getTorSocksPort() const { return torSocksPort; }
+
+  // Privacy network options
+  bool getRestrictToPrivacyNet() const { return restrictToPrivacyNet; }
+  std::vector<AnonymousInbound> getAnonymousInbound() const { return anonymousInbound; }
+  std::vector<TxProxy> getTxProxies() const { return txProxies; }
 
 #ifdef ENABLE_FUEGOMESH
   bool getMeshtasticEnabled() const;
@@ -87,6 +117,21 @@ private:
   std::string configFolder;
   std::string p2pStateFilename;
   bool testnet;
+
+  // I2P
+  bool i2pEnabled;
+  std::string i2pSocksHost;
+  uint16_t i2pSocksPort;
+
+  // Tor
+  bool torEnabled;
+  std::string torSocksHost;
+  uint16_t torSocksPort;
+
+  // Privacy options
+  bool restrictToPrivacyNet;
+  std::vector<AnonymousInbound> anonymousInbound;
+  std::vector<TxProxy> txProxies;
 
 #ifdef ENABLE_FUEGOMESH
   bool meshtasticEnabled;

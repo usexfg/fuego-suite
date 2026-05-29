@@ -36,12 +36,41 @@
 #include "TransactionExtra.h"
 #include "CommitmentIndex.h"
 #include "CryptoNoteConfig.h"
+#include "OSPEADDecoySelection.h"
+#include "DynamicRingSize.h"
+#include "crypto/pedersen.h"
+#include "crypto/mlsag.h"
+extern "C" {
+#include "crypto/crypto-ops.h"
+}
 #include "parallel_hashmap/phmap_dump.h"
 
 using namespace Logging;
 using namespace Common;
 
 namespace {
+
+// EC point addition: result = a + b
+void ec_add(Crypto::EllipticCurvePoint& result,
+            const Crypto::EllipticCurvePoint& a,
+            const Crypto::EllipticCurvePoint& b) {
+  ge_p3 a_p3, b_p3;
+  ge_cached b_cached;
+  ge_p1p1 sum_p1p1;
+  if (ge_frombytes_vartime(&a_p3, reinterpret_cast<const unsigned char*>(&a)) != 0) return;
+  if (ge_frombytes_vartime(&b_p3, reinterpret_cast<const unsigned char*>(&b)) != 0) return;
+  ge_p3_to_cached(&b_cached, &b_p3);
+  ge_add(&sum_p1p1, &a_p3, &b_cached);
+  ge_p1p1_to_p3(&b_p3, &sum_p1p1);
+  ge_p3_tobytes(reinterpret_cast<unsigned char*>(&result), &b_p3);
+}
+
+// EC point negation: compresses negation by flipping sign bit
+void ec_negate(Crypto::EllipticCurvePoint& result,
+               const Crypto::EllipticCurvePoint& point) {
+  memcpy(&result, &point, sizeof(result));
+  result.data[31] ^= 0x80;
+}
 
 std::string appendPath(const std::string& path, const std::string& fileName) {
   std::string result = path;
@@ -76,8 +105,8 @@ class BlockchainIndicesSerializer;
 namespace CryptoNote {
 
 // custom serialization to speedup cache loading
-bool serialize(std::vector<std::pair<Blockchain::TransactionIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
-  const size_t elementSize = sizeof(std::pair<Blockchain::TransactionIndex, uint16_t>);
+bool serialize(std::vector<std::pair<TransactionIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
+  const size_t elementSize = sizeof(std::pair<TransactionIndex, uint16_t>);
   size_t size = value.size() * elementSize;
 
   if (!s.beginArray(size, name)) {
@@ -99,7 +128,7 @@ bool serialize(std::vector<std::pair<Blockchain::TransactionIndex, uint16_t>>& v
   return true;
 }
 
-void serialize(Blockchain::TransactionIndex& value, ISerializer& s) {
+void serialize(TransactionIndex& value, ISerializer& s) {
   s(value.block, "block");
   s(value.transaction, "tx");
 }
@@ -176,31 +205,31 @@ public:
       if (s.type() == ISerializer::INPUT)
       {
         phmap::BinaryInputArchive ar_in(appendPath(m_bs.m_config_folder, "transactionsmap.dat").c_str());
-        m_bs.m_transactionMap.load(ar_in);
+        m_bs.m_indexManager.transactionMap().load(ar_in);
       }
       else
       {
         phmap::BinaryOutputArchive ar_out(appendPath(m_bs.m_config_folder, "transactionsmap.dat").c_str());
-        m_bs.m_transactionMap.dump(ar_out);
+        m_bs.m_indexManager.transactionMap().dump(ar_out);
       }
 
       logger(INFO) << operation << "spent keys";
       if (s.type() == ISerializer::INPUT)
       {
         phmap::BinaryInputArchive ar_in(appendPath(m_bs.m_config_folder, "spentkeys.dat").c_str());
-        m_bs.m_spent_keys.load(ar_in);
+        m_bs.m_indexManager.spentKeys().load(ar_in);
       }
       else
       {
         phmap::BinaryOutputArchive ar_out(appendPath(m_bs.m_config_folder, "spentkeys.dat").c_str());
-        m_bs.m_spent_keys.dump(ar_out);
+        m_bs.m_indexManager.spentKeys().dump(ar_out);
       }
 
       logger(INFO) << operation << "outputs";
-      s(m_bs.m_outputs, "outputs");
+      s(m_bs.m_indexManager.outputs().data(), "outputs");
 
       logger(INFO) << operation << "multi-signature outputs";
-      s(m_bs.m_multisignatureOutputs, "multisig_outputs");
+      s(m_bs.m_indexManager.multisigOutputs().data(), "multisig_outputs");
 
       logger(INFO) << operation << "banking index";
       s(m_bs.m_bankingIndex, "banking_index");
@@ -209,7 +238,7 @@ public:
       s(m_bs.m_commitmentIndex, "commitment_index");
 
       logger(INFO) << operation << "commitment outputs";
-      s(m_bs.m_commitmentOutputs, "commitment_outputs");
+      s(m_bs.m_indexManager.commitmentOutputs().data(), "commitment_outputs");
 
       logger(INFO) << operation << "fee pool state";
       s(m_bs.m_feePoolBalance, "fee_pool_balance");
@@ -240,6 +269,8 @@ public:
       s(m_bs.m_piState, "pi_state");
       s(m_bs.m_heatLaunchTwap, "heat_launch_twap");
       s(m_bs.m_heatLaunchTwapSet, "heat_launch_twap_set");
+      s(m_bs.m_heatCurrentCpi, "heat_current_cpi");
+      s(m_bs.m_heatLaunchCpi, "heat_launch_cpi");
       s(m_bs.m_xfgMarketValue, "xfg_market_value");
       s(m_bs.m_xfgMarketValueHeight, "xfg_market_value_height");
       s(m_bs.m_cdYieldPool, "cd_yield_pool");
@@ -465,12 +496,14 @@ bool Blockchain::checkTransactionSize(size_t blobSize) {
 
 bool Blockchain::haveTransaction(const Crypto::Hash &id) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_transactionMap.find(id) != m_transactionMap.end();
+  if (!m_indexManager.isReady()) return false;
+  return m_indexManager.transactionMap().find(id) != m_indexManager.transactionMap().end();
 }
 
 bool Blockchain::have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return  m_spent_keys.find(key_im) != m_spent_keys.end();
+  if (!m_indexManager.isReady()) return false;
+  return m_indexManager.spentKeys().find(key_im) != m_indexManager.spentKeys().end();
 }
 
 uint32_t Blockchain::getCurrentBlockchainHeight() {
@@ -733,13 +766,14 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     logger(INFO, BRIGHT_WHITE) << "Rebuilding cache";
 
     std::chrono::steady_clock::time_point timePoint = std::chrono::steady_clock::now();
+
+    // Guard against concurrent access: during rebuild, RPC queries that call
+    // isReady() will return false until the rebuild completes.
+    std::lock_guard<std::mutex> rebuildLock(m_indexManager.rebuildMutex());
+    m_indexManager.setReady(false);
+
+    m_indexManager.clear();
     m_blockIndex.clear();
-    m_transactionMap.clear();
-    m_spent_keys.clear();
-    m_outputs.clear();
-    m_multisignatureOutputs.clear();
-    m_commitmentOutputs.clear();
-    m_commitmentIndex.clear();
     m_bankingIndex = BankingIndex(static_cast<BankingIndex::DepositHeight>(m_blocks.size()));
     for (uint32_t b = 0; b < m_blocks.size(); ++b)
     {
@@ -757,23 +791,23 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         const TransactionEntry &transaction = block.transactions[t];
         Crypto::Hash transactionHash = getObjectHash(transaction.tx);
         TransactionIndex transactionIndex = {b, t};
-        m_transactionMap.insert(std::make_pair(transactionHash, transactionIndex));
+        m_indexManager.transactionMap().insert(std::make_pair(transactionHash, transactionIndex));
 
         // process inputs
         for (auto &i : transaction.tx.inputs)
         {
           if (i.type() == typeid(KeyInput))
           {
-            m_spent_keys.insert(std::make_pair(::boost::get<KeyInput>(i).keyImage, b));
+            m_indexManager.spentKeys().insert(std::make_pair(::boost::get<KeyInput>(i).keyImage, b));
           }
           else if (i.type() == typeid(MultisignatureInput))
           {
             auto out = ::boost::get<MultisignatureInput>(i);
-            m_multisignatureOutputs[out.amount][out.outputIndex].isUsed = true;
+            m_indexManager.multisigOutputs()[out.amount][out.outputIndex].isUsed = true;
           }
           else if (i.type() == typeid(TransactionInputCommitmentSpend))
           {
-            m_spent_keys.insert(std::make_pair(::boost::get<TransactionInputCommitmentSpend>(i).keyImage, b));
+            m_indexManager.spentKeys().insert(std::make_pair(::boost::get<TransactionInputCommitmentSpend>(i).keyImage, b));
           }
         }
 
@@ -781,10 +815,10 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
           const auto& out = transaction.tx.outputs[o];
           if (out.target.type() == typeid(KeyOutput)) {
-            m_outputs[out.amount].push_back(std::make_pair<>(transactionIndex, o));
+            m_indexManager.outputs()[out.amount].push_back(std::make_pair<>(transactionIndex, o));
           } else if (out.target.type() == typeid(MultisignatureOutput)) {
             MultisignatureOutputUsage usage = { transactionIndex, o, false };
-            m_multisignatureOutputs[out.amount].push_back(usage);
+            m_indexManager.multisigOutputs()[out.amount].push_back(usage);
           } else if (out.target.type() == typeid(TransactionOutputCommitment)) {
             const auto& commitOut = ::boost::get<TransactionOutputCommitment>(out.target);
             CommitmentOutputRef ref;
@@ -792,7 +826,29 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             ref.outputInTransaction  = o;
             ref.commitKey            = commitOut.commitKey;
             ref.term                 = commitOut.term;
-            m_commitmentOutputs[out.amount].push_back(ref);
+            m_indexManager.commitmentOutputs()[out.amount].push_back(ref);
+          } else if (out.target.type() == typeid(TransactionOutputUnified)) {
+            const auto& unifiedOut = ::boost::get<TransactionOutputUnified>(out.target);
+            if (unifiedOut.term == parameters::TERM_REGULAR && out.amount == 0 && o > 0) {
+              uint64_t realAmount = transaction.tx.outputs[o - 1].amount;
+              if (realAmount > 0) {
+                CommitmentOutputRef ref;
+                ref.transactionIndex     = transactionIndex;
+                ref.outputInTransaction  = o;
+                ref.commitKey            = unifiedOut.key;
+                ref.term                 = unifiedOut.term;
+                m_indexManager.commitmentOutputs()[realAmount].push_back(ref);
+
+                UnifiedOutputRef uref;
+                uref.transactionIndex    = transactionIndex;
+                uref.outputInTransaction = o;
+                uref.commitKey           = unifiedOut.key;
+                uref.term                = unifiedOut.term;
+                uref.amount              = realAmount;
+                uref.commitment          = unifiedOut.commitment;
+                m_indexManager.allUnifiedOutputs().push_back(uref);
+              }
+            }
           }
         }
         interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b);
@@ -817,7 +873,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             entry.txHash        = getObjectHash(tx);
             entry.blockHeight   = b;
             entry.amount        = h.amount;
-            entry.term          = parameters::DEPOSIT_TERM_FOREVER;
+            entry.term          = parameters::HEAT_TERM;
             entry.type          = CommitmentEntry::Type::HEAT;
             entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
             m_commitmentIndex.addCommitment(entry);
@@ -838,6 +894,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     }
     logger(INFO, BRIGHT_WHITE) << "Commitment index rebuilt: "
       << m_commitmentIndex.size() << " commitments.";
+
+    m_indexManager.setReady(true);
 
     std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
     logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
@@ -869,11 +927,10 @@ bool Blockchain::resetAndSetGenesisBlock(const Block& b) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   m_blocks.clear();
   m_blockIndex.clear();
-  m_transactionMap.clear();
+  m_indexManager.setReady(false);
+  m_indexManager.clear();
 
-  m_spent_keys.clear();
   m_alternative_chains.clear();
-  m_outputs.clear();
 
   m_paymentIdIndex.clear();
   m_timestampIndex.clear();
@@ -882,6 +939,7 @@ bool Blockchain::resetAndSetGenesisBlock(const Block& b) {
 
   block_verification_context bvc = boost::value_initialized<block_verification_context>();
   addNewBlock(b, bvc);
+  m_indexManager.setReady(true);
   return bvc.m_added_to_main_chain && !bvc.m_verification_failed;
 }
 
@@ -1737,15 +1795,21 @@ bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TransactionInd
     logger(ERROR, BRIGHT_RED) << "internal error: in global outs index, transaction out index="
       << amount_outs[i].second << " more than transaction outputs = " << tx.outputs.size() << ", for tx id = " << getObjectHash(tx); return false;
   }
-  if (!(tx.outputs[amount_outs[i].second].target.type() == typeid(KeyOutput))) { logger(ERROR, BRIGHT_RED) << "unknown tx out type"; return false; }
-
-  //check if transaction is unlocked
-  if (!is_tx_spendtime_unlocked(tx.unlockTime))
-    return false;
-
+  if (!(tx.outputs[amount_outs[i].second].target.type() == typeid(KeyOutput) || 
+            tx.outputs[amount_outs[i].second].target.type() == typeid(TransactionOutputCommitment))) { 
+    logger(ERROR, BRIGHT_RED) << "unknown tx out type"; return false; 
+  }
+  
+  Crypto::PublicKey outKey;
+  if (tx.outputs[amount_outs[i].second].target.type() == typeid(KeyOutput)) {
+    outKey = boost::get<KeyOutput>(tx.outputs[amount_outs[i].second].target).key;
+  } else {
+    outKey = boost::get<TransactionOutputCommitment>(tx.outputs[amount_outs[i].second].target).commitKey;
+  }
+  
   COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry& oen = *result_outs.outs.insert(result_outs.outs.end(), COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry());
   oen.global_amount_index = static_cast<uint32_t>(i);
-  oen.out_key = boost::get<KeyOutput>(tx.outputs[amount_outs[i].second].target).key;
+  oen.out_key = outKey;
   return true;
 }
 
@@ -1768,12 +1832,12 @@ size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<Transac
 
 bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-
+  if (!m_indexManager.isReady()) return false;
   for (uint64_t amount : req.amounts) {
     COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount& result_outs = *res.outs.insert(res.outs.end(), COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount());
     result_outs.amount = amount;
-    auto it = m_outputs.find(amount);
-    if (it == m_outputs.end()) {
+    auto it = m_indexManager.outputs().find(amount);
+    if (it == m_indexManager.outputs().end()) {
       logger(ERROR, BRIGHT_RED) <<
         "COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS: not outs for amount " << amount << ", wallet should use some real outs when it looks for mixins, so at least one out for this amount should exist";
       continue;//actually this is strange situation, wallet should use some real outs when it lookup for some mix, so, at least one out for this amount should exist
@@ -1815,9 +1879,10 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
 bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
     std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  if (!m_indexManager.isReady()) return false;
 
-  auto it = m_commitmentOutputs.find(amount);
-  if (it == m_commitmentOutputs.end() || it->second.empty()) {
+  auto it = m_indexManager.commitmentOutputs().find(amount);
+  if (it == m_indexManager.commitmentOutputs().end() || it->second.empty()) {
     return true; // no commitment outputs at this amount yet — caller handles empty result
   }
 
@@ -1852,25 +1917,58 @@ bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t c
       result.push_back(entry);
     }
   } else {
-    // Triangular distribution: bias toward recent (but still valid) outputs.
+    // OSPEAD-weighted decoy selection: learn spend pattern from recent outputs
+    // and weight selection accordingly. Falls back to age-biased (triangular)
+    // distribution when there's insufficient data.
+    uint64_t currentHeight = m_blocks.empty() ? 0 : m_blocks.back().height;
+
+    std::vector<TransactionOutputInfo> recentTxData;
+    size_t sampleSize = std::min(total, size_t(1000));
+    size_t sampleStart = total - sampleSize;
+    for (size_t i = sampleStart; i < total; ++i) {
+      size_t absIdx = validIndices[i];
+      recentTxData.emplace_back(amount, allRefs[absIdx].transactionIndex.block, absIdx);
+    }
+    auto ageBins = OSPEADDecoySelector::analyzeSpendPatterns(recentTxData, currentHeight);
+
+    std::vector<double> weights(total, 0.001);
+    for (size_t i = 0; i < total; ++i) {
+      size_t absIdx = validIndices[i];
+      uint64_t age = allRefs[absIdx].transactionIndex.block <= currentHeight
+        ? currentHeight - allRefs[absIdx].transactionIndex.block : 0;
+      for (const auto& bin : ageBins) {
+        if (age >= bin.minAge && age <= bin.maxAge) {
+          weights[i] = bin.spendProbability;
+          break;
+        }
+      }
+    }
+
     std::set<size_t> used;
     size_t tries = 0;
     const size_t maxTries = count * 20;
     while (result.size() < count && tries < maxTries) {
       ++tries;
-      uint64_t r = Crypto::rand<uint64_t>() % ((uint64_t)1 << 53);
-      double frac = std::sqrt((double)r / ((uint64_t)1 << 53));
-      size_t idxInValid = static_cast<size_t>(frac * total);
-      if (idxInValid >= total) idxInValid = total - 1;
-      
-      size_t absIdx = validIndices[idxInValid];
-      if (used.count(absIdx)) continue;
-      used.insert(absIdx);
-      
-      COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry entry;
-      entry.global_amount_index = static_cast<uint32_t>(absIdx);
-      entry.commit_key = allRefs[absIdx].commitKey;
-      result.push_back(entry);
+      double totalW = 0.0;
+      for (size_t i = 0; i < total; ++i)
+        if (!used.count(validIndices[i]))
+          totalW += weights[i];
+      if (totalW <= 0.0) break;
+      double r = static_cast<double>(Crypto::rand<uint64_t>()) / static_cast<double>(UINT64_MAX) * totalW;
+      double cum = 0.0;
+      for (size_t i = 0; i < total; ++i) {
+        if (used.count(validIndices[i])) continue;
+        cum += weights[i];
+        if (r <= cum) {
+          size_t absIdx = validIndices[i];
+          used.insert(absIdx);
+          COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry entry;
+          entry.global_amount_index = static_cast<uint32_t>(absIdx);
+          entry.commit_key = allRefs[absIdx].commitKey;
+          result.push_back(entry);
+          break;
+        }
+      }
     }
   }
 
@@ -1934,7 +2032,7 @@ void Blockchain::print_blockchain_index() {
 void Blockchain::print_blockchain_outs(const std::string& file) {
   std::stringstream ss;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  for (const outputs_container::value_type& v : m_outputs) {
+  for (const outputs_container::value_type& v : m_indexManager.outputs().data()) {
     const std::vector<std::pair<TransactionIndex, uint16_t>>& vals = v.second;
     if (!vals.empty()) {
       ss << "amount: " << v.first << ENDL;
@@ -1979,13 +2077,15 @@ bool Blockchain::haveBlock(const Crypto::Hash& id) {
 
 size_t Blockchain::getTotalTransactions() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_transactionMap.size();
+  if (!m_indexManager.isReady()) return 0;
+  return m_indexManager.transactionMap().size();
 }
 
 bool Blockchain::getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  auto it = m_transactionMap.find(tx_id);
-  if (it == m_transactionMap.end()) {
+  if (!m_indexManager.isReady()) return false;
+  auto it = m_indexManager.transactionMap().find(tx_id);
+  if (it == m_indexManager.transactionMap().end()) {
     logger(WARNING, YELLOW) << "warning: get_tx_outputs_gindexs failed to find transaction with id = " << tx_id;
     return false;
   }
@@ -2002,8 +2102,9 @@ bool Blockchain::getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, st
 
 bool Blockchain::get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  auto it = m_multisignatureOutputs.find(amount);
-  if (it == m_multisignatureOutputs.end()) {
+  if (!m_indexManager.isReady()) return false;
+  auto it = m_indexManager.multisigOutputs().find(amount);
+  if (it == m_indexManager.multisigOutputs().end()) {
     return false;
   }
 
@@ -2158,12 +2259,80 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
 
         ++inputIndex;
       }
+      else if (txin.type() == typeid(TransactionInputUnified))
+      {
+        const TransactionInputUnified& uin = boost::get<TransactionInputUnified>(txin);
+
+        if (uin.outputIndexes.empty()) {
+          logger(ERROR, BRIGHT_RED) << "Unified input has empty outputIndexes in tx " << transactionHash;
+          return false;
+        }
+
+        if (have_tx_keyimg_as_spent(uin.keyImage)) {
+          logger(DEBUGGING) << "Unified input key image already spent: " << Common::podToHex(uin.keyImage);
+          return false;
+        }
+
+        if (!isInCheckpointZone(getCurrentBlockchainHeight())) {
+          if (!checkUnifiedInput(uin, tx_prefix_hash, tx.signatures[inputIndex], pmax_used_block_height)) {
+            logger(INFO, BRIGHT_WHITE) << "Unified input MLSAG check failed in tx " << transactionHash;
+            return false;
+          }
+        }
+
+        ++inputIndex;
+      }
       else
       {
         logger(INFO, BRIGHT_WHITE) << "Transaction << " << transactionHash << " contains input of unsupported type.";
         return false;
       }
     }
+
+  // Phase 2d: Balance proof for Unified inputs.
+  // sum(pseudoCommitment_inputs) - sum(commitment_outputs) - fee*H == identity
+  {
+    bool hasUnified = false;
+    Crypto::EllipticCurvePoint balance = {};
+    for (const auto& tin : tx.inputs) {
+      if (tin.type() == typeid(TransactionInputUnified)) {
+        hasUnified = true;
+        const auto& uin = boost::get<TransactionInputUnified>(tin);
+        Crypto::EllipticCurvePoint tmp = balance;
+        ec_add(balance, tmp, uin.pseudoCommitment);
+      }
+    }
+    if (hasUnified) {
+      for (const auto& out : tx.outputs) {
+        if (out.target.type() == typeid(TransactionOutputUnified)) {
+          const auto& uout = boost::get<TransactionOutputUnified>(out.target);
+          Crypto::EllipticCurvePoint neg;
+          ec_negate(neg, uout.commitment);
+          Crypto::EllipticCurvePoint tmp = balance;
+          ec_add(balance, tmp, neg);
+        }
+      }
+      // Subtract fee*H
+      uint64_t fee;
+      if (!m_currency.getTransactionFee(tx, fee, getCurrentBlockchainHeight())) {
+        logger(ERROR, BRIGHT_RED) << "Balance proof: cannot determine fee for tx " << transactionHash;
+        return false;
+      }
+      Crypto::EllipticCurvePoint feePoint;
+      Crypto::EllipticCurveScalar zeroMask = {};
+      pedersen_commit(feePoint, fee, zeroMask);
+      Crypto::EllipticCurvePoint negFee;
+      ec_negate(negFee, feePoint);
+      Crypto::EllipticCurvePoint tmp = balance;
+      ec_add(balance, tmp, negFee);
+
+      static const Crypto::EllipticCurvePoint zero = {};
+      if (memcmp(&balance, &zero, sizeof(zero)) != 0) {
+        logger(ERROR, BRIGHT_RED) << "Balance proof failed for tx " << transactionHash;
+        return false;
+      }
+    }
+  }
 
   return true;
 }
@@ -2271,8 +2440,8 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
   }
 
   // Resolve global commitment output indices (relative-encoded, same as KeyInput).
-  auto it = m_commitmentOutputs.find(txin.amount);
-  if (it == m_commitmentOutputs.end()) {
+  auto it = m_indexManager.commitmentOutputs().find(txin.amount);
+  if (it == m_indexManager.commitmentOutputs().end()) {
     logger(INFO) << "CommitmentSpend: no commitment outputs exist for amount " << txin.amount;
     return false;
   }
@@ -2313,7 +2482,7 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
       youngestRingMemberHeight = memberHeight;
     }
 
-    if (ref.term != CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
+    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
 
       // All non-FOREVER ring members must be mature — prevents early withdrawal
@@ -2427,8 +2596,8 @@ bool Blockchain::checkCommitmentTransferInput(
   }
 
   // Resolve commitment outputs for this amount
-  auto it = m_commitmentOutputs.find(txin.amount);
-  if (it == m_commitmentOutputs.end()) {
+  auto it = m_indexManager.commitmentOutputs().find(txin.amount);
+  if (it == m_indexManager.commitmentOutputs().end()) {
     logger(INFO) << "CommitmentTransfer: no commitment outputs for amount " << txin.amount;
     return false;
   }
@@ -2455,7 +2624,7 @@ bool Blockchain::checkCommitmentTransferInput(
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
 
-    if (ref.term != CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
+    if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
     }
 
@@ -2491,6 +2660,105 @@ bool Blockchain::checkCommitmentTransferInput(
   return valid;
 }
 
+// ============================================================
+// checkUnifiedInput — Phase 2 MLSAG verification for TransactionInputUnified.
+// Uses the flat global pool (m_allUnifiedOutputs) where all amounts are
+// mixed together. For Phase 1 retroactive outputs (commitment is zero,
+// amount is known from the global pool entry), the commitment is computed
+// as C = amount*H + 0*G.
+// ============================================================
+bool Blockchain::checkUnifiedInput(const TransactionInputUnified& uin,
+                                   const Crypto::Hash& tx_prefix_hash,
+                                   const std::vector<Crypto::Signature>& sig,
+                                   uint32_t* pmax_related_block_height) {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+
+  static const Crypto::KeyImage I = { { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+  static const Crypto::KeyImage L = { { 0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10 } };
+  if (!(scalarmultKey(uin.keyImage, L) == I)) {
+    logger(ERROR) << "Unified input key image not in valid Ed25519 domain";
+    return false;
+  }
+
+  size_t ringSize = uin.outputIndexes.size();
+  if (ringSize == 0) {
+    logger(ERROR) << "Unified input has empty outputIndexes";
+    return false;
+  }
+  if (sig.size() != ringSize) {
+    logger(ERROR) << "Unified input ring size " << ringSize << " != sig count " << sig.size();
+    return false;
+  }
+
+  const auto& pool = m_indexManager.allUnifiedOutputs();
+
+  // Decode relative offsets to absolute indices
+  std::vector<uint64_t> absoluteIndexes;
+  absoluteIndexes.reserve(ringSize);
+  uint64_t absIdx = 0;
+  for (uint32_t rel : uin.outputIndexes) {
+    absIdx += rel;
+    absoluteIndexes.push_back(absIdx);
+  }
+
+  std::vector<Crypto::PublicKey>            ringKeys(ringSize);
+  std::vector<Crypto::EllipticCurvePoint>   ringCommitments(ringSize);
+
+  for (size_t i = 0; i < ringSize; ++i) {
+    if (absoluteIndexes[i] >= pool.size()) {
+      logger(INFO) << "Unified input: global index " << absoluteIndexes[i]
+                   << " out of range (" << pool.size() << " total)";
+      return false;
+    }
+    const auto& ref = pool[absoluteIndexes[i]];
+    ringKeys[i] = ref.commitKey;
+
+    // Compute commitment: if on-chain commitment is non-zero, use it.
+    // For Phase 1 retroactive (commitment = 0, amount known), compute
+    // C = amount*H + 0*G via pedersen_commit(amount, 0).
+    {
+      static const Crypto::EllipticCurvePoint zeroPoint = {};
+      if (memcmp(&ref.commitment, &zeroPoint, sizeof(zeroPoint)) != 0) {
+        ringCommitments[i] = ref.commitment;
+      } else {
+        Crypto::EllipticCurveScalar zeroMask = {};
+        pedersen_commit(ringCommitments[i], ref.amount, zeroMask);
+      }
+    }
+
+    if (pmax_related_block_height) {
+      uint32_t bh = ref.transactionIndex.block;
+      if (*pmax_related_block_height < bh)
+        *pmax_related_block_height = bh;
+    }
+  }
+
+  // Pack sig_s: 2 scalars per ring member (layer 0: key, layer 1: commitment)
+  std::vector<Crypto::EllipticCurveScalar> sig_s(ringSize * 2);
+  for (size_t i = 0; i < ringSize; ++i) {
+    memcpy(&sig_s[2 * i],     sig[i].data,      32);
+    memcpy(&sig_s[2 * i + 1], sig[i].data + 32, 32);
+  }
+
+  bool valid = Crypto::check_mlsag(
+    tx_prefix_hash,
+    ringKeys.data(),
+    ringCommitments.data(),
+    uin.pseudoCommitment,
+    uin.keyImage,
+    ringSize,
+    uin.sigC0,
+    sig_s.data()
+  );
+
+  if (!valid) {
+    logger(DEBUGGING) << "Unified input MLSAG check failed for keyImage: "
+                     << Common::podToHex(uin.keyImage);
+  }
+
+  return valid;
+}
+
 uint64_t Blockchain::get_adjusted_time() {
   //TODO: add collecting median time
   return time(NULL);
@@ -2505,8 +2773,8 @@ bool Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const 
       } else {
         const auto& multisignatureOutput = ::boost::get<MultisignatureOutput>(out.target);
         if (multisignatureOutput.term != 0 && height >= 821000) {
-          // Allow DEPOSIT_TERM_FOREVER for burn deposits (HEAT)
-          if (multisignatureOutput.term != CryptoNote::parameters::DEPOSIT_TERM_FOREVER &&
+          // Allow HEAT_TERM for burn deposits (HEAT)
+          if (multisignatureOutput.term != CryptoNote::parameters::HEAT_TERM &&
               (multisignatureOutput.term < m_currency.depositMinTerm() || multisignatureOutput.term > m_currency.depositMaxTerm())) {
             logger(INFO, BRIGHT_WHITE) << getObjectHash(tx) << " multisignature output has invalid term: " << multisignatureOutput.term;
             return false;
@@ -2944,15 +3212,15 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
+        // Auth-tag path: declared amounts verified by per-asset balance check above
         FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
         if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, redemptionPrice,
                                                 authXfgBurned, authHeatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
         }
-      }
-    } else if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      if (m_heatMintEngine.isHeatMint(transactions[i])) {
+      } else if (m_heatMintEngine.isHeatMint(transactions[i])) {
+        // Legacy path: no auth tag, derive amounts from tx
         FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
         uint64_t xfgBurned = 0, heatMinted = 0;
         if (!m_heatMintEngine.validateMint(transactions[i], fee, redemptionPrice, xfgBurned, heatMinted)) {
@@ -2996,7 +3264,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
         // Verify user-receive output
         bool foundUserReceive = false;
-        uint32_t expectedReceiveTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_FOREVER
+        uint32_t expectedReceiveTerm = (swapDirection == 0) ? parameters::HEAT_TERM
                                                             : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
         for (const auto& out : transactions[i].outputs) {
           if (out.target.type() == typeid(TransactionOutputCommitment)) {
@@ -3052,8 +3320,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         for (const auto& in : transactions[i].inputs) {
           if (in.type() == typeid(MultisignatureInput)) {
             const auto& msIn = boost::get<MultisignatureInput>(in);
-            auto amountOutputs = m_multisignatureOutputs.find(msIn.amount);
-            if (amountOutputs != m_multisignatureOutputs.end() &&
+            auto amountOutputs = m_indexManager.multisigOutputs().find(msIn.amount);
+            if (amountOutputs != m_indexManager.multisigOutputs().end() &&
                 msIn.outputIndex < amountOutputs->second.size()) {
               const auto& usage = amountOutputs->second[msIn.outputIndex];
               if (!usage.isUsed) {
@@ -3275,6 +3543,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       FixedPoint64 targetRatio = computeTargetRatio(
         m_piState, parameters::HEAT_STABILITY_MODE, launchTwap, currentTwap, oracleValue);
 
+      // HEAT flatcoin: CPI-adjusted purchasing power multiplier
+      // target_ratio *= current_CPI / launch_CPI  — preserves real value vs USD inflation
+      if (m_heatLaunchCpi > 0) {
+        targetRatio = targetRatio.mul(FixedPoint64::fromRatio(m_heatCurrentCpi, m_heatLaunchCpi));
+      }
+
       computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration, parameters::HEAT_STABILITY_MODE);
     }
     int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : 0;
@@ -3450,9 +3724,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
     return m_commitmentIndex.getAllLeaves();
   }
 
-  uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs, uint32_t activeEfierCount) {
-    // Banking fees now go to miners instead of EFiers
-    // Fixed rate: 0.1% on HEAT/COLD commitments and Elderfier deposits
+  uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs) {
+    // Fixed rate: 0.1% on HEAT/COLD commitments
     uint64_t totalBankingFees = 0;
     for (const auto& tx : txs) {
       std::vector<TransactionExtraField> extraFields;
@@ -3479,7 +3752,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
 
     for (const auto &tx : block.transactions)
     {
-      // Parse transaction extra to detect burn types (0X08 0xEF)
+      // Parse transaction extra to detect burn types (0x08)
       std::vector<TransactionExtraField> extraFields;
       if (parseTransactionExtra(tx.tx.extra, extraFields)) {
         logger(DEBUGGING, "Blockchain") << "Transaction " << getObjectHash(tx.tx)
@@ -3507,7 +3780,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
             entry.txHash = txHash;
             entry.blockHeight = block.height;
             entry.amount = heatCommit.amount;
-            entry.term = parameters::DEPOSIT_TERM_FOREVER;  // HEAT is permanent
+            entry.term = parameters::HEAT_TERM;  // HEAT is permanent
             entry.type = CommitmentEntry::Type::HEAT;
             entry.targetChainId = heatCommit.metadata.size() > 0 ? heatCommit.metadata[0] : 1;  // Default to ETH
             m_commitmentIndex.addCommitment(entry);
@@ -3570,8 +3843,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
               // The L2 contract needs the original deposit date (not migration date)
               // to determine if legacy (pre-2026) interest rates apply.
               uint32_t originalBlockHeight = block.height;  // fallback: migration block
-              auto origIt = m_transactionMap.find(migration.originalTxHash);
-              if (origIt != m_transactionMap.end()) {
+              auto origIt = m_indexManager.transactionMap().find(migration.originalTxHash);
+              if (origIt != m_indexManager.transactionMap().end()) {
                 originalBlockHeight = origIt->second.block;
               }
 
@@ -3671,9 +3944,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                 // Fee enforcement: regular users (aliasType == 1) must pay ALIAS_REGISTRATION_FEE
                 // to FUEGO_DEV_FUND_ADDRESS. Amount alone is insufficient — the destination must
                 // also match, otherwise a self-transfer satisfies the amount check.
-                // Elderfiers (aliasType == 0) are exempt. Testnet always passes.
                 bool feeOk = true;
-                if (!m_currency.isTestnet() && aliasReg.aliasType != 0) {
+                if (!m_currency.isTestnet()) {
                   bool feeOutputFound = false;
                   AccountPublicAddress devFundAddr;
                   bool devAddrParsed = m_currency.parseAccountAddressString(
@@ -3849,7 +4121,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
         else if (out.target.type() == typeid(TransactionOutputCommitment))
         {
           const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
-          if (commitment.term != parameters::DEPOSIT_TERM_FOREVER)
+          if (commitment.term != parameters::HEAT_TERM)
           {
             deposit += out.amount;
           }
@@ -4187,7 +4459,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
 }
 
 bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transactionHash, TransactionIndex transactionIndex) {
-  auto result = m_transactionMap.insert(std::make_pair(transactionHash, transactionIndex));
+  auto result = m_indexManager.transactionMap().insert(std::make_pair(transactionHash, transactionIndex));
   if (!result.second) {
     logger(ERROR, BRIGHT_RED) <<
       "Duplicate transaction was pushed to blockchain.";
@@ -4199,7 +4471,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   if (!checkMultisignatureInputsDiff(transaction.tx)) {
     logger(ERROR, BRIGHT_RED) <<
       "Double spending transaction was pushed to blockchain.";
-    m_transactionMap.erase(transactionHash);
+    m_indexManager.transactionMap().erase(transactionHash);
     return false;
   }
 
@@ -4207,17 +4479,17 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   {
       if (transaction.tx.inputs[i].type() == typeid(KeyInput))
       {
-        auto result = m_spent_keys.insert(std::make_pair(::boost::get<KeyInput>(transaction.tx.inputs[i]).keyImage, block.height));
+        auto result = m_indexManager.spentKeys().insert(std::make_pair(::boost::get<KeyInput>(transaction.tx.inputs[i]).keyImage, block.height));
         if (!result.second)
         {
           logger(ERROR, BRIGHT_RED) << "Double spending transaction was pushed to blockchain.";
 
           for (size_t j = 0; j < i; ++j)
           {
-            m_spent_keys.erase(::boost::get<KeyInput>(transaction.tx.inputs[i - 1 - j]).keyImage);
+            m_indexManager.spentKeys().erase(::boost::get<KeyInput>(transaction.tx.inputs[i - 1 - j]).keyImage);
           }
 
-        m_transactionMap.erase(transactionHash);
+        m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
     }
@@ -4226,14 +4498,14 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   for (const auto& inv : transaction.tx.inputs) {
     if (inv.type() == typeid(MultisignatureInput)) {
       const MultisignatureInput& in = ::boost::get<MultisignatureInput>(inv);
-      auto& amountOutputs = m_multisignatureOutputs[in.amount];
+      auto& amountOutputs = m_indexManager.multisigOutputs()[in.amount];
       amountOutputs[in.outputIndex].isUsed = true;
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(inv);
-      auto result = m_spent_keys.insert(std::make_pair(cin.keyImage, block.height));
+      auto result = m_indexManager.spentKeys().insert(std::make_pair(cin.keyImage, block.height));
       if (!result.second) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
-        m_transactionMap.erase(transactionHash);
+        m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       // CD redemption: reduce locked supply, deduct claimed interest from fee pool
@@ -4254,10 +4526,10 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(inv);
-      auto result = m_spent_keys.insert(std::make_pair(xfer.keyImage, block.height));
+      auto result = m_indexManager.spentKeys().insert(std::make_pair(xfer.keyImage, block.height));
       if (!result.second) {
         logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
-        m_transactionMap.erase(transactionHash);
+        m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
       // Transfer doesn't change locked supply (old CD consumed, new CD produced — net zero)
@@ -4267,17 +4539,17 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   transaction.m_global_output_indexes.resize(transaction.tx.outputs.size());
   for (uint16_t output = 0; output < transaction.tx.outputs.size(); ++output) {
     if (transaction.tx.outputs[output].target.type() == typeid(KeyOutput)) {
-      auto& amountOutputs = m_outputs[transaction.tx.outputs[output].amount];
+      auto& amountOutputs = m_indexManager.outputs()[transaction.tx.outputs[output].amount];
       transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
       amountOutputs.push_back(std::make_pair<>(transactionIndex, output));
     } else if (transaction.tx.outputs[output].target.type() == typeid(MultisignatureOutput)) {
-      auto& amountOutputs = m_multisignatureOutputs[transaction.tx.outputs[output].amount];
+      auto& amountOutputs = m_indexManager.multisigOutputs()[transaction.tx.outputs[output].amount];
       transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
       MultisignatureOutputUsage outputUsage = { transactionIndex, output, false };
       amountOutputs.push_back(outputUsage);
     } else if (transaction.tx.outputs[output].target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitOut = ::boost::get<TransactionOutputCommitment>(transaction.tx.outputs[output].target);
-      auto& amountOutputs = m_commitmentOutputs[transaction.tx.outputs[output].amount];
+      auto& amountOutputs = m_indexManager.commitmentOutputs()[transaction.tx.outputs[output].amount];
       transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
       CommitmentOutputRef ref;
       ref.transactionIndex    = transactionIndex;
@@ -4288,7 +4560,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       // Track total XFG locked in CDs
       m_totalCdLocked += transaction.tx.outputs[output].amount;
       // Track HEAT supply for burn-to-mint outputs (validated by HeatMintEngine before push)
-      if (commitOut.term == parameters::DEPOSIT_TERM_FOREVER) {
+      if (commitOut.term == parameters::HEAT_TERM) {
         m_heatSupply += transaction.tx.outputs[output].amount;
       }
       // Track pool-locked reserves for invariant verification
@@ -4296,6 +4568,30 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
         m_poolLockedXfg += transaction.tx.outputs[output].amount;
       } else if (commitOut.term == parameters::DEPOSIT_TERM_POOL_HEAT) {
         m_poolLockedHeat += transaction.tx.outputs[output].amount;
+      }
+    } else if (transaction.tx.outputs[output].target.type() == typeid(TransactionOutputUnified)) {
+      // Phase 2+ Unified outputs: amounts hidden via Pedersen commitments.
+      // The real amount lives in the preceding commitment output (output-1).
+      const auto& unifiedOut = ::boost::get<TransactionOutputUnified>(transaction.tx.outputs[output].target);
+      if (unifiedOut.term == parameters::TERM_REGULAR && transaction.tx.outputs[output].amount == 0 && output > 0) {
+        uint64_t realAmount = transaction.tx.outputs[output - 1].amount;
+        if (realAmount > 0) {
+          CommitmentOutputRef ref;
+          ref.transactionIndex     = transactionIndex;
+          ref.outputInTransaction  = output;
+          ref.commitKey            = unifiedOut.key;
+          ref.term                 = unifiedOut.term;
+          m_indexManager.commitmentOutputs()[realAmount].push_back(ref);
+
+          UnifiedOutputRef uref;
+          uref.transactionIndex    = transactionIndex;
+          uref.outputInTransaction = output;
+          uref.commitKey           = unifiedOut.key;
+          uref.term                = unifiedOut.term;
+          uref.amount              = realAmount;
+          uref.commitment          = unifiedOut.commitment;
+          m_indexManager.allUnifiedOutputs().push_back(uref);
+        }
       }
     }
   }
@@ -4369,12 +4665,12 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
 }
 
 void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
-  TransactionIndex transactionIndex = m_transactionMap.at(transactionHash);
+  TransactionIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
     if (output.target.type() == typeid(KeyOutput)) {
-      auto amountOutputs = m_outputs.find(output.amount);
-      if (amountOutputs == m_outputs.end()) {
+      auto amountOutputs = m_indexManager.outputs().find(output.amount);
+      if (amountOutputs == m_indexManager.outputs().end()) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find specific amount in outputs map.";
         continue;
@@ -4400,11 +4696,11 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
 
       amountOutputs->second.pop_back();
       if (amountOutputs->second.empty()) {
-        m_outputs.erase(amountOutputs);
+        m_indexManager.outputs().erase(amountOutputs);
       }
     } else if (output.target.type() == typeid(MultisignatureOutput)) {
-      auto amountOutputs = m_multisignatureOutputs.find(output.amount);
-      if (amountOutputs == m_multisignatureOutputs.end()) {
+      auto amountOutputs = m_indexManager.multisigOutputs().find(output.amount);
+      if (amountOutputs == m_indexManager.multisigOutputs().end()) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find specific amount in outputs map.";
         continue;
@@ -4436,11 +4732,11 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
 
       amountOutputs->second.pop_back();
       if (amountOutputs->second.empty()) {
-        m_multisignatureOutputs.erase(amountOutputs);
+        m_indexManager.multisigOutputs().erase(amountOutputs);
       }
     } else if (output.target.type() == typeid(TransactionOutputCommitment)) {
-      auto amountOutputs = m_commitmentOutputs.find(output.amount);
-      if (amountOutputs == m_commitmentOutputs.end()) {
+      auto amountOutputs = m_indexManager.commitmentOutputs().find(output.amount);
+      if (amountOutputs == m_indexManager.commitmentOutputs().end()) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find specific amount in commitment outputs map.";
         continue;
@@ -4454,7 +4750,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
 
       amountOutputs->second.pop_back();
       if (amountOutputs->second.empty()) {
-        m_commitmentOutputs.erase(amountOutputs);
+        m_indexManager.commitmentOutputs().erase(amountOutputs);
       }
       // Reverse CD locked supply tracking
       if (m_totalCdLocked >= output.amount) {
@@ -4463,7 +4759,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       // Reverse HEAT supply for burn-to-mint outputs
       if (m_heatSupply >= output.amount) {
         const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
-        if (commitOut.term == parameters::DEPOSIT_TERM_FOREVER) {
+        if (commitOut.term == parameters::HEAT_TERM) {
           m_heatSupply -= output.amount;
         }
       }
@@ -4476,19 +4772,37 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           if (m_poolLockedHeat >= output.amount) m_poolLockedHeat -= output.amount;
         }
       }
+    } else if (output.target.type() == typeid(TransactionOutputUnified)) {
+      const auto& unifiedOut = ::boost::get<TransactionOutputUnified>(output.target);
+      if (unifiedOut.term == parameters::TERM_REGULAR && output.amount == 0 && outputIndex + 1 < transaction.outputs.size()) {
+        size_t prevIdx = transaction.outputs.size() - 2 - outputIndex;
+        uint64_t realAmount = transaction.outputs[prevIdx].amount;
+        if (realAmount > 0) {
+          auto amountOutputs = m_indexManager.commitmentOutputs().find(realAmount);
+          if (amountOutputs != m_indexManager.commitmentOutputs().end() && !amountOutputs->second.empty()) {
+            amountOutputs->second.pop_back();
+            if (amountOutputs->second.empty()) {
+              m_indexManager.commitmentOutputs().erase(amountOutputs);
+            }
+          }
+          if (!m_indexManager.allUnifiedOutputs().empty()) {
+            m_indexManager.allUnifiedOutputs().pop_back();
+          }
+        }
+      }
     }
   }
 
   for (auto& input : transaction.inputs) {
     if (input.type() == typeid(KeyInput)) {
-      size_t count = m_spent_keys.erase(::boost::get<KeyInput>(input).keyImage);
+      size_t count = m_indexManager.spentKeys().erase(::boost::get<KeyInput>(input).keyImage);
       if (count != 1) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent key.";
       }
     } else if (input.type() == typeid(MultisignatureInput)) {
       const MultisignatureInput& in = ::boost::get<MultisignatureInput>(input);
-      auto& amountOutputs = m_multisignatureOutputs[in.amount];
+      auto& amountOutputs = m_indexManager.multisigOutputs()[in.amount];
       if (!amountOutputs[in.outputIndex].isUsed) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - multisignature output not marked as used.";
@@ -4497,7 +4811,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       amountOutputs[in.outputIndex].isUsed = false;
     } else if (input.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(input);
-      size_t count = m_spent_keys.erase(cin.keyImage);
+      size_t count = m_indexManager.spentKeys().erase(cin.keyImage);
       if (count != 1) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent commitment key.";
@@ -4520,7 +4834,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       }
     } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(input);
-      size_t count = m_spent_keys.erase(xfer.keyImage);
+      size_t count = m_indexManager.spentKeys().erase(xfer.keyImage);
       if (count != 1) {
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent commitment transfer key.";
@@ -4530,7 +4844,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
 
   m_paymentIdIndex.remove(transaction);
 
-  size_t count = m_transactionMap.erase(transactionHash);
+  size_t count = m_indexManager.transactionMap().erase(transactionHash);
   if (count != 1) {
     logger(ERROR, BRIGHT_RED) <<
       "Blockchain consistency broken - cannot find transaction by hash.";
@@ -4609,8 +4923,8 @@ void Blockchain::popTransactions(const BlockEntry& block, const Crypto::Hash& mi
 
 bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::Hash& transactionHash, const Crypto::Hash& transactionPrefixHash, const std::vector<Crypto::Signature>& transactionSignatures) {
   assert(input.signatureCount == transactionSignatures.size());
-  MultisignatureOutputsContainer::const_iterator amountOutputs = m_multisignatureOutputs.find(input.amount);
-  if (amountOutputs == m_multisignatureOutputs.end()) {
+  MultisignatureOutputsContainer::const_iterator amountOutputs = m_indexManager.multisigOutputs().find(input.amount);
+  if (amountOutputs == m_indexManager.multisigOutputs().end()) {
     logger(DEBUGGING) <<
       "Transaction << " << transactionHash << " contains multisignature input with invalid amount.";
     return false;
@@ -4746,8 +5060,8 @@ std::vector<Crypto::Hash> Blockchain::getBlockIds(uint32_t startHeight, uint32_t
 
 bool Blockchain::getBlockContainingTransaction(const Crypto::Hash& txId, Crypto::Hash& blockId, uint32_t& blockHeight) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  auto it = m_transactionMap.find(txId);
-  if (it == m_transactionMap.end()) {
+  auto it = m_indexManager.transactionMap().find(txId);
+  if (it == m_indexManager.transactionMap().end()) {
     return false;
   } else {
     blockHeight = m_blocks[it->second.block].height;
@@ -4800,8 +5114,8 @@ bool Blockchain::getBlockSize(const Crypto::Hash& hash, size_t& size) {
 
 bool Blockchain::getMultisigOutputReference(const MultisignatureInput& txInMultisig, std::pair<Crypto::Hash, size_t>& outputReference) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  MultisignatureOutputsContainer::const_iterator amountIter = m_multisignatureOutputs.find(txInMultisig.amount);
-  if (amountIter == m_multisignatureOutputs.end()) {
+  MultisignatureOutputsContainer::const_iterator amountIter = m_indexManager.multisigOutputs().find(txInMultisig.amount);
+  if (amountIter == m_indexManager.multisigOutputs().end()) {
     logger(DEBUGGING) << "Transaction contains multisignature input with invalid amount.";
     return false;
   }
@@ -4956,8 +5270,8 @@ AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {
   }
   if (in.type() == typeid(TransactionInputCommitmentSpend)) {
     const auto& cs = boost::get<TransactionInputCommitmentSpend>(in);
-    auto it = m_commitmentOutputs.find(cs.amount);
-    if (it == m_commitmentOutputs.end() || it->second.empty())
+    auto it = m_indexManager.commitmentOutputs().find(cs.amount);
+    if (it == m_indexManager.commitmentOutputs().end() || it->second.empty())
       return AssetType::XFG;  // conservative: treat unresolvable as XFG
     if (cs.outputIndexes.empty())
       return AssetType::XFG;
@@ -4965,7 +5279,7 @@ AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {
     if (absIdx >= it->second.size())
       return AssetType::XFG;
     const auto& ref = it->second[absIdx];
-    if (ref.term == parameters::DEPOSIT_TERM_FOREVER)
+    if (ref.term == parameters::HEAT_TERM)
       return AssetType::HEAT;
     if (ref.term == parameters::DEPOSIT_TERM_LP)
       return AssetType::LP;

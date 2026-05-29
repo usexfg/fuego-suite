@@ -1094,7 +1094,7 @@ namespace CryptoNote
     transaction->setUnlockTime(0);
 
     /* Process commitment based on deposit type */
-    bool isBurnDeposit = (term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER);
+    bool isBurnDeposit = (term == CryptoNote::parameters::HEAT_TERM);
 
     if (isBurnDeposit) {
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating burn deposit with HEAT commitment for " << amount << " XFG";
@@ -1307,7 +1307,7 @@ namespace CryptoNote
       wallet.pendingBalance = 0;
       wallet.lockedDepositBalance = 0;
       wallet.unlockedDepositBalance = 0;
-      wallet.container = reinterpret_cast<CryptoNote::ITransfersContainer *>(i); //dirty hack. container field must be unique
+      wallet.container = nullptr;
 
       m_walletsContainer.emplace_back(std::move(wallet));
     }
@@ -2011,15 +2011,13 @@ namespace CryptoNote
 
     if (clearCachedData)
     {
-      size_t walletIndex = 0;
-      for (auto it = m_walletsContainer.begin(); it != m_walletsContainer.end(); ++it)
-      {
-        m_walletsContainer.modify(it, [&walletIndex](WalletRecord &wallet) {
+      for (auto it = m_walletsContainer.begin(); it != m_walletsContainer.end(); ++it) {
+        m_walletsContainer.modify(it, [](WalletRecord &wallet) {
           wallet.actualBalance = 0;
           wallet.pendingBalance = 0;
           wallet.lockedDepositBalance = 0;
           wallet.unlockedDepositBalance = 0;
-          wallet.container = reinterpret_cast<CryptoNote::ITransfersContainer *>(walletIndex++); //dirty hack. container field must be unique
+          wallet.container = nullptr;
         });
       }
 
@@ -5338,13 +5336,6 @@ namespace CryptoNote
 
   bool WalletGreen::hasBurnDepositSecret(const std::string& transactionHash) {
     return m_burnDepositSecrets.find(transactionHash) != m_burnDepositSecrets.end();
-  }
-
-  void WalletGreen::markBurnDepositBPDFGenerated(const std::string& transactionHash) {
-    auto it = m_burnDepositSecrets.find(transactionHash);
-    if (it != m_burnDepositSecrets.end()) {
-      it->second.bpdfGenerated = true;
-    }
   }
 
   std::vector<WalletGreen::BurnDepositInfo> WalletGreen::getAllBurnDeposits() {

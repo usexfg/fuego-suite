@@ -121,7 +121,6 @@ struct GetStatus
     uint32_t depositCount;
     uint32_t transactionCount;
     uint32_t addressCount;
-    std::string networkId;
 
     void serialize(CryptoNote::ISerializer &serializer);
   };
@@ -174,30 +173,6 @@ struct CreateBurnDeposit
   };
 };
 
-struct CreateBurnDepositWithProof
-{
-  struct Request
-  {
-    uint64_t amount;
-    std::string sourceAddress;
-    std::string recipientAddress;  // 🔥 ADD: Arbitrum recipient address
-    std::string metadata;          // Hex string of metadata (optional) - can include network_id
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-
-  struct Response
-  {
-    std::string transactionHash;
-    uint64_t term;                 // Always 4294967295 (FOREVER)
-    uint64_t heatAmount;           // HEAT amount that will be minted
-    std::string burnProofDataFile; // 🔥 ADD: Path to generated BPDF
-    std::string networkId;         // 🔥 ADD: Network ID for validation
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-};
-
 struct CreateBurnDepositLarge
 {
   struct Request
@@ -217,79 +192,6 @@ struct CreateBurnDepositLarge
     void serialize(CryptoNote::ISerializer &serializer);
   };
 };
-
-struct CreateBurnDepositLargeWithProof
-{
-  struct Request
-  {
-    std::string sourceAddress;
-    std::string recipientAddress;  // 🔥 ADD: Arbitrum recipient address
-    std::string metadata;          // Hex string of metadata (optional) - can include network_id
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-
-  struct Response
-  {
-    std::string transactionHash;
-    uint64_t term;                 // Always 4294967295 (FOREVER)
-    uint64_t heatAmount;           // HEAT amount that will be minted (800 XFG = 8,000,000,000 HEAT)
-    std::string burnProofDataFile; // 🔥 ADD: Path to generated BPDF
-    std::string networkId;         // 🔥 ADD: Network ID for validation
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-};
-
-struct GenerateBurnProofDataFile
-{
-  struct Request
-  {
-    std::string transactionHash;
-    std::string recipientAddress;  // 🔥 ADD: Arbitrum recipient address
-    std::string outputPath;        // 🔥 ADD: Where to save BPDF
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-
-  struct Response
-  {
-    std::string burnProofDataFile; // 🔥 ADD: Path to generated BPDF
-    bool success;
-    std::string errorMessage;
-    std::string networkId;         // 🔥 ADD: Network ID for validation
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-};
-
-struct GenerateBurnProofDataFileAuto
-{
-  struct Request
-  {
-    std::string transactionHash;
-    std::string recipientAddress;  // 🔥 ADD: Arbitrum recipient address
-    std::string outputPath;        // 🔥 ADD: Where to save BPDF
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-
-  struct Response
-  {
-    std::string burnProofDataFile; // 🔥 ADD: Path to generated BPDF
-    bool success;
-    std::string errorMessage;
-    std::string networkId;         // 🔥 ADD: Network ID for validation
-
-    void serialize(CryptoNote::ISerializer &serializer);
-  };
-};
-
-
-
-
-
-
 
 struct WithdrawDeposit
 {

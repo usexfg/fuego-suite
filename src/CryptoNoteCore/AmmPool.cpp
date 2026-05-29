@@ -100,7 +100,7 @@ bool ammValidateSwap(uint64_t input, uint64_t output,
     return false;
 
   uint64_t expected = ammGetOutputAmount(input, reserveIn, reserveOut, feeBps);
-  return output >= expected;
+  return output > 0 && output <= expected;
 }
 
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,

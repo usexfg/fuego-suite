@@ -132,6 +132,22 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "ETH chain client registered: "
       << chainCfg.ethHost << ":" << chainCfg.ethPort;
   }
+  if (!chainCfg.arbHost.empty()) {
+    std::unique_ptr<EthRpcClient> rpc;
+    if (!chainCfg.arbPrivKeyHex.empty() && !chainCfg.arbAddress.empty()) {
+      rpc = std::make_unique<EthRpcClient>(
+          chainCfg.arbHost, chainCfg.arbPort,
+          chainCfg.arbPrivKeyHex, chainCfg.arbAddress, chainCfg.arbChainId,
+          EthTxType::Eip1559);
+    } else {
+      rpc = std::make_unique<EthRpcClient>(chainCfg.arbHost, chainCfg.arbPort);
+    }
+    m_chainRegistry.registerChain(SwapPair::ARB,
+        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.arbAddress, "ARB"));
+    m_logger(Logging::INFO) << "ARB chain client registered: "
+      << chainCfg.arbHost << ":" << chainCfg.arbPort
+      << " (chainId=" << chainCfg.arbChainId << ")";
+  }
   if (!chainCfg.solHost.empty()) {
     auto rpc = std::make_unique<SolRpcClient>(
         chainCfg.solHost, chainCfg.solPort, chainCfg.solProgramId);
@@ -1331,7 +1347,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= 3; ++pair) {
+  for (int pair = 0; pair <= 4; ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {

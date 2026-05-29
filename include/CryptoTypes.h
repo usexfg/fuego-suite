@@ -66,7 +66,7 @@ struct Signature {
 // 1-of-N OR proof (Cramer-Damgard-Schoenmakers sigma protocol) proving a
 // Pedersen commitment C = v*H + mask*G hides one of N known values.
 // Used for both amount privacy (v ∈ {TIER_0..TIER_3}) and term privacy
-// (v ∈ {3mo, 1yr, FOREVER, EFier}).
+// (v ∈ {3mo, 1yr, FOREVER}).
 // Proof size: N * 64 bytes = 256 bytes for N=4.
 struct MembershipProof {
   struct EllipticCurveScalar e[FUEGO_MEMBERSHIP_N]; // challenge shares (sum = Fiat-Shamir challenge)

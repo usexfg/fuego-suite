@@ -63,6 +63,7 @@ public:
   virtual void getOutput(size_t index, KeyOutput& output, uint64_t& amount) const override;
   virtual void getOutput(size_t index, MultisignatureOutput& output, uint64_t& amount) const override;
   virtual void getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const override;
+  virtual void getOutput(size_t index, TransactionOutputUnified& output, uint64_t& amount) const override;
 
   // signatures
   virtual size_t getRequiredSignaturesCount(size_t inputIndex) const override;
@@ -200,6 +201,12 @@ void TransactionPrefixImpl::getOutput(size_t index, MultisignatureOutput& output
 void TransactionPrefixImpl::getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const {
   const auto& out = getOutputChecked(m_txPrefix, index, TransactionTypes::OutputType::Commitment);
   output = boost::get<TransactionOutputCommitment>(out.target);
+  amount = out.amount;
+}
+
+void TransactionPrefixImpl::getOutput(size_t index, TransactionOutputUnified& output, uint64_t& amount) const {
+  const auto& out = getOutputChecked(m_txPrefix, index, TransactionTypes::OutputType::Unified);
+  output = boost::get<TransactionOutputUnified>(out.target);
   amount = out.amount;
 }
 

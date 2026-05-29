@@ -209,7 +209,7 @@ DepositCommitment DepositCommitmentGenerator::generateCommitment(
     uint64_t amount,
     const std::vector<uint8_t>& metadata) {
 
-    if (term == parameters::DEPOSIT_TERM_FOREVER) {
+    if (term == parameters::HEAT_TERM) {
         return generateHeatCommitment(amount, metadata);
     }
     return generateYieldCommitment(term, amount, metadata);

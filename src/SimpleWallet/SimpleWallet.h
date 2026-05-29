@@ -154,11 +154,6 @@ namespace CryptoNote
 
      bool create_cold_secret(const std::vector<std::string> &args);
 
-    // USER-FACING: Proof generation from deposits
-    // Users generate STARKs from deposit transactions with xfg-stark-cli for L2 claims
-    bool gen_proof(const std::vector<std::string> &args);
-    // bool elder_council(const std::vector<std::string> &args); // fier_panel
-
     // Sub-address commands
     bool new_sub(const std::vector<std::string> &args);
     bool list_subs(const std::vector<std::string> &args);

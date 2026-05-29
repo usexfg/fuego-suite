@@ -101,13 +101,10 @@ std::error_code getViewKey(std::string &viewSecretKey);
   std::error_code deleteDelayedTransaction(const std::string &transactionHash);
   std::error_code sendDelayedTransaction(const std::string &transactionHash);
   std::error_code getUnconfirmedTransactionHashes(const std::vector<std::string> &addresses, std::vector<std::string> &transactionHashes);
-  std::error_code getStatus(uint32_t &blockCount, uint32_t &knownBlockCount, std::string &lastBlockHash, uint32_t &peerCount, uint32_t &depositCount, uint32_t &transactionCount, uint32_t &addressCount, std::string &networkId);
+  std::error_code getStatus(uint32_t &blockCount, uint32_t &knownBlockCount, std::string &lastBlockHash, uint32_t &peerCount, uint32_t &depositCount, uint32_t &transactionCount, uint32_t &addressCount);
   std::error_code createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string &transactionHash, const CryptoNote::DepositCommitment& commitment = CryptoNote::DepositCommitment(), bool useStagedUnlock = false);
   std::error_code storeBurnDepositSecret(const std::string& transactionHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
   std::error_code getBurnDepositSecret(const std::string& transactionHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
-  std::error_code markBurnDepositBPDFGenerated(const std::string& transactionHash);
-  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata, const std::string& networkId);
-  std::error_code generateBurnProofDataFile(const std::string& transactionHash, const std::string& recipientAddress, const std::string& outputPath, const std::string& networkId);
   std::string getDefaultWalletPath();
 
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);

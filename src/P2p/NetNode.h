@@ -33,9 +33,11 @@
 #include "LevinProtocol.h"
 #include "NetNodeCommon.h"
 #include "NetNodeConfig.h"
+#include "NetworkAddressTypes.h"
 #include "P2pProtocolDefinitions.h"
 #include "P2pNetworks.h"
 #include "PeerListManager.h"
+#include "net/Socks5.h"
 
 namespace System {
 class TcpConnection;
@@ -180,10 +182,12 @@ namespace CryptoNote
 
     //----------------- i_p2p_endpoint -------------------------------------------------------------
     virtual void relay_notify_to_all(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) override;
+    virtual void relay_notify_stem(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) override;
     virtual bool invoke_notify_to_peer(int command, const BinaryArray& req_buff, const CryptoNoteConnectionContext& context) override;
     virtual void drop_connection(CryptoNoteConnectionContext &context, bool add_fail) override;
     virtual void for_each_connection(std::function<void(CryptoNote::CryptoNoteConnectionContext&, PeerIdType)> f) override;
     virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
+    virtual void externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
     virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override;
 #ifdef ENABLE_FUEGOMESH
     virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) override;
@@ -223,6 +227,25 @@ namespace CryptoNote
 
     //debug functions
     std::string print_connections_container();
+
+    // Per-zone network state — separate peerlists and proxy configuration per zone
+    struct network_zone_data {
+      PeerlistManager peerlist;
+      std::string proxy_host;
+      uint16_t proxy_port = 0;
+      network_address our_address;           // our .b32.i2p or .onion address (for inbound)
+      uint32_t max_out_peers = 0;
+      uint32_t max_in_peers = 0;
+      uint32_t current_out_peers = 0;
+      uint32_t current_in_peers = 0;
+      bool enabled = false;
+    };
+
+    std::map<NetworkZone, network_zone_data> m_network_zones;
+
+    network_zone_data& get_zone(NetworkZone zone);
+    bool init_network_zones(const NetNodeConfig& config);
+    bool try_to_connect_via_proxy(const network_address& na, NetworkZone zone, bool just_take_peerlist = false, uint64_t last_seen_stamp = 0, PeerType peer_type = white);
 
     typedef std::unordered_map<boost::uuids::uuid, P2pConnectionContext, boost::hash<boost::uuids::uuid>> ConnectionContainer;
     typedef ConnectionContainer::iterator ConnectionIterator;

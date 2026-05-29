@@ -32,7 +32,7 @@ namespace CryptoNote {
 // Preimage (56 bytes):
 //   secret[32] || le64(amount) || le32(network_id) || le32(chain_id) || le32(version) || le32(term)
 //
-// HEAT burns:  term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
+// HEAT burns:  term = HEAT_TERM (0xFFFFFFFF)
 // COLD deposits: term = actual lock duration in blocks
 //
 // Nullifier (49 bytes):
@@ -56,7 +56,7 @@ public:
   // This is what burn() and cold() wallet commands call.
   static StarkCommitmentResult generate(
       uint64_t amount,
-      uint32_t term,        // DEPOSIT_TERM_FOREVER for HEAT, actual blocks for COLD
+      uint32_t term,        // HEAT_TERM for HEAT, actual blocks for COLD
       uint32_t networkId,   // STARK_NETWORK_ID_MAINNET or _TESTNET
       uint32_t chainId,     // STARK_TARGET_CHAIN_ETH, _ARB, etc.
       uint32_t version);    // STARK_COMMITMENT_VERSION (currently 3)

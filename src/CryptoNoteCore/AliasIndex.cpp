@@ -113,7 +113,7 @@ bool AliasIndex::registerAlias(const AliasEntry& entry) {
 
   // Validate alias format based on type
   if (normalizedEntry.aliasType == 0) {
-    return false;  // Elderfier aliases no longer supported
+    return false;  // aliasType 0 not supported
   } else if (normalizedEntry.aliasType == 1) {
     if (!isValidRegularAlias(normalizedEntry.alias)) {
       return false;

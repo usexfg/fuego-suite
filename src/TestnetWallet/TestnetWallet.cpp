@@ -123,7 +123,7 @@ namespace CryptoNote
         return true;
       }
 
-      uint32_t burn_term = CryptoNote::parameters::DEPOSIT_TERM_FOREVER;
+      uint32_t burn_term = CryptoNote::parameters::HEAT_TERM;
 
       // Determine banking fee based on amount tier (testnet rates: 0.1% of TEST_AMOUNT_TIER)
       uint64_t banking_fee = 0;
@@ -368,7 +368,7 @@ namespace CryptoNote
         Deposit deposit;
         if (m_wallet->getDeposit(i, deposit)) {
           // Check if this is a HEAT/burn deposit (FOREVER term)
-          if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_FOREVER) {
+          if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
             burnCount++;
             success_msg_writer() << "  [" << i << "] Amount: " << m_currency.formatAmount(deposit.amount)
                                  << " TEST | Status: Burned"

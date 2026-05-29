@@ -74,19 +74,17 @@ public:
     Crypto::SecretKey secret;
     uint64_t amount;
     std::vector<uint8_t> metadata;
-    bool bpdfGenerated;
     uint64_t timestamp;
 
-    BurnDepositInfo() : amount(0), bpdfGenerated(false), timestamp(0) {}
+    BurnDepositInfo() : amount(0), timestamp(0) {}
     BurnDepositInfo(const std::string& txHash, const Crypto::SecretKey& s, uint64_t amt, const std::vector<uint8_t>& meta)
-      : transactionHash(txHash), secret(s), amount(amt), metadata(meta), bpdfGenerated(false), timestamp(0) {}
+      : transactionHash(txHash), secret(s), amount(amt), metadata(meta), timestamp(0) {}
   };
 
   // Burn deposit secret management
   void addBurnDepositSecret(const std::string& transactionHash, const Crypto::SecretKey& secret, uint64_t amount, const std::vector<uint8_t>& metadata);
   bool getBurnDepositSecret(const std::string& transactionHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   bool hasBurnDepositSecret(const std::string& transactionHash);
-  void markBurnDepositBPDFGenerated(const std::string& transactionHash);
   std::vector<BurnDepositInfo> getAllBurnDeposits();
 
   // Alias methods

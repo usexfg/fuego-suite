@@ -23,7 +23,7 @@ func main() {
 			return ""
 		}
 		switch arg {
-		case "--daemon", "-d", "--efier", "-e":
+		case "--daemon", "-d":
 			cfg.DaemonRPC = next()
 		case "--wallet", "-w":
 			cfg.WalletRPC = next()
@@ -59,7 +59,6 @@ func main() {
 			fmt.Println()
 			fmt.Println("Connection:")
 			fmt.Println("  --daemon, -d    Fuego daemon RPC (default: http://127.0.0.1:18180)")
-			fmt.Println("                  Aliases: --efier, -e")
 			fmt.Println("  --wallet, -w    Wallet RPC endpoint (optional, enables balance + swap signing)")
 			fmt.Println("  --testnet       Use testnet defaults (:28280 daemon, :28282 wallet)")
 			fmt.Println()

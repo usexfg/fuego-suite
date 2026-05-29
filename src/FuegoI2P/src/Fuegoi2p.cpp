@@ -381,7 +381,7 @@ FuegoI2PConfig getDefaultConfig() {
     
     config.enabled = false;
     config.socksHost = "127.0.0.1";
-    config.socksPort = 9150;  // Default I2P SOCKS port
+    config.socksPort = 4447;  // Default i2pd SOCKS port
     config.hiddenServicePort = 8081;
     config.autoStart = false;
     config.connectionTimeout = 30000;

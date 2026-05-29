@@ -98,9 +98,13 @@ namespace CryptoNote
   struct NOTIFY_NEW_TRANSACTIONS_request
   {
     std::vector<std::string> txs;
+    bool dandelion_stem = false;
+    uint32_t hop_count = 0;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(txs);
+      KV_MEMBER(dandelion_stem);
+      KV_MEMBER(hop_count);
     }
 
   };

@@ -21,6 +21,8 @@
 
 namespace XfgSwap {
 
+enum class EthTxType : uint8_t { Legacy = 0, Eip1559 = 2 };
+
 struct EthTxReceipt {
   std::string txHash;
   std::string contractAddress;
@@ -39,10 +41,12 @@ public:
   // signerAddress: "0x..." Ethereum address derived from privKeyHex (caller must
   //   derive and supply; see Secp256k1Signer::derivePublicKey + keccak256(pubkey[1..]).
   // chainId: EIP-155 chain ID (1 = mainnet, 11155111 = Sepolia, etc.).
+  // txType: EIP-1559 (default) or Legacy.
   EthRpcClient(const std::string& host, uint16_t port,
                const std::string& privKeyHex,
                const std::string& signerAddress,
-               uint64_t chainId);
+               uint64_t chainId,
+               EthTxType txType = EthTxType::Eip1559);
 
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
@@ -98,8 +102,12 @@ public:
 
   // Refund ETH from the HTLC after timeout.
   bool refundHtlc(const std::string& fromAddress,
-                  const std::string& contractAddress,
-                  std::string& refundTxHash);
+                   const std::string& contractAddress,
+                   std::string& refundTxHash);
+
+  // Estimate gas for a transaction (eth_estimateGas).
+  bool estimateGas(const std::string& to, const std::string& data,
+                   uint64_t valueWei, uint64_t& gasEstimate);
 
 private:
   std::string httpPost(const std::string& path, const std::string& body);
@@ -118,13 +126,25 @@ private:
                    uint64_t gasLimit,
                    std::string& txHash);
 
-  // Build a signed raw EIP-155 transaction.
-  std::vector<uint8_t> buildSignedTx(uint64_t nonce,
-                                     uint64_t gasPriceWei,
-                                     uint64_t gasLimit,
-                                     const std::vector<uint8_t>& to,
-                                     uint64_t valueWei,
-                                     const std::vector<uint8_t>& data);
+  // Build a signed raw EIP-155 (type-0) transaction.
+  std::vector<uint8_t> buildLegacySignedTx(uint64_t nonce,
+                                           uint64_t gasPriceWei,
+                                           uint64_t gasLimit,
+                                           const std::vector<uint8_t>& to,
+                                           uint64_t valueWei,
+                                           const std::vector<uint8_t>& data);
+
+  // Build a signed raw EIP-1559 (type-2) transaction.
+  std::vector<uint8_t> buildEip1559SignedTx(uint64_t nonce,
+                                            uint64_t maxPriorityFeePerGas,
+                                            uint64_t maxFeePerGas,
+                                            uint64_t gasLimit,
+                                            const std::vector<uint8_t>& to,
+                                            uint64_t valueWei,
+                                            const std::vector<uint8_t>& data);
+
+  // Estimate dynamic fees for EIP-1559.
+  bool estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFeePerGas);
 
   // Set the pre-compiled HashedTimelock contract bytecode (hex, no 0x prefix).
   // Must be called before deployHtlc if deploying a new contract.
@@ -141,6 +161,9 @@ private:
 
   // Pre-compiled HTLC contract bytecode (hex, no 0x prefix).
   std::string m_htlcBytecode;
+
+  // Transaction type: EIP-1559 (default) or Legacy.
+  EthTxType m_txType = EthTxType::Eip1559;
 };
 
 } // namespace XfgSwap

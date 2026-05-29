@@ -381,6 +381,7 @@ void serialize(TransactionOutputUnified& out, ISerializer& serializer) {
   serializer(out.term, "term");
   serializePod(out.commitment, "commitment", serializer);
   serializePod(out.proof,      "proof",      serializer);
+  serializer(out.rangeProof, "range_proof");
 }
 
 void serialize(TransactionInputUnified& in, ISerializer& serializer) {

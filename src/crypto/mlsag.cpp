@@ -215,6 +215,10 @@ bool generate_mlsag(
             reinterpret_cast<const unsigned char*>(&sec_commit),
             reinterpret_cast<const unsigned char*>(&alpha1));
 
+  // Zero secret nonces — prevents leakage if stack is read after return
+  memset(&alpha0, 0, sizeof(alpha0));
+  memset(&alpha1, 0, sizeof(alpha1));
+
   return true;
 }
 

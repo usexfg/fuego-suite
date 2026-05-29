@@ -5,9 +5,9 @@
 // Copyright (c) 2012-2018 The CryptoNote developers
 // Copyright (c) 2018-2019 Conceal Network developers
 // Copyright (c) 2018-2019 The Ryo Currency developers
-//
+
 // This file is part of Fuego.
-//
+
 // Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
@@ -32,23 +32,12 @@ namespace CryptoNote
 		const uint64_t DIFFICULTY_TARGET = 480;
 		const uint64_t CRYPTONOTE_MAX_BLOCK_NUMBER = 500000000;
 		const size_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE = 8000000;
-		const size_t CRYPTONOTE_MAX_TX_SIZE = 4000000;          // 4 MB hard cap on a single tx accepted into mempool / relayed.
-		                                                        // Real Fuego txs are 1-2 KB; the biggest legitimate use is a fusion
-		                                                        // tx capped at FUSION_TX_MAX_SIZE (~126 KB). 4 MB leaves 30x headroom
-		                                                        // for any future protocol expansion while closing the 1 GB DoS hole
-		                                                        // that was inherited from Bytecoin's original "no limit" sanity check.
-		const size_t MAX_TX_EXTRA_SIZE = 4096;                  // 4 KB hard cap on tx.extra. Natural protocol uses (tx public key 33B,
-		                                                        // optional payment ID ~65B, merge-mining tag ~70B, plus Fuego-specific
-		                                                        // HEAT/AMM/DIGM commitment tags <256B each) fit comfortably under 1 KB.
-		                                                        // 4 KB gives 4x headroom for future protocol features; anything larger
-		                                                        // is bloat that every full node carries forever — reject it at relay.
-		const size_t MEMPOOL_SIZE_LIMIT = 800 * 1024 * 1024;    // 800 MB total mempool cap. Beyond this, new low-fee txs are rejected
-		                                                        // (txs already accepted into a block and pushed back during reorg are
-		                                                        // bypassed via keptByBlock=true). Without this cap, a low-fee tx flood
-		                                                        // exhausts daemon RAM.
+		const size_t CRYPTONOTE_MAX_TX_SIZE = 4000000;   // 4 MB hard cap on a single tx
+		const size_t MAX_TX_EXTRA_SIZE = 4096;     // 4 KB hard cap on tx.extra
+		const size_t MEMPOOL_SIZE_LIMIT = 800 * 1024 * 1024;    // 800 MB total mempool cap.
         const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 1753191; /* "fire" address prefix */
         const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX = CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX; // same as main (fire) for max privacy, ie indistinguishable to outside observers.
-        // only issue being if user tried to send FROM a sub-addy, which isnt supported by wallets anyway
+        // only potential issue being if user tried to send FROM a sub-addy, which wallets will not support anyway
 		const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW = 60;
 		const size_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_TESTNET = 0;
 		const uint64_t DIFFICULTY_TARGET_DRGL = 81;
@@ -65,15 +54,15 @@ namespace CryptoNote
 		const uint64_t MONEY_SUPPLY = UINT64_C(80000088000008); /* max supply: 8M8 */
 		const uint64_t COIN = UINT64_C(10000000);
 		const uint64_t MINIMUM_FEE_V1 = UINT64_C(800000);
-		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG  (80Kħ) */
-		const uint64_t MINIMUM_FEE_8KH = UINT64_C(8000);	/* 0.0008 XFG (8Kħ)  BMv10+ Flat Fee */
+		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG  (80Kf) */
+		const uint64_t MINIMUM_FEE_8KH = UINT64_C(8000);	/* 0.0008 XFG (8Kf)  BMv10+ Flat Fee */
 		const uint64_t MINIMUM_FEE = MINIMUM_FEE_8KH;
 
 		// MAINNET banking fees (0.1% of AMOUNT_TIER)
-		const uint64_t BANK_FEE_TIER_0 = UINT64_C(8000);  /* 0.0008 XFG / (8 Kiloħeat) for 0.8 XFG burns */
-		const uint64_t BANK_FEE_TIER_1 = UINT64_C(80000);  /* 0.008 XFG / (80Kħ) for 8 XFG burns */
-		const uint64_t BANK_FEE_TIER_2 = UINT64_C(800000);  /* 0.08 XFG / (800Kħ) for 80 XFG burns */
-		const uint64_t BANK_FEE_TIER_3 = UINT64_C(8000000);  /* 0.8 XFG / (8 Milliħeat) for 800 XFG burns */
+		const uint64_t BANK_FEE_TIER_0 = UINT64_C(8000);  /* 0.0008 XFG / (8 Kilofire) for 0.8 XFG burns */
+		const uint64_t BANK_FEE_TIER_1 = UINT64_C(80000);  /* 0.008 XFG / (80Kf) for 8 XFG burns */
+		const uint64_t BANK_FEE_TIER_2 = UINT64_C(800000);  /* 0.08 XFG / (800Kf) for 80 XFG burns */
+		const uint64_t BANK_FEE_TIER_3 = UINT64_C(8000000);  /* 0.8 XFG / (8 Millifire) for 800 XFG burns */
 
 		// TESTNET banking fees (0.1% of TEST_AMOUNT_TIER)
 		const uint64_t TEST_BANK_FEE_TIER_0 = UINT64_C(800);    /* 0.1% of 0.08 TEST (800,000 atomic) = 800 atomic */
@@ -81,12 +70,12 @@ namespace CryptoNote
 		const uint64_t TEST_BANK_FEE_TIER_2 = UINT64_C(80000);  /* 0.1% of 8 TEST (80,000,000 atomic) = 80,000 atomic */
 		const uint64_t TEST_BANK_FEE_TIER_3 = UINT64_C(800000); /* 0.1% of 80 TEST (800,000,000 atomic) = 800,000 atomic */
 
-		// Fire Alias registration fee: 1 XFG for regular users, free for Elderfiers
+		// Fire Alias registration fee: 1 XFG
 		const uint64_t ALIAS_REGISTRATION_FEE = COIN;  /* 1 XFG sent to Fuego Development Fund */
 		const uint64_t ALIAS_REGISTRATION_FEE_MAX_RANDOM = 1000;  /* max random dust added to alias fee to prevent fingerprinting */
 
-		const uint64_t DEFAULT_DUST_THRESHOLD_20KH = UINT64_C(20000); /* < 0.002 XFG ( under 20 Kħ is dust) */
-		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(1000); /* < 0.0001 XFG ( under 1 Kħ is dust) v10 */
+		const uint64_t DEFAULT_DUST_THRESHOLD_20KH = UINT64_C(20000); /* < 0.002 XFG ( under 20 Kf is dust) */
+		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(1000); /* < 0.0001 XFG ( under 1 Kf is dust) v10 */
 
 		const size_t   CRYPTONOTE_COIN_VERSION                       = 1;
 		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	         = 7;
@@ -133,7 +122,7 @@ namespace CryptoNote
 		const uint64_t MIN_TX_MIXIN_SIZE_V2                          = 2;  // Legacy mixin
 		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // Maxmix min starting from BlockMajorVersion 10
         const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;  // Default mixin size
-		const uint64_t MAX_TX_MIXIN_SIZE                             = 18;
+		const uint64_t MAX_TX_MIXIN_SIZE                             = 32;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
 		// HEAT CD denominations (atomic units, 7 decimal places)
@@ -176,7 +165,7 @@ namespace CryptoNote
         const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
         const uint64_t LEGACY_BOND_TARGET_APY = 80;          // 80% target APY on legacy bonds
         const uint64_t LEGACY_BOND_TERM_EPOCHS = 72;         // 72 epochs (~1 year) lock period
-        const uint64_t LEGACY_BOND_DEBT_CAP = 250000000;     // 250k XFG total debt cap (in ATOMIC units, 10000 per XFG)
+        const uint64_t LEGACY_BOND_DEBT_CAP = 2542500000000;     // ₲254,250 total debt cap (in ATOMIC units, 10000000 per XFG)
 
         // HEAT Deposits
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 8 HEAT minimum CD
@@ -188,10 +177,10 @@ namespace CryptoNote
         const uint32_t TESTNET_DEPOSIT_MIN_TERM = TESTNET_CD_MIN_EPOCHS * TESTNET_EPOCH_DURATION_BLOCKS;  // 10 blocks
         const uint32_t TESTNET_DEPOSIT_MAX_TERM = TESTNET_CD_MAX_EPOCHS * TESTNET_EPOCH_DURATION_BLOCKS;  // 720 blocks
 
-        const uint32_t DEPOSIT_TERM_FOREVER = ((uint32_t)(-1));  // Forever term = burn
+        const uint32_t HEAT_TERM = ((uint32_t)(-1));  // 0xFFFFFFFF marks HEAT (permanent)
+        const uint32_t TERM_REGULAR = 0;               // 0 marks regular XFG transfer
         const uint32_t DEPOSIT_TERM_LP      = 0xFFFFFFFD;         // LP share marker (term for Hearth liquidity)
         const uint32_t DEPOSIT_TERM_YIELD = DEPOSIT_MIN_TERM;  // CD minimum term for FuCIA deposits
-        const uint32_t DEPOSIT_TERM_BURN = DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
         const uint32_t DEPOSIT_TERM_POOL_XFG = 0x504F4C58;  // 'POLX' — AMM pool receives XFG (unspendable)
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
@@ -215,7 +204,7 @@ namespace CryptoNote
 
         // HEAT stability — 3 switchable modes via HEAT_STABILITY_MODE
         //   0 = CPI-adjusted purchasing power + EUR display
-        //   1 = 5:1 self-sovereign (fixed $1.50-$2.50 band, activate at XFG ≥ $5)
+        //   1 = 5:1 self-sovereign (fixed 1.50-2.50 band, activate at XFG ≥ $5)
         //   2 = 8:1 self-sovereign full float (PI-only, best APY per Monte Carlo)
         const uint8_t  HEAT_STABILITY_MODE = 2;                    // default: 8:1 full float (best APY)
         const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT) — used by modes 0,1
@@ -224,17 +213,17 @@ namespace CryptoNote
         const uint64_t HEAT_LAUNCH_RATIO_8X_DENOM = 8;
         const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint
         const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium
-        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // $5.00 (mode 1 activation)
-        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD_8X = 800;    // $8.00 (mode 2 variant; unused when float)
-        const uint64_t HEAT_VALUE_FLOOR = 150;                     // $1.50 band floor (modes 0,1)
-        const uint64_t HEAT_VALUE_CEILING = 250;                   // $2.50 band ceiling (modes 0,1)
-        const uint64_t VALUE_SCALE = 100;                          // cents scale for oracle values
+        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // 5.00 (mode 1 activation)
+        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD_8X = 800;    // 8.00 (mode 2 variant; unused when float)
+        const uint64_t HEAT_VALUE_FLOOR = 150;                     // 1.5 band floor (modes 0,1)
+        const uint64_t HEAT_VALUE_CEILING = 250;                   // 2.5 band ceiling (modes 0,1)
+        const uint64_t VALUE_SCALE = 100;                          // scale for oracle values
 
         // CPI-adjusted purchasing power — used by mode 0 only
         // HEAT targets constant real value: as USD loses purchasing power, HEAT's
         // nominal USD value rises proportionally. EUR display for public-facing output.
-        const uint64_t HEAT_CPI_BASE_FLOOR     = 150;               // $1.50 at CPI=100 (launch baseline)
-        const uint64_t HEAT_CPI_BASE_CEIL      = 250;               // $2.50 at CPI=100
+        const uint64_t HEAT_CPI_BASE_FLOOR     = 150;               // 1.50 at CPI=100 (launch baseline)
+        const uint64_t HEAT_CPI_BASE_CEIL      = 250;               // 2.50 at CPI=100
         const uint64_t HEAT_CPI_SCALE          = 100;               // CPI index scale (100 = launch baseline)
         const uint64_t HEAT_CPI_LAUNCH_INDEX   = 100;               // CPI at launch time
         const uint64_t HEAT_CPI_AUTO_INFLATION_BPS = 250;           // 2.50%/yr simulated CPI drift
@@ -288,7 +277,7 @@ namespace CryptoNote
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");
 
-        const uint64_t MULTIPLIER_FACTOR = 100;		 /* conceal code */
+        const uint64_t MULTIPLIER_FACTOR = 100;		 /* old conceal code */
 		const uint32_t END_MULTIPLIER_BLOCK = 50; /* cocneal deposit code */
 
 		static constexpr uint64_t POISSON_CHECK_TRIGGER = 10; // Reorg size that triggers poisson timestamp check
@@ -321,9 +310,10 @@ namespace CryptoNote
  		const uint32_t UPGRADE_HEIGHT_V6                             = 345678; //{Ice&fire}  CN8  (variant2)
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
-        const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //Godflame  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //ÆzorAhai  (@fire aliases|dynamaxin|dandelion+|CD|SwapXFG)
-        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //HearthAMM + HEAT stablecoin + PI controller
+        const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //{Godflame}  (emission|UPX2|Fuego)
+        const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //{Harbinja}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
+        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT stablecoin + PI controller + HEARTH AMM + HEAT_CDs
+        const uint32_t UPGRADE_HEIGHT_V12                            = 1666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
@@ -368,7 +358,8 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
 	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // Per-asset balance + AMM swap auth + HEAT mint auth (M3 fix)
-	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // Hearthbane AMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // Hearth AMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Unified output/input types + Pedersen + MLSAG (hidden amounts)
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;
@@ -400,7 +391,7 @@ namespace CryptoNote
 	const size_t P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT = 2;
 	const size_t P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT = 70; // percent
 	const uint32_t P2P_DEFAULT_HANDSHAKE_INTERVAL = 60;			 // seconds
-	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 50000000;		 // 50 MB max packet size (matches Karbo/Conceal). NetNode.cpp:343 already says "20 MB limit"; 1MB was a regression that paired with the LevinProtocol 1MB cap to abort sync once any peer sent >1MB.
+	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 50000000;		 // 50 MB max packet size
 	const uint32_t P2P_DEFAULT_PEERS_IN_HANDSHAKE = 250;
 	const uint32_t P2P_MAX_INCOMING_CONNECTIONS = 250;			 // max incoming connections
 	const uint32_t P2P_DEFAULT_CONNECTION_TIMEOUT = 5000;	   // 5 seconds
@@ -413,37 +404,31 @@ namespace CryptoNote
 
 // Mainnet Seed Nodes
 	const std::initializer_list<const char *> SEED_NODES = {
-	  "207.244.247.64:10808",
-	    "195.88.57.158:10808",
+	            "207.244.247.64:10808",
+	          "195.88.57.158:10808",
  		   "80.89.228.157:10808",
-	         "216.145.84.248:10808"
-	};
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-// TESTNET Seed Nodes
-	const std::initializer_list<const char *> SEED_NODES_TESTNET = {
-	   "195.88.57.158:20808",
+	    "216.145.84.248:10808"};
+//________________________________________________________________________________________________________________________
+//  TESTNET PARAMETERS below
+//--------------------------------------------------------------------------------------------------------------------------
+  const std::initializer_list<const char *> SEED_NODES_TESTNET = {
+ 	   "195.88.57.158:20808",
 	   	 "216.145.84.248:20808",
  		    "80.89.228.157:20808",
  		      "207.244.247.64:20808"
 		};
-
-//__________________________________________________________________________________________________________________________
-//                           TESTNET parameters
-//--------------------------------------------------------------------------------------------------------------------------
 
     const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712701febbfb69c5e4579824b105c4041860afd466176975248042e000479e96f1acb20204e0c81000";
  	const int P2P_DEFAULT_PORT_TESTNET = 20808;
  	const int RPC_DEFAULT_PORT_TESTNET = 28280;
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */
 	const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET = CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET;
-	const uint32_t TESTNET_DEPOSIT_TERM_FOREVER = ((uint32_t)(-1));  // Forever term for burn transactions
+	const uint32_t TESTNET_HEAT_TERM = ((uint32_t)(-1));  // Forever term for burn transactions
     const uint64_t TESTNET_HEAT_MINT_MIN =   800000;  // 0.08 TEST minimum mint (testnet scale)
-    const uint32_t TESTNET_DEPOSIT_TERM_BURN = TESTNET_DEPOSIT_TERM_FOREVER;  // 4294967295 for burn deposits
 
-// -------------------------------------- END TESTNET CONFIGS ---------------------------------------------------------
-
+    //__________________________________________________________________________________________________________________________
+    //                       END  OF  TESTNET  P A R A  M    E     T      E      R        S
+    //--------------------------------------------------------------------------------------------------------------------------
 	struct CheckpointData
 	{
 		uint32_t height;
@@ -516,16 +501,16 @@ namespace CryptoNote
 			       { 900000, "1cacd4c442ddc836020f5d21c9540cac8890a0d7bf7e9a6ed5b6615f0a564afa" },
 			       { 910000, "99de18bcc18f47c2d4676f29b1ca01ae604c237bddfa8970da42b683705289b2" },
 			       { 920000, "fb58c246ead757e74dc6b8eb54f52b86ec5f475aa2978abc9729adbfd939bbb5" },
-			      { 930000, "bf4bdf3888e2593db332708e25c7de2bb8eabfb11d5df9324df666c338804629" },
-			     { 940000, "f5c0bfd2f0f4c166dc3de05af75b7616f73a9e24ed8ab7c504c1aac4203eb817" },
-			    { 950000, "c23a6da74e4d1ec8b2bc1debac5578d7c12ea70f3b03a692a62cab8d3c4431e1" },
-			   { 960000, "1ac7447e9819be997209b0bd3fa56edeca31f4cd33068a1808db3ab2c6705f18" },
-			  { 970000, "96f8735193c5435254d32c03d25b3747e059931cd3382c436d91b61cb6c6b871" },
-			 { 980000, "1ae34b8d56a796bf5d82bd80ba9cb81e029deda46a293ebb225b26f33c8e240a"},
-			{ 988000, "dd509fba899ecb1b7b58ea3023624fbd2b34df247056869c0ac4b59d65cfa6bf"},
-			{ 988001, "c38e275d08f3a984484d920d9c65157384c6ea75cc95dbc0015b90b9fa3d3250"},
-
-
+			       { 930000, "bf4bdf3888e2593db332708e25c7de2bb8eabfb11d5df9324df666c338804629" },
+			      { 940000, "f5c0bfd2f0f4c166dc3de05af75b7616f73a9e24ed8ab7c504c1aac4203eb817" },
+			     { 950000, "c23a6da74e4d1ec8b2bc1debac5578d7c12ea70f3b03a692a62cab8d3c4431e1" },
+			    { 960000, "1ac7447e9819be997209b0bd3fa56edeca31f4cd33068a1808db3ab2c6705f18" },
+			    { 970000, "96f8735193c5435254d32c03d25b3747e059931cd3382c436d91b61cb6c6b871" },
+                 { 980000, "1ae34b8d56a796bf5d82bd80ba9cb81e029deda46a293ebb225b26f33c8e240a"},
+	       	      { 988000, "dd509fba899ecb1b7b58ea3023624fbd2b34df247056869c0ac4b59d65cfa6bf"},
+	               { 988001, "c38e275d08f3a984484d920d9c65157384c6ea75cc95dbc0015b90b9fa3d3250"},
+                    { 990000, "a4a9d7c492e4b4d939f8db069eee00fd85ee51b5b4f34a5edc9d335e59d41e51"},
+                     { 999999, "5360676adc5525d5092680e1a31a0ab40b28deb3699eb5dabe0d3230e7bfcdd2"},
 		};
 
 } // namespace CryptoNote

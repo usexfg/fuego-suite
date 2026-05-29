@@ -355,9 +355,9 @@ Three scopes were **blocking** for any real-value testnet deployment. The alias 
   - Registration is CLI-only (`SimpleWallet`). Users of the wallet library have no programmatic path to register an alias.
   - Either document as intentional CLI-only, or add `registerAlias` / `getAlias` methods to `IWallet` / `WalletGreen`.
 
-- **Minor**: `AliasEntry::aliasType` default value is `0` (Elderfier, now rejected) — silent construction failure
+- **Minor**: `AliasEntry::aliasType` default value is `0` (deprecated, now rejected) — silent construction failure
   - `src/CryptoNoteCore/AliasIndex.h:35`
-  - Any code that constructs an `AliasEntry` without explicitly setting `aliasType = 1` will be silently rejected by `registerAlias` ("Elderfier aliases no longer supported"). The comment still advertises the mapping.
+  - Any code that constructs an `AliasEntry` without explicitly setting `aliasType = 1` will be silently rejected by `registerAlias`.
   - Change the default to `uint8_t aliasType = 1;` and update the comment.
 
 - **Minor**: No alias-specific unit tests
@@ -396,7 +396,7 @@ Three scopes were **blocking** for any real-value testnet deployment. The alias 
 - **Important**: `addressHash` computed over the raw base58 address string — encoding-format-dependent, not stable across wallet software changes
   - `src/SimpleWallet/SimpleWallet.cpp:3660`
   - `src/CryptoNoteCore/AliasIndex.cpp:49, 149, 172, 188`
-  - `cn_fast_hash(address.data(), address.size())` where `address` is the base58-encoded string. A change in encoding format or checksum bytes produces a different hash for the same cryptographic identity, breaking lookup silently. Commit `768758e7` changed the Elderfier path to `hash(spendPublicKey || ephemeralPublicKey)`; the regular alias path was not updated.
+  - `cn_fast_hash(address.data(), address.size())` where `address` is the base58-encoded string. A change in encoding format or checksum bytes produces a different hash for the same cryptographic identity, breaking lookup silently.
   - Hash the spend public key directly (raw bytes, not encoded) to decouple from address format changes; document the scheme in the header.
 
 - **Important**: No chain-ID or genesis-hash binding in `TransactionExtraAliasRegistration` — registration TXs are valid on forks and testnet

@@ -1091,7 +1091,7 @@ namespace CryptoNote
   // UNIFIED PREIMAGE (88 bytes):
   //   keccak256(secret || le64(amount) || tx_prefix_hash || network_id || target_chain_id || version || le32(term))
   //
-  // HEAT burns use: term = DEPOSIT_TERM_FOREVER (0xFFFFFFFF)
+  // HEAT burns use: term = HEAT_TERM (0xFFFFFFFF)
   // COLD deposits use: actual term in blocks
   //
   // This unified format allows both HEAT and COLD to use the same verification logic,
@@ -1146,7 +1146,7 @@ namespace CryptoNote
     }
 
     // Term (4 bytes, LE) - UNIFIED for HEAT and COLD
-    // HEAT: 0xFFFFFFFF (DEPOSIT_TERM_FOREVER)
+    // HEAT: 0xFFFFFFFF (HEAT_TERM)
     // COLD: actual term in blocks
     uint32_t t = term;
     for (int i = 0; i < 4; ++i) {
@@ -1161,7 +1161,7 @@ namespace CryptoNote
     return out;
   }
 
-  // HEAT convenience wrapper - uses DEPOSIT_TERM_FOREVER for term
+  // HEAT convenience wrapper - uses HEAT_TERM for term
   Crypto::Hash computeHeatCommitment(const std::array<uint8_t, 32> &secret,
                                      uint64_t amount_atomic,
                                      const Crypto::Hash &tx_prefix_hash,
@@ -1169,8 +1169,8 @@ namespace CryptoNote
                                      uint32_t target_chain_id,
                                      uint32_t commitment_version)
   {
-    // Use DEPOSIT_TERM_FOREVER (0xFFFFFFFF) for HEAT burns
-    return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, parameters::DEPOSIT_TERM_FOREVER);
+    // Use HEAT_TERM (0xFFFFFFFF) for HEAT burns
+    return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, parameters::HEAT_TERM);
   }
 
   // Builds tx.extra with TX_EXTRA_HEAT_COMMITMENT (0x08)

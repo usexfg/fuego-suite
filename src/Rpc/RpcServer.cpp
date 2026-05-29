@@ -2340,7 +2340,6 @@ bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::reques
       summary.total_cd_locked_at_start = report->totalCdLockedAtStart;
       summary.fee_rate_fixed_point = report->feeRateFixedPoint;
       summary.total_fees_distributed = report->totalFeesDistributed;
-      summary.active_efier_count = report->activeEfierCount;
       res.epochs.push_back(summary);
       ++collected;
     }

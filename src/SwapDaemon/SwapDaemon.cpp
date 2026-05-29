@@ -238,7 +238,7 @@ void SwapDaemon::tickLoop() {
       SwapStateMachine sm;
       if (!m_db.loadSwap(id, sm)) continue;
       if (sm.isTerminal()) continue;
-      processSwap(id);
+      processSwap(sm);
     }
   }
 }
@@ -509,6 +509,11 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
     m_logger(Logging::ERROR) << "Swap not found: " << swapId;
     return false;
   }
+  return processSwap(sm);
+}
+
+bool SwapDaemon::processSwap(SwapStateMachine& sm) {
+  const std::string& swapId = sm.params().swapId;
 
   if (sm.isTerminal()) {
     m_logger(Logging::INFO) << "Swap " << swapId
@@ -539,229 +544,22 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
     case SwapState::ADAPTOR_KEYS_EXCHANGED:
       m_logger(Logging::INFO) << "  Keys aggregated. Escrow key: "
         << Common::podToHex(params.escrowPubKey);
-      m_logger(Logging::INFO) << "  Next: fund XFG → escrow key, then exchange nonces + pre-sigs.";
       break;
 
     case SwapState::ADAPTOR_ESCROW_FUNDED:
-      m_logger(Logging::INFO) << "  Escrow funded (tx: "
-        << Common::podToHex(params.escrowTxHash) << ").";
-      // Phase 1: 1% sender surcharge added to escrow amount (total swap fee = 2%: 1% init + 1% claim)
-      if (params.xfgAmount > 0) {
-        uint64_t senderSurcharge = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) 
-                                 / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
-        if (senderSurcharge > 0) {
-          params.xfgAmount += senderSurcharge;
-          m_rpc.addSwapFee(senderSurcharge);
-          m_logger(Logging::INFO) << "  Swap initiation fee (1%): " << senderSurcharge 
-                                   << " XFG reported to daemon fee pool";
-        }
-      }
-      m_logger(Logging::INFO) << "  Next: exchange Musig2 nonces and create adaptor pre-sigs.";
+      handleEscrowFunded(sm, currentHeight);
       break;
 
     case SwapState::ADAPTOR_PRESIGS_READY:
-      // Bob locks counterparty chain funds once pre-sigs are ready.
-      if (params.role == SwapRole::BOB) {
-        m_logger(Logging::INFO) << "  Pre-sigs ready. Bob locking counterparty ("
-          << swapPairToString(params.pair) << ") funds...";
-
-        bool lockOk = false;
-        auto* client = m_chainRegistry.getClient(params.pair);
-        if (!client) {
-          m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-            << " client not configured — cannot lock";
-        } else {
-          auto result = client->lock(params);
-          if (result.success) {
-            m_logger(Logging::INFO) << "  " << client->chainName()
-              << " locked, txid: " << result.txId;
-            params.ctrLockTxId = result.txId;
-            if (!result.chainState.empty()) {
-              params.chainState = result.chainState;
-            }
-            sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
-            m_db.saveSwap(sm);
-            lockOk = true;
-          } else {
-            m_logger(Logging::ERROR) << "  " << client->chainName()
-              << " lock failed: " << result.error;
-            if (result.fatal) {
-              sm.transition(SwapState::FAILED);
-              m_db.saveSwap(sm);
-            }
-          }
-        }
-      } else {
-        // Alice: verify Bob has locked on the counterparty chain
-        m_logger(Logging::INFO) << "  Pre-sigs ready. Alice verifying counterparty ("
-          << swapPairToString(params.pair) << ") lock...";
-
-        bool verified = false;
-        auto* client = m_chainRegistry.getClient(params.pair);
-        if (!client) {
-          m_logger(Logging::WARNING) << "  " << swapPairToString(params.pair)
-            << " client not configured — cannot verify lock";
-        } else {
-          auto result = client->verifyLock(params);
-          verified = result.success;
-        }
-
-        if (verified) {
-          m_logger(Logging::INFO) << "  Counterparty lock verified. Transitioning to CTR_LOCKED.";
-          sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
-          m_db.saveSwap(sm);
-        } else {
-          m_logger(Logging::INFO) << "  Counterparty lock not yet verified — will retry next tick.";
-        }
-      }
+      handlePreSigsReady(sm);
       break;
 
     case SwapState::ADAPTOR_CTR_LOCKED:
-      if (params.role == SwapRole::ALICE) {
-        // Alice claims the counterparty funds, revealing the adaptor secret.
-        m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
-          << " locked. Alice claiming to reveal adaptor secret...";
-
-        bool claimOk = false;
-        auto* client = m_chainRegistry.getClient(params.pair);
-        if (!client) {
-          m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-            << " client not configured — cannot claim";
-        } else {
-          auto result = client->claim(params);
-          if (result.success) {
-            m_logger(Logging::INFO) << "  " << client->chainName()
-              << " claimed, txid: " << result.txId;
-            sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
-            m_db.saveSwap(sm);
-            claimOk = true;
-          } else {
-            m_logger(Logging::ERROR) << "  " << client->chainName()
-              << " claim failed: " << result.error;
-            if (result.fatal) {
-              sm.transition(SwapState::FAILED);
-              m_db.saveSwap(sm);
-            }
-          }
-        }
-
-        if (!claimOk) {
-          m_logger(Logging::INFO) << "  Claim not yet complete — will retry next tick.";
-        }
-      } else {
-        m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
-          << " locked. Waiting for Alice to claim (reveals adaptor secret).";
-      }
+      handleCtrLocked(sm);
       break;
 
     case SwapState::ADAPTOR_SECRET_REVEALED:
-      if (params.role == SwapRole::BOB) {
-        m_logger(Logging::INFO) << "  Adaptor secret learned. Building adapted escrow spend tx...";
-
-        // If tx already broadcast, transition to terminal state.
-        if (params.ringTxBroadcast) {
-          sm.transition(SwapState::ADAPTOR_XFG_SPENT);
-          m_db.saveSwap(sm);
-          m_logger(Logging::INFO) << "  Escrow spend confirmed. Swap " << swapId << " completed.";
-          break;
-        }
-
-        // If peer has sent both Round 1 and Round 2 data, finalize and broadcast.
-        if (params.ringPeerRound1Received && params.ringPeerRound2Received) {
-          Crypto::PublicKey alicePub = params.peerSwapPubKey;
-          if (buildAndBroadcastEscrowTx(params, alicePub, "spend")) {
-            params.ringTxBroadcast = true;
-            sm.transition(SwapState::ADAPTOR_XFG_SPENT);
-            m_db.saveSwap(sm);
-            m_logger(Logging::INFO) << "  Escrow spend broadcast. Swap " << swapId << " completed.";
-          } else {
-            m_logger(Logging::ERROR) << "  Failed to build/broadcast escrow spend tx";
-          }
-          break;
-        }
-
-        // If peer has sent Round 1 but not Round 2, send our Round 2.
-        if (params.ringPeerRound1Received && !params.ringOurRound2Sent) {
-          SwapParams working = params;
-          CollaborativeRingState ringState;
-          CryptoNote::Transaction spendTx;
-          Crypto::Hash spendPrefixHash;
-          Crypto::PublicKey alicePub = params.peerSwapPubKey;
-
-          if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-                  m_rpc, working, alicePub, SwapTxBuilder::MIN_FEE,
-                  spendTx, spendPrefixHash, ringState)) {
-            m_logger(Logging::ERROR) << "  Failed to build escrow spend tx for Round 2";
-            break;
-          }
-          // Populate peer Round 1 into ringState
-          ringState.peerPartialKeyImage = params.ringPeerPartialKeyImage;
-          ringState.peerRingNoncePub    = params.ringPeerRingNoncePub;
-          ringState.peerRingNonceHp     = params.ringPeerRingNonceHp;
-          // Generate our Round 1
-          SwapTxBuilder::ringRound1Generate(working, ringState);
-          // Finalize Round 1
-          if (!SwapTxBuilder::ringRound1Finalize(spendPrefixHash, ringState)) {
-            m_logger(Logging::ERROR) << "  Ring Round 1 finalize failed";
-            break;
-          }
-          // Recompute prefix hash with aggregate key image
-          auto& input = boost::get<CryptoNote::KeyInput>(spendTx.inputs[0]);
-          input.keyImage = ringState.aggregateKeyImage;
-          if (!CryptoNote::getObjectHash(
-              static_cast<CryptoNote::TransactionPrefix&>(spendTx), spendPrefixHash)) {
-            m_logger(Logging::ERROR) << "  Failed to recompute prefix hash";
-            break;
-          }
-          // Generate our Round 2
-          SwapTxBuilder::ringRound2Sign(working, ringState);
-          params.ringOurRound2Sent = true;
-          m_db.saveSwap(sm);
-
-          PeerMessage r2msg;
-          r2msg.type = PeerMessageType::RING_ROUND2;
-          r2msg.swapId = params.swapId;
-          r2msg.ringRound2.partialResponse = ringState.ourPartialResponse;
-          m_logger(Logging::INFO) << "  Sending Ring Round 2 to peer...";
-          m_logger(Logging::INFO) << "  Ring Round 2: "
-            << serializePeerMessage(r2msg).substr(0, 120) << "...";
-          break;
-        }
-
-        // If we haven't sent Round 1 yet, build tx and send Round 1.
-        if (!params.ringOurRound1Sent) {
-          SwapParams working = params;
-          CryptoNote::Transaction spendTx;
-          Crypto::Hash spendPrefixHash;
-          CollaborativeRingState spendRingState;
-          Crypto::PublicKey alicePub = params.peerSwapPubKey;
-
-          if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-                  m_rpc, working, alicePub, SwapTxBuilder::MIN_FEE,
-                  spendTx, spendPrefixHash, spendRingState)) {
-            m_logger(Logging::ERROR) << "  Failed to build escrow spend tx";
-            break;
-          }
-          SwapTxBuilder::ringRound1Generate(working, spendRingState);
-          params.ringOurRound1Sent = true;
-          m_db.saveSwap(sm);
-
-          PeerMessage r1msg;
-          r1msg.type = PeerMessageType::RING_ROUND1;
-          r1msg.swapId = params.swapId;
-          r1msg.ringRound1.partialKeyImage = spendRingState.ourPartialKeyImage;
-          r1msg.ringRound1.ringNoncePub = spendRingState.ourRingNoncePub;
-          r1msg.ringRound1.ringNonceHp = spendRingState.ourRingNonceHp;
-
-          m_logger(Logging::INFO) << "  Escrow spend tx built. Sending Ring Round 1 to peer...";
-          m_logger(Logging::INFO) << "  Ring Round 1: "
-            << serializePeerMessage(r1msg).substr(0, 120) << "...";
-        } else {
-          m_logger(Logging::INFO) << "  Awaiting peer ring data (Round 1 sent, waiting for response).";
-        }
-      } else {
-        m_logger(Logging::INFO) << "  Secret revealed. Waiting for Bob to broadcast escrow spend.";
-      }
+      handleSecretRevealed(sm);
       break;
 
     default:
@@ -1200,15 +998,32 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
   return m_db.updateSwap(msg.swapId, [&](SwapStateMachine& sm) -> bool {
     SwapParams& params = const_cast<SwapParams&>(sm.params());
 
+    // Peer authentication gate:
+    // KEY_EXCHANGE must only be accepted once (no key-swapping attacks).
+    // All other messages require the peer key to have been set.
+    static const Crypto::PublicKey ZERO_KEY{};
+    bool keyExchanged = (std::memcmp(&params.peerSwapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) != 0);
+
     switch (msg.type) {
       case PeerMessageType::KEY_EXCHANGE:
+        if (keyExchanged) {
+          m_logger(Logging::WARNING) << "Duplicate KEY_EXCHANGE rejected for swap " << msg.swapId;
+          return false;
+        }
+        if (std::memcmp(&msg.keyExchange.swapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) == 0) {
+          m_logger(Logging::WARNING) << "KEY_EXCHANGE with zero pubkey rejected";
+          return false;
+        }
         params.peerSwapPubKey = msg.keyExchange.swapPubKey;
         if (!adaptor_key_aggregate(params)) return false;
         sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
         return true;
 
       case PeerMessageType::ADAPTOR_EXCHANGE:
+        if (!keyExchanged) return false;
         params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
+
+      // ... rest of the cases need keyExchanged check
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
         if (!adaptor_verify_adaptor(params, params.escrowPubKey, params.adaptorDleqQ)) {
@@ -1218,10 +1033,12 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::NONCE_EXCHANGE:
+        if (!keyExchanged) return false;
         params.musig2.peerPubNonce = msg.nonceExchange.pubNonce;
         return true;
 
       case PeerMessageType::PARTIAL_SIG:
+        if (!keyExchanged) return false;
         params.musig2.peerPartialSig = msg.partialSig.partialSig;
         if (!adaptor_partial_verify(params)) {
           m_logger(Logging::ERROR) << "Peer partial sig verification failed!";
@@ -1231,8 +1048,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::RING_ROUND1:
-        // Persist peer's Ring Round 1 data so the collaborative ring sig
-        // can resume after a daemon restart.
+        if (!keyExchanged) return false;
         params.ringPeerPartialKeyImage = msg.ringRound1.partialKeyImage;
         params.ringPeerRingNoncePub    = msg.ringRound1.ringNoncePub;
         params.ringPeerRingNonceHp     = msg.ringRound1.ringNonceHp;
@@ -1241,6 +1057,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::RING_ROUND2:
+        if (!keyExchanged) return false;
         params.ringPeerPartialResponse = msg.ringRound2.partialResponse;
         params.ringPeerRound2Received  = true;
         m_logger(Logging::INFO) << "  Received peer Ring Round 2 data (persisted)";

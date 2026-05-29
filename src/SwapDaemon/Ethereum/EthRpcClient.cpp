@@ -23,6 +23,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/select.h>
 
 #include <atomic>
 #include <cstring>
@@ -247,72 +249,118 @@ EthRpcClient::EthRpcClient(const std::string& host, uint16_t port,
 }
 
 // ---------------------------------------------------------------------------
-// HTTP POST over POSIX sockets
+// HTTP POST with keep-alive (persistent socket)
 // ---------------------------------------------------------------------------
 
-std::string EthRpcClient::httpPost(const std::string& path, const std::string& body) {
-  // Resolve host
+bool EthRpcClient::connectSocket() {
+  closeSocket();
+
   struct addrinfo hints{}, *res = nullptr;
   hints.ai_family   = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
 
   std::string portStr = std::to_string(m_port);
-  int gaiRet = getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res);
-  if (gaiRet != 0 || !res) {
-    return "";
+  if (getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
+    return false;
   }
 
-  int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (sock < 0) {
-    freeaddrinfo(res);
-    return "";
+  m_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  if (m_sock < 0) { freeaddrinfo(res); return false; }
+
+  struct timeval tv = {10, 0};
+  setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+  int flags = fcntl(m_sock, F_GETFL, 0);
+  if (flags >= 0) fcntl(m_sock, F_SETFL, flags | O_NONBLOCK);
+
+  int connRet = connect(m_sock, res->ai_addr, res->ai_addrlen);
+  if (connRet < 0 && errno == EINPROGRESS) {
+    fd_set fdset;
+    FD_ZERO(&fdset);
+    FD_SET(m_sock, &fdset);
+    if (select(m_sock + 1, NULL, &fdset, NULL, &tv) <= 0) {
+      closeSocket(); freeaddrinfo(res); return false;
+    }
+  } else if (connRet < 0) {
+    closeSocket(); freeaddrinfo(res); return false;
   }
 
-  // Set a 10-second timeout on send/recv
-  struct timeval tv;
-  tv.tv_sec  = 10;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-
-  if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
-    close(sock);
-    freeaddrinfo(res);
-    return "";
-  }
+  if (flags >= 0) fcntl(m_sock, F_SETFL, flags);
   freeaddrinfo(res);
+  m_sockHost = m_host;
+  m_sockPort = m_port;
+  return true;
+}
 
-  // Build HTTP request
+void EthRpcClient::closeSocket() {
+  if (m_sock >= 0) { close(m_sock); m_sock = -1; }
+}
+
+static bool httpReadResponse(int sock, std::string& response) {
+  char buf[4096];
+  // Read until \r\n\r\n appears in accumulated data
+  std::string accum;
+  size_t hdrEnd = std::string::npos;
+  while (hdrEnd == std::string::npos) {
+    ssize_t n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) return false;
+    accum.append(buf, static_cast<size_t>(n));
+    hdrEnd = accum.find("\r\n\r\n");
+  }
+  // Parse Content-Length
+  size_t clPos = accum.find("Content-Length:");
+  if (clPos == std::string::npos) return false;
+  clPos += 15;
+  while (clPos < accum.size() && accum[clPos] == ' ') ++clPos;
+  size_t contentLen = 0;
+  while (clPos < accum.size() && accum[clPos] >= '0' && accum[clPos] <= '9')
+    contentLen = contentLen * 10 + (accum[clPos++] - '0');
+  // Body starts after \r\n\r\n
+  response = accum.substr(hdrEnd + 4);
+  // Read remaining body
+  while (response.size() < contentLen) {
+    ssize_t n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0) return false;
+    response.append(buf, static_cast<size_t>(n));
+  }
+  return true;
+}
+
+std::string EthRpcClient::httpPost(const std::string& path, const std::string& body) {
+  // Connect or reconnect if host/port changed or socket broken
+  if (m_sock < 0 || m_sockHost != m_host || m_sockPort != m_port) {
+    if (!connectSocket()) return "";
+  }
+
+  // Build HTTP request with keep-alive
   std::ostringstream req;
   req << "POST " << path << " HTTP/1.1\r\n";
   req << "Host: " << m_host << ":" << m_port << "\r\n";
   req << "Content-Type: application/json\r\n";
   req << "Content-Length: " << body.size() << "\r\n";
-  req << "Connection: close\r\n";
+  req << "Connection: keep-alive\r\n";
   req << "\r\n";
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = send(sock, request.data(), request.size(), 0);
-  if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
-    close(sock);
-    return "";
+
+  // Send, retry once on failure
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (attempt > 0) {
+      closeSocket();
+      if (!connectSocket()) return "";
+    }
+    if (send(m_sock, request.data(), request.size(), 0) < 0)
+      continue;
+
+    std::string response;
+    if (httpReadResponse(m_sock, response))
+      return response;
   }
 
-  // Read response
-  std::string response;
-  char buf[4096];
-  while (true) {
-    ssize_t n = recv(sock, buf, sizeof(buf), 0);
-    if (n <= 0) break;
-    response.append(buf, static_cast<size_t>(n));
-  }
-  close(sock);
-
-  // Strip HTTP headers — body starts after \r\n\r\n
-  auto headerEnd = response.find("\r\n\r\n");
-  if (headerEnd == std::string::npos) return "";
-  return response.substr(headerEnd + 4);
+  closeSocket();
+  return "";
 }
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,9 @@ namespace CryptoNote {
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <map>
+#include <vector>
+#include <ctime>
 
 namespace XfgSwap {
 
@@ -142,6 +145,7 @@ public:
 
   // Advance a specific swap to its next state based on chain observations.
   bool processSwap(const std::string& swapId);
+  bool processSwap(SwapStateMachine& sm);  // avoids duplicate DB load in tick loop
 
   // Print a summary of all swaps.
   void listSwaps();
@@ -190,6 +194,12 @@ public:
   // Returns true on success.
   bool fundEscrow(SwapParams& params);
 
+  // Per-state handlers extracted from processSwap for readability
+  bool handlePreSigsReady(SwapStateMachine& sm);
+  bool handleSecretRevealed(SwapStateMachine& sm);
+  bool handleCtrLocked(SwapStateMachine& sm);
+  bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
+
   // Verify that the escrow funding tx exists and contains an output
   // with the expected amount to the joint escrow key.
   // Returns true if the escrow is confirmed on chain.
@@ -221,7 +231,19 @@ public:
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
 
-   CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
+    CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
+
+   struct TakerRecord {
+     std::vector<time_t> requestTimes;
+     uint32_t failedSwaps = 0;
+   };
+   std::mutex m_takerMutex;
+   std::map<std::string, TakerRecord> m_takerHistory;
+   static constexpr uint32_t MAX_TAKER_REQUESTS_PER_HOUR = 5;
+   static constexpr uint32_t TAKER_BAN_THRESHOLD = 3;
+
+   bool isTakerRateLimited(const std::string& takerPubKey);
+   void recordTakerFailure(const std::string& takerPubKey);
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

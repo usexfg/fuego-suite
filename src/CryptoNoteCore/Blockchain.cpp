@@ -808,47 +808,40 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
             m_indexManager.commitmentOutputs()[out.amount].push_back(ref);
           }
         }
+        // Rebuild CommitmentIndex from transaction extras (merged into single pass)
+        std::vector<TransactionExtraField> extraFields;
+        if (parseTransactionExtra(transaction.tx.extra, extraFields)) {
+          for (const auto& field : extraFields) {
+            if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+              const auto& h = boost::get<TransactionExtraHeatCommitment>(field);
+              CommitmentEntry entry;
+              entry.commitment    = h.commitment;
+              entry.txHash        = getObjectHash(transaction.tx);
+              entry.blockHeight   = b;
+              entry.amount        = h.amount;
+              entry.term          = parameters::HEAT_TERM;
+              entry.type          = CommitmentEntry::Type::HEAT;
+              entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
+              m_commitmentIndex.addCommitment(entry);
+            } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
+              const auto& c = boost::get<TransactionExtraSimpleCD>(field);
+              CommitmentEntry entry;
+              entry.commitment    = c.commitment;
+              entry.txHash        = getObjectHash(transaction.tx);
+              entry.blockHeight   = b;
+              entry.amount        = c.amount;
+              entry.term          = c.term;
+              entry.type          = CommitmentEntry::Type::COLD;
+              entry.targetChainId = 1;
+              m_commitmentIndex.addCommitment(entry);
+            }
+          }
+        }
         interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b);
       }
       pushToBankingIndex(block, interest);
     }
 
-    // Re-populate CommitmentIndex from block transaction extras.
-    // rebuildCache() only rebuilds basic output indices; CommitmentIndex needs extra parsing.
-    logger(INFO, BRIGHT_WHITE) << "Rebuilding commitment index from block history...";
-    for (uint32_t b = 0; b < m_blocks.size(); ++b) {
-      const BlockEntry& block = m_blocks[b];
-      for (uint16_t t = 0; t < block.transactions.size(); ++t) {
-        const Transaction& tx = block.transactions[t].tx;
-        std::vector<TransactionExtraField> extraFields;
-        if (!parseTransactionExtra(tx.extra, extraFields)) continue;
-        for (const auto& field : extraFields) {
-          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-            const auto& h = boost::get<TransactionExtraHeatCommitment>(field);
-            CommitmentEntry entry;
-            entry.commitment    = h.commitment;
-            entry.txHash        = getObjectHash(tx);
-            entry.blockHeight   = b;
-            entry.amount        = h.amount;
-            entry.term          = parameters::HEAT_TERM;
-            entry.type          = CommitmentEntry::Type::HEAT;
-            entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
-            m_commitmentIndex.addCommitment(entry);
-          } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-            const auto& c = boost::get<TransactionExtraSimpleCD>(field);
-            CommitmentEntry entry;
-            entry.commitment    = c.commitment;
-            entry.txHash        = getObjectHash(tx);
-            entry.blockHeight   = b;
-            entry.amount        = c.amount;
-            entry.term          = c.term;
-            entry.type          = CommitmentEntry::Type::COLD; // Keep type COLD for internal tracking
-            entry.targetChainId = 1; // Default to ETH
-            m_commitmentIndex.addCommitment(entry);
-          }
-        }
-      }
-    }
     logger(INFO, BRIGHT_WHITE) << "Commitment index rebuilt: "
       << m_commitmentIndex.size() << " commitments.";
 

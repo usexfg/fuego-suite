@@ -18,48 +18,21 @@
 
 namespace XfgSwap {
 
-const char* swapStateToString(SwapState s) {
-  switch (s) {
-    // Legacy HTLC states (kept for DB compat)
-    case SwapState::INITIATED:    return "INITIATED";
-    case SwapState::XFG_LOCKED:   return "XFG_LOCKED";
-    case SwapState::CTR_LOCKED:   return "CTR_LOCKED";
-    case SwapState::XFG_CLAIMED:  return "XFG_CLAIMED";
-    case SwapState::CTR_CLAIMED:  return "CTR_CLAIMED";
-    case SwapState::XFG_REFUNDED: return "XFG_REFUNDED";
-    case SwapState::CTR_REFUNDED: return "CTR_REFUNDED";
-    case SwapState::FAILED:       return "FAILED";
-    // Adaptor signature flow
-    case SwapState::ADAPTOR_KEYS_EXCHANGED:  return "KEYS_EXCHANGED";
-    case SwapState::ADAPTOR_ESCROW_FUNDED:   return "ESCROW_FUNDED";
-    case SwapState::ADAPTOR_PRESIGS_READY:   return "PRESIGS_READY";
-    case SwapState::ADAPTOR_CTR_LOCKED:      return "CTR_LOCKED(adaptor)";
-    case SwapState::ADAPTOR_SECRET_REVEALED: return "SECRET_REVEALED";
-    case SwapState::ADAPTOR_XFG_SPENT:       return "XFG_SPENT";
-    case SwapState::ADAPTOR_REFUNDED:        return "REFUNDED(adaptor)";
-    default:                                 return "UNKNOWN";
+static bool iequal3(const char* a, const char* b) {
+  for (int i = 0; i < 3; ++i) {
+    if (::toupper(a[i]) != ::toupper(b[i])) return false;
   }
-}
-
-const char* swapPairToString(SwapPair p) {
-  switch (p) {
-    case SwapPair::SOL: return "SOL";
-    case SwapPair::ETH: return "ETH";
-    case SwapPair::XMR: return "XMR";
-    case SwapPair::BCH: return "BCH";
-    case SwapPair::ARB: return "ARB";
-    default:            return "UNKNOWN";
-  }
+  return true;
 }
 
 bool swapPairFromString(const std::string& s, SwapPair& out) {
-  std::string upper = s;
-  std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-  if (upper == "SOL") { out = SwapPair::SOL; return true; }
-  if (upper == "ETH") { out = SwapPair::ETH; return true; }
-  if (upper == "XMR") { out = SwapPair::XMR; return true; }
-  if (upper == "BCH") { out = SwapPair::BCH; return true; }
-  if (upper == "ARB") { out = SwapPair::ARB; return true; }
+  if (s.size() != 3) return false;
+  const char* p = s.c_str();
+  if (iequal3(p, "SOL")) { out = SwapPair::SOL; return true; }
+  if (iequal3(p, "ETH")) { out = SwapPair::ETH; return true; }
+  if (iequal3(p, "XMR")) { out = SwapPair::XMR; return true; }
+  if (iequal3(p, "BCH")) { out = SwapPair::BCH; return true; }
+  if (iequal3(p, "ARB")) { out = SwapPair::ARB; return true; }
   return false;
 }
 

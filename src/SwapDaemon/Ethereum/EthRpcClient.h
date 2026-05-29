@@ -48,6 +48,8 @@ public:
                uint64_t chainId,
                EthTxType txType = EthTxType::Eip1559);
 
+  ~EthRpcClient() { closeSocket(); }
+
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
   bool getBalance(const std::string& address, uint64_t& balanceWei);
@@ -164,6 +166,16 @@ private:
 
   // Transaction type: EIP-1559 (default) or Legacy.
   EthTxType m_txType = EthTxType::Eip1559;
+
+  // Persistent HTTP connection (keep-alive).  -1 if not connected.
+  // Reused across RPC calls, reconnected on failure.
+  int m_sock = -1;
+  std::string m_sockHost;
+  uint16_t    m_sockPort = 0;
+
+  // Internal: connect or reconnect to the RPC host.
+  bool connectSocket();
+  void closeSocket();
 };
 
 } // namespace XfgSwap

@@ -553,6 +553,8 @@ bool Blockchain::init(const std::string& config_folder, bool load_existing) {
         rebuildCache();
         m_rebuildRunning = false;
       });
+    } else {
+      m_indexManager.setReady(true);
     }
 
       /* Load (or generate) indices only if Explorer mode is enabled */
@@ -565,6 +567,7 @@ bool Blockchain::init(const std::string& config_folder, bool load_existing) {
     else
     {
       m_blocks.clear();
+      m_indexManager.setReady(true);
     }
 
   // Load checkpoints for mainnet only (testnet has no checkpoints)
@@ -743,12 +746,12 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     logger(INFO, BRIGHT_WHITE) << "Rebuilding cache";
 
     std::chrono::steady_clock::time_point timePoint = std::chrono::steady_clock::now();
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+    std::lock_guard<std::mutex> rebuildLock(m_indexManager.rebuildMutex());
+
+    m_indexManager.setReady(false);
+    m_indexManager.clear();
     m_blockIndex.clear();
-    m_indexManager.transactionMap().clear();
-    m_indexManager.spentKeys().clear();
-    m_indexManager.outputs().clear();
-    m_indexManager.multisigOutputs().clear();
-    m_indexManager.commitmentOutputs().clear();
     m_commitmentIndex.clear();
     m_bankingIndex = BankingIndex(static_cast<BankingIndex::DepositHeight>(m_blocks.size()));
     for (uint32_t b = 0; b < m_blocks.size(); ++b)
@@ -848,6 +851,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     }
     logger(INFO, BRIGHT_WHITE) << "Commitment index rebuilt: "
       << m_commitmentIndex.size() << " commitments.";
+
+    m_indexManager.setReady(true);
 
     std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
     logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();

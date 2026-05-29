@@ -266,20 +266,9 @@ namespace CryptoNote
         return true;
       }
 
-      // Generate unified STARK commitment (v3) for testnet COLD deposit
-      auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
-          cold_amount,
-          cold_term,
-          CryptoNote::parameters::STARK_NETWORK_ID_TESTNET,
-          CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
-          CryptoNote::parameters::STARK_COMMITMENT_VERSION);
-
-      success_msg_writer() << "";
-      success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
-      success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
-      success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
-      success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
-      success_msg_writer() << "";
+      success_msg_writer() << "COLD deposits are created via wallet RPC (createDeposit).";
+      success_msg_writer() << "Use the walletd RPC interface or swapxfg CLI.";
+      return true;
 
       /*
       std::vector<uint8_t> extra;

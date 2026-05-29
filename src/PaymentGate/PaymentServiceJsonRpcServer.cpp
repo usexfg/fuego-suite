@@ -319,7 +319,7 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const Creat
     response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
 
     // Store secret locally
-    service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(enhancedMetadata.begin(), enhancedMetadata.end()));
+    service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(request.metadata.begin(), request.metadata.end()));
 
   }
 

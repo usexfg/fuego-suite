@@ -249,7 +249,7 @@ namespace CryptoNote {
     void print_blockchain_index();
     void print_blockchain_outs(const std::string& file);
 
-    // TransactionIndex, MultisignatureOutputUsage, CommitmentOutputRef,
+    // TxIndex, MultisignatureOutputUsage, CommitmentOutputRef,
     // UnifiedOutputRef and container type aliases are now in IndexManager.h.
 
     bool rollbackBlockchainTo(uint32_t height);
@@ -317,7 +317,7 @@ namespace CryptoNote {
       }
     };
 
-    // BlockEntry uses TransactionEntry. TransactionIndex, MultisignatureOutput-
+    // BlockEntry uses TransactionEntry. TxIndex, MultisignatureOutput-
     // Usage, CommitmentOutputRef, UnifiedOutputRef, and all container typedefs
     // (key_images_container, outputs_container, MultisignatureOutputsContainer,
     // CommitmentOutputsContainer, TransactionMap) are now in IndexManager.h.
@@ -460,9 +460,9 @@ namespace CryptoNote {
     bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {});
     bool rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height);
     bool get_last_n_blocks_sizes(std::vector<size_t> &sz, size_t count);
-    bool add_out_to_get_random_outs(std::vector<std::pair<TransactionIndex, uint16_t>> &amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount &result_outs, uint64_t amount, size_t i);
+    bool add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>> &amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_outs_for_amount &result_outs, uint64_t amount, size_t i);
     bool is_tx_spendtime_unlocked(uint64_t unlock_time);
-    size_t find_end_of_allowed_index(const std::vector<std::pair<TransactionIndex, uint16_t>> &amount_outs);
+    size_t find_end_of_allowed_index(const std::vector<std::pair<TxIndex, uint16_t>> &amount_outs);
     bool check_block_timestamp_main(const Block &b);
     bool check_block_timestamp(std::vector<uint64_t> timestamps, const Block &b);
     uint64_t get_adjusted_time();
@@ -477,13 +477,13 @@ namespace CryptoNote {
     bool checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height = NULL);
     bool checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height = NULL);
     bool check_tx_outputs(const Transaction& tx, uint32_t height) const;
-    const TransactionEntry& transactionByIndex(TransactionIndex index);
+    const TransactionEntry& transactionByIndex(TxIndex index);
     bool pushBlock(const Block &blockData, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
      bool pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
 
     bool pushBlock(BlockEntry &block);
     void popBlock(const Crypto::Hash &blockHash);
-    bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TransactionIndex transactionIndex);
+    bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
@@ -530,7 +530,7 @@ namespace CryptoNote {
       return false;
 
     std::vector<uint32_t> absolute_offsets = relative_output_offsets_to_absolute(tx_in_to_key.outputIndexes);
-    std::vector<std::pair<TransactionIndex, uint16_t>>& amount_outs_vec = it->second;
+    std::vector<std::pair<TxIndex, uint16_t>>& amount_outs_vec = it->second;
     size_t count = 0;
     for (uint64_t i : absolute_offsets) {
       if(i >= amount_outs_vec.size() ) {

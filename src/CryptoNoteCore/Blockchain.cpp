@@ -76,8 +76,8 @@ class BlockchainIndicesSerializer;
 namespace CryptoNote {
 
 // custom serialization to speedup cache loading
-bool serialize(std::vector<std::pair<TransactionIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
-  const size_t elementSize = sizeof(std::pair<TransactionIndex, uint16_t>);
+bool serialize(std::vector<std::pair<TxIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
+  const size_t elementSize = sizeof(std::pair<TxIndex, uint16_t>);
   size_t size = value.size() * elementSize;
 
   if (!s.beginArray(size, name)) {
@@ -99,7 +99,7 @@ bool serialize(std::vector<std::pair<TransactionIndex, uint16_t>>& value, Common
   return true;
 }
 
-void serialize(TransactionIndex& value, ISerializer& s) {
+void serialize(TxIndex& value, ISerializer& s) {
   s(value.block, "block");
   s(value.transaction, "tx");
 }
@@ -769,7 +769,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       {
         const TransactionEntry &transaction = block.transactions[t];
         Crypto::Hash transactionHash = getObjectHash(transaction.tx);
-        TransactionIndex transactionIndex = {b, t};
+        TxIndex transactionIndex = {b, t};
         m_indexManager.transactionMap().insert(std::make_pair(transactionHash, transactionIndex));
 
         // process inputs
@@ -1751,7 +1751,7 @@ uint32_t Blockchain::getAlternativeBlocksCount() {
   return static_cast<uint32_t>(m_alternative_chains.size());
 }
 
-bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TransactionIndex, uint16_t>>& amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount& result_outs, uint64_t amount, size_t i) {
+bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>>& amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount& result_outs, uint64_t amount, size_t i) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   const Transaction& tx = transactionByIndex(amount_outs[i].first).tx;
   if (!(tx.outputs.size() > amount_outs[i].second)) {
@@ -1770,7 +1770,7 @@ bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TransactionInd
   return true;
 }
 
-size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<TransactionIndex, uint16_t>>& amount_outs) {
+size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<TxIndex, uint16_t>>& amount_outs) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (amount_outs.empty()) {
     return 0;
@@ -1801,7 +1801,7 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
       continue;//actually this is strange situation, wallet should use some real outs when it lookup for some mix, so, at least one out for this amount should exist
     }
 
-    std::vector<std::pair<TransactionIndex, uint16_t>>& amount_outs = it->second;
+    std::vector<std::pair<TxIndex, uint16_t>>& amount_outs = it->second;
     //it is not good idea to use top fresh outs, because it increases possibility of transaction canceling on split
     //lets find upper bound of not fresh outs
     size_t up_index_limit = find_end_of_allowed_index(amount_outs);
@@ -1958,7 +1958,7 @@ void Blockchain::print_blockchain_outs(const std::string& file) {
   std::stringstream ss;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   for (const outputs_container::value_type& v : m_indexManager.outputs().data()) {
-    const std::vector<std::pair<TransactionIndex, uint16_t>>& vals = v.second;
+    const std::vector<std::pair<TxIndex, uint16_t>>& vals = v.second;
     if (!vals.empty()) {
       ss << "amount: " << v.first << ENDL;
       for (size_t i = 0; i != vals.size(); i++) {
@@ -2735,7 +2735,7 @@ bool Blockchain::addNewBlock(const Block& bl_, block_verification_context& bvc) 
   return add_result;
 }
 
-const Blockchain::TransactionEntry& Blockchain::transactionByIndex(TransactionIndex index) {
+const Blockchain::TransactionEntry& Blockchain::transactionByIndex(TxIndex index) {
   return m_blocks[index.block].transactions[index.transaction];
 }
 
@@ -2838,7 +2838,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   block.height = static_cast<uint32_t>(m_blocks.size());
   block.transactions.resize(1);
   block.transactions[0].tx = blockData.baseTransaction;
-  TransactionIndex transactionIndex = { block.height, static_cast<uint16_t>(0) };
+  TxIndex transactionIndex = { block.height, static_cast<uint16_t>(0) };
   pushTransaction(block, minerTransactionHash, transactionIndex);
 
   size_t coinbase_blob_size = getObjectBinarySize(blockData.baseTransaction);
@@ -4218,7 +4218,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
 }
 
-bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transactionHash, TransactionIndex transactionIndex) {
+bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transactionHash, TxIndex transactionIndex) {
   auto result = m_indexManager.transactionMap().insert(std::make_pair(transactionHash, transactionIndex));
   if (!result.second) {
     logger(ERROR, BRIGHT_RED) <<
@@ -4401,7 +4401,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
 }
 
 void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
-  TransactionIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
+  TxIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
     if (output.target.type() == typeid(KeyOutput)) {

@@ -37,7 +37,7 @@ class ISerializer;
 
 struct BlockEntry;
 
-struct TransactionIndex {
+struct TxIndex {
     uint32_t block;
     uint16_t transaction;
 
@@ -48,7 +48,7 @@ struct TransactionIndex {
 };
 
 struct MultisignatureOutputUsage {
-    TransactionIndex transactionIndex;
+    TxIndex transactionIndex;
     uint16_t outputIndex;
     bool isUsed;
 
@@ -60,7 +60,7 @@ struct MultisignatureOutputUsage {
 };
 
 struct CommitmentOutputRef {
-    TransactionIndex           transactionIndex;
+    TxIndex           transactionIndex;
     uint16_t                   outputInTransaction;
     Crypto::PublicKey          commitKey;
     uint32_t                   term;
@@ -79,10 +79,10 @@ struct CommitmentOutputRef {
 
 
 using key_images_container       = parallel_flat_hash_map<Crypto::KeyImage, uint32_t>;
-using outputs_container          = parallel_flat_hash_map<uint64_t, std::vector<std::pair<TransactionIndex, uint16_t>>>;
+using outputs_container          = parallel_flat_hash_map<uint64_t, std::vector<std::pair<TxIndex, uint16_t>>>;
 using MultisignatureOutputsContainer = parallel_flat_hash_map<uint64_t, std::vector<MultisignatureOutputUsage>>;
 using CommitmentOutputsContainer     = parallel_flat_hash_map<uint64_t, std::vector<CommitmentOutputRef>>;
-using TransactionMap                 = parallel_flat_hash_map<Crypto::Hash, TransactionIndex>;
+using TransactionMap                 = parallel_flat_hash_map<Crypto::Hash, TxIndex>;
 
 // ─── IIndex interface ─────────────────────────────────────────────────────
 //
@@ -214,11 +214,11 @@ public:
     auto find(const Crypto::Hash& h) const { return m_data.find(h); }
     auto end() { return m_data.end(); }
     auto end() const { return m_data.end(); }
-    auto insert(const std::pair<Crypto::Hash, TransactionIndex>& p) { return m_data.insert(p); }
-    auto insert(const Crypto::Hash& h, TransactionIndex idx) { return m_data.insert(std::make_pair(h, idx)); }
+    auto insert(const std::pair<Crypto::Hash, TxIndex>& p) { return m_data.insert(p); }
+    auto insert(const Crypto::Hash& h, TxIndex idx) { return m_data.insert(std::make_pair(h, idx)); }
     size_t erase(const Crypto::Hash& h) { return m_data.erase(h); }
     size_t size() const { return m_data.size(); }
-    TransactionIndex at(const Crypto::Hash& h) const { return m_data.at(h); }
+    TxIndex at(const Crypto::Hash& h) const { return m_data.at(h); }
 
     // phmap binary I/O
     template<class Archive> void load(Archive& ar) { m_data.load(ar); }

@@ -108,19 +108,12 @@ private:
   bool on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& req, COMMAND_RPC_GET_SWAP_TRADES::response& res);
   bool on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::request& req, COMMAND_RPC_SUBMIT_SWAP_OFFER::response& res);
   bool on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::request& req, COMMAND_RPC_CANCEL_SWAP_OFFER::response& res);
+  bool on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res);
 
   bool on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res);
   bool on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request& req, COMMAND_RPC_GET_TRANSACTIONS::response& res);
   // ZK prover data endpoints
   bool on_get_block_range(const COMMAND_RPC_GET_BLOCK_RANGE::request& req, COMMAND_RPC_GET_BLOCK_RANGE::response& res);
-  bool on_get_commitment_leaves(const COMMAND_RPC_GET_COMMITMENT_LEAVES::request& req, COMMAND_RPC_GET_COMMITMENT_LEAVES::response& res);
-
-  // Commitment Index RPC endpoints (Fuego → EVM bridge)
-  bool on_get_commitment(const COMMAND_RPC_GET_COMMITMENT::request& req, COMMAND_RPC_GET_COMMITMENT::response& res);
-  bool on_get_commitment_stats(const COMMAND_RPC_GET_COMMITMENT_STATS::request& req, COMMAND_RPC_GET_COMMITMENT_STATS::response& res);
-  bool on_get_commitment_merkle_root(const COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::response& res);
-  bool on_get_commitment_merkle_proof(const COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::response& res);
-  bool on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EXISTS::request& req, COMMAND_RPC_CHECK_COMMITMENT_EXISTS::response& res);
 
   // Fee pool analytics + treasury
   bool on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req, COMMAND_RPC_GET_FEE_POOL_INFO::response& res);

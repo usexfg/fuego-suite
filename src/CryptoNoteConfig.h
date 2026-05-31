@@ -125,6 +125,21 @@ namespace CryptoNote
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 32;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
+		// DANDELION++ tx relay (privacy)
+		// Active from BLOCK_MAJOR_VERSION_10. Per-hop the stem-stay decision is a coin flip
+		// (uniform in [0,100)); staying-prob is *_STAY_PCT. After MAX_HOPS or fluff transition,
+		// the tx is broadcast normally. EMBARGO_SECONDS guards against stem black-hole: if a
+		// stem tx is not seen integrated into the core within EMBARGO, we promote it to fluff
+		// ourselves (already implemented in CryptoNoteProtocolHandler::on_idle).
+		const uint32_t DANDELION_STEM_MAX_HOPS                       = 10;
+		const uint32_t DANDELION_STEM_STAY_PCT                       = 90;
+		const uint32_t DANDELION_SWAP_STEM_MAX_HOPS                  = 5;   // shorter for swap offers (latency-sensitive)
+		const uint32_t DANDELION_SWAP_STEM_STAY_PCT                  = 80;
+		const uint32_t DANDELION_EMBARGO_SECONDS                     = 30;
+		static_assert(DANDELION_STEM_STAY_PCT < 100, "stay pct must allow eventual fluff");
+		static_assert(DANDELION_SWAP_STEM_STAY_PCT < 100, "swap stay pct must allow eventual fluff");
+		static_assert(DANDELION_SWAP_STEM_MAX_HOPS <= DANDELION_STEM_MAX_HOPS, "swap path must be no longer than tx path");
+
 		// HEAT CD denominations (atomic units, 7 decimal places)
         const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 HEAT
         const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 HEAT

@@ -394,7 +394,8 @@ int CryptoNoteProtocolHandler::handle_notify_new_transactions(int command, NOTIF
       if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
         if (arg.dandelion_stem) {
           arg.hop_count++;
-          bool stay_stem = (arg.hop_count < 10) && (Crypto::rand<uint32_t>() % 100 < 90);
+          bool stay_stem = (arg.hop_count < parameters::DANDELION_STEM_MAX_HOPS) &&
+                           (Crypto::rand<uint32_t>() % 100 < parameters::DANDELION_STEM_STAY_PCT);
 
           if (stay_stem) {
             logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying transactions in Dandelion STEM mode (hop " << arg.hop_count << ")";
@@ -640,8 +641,8 @@ bool CryptoNoteProtocolHandler::on_idle()
          continue;
       }
 
-      if (now - it->second.time_added > 30) {
-        logger(Logging::INFO) << "Fluffing stem transaction " << it->first << " after timeout";
+      if (now - it->second.time_added > static_cast<time_t>(parameters::DANDELION_EMBARGO_SECONDS)) {
+        logger(Logging::INFO) << "Fluffing stem transaction " << it->first << " after embargo timeout";
         it->second.request.dandelion_stem = false;
         relay_transactions(it->second.request);
         it = m_stem_transactions.erase(it);
@@ -1208,7 +1209,8 @@ int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER
   if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
     if (arg.dandelion_stem) {
       arg.hop_count++;
-      bool stay_stem = (arg.hop_count < 5) && (Crypto::rand<uint32_t>() % 100 < 80);
+      bool stay_stem = (arg.hop_count < parameters::DANDELION_SWAP_STEM_MAX_HOPS) &&
+                       (Crypto::rand<uint32_t>() % 100 < parameters::DANDELION_SWAP_STEM_STAY_PCT);
 
       if (stay_stem) {
         logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying swap offer in STEM mode (hop " << arg.hop_count << ")";

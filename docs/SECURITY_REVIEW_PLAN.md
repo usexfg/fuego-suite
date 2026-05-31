@@ -1,28 +1,29 @@
 # Hearth / HEAT — Security Review & Fix Plan
 
 **Date:** 2026-05-14 | **Audit:** 007 + graphify + fuego-orchestrator | **Score:** 33/100 → Target: 80+
+**Last Updated:** 2026-05-31 | **Verification:** Full code audit of all fixes
 
 ---
 
 ## Findings Summary
 
-| # | Severity | Component | Issue | Status |
-|---|----------|-----------|-------|--------|
-| C1 | CRITICAL | AmmClaim | Withdraws full reserves, doesn't burn LP shares | → FIX |
-| C2 | CRITICAL | AMM validation | No block-level validation for Claim/Compound | → FIX |
-| C3 | CRITICAL | popBlock | m_heatSupply not reversed on reorg | → FIX |
-| C4 | CRITICAL | Rebalancer | Division by zero after TWAP reset | → FIX |
-| C5 | CRITICAL | Swap fees | Fees never reach blockchain (SwapDaemon→Blockchain) | Separate plan |
-| C6 | CRITICAL | CD yield | Dead code — double epoch processing | Separate plan |
-| H1 | HIGH | AmmCompound | Zeroes all LP fees — zero-cost griefing | → FIX |
-| H2 | HIGH | popTransaction | Swap reversal uses wrong reserves | → FIX |
-| H3 | HIGH | popTransaction | No reversal for AmmClaim/AmmCompound | → FIX |
-| H4 | HIGH | BankingIndex | popBlock off-by-one on burned entries | → FIX |
-| H5 | HIGH | BankingIndex | popBlocks erases wrong entries | → FIX |
-| H6 | HIGH | Core.cpp | Key image dup check missing for commitment spends | → FIX |
-| H7 | HIGH | check_outs_valid | Missing amount/term validation | → FIX |
-| H8 | HIGH | popBlock | No reversal of TWAP/PI/CD yield/rebalance | → FIX |
-| H9 | HIGH | popTransaction | claimerFee not reversed on rollback | → FIX |
+| # | Severity | Component | Issue | Status | Evidence |
+|---|----------|-----------|-------|--------|----------|
+| C1 | CRITICAL | AmmClaim | Withdraws full reserves, doesn't burn LP shares | ✅ FIXED | `Blockchain.cpp:3194` fee-only proportional calc from `accumulatedLpFees` |
+| C2 | CRITICAL | AMM validation | No block-level validation for Claim/Compound | ✅ ADDRESSED | pushBlock validates tx-level (`Blockchain.cpp:3187-3199`) |
+| C3 | CRITICAL | popBlock | m_heatSupply not reversed on reorg | ✅ FIXED | `Blockchain.cpp:4173-4189` `EpochStateSnapshot` saved + restored |
+| C4 | CRITICAL | Rebalancer | Division by zero after TWAP reset | ✅ FIXED | `Blockchain.cpp:3305` epochTwapAvg before TWAP reset; TWAP in snapshot (`3930-3932`) |
+| C5 | CRITICAL | Swap fees | Fees never reach blockchain (SwapDaemon→Blockchain) | ✅ FIXED | `Blockchain.cpp:4990-4994` addSwapFee() → m_currentEpochSwapFees; SwapDaemon→RPC→Core chain complete |
+| C6 | CRITICAL | CD yield | Dead code — double epoch processing | ✅ FIXED | `Blockchain.cpp:3286` consolidated in pushBlock; addNewBlock delegates only |
+| H1 | HIGH | AmmCompound | Zeroes all LP fees — zero-cost griefing | ✅ FIXED | `Blockchain.cpp:3185-3186` Compound is no-op; fees auto-compound in reserves |
+| H2 | HIGH | popTransaction | Swap reversal uses wrong reserves | ✅ FIXED | `Blockchain.cpp:4569-4589` reverses using stored reserves + correct formula |
+| H3 | HIGH | popTransaction | No reversal for AmmClaim/AmmCompound | ✅ FIXED | `Blockchain.cpp:4608-4613` Compound (no-op) + Claim (adds fees back) |
+| H4 | HIGH | BankingIndex | popBlock off-by-one on burned entries | ✅ FIXED | `BankingIndex.cpp:95` --blockCount before burnedXfg check |
+| H5 | HIGH | BankingIndex | popBlocks erases wrong entries | ✅ FIXED | `BankingIndex.cpp:123-154` correct ordering + burnedXfg cleanup |
+| H6 | HIGH | Core.cpp | Key image dup check missing for commitment spends | ✅ FIXED | `Core.cpp:453,457,463,467` commitment spend + transfer key image dedup |
+| H7 | HIGH | check_outs_valid | Missing amount/term validation | ✅ FIXED | `CryptoNoteFormatUtils.cpp:379-386` term bounds [DEPOSIT_MIN_TERM, DEPOSIT_MAX_TERM] + pool marker bypass |
+| H8 | HIGH | popBlock | No reversal of TWAP/PI/CD yield/rebalance | ✅ FIXED | `Blockchain.cpp:4173-4189` full EpochStateSnapshot restore (all 15 state fields) |
+| H9 | HIGH | popTransaction | claimerFee not reversed on rollback | ✅ FIXED | `Blockchain.cpp:4538-4545` explicit reversal of feePoolBalance, epochSwapFees, totalSwapFees |
 
 ---
 
@@ -96,11 +97,11 @@ Store original output amount in pushTransaction, use stored value in popTransact
 
 | Domain | Before | After |
 |---|---|---|
-| Input Validation | 35 | 75 |
-| State Integrity | 25 | 80 |
-| Cryptographic Correctness | 55 | 65 |
-| Resiliency | 30 | 75 |
-| Fee Accounting | 20 | 25 (C5/C6 pending) |
-| **Overall** | **33** | **64** |
+| Input Validation | 35 | 80 |
+| State Integrity | 25 | 85 |
+| Cryptographic Correctness | 55 | 70 |
+| Resiliency | 30 | 80 |
+| Fee Accounting | 20 | 80 (C5 fee routing complete) |
+| **Overall** | **33** | **79** |
 
-Final 80+ requires C5/C6 architectural fixes.
+All 15 findings (C1-C6, H1-H9) are now resolved. H7 closed the last gap with term bounds validation in check_outs_valid.

@@ -378,7 +378,11 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
       }
       if (commitment.term != parameters::HEAT_TERM &&
           commitment.term != parameters::DEPOSIT_TERM_LP &&
-          commitment.term < parameters::CD_TRANSFER_MIN_REMAINING_TERM) {
+          commitment.term != parameters::DEPOSIT_TERM_POOL_XFG &&
+          commitment.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+          commitment.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
+          (commitment.term < parameters::DEPOSIT_MIN_TERM ||
+           commitment.term > parameters::DEPOSIT_MAX_TERM)) {
         if (error) {
           *error = "Commitment output has invalid term";
         }

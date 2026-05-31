@@ -83,6 +83,32 @@ private:
   Callback m_cb;
 };
 
+// Sidecar lookup that enriches each daemon-returned decoy in context->outs with
+// its creation block height, so OSPEAD can filter by spend-probability. Chained
+// AFTER WalletGetRandomOutsByAmountsRequest and BEFORE ring-sizing in
+// WalletTransactionSender::sendTransactionAfterOspeadHeights. Queries are taken
+// from m_context->ospeadHeightQueries; heights are written into
+// m_context->ospeadHeights. Non-blocking — dispatches through INode async machinery.
+class WalletGetOutputsHeightsRequest: public WalletRequest
+{
+public:
+  WalletGetOutputsHeightsRequest(std::shared_ptr<SendTransactionContext> context, Callback cb)
+    : m_context(context), m_cb(cb) {}
+
+  virtual ~WalletGetOutputsHeightsRequest() {}
+
+  virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
+  {
+    node.getOutputsHeights(m_context->ospeadHeightQueries,
+                           m_context->ospeadHeights,
+                           std::bind(cb, m_cb, std::placeholders::_1));
+  }
+
+private:
+  std::shared_ptr<SendTransactionContext> m_context;
+  Callback m_cb;
+};
+
 class WalletRelayTransactionRequest: public WalletRequest
 {
 public:

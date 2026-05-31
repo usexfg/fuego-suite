@@ -31,7 +31,7 @@
 #include "CryptoNoteCore/DepositCommitment.h"
 #include "Common/FileSystem.h"
 #include "Common/PathTools.h"
-#include <future>
+#include "WalletLegacy/WalletRequest.h"  // for WalletGetOutputsHeightsRequest
 #include "INode.h"
 
 #include <Logging/LoggerGroup.h>
@@ -578,37 +578,47 @@ namespace CryptoNote
     }
   }
 
-  void WalletTransactionSender::applyOspeadFilter(std::shared_ptr<SendTransactionContext> context) {
-    // ── Altitude note ──
-    // OSPEAD runs WALLET-side, after the daemon returns decoys, not inside
-    // Blockchain::getRandomOutsByAmount. Trade-off: wastes RPC bandwidth (we
-    // over-request then prune) but keeps daemon decoy selection consensus-
-    // neutral and lets each wallet pick its own quality bar. Daemon-side
-    // OSPEAD would push state-tracking and policy onto every node.
+  // ── OSPEAD async pipeline (replaces prior blocking applyOspeadFilter) ──
+  //
+  // Altitude note: OSPEAD runs WALLET-side, after the daemon returns decoys, not
+  // inside Blockchain::getRandomOutsByAmount. Wastes RPC bandwidth (we over-
+  // request then prune) but keeps daemon decoy selection consensus-neutral and
+  // lets each wallet pick its own quality bar. Daemon-side OSPEAD would push
+  // state-tracking and policy onto every node.
+  //
+  // The previous blocking implementation called m_node.getOutputsHeights and
+  // then fut.get() on the same event loop that dispatches the RPC reply —
+  // deadlock on every send. This version splits the work in two: a chain-decision
+  // check populates context->ospeadHeightQueries and returns a new WalletRequest
+  // that asynchronously fetches heights; when its callback re-enters
+  // sendTransactionRandomOutsByAmount, applyOspeadMaskFromHeights consumes the
+  // pre-fetched data and compacts context->outs in place.
 
-    // Collect (amount, global_index) queries in iteration order so heights[i]
-    // aligns 1:1 with the i-th decoy across all amount groups.
-    std::vector<std::pair<uint64_t, uint32_t>> heightQueries;
+  // Returns true if a height-fetch request should be chained. When true, also
+  // populates context->ospeadHeightQueries as a side effect. Returns false on
+  // second-pass entry (heights already fetched), capability mismatch, or empty
+  // pool.
+  bool WalletTransactionSender::shouldChainOspeadHeights(std::shared_ptr<SendTransactionContext> context) {
+    if (!context->dynamicRingSize) return false;
+    if (!m_node.supportsOutputsHeights()) return false;
+    if (!context->ospeadHeights.empty()) return false;  // second pass — heights already in hand
+
+    context->ospeadHeightQueries.clear();
     for (const auto& oa : context->outs) {
       for (const auto& oe : oa.outs) {
-        heightQueries.emplace_back(oa.amount, static_cast<uint32_t>(oe.global_amount_index));
+        context->ospeadHeightQueries.emplace_back(oa.amount, static_cast<uint32_t>(oe.global_amount_index));
       }
     }
-    if (heightQueries.empty()) return;
+    return !context->ospeadHeightQueries.empty();
+  }
 
-    // Capability check: if the daemon doesn't support the sidecar endpoint,
-    // leave context->outs untouched.
-    if (!m_node.supportsOutputsHeights()) return;
-
-    // Blocking-fetch heights via sidecar RPC. Worker thread is already serialized.
-    std::promise<std::error_code> p;
-    auto fut = p.get_future();
-    std::vector<uint32_t> heights;
-    m_node.getOutputsHeights(heightQueries, heights,
-      [&p](std::error_code ec) { p.set_value(ec); });
-    auto ec = fut.get();
-
-    if (ec || heights.size() != heightQueries.size()) return;
+  // Consumes context->ospeadHeights (populated by WalletGetOutputsHeightsRequest)
+  // and compacts context->outs in place by spend probability. No-op if heights
+  // are missing/misshapen or filtering would drop any ring below min mixin.
+  void WalletTransactionSender::applyOspeadMaskFromHeights(std::shared_ptr<SendTransactionContext> context) {
+    auto& heights = context->ospeadHeights;
+    auto& queries = context->ospeadHeightQueries;
+    if (heights.empty() || heights.size() != queries.size()) return;
 
     const uint32_t currentHeight = m_node.getLastLocalBlockHeight();
     if (currentHeight == 0) return;  // wallet not synced; skip filter
@@ -618,10 +628,10 @@ namespace CryptoNote
     auto spendPattern = CryptoNote::OSPEADDecoySelector::analyzeSpendPatterns({}, currentHeight);
     constexpr double kKeepThreshold = 0.01;
 
-    // Single pass: compute keep-mask aligned with heightQueries; track per-amount
+    // Single pass: compute keep-mask aligned with queries; track per-amount
     // survivor count so we can bail before mutating if any ring would drop below
     // min mixin.
-    std::vector<bool> keepMask(heightQueries.size(), false);
+    std::vector<bool> keepMask(queries.size(), false);
     const size_t minMix = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     size_t qi = 0;
     for (const auto& oa : context->outs) {
@@ -671,12 +681,23 @@ namespace CryptoNote
       return;
     }
 
+    // OSPEAD async pipeline: if we have decoys but no heights yet, chain a
+    // WalletGetOutputsHeightsRequest. On reentry the heights will be present
+    // and we drop through to applyOspeadMaskFromHeights below.
+    if (shouldChainOspeadHeights(context)) {
+      nextRequest.reset(new WalletGetOutputsHeightsRequest(
+        context,
+        std::bind(&WalletTransactionSender::sendTransactionRandomOutsByAmount, this,
+                  isMultisigTransaction, context, std::ref(transactionSK),
+                  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+      return;
+    }
+
     if (context->dynamicRingSize) {
-      // OSPEAD: enrich daemon-supplied uniform-random decoys with creation heights via
-      // sidecar RPC, then filter by spend-probability before sizing the ring. Falls back
-      // gracefully (no filter) when daemon doesn't expose /get_outputs_heights or when
-      // filtering would drop the ring below min mixin.
-      applyOspeadFilter(context);
+      // OSPEAD: compact context->outs in place by spend probability using the
+      // pre-fetched heights (no-op if heights weren't gathered, e.g. daemon
+      // doesn't support /get_outputs_heights or the filter would over-prune).
+      applyOspeadMaskFromHeights(context);
 
       // Determine the binding constraint: the minimum outs actually returned by the daemon
       // across all input amounts. Each input ring must independently satisfy the ring size.

@@ -67,6 +67,12 @@ struct SendTransactionContext
   AccountPublicAddress v10HeatRecipient;
   uint64_t v10HeatTransferAmount = 0;
 
+  // OSPEAD async pipeline state (populated between WalletGetRandomOutsByAmountsRequest
+  // and WalletGetOutputsHeightsRequest; consumed by sendTransactionAfterOspeadHeights).
+  // Queries are kept in iteration order so heights[i] aligns 1:1 with the i-th
+  // decoy across all amount groups in `outs`.
+  std::vector<std::pair<uint64_t, uint32_t>> ospeadHeightQueries;
+  std::vector<uint32_t> ospeadHeights;
 };
 
 } //namespace CryptoNote

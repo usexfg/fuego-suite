@@ -205,10 +205,15 @@ private:
                                                 std::unique_ptr<WalletRequest>& nextRequest,
                                                 std::error_code ec);
 
-  // OSPEAD: enrich context->outs with creation heights (via /get_outputs_heights sidecar RPC)
-  // and prune entries below the spend-probability threshold. No-op if daemon doesn't support
-  // the endpoint or if filtering would drop any ring below min mixin.
-  void applyOspeadFilter(std::shared_ptr<SendTransactionContext> context);
+  // OSPEAD async pipeline. shouldChainOspeadHeights populates
+  // context->ospeadHeightQueries and returns true when the caller should
+  // dispatch a WalletGetOutputsHeightsRequest. applyOspeadMaskFromHeights
+  // consumes context->ospeadHeights (populated by that request) and compacts
+  // context->outs in place. See WalletTransactionSender.cpp for the rationale
+  // behind the two-stage split (avoids deadlock from blocking on the same
+  // event loop the RPC reply dispatches on).
+  bool shouldChainOspeadHeights(std::shared_ptr<SendTransactionContext> context);
+  void applyOspeadMaskFromHeights(std::shared_ptr<SendTransactionContext> context);
 
   void prepareKeyInputs(const std::vector<TransactionOutputInformation>& selectedTransfers,
                         std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,

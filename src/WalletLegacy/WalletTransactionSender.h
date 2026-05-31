@@ -205,6 +205,11 @@ private:
                                                 std::unique_ptr<WalletRequest>& nextRequest,
                                                 std::error_code ec);
 
+  // OSPEAD: enrich context->outs with creation heights (via /get_outputs_heights sidecar RPC)
+  // and prune entries below the spend-probability threshold. No-op if daemon doesn't support
+  // the endpoint or if filtering would drop any ring below min mixin.
+  void applyOspeadFilter(std::shared_ptr<SendTransactionContext> context);
+
   void prepareKeyInputs(const std::vector<TransactionOutputInformation>& selectedTransfers,
                         std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& outs,
                         std::vector<TransactionSourceEntry>& sources,

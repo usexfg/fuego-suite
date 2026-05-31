@@ -728,6 +728,11 @@ bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count
   return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight);
 }
 
+bool core::get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                              std::vector<uint32_t>& heights) {
+  return m_blockchain.getOutputHeights(queries, heights);
+}
+
 bool core::get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
   return m_blockchain.getTransactionOutputGlobalIndexes(tx_id, indexs);
 }

@@ -21,6 +21,7 @@
 #include <iostream>
 #include "CryptoNoteCore/Account.h"
 #include "DynamicRingSize.h"
+#include "OSPEADDecoySelection.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionApi.h"
@@ -30,6 +31,7 @@
 #include "CryptoNoteCore/DepositCommitment.h"
 #include "Common/FileSystem.h"
 #include "Common/PathTools.h"
+#include <future>
 #include "INode.h"
 
 #include <Logging/LoggerGroup.h>
@@ -572,6 +574,71 @@ namespace CryptoNote
     }
   }
 
+  void WalletTransactionSender::applyOspeadFilter(std::shared_ptr<SendTransactionContext> context) {
+    // Collect (amount, global_index) for every decoy across all input amounts.
+    std::vector<std::pair<uint64_t, uint32_t>> heightQueries;
+    for (const auto& oa : context->outs) {
+      for (const auto& oe : oa.outs) {
+        heightQueries.emplace_back(oa.amount, static_cast<uint32_t>(oe.global_amount_index));
+      }
+    }
+    if (heightQueries.empty()) return;
+
+    // Blocking-fetch heights via sidecar RPC. Worker thread is already serialized.
+    std::promise<std::error_code> p;
+    auto fut = p.get_future();
+    std::vector<uint32_t> heights;
+    m_node.getOutputsHeights(heightQueries, heights,
+      [&p](std::error_code ec) { p.set_value(ec); });
+    auto ec = fut.get();
+
+    if (ec || heights.size() != heightQueries.size()) {
+      // Daemon doesn't expose endpoint or shape mismatch — leave context->outs unfiltered.
+      return;
+    }
+
+    const uint32_t currentHeight = m_node.getLastLocalBlockHeight();
+    if (currentHeight == 0) return;  // wallet not synced; skip filter
+
+    // Build an OSPEAD spend-pattern from logarithmic age bins (no real history wired yet).
+    std::vector<CryptoNote::TransactionOutputInfo> emptyPattern;
+    auto spendPattern = CryptoNote::OSPEADDecoySelector::analyzeSpendPatterns(emptyPattern, currentHeight);
+
+    // Compute keep-mask per decoy by spend probability. Threshold matches DynamicRingSize.cpp:208.
+    std::set<std::pair<uint64_t, uint32_t>> keep;
+    for (size_t i = 0; i < heightQueries.size(); ++i) {
+      if (heights[i] == 0) continue;  // unknown — leave out (treat as unfilterable)
+      uint64_t age = (currentHeight > heights[i]) ? (currentHeight - heights[i]) : 0;
+      double prob = CryptoNote::OSPEADDecoySelector::calculateSpendProbability(age, currentHeight, spendPattern);
+      if (prob > 0.01) {
+        keep.emplace(heightQueries[i].first, heightQueries[i].second);
+      }
+    }
+
+    // Compute the per-amount survivor count before mutating; if any amount would drop below
+    // min mixin, abort the filter entirely (preserve original pool).
+    const size_t minMix = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
+    for (const auto& oa : context->outs) {
+      size_t survivors = 0;
+      for (const auto& oe : oa.outs) {
+        if (keep.find({oa.amount, static_cast<uint32_t>(oe.global_amount_index)}) != keep.end()) {
+          ++survivors;
+        }
+      }
+      if (survivors < minMix) {
+        return;  // filter too aggressive; bail
+      }
+    }
+
+    // Apply keep-set to context->outs in place.
+    for (auto& oa : context->outs) {
+      oa.outs.erase(std::remove_if(oa.outs.begin(), oa.outs.end(),
+        [&](const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry& e) {
+          return keep.find({oa.amount, static_cast<uint32_t>(e.global_amount_index)}) == keep.end();
+        }), oa.outs.end());
+    }
+  }
+
   void WalletTransactionSender::sendTransactionRandomOutsByAmount(bool isMultisigTransaction,
                                                                   std::shared_ptr<SendTransactionContext> context,
                                                                   Crypto::SecretKey &transactionSK,
@@ -591,6 +658,12 @@ namespace CryptoNote
     }
 
     if (context->dynamicRingSize) {
+      // OSPEAD: enrich daemon-supplied uniform-random decoys with creation heights via
+      // sidecar RPC, then filter by spend-probability before sizing the ring. Falls back
+      // gracefully (no filter) when daemon doesn't expose /get_outputs_heights or when
+      // filtering would drop the ring below min mixin.
+      applyOspeadFilter(context);
+
       // Determine the binding constraint: the minimum outs actually returned by the daemon
       // across all input amounts. Each input ring must independently satisfy the ring size.
       size_t minAvailable = context->outs.empty() ? 0 : SIZE_MAX;

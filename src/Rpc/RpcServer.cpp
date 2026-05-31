@@ -99,6 +99,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getrandom_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS>(&RpcServer::on_get_random_outs), false } },
   { "/getrandom_commitment_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS>(&RpcServer::on_get_random_commitment_outs), false } },
   { "/getrandom_outs_json", { jsonMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON>(&RpcServer::on_get_random_outs_json), true } },
+  { "/get_outputs_heights", { jsonMethod<COMMAND_RPC_GET_OUTPUTS_HEIGHTS>(&RpcServer::on_get_outputs_heights), true } },
   { "/get_pool_changes.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES>(&RpcServer::onGetPoolChanges), false } },
   { "/get_pool_changes_lite.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES_LITE>(&RpcServer::onGetPoolChangesLite), false } },
 
@@ -692,6 +693,24 @@ bool RpcServer::on_get_random_outs_json(const COMMAND_RPC_GET_RANDOM_OUTPUTS_JSO
       je.out_key = Common::podToHex(entry.out_key);
       res.outs.push_back(std::move(je));
     }
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_outputs_heights(const COMMAND_RPC_GET_OUTPUTS_HEIGHTS::request& req,
+                                       COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response& res) {
+  res.status = "Failed";
+
+  std::vector<std::pair<uint64_t, uint32_t>> queries;
+  queries.reserve(req.queries.size());
+  for (const auto& q : req.queries) {
+    queries.emplace_back(q.amount, q.global_index);
+  }
+
+  if (!m_core.get_output_heights(queries, res.heights)) {
+    return true;
   }
 
   res.status = CORE_RPC_STATUS_OK;

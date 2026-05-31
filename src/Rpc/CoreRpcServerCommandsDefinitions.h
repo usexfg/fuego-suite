@@ -312,6 +312,42 @@ struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS {
 };
 
 //-----------------------------------------------
+// Sidecar lookup: get block heights for a list of (amount, global_index) outputs.
+// Used by wallets to enrich OSPEAD-aware decoy selection without breaking the
+// packed binary wire format of COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS.
+// Heights are returned in the same order as queries. If an index is invalid,
+// height is 0 (sentinel — wallet treats as unknown).
+struct COMMAND_RPC_GET_OUTPUTS_HEIGHTS_query {
+  uint64_t amount;
+  uint32_t global_index;
+
+  void serialize(ISerializer &s) {
+    KV_MEMBER(amount)
+    KV_MEMBER(global_index)
+  }
+};
+
+struct COMMAND_RPC_GET_OUTPUTS_HEIGHTS {
+  struct request {
+    std::vector<COMMAND_RPC_GET_OUTPUTS_HEIGHTS_query> queries;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(queries)
+    }
+  };
+
+  struct response {
+    std::vector<uint32_t> heights;  // 1:1 with request.queries; 0 means unknown/invalid
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(heights)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+//-----------------------------------------------
 // Random commitment outputs for ring-signature deposit withdrawals.
 // Works like COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS but indexes m_commitmentOutputs.
 #pragma pack(push, 1)

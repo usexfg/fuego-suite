@@ -1827,6 +1827,24 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return true;
 }
 
+bool Blockchain::getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                                  std::vector<uint32_t>& heights) {
+  heights.assign(queries.size(), 0);
+  if (!m_indexManager.isReady()) return false;
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+
+  for (size_t i = 0; i < queries.size(); ++i) {
+    const uint64_t amount = queries[i].first;
+    const uint32_t gindex = queries[i].second;
+    auto it = m_indexManager.outputs().find(amount);
+    if (it == m_indexManager.outputs().end()) continue;
+    if (gindex >= it->second.size()) continue;
+    // outputs() entries are pair<TxIndex, uint16_t>; TxIndex.block is the block height
+    heights[i] = it->second[gindex].first.block;
+  }
+  return true;
+}
+
 bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
     std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
   if (!m_indexManager.isReady()) return false;

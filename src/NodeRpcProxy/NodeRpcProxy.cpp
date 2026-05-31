@@ -528,6 +528,35 @@ std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount
   return ec;
 }
 
+void NodeRpcProxy::getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                                     std::vector<uint32_t>& heights, const Callback& callback) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (m_state != STATE_INITIALIZED) {
+    callback(make_error_code(error::NOT_INITIALIZED));
+    return;
+  }
+
+  scheduleRequest([this, &queries, &heights]() -> std::error_code {
+    COMMAND_RPC_GET_OUTPUTS_HEIGHTS::request req;
+    req.queries.reserve(queries.size());
+    for (const auto& q : queries) {
+      COMMAND_RPC_GET_OUTPUTS_HEIGHTS_query qe;
+      qe.amount = q.first;
+      qe.global_index = q.second;
+      req.queries.push_back(qe);
+    }
+    COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response rsp = AUTO_VAL_INIT(rsp);
+    std::error_code ec = jsonCommand("/get_outputs_heights", req, rsp);
+    if (!ec) {
+      heights = std::move(rsp.heights);
+    } else {
+      // Daemon doesn't support the endpoint — leave heights empty so wallet skips OSPEAD.
+      heights.clear();
+    }
+    return ec;
+  }, callback);
+}
+
 std::error_code NodeRpcProxy::doGetNewBlocks(std::vector<Crypto::Hash>& knownBlockIds,
                                              std::vector<CryptoNote::block_complete_entry>& newBlocks,
                                              uint32_t& startHeight) {

@@ -152,6 +152,8 @@ namespace CryptoNote {
     Crypto::Hash get_tail_id();
     virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request &req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response &res) override;
     bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result);
+    virtual bool get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+                                    std::vector<uint32_t>& heights) override;
     void pause_mining() override;
     void update_block_template_and_resume_mining() override;
     Blockchain& get_blockchain_storage(){return m_blockchain;}

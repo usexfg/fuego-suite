@@ -43,4 +43,43 @@ SwapPair swapPairFromString(const std::string& s) {
   return out;
 }
 
+const char* swapPairToString(SwapPair p) {
+  switch (p) {
+    case SwapPair::SOL: return "SOL";
+    case SwapPair::ETH: return "ETH";
+    case SwapPair::XMR: return "XMR";
+    case SwapPair::BCH: return "BCH";
+    case SwapPair::ARB: return "ARB";
+  }
+  return "???";
+}
+
+const char* swapStateToString(SwapState s) {
+  switch (s) {
+    // Legacy HTLC flow
+    case SwapState::INITIATED:               return "INITIATED";
+    case SwapState::XFG_LOCKED:              return "XFG_LOCKED";
+    case SwapState::CTR_LOCKED:              return "CTR_LOCKED";
+    case SwapState::XFG_CLAIMED:             return "XFG_CLAIMED";
+    case SwapState::CTR_CLAIMED:             return "CTR_CLAIMED";
+    case SwapState::XFG_REFUNDED:            return "XFG_REFUNDED";
+    case SwapState::CTR_REFUNDED:            return "CTR_REFUNDED";
+    case SwapState::FAILED:                  return "FAILED";
+    // Adaptor v1
+    case SwapState::ADAPTOR_KEYS_EXCHANGED:  return "ADAPTOR_KEYS_EXCHANGED";
+    case SwapState::ADAPTOR_ESCROW_FUNDED:   return "ADAPTOR_ESCROW_FUNDED";
+    case SwapState::ADAPTOR_PRESIGS_READY:   return "ADAPTOR_PRESIGS_READY";
+    case SwapState::ADAPTOR_CTR_LOCKED:      return "ADAPTOR_CTR_LOCKED";
+    case SwapState::ADAPTOR_SECRET_REVEALED: return "ADAPTOR_SECRET_REVEALED";
+    case SwapState::ADAPTOR_XFG_SPENT:       return "ADAPTOR_XFG_SPENT";
+    case SwapState::ADAPTOR_REFUNDED:        return "ADAPTOR_REFUNDED";
+    // AFK v2
+    case SwapState::AFK_OFFER_LOCKED:        return "AFK_OFFER_LOCKED";
+    case SwapState::AFK_OFFER_ACCEPTED:      return "AFK_OFFER_ACCEPTED";
+    case SwapState::AFK_CLAIMED:             return "AFK_CLAIMED";
+    case SwapState::AFK_REFUNDED:            return "AFK_REFUNDED";
+  }
+  return "???";
+}
+
 } // namespace XfgSwap

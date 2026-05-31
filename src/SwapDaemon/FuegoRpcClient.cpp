@@ -402,4 +402,23 @@ bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint
   return true;
 }
 
+bool FuegoRpcClient::checkReserveProof(const std::string& address, const std::string& message,
+                                        const std::string& signature, bool& good, uint64_t& total) {
+  try {
+    std::string body = "{\"address\":\"" + address + "\","
+                       "\"message\":\"" + message + "\","
+                       "\"signature\":\"" + signature + "\"}";
+    std::string respBody = daemonPost("/check_reserve_proof", body);
+    if (respBody.empty()) return false;
+
+    Common::JsonValue json = Common::JsonValue::fromString(respBody);
+    if (!json.isObject()) return false;
+    if (json.contains("status") && json("status").getString() != "OK") return false;
+
+    good = json.contains("good") && json("good").getBool();
+    total = json.contains("total") ? static_cast<uint64_t>(json("total").getInteger()) : 0;
+    return true;
+  } catch (const std::exception&) { return false; }
+}
+
 } // namespace XfgSwap

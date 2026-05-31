@@ -196,6 +196,12 @@ private:
   static const uint64_t TWAP_MAX_AGE = 604800;  // 7 days
   static const size_t TWAP_MIN_TRADES = 5;
 
+  // Price drift auto-cancel: soft orders drifting beyond this % from TWAP are pruned
+  static constexpr double SOFT_ORDER_MAX_DRIFT_PCT = 15.0;
+
+  // Update offer amount after partial fill. Removes offer if below dust threshold.
+  bool updateOfferAmount(const std::string& offerId, uint64_t newAmount);
+
   // External price sources (keyed by name)
   std::map<std::string, PriceSource> m_externalSources;
   std::vector<PoolSourceConfig> m_poolConfigs;

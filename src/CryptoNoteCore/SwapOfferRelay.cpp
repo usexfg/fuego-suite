@@ -21,6 +21,7 @@
 #include "crypto/crypto.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <HTTP/httplib.h>
 #include <json/json.h>
@@ -95,7 +96,6 @@ void SwapOfferRelay::cleanupThread() {
 
       {
         std::lock_guard<std::mutex> lock(m_mutex);
-        // Remove expired offers
         for (auto it = m_offers.begin(); it != m_offers.end(); ) {
           if (currentHeight > it->second.postedHeight + it->second.ttlBlocks) {
             it = m_offers.erase(it);
@@ -104,9 +104,31 @@ void SwapOfferRelay::cleanupThread() {
           }
         }
 
-        // Trim old trades
         while (m_trades.size() > MAX_TRADE_HISTORY) {
           m_trades.pop_front();
+        }
+      }
+
+      double twap[5] = {};
+      for (int p = 0; p < 5; ++p) {
+        twap[p] = getTwap(static_cast<uint8_t>(p));
+      }
+
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto it = m_offers.begin(); it != m_offers.end(); ) {
+          if (it->second.isSoftOrder && it->second.pair < 5) {
+            double offerRate = static_cast<double>(it->second.rateNum) / 1e7;
+            double pairTwap = twap[it->second.pair];
+            if (pairTwap > 0.0 && offerRate > 0.0) {
+              double drift = std::abs(offerRate - pairTwap) / pairTwap * 100.0;
+              if (drift > SOFT_ORDER_MAX_DRIFT_PCT) {
+                it = m_offers.erase(it);
+                continue;
+              }
+            }
+          }
+          ++it;
         }
       }
     } catch (...) {
@@ -293,6 +315,48 @@ bool SwapOfferRelay::cancelOffer(const std::string& offerId,
 
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_CANCEL::ID, buf, nullptr);
+  }
+
+  return true;
+}
+
+bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newAmount) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_offers.find(offerId);
+  if (it == m_offers.end()) return false;
+
+  static constexpr uint64_t DUST_THRESHOLD = 10000000ULL;
+
+  if (newAmount < DUST_THRESHOLD) {
+    m_offers.erase(it);
+    return true;
+  }
+
+  it->second.xfgAmount = newAmount;
+
+  if (m_p2pEndpoint) {
+    COMMAND_SWAP_OFFER::request msg;
+    msg.offerId = it->second.offerId;
+    msg.xfgAmount = it->second.xfgAmount;
+    msg.rateNum = it->second.rateNum;
+    msg.pair = it->second.pair;
+    msg.makerPubKey = it->second.makerPubKey;
+    msg.signature = it->second.signature;
+    msg.timestamp = it->second.timestamp;
+    msg.ttlBlocks = it->second.ttlBlocks;
+    msg.postedHeight = it->second.postedHeight;
+    msg.isSoftOrder = it->second.isSoftOrder;
+
+    if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
+      msg.dandelion_stem = true;
+    }
+
+    auto buf = LevinProtocol::encode(msg);
+    if (msg.dandelion_stem) {
+      m_p2pEndpoint->externalRelayNotifyToStem(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    } else {
+      m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    }
   }
 
   return true;

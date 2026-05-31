@@ -52,6 +52,12 @@ func main() {
 			cfg.BchRPC = next()
 		case "--no-bch":
 			cfg.NoBch = true
+		case "--headless":
+			cfg.Headless = true
+		case "--headless-port":
+			var p int
+			fmt.Sscanf(next(), "%d", &p)
+			cfg.HeadlessPort = p
 		case "--help", "-h":
 			fmt.Println("swapxfg — Fuego cross-chain adaptor swap terminal")
 			fmt.Println()
@@ -71,6 +77,10 @@ func main() {
 			fmt.Println("  --bch-rpc       Electron Cash RPC (default: http://127.0.0.1:7773)")
 			fmt.Println("  --no-bch        Disable BCH / Electron Cash connection")
 			fmt.Println()
+			fmt.Println("Headless:")
+			fmt.Println("  --headless      Run in background mode (no TUI, auto-execute soft orders)")
+			fmt.Println("  --headless-port Port for headless control API (default: 18190)")
+			fmt.Println()
 			fmt.Println("  --help, -h      Show this help")
 			os.Exit(0)
 		default:
@@ -79,8 +89,15 @@ func main() {
 		}
 	}
 
-	if err := app.Run(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	if cfg.Headless {
+		if err := app.RunHeadless(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := app.Run(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

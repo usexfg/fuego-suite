@@ -544,6 +544,30 @@ using CryptoNote::ISerializer;
     };
   };
 
+  struct COMMAND_RPC_SIGN_CANCEL {
+    struct request {
+      std::string offerId;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+      }
+    };
+
+    struct response {
+      std::string offerId;
+      std::string makerPubKey;
+      std::string signature;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(offerId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
   // ── Phase 7: CD / COLD wallet RPC bridges ─────────────────────────────────
 
   struct COMMAND_RPC_CREATE_AFK_LOCK {

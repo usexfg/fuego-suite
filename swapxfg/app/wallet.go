@@ -44,6 +44,12 @@ type SwapInitResult struct {
 	DleqResponse  string `json:"dleqResponse"`
 }
 
+type SignedCancel struct {
+	OfferID     string `json:"offerId"`
+	MakerPubKey string `json:"makerPubKey"`
+	Signature   string `json:"signature"`
+}
+
 type AfkLockResult struct {
 	LockID       string `json:"lockId"`
 	AdaptorPoint string `json:"adaptorPoint"`
@@ -146,6 +152,23 @@ func (w *WalletClient) InitiateSwap(xfgAmount uint64, peerPubKey, pair, role str
 }
 
 // IsConnected performs a lightweight check by calling get_address.
+func (w *WalletClient) SignCancel(offerID string) (*SignedCancel, error) {
+	var outer struct {
+		Result SignedCancel `json:"result"`
+	}
+	if err := w.fc.post("/json_rpc", map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "sign_cancel",
+		"params": map[string]interface{}{
+			"offerId": offerID,
+		},
+		"id": 1,
+	}, &outer); err != nil {
+		return nil, err
+	}
+	return &outer.Result, nil
+}
+
 func (w *WalletClient) IsConnected() bool {
 	_, err := w.GetAddress()
 	return err == nil

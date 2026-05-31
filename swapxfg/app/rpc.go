@@ -51,6 +51,7 @@ type SwapOffer struct {
 	Timestamp    uint64 `json:"timestamp"`
 	TTLBlocks    uint32 `json:"ttlBlocks"`
 	PostedHeight uint32 `json:"postedHeight"`
+	IsSoftOrder  bool   `json:"isSoftOrder"`
 }
 
 type SwapTrade struct {
@@ -171,6 +172,43 @@ func (c *FuegoClient) GetSwapStatus(swapId string) (*SwapStatus, error) {
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *FuegoClient) CancelSwapOffer(offerId, makerPubKey, signature string) error {
+	req := map[string]interface{}{
+		"offerId":     offerId,
+		"makerPubKey": makerPubKey,
+		"signature":   signature,
+	}
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.post("/cancelswap", req, &resp); err != nil {
+		return err
+	}
+	if resp.Status != "OK" {
+		return fmt.Errorf("cancel failed: %s", resp.Status)
+	}
+	return nil
+}
+
+func (c *FuegoClient) RequestSwap(offerId string, amount uint64, takerPubKey, proofOfFunds string) error {
+	req := map[string]interface{}{
+		"offerId":      offerId,
+		"amount":       amount,
+		"takerPubKey":  takerPubKey,
+		"proofOfFunds": proofOfFunds,
+	}
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.post("/requestswap", req, &resp); err != nil {
+		return err
+	}
+	if resp.Status != "OK" {
+		return fmt.Errorf("request swap failed: %s", resp.Status)
+	}
+	return nil
 }
 
 func (c *FuegoClient) GetActiveSwaps() ([]SwapStatus, error) {

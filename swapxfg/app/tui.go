@@ -410,15 +410,34 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 			}
 		}
 	case "accept":
-		// accept <offer_id>
 		if len(parts) < 2 {
 			m.statusMsg = "usage: accept <offer_id>"
 			return nil
 		}
 		offerID := parts[1]
 		client := m.client
+		wallet := m.wallet
 		return func() tea.Msg {
-			// Now actually accept
+			offers, err := client.GetOffers(m.activePair)
+			if err != nil {
+				return statusUpdateMsg{"fetch offers failed: " + err.Error()}
+			}
+			var isSoft bool
+			for _, o := range offers {
+				if o.OfferID == offerID {
+					isSoft = o.IsSoftOrder
+					break
+				}
+			}
+
+			if isSoft && wallet != nil {
+				addr, _ := wallet.GetAddress()
+				if err := client.RequestSwap(offerID, 0, addr, ""); err != nil {
+					return statusUpdateMsg{"request swap failed: " + err.Error()}
+				}
+				return statusUpdateMsg{"Swap request sent to maker. Waiting for auto-lock..."}
+			}
+
 			var resp struct {
 				Status string `json:"status"`
 			}
@@ -637,7 +656,6 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 		}
 
 	case "cancel":
-		// cancel <offer_id>
 		if len(parts) < 2 {
 			m.statusMsg = "usage: cancel <offer_id>"
 			return nil
@@ -648,8 +666,13 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 		}
 		offerID := parts[1]
 		client := m.client
+		wallet := m.wallet
 		return func() tea.Msg {
-			if err := client.CancelCdOffer(offerID, "", ""); err != nil {
+			signed, err := wallet.SignCancel(offerID)
+			if err != nil {
+				return statusUpdateMsg{"sign cancel failed: " + err.Error()}
+			}
+			if err := client.CancelSwapOffer(signed.OfferID, signed.MakerPubKey, signed.Signature); err != nil {
 				return statusUpdateMsg{"cancel failed: " + err.Error()}
 			}
 			return statusUpdateMsg{"offer cancelled: " + offerID[:min(12, len(offerID))]}

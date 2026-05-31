@@ -145,6 +145,11 @@ namespace CryptoNote
     bool unban_host(const uint32_t address_ip) override;
     std::map<uint32_t, time_t> get_blocked_hosts() override { return m_blocked_hosts; };
 
+    // External relay interface (IP2pEndpoint) — public
+    virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
+    virtual void externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
+    virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override;
+
   private:
     enum PeerType
     {
@@ -186,9 +191,6 @@ namespace CryptoNote
     virtual bool invoke_notify_to_peer(int command, const BinaryArray& req_buff, const CryptoNoteConnectionContext& context) override;
     virtual void drop_connection(CryptoNoteConnectionContext &context, bool add_fail) override;
     virtual void for_each_connection(std::function<void(CryptoNote::CryptoNoteConnectionContext&, PeerIdType)> f) override;
-    virtual void externalRelayNotifyToAll(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
-    virtual void externalRelayNotifyToStem(int command, const BinaryArray &data_buff, const net_connection_id *excludeConnection) override;
-    virtual void externalRelayNotifyToList(int command, const BinaryArray &data_buff, const std::list<boost::uuids::uuid> relayList) override;
 #ifdef ENABLE_FUEGOMESH
     virtual bool relayTransactionViaMesh(const BinaryArray& txBlob) override;
     virtual bool relayBlockSignalViaMesh(uint32_t height, const Crypto::Hash& blockHash) override;

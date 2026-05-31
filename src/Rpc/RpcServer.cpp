@@ -1179,6 +1179,15 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
 
   m_swapRelay->handleSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
 
+  COMMAND_SWAP_REQUEST::request msg;
+  msg.offerId = req.offerId;
+  msg.amount = req.amount;
+  msg.takerPubKey = req.takerPubKey;
+  msg.proofOfFunds = req.proofOfFunds;
+
+  auto buf = LevinProtocol::encode(msg);
+  m_p2p.externalRelayNotifyToAll(COMMAND_SWAP_REQUEST::ID, buf, nullptr);
+
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

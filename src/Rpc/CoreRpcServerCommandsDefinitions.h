@@ -1170,6 +1170,7 @@ struct swap_offer_rpc_entry {
   uint64_t timestamp;
   uint32_t ttlBlocks;
   uint32_t postedHeight;
+  bool isSoftOrder;
 
   void serialize(ISerializer& s) {
     KV_MEMBER(offerId)
@@ -1180,6 +1181,7 @@ struct swap_offer_rpc_entry {
     KV_MEMBER(timestamp)
     KV_MEMBER(ttlBlocks)
     KV_MEMBER(postedHeight)
+    KV_MEMBER(isSoftOrder)
   }
 };
 
@@ -1361,6 +1363,30 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
       KV_MEMBER(offerId)
       KV_MEMBER(makerPubKey)
       KV_MEMBER(signature)
+    }
+  };
+
+  struct response {
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_REQUEST_SWAP {
+  struct request {
+    std::string offerId;
+    uint64_t    amount;
+    std::string takerPubKey;
+    std::string proofOfFunds;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(amount)
+      KV_MEMBER(takerPubKey)
+      KV_MEMBER(proofOfFunds)
     }
   };
 

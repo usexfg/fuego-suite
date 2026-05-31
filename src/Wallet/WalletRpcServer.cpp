@@ -144,6 +144,7 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "getbalance", makeMemberMethod(&wallet_rpc_server::on_getbalance) },
       { "get_address", makeMemberMethod(&wallet_rpc_server::on_get_address) },
       { "sign_offer",    makeMemberMethod(&wallet_rpc_server::on_sign_offer)    },
+      { "sign_cancel",   makeMemberMethod(&wallet_rpc_server::on_sign_cancel)   },
       { "initiate_swap", makeMemberMethod(&wallet_rpc_server::on_initiate_swap) },
       { "complete_swap", makeMemberMethod(&wallet_rpc_server::on_complete_swap) },
       { "refund_swap",   makeMemberMethod(&wallet_rpc_server::on_refund_swap)   },
@@ -236,6 +237,24 @@ bool wallet_rpc_server::on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::
   res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
   res.signature   = Common::podToHex(sig);
   res.timestamp   = ts;
+  res.status      = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL::request& req, wallet_rpc::COMMAND_RPC_SIGN_CANCEL::response& res) {
+  CryptoNote::AccountKeys keys;
+  m_wallet.getAccountKeys(keys);
+
+  std::string cancelData = "cancel:" + req.offerId;
+  Crypto::Hash cancelHash;
+  Crypto::cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
+
+  Crypto::Signature sig;
+  Crypto::generate_signature(cancelHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+
+  res.offerId     = req.offerId;
+  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
+  res.signature   = Common::podToHex(sig);
   res.status      = WALLET_RPC_STATUS_OK;
   return true;
 }

@@ -530,7 +530,11 @@ namespace CryptoNote
       return;
     }
 
-    // use DynamicRingSizeCalculator to get optimal ring size from available commitment outputs
+    // use DynamicRingSizeCalculator to get optimal ring size from available commitment outputs.
+    // Intentional: applyOspeadFilter is NOT invoked on this path. The commitment-output pool is
+    // small/new and OSPEAD's age-bin model would either bail under min-mixin or filter pointlessly
+    // on a near-uniform age distribution. Re-evaluate once the commitment pool ages out and a
+    // real spend-pattern is observable.
     const size_t available = context->commitmentOuts.size();
     std::vector<CryptoNote::OutputInfo> outputInfos;
     outputInfos.emplace_back(0, available);
@@ -575,7 +579,15 @@ namespace CryptoNote
   }
 
   void WalletTransactionSender::applyOspeadFilter(std::shared_ptr<SendTransactionContext> context) {
-    // Collect (amount, global_index) for every decoy across all input amounts.
+    // ── Altitude note ──
+    // OSPEAD runs WALLET-side, after the daemon returns decoys, not inside
+    // Blockchain::getRandomOutsByAmount. Trade-off: wastes RPC bandwidth (we
+    // over-request then prune) but keeps daemon decoy selection consensus-
+    // neutral and lets each wallet pick its own quality bar. Daemon-side
+    // OSPEAD would push state-tracking and policy onto every node.
+
+    // Collect (amount, global_index) queries in iteration order so heights[i]
+    // aligns 1:1 with the i-th decoy across all amount groups.
     std::vector<std::pair<uint64_t, uint32_t>> heightQueries;
     for (const auto& oa : context->outs) {
       for (const auto& oe : oa.outs) {
@@ -583,6 +595,10 @@ namespace CryptoNote
       }
     }
     if (heightQueries.empty()) return;
+
+    // Capability check: if the daemon doesn't support the sidecar endpoint,
+    // leave context->outs untouched.
+    if (!m_node.supportsOutputsHeights()) return;
 
     // Blocking-fetch heights via sidecar RPC. Worker thread is already serialized.
     std::promise<std::error_code> p;
@@ -592,50 +608,48 @@ namespace CryptoNote
       [&p](std::error_code ec) { p.set_value(ec); });
     auto ec = fut.get();
 
-    if (ec || heights.size() != heightQueries.size()) {
-      // Daemon doesn't expose endpoint or shape mismatch — leave context->outs unfiltered.
-      return;
-    }
+    if (ec || heights.size() != heightQueries.size()) return;
 
     const uint32_t currentHeight = m_node.getLastLocalBlockHeight();
     if (currentHeight == 0) return;  // wallet not synced; skip filter
 
-    // Build an OSPEAD spend-pattern from logarithmic age bins (no real history wired yet).
-    std::vector<CryptoNote::TransactionOutputInfo> emptyPattern;
-    auto spendPattern = CryptoNote::OSPEADDecoySelector::analyzeSpendPatterns(emptyPattern, currentHeight);
+    // Log-age bin pattern, no real spend history wired yet. Same threshold as
+    // DynamicRingSize.cpp:208.
+    auto spendPattern = CryptoNote::OSPEADDecoySelector::analyzeSpendPatterns({}, currentHeight);
+    constexpr double kKeepThreshold = 0.01;
 
-    // Compute keep-mask per decoy by spend probability. Threshold matches DynamicRingSize.cpp:208.
-    std::set<std::pair<uint64_t, uint32_t>> keep;
-    for (size_t i = 0; i < heightQueries.size(); ++i) {
-      if (heights[i] == 0) continue;  // unknown — leave out (treat as unfilterable)
-      uint64_t age = (currentHeight > heights[i]) ? (currentHeight - heights[i]) : 0;
-      double prob = CryptoNote::OSPEADDecoySelector::calculateSpendProbability(age, currentHeight, spendPattern);
-      if (prob > 0.01) {
-        keep.emplace(heightQueries[i].first, heightQueries[i].second);
-      }
-    }
-
-    // Compute the per-amount survivor count before mutating; if any amount would drop below
-    // min mixin, abort the filter entirely (preserve original pool).
+    // Single pass: compute keep-mask aligned with heightQueries; track per-amount
+    // survivor count so we can bail before mutating if any ring would drop below
+    // min mixin.
+    std::vector<bool> keepMask(heightQueries.size(), false);
     const size_t minMix = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
+    size_t qi = 0;
     for (const auto& oa : context->outs) {
       size_t survivors = 0;
-      for (const auto& oe : oa.outs) {
-        if (keep.find({oa.amount, static_cast<uint32_t>(oe.global_amount_index)}) != keep.end()) {
+      for (size_t j = 0; j < oa.outs.size(); ++j, ++qi) {
+        if (heights[qi] == 0) continue;  // unknown height — leave masked-out
+        const uint64_t age = currentHeight - heights[qi];
+        const double prob = CryptoNote::OSPEADDecoySelector::calculateSpendProbability(
+          age, currentHeight, spendPattern);
+        if (prob > kKeepThreshold) {
+          keepMask[qi] = true;
           ++survivors;
         }
       }
-      if (survivors < minMix) {
-        return;  // filter too aggressive; bail
-      }
+      if (survivors < minMix) return;  // filter too aggressive; bail
     }
 
-    // Apply keep-set to context->outs in place.
+    // Apply mask via two-pointer compaction.
+    qi = 0;
     for (auto& oa : context->outs) {
-      oa.outs.erase(std::remove_if(oa.outs.begin(), oa.outs.end(),
-        [&](const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::out_entry& e) {
-          return keep.find({oa.amount, static_cast<uint32_t>(e.global_amount_index)}) == keep.end();
-        }), oa.outs.end());
+      size_t w = 0;
+      for (size_t r = 0; r < oa.outs.size(); ++r, ++qi) {
+        if (keepMask[qi]) {
+          if (w != r) oa.outs[w] = oa.outs[r];
+          ++w;
+        }
+      }
+      oa.outs.resize(w);
     }
   }
 

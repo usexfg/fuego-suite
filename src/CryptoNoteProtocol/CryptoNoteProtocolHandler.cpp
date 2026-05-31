@@ -394,8 +394,8 @@ int CryptoNoteProtocolHandler::handle_notify_new_transactions(int command, NOTIF
       if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
         if (arg.dandelion_stem) {
           arg.hop_count++;
-          bool stay_stem = (arg.hop_count < parameters::DANDELION_STEM_MAX_HOPS) &&
-                           (Crypto::rand<uint32_t>() % 100 < parameters::DANDELION_STEM_STAY_PCT);
+          bool stay_stem = parameters::dandelionShouldStayInStem(
+            arg.hop_count, parameters::DandelionKind::Tx, Crypto::rand<uint32_t>() % 100);
 
           if (stay_stem) {
             logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying transactions in Dandelion STEM mode (hop " << arg.hop_count << ")";
@@ -1209,8 +1209,8 @@ int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER
   if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
     if (arg.dandelion_stem) {
       arg.hop_count++;
-      bool stay_stem = (arg.hop_count < parameters::DANDELION_SWAP_STEM_MAX_HOPS) &&
-                       (Crypto::rand<uint32_t>() % 100 < parameters::DANDELION_SWAP_STEM_STAY_PCT);
+      bool stay_stem = parameters::dandelionShouldStayInStem(
+        arg.hop_count, parameters::DandelionKind::SwapOffer, Crypto::rand<uint32_t>() % 100);
 
       if (stay_stem) {
         logger(Logging::TRACE, Logging::BRIGHT_MAGENTA) << context << "Relaying swap offer in STEM mode (hop " << arg.hop_count << ")";

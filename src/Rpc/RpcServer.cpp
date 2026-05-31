@@ -703,15 +703,15 @@ bool RpcServer::on_get_outputs_heights(const COMMAND_RPC_GET_OUTPUTS_HEIGHTS::re
                                        COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response& res) {
   res.status = "Failed";
 
+  if (req.amounts.size() != req.global_indices.size()) return true;
+
   std::vector<std::pair<uint64_t, uint32_t>> queries;
-  queries.reserve(req.queries.size());
-  for (const auto& q : req.queries) {
-    queries.emplace_back(q.amount, q.global_index);
+  queries.reserve(req.amounts.size());
+  for (size_t i = 0; i < req.amounts.size(); ++i) {
+    queries.emplace_back(req.amounts[i], req.global_indices[i]);
   }
 
-  if (!m_core.get_output_heights(queries, res.heights)) {
-    return true;
-  }
+  if (!m_core.get_output_heights(queries, res.heights)) return true;
 
   res.status = CORE_RPC_STATUS_OK;
   return true;

@@ -538,12 +538,11 @@ void NodeRpcProxy::getOutputsHeights(const std::vector<std::pair<uint64_t, uint3
 
   scheduleRequest([this, &queries, &heights]() -> std::error_code {
     COMMAND_RPC_GET_OUTPUTS_HEIGHTS::request req;
-    req.queries.reserve(queries.size());
+    req.amounts.reserve(queries.size());
+    req.global_indices.reserve(queries.size());
     for (const auto& q : queries) {
-      COMMAND_RPC_GET_OUTPUTS_HEIGHTS_query qe;
-      qe.amount = q.first;
-      qe.global_index = q.second;
-      req.queries.push_back(qe);
+      req.amounts.push_back(q.first);
+      req.global_indices.push_back(q.second);
     }
     COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response rsp = AUTO_VAL_INIT(rsp);
     std::error_code ec = jsonCommand("/get_outputs_heights", req, rsp);

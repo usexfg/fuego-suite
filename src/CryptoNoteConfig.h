@@ -140,6 +140,17 @@ namespace CryptoNote
 		static_assert(DANDELION_SWAP_STEM_STAY_PCT < 100, "swap stay pct must allow eventual fluff");
 		static_assert(DANDELION_SWAP_STEM_MAX_HOPS <= DANDELION_STEM_MAX_HOPS, "swap path must be no longer than tx path");
 
+		// Identifies which relay path is asking — tx pool, or swap-offer gossip.
+		// Single helper keeps the two sites from drifting on future tuning.
+		enum class DandelionKind { Tx, SwapOffer };
+		inline bool dandelionShouldStayInStem(uint32_t hop_count, DandelionKind kind, uint32_t rand_0_99) {
+		  const uint32_t max_hops = (kind == DandelionKind::Tx)
+		    ? DANDELION_STEM_MAX_HOPS : DANDELION_SWAP_STEM_MAX_HOPS;
+		  const uint32_t stay_pct = (kind == DandelionKind::Tx)
+		    ? DANDELION_STEM_STAY_PCT : DANDELION_SWAP_STEM_STAY_PCT;
+		  return hop_count < max_hops && rand_0_99 < stay_pct;
+		}
+
 		// HEAT CD denominations (atomic units, 7 decimal places)
         const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 HEAT
         const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 HEAT

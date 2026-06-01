@@ -472,23 +472,21 @@ std::string simple_wallet::get_commands_str() {
   std::stringstream ss;
   ss << "Commands: " << ENDL;
 
-  auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
-    ss << "\n" << cat << "\n" << std::string(cat.size(), '-') << ENDL;
-    
-    std::vector<std::pair<std::string, std::string>> long_cmds;
-    for (const auto& cmd : cmds) {
-      if (cmd.second.find('-') != std::string::npos || cmd.second.find('[') != std::string::npos) {
-        long_cmds.push_back(cmd);
-      } else {
-        ss << "  " << std::setw(20) << std::left << cmd.first << " : " << cmd.second << ENDL;
-      }
-    }
+  static const std::string CAT_COLOR = "\x1F""BRIGHT_YELLOW\x1F";
+  static const std::string RESET     = "\x1F""DEFAULT\x1F";
 
-    if (!long_cmds.empty()) {
-      ss << ENDL;
-      for (const auto& cmd : long_cmds) {
-        ss << "  " << cmd.first << " : " << cmd.second << ENDL;
-      }
+  auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
+    ss << "\n  " << CAT_COLOR << cat << RESET << "\n";
+
+    size_t maxCmdLen = 0;
+    for (const auto& cmd : cmds) {
+      maxCmdLen = std::max(maxCmdLen, cmd.first.size());
+    }
+    maxCmdLen += 3;
+
+    for (const auto& cmd : cmds) {
+      ss << "  " << std::setw(static_cast<int>(maxCmdLen)) << std::left << cmd.first
+         << " : " << cmd.second << ENDL;
     }
     ss << ENDL;
   };
@@ -1482,6 +1480,7 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
+/*
 bool simple_wallet::cold(const std::vector<std::string> &args)
 {
   // Simplified COLD deposit command - amount + term code (3 or 12)
@@ -1589,13 +1588,10 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       return true;
     }
 
-        cold_amount,
-        cold_term,
-
     success_msg_writer() << "";
     success_msg_writer() << "";
 
-    /*
+
     std::vector<uint8_t> extra;
     CryptoNote::TransactionExtraColdCommitment coldCommitment;
     coldCommitment.amount = cold_amount;
@@ -1638,7 +1634,8 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 
     success_msg_writer() << "COLD transaction sent! ID: " << txId;
     return true;
-    */
+
+    return true;
   }
   catch (const std::exception& e)
   {
@@ -1646,7 +1643,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     return true;
   }
 }
-
+*/
 //----------------------------------------------------------------------------------------------------
 
 
@@ -2131,14 +2128,14 @@ bool simple_wallet::withdraw_bond(const std::vector<std::string> &args) {
     }
 
     if (deposit.unlockHeight > m_node->getLastLocalBlockHeight()) {
-      fail_msg_writer() << "Legacy Bond is still locked until height " << deposit.unlockHeight 
+      fail_msg_writer() << "Legacy Bond is still locked until height " << deposit.unlockHeight
                         << " (Current: " << m_node->getLastLocalBlockHeight() << ")";
       return true;
     }
 
     // Calculate accrued interest from fee pool
     uint64_t accruedInterest = 0;
-    std::error_code ec = m_node->getCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height), 
+    std::error_code ec = m_node->getCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height),
                                               m_node->getLastLocalBlockHeight(), accruedInterest, true);
     if (ec) {
       fail_msg_writer() << "Failed to calculate bond interest: " << ec.message();
@@ -2264,7 +2261,7 @@ static std::string findSwapxfg() {
     std::string dir(self);
     auto pos = dir.rfind('\\');
     if (pos != std::string::npos) {
-      std::string candidate = dir.substr(0, pos + 1) + "xfg-swap.exe";
+      std::string candidate = dir.substr(0, pos + 1) + "xfg-swapd.exe";
       if (GetFileAttributesA(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
         return candidate;
     }
@@ -2291,16 +2288,16 @@ static std::string findSwapxfg() {
   if (!self.empty()) {
     std::string dir = self;
     dir = dir.substr(0, dir.rfind('/'));
-    std::string candidate = dir + "/xfg-swap";
+    std::string candidate = dir + "/xfg-swapd";
     if (access(candidate.c_str(), X_OK) == 0) return candidate;
   }
 
   // 1.5. Current working directory fallback
-  if (access("./xfg-swap", X_OK) == 0) return "./xfg-swap";
+  if (access("./xfg-swapd", X_OK) == 0) return "./xfg-swapd";
 
   // 2. PATH fallback
-  if (system("which xfg-swap > /dev/null 2>&1") == 0)
-    return "xfg-swap";
+  if (system("which xfg-swapd > /dev/null 2>&1") == 0)
+    return "xfg-swapd";
   return "";
 #endif
 }
@@ -2308,11 +2305,11 @@ static std::string findSwapxfg() {
 void simple_wallet::launchSwapxfg(bool testnet) {
   std::string swapxfgPath = findSwapxfg();
   if (swapxfgPath.empty()) {
-    logger(Logging::WARNING) << "xfg-swap not found. To use the swap terminal, install xfg-swap:";
+    logger(Logging::WARNING) << "xfg-swapd not found. To use the swap terminal, install xfg-swapd:";
     logger(Logging::WARNING) << "  - Download from https://github.com/usexfg/fuego-suite/releases";
-    logger(Logging::WARNING) << "  - Place xfg-swap in the same directory as fire_wallet";
+    logger(Logging::WARNING) << "  - Place xfg-swapd in the same directory as fire_wallet";
     logger(Logging::INFO)    << "Alternatively, run manually:";
-    logger(Logging::INFO)    << "  xfg-swap --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
+    logger(Logging::INFO)    << "  xfg-swapd --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
     return;
   }
 
@@ -2333,22 +2330,22 @@ void simple_wallet::launchSwapxfg(bool testnet) {
     if (m_wallet_rpc_port) {
       std::string walletEndpoint = "http://127.0.0.1:" + std::to_string(m_wallet_rpc_port);
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     } else {
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swap",
+        execlp(swapxfgPath.c_str(), "xfg-swapd",
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     }
@@ -3474,7 +3471,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       if (txInfo.blockHeight == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
         // Check if transaction has alias registration tag (0xEA)
         if (!txInfo.extra.empty()) {
-          if (txInfo.extra[0] == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
+          if (static_cast<uint8_t>(txInfo.extra[0]) == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
             hasPendingAlias = true;
             break;
           }

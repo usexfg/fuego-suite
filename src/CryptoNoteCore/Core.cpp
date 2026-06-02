@@ -304,7 +304,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
-      if (blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(blockMajorVersion)) {
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(blockMajorVersion)) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count " << txMixin
                       << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
                       << " for block version " << (int)blockMajorVersion << ", rejected";

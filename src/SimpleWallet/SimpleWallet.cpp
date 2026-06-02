@@ -472,21 +472,23 @@ std::string simple_wallet::get_commands_str() {
   std::stringstream ss;
   ss << "Commands: " << ENDL;
 
-  static const std::string CAT_COLOR = "\x1F""BRIGHT_YELLOW\x1F";
-  static const std::string RESET     = "\x1F""DEFAULT\x1F";
-
   auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
-    ss << "\n  " << CAT_COLOR << cat << RESET << "\n";
+    ss << "\n" << cat << "\n" << std::string(cat.size(), '-') << ENDL;
 
-    size_t maxCmdLen = 0;
+    std::vector<std::pair<std::string, std::string>> long_cmds;
     for (const auto& cmd : cmds) {
-      maxCmdLen = std::max(maxCmdLen, cmd.first.size());
+      if (cmd.second.find('-') != std::string::npos || cmd.second.find('[') != std::string::npos) {
+        long_cmds.push_back(cmd);
+      } else {
+        ss << "  " << std::setw(20) << std::left << cmd.first << " : " << cmd.second << ENDL;
+      }
     }
-    maxCmdLen += 3;
 
-    for (const auto& cmd : cmds) {
-      ss << "  " << std::setw(static_cast<int>(maxCmdLen)) << std::left << cmd.first
-         << " : " << cmd.second << ENDL;
+    if (!long_cmds.empty()) {
+      ss << ENDL;
+      for (const auto& cmd : long_cmds) {
+        ss << "  " << cmd.first << " : " << cmd.second << ENDL;
+      }
     }
     ss << ENDL;
   };
@@ -724,6 +726,9 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   }
 
   if (m_generate_new.empty() && m_wallet_file_arg.empty()) {
+    if (!m_currency.isTestnet()) {
+      Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        " << "\n";
@@ -732,6 +737,9 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     std::cout << "       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       " << "\n";
     std::cout << "       ██       ██████  ███████  ██████   ██████        " << "\n";
     std::cout << "\n";
+    if (!m_currency.isTestnet()) {
+      Common::Console::setTextColor(Common::Console::Color::Default);
+    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "Welcome to Fuego command-line wallet." << "\n";

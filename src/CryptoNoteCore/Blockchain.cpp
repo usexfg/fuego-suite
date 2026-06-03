@@ -3755,7 +3755,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
                 // Fee enforcement: regular users (aliasType == 1) must pay ALIAS_REGISTRATION_FEE
                 // to FUEGO_DEV_FUND_ADDRESS. Amount alone is insufficient — the destination must
                 // also match, otherwise a self-transfer satisfies the amount check.
-                // Elderfiers (aliasType == 0) are exempt. Testnet always passes.
+                // Reserved aliases (aliasType == 0) are exempt. Testnet always passes.
                 bool feeOk = true;
                 if (!m_currency.isTestnet() && aliasReg.aliasType != 0) {
                   bool feeOutputFound = false;

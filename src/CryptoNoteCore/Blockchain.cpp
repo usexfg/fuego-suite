@@ -65,7 +65,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 7
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 8   // +YEM v10 skeleton
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -252,6 +252,9 @@ public:
       s(m_bs.m_bootstrapRepaid, "bootstrap_repaid");
       s(m_bs.m_bootstrapXfgOwed, "bootstrap_xfg_owed");
       s(m_bs.m_bootstrapRepaymentVault, "bootstrap_repayment_vault");
+      s(m_bs.m_yemState, "yem_state");                        // v10 skeleton
+      s(m_bs.m_yemBonds, "yem_bonds");                        // v10 skeleton
+      // m_pendingYemPayouts deque not serialized (always empty in v10)
 
     auto dur = std::chrono::steady_clock::now() - start;
 
@@ -271,6 +274,35 @@ private:
   Blockchain& m_bs;
   Crypto::Hash m_lastBlockHash;
 };
+
+// ═══════════════════════════════════════════════════════════════
+// YEM v10 skeleton — YemBondIndex method implementations
+// ═══════════════════════════════════════════════════════════════
+void CryptoNote::YemBondIndex::issue(const CryptoNote::YemBond& bond) {
+    m_bonds.push_back(bond);
+    m_totalOutstanding += bond.principal;
+}
+
+void CryptoNote::YemBondIndex::markRepaid(const Crypto::Hash& depositTxHash) {
+    for (auto& b : m_bonds) {
+        if (b.depositTxHash == depositTxHash && !b.repaid) {
+            m_totalOutstanding -= b.principal;
+            b.repaid = true;
+            return;
+        }
+    }
+}
+
+bool CryptoNote::YemBondIndex::hasBond(const Crypto::Hash& depositTxHash) const {
+    for (const auto& b : m_bonds)
+        if (b.depositTxHash == depositTxHash) return true;
+    return false;
+}
+
+void CryptoNote::YemBondIndex::serialize(ISerializer& s) {
+    s(m_bonds, "bonds");
+    s(m_totalOutstanding, "total_outstanding");
+}
 
 class BlockchainIndicesSerializer {
 
@@ -546,13 +578,7 @@ bool Blockchain::init(const std::string& config_folder, bool load_existing) {
 
     if (!loader.loaded()) {
       logger(WARNING, BRIGHT_YELLOW) << "No actual blockchain cache found, rebuilding internal structures...";
-      // Phase 3: start rebuild in background thread so init() returns quickly.
-      // The thread will acquire m_blockchain_lock when init() releases it.
-      m_rebuildRunning = true;
-      m_rebuildThread = std::thread([this] {
-        rebuildCache();
-        m_rebuildRunning = false;
-      });
+      rebuildCache();
     } else {
       m_indexManager.setReady(true);
     }
@@ -728,7 +754,10 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         return true;
       }
 
-      if (m_checkpoints.check_block(checkpointHeight, getBlockIdByHeight(checkpointHeight)))
+      // Use get_block_hash directly instead of getBlockIdByHeight to avoid asserting
+      // on m_blockIndex.size() when running async rebuildCache in the background.
+      Crypto::Hash blockHash = get_block_hash(m_blocks[checkpointHeight].bl);
+      if (m_checkpoints.check_block(checkpointHeight, blockHash))
       {
         lastValidCheckpointHeight = checkpointHeight;
       }
@@ -865,10 +894,6 @@ bool Blockchain::storeCache() {
 }
 
 bool Blockchain::deinit() {
-  // Wait for any in-progress async rebuild before saving cache
-  if (m_rebuildThread.joinable()) {
-    m_rebuildThread.join();
-  }
   storeCache();
   if (m_blockchainIndexesEnabled) {
     storeBlockchainIndices();
@@ -3493,9 +3518,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
     return m_commitmentIndex.getAllLeaves();
   }
 
-  uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs, uint32_t activeEfierCount) {
-    // Banking fees now go to miners instead of EFiers
-    // Fixed rate: 0.1% on HEAT/COLD commitments and Elderfier deposits
+  uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs) {
+    // Banking fees go to miners. Fixed rate: 0.1% on HEAT/COLD commitments.
     uint64_t totalBankingFees = 0;
     for (const auto& tx : txs) {
       std::vector<TransactionExtraField> extraFields;
@@ -3671,6 +3695,23 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
               logger(DEBUGGING) << "Legacy bond registered: original=" << Common::podToHex(bond.originalTxHash)
                                 << " amount=" << bond.amount
                                 << " totalLegacyBondLocked=" << m_totalLegacyBondLocked;
+              // ── YEM v10: dual-register bond in YemBondIndex ──
+              if (block.height >= CryptoNote::parameters::YEM_V10_ACTIVATION_HEIGHT) {
+                uint64_t epochDur = m_currency.isTestnet()
+                    ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+                    : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+                YemBond yb;
+                yb.principal     = bond.amount;
+                yb.issuedAtEpoch = block.height / epochDur;
+                yb.termEpochs    = CryptoNote::parameters::LEGACY_BOND_TERM_EPOCHS;
+                yb.rateBps       = CryptoNote::parameters::YEM_BOND_MAX_RATE_BPS;
+                yb.depositTxHash = bond.originalTxHash;
+                yb.creditor      = AccountPublicAddress();  // TODO v11: resolve from tx inputs
+                yb.repaid        = false;
+                m_yemBonds.issue(yb);
+                logger(DEBUGGING) << "YEM bond registered: " << Common::podToHex(bond.originalTxHash)
+                                  << " principal=" << bond.amount << " rate=" << yb.rateBps << " bps";
+              }
             } else {
               logger(WARNING) << "Legacy bond rejected: original tx " << Common::podToHex(bond.originalTxHash)
                               << " — deposit validation failed";
@@ -3952,6 +3993,8 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
     preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
     preEpoch.ammAccumulatedLpFees = m_ammPool.accumulatedLpFees;
+    preEpoch.yemReserve = m_yemState.yemReserve;               // v10 skeleton
+    preEpoch.yemBondOutstanding = m_yemBonds.getTotalOutstanding();  // v10 skeleton
 
     uint64_t epochNumber = newHeight / epochDuration;
     uint64_t epochStart = (epochNumber - 1) * epochDuration;
@@ -3990,6 +4033,16 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
+
+    // ── YEM v10: fee allocation to reserve ──
+    if (newHeight >= CryptoNote::parameters::YEM_V10_ACTIVATION_HEIGHT) {
+      uint64_t yemAllocation = (epochSwapFees * CryptoNote::parameters::YEM_V10_ALLOCATION_BPS)
+                             / CryptoNote::parameters::YEM_V10_RESERVE_DENOM;
+      if (yemAllocation > 0) {
+        m_yemState.yemReserve += yemAllocation;
+        treasuryShare = (treasuryShare >= yemAllocation) ? (treasuryShare - yemAllocation) : 0;
+      }
+    }
 
     // Route treasury share to treasury balance
     m_treasuryBalance += treasuryShare;
@@ -4205,6 +4258,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.reserveHeat = snap.ammReserveHeat;
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
     m_ammPool.accumulatedLpFees = snap.ammAccumulatedLpFees;
+    m_yemState.yemReserve = snap.yemReserve;               // v10 skeleton
     m_epochSnapshots.pop_back();
   }
 

@@ -5,7 +5,25 @@ description: "Fuego Suite Updates & Features"
 
 <CodeGroup>
 ```text Changelog
-v1.10.01 (Current)
+v1.10.02 (Current)
+* AFK atomic swaps: soft-order auto-execution engine (OfferManager), griefing
+  protection with taker rate-limiting, partial fills, price-drift auto-cancel,
+  headless daemon mode with StatusServer monitoring endpoint.
+* Cross-chain timelock-ordering safety via SwapTimelock (SOL/ETH/XMR/BCH/ARB/BASE).
+* ETH EIP-155 offline signing (secp256k1); adaptor-secret at-rest persistence
+  with CryptoNight-KDF + ChaCha8 + HMAC-SHA256.
+* Ed25519 P2P message authentication for all swap peer messages.
+* Wallet integrity upgraded to HMAC-SHA256 (v7); file permissions set to 0600.
+* RPC error responses sanitized (no internal details exposed to clients).
+* Alias registration privacy: per-tx sub-address rotation, ring-sig mixin.
+* Small-subgroup point rejection in adaptor/DLEQ verifiers.
+* RNG fork safety (pthread_atfork reseed); modulo-bias elimination.
+* Taker P2P swap-request relay; cancel-command fix.
+* Arbitrum and Base L2 chain support (EVM adaptor swaps).
+* SwapP2P hardened: default loopback bind, worker cap, bounded message queue.
+* PriceOracle bootstrap drift guard (±50% from seed rate).
+
+v1.10.01
 * Clean up repo for release.
 * Fix stream tools endianness conversion for integers.
 

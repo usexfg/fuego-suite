@@ -240,8 +240,14 @@ endif()
 # --------------------------
 # Check for Homebrew installation first (takes precedence on macOS)
 if(APPLE)
-    # Check via Homebrew on macOS first
-    execute_process(COMMAND brew --prefix jsoncpp OUTPUT_VARIABLE BREW_JSONCPP_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE BREW_RESULT)
+    # Check via Homebrew on macOS first.
+    # On Apple Silicon, /opt/homebrew is the native arm64 prefix; /usr/local is
+    # Rosetta/Intel. Prefer the arm64 path when it exists to avoid arch mismatch.
+    set(_BREW_CMD "brew")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" AND EXISTS "/opt/homebrew/bin/brew")
+      set(_BREW_CMD "/opt/homebrew/bin/brew")
+    endif()
+    execute_process(COMMAND ${_BREW_CMD} --prefix jsoncpp OUTPUT_VARIABLE BREW_JSONCPP_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE BREW_RESULT)
     if(BREW_RESULT EQUAL 0)
       set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include/json")
       set(JSONCPP_LIBRARY_DIRS "${BREW_JSONCPP_PREFIX}/lib")

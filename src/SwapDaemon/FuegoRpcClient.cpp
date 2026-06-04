@@ -15,6 +15,8 @@
 #include "FuegoRpcClient.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -289,22 +291,27 @@ bool FuegoRpcClient::getTransactionOutputs(const std::string& txHashHex,
 
     // Parse the raw transaction binary to extract outputs.
     // The tx blob is hex-encoded CryptoNote::Transaction.
-    // We decode it and walk the outputs looking for KeyOutputs.
     std::string txHex = txsHex[0].getString();
- //   std::string txBlob = Common::fromHex(txHex);
+    std::vector<uint8_t> txBlob;
+    if (!Common::fromHex(txHex, txBlob) || txBlob.empty()) {
+      return false;
+    }
 
-    // Use CryptoNote binary deserialization.  Rather than pulling in the
-    // full serialization stack here, we store the hex for the caller and
-    // provide a minimal output scan by walking vout entries.
-    //
-    // For now, we return success = tx exists.  The caller matches outputs
-    // by deriving the one-time key from the tx public key and comparing.
-    // The actual output parsing requires CryptoNote deserialization which
-    // will be wired in when the full tx builder is integrated.  We store
-    // the raw hex so higher layers can deserialize as needed.
-    //
-    // TODO: deserialize Transaction and populate TxOutputInfo vector.
+    CryptoNote::Transaction tx;
+    if (!CryptoNote::fromBinaryArray(tx, txBlob)) {
+      return false;
+    }
+
     outputs.clear();
+    outputs.reserve(tx.outputs.size());
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(CryptoNote::KeyOutput)) {
+        TxOutputInfo info;
+        info.amount = out.amount;
+        info.targetKey = boost::get<CryptoNote::KeyOutput>(out.target).key;
+        outputs.push_back(info);
+      }
+    }
     return true;
   } catch (const std::exception&) {
     return false;

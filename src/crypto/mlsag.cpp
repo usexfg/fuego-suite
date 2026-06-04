@@ -101,33 +101,47 @@ bool generate_mlsag(
   if (ring_size == 0 || sec_index >= ring_size)
     return false;
 
+  EllipticCurveScalar alpha0, alpha1;
+  memset(&alpha0, 0, sizeof(alpha0));
+  memset(&alpha1, 0, sizeof(alpha1));
+
   // Unpack and precompute key image for R0 computation
   ge_p3 image_unp;
-  if (ge_frombytes_vartime(&image_unp, reinterpret_cast<const unsigned char*>(&key_image)) != 0)
+  if (ge_frombytes_vartime(&image_unp, reinterpret_cast<const unsigned char*>(&key_image)) != 0) {
+    memset(&alpha0, 0, sizeof(alpha0));
+    memset(&alpha1, 0, sizeof(alpha1));
     return false;
+  }
   ge_dsmp image_pre;
   ge_dsm_precomp(image_pre, &image_unp);
 
   // Unpack pseudo_commitment once
   ge_p3 pseudo_unp;
-  if (ge_frombytes_vartime(&pseudo_unp, reinterpret_cast<const unsigned char*>(&pseudo_commitment)) != 0)
+  if (ge_frombytes_vartime(&pseudo_unp, reinterpret_cast<const unsigned char*>(&pseudo_commitment)) != 0) {
+    memset(&alpha0, 0, sizeof(alpha0));
+    memset(&alpha1, 0, sizeof(alpha1));
     return false;
+  }
 
   // Precompute commitment differences D[i] = commitments[i] - pseudo_commitment
   if (ring_size > 256) {
+    memset(&alpha0, 0, sizeof(alpha0));
+    memset(&alpha1, 0, sizeof(alpha1));
     return false; // refuse excessive ring sizes
   }
   ge_p3* D = reinterpret_cast<ge_p3*>(alloca(ring_size * sizeof(ge_p3)));
   for (size_t i = 0; i < ring_size; i++) {
-    if (!commitment_diff(D[i], commitments[i], pseudo_unp))
+    if (!commitment_diff(D[i], commitments[i], pseudo_unp)) {
+      memset(&alpha0, 0, sizeof(alpha0));
+      memset(&alpha1, 0, sizeof(alpha1));
       return false;
+    }
   }
 
   mlsag_round buf;
   buf.prefix = prefix_hash;
 
   // Random nonces for the real member
-  EllipticCurveScalar alpha0, alpha1;
   mlsag_random_scalar(alpha0);
   mlsag_random_scalar(alpha1);
 
@@ -170,8 +184,15 @@ bool generate_mlsag(
     ge_p3 tmp3;
 
     // Unpack K[i]
-    if (ge_frombytes_vartime(&tmp3, reinterpret_cast<const unsigned char*>(&pubs[i])) != 0)
+    if (ge_frombytes_vartime(&tmp3, reinterpret_cast<const unsigned char*>(&pubs[i])) != 0) {
+      {
+        volatile unsigned char* p0 = reinterpret_cast<volatile unsigned char*>(&alpha0);
+        volatile unsigned char* p1 = reinterpret_cast<volatile unsigned char*>(&alpha1);
+        for (size_t zi = 0; zi < sizeof(alpha0); ++zi) p0[zi] = 0;
+        for (size_t zi = 0; zi < sizeof(alpha1); ++zi) p1[zi] = 0;
+      }
       return false;
+    }
 
     // L0 = s[i][0]*G + c*K[i]
     ge_double_scalarmult_base_vartime(&tmp2,
@@ -216,8 +237,12 @@ bool generate_mlsag(
             reinterpret_cast<const unsigned char*>(&alpha1));
 
   // Zero secret nonces — prevents leakage if stack is read after return
-  memset(&alpha0, 0, sizeof(alpha0));
-  memset(&alpha1, 0, sizeof(alpha1));
+  {
+    volatile unsigned char* p0 = reinterpret_cast<volatile unsigned char*>(&alpha0);
+    volatile unsigned char* p1 = reinterpret_cast<volatile unsigned char*>(&alpha1);
+    for (size_t i = 0; i < sizeof(alpha0); ++i) p0[i] = 0;
+    for (size_t i = 0; i < sizeof(alpha1); ++i) p1[i] = 0;
+  }
 
   return true;
 }

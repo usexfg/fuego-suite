@@ -1,7 +1,5 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
-// This file is part of Fuego.
-//
 // Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
@@ -14,24 +12,28 @@
 
 #pragma once
 
-#include "CryptoTypes.h"
+#include "SwapTypes.h"
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace XfgSwap {
 
-constexpr size_t ENCRYPTED_SECRET_SIZE = 32;
-constexpr size_t CHACHA8_IV_BYTES = 8;
-constexpr size_t CHACHA20_KEY_SIZE = 32;
-constexpr size_t CHACHA20_NONCE_SIZE = 12;
+constexpr size_t CHACHA8_KEY_SIZE   = 32;
+constexpr size_t CHACHA8_NONCE_SIZE = 8;
+constexpr size_t SALT_SIZE          = 16;
+constexpr size_t TAG_SIZE           = 32;
+constexpr size_t SECRET_PLAINTEXT   = 32;
 
 class SwapSecretEncryption {
 public:
   struct EncryptedSecret {
-    std::array<uint8_t, CHACHA20_NONCE_SIZE> nonce;
-    std::vector<uint8_t> ciphertext;
+    std::array<uint8_t, CHACHA8_NONCE_SIZE> nonce;
+    std::array<uint8_t, SALT_SIZE>          salt;
+    std::vector<uint8_t>                    ciphertext;
+    std::array<uint8_t, TAG_SIZE>           tag;
   };
 
   static bool encrypt(
@@ -46,7 +48,8 @@ public:
     Crypto::SecretKey& out
   );
 
-  static std::string deriveKey(const std::string& encryptionKey, const std::string& salt);
+private:
+  static void secureZero(void* buf, size_t len);
 };
 
 } // namespace XfgSwap

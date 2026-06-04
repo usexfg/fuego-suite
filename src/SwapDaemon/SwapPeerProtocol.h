@@ -103,15 +103,40 @@ struct PeerMessage {
   MsgPartialSig partialSig;
   MsgRingRound1 ringRound1;
   MsgRingRound2 ringRound2;
+
+  // Ed25519 signature over peerMessageDigest(msg) by the sender's swap pubkey.
+  // For KEY_EXCHANGE: signed by the keyExchange.swapPubKey carried in the body
+  //   (the sender attests to owning that key).
+  // For all other types: signed by the swap's already-bound peerSwapPubKey
+  //   (verified against SwapParams::peerSwapPubKey on receive).
+  Crypto::Signature signature{};
 };
+
+// ── Authentication ───────────────────────────────────────────────────
+
+// Compute a canonical digest over the message — covers type, swapId and
+// every payload field that is materially carried for this type. Signature
+// itself is NOT included.
+Crypto::Hash peerMessageDigest(const PeerMessage& msg);
+
+// Sign in-place. Sets msg.signature to a fresh Ed25519 signature over
+// peerMessageDigest(msg). The caller is responsible for choosing the correct
+// keypair (see PeerMessage::signature docs).
+bool signPeerMessage(PeerMessage& msg,
+                     const Crypto::PublicKey& pub,
+                     const Crypto::SecretKey& sec);
+
+// Verify msg.signature against pub. Returns true iff the signature is valid
+// over the canonical digest.
+bool verifyPeerMessage(const PeerMessage& msg, const Crypto::PublicKey& pub);
 
 // ── Serialization ────────────────────────────────────────────────────
 
-// Serialize a PeerMessage to JSON string.
+// Serialize a PeerMessage to JSON string. Includes the signature field.
 std::string serializePeerMessage(const PeerMessage& msg);
 
-// Deserialize a JSON string to PeerMessage.
-// Returns false on parse error.
+// Deserialize a JSON string to PeerMessage. Reads the signature field if
+// present. Returns false on parse error.
 bool deserializePeerMessage(const std::string& json, PeerMessage& msg);
 
 } // namespace XfgSwap

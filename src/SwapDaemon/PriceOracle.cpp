@@ -48,7 +48,8 @@ static const size_t TWAP_MIN_TRADES = 5;
 PriceOracle::PriceOracle()
   : m_twapMaxTrades(20)
   , m_twapMaxAgeSec(604800)   // 7 days
-  , m_floorThreshold(0.50) {  // reject if < 50% of TWAP
+  , m_floorThreshold(0.80)    // reject if rate diverges beyond 80% band
+  , m_maxBootstrapDrift(0.50) { // ±50% drift from seed in bootstrap
 }
 
 // =============================================================================
@@ -66,6 +67,8 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::ETH: return SEED_ETH_USD / SEED_XFG_USD;  // 214,000
     case SwapPair::BCH: return SEED_BCH_USD / SEED_XFG_USD;  //  46,900
     case SwapPair::XMR: return SEED_XMR_USD / SEED_XFG_USD;  //  34,300
+    case SwapPair::ARB: return SEED_ETH_USD / SEED_XFG_USD;  // ARB = ETH on L2
+    case SwapPair::BASE: return SEED_ETH_USD / SEED_XFG_USD; // BASE = ETH on L2
     default:            return 0.0;
   }
 }
@@ -80,6 +83,8 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::ETH: return 1e18;  // wei
     case SwapPair::BCH: return 1e8;   // satoshi
     case SwapPair::XMR: return 1e12;  // piconero
+    case SwapPair::ARB: return 1e18;  // wei (EVM L2)
+    case SwapPair::BASE: return 1e18; // wei (EVM L2)
     default:            return 1e8;
   }
 }
@@ -163,7 +168,19 @@ RateCheck PriceOracle::validateRate(SwapPair pair, double proposedRate) const {
     // Not enough TWAP data — use seed rate if we have some trades but < minimum
     size_t trades = getTradeCount(pair);
     if (trades == 0) {
-      return RateCheck::RATE_NO_DATA;  // true bootstrap, no restriction
+      // True bootstrap: enforce bounded drift from seed rate if configured
+      if (m_maxBootstrapDrift > 0.0) {
+        double seed = getSeedRate(pair);
+        if (seed > 0.0) {
+          if (proposedRate < seed * (1.0 - m_maxBootstrapDrift)) {
+            return RateCheck::BELOW_FLOOR;
+          }
+          if (proposedRate > seed * (1.0 + m_maxBootstrapDrift)) {
+            return RateCheck::ABOVE_MARKET;
+          }
+        }
+      }
+      return RateCheck::RATE_NO_DATA;
     }
     // Have some trades but < TWAP_MIN_TRADES: use seed as soft reference
     refRate = getSeedRate(pair);
@@ -183,12 +200,10 @@ RateCheck PriceOracle::validateRate(SwapPair pair, double proposedRate) const {
   // We never block price going UP (XFG getting more expensive = lower rate).
 
   if (proposedRate > refRate / m_floorThreshold) {
-    // Proposed rate gives too many XFG per CTR — seller is getting ripped off
     return RateCheck::BELOW_FLOOR;
   }
 
   if (proposedRate < refRate * 0.20) {
-    // Rate is 5x+ below market (XFG priced 5x higher than TWAP) — warn but allow
     return RateCheck::ABOVE_MARKET;
   }
 
@@ -224,6 +239,13 @@ void PriceOracle::setTwapMaxAge(uint64_t seconds) {
 
 void PriceOracle::setFloorThreshold(double fraction) {
   m_floorThreshold = fraction;
+}
+
+void PriceOracle::setMaxBootstrapDrift(double drift) {
+  if (drift < 0.0 || drift > 1.0) {
+    throw std::invalid_argument("maxBootstrapDrift must be in [0.0, 1.0]");
+  }
+  m_maxBootstrapDrift = drift;
 }
 
 } // namespace XfgSwap

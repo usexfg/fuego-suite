@@ -52,4 +52,35 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
   return ChainClientResult::ok(refundTxId);
 }
 
+ChainClientResult BchChainClient::verifyReserveProof(const std::string& ctrAddress,
+    uint64_t minAmount, const std::string& proof) {
+  size_t c1 = proof.find(':');
+  size_t c2 = proof.find(':', c1 + 1);
+  if (c1 == std::string::npos || c2 == std::string::npos)
+    return ChainClientResult::fail("BCH reserve proof: invalid format (expected address:signature:message)");
+
+  std::string address   = proof.substr(0, c1);
+  std::string signature = proof.substr(c1 + 1, c2 - c1 - 1);
+  std::string message   = proof.substr(c2 + 1);
+
+  bool sigValid = false;
+  if (!m_rpc->verifyMessage(address, signature, message, sigValid))
+    return ChainClientResult::fail("BCH reserve proof: verifymessage RPC failed");
+  if (!sigValid)
+    return ChainClientResult::fail("BCH reserve proof: invalid signature");
+
+  uint64_t balance = 0;
+  if (!m_rpc->getBalance(address, balance))
+    return ChainClientResult::fail("BCH reserve proof: balance check RPC failed");
+  if (balance < minAmount)
+    return ChainClientResult::fail("BCH reserve proof: insufficient balance (" +
+                                   std::to_string(balance) + " < " + std::to_string(minAmount) + ")");
+
+  return ChainClientResult::ok(ctrAddress);
+}
+
+bool BchChainClient::getCurrentHeight(uint64_t& height) {
+  return m_rpc->getBlockCount(height);
+}
+
 } // namespace XfgSwap

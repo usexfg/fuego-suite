@@ -75,11 +75,11 @@ public:
 
   // Verify the shared address holds the expected amount (unlocked).
   bool verifyLock(const std::string& sharedAddress,
-                  uint64_t expectedPiconero);
+                   uint64_t expectedPiconero);
 
-  // Claim XMR from the shared address by providing both spend keys.
-  // This is equivalent to sweepSharedAddress with the adaptor secret applied.
-  // adaptorSecretHex: the 32-byte adaptor secret t (hex).
+  bool checkReserveProof(const std::string& address, const std::string& message,
+                         const std::string& signature, bool& good, uint64_t& total);
+
   bool claimAdaptor(const std::string& aliceSpendKeyHex,
                     const std::string& bobSpendKeyHex,
                     const std::string& adaptorSecretHex,

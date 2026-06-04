@@ -27,6 +27,29 @@ extern "C" {
 #include <mutex>
 #include <cstring>
 
+namespace {
+
+bool point_is_valid(const unsigned char bytes[32]) {
+  int nonzero = 0;
+  for (int i = 0; i < 32; ++i) nonzero |= bytes[i];
+  if (!nonzero) return false;
+  ge_p3 p3;
+  if (ge_frombytes_vartime(&p3, bytes) != 0) return false;
+  ge_p2 p2;
+  ge_p3_to_p2(&p2, &p3);
+  ge_p1p1 p1p1;
+  ge_mul8(&p1p1, &p2);
+  ge_p2 p2r;
+  ge_p1p1_to_p2(&p2r, &p1p1);
+  unsigned char out[32];
+  ge_tobytes(out, &p2r);
+  int diff = 0;
+  for (int i = 0; i < 32; ++i) diff |= out[i];
+  return diff != 0;
+}
+
+} // namespace
+
 namespace Crypto {
 
 // Domain separator for DLEQ challenge hashing.
@@ -107,20 +130,23 @@ bool check_dleq_proof(
     const PublicKey &point_P,
     const DLEQProof &proof)
 {
-  // Decode all points
+  // Decode all points — reject identity and small-order
   ge_p3 P_p3, A_p3, B_p3;
   if (ge_frombytes_vartime(&P_p3,
       reinterpret_cast<const unsigned char*>(&base_point)) != 0) {
     return false;
   }
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&base_point))) return false;
   if (ge_frombytes_vartime(&A_p3,
       reinterpret_cast<const unsigned char*>(&point_G)) != 0) {
     return false;
   }
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&point_G))) return false;
   if (ge_frombytes_vartime(&B_p3,
       reinterpret_cast<const unsigned char*>(&point_P)) != 0) {
     return false;
   }
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&point_P))) return false;
 
   // Validate proof scalars
   if (sc_check(reinterpret_cast<const unsigned char*>(&proof.challenge)) != 0 ||

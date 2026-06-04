@@ -181,7 +181,8 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
   } catch (const JsonRpcError& err) {
     jsonResponse.setError(err);
   } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what()));
+    logger(WARNING) << "Wallet RPC internal error (not sent to client): " << e.what();
+    jsonResponse.setError(JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error"));
   }
 
   response.setBody(jsonResponse.getBody());
@@ -319,7 +320,8 @@ bool wallet_rpc_server::on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -443,7 +445,8 @@ bool wallet_rpc_server::on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::requ
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -504,7 +507,8 @@ bool wallet_rpc_server::on_get_reserve_proof(const wallet_rpc::COMMAND_RPC_GET_B
 		res.signature = m_wallet.getReserveProof(req.amount != 0 ? req.amount : m_wallet.actualBalance(), !req.message.empty() ? req.message : "");
 	}
 	catch (const std::exception &e) {
-		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
+		logger(WARNING) << "Wallet RPC handler error: " << e.what();
+		throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
 	}
 
 	return true;
@@ -542,7 +546,8 @@ bool wallet_rpc_server::on_optimize(const wallet_rpc::COMMAND_RPC_OPTIMIZE::requ
     res.tx_secret_key = Common::podToHex(transactionSK);
 
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -557,7 +562,8 @@ bool wallet_rpc_server::on_estimate_fusion(const wallet_rpc::COMMAND_RPC_ESTIMAT
     res.fusion_ready_count = m_wallet.estimateFusion(req.threshold);
   }
   catch (std::exception &e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Failed to estimate fusion ready count: ") + e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -605,7 +611,8 @@ bool wallet_rpc_server::on_send_fusion(const wallet_rpc::COMMAND_RPC_SEND_FUSION
   }
   catch (const std::exception& e)
   {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -614,7 +621,8 @@ bool wallet_rpc_server::on_store(const wallet_rpc::COMMAND_RPC_STORE::request& r
   try {
     WalletHelper::storeWallet(m_wallet, m_walletFilename);
   } catch (std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, std::string("Couldn't save wallet: ") + e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
 
   return true;
@@ -852,7 +860,8 @@ bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::re
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -876,7 +885,8 @@ bool wallet_rpc_server::on_withdraw_cd(const wallet_rpc::COMMAND_RPC_WITHDRAW_CD
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -925,7 +935,8 @@ bool wallet_rpc_server::on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }
@@ -963,7 +974,8 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {
-    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, e.what());
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
   return true;
 }

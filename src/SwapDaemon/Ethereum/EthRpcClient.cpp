@@ -297,6 +297,12 @@ void EthRpcClient::closeSocket() {
   if (m_sock >= 0) { close(m_sock); m_sock = -1; }
 }
 
+void EthRpcClient::clear() {
+  volatile uint8_t* p = m_privKey.data();
+  for (size_t i = 0; i < m_privKey.size(); ++i) p[i] = 0;
+  m_hasSigner = false;
+}
+
 static bool httpReadResponse(int sock, std::string& response) {
   char buf[4096];
   // Read until \r\n\r\n appears in accumulated data
@@ -590,6 +596,21 @@ bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFee
   return true;
 }
 
+bool EthRpcClient::queryGasPrice(uint64_t& gasPriceWei) {
+  std::string resp = jsonRpc("eth_gasPrice", "[]");
+  if (resp.empty() || jsonHasError(resp)) return false;
+  std::string priceStr = jsonGetResult(resp);
+  if (priceStr.empty()) return false;
+  uint64_t rawPrice = hexToUint64(priceStr);
+  if (rawPrice == 0) return false;
+  constexpr uint64_t MAX_GAS_PRICE_WEI = 500000000000ULL; // 500 gwei cap
+  if (rawPrice > MAX_GAS_PRICE_WEI) {
+    rawPrice = MAX_GAS_PRICE_WEI;
+  }
+  gasPriceWei = rawPrice;
+  return true;
+}
+
 bool EthRpcClient::estimateGas(const std::string& to, const std::string& data,
                                 uint64_t valueWei, uint64_t& gasEstimate) {
   // Build eth_estimateGas call
@@ -633,8 +654,9 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
     rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
                                   gasLimit, to, valueWei, data);
   } else {
-    // Legacy: use 20 gwei fixed gas price
-    const uint64_t gasPriceWei = 20000000000ULL; // 20 gwei
+    // Legacy: query eth_gasPrice, fall back to configured default
+    uint64_t gasPriceWei = m_gasPriceFallback;
+    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
     rawTx = buildLegacySignedTx(nonce, gasPriceWei, gasLimit, to, valueWei, data);
   }
 
@@ -721,7 +743,8 @@ bool EthRpcClient::deployHtlc(const std::string& /*fromAddress*/,
     rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
                                   deployGasLimit, /*to=*/{}, valueWei, deployData);
   } else {
-    const uint64_t gasPriceWei = 20000000000ULL; // 20 gwei
+    uint64_t gasPriceWei = m_gasPriceFallback;
+    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
     rawTx = buildLegacySignedTx(nonce, gasPriceWei, deployGasLimit,
                                 /*to=*/{}, valueWei, deployData);
   }

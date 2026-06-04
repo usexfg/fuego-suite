@@ -26,8 +26,12 @@
 #include <tuple>
 #include <utility>
 #include <fstream>
+#include <sys/stat.h>
 #include <System/EventLock.h>
 #include <System/RemoteContext.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#include <openssl/crypto.h>
 
 #include "ITransaction.h"
 
@@ -1084,7 +1088,8 @@ namespace CryptoNote
 
     catch (const std::exception &e)
     {
-      std::cerr << e.what() << '\n';
+      m_logger(ERROR, BRIGHT_RED) << "Failed to add change outputs: " << e.what();
+      throw;
     }
 
     /* Now add the other components of the transaction such as the transaction secret key, unlocktime
@@ -1480,6 +1485,9 @@ namespace CryptoNote
 
     newStorage.flush();
     m_containerStorage.swap(newStorage);
+    if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
+      m_logger(WARNING) << "Failed to set restrictive permissions on wallet file";
+    }
     incNextIv();
 
     m_viewPublicKey = viewPublicKey;
@@ -1600,6 +1608,9 @@ namespace CryptoNote
       copyContainerStoragePrefix(m_containerStorage, m_key, newStorage, newStorageKey);
       copyContainerStorageKeys(m_containerStorage, m_key, newStorage, newStorageKey);
       saveWalletCache(newStorage, newStorageKey, saveLevel, extra);
+      if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
+        m_logger(WARNING) << "Failed to set restrictive permissions on exported keys";
+      }
 
       failExitHandler.cancel();
 
@@ -1653,6 +1664,9 @@ namespace CryptoNote
       copyContainerStoragePrefix(m_containerStorage, m_key, newStorage, newStorageKey);
       copyContainerStorageKeys(m_containerStorage, m_key, newStorage, newStorageKey);
       saveWalletCache(newStorage, newStorageKey, saveLevel, extra);
+      if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
+        m_logger(WARNING) << "Failed to set restrictive permissions on exported wallet";
+      }
 
       failExitHandler.cancel();
 
@@ -1727,6 +1741,9 @@ namespace CryptoNote
     }
 
     tmpFileDeleter.cancel();
+    if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
+      m_logger(WARNING) << "Failed to set restrictive permissions on converted wallet";
+    }
     m_logger(INFO, BRIGHT_WHITE) << "Wallet file converted! Previous version: " << bakPath;
   }
 
@@ -1750,15 +1767,43 @@ namespace CryptoNote
     chacha8(encryptedContainer.data(), encryptedContainer.size(), key, suffixIv, reinterpret_cast<char *>(decrypted.data()));
 
     if (decrypted.size() < 32) {
-      throw std::runtime_error("Container data too short: missing integrity hash");
+      throw std::runtime_error("Container data too short: missing integrity tag");
     }
 
-    Crypto::Hash expected;
-    Crypto::Hash actual;
-    memcpy(expected.data, decrypted.data(), 32);
-    keccak(decrypted.data() + 32, decrypted.size() - 32, actual.data, sizeof(actual.data));
+    uint8_t expectedTag[32];
+    memcpy(expectedTag, decrypted.data(), 32);
 
-    if (expected != actual) {
+    ContainerStoragePrefix *prefix = reinterpret_cast<ContainerStoragePrefix *>(storage.prefix());
+    bool valid = false;
+
+    if (prefix->version >= 7) {
+      // v7+: HMAC-SHA256 integrity check with independent MAC key
+      uint8_t macKey[32];
+      unsigned int macKeyLen = 32;
+      if (!HMAC(EVP_sha256(),
+                key.data, sizeof(key.data),
+                reinterpret_cast<const unsigned char*>("fuego-wallet-hmac"), 18,
+                macKey, &macKeyLen) || macKeyLen != 32) {
+        throw std::runtime_error("Container decryption: MAC key derivation failed");
+      }
+
+      uint8_t computedTag[32];
+      unsigned int computedLen = 32;
+      if (!HMAC(EVP_sha256(),
+                macKey, sizeof(macKey),
+                decrypted.data() + 32, decrypted.size() - 32,
+                computedTag, &computedLen)) {
+        throw std::runtime_error("Container decryption: HMAC tag recomputation failed");
+      }
+      valid = (computedLen == 32) && (CRYPTO_memcmp(computedTag, expectedTag, 32) == 0);
+    } else {
+      // v6: keccak integrity check (legacy)
+      Crypto::Hash computedHash;
+      keccak(decrypted.data() + 32, decrypted.size() - 32, computedHash.data, sizeof(computedHash.data));
+      valid = (CRYPTO_memcmp(computedHash.data, expectedTag, 32) == 0);
+    }
+
+    if (!valid) {
       throw std::runtime_error("Container integrity check failed — wallet data may be corrupted or tampered");
     }
 
@@ -1834,15 +1879,33 @@ namespace CryptoNote
     Crypto::chacha8_iv suffixIv = prefix->nextIv;
     incIv(prefix->nextIv);
 
-    BinaryArray plaintextWithHash(32 + containerDataSize);
-    Crypto::Hash hash;
-    keccak(static_cast<const uint8_t*>(containerData), static_cast<int>(containerDataSize), hash.data, sizeof(hash.data));
-    memcpy(plaintextWithHash.data(), hash.data, 32);
-    memcpy(plaintextWithHash.data() + 32, containerData, containerDataSize);
+    // Derive independent MAC key from encryption key
+    uint8_t macKey[32];
+    unsigned int macKeyLen = 32;
+    if (!HMAC(EVP_sha256(),
+              key.data, sizeof(key.data),
+              reinterpret_cast<const unsigned char*>("fuego-wallet-hmac"), 18,
+              macKey, &macKeyLen) || macKeyLen != 32) {
+      throw std::runtime_error("Container encryption: MAC key derivation failed");
+    }
+
+    // Compute HMAC-SHA256 tag over plaintext
+    uint8_t tag[32];
+    unsigned int tagLen = 32;
+    if (!HMAC(EVP_sha256(),
+              macKey, sizeof(macKey),
+              static_cast<const unsigned char*>(containerData), containerDataSize,
+              tag, &tagLen)) {
+      throw std::runtime_error("Container encryption: HMAC tag computation failed");
+    }
+
+    BinaryArray plaintextWithTag(32 + containerDataSize);
+    memcpy(plaintextWithTag.data(), tag, 32);
+    memcpy(plaintextWithTag.data() + 32, containerData, containerDataSize);
 
     BinaryArray encryptedContainer;
-    encryptedContainer.resize(plaintextWithHash.size());
-    chacha8(plaintextWithHash.data(), plaintextWithHash.size(), key, suffixIv, reinterpret_cast<char *>(encryptedContainer.data()));
+    encryptedContainer.resize(plaintextWithTag.size());
+    chacha8(plaintextWithTag.data(), plaintextWithTag.size(), key, suffixIv, reinterpret_cast<char *>(encryptedContainer.data()));
 
     std::string suffix;
     Common::StringOutputStream suffixStream(suffix);
@@ -5356,25 +5419,61 @@ namespace CryptoNote
     throwIfNotInitialized();
     throwIfStopped();
 
-    // Build the 0xEA alias registration extra field
+    // Parse owner address for canonical identity.
+    CryptoNote::AccountPublicAddress masterAddr;
+    if (!m_currency.parseAccountAddressString(ownerAddress, masterAddr)) {
+      return make_error_code(std::errc::invalid_argument);
+    }
+
+    // Build the 0xEA alias registration extra field.
     CryptoNote::TransactionExtraAliasRegistration aliasReg;
     aliasReg.version   = 1;
     aliasReg.alias     = alias;
     aliasReg.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    // v2 addressHash: cn_fast_hash(spendKey||viewKey) — rainbow-table resistant.
-    // Hashing the raw 64-byte key preimage (not the base58 string) prevents
-    // precomputed base58 rainbow-table attacks on the on-chain hash.
+
+    // Canonical addressHash from master keys (not base58 string).
+    // This is the identity that enforces one-alias-per-address at consensus.
     {
-      CryptoNote::AccountPublicAddress addr;
-      if (!m_currency.parseAccountAddressString(ownerAddress, addr)) {
-        return make_error_code(std::errc::invalid_argument);
-      }
       uint8_t preimage[64];
-      memcpy(preimage,      &addr.spendPublicKey, 32);
-      memcpy(preimage + 32, &addr.viewPublicKey,  32);
+      memcpy(preimage,      &masterAddr.spendPublicKey, 32);
+      memcpy(preimage + 32, &masterAddr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = ownerAddress;  // Stored in tx_extra for on-chain resolution
+
+    // Per-tx rotation: derive a fresh sub-address so an observer scanning
+    // blocks cannot link multiple alias registrations by ownerAddress.
+    {
+      const auto& wallets = m_walletsContainer.get<RandomAccessIndex>();
+      if (wallets.empty()) {
+        return make_error_code(std::errc::not_connected);
+      }
+      const WalletRecord& primary = wallets[0];
+
+      // Pick a random non-zero major index (minor=0).
+      // Each registration gets a unique sub-address; never (0,0).
+      uint32_t major = 0;
+      uint32_t minor = 0;
+      {
+        uint8_t rb[4];
+        Crypto::generate_random_bytes(4, rb);
+        major = 1 + (static_cast<uint32_t>(rb[0])
+                  | (static_cast<uint32_t>(rb[1]) << 8)
+                  | (static_cast<uint32_t>(rb[2]) << 16)
+                  | (static_cast<uint32_t>(rb[3]) << 24));
+        // Failsafe: avoid overflow wrap. Extremely unlikely but safe.
+        if (major == 0) major = 1;
+      }
+
+      const Crypto::SecretKey* spendSec = (primary.spendSecretKey != NULL_SECRET_KEY)
+                                          ? &primary.spendSecretKey : nullptr;
+
+      Crypto::SubAddressKeys subKeys = Crypto::deriveSubAddressKeys(
+        m_viewSecretKey, primary.spendPublicKey, spendSec, major, minor);
+
+      CryptoNote::AccountPublicAddress subAddr{subKeys.spendPublicKey, subKeys.viewPublicKey};
+      aliasReg.ownerAddress = m_currency.subAddressAsString(subAddr);
+    }
+
     aliasReg.aliasType = 1;      // Regular user alias [a-z0-9&]
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
@@ -5389,12 +5488,10 @@ namespace CryptoNote
 
     std::string extra(extraVec.begin(), extraVec.end());
 
-    // Build transaction: fee output to Fuego Developer Fund (enforced by Phase 1.2)
     TransactionParameters params;
     if (!m_currency.isTestnet()) {
       WalletOrder devFundOutput;
       devFundOutput.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      // Random dust prevents fingerprinting of exact 1 XFG alias registration txns
       uint64_t randomDust = 0;
       {
         uint8_t randBytes[8] = {};
@@ -5407,14 +5504,13 @@ namespace CryptoNote
       devFundOutput.amount  = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
       params.destinations.push_back(devFundOutput);
     } else {
-      // Testnet: self-transfer of minimum fee
       WalletOrder selfOutput;
       selfOutput.address = ownerAddress;
       selfOutput.amount  = m_currency.minimumFee();
       params.destinations.push_back(selfOutput);
     }
     params.fee   = m_currency.minimumFee();
-    params.mixIn = 0;
+    params.mixIn = m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
     params.extra = extra;
 
     Crypto::SecretKey txSK;

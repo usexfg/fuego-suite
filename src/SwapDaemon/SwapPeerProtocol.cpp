@@ -15,8 +15,10 @@
 #include "SwapPeerProtocol.h"
 #include "Common/JsonValue.h"
 #include "Common/StringTools.h"
+#include "crypto/hash.h"
 
 #include <cstring>
+#include <vector>
 
 namespace XfgSwap {
 
@@ -57,6 +59,82 @@ static std::string dleqToHex(const Crypto::DLEQProof& p) {
 
 static bool hexToDleq(const std::string& hex, Crypto::DLEQProof& p) {
   return Common::podFromHex(hex, p);
+}
+
+// ── digest / sign / verify ───────────────────────────────────────────
+//
+// Canonical layout (length-prefix-free; types are fixed-size or have a
+// type-determined order, so concatenation is unambiguous):
+//   1 byte    msg.type
+//   4 bytes   little-endian length of swapId
+//   N bytes   swapId
+//   ...       payload fields in struct-declaration order, raw bytes
+//
+// Anything outside the union for the message's type is excluded.
+
+static void appendU32LE(std::vector<uint8_t>& buf, uint32_t v) {
+  buf.push_back(static_cast<uint8_t>(v & 0xFF));
+  buf.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+  buf.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+  buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+}
+
+template <typename T>
+static void appendPod(std::vector<uint8_t>& buf, const T& v) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+  buf.insert(buf.end(), p, p + sizeof(T));
+}
+
+Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
+  std::vector<uint8_t> buf;
+  buf.reserve(1 + 4 + msg.swapId.size() + 128);
+  buf.push_back(static_cast<uint8_t>(msg.type));
+  appendU32LE(buf, static_cast<uint32_t>(msg.swapId.size()));
+  buf.insert(buf.end(), msg.swapId.begin(), msg.swapId.end());
+
+  switch (msg.type) {
+    case PeerMessageType::KEY_EXCHANGE:
+      appendPod(buf, msg.keyExchange.swapPubKey);
+      break;
+    case PeerMessageType::ADAPTOR_EXCHANGE:
+      appendPod(buf, msg.adaptorExchange.adaptorPoint);
+      appendPod(buf, msg.adaptorExchange.adaptorDleqQ);
+      appendPod(buf, msg.adaptorExchange.dleqProof);
+      break;
+    case PeerMessageType::NONCE_EXCHANGE:
+      appendPod(buf, msg.nonceExchange.pubNonce);
+      break;
+    case PeerMessageType::PARTIAL_SIG:
+      appendPod(buf, msg.partialSig.partialSig);
+      break;
+    case PeerMessageType::RING_ROUND1:
+      appendPod(buf, msg.ringRound1.partialKeyImage);
+      appendPod(buf, msg.ringRound1.ringNoncePub);
+      appendPod(buf, msg.ringRound1.ringNonceHp);
+      break;
+    case PeerMessageType::RING_ROUND2:
+      appendPod(buf, msg.ringRound2.partialResponse);
+      break;
+    case PeerMessageType::ABORT:
+      break;
+  }
+
+  Crypto::Hash h;
+  Crypto::cn_fast_hash(buf.data(), buf.size(), h);
+  return h;
+}
+
+bool signPeerMessage(PeerMessage& msg,
+                     const Crypto::PublicKey& pub,
+                     const Crypto::SecretKey& sec) {
+  Crypto::Hash digest = peerMessageDigest(msg);
+  Crypto::generate_signature(digest, pub, sec, msg.signature);
+  return true;
+}
+
+bool verifyPeerMessage(const PeerMessage& msg, const Crypto::PublicKey& pub) {
+  Crypto::Hash digest = peerMessageDigest(msg);
+  return Crypto::check_signature(digest, pub, msg.signature);
 }
 
 // ── serialize ────────────────────────────────────────────────────────
@@ -102,6 +180,7 @@ std::string serializePeerMessage(const PeerMessage& msg) {
   }
 
   root.insert("payload", payload);
+  root.insert("signature", podHex(msg.signature));
   return root.toString();
 }
 
@@ -164,6 +243,13 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
       default:
         return false;
     }
+
+    if (!root.contains("signature")) {
+      // Pre-auth wire format from before M2 — reject (no swaps were live on
+      // mainnet so there are no legitimate unsigned messages in existence).
+      return false;
+    }
+    if (!hexPod(root("signature").getString(), msg.signature)) return false;
 
     return true;
   } catch (const std::exception&) {

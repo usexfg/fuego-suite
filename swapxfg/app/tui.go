@@ -55,6 +55,11 @@ type tuiModel struct {
 	// Status
 	lastErr   string
 	statusMsg string
+
+	// Daemon monitoring
+	daemonStatus     *DaemonStatus
+	daemonStatusAddr string
+	daemonLastErr    string
 }
 
 type refreshMsg struct {
@@ -102,10 +107,12 @@ type bchConnectedMsg struct {
 }
 
 func newTuiModel(cfg Config) tuiModel {
+	daemonAddr := fmt.Sprintf("127.0.0.1:%d", cfg.StatusPort)
 	m := tuiModel{
-		cfg:        cfg,
-		client:     NewFuegoClient(cfg.DaemonRPC),
-		activePair: cfg.StartPair,
+		cfg:              cfg,
+		client:           NewFuegoClient(cfg.DaemonRPC),
+		activePair:       cfg.StartPair,
+		daemonStatusAddr: daemonAddr,
 		data: &AllPairData{
 			Offers:   make(map[uint8][]SwapOffer),
 			Prices:   make(map[uint8]*SwapPriceResponse),
@@ -182,7 +189,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case refreshTickMsg:
-		return m, tea.Batch(m.fetchData(), refreshTick())
+		return m, tea.Batch(m.fetchData(), refreshTick(), func() tea.Msg { return m.fetchDaemonStatus() })
 
 	case cursorBlinkMsg:
 		m.blinkTick++
@@ -191,6 +198,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusUpdateMsg:
 		m.statusMsg = msg.text
+
+	case daemonStatusMsg:
+		if msg.err != nil {
+			m.daemonLastErr = msg.err.Error()
+		} else {
+			m.daemonStatus = msg.status
+			m.daemonLastErr = ""
+		}
 
 	case ethConnectedMsg:
 		if msg.err != nil {
@@ -719,8 +734,8 @@ func pairToID(pair string) uint8 {
 	return PairFromString(strings.ToLower(pair))
 }
 
-// allPairsWithCD includes CD as the last tab in the rotation.
-var allPairsWithCD = append(ActivePairs, PairCD)
+// allPairsWithCD includes CD and Daemon as the last tabs in the rotation.
+var allPairsWithCD = append(append(ActivePairs, PairCD), PairDaemon)
 
 func nextPair(cur uint8) uint8 {
 	for i, p := range allPairsWithCD {
@@ -757,6 +772,8 @@ func (m tuiModel) View() string {
 	var mainArea string
 	if m.activePair == PairCD {
 		mainArea = RenderCdMarket(&m.cdMarket, w, mainH)
+	} else if m.activePair == PairDaemon {
+		mainArea = RenderDaemonStatus(m.daemonStatus, m.daemonLastErr, w, mainH)
 	} else {
 		// chart (left 60%) | orderbook+tape (right 40%)
 		rightW := w * 38 / 100
@@ -839,4 +856,50 @@ func (m tuiModel) View() string {
 		inputBar,
 		status,
 	)
+}
+
+func (m tuiModel) fetchDaemonStatus() tea.Msg {
+	if m.daemonStatusAddr == "" {
+		return nil
+	}
+	s, err := FetchDaemonStatus(m.daemonStatusAddr)
+	return daemonStatusMsg{status: s, err: err}
+}
+
+type daemonStatusMsg struct {
+	status *DaemonStatus
+	err    error
+}
+
+func RenderDaemonStatus(status *DaemonStatus, lastErr string, w, h int) string {
+	if lastErr != "" {
+		return "Daemon status unavailable: " + lastErr
+	}
+	if status == nil {
+		return "Connecting to daemon status endpoint..."
+	}
+
+	lines := []string{
+		fmt.Sprintf("xfg-swapd  Height: %d  |  Active offers: %d  |  In-flight swaps: %d",
+			status.Height, len(status.Offers), len(status.Swaps)),
+		"",
+	}
+
+	for _, o := range status.Offers {
+		avail := o.XfgAmount - o.FilledAmount
+		pairName := PairShort(uint8(o.Pair))
+		lines = append(lines,
+			fmt.Sprintf("  %s  %-8s %12d / %-12d XFG  rate=%d  height=%d",
+				o.OfferId[:8], pairName, avail, o.XfgAmount, o.RateNum, o.PostedHeight))
+	}
+
+	lines = append(lines, "")
+	for _, s := range status.Swaps {
+		pairName := PairShort(uint8(s.Pair))
+		lines = append(lines,
+			fmt.Sprintf("  %s  %-8s %-24s  timeout=%d",
+				s.SwapId[:8], pairName, s.State, s.TimeoutHeight))
+	}
+
+	return strings.Join(lines, "\n")
 }

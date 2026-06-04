@@ -45,7 +45,9 @@ std::string SwapDatabase::swapFilePath(const std::string& swapId) const {
 
 bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
   try {
-    std::string json = sm.serialize();
+    auto& mutableSm = const_cast<SwapStateMachine&>(sm);
+    if (!m_encKey.empty()) mutableSm.setEncryptionKey(m_encKey);
+    std::string json = mutableSm.serialize();
     std::string path = swapFilePath(sm.params().swapId);
 
     // Write to a temp file first, then rename for atomicity
@@ -60,6 +62,8 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
     if (ofs.fail()) {
       return false;
     }
+
+    chmod(tmpPath.c_str(), S_IRUSR | S_IWUSR);
 
     // Atomic rename
     if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
@@ -91,6 +95,10 @@ bool SwapDatabase::loadSwapLocked(const std::string& swapId, SwapStateMachine& s
     }
 
     sm = SwapStateMachine::deserialize(json);
+    if (!m_encKey.empty()) {
+      sm.setEncryptionKey(m_encKey);
+      sm.decryptStoredSecret();
+    }
     return true;
   } catch (const std::exception&) {
     return false;
@@ -149,6 +157,10 @@ bool SwapDatabase::deleteSwap(const std::string& swapId) {
 
 const std::string& SwapDatabase::dataDir() const {
   return m_dataDir;
+}
+
+void SwapDatabase::setEncryptionKey(const std::string& key) {
+  m_encKey = key;
 }
 
 } // namespace XfgSwap

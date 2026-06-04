@@ -143,7 +143,7 @@ std::string BchRpcClient::httpPost(const std::string& body) {
 
 std::string BchRpcClient::rpcCall(const std::string& method, const std::string& params) {
   // Bitcoin JSON-RPC envelope
-  std::string body = "{\"jsonrpc\":\"1.0\",\"id\":\"xfg-swap\",\"method\":\"" +
+  std::string body = "{\"jsonrpc\":\"1.0\",\"id\":\"xfg-swapd\",\"method\":\"" +
                      method + "\",\"params\":" + params + "}";
   return httpPost(body);
 }
@@ -615,6 +615,20 @@ bool BchRpcClient::refundHtlc(const std::string& senderWif,
 
   std::string txHex = BchHtlcScript::bytesToHex(rawTx);
   return sendRawTransaction(txHex, refundTxId);
+}
+
+bool BchRpcClient::verifyMessage(const std::string& address, const std::string& signature,
+                                 const std::string& message, bool& valid) {
+  try {
+    std::string params = "[\"" + address + "\",\"" + signature + "\",\"" + message + "\"]";
+    std::string resp = rpcCall("verifymessage", params);
+    if (resp.empty()) return false;
+    valid = resp.find("\"result\":true") != std::string::npos
+            || resp.find("\"result\": true") != std::string::npos;
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
 }
 
 } // namespace XfgSwap

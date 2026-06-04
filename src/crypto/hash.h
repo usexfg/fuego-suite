@@ -67,7 +67,7 @@ namespace Crypto {
   };
 
    inline void cn_slow_hash(cn_context &context, const void *data, size_t length, Hash &hash, int light = 0, int variant = 0, int prehashed = 0) {
-    cn_slow_hash(data, length, reinterpret_cast<char *>(&hash), light, variant, 0);
+    cn_slow_hash(data, length, reinterpret_cast<char *>(&hash), light, variant, prehashed);
   }
 
   inline void cn_slow_hash_prehashed(const void *data, std::size_t length, Hash &hash, int light = 0, int variant = 0, int prehashed = 0) {

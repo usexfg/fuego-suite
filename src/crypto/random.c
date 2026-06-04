@@ -96,10 +96,24 @@ FINALIZER(deinit_random) {
   pthread_mutex_unlock(&random_lock);
 }
 
+static void reinit_random_child() {
+  pthread_mutex_init(&random_lock, NULL);
+  generate_system_random_bytes(32, &state);
+}
+
+static void prepare_random_fork() {
+  pthread_mutex_lock(&random_lock);
+}
+
+static void parent_random_fork() {
+  pthread_mutex_unlock(&random_lock);
+}
+
 INITIALIZER(init_random) {
   pthread_mutex_lock(&random_lock);
   generate_system_random_bytes(32, &state);
   pthread_mutex_unlock(&random_lock);
+  pthread_atfork(prepare_random_fork, parent_random_fork, reinit_random_child);
   REGISTER_FINALIZER(deinit_random);
 #if !defined(NDEBUG)
   assert(curstate == 0);

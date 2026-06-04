@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include "OfferManager.h"
+#include "StatusServer.h"
 #include "SwapTypes.h"
 #include "SwapStateMachine.h"
 #include "SwapDatabase.h"
@@ -86,12 +88,23 @@ struct ChainClientConfig {
   uint64_t    arbChainId = 42161;
   std::string arbHtlcBinPath;
 
+  // BASE (Base L2 — EVM, EIP-1559)
+  std::string baseHost;
+  uint16_t    basePort     = 8545;
+  std::string basePrivKeyHex;
+  std::string baseAddress;
+  uint64_t    baseChainId  = 8453;
+  std::string baseHtlcBinPath;
+
   // XMR spend/view keys (64 hex chars each)
   std::string xmrSpendKeyHex;
   std::string xmrViewKeyHex;
 
   // Solana keypair JSON file path (as produced by `solana-keygen new`)
   std::string solKeypairPath;
+
+  // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
+  std::string xfgSecretKeyHex;
 };
 
 class SwapDaemon {
@@ -121,6 +134,15 @@ public:
   void setWalletRpc(const std::string& host, uint16_t port);
 
   void setSwapRelay(CryptoNote::SwapOfferRelay* relay) { m_swapRelay = relay; }
+
+  void setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk);
+  bool loadOfferConfig(const std::string& jsonPath);
+
+  OfferManager& offerManager() { return *m_offerManager; }
+
+  bool startStatusServer(uint16_t port);
+
+  std::string buildStatusJson();
 
   // Start a new swap as initiator (Bob: has XFG, wants counterparty coin).
   bool initiate(SwapParams params);
@@ -232,6 +254,12 @@ public:
    ChainRegistry m_chainRegistry;
 
     CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
+    std::unique_ptr<OfferManager> m_offerManager;
+    std::unique_ptr<StatusServer> m_statusServer;
+
+    Crypto::SecretKey m_makerSecretKey;
+    Crypto::PublicKey m_makerPublicKey;
+    bool m_makerKeysSet = false;
 
    struct TakerRecord {
      std::vector<time_t> requestTimes;

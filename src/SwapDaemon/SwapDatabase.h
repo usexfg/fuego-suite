@@ -55,6 +55,9 @@ public:
   // Get the data directory path.
   const std::string& dataDir() const;
 
+  // Set the escrow-secret encryption key (held in memory, never persisted).
+  void setEncryptionKey(const std::string& key);
+
 private:
   // Get the full path to a swap's JSON file.
   std::string swapFilePath(const std::string& swapId) const;
@@ -68,6 +71,7 @@ private:
 
   std::string m_dataDir;
   std::string m_swapsDir;
+  std::string m_encKey;
   mutable std::mutex m_mutex;
 };
 

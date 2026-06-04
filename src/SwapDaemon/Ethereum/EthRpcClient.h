@@ -48,7 +48,7 @@ public:
                uint64_t chainId,
                EthTxType txType = EthTxType::Eip1559);
 
-  ~EthRpcClient() { closeSocket(); }
+  ~EthRpcClient() { closeSocket(); clear(); }
 
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
@@ -148,6 +148,10 @@ private:
   // Estimate dynamic fees for EIP-1559.
   bool estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFeePerGas);
 
+  // Query eth_gasPrice for legacy (type-0) transactions.
+  // Returns false if the RPC call fails; caller should use m_gasPriceFallback.
+  bool queryGasPrice(uint64_t& gasPriceWei);
+
   // Set the pre-compiled HashedTimelock contract bytecode (hex, no 0x prefix).
   // Must be called before deployHtlc if deploying a new contract.
   void setHtlcBytecode(const std::string& bytecodeHex) { m_htlcBytecode = bytecodeHex; }
@@ -167,6 +171,10 @@ private:
   // Transaction type: EIP-1559 (default) or Legacy.
   EthTxType m_txType = EthTxType::Eip1559;
 
+  // Fallback gas price for legacy transactions (wei).
+  // Used when eth_gasPrice RPC call fails.
+  uint64_t m_gasPriceFallback = 20000000000ULL; // 20 gwei
+
   // Persistent HTTP connection (keep-alive).  -1 if not connected.
   // Reused across RPC calls, reconnected on failure.
   int m_sock = -1;
@@ -176,6 +184,7 @@ private:
   // Internal: connect or reconnect to the RPC host.
   bool connectSocket();
   void closeSocket();
+  void clear();
 };
 
 } // namespace XfgSwap

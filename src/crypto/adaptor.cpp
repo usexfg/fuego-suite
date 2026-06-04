@@ -26,6 +26,29 @@ extern "C" {
 #include "random.h"
 }
 
+namespace {
+
+bool point_is_valid(const unsigned char bytes[32]) {
+  int nonzero = 0;
+  for (int i = 0; i < 32; ++i) nonzero |= bytes[i];
+  if (!nonzero) return false;
+  ge_p3 p3;
+  if (ge_frombytes_vartime(&p3, bytes) != 0) return false;
+  ge_p2 p2;
+  ge_p3_to_p2(&p2, &p3);
+  ge_p1p1 p1p1;
+  ge_mul8(&p1p1, &p2);
+  ge_p2 p2r;
+  ge_p1p1_to_p2(&p2r, &p1p1);
+  unsigned char out[32];
+  ge_tobytes(out, &p2r);
+  int diff = 0;
+  for (int i = 0; i < 32; ++i) diff |= out[i];
+  return diff != 0;
+}
+
+} // namespace
+
 #include <mutex>
 #include <cstring>
 
@@ -60,6 +83,9 @@ bool generate_adaptor_signature(
   ge_p3 T_p3;
   if (ge_frombytes_vartime(&T_p3,
       reinterpret_cast<const unsigned char*>(&adaptor_point)) != 0) {
+    return false;
+  }
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&adaptor_point))) {
     return false;
   }
 
@@ -108,10 +134,13 @@ bool check_adaptor_signature(
     const PublicKey &adaptor_point,
     const AdaptorSignature &pre_sig)
 {
-  // Decode adaptor point T
+  // Decode adaptor point T — reject identity and small-order points
   ge_p3 T_p3;
   if (ge_frombytes_vartime(&T_p3,
       reinterpret_cast<const unsigned char*>(&adaptor_point)) != 0) {
+    return false;
+  }
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&adaptor_point))) {
     return false;
   }
 

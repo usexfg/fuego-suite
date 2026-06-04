@@ -48,12 +48,18 @@ namespace Randomize
     template <typename T>
     T randomValue(T min, T max)
     {
-        T result;
-        generate_random_bytes(sizeof(T), &result);
         T range = max - min + 1;
         if (range == 0) {
+            T result;
+            generate_random_bytes(sizeof(T), &result);
             return result;
         }
+        T result;
+        T maxValid = (std::numeric_limits<T>::max)() - ((std::numeric_limits<T>::max)() % range + 1) % range;
+        if (maxValid == 0) maxValid = (std::numeric_limits<T>::max)();
+        do {
+            generate_random_bytes(sizeof(T), &result);
+        } while (result > maxValid);
         return min + (result % range);
     }
 }

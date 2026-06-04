@@ -227,7 +227,7 @@ target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 
-# Swap core library: shared by libRpc and the xfg-swap binary
+# Swap core library: shared by libRpc and the xfg-swapd binary
 # Active sources: adaptor-signature atomic swaps (v1)
 # Pool sources are deferred to v11 — see src/SwapDaemon/pool_v11/README.md
 add_library(SwapDaemonLib STATIC
@@ -237,11 +237,14 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapDatabase.cpp
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/SwapDaemon.cpp
+    SwapDaemon/SwapTimelock.cpp
     SwapDaemon/SwapTxBuilder.cpp
     SwapDaemon/SwapPeerProtocol.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/OfferManager.cpp
+    SwapDaemon/StatusServer.cpp
     SwapDaemon/PoolTypes.cpp
     SwapDaemon/PoolAMM.cpp
     SwapDaemon/PoolAttestation.cpp
@@ -270,6 +273,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/Crypto/Base58Std.cpp
+    SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
@@ -284,6 +289,12 @@ target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
 add_executable(test_adaptor_roundtrip
     SwapDaemon/tests/test_adaptor_roundtrip.cpp)
 target_link_libraries(test_adaptor_roundtrip PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: PriceOracle ARB/BASE pricing and units
+add_executable(test_price_oracle_arb
+    SwapDaemon/tests/test_price_oracle_arb.cpp)
+target_link_libraries(test_price_oracle_arb PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
@@ -359,7 +370,7 @@ add_executable(SimpleWallet ${SimpleWallet} SimpleWallet/main.cpp)
 add_executable(PaymentGateService ${PaymentGateService})
 add_executable(Optimizer ${OPTIMIZER_SOURCES})
 
-# Swap Daemon executable (xfg-swap) — active v1 atomic swap sources only
+# Swap Daemon executable (xfg-swapd) — active v1 atomic swap sources only
 # v11 pool trading sources are in SwapDaemon/pool_v11/ and excluded here.
 # See src/SwapDaemon/pool_v11/README.md for reintegration instructions.
 add_executable(SwapDaemon
@@ -367,6 +378,7 @@ add_executable(SwapDaemon
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/OfferManager.cpp
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/SwapSecretEncryption.cpp
@@ -385,6 +397,8 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/Crypto/Base58Std.cpp
+    SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
     # SwapDaemon/pool_v11/PoolTypes.cpp
@@ -539,6 +553,7 @@ target_link_libraries(SwapDaemon PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     secp256k1
+    ${JSONCPP_LIBRARIES}
 )
 target_include_directories(SwapDaemon PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -623,4 +638,4 @@ set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "walletd")
 set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")
 set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")
-set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swap")
+set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")

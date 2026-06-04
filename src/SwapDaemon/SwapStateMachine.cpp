@@ -177,9 +177,8 @@ bool SwapStateMachine::isTerminal() const {
 std::string SwapStateMachine::serialize() const {
   Common::JsonValue root(Common::JsonValue::OBJECT);
 
-  // Serialization version — bump when adding new fields so deserialize()
-  // can skip missing fields on older records gracefully.
-  root.insert("serVersion", static_cast<int64_t>(2));
+  // Serialization version — bump when adding new fields.
+  root.insert("serVersion", static_cast<int64_t>(3));
 
   root.insert("swapId", m_params.swapId);
   root.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(m_params.pair)));
@@ -197,24 +196,24 @@ std::string SwapStateMachine::serialize() const {
   root.insert("escrowTxHash", Common::podToHex(m_params.escrowTxHash));
   root.insert("escrowOutputIndex", static_cast<int64_t>(m_params.escrowOutputIndex));
 
-  // Persist adaptorSecret so a daemon restart mid-swap can recover the
-  // 32-byte scalar needed to adapt the pre-signature on the XFG chain.
-  // SECURE: Encrypt at rest with ChaCha20 if encryption key is set.
+  // Persist adaptorSecret — always encrypted at rest. No plaintext fallback.
+  // The encryption key must be set by the caller before serialize().
+  // Format: nonce(8) || salt(16) || ciphertext(32) || tag(32) = 88 bytes → 176 hex.
   if (hasEncryptionKey()) {
     SwapSecretEncryption::EncryptedSecret encrypted;
     if (SwapSecretEncryption::encrypt(m_params.adaptorSecret, m_encryptionKey, encrypted)) {
-      // Store as encrypted: nonce(12) || ciphertext(32) = 44 bytes, stored as hex
       std::string encData;
-      encData.reserve(CHACHA20_NONCE_SIZE + encrypted.ciphertext.size());
+      encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
       encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
+      encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
       encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
-      root.insert("adaptorSecret", Common::toHex(encData.data(), encData.size()));
+      encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
+      root.insert("adaptorSecretEnc", Common::toHex(encData.data(), encData.size()));
     } else {
-      // Encryption failed — fall back to plaintext (should not happen)
-      root.insert("adaptorSecret", Common::podToHex(m_params.adaptorSecret));
+      return "";
     }
   } else {
-    root.insert("adaptorSecret", Common::podToHex(m_params.adaptorSecret));
+    root.insert("adaptorSecretEnc", "");
   }
 
   // Legacy fields (kept for backward compat in DB)
@@ -243,18 +242,11 @@ std::string SwapStateMachine::serialize() const {
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
 
-  // Store encryption key for later decryption (if set)
-  if (hasEncryptionKey())
-    root.insert("encKey", m_encryptionKey);
-
   return root.toString();
 }
 
 SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   Common::JsonValue root = Common::JsonValue::fromString(json);
-
-  // serVersion added in v2; v1 records simply omit it and fall back gracefully.
-  // int64_t serVersion = root.contains("serVersion") ? root("serVersion").getInteger() : 1;
 
   SwapParams params;
   params.swapId = root("swapId").getString();
@@ -279,28 +271,13 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   if (root.contains("escrowOutputIndex"))
     params.escrowOutputIndex = static_cast<uint32_t>(root("escrowOutputIndex").getInteger());
 
-  // Restore adaptorSecret persisted since serVersion 2.
-  // Absent in v1 records — zero-initialised by SwapStateMachine() default ctor
-  // and will be populated from the counterparty chain claim when the swap resumes.
-  if (root.contains("adaptorSecret")) {
-    std::string stored = root("adaptorSecret").getString();
-
-    // Check if encrypted format (88 hex chars = 44 bytes nonce+ciphertext)
-    // or plaintext format (64 hex chars = 32 bytes)
-    if (stored.size() == 88 && root.contains("encKey")) {
-      // Encrypted: decode hex to bytes
-      std::vector<uint8_t> data(stored.size() / 2);
-      Common::podFromHex(stored, data);
-
-      std::array<uint8_t, CHACHA20_NONCE_SIZE> nonce;
-      std::vector<uint8_t> ciphertext(data.begin() + 12, data.end());
-
-      SwapSecretEncryption::EncryptedSecret encrypted{nonce, ciphertext};
-      std::string encKey = root("encKey").getString();
-      SwapSecretEncryption::decrypt(encrypted, encKey, params.adaptorSecret);
-    } else {
-      // Plaintext (64 hex chars = 32 bytes)
-      Common::podFromHex(stored, params.adaptorSecret);
+  // Restore adaptorSecret: encrypted blob only. Decrypted into m_params.adaptorSecret
+  // by decryptStoredSecret() once the in-memory encryption key is applied.
+  if (root.contains("adaptorSecretEnc") && !root("adaptorSecretEnc").getString().empty()) {
+    std::string stored = root("adaptorSecretEnc").getString();
+    params.encBlob.resize(stored.size() / 2);
+    if (!Common::podFromHex(stored, params.encBlob)) {
+      params.encBlob.clear();
     }
   }
 
@@ -316,45 +293,27 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrLockTxId = root("ctrLockTxId").getString();
   params.ctrAddress = root("ctrAddress").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
-  // chainState was added in serialization v2 (previously bchRedeemScriptHex); gracefully default to ""
-  // for older records that pre-date the field.
-  try {
-    if (root.contains("chainState"))
-      params.chainState = root("chainState").getString();
-    else
-      params.chainState = root("bchRedeemScriptHex").getString();
-  }
-  catch (...) { params.chainState = ""; }
+  params.chainState = root("chainState").getString();
 
-  // Collaborative ring state (peer data). Gracefully default to zero
-  // for older records that pre-date these fields.
-  try { Common::podFromHex(root("ringPeerPartialKeyImage").getString(), params.ringPeerPartialKeyImage); }
-  catch (...) { std::memset(&params.ringPeerPartialKeyImage, 0, sizeof(params.ringPeerPartialKeyImage)); }
-  try { Common::podFromHex(root("ringPeerRingNoncePub").getString(), params.ringPeerRingNoncePub); }
-  catch (...) { std::memset(&params.ringPeerRingNoncePub, 0, sizeof(params.ringPeerRingNoncePub)); }
-  try { Common::podFromHex(root("ringPeerRingNonceHp").getString(), params.ringPeerRingNonceHp); }
-  catch (...) { std::memset(&params.ringPeerRingNonceHp, 0, sizeof(params.ringPeerRingNonceHp)); }
-  try { Common::podFromHex(root("ringPeerPartialResponse").getString(), params.ringPeerPartialResponse); }
-  catch (...) { std::memset(&params.ringPeerPartialResponse, 0, sizeof(params.ringPeerPartialResponse)); }
-  try { params.ringPeerRound1Received = root("ringPeerRound1Received").getInteger() != 0; }
-  catch (...) { params.ringPeerRound1Received = false; }
-  try { params.ringPeerRound2Received = root("ringPeerRound2Received").getInteger() != 0; }
-  catch (...) { params.ringPeerRound2Received = false; }
-  try { params.ringOurRound1Sent = root("ringOurRound1Sent").getInteger() != 0; }
-  catch (...) { params.ringOurRound1Sent = false; }
-  try { params.ringOurRound2Sent = root("ringOurRound2Sent").getInteger() != 0; }
-  catch (...) { params.ringOurRound2Sent = false; }
-  try { params.ringTxBroadcast = root("ringTxBroadcast").getInteger() != 0; }
-  catch (...) { params.ringTxBroadcast = false; }
+  // Collaborative ring state (peer data, written by every record).
+  Common::podFromHex(root("ringPeerPartialKeyImage").getString(), params.ringPeerPartialKeyImage);
+  Common::podFromHex(root("ringPeerRingNoncePub").getString(),    params.ringPeerRingNoncePub);
+  Common::podFromHex(root("ringPeerRingNonceHp").getString(),     params.ringPeerRingNonceHp);
+  Common::podFromHex(root("ringPeerPartialResponse").getString(), params.ringPeerPartialResponse);
+  params.ringPeerRound1Received = root("ringPeerRound1Received").getInteger() != 0;
+  params.ringPeerRound2Received = root("ringPeerRound2Received").getInteger() != 0;
+  params.ringOurRound1Sent      = root("ringOurRound1Sent").getInteger() != 0;
+  params.ringOurRound2Sent      = root("ringOurRound2Sent").getInteger() != 0;
+  params.ringTxBroadcast        = root("ringTxBroadcast").getInteger() != 0;
 
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));
   sm.m_createdAt = static_cast<time_t>(root("createdAt").getInteger());
   sm.m_updatedAt = static_cast<time_t>(root("updatedAt").getInteger());
 
-  // Restore encryption key if present (for decrypting adaptorSecret on load)
-  if (root.contains("encKey"))
-    sm.m_encryptionKey = root("encKey").getString();
+  // NOTE: encryption key is NEVER persisted. It is injected at runtime by
+  // SwapDatabase::setEncryptionKey() before decryptStoredSecret() is called.
+  // Any "encKey" field in legacy records is ignored.
 
   return sm;
 }
@@ -365,6 +324,22 @@ void SwapStateMachine::setEncryptionKey(const std::string& key) {
 
 bool SwapStateMachine::hasEncryptionKey() const {
   return !m_encryptionKey.empty();
+}
+
+void SwapStateMachine::decryptStoredSecret() {
+  if (m_params.encBlob.empty() || m_encryptionKey.empty()) return;
+  if (m_params.encBlob.size() < CHACHA8_NONCE_SIZE + SALT_SIZE + 32 + TAG_SIZE) return;
+
+  SwapSecretEncryption::EncryptedSecret encrypted;
+  std::memcpy(encrypted.nonce.data(), m_params.encBlob.data(), CHACHA8_NONCE_SIZE);
+  std::memcpy(encrypted.salt.data(),  m_params.encBlob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
+  encrypted.ciphertext.assign(m_params.encBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
+                               m_params.encBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32);
+  std::memcpy(encrypted.tag.data(), m_params.encBlob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32, TAG_SIZE);
+
+  if (SwapSecretEncryption::decrypt(encrypted, m_encryptionKey, m_params.adaptorSecret)) {
+    m_params.encBlob.clear();
+  }
 }
 
 } // namespace XfgSwap

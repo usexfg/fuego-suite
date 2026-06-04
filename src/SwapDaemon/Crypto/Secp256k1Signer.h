@@ -59,6 +59,12 @@ class Secp256k1Signer {
   std::vector<uint8_t> derivePublicKeyCompressed(
       const std::array<uint8_t, 32>& privKey);
 
+  // Recover the 65-byte uncompressed public key (0x04||X||Y) from a
+  // recoverable signature over msgHash. Throws std::runtime_error on failure.
+  std::vector<uint8_t> recoverPublicKey(
+      const std::array<uint8_t, 32>& msgHash,
+      const RecoverableSignature& sig);
+
  private:
   void* m_ctx;  // secp256k1_context*
 };

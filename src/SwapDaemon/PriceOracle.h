@@ -106,6 +106,14 @@ public:
   // Floor protection threshold as fraction of TWAP (default: 0.50 = 50%)
   void setFloorThreshold(double fraction);
 
+  // Max allowed drift from seed rate during bootstrap (default: 0.50 = ±50%).
+  // In bootstrap mode (no completed swaps), rates outside [seed * (1-drift), seed * (1+drift)]
+  // are rejected. Set to 0.0 to disable bootstrap validation (fall back to unlimited).
+  void setMaxBootstrapDrift(double drift);
+
+  // CTR divisor for atomic→whole conversion
+  static double ctrDivisor(SwapPair pair);
+
 private:
   // Completed swap history per pair
   mutable std::mutex m_mutex;
@@ -113,12 +121,10 @@ private:
   size_t   m_twapMaxTrades;    // default 20
   uint64_t m_twapMaxAgeSec;    // default 604800 (7 days)
   double   m_floorThreshold;   // default 0.50
+  double   m_maxBootstrapDrift; // default 0.50 (±50%)
 
   // Convert atomic amounts to a rate (XFG per 1 whole CTR coin)
   static double atomicToRate(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount);
-
-  // CTR divisor for atomic→whole conversion
-  static double ctrDivisor(SwapPair pair);
 };
 
 } // namespace XfgSwap

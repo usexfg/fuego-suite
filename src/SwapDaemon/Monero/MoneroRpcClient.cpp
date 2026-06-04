@@ -535,4 +535,22 @@ bool MoneroRpcClient::refundAdaptor(const std::string& aliceShareHex,
   return sweepSharedAddress(combinedHex, viewKeyHex, destAddress, result);
 }
 
+bool MoneroRpcClient::checkReserveProof(const std::string& address, const std::string& message,
+                                        const std::string& signature, bool& good, uint64_t& total) {
+  std::ostringstream params;
+  params << "{\"address\":\"" << address << "\""
+         << ",\"message\":\"" << message << "\""
+         << ",\"signature\":\"" << signature << "\"}";
+
+  std::string raw = jsonRpc(m_walletHost, m_walletPort, "check_reserve_proof", params.str());
+
+  Common::JsonValue res(Common::JsonValue::NIL);
+  if (!parseJsonRpcResult(raw, res)) return false;
+  if (!res.isObject()) return false;
+
+  if (res.contains("good")) good = res("good").getBool();
+  if (res.contains("total")) total = static_cast<uint64_t>(res("total").getInteger());
+  return true;
+}
+
 } // namespace XfgSwap

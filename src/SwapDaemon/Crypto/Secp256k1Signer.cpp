@@ -105,6 +105,32 @@ std::vector<uint8_t> Secp256k1Signer::derivePublicKeyCompressed(
   return out;
 }
 
+std::vector<uint8_t> Secp256k1Signer::recoverPublicKey(
+    const std::array<uint8_t, 32>& msgHash,
+    const RecoverableSignature& sig) {
+  auto* ctx = static_cast<secp256k1_context*>(m_ctx);
+
+  uint8_t compact[64];
+  std::memcpy(compact,      sig.r.data(), 32);
+  std::memcpy(compact + 32, sig.s.data(), 32);
+
+  secp256k1_ecdsa_recoverable_signature rawSig;
+  if (!secp256k1_ecdsa_recoverable_signature_parse_compact(ctx, &rawSig, compact, sig.recid)) {
+    throw std::runtime_error("Secp256k1Signer::recoverPublicKey: failed to parse signature");
+  }
+
+  secp256k1_pubkey pubkey;
+  if (!secp256k1_ecdsa_recover(ctx, &pubkey, &rawSig, msgHash.data())) {
+    throw std::runtime_error("Secp256k1Signer::recoverPublicKey: recovery failed");
+  }
+
+  std::vector<uint8_t> out(65);
+  size_t outLen = 65;
+  secp256k1_ec_pubkey_serialize(ctx, out.data(), &outLen, &pubkey, SECP256K1_EC_UNCOMPRESSED);
+  out.resize(outLen);
+  return out;
+}
+
 }  // namespace Crypto
 }  // namespace SwapDaemon
 }  // namespace CryptoNote

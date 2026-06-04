@@ -45,6 +45,11 @@ public:
   void setEncryptionKey(const std::string& key);
   bool hasEncryptionKey() const;
 
+  // Decrypt adaptorSecret after loading and setting encryption key.
+  // Must be called after setEncryptionKey on a deserialized record that
+  // has adaptorSecretEnc data. No-op if no encrypted data is present.
+  void decryptStoredSecret();
+
   // Check if swap is in a terminal state
   bool isTerminal() const;
 

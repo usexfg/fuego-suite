@@ -14,6 +14,7 @@
 
 #include "SwapDaemon.h"
 #include "SwapTypes.h"
+#include "crypto/crypto.h"
 #include <optional>
 
 #include "Logging/ConsoleLogger.h"
@@ -23,6 +24,12 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
+#include <chrono>
+#include <fstream>
+#include <sstream>
+
+#include "Common/StringTools.h"
 
 namespace {
 
@@ -32,7 +39,7 @@ const char* DEFAULT_HOST = "127.0.0.1";
 
 void printUsage() {
   std::cout <<
-    "Usage: xfg-swap [options] <command> [args...]\n"
+    "Usage: xfg-swapd [options] <command> [args...]\n"
     "\n"
     "Commands:\n"
     "  initiate <pair> <xfg_amount> <ctr_amount> <peer>  -- start a swap\n"
@@ -45,28 +52,33 @@ void printUsage() {
     "Options:\n"
     "  --fuegod-host <host>    Fuegod RPC host (default: 127.0.0.1)\n"
     "  --fuegod-port <port>    Fuegod RPC port (default: 18180)\n"
-    "  --data-dir <dir>        Data directory (default: ~/.xfg-swap)\n"
+    "  --data-dir <dir>        Data directory (default: ~/.xfg-swapd)\n"
     "  --swap-config <file>    JSON config with chain RPC + signer keys\n"
+    "  --offer-config <file>   JSON config for managed auto-pricing offers\n"
+    "  --service               Run as background service (no interactive commands)\n"
+    "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
+    "  --swap-p2p-bind <addr>  P2P bind address (default: 127.0.0.1)\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --help                  Show this help message\n"
     "\n"
-    "Pairs: SOL, ETH, XMR, BCH\n"
+    "Pairs: SOL, ETH, XMR, BCH, ARB, BASE\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
     "\n"
     "Examples:\n"
-    "  xfg-swap initiate SOL 10000000 1000000000 192.168.1.100:9999\n"
-    "  xfg-swap status a1b2c3d4e5f6\n"
-    "  xfg-swap list\n"
-    "  xfg-swap --testnet list\n"
+    "  xfg-swapd initiate SOL 10000000 1000000000 192.168.1.100:9999\n"
+    "  xfg-swapd status a1b2c3d4e5f6\n"
+    "  xfg-swapd list\n"
+    "  xfg-swapd --testnet list\n"
+    "  xfg-swapd --service --offer-config offers.json\n"
     << std::endl;
 }
 
 std::string getDefaultDataDir() {
   const char* home = std::getenv("HOME");
   if (home) {
-    return std::string(home) + "/.xfg-swap";
+    return std::string(home) + "/.xfg-swapd";
   }
-  return "./.xfg-swap";
+  return "./.xfg-swapd";
 }
 
 } // anonymous namespace
@@ -76,7 +88,11 @@ int main(int argc, char* argv[]) {
   uint16_t port = DEFAULT_MAINNET_PORT;
   std::string dataDir = getDefaultDataDir();
   std::string swapConfigPath;
+  std::string offerConfigPath;
+  uint16_t statusPort = 18900;
+  std::string p2pBindAddr = "127.0.0.1";
   bool testnet = false;
+  bool serviceMode = false;
 
   // Parse options (before the command)
   int argIdx = 1;
@@ -110,6 +126,26 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       swapConfigPath = argv[argIdx];
+    } else if (opt == "--offer-config") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --offer-config requires an argument" << std::endl;
+        return 1;
+      }
+      offerConfigPath = argv[argIdx];
+    } else if (opt == "--service") {
+      serviceMode = true;
+    } else if (opt == "--status-port") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --status-port requires an argument" << std::endl;
+        return 1;
+      }
+      statusPort = static_cast<uint16_t>(std::atoi(argv[argIdx]));
+    } else if (opt == "--swap-p2p-bind") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --swap-p2p-bind requires an argument" << std::endl;
+        return 1;
+      }
+      p2pBindAddr = argv[argIdx];
     } else if (opt == "--testnet") {
       testnet = true;
       port = DEFAULT_TESTNET_PORT;
@@ -121,16 +157,9 @@ int main(int argc, char* argv[]) {
     ++argIdx;
   }
 
-  if (argIdx >= argc) {
-    printUsage();
-    return 1;
-  }
-
-  std::string command = argv[argIdx++];
-
   // Set up logging
   Logging::ConsoleLogger consoleLogger(Logging::INFO);
-  Logging::LoggerRef logger(consoleLogger, "xfg-swap");
+  Logging::LoggerRef logger(consoleLogger, "xfg-swapd");
 
   if (testnet) {
     logger(Logging::INFO) << "Using testnet configuration";
@@ -151,10 +180,79 @@ int main(int argc, char* argv[]) {
     return XfgSwap::SwapDaemon(host, port, dataDir, consoleLogger);
   }();
 
+  // Load maker wallet key for signing managed offers
+  if (!swapConfigPath.empty()) {
+    std::ifstream f(swapConfigPath);
+    if (f.is_open()) {
+      std::stringstream ss; ss << f.rdbuf();
+      std::string json = ss.str();
+      auto getStr = [&](const std::string& key) -> std::string {
+        std::string needle = "\"" + key + "\"";
+        auto pos = json.find(needle);
+        if (pos == std::string::npos) return "";
+        pos = json.find(':', pos + needle.size());
+        if (pos == std::string::npos) return "";
+        ++pos;
+        while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' ||
+                                      json[pos] == '\n' || json[pos] == '\r')) ++pos;
+        if (pos >= json.size() || json[pos] != '"') return "";
+        ++pos;
+        std::string result;
+        while (pos < json.size() && json[pos] != '"') {
+          if (json[pos] == '\\' && pos + 1 < json.size()) ++pos;
+          result += json[pos++];
+        }
+        return result;
+      };
+      std::string xfgKeyHex = getStr("xfg_secret_key");
+      if (!xfgKeyHex.empty()) {
+        Crypto::SecretKey sk;
+        Crypto::PublicKey pk;
+        if (Common::podFromHex(xfgKeyHex, sk) && Crypto::secret_key_to_public_key(sk, pk)) {
+          daemon.setMakerKeys(sk, pk);
+          logger(Logging::INFO) << "Loaded XFG wallet key for offer signing";
+        } else {
+          logger(Logging::ERROR) << "Invalid xfg_secret_key in swap config";
+        }
+      }
+    }
+  }
+
+  // Load offer config for auto-pricing
+  if (!offerConfigPath.empty()) {
+    if (daemon.loadOfferConfig(offerConfigPath)) {
+      logger(Logging::INFO) << "Auto-pricing offer manager loaded";
+    } else {
+      logger(Logging::ERROR) << "Failed to load offer config: " << offerConfigPath;
+    }
+  }
+
+  // Service mode: run tick loop continuously
+  if (serviceMode) {
+    logger(Logging::INFO) << "Starting as background service...";
+    daemon.start();
+
+    if (daemon.startStatusServer(statusPort)) {
+      logger(Logging::INFO) << "Status endpoint: 127.0.0.1:" << statusPort;
+    }
+
+    while (true) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    return 0;
+  }
+
+  if (argIdx >= argc) {
+    printUsage();
+    return 1;
+  }
+
+  std::string command = argv[argIdx++];
+
   // Dispatch command
     if (command == "initiate") {
       if (argIdx + 3 >= argc) {
-        std::cerr << "Usage: xfg-swap initiate <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
+        std::cerr << "Usage: xfg-swapd initiate <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
         return 1;
       }
 
@@ -199,7 +297,7 @@ int main(int argc, char* argv[]) {
 
     } else if (command == "accept") {
       if (argIdx >= argc) {
-        std::cerr << "Usage: xfg-swap accept <swap_id>" << std::endl;
+        std::cerr << "Usage: xfg-swapd accept <swap_id>" << std::endl;
         return 1;
       }
       std::string swapId = argv[argIdx++];
@@ -221,7 +319,7 @@ int main(int argc, char* argv[]) {
 
     } else if (command == "refund") {
       if (argIdx >= argc) {
-        std::cerr << "Usage: xfg-swap refund <swap_id>" << std::endl;
+        std::cerr << "Usage: xfg-swapd refund <swap_id>" << std::endl;
         return 1;
       }
       std::string swapId = argv[argIdx++];

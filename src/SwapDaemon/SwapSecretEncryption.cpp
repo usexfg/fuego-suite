@@ -1,7 +1,5 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
-// This file is part of Fuego.
-//
 // Fuego is free software distributed in the hope that it
 // will be useful, but WITHOUT ANY WARRANTY; without even the
 // implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
@@ -16,26 +14,16 @@
 #include "Common/StringTools.h"
 #include "crypto/chacha8.h"
 #include "crypto/randomize.h"
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 #include <cstring>
+#include <algorithm>
 
 namespace XfgSwap {
 
-std::string SwapSecretEncryption::deriveKey(
-    const std::string& encryptionKey,
-    const std::string& salt
-) {
-  // Derive key by XOR mixing salt with key bytes
-  std::array<uint8_t, 32> keyBytes{};
-  size_t keyLen = encryptionKey.size();
-  size_t saltLen = salt.size();
-  
-  for (size_t i = 0; i < 32; ++i) {
-    uint8_t kb = (i < keyLen) ? static_cast<uint8_t>(encryptionKey[i]) : 0;
-    uint8_t sb = (i < saltLen) ? static_cast<uint8_t>(salt[i]) : 0;
-    keyBytes[i] = kb ^ sb ^ static_cast<uint8_t>(i * 0x9E + 0x47);
-  }
-  
-  return std::string(reinterpret_cast<const char*>(keyBytes.data()), CHACHA20_KEY_SIZE);
+void SwapSecretEncryption::secureZero(void* buf, size_t len) {
+  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
+  while (len--) *p++ = 0;
 }
 
 bool SwapSecretEncryption::encrypt(
@@ -43,26 +31,51 @@ bool SwapSecretEncryption::encrypt(
     const std::string& encryptionKey,
     EncryptedSecret& out
 ) {
-  std::string derivedKey = deriveKey(encryptionKey, "swap-secret");
+  // Generate random salt
+  Randomize::randomBytes(SALT_SIZE, out.salt.data());
 
-  Crypto::chacha8_key key;
-  std::memcpy(key.data, derivedKey.data(), CHACHA20_KEY_SIZE);
+  // Combine key with salt for domain separation
+  std::string saltedKey = encryptionKey;
+  saltedKey.append(reinterpret_cast<const char*>(out.salt.data()), SALT_SIZE);
 
+  // KDF: memory-hard cipher key via CryptoNight
+  Crypto::cn_context ctx;
+  Crypto::chacha8_key cipherKey;
+  Crypto::generate_chacha8_key(ctx, saltedKey, cipherKey);
+
+  // Zero the salted key material — std::string destructor does not zero memory
+  std::fill(saltedKey.begin(), saltedKey.end(), '\0');
+
+  // Generate random nonce
   Crypto::chacha8_iv iv;
-  Randomize::randomBytes(CHACHA8_IV_BYTES, iv.data);
+  Randomize::randomBytes(CHACHA8_NONCE_SIZE, iv.data);
+  std::memcpy(out.nonce.data(), iv.data, CHACHA8_NONCE_SIZE);
 
-  std::memcpy(out.nonce.data(), iv.data, CHACHA8_IV_BYTES);
-
-  out.ciphertext.resize(ENCRYPTED_SECRET_SIZE);
+  // Encrypt
+  out.ciphertext.resize(SECRET_PLAINTEXT);
   Crypto::chacha8(
-    plaintext.data,
-    ENCRYPTED_SECRET_SIZE,
-    key,
-    iv,
+    plaintext.data, SECRET_PLAINTEXT,
+    cipherKey, iv,
     reinterpret_cast<char*>(out.ciphertext.data())
   );
 
-  std::memset(key.data, 0, CHACHA20_KEY_SIZE);
+  // Compute MAC tag = HMAC-SHA256(cipherKey, nonce || salt || ciphertext)
+  std::string tagInput(reinterpret_cast<const char*>(out.nonce.data()), CHACHA8_NONCE_SIZE);
+  tagInput.append(reinterpret_cast<const char*>(out.salt.data()), SALT_SIZE);
+  tagInput.append(reinterpret_cast<const char*>(out.ciphertext.data()), out.ciphertext.size());
+
+  unsigned int tagLen = TAG_SIZE;
+  HMAC(EVP_sha256(),
+       cipherKey.data, CHACHA8_KEY_SIZE,
+       reinterpret_cast<const unsigned char*>(tagInput.data()), tagInput.size(),
+       out.tag.data(), &tagLen);
+
+  if (tagLen != TAG_SIZE) {
+    secureZero(cipherKey.data, sizeof(cipherKey));
+    return false;
+  }
+
+  secureZero(cipherKey.data, sizeof(cipherKey));
   return true;
 }
 
@@ -71,28 +84,58 @@ bool SwapSecretEncryption::decrypt(
     const std::string& encryptionKey,
     Crypto::SecretKey& out
 ) {
-  if (encrypted.nonce.size() != CHACHA20_NONCE_SIZE ||
-      encrypted.ciphertext.size() != ENCRYPTED_SECRET_SIZE) {
+  if (encrypted.ciphertext.size() != SECRET_PLAINTEXT) {
     return false;
   }
 
-  std::string derivedKey = deriveKey(encryptionKey, "swap-secret");
+  // Recompute salted key
+  std::string saltedKey = encryptionKey;
+  saltedKey.append(reinterpret_cast<const char*>(encrypted.salt.data()), SALT_SIZE);
 
-  Crypto::chacha8_key key;
-  std::memcpy(key.data, derivedKey.data(), CHACHA20_KEY_SIZE);
+  // Re-derive cipher key
+  Crypto::cn_context ctx;
+  Crypto::chacha8_key cipherKey;
+  Crypto::generate_chacha8_key(ctx, saltedKey, cipherKey);
+  std::fill(saltedKey.begin(), saltedKey.end(), '\0');
 
+  // Recompute MAC tag = HMAC-SHA256(cipherKey, nonce || salt || ciphertext)
+  std::string tagInput(reinterpret_cast<const char*>(encrypted.nonce.data()), CHACHA8_NONCE_SIZE);
+  tagInput.append(reinterpret_cast<const char*>(encrypted.salt.data()), SALT_SIZE);
+  tagInput.append(reinterpret_cast<const char*>(encrypted.ciphertext.data()), encrypted.ciphertext.size());
+
+  uint8_t computedTag[TAG_SIZE];
+  unsigned int tagLen = TAG_SIZE;
+  HMAC(EVP_sha256(),
+       cipherKey.data, CHACHA8_KEY_SIZE,
+       reinterpret_cast<const unsigned char*>(tagInput.data()), tagInput.size(),
+       computedTag, &tagLen);
+
+  if (tagLen != TAG_SIZE) {
+    secureZero(cipherKey.data, sizeof(cipherKey));
+    return false;
+  }
+
+  uint8_t diff = 0;
+  for (size_t i = 0; i < TAG_SIZE; ++i) {
+    diff |= computedTag[i] ^ encrypted.tag[i];
+  }
+
+  if (diff != 0) {
+    secureZero(cipherKey.data, sizeof(cipherKey));
+    return false;
+  }
+
+  // Decrypt
   Crypto::chacha8_iv iv;
-  std::memcpy(iv.data, encrypted.nonce.data(), CHACHA8_IV_BYTES);
+  std::memcpy(iv.data, encrypted.nonce.data(), CHACHA8_NONCE_SIZE);
 
   Crypto::chacha8(
-    encrypted.ciphertext.data(),
-    ENCRYPTED_SECRET_SIZE,
-    key,
-    iv,
+    encrypted.ciphertext.data(), SECRET_PLAINTEXT,
+    cipherKey, iv,
     reinterpret_cast<char*>(out.data)
   );
 
-  std::memset(key.data, 0, CHACHA20_KEY_SIZE);
+  secureZero(cipherKey.data, sizeof(cipherKey));
   return true;
 }
 

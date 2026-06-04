@@ -18,21 +18,24 @@
 
 namespace XfgSwap {
 
-static bool iequal3(const char* a, const char* b) {
-  for (int i = 0; i < 3; ++i) {
+static bool iequal(const char* a, const char* b, int n) {
+  for (int i = 0; i < n; ++i) {
     if (::toupper(a[i]) != ::toupper(b[i])) return false;
+    if (a[i] == '\0' || b[i] == '\0') return false;
   }
   return true;
 }
 
 bool swapPairFromString(const std::string& s, SwapPair& out) {
-  if (s.size() != 3) return false;
+  if (s.size() < 3 || s.size() > 4) return false;
   const char* p = s.c_str();
-  if (iequal3(p, "SOL")) { out = SwapPair::SOL; return true; }
-  if (iequal3(p, "ETH")) { out = SwapPair::ETH; return true; }
-  if (iequal3(p, "XMR")) { out = SwapPair::XMR; return true; }
-  if (iequal3(p, "BCH")) { out = SwapPair::BCH; return true; }
-  if (iequal3(p, "ARB")) { out = SwapPair::ARB; return true; }
+  int n = static_cast<int>(s.size());
+  if (iequal(p, "SOL", n))  { out = SwapPair::SOL;  return true; }
+  if (iequal(p, "ETH", n))  { out = SwapPair::ETH;  return true; }
+  if (iequal(p, "XMR", n))  { out = SwapPair::XMR;  return true; }
+  if (iequal(p, "BCH", n))  { out = SwapPair::BCH;  return true; }
+  if (iequal(p, "ARB", n))  { out = SwapPair::ARB;  return true; }
+  if (iequal(p, "BASE", n)) { out = SwapPair::BASE; return true; }
   return false;
 }
 
@@ -49,7 +52,8 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::ETH: return "ETH";
     case SwapPair::XMR: return "XMR";
     case SwapPair::BCH: return "BCH";
-    case SwapPair::ARB: return "ARB";
+    case SwapPair::ARB:  return "ARB";
+    case SwapPair::BASE: return "BASE";
   }
   return "???";
 }

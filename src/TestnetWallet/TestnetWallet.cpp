@@ -73,7 +73,7 @@ namespace CryptoNote
     // @ Alias system commands (inherited from simple_wallet)
 
     // Override swap command to pass --testnet flag to swapxfg
-    m_consoleHandler.setHandler("swap", boost::bind(&testnet_wallet::swap_tui, this, boost::arg<1>()), "swap - Launch swapxfg testnet swap terminal");
+  /*  m_consoleHandler.setHandler("swap", boost::bind(&testnet_wallet::swap_tui, this, boost::arg<1>()), "swap - Launch swapxfg testnet swap terminal"); */
   }
 
   //----------------------------------------------------------------------------------------------------
@@ -98,6 +98,8 @@ namespace CryptoNote
       fail_msg_writer() << "Valid amounts: 0.08, 0.8, 8, 80 TEST";
       return true;
     }
+
+    if (!requireV11("burn")) return true;
 
     try
     {

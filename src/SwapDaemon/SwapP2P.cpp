@@ -47,9 +47,10 @@ static uint32_t readBE32(const uint8_t* src) {
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-SwapP2P::SwapP2P(uint16_t listenPort, Logging::LoggerRef& logger)
+SwapP2P::SwapP2P(uint16_t listenPort, const std::string& bindAddr, Logging::LoggerRef& logger)
   : m_listenSocket(-1)
   , m_listenPort(listenPort)
+  , m_bindAddr(bindAddr.empty() ? "127.0.0.1" : bindAddr)
   , m_running(false)
   , m_logger(logger) {
 }
@@ -75,7 +76,7 @@ bool SwapP2P::start() {
   struct sockaddr_in addr;
   std::memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_addr.s_addr = inet_addr(m_bindAddr.c_str());
   addr.sin_port = htons(m_listenPort);
 
   if (bind(m_listenSocket, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
@@ -85,7 +86,7 @@ bool SwapP2P::start() {
     return false;
   }
 
-  if (listen(m_listenSocket, 5) < 0) {
+  if (listen(m_listenSocket, 64) < 0) {
     m_logger(Logging::ERROR) << "SwapP2P: listen failed on port " << m_listenPort;
     close(m_listenSocket);
     m_listenSocket = -1;
@@ -138,42 +139,58 @@ void SwapP2P::acceptLoop() {
       continue;
     }
 
-    // Set a receive timeout so we don't block forever on a misbehaving peer.
+    // Refuse connections beyond the worker cap so one slow peer (or a flood)
+    // can't tie up all threads or unbounded memory. The peer will retry.
+    if (m_activeWorkers.load() >= MAX_WORKERS) {
+      m_logger(Logging::WARNING) << "SwapP2P: worker cap reached ("
+        << MAX_WORKERS << "), refusing connection";
+      close(clientSock);
+      continue;
+    }
+
+    // Set a receive timeout so a misbehaving peer can't pin a worker forever.
     struct timeval tv;
     tv.tv_sec = 30;
     tv.tv_usec = 0;
     setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    SwapMessage msg;
-    if (readFramedMessage(clientSock, msg)) {
-      char peerIp[INET_ADDRSTRLEN];
-      inet_ntop(AF_INET, &peerAddr.sin_addr, peerIp, sizeof(peerIp));
-      m_logger(Logging::DEBUGGING) << "SwapP2P: received msg type="
-        << static_cast<int>(msg.type) << " swapId=" << msg.swapId
-        << " from " << peerIp << ":" << ntohs(peerAddr.sin_port);
+    // Dispatch to a detached worker so accept() can continue immediately.
+    m_activeWorkers.fetch_add(1, std::memory_order_relaxed);
+    std::thread(&SwapP2P::handleConnection, this, clientSock).detach();
+  }
+}
 
-      // Deliver to callback if registered.
-      std::function<void(const SwapMessage&)> cb;
-      {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        cb = m_callback;
-      }
-      if (cb) {
-        cb(msg);
-      }
+void SwapP2P::handleConnection(int clientSock) {
+  SwapMessage msg;
+  if (readFramedMessage(clientSock, msg)) {
+    m_logger(Logging::DEBUGGING) << "SwapP2P: received msg type="
+      << static_cast<int>(msg.type) << " swapId=" << msg.swapId;
 
-      // Always enqueue for waitForMessage callers.
-      {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_pendingMessages.push_back(msg);
-      }
-      m_cv.notify_all();
-    } else {
-      m_logger(Logging::WARNING) << "SwapP2P: failed to read message from peer";
+    // Deliver to callback if registered.
+    std::function<void(const SwapMessage&)> cb;
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      cb = m_callback;
+    }
+    if (cb) {
+      cb(msg);
     }
 
-    close(clientSock);
+    // Always enqueue for waitForMessage callers (bounded at 1024).
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      if (m_pendingMessages.size() >= 1024) {
+        m_pendingMessages.pop_front();
+      }
+      m_pendingMessages.push_back(msg);
+    }
+    m_cv.notify_all();
+  } else {
+    m_logger(Logging::WARNING) << "SwapP2P: failed to read message from peer";
   }
+
+  close(clientSock);
+  m_activeWorkers.fetch_sub(1, std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------

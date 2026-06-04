@@ -15,6 +15,7 @@ type Config struct {
 	NoBch        bool   // disable BCH connection
 	Headless     bool   // run in headless mode (no TUI)
 	HeadlessPort int    // HTTP control API port (default: 18190)
+	StatusPort   int    // xfg-swapd status port (default: 18900)
 }
 
 func DefaultConfig() Config {
@@ -24,5 +25,6 @@ func DefaultConfig() Config {
 		StartPair: PairSOL,
 		BchRPC:       "http://127.0.0.1:7773",
 		HeadlessPort: 18190,
+		StatusPort:   18900,
 	}
 }

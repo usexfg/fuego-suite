@@ -15,6 +15,7 @@
 #include <HTTP/httplib.h>
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
+#include "SwapTimelock.h"
 #include "SwapTxBuilder.h"
 #include "SwapPeerProtocol.h"
 #include "Common/StringTools.h"
@@ -28,6 +29,7 @@
 #include "Solana/SolChainClient.h"
 #include "Monero/XmrChainClient.h"
 
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -148,6 +150,22 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << chainCfg.arbHost << ":" << chainCfg.arbPort
       << " (chainId=" << chainCfg.arbChainId << ")";
   }
+  if (!chainCfg.baseHost.empty()) {
+    std::unique_ptr<EthRpcClient> rpc;
+    if (!chainCfg.basePrivKeyHex.empty() && !chainCfg.baseAddress.empty()) {
+      rpc = std::make_unique<EthRpcClient>(
+          chainCfg.baseHost, chainCfg.basePort,
+          chainCfg.basePrivKeyHex, chainCfg.baseAddress, chainCfg.baseChainId,
+          EthTxType::Eip1559);
+    } else {
+      rpc = std::make_unique<EthRpcClient>(chainCfg.baseHost, chainCfg.basePort);
+    }
+    m_chainRegistry.registerChain(SwapPair::BASE,
+        std::make_unique<EthChainClient>(std::move(rpc), chainCfg.baseAddress, "BASE"));
+    m_logger(Logging::INFO) << "BASE chain client registered: "
+      << chainCfg.baseHost << ":" << chainCfg.basePort
+      << " (chainId=" << chainCfg.baseChainId << ")";
+  }
   if (!chainCfg.solHost.empty()) {
     auto rpc = std::make_unique<SolRpcClient>(
         chainCfg.solHost, chainCfg.solPort, chainCfg.solProgramId);
@@ -179,21 +197,62 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
 
 SwapDaemon::~SwapDaemon() {
   stop();
+  if (m_offerManager) {
+    m_offerManager->shutdown();
+  }
 }
 
 void SwapDaemon::start() {
+  uint32_t currentHeight = 0;
+  m_rpc.getHeight(currentHeight);
+
+  // Derive escrow encryption key from maker wallet key (memory-hard KDF).
+  // Never persisted — held only in m_db for this process lifetime.
+  if (m_makerKeysSet) {
+    std::string keyInput(Common::podToHex(m_makerSecretKey));
+    keyInput += "::swap-escrow-enc-key";
+    Crypto::cn_context ctx;
+    Crypto::Hash derived;
+    Crypto::cn_slow_hash(ctx, keyInput.data(), keyInput.size(), derived, 0, 0, 0);
+    m_db.setEncryptionKey(std::string(reinterpret_cast<const char*>(derived.data), sizeof(derived.data)));
+  }
+  // NOTE: XFG_SWAP_ENC_KEY env var fallback removed for security.
+  // The maker key is the only valid encryption key source.
+
   std::vector<std::string> swapIds = m_db.listSwaps();
   int recovered = 0;
+  int autoRefunded = 0;
+
   for (const auto& id : swapIds) {
     SwapStateMachine sm;
     if (m_db.loadSwap(id, sm) && !sm.isTerminal()) {
+      SwapState state = sm.currentState();
+      const auto& params = sm.params();
+
+      if ((state == SwapState::AFK_OFFER_LOCKED || state == SwapState::AFK_OFFER_ACCEPTED) &&
+          params.xfgTimeoutHeight > 0 && currentHeight >= params.xfgTimeoutHeight) {
+        m_logger(Logging::WARNING) << "AFK swap " << id << " timed out during offline — auto-refunding";
+        refund(id);
+        autoRefunded++;
+        continue;
+      }
+
       m_logger(Logging::INFO) << "Recovered in-progress swap " << id
         << " state=" << swapStateToString(sm.currentState());
       recovered++;
     }
   }
+
   if (recovered > 0) {
     m_logger(Logging::INFO) << "Recovered " << recovered << " in-progress swap(s)";
+  }
+  if (autoRefunded > 0) {
+    m_logger(Logging::INFO) << "Auto-refunded " << autoRefunded << " expired AFK swap(s)";
+  }
+
+  // Resubmit managed offers via swap relay
+  if (m_offerManager && m_swapRelay) {
+    m_offerManager->tick(currentHeight);
   }
 
   // Handle any swaps that expired while daemon was offline
@@ -230,6 +289,13 @@ void SwapDaemon::tickLoop() {
       for (const auto& req : pendingRequests) {
         handleSwapRequest(std::get<0>(req), std::get<1>(req), std::get<2>(req), std::get<3>(req));
       }
+    }
+
+    // Auto-reprice managed offers
+    if (m_offerManager) {
+      uint32_t currentHeight = 0;
+      m_rpc.getHeight(currentHeight);
+      m_offerManager->tick(currentHeight);
     }
 
     // Advance every non-terminal swap one step
@@ -294,15 +360,28 @@ bool SwapDaemon::initiate(SwapParams params) {
     params.xfgTimeoutHeight = currentHeight + 180;
   }
 
-  // Timelock ordering: Alice's XFG refund window must strictly exceed Bob's
-  // counterparty timeout so Alice can always reclaim XFG if Bob goes silent.
-  if (params.ctrTimeoutBlock != 0 &&
-      params.xfgTimeoutHeight <= params.ctrTimeoutBlock) {
-    m_logger(Logging::ERROR)
-      << "Timelock ordering violation: xfgTimeoutHeight ("
-      << params.xfgTimeoutHeight << ") must exceed ctrTimeoutBlock ("
-      << params.ctrTimeoutBlock << ")";
-    return false;
+  // Timelock ordering: wall-clock comparison with per-chain block times.
+  // XFG refund window must outlast the counterparty timeout by >= safety margin.
+  {
+    if (params.ctrTimeoutBlock == 0) {
+      m_logger(Logging::ERROR) << "ctrTimeoutBlock not set — cannot verify timelock ordering";
+      return false;
+    }
+    IChainClient* client = m_chainRegistry.getClient(params.pair);
+    uint64_t ctrCurrentHeight = 0;
+    if (!client || !client->getCurrentHeight(ctrCurrentHeight) || ctrCurrentHeight == 0) {
+      m_logger(Logging::WARNING) << "Cannot query counterparty chain height — skipping timelock check";
+    } else {
+      if (!timelockOrderingOk(params.pair, currentHeight, params.xfgTimeoutHeight,
+                               ctrCurrentHeight, params.ctrTimeoutBlock)) {
+        m_logger(Logging::ERROR)
+          << "Timelock ordering violation: XFG window ("
+          << (params.xfgTimeoutHeight - currentHeight) << " blocks) must outlast "
+          << swapPairToString(params.pair) << " timeout by >= "
+          << (DEFAULT_SAFETY_MARGIN_SEC / 3600) << "h in wall-clock";
+        return false;
+      }
+    }
   }
 
   // Validate price against TWAP
@@ -365,6 +444,9 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
   
   auto& params = sm.params();
   std::string warning = "";
+
+  uint32_t currentHeight = 0;
+  m_rpc.getHeight(currentHeight);
   
     // AFK Safety Check: Check remaining time of Maker's lock
     if (sm.currentState() == SwapState::AFK_OFFER_LOCKED) {
@@ -392,13 +474,23 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
 
 
   // Timelock ordering check
-  if (params.ctrTimeoutBlock != 0 &&
-      params.xfgTimeoutHeight <= params.ctrTimeoutBlock) {
-    m_logger(Logging::ERROR)
-      << "Timelock ordering violation: xfgTimeoutHeight ("
-      << params.xfgTimeoutHeight << ") must exceed ctrTimeoutBlock ("
-      << params.ctrTimeoutBlock << ")";
-    return {false, ""};
+  {
+    if (params.ctrTimeoutBlock == 0) {
+      m_logger(Logging::ERROR) << "ctrTimeoutBlock not set — cannot verify timelock ordering";
+      return {false, ""};
+    }
+    IChainClient* client = m_chainRegistry.getClient(params.pair);
+    uint64_t ctrCurrentHeight = 0;
+    if (!client || !client->getCurrentHeight(ctrCurrentHeight) || ctrCurrentHeight == 0) {
+      m_logger(Logging::WARNING) << "Cannot query counterparty chain height — skipping timelock check";
+    } else {
+      if (!timelockOrderingOk(params.pair, currentHeight, params.xfgTimeoutHeight,
+                               ctrCurrentHeight, params.ctrTimeoutBlock)) {
+        m_logger(Logging::ERROR)
+          << "Timelock ordering violation: XFG window must outlast counterparty timeout";
+        return {false, ""};
+      }
+    }
   }
   
   // ── Adaptor sig step 2: key aggregation ──
@@ -491,6 +583,22 @@ bool SwapDaemon::checkTimeouts() {
           << " — call 'refund " << swapId << "' to initiate cooperative refund.";
         anyExpired = true;
       }
+
+      if (current == SwapState::AFK_OFFER_LOCKED ||
+          current == SwapState::AFK_OFFER_ACCEPTED) {
+        uint32_t threshold = (params.xfgTimeoutHeight > currentHeight)
+                             ? (params.xfgTimeoutHeight - currentHeight) : 0;
+        if (threshold < 2) {
+          m_logger(Logging::WARNING) << "AFK swap " << swapId
+            << " timeout imminent at height " << currentHeight
+            << " (deadline: " << params.xfgTimeoutHeight << ") — attempting auto-refund";
+          refund(swapId);
+        } else {
+          m_logger(Logging::INFO) << "AFK swap " << swapId
+            << " state=" << swapStateToString(current)
+            << " remaining=" << threshold << " blocks";
+        }
+      }
     }
   }
 
@@ -521,9 +629,18 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
     << Common::podToHex(params.escrowTxHash) << ").";
   // Phase 1: 1% sender surcharge added to escrow amount (total swap fee = 2%: 1% init + 1% claim)
   if (params.xfgAmount > 0) {
+    if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
+      m_logger(Logging::ERROR) << "Fee surcharge multiplication overflow on swap";
+      return false;
+    }
     uint64_t senderSurcharge = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
                              / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
     if (senderSurcharge > 0) {
+      if (params.xfgAmount > UINT64_MAX - senderSurcharge) {
+        m_logger(Logging::ERROR) << "Fee surcharge overflow on swap — xfgAmount="
+                                 << params.xfgAmount << " surcharge=" << senderSurcharge;
+        return false;
+      }
       params.xfgAmount += senderSurcharge;
       m_rpc.addSwapFee(senderSurcharge);
       m_logger(Logging::INFO) << "  Swap initiation fee (1%): " << senderSurcharge
@@ -694,6 +811,7 @@ bool SwapDaemon::handleSecretRevealed(SwapStateMachine& sm) {
     r2msg.type = PeerMessageType::RING_ROUND2;
     r2msg.swapId = params.swapId;
     r2msg.ringRound2.partialResponse = ringState.ourPartialResponse;
+    signPeerMessage(r2msg, params.ourSwapPubKey, params.ourSwapSecKey);
     m_logger(Logging::INFO) << "  Sending Ring Round 2 to peer...";
     m_logger(Logging::INFO) << "  Ring Round 2: "
       << serializePeerMessage(r2msg).substr(0, 120) << "...";
@@ -724,6 +842,7 @@ bool SwapDaemon::handleSecretRevealed(SwapStateMachine& sm) {
     r1msg.ringRound1.partialKeyImage = spendRingState.ourPartialKeyImage;
     r1msg.ringRound1.ringNoncePub = spendRingState.ourRingNoncePub;
     r1msg.ringRound1.ringNonceHp = spendRingState.ourRingNonceHp;
+    signPeerMessage(r1msg, params.ourSwapPubKey, params.ourSwapSecKey);
 
     m_logger(Logging::INFO) << "  Escrow spend tx built. Sending Ring Round 1 to peer...";
     m_logger(Logging::INFO) << "  Ring Round 1: "
@@ -1004,6 +1123,7 @@ bool SwapDaemon::refund(const std::string& swapId) {
       r2msg.type = PeerMessageType::RING_ROUND2;
       r2msg.swapId = params.swapId;
       r2msg.ringRound2.partialResponse = ringState.ourPartialResponse;
+      signPeerMessage(r2msg, params.ourSwapPubKey, params.ourSwapSecKey);
       m_logger(Logging::INFO) << "  Sending Ring Round 2 to peer...";
       m_logger(Logging::INFO) << "  Ring Round 2: "
         << serializePeerMessage(r2msg).substr(0, 120) << "...";
@@ -1039,6 +1159,7 @@ bool SwapDaemon::refund(const std::string& swapId) {
       r1msg.ringRound1.partialKeyImage = ringState.ourPartialKeyImage;
       r1msg.ringRound1.ringNoncePub = ringState.ourRingNoncePub;
       r1msg.ringRound1.ringNonceHp = ringState.ourRingNonceHp;
+      signPeerMessage(r1msg, params.ourSwapPubKey, params.ourSwapSecKey);
 
       m_logger(Logging::INFO) << "  Refund tx built. Sending Ring Round 1 to peer...";
       m_logger(Logging::INFO) << "  Ring Round 1 message: "
@@ -1201,6 +1322,10 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
 
   // Phase 2: 1% claim fee reported to daemon (total swap fee = 2%: 1% init + 1% claim)
   if (params.xfgAmount > 0) {
+    if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
+      m_logger(Logging::ERROR) << "Claim fee multiplication overflow on swap";
+      return false;
+    }
     uint64_t claimFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
                       / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
     if (claimFee > 0) {
@@ -1222,8 +1347,9 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
     SwapParams& params = const_cast<SwapParams&>(sm.params());
 
     // Peer authentication gate:
-    // KEY_EXCHANGE must only be accepted once (no key-swapping attacks).
-    // All other messages require the peer key to have been set.
+    // KEY_EXCHANGE: signature is self-attested by the key carried in the body
+    //   (sender proves they own the key they're announcing). Bind it once.
+    // All other messages: signature must verify under the bound peerSwapPubKey.
     static const Crypto::PublicKey ZERO_KEY{};
     bool keyExchanged = (std::memcmp(&params.peerSwapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) != 0);
 
@@ -1237,16 +1363,34 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "KEY_EXCHANGE with zero pubkey rejected";
           return false;
         }
+        if (!verifyPeerMessage(msg, msg.keyExchange.swapPubKey)) {
+          m_logger(Logging::WARNING) << "KEY_EXCHANGE signature invalid for swap " << msg.swapId;
+          return false;
+        }
         params.peerSwapPubKey = msg.keyExchange.swapPubKey;
         if (!adaptor_key_aggregate(params)) return false;
         sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
         return true;
 
-      case PeerMessageType::ADAPTOR_EXCHANGE:
-        if (!keyExchanged) return false;
-        params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
+      default:
+        break;  // fall through to post-KEY_EXCHANGE auth gate below.
+    }
 
-      // ... rest of the cases need keyExchanged check
+    // Non-KEY_EXCHANGE messages: peer key must be bound + signature must verify.
+    if (!keyExchanged) {
+      m_logger(Logging::WARNING) << "Peer message before KEY_EXCHANGE rejected: type="
+        << static_cast<int>(msg.type) << " swap=" << msg.swapId;
+      return false;
+    }
+    if (!verifyPeerMessage(msg, params.peerSwapPubKey)) {
+      m_logger(Logging::WARNING) << "Peer message signature invalid: type="
+        << static_cast<int>(msg.type) << " swap=" << msg.swapId;
+      return false;
+    }
+
+    switch (msg.type) {
+      case PeerMessageType::ADAPTOR_EXCHANGE:
+        params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
         if (!adaptor_verify_adaptor(params, params.escrowPubKey, params.adaptorDleqQ)) {
@@ -1256,12 +1400,10 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::NONCE_EXCHANGE:
-        if (!keyExchanged) return false;
         params.musig2.peerPubNonce = msg.nonceExchange.pubNonce;
         return true;
 
       case PeerMessageType::PARTIAL_SIG:
-        if (!keyExchanged) return false;
         params.musig2.peerPartialSig = msg.partialSig.partialSig;
         if (!adaptor_partial_verify(params)) {
           m_logger(Logging::ERROR) << "Peer partial sig verification failed!";
@@ -1271,7 +1413,6 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::RING_ROUND1:
-        if (!keyExchanged) return false;
         params.ringPeerPartialKeyImage = msg.ringRound1.partialKeyImage;
         params.ringPeerRingNoncePub    = msg.ringRound1.ringNoncePub;
         params.ringPeerRingNonceHp     = msg.ringRound1.ringNonceHp;
@@ -1280,7 +1421,6 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::RING_ROUND2:
-        if (!keyExchanged) return false;
         params.ringPeerPartialResponse = msg.ringRound2.partialResponse;
         params.ringPeerRound2Received  = true;
         m_logger(Logging::INFO) << "  Received peer Ring Round 2 data (persisted)";
@@ -1289,6 +1429,10 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
       case PeerMessageType::ABORT:
         m_logger(Logging::WARNING) << "Peer aborted swap " << msg.swapId;
         return true;
+
+      case PeerMessageType::KEY_EXCHANGE:
+        // Unreachable — handled in the first switch.
+        return false;
 
       default:
         m_logger(Logging::ERROR) << "Unknown peer message type: "
@@ -1372,22 +1516,21 @@ PriceOracle& SwapDaemon::priceOracle() {
   }
 bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds) {
-  // Validate proofOfFunds if applicable (using K_COMMAND_RPC_CHECK_RESERVE_PROOF logic via wallet/RPC)
-
-  // Create the AFK Lock using wallet RPC (auto-execute)
-  // And start the swap state machine
   m_logger(Logging::INFO) << "Received swap request for offer " << offerId << " amount " << amount;
+
+  if (isTakerRateLimited(takerPubKey)) {
+    m_logger(Logging::WARNING) << "Taker " << takerPubKey.substr(0, 16) << "... is rate-limited — rejecting";
+    return false;
+  }
 
   if (!m_swapRelay) {
     m_logger(Logging::ERROR) << "Swap relay not configured, cannot handle swap request";
     return false;
   }
 
-  // Search all pairs to find the target offer by ID
-
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= 4; ++pair) {
+  for (int pair = 0; pair <= 5; ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {
@@ -1409,19 +1552,173 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     return false;
   }
 
+  uint64_t fillAmount = amount;
+  uint64_t remaining = targetOffer.xfgAmount - targetOffer.filledAmount;
+  if (fillAmount == 0 || fillAmount > remaining) {
+    fillAmount = remaining;
+  }
+  if (fillAmount == 0) {
+    m_logger(Logging::ERROR) << "Offer " << offerId << " has no remaining amount";
+    return false;
+  }
+
+  SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
+  IChainClient* client = m_chainRegistry.getClient(pair);
+  if (!client) {
+    m_logger(Logging::ERROR) << "No chain client for pair " << (int)targetOffer.pair;
+    return false;
+  }
+
+  uint64_t requiredCtrAmount = 0;
+  {
+    double xfgWhole = static_cast<double>(fillAmount) / 1e7;
+    double rate = static_cast<double>(targetOffer.rateNum) / 1e7;
+    if (rate <= 0.0) {
+      m_logger(Logging::ERROR) << "Invalid rate for offer " << offerId;
+      return false;
+    }
+    double ctrWhole = xfgWhole / rate;
+    ctrWhole *= m_oracle.ctrDivisor(pair);
+    if (ctrWhole > static_cast<double>(UINT64_MAX)) {
+      m_logger(Logging::ERROR) << "CTR amount overflow for offer " << offerId;
+      return false;
+    }
+    requiredCtrAmount = static_cast<uint64_t>(ctrWhole);
+  }
+
+  ChainClientResult proofResult = client->verifyReserveProof("", requiredCtrAmount, proofOfFunds);
+  if (!proofResult.success) {
+    m_logger(Logging::ERROR) << "Reserve proof failed for offer " << offerId << ": " << proofResult.error;
+    recordTakerFailure(takerPubKey);
+    return false;
+  }
+
   std::string lockId;
   std::string adaptorPoint;
   std::string preSig;
 
-  // Create AFK lock (short timeout for taker, e.g., 1 hour)
-  if (!m_rpc.createAfkLock(targetOffer.xfgAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig)) {
+  if (!m_rpc.createAfkLock(fillAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig)) {
     m_logger(Logging::ERROR) << "Failed to create AFK lock for offer " << offerId;
     return false;
   }
 
-  m_logger(Logging::INFO) << "Successfully created AFK lock " << lockId << " for soft order " << offerId;
+  m_logger(Logging::INFO) << "AFK lock " << lockId << " created for " << fillAmount
+                          << " of " << remaining << " XFG on offer " << offerId;
 
-  // State machine will pick up the new lock
+  uint64_t newRemaining = remaining - fillAmount;
+  if (!m_swapRelay->updateOfferAmount(offerId, newRemaining)) {
+    m_logger(Logging::WARNING) << "Failed to update offer fill state for " << offerId;
+  }
+
+  return true;
+}
+
+bool SwapDaemon::isTakerRateLimited(const std::string& takerPubKey) {
+  std::lock_guard<std::mutex> lock(m_takerMutex);
+  auto it = m_takerHistory.find(takerPubKey);
+  if (it == m_takerHistory.end()) return false;
+
+  time_t now = time(nullptr);
+  time_t oneHourAgo = now - 3600;
+  it->second.requestTimes.erase(
+    std::remove_if(it->second.requestTimes.begin(),
+                   it->second.requestTimes.end(),
+                   [oneHourAgo](time_t t) { return t < oneHourAgo; }),
+    it->second.requestTimes.end()
+  );
+
+  if (it->second.failedSwaps >= TAKER_BAN_THRESHOLD) return true;
+  if (it->second.requestTimes.size() >= MAX_TAKER_REQUESTS_PER_HOUR) return true;
+  return false;
+}
+
+void SwapDaemon::recordTakerFailure(const std::string& takerPubKey) {
+  std::lock_guard<std::mutex> lock(m_takerMutex);
+  auto& record = m_takerHistory[takerPubKey];
+  record.requestTimes.push_back(time(nullptr));
+  record.failedSwaps++;
+}
+
+void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk) {
+  m_makerSecretKey = sk;
+  m_makerPublicKey = pk;
+  m_makerKeysSet = true;
+}
+
+bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
+  if (!m_swapRelay) {
+    m_logger(Logging::ERROR) << "Swap relay not set, cannot initialize OfferManager";
+    return false;
+  }
+  if (!m_makerKeysSet) {
+    m_logger(Logging::ERROR) << "Maker keys not set, cannot initialize OfferManager";
+    return false;
+  }
+  m_offerManager.reset(new OfferManager(
+    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger()));
+  if (!m_offerManager->loadConfig(jsonPath)) {
+    m_offerManager.reset();
+    return false;
+  }
+  m_logger(Logging::INFO) << "OfferManager initialized with "
+                          << m_offerManager->activeOfferCount() << " offers";
+  return true;
+}
+
+std::string SwapDaemon::buildStatusJson() {
+  std::ostringstream json;
+  json << "{";
+
+  uint32_t height = 0;
+  m_rpc.getHeight(height);
+  json << "\"height\":" << height << ",";
+
+  json << "\"offers\":[";
+  if (m_swapRelay) {
+    auto offers = m_swapRelay->getAllOffers();
+    for (size_t i = 0; i < offers.size(); ++i) {
+      if (i > 0) json << ",";
+      json << "{\"offerId\":\"" << offers[i].offerId << "\""
+           << ",\"pair\":" << (int)offers[i].pair
+           << ",\"xfgAmount\":" << offers[i].xfgAmount
+           << ",\"filledAmount\":" << offers[i].filledAmount
+           << ",\"rateNum\":" << offers[i].rateNum
+           << ",\"postedHeight\":" << offers[i].postedHeight
+           << "}";
+    }
+  }
+  json << "],";
+
+  json << "\"swaps\":[";
+  {
+    auto swapIds = m_db.listSwaps();
+    bool first = true;
+    for (const auto& id : swapIds) {
+      SwapStateMachine sm;
+      if (!m_db.loadSwap(id, sm)) continue;
+      if (sm.isTerminal()) continue;
+      if (!first) json << ",";
+      first = false;
+      const auto& p = sm.params();
+      json << "{\"swapId\":\"" << id << "\""
+           << ",\"state\":\"" << swapStateToString(sm.currentState()) << "\""
+           << ",\"pair\":" << (int)p.pair
+           << ",\"timeoutHeight\":" << p.xfgTimeoutHeight
+           << "}";
+    }
+  }
+  json << "]}";
+  return json.str();
+}
+
+bool SwapDaemon::startStatusServer(uint16_t port) {
+  m_statusServer.reset(new StatusServer(port,
+    [this]() { return this->buildStatusJson(); },
+    m_logger.getLogger()));
+  if (!m_statusServer->start()) {
+    m_statusServer.reset();
+    return false;
+  }
   return true;
 }
 

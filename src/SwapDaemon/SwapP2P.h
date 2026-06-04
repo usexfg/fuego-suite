@@ -44,7 +44,7 @@ struct SwapMessage {
 
 class SwapP2P {
 public:
-  SwapP2P(uint16_t listenPort, Logging::LoggerRef& logger);
+  SwapP2P(uint16_t listenPort, const std::string& bindAddr, Logging::LoggerRef& logger);
   ~SwapP2P();
 
   // Bind and listen on the configured TCP port.
@@ -69,6 +69,11 @@ private:
   // Accept incoming connections in a dedicated thread.
   void acceptLoop();
 
+  // Handle one accepted connection on a worker thread: read one framed
+  // message, deliver to the callback + pending queue, close the socket.
+  // Decrements m_activeWorkers on exit.
+  void handleConnection(int clientSock);
+
   // Deserialize raw bytes into a SwapMessage.
   bool parseMessage(const std::vector<uint8_t>& data, SwapMessage& msg);
 
@@ -90,12 +95,17 @@ private:
 
   int m_listenSocket;
   uint16_t m_listenPort;
+  std::string m_bindAddr;
   std::atomic<bool> m_running;
   std::thread m_acceptThread;
 
   std::deque<SwapMessage> m_pendingMessages;
   std::mutex m_mutex;
   std::condition_variable m_cv;
+
+  // Bounded per-connection workers so one slow peer can't stall accept().
+  std::atomic<size_t> m_activeWorkers{0};
+  static constexpr size_t MAX_WORKERS = 64;
 
   std::function<void(const SwapMessage&)> m_callback;
 

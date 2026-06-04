@@ -126,8 +126,19 @@ bool loadChainClientConfig(const std::string& path,
   out.arbChainId    = jsonGetUint(json, "arb_chain_id", 42161);
   out.arbHtlcBinPath = jsonGetStr(json, "arb_htlc_bin_path");
 
+  // BASE
+  out.baseHost       = jsonGetStr (json, "base_rpc_host", "");
+  out.basePort       = static_cast<uint16_t>(jsonGetUint(json, "base_rpc_port", 8545));
+  out.baseAddress    = jsonGetStr (json, "base_address",  out.ethAddress);
+  out.basePrivKeyHex = jsonGetStr (json, "base_priv_key", out.ethPrivKeyHex);
+  out.baseChainId    = jsonGetUint(json, "base_chain_id", 8453);
+  out.baseHtlcBinPath= jsonGetStr (json, "base_htlc_bin", out.ethHtlcBinPath);
+
   out.xmrSpendKeyHex = jsonGetStr(json, "xmr_spend_key");
   out.xmrViewKeyHex  = jsonGetStr(json, "xmr_view_key");
+
+  // XFG wallet key for signing managed offers
+  out.xfgSecretKeyHex = jsonGetStr(json, "xfg_secret_key");
 
   // ── Validate ──
   if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;
@@ -138,6 +149,11 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.arbPrivKeyHex, 32, "arb_priv_key", errorMsg)) return false;
   if (!out.arbAddress.empty() && (out.arbAddress.size() < 2 || out.arbAddress.substr(0, 2) != "0x")) {
     errorMsg = "arb_address must start with 0x";
+    return false;
+  }
+  if (!validateHex(out.basePrivKeyHex, 32, "base_priv_key", errorMsg)) return false;
+  if (!out.baseAddress.empty() && (out.baseAddress.size() < 2 || out.baseAddress.substr(0, 2) != "0x")) {
+    errorMsg = "base_address must start with 0x";
     return false;
   }
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;

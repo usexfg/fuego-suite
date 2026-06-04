@@ -75,7 +75,8 @@ enum class SwapPair : uint8_t {
   ETH = 1,
   XMR = 2,
   BCH = 3,
-  ARB = 4
+  ARB = 4,
+  BASE = 5
 };
 
 // Musig2 session state persisted across swap steps.
@@ -151,6 +152,8 @@ struct SwapParams {
   bool ringOurRound1Sent = false;      // we already generated & sent Round 1
   bool ringOurRound2Sent = false;      // we already generated & sent Round 2
   bool ringTxBroadcast = false;        // escrow spend/refund tx was broadcast
+
+  std::vector<uint8_t> encBlob;        // encrypted adaptorSecret blob (from disk)
 };
 
 const char* swapStateToString(SwapState s);

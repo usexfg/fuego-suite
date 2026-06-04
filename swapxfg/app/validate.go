@@ -22,7 +22,7 @@ var reETHAddr = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
 // "xmr"/"xfg". Returns nil on success, a user-visible error otherwise.
 func validateAddress(chain string, addr string) error {
 	switch strings.ToLower(chain) {
-	case "eth", "evm":
+	case "eth", "evm", "arb", "base":
 		return validateETHAddress(addr)
 	case "sol":
 		return validateSOLAddress(addr)

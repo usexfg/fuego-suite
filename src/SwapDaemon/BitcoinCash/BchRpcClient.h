@@ -57,6 +57,10 @@ public:
   // Import address for watching (no private key)
   bool importAddress(const std::string& address, const std::string& label, bool rescan);
 
+  // Verify a signed message against an address via node verifymessage RPC.
+  bool verifyMessage(const std::string& address, const std::string& signature,
+                     const std::string& message, bool& valid);
+
   // ─── HTLC operations ─────────────────────────────────────────────────────
   //
   // Lock BCH in a P2SH HTLC.

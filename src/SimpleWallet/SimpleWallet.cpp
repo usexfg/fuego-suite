@@ -475,21 +475,8 @@ std::string simple_wallet::get_commands_str() {
   auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
     if (cmds.empty()) return; // don't print empty categories
     ss << "\n\033[1;33m" << cat << "\n" << std::string(cat.size(), '_') << "\033[0m" << ENDL;
-
-    std::vector<std::pair<std::string, std::string>> long_cmds;
     for (const auto& cmd : cmds) {
-      if (cmd.second.find('-') != std::string::npos || cmd.second.find('[') != std::string::npos) {
-        long_cmds.push_back(cmd);
-      } else {
-        ss << "  " << std::setw(20) << std::left << cmd.first << " : " << cmd.second << ENDL;
-      }
-    }
-
-    if (!long_cmds.empty()) {
-      ss << ENDL;
-      for (const auto& cmd : long_cmds) {
-        ss << "  " << cmd.first << " : " << cmd.second << ENDL;
-      }
+      ss << "  " << std::setw(20) << std::left << cmd.first << " : " << cmd.second << ENDL;
     }
     ss << ENDL;
   };
@@ -988,9 +975,9 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
     logger(INFO, BRIGHT_GREEN) << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. Only YOU are in control of your funds & your private keys. When you generate a new wallet, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. IT IS IMPERATIVE that you write down, print, or save your seed phrase somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account CANNOT be recovered. Freedom isn't free - the cost is responsibility. Schofield's 2nd Law of Computing states that data doesn't really exist unless you have at least two copies of it-- then keep each somewhere safe & secure.   " << std::endl << std::endl;
 
     std::cout << "Wallet Address: " << m_wallet->getAddress() << std::endl;
-    std::cout << "Private spend key: <redacted>" << std::endl;
-    std::cout << "Private view key: <redacted>" << std::endl;
-    std::cout << "Mnemonic Seed: <redacted>" << std::endl;
+    std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
+    std::cout << "Private view key: " << Common::podToHex(keys.viewSecretKey) << std::endl;
+    std::cout << "Mnemonic Seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl;
 
   }
   catch (const std::exception& e) {
@@ -2947,9 +2934,9 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
 
   logger(INFO, BRIGHT_GREEN) << std::endl << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility. Protect your keys." << std::endl << std::endl;
 
-    std::cout << "Private spend key: <redacted>" << std::endl;
-    std::cout << "Private view key: <redacted>" << std::endl;
-    std::cout << "Mnemonic seed: <redacted>" << std::endl << std::endl;
+    std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
+    std::cout << "Private view key: " << Common::podToHex(keys.viewSecretKey) << std::endl;
+    std::cout << "Mnemonic seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl << std::endl;
   return true;
 }
 

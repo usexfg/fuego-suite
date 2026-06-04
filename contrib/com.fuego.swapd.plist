@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fuego.swapd</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/xfg-swapd</string>
+        <string>--service</string>
+        <string>--swap-config</string>
+        <string>/etc/fuego/swap-config.json</string>
+        <string>--offer-config</string>
+        <string>/etc/fuego/offers.json</string>
+        <string>--status-port</string>
+        <string>18900</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/fuego/swapd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/fuego/swapd.err</string>
+</dict>
+</plist>

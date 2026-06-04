@@ -1,0 +1,25 @@
+[Unit]
+Description=Fuego Swap Daemon (xfg-swapd)
+After=network.target fuegod.service
+
+[Service]
+Type=simple
+User=fuego
+ExecStart=/usr/local/bin/xfg-swapd \
+    --service \
+    --swap-config /etc/fuego/swap-config.json \
+    --offer-config /etc/fuego/offers.json \
+    --status-port 18900
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/fuego/swap
+ReadOnlyPaths=/etc/fuego
+
+[Install]
+WantedBy=multi-user.target

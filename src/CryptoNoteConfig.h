@@ -54,8 +54,8 @@ namespace CryptoNote
 		const uint64_t MONEY_SUPPLY = UINT64_C(80000088000008); /* max supply: 8M8 */
 		const uint64_t COIN = UINT64_C(10000000);
 		const uint64_t MINIMUM_FEE_V1 = UINT64_C(800000);
-		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG  (80Kf) */
-		const uint64_t MINIMUM_FEE_8KH = UINT64_C(8000);	/* 0.0008 XFG (8Kf)  BMv10+ Flat Fee */
+		const uint64_t MINIMUM_FEE_V2 = UINT64_C(80000);	/* 0.008 XFG  (80Kilofire) */
+		const uint64_t MINIMUM_FEE_8KH = UINT64_C(8000);	/* 0.0008 XFG (8Kilofire)  BMv10+ Flat Fee */
 		const uint64_t MINIMUM_FEE = MINIMUM_FEE_8KH;
 
 		// MAINNET banking fees (0.1% of AMOUNT_TIER)
@@ -78,7 +78,7 @@ namespace CryptoNote
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(1000); /* < 0.0001 XFG ( under 1 Kf is dust) v10 */
 
 		const size_t   CRYPTONOTE_COIN_VERSION                       = 1;
-		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	         = 7;
+		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	     = 7;
 		const size_t   CRYPTONOTE_REWARD_BLOCKS_WINDOW               = 100;
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE     = 430080; //size of block (bytes) after reward for block is calculated in block-size (420KB)
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2  = 430080;
@@ -94,38 +94,14 @@ namespace CryptoNote
 		const size_t   DIFFICULTY_WINDOW_V3                          = 60;  // blocks  Zawy-LWMA1
 		const size_t   DIFFICULTY_WINDOW_V4                          = 45;  // blocks  Zawy-LWMA1 Fuego (~180 block per day)
 
-		// DMWDA MAINNET parameters
-		const uint32_t DMWDA_SHORT_WINDOW                            = 15;   // Rapid response window
-		const uint32_t DMWDA_MEDIUM_WINDOW                           = 45;   // Stability window
-		const uint32_t DMWDA_LONG_WINDOW                             = 120;  // Trend analysis window
-		const uint32_t DMWDA_EMERGENCY_WINDOW                        = 5;    // Emergency response window
-		const double   DMWDA_MIN_ADJUSTMENT                          = 0.5;  // Minimum difficulty adjustment (50%)
-		const double   DMWDA_MAX_ADJUSTMENT                          = 4.0;  // Maximum difficulty adjustment (400%)
-		const double   DMWDA_EMERGENCY_THRESHOLD                     = 0.1;  // Emergency threshold (10%)
-		const double   DMWDA_SMOOTHING_FACTOR                        = 0.3;  // Smoothing factor for oscillations prevention
-		const double   DMWDA_CONFIDENCE_MIN                          = 0.1;  // Minimum confidence score
-		const double   DMWDA_CONFIDENCE_MAX                          = 1.0;  // Maximum confidence score
-		const double   DMWDA_ADJUSTMENT_RANGE                        = 0.3;  // Adjustment range for confidence-based bounds
-		const double   DMWDA_WEIGHT_SHORT                            = 0.4;  // Weight for short window
-		const double   DMWDA_WEIGHT_MEDIUM                           = 0.4;  // Weight for medium window
-		const double   DMWDA_WEIGHT_LONG                             = 0.2;  // Weight for long window
-		const double   DMWDA_HASH_RATE_CHANGE_THRESHOLD              = 10.0; // Hash rate change threshold for anomaly detection
-		const double   DMWDA_DEFAULT_CONFIDENCE                      = 0.5;  // Default confidence score
-		const uint32_t DMWDA_RECENT_WINDOW_SIZE                      = 5;    // Recent window size for anomaly detection
-		const uint32_t DMWDA_HISTORICAL_WINDOW_SIZE                  = 20;   // Historical window size for anomaly detection
-		const uint32_t DMWDA_BLOCK_STEALING_CHECK_BLOCKS             = 5;    // Number of blocks to check for stealing attempts
-		const uint32_t DMWDA_BLOCK_STEALING_THRESHOLD                = 2;    // Threshold for fast blocks to trigger stealing detection
-		const double   DMWDA_BLOCK_STEALING_TIME_THRESHOLD           = 0.05; // 5% of target time threshold for fast blocks
-		const uint32_t TESTNET_DMWDA_LONG_WINDOW                             = 60;  // Trend analysis window
-
         // MIXIN
 		const uint64_t MIN_TX_MIXIN_SIZE_V2                          = 2;  // Legacy mixin
-		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // Maxmix min starting from BlockMajorVersion 10
+		const uint64_t MIN_TX_MIXIN_SIZE_V10                         = 8;  // dynamix starting from BlockMajorVersion 10
         const uint64_t MIN_TX_MIXIN_SIZE                             = MIN_TX_MIXIN_SIZE_V10;  // Default mixin size
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 32;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
-		// DANDELION++ tx relay (privacy)
+		// DANDELION++ tx relay 
 		// Active from BLOCK_MAJOR_VERSION_10. Per-hop the stem-stay decision is a coin flip
 		// (uniform in [0,100)); staying-prob is *_STAY_PCT. After MAX_HOPS or fluff transition,
 		// the tx is broadcast normally. EMBARGO_SECONDS guards against stem black-hole: if a
@@ -136,12 +112,13 @@ namespace CryptoNote
 		const uint32_t DANDELION_SWAP_STEM_MAX_HOPS                  = 5;   // shorter for swap offers (latency-sensitive)
 		const uint32_t DANDELION_SWAP_STEM_STAY_PCT                  = 80;
 		const uint32_t DANDELION_EMBARGO_SECONDS                     = 30;
+		const uint32_t DANDELION_EPOCH_SECONDS                      = 90;  // rotate stem successor every 90 s
 		static_assert(DANDELION_STEM_STAY_PCT < 100, "stay pct must allow eventual fluff");
 		static_assert(DANDELION_SWAP_STEM_STAY_PCT < 100, "swap stay pct must allow eventual fluff");
 		static_assert(DANDELION_SWAP_STEM_MAX_HOPS <= DANDELION_STEM_MAX_HOPS, "swap path must be no longer than tx path");
 
 		// Identifies which relay path is asking — tx pool, or swap-offer gossip.
-		// Single helper keeps the two sites from drifting on future tuning.
+		// Single helper keeps the two from drifting on future tuning.
 		enum class DandelionKind { Tx, SwapOffer };
 		inline bool dandelionShouldStayInStem(uint32_t hop_count, DandelionKind kind, uint32_t rand_0_99) {
 		  const uint32_t max_hops = (kind == DandelionKind::Tx)
@@ -166,7 +143,7 @@ namespace CryptoNote
         const uint64_t EPOCH_DURATION_BLOCKS = 900;  // 5 days (180 blks/day)        // Mainnet: 900 blocks (5 days at 480s/block)
         const uint64_t TESTNET_EPOCH_DURATION_BLOCKS = 10;       // Testnet: 10 blocks (fast epochs for testing)
 
-        // CD Fee Pool — funded by atomic swap fees, distributed as interest to CD holders
+        // CD Fee Pool — funded by atomic swap fees / distributed as interest to CD holders
         const uint64_t SWAP_FEE_RATE_BPS = 100;                // 1% of swap claim/refund amount (100 basis points)
         const uint64_t SWAP_FEE_RATE_DIVISOR = 10000;          // basis point denominator
         const uint64_t FEE_POOL_RATE_PRECISION = 1000000ULL;   // 1e6 fixed-point (fits uint32_t for div128_32)
@@ -187,9 +164,19 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
+        // YEM v10 skeleton — pre-activation scaffolding for v11 Sovereign Yield System
+        // Atomic swap fee routing + legacy bond registration activate at v10.
+        // Coupons, maturities, coinbase, scalp, SWF, smoothing wait for v11.
+        constexpr uint32_t YEM_V10_ACTIVATION_HEIGHT  = 445000;    // v10 go-live: fee routing + bond registration
+        constexpr uint32_t YEM_ACTIVATION_HEIGHT      = 1111111;   // v11 go-live: full sovereign yield engine
+        constexpr uint64_t YEM_V10_ALLOCATION_BPS     = 10000;     // 100% of swap fees → YEM Reserve (held until v11)
+        constexpr uint64_t YEM_V10_RESERVE_DENOM      = 10000;     // basis point denominator
+        constexpr uint64_t YEM_BOND_MAX_RATE_BPS      = 2500;      // 25%/yr coupon cap (v11)
+        constexpr uint64_t YEM_BOND_MIN_RATE_BPS      = 300;       // 3%/yr coupon floor (v11)
+
         // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)
         const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
-        const uint64_t LEGACY_BOND_TARGET_APY = 80;          // 80% target APY on legacy bonds
+        const uint64_t LEGACY_BOND_TARGET_APY = 50;          // 50% target APY on legacy bonds
         const uint64_t LEGACY_BOND_TERM_EPOCHS = 72;         // 72 epochs (~1 year) lock period
         const uint64_t LEGACY_BOND_DEBT_CAP = 2542500000000;     // ₲254,250 total debt cap (in ATOMIC units, 10000000 per XFG)
 
@@ -331,7 +318,7 @@ namespace CryptoNote
 		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //{Godflame}  (emission|UPX2|Fuego)
         const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //{Harbinja}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
-        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT stablecoin + PI controller + HEARTH AMM + HEAT_CDs
+        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH AMM + HEAT_CDs + YELM
         const uint32_t UPGRADE_HEIGHT_V12                            = 1666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
 // upgradekit
 //
@@ -376,8 +363,8 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_7                         =  7;
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
-	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; // Per-asset balance + AMM swap auth + HEAT mint auth (M3 fix)
-	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11; // Hearth AMM + PI controller + CD yield pipeline
+	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; 
+	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11;
 	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Unified output/input types + Pedersen + MLSAG (hidden amounts)
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
@@ -410,9 +397,10 @@ namespace CryptoNote
 	const size_t P2P_DEFAULT_ANCHOR_CONNECTIONS_COUNT = 2;
 	const size_t P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT = 70; // percent
 	const uint32_t P2P_DEFAULT_HANDSHAKE_INTERVAL = 60;			 // seconds
-	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 50000000;		 // 50 MB max packet size
+	const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE = 20971520;		 // 20 MB max packet size
 	const uint32_t P2P_DEFAULT_PEERS_IN_HANDSHAKE = 250;
 	const uint32_t P2P_MAX_INCOMING_CONNECTIONS = 250;			 // max incoming connections
+	const uint32_t P2P_MAX_INBOUND_PER_IP = 8;                    // max inbound connections per remote IP
 	const uint32_t P2P_DEFAULT_CONNECTION_TIMEOUT = 5000;	   // 5 seconds
 	const uint32_t P2P_DEFAULT_PING_CONNECTION_TIMEOUT = 2000; // 2 seconds
 	const uint64_t P2P_DEFAULT_INVOKE_TIMEOUT = 60 * 2 * 1000; // 2 minutes
@@ -446,7 +434,7 @@ namespace CryptoNote
     const uint64_t TESTNET_HEAT_MINT_MIN =   800000;  // 0.08 TEST minimum mint (testnet scale)
 
     //__________________________________________________________________________________________________________________________
-    //                       END  OF  TESTNET  P A R A  M    E     T      E      R        S
+    //                       END  OF  TESTNET  P A  R   A    M    E     T      E      R        S
     //--------------------------------------------------------------------------------------------------------------------------
 	struct CheckpointData
 	{

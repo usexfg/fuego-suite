@@ -36,7 +36,8 @@ class IP2pEndpoint;
 struct SwapOfferMsg {
   std::string offerId;      // SHA-256 of (maker_pubkey || pair || amount || rate || timestamp)
   bool        isSell;       // true = selling XFG for CTR
-  uint64_t    xfgAmount;    // atomic units (7 decimals)
+  uint64_t    xfgAmount;    // atomic units (7 decimals) — total offered amount
+  uint64_t    filledAmount; // atomic units already locked via partial fills
   uint64_t    rateNum;      // rate numerator (XFG per 1 CTR, scaled by 1e7)
   uint8_t     pair;         // 0=SOL, 1=ETH, 2=XMR, 3=BCH, 4=ARB
   Crypto::PublicKey makerPubKey;  // maker's wallet pubkey
@@ -161,6 +162,9 @@ public:
   bool cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey,
                    const Crypto::Signature& sig);
 
+  // Update offer amount after partial fill. Removes offer if below dust threshold.
+  bool updateOfferAmount(const std::string& offerId, uint64_t newAmount);
+
   // Seed rates: XFG per 1 whole CTR coin (1 XFG = $0.01 USD)
   static double getSeedRate(uint8_t pair);
 
@@ -198,9 +202,6 @@ private:
 
   // Price drift auto-cancel: soft orders drifting beyond this % from TWAP are pruned
   static constexpr double SOFT_ORDER_MAX_DRIFT_PCT = 15.0;
-
-  // Update offer amount after partial fill. Removes offer if below dust threshold.
-  bool updateOfferAmount(const std::string& offerId, uint64_t newAmount);
 
   // External price sources (keyed by name)
   std::map<std::string, PriceSource> m_externalSources;

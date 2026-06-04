@@ -1,20 +1,3 @@
-// Copyright (c) 2017-2022 Fuego Developers
-// Copyright (c) 2018-2019 Conceal Network & Conceal Devs
-// Copyright (c) 2016-2019 The Karbowanec developers
-// Copyright (c) 2012-2018 The CryptoNote developers
-//
-// This file is part of Fuego.
-//
-// Fuego is free software distributed in the hope that it
-// will be useful, but WITHOUT ANY WARRANTY; without even the
-// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-// PURPOSE. You can redistribute it and/or modify it under the terms
-// of the GNU General Public License v3 or later versions as published
-// by the Free Software Foundation. Fuego includes elements written
-// by third parties. See file labeled LICENSE for more details.
-// You should have received a copy of the GNU General Public License
-// along with Fuego. If not, see <https://www.gnu.org/licenses/>.
-
 #include "PasswordContainer.h"
 
 #include <iostream>
@@ -28,6 +11,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <sys/mman.h>
 #endif
 
 namespace Tools
@@ -37,6 +21,36 @@ namespace Tools
     bool is_cin_tty();
   }
 
+  void SecureBuffer::assign(const char* src, size_t len) {
+    clear();
+    if (len == 0) return;
+    m_data = new char[len];
+#if !defined(_WIN32)
+    mlock(m_data, len);
+#endif
+    memcpy(m_data, src, len);
+    m_size = len;
+  }
+
+  void SecureBuffer::assign(const std::string& src) {
+    assign(src.data(), src.size());
+  }
+
+  void SecureBuffer::clear() {
+    if (m_data && m_size > 0) {
+      volatile char* p = m_data;
+      for (size_t i = 0; i < m_size; ++i) {
+        p[i] = 0;
+      }
+#if !defined(_WIN32)
+      munlock(m_data, m_size);
+#endif
+      delete[] m_data;
+    }
+    m_data = nullptr;
+    m_size = 0;
+  }
+
   PasswordContainer::PasswordContainer()
     : m_empty(true)
   {
@@ -44,14 +58,17 @@ namespace Tools
 
   PasswordContainer::PasswordContainer(std::string&& password)
     : m_empty(false)
-    , m_password(std::move(password))
   {
+    m_password.assign(password);
+    volatile char* p = const_cast<char*>(password.data());
+    for (size_t i = 0; i < password.size(); ++i) p[i] = 0;
   }
 
   PasswordContainer::PasswordContainer(PasswordContainer&& rhs)
-    : m_empty(std::move(rhs.m_empty))
+    : m_empty(rhs.m_empty)
     , m_password(std::move(rhs.m_password))
   {
+    rhs.m_empty = true;
   }
 
   PasswordContainer::~PasswordContainer()
@@ -61,12 +78,15 @@ namespace Tools
 
   void PasswordContainer::clear()
   {
-    if (0 < m_password.capacity())
-    {
-      m_password.replace(0, m_password.capacity(), m_password.capacity(), '\0');
-      m_password.resize(0);
-    }
+    m_password.clear();
     m_empty = true;
+  }
+
+  void PasswordContainer::password(std::string&& val) {
+    m_password.assign(val);
+    volatile char* p = const_cast<char*>(val.data());
+    for (size_t i = 0; i < val.size(); ++i) p[i] = 0;
+    m_empty = false;
   }
 
   bool PasswordContainer::read_password()
@@ -98,7 +118,8 @@ namespace Tools
 
   bool PasswordContainer::read_from_file()
   {
-    m_password.reserve(max_password_size);
+    std::string buf;
+    buf.reserve(max_password_size);
     for (size_t i = 0; i < max_password_size; ++i)
     {
       char ch = static_cast<char>(std::cin.get());
@@ -112,10 +133,15 @@ namespace Tools
       }
       else
       {
-        m_password.push_back(ch);
+        buf.push_back(ch);
       }
     }
 
+    m_password.assign(buf);
+    if (!buf.empty()) {
+      volatile char* p = &buf[0];
+      for (size_t i = 0; i < buf.size(); ++i) p[i] = 0;
+    }
     return true;
   }
 
@@ -141,8 +167,9 @@ namespace Tools
     ::SetConsoleMode(h_cin, mode_new);
 
     bool r = true;
-    m_password.reserve(max_password_size);
-    while (m_password.size() < max_password_size)
+    std::string buf;
+    buf.reserve(max_password_size);
+    while (buf.size() < max_password_size)
     {
       DWORD read;
       char ch;
@@ -159,18 +186,24 @@ namespace Tools
       }
       else if (ch == BACKSPACE)
       {
-        if (!m_password.empty())
+        if (!buf.empty())
         {
-          m_password.back() = '\0';
-          m_password.resize(m_password.size() - 1);
+          buf.back() = '\0';
+          buf.resize(buf.size() - 1);
           std::cout << "\b \b";
         }
       }
       else
       {
-        m_password.push_back(ch);
+        buf.push_back(ch);
         std::cout << '*';
       }
+    }
+
+    m_password.assign(buf);
+    if (!buf.empty()) {
+      volatile char* p = &buf[0];
+      for (size_t i = 0; i < buf.size(); ++i) p[i] = 0;
     }
 
     ::SetConsoleMode(h_cin, mode_old);
@@ -209,12 +242,18 @@ namespace Tools
   {
     const char BACKSPACE = 127;
 
-    m_password.reserve(max_password_size);
-    while (m_password.size() < max_password_size)
+    std::string buf;
+    buf.reserve(max_password_size);
+    while (buf.size() < max_password_size)
     {
       int ch = getch();
       if (EOF == ch)
       {
+        m_password.assign(buf);
+        if (!buf.empty()) {
+          volatile char* p = &buf[0];
+          for (size_t i = 0; i < buf.size(); ++i) p[i] = 0;
+        }
         return false;
       }
       else if (ch == '\n' || ch == '\r')
@@ -224,18 +263,24 @@ namespace Tools
       }
       else if (ch == BACKSPACE)
       {
-        if (!m_password.empty())
+        if (!buf.empty())
         {
-          m_password.back() = '\0';
-          m_password.resize(m_password.size() - 1);
+          buf.back() = '\0';
+          buf.resize(buf.size() - 1);
           std::cout << "\b \b";
         }
       }
       else
       {
-        m_password.push_back(ch);
+        buf.push_back(ch);
         std::cout << '*';
       }
+    }
+
+    m_password.assign(buf);
+    if (!buf.empty()) {
+      volatile char* p = &buf[0];
+      for (size_t i = 0; i < buf.size(); ++i) p[i] = 0;
     }
 
     return true;

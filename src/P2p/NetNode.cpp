@@ -44,6 +44,7 @@
 #include "NetworkAddressTypes.h"
 #include "P2pProtocolDefinitions.h"
 #include "net/Socks5.h"
+#include "net/TorControl.h"
 
 #include "Serialization/BinaryInputStreamSerializer.h"
 #include "Serialization/BinaryOutputStreamSerializer.h"
@@ -883,6 +884,26 @@ namespace CryptoNote
       }
     }
 
+    if (config.getTorEnabled() && m_listeningPort > 0) {
+      m_hiddenService = std::unique_ptr<CryptoNote::net::TorHiddenService>(
+        new CryptoNote::net::TorHiddenService(m_dispatcher));
+      std::string target = "127.0.0.1:" + std::to_string(m_listeningPort);
+      if (m_hiddenService->create_hidden_service(m_listeningPort, target)) {
+        std::string onion = m_hiddenService->get_onion_host();
+        logger(INFO, BRIGHT_GREEN) << "Tor hidden service published: "
+          << onion << ":" << m_listeningPort;
+        auto& tor_zone = m_network_zones[NetworkZone::Tor];
+        tor_address addr;
+        if (tor_address::from_string(onion, addr, m_listeningPort)) {
+          tor_zone.our_address = network_address(addr);
+        }
+      } else {
+        logger(WARNING, BRIGHT_YELLOW)
+          << "Tor hidden service creation failed. Is Tor running with ControlPort 9051?";
+        m_hiddenService.reset();
+      }
+    }
+
     return true;
   }
   //-----------------------------------------------------------------------------------
@@ -922,6 +943,10 @@ namespace CryptoNote
 #ifdef ENABLE_FUEGOMESH
     shutdownMeshtastic();
 #endif
+    if (m_hiddenService) {
+      m_hiddenService->shutdown();
+      m_hiddenService.reset();
+    }
     return store_config();
   }
 
@@ -1589,6 +1614,46 @@ namespace CryptoNote
   void NodeServer::relay_notify_stem(int command, const BinaryArray& data_buff, const net_connection_id* excludeConnection) {
     net_connection_id excludeId = excludeConnection ? *excludeConnection : boost::value_initialized<net_connection_id>();
 
+    time_t now = time(nullptr);
+
+    if (m_dandelionEpochEnd == 0 || now >= m_dandelionEpochEnd) {
+      m_dandelionEpochEnd = now + parameters::DANDELION_EPOCH_SECONDS;
+
+      std::vector<boost::uuids::uuid> outbound_peers;
+      forEachConnection([&](P2pConnectionContext& conn) {
+        if (!conn.m_is_income && conn.peerId && conn.m_connection_id != excludeId &&
+            (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+             conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+          outbound_peers.push_back(conn.m_connection_id);
+        }
+      });
+      if (outbound_peers.empty()) {
+        forEachConnection([&](P2pConnectionContext& conn) {
+          if (conn.peerId && conn.m_connection_id != excludeId &&
+              (conn.m_state == CryptoNoteConnectionContext::state_normal ||
+               conn.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+            outbound_peers.push_back(conn.m_connection_id);
+          }
+        });
+      }
+      if (!outbound_peers.empty()) {
+        m_dandelionStemSuccessor = outbound_peers[Crypto::rand<size_t>() % outbound_peers.size()];
+      } else {
+        m_dandelionStemSuccessor = boost::value_initialized<boost::uuids::uuid>();
+      }
+    }
+
+    if (!m_dandelionStemSuccessor.is_nil()) {
+      auto it = m_connections.find(m_dandelionStemSuccessor);
+      if (it != m_connections.end() && it->second.m_connection_id != excludeId &&
+          (it->second.m_state == CryptoNoteConnectionContext::state_normal ||
+           it->second.m_state == CryptoNoteConnectionContext::state_synchronizing)) {
+        it->second.pushMessage(P2pMessage(P2pMessage::NOTIFY, command, data_buff));
+        return;
+      }
+      m_dandelionStemSuccessor = boost::value_initialized<boost::uuids::uuid>();
+    }
+
     std::vector<boost::uuids::uuid> outbound_peers;
     forEachConnection([&](P2pConnectionContext& conn) {
       if (!conn.m_is_income && conn.peerId && conn.m_connection_id != excludeId &&
@@ -1599,7 +1664,6 @@ namespace CryptoNote
     });
 
     if (outbound_peers.empty()) {
-      // Fallback to any peer if no outbound peers available
       forEachConnection([&](P2pConnectionContext& conn) {
         if (conn.peerId && conn.m_connection_id != excludeId &&
             (conn.m_state == CryptoNoteConnectionContext::state_normal ||
@@ -1888,6 +1952,23 @@ namespace CryptoNote
         ctx.m_remote_port = addressAndPort.second;
         ctx.m_remote_address = network_address(ipv4_network_address(ctx.m_remote_ip, ctx.m_remote_port));
 
+        // Rate-limit inbound connections: max per IP, max total
+        {
+          uint32_t hostIp = networkToHost(ctx.m_remote_ip);
+          std::lock_guard<std::mutex> lock(mutex);
+          auto it = m_inboundCounts.find(hostIp);
+          size_t sameIpCount = (it != m_inboundCounts.end()) ? it->second : 0;
+          if (sameIpCount >= P2P_MAX_INBOUND_PER_IP ||
+              m_totalInboundCount >= P2P_MAX_INCOMING_CONNECTIONS) {
+            logger(DEBUGGING) << "Rejecting inbound connection from "
+                              << Common::ipAddressToString(ctx.m_remote_ip)
+                              << " (per-IP: " << sameIpCount << ", total inbound: " << m_totalInboundCount << ")";
+            continue;
+          }
+          m_inboundCounts[hostIp] = sameIpCount + 1;
+          m_totalInboundCount++;
+        }
+
         auto iter = m_connections.emplace(ctx.m_connection_id, std::move(ctx)).first;
         const boost::uuids::uuid& connectionId = iter->first;
         P2pConnectionContext& connection = iter->second;
@@ -2011,6 +2092,17 @@ namespace CryptoNote
       writeContext.wait();
 
       on_connection_close(ctx);
+      bool wasInbound = ctx.m_is_income;
+      uint32_t hostIp = 0;
+      if (wasInbound) {
+        hostIp = networkToHost(ctx.m_remote_ip);
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = m_inboundCounts.find(hostIp);
+        if (it != m_inboundCounts.end() && it->second > 0) {
+          if (--it->second == 0) m_inboundCounts.erase(it);
+        }
+        if (m_totalInboundCount > 0) m_totalInboundCount--;
+      }
       m_connections.erase(connectionId);
     });
 

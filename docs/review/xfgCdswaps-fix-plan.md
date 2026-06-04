@@ -55,7 +55,7 @@ These three fixes either unblock other fixes or eliminate latent UB that affects
 
 ### 1.3 `generateEpochReport` missing return
 - **File:** `src/CryptoNoteCore/CommitmentIndex.cpp:288–297`
-- **Change:** Add `return report;` at end. Populate `totalFeesDistributed` and `activeEfierCount` (or remove fields if unused).
+- **Change:** Add `return report;` at end. Populate `totalFeesDistributed` (or remove field if unused).
 - **Why first:** UB fires at every epoch boundary; affects all CD calculations downstream.
 - **Model:** Haiku
 

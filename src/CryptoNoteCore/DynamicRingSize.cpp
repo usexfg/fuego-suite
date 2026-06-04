@@ -161,7 +161,10 @@ private:
   IBlockchainExplorer& m_explorer;
 };
 
-// OSPEAD output filtering using blockchain data
+// OSPEAD output filtering using blockchain data.
+// Wallet-side OSPEAD is active in WalletTransactionSender::applyOspeadFilter.
+// This daemon-side path is unused — kept for future daemon-side decoy filtering.
+// To wire: call from the daemon decoy selection path before returning outputs to wallet.
 std::vector<OutputInfo> DynamicRingSizeCalculator::filterOutputsByOSPEAD(
   const std::vector<OutputInfo>& availableOutputs,
   uint64_t amount,

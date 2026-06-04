@@ -161,7 +161,7 @@ bool Currency::constructMinerTx(
 ) const;
 ```
 
-Replace the unused EFier output loop (~lines 663-688) with:
+Replace the unused reward output loop (~lines 663-688) with:
 
 ```cpp
 for (const auto& [recipient, amount] : protocolPayouts) {
@@ -851,7 +851,7 @@ constexpr uint64_t YEM_LP_FEED_PCT                 = 75;
 | Step | File | What |
 |---|---|---|
 | 4.1 | Currency.h | `protocolPayouts` parameter on `constructMinerTx()` |
-| 4.2 | Currency.cpp (constructMinerTx) | Replace EFier loop with generic protocol payouts |
+| 4.2 | Currency.cpp (constructMinerTx) | Replace old reward loop with generic protocol payouts |
 | 4.3 | Blockchain.h | `m_pendingYemPayouts` deque, `YemPayout` struct |
 | 4.4 | Core.cpp (~620) | Drain queue into `constructMinerTx` protocolPayouts |
 | 4.5 | Blockchain.cpp (validateMinerTx, ~1374) | Updated validation for YEM payouts |

@@ -258,7 +258,7 @@ Three scopes were **blocking** for any real-value testnet deployment. The alias 
 
 - **Important**: `CommitmentIndex::generateEpochReport` has no `return` statement — undefined behaviour at every epoch boundary
   - `src/CryptoNoteCore/CommitmentIndex.cpp:288–297`
-  - Function populates `report` fields then falls off the end with `}`. UB in C++ (non-void path). Callers receive a garbage-filled `EpochReport`; at least `totalFeesDistributed` and `activeEfierCount` are never set.
+  - Function populates `report` fields then falls off the end with `}`. UB in C++ (non-void path). Callers receive a garbage-filled `EpochReport`; at least `totalFeesDistributed` is never set.
   - Add `return report;` after line 296.
 
 - **Minor**: `SWAP_FEE_CD_SHARE_PCT` constant is defined but not used in `Blockchain.cpp` — computed as residual instead

@@ -332,7 +332,7 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
 
 
 std::cout << std::endl
-         << "Fuego Blockchain Bank |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
+         << "Fuego Bank of XFG |" << (m_core.currency().isTestnet() ? " Testnet - " : " MAINNET | ")
          << (synced ? "synced " : "syncing ") << height << "/" << last_known_block_index
          << " (" << get_sync_percentage(height, last_known_block_index) << "%) "<< std::endl;
 std::cout << "**************************************************"<< std::endl;
@@ -342,7 +342,7 @@ const auto &currency = m_core.currency();
 std::cout << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " minted to date:  " << currency.formatAmount(totalCoinsInNetwork) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
 // todo add Total HEAT Supply:
 // todo add Circulating HEAT:
-std::cout << "HEAT Locked in CDs : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
+std::cout << "XFG Locked in Bonds : " << (totalCoinsOnDeposits >= 1000000 ? currency.formatAmount(totalCoinsOnDeposits) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << currency.formatAmount(calculatePercent(currency, totalCoinsOnDeposits, totalCoinsInNetwork)) << "%)" << std::endl;
 //  todo add Current HEAT_CD Yield: __%
 // todo add Current price of XFG: __ HEAT | Mint ratio (HEAT):(XFG)
 uint64_t actualTotalSupply = (totalCoinsInNetwork > totalCoinsEthereal) ? (totalCoinsInNetwork - totalCoinsEthereal) : 0;

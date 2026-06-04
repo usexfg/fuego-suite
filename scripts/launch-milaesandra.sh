@@ -1,7 +1,7 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════
 #  Fuego Testnet Suite — Milæsandra Launch
-#  Starts: testnetd + xfg-swap(testnet) + test_wallet
+#  Starts: testnetd + xfg-swapd(testnet) + test_wallet
 # ═══════════════════════════════════════════════════════════════════
 set -e
 
@@ -41,7 +41,7 @@ trap cleanup INT TERM
 mkdir -p "$DATA_DIR" "$LOG_DIR"
 
 # ── Check binaries ──
-for bin in testnetd xfg-swap test_wallet; do
+for bin in testnetd xfg-swapd test_wallet; do
     if [ ! -f "${BUILD_DIR}/src/${bin}" ]; then
         err "Binary not found: ${BUILD_DIR}/src/${bin}"
         err "Run build first: cmake --build ${BUILD_DIR} -- -j4"
@@ -81,23 +81,23 @@ HEIGHT=$(curl -s http://localhost:${TESTNET_PORT}/getinfo | python3 -c "import s
 log "  Height: ${HEIGHT} | RPC: http://localhost:${TESTNET_PORT}"
 
 # ══════════════════════════════════════════════════════════════
-#  2. Start xfg-swap (testnet mode)
+#  2. Start xfg-swapd (testnet mode)
 # ══════════════════════════════════════════════════════════════
-log "Starting xfg-swap daemon (testnet, port ${SWAP_PORT})..."
-"${BUILD_DIR}/src/xfg-swap" \
+log "Starting xfg-swapd daemon (testnet, port ${SWAP_PORT})..."
+"${BUILD_DIR}/src/xfg-swapd" \
     --testnet \
     --rpc-bind-port ${SWAP_PORT} \
     --p2p-bind-port ${SWAP_P2P_PORT} \
     --fuego-rpc-port ${TESTNET_PORT} \
     --data-dir "${DATA_DIR}/swap" \
-    > "${LOG_DIR}/xfg-swap.out" 2>&1 &
+    > "${LOG_DIR}/xfg-swapd.out" 2>&1 &
 PIDS+=($!)
 
 sleep 2
 if curl -s http://localhost:${SWAP_PORT}/getinfo > /dev/null 2>&1; then
-    ok "xfg-swap ready"
+    ok "xfg-swapd ready"
 else
-    warn "xfg-swap may not be fully ready (retrying)"
+    warn "xfg-swapd may not be fully ready (retrying)"
 fi
 log "  Swap daemon: http://localhost:${SWAP_PORT}"
 
@@ -130,7 +130,7 @@ echo "════════════════════════�
 echo ""
 echo "  Services:"
 echo "    testnetd:     http://localhost:${TESTNET_PORT}"
-echo "    xfg-swap:     http://localhost:${SWAP_PORT}"
+echo "    xfg-swapd:     http://localhost:${SWAP_PORT}"
 echo "    test_wallet:  http://localhost:${WALLET_PORT}"
 echo ""
 echo "  Logs: ${LOG_DIR}/"

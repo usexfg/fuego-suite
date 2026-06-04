@@ -149,6 +149,7 @@ namespace CryptoNote
 
   protected:
     void launchSwapxfg(bool testnet = false);
+    bool requireV11(const char* commandName);
 
   private:
 

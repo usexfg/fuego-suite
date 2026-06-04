@@ -18,9 +18,49 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <cstdint>
 
 namespace Tools
 {
+  class SecureBuffer {
+  public:
+    SecureBuffer() = default;
+    ~SecureBuffer() { clear(); }
+
+    SecureBuffer(const SecureBuffer&) = delete;
+    SecureBuffer& operator=(const SecureBuffer&) = delete;
+
+    SecureBuffer(SecureBuffer&& other) noexcept
+      : m_data(other.m_data), m_size(other.m_size) {
+      other.m_data = nullptr;
+      other.m_size = 0;
+    }
+
+    SecureBuffer& operator=(SecureBuffer&& other) noexcept {
+      if (this != &other) {
+        clear();
+        m_data = other.m_data;
+        m_size = other.m_size;
+        other.m_data = nullptr;
+        other.m_size = 0;
+      }
+      return *this;
+    }
+
+    void assign(const char* src, size_t len);
+    void assign(const std::string& src);
+    void clear();
+    bool empty() const { return m_size == 0; }
+    const char* data() const { return m_data ? m_data : ""; }
+    size_t size() const { return m_size; }
+    std::string toString() const { return std::string(data(), size()); }
+
+  private:
+    char* m_data = nullptr;
+    size_t m_size = 0;
+  };
+
   class PasswordContainer
   {
   public:
@@ -33,8 +73,8 @@ namespace Tools
 
     void clear();
     bool empty() const { return m_empty; }
-    const std::string& password() const { return m_password; }
-    void password(std::string&& val) { m_password = std::move(val); m_empty = false; }
+    const std::string password() const { return m_password.toString(); }
+    void password(std::string&& val);
     bool read_password();
 
   private:
@@ -43,6 +83,6 @@ namespace Tools
 
   private:
     bool m_empty;
-    std::string m_password;
+    SecureBuffer m_password;
   };
 }

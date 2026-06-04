@@ -22,7 +22,6 @@ The companion doc `docs/design/HEAT_FLATCOIN_FORMULA.md` describes the *what* (f
 | PI controller integration with target_ratio | `src/CryptoNoteCore/Blockchain.cpp:3245–3284` | ✅ Mode 0 path will engage when `cpiOracleActive=true` |
 | Hill damping disabled in Mode 0 (correct — Mode 0 uses bands, not damping) | `src/CryptoNoteCore/PiController.cpp:211` | ✅ Correct already |
 | External price fetcher pattern (HTTPS + JSON + thread lifecycle) | `src/CryptoNoteCore/SwapOfferRelay.cpp:476–509` (`exbitronFetchThread`) | ✅ Reference pattern |
-| Elderfier signature broadcast | existing ESN system | ✅ Pattern for Phase 3 |
 
 The **only** missing piece is the path from a real CPI feed into `state.cpiCurrentValue`.
 
@@ -217,14 +216,13 @@ Once `cpiLaunchValue` is snapshotted (first valid attestation), it must never ch
 
 ---
 
-### Phase 4 — Federated CPI via Elderfier [later, separate plan]
+### Phase 4 — Federated CPI via threshold attestation [later, separate plan]
 
-When Phase 2 stabilizes, replace the single-signer model with multisig threshold attestation by Elderfier nodes:
-- Each Elderfier runs its own `CpiOracleService`.
+When Phase 2 stabilizes, replace the single-signer model with multisig threshold attestation:
+- Multiple attestation nodes each run their own `CpiOracleService`.
 - Each signs a partial attestation.
 - An aggregator node combines ≥ N/2+1 signatures into a MuSig2 multisig attestation.
-- Validators verify the threshold signature against the registered Elderfier set.
-- Migration: hard-coded signer pubkey gets retired in favor of Elderfier set commitment.
+- Validators verify the threshold signature against the registered attestor set.
 
 This phase is **out of scope here** — Phase 2 single-signer ships first.
 
@@ -337,7 +335,7 @@ The `cpiLaunchValue` snapshot lock-in (first valid attestation) gives us a clean
 | **Total engineering** | **~2–3 weeks** |
 | **Total calendar to mainnet activation** | **~6–8 weeks** (includes hardfork notification windows) |
 
-Phase 4 (Elderfier federation) deferred to a separate ~2 week effort.
+Phase 4 (threshold attestation federation) deferred to a separate ~2 week effort.
 
 ---
 

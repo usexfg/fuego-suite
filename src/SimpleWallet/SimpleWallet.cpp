@@ -473,7 +473,8 @@ std::string simple_wallet::get_commands_str() {
   ss << "Commands: " << ENDL;
 
   auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
-    ss << "\n" << cat << "\n" << std::string(cat.size(), '-') << ENDL;
+    if (cmds.empty()) return; // don't print empty categories
+    ss << "\n\033[1;33m" << cat << "\n" << std::string(cat.size(), '_') << "\033[0m" << ENDL;
 
     std::vector<std::pair<std::string, std::string>> long_cmds;
     for (const auto& cmd : cmds) {
@@ -516,35 +517,35 @@ std::string simple_wallet::get_commands_str() {
   });
 
   add_cat("CDs / Bonds", {
-    {"cd_create", "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)"},
+  /*  {"cd_create", "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)"},
     {"cd_claim", "cd_claim <deposit_id> - Withdraw HEAT CD with interest"},
     {"cd_list", "cd_list - List HEAT CDs (active/complete/claimed)"},
-    {"cd_rollover", "cd_rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested)."},
-    {"migrate_deposit", "migrate_deposit <id> - Convert a bug-era Multisig deposit into a 1-year Legacy Bond earning 50% CD share."},
+    {"cd_rollover", "cd_rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested)."}, */
+    {"migrate_deposit", "migrate_deposit <id> - Convert a bug-era Multisig deposit into a 1-year Legacy XFG Reserve Bond; earns 50% APY in XFG with quarterly principal unlock option."},
     {"withdraw_bond", "withdraw_bond <id> - Withdraw a mature Legacy Bond and claim accrued fee-pool interest."}
   });
 
   add_cat("HEAT", {
-    {"info_heat", "Show HEAT stablecoin metrics"},
-    {"mint_heat", "mint_heat <xfg_amount> - Burn XFG to mint HEAT"},
+    {"info_heat", "Show HEAT flatcoin metrics"},
+   /* {"mint_heat", "mint_heat <xfg_amount> - Burn XFG to mint HEAT"},
     {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"},
-    {"view_heat", "view_heat - List all HEAT balance and transactions"}
+    {"view_heat", "view_heat - View HEAT balance and transactions"} */
   });
 
-  add_cat("Hearth", {
+/*  add_cat("Hearth", {
     {"hearth_add", "hearth_add <xfg_amount> <heat_amount> - Add liquidity to Hearth"},
     {"hearth_heat", "hearth_heat <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth"},
     {"hearth_xfg", "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth"},
     {"hearth_exit", "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth"},
     {"hearth_info", "Show Hearth AMM pool state"}
-  });
+  });  */
 
   add_cat("Transfer / Send", {
     {"balance", "Show current wallet balance"},
     {"show_txn", "show_txn <txid> - Show detailed information for a specific transaction"},
     {"list_transfers", "list_transfers <block_height> - Show all known transfers, optionally from a certain block height"},
-    {"transfer", "transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-p payment_id] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. "},
-    {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"}
+    {"transfer", "transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. "},
+  /*  {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"} */
   });
 
   add_cat("Sign / Keys / Proof", {
@@ -562,7 +563,7 @@ std::string simple_wallet::get_commands_str() {
     {"reset", "Discard cache data and start synchronizing from the start"},
     {"set_log", "set_log <level> - Change current log level, <level> is a number 0-4"},
     {"save", "Save wallet synchronized data"},
-    {"swap", "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)"},
+    // {"swap", "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)"},
     {"exit", "Close wallet"}
   });
 
@@ -633,7 +634,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // HEAT / Hearth AMM commands (v11+)
   m_consoleHandler.setHandler("info_heat", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
-  m_consoleHandler.setHandler("hearth_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
+/*  m_consoleHandler.setHandler("hearth_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
   m_consoleHandler.setHandler("hearth_xfg", boost::bind(&simple_wallet::hearth_xfg, this, boost::arg<1>()), "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
@@ -646,11 +647,11 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("cd_claim", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "cd_claim <deposit_id> - Withdraw HEAT CD with interest");
   m_consoleHandler.setHandler("cd_list", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "cd_list - List HEAT CDs (active/complete/claimed)");
 
-  m_consoleHandler.setHandler("view_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "view_heat - List all HEAT balance and transactions");
+  m_consoleHandler.setHandler("view_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "view_heat - List all HEAT balance and transactions"); */
 
   // show_txn and send_heat stubs
   m_consoleHandler.setHandler("show_txn", boost::bind(&simple_wallet::show_txn, this, boost::arg<1>()), "show_txn <txid> - Show detailed information for a specific transaction");
-  m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
+/*  m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient"); */
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -4166,7 +4167,19 @@ bool simple_wallet::list_subs(const std::vector<std::string>& args) {
   return true;
 }
 
+bool simple_wallet::requireV11(const char* commandName) {
+  uint64_t v11Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+  uint64_t currentHeight = m_node->getLastLocalBlockHeight();
+  if (currentHeight < v11Height) {
+    fail_msg_writer() << commandName << " requires block major version 11 (height " << v11Height
+                      << "), current height is " << currentHeight;
+    return false;
+  }
+  return true;
+}
+
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
+  if (!requireV11("info_heat")) return false;
   uint8_t mode = CryptoNote::parameters::HEAT_STABILITY_MODE;
   success_msg_writer() << "HEAT stability mode: " << (int)mode;
   switch (mode) {
@@ -4186,6 +4199,7 @@ bool simple_wallet::heat_info(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::pool_info(const std::vector<std::string>& args) {
+  if (!requireV11("hearth_info")) return false;
   success_msg_writer() << "Hearth AMM pool (v11+):";
   success_msg_writer() << "  Pool: XFG/HEAT constant-product (X * Y = K)";
   success_msg_writer() << "  Fee: 0.3% (30 bps), routed to LP providers";
@@ -4198,6 +4212,7 @@ bool simple_wallet::pool_info(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
+  if (!requireV11("mint_heat")) return false;
   if (args.size() < 1) {
     fail_msg_writer() << "Usage: mint_heat <xfg_amount>";
     return false;
@@ -4248,6 +4263,7 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::swap(const std::vector<std::string>& args) {
+  if (!requireV11("swap")) return false;
   if (args.size() < 4) {
     fail_msg_writer() << "Usage: swap <direction> <input_amount> <expected_output> <min_output>";
     fail_msg_writer() << "  direction: 0 = XFG->HEAT, 1 = HEAT->XFG";
@@ -4300,6 +4316,7 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::hearth_add(const std::vector<std::string>& args) {
+  if (!requireV11("hearth_add")) return false;
   if (args.size() < 2) {
     fail_msg_writer() << "Usage: hearth_add <xfg_amount> <heat_amount>";
     return false;
@@ -4341,6 +4358,7 @@ bool simple_wallet::hearth_add(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::hearth_exit(const std::vector<std::string>& args) {
+  if (!requireV11("hearth_exit")) return false;
   if (args.size() < 3) {
     fail_msg_writer() << "Usage: hearth_exit <lp_shares> <min_xfg> <min_heat>";
     return false;
@@ -4387,6 +4405,7 @@ bool simple_wallet::hearth_exit(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::hearth_xfg(const std::vector<std::string>& args) {
+  if (!requireV11("hearth_xfg")) return false;
   // Wrapper: buy HEAT with XFG (direction=0)
   if (args.size() < 3) {
     fail_msg_writer() << "Usage: hearth_xfg <xfg_amount> <expected_heat> <min_heat>";
@@ -4397,6 +4416,7 @@ bool simple_wallet::hearth_xfg(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::hearth_heat(const std::vector<std::string>& args) {
+  if (!requireV11("hearth_heat")) return false;
   // Wrapper: sell HEAT for XFG (direction=1)
   if (args.size() < 3) {
     fail_msg_writer() << "Usage: hearth_heat <heat_amount> <expected_xfg> <min_xfg>";
@@ -4407,6 +4427,7 @@ bool simple_wallet::hearth_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
+  if (!requireV11("cd_create")) return false;
   if (args.size() < 2) {
     fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
     return false;
@@ -4445,6 +4466,7 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
+  if (!requireV11("cd_claim")) return false;
   if (args.size() < 1) {
     fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
     return false;
@@ -4491,6 +4513,7 @@ bool simple_wallet::heat_list(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::list_heat(const std::vector<std::string>& args) {
+  if (!requireV11("view_heat")) return false;
   uint64_t heatActual = m_wallet->actualHeatBalance();
   uint64_t heatPending = m_wallet->pendingHeatBalance();
   success_msg_writer() << "";
@@ -4622,6 +4645,7 @@ bool simple_wallet::show_txn(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::send_heat(const std::vector<std::string>& args) {
+  if (!requireV11("send_heat")) return false;
   if (args.size() < 2) {
     fail_msg_writer() << "usage: send_heat <address|alias> <amount>";
     return true;

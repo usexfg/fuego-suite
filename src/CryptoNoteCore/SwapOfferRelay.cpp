@@ -41,6 +41,7 @@ double SwapOfferRelay::getSeedRate(uint8_t pair) {
     {2, 34300.0},   // XMR
     {3, 46900.0},   // BCH
     {4, 214000.0},  // ARB
+    {5, 214000.0},  // BASE
   };
   auto it = rates.find(pair);
   return (it != rates.end()) ? it->second : 0.0;
@@ -55,6 +56,7 @@ double SwapOfferRelay::getCtrUsdPrice(uint8_t pair) {
     {2, 343.0},    // XMR
     {3, 469.0},    // BCH
     {4, 2140.0},   // ARB
+    {5, 2140.0},   // BASE
   };
   auto it = prices.find(pair);
   return (it != prices.end()) ? it->second : 0.0;
@@ -109,15 +111,15 @@ void SwapOfferRelay::cleanupThread() {
         }
       }
 
-      double twap[5] = {};
-      for (int p = 0; p < 5; ++p) {
+      double twap[6] = {};
+      for (int p = 0; p < 6; ++p) {
         twap[p] = getTwap(static_cast<uint8_t>(p));
       }
 
       {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (auto it = m_offers.begin(); it != m_offers.end(); ) {
-          if (it->second.isSoftOrder && it->second.pair < 5) {
+          if (it->second.isSoftOrder && it->second.pair < 6) {
             double offerRate = static_cast<double>(it->second.rateNum) / 1e7;
             double pairTwap = twap[it->second.pair];
             if (pairTwap > 0.0 && offerRate > 0.0) {
@@ -146,7 +148,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0) return false;
   if (offer.rateNum == 0) return false;
-  if (offer.pair > 4) return false;
+  if (offer.pair > 5) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;  // max ~6 days at 8min blocks
 
   // Verify signature: maker signs the offerId hash
@@ -327,12 +329,15 @@ bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newA
 
   static constexpr uint64_t DUST_THRESHOLD = 10000000ULL;
 
+  if (newAmount <= it->second.xfgAmount) {
+    it->second.filledAmount += (it->second.xfgAmount - newAmount);
+  }
+  it->second.xfgAmount = newAmount;
+
   if (newAmount < DUST_THRESHOLD) {
     m_offers.erase(it);
     return true;
   }
-
-  it->second.xfgAmount = newAmount;
 
   if (m_p2pEndpoint) {
     COMMAND_SWAP_OFFER::request msg;
@@ -516,7 +521,7 @@ NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
 
   double sum = 0.0;
 
-  for (uint8_t p = 0; p <= 4; ++p) {
+  for (uint8_t p = 0; p <= 5; ++p) {
     CompositePrice cp = getCompositePrice(p);
     if (cp.rate <= 0.0) continue;
 

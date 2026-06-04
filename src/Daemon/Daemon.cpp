@@ -391,7 +391,9 @@ int main(int argc, char* argv[])
       std::string vk_str = command_line::get_arg(vm, arg_set_view_key);
 	    if (!vk_str.empty()) {
         rpcServer.setViewKey(vk_str);
-        logger(INFO, BRIGHT_YELLOW) << "Secret view key set: " << vk_str;
+        logger(INFO, BRIGHT_YELLOW) << "Secret view key configured (redacted)";
+        volatile char* p = const_cast<char*>(vk_str.data());
+        for (size_t i = 0; i < vk_str.size(); ++i) p[i] = 0;
       }
     }
  

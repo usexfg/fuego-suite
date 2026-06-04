@@ -32,8 +32,8 @@
     "hash": "5057555e71a633711489b13887893556"
   },
   "/Users/aejt/xfgo/swapxfg/main.go": {
-    "mtime": 1780051530.478804,
-    "hash": "626a9ab66658d4ed0a876f692044af66"
+    "mtime": 1780212014.511135,
+    "hash": "0c924428b2b76d79057dabf2af2efc30"
   },
   "/Users/aejt/xfgo/swapxfg/app/bridge_sol.go": {
     "mtime": 1780024282.640994,
@@ -48,8 +48,8 @@
     "hash": "3b5c9d8ed36a693b200a2a04458fe471"
   },
   "/Users/aejt/xfgo/swapxfg/app/config.go": {
-    "mtime": 1780051530.4725676,
-    "hash": "fa3939bb508ab244516640943a513e25"
+    "mtime": 1780243484.9734397,
+    "hash": "a9c88415069a5af0f097355691cdb5a5"
   },
   "/Users/aejt/xfgo/swapxfg/app/bridge_eth.go": {
     "mtime": 1780024282.6397793,
@@ -72,8 +72,8 @@
     "hash": "6efec16b850131c880d26e6a7ff7f789"
   },
   "/Users/aejt/xfgo/swapxfg/app/pairs.go": {
-    "mtime": 1780024282.645453,
-    "hash": "b7f2a7fd6fc448e49e035f954b8d6c92"
+    "mtime": 1780266413.8828435,
+    "hash": "be3bea54757df2746c708f7ee664d9e0"
   },
   "/Users/aejt/xfgo/swapxfg/app/rpc_test.go": {
     "mtime": 1780024282.6463776,
@@ -88,8 +88,8 @@
     "hash": "d2ca5e1a34fa312046baf4146d3f9ffb"
   },
   "/Users/aejt/xfgo/swapxfg/app/tui.go": {
-    "mtime": 1780051530.4764278,
-    "hash": "77cde5df95a3617dba9b0c974cd2c6ae"
+    "mtime": 1780243589.6430104,
+    "hash": "8f200f3af1df1f0a852d8859f086fbfd"
   },
   "/Users/aejt/xfgo/swapxfg/app/input.go": {
     "mtime": 1780024282.6447093,
@@ -100,12 +100,12 @@
     "hash": "c0289e4c9a1a7f25be305466061f8fad"
   },
   "/Users/aejt/xfgo/swapxfg/app/rpc.go": {
-    "mtime": 1780051530.4755416,
-    "hash": "4e1b99705901f6027d71c484c6b15d76"
+    "mtime": 1780211990.3805583,
+    "hash": "c8c95df913145278a87e7171b6133856"
   },
   "/Users/aejt/xfgo/swapxfg/app/validate.go": {
-    "mtime": 1780024282.649227,
-    "hash": "a28e3e297cfa184e2ef4c1b7bd8e51e1"
+    "mtime": 1780266419.306893,
+    "hash": "210e079ef00386fdb6be407219dd8443"
   },
   "/Users/aejt/xfgo/swapxfg/app/orderbook.go": {
     "mtime": 1780024282.6450915,
@@ -120,8 +120,8 @@
     "hash": "0cce5b63572297646be743c4c063b653"
   },
   "/Users/aejt/xfgo/swapxfg/app/wallet.go": {
-    "mtime": 1780051530.4778874,
-    "hash": "1de0711edf3378a946b4eee4d4bd997c"
+    "mtime": 1780211984.119885,
+    "hash": "2f9f2f0018b8541e37894153700c40de"
   },
   "/Users/aejt/xfgo/swapxfg/app/daemon.go": {
     "mtime": 1780051151.0565543,
@@ -143,6 +143,10 @@
     "mtime": 1780024282.6481626,
     "hash": "3feb85e2c27f866c84eb298daae9789f"
   },
+  "/Users/aejt/xfgo/swapxfg/app/daemon_status.go": {
+    "mtime": 1780243442.6376414,
+    "hash": "491ec2e37ded9a223bf641acfb26603f"
+  },
   "/Users/aejt/xfgo/tui/config.go": {
     "mtime": 1780024282.8332376,
     "hash": "9fb31eed3533b65c80a54e1c1cd4beab"
@@ -160,8 +164,8 @@
     "hash": "67c4147da050860e442d696c7854ef25"
   },
   "/Users/aejt/xfgo/include/INode.h": {
-    "mtime": 1780024280.6278393,
-    "hash": "9f0698a2b8e0361ac4387acdd32ace37"
+    "mtime": 1780220729.8426666,
+    "hash": "eb45d02cbbcbfab3095cd52f59cf1a4f"
   },
   "/Users/aejt/xfgo/include/CryptoTypes.h": {
     "mtime": 1780032513.925328,
@@ -212,8 +216,8 @@
     "hash": "cbed905d8e2af29c062c9033bba74e67"
   },
   "/Users/aejt/xfgo/include/CryptoNote.h": {
-    "mtime": 1780034741.102127,
-    "hash": "6655dd27fb654e30e0e9eca957049971"
+    "mtime": 1780220649.5566926,
+    "hash": "b4bc1daa3ac42af4caa98a7b680a1a0e"
   },
   "/Users/aejt/xfgo/tests/HashTarget.cpp": {
     "mtime": 1780024282.7008944,
@@ -959,103 +963,119 @@
     "mtime": 1780024280.4997053,
     "hash": "e1a05987a9b41ed02f666d5786513c7b"
   },
-  "/Users/aejt/xfgo/scripts/sim_ratio_tune.py": {
-    "mtime": 1780024282.2994213,
-    "hash": "f6bf493084c6fb93c39d4be87f0038bf"
-  },
-  "/Users/aejt/xfgo/scripts/sim_v14.py": {
-    "mtime": 1780058816.6570406,
-    "hash": "65c777e8b14a76bd1edd4902c352c0b5"
-  },
   "/Users/aejt/xfgo/scripts/milaesandra-dashboard.py": {
     "mtime": 1780024282.2957292,
     "hash": "31e02410efac6a9bd1b83260a30274f7"
   },
-  "/Users/aejt/xfgo/scripts/sim_cd_hybrid_v2.py": {
-    "mtime": 1780024282.29786,
-    "hash": "ffc28c530cf07513daab4485d5a96fd2"
+  "/Users/aejt/xfgo/scripts/sim_xfg_below_v2.py": {
+    "mtime": 1780239049.4959788,
+    "hash": "90829be17f7ef5ea483d2df73189d5cf"
   },
-  "/Users/aejt/xfgo/scripts/sim_two_phase.py": {
-    "mtime": 1780024282.3001528,
-    "hash": "d1b80b919eb5175e0de710208434f0d1"
-  },
-  "/Users/aejt/xfgo/scripts/sim_cd_apy_compare.py": {
-    "mtime": 1780024282.297515,
-    "hash": "d3b57d944d1d5346caf3cc52c5d82a13"
-  },
-  "/Users/aejt/xfgo/scripts/sim_formula_compare.py": {
-    "mtime": 1780024282.2981875,
-    "hash": "619619caf7f4299c33f761add4b503e7"
-  },
-  "/Users/aejt/xfgo/scripts/yem_v3_oneway_sim.py": {
-    "mtime": 1780144367.2407064,
-    "hash": "a8a2c594644080295ec7d70b554ef840"
-  },
-  "/Users/aejt/xfgo/scripts/sim_premium_compare.py": {
-    "mtime": 1780024282.299049,
-    "hash": "a9b445b28c453a74025c4992834f2117"
-  },
-  "/Users/aejt/xfgo/scripts/sim_scenarios.py": {
-    "mtime": 1780024282.2996595,
-    "hash": "1b092f69b4cf3e86c7d91e4f926445ae"
-  },
-  "/Users/aejt/xfgo/scripts/sim_shootout_v15.py": {
-    "mtime": 1780117941.338237,
-    "hash": "d504aa6a06331fff0b4c49a455e10af9"
-  },
-  "/Users/aejt/xfgo/scripts/sim_sigmoid_vs_float.py": {
-    "mtime": 1780024282.2999082,
-    "hash": "c66fa756aa83859f0f2be19a39bbc026"
-  },
-  "/Users/aejt/xfgo/scripts/yem_v3_sim.py": {
-    "mtime": 1780092314.830048,
-    "hash": "b996bc12ec95a4f5cd35571d0cc9db4a"
-  },
-  "/Users/aejt/xfgo/scripts/sim_cd_heat_link.py": {
-    "mtime": 1780118035.0036182,
-    "hash": "07ff83e68b7f9dfee6445c2a4fcca0ca"
-  },
-  "/Users/aejt/xfgo/scripts/sim_10yr.py": {
-    "mtime": 1780024282.297205,
-    "hash": "abe7e9b9312b4fde509553761c606163"
+  "/Users/aejt/xfgo/scripts/sim_attack_v1.py": {
+    "mtime": 1780243615.0848467,
+    "hash": "f6f4ac3c5cd31738018a1c4457fa1aeb"
   },
   "/Users/aejt/xfgo/scripts/simple_rag.py": {
     "mtime": 1780024282.3007145,
     "hash": "da63eead59a9452c20e5762390ab43b2"
   },
-  "/Users/aejt/xfgo/scripts/sim_v13_full.py": {
-    "mtime": 1780057739.6213105,
-    "hash": "ab5376b529d30ec030c523d4337754df"
-  },
-  "/Users/aejt/xfgo/scripts/sim_mode_compare_v8.py": {
-    "mtime": 1780053646.2075248,
-    "hash": "940e496027f703383e39fb80a4f3017c"
-  },
   "/Users/aejt/xfgo/scripts/dmwda_analysis.py": {
     "mtime": 1780024282.2937136,
     "hash": "f2ef97614ac46a57471589f2e1e7c8e8"
-  },
-  "/Users/aejt/xfgo/scripts/test_mapper.py": {
-    "mtime": 1780024282.3019688,
-    "hash": "e76c1c8c4d069e9adca1f650cdb5bf16"
-  },
-  "/Users/aejt/xfgo/scripts/test_fuego_specialist.py": {
-    "mtime": 1780024282.3017182,
-    "hash": "42549fcbf0ea55cbf5b56567913a2cfe"
   },
   "/Users/aejt/xfgo/scripts/simple_mapper.py": {
     "mtime": 1780024282.300475,
     "hash": "0f1714315b39761997063884a94563a3"
   },
-  "/Users/aejt/xfgo/scripts/sim_supply_compare.py": {
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_ratio_tune.py": {
+    "mtime": 1780024282.2994213,
+    "hash": "f6bf493084c6fb93c39d4be87f0038bf"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_v14.py": {
+    "mtime": 1780058816.6570406,
+    "hash": "65c777e8b14a76bd1edd4902c352c0b5"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_cd_hybrid_v2.py": {
+    "mtime": 1780024282.29786,
+    "hash": "ffc28c530cf07513daab4485d5a96fd2"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_two_phase.py": {
+    "mtime": 1780024282.3001528,
+    "hash": "d1b80b919eb5175e0de710208434f0d1"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_cd_apy_compare.py": {
+    "mtime": 1780024282.297515,
+    "hash": "d3b57d944d1d5346caf3cc52c5d82a13"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_final_v17.py": {
+    "mtime": 1780202837.6200254,
+    "hash": "2524fd34373eecf520d2ffb92bee517a"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_formula_compare.py": {
+    "mtime": 1780024282.2981875,
+    "hash": "619619caf7f4299c33f761add4b503e7"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/yem_v3_oneway_sim.py": {
+    "mtime": 1780144367.2407064,
+    "hash": "a8a2c594644080295ec7d70b554ef840"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_premium_compare.py": {
+    "mtime": 1780024282.299049,
+    "hash": "a9b445b28c453a74025c4992834f2117"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_final_v16.py": {
+    "mtime": 1780148851.4022076,
+    "hash": "aafd7ee6e634e283630b92191dbff136"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_scenarios.py": {
+    "mtime": 1780024282.2996595,
+    "hash": "1b092f69b4cf3e86c7d91e4f926445ae"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_shootout_v15.py": {
+    "mtime": 1780117941.338237,
+    "hash": "d504aa6a06331fff0b4c49a455e10af9"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_sigmoid_vs_float.py": {
+    "mtime": 1780024282.2999082,
+    "hash": "c66fa756aa83859f0f2be19a39bbc026"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/yem_v3_sim.py": {
+    "mtime": 1780092314.830048,
+    "hash": "b996bc12ec95a4f5cd35571d0cc9db4a"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_cd_heat_link.py": {
+    "mtime": 1780118035.0036182,
+    "hash": "07ff83e68b7f9dfee6445c2a4fcca0ca"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_10yr.py": {
+    "mtime": 1780024282.297205,
+    "hash": "abe7e9b9312b4fde509553761c606163"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_v13_full.py": {
+    "mtime": 1780057739.6213105,
+    "hash": "ab5376b529d30ec030c523d4337754df"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_mode_compare_v8.py": {
+    "mtime": 1780053646.2075248,
+    "hash": "940e496027f703383e39fb80a4f3017c"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_xfg_below.py": {
+    "mtime": 1780204843.8888981,
+    "hash": "194dd40032511864e905d154ca7a793b"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_debt_scalp.py": {
+    "mtime": 1780270083.2647574,
+    "hash": "45235e9029bc0ce8c66e0b611b173d0f"
+  },
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_supply_compare.py": {
     "mtime": 1780122197.8384275,
     "hash": "e911c269336d25902845cad76d5e9e59"
   },
-  "/Users/aejt/xfgo/scripts/sim_model_compare.py": {
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_model_compare.py": {
     "mtime": 1780024282.2987704,
     "hash": "86d55eb0b6b7c55ce5424b5badb59300"
   },
-  "/Users/aejt/xfgo/scripts/sim_mode_compare_v2.py": {
+  "/Users/aejt/xfgo/scripts/montecarlos/sim_mode_compare_v2.py": {
     "mtime": 1780024282.2985117,
     "hash": "c0f59b845c8fc8c04d94505524664531"
   },
@@ -2320,8 +2340,8 @@
     "hash": "f63a6876f5929f9a83871d7cdf76154f"
   },
   "/Users/aejt/xfgo/src/CryptoNoteConfig.h": {
-    "mtime": 1780147111.8386714,
-    "hash": "0d7cb42728db0ca7e28b225ccd82b392"
+    "mtime": 1780282368.8799543,
+    "hash": "5af265e2e12c3a8eba5e2b5f4145fe6e"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/ProofStructures.cpp": {
     "mtime": 1780024282.3569999,
@@ -2348,12 +2368,12 @@
     "hash": "c7e572c60fb1eb75b8d4b058d4974f0e"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.cpp": {
-    "mtime": 1780147117.4892585,
-    "hash": "7ed60df7737bd1c2fcbcab312b3105c3"
+    "mtime": 1780282387.4290144,
+    "hash": "53554f2adebd49d269bf447e0179a2c7"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/SwapOfferRelay.h": {
-    "mtime": 1780051530.4686067,
-    "hash": "48f4293d5098582fe25c45f3ab4a6c7f"
+    "mtime": 1780226170.0053005,
+    "hash": "1be6153bb719e30f2556a215f9ca5434"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/ProofStructures.h": {
     "mtime": 1780024282.3575084,
@@ -2372,8 +2392,8 @@
     "hash": "ce0793219a64c111d86905eff98acf50"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Core.h": {
-    "mtime": 1780024282.3403227,
-    "hash": "7446f17166c1a8bc64ff7b7463c14277"
+    "mtime": 1780217103.1976397,
+    "hash": "7d90700596b3f47fb70268f8bb235561"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/IBlock.h": {
     "mtime": 1780024282.3494334,
@@ -2396,8 +2416,8 @@
     "hash": "2d593b408a38ce0aa557443eb6466d69"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/SwapOfferRelay.cpp": {
-    "mtime": 1780051530.4675536,
-    "hash": "944de09bb8504d884bad0d59cba5a29f"
+    "mtime": 1780267332.2162135,
+    "hash": "4d2769357f59c51c96c84aa1c59e85b7"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Account.h": {
     "mtime": 1780024282.327686,
@@ -2420,12 +2440,12 @@
     "hash": "1d6a3ae15ad5bb5b741d922e0ea60e6b"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Blockchain.h": {
-    "mtime": 1780050556.420298,
-    "hash": "cc550291d6d121fa05429565cf6ca154"
+    "mtime": 1780220668.2887034,
+    "hash": "75a194981b3df7da8f45a98bc06896e0"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Core.cpp": {
-    "mtime": 1780024282.3395932,
-    "hash": "cc438253bc794ece136100e7fbeb783a"
+    "mtime": 1780217112.7357461,
+    "hash": "24c54f5d35987328a19996cdb5105c2c"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/CoreConfig.cpp": {
     "mtime": 1780024282.3406932,
@@ -2436,8 +2456,8 @@
     "hash": "172f8f123c0024ef1754540bd0a5eb9f"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/CryptoNoteFormatUtils.cpp": {
-    "mtime": 1780034747.7212746,
-    "hash": "35fda88d4ec1313b0a63cb5a6082a96d"
+    "mtime": 1780220099.8473752,
+    "hash": "cbcc96ba8d8a73c1cf67eb58d7a98255"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/UpgradeDetector.h": {
     "mtime": 1780024282.3664172,
@@ -2456,8 +2476,8 @@
     "hash": "a90439d85003d3fff74e788d628d9f4c"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Currency.h": {
-    "mtime": 1780035005.8168795,
-    "hash": "feef8675be1d63c329d634043a5e0ace"
+    "mtime": 1780220686.5541277,
+    "hash": "c64839dd7bcf21159f9e3d7b1bbba0d7"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/CommitmentIndex.h": {
     "mtime": 1780032513.935526,
@@ -2492,16 +2512,16 @@
     "hash": "13a1fcf3729210e1030155a56b9a3ca3"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/ICore.h": {
-    "mtime": 1780032513.9411645,
-    "hash": "b5074e892c279d6a93808d96e57180dc"
+    "mtime": 1780217093.5887222,
+    "hash": "9dd9c6330da31548083ae2b37d195a79"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/MinerConfig.h": {
     "mtime": 1780024282.354941,
     "hash": "b58437c762a52872bb20ab7c5e491e14"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/Currency.cpp": {
-    "mtime": 1780147123.097379,
-    "hash": "0fa880c2ee610e56310f0e8fb32d8818"
+    "mtime": 1780281872.7875166,
+    "hash": "d451ae0ac734d33653730b4a627991c2"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/CryptoNoteBasic.h": {
     "mtime": 1780024282.3415625,
@@ -2516,8 +2536,8 @@
     "hash": "c27bc56761ad9f4860e4dadd0cd7c8a6"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/DynamicRingSize.cpp": {
-    "mtime": 1780032513.9402611,
-    "hash": "91ea11a7fbdad686d7821d4615a3fcde"
+    "mtime": 1780282059.1618538,
+    "hash": "f3eab4a066471946aa7c9774846fde33"
   },
   "/Users/aejt/xfgo/src/CryptoNoteCore/CryptoNoteTools.cpp": {
     "mtime": 1780024282.3443851,
@@ -2736,8 +2756,8 @@
     "hash": "6368bdb113f90d6b28aab530f1a82f32"
   },
   "/Users/aejt/xfgo/src/CryptoNoteProtocol/CryptoNoteProtocolHandler.cpp": {
-    "mtime": 1780035112.6381116,
-    "hash": "be4148035a395617578e21f2706e6d51"
+    "mtime": 1780220799.9325395,
+    "hash": "05489607e8a98525cf4c6f540f3a1530"
   },
   "/Users/aejt/xfgo/src/CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h": {
     "mtime": 1780032513.9470224,
@@ -2792,8 +2812,8 @@
     "hash": "14c11ff64a9bb329ed23065ec45e2dcf"
   },
   "/Users/aejt/xfgo/src/crypto/randomize.h": {
-    "mtime": 1780024282.6194336,
-    "hash": "5c771d8765a9ccc8c68fe746f90c35cb"
+    "mtime": 1780281823.284094,
+    "hash": "5ee79c98af94c535c1dee1e6d9a6fe57"
   },
   "/Users/aejt/xfgo/src/crypto/chacha8.h": {
     "mtime": 1780024282.5964165,
@@ -2812,8 +2832,8 @@
     "hash": "1a3176d0c6b8f44e5f3a9e389b890972"
   },
   "/Users/aejt/xfgo/src/crypto/adaptor.cpp": {
-    "mtime": 1780024282.591013,
-    "hash": "e5fbbf15ca9b8e9368eeea9b1e8f04e0"
+    "mtime": 1780281820.8745182,
+    "hash": "6c95284424b2f77408ce8c210c1456a3"
   },
   "/Users/aejt/xfgo/src/crypto/blake256.c": {
     "mtime": 1780024282.594821,
@@ -2848,16 +2868,16 @@
     "hash": "58195b4d843fa8aa07a58951b0478f75"
   },
   "/Users/aejt/xfgo/src/crypto/random.c": {
-    "mtime": 1780024282.6184723,
-    "hash": "4783ee4f9a065d91dcdb62054021bdd5"
+    "mtime": 1780282213.1187978,
+    "hash": "dcca812928bc1e1fcfc125081ff8da86"
   },
   "/Users/aejt/xfgo/src/crypto/crypto-ops.c": {
     "mtime": 1780024282.5990918,
     "hash": "290681cd922e4e4b36299a477d986483"
   },
   "/Users/aejt/xfgo/src/crypto/dleq.cpp": {
-    "mtime": 1780024282.6028492,
-    "hash": "24ff8969432a5d7a16f9ad43b5000f59"
+    "mtime": 1780252535.1463258,
+    "hash": "fa90d459feb1d90508f55e6d69053b56"
   },
   "/Users/aejt/xfgo/src/crypto/generic-ops.h": {
     "mtime": 1780024282.6039395,
@@ -2900,8 +2920,8 @@
     "hash": "fd4bd7ecea0675e536140b65a62d50d1"
   },
   "/Users/aejt/xfgo/src/crypto/mlsag.cpp": {
-    "mtime": 1780032513.9772184,
-    "hash": "30c3d0e2e646baaffffbe1a4576ec8c7"
+    "mtime": 1780282524.340872,
+    "hash": "0ec29d9637dca57e41e900a22f75502b"
   },
   "/Users/aejt/xfgo/src/crypto/tree-hash.c": {
     "mtime": 1780024282.6311045,
@@ -2964,8 +2984,8 @@
     "hash": "8f635fa9d629a5908fdf3e0ab3ebd01c"
   },
   "/Users/aejt/xfgo/src/crypto/hash.h": {
-    "mtime": 1780024282.6097133,
-    "hash": "be9f3c2386a4cc91f24134e1a7f70768"
+    "mtime": 1780281739.9974775,
+    "hash": "14381ef8c88884940b1ea2dedc424067"
   },
   "/Users/aejt/xfgo/src/crypto/crypto-ops.h": {
     "mtime": 1780024282.5999835,
@@ -2992,12 +3012,12 @@
     "hash": "1adb098051cb7319ff70c9de821cf12d"
   },
   "/Users/aejt/xfgo/src/NodeRpcProxy/NodeRpcProxy.h": {
-    "mtime": 1780024282.4129586,
-    "hash": "db870a6056f3b06017385cd196bc35b9"
+    "mtime": 1780233029.1851096,
+    "hash": "d6bd682b6ab237afb73029448e2d2da5"
   },
   "/Users/aejt/xfgo/src/NodeRpcProxy/NodeRpcProxy.cpp": {
-    "mtime": 1780024282.4122024,
-    "hash": "d3ac622c0882dc185090b9cb161e8d76"
+    "mtime": 1780220766.056051,
+    "hash": "263bd73b69ad3c7635ef8911dd69c6d3"
   },
   "/Users/aejt/xfgo/src/FuegoTor/include/Fuegotor.h": {
     "mtime": 1780024282.3776534,
@@ -3048,16 +3068,16 @@
     "hash": "a629803a90d4c379be37b6808a62476b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapPeerProtocol.h": {
-    "mtime": 1780024282.517229,
-    "hash": "e944543883805af2efada272a04661a2"
+    "mtime": 1780273943.1953526,
+    "hash": "24df27734c8dd5ff572a6f8f9e4c7d4e"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapTypes.cpp": {
-    "mtime": 1780053002.7081091,
-    "hash": "ffe4a87cae7e032f3737eba3051b4554"
+    "mtime": 1780266362.64379,
+    "hash": "507fe7ed37b35af94d86c0bad8a533f6"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapStateMachine.cpp": {
-    "mtime": 1780024282.51893,
-    "hash": "6261cd56ec20e86f1509457e339dda17"
+    "mtime": 1780274777.6469445,
+    "hash": "b904185dbb3c788d9173dd297c7c36d4"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/ChainRegistry.cpp": {
     "mtime": 1780024282.4857051,
@@ -3066,6 +3086,10 @@
   "/Users/aejt/xfgo/src/SwapDaemon/ChainClientResult.h": {
     "mtime": 1780024282.485257,
     "hash": "c1f5a09a3b479c1bbda24a181826fa33"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/StatusServer.h": {
+    "mtime": 1780243247.885813,
+    "hash": "6933c08c83b949ad768dafffea892a95"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolP2P.cpp": {
     "mtime": 1780024282.5044794,
@@ -3079,21 +3103,33 @@
     "mtime": 1780024282.502569,
     "hash": "2671d63af86d59cbfc2297102d8e4c4a"
   },
+  "/Users/aejt/xfgo/src/SwapDaemon/OfferManager.cpp": {
+    "mtime": 1780232901.897965,
+    "hash": "a6051218bf50f110fd0b8f456eaf28f3"
+  },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapPeerProtocol.cpp": {
-    "mtime": 1780024282.5165358,
-    "hash": "56bcd77b7fab89ddc483f7ecf2a74da9"
+    "mtime": 1780274005.1585996,
+    "hash": "37923ae14b23edcc6680c3ca99cb73bb"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/SwapTimelock.cpp": {
+    "mtime": 1780252297.214022,
+    "hash": "977a3fcd1af2925bcead5f734192b8d3"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapDatabase.cpp": {
-    "mtime": 1780024282.5142689,
-    "hash": "c006553d65f4c6dfcf6c6f80154f0d2e"
+    "mtime": 1780252051.367185,
+    "hash": "c005da9ae5422e3782dc85d191239ad2"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/OfferManager.h": {
+    "mtime": 1780232502.8781064,
+    "hash": "c64453192b85019d6ac42b126c86602b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/ChainClientConfig.cpp": {
-    "mtime": 1780032513.9616072,
-    "hash": "5f0391eff20ea3a28d6a2ac3272da1e5"
+    "mtime": 1780267335.062307,
+    "hash": "2e224565a733ef1850b4732005987f8a"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapSecretEncryption.h": {
-    "mtime": 1780024282.5182726,
-    "hash": "ff63f8b8fe886416ce8b38af26714684"
+    "mtime": 1780251829.0415845,
+    "hash": "442a6b8d9cdb016d04532a55ec15b766"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolOrganizer.h": {
     "mtime": 1780024282.5039432,
@@ -3104,24 +3140,28 @@
     "hash": "6a267f0d4b9725f4289f570d18f3394b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapDatabase.h": {
-    "mtime": 1780024282.514762,
-    "hash": "62af53b0cec6b2e758015d6e19658f41"
+    "mtime": 1780251925.4596462,
+    "hash": "3396457bc42191ae34a7c6d2081d13b4"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapTypes.h": {
-    "mtime": 1780032513.9682875,
-    "hash": "9c5c819e8c6c7f9df24e541784c6e93f"
+    "mtime": 1780266331.9785576,
+    "hash": "ea0dae24be3cb66a1093aeac558fc980"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapP2P.cpp": {
-    "mtime": 1780024282.5154889,
-    "hash": "0533b88cac4d0dd1074421cc9b0d40a5"
+    "mtime": 1780274537.6897106,
+    "hash": "abcd1f7829b8f9677be358e7b9b879d8"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapDaemon.cpp": {
-    "mtime": 1780053349.5224445,
-    "hash": "dad4587eb7895845fd25f49d5dcea96b"
+    "mtime": 1780274479.290286,
+    "hash": "11cd514cefb2353eae713ac1918370c8"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapDaemon.h": {
-    "mtime": 1780053379.0186203,
-    "hash": "e44ca4c8daf0c9684cbb46e140a1ea3b"
+    "mtime": 1780266392.6195946,
+    "hash": "e65804cf4fac8394c5d8c7ec4d9573df"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/StatusServer.cpp": {
+    "mtime": 1780243254.5889893,
+    "hash": "42967f08f0ac906b92dc12142b26d91c"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/FuegoRpcClient.h": {
     "mtime": 1780051445.2892783,
@@ -3135,13 +3175,17 @@
     "mtime": 1780032513.9653323,
     "hash": "7aeb87106ac5b22b0f081f9a8d8d05a7"
   },
+  "/Users/aejt/xfgo/src/SwapDaemon/SwapTimelock.h": {
+    "mtime": 1780252291.3441541,
+    "hash": "cf0fd0966548f6310b131345ca8e9fd4"
+  },
   "/Users/aejt/xfgo/src/SwapDaemon/IChainClient.h": {
-    "mtime": 1780024282.494973,
-    "hash": "8ac46bc45f551812c01ea1b281c9253d"
+    "mtime": 1780225668.474794,
+    "hash": "80779e53f44e2fe01f1515bc387baba4"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapP2P.h": {
-    "mtime": 1780024282.516015,
-    "hash": "2ba1fea2a2ebaf821f67f4d395182a37"
+    "mtime": 1780274506.186648,
+    "hash": "0c18de55b85cd7acb9010ee423be40e8"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/AdaptorSwap.h": {
     "mtime": 1780024282.4817896,
@@ -3156,12 +3200,12 @@
     "hash": "f9c4f6e25a376c12450278f62700f611"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PriceOracle.h": {
-    "mtime": 1780024282.5082314,
-    "hash": "9e9c4aa40383ebbf2df03fedc12b9649"
+    "mtime": 1780266584.773633,
+    "hash": "b4c36797f51d868f00b90d702206dfd9"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapSecretEncryption.cpp": {
-    "mtime": 1780024282.5177019,
-    "hash": "76f11fe8d5d6d9f656a19793c8ca7b41"
+    "mtime": 1780252214.4107475,
+    "hash": "cc81462cddc4de2e221f05e2c817ac5b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolAttestation.cpp": {
     "mtime": 1780024282.501142,
@@ -3172,8 +3216,8 @@
     "hash": "077660e70fe3dc1966d523b0d8dcb48e"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PriceOracle.cpp": {
-    "mtime": 1780024282.507652,
-    "hash": "7fc5c64b775164496a48beb69af163c7"
+    "mtime": 1780266379.4466717,
+    "hash": "ecffafa802587ba49bb36489bed1512b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolDatabase.cpp": {
     "mtime": 1780024282.502116,
@@ -3184,24 +3228,24 @@
     "hash": "4541e9ca279bb2014c4c0ecc9fcdb60e"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/main.cpp": {
-    "mtime": 1780024282.5230134,
-    "hash": "4af554ec91d42359cd438b186f6d7271"
+    "mtime": 1780252599.7729945,
+    "hash": "f0e26718f17081f164687635f1fd94a6"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolAMM.h": {
     "mtime": 1780032513.9657063,
     "hash": "14a76e3395195586328378a3938ec835"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/FuegoRpcClient.cpp": {
-    "mtime": 1780051448.8180542,
-    "hash": "9d68b98d11a2fdd56b208969a739825a"
+    "mtime": 1780282103.793153,
+    "hash": "4f49c0d0a04267d86df31c1aa5fa9e06"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapTxBuilder.h": {
     "mtime": 1780024282.5213206,
     "hash": "6f82a81e1cbd7795e645c3fefa548308"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/SwapStateMachine.h": {
-    "mtime": 1780024282.5196736,
-    "hash": "d1ee8bfc28f956d8befc096ece00e1bd"
+    "mtime": 1780252121.283569,
+    "hash": "caa8a9c092a662a2110f6a2402686e16"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/PoolTypes.cpp": {
     "mtime": 1780024282.5054705,
@@ -3212,24 +3256,24 @@
     "hash": "885fe3bc894b5331fc2666d708fec498"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/BitcoinCash/BchChainClient.h": {
-    "mtime": 1780024282.4825397,
-    "hash": "a12ac1b26252ef45980603b5f0297fbe"
+    "mtime": 1780225736.7710392,
+    "hash": "534985e231256c3ec9aa42cd5129d0bb"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/BitcoinCash/HtlcScript.h": {
     "mtime": 1780024282.48444,
     "hash": "d03718db974430316f234347d15f7a57"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/BitcoinCash/BchChainClient.cpp": {
-    "mtime": 1780024282.4821827,
-    "hash": "63b21e6e213735f451b0b8c22ce252c5"
+    "mtime": 1780239717.3522713,
+    "hash": "954a0601e20e6d39cabea20a3c0abb64"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/BitcoinCash/BchRpcClient.h": {
-    "mtime": 1780024282.48361,
-    "hash": "b37294259d7dd00aaef07437a6fcebfc"
+    "mtime": 1780239688.648074,
+    "hash": "ba3ab231d65c66c41a7762a5e027f15b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/BitcoinCash/BchRpcClient.cpp": {
-    "mtime": 1780024282.482971,
-    "hash": "ab2ec7cb82a382d28b7dbbd4b3187264"
+    "mtime": 1780239706.202178,
+    "hash": "eaf6b103a7c64e9b4e556a639ca29e7a"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Bip143Sighash.h": {
     "mtime": 1780024282.4872873,
@@ -3240,20 +3284,40 @@
     "hash": "0477a706ff9e1c35e21f1b30b4812565"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Secp256k1Signer.h": {
-    "mtime": 1780024282.4889295,
-    "hash": "ece1f7f266f44aac8ad12585d672173a"
+    "mtime": 1780239740.953725,
+    "hash": "b718a59d04acd15e8ee2e1fea0c1ea97"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Base58Std.cpp": {
+    "mtime": 1780239837.36699,
+    "hash": "30210ed77bc206c5bde0c936196b53d5"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Crypto/RlpEncoder.h": {
     "mtime": 1780024282.4882827,
     "hash": "70496d3e24db4e0bf9d8c501adeb6279"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Secp256k1Signer.cpp": {
-    "mtime": 1780024282.4886105,
-    "hash": "a91613012642327a40c6a2b96e3f0f4a"
+    "mtime": 1780239760.0359862,
+    "hash": "661e7407d1d80c0624abc1d639b01e06"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Ed25519Verify.h": {
+    "mtime": 1780239845.2003953,
+    "hash": "ccd20ca6a698627104afe75bd2ba6b86"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Base58Std.h": {
+    "mtime": 1780239830.2210908,
+    "hash": "42cfe26794199c941eb50265af736648"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/Crypto/Ed25519Verify.cpp": {
+    "mtime": 1780243200.0986657,
+    "hash": "3fcf93c65f2f1d544d8be97a97699139"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Crypto/RlpEncoder.cpp": {
     "mtime": 1780024282.487946,
     "hash": "8d5e1ccbff53b2ed0c6d7f7ea7efb657"
+  },
+  "/Users/aejt/xfgo/src/SwapDaemon/tests/test_price_oracle_arb.cpp": {
+    "mtime": 1780266435.5475674,
+    "hash": "6c21d2ca6d29f0165e5949d16dc93994"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/tests/test_adaptor_roundtrip.cpp": {
     "mtime": 1780024282.524115,
@@ -3272,44 +3336,44 @@
     "hash": "9212a8b8e9ba35a970903450999cb38d"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Solana/SolChainClient.cpp": {
-    "mtime": 1780024282.5087645,
-    "hash": "f26fb5f2ef061a40a67d9e8d8d7333d7"
+    "mtime": 1780243099.4654543,
+    "hash": "e50c0a2e810d94676f9bc6e027850019"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Solana/SolChainClient.h": {
-    "mtime": 1780024282.5091887,
-    "hash": "d8ed30684d65684fab63f65f47ea817d"
+    "mtime": 1780225730.8394883,
+    "hash": "368609d4851b2dc7763a89cd2db375c7"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/MoneroRpcClient.cpp": {
-    "mtime": 1780024282.498249,
-    "hash": "143e92ef60c8ea4782f785dfea722f6f"
+    "mtime": 1780225790.8589933,
+    "hash": "d4a902110bc717f83877a1ed5efd0982"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/AdaptorSignature.h": {
     "mtime": 1780024282.4968169,
     "hash": "6301444479da9648574ff378e45186f5"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/XmrChainClient.h": {
-    "mtime": 1780024282.4997015,
-    "hash": "2b8b2f261feaea019acafe0b3c0b3ed1"
+    "mtime": 1780225734.9905531,
+    "hash": "490d462aeeb69103b6218509d46a844b"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/AdaptorSignature.cpp": {
     "mtime": 1780024282.4954312,
     "hash": "36138a737c9d78412690f478c606bf03"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/XmrChainClient.cpp": {
-    "mtime": 1780024282.4993105,
-    "hash": "a3ad60296f579b469dfba9771d8d11c1"
+    "mtime": 1780225805.9218705,
+    "hash": "ad708288f9812629f3317ffaf6771c5f"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Monero/MoneroRpcClient.h": {
-    "mtime": 1780024282.4988837,
-    "hash": "9dd62a3ae29723cf7557f72c2d485d5c"
+    "mtime": 1780225765.302198,
+    "hash": "0d644c0a5bf8b0dcac2a0f954ab673bc"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Ethereum/EthRpcClient.cpp": {
-    "mtime": 1780053168.8122518,
-    "hash": "83a27431d2427b3775c093f017bc2719"
+    "mtime": 1780282102.6107972,
+    "hash": "6411a10d6f4bcfd413b1f064b2d3329a"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Ethereum/EthChainClient.cpp": {
-    "mtime": 1780032513.9628437,
-    "hash": "30f6cfcc99b26d228e092f426426816c"
+    "mtime": 1780243141.288559,
+    "hash": "e9e749c7ba6a65f577f10bb9e224b1fb"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Ethereum/ContractAbi.cpp": {
     "mtime": 1780024282.489521,
@@ -3320,12 +3384,12 @@
     "hash": "af4315e7a593a4d97fbf9356431e0576"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Ethereum/EthRpcClient.h": {
-    "mtime": 1780053182.4626498,
-    "hash": "87699d0a17d026db1d7caebaf278e21c"
+    "mtime": 1780281832.0888286,
+    "hash": "36dea6ebf9fb1c33f5ad820cf171d95e"
   },
   "/Users/aejt/xfgo/src/SwapDaemon/Ethereum/EthChainClient.h": {
-    "mtime": 1780032513.963425,
-    "hash": "6a864a3d9d8c5f1b9b2ecf80e83e3df3"
+    "mtime": 1780225732.8392212,
+    "hash": "90cbdcd5ef6fd67be6e3449bbfe8e706"
   },
   "/Users/aejt/xfgo/src/FuegoMeshtastic/include/MeshtasticIntegration.h": {
     "mtime": 1780024282.3745096,
@@ -3600,12 +3664,12 @@
     "hash": "9e4d0ecab3f00c87b038f2709e7f953c"
   },
   "/Users/aejt/xfgo/src/SimpleWallet/PasswordContainer.cpp": {
-    "mtime": 1780024282.4752421,
-    "hash": "967559d50bce22dd9ce3b2166c7812f1"
+    "mtime": 1780281931.9433434,
+    "hash": "fbeb38bed6b6f1d90088306a041c916c"
   },
   "/Users/aejt/xfgo/src/SimpleWallet/PasswordContainer.h": {
-    "mtime": 1780024282.4758546,
-    "hash": "da94dc6b95fcb9ecdc15776aeac69df1"
+    "mtime": 1780282386.6482816,
+    "hash": "8a2501e9c6f6891f71c62952f0a412ea"
   },
   "/Users/aejt/xfgo/src/SimpleWallet/ClientHelper.cpp": {
     "mtime": 1780024282.4739797,
@@ -3628,8 +3692,8 @@
     "hash": "0c9ddad7048bc972462d391825797494"
   },
   "/Users/aejt/xfgo/src/SimpleWallet/SimpleWallet.cpp": {
-    "mtime": 1780147123.5784347,
-    "hash": "f7eb8a28dde09b6e07b9eb7cebe665a0"
+    "mtime": 1780279170.7202537,
+    "hash": "6f448d26f3ddd4759cb21c68f11b322a"
   },
   "/Users/aejt/xfgo/src/SimpleWallet/main.cpp": {
     "mtime": 1780024282.4809275,
@@ -3700,8 +3764,8 @@
     "hash": "10821f106659f8522a32318312c55753"
   },
   "/Users/aejt/xfgo/src/Transfers/TransfersConsumer.cpp": {
-    "mtime": 1780034741.1109262,
-    "hash": "a8ef705784ada54efa711b1f3db32acb"
+    "mtime": 1780220712.1306143,
+    "hash": "36fdc89edab44955740df1481bce50ec"
   },
   "/Users/aejt/xfgo/src/System/NativeContext.h": {
     "mtime": 1780024282.5339608,
@@ -4188,8 +4252,8 @@
     "hash": "ef7332ecf953850799430cfc9d4cd3e6"
   },
   "/Users/aejt/xfgo/src/Daemon/Daemon.cpp": {
-    "mtime": 1780024282.37036,
-    "hash": "9240f0ef71c5707f5f4e19fc274ebad7"
+    "mtime": 1780282117.1680236,
+    "hash": "79c8f74d74728431ded0d9b2ebe37a17"
   },
   "/Users/aejt/xfgo/src/Daemon/DaemonCommandsHandler.cpp": {
     "mtime": 1780024282.370873,
@@ -4320,8 +4384,8 @@
     "hash": "f708e8ae3913f02d0b60f1f21bfea1f8"
   },
   "/Users/aejt/xfgo/src/P2p/NetNode.cpp": {
-    "mtime": 1780032513.9501467,
-    "hash": "335169bc9f6ef3bf6a4cf029c3fcb7d0"
+    "mtime": 1780283258.724713,
+    "hash": "dcccb92d255983dbd39c9ee24aeeb763"
   },
   "/Users/aejt/xfgo/src/P2p/PeerListManager.h": {
     "mtime": 1780024282.4304268,
@@ -4348,8 +4412,8 @@
     "hash": "03fe7d5cbfc64a40857681daffa22503"
   },
   "/Users/aejt/xfgo/src/P2p/NetNode.h": {
-    "mtime": 1780032513.950942,
-    "hash": "dacc5a2f8de6fd77dcbb229437cd2aea"
+    "mtime": 1780283171.8887753,
+    "hash": "239f8f89f867ce54f9a725a9cf03ab20"
   },
   "/Users/aejt/xfgo/src/P2p/NetworkAddressTypes.cpp": {
     "mtime": 1780024282.4208057,
@@ -4440,8 +4504,8 @@
     "hash": "f4f8e61f1cda1dfa58e8bafb01bfe859"
   },
   "/Users/aejt/xfgo/src/Wallet/WalletGreen.cpp": {
-    "mtime": 1780035112.6361964,
-    "hash": "dab0ab061a2720dd17763903f81890b3"
+    "mtime": 1780281696.992568,
+    "hash": "3db14c31b7e1e4778bff4529e193b191"
   },
   "/Users/aejt/xfgo/src/Wallet/WalletSerializationV1.h": {
     "mtime": 1780024282.569609,
@@ -4544,8 +4608,8 @@
     "hash": "b299ce0f4cc7b93344db22690ea68c88"
   },
   "/Users/aejt/xfgo/src/Rpc/CoreRpcServerCommandsDefinitions.h": {
-    "mtime": 1780051097.4700983,
-    "hash": "236b35fbee827466462460accdbd91e3"
+    "mtime": 1780282087.5798743,
+    "hash": "afa80850c08f9e2d793759d874fb0cf6"
   },
   "/Users/aejt/xfgo/src/Rpc/RpcServerConfig.cpp": {
     "mtime": 1780024282.4644048,
@@ -4572,12 +4636,12 @@
     "hash": "92ef90fde81942231cb4a294e607ed62"
   },
   "/Users/aejt/xfgo/src/Rpc/RpcServer.h": {
-    "mtime": 1780050172.5816326,
-    "hash": "dfa1b394eff539f91e0e010940a9c139"
+    "mtime": 1780217125.4430804,
+    "hash": "3e686c84e6b2bf096038ac81e38d19aa"
   },
   "/Users/aejt/xfgo/src/Rpc/RpcServer.cpp": {
-    "mtime": 1780051101.6263359,
-    "hash": "6d95c94807ba24da0a4dff7e43e26122"
+    "mtime": 1780220760.2125738,
+    "hash": "85f8646083182b785e4029360f2385cb"
   },
   "/Users/aejt/xfgo/src/Rpc/CoreRpcServerErrorCodes.h": {
     "mtime": 1780024282.459645,
@@ -4616,12 +4680,12 @@
     "hash": "8dde7f87ff1714dc009561e7a1aa8ebe"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletRequest.h": {
-    "mtime": 1780024282.582921,
-    "hash": "165926673fd52004415c815d315ee10b"
+    "mtime": 1780232912.2724128,
+    "hash": "34e80996761717103ffbc57f172a2bf9"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletTransactionSender.cpp": {
-    "mtime": 1780035112.637058,
-    "hash": "9da6b25ed4841c41f52377fa775e7f4e"
+    "mtime": 1780233016.5426002,
+    "hash": "f50b12c62dbadb24d77770d17defc523"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletUtils.h": {
     "mtime": 1780024282.5899017,
@@ -4656,8 +4720,8 @@
     "hash": "98c38c16132b2208aae2e8aea21027b2"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletTransactionSender.h": {
-    "mtime": 1780024282.58604,
-    "hash": "af7b6e4b0156bc2ba1158c23e1991640"
+    "mtime": 1780233007.8453543,
+    "hash": "ae9975f36ec7f7cca66a4370a77ea608"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletUserTransactionsCache.cpp": {
     "mtime": 1780032513.9764013,
@@ -4672,8 +4736,8 @@
     "hash": "e3c21e9f821104043a152c2036cfd3e3"
   },
   "/Users/aejt/xfgo/src/WalletLegacy/WalletSendTransactionContext.h": {
-    "mtime": 1780024282.5834203,
-    "hash": "14addfacb1f4c9d3cd4bff5fa99aba2b"
+    "mtime": 1780232899.2996206,
+    "hash": "f8f8f6b63c91b0664892c5baadd0348c"
   },
   "/Users/aejt/xfgo/src/Logging/CommonLogger.h": {
     "mtime": 1780024282.3879921,
@@ -4752,8 +4816,8 @@
     "hash": "2bb5ddb3f96a153eb1023c49a9b152f6"
   },
   "/Users/aejt/xfgo/src/TestnetWallet/TestnetWallet.cpp": {
-    "mtime": 1780147124.403723,
-    "hash": "1d6ea9271073bc96909c1c4c8a1e33c0"
+    "mtime": 1780200034.3166454,
+    "hash": "312875f958a1be27ac0fad02eed126a7"
   },
   "/Users/aejt/xfgo/src/TestnetWallet/TestnetWallet.h": {
     "mtime": 1780024282.5447364,
@@ -4827,6 +4891,10 @@
     "mtime": 1780024280.498043,
     "hash": "26a73d2f09062f1d1b4f3e8466cae2b5"
   },
+  "/Users/aejt/xfgo/BASE_INTEGRATION_PLAN.md": {
+    "mtime": 1780256062.4454904,
+    "hash": "5b9014ec030ff6a5523d0843e95ef3d5"
+  },
   "/Users/aejt/xfgo/SPECIALIST_AGENT_README.md": {
     "mtime": 1780024280.4977868,
     "hash": "e9b09010c5093464fc66ee074add0a48"
@@ -4834,10 +4902,6 @@
   "/Users/aejt/xfgo/README.md": {
     "mtime": 1780024280.4975474,
     "hash": "1b82edafa12337a60ef038cd4272bf8a"
-  },
-  "/Users/aejt/xfgo/YEM_IMPLEMENTATION_PLAN.md": {
-    "mtime": 1780024280.4982722,
-    "hash": "f5b9489edfe875a305a16da982fa665c"
   },
   "/Users/aejt/xfgo/FUEGO_BLOCKCHAIN_SPECIALIST_SUMMARY.md": {
     "mtime": 1780024280.496511,
@@ -4971,29 +5035,21 @@
     "mtime": 1780032513.86769,
     "hash": "827e79237acc4e0bdb6715be41b85167"
   },
-  "/Users/aejt/xfgo/docs/HEAT_STABLECOIN_VISION.md": {
-    "mtime": 1780024280.5060463,
-    "hash": "74f27d244580b1552227265a08ded735"
-  },
   "/Users/aejt/xfgo/docs/AFK_SWAP_IMPROVEMENT_PROPOSAL.md": {
-    "mtime": 1780024280.503994,
-    "hash": "7f7e62b0fd08815922ab855d575f5e68"
+    "mtime": 1780220640.2285385,
+    "hash": "4e5c094edbf75b13e24be2896e4ca156"
   },
   "/Users/aejt/xfgo/docs/README-WALLETD.md": {
     "mtime": 1780032513.8681412,
     "hash": "a0c3b173023eeef52e3aff238f6623cf"
   },
   "/Users/aejt/xfgo/docs/SECURITY_REVIEW_PLAN.md": {
-    "mtime": 1780024280.508575,
-    "hash": "d176716950bea174f74d3d46ea207917"
+    "mtime": 1780220135.3758898,
+    "hash": "f7f447765cd7be8b584621398f214d8a"
   },
   "/Users/aejt/xfgo/docs/DIGM_FUEGO_ARCHITECTURE_GUIDE.md": {
     "mtime": 1780032513.8670082,
     "hash": "f700e88414a6cd81916b9abfa5a50906"
-  },
-  "/Users/aejt/xfgo/docs/decentralized-lp-organizer.md": {
-    "mtime": 1780024280.5131798,
-    "hash": "9987d7c3eb0112af7b594c514613f5ba"
   },
   "/Users/aejt/xfgo/docs/RASPBERRY_PI_SETUP_GUIDE.md": {
     "mtime": 1780024280.507569,
@@ -5002,14 +5058,6 @@
   "/Users/aejt/xfgo/docs/sim_results_6mode.md": {
     "mtime": 1780024280.5261106,
     "hash": "91f467550408040de57fc2f00b6d506a"
-  },
-  "/Users/aejt/xfgo/docs/cd_yield_framework_v2.md": {
-    "mtime": 1780024280.5117264,
-    "hash": "0d4432312940c488cbd5a6a1998a48ac"
-  },
-  "/Users/aejt/xfgo/docs/ZK_ALIAS_MAPPING_PLAN.md": {
-    "mtime": 1780051379.4031246,
-    "hash": "644fc3b950cb442188817c7a1341238f"
   },
   "/Users/aejt/xfgo/docs/introduction.mdx": {
     "mtime": 1780024280.5243993,
@@ -5051,10 +5099,6 @@
     "mtime": 1780032513.8686662,
     "hash": "e765171c1e658d5a1bca8140263dd877"
   },
-  "/Users/aejt/xfgo/docs/hearth-amm-commitment-plan.md": {
-    "mtime": 1780024280.520999,
-    "hash": "6672e075a9e036efee03fc767f03d1b6"
-  },
   "/Users/aejt/xfgo/docs/DYNAMIC_RING_SIZE.md": {
     "mtime": 1780024280.5054922,
     "hash": "b35dabccadf0215deaab92fd3ea696a0"
@@ -5079,29 +5123,25 @@
     "mtime": 1780024280.5161345,
     "hash": "716fe6228fe57c5273596ff38d5c292a"
   },
-  "/Users/aejt/xfgo/docs/design/HEAT_FLATCOIN_FORMULA.md": {
-    "mtime": 1780024280.5141232,
-    "hash": "7d0649b1e40dae9a74e905ef751aaab9"
+  "/Users/aejt/xfgo/docs/design/SWAPXFG_FINAL_NINE.md": {
+    "mtime": 1780274094.2296774,
+    "hash": "34717bb970abe6b1377023e48a822323"
   },
   "/Users/aejt/xfgo/docs/design/2026-03-22-transferable-cd-fee-pool.md": {
     "mtime": 1780024280.5138035,
     "hash": "1b1b93e7290cd1fa2db2c4d4b633d7e2"
   },
+  "/Users/aejt/xfgo/docs/design/SWAPXFG_CHAIN_REACH_STRATEGY.md": {
+    "mtime": 1780271547.8167102,
+    "hash": "80b1268b561112c7e0d54a7c6184e6a1"
+  },
   "/Users/aejt/xfgo/docs/design/2026-03-22-transferable-cd-fee-pool-design.md": {
     "mtime": 1780024280.5135455,
     "hash": "482e0a231e6f47aa0fc8e381e630297b"
   },
-  "/Users/aejt/xfgo/docs/design/minimizing-prover-exposure.md": {
-    "mtime": 1780024280.5148911,
-    "hash": "943fcb40cab0e35ff40d850d1080914d"
-  },
-  "/Users/aejt/xfgo/docs/design/HEAT_STABILITY_FORMULA.md": {
-    "mtime": 1780024280.5143034,
-    "hash": "f1f4cbffcee2db4591094a5b5ed3c830"
-  },
-  "/Users/aejt/xfgo/docs/design/group-aliases-plan.md": {
-    "mtime": 1780032513.8692987,
-    "hash": "b5755f9aad22e15b331533e44e6d72c6"
+  "/Users/aejt/xfgo/docs/design/SWAPXFG_CHAIN_RECOMMENDATIONS.md": {
+    "mtime": 1780255674.765056,
+    "hash": "3062a5b2a2d19f9999f7320001c91deb"
   },
   "/Users/aejt/xfgo/docs/developer/rpc-reference.mdx": {
     "mtime": 1780024280.51543,
@@ -5116,8 +5156,40 @@
     "hash": "ef63b8d319e17f2724d5e0b6ce9984b5"
   },
   "/Users/aejt/xfgo/docs/developer/building.mdx": {
-    "mtime": 1780024280.5152624,
-    "hash": "edc332fef35064d1f80db0e420a21458"
+    "mtime": 1780233779.70273,
+    "hash": "fea696ff949737dd3ff59234a990cf05"
+  },
+  "/Users/aejt/xfgo/docs/heat/HEAT_STABLECOIN_VISION.md": {
+    "mtime": 1780024280.5060463,
+    "hash": "74f27d244580b1552227265a08ded735"
+  },
+  "/Users/aejt/xfgo/docs/heat/HEAT_FLATCOIN_FORMULA.md": {
+    "mtime": 1780024280.5141232,
+    "hash": "7d0649b1e40dae9a74e905ef751aaab9"
+  },
+  "/Users/aejt/xfgo/docs/heat/FUEGO_HEAT_FINAL_DESIGN.md": {
+    "mtime": 1780204756.5931976,
+    "hash": "a40be140a628ca5b2a9f33fe8620dcf5"
+  },
+  "/Users/aejt/xfgo/docs/heat/HEAT_STABILITY_FORMULA.md": {
+    "mtime": 1780024280.5143034,
+    "hash": "f1f4cbffcee2db4591094a5b5ed3c830"
+  },
+  "/Users/aejt/xfgo/docs/heat/HEAT-flatcoin-how.md": {
+    "mtime": 1780220743.8305593,
+    "hash": "5d92e002e514e338c409e846a2e0a34f"
+  },
+  "/Users/aejt/xfgo/docs/heat/hearth-amm-commitment-plan.md": {
+    "mtime": 1780024280.520999,
+    "hash": "6672e075a9e036efee03fc767f03d1b6"
+  },
+  "/Users/aejt/xfgo/docs/heat/MODE4_IMPLEMENTATION_PLAN.md": {
+    "mtime": 1780058235.7264097,
+    "hash": "ffcb16a6608215a3a00cbfe7d084e245"
+  },
+  "/Users/aejt/xfgo/docs/heat/burn2mint-manifesto.md": {
+    "mtime": 1780024280.517978,
+    "hash": "4d644b96a92fc654db8a25efa42902ee"
   },
   "/Users/aejt/xfgo/docs/starkproof-CDs/noble-mixing-stroustrup.md": {
     "mtime": 1780024280.5263975,
@@ -5127,21 +5199,13 @@
     "mtime": 1780024280.5265963,
     "hash": "7da5ef5be25e63aa9dbfe0745fcdfc20"
   },
-  "/Users/aejt/xfgo/docs/comparisons/privacy-coins-comparison.md": {
-    "mtime": 1780024280.5128427,
-    "hash": "4f8673b1a63a4023fd81cb85b17b8549"
-  },
-  "/Users/aejt/xfgo/docs/comparisons/fuego-vs-monero.md": {
-    "mtime": 1780024280.5123816,
-    "hash": "e2050ba2bfc1650283f0c02a38b5af47"
-  },
-  "/Users/aejt/xfgo/docs/comparisons/fuego-vs-zcash.md": {
-    "mtime": 1780024280.51262,
-    "hash": "1098e6e0e116de0c82d1d6b271a087ac"
-  },
   "/Users/aejt/xfgo/docs/apy/cd_apy_models.md": {
     "mtime": 1780024280.510786,
     "hash": "963319710817d09bc70fb67cc2bc8e44"
+  },
+  "/Users/aejt/xfgo/docs/apy/cd_yield_framework_v2.md": {
+    "mtime": 1780024280.5117264,
+    "hash": "0d4432312940c488cbd5a6a1998a48ac"
   },
   "/Users/aejt/xfgo/docs/archive/ZK_STARK_ALIAS_FEASIBILITY.md": {
     "mtime": 1780024280.511409,
@@ -5178,10 +5242,6 @@
   "/Users/aejt/xfgo/docs/api-reference/fee-pool.mdx": {
     "mtime": 1780024280.5100818,
     "hash": "1306afb58472557cc707ce957e663abf"
-  },
-  "/Users/aejt/xfgo/docs/features/burn2mint-manifesto.md": {
-    "mtime": 1780024280.517978,
-    "hash": "4d644b96a92fc654db8a25efa42902ee"
   },
   "/Users/aejt/xfgo/docs/features/atomic-swaps/step-by-step-guide.mdx": {
     "mtime": 1780024280.517505,
@@ -5271,6 +5331,10 @@
     "mtime": 1780024280.531519,
     "hash": "1a14825477379a378710ec8872089a46"
   },
+  "/Users/aejt/xfgo/docs/zkLP/decentralized-lp-organizer.md": {
+    "mtime": 1780024280.5131798,
+    "hash": "9987d7c3eb0112af7b594c514613f5ba"
+  },
   "/Users/aejt/xfgo/docs/zkLP/prover-privacy-model.md": {
     "mtime": 1780024280.5313292,
     "hash": "64d6f1c8513289e765d629a38fd4b90f"
@@ -5283,13 +5347,25 @@
     "mtime": 1780024280.5305479,
     "hash": "943fcb40cab0e35ff40d850d1080914d"
   },
+  "/Users/aejt/xfgo/docs/review/security-implementation-plan.md": {
+    "mtime": 1780281448.6831222,
+    "hash": "db17d483a793b52d36f0e1663082ac43"
+  },
+  "/Users/aejt/xfgo/docs/review/ZK_ALIAS_MAPPING_PLAN.md": {
+    "mtime": 1780051379.4031246,
+    "hash": "644fc3b950cb442188817c7a1341238f"
+  },
   "/Users/aejt/xfgo/docs/review/xfgCdswaps-fix-plan.md": {
-    "mtime": 1780024280.525071,
-    "hash": "5e29769a8c74ef8751b023b6fc8c3fbc"
+    "mtime": 1780220785.2421033,
+    "hash": "216aaa3ae8102ba52aec4ca689f6c461"
+  },
+  "/Users/aejt/xfgo/docs/review/atomic-swap-security-fix-plan.md": {
+    "mtime": 1780250772.840351,
+    "hash": "ff44ec208d6f76e63aa038d3fa91d524"
   },
   "/Users/aejt/xfgo/docs/review/xfgCdswaps-review.md": {
-    "mtime": 1780032513.8705719,
-    "hash": "f1316b56eb3b79c7990960e59ce4134d"
+    "mtime": 1780220786.8826008,
+    "hash": "359f2f132909ef3cb20b864f19c535e9"
   },
   "/Users/aejt/xfgo/docs/review/2026-04-16-xfgCdswaps-remaining-fixes.md": {
     "mtime": 1780024280.5246632,
@@ -5304,20 +5380,16 @@
     "hash": "187aa8b511d2fca095a9514c950613e4"
   },
   "/Users/aejt/xfgo/docs/implementation/YEM_V3_PLAN.md": {
-    "mtime": 1780056756.375377,
-    "hash": "f60f7bef2a7a3a2bccf1a6549ba56e80"
+    "mtime": 1780220755.961151,
+    "hash": "c7647f0fa7d16e1dbf37d295bd5c1e3a"
   },
   "/Users/aejt/xfgo/docs/implementation/ONEWAY_HEAT_REDESIGN.md": {
     "mtime": 1780121703.339645,
     "hash": "e71fa135c6d194e9e6e7812adf1e9b0d"
   },
-  "/Users/aejt/xfgo/docs/implementation/tanda-dev-guide.md": {
-    "mtime": 1780024280.5234692,
-    "hash": "be83cc6406fe4f1f1156e0be60121f78"
-  },
-  "/Users/aejt/xfgo/docs/implementation/HEAT_FLATCOIN_FORMULA.md": {
-    "mtime": 1780024280.522142,
-    "hash": "7d0649b1e40dae9a74e905ef751aaab9"
+  "/Users/aejt/xfgo/docs/implementation/FUEGO_HEAT_FINAL_DESIGN.md": {
+    "mtime": 1780255596.5144334,
+    "hash": "2b89e6164e0a7702a965e7c88d487bc0"
   },
   "/Users/aejt/xfgo/docs/implementation/CAPITAL_ALLOCATION_ANALYSIS.md": {
     "mtime": 1780130307.131029,
@@ -5339,21 +5411,9 @@
     "mtime": 1780024280.5228486,
     "hash": "08380ac2b14a5b2d0a3fddd7d5d431a4"
   },
-  "/Users/aejt/xfgo/docs/implementation/group-aliases-plan.md": {
-    "mtime": 1780024280.522618,
-    "hash": "b5755f9aad22e15b331533e44e6d72c6"
-  },
   "/Users/aejt/xfgo/docs/implementation/BOUGH_APPLICATIONS.md": {
     "mtime": 1780141873.0065246,
     "hash": "c7d5695f35d8b3f70d99e99c8ae559e9"
-  },
-  "/Users/aejt/xfgo/docs/implementation/HEAT-flatcoin-how.md": {
-    "mtime": 1780024280.5218303,
-    "hash": "2885c64896bcfb9e54d711e4b94c5d9e"
-  },
-  "/Users/aejt/xfgo/docs/implementation/MODE4_IMPLEMENTATION_PLAN.md": {
-    "mtime": 1780058235.7264097,
-    "hash": "ffcb16a6608215a3a00cbfe7d084e245"
   },
   "/Users/aejt/xfgo/docs/implementation/FireScript VM Parennt Block uses.md": {
     "mtime": 1780024280.5213137,
@@ -5391,17 +5451,37 @@
     "mtime": 1780024280.5291283,
     "hash": "12a7fac3cd4dea386a86f934c56264e8"
   },
+  "/Users/aejt/xfgo/docs/aliases/tanda-dev-guide.md": {
+    "mtime": 1780024280.5234692,
+    "hash": "be83cc6406fe4f1f1156e0be60121f78"
+  },
+  "/Users/aejt/xfgo/docs/aliases/group-aliases-plan.md": {
+    "mtime": 1780032513.8692987,
+    "hash": "b5755f9aad22e15b331533e44e6d72c6"
+  },
+  "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-31-arb-pricing-fix.md": {
+    "mtime": 1780265729.582135,
+    "hash": "4165e6eb0b73365ed0fcb59e3fb6755b"
+  },
+  "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-31-atomic-swap-security-fixes.md": {
+    "mtime": 1780251547.1736073,
+    "hash": "8362df1d0867f9cbbe65fdf6b988a43b"
+  },
   "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-25-swapxfg-chain-interface-refactor.md": {
     "mtime": 1780024280.5273573,
     "hash": "c9e641f89709a947898f66871e029895"
   },
   "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-27-heat-flatcoin-implementation.md": {
-    "mtime": 1780024280.527644,
-    "hash": "2885c64896bcfb9e54d711e4b94c5d9e"
+    "mtime": 1780220772.0786822,
+    "hash": "5d92e002e514e338c409e846a2e0a34f"
   },
   "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-25-fuegoscript-dao-v14-plan.md": {
     "mtime": 1780024280.5269828,
     "hash": "a8b2a6e1de3e2fb0219f6f38d9f1fbd6"
+  },
+  "/Users/aejt/xfgo/docs/superpowers/plans/2026-05-31-privacy-b1-ospead-d1-dandelion.md": {
+    "mtime": 1780216759.3679512,
+    "hash": "4aa67ff2c938d3fcc3681d55c3293756"
   },
   "/Users/aejt/xfgo/docs/superpowers/plans/FireScript VM Parennt Block uses.md": {
     "mtime": 1780024280.5279694,
@@ -5410,6 +5490,10 @@
   "/Users/aejt/xfgo/docs/superpowers/specs/2026-05-26-fuegoscript-ecosystem-use-cases.md": {
     "mtime": 1780024280.5282993,
     "hash": "7c01a58d262792ad88ca029866a0e97d"
+  },
+  "/Users/aejt/xfgo/contrib/README.md": {
+    "mtime": 1780243612.4485042,
+    "hash": "9621c09c57955ce8ca004150d19a6237"
   },
   "/Users/aejt/xfgo/external/CMakeLists.txt": {
     "mtime": 1780024280.5317745,
@@ -5524,8 +5608,8 @@
     "hash": "fb8ef12b9052b8f737eb5f4db91d4d3c"
   },
   "/Users/aejt/xfgo/src/CMakeLists.txt": {
-    "mtime": 1780032513.9280136,
-    "hash": "8e15bef028a8497748f6429b1f6e918e"
+    "mtime": 1780266461.8191524,
+    "hash": "283847828279db525449a46d978493f2"
   },
   "/Users/aejt/xfgo/src/FuegoTor/CMakeLists.txt": {
     "mtime": 1780024282.3752778,

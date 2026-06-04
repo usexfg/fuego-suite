@@ -253,7 +253,8 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
   } catch (const JsonRpcError& err) {
     jsonResponse.setError(err);
   } catch (const std::exception& e) {
-    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, e.what()));
+    logger(WARNING) << "RPC internal error (not sent to client): " << e.what();
+    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, "Internal error"));
   }
 
   response.setBody(jsonResponse.getBody());
@@ -2266,7 +2267,8 @@ bool RpcServer::on_get_maturing_deposits(const COMMAND_RPC_GET_MATURING_DEPOSITS
     res.status = CORE_RPC_STATUS_OK;
     return true;
   } catch (const std::exception& e) {
-    res.status = "Error: " + std::string(e.what());
+    logger(WARNING) << "get_maturing_deposits error: " << e.what();
+    res.status = "Error";
     return false;
   }
 }
@@ -2282,7 +2284,8 @@ bool RpcServer::on_rollover_deposit(const COMMAND_RPC_ROLLOVER_DEPOSIT::request&
     res.status = "Error: Rollover must be called from wallet RPC, not daemon RPC";
     return false;
   } catch (const std::exception& e) {
-    res.status = "Error: " + std::string(e.what());
+    logger(WARNING) << "rollover_deposit error: " << e.what();
+    res.status = "Error";
     return false;
   }
 }

@@ -995,11 +995,15 @@ struct COMMAND_RPC_GEN_PAYMENT_ID {
   typedef EMPTY_STRUCT request;
 
   struct response {
-	  std::string payment_id;
+    std::string payment_id;
+    bool deprecated = true;
+    std::string deprecated_message = "Payment IDs are deprecated. Use integrated addresses or subaddresses for recipient identification.";
 
-	  void serialize(ISerializer &s) {
-		  KV_MEMBER(payment_id)
-	  }
+    void serialize(ISerializer &s) {
+      KV_MEMBER(payment_id)
+      KV_MEMBER(deprecated)
+      KV_MEMBER(deprecated_message)
+    }
   };
 };
 

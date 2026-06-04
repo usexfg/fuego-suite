@@ -60,6 +60,29 @@ void JsonRpcServer::processRequest(const CryptoNote::HttpRequest& req, CryptoNot
       Common::JsonValue jsonRpcRequest;
       Common::JsonValue jsonRpcResponse(Common::JsonValue::OBJECT);
 
+      // Reject deeply nested JSON to prevent stack-overflow DoS
+      {
+        int depth = 0, maxDepth = 0;
+        bool inString = false, escaped = false;
+        for (char c : req.getBody()) {
+          if (escaped) { escaped = false; continue; }
+          if (c == '\\') { escaped = true; continue; }
+          if (c == '"') { inString = !inString; continue; }
+          if (inString) continue;
+          if (c == '{' || c == '[') {
+            if (++depth > maxDepth) maxDepth = depth;
+          } else if (c == '}' || c == ']') {
+            if (depth > 0) depth--;
+          }
+        }
+        constexpr int MAX_JSON_NESTING_DEPTH = 32;
+        if (maxDepth > MAX_JSON_NESTING_DEPTH) {
+          logger(Logging::WARNING) << "Rejected JSON request: nesting depth " << maxDepth;
+          resp.setStatus(CryptoNote::HttpResponse::STATUS_400);
+          return;
+        }
+      }
+
       try {
         jsonInputStream >> jsonRpcRequest;
       } catch (std::runtime_error&) {

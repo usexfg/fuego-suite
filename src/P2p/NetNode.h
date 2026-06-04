@@ -38,6 +38,7 @@
 #include "P2pNetworks.h"
 #include "PeerListManager.h"
 #include "net/Socks5.h"
+#include "net/TorControl.h"
 
 namespace System {
 class TcpConnection;
@@ -318,6 +319,14 @@ namespace CryptoNote
     boost::uuids::uuid m_network_id;
     std::map<uint32_t, time_t> m_blocked_hosts;
     std::map<uint32_t, uint64_t> m_host_fails_score;
+
+    std::map<uint32_t, uint32_t> m_inboundCounts;     // per-IP inbound connection count (guarded by mutex)
+    size_t m_totalInboundCount = 0;                    // total inbound connections (guarded by mutex)
+
+    boost::uuids::uuid m_dandelionStemSuccessor;
+    time_t m_dandelionEpochEnd = 0;
+    std::unique_ptr<CryptoNote::net::TorHiddenService> m_hiddenService;
+
     mutable std::mutex mutex;
 
 #ifdef ENABLE_FUEGOMESH

@@ -117,6 +117,17 @@ void SwapP2P::stop() {
     m_acceptThread.join();
   }
 
+  // Accept thread is gone, so no new workers will spawn. Drain any in-flight
+  // detached workers before returning — they hold a `this` pointer and would
+  // use-after-free if the object were destroyed while they run. Each worker
+  // exits within the per-connection SO_RCVTIMEO (30s) at the latest.
+  {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_workersDoneCv.wait(lock, [this] {
+      return m_activeWorkers.load(std::memory_order_acquire) == 0;
+    });
+  }
+
   m_logger(Logging::INFO) << "SwapP2P: stopped";
 }
 
@@ -190,7 +201,11 @@ void SwapP2P::handleConnection(int clientSock) {
   }
 
   close(clientSock);
-  m_activeWorkers.fetch_sub(1, std::memory_order_relaxed);
+  if (m_activeWorkers.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    // Last worker out — wake any stop() waiting to drain before destruction.
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_workersDoneCv.notify_all();
+  }
 }
 
 // ---------------------------------------------------------------------------

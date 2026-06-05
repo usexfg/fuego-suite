@@ -107,6 +107,10 @@ private:
   std::atomic<size_t> m_activeWorkers{0};
   static constexpr size_t MAX_WORKERS = 64;
 
+  // Signalled when the last detached worker exits, so stop() can drain all
+  // workers before the object is destroyed (prevents use-after-free on `this`).
+  std::condition_variable m_workersDoneCv;
+
   std::function<void(const SwapMessage&)> m_callback;
 
   Logging::LoggerRef& m_logger;

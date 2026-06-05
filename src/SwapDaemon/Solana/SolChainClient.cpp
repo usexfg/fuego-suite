@@ -51,7 +51,7 @@ ChainClientResult SolChainClient::refund(const SwapParams& params) {
   return ChainClientResult::ok(solResult.signature);
 }
 
-ChainClientResult SolChainClient::verifyReserveProof(const std::string& ctrAddress,
+ChainClientResult SolChainClient::verifyReserveProof(const std::string& expectedMessage,
     uint64_t minAmount, const std::string& proof) {
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
@@ -75,6 +75,9 @@ ChainClientResult SolChainClient::verifyReserveProof(const std::string& ctrAddre
   if (!Ed25519Verify::verify(pubkeyBytes.data(), message, sigBytes.data()))
     return ChainClientResult::fail("SOL reserve proof: invalid signature");
 
+  if (!expectedMessage.empty() && message != expectedMessage)
+    return ChainClientResult::fail("SOL reserve proof: message not bound to this offer");
+
   uint64_t balance = 0;
   if (!m_rpc->getBalance(address, balance))
     return ChainClientResult::fail("SOL reserve proof: balance check RPC failed");
@@ -82,7 +85,7 @@ ChainClientResult SolChainClient::verifyReserveProof(const std::string& ctrAddre
     return ChainClientResult::fail("SOL reserve proof: insufficient balance (" +
                                    std::to_string(balance) + " < " + std::to_string(minAmount) + ")");
 
-  return ChainClientResult::ok(ctrAddress);
+  return ChainClientResult::ok(address);
 }
 
 bool SolChainClient::getCurrentHeight(uint64_t& height) {

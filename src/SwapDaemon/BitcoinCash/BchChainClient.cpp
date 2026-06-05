@@ -52,7 +52,7 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
   return ChainClientResult::ok(refundTxId);
 }
 
-ChainClientResult BchChainClient::verifyReserveProof(const std::string& ctrAddress,
+ChainClientResult BchChainClient::verifyReserveProof(const std::string& expectedMessage,
     uint64_t minAmount, const std::string& proof) {
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
@@ -69,6 +69,9 @@ ChainClientResult BchChainClient::verifyReserveProof(const std::string& ctrAddre
   if (!sigValid)
     return ChainClientResult::fail("BCH reserve proof: invalid signature");
 
+  if (!expectedMessage.empty() && message != expectedMessage)
+    return ChainClientResult::fail("BCH reserve proof: message not bound to this offer");
+
   uint64_t balance = 0;
   if (!m_rpc->getBalance(address, balance))
     return ChainClientResult::fail("BCH reserve proof: balance check RPC failed");
@@ -76,7 +79,7 @@ ChainClientResult BchChainClient::verifyReserveProof(const std::string& ctrAddre
     return ChainClientResult::fail("BCH reserve proof: insufficient balance (" +
                                    std::to_string(balance) + " < " + std::to_string(minAmount) + ")");
 
-  return ChainClientResult::ok(ctrAddress);
+  return ChainClientResult::ok(address);
 }
 
 bool BchChainClient::getCurrentHeight(uint64_t& height) {

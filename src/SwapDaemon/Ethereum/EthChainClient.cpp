@@ -72,7 +72,7 @@ ChainClientResult EthChainClient::refund(const SwapParams& params) {
   }
 }
 
-ChainClientResult EthChainClient::verifyReserveProof(const std::string& ctrAddress,
+ChainClientResult EthChainClient::verifyReserveProof(const std::string& expectedMessage,
     uint64_t minAmount, const std::string& proof) {
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
@@ -143,6 +143,9 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& ctrAddre
       return ChainClientResult::fail("ETH reserve proof: invalid signature (address mismatch)");
   }
 
+  if (!expectedMessage.empty() && message != expectedMessage)
+    return ChainClientResult::fail("ETH reserve proof: message not bound to this offer");
+
   uint64_t balanceWei = 0;
   if (!m_rpc->getBalance(address, balanceWei))
     return ChainClientResult::fail("ETH reserve proof: balance check RPC failed");
@@ -150,7 +153,7 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& ctrAddre
     return ChainClientResult::fail("ETH reserve proof: insufficient balance (" +
                                    std::to_string(balanceWei) + " < " + std::to_string(minAmount) + ")");
 
-  return ChainClientResult::ok(ctrAddress);
+  return ChainClientResult::ok(address);
 }
 
 bool EthChainClient::getCurrentHeight(uint64_t& height) {

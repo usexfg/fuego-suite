@@ -52,7 +52,7 @@ ChainClientResult XmrChainClient::refund(const SwapParams& params) {
   return ChainClientResult::ok(xmrResult.txHash);
 }
 
-ChainClientResult XmrChainClient::verifyReserveProof(const std::string& ctrAddress,
+ChainClientResult XmrChainClient::verifyReserveProof(const std::string& expectedMessage,
     uint64_t minAmount, const std::string& proof) {
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
@@ -69,11 +69,13 @@ ChainClientResult XmrChainClient::verifyReserveProof(const std::string& ctrAddre
     return ChainClientResult::fail("XMR reserve proof: RPC call failed");
   if (!good)
     return ChainClientResult::fail("XMR reserve proof: invalid signature");
+  if (!expectedMessage.empty() && message != expectedMessage)
+    return ChainClientResult::fail("XMR reserve proof: message not bound to this offer");
   if (total < minAmount)
     return ChainClientResult::fail("XMR reserve proof: insufficient balance (" +
                                    std::to_string(total) + " < " + std::to_string(minAmount) + ")");
 
-  return ChainClientResult::ok(ctrAddress);
+  return ChainClientResult::ok(address);
 }
 
 bool XmrChainClient::getCurrentHeight(uint64_t& height) {

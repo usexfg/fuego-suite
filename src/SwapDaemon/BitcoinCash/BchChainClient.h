@@ -16,7 +16,7 @@ public:
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
-  ChainClientResult verifyReserveProof(const std::string& ctrAddress,
+  ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
   bool getCurrentHeight(uint64_t& height) override;

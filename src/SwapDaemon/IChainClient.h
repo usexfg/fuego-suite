@@ -16,7 +16,11 @@ public:
   virtual ChainClientResult claim(const SwapParams& params) = 0;
   virtual ChainClientResult refund(const SwapParams& params) = 0;
 
-  virtual ChainClientResult verifyReserveProof(const std::string& ctrAddress,
+  // Verify a counterparty reserve proof.
+  // expectedMessage: the proof's signed message must equal this (binds the proof
+  //   to a specific swap/offer — pass the offerId). Empty disables the binding check.
+  // minAmount: minimum counterparty-chain balance the proof must demonstrate.
+  virtual ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                                uint64_t minAmount,
                                                const std::string& proof) = 0;
 

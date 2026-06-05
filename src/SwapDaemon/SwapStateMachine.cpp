@@ -279,6 +279,16 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     if (!Common::podFromHex(stored, params.encBlob)) {
       params.encBlob.clear();
     }
+  } else if (root.contains("adaptorSecret")) {
+    // Legacy v2 record: the adaptor secret was stored under "adaptorSecret"
+    // (with an inline "encKey"). That scheme is removed in v3 and cannot be
+    // migrated — the secret is unrecoverable under the new at-rest format.
+    // Fail loudly so the loader skips this record rather than resurrecting a
+    // swap it can never complete (which would loop forever / risk escrow
+    // lockup). Operators must refund such swaps on-chain manually.
+    throw std::runtime_error(
+      "legacy v2 swap record (pre-Wildfire) cannot be migrated to v3 — "
+      "adaptorSecret unrecoverable; manual on-chain refund required");
   }
 
   // Legacy fields

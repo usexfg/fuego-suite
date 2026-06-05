@@ -1571,22 +1571,25 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   uint64_t requiredCtrAmount = 0;
   {
-    double xfgWhole = static_cast<double>(fillAmount) / 1e7;
-    double rate = static_cast<double>(targetOffer.rateNum) / 1e7;
-    if (rate <= 0.0) {
-      m_logger(Logging::ERROR) << "Invalid rate for offer " << offerId;
+    if (targetOffer.rateNum == 0) {
+      m_logger(Logging::ERROR) << "Invalid (zero) rate for offer " << offerId;
       return false;
     }
-    double ctrWhole = xfgWhole / rate;
-    ctrWhole *= m_oracle.ctrDivisor(pair);
-    if (ctrWhole > static_cast<double>(UINT64_MAX)) {
+    // Integer math — avoid double precision loss on large 1e18-divisor chains.
+    //   requiredCtr = fillAmount(atomic XFG) * ctrDivisor / rateNum
+    // The 1e7 scaling on rateNum and (implicitly) on fillAmount cancels out.
+    uint64_t ctrDiv = static_cast<uint64_t>(m_oracle.ctrDivisor(pair));
+    __uint128_t num = static_cast<__uint128_t>(fillAmount) * ctrDiv;
+    __uint128_t result = num / static_cast<__uint128_t>(targetOffer.rateNum);
+    if (result > static_cast<__uint128_t>(UINT64_MAX)) {
       m_logger(Logging::ERROR) << "CTR amount overflow for offer " << offerId;
       return false;
     }
-    requiredCtrAmount = static_cast<uint64_t>(ctrWhole);
+    requiredCtrAmount = static_cast<uint64_t>(result);
   }
 
-  ChainClientResult proofResult = client->verifyReserveProof("", requiredCtrAmount, proofOfFunds);
+  // Bind the reserve proof to this offer (proof message must equal offerId).
+  ChainClientResult proofResult = client->verifyReserveProof(offerId, requiredCtrAmount, proofOfFunds);
   if (!proofResult.success) {
     m_logger(Logging::ERROR) << "Reserve proof failed for offer " << offerId << ": " << proofResult.error;
     recordTakerFailure(takerPubKey);

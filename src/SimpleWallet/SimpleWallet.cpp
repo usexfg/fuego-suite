@@ -1052,7 +1052,7 @@ bool simple_wallet::new_wallet(Crypto::SecretKey &secret_key, Crypto::SecretKey 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::deposit(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
   return true;
   // No ETH address required at deposit time
   // This prevents linking Fuego deposits to ETH addresses on-chain
@@ -1334,7 +1334,7 @@ bool simple_wallet::save(const std::vector<std::string> &args)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::burn(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
   return true;
   // Simplified burn command - just takes amount, term is always FOREVER
   if (args.size() != 1)
@@ -1646,7 +1646,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::withdraw(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
   return true;
   if (args.size() != 1)
   {
@@ -1722,7 +1722,7 @@ bool simple_wallet::withdraw(const std::vector<std::string> &args)
 // Rollover matured CD with compound interest (principal + interest reinvested)
 bool simple_wallet::cd_rollover(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
   return true;
   if (args.size() != 2)
   {
@@ -2356,7 +2356,7 @@ void simple_wallet::launchSwapxfg(bool testnet) {
 }
 
 bool simple_wallet::swap_tui(const std::vector<std::string>& /*args*/) {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
   return true;
   launchSwapxfg(false);
   return true;

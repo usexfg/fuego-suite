@@ -276,6 +276,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Crypto/Base58Std.cpp
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
+    SwapDaemon/SwapHashLock.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -295,6 +296,18 @@ target_link_libraries(test_adaptor_roundtrip PRIVATE
 add_executable(test_price_oracle_arb
     SwapDaemon/tests/test_price_oracle_arb.cpp)
 target_link_libraries(test_price_oracle_arb PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: HTLC hashlock derivation (keccak256/sha256 of secret)
+add_executable(test_swap_hashlock
+    SwapDaemon/tests/test_swap_hashlock.cpp)
+target_link_libraries(test_swap_hashlock PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Solana HTLC PDA account reference
+add_executable(test_sol_htlc_address
+    SwapDaemon/tests/test_sol_htlc_address.cpp)
+target_link_libraries(test_sol_htlc_address PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
@@ -400,6 +413,7 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Base58Std.cpp
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
+    SwapDaemon/SwapHashLock.cpp
     # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
     # SwapDaemon/pool_v11/PoolTypes.cpp
     # SwapDaemon/pool_v11/PoolAMM.cpp

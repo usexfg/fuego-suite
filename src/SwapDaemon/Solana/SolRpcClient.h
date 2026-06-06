@@ -53,6 +53,9 @@ struct SolTxResult {
   std::string signature;    // base58 tx signature
   bool confirmed;
   std::string error;        // empty on success
+  std::string htlcAddress;  // base58 HTLC state PDA (set by lock) — the
+                            // reference verifyLock/claim must use, NOT the
+                            // tx signature.
 };
 
 class SolRpcClient {

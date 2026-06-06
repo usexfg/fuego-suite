@@ -1,18 +1,32 @@
 #include "BchChainClient.h"
 #include "Common/StringTools.h"
+#include "../SwapHashLock.h"
 
 namespace XfgSwap {
+
+static bool isZeroSecret(const Crypto::SecretKey& s) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+  for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return false;
+  return true;
+}
 
 BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif)
   : m_rpc(std::move(rpc)), m_wif(wif) {}
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
+  // The BCH P2SH HTLC redeem script enforces OP_SHA256 <hash_lock>
+  // OP_EQUALVERIFY, and claim() reveals the adaptor secret t as the preimage.
+  // So the hashlock MUST be sha256(t) — NOT the adaptor point T = t*G. The old
+  // code committed T, so OP_EQUALVERIFY always failed; funds could only refund.
+  if (isZeroSecret(params.adaptorSecret))
+    return ChainClientResult::fail("BCH lock: adaptor secret not set — cannot derive hashlock");
+
   std::string lockTxId;
   std::string redeemScriptHex;
   bool ok = m_rpc->lockHtlc(
       m_wif,
       params.ctrAddress,
-      Common::podToHex(params.adaptorPoint),
+      bchHashLockHex(params.adaptorSecret),
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAmount,
       lockTxId,

@@ -2,24 +2,42 @@
 #include "Common/StringTools.h"
 #include "../Crypto/Base58Std.h"
 #include "../Crypto/Ed25519Verify.h"
+#include "../SwapHashLock.h"
 
 namespace XfgSwap {
+
+static bool isZeroSecret(const Crypto::SecretKey& s) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+  for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return false;
+  return true;
+}
 
 SolChainClient::SolChainClient(std::unique_ptr<SolRpcClient> rpc, const std::string& keypairBase58)
   : m_rpc(std::move(rpc)), m_keypairBase58(keypairBase58) {}
 
 ChainClientResult SolChainClient::lock(const SwapParams& params) {
+  // The Solana xfg_htlc program verifies keccak256(preimage) == hash_lock, and
+  // claim() reveals the adaptor secret t as the preimage. So the hashlock MUST
+  // be keccak256(t) — NOT the adaptor point T = t*G. Committing T (the old bug)
+  // made every claim fail with InvalidPreimage; funds could only be refunded.
+  if (isZeroSecret(params.adaptorSecret))
+    return ChainClientResult::fail("SOL lock: adaptor secret not set — cannot derive hashlock");
+
   SolTxResult solResult;
   bool ok = m_rpc->lock(
       m_keypairBase58,
       params.ctrAddress,
-      Common::podToHex(params.adaptorPoint),
+      solHashLockHex(params.adaptorSecret),
       params.ctrTimeoutBlock,
       params.ctrAmount,
       solResult);
   if (!ok || !solResult.confirmed)
     return ChainClientResult::fail("SOL lock failed: " + solResult.error);
-  return ChainClientResult::ok(solResult.signature);
+  // The canonical reference for verifyLock/claim is the HTLC state PDA, NOT
+  // the lock-tx signature. claim() base58-decodes this and requires 32 bytes.
+  if (solResult.htlcAddress.empty())
+    return ChainClientResult::fail("SOL lock: could not derive HTLC account address");
+  return ChainClientResult::ok(solResult.htlcAddress);
 }
 
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {

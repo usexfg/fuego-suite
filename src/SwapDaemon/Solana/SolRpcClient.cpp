@@ -860,7 +860,24 @@ bool SolRpcClient::lock(const std::string& senderSecretKey,
     return false;
   }
 
-  return sendAndConfirmTransaction(txBytes, result);
+  bool sent = sendAndConfirmTransaction(txBytes, result);
+  if (sent) {
+    // Record the HTLC state PDA — this is the on-chain account that
+    // verifyLock/claim must reference. The tx signature is NOT an account
+    // address; passing it to claim made base58Decode != 32 bytes and the
+    // claim tx failed to build. PDA = find_program_address(
+    //   [b"xfg_htlc", sender_pubkey, hash_lock]).
+    std::vector<uint8_t> kp = base58Decode(senderSecretKey);
+    if (kp.size() == 64) {
+      std::vector<uint8_t> senderPub(kp.begin() + 32, kp.end());
+      std::vector<uint8_t> programIdBytes = base58Decode(m_programId);
+      const std::string seed = "xfg_htlc";
+      std::vector<uint8_t> seedBytes(seed.begin(), seed.end());
+      auto pda = derivePDA({seedBytes, senderPub, hashLock}, programIdBytes);
+      if (!pda.first.empty()) result.htlcAddress = base58Encode(pda.first);
+    }
+  }
+  return sent;
 }
 
 bool SolRpcClient::claim(const std::string& claimerSecretKey,

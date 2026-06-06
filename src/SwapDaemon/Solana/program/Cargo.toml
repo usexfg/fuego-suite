@@ -1,0 +1,39 @@
+[package]
+name = "xfg_htlc"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[lib]
+name = "xfg_htlc"
+# Single source of truth — the program lives one directory up. This workspace
+# only adds the build manifest + a pinned Cargo.lock.
+path = "../htlc_program.rs"
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.30.1"
+
+# ── Solana SBF toolchain pins ─────────────────────────────────────────────
+# The Solana 1.18 `cargo-build-sbf` bundles rustc <= 1.79 (even with
+# --tools-version v1.43). The 2025 releases of these transitive crates either
+# adopted Cargo's unstable `edition2024` or raised their MSRV to 1.85, so the
+# SBF rustc refuses to build them. These pin the dependency graph back to the
+# last edition-2021 / MSRV<=1.79 versions. The exact resolved tree is captured
+# in Cargo.lock — build with `--locked` and do NOT run `cargo update`.
+blake3               = "=1.5.5"   # 1.8 -> digest 0.11 -> block-buffer 0.12 (edition2024)
+proc-macro-crate     = "=3.2.0"   # 3.5 -> toml_edit 0.25 -> toml_datetime 1.x (edition2024)
+indexmap             = "=2.9.0"   # 2.14 is edition2024
+unicode-segmentation = "=1.12.0"  # 1.13 requires rustc 1.85
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1

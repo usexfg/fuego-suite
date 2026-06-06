@@ -14,15 +14,17 @@
 //   4. Alice claims SOL by revealing t (preimage)
 //   5. Bob sees t on-chain, adapts XFG pre-sig, spends escrow
 //
-// Build:  anchor build
-// Deploy: anchor deploy --provider.cluster devnet
+// Build/deploy: see program/README.md (uses cargo build-sbf with a pinned
+// Cargo.lock to fit the Solana SBF toolchain's rust ceiling).
 //
-// Program ID is set after first deploy — update declare_id!() below.
+// declare_id below is a dev/localnet deployment. To deploy under your own
+// program ID, generate a program keypair and update this value (or run
+// `anchor keys sync`).
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak::hash as keccak256;
 
-declare_id!("FUEGhtLc1111111111111111111111111111111111");
+declare_id!("J4H9vUpp5CtJF9x4iPAMj7fqp5fpH9KTGcRzRC8e72ig");
 
 /// Seed prefix for HTLC vault PDA.
 const HTLC_SEED: &[u8] = b"xfg_htlc";

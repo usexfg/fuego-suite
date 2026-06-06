@@ -92,29 +92,44 @@ pub mod xfg_htlc {
     /// Anyone can call this as long as preimage is valid, but SOL goes
     /// to the designated recipient.
     pub fn claim(ctx: Context<Claim>, preimage: [u8; 32]) -> Result<()> {
-        let htlc = &mut ctx.accounts.htlc;
-        require!(!htlc.claimed, HtlcError::AlreadyClaimed);
-        require!(!htlc.refunded, HtlcError::AlreadyRefunded);
+        // Validate + mark claimed in a scope so the &mut htlc borrow ends
+        // before the CPI below.
+        let (amount, htlc_key, bump) = {
+            let htlc = &mut ctx.accounts.htlc;
+            require!(!htlc.claimed, HtlcError::AlreadyClaimed);
+            require!(!htlc.refunded, HtlcError::AlreadyRefunded);
 
-        // Verify Keccak-256(preimage) == hash_lock
-        let computed = keccak256(&preimage);
-        require!(computed.to_bytes() == htlc.hash_lock, HtlcError::InvalidPreimage);
+            // Verify Keccak-256(preimage) == hash_lock
+            let computed = keccak256(&preimage);
+            require!(computed.to_bytes() == htlc.hash_lock, HtlcError::InvalidPreimage);
 
-        htlc.claimed = true;
-        htlc.preimage = preimage;
+            htlc.claimed = true;
+            htlc.preimage = preimage;
+            (htlc.amount, htlc.key(), htlc.bump)
+        };
 
-        // Transfer SOL from vault PDA to recipient
-        let amount = htlc.amount;
-        let htlc_key = htlc.key();
-        let bump = htlc.bump;
-        let seeds = &[HTLC_SEED, htlc_key.as_ref(), &[bump]];
-        let signer_seeds = &[&seeds[..]];
-
-        **ctx.accounts.vault.try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.recipient.try_borrow_mut_lamports()? += amount;
+        // The vault is a system-owned PDA. A program may NOT directly debit an
+        // account it does not own, so move the lamports via a system-program
+        // transfer signed by the vault PDA seeds [b"xfg_htlc", htlc_key, bump].
+        let seeds: &[&[u8]] = &[HTLC_SEED, htlc_key.as_ref(), &[bump]];
+        let signer: &[&[&[u8]]] = &[seeds];
+        let ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.recipient.key(),
+            amount,
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            signer,
+        )?;
 
         emit!(Claimed {
-            htlc_id: htlc.key(),
+            htlc_id: htlc_key,
             preimage,
         });
 
@@ -123,22 +138,39 @@ pub mod xfg_htlc {
 
     /// Refund locked SOL to the sender after timeout.
     pub fn refund(ctx: Context<Refund>) -> Result<()> {
-        let htlc = &mut ctx.accounts.htlc;
-        require!(!htlc.claimed, HtlcError::AlreadyClaimed);
-        require!(!htlc.refunded, HtlcError::AlreadyRefunded);
+        let (amount, htlc_key, bump) = {
+            let htlc = &mut ctx.accounts.htlc;
+            require!(!htlc.claimed, HtlcError::AlreadyClaimed);
+            require!(!htlc.refunded, HtlcError::AlreadyRefunded);
 
-        let clock = Clock::get()?;
-        require!(clock.slot >= htlc.timeout_slot, HtlcError::TimeoutNotReached);
+            let clock = Clock::get()?;
+            require!(clock.slot >= htlc.timeout_slot, HtlcError::TimeoutNotReached);
 
-        htlc.refunded = true;
+            htlc.refunded = true;
+            (htlc.amount, htlc.key(), htlc.bump)
+        };
 
-        // Transfer SOL from vault PDA back to sender
-        let amount = htlc.amount;
-        **ctx.accounts.vault.try_borrow_mut_lamports()? -= amount;
-        **ctx.accounts.sender.try_borrow_mut_lamports()? += amount;
+        // Vault is a system-owned PDA — refund via a signed system transfer
+        // (see claim() for why direct lamport mutation is invalid).
+        let seeds: &[&[u8]] = &[HTLC_SEED, htlc_key.as_ref(), &[bump]];
+        let signer: &[&[&[u8]]] = &[seeds];
+        let ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.sender.key(),
+            amount,
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.sender.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            signer,
+        )?;
 
         emit!(Refunded {
-            htlc_id: htlc.key(),
+            htlc_id: htlc_key,
         });
 
         Ok(())
@@ -199,6 +231,8 @@ pub struct Claim<'info> {
         bump = htlc.bump,
     )]
     pub vault: SystemAccount<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -224,6 +258,8 @@ pub struct Refund<'info> {
         bump = htlc.bump,
     )]
     pub vault: SystemAccount<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 // ─── State ────────────────────────────────────────────────────────────

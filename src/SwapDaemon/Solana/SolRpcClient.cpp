@@ -1182,33 +1182,38 @@ std::vector<uint8_t> SolRpcClient::buildClaimTx(
   if (vaultPda.empty()) return {};
 
   // Account list for Claim instruction (Anchor struct order):
-  //   htlc (mut), recipient (mut), vault (mut)
+  //   htlc (mut), recipient (mut), vault (mut), system_program
   //
   // The claimer is the recipient. They must also be a signer for the tx fee.
+  // system_program is required because claim() moves the vault's lamports via
+  // a system-program transfer CPI (the vault is a system-owned PDA).
   //
   // Solana message account ordering:
   //   [0] claimer/recipient — signer, writable
   //   [1] htlc PDA          — non-signer, writable
   //   [2] vault PDA         — non-signer, writable
-  //   [3] program_id        — non-signer, readonly
+  //   [3] system_program    — non-signer, readonly
+  //   [4] program_id        — non-signer, readonly
 
   std::vector<std::vector<uint8_t>> accounts = {
-    claimerPub,       // [0] signer, writable (fee payer + recipient)
-    htlcBytes,        // [1] writable
-    vaultPda,         // [2] writable
-    programIdBytes,   // [3] readonly (the program)
+    claimerPub,        // [0] signer, writable (fee payer + recipient)
+    htlcBytes,         // [1] writable
+    vaultPda,          // [2] writable
+    SYSTEM_PROGRAM_ID, // [3] readonly (system program for the transfer CPI)
+    programIdBytes,    // [4] readonly (the program)
   };
 
   uint8_t numRequiredSignatures   = 1;
   uint8_t numReadonlySigned       = 0;
-  uint8_t numReadonlyUnsigned     = 1;  // program_id
+  uint8_t numReadonlyUnsigned     = 2;  // system_program + program_id
 
   // Build instruction data: discriminator + preimage
   std::vector<uint8_t> ixData = anchorDiscriminator("global:claim");
   ixData.insert(ixData.end(), preimage.begin(), preimage.end());
 
-  // Instruction account indices (Anchor struct order: htlc=1, recipient=0, vault=2)
-  std::vector<uint8_t> ixAccountIndices = {1, 0, 2};
+  // Instruction account indices in Anchor struct order:
+  //   htlc=1, recipient(claimer)=0, vault=2, system_program=3
+  std::vector<uint8_t> ixAccountIndices = {1, 0, 2, 3};
 
   // Build message
   std::vector<uint8_t> message;
@@ -1227,7 +1232,7 @@ std::vector<uint8_t> SolRpcClient::buildClaimTx(
   auto numIx = compactU16Encode(1);
   message.insert(message.end(), numIx.begin(), numIx.end());
 
-  message.push_back(3);  // program_id at index 3
+  message.push_back(4);  // program_id at index 4
 
   auto numIxAccts = compactU16Encode(static_cast<uint16_t>(ixAccountIndices.size()));
   message.insert(message.end(), numIxAccts.begin(), numIxAccts.end());
@@ -1281,32 +1286,36 @@ std::vector<uint8_t> SolRpcClient::buildRefundTx(
   if (vaultPda.empty()) return {};
 
   // Account list for Refund instruction (Anchor struct order):
-  //   htlc (mut), sender (mut), vault (mut)
+  //   htlc (mut), sender (mut), vault (mut), system_program
   //
-  // The sender is the signer/fee-payer.
+  // The sender is the signer/fee-payer. system_program is required because
+  // refund() moves the vault's lamports via a system-program transfer CPI.
   //
   // Solana message ordering:
-  //   [0] sender       — signer, writable
-  //   [1] htlc PDA     — non-signer, writable
-  //   [2] vault PDA    — non-signer, writable
-  //   [3] program_id   — non-signer, readonly
+  //   [0] sender         — signer, writable
+  //   [1] htlc PDA       — non-signer, writable
+  //   [2] vault PDA      — non-signer, writable
+  //   [3] system_program — non-signer, readonly
+  //   [4] program_id     — non-signer, readonly
 
   std::vector<std::vector<uint8_t>> accounts = {
-    senderPub,        // [0] signer, writable
-    htlcBytes,        // [1] writable
-    vaultPda,         // [2] writable
-    programIdBytes,   // [3] readonly (the program)
+    senderPub,         // [0] signer, writable
+    htlcBytes,         // [1] writable
+    vaultPda,          // [2] writable
+    SYSTEM_PROGRAM_ID, // [3] readonly (system program for the transfer CPI)
+    programIdBytes,    // [4] readonly (the program)
   };
 
   uint8_t numRequiredSignatures   = 1;
   uint8_t numReadonlySigned       = 0;
-  uint8_t numReadonlyUnsigned     = 1;  // program_id
+  uint8_t numReadonlyUnsigned     = 2;  // system_program + program_id
 
   // Instruction data: discriminator only (no args)
   std::vector<uint8_t> ixData = anchorDiscriminator("global:refund");
 
-  // Instruction account indices (Anchor struct order: htlc=1, sender=0, vault=2)
-  std::vector<uint8_t> ixAccountIndices = {1, 0, 2};
+  // Instruction account indices in Anchor struct order:
+  //   htlc=1, sender=0, vault=2, system_program=3
+  std::vector<uint8_t> ixAccountIndices = {1, 0, 2, 3};
 
   // Build message
   std::vector<uint8_t> message;
@@ -1325,7 +1334,7 @@ std::vector<uint8_t> SolRpcClient::buildRefundTx(
   auto numIx = compactU16Encode(1);
   message.insert(message.end(), numIx.begin(), numIx.end());
 
-  message.push_back(3);  // program_id at index 3
+  message.push_back(4);  // program_id at index 4
 
   auto numIxAccts = compactU16Encode(static_cast<uint16_t>(ixAccountIndices.size()));
   message.insert(message.end(), numIxAccts.begin(), numIxAccts.end());

@@ -15,6 +15,7 @@ add_library(Crypto STATIC ${Crypto})
 file(GLOB_RECURSE CryptoNoteCore CryptoNoteCore/* CryptoNoteConfig.h DynamicRingSize.cpp OSPEADDecoySelection.cpp)
 file(GLOB_RECURSE CryptoNoteProtocol CryptoNoteProtocol/*)
 file(GLOB_RECURSE Daemon Daemon/*)
+list(APPEND Daemon SwapDaemon/SwapHashLock.cpp)
 file(GLOB_RECURSE Http HTTP/*)
 file(GLOB_RECURSE InProcessNode InProcessNode/*)
 file(GLOB_RECURSE Logging Logging/*)
@@ -308,6 +309,12 @@ target_link_libraries(test_swap_hashlock PRIVATE
 add_executable(test_sol_htlc_address
     SwapDaemon/tests/test_sol_htlc_address.cpp)
 target_link_libraries(test_sol_htlc_address PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon MANUAL on-chain e2e (not run in CI; needs a live validator)
+add_executable(test_sol_e2e
+    SwapDaemon/tests/test_sol_e2e.cpp)
+target_link_libraries(test_sol_e2e PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # XMR claim/refund adaptor tests (spend-key combine behaviour)

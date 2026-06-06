@@ -1365,13 +1365,20 @@ bool SolRpcClient::sendAndConfirmTransaction(const std::vector<uint8_t>& txBytes
     return false;
   }
 
-  // Encode tx as base64 for sendTransaction
+  // Encode tx as base64 for sendTransaction.
+  // preflightCommitment=confirmed matches the commitment we confirm at below;
+  // without it, preflight simulates at the node default (finalized) and a tx
+  // depending on a just-confirmed account (e.g. claim right after lock) is
+  // wrongly rejected as referencing an uninitialized account.
   std::string txBase64 = base64Encode(txBytes);
-  std::string params = "[\"" + txBase64 + "\",{\"encoding\":\"base64\"}]";
+  std::string params = "[\"" + txBase64 +
+      "\",{\"encoding\":\"base64\",\"preflightCommitment\":\"confirmed\"}]";
   std::string resp = jsonRpc("sendTransaction", params);
 
   if (resp.empty() || jsonHasError(resp)) {
-    result.error = "sendTransaction failed";
+    // Surface the RPC error (incl. preflight program logs) instead of a
+    // generic message — essential for diagnosing on-chain rejections.
+    result.error = "sendTransaction failed: " + (resp.empty() ? "(no response)" : resp);
     return false;
   }
 

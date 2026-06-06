@@ -22,6 +22,7 @@
 
 #include <iostream>
 #include <string>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <thread>
@@ -84,6 +85,13 @@ std::string getDefaultDataDir() {
 } // anonymous namespace
 
 int main(int argc, char* argv[]) {
+  // Make stdout/stderr line-buffered even when redirected to a file or pipe.
+  // Without this, --service mode (long-running, no TTY) holds INFO logs in the
+  // 4KB block buffer indefinitely — operators see "the daemon is silent" even
+  // when it's running fine.
+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
+  std::setvbuf(stderr, nullptr, _IOLBF, 0);
+
   std::string host = DEFAULT_HOST;
   uint16_t port = DEFAULT_MAINNET_PORT;
   std::string dataDir = getDefaultDataDir();
@@ -270,8 +278,28 @@ int main(int argc, char* argv[]) {
       }
 
       params.role = XfgSwap::SwapRole::BOB;
-      params.xfgAmount = std::strtoull(xfgAmountStr.c_str(), nullptr, 10);
-      params.ctrAmount = std::strtoull(ctrAmountStr.c_str(), nullptr, 10);
+      // Validate amounts: strtoull silently returns 0 for "notanumber". Require
+      // that endptr advanced past at least one digit AND the value is > 0.
+      auto parseAmount = [](const std::string& s, const char* label, uint64_t& out) {
+        if (s.empty()) {
+          std::cerr << "Error: " << label << " is empty" << std::endl;
+          return false;
+        }
+        char* endp = nullptr;
+        unsigned long long v = std::strtoull(s.c_str(), &endp, 10);
+        if (endp == s.c_str() || endp == nullptr || *endp != '\0') {
+          std::cerr << "Error: " << label << " must be a positive integer (got '" << s << "')" << std::endl;
+          return false;
+        }
+        if (v == 0) {
+          std::cerr << "Error: " << label << " must be > 0" << std::endl;
+          return false;
+        }
+        out = static_cast<uint64_t>(v);
+        return true;
+      };
+      if (!parseAmount(xfgAmountStr, "xfg_amount", params.xfgAmount)) return 1;
+      if (!parseAmount(ctrAmountStr, "ctr_amount", params.ctrAmount)) return 1;
       params.peerEndpoint = peer;
 
       // Zero-init crypto fields

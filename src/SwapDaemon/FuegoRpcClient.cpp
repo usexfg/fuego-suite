@@ -23,6 +23,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -93,23 +95,77 @@ std::string FuegoRpcClient::httpPost(const std::string& host, uint16_t port,
     throw std::runtime_error("Failed to send HTTP request");
   }
 
-  // Read response
+  // Read response.
+  //
+  // The peer (fuegod, fuegod-testnet) does NOT honor `Connection: close` and
+  // keeps the socket open after the response body. Without Content-Length
+  // termination, recv() would block for the full SO_RCVTIMEO (10s) on every
+  // RPC — a 20s+ wedge on daemon startup (start() + checkTimeouts()).
+  //
+  // Read strategy:
+  //   1. Read until we see end-of-headers (`\r\n\r\n`).
+  //   2. Parse `Content-Length` (case-insensitive).
+  //   3. Read exactly Content-Length more bytes of body, then stop.
+  //   4. If no Content-Length is present (legacy / chunked), fall back to
+  //      read-until-close — still bounded by SO_RCVTIMEO.
   std::string response;
   char buf[4096];
-  while (true) {
+
+  // Phase 1: read until end of headers
+  size_t headerEnd = std::string::npos;
+  while (headerEnd == std::string::npos) {
     ssize_t n = recv(sock, buf, sizeof(buf), 0);
-    if (n <= 0) break;
+    if (n <= 0) break;  // closed or timeout before headers complete
     response.append(buf, static_cast<size_t>(n));
+    headerEnd = response.find("\r\n\r\n");
+  }
+
+  if (headerEnd == std::string::npos) {
+    close(sock);
+    throw std::runtime_error("Malformed HTTP response (no header terminator)");
+  }
+
+  // Phase 2: parse Content-Length from headers (case-insensitive)
+  auto parseContentLength = [](const std::string& hdrs) -> long long {
+    static const char* needles[] = {
+      "\r\nContent-Length:", "\r\ncontent-length:", "\r\nContent-length:"
+    };
+    size_t pos = std::string::npos;
+    for (auto* n : needles) {
+      pos = hdrs.find(n);
+      if (pos != std::string::npos) { pos += std::strlen(n); break; }
+    }
+    if (pos == std::string::npos) return -1;
+    while (pos < hdrs.size() && (hdrs[pos] == ' ' || hdrs[pos] == '\t')) ++pos;
+    long long val = 0; bool any = false;
+    while (pos < hdrs.size() && std::isdigit(static_cast<unsigned char>(hdrs[pos]))) {
+      val = val * 10 + (hdrs[pos] - '0'); ++pos; any = true;
+    }
+    return any ? val : -1;
+  };
+
+  long long contentLength = parseContentLength(response.substr(0, headerEnd + 2));
+  size_t bodyStart = headerEnd + 4;
+
+  if (contentLength >= 0) {
+    // Phase 3: read exactly Content-Length more bytes of body
+    while (response.size() - bodyStart < static_cast<size_t>(contentLength)) {
+      size_t want = static_cast<size_t>(contentLength) - (response.size() - bodyStart);
+      ssize_t n = recv(sock, buf, std::min(sizeof(buf), want), 0);
+      if (n <= 0) break;
+      response.append(buf, static_cast<size_t>(n));
+    }
+  } else {
+    // Phase 4: no Content-Length — fall back to read-until-close/timeout
+    while (true) {
+      ssize_t n = recv(sock, buf, sizeof(buf), 0);
+      if (n <= 0) break;
+      response.append(buf, static_cast<size_t>(n));
+    }
   }
   close(sock);
 
-  // Parse HTTP response: find body after \r\n\r\n
-  size_t headerEnd = response.find("\r\n\r\n");
-  if (headerEnd == std::string::npos) {
-    throw std::runtime_error("Malformed HTTP response");
-  }
-
-  return response.substr(headerEnd + 4);
+  return response.substr(bodyStart);
 }
 
 std::string FuegoRpcClient::daemonPost(const std::string& path, const std::string& body) {

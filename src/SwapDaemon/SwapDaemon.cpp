@@ -363,13 +363,31 @@ bool SwapDaemon::initiate(SwapParams params) {
   // Timelock ordering: wall-clock comparison with per-chain block times.
   // XFG refund window must outlast the counterparty timeout by >= safety margin.
   {
-    if (params.ctrTimeoutBlock == 0) {
-      m_logger(Logging::ERROR) << "ctrTimeoutBlock not set — cannot verify timelock ordering";
-      return false;
-    }
     IChainClient* client = m_chainRegistry.getClient(params.pair);
     uint64_t ctrCurrentHeight = 0;
-    if (!client || !client->getCurrentHeight(ctrCurrentHeight) || ctrCurrentHeight == 0) {
+    bool ctrHeightOk = client && client->getCurrentHeight(ctrCurrentHeight) && ctrCurrentHeight > 0;
+
+    if (params.ctrTimeoutBlock == 0) {
+      // Caller didn't specify a CTR timeout — auto-derive a safe one.
+      // CTR window = 50% of XFG remaining window (in wall-clock ms). The
+      // subsequent timelockOrderingOk check verifies the margin holds.
+      if (!ctrHeightOk) {
+        m_logger(Logging::ERROR)
+          << "ctrTimeoutBlock not set and counterparty chain height unavailable — cannot auto-derive";
+        return false;
+      }
+      uint64_t xfgRemainingMs = (params.xfgTimeoutHeight - currentHeight) * 480000ULL;
+      uint64_t ctrWindowMs = xfgRemainingMs / 2;
+      uint64_t ctrBlocks = ctrWindowMs / msPerBlock(params.pair);
+      if (ctrBlocks == 0) ctrBlocks = 1;
+      params.ctrTimeoutBlock = ctrCurrentHeight + ctrBlocks;
+      m_logger(Logging::INFO)
+        << "Auto-derived ctrTimeoutBlock=" << params.ctrTimeoutBlock
+        << " (" << ctrBlocks << " " << swapPairToString(params.pair)
+        << " blocks ≈ " << (ctrWindowMs / 60000ULL) << " min wall-clock)";
+    }
+
+    if (!ctrHeightOk) {
       m_logger(Logging::WARNING) << "Cannot query counterparty chain height — skipping timelock check";
     } else {
       if (!timelockOrderingOk(params.pair, currentHeight, params.xfgTimeoutHeight,
@@ -431,15 +449,17 @@ bool SwapDaemon::initiate(SwapParams params) {
 SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
   SwapStateMachine sm;
   if (!m_db.loadSwap(swapId, sm)) {
-    m_logger(Logging::ERROR) << "Swap not found: " << swapId;
-    return {false, ""};
+    const std::string msg = "Swap not found: " + swapId;
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
   }
-  
-  if (sm.currentState() != SwapState::INITIATED && 
+
+  if (sm.currentState() != SwapState::INITIATED &&
       sm.currentState() != SwapState::AFK_OFFER_LOCKED) {
-    m_logger(Logging::ERROR) << "Swap is not in a state that can be accepted (current: "
-                               << swapStateToString(sm.currentState()) << ")";
-    return {false, ""};
+    const std::string msg = std::string("Swap is not in a state that can be accepted (current: ")
+                            + swapStateToString(sm.currentState()) + ")";
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
   }
   
   auto& params = sm.params();
@@ -476,8 +496,9 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
   // Timelock ordering check
   {
     if (params.ctrTimeoutBlock == 0) {
-      m_logger(Logging::ERROR) << "ctrTimeoutBlock not set — cannot verify timelock ordering";
-      return {false, ""};
+      const std::string msg = "ctrTimeoutBlock not set in offer — cannot verify timelock ordering";
+      m_logger(Logging::ERROR) << msg;
+      return {false, msg};
     }
     IChainClient* client = m_chainRegistry.getClient(params.pair);
     uint64_t ctrCurrentHeight = 0;
@@ -486,9 +507,9 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     } else {
       if (!timelockOrderingOk(params.pair, currentHeight, params.xfgTimeoutHeight,
                                ctrCurrentHeight, params.ctrTimeoutBlock)) {
-        m_logger(Logging::ERROR)
-          << "Timelock ordering violation: XFG window must outlast counterparty timeout";
-        return {false, ""};
+        const std::string msg = "Timelock ordering violation: XFG window must outlast counterparty timeout";
+        m_logger(Logging::ERROR) << msg;
+        return {false, msg};
       }
     }
   }

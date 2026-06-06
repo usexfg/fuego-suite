@@ -14,10 +14,12 @@
 // Reads a JSON config file and populates ChainClientConfig struct.
 
 #include "SwapDaemon.h"
+#include "Common/JsonValue.h"
 
 #include <fstream>
 #include <sstream>
 #include <cctype>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -92,21 +94,36 @@ bool loadChainClientConfig(const std::string& path,
   ss << f.rdbuf();
   const std::string json = ss.str();
 
+  // Validate the file is actually parseable JSON. Previously the loader used
+  // `string::find()` lookups that silently treat malformed JSON as missing
+  // keys → every field falls through to defaults → daemon registered every
+  // chain at hardcoded loopback ports with no warning. An operator with a
+  // typo would never know.
+  try {
+    Common::JsonValue::fromString(json);
+  } catch (const std::exception& e) {
+    errorMsg = "Config file is not valid JSON: " + std::string(e.what());
+    return false;
+  }
+
   // ── RPC endpoints ──
-  out.ethHost    = jsonGetStr(json, "eth_rpc_host", "127.0.0.1");
+  // Hostname defaults are deliberately EMPTY: the SwapDaemon constructor only
+  // registers a chain client when the corresponding host is non-empty. Empty
+  // means "this chain is not configured" — matches the existing BASE pattern.
+  out.ethHost    = jsonGetStr(json, "eth_rpc_host", "");
   out.ethPort    = static_cast<uint16_t>(jsonGetUint(json, "eth_rpc_port", 8545));
 
-  out.bchHost    = jsonGetStr(json, "bch_rpc_host", "127.0.0.1");
+  out.bchHost    = jsonGetStr(json, "bch_rpc_host", "");
   out.bchPort    = static_cast<uint16_t>(jsonGetUint(json, "bch_rpc_port", 8332));
   out.bchRpcUser = jsonGetStr(json, "bch_rpc_user");
   out.bchRpcPass = jsonGetStr(json, "bch_rpc_pass");
 
-  out.xmrDaemonHost = jsonGetStr(json, "xmr_daemon_host", "127.0.0.1");
+  out.xmrDaemonHost = jsonGetStr(json, "xmr_daemon_host", "");
   out.xmrDaemonPort = static_cast<uint16_t>(jsonGetUint(json, "xmr_daemon_port", 18081));
-  out.xmrWalletHost = jsonGetStr(json, "xmr_wallet_host", "127.0.0.1");
+  out.xmrWalletHost = jsonGetStr(json, "xmr_wallet_host", "");
   out.xmrWalletPort = static_cast<uint16_t>(jsonGetUint(json, "xmr_wallet_port", 18082));
 
-  out.solHost       = jsonGetStr(json, "sol_rpc_host", "127.0.0.1");
+  out.solHost       = jsonGetStr(json, "sol_rpc_host", "");
   out.solPort       = static_cast<uint16_t>(jsonGetUint(json, "sol_rpc_port", 8899));
   out.solProgramId  = jsonGetStr(json, "sol_program_id");
   out.solKeypairPath = jsonGetStr(json, "sol_keypair_path");
@@ -119,7 +136,7 @@ bool loadChainClientConfig(const std::string& path,
   out.ethHtlcBinPath = jsonGetStr(json, "eth_htlc_bin_path");
 
   // ARB
-  out.arbHost       = jsonGetStr(json, "arb_rpc_host", "127.0.0.1");
+  out.arbHost       = jsonGetStr(json, "arb_rpc_host", "");
   out.arbPort       = static_cast<uint16_t>(jsonGetUint(json, "arb_rpc_port", 8547));
   out.arbPrivKeyHex = jsonGetStr(json, "arb_priv_key");
   out.arbAddress    = jsonGetStr(json, "arb_address");

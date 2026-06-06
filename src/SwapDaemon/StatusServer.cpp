@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include <sstream>
 
 namespace XfgSwap {
 
@@ -75,7 +76,21 @@ void StatusServer::acceptLoop() {
     }
 
     std::string json = m_statusFn();
-    send(clientSock, json.data(), json.size(), 0);
+
+    // Emit a proper HTTP/1.1 response. Without a status line and headers, modern
+    // HTTP clients (curl ≥ 7.x without --http0.9) refuse the response and report
+    // "Received HTTP/0.9 when not allowed", breaking standard monitoring tooling.
+    // We do NOT parse the request — any method/path returns the dashboard JSON.
+    std::ostringstream resp;
+    resp << "HTTP/1.1 200 OK\r\n"
+         << "Content-Type: application/json\r\n"
+         << "Content-Length: " << json.size() << "\r\n"
+         << "Access-Control-Allow-Origin: *\r\n"
+         << "Connection: close\r\n"
+         << "\r\n"
+         << json;
+    const std::string out = resp.str();
+    send(clientSock, out.data(), out.size(), 0);
 
     close(clientSock);
   }

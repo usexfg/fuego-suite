@@ -259,6 +259,10 @@ public:
     uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;
+    // Sums claimedInterest across all TransactionInputCommitmentSpend inputs of a tx.
+    // Returns false on uint64 overflow. Used by the block-validation aggregate
+    // fee-pool cap that backs CD interest (see Blockchain.cpp, F-001 fix).
+    bool sumCommitmentClaimedInterest(const Transaction &tx, uint64_t &total) const;
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
 

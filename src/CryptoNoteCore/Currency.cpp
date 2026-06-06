@@ -425,6 +425,26 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  bool Currency::sumCommitmentClaimedInterest(const Transaction &tx, uint64_t &total) const
+  {
+    total = 0;
+    for (const auto &in : tx.inputs)
+    {
+      if (in.type() == typeid(TransactionInputCommitmentSpend))
+      {
+        uint64_t ci = boost::get<TransactionInputCommitmentSpend>(in).claimedInterest;
+        if (ci > std::numeric_limits<uint64_t>::max() - total)
+        {
+          return false; // aggregate overflow
+        }
+        total += ci;
+      }
+    }
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
     if (target.type() == typeid(KeyOutput)) {
       return AssetType::XFG;

@@ -3004,6 +3004,28 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
     }
 
+    // F-001 fix: per-transaction CD-interest fee-pool cap.
+    // checkCommitmentSpendInput() caps each input's claimedInterest at the
+    // current m_feePoolBalance, but every input of a transaction is validated
+    // against the same pre-connect snapshot. Multiple CommitmentSpend inputs can
+    // therefore each pass individually while their sum exceeds the pool — and
+    // since claimedInterest is minted into the outputs (getTransactionInputAmount
+    // adds it to the input side of the conservation check), the excess is
+    // unbacked supply. The fee pool is the sole backing for CD interest, so the
+    // aggregate must be enforced here, before pushTransaction draws it down.
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      uint64_t txClaimedInterest = 0;
+      if (!m_currency.sumCommitmentClaimedInterest(transactions[i], txClaimedInterest)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " CD interest sum overflow";
+      } else if (txClaimedInterest > m_feePoolBalance) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+            << " aggregate CD interest " << txClaimedInterest
+            << " exceeds fee pool " << m_feePoolBalance;
+      }
+    }
+
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
         FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
@@ -4335,9 +4357,20 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       }
       // CD redemption: reduce locked supply, deduct claimed interest from fee pool
       m_totalCdLocked -= cin.amount;
-      if (cin.claimedInterest > 0 && cin.claimedInterest <= m_feePoolBalance) {
-        m_feePoolBalance -= cin.claimedInterest;
-        m_totalCdInterestPaid += cin.claimedInterest;
+      if (cin.claimedInterest > 0) {
+        if (cin.claimedInterest <= m_feePoolBalance) {
+          m_feePoolBalance -= cin.claimedInterest;
+          m_totalCdInterestPaid += cin.claimedInterest;
+        } else {
+          // Defense-in-depth: the per-transaction aggregate fee-pool cap in the
+          // block-validation loop (F-001 fix) guarantees this branch is
+          // unreachable for accepted blocks. If it is ever hit the pool
+          // accounting is inconsistent — log loudly instead of silently leaving
+          // unbacked interest minted into the outputs.
+          logger(ERROR, BRIGHT_RED) << "Fee-pool invariant violated: CD claimedInterest "
+              << cin.claimedInterest << " exceeds pool " << m_feePoolBalance
+              << " at connect for tx " << transactionHash;
+        }
       }
       // Phase 2: 1% claim fee goes to fee pool (total swap fee = 2%: 1% initiation + 1% claim)
       if (cin.amount > 0) {

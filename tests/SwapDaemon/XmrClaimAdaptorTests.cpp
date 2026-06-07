@@ -156,11 +156,7 @@ public:
   bool sweepSharedAddress(const std::string& spendKeyHex,
                           const std::string& viewKeyHex,
                           const std::string& destAddress,
-                          MoneroTransferResult& result,
-                          const std::string& walletName = "",
-                          uint64_t restoreHeight = 0,
-                          uint64_t targetHeight = 0,
-                          uint64_t networkPrefix = 18) override {
+                          MoneroTransferResult& result) override {
     (void)viewKeyHex; (void)destAddress;
     capturedSpendKey = spendKeyHex;
     sweepCallCount++;

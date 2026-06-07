@@ -73,7 +73,7 @@ void InProcessNode::init(const Callback& callback) {
     protocol.addObserver(this);
     core.addObserver(this);
 
-    work.reset(new boost::asio::executor_work_guard<boost::asio::io_context::executor_type>(boost::asio::make_work_guard(ioService)));
+    work.reset(new boost::asio::io_service::work(ioService));
     workerThread.reset(new std::thread(&InProcessNode::workerFunc, this));
 
     state = INITIALIZED;
@@ -99,7 +99,7 @@ bool InProcessNode::doShutdown() {
   work.reset();
   ioService.stop();
   workerThread->join();
-   ioService.restart();
+  ioService.reset();
   return true;
 }
 

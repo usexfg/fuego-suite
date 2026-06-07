@@ -52,6 +52,11 @@ analyze_fuego_code.py
 AGENTS.md
 contrib/
 
+contracts/
+mcp/
+sim_out/
+fuego_rag/
+
 /CMakeFiles/
 /src/CMakeFiles/*
 /build

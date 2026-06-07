@@ -52,9 +52,18 @@ public:
   // Transfer XMR to the shared address
   bool transferToShared(const std::string& address, uint64_t amount, MoneroTransferResult& result);
 
-  // Sweep the shared address (once both keys are known)
+  // Sweep the shared address (once both keys are known).
+  // walletName : per-swap suffix so concurrent swaps don't collide on the
+  //              temp from-keys wallet (empty → a shared default name).
+  // restoreHeight : wallet scan start height (0 → from genesis; slow).
+  // targetHeight  : if > 0, poll the wallet's get_height until it reaches this
+  //                 (the daemon height) BEFORE sweeping; if 0, poll until the
+  //                 scan height stabilizes. NEVER sweep an unsynced wallet.
   virtual bool sweepSharedAddress(const std::string& spendKeyHex, const std::string& viewKeyHex,
-                                   const std::string& destAddress, MoneroTransferResult& result);
+                                   const std::string& destAddress, MoneroTransferResult& result,
+                                   const std::string& walletName = "",
+                                   uint64_t restoreHeight = 0,
+                                   uint64_t targetHeight = 0);
 
   // Check if an address has received funds
   bool checkAddressBalance(const std::string& address, uint64_t& balance, uint64_t& unlocked);
@@ -94,6 +103,12 @@ public:
                      const std::string& viewKeyHex,
                      const std::string& destAddress,
                      MoneroTransferResult& result);
+
+protected:
+  // Wallet-RPC seam: all monero-wallet-rpc calls route through here so tests
+  // can override with canned responses + assert the call sequence. Default
+  // wraps jsonRpc to the wallet host/port.
+  virtual std::string walletRpc(const std::string& method, const std::string& params);
 
 private:
   std::string httpPost(const std::string& host, uint16_t port, const std::string& path, const std::string& body);

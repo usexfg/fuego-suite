@@ -151,6 +151,10 @@ static bool parseJsonRpcResult(const std::string& raw, Common::JsonValue& result
 // Daemon RPC (monerod, default port 18081)
 // ---------------------------------------------------------------------------
 
+std::string MoneroRpcClient::walletRpc(const std::string& method, const std::string& params) {
+  return jsonRpc(m_walletHost, m_walletPort, method, params);
+}
+
 bool MoneroRpcClient::getHeight(uint64_t& height) {
   // monerod "get_info" returns { ..., "height": N, ... }
   std::string raw = jsonRpc(m_daemonHost, m_daemonPort, "get_info", "{}");
@@ -304,30 +308,31 @@ bool MoneroRpcClient::transferToShared(const std::string& address, uint64_t amou
 bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
                                          const std::string& viewKeyHex,
                                          const std::string& destAddress,
-                                         MoneroTransferResult& result) {
-  // To sweep the shared XMR address, we need to:
-  //   1. Open (or create) a wallet from the full spend+view key pair
-  //   2. Wait for it to sync
-  //   3. sweep_all to destAddress
-  //
-  // Step 1: generate_from_keys (creates a wallet with the given keys)
-  // TODO: The wallet filename should be unique per swap to avoid collisions.
-  //       For now we use a hardcoded name.
+                                         MoneroTransferResult& result,
+                                         const std::string& walletName,
+                                         uint64_t restoreHeight,
+                                         uint64_t targetHeight) {
+  // 1. generate_from_keys (per-swap wallet name; restore from the lock height
+  //    to avoid a full-chain rescan), 2. WAIT FOR SYNC, 3. sweep_all.
 
-  // Close any currently open wallet first
-  jsonRpc(m_walletHost, m_walletPort, "close_wallet", "{}");
+  // Close any currently open wallet first.
+  walletRpc("close_wallet", "{}");
 
-  // Open wallet from the combined spend key and view key
+  // Per-swap filename so concurrent swaps don't collide on one temp wallet.
+  const std::string filename =
+      walletName.empty() ? std::string("swap_sweep_default")
+                         : std::string("swap_sweep_") + walletName;
+
   std::ostringstream genParams;
-  genParams << "{\"filename\":\"swap_sweep_temp\""
-            << ",\"address\":\"\"" // Will be derived from keys
+  genParams << "{\"filename\":\"" << filename << "\""
+            << ",\"address\":\"\""  // derived from keys
             << ",\"spendkey\":\"" << spendKeyHex << "\""
             << ",\"viewkey\":\"" << viewKeyHex << "\""
             << ",\"password\":\"\""
-            << ",\"restore_height\":0"  // TODO: Use a reasonable restore height
+            << ",\"restore_height\":" << restoreHeight
             << "}";
 
-  std::string genRaw = jsonRpc(m_walletHost, m_walletPort, "generate_from_keys", genParams.str());
+  std::string genRaw = walletRpc("generate_from_keys", genParams.str());
   Common::JsonValue genRes(Common::JsonValue::NIL);
   if (!parseJsonRpcResult(genRaw, genRes)) {
     result.success = false;
@@ -335,18 +340,43 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
     return false;
   }
 
-  // TODO: Wait for wallet to sync. In production, poll get_height until
-  // the wallet height matches the daemon height. For now, we proceed
-  // immediately — the caller must ensure sync is complete.
+  // 2. Wait for the from-keys wallet to scan/sync BEFORE sweeping — otherwise
+  //    sweep_all sees no outputs. Poll get_height: if targetHeight is known
+  //    (the daemon height) wait until the wallet reaches it; otherwise wait
+  //    until the scan height stabilizes. Never sweep an unsynced wallet.
+  {
+    const int kMaxPolls = 120;       // bounded
+    uint64_t prevHeight = 0;
+    bool synced = false;
+    for (int i = 0; i < kMaxPolls; ++i) {
+      std::string hRaw = walletRpc("get_height", "{}");
+      Common::JsonValue hRes(Common::JsonValue::NIL);
+      uint64_t wh = 0;
+      if (parseJsonRpcResult(hRaw, hRes) && hRes.contains("height")) {
+        wh = static_cast<uint64_t>(hRes("height").getInteger());
+      }
+      if (targetHeight > 0) {
+        if (wh >= targetHeight) { synced = true; break; }
+      } else {
+        if (i > 0 && wh == prevHeight && wh > 0) { synced = true; break; }
+      }
+      prevHeight = wh;
+    }
+    if (!synced) {
+      result.success = false;
+      result.error = "Wallet did not sync before sweep deadline";
+      return false;
+    }
+  }
 
-  // Step 2: sweep_all to destination
+  // 3. sweep_all to destination.
   std::ostringstream sweepParams;
   sweepParams << "{\"address\":\"" << destAddress << "\""
               << ",\"priority\":1"
               << ",\"ring_size\":16"
               << "}";
 
-  std::string sweepRaw = jsonRpc(m_walletHost, m_walletPort, "sweep_all", sweepParams.str());
+  std::string sweepRaw = walletRpc("sweep_all", sweepParams.str());
   Common::JsonValue sweepRes(Common::JsonValue::NIL);
   if (!parseJsonRpcResult(sweepRaw, sweepRes)) {
     result.success = false;
@@ -395,7 +425,7 @@ bool MoneroRpcClient::checkAddressBalance(const std::string& address,
 
   (void)address;  // The open wallet determines the address
 
-  std::string raw = jsonRpc(m_walletHost, m_walletPort, "get_balance", "{\"account_index\":0}");
+  std::string raw = walletRpc("get_balance", "{\"account_index\":0}");
 
   Common::JsonValue res(Common::JsonValue::NIL);
   if (!parseJsonRpcResult(raw, res)) {
@@ -433,8 +463,9 @@ bool MoneroRpcClient::verifyLock(const std::string& sharedAddress,
                                   uint64_t expectedPiconero) {
   uint64_t balance = 0, unlocked = 0;
   if (!checkAddressBalance(sharedAddress, balance, unlocked)) return false;
-  // Accept either locked or unlocked balance — XMR may take time to unlock.
-  return balance >= expectedPiconero;
+  // Require UNLOCKED balance: XMR needs ~10 confirmations to become spendable,
+  // and a swap must not treat a still-locked deposit as a verified lock.
+  return unlocked >= expectedPiconero;
 }
 
 bool MoneroRpcClient::claimAdaptor(const std::string& aliceSpendKeyHex,

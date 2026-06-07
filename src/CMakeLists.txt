@@ -330,6 +330,12 @@ add_executable(test_xmr_keys
 target_link_libraries(test_xmr_keys PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon unit test: XMR verifyLock unlocked-only + sweep sync sequence
+add_executable(test_xmr_sweep_sequence
+    SwapDaemon/tests/test_xmr_sweep_sequence.cpp)
+target_link_libraries(test_xmr_sweep_sequence PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
 # Note: Path is relative from src/ directory
 add_executable(XmrClaimAdaptorTests

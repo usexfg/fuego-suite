@@ -36,18 +36,21 @@ jobs:
           $Zip  = "$env:TEMP\boost.zip"
           Invoke-WebRequest -Uri $Url -OutFile $Zip
           Expand-Archive -Path $Zip -DestinationPath C:\boost -Force
-          echo "BOOST_ROOT=C:\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_LIBRARYDIR=C:\boost\boost_1_85_0\stage\lib" >> $env:GITHUB_ENV
-
-      - name: Build Boost libraries
-        shell: powershell
-        run: |
           cd C:\boost\boost_1_85_0
           .\bootstrap.bat
           .\b2 --with-filesystem --with-thread --with-date_time --with-chrono `
               --with-regex --with-serialization --with-program_options `
               --with-coroutine --with-context --with-atomic `
-              link=static runtime-link=static threading=multi address-model=64 -j4 stage
+              link=static runtime-link=static threading=multi address-model=64 `
+              --build-type=complete stage
+          echo "BOOST_ROOT=C:\boost\boost_1_85_0" >> $env:GITHUB_ENV
+          echo "BOOST_LIBRARYDIR=C:\boost\boost_1_85_0\stage\lib" >> $env:GITHUB_ENV
+
+      - name: Install legacy FindBoost for CMake 4.x
+        shell: bash
+        run: |
+          mkdir -p cmake
+          curl -sL https://raw.githubusercontent.com/Kitware/CMake/v3.30.0/Modules/FindBoost.cmake -o cmake/FindBoost.cmake
 
       - name: Build
         shell: powershell
@@ -59,6 +62,7 @@ jobs:
             -DBOOST_LIBRARYDIR="$env:BOOST_LIBRARYDIR" `
             -DBoost_NO_BOOST_CMAKE=ON `
             -DBoost_USE_STATIC_LIBS=ON `
+            -DCMAKE_MODULE_PATH="${{ github.workspace }}\cmake" `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
           msbuild fuegoX.sln /p:Configuration=Release /m
 

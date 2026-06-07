@@ -98,10 +98,15 @@ public:
       const Crypto::EllipticCurvePoint& G,
       const Crypto::EllipticCurvePoint& H);
 
-  // Combine three Ed25519 scalars via addition mod ℓ
-  // Used to construct the full spend key for sweeping a shared XMR address
-  // in adaptor swaps: combined = alice + bob + adaptor (mod ℓ)
-  // Returns false if the result is zero (would brick the sweep)
+  // DEPRECATED — WRONG KEY MODEL. The XMR↔XFG swap shared spend key is the
+  // 2-term `a + b` (and the adaptor secret IS one party's spend share, revealed
+  // cross-chain), NOT a 3-term `a + b + adaptor`. Using this to build a sweep
+  // key produces an address no one funded. Use
+  // `MoneroSwapProtocol::computeFullSpendKey(own, extractedPeer)` (2-term) and
+  // `computeSharedSpendPub(A,B)` instead.
+  // See docs/superpowers/specs/2026-06-06-xmr-trustless-claim-design.md §9.
+  [[deprecated("3-term a+b+adaptor is the wrong XMR key model; use "
+               "MoneroSwapProtocol::computeFullSpendKey (2-term). See spec §9")]]
   static bool combineSpendKeys(
       const std::array<uint8_t, 32>& alice,
       const std::array<uint8_t, 32>& bob,

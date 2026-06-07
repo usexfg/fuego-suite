@@ -324,6 +324,12 @@ add_executable(test_monero_address
 target_link_libraries(test_monero_address PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon unit test: XMR shared-key ops (A+B, 2-term full key)
+add_executable(test_xmr_keys
+    SwapDaemon/tests/test_xmr_keys.cpp)
+target_link_libraries(test_xmr_keys PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
 # Note: Path is relative from src/ directory
 add_executable(XmrClaimAdaptorTests

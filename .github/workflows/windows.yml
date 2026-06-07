@@ -13,6 +13,8 @@ jobs:
       BOOST_ROOT: C:\thirdparties\boost-1.85.0
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1.1
@@ -20,7 +22,7 @@ jobs:
       - name: Install OpenSSL
         shell: powershell
         run: |
-          choco install openssl --version=3.4.1 -y
+          choco install openssl -y
           echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
       - name: Download and Install Boost 1.85

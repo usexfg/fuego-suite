@@ -20,6 +20,8 @@ jobs:
             abi: armeabi-v7a
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1

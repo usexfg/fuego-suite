@@ -20,6 +20,8 @@ jobs:
             brew_prefix: /opt/homebrew
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install dependencies
         run: |

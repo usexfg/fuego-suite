@@ -4116,7 +4116,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       uint64_t treasuryFeeShare = (m_ammPool.accumulatedLpFees * m_protocolLpShares)
                                 / m_ammPool.totalLpShares;
       m_ammPool.accumulatedLpFees -= treasuryFeeShare;
-      m_cdYieldPool += treasuryFeeShare;
+      m_treasuryBalance += treasuryFeeShare;
       m_treasuryLpYield += treasuryFeeShare;
     }
 

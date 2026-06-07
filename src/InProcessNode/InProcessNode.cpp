@@ -99,7 +99,7 @@ bool InProcessNode::doShutdown() {
   work.reset();
   ioService.stop();
   workerThread->join();
-  ioService.reset();
+   ioService.restart();
   return true;
 }
 

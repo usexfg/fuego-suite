@@ -3378,11 +3378,10 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::alias_register(const std::vector<std::string> &args) {
-  if (args.size() < 1 || args.size() > 2) {
-    fail_msg_writer() << "Usage: alias_register <alias> [<address>]";
+  if (args.size() != 1) {
+    fail_msg_writer() << "Usage: alias_register <alias>";
     fail_msg_writer() << "  Alias must be exactly 8 characters [a-z0-9&] (e.g., firenode)";
-    fail_msg_writer() << "  Address (optional): sub-address to own this alias. Use a sub-address for privacy.";
-    fail_msg_writer() << "  Omitting address registers to your primary address.";
+    fail_msg_writer() << "  A unique sub-address is auto-generated for privacy.";
     return true;
   }
 
@@ -3434,18 +3433,17 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     return true;
   }
 
-  // Check if address already has an alias
+  // Check if master identity already has an alias (one alias per address pair)
   try {
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
     COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
     COMMAND_RPC_GET_ALIAS_BY_ADDRESS::response addrRes;
-    std::string checkAddr = (args.size() >= 2) ? args[1] : m_wallet->getAddress();
-    addrReq.address = checkAddr;
+    addrReq.address = m_wallet->getAddress();
     invokeJsonCommand(httpClient, "/get_alias_by_address", addrReq, addrRes);
 
     if (addrRes.found) {
       fail_msg_writer() << "Your address already has alias @" << addrRes.alias;
-      fail_msg_writer() << "Each address can only have one alias.";
+      fail_msg_writer() << "Each master identity can only have one alias.";
       return true;
     }
   } catch (const ConnectException&) {
@@ -3483,23 +3481,46 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     return true;
   }
 
-  std::string walletAddress = (args.size() >= 2) ? args[1] : m_wallet->getAddress();
-
-  // Validate the address if one was provided
-  if (args.size() >= 2) {
-    CryptoNote::AccountPublicAddress ignore;
-    if (!m_currency.parseAccountAddressString(walletAddress, ignore)) {
-      fail_msg_writer() << "Invalid address: " << walletAddress;
-      return true;
+  // Auto-generate a unique sub-address for the alias (privacy).
+  // Uses the same auto-increment scheme as new_sub: major=0, minor=next_unused.
+  std::string walletAddress;
+  {
+    uint32_t major = 0;
+    uint32_t minor = 1;
+    for (const auto& e : m_subAddresses) {
+      if (std::get<0>(e) == 0) {
+        minor = std::max(minor, std::get<1>(e) + 1);
+      }
     }
-  }
 
-  // Show privacy advisory
-  if (args.size() < 2) {
-    success_msg_writer() << "";
-    success_msg_writer() << "  Privacy note: registering to your primary address.";
-    success_msg_writer() << "  Use: alias_register " << alias << " <sub_address>";
-    success_msg_writer() << "  to protect your privacy with a sub-address (new_sub first).";
+    bool found = false;
+    for (const auto& e : m_subAddresses) {
+      if (std::get<0>(e) == major && std::get<1>(e) == minor) {
+        walletAddress = std::get<2>(e);
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      try {
+        walletAddress = m_wallet->registerSubAddress(major, minor);
+      } catch (const std::exception& e) {
+        fail_msg_writer() << "Failed to generate sub-address for alias: " << e.what();
+        return true;
+      } catch (...) {
+        fail_msg_writer() << "Failed to generate sub-address for alias: Unknown error";
+        return true;
+      }
+
+      if (walletAddress.empty() || walletAddress.size() < 10) {
+        fail_msg_writer() << "Failed to generate sub-address for alias registration.";
+        return true;
+      }
+
+      m_subAddresses.emplace_back(major, minor, walletAddress);
+      saveSubAddresses();
+    }
   }
 
   // Show confirmation summary
@@ -3513,7 +3534,11 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       success_msg_writer() << "  Fee: 1 XFG sent to Fuego Developer Fund";
     }
   }
-  success_msg_writer() << "  Address: " << walletAddress;
+  success_msg_writer() << "  Sub-address: " << walletAddress;
+  success_msg_writer() << "";
+  success_msg_writer() << "  This sub-address belongs to your wallet. Incoming payments sent to it";
+  success_msg_writer() << "  will appear in your balance just like payments to your main address.";
+  success_msg_writer() << "  Aliases use sub-addresses to avoid linking your on-chain identity.";
   success_msg_writer() << "";
   success_msg_writer() << "Confirm? (1) OK  (2) No ";
 
@@ -3620,6 +3645,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     success_msg_writer(true) << "";
     success_msg_writer(true) << " XFG Alias registered successfully!";
     success_msg_writer(true) << "  Alias: @" << alias;
+    success_msg_writer(true) << "  Sub-address: " << walletAddress;
     success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
     success_msg_writer(true) << "  The alias will be active after the transaction is confirmed.";
 

@@ -1,0 +1,99 @@
+name: Raspberry Pi (ARM64)
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-raspberry-pi:
+    name: Raspberry Pi ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM64 Cross-Compilation Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get install -y cmake build-essential
+
+      - name: Create Toolchain File
+        run: |
+          mkdir -p cmake
+          cat > cmake/arm64-toolchain.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          EOF
+
+      - name: Download and Build Boost for ARM64
+        run: |
+          BOOST_VERSION=1.83.0
+          BOOST_VERSION_UNDERSCORE=${BOOST_VERSION//./_}
+          BOOST_URL="https://sourceforge.net/projects/boost/files/boost/${BOOST_VERSION}/boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2/download"
+          wget --retry-connrefused --waitretry=5 --timeout=30 --tries=5 -O boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2 "$BOOST_URL"
+          file boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2
+          if ! file boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2 | grep -q 'bzip2 compressed data'; then
+            echo "Downloaded file is not a valid bzip2 archive."
+            exit 1
+          fi
+          tar -xjf boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2
+          cd boost_${BOOST_VERSION_UNDERSCORE}
+          echo "using gcc : arm : aarch64-linux-gnu-g++ ;" > user-config.jam
+          ./bootstrap.sh
+          ./b2 --user-config=user-config.jam toolset=gcc-arm target-os=linux architecture=arm address-model=64 --prefix=/tmp/boost-arm64 install
+          cd ..
+
+      - name: Patch Boost to fix PTHREAD_STACK_MIN preprocessor issue
+        run: |
+          # Patch Boost to fix PTHREAD_STACK_MIN preprocessor issue
+          BOOST_HEADER="boost/context/posix/stack_traits.hpp"
+          if grep -q '#if defined(PTHREAD_STACK_MIN) && (PTHREAD_STACK_MIN > 0)' $BOOST_HEADER; then
+            sed -i 's/#if defined(PTHREAD_STACK_MIN) && (PTHREAD_STACK_MIN > 0)/#if defined(PTHREAD_STACK_MIN)/' $BOOST_HEADER
+          fi
+
+      - name: Build
+        id: build
+        run: |
+          build_folder="build/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-raspberry-pi-arm64-v$xfg_ver"
+          mkdir "$build_folder"
+          cd "$build_folder"
+          cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/arm64-toolchain.cmake \
+                -DBOOST_ROOT=/tmp/boost-arm64 \
+                -DCMAKE_BUILD_TYPE=Release ..
+          make -j$(nproc)
+          mkdir "$release_name"
+          exeFiles=()
+          for f in src/*; do [[ -x $f && -f $f ]] && aarch64-linux-gnu-strip "$f" && exeFiles+=( "$f" ); done
+          cp "${exeFiles[@]}" "$release_name/"
+          tar -czf "$release_name".tar.gz "$release_name"
+          sha256=$(sha256sum "$release_name".tar.gz | awk '{print toupper($1)}')
+          asset_path="./$build_folder$release_name.tar.gz"
+          echo "sha256=${sha256}" >> $GITHUB_OUTPUT
+          echo "release_name=${release_name}.tar.gz" >> $GITHUB_OUTPUT
+          echo "asset_path=${asset_path}" >> $GITHUB_OUTPUT
+          echo "xfg_version=${xfg_ver}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.build.outputs.asset_path }}
+          name: Fuego CLI Suite v${{ steps.build.outputs.xfg_version }}
+          body: |
+            🍓 [Download for Raspberry Pi](../../releases/download/${{ steps.build.outputs.xfg_version }}/${{ steps.build.outputs.release_name }}) **${{ steps.build.outputs.release_name }}**
+            
+            `SHA256 : ${{ steps.build.outputs.sha256 }}`
+          append_body: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+

@@ -1,0 +1,163 @@
+name: Docker Images
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-docker:
+    name: Docker Multi-Arch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.colinritman }}
+          password: ${{ secrets.dckr_pat_9CkW7wqzfP-RMWpji4ZkDJDU9xs }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            fuego/fuego
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << 'EOF'
+          FROM ubuntu:20.04 as builder
+          
+          # Install dependencies
+          RUN apt-get update && apt-get install -y \
+              build-essential \
+              cmake \
+              libboost-all-dev \
+              git \
+              && rm -rf /var/lib/apt/lists/*
+          
+          # Copy source code
+          WORKDIR /src
+          COPY . .
+          
+          # Build
+          RUN mkdir build && cd build && \
+              cmake -DCMAKE_BUILD_TYPE=Release .. && \
+              make -j$(nproc)
+          
+          # Runtime stage
+          FROM ubuntu:20.04
+          
+          # Install runtime dependencies
+          RUN apt-get update && apt-get install -y \
+              libboost-system1.71.0 \
+              libboost-filesystem1.71.0 \
+              libboost-thread1.71.0 \
+              libboost-date-time1.71.0 \
+              libboost-chrono1.71.0 \
+              libboost-regex1.71.0 \
+              libboost-serialization1.71.0 \
+              libboost-program-options1.71.0 \
+              ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+          
+          # Copy binaries from builder
+          COPY --from=builder /src/build/src/fuegod /usr/local/bin/
+          COPY --from=builder /src/build/src/fuego-wallet-cli /usr/local/bin/
+          COPY --from=builder /src/build/src/walletd /usr/local/bin/
+          
+          # Create fuego user
+          RUN useradd -m -u 1000 fuego
+          USER fuego
+          WORKDIR /home/fuego
+          
+          # Create data directory
+          RUN mkdir -p /home/fuego/.fuego
+          VOLUME ["/home/fuego/.fuego"]
+          
+          # Expose ports
+          EXPOSE 20808 28180
+          
+          # Default command
+          ENTRYPOINT ["fuegod"]
+          CMD ["--data-dir=/home/fuego/.fuego"]
+          EOF
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Docker run instructions
+        id: docker-info
+        run: |
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          cat > docker-instructions.md << EOF
+          # Fuego Docker Images v${xfg_ver}
+          
+          ## Quick Start
+          \`\`\`bash
+          # Run Fuego daemon
+          docker run -d --name fuego-node \\
+            -p 20808:20808 -p 28180:28180 \\
+            -v fuego-data:/home/fuego/.fuego \\
+            ghcr.io/${{ github.repository }}:${xfg_ver}
+          
+          # Run wallet CLI
+          docker run -it --rm \\
+            -v fuego-wallet:/home/fuego/.fuego \\
+            ghcr.io/${{ github.repository }}:${xfg_ver} \\
+            fuego-wallet-cli
+          \`\`\`
+          
+          ## Available Images
+          - \`fuego/fuego:${xfg_ver}\` (Docker Hub)
+          - \`ghcr.io/${{ github.repository }}:${xfg_ver}\` (GitHub Container Registry)
+          
+          ## Architectures
+          - linux/amd64 (Intel/AMD)
+          - linux/arm64 (ARM64/Apple Silicon)
+          EOF
+          echo "instructions_file=docker-instructions.md" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.docker-info.outputs.instructions_file }}
+          name: Fuego CLI Suite v${{ steps.meta.outputs.version }}
+          body: |
+            🐳 [Docker instructions](../../releases/download/${{ steps.meta.outputs.version }}/docker-instructions.md) for **Fuego CLI Docker ${{ steps.meta.outputs.version }}**
+            
+            Multi-architecture images:
+            - `fuego/fuego:${{ steps.meta.outputs.version }}`
+            - `ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}`
+            
+            Supported platforms: linux/amd64, linux/arm64
+          append_body: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

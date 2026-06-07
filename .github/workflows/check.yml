@@ -32,19 +32,22 @@ jobs:
       - name: Download and Install Boost 1.85
         shell: powershell
         run: |
-          $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
-          $OutputPath = "$env:TEMP\boost.exe"
-          Invoke-WebRequest -Uri $Url -OutFile $OutputPath
-          Start-Process -Wait -FilePath $OutputPath "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
-          if (Test-Path "C:\boost\include") {
-            echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
-          } elseif (Test-Path "C:\boost\boost_1_85_0\include") {
-            echo "BOOST_ROOT=C:\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          } else {
-            Get-ChildItem C:\boost -Recurse -Depth 1 | Select-Object FullName
-            Write-Error "Boost include not found"
-          }
-          echo "BOOST_LIBRARYDIR=$env:BOOST_ROOT\lib64-msvc-14.3" >> $env:GITHUB_ENV
+          $Url = "https://archives.boost.io/release/1.85.0/source/boost_1_85_0.zip"
+          $Zip  = "$env:TEMP\boost.zip"
+          Invoke-WebRequest -Uri $Url -OutFile $Zip
+          Expand-Archive -Path $Zip -DestinationPath C:\boost -Force
+          echo "BOOST_ROOT=C:\boost\boost_1_85_0" >> $env:GITHUB_ENV
+          echo "BOOST_LIBRARYDIR=C:\boost\boost_1_85_0\stage\lib" >> $env:GITHUB_ENV
+
+      - name: Build Boost libraries
+        shell: powershell
+        run: |
+          cd C:\boost\boost_1_85_0
+          .\bootstrap.bat
+          .\b2 --with-filesystem --with-thread --with-date_time --with-chrono `
+              --with-regex --with-serialization --with-program_options `
+              --with-coroutine --with-context --with-atomic `
+              link=static runtime-link=static threading=multi address-model=64 -j4 stage
 
       - name: Build
         shell: powershell
@@ -53,8 +56,9 @@ jobs:
           cd build
           cmake -G "Visual Studio 17 2022" -A x64 `
             -DBOOST_ROOT="$env:BOOST_ROOT" `
-            -DBOOST_INCLUDE_DIRS="$env:BOOST_INCLUDE_DIRS" `
+            -DBOOST_LIBRARYDIR="$env:BOOST_LIBRARYDIR" `
             -DBoost_NO_BOOST_CMAKE=ON `
+            -DBoost_USE_STATIC_LIBS=ON `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
           msbuild fuegoX.sln /p:Configuration=Release /m
 

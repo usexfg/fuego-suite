@@ -15,6 +15,7 @@
 #include "TorControl.h"
 
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>

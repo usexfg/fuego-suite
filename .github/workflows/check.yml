@@ -88,5 +88,6 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3
+            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
+            -DCMAKE_CXX_FLAGS="-D_LIBCPP_DISABLE_AVAILABILITY"
           cmake --build build -j$(sysctl -n hw.logicalcpu)

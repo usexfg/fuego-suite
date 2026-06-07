@@ -1,0 +1,131 @@
+name: Android (Termux)
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-android:
+    name: Android Termux
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            api: 21
+          - arch: arm
+            api: 16
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential wget
+
+      - name: Download and Build Boost for Android
+        run: |
+          wget -O boost_1_83_0.tar.gz https://sourceforge.net/projects/boost/files/boost/1.83.0/boost_1_83_0.tar.gz
+          echo "c2fe8e80e82d8c90ddf016edd51f0579b0ccfee7b6e28b4b4a6ca0d8ce744dc2  boost_1_83_0.tar.gz" | sha256sum -c -
+          tar -xjf boost_1_83_0.tar.gz
+          cd boost_1_83_0
+          
+          # Configure for Android
+          cat > user-config.jam << EOF
+          using clang : android
+          : $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.arch }}-linux-android${{ matrix.api }}-clang++
+          : <compileflags>-fPIC
+            <compileflags>-frtti
+            <compileflags>-fexceptions
+            <archiver>$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+            <ranlib>$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib
+          ;
+          EOF
+          
+          ./bootstrap.sh
+          ./b2 --user-config=user-config.jam toolset=clang-android target-os=android \
+               architecture=${{ matrix.arch == 'aarch64' && 'arm' || 'arm' }} \
+               address-model=${{ matrix.arch == 'aarch64' && '64' || '32' }} \
+               --prefix=/tmp/boost-android-${{ matrix.arch }} install
+          cd ..
+
+      - name: Create Android Toolchain File
+        run: |
+          mkdir -p cmake
+          cat > cmake/android-${{ matrix.arch }}-toolchain.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Android)
+          set(CMAKE_SYSTEM_VERSION ${{ matrix.api }})
+          set(CMAKE_ANDROID_ARCH_ABI ${{ matrix.arch == 'aarch64' && 'arm64-v8a' || 'armeabi-v7a' }})
+          set(CMAKE_ANDROID_NDK $ENV{ANDROID_NDK_ROOT})
+          set(CMAKE_ANDROID_STL_TYPE c++_shared)
+          EOF
+
+      - name: Build
+        id: build
+        run: |
+          build_folder="build-android-${{ matrix.arch }}/"
+          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
+          release_name="fuego-cli-android-${{ matrix.arch }}-v$xfg_ver"
+          
+          mkdir "$build_folder"
+          cd "$build_folder"
+          cmake -DCMAKE_TOOLCHAIN_FILE=../cmake/android-${{ matrix.arch }}-toolchain.cmake \
+                -DBOOST_ROOT=/tmp/boost-android-${{ matrix.arch }} \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DANDROID_ABI=${{ matrix.arch == 'aarch64' && 'arm64-v8a' || 'armeabi-v7a' }} \
+                -DANDROID_PLATFORM=android-${{ matrix.api }} ..
+          make -j$(nproc)
+          
+          mkdir "$release_name"
+          exeFiles=()
+          for f in src/*; do 
+            if [[ -x $f && -f $f ]]; then
+              $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip "$f"
+              exeFiles+=( "$f" )
+            fi
+          done
+          cp "${exeFiles[@]}" "$release_name/"
+          
+          # Create installation script for Termux
+          cat > "$release_name/install.sh" << 'EOF'
+          #!/data/data/com.termux/files/usr/bin/bash
+          echo "Installing Fuego CLI tools for Termux..."
+          cp fuegod $PREFIX/bin/
+          cp fuego-wallet-cli $PREFIX/bin/
+          cp walletd $PREFIX/bin/
+          chmod +x $PREFIX/bin/fuegod $PREFIX/bin/fuego-wallet-cli $PREFIX/bin/walletd
+          echo "Installation complete! You can now run: fuegod"
+          EOF
+          chmod +x "$release_name/install.sh"
+          
+          tar -czf "$release_name".tar.gz "$release_name"
+          sha256=$(sha256sum "$release_name".tar.gz | awk '{print toupper($1)}')
+          asset_path="./$build_folder$release_name.tar.gz"
+          echo "sha256=${sha256}" >> $GITHUB_OUTPUT
+          echo "release_name=${release_name}.tar.gz" >> $GITHUB_OUTPUT
+          echo "asset_path=${asset_path}" >> $GITHUB_OUTPUT
+          echo "xfg_version=${xfg_ver}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.build.outputs.asset_path }}
+          name: Fuego CLI Suite v${{ steps.build.outputs.xfg_ver }}
+          body: |
+            📱 [Download for Termux](../../releases/download/${{ steps.build.outputs.xfg_version }}/${{ steps.build.outputs.release_name }}) **${{ steps.build.outputs.release_name }}**
+            
+            `SHA256 : ${{ steps.build.outputs.sha256 }}`
+            
+            After download:
+            1. `tar -xzf ${{ steps.build.outputs.release_name }}`
+            2. `cd $(basename -s .tar.gz ${{ steps.build.outputs.release_name }})`
+            3. `./install.sh`
+          append_body: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

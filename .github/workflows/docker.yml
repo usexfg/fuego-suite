@@ -45,59 +45,41 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat > Dockerfile << 'EOF'
-          FROM ubuntu:20.04 as builder
-          
-          # Install dependencies
+          FROM ubuntu:22.04 as builder
+
           RUN apt-get update && apt-get install -y \
-              build-essential \
-              cmake \
-              libboost-all-dev \
-              git \
+              build-essential cmake libboost-all-dev \
+              libssl-dev libicu-dev libjsoncpp-dev git \
               && rm -rf /var/lib/apt/lists/*
-          
-          # Copy source code
+
           WORKDIR /src
           COPY . .
-          
-          # Build
-          RUN mkdir build && cd build && \
-              cmake -DCMAKE_BUILD_TYPE=Release .. && \
-              make -j$(nproc)
-          
-          # Runtime stage
-          FROM ubuntu:20.04
-          
-          # Install runtime dependencies
+
+          RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && \
+              make -C build -j$(nproc)
+
+          FROM ubuntu:22.04
+
           RUN apt-get update && apt-get install -y \
-              libboost-system1.71.0 \
-              libboost-filesystem1.71.0 \
-              libboost-thread1.71.0 \
-              libboost-date-time1.71.0 \
-              libboost-chrono1.71.0 \
-              libboost-regex1.71.0 \
-              libboost-serialization1.71.0 \
-              libboost-program-options1.71.0 \
-              ca-certificates \
+              libboost-filesystem1.74.0 libboost-thread1.74.0 \
+              libboost-date-time1.74.0 libboost-chrono1.74.0 \
+              libboost-regex1.74.0 libboost-serialization1.74.0 \
+              libboost-program-options1.74.0 libboost-coroutine1.74.0 \
+              libboost-context1.74.0 libboost-atomic1.74.0 \
+              libssl3 libicu70 libjsoncpp25 ca-certificates \
               && rm -rf /var/lib/apt/lists/*
-          
-          # Copy binaries from builder
+
           COPY --from=builder /src/build/src/fuegod /usr/local/bin/
           COPY --from=builder /src/build/src/fuego-wallet-cli /usr/local/bin/
           COPY --from=builder /src/build/src/walletd /usr/local/bin/
-          
-          # Create fuego user
+
           RUN useradd -m -u 1000 fuego
           USER fuego
           WORKDIR /home/fuego
-          
-          # Create data directory
           RUN mkdir -p /home/fuego/.fuego
           VOLUME ["/home/fuego/.fuego"]
-          
-          # Expose ports
+
           EXPOSE 20808 28180
-          
-          # Default command
           ENTRYPOINT ["fuegod"]
           CMD ["--data-dir=/home/fuego/.fuego"]
           EOF
@@ -112,52 +94,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Generate Docker run instructions
-        id: docker-info
-        run: |
-          xfg_ver=$(echo ${{ github.ref }} | sed 's|refs/tags/||')
-          cat > docker-instructions.md << EOF
-          # Fuego Docker Images v${xfg_ver}
-          
-          ## Quick Start
-          \`\`\`bash
-          # Run Fuego daemon
-          docker run -d --name fuego-node \\
-            -p 20808:20808 -p 28180:28180 \\
-            -v fuego-data:/home/fuego/.fuego \\
-            ghcr.io/${{ github.repository }}:${xfg_ver}
-          
-          # Run wallet CLI
-          docker run -it --rm \\
-            -v fuego-wallet:/home/fuego/.fuego \\
-            ghcr.io/${{ github.repository }}:${xfg_ver} \\
-            fuego-wallet-cli
-          \`\`\`
-          
-          ## Available Images
-          - \`fuego/fuego:${xfg_ver}\` (Docker Hub)
-          - \`ghcr.io/${{ github.repository }}:${xfg_ver}\` (GitHub Container Registry)
-          
-          ## Architectures
-          - linux/amd64 (Intel/AMD)
-          - linux/arm64 (ARM64/Apple Silicon)
-          EOF
-          echo "instructions_file=docker-instructions.md" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ${{ steps.docker-info.outputs.instructions_file }}
-          name: Fuego CLI Suite v${{ steps.meta.outputs.version }}
-          body: |
-            🐳 [Docker instructions](../../releases/download/${{ steps.meta.outputs.version }}/docker-instructions.md) for **Fuego CLI Docker ${{ steps.meta.outputs.version }}**
-            
-            Multi-architecture images:
-            - `fuego/fuego:${{ steps.meta.outputs.version }}`
-            - `ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}`
-            
-            Supported platforms: linux/amd64, linux/arm64
-          append_body: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

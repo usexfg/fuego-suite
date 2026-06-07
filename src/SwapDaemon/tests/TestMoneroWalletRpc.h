@@ -54,6 +54,9 @@ protected:
     }
     return defaultResp;
   }
+
+  // No real sleeping in unit tests.
+  void syncPollDelay() override {}
 };
 
 } // namespace XfgSwap

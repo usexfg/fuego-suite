@@ -336,6 +336,12 @@ add_executable(test_xmr_sweep_sequence
 target_link_libraries(test_xmr_sweep_sequence PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)
+add_executable(test_xmr_live_e2e
+    SwapDaemon/tests/test_xmr_live_e2e.cpp)
+target_link_libraries(test_xmr_live_e2e PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
 # Note: Path is relative from src/ directory
 add_executable(XmrClaimAdaptorTests

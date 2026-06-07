@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# ⚠️ SUPERSEDED by sim_final_v18.py — this sim hallucinates a HEAT→XFG burn path
+# that does not exist. HEAT is mint-only. The AMM pool is the sole exit.
 """
 Fuego HEAT — Multi-Scenario Model Comparison
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

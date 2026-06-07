@@ -4063,8 +4063,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     }
 
     // ── Direct peg arbitrage ──────────────────────────────────────────
-    // Converges pool toward peg via iterative mint-sell / treasury-buy.
-    // 40 rounds per epoch matches simulation-tested convergence behavior.
+    // Converges pool toward peg via iterative treasury-sell / mint-sell /
+    // treasury-buy cycles. 40 rounds per epoch matches simulation-tested
+    // convergence behavior.
     if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0
         && !m_piState.redemptionPrice.isZero()) {
       uint64_t heathFeeBps = parameters::HEARTH_FEE_BPS;
@@ -4083,18 +4084,37 @@ bool Blockchain::pushBlock(BlockEntry &block) {
         if (arbSize == 0) break;
 
         if (deviation > 0) {
-          // HEAT overvalued: mint HEAT at redemption price, sell to pool
-          uint64_t heatToMint = FixedPoint64::fromUint64(arbSize).div(
+          // HEAT overvalued: sell treasury HEAT first, then mint remainder
+          uint64_t heatCap = FixedPoint64::fromUint64(arbSize).div(
               m_piState.redemptionPrice).toUint64();
-          if (heatToMint == 0 || heatToMint > m_ammPool.reserveHeat / 4) continue;
-          uint64_t xfgReceived = ammGetOutputAmount(
-              heatToMint, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
-          if (xfgReceived == 0 || xfgReceived > m_ammPool.reserveXfg) continue;
-          m_ammPool.reserveHeat += heatToMint;
-          m_ammPool.reserveXfg  -= xfgReceived;
-          m_heatSupply          += heatToMint;
-          m_treasuryBalance     += arbSize / 2;       // 50% of mint value
-          m_treasuryBalance     += xfgReceived;        // pool XFG from sale
+          if (heatCap == 0) continue;
+
+          uint64_t heatSold = 0;
+          if (m_treasuryHeatReserve > 0) {
+            heatSold = std::min(m_treasuryHeatReserve, heatCap);
+            if (heatSold > 0 && heatSold <= m_ammPool.reserveHeat / 4) {
+              uint64_t xfgReceived = ammGetOutputAmount(
+                  heatSold, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
+              if (xfgReceived > 0 && xfgReceived <= m_ammPool.reserveXfg) {
+                m_ammPool.reserveHeat  += heatSold;
+                m_ammPool.reserveXfg   -= xfgReceived;
+                m_treasuryHeatReserve  -= heatSold;
+                m_treasuryBalance      += xfgReceived;
+              }
+            }
+          }
+
+          uint64_t heatToMint = heatCap - heatSold;
+          if (heatToMint > 0 && heatToMint <= m_ammPool.reserveHeat / 4) {
+            uint64_t xfgReceived = ammGetOutputAmount(
+                heatToMint, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
+            if (xfgReceived == 0 || xfgReceived > m_ammPool.reserveXfg) continue;
+            m_ammPool.reserveHeat += heatToMint;
+            m_ammPool.reserveXfg  -= xfgReceived;
+            m_heatSupply          += heatToMint;
+            m_treasuryBalance     += arbSize / 2;       // 50% eternal flame
+            m_treasuryBalance     += xfgReceived;
+          }
         } else {
           // HEAT undervalued: treasury buys HEAT from pool
           if (m_treasuryBalance < arbSize) continue;

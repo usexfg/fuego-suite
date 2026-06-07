@@ -24,6 +24,11 @@ static bool before(const std::vector<std::string>& seq,
 }
 
 int main() {
+  // Realistic 64-char hex keys (sweepSharedAddress now validates the keys and
+  // derives the from-keys wallet address from them before any RPC).
+  const std::string SK(64, 'a');
+  const std::string VK(64, 'b');
+
   // 1. verifyLock: unlocked-only.
   {
     TestMoneroWalletRpc w;
@@ -46,7 +51,7 @@ int main() {
     w.queue("sweep_all", "{\"result\":{\"tx_hash_list\":[\"deadbeef\"],\"fee_list\":[100]}}");
 
     MoneroTransferResult r;
-    bool ok = w.sweepSharedAddress("aa", "bb", "dest", r,
+    bool ok = w.sweepSharedAddress(SK, VK, "dest", r,
                                    /*walletName*/ "swap123",
                                    /*restoreHeight*/ 7,
                                    /*targetHeight*/ 10);
@@ -70,7 +75,7 @@ int main() {
     w.queue("generate_from_keys", "{\"result\":{}}");
     w.defaultResp = "{\"result\":{\"height\":5}}";  // every get_height < target 10
     MoneroTransferResult r;
-    bool ok = w.sweepSharedAddress("aa", "bb", "dest", r, "s", 0, /*targetHeight*/ 10);
+    bool ok = w.sweepSharedAddress(SK, VK, "dest", r, "s", 0, /*targetHeight*/ 10);
     assert(!ok && "must NOT sweep when wallet never reaches target height");
     auto seq = w.methodSeq();
     assert(std::find(seq.begin(), seq.end(), "sweep_all") == seq.end() &&

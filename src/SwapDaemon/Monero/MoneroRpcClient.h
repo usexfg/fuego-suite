@@ -65,11 +65,16 @@ public:
   // targetHeight  : if > 0, poll the wallet's get_height until it reaches this
   //                 (the daemon height) BEFORE sweeping; if 0, poll until the
   //                 scan height stabilizes. NEVER sweep an unsynced wallet.
+  // networkPrefix : network tag used to derive the from-keys wallet's primary
+  //                 address (some monero-wallet-rpc builds reject an empty
+  //                 address in generate_from_keys). Must match the wallet-rpc's
+  //                 network (18 mainnet / 53 testnet / 24 stagenet).
   virtual bool sweepSharedAddress(const std::string& spendKeyHex, const std::string& viewKeyHex,
                                    const std::string& destAddress, MoneroTransferResult& result,
                                    const std::string& walletName = "",
                                    uint64_t restoreHeight = 0,
-                                   uint64_t targetHeight = 0);
+                                   uint64_t targetHeight = 0,
+                                   uint64_t networkPrefix = 18 /* Monero mainnet */);
 
   // Check if an address has received funds
   bool checkAddressBalance(const std::string& address, uint64_t& balance, uint64_t& unlocked);
@@ -115,6 +120,10 @@ protected:
   // can override with canned responses + assert the call sequence. Default
   // wraps jsonRpc to the wallet host/port.
   virtual std::string walletRpc(const std::string& method, const std::string& params);
+
+  // Delay between sync polls in sweepSharedAddress. Default sleeps ~1.5s so a
+  // fresh from-keys wallet has time to scan; tests override to a no-op.
+  virtual void syncPollDelay();
 
 private:
   std::string httpPost(const std::string& host, uint16_t port, const std::string& path, const std::string& body);

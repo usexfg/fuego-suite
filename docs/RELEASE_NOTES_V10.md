@@ -1,96 +1,141 @@
-# Fuego v10 Protocol Upgrade — Harbinja
+# Fuego Suite v1.10.02 — Wildfire Release
 
 | | |
 |---|---|
-| **Codename** | Harbinja |
+| **Codename** | Wildfire |
 | **Block Version** | `BLOCK_MAJOR_VERSION_10` |
 | **Activation Height** | 1,100,000 |
-| **Release Version** | v1.10.00-PROPHETS (build 1153) |
+| **Release Version** | v1.10.02 |
 | **Testnet Activation** | Block 25 |
 
+Atomic swaps, cross-chain expansion, privacy hardening, and a broad security pass.
+
 ---
 
-## New Features
+## Cross-Chain Atomic Swaps (SwapXFG)
 
-### Two-Coin Ecosystem (HEAT + Hearth AMM)
-- HEAT colored-coin stablecoin — minted by burning XFG with PI-controlled supply targeting $1 peg
-- Hearth AMM — constant-product XFG/HEAT pool with permissionless liquidity provision
-- LP token algebra — add/remove liquidity, withdraw proportional pool share
-- Per-asset balance validation — XFG, HEAT, and LP share inputs/outputs tracked and enforced independently per transaction
-- Osavvirsak burn-adjusted block rewards — burned coins re-enter the emission curve, extending tail emission
-- Banking fee infrastructure — 0.1% deposit fee on HEAT routed to stakers via coinbase split
+### Supported Chains
 
-### Dynamic Ring Sizes (DynaMaxin)
-- Adaptive decoy selection via OSPEAD (logarithmic age-bin sampling)
-- Minimum ring size raised from 2 to 8
-- Target ring sizes: {18, 15, 12, 11, 10, 9, 8} selected dynamically based on output pool depth
-- Max ring size remains 32
+| Chain | Adapter | Keying |
+|---|---|---|
+| Bitcoin Cash | `BchChainClient` | secp256k1 |
+| Ethereum (+ L2: **Arbitrum**, **Base**) | `EthChainClient` | EIP-155 secp256k1 offline signing + `eth_sendRawTransaction` |
+| Monero | `XmrChainClient` | Ed25519 reserve-proof verification |
+| Solana | `SolChainClient` | Ed25519 + base58 |
+
+- Polymorphic `ChainRegistry` dispatches all swap pairs through a plugin `IChainClient` interface
+- Cross-chain timelock-ordering safety (`SwapTimelock`) across all supported pairs
+
+### AFK Auto-Execution Engine
+- Soft-order auto-execution via OfferManager — griefing protection with taker rate-limiting, partial fills, price-drift auto-cancel
+- Headless daemon mode (`--service`) with loopback JSON status endpoint (StatusServer)
+- Taker P2P swap-request relay
+
+### Swap Privacy
+- Swap offers relayed via Dandelion++ (separate stem path: 80% stay, max 5 hops)
+
+---
+
+## Privacy
+
+### Dynamic Ring Sizes (DynaMaxin / OSPEAD)
+- Minimum mixin **2 → 8**; max remains **32**
+- Dynamic ring size buckets: **{32, 16, 8}** — selected based on output pool depth
+- OSPEAD logarithmic age-bin sampling — decoy spend-probability filter wired into tx build path
+- Mixin upper bound gated behind `keeped_by_block` for sync-era compatibility
 
 ### Dandelion++ Network Privacy
-- Stem-fluff transaction relay — per-hop coin-flip decides stem continuation (90% stay, max 10 hops)
-- Separate Dandelion++ path for swap offers (80% stay, max 5 hops) to prevent metadata correlation
-- Embargo timer: 30s before fluff broadcast
-- Epoch rotation: 90s for stem phase key rotation
-- Pre-v10: all transactions flood the network directly
+- Stem-fluff transaction relay — per-hop coin-flip (90% stay, max 10 hops)
+- Embargo timer: 30s; epoch rotation: 90s
+- Relay constants extracted to config
 
-### @Fire Aliases
-- Human-readable `@fire` addresses registered on-chain
-- Registration fee: 1 XFG to Fuego Development Fund (`@fuegoxfg`)
-- Standard individual aliases only (group/multi-sig tandalias in design phase)
-
-### SwapXFG Atomic Swaps
-- Cross-chain atomic swaps via HTLC with integrated fee routing
-- 1% swap fee collected from HTLC claims → YEM Reserve
-- 1% sender surcharge → YEM Reserve
-- Swap offers relayed via Dandelion++ for privacy
-
-### Commitment Deposits (Ring-CT)
-- `TransactionOutputCommitment` replaces legacy `MultisignatureOutput` — Pedersen commitments with 1-of-4 OR amount proofs
-- `TransactionInputCommitmentSpend` replaces legacy `MultisignatureInput` — withdrawal inputs with key image + claimed interest
+### Alias Registration Privacy
+- Per-transaction sub-address rotation during `@fire` alias registration
+- Ring-signature mixin applied to alias registration transactions
 
 ---
 
-## Economic Changes
+## @Fire Aliases
+- Human-readable `@fire` addresses registered on-chain
+- Registration fee: 1 XFG to Fuego Development Fund (`@fuegoxfg`)
+- Standard individual aliases only
 
-| Parameter | v9 (Godflame) | v10 (Harbinja) |
-|---|---|---|
-| **Transaction fee** | 0.008 XFG (80,000 atomic) | **0.0008 XFG (8,000 atomic)** — 10x reduction |
-| **Dust threshold** | 0.002 XFG (20,000 atomic) | **0.0001 XFG (1,000 atomic)** |
-| **Min ring size** | 2 | **8** |
-| **Block reward** | Standard tail emission | **Osavvirsak burn-adjusted re-emission** |
-| **Coinbase validation** | Miners may claim less than reward | **Strict exact-match enforced** |
+---
+
+## Security
+
+### Swap Security
+- Adaptor-secret at-rest encryption: CryptoNight-KDF + ChaCha8 + HMAC-SHA256; derived from wallet key, never persisted
+- Ed25519 authentication on all swap P2P messages
+- Small-subgroup point rejection in adaptor/DLEQ verifiers
+- RPC error responses sanitized
+
+### Wallet & P2P Hardening
+- Wallet container integrity upgraded to HMAC-SHA256 (v7); wallet files set to `0600`
+- MLSAG nonce zeroing on all paths; RNG fork-safety; modulo-bias elimination
+- Mempool DoS hardening: tx size 4MB cap, extra 4KB cap, 800MB pool limit
+- P2P: Levin max packet size 1MB→100MB
+- 11 CRITICAL/HIGH audit findings resolved (C1-C4, H1-H9)
 
 ---
 
 ## Consensus Changes
 
 ### Difficulty Algorithm
+
 | | v9 | v10 |
 |---|---|---|
 | **Algorithm** | LWMA (N=60) | **LWMA-1 (N=36)** |
 | **Function** | `nextDifficultyV5()` | `nextDifficultyV6()` |
-| **Solvetime clamp** | T/2 – 8T | **T/3 – 6T** (symmetric) |
-| **Rounding** | Standard | **Clean number rounding** |
+| **Solvetime clamp** | T/2 – 8T | **T/3 – 6T** |
+| **Rounding** | Standard | Clean number rounding |
 
 ### Penalty Formula Bugfix
-Monero-style 64-bit safe variant: intermediate multiplication uses 64-bit to prevent overflow on ARM/32-bit platforms. Pre-v10 formula preserved for historical block validation.
+64-bit safe intermediate multiplication — prevents overflow on ARM/32-bit. Pre-v10 formula preserved for historical blocks.
 
 ---
 
-## YEM v10 Skeleton
-- Swap fee pool activated — 1% of HTLC claims + 1% sender surcharge routed to YEM Reserve
-- Legacy bond registration for pre-v10 COLD deposit migration
-- YEM v10 allocation: 100% of swap fees → YEM Reserve (10,000 bps)
-- Full Sovereign Yield Engine (coupons, maturities, coinbase, scalp, SWF, smoothing) activates at v11
+## Economic Changes
+
+| Parameter | v9 | v10 |
+|---|---|---|
+| **Transaction fee** | 0.008 XFG | **0.0008 XFG** (10× reduction) |
+| **Dust threshold** | 0.002 XFG | **0.0001 XFG** |
+| **Min ring size** | 2 | **8** |
+| **Coinbase validation** | Lax | **Strict exact-match** |
 
 ---
 
-## Testnet
-- Upgrade height: block 25
-- Testnet daemon version: 10.00.016
-- Genesis extra nonce encodes v10 upgrade height
+## Infrastructure
+
+- `IndexManager` delegates blockchain indices; async `rebuildCache` with lock gate
+- ARM hardware AES on Apple Silicon
+- arm64 Homebrew prefix detection for `jsoncpp`
+- Docs: SPV light-client ADR, swap expansion guide
+
+---
+
+## Commit Breakdown (247 total since v1.9.3)
+
+| Area | Count |
+|---|---|
+| Build + CI | 57 |
+| Refactor + misc | 45 |
+| HEAT + Hearth (v11 prep) | 39 |
+| Swaps | 31 |
+| CDs + Yield (v11 prep) | 27 |
+| Docs | 27 |
+| v11/v12 scaffolding | 22 |
+| Wallet UX | 13 |
+| Privacy | 11 |
+| Deposit framework (v11 prep) | 8 |
+| Security | 7 |
+| Index + P2P infra | 6 |
+| Aliases | 4 |
+| Per-asset + auth | 4 |
+| Consensus + economic | 3 |
 
 ---
 
 *Previous: v9 Godflame (height 826,420)*
-*Next: v11 HEATWAVE (height 1,111,111)*
+*Next: v11 HEATWAVE (height 1,111,111) — HEAT + Hearth AMM + CDs + YEM*

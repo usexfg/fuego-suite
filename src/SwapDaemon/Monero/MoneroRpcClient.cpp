@@ -32,6 +32,10 @@
 #include "Common/JsonValue.h"
 #include "SwapDaemon/Monero/AdaptorSignature.h"
 
+extern "C" {
+#include "crypto/crypto-ops.h"
+}
+
 namespace XfgSwap {
 
 MoneroRpcClient::MoneroRpcClient(const std::string& daemonHost, uint16_t daemonPort,
@@ -154,6 +158,11 @@ static bool parseJsonRpcResult(const std::string& raw, Common::JsonValue& result
 
 std::string MoneroRpcClient::walletRpc(const std::string& method, const std::string& params) {
   return jsonRpc(m_walletHost, m_walletPort, method, params);
+}
+
+void MoneroRpcClient::syncPollDelay() {
+  // ~1.5s between sync polls so the from-keys wallet scan can make progress.
+  usleep(1500 * 1000);
 }
 
 bool MoneroRpcClient::getHeight(uint64_t& height) {
@@ -317,9 +326,39 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
                                          MoneroTransferResult& result,
                                          const std::string& walletName,
                                          uint64_t restoreHeight,
-                                         uint64_t targetHeight) {
+                                         uint64_t targetHeight,
+                                         uint64_t networkPrefix) {
   // 1. generate_from_keys (per-swap wallet name; restore from the lock height
   //    to avoid a full-chain rescan), 2. WAIT FOR SYNC, 3. sweep_all.
+
+  // Derive the wallet's primary address from the (secret) spend/view keys:
+  // pub = sec*G for each, then encode(spendPub, viewPub, prefix). Some
+  // monero-wallet-rpc builds reject an empty address in generate_from_keys, so
+  // we always pass the matching address. This also asserts the keys are valid
+  // ed25519 scalars before we touch the wallet.
+  std::vector<uint8_t> spendSec, viewSec;
+  if (!hexTo32(spendKeyHex, spendSec) || !hexTo32(viewKeyHex, viewSec)) {
+    result.success = false;
+    result.error = "Invalid spend/view key hex";
+    return false;
+  }
+  std::string derivedAddr;
+  {
+    ge_p3 p;
+    unsigned char spendPub[32], viewPub[32];
+    ge_scalarmult_base(&p, spendSec.data());
+    ge_p3_tobytes(spendPub, &p);
+    ge_scalarmult_base(&p, viewSec.data());
+    ge_p3_tobytes(viewPub, &p);
+    derivedAddr = MoneroAddress::encode(
+        std::vector<uint8_t>(spendPub, spendPub + 32),
+        std::vector<uint8_t>(viewPub, viewPub + 32), networkPrefix);
+    if (derivedAddr.empty()) {
+      result.success = false;
+      result.error = "Failed to derive wallet address from keys";
+      return false;
+    }
+  }
 
   // Close any currently open wallet first.
   walletRpc("close_wallet", "{}");
@@ -331,7 +370,7 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
 
   std::ostringstream genParams;
   genParams << "{\"filename\":\"" << filename << "\""
-            << ",\"address\":\"\""  // derived from keys
+            << ",\"address\":\"" << derivedAddr << "\""
             << ",\"spendkey\":\"" << spendKeyHex << "\""
             << ",\"viewkey\":\"" << viewKeyHex << "\""
             << ",\"password\":\"\""
@@ -347,14 +386,20 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
   }
 
   // 2. Wait for the from-keys wallet to scan/sync BEFORE sweeping — otherwise
-  //    sweep_all sees no outputs. Poll get_height: if targetHeight is known
+  //    sweep_all sees no outputs. Each iteration DRIVES the scan with a
+  //    synchronous "refresh" (the wallet does not advance on its own between
+  //    instant RPC calls), then checks get_height. If targetHeight is known
   //    (the daemon height) wait until the wallet reaches it; otherwise wait
-  //    until the scan height stabilizes. Never sweep an unsynced wallet.
+  //    until the scan height stabilizes. A delay between polls gives the scan
+  //    time to make progress. Never sweep an unsynced wallet.
   {
     const int kMaxPolls = 120;       // bounded
     uint64_t prevHeight = 0;
     bool synced = false;
     for (int i = 0; i < kMaxPolls; ++i) {
+      // Drive the wallet scan forward synchronously.
+      walletRpc("refresh", "{}");
+
       std::string hRaw = walletRpc("get_height", "{}");
       Common::JsonValue hRes(Common::JsonValue::NIL);
       uint64_t wh = 0;
@@ -367,6 +412,7 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
         if (i > 0 && wh == prevHeight && wh > 0) { synced = true; break; }
       }
       prevHeight = wh;
+      syncPollDelay();
     }
     if (!synced) {
       result.success = false;

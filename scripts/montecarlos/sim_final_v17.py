@@ -7,9 +7,11 @@ HEARTH_FEE_BPS=8;ARB_THRESHOLD=0.001  # 0.1%
 CD_FLOOR_APY=5.0
 
 def mint_split(dev):
-    if dev<0.01: return 15,60,25
-    elif dev<0.03: return 40,20,40
-    else: return 60,10,30
+    # MIN flat 50% of 92% post-scalp share = 46% of premium → Eternal Flame
+    # TRE+SWF = remaining 50% of 92% = 46% of premium
+    if dev<0.01: return 10,50,40      # tight peg → SWF saves
+    elif dev<0.03: return 25,50,25    # moderate → balanced
+    else: return 40,50,10             # loose peg → treasury defends
 
 def drip_split(dev, atomic_vol):
     bond=20;mining=30;swf_restake=30

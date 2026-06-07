@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# ⚠️ SUPERSEDED by sim_final_v18.py — this sim hallucinates a HEAT→XFG burn path
+# that does not exist. HEAT is mint-only. The AMM pool is the sole exit.
 """HEAT — Mint Premium: 0% vs 5% (8:1 Full Float, 150 sims × 20yr)"""
 
 import numpy as np, time, sys

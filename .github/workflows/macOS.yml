@@ -15,7 +15,7 @@ jobs:
           - os: macos-13
             arch: intel
             brew_prefix: /usr/local
-          - os: macos-15
+          - os: macos-14
             arch: apple
             brew_prefix: /opt/homebrew
     steps:

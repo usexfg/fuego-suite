@@ -64,44 +64,6 @@ namespace CryptoNote {
   struct COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry;
   using CryptoNote::BlockInfo;
 
-  // ═══════════════════════════════════════════════════════════════
-  // YEM v10 skeleton — bond & reserve plumbing, zero active logic until v11
-  // ═══════════════════════════════════════════════════════════════
-  struct YemState {
-      uint64_t yemReserve = 0;   // paper credit from fee allocation (v10) / burn scalp (v11)
-      void serialize(ISerializer& s) { s(yemReserve, "yem_reserve"); }
-  };
-
-  struct YemBond {
-      uint64_t principal;         uint32_t issuedAtEpoch;   uint32_t termEpochs;
-      uint64_t rateBps;           Crypto::Hash depositTxHash;
-      AccountPublicAddress creditor;  bool repaid;
-      void serialize(ISerializer& s) {
-          s(principal, "principal"); s(issuedAtEpoch, "issued_epoch");
-          s(termEpochs, "term");     s(rateBps, "rate");
-          s(depositTxHash, "deposit_tx"); s(creditor, "creditor"); s(repaid, "repaid");
-      }
-  };
-
-  class YemBondIndex {
-  public:
-      void     issue(const YemBond& bond);
-      void     markRepaid(const Crypto::Hash& depositTxHash);
-      bool     hasBond(const Crypto::Hash& depositTxHash) const;
-      uint64_t getTotalOutstanding() const { return m_totalOutstanding; }
-      bool     isEmpty() const { return m_bonds.empty(); }
-      void     serialize(ISerializer& s);
-  private:
-      std::vector<YemBond> m_bonds;
-      uint64_t m_totalOutstanding = 0;
-  };
-
-  struct YemPayout {
-      AccountPublicAddress recipient;  uint64_t amount;  Crypto::Hash sourceTxHash;
-      void serialize(ISerializer& s) { s(recipient, "recipient"); s(amount, "amount"); s(sourceTxHash, "source"); }
-  };
-  // ═══════════════════════════════════════════════════════════════
-
   class Blockchain : public CryptoNote::ITransactionValidator {
   public:
     Blockchain(const Currency &currency, tx_memory_pool &tx_pool, Logging::ILogger &logger, bool blockchainIndexesEnabled, bool blockchainAutosaveEnabled);
@@ -160,11 +122,6 @@ namespace CryptoNote {
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
     bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
-    // YEM v10 skeleton getters
-    uint64_t getYemReserve() const { return m_yemState.yemReserve; }
-    const YemBondIndex& getYemBonds() const { return m_yemBonds; }
-    std::deque<YemPayout>& getYemPayoutQueue() { return m_pendingYemPayouts; }
-    void debitYemReserve(uint64_t amt) { if (m_yemState.yemReserve >= amt) m_yemState.yemReserve -= amt; }
     void setXfgMarketValue(uint64_t val);
     void setBootstrapAmount(uint64_t xfg, uint64_t heat);
     void addSwapFee(uint64_t amount);
@@ -391,8 +348,6 @@ namespace CryptoNote {
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
       uint64_t ammAccumulatedLpFees;
-      uint64_t yemReserve;          // v10 skeleton
-      uint64_t yemBondOutstanding;  // v10 skeleton
     };
 
     friend class BlockCacheSerializer;
@@ -444,12 +399,6 @@ namespace CryptoNote {
     uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
     uint64_t m_totalLegacyBondLocked = 0;  // total XFG in legacy bonds (for separate CD share split)
     uint64_t m_legacyBondYieldPool = 0;    // accumulated legacy bond share of swap fees
-
-    // ── YEM v10 skeleton ──────────────────────────────────────
-    YemState      m_yemState;                 // reserve accumulator
-    YemBondIndex  m_yemBonds;                 // bond registry (dormant until v11)
-    std::deque<YemPayout> m_pendingYemPayouts;  // payout queue (v11)
-    // ───────────────────────────────────────────────────────────
 
     // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
     std::deque<uint64_t> m_blockSwapFeeContributions;

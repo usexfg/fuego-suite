@@ -164,16 +164,6 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
-        // YEM v10 skeleton — pre-activation scaffolding for v11 Sovereign Yield System
-        // Atomic swap fee routing + legacy bond registration activate at v10.
-        // Coupons, maturities, coinbase, scalp, SWF, smoothing wait for v11.
-        constexpr uint32_t YEM_V10_ACTIVATION_HEIGHT  = 445000;    // v10 go-live: fee routing + bond registration
-        constexpr uint32_t YEM_ACTIVATION_HEIGHT      = 1111111;   // v11 go-live: full sovereign yield engine
-        constexpr uint64_t YEM_V10_ALLOCATION_BPS     = 10000;     // 100% of swap fees → YEM Reserve (held until v11)
-        constexpr uint64_t YEM_V10_RESERVE_DENOM      = 10000;     // basis point denominator
-        constexpr uint64_t YEM_BOND_MAX_RATE_BPS      = 2500;      // 25%/yr coupon cap (v11)
-        constexpr uint64_t YEM_BOND_MIN_RATE_BPS      = 300;       // 3%/yr coupon floor (v11)
-
         // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)
         const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
         const uint64_t LEGACY_BOND_TARGET_APY = 50;          // 50% target APY on legacy bonds

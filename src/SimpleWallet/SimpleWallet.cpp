@@ -4627,7 +4627,7 @@ bool simple_wallet::show_txn(const std::vector<std::string>& args) {
 
     success_msg_writer() << "Transaction " << Common::podToHex(txInfo.hash);
     success_msg_writer() << "  State:      " << stateStr;
-    success_msg_writer() << "  Amount:     " << m_currency.formatAmount(std::llabs(txInfo.totalAmount))
+    success_msg_writer() << "  Amount:     " << m_currency.formatAmount(static_cast<int64_t>(std::llabs(txInfo.totalAmount)))
                          << (txInfo.totalAmount < 0 ? " (outgoing)" : " (incoming)");
     success_msg_writer() << "  Fee:        " << m_currency.formatAmount(txInfo.fee);
     success_msg_writer() << "  Height:     " << txInfo.blockHeight;

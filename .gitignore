@@ -50,7 +50,7 @@ mcp_server.py
 codebase_mapper.py
 analyze_fuego_code.py
 AGENTS.md
-
+contrib/
 
 /CMakeFiles/
 /src/CMakeFiles/*

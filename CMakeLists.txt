@@ -207,16 +207,16 @@ if(APPLE)
     if(_brew_boost)
         set(Boost_INCLUDE_DIRS "${_brew_boost}/include")
         set(Boost_LIBRARIES
-            "${_brew_boost}/lib/libboost_filesystem-mt.dylib"
-            "${_brew_boost}/lib/libboost_thread-mt.dylib"
-            "${_brew_boost}/lib/libboost_date_time-mt.dylib"
-            "${_brew_boost}/lib/libboost_chrono-mt.dylib"
-            "${_brew_boost}/lib/libboost_regex-mt.dylib"
-            "${_brew_boost}/lib/libboost_serialization-mt.dylib"
-            "${_brew_boost}/lib/libboost_program_options-mt.dylib"
-            "${_brew_boost}/lib/libboost_coroutine-mt.dylib"
-            "${_brew_boost}/lib/libboost_context-mt.dylib"
-            "${_brew_boost}/lib/libboost_atomic-mt.dylib"
+            "${_brew_boost}/lib/libboost_filesystem.dylib"
+            "${_brew_boost}/lib/libboost_thread.dylib"
+            "${_brew_boost}/lib/libboost_date_time.dylib"
+            "${_brew_boost}/lib/libboost_chrono.dylib"
+            "${_brew_boost}/lib/libboost_regex.dylib"
+            "${_brew_boost}/lib/libboost_serialization.dylib"
+            "${_brew_boost}/lib/libboost_program_options.dylib"
+            "${_brew_boost}/lib/libboost_coroutine.dylib"
+            "${_brew_boost}/lib/libboost_context.dylib"
+            "${_brew_boost}/lib/libboost_atomic.dylib"
         )
         set(Boost_FOUND TRUE)
         message(STATUS "Using ARM64 Boost from ${_brew_boost}")
@@ -260,7 +260,7 @@ if(APPLE)
     endif()
     execute_process(COMMAND ${_BREW_CMD} --prefix jsoncpp OUTPUT_VARIABLE BREW_JSONCPP_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE BREW_RESULT)
     if(BREW_RESULT EQUAL 0)
-      set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include/json")
+      set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include")
       set(JSONCPP_LIBRARY_DIRS "${BREW_JSONCPP_PREFIX}/lib")
       set(JSONCPP_LIBRARIES "${BREW_JSONCPP_PREFIX}/lib/libjsoncpp.dylib")
       set(JSONCPP_FOUND TRUE)
@@ -297,17 +297,17 @@ if(NOT JSONCPP_FOUND)
 
   # Try standard locations
   if(EXISTS "/usr/include/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include")
     set(JSONCPP_FOUND TRUE)
     message(STATUS "Found jsoncpp headers at /usr/include/json")
   elseif(EXISTS "/usr/include/jsoncpp/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
     set(JSONCPP_FOUND TRUE)
-    message(STATUS "Found jsoncpp headers at /usr/include/jsoncpp/json")
+    message(STATUS "Found jsoncpp headers at /usr/include/jsoncpp")
   elseif(EXISTS "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp")
     set(JSONCPP_FOUND TRUE)
-    message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp/json")
+    message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp")
   elseif(WIN32)
     if(EXISTS "C:/vcpkg/installed/x64-windows/include/json/json.h")
       set(JSONCPP_INCLUDE_DIRS "C:/vcpkg/installed/x64-windows/include/json")
@@ -319,7 +319,7 @@ if(NOT JSONCPP_FOUND)
   if(JSONCPP_FOUND)
     include_directories(SYSTEM ${JSONCPP_INCLUDE_DIRS})
   else()
-    include_directories(SYSTEM /usr/include/json /usr/include/jsoncpp/json /usr/include/x86_64-linux-gnu/jsoncpp/json)
+    include_directories(SYSTEM /usr/include /usr/include/jsoncpp /usr/include/x86_64-linux-gnu/jsoncpp)
     message(WARNING "jsoncpp headers not found, using fallback paths")
   endif()
 endif()
@@ -329,7 +329,7 @@ if(NOT DEFINED JSONCPP_LIBRARIES)
   set(JSONCPP_LIBRARIES "jsoncpp")
 endif()
 if(NOT DEFINED JSONCPP_INCLUDE_DIRS)
-  set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
+  set(JSONCPP_INCLUDE_DIRS "/usr/include")
 endif()
 if(NOT DEFINED JSONCPP_LIBRARY_DIRS)
   set(JSONCPP_LIBRARY_DIRS "")

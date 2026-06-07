@@ -235,6 +235,9 @@ public:
   virtual uint64_t getUnlockedDepositBalance() const = 0;
   virtual uint64_t getUnlockedDepositBalance(const std::string &address) const = 0;
 
+  virtual uint64_t getLockedHeatBalance() const = 0;
+  virtual uint64_t getUnlockedHeatBalance() const = 0;
+
   virtual size_t getTransactionCount() const = 0;
   virtual WalletTransaction getTransaction(size_t transactionIndex) const = 0;
   virtual size_t getTransactionTransferCount(size_t transactionIndex) const = 0;

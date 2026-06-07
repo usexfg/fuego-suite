@@ -12,7 +12,7 @@ type Config struct {
 	DataDir       string
 	CoinUnits     int64
 	StakeAmount   int64
-	BurnTiers     []int64 // 0.8, 8, 80, 800 in atomic
+	BurnTiers     []int64
 	TestTxAmount  int64
 }
 
@@ -28,7 +28,7 @@ var MainnetConfig = Config{
 	DataDir:       ".fuego",
 	CoinUnits:     10000000,
 	StakeAmount:   8000000000,
-	BurnTiers:     []int64{8000000, 80000000, 800000000, 8000000000}, // 0.8, 8, 80, 800 XFG
+	BurnTiers:     []int64{8000000, 80000000, 800000000, 8000000000},
 	TestTxAmount:  10000000,
 }
 
@@ -44,7 +44,7 @@ var TestnetConfig = Config{
 	DataDir:       ".fuego-testnet",
 	CoinUnits:     10000000,
 	StakeAmount:   40000000000,
-	BurnTiers:     []int64{8000000, 80000000, 800000000, 8000000000}, // 0.8, 8, 80, 800 TEST
+	BurnTiers:     []int64{8000000, 80000000, 800000000, 8000000000},
 	TestTxAmount:  1000,
 }
 

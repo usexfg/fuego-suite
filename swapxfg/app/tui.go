@@ -756,11 +756,11 @@ func (m tuiModel) View() string {
 	w := m.width
 	h := m.height
 
-	// Layout rows: ticker(2) + main(h-4) + input(1) + status(1)
+	// Layout rows: ticker(1) + cmdbar(1) + hline(1) + main(h-6) + hline(1) + input(1) + status(1)
 	tickerH := 1
 	inputH := 1
 	statusH := 1
-	mainH := h - tickerH - inputH - statusH - 1 // -1 for borders
+	mainH := h - tickerH - inputH - statusH - 4 // cmdbar(1) + hlines(2) + padding(1)
 	if mainH < 5 {
 		mainH = 5
 	}
@@ -845,11 +845,15 @@ func (m tuiModel) View() string {
 		status = StyleMuted.Render(m.statusMsg)
 	}
 
+	// ── Command bar ──
+	cmdBar := RenderCmdBar(w)
+
 	// ── Border ──
 	hline := lipgloss.NewStyle().Foreground(ColorMuted).Render(strings.Repeat("─", w))
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		ticker,
+		cmdBar,
 		hline,
 		mainArea,
 		hline,
@@ -902,4 +906,24 @@ func RenderDaemonStatus(status *DaemonStatus, lastErr string, w, h int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func RenderCmdBar(w int) string {
+	items := []string{
+		"pair sol|xmr|eth|bch",
+		"c:CD",
+		"d:daemon",
+		"bch connect|lock|claim|refund",
+		"eth lock",
+		"connect metamask|phantom",
+		"offer <amt> <pair>",
+		"accept [id]",
+		"sell cd",
+		"confirm-offer <amt> <pair>",
+		"r:refresh",
+		"q:quit",
+	}
+	joined := strings.Join(items, "  ")
+	style := lipgloss.NewStyle().Foreground(ColorMuted).Width(w).Align(lipgloss.Center)
+	return style.Render(joined)
 }

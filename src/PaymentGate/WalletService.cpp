@@ -984,7 +984,7 @@ namespace PaymentService
     return std::error_code();
   }
 
-  std::error_code WalletService::getBalance(const std::string &address, uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance)
+  std::error_code WalletService::getBalance(const std::string &address, uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance, uint64_t &lockedHeatBalance, uint64_t &unlockedHeatBalance)
   {
     try
     {
@@ -995,6 +995,8 @@ namespace PaymentService
       lockedAmount = wallet.getPendingBalance(address);
       lockedDepositBalance = wallet.getLockedDepositBalance(address);
       unlockedDepositBalance = wallet.getUnlockedDepositBalance(address);
+      lockedHeatBalance = wallet.getLockedHeatBalance();
+      unlockedHeatBalance = wallet.getUnlockedHeatBalance();
     }
     catch (std::system_error &x)
     {
@@ -1006,7 +1008,7 @@ namespace PaymentService
     return std::error_code();
   }
 
-  std::error_code WalletService::getBalance(uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance)
+  std::error_code WalletService::getBalance(uint64_t &availableBalance, uint64_t &lockedAmount, uint64_t &lockedDepositBalance, uint64_t &unlockedDepositBalance, uint64_t &lockedHeatBalance, uint64_t &unlockedHeatBalance)
   {
     try
     {
@@ -1017,6 +1019,8 @@ namespace PaymentService
       lockedAmount = wallet.getPendingBalance();
       lockedDepositBalance = wallet.getLockedDepositBalance();
       unlockedDepositBalance = wallet.getUnlockedDepositBalance();
+      lockedHeatBalance = wallet.getLockedHeatBalance();
+      unlockedHeatBalance = wallet.getUnlockedHeatBalance();
     }
     catch (std::system_error &x)
     {

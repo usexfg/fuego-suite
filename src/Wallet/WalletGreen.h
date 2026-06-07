@@ -144,6 +144,8 @@ private:
   virtual uint64_t getLockedDepositBalance(const std::string &address) const override;
   virtual uint64_t getUnlockedDepositBalance() const override;
   virtual uint64_t getUnlockedDepositBalance(const std::string &address) const override;
+  virtual uint64_t getLockedHeatBalance() const override;
+  virtual uint64_t getUnlockedHeatBalance() const override;
 
   virtual size_t getTransactionCount() const override;
   virtual WalletTransaction getTransaction(size_t transactionIndex) const override;
@@ -481,6 +483,9 @@ protected:
   uint64_t m_pendingBalance;
   uint64_t m_lockedDepositBalance;
   uint64_t m_unlockedDepositBalance;
+
+  uint64_t m_lockedHeatBalance;
+  uint64_t m_unlockedHeatBalance;
 
   uint64_t m_upperTransactionSizeLimit;
   uint32_t m_transactionSoftLockTime;

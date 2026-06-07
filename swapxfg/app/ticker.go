@@ -93,7 +93,7 @@ func RenderTickerWithCD(activePair uint8, prices map[uint8]*SwapPriceResponse, c
 func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse) string {
 	pr := prices[pair]
 	if pr == nil {
-		return StyleMuted.Render("  XFG — H | XFG $— | HEAT $—  |  TWAP: —  Composite: —")
+		return StyleMuted.Render("  XFG — H\u2CB6\u2206T | XFG $— | H\u2CB6\u2206T $—  |  TWAP: —  Composite: —")
 	}
 	
 	twap := pr.Twap
@@ -109,9 +109,9 @@ func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse) string {
 	if hearth == "" || hearth == "0.0" {
 		hearth = "—"
 	} else {
-		// Format to 2 decimals
-		if val, err := strconv.ParseFloat(hearth, 64); err == nil {
-			hearth = fmt.Sprintf("%.2f", val)
+		if val, err := strconv.ParseFloat(hearth, 64); err == nil && val > 0 {
+			// hearth is XFG per HⲶ∆T — invert for HⲶ∆T per XFG
+			hearth = fmt.Sprintf("%.4f", 1.0/val)
 		}
 	}
 
@@ -133,7 +133,7 @@ func RenderPriceLine(pair uint8, prices map[uint8]*SwapPriceResponse) string {
 		}
 	}
 
-	beacon := fmt.Sprintf("XFG %s H | XFG $%s | HEAT $%s", hearth, xfgUsd, heatUsd)
+	beacon := fmt.Sprintf("XFG %s H\u2CB6\u2206T | XFG $%s | H\u2CB6\u2206T $%s", hearth, xfgUsd, heatUsd)
 	rates := fmt.Sprintf("TWAP: %s  Composite: %s", twap, comp)
 	
 	return StyleAccent.Render("  " + beacon + "  ") + StyleMuted.Render("|  " + rates)

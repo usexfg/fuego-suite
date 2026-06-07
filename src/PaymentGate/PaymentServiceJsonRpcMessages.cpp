@@ -221,6 +221,8 @@ void GetBalance::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(lockedAmount, "lockedAmount");
   serializer(lockedDepositBalance, "lockedDepositBalance");
   serializer(unlockedDepositBalance, "unlockedDepositBalance");
+  serializer(lockedHeatBalance, "lockedHeatBalance");
+  serializer(unlockedHeatBalance, "unlockedHeatBalance");
 }
 
 void GetBlockHashes::Request::serialize(CryptoNote::ISerializer &serializer)

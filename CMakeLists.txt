@@ -338,7 +338,7 @@ message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 if(APPLE)
     # Prioritize Homebrew arm64 Boost only on Apple Silicon
     if(EXISTS "/opt/homebrew/opt/boost@1.85/lib")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost@1.85/lib -Wl,-rpath,/opt/homebrew/opt/boost@1.85/lib")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost@1.85/lib")
     endif()
 
     # Also add ICU library paths (arm64 only)
@@ -476,15 +476,6 @@ if(APPLE AND ICU_FOUND)
         if(TARGET ${exec_target})
             message(STATUS "Linking ICU to ${exec_target}")
             target_link_libraries(${exec_target} PRIVATE ${ICU_LIBRARIES})
-
-            # Ensure proper rpath for ICU libraries on macOS
-            if(EXISTS "/opt/homebrew/opt/icu4c/lib")
-                set_target_properties(${exec_target} PROPERTIES
-                    LINK_FLAGS "-L/opt/homebrew/opt/icu4c/lib -Wl,-rpath,/opt/homebrew/opt/icu4c/lib")
-            elseif(EXISTS "/usr/local/opt/icu4c/lib")
-                set_target_properties(${exec_target} PROPERTIES
-                    LINK_FLAGS "-L/usr/local/opt/icu4c/lib -Wl,-rpath,/usr/local/opt/icu4c/lib")
-            endif()
         endif()
     endforeach()
 

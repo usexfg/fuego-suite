@@ -500,6 +500,8 @@ struct GetBalance
     uint64_t lockedAmount;
     uint64_t lockedDepositBalance;
     uint64_t unlockedDepositBalance;
+    uint64_t lockedHeatBalance;
+    uint64_t unlockedHeatBalance;
 
     void serialize(CryptoNote::ISerializer &serializer);
   };

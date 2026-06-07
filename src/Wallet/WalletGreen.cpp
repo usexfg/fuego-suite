@@ -2615,6 +2615,32 @@ namespace CryptoNote
     return m_unlockedDepositBalance;
   }
 
+  uint64_t WalletGreen::getLockedHeatBalance() const
+  {
+    throwIfNotInitialized();
+    throwIfStopped();
+
+    uint64_t total = 0;
+    for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
+      if (dep.depositType == Deposit::Type::HEAT && dep.locked)
+        total += dep.amount + dep.interest;
+    }
+    return total;
+  }
+
+  uint64_t WalletGreen::getUnlockedHeatBalance() const
+  {
+    throwIfNotInitialized();
+    throwIfStopped();
+
+    uint64_t total = 0;
+    for (const auto& dep : m_deposits.get<RandomAccessIndex>()) {
+      if (dep.depositType == Deposit::Type::HEAT && !dep.locked)
+        total += dep.amount + dep.interest;
+    }
+    return total;
+  }
+
   uint64_t WalletGreen::getPendingBalance(const std::string &address) const
   {
     throwIfNotInitialized();

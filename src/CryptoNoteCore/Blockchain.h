@@ -127,6 +127,9 @@ namespace CryptoNote {
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
+    uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
+    uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
+    bool withdrawTreasuryLp(uint64_t sharesToBurn);
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
     uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);

@@ -4212,6 +4212,39 @@ bool Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
   return true;
 }
 
+bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
+  if (sharesToBurn == 0 || sharesToBurn > m_protocolLpShares)
+    return false;
+  if (m_ammPool.totalLpShares == 0 || m_ammPool.isEmpty())
+    return false;
+
+  uint64_t xfgOut = 0, heatOut = 0;
+  ammGetWithdrawalAmounts(sharesToBurn, m_ammPool.totalLpShares,
+      m_ammPool.reserveXfg, m_ammPool.reserveHeat,
+      xfgOut, heatOut);
+
+  if (xfgOut == 0 && heatOut == 0)
+    return false;
+  if (xfgOut > m_ammPool.reserveXfg || heatOut > m_ammPool.reserveHeat)
+    return false;
+
+  m_ammPool.totalLpShares -= sharesToBurn;
+  m_ammPool.reserveXfg    -= xfgOut;
+  m_ammPool.reserveHeat   -= heatOut;
+  m_protocolLpShares      -= sharesToBurn;
+  m_treasuryBalance       += xfgOut;
+  m_treasuryHeatReserve   += heatOut;
+
+  logger(INFO, BRIGHT_GREEN) << "Treasury LP withdrawal: "
+    << "shares=" << sharesToBurn << " → "
+    << m_currency.formatAmount(xfgOut) << " XFG + "
+    << m_currency.formatAmount(heatOut) << " HEAT"
+    << " | protocolLpShares=" << m_protocolLpShares
+    << " | treasuryBal=" << m_currency.formatAmount(m_treasuryBalance)
+    << " | treasuryHeatRes=" << m_currency.formatAmount(m_treasuryHeatReserve);
+  return true;
+}
+
 void Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (m_blocks.empty()) {
     logger(ERROR, BRIGHT_RED) <<

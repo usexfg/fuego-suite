@@ -262,6 +262,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
+    SwapDaemon/Monero/MoneroAddress.cpp
     SwapDaemon/Monero/XmrChainClient.cpp
     SwapDaemon/Ethereum/EthRpcClient.cpp
     SwapDaemon/Ethereum/ContractAbi.cpp
@@ -315,6 +316,12 @@ target_link_libraries(test_sol_htlc_address PRIVATE
 add_executable(test_sol_e2e
     SwapDaemon/tests/test_sol_e2e.cpp)
 target_link_libraries(test_sol_e2e PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Monero address encoding + shared spend pub (A+B)
+add_executable(test_monero_address
+    SwapDaemon/tests/test_monero_address.cpp)
+target_link_libraries(test_monero_address PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # XMR claim/refund adaptor tests (spend-key combine behaviour)
@@ -405,6 +412,7 @@ add_executable(SwapDaemon
     SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
+    SwapDaemon/Monero/MoneroAddress.cpp
     SwapDaemon/Monero/XmrChainClient.cpp
     SwapDaemon/Ethereum/EthRpcClient.cpp
     SwapDaemon/Ethereum/ContractAbi.cpp

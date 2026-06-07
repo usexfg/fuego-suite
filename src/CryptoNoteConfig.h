@@ -129,15 +129,15 @@ namespace CryptoNote
 		}
 
 		// HEAT CD denominations (atomic units, 7 decimal places)
-        const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 HEAT
-        const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 HEAT
-        const uint64_t AMOUNT_TIER_2 =  8000000000;  // 800 HEAT
-        const uint64_t AMOUNT_TIER_3 = 80000000000;  // 8,000 HEAT
+        const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 FIRE
+        const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 FIRE
+        const uint64_t AMOUNT_TIER_2 =  8000000000;  // 800 FIRE
+        const uint64_t AMOUNT_TIER_3 = 80000000000;  // 8,000 FIRE
         // TESTNET TIERS
-        const uint64_t TEST_AMOUNT_TIER_0 =    8000000;  // 0.8 HEAT
-        const uint64_t TEST_AMOUNT_TIER_1 =   80000000;  // 8 HEAT
-        const uint64_t TEST_AMOUNT_TIER_2 =  800000000;  // 80 HEAT
-        const uint64_t TEST_AMOUNT_TIER_3 = 8000000000;  // 800 HEAT
+        const uint64_t TEST_AMOUNT_TIER_0 =    8000000;  // 0.8 FIRE
+        const uint64_t TEST_AMOUNT_TIER_1 =   80000000;  // 8 FIRE
+        const uint64_t TEST_AMOUNT_TIER_2 =  800000000;  // 80 FIRE
+        const uint64_t TEST_AMOUNT_TIER_3 = 8000000000;  // 800 FIRE
 
         // Epoch duration for HEAT CD terms & fees/interest distribution
         const uint64_t EPOCH_DURATION_BLOCKS = 900;  // 5 days (180 blks/day)        // Mainnet: 900 blocks (5 days at 480s/block)
@@ -315,11 +315,11 @@ namespace CryptoNote
  		const uint32_t UPGRADE_HEIGHT_V5                             = 324819; //{Ironborn}  CN7  (variant1)
  		const uint32_t UPGRADE_HEIGHT_V6                             = 345678; //{Ice&fire}  CN8  (variant2)
         const uint32_t UPGRADE_HEIGHT_V7                             = 657000; //Apotheosis  Fango
-		const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
+	const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //{Godflame}  (emission|UPX2|Fuego)
-        const uint32_t UPGRADE_HEIGHT_V10                            = 1100000; //{Harbinja}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
+        const uint32_t UPGRADE_HEIGHT_V10                            = 1003000; //{Wildfire}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH AMM + HEAT_CDs + YELM
-        const uint32_t UPGRADE_HEIGHT_V12                            = 1666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
+        const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

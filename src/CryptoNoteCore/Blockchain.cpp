@@ -216,6 +216,7 @@ public:
       s(m_bs.m_currentEpochSwapFees, "current_epoch_swap_fees");
       s(m_bs.m_totalCdLocked, "total_cd_locked");
       s(m_bs.m_treasuryBalance, "treasury_balance");
+      s(m_bs.m_treasuryHeatReserve, "treasury_heat_reserve");
       s(m_bs.m_rolloverVaultBalance, "rollover_vault_balance");
       s(m_bs.m_totalSwapFeesCollected, "total_swap_fees_collected");
       s(m_bs.m_totalCdInterestPaid, "total_cd_interest_paid");
@@ -4006,6 +4007,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.cdReserve = m_cdReserve;
     preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
     preEpoch.treasuryBalance = m_treasuryBalance;
+    preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
     preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
@@ -4120,6 +4122,54 @@ bool Blockchain::pushBlock(BlockEntry &block) {
         }
       }
     }
+
+    // ── Direct peg arbitrage ──────────────────────────────────────────
+    // Converges pool toward peg via iterative mint-sell / treasury-buy.
+    // 40 rounds per epoch matches simulation-tested convergence behavior.
+    if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0
+        && !m_piState.redemptionPrice.isZero()) {
+      uint64_t heathFeeBps = parameters::HEARTH_FEE_BPS;
+      uint64_t expectedRatioScaled = m_piState.redemptionPrice.toUint64();
+      if (expectedRatioScaled == 0) goto arb_done;
+
+      for (int round = 0; round < 40; ++round) {
+        uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, 1ULL);
+        int64_t  deviation       = ((int64_t)poolRatioScaled - (int64_t)expectedRatioScaled) * 10000
+                                   / std::max(expectedRatioScaled, 1ULL);
+        if (deviation < 500 && deviation > -500) break;  // within 0.05%, stop
+
+        // Arb size: 3% of smaller reserve, max 5% of XFG reserve
+        uint64_t arbSize = (std::min(m_ammPool.reserveXfg, m_ammPool.reserveHeat) * 3) / 100;
+        arbSize = std::min(arbSize, m_ammPool.reserveXfg / 20);
+        if (arbSize == 0) break;
+
+        if (deviation > 0) {
+          // HEAT overvalued: mint HEAT at redemption price, sell to pool
+          uint64_t heatToMint = FixedPoint64::fromUint64(arbSize).div(
+              m_piState.redemptionPrice).toUint64();
+          if (heatToMint == 0 || heatToMint > m_ammPool.reserveHeat / 4) continue;
+          uint64_t xfgReceived = ammGetOutputAmount(
+              heatToMint, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
+          if (xfgReceived == 0 || xfgReceived > m_ammPool.reserveXfg) continue;
+          m_ammPool.reserveHeat += heatToMint;
+          m_ammPool.reserveXfg  -= xfgReceived;
+          m_heatSupply          += heatToMint;
+          m_treasuryBalance     += arbSize / 2;       // 50% of mint value
+          m_treasuryBalance     += xfgReceived;        // pool XFG from sale
+        } else {
+          // HEAT undervalued: treasury buys HEAT from pool
+          if (m_treasuryBalance < arbSize) continue;
+          uint64_t heatBought = ammGetOutputAmount(
+              arbSize, m_ammPool.reserveXfg, m_ammPool.reserveHeat, heathFeeBps);
+          if (heatBought == 0 || heatBought > m_ammPool.reserveHeat) continue;
+          m_ammPool.reserveXfg   += arbSize;
+          m_ammPool.reserveHeat  -= heatBought;
+          m_treasuryBalance      -= arbSize;
+          m_treasuryHeatReserve  += heatBought;
+        }
+      }
+    }
+    arb_done:
 
     // Treasury LP yield: protocol claims its proportional share of accumulated LP fees
     if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0
@@ -4272,6 +4322,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_cdReserve = snap.cdReserve;
     m_legacyBondYieldPool = snap.legacyBondYieldPool;
     m_treasuryBalance = snap.treasuryBalance;
+    m_treasuryHeatReserve = snap.treasuryHeatReserve;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;

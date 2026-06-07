@@ -17,6 +17,7 @@
 // Uses POSIX sockets for HTTP — no external dependencies.
 
 #include "MoneroRpcClient.h"
+#include "MoneroAddress.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -225,37 +226,42 @@ bool MoneroRpcClient::getTransaction(const std::string& txHash, MoneroTxInfo& in
 // Wallet RPC (monero-wallet-rpc, default port 18082)
 // ---------------------------------------------------------------------------
 
+// Decode a 64-char hex string to 32 bytes. Returns false on bad input.
+static bool hexTo32(const std::string& h, std::vector<uint8_t>& out) {
+  if (h.size() != 64) return false;
+  out.resize(32);
+  for (size_t i = 0; i < 32; ++i) {
+    auto nib = [](char c) -> int {
+      if (c >= '0' && c <= '9') return c - '0';
+      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+      if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+      return -1;
+    };
+    int hi = nib(h[2 * i]), lo = nib(h[2 * i + 1]);
+    if (hi < 0 || lo < 0) return false;
+    out[i] = static_cast<uint8_t>((hi << 4) | lo);
+  }
+  return true;
+}
+
 bool MoneroRpcClient::createSharedAddress(const std::string& aliceSpendPub,
                                           const std::string& bobSpendPub,
                                           const std::string& aliceViewPub,
                                           const std::string& bobViewPub,
-                                          std::string& sharedAddress) {
-  // TODO: The shared address for the XMR atomic swap is computed off-chain
-  // by adding the public keys (A_spend + B_spend, A_view + B_view) and then
-  // encoding the result as a standard Monero address. This does NOT go through
-  // monero-wallet-rpc — it is pure Ed25519 point addition done locally.
-  //
-  // For now, we use generate_from_keys to import the shared view key and
-  // the shared spend public key into a watch-only wallet so we can monitor
-  // incoming funds. The actual spend requires both parties' secrets.
-  //
-  // Steps (to be wired up with AdaptorSignature key exchange):
-  //   1. Compute shared_spend_pub = point_add(alice_spend_pub, bob_spend_pub)
-  //   2. Compute shared_view_key  = scalar_add(alice_view_sec, bob_view_sec)
-  //      (both parties share view keys during negotiation)
-  //   3. Derive shared_view_pub   = shared_view_key * G
-  //   4. Encode as Monero mainnet address (network byte 0x12)
-  //
-  // This method is a placeholder that will create a watch-only wallet
-  // via monero-wallet-rpc's "generate_from_keys" once the key exchange
-  // is integrated.
-
-  (void)aliceSpendPub;
-  (void)bobSpendPub;
-  (void)aliceViewPub;
-  (void)bobViewPub;
-  sharedAddress = "";
-  return false;  // Not yet implemented
+                                          std::string& sharedAddress,
+                                          uint64_t networkPrefix) {
+  sharedAddress.clear();
+  std::vector<uint8_t> aS, bS, aV, bV;
+  if (!hexTo32(aliceSpendPub, aS) || !hexTo32(bobSpendPub, bS) ||
+      !hexTo32(aliceViewPub, aV) || !hexTo32(bobViewPub, bV)) {
+    return false;
+  }
+  // shared spend pub = A_spend + B_spend ; shared view pub = A_view + B_view
+  std::vector<uint8_t> sharedSpend, sharedView;
+  if (!MoneroAddress::sharedSpendPub(aS, bS, sharedSpend)) return false;
+  if (!MoneroAddress::sharedSpendPub(aV, bV, sharedView)) return false;
+  sharedAddress = MoneroAddress::encode(sharedSpend, sharedView, networkPrefix);
+  return !sharedAddress.empty();
 }
 
 bool MoneroRpcClient::transferToShared(const std::string& address, uint64_t amount,

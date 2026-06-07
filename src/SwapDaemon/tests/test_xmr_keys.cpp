@@ -14,6 +14,7 @@
 
 #include "SwapDaemon/Monero/AdaptorSignature.h"
 #include "SwapDaemon/Monero/MoneroAddress.h"
+#include "SwapDaemon/Monero/MoneroRpcClient.h"
 #include "crypto/crypto.h"
 
 extern "C" {
@@ -82,6 +83,37 @@ int main() {
   assert(std::memcmp(combined.data(), baScalar, 32) != 0 &&
          "3-term combine must differ from the correct 2-term key");
   std::cout << "  [3] 3-term combineSpendKeys != 2-term (deprecated model)\n";
+
+  // 4. createSharedAddress composes validated pieces: shared spend = A+B,
+  //    shared view = Av+Bv, encoded as a Monero address.
+  {
+    Crypto::PublicKey Av_pk, Bv_pk;
+    Crypto::SecretKey av_sk, bv_sk;
+    Crypto::generate_keys(Av_pk, av_sk);
+    Crypto::generate_keys(Bv_pk, bv_sk);
+    auto hx = [](const uint8_t* p) {
+      static const char* h = "0123456789abcdef";
+      std::string s;
+      for (int i = 0; i < 32; ++i) { s += h[p[i] >> 4]; s += h[p[i] & 15]; }
+      return s;
+    };
+    MoneroRpcClient rpc("127.0.0.1", 0, "127.0.0.1", 0);
+    std::string addr;
+    bool ok = rpc.createSharedAddress(hx(A_pk.data), hx(B_pk.data),
+                                      hx(Av_pk.data), hx(Bv_pk.data),
+                                      addr, MoneroAddress::MAINNET);
+    assert(ok && !addr.empty() && addr[0] == '4' && "shared address derives");
+    std::vector<uint8_t> ss, vv;
+    assert(MoneroAddress::sharedSpendPub(vec32(A_pk.data), vec32(B_pk.data), ss));
+    assert(MoneroAddress::sharedSpendPub(vec32(Av_pk.data), vec32(Bv_pk.data), vv));
+    assert(addr == MoneroAddress::encode(ss, vv, MoneroAddress::MAINNET) &&
+           "createSharedAddress == encode(A+B, Av+Bv)");
+    std::string bad;
+    assert(!rpc.createSharedAddress("zz", hx(B_pk.data), hx(Av_pk.data),
+                                    hx(Bv_pk.data), bad, MoneroAddress::MAINNET) &&
+           "bad hex rejected");
+    std::cout << "  [4] createSharedAddress == encode(A+B, Av+Bv) OK\n";
+  }
 
   std::cout << "=== test_xmr_keys: passed ===\n";
   return 0;

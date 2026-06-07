@@ -44,10 +44,16 @@ public:
   bool getTransaction(const std::string& txHash, MoneroTxInfo& info);
 
   // Wallet RPC (monero-wallet-rpc)
-  // Create a shared 2-of-2 address from Alice's and Bob's view/spend keys
+  // Create a shared 2-of-2 address from Alice's and Bob's spend/view PUBLIC
+  // keys (all 64-char hex). Pure local ed25519 math (no RPC):
+  //   shared spend pub = A_spend + B_spend ; shared view pub = A_view + B_view
+  // then encode as a Monero address with the given network prefix.
+  // (The matching shared *secret* view key = a_view + b_view is assembled by
+  // the negotiation layer so both parties can scan; that wiring is separate.)
   bool createSharedAddress(const std::string& aliceSpendPub, const std::string& bobSpendPub,
                            const std::string& aliceViewPub, const std::string& bobViewPub,
-                           std::string& sharedAddress);
+                           std::string& sharedAddress,
+                           uint64_t networkPrefix = 18 /* Monero mainnet */);
 
   // Transfer XMR to the shared address
   bool transferToShared(const std::string& address, uint64_t amount, MoneroTransferResult& result);

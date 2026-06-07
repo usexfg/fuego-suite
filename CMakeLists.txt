@@ -111,6 +111,9 @@ if(APPLE OR FREEBSD)
     # Add macOS specific definitions for Boost.Asio
     add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1)
 
+    # Disable libc++ availability checks — fixes _LIBCPP_USING_IF_EXISTS on Xcode 16+
+    add_definitions(-D_LIBCPP_DISABLE_AVAILABILITY)
+
     # Fix header search paths for macOS
     if(APPLE)
         # Ensure proper C++ standard library is used
@@ -192,24 +195,34 @@ endif()
 
 # Required components - system is not needed in Boost 1.80+
 # For ARM64 macOS, directly specify Boost paths to avoid x86_64 Boost in /usr/local
-if(APPLE AND EXISTS "/opt/homebrew/opt/boost@1.85/lib")
-    # Skip find_package and directly set Boost variables for ARM64
-    set(Boost_INCLUDE_DIRS "/opt/homebrew/opt/boost@1.85/include")
-    set(Boost_LIBRARIES
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_filesystem-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_thread-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_date_time-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_chrono-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_regex-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_serialization-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_program_options-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_coroutine-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_context-mt.dylib"
-        "/opt/homebrew/opt/boost@1.85/lib/libboost_atomic-mt.dylib"
-    )
-    set(Boost_FOUND TRUE)
-    message(STATUS "Using ARM64 Boost from /opt/homebrew/opt/boost@1.85")
-else()
+if(APPLE)
+    set(_brew_boost "")
+    if(EXISTS "/opt/homebrew/opt/boost/lib")
+        set(_brew_boost "/opt/homebrew/opt/boost")
+    elseif(EXISTS "/opt/homebrew/opt/boost@1.85/lib")
+        set(_brew_boost "/opt/homebrew/opt/boost@1.85")
+    elseif(EXISTS "/opt/homebrew/opt/boost@1.87/lib")
+        set(_brew_boost "/opt/homebrew/opt/boost@1.87")
+    endif()
+    if(_brew_boost)
+        set(Boost_INCLUDE_DIRS "${_brew_boost}/include")
+        set(Boost_LIBRARIES
+            "${_brew_boost}/lib/libboost_filesystem-mt.dylib"
+            "${_brew_boost}/lib/libboost_thread-mt.dylib"
+            "${_brew_boost}/lib/libboost_date_time-mt.dylib"
+            "${_brew_boost}/lib/libboost_chrono-mt.dylib"
+            "${_brew_boost}/lib/libboost_regex-mt.dylib"
+            "${_brew_boost}/lib/libboost_serialization-mt.dylib"
+            "${_brew_boost}/lib/libboost_program_options-mt.dylib"
+            "${_brew_boost}/lib/libboost_coroutine-mt.dylib"
+            "${_brew_boost}/lib/libboost_context-mt.dylib"
+            "${_brew_boost}/lib/libboost_atomic-mt.dylib"
+        )
+        set(Boost_FOUND TRUE)
+        message(STATUS "Using ARM64 Boost from ${_brew_boost}")
+    endif()
+endif()
+if(NOT Boost_FOUND)
     # Required components - system is not needed in Boost 1.80+
     find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 endif()
@@ -222,14 +235,9 @@ message(STATUS "Found Boost Version: ${Boost_VERSION}")
 if(MINGW)
   set(Boost_LIBRARIES "${Boost_LIBRARIES};ws2_32;mswsock;iphlpapi;bcrypt")
 elseif(APPLE)
-  # Ensure proper linking on macOS - prioritize Homebrew arm64 Boost
-  # First: Check for Homebrew arm64 at /opt/homebrew (Apple Silicon)
-  if(EXISTS "/opt/homebrew/opt/boost@1.85/lib")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost@1.85/lib -Wl,-rpath,/opt/homebrew/opt/boost@1.85/lib")
-    link_directories("/opt/homebrew/opt/boost@1.85/lib")
-  elseif(EXISTS "/opt/homebrew/opt/boost/lib")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/boost/lib -Wl,-rpath,/opt/homebrew/opt/boost/lib")
-    link_directories("/opt/homebrew/opt/boost/lib")
+  if(_brew_boost)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L${_brew_boost}/lib -Wl,-rpath,${_brew_boost}/lib")
+    link_directories("${_brew_boost}/lib")
   endif()
   # Skip x86_64 Boost at /usr/local on Apple Silicon to avoid architecture mismatch
 elseif(OPENBSD OR ANDROID)

@@ -32,9 +32,12 @@ jobs:
       - name: Download and Install Boost 1.85
         shell: powershell
         run: |
-          choco install boost-msvc-14.3 --version=1.85.0 -y --allow-downgrade
-          echo "BOOST_ROOT=C:\tools\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_INCLUDE_DIRS=C:\tools\boost\boost_1_85_0\include" >> $env:GITHUB_ENV
+          $Url = "https://sourceforge.net/projects/boost/files/boost-binaries/1.85.0/boost_1_85_0-msvc-14.3-64.exe/download"
+          $OutputPath = "$env:TEMP\boost-installer.exe"
+          Invoke-WebRequest -Uri $Url -OutFile $OutputPath
+          Start-Process -Wait -FilePath $OutputPath "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\thirdparties\boost-1.85.0"
+          echo "BOOST_ROOT=C:\thirdparties\boost-1.85.0" >> $env:GITHUB_ENV
+          echo "BOOST_INCLUDE_DIRS=C:\thirdparties\boost-1.85.0\include" >> $env:GITHUB_ENV
 
       - name: Build
         shell: powershell
@@ -84,13 +87,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost@1.85 openssl@3 icu4c jsoncpp cmake ninja
+          brew install boost openssl@3 icu4c jsoncpp cmake ninja
 
       - name: Build
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
-            -DCMAKE_CXX_FLAGS="-D_LIBCPP_DISABLE_AVAILABILITY"
+            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3
           cmake --build build -j$(sysctl -n hw.logicalcpu)

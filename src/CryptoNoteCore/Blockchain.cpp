@@ -4073,9 +4073,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       if (expectedRatioScaled == 0) goto arb_done;
 
       for (int round = 0; round < 40; ++round) {
-        uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, 1ULL);
+        uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, uint64_t(1));
         int64_t  deviation       = ((int64_t)poolRatioScaled - (int64_t)expectedRatioScaled) * 10000
-                                   / std::max(expectedRatioScaled, 1ULL);
+                                   / std::max(expectedRatioScaled, uint64_t(1));
         if (deviation < 500 && deviation > -500) break;  // within 0.05%, stop
 
         // Arb size: 3% of smaller reserve, max 5% of XFG reserve

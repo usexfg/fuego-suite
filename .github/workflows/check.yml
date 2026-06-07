@@ -29,22 +29,13 @@ jobs:
           choco install openssl -y
           echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
-      - name: Download and Install Boost 1.85
+      - name: Install Boost 1.85 (vcpkg)
         shell: powershell
         run: |
-          $Url = "https://archives.boost.io/release/1.85.0/source/boost_1_85_0.zip"
-          $Zip  = "$env:TEMP\boost.zip"
-          Invoke-WebRequest -Uri $Url -OutFile $Zip
-          Expand-Archive -Path $Zip -DestinationPath C:\boost -Force
-          cd C:\boost\boost_1_85_0
-          .\bootstrap.bat
-          .\b2 --with-filesystem --with-thread --with-date_time --with-chrono `
-              --with-regex --with-serialization --with-program_options `
-              --with-coroutine --with-context --with-atomic `
-              link=static runtime-link=static threading=multi address-model=64 `
-              --build-type=complete stage
-          echo "BOOST_ROOT=C:\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_LIBRARYDIR=C:\boost\boost_1_85_0\stage\lib" >> $env:GITHUB_ENV
+          vcpkg install boost-asio boost-filesystem boost-thread boost-date_time `
+            boost-chrono boost-regex boost-serialization boost-program-options `
+            boost-coroutine boost-context boost-atomic --triplet x64-windows-static
+          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Install legacy FindBoost for CMake 4.x
         shell: bash
@@ -58,11 +49,9 @@ jobs:
           mkdir build
           cd build
           cmake -G "Visual Studio 17 2022" -A x64 `
-            -DBOOST_ROOT="$env:BOOST_ROOT" `
-            -DBOOST_LIBRARYDIR="$env:BOOST_LIBRARYDIR" `
-            -DBoost_NO_BOOST_CMAKE=ON `
-            -DBoost_USE_STATIC_LIBS=ON `
+            -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE" `
             -DCMAKE_MODULE_PATH="${{ github.workspace }}\cmake" `
+            -DBoost_NO_BOOST_CMAKE=ON `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
           msbuild fuegoX.sln /p:Configuration=Release /m
 

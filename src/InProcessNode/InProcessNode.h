@@ -157,10 +157,9 @@ private:
   CryptoNote::ICryptoNoteProtocolQuery& protocol;
   Tools::ObserverManager<INodeObserver> observerManager;
 
-   boost::asio::io_context ioService;
-   std::unique_ptr<std::thread> workerThread;
-   std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work;
-
+  boost::asio::io_service ioService;
+  std::unique_ptr<std::thread> workerThread;
+  std::unique_ptr<boost::asio::io_service::work> work;
 
   BlockchainExplorerDataBuilder blockchainExplorerDataBuilder;
 

@@ -251,7 +251,7 @@ namespace CryptoNote
         const uint64_t BASIN_STABILITY_RANGE  = 10;                 // ±10% deviation = stable
         const uint64_t BASIN_EXIT_THRESHOLD   = 3;                  // exit basin after 3 epochs outside
         const uint64_t BASIN_REBALANCE_MULT   = 200;                // rebalance at 2× basin half-width
-        const uint64_t PROTOCOL_LP_MAX_FRACTION = 40;               // max 40% of pool owned by protocol
+        const uint64_t PROTOCOL_LP_MAX_FRACTION = 50;               // max 50% of pool owned by protocol
         const uint64_t PROTOCOL_REBALANCE_MAX  = 10;                // max 10% of treasury per rebalance
 
         // Oracle quality gates (game-theory defense against thin-pair manipulation)

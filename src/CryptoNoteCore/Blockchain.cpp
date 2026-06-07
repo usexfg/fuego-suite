@@ -3586,7 +3586,8 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
           // Check for HEAT commitment (0x08) - permanent burn
           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            permanentBurns += heatCommit.amount;
+            permanentBurns += heatCommit.amount / 2;                    // 50% → Eternal Flame (emission recycling)
+            m_treasuryBalance += heatCommit.amount - (heatCommit.amount / 2); // 50% → Treasury (peg defense)
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
             // Index the HEAT commitment for RPC queries

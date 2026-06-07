@@ -605,7 +605,7 @@ CD yield currently buys HEAT from AMM each epoch in a single lump. After YEM: th
 
 With 2-way mint/burn (HEAT flatcoin):
 - **HEAT > peg**: XFG burns → HEAT mints → 8% scalp fires → YEM Reserve grows
-- **HEAT < peg**: HEAT burns → XFG mints → no scalp, direction reversed
+- **HEAT < peg**: No minting activity. Treasury buys HEAT from AMM pool (peg defense).
 
 The burn scalp is pro-cyclical: it collects when HEAT is overvalued, just as the SWF should be accumulating for the inevitable lean period. The SWF architecture already handles this — high-yield epochs build reserves; low-yield epochs draw them. The 2-way peg doesn't change the model; it validates it.
 

@@ -1,7 +1,9 @@
 # Transforming HEAT into a Stablecoin: Architectural Vision
 
 ## Context
-Currently in the Fuego ecosystem, HEAT is a cross-chain ERC-20 token minted by permanently burning XFG via a zero-knowledge commitment and bridge mechanism. Currently, HEAT is treated as a speculative reward token for reducing the XFG supply. The Fuego blockchain incorporates confidential deposits (CDs), earning swap fees from LP pools, native atomic swaps, and zero-knowledge privacy out of the box.
+**IMPLEMENTATION REALITY (v10):** HEAT is one-way mint only. XFG is burned to create HEAT.
+HEAT exits via the Hearth AMM pool (swap for XFG). No protocol burn/redeem path exists.
+The "redemption" sections below are aspirational design, not implemented.
 
 Reimagining HEAT as a stablecoin (e.g., pegged to $1 USD) changes the core Fuego value proposition from pure speculation into an expansive, privacy-first DeFi network with a highly useful, stable unit of account.
 

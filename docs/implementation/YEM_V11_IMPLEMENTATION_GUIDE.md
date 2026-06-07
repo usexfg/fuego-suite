@@ -27,10 +27,9 @@ HEAT Mint (XFG burned):
                │
                ├──  8% → YEM Reserve (scalp — paper credit)
                │
-               └── 92% → Tre/Min/SWF dynamic split:
-                           TRE² = 15-60% → Treasury
-                           MIN³ = 10-60% → Eternal Flame (recycled via block rewards)
-                           SWF³ = 25-40% → Sovereign Wealth Fund
+               └── 92% → split:
+                           46% → Eternal Flame (MIN flat 50%, recycled via block rewards)
+                           46% → Treasury + SWF (split by need)
 
 HEAT Burn (redemption):
   95% of redemption value → from Collateral Reserve → user
@@ -44,21 +43,29 @@ Atomic Swap Fees (2%):
   100% → CD yield pool (unchanged)
 ```
 
-### Dynamic Mint Split Bands
+### Mint Split
 
-| Peg deviation | TRE% | MIN% | SWF% |
+MIN is flat 50% of the 92% post-scalp share — always goes to Eternal Flame.
+
+TRE/SWF split of the remaining 46% is need-based:
+
+| Condition | TRE% | SWF% | Why |
 |---|---|---|---|
-| < 1% | 15 | 60 | 25 |
-| 1-3% | 40 | 20 | 40 |
-| > 3% | 60 | 10 | 30 |
-
-Tight peg → maximize mining. Loose peg → save more to treasury + SWF.
+| Peg tight (<1%) | 10 → Treasury | 36 → SWF | Save for lean epochs |
+| Peg moderate (1-3%) | 23 → Treasury | 23 → SWF | Balanced |
+| Peg loose (>3%) | 36 → Treasury | 10 → SWF | Treasury defends peg |
+| SWF low (<50K) | 0 → Treasury | 46 → SWF | Priority: refill SWF |
+| Treasury full (>500K) | 0 → Treasury | 46 → SWF | Divert surplus |
 
 ---
 
 ## 2. Implementation Phases
 
-### Phase 1 — Burn Scalp & Mint Split
+### Phase 1 — Burn Scalp & Flat Mint Split
+
+**Files:** `Blockchain.cpp` (pushToBankingIndex)
+
+After accumulating `permanentBurns` and `m_heatMintPremiumAccumulator` from HEAT commitments, before `addForeverDeposit()`:
 
 **Files:** `Blockchain.cpp` (pushToBankingIndex)
 

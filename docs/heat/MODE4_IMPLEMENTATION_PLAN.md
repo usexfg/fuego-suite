@@ -12,7 +12,8 @@ Where `HEAT_PEG = 158` (CPI index, representing $1.58 in Dec 2008 dollars, BLS C
 
 This eliminates: PI controller (Kp, Ki, integral, rate clamp, Hill damping), basin discovery (4-phase state machine), self-referencing target (`launchTwap/currentTwap`), protocol rebalancer, CD spend multiplier.
 
-Arbitrage handles peg maintenance. Two-way create/destroy (mint XFG→HEAT, burn HEAT→XFG) provides symmetric peg pressure.
+Arbitrage handles peg maintenance. One-way mint (XFG→HEAT) plus AMM pool trading provides
+directionally symmetric peg pressure through arbitrage and treasury operations.
 
 Oracle: Exbitron as primary, SwapXFG atomic swap TWAP as fallback. Last-known-good during staleness.
 
@@ -328,14 +329,14 @@ Protocol creates HEAT at redemption_price = HEAT_PEG / oracle_price
 8% scalp → 0.08 XFG credited to YEM Reserve
 ```
 
-### Burn (HEAT → XFG) — NEW
+### HEAT Exit (via AMM pool only — no burn/redeem path) — CORRECTED
 
 ```
-User burns HEAT → sends to burn address
-Protocol creates XFG at redemption_price = HEAT_PEG / oracle_price
-100 HEAT burned → 100 * (1.58/5) = 31.6 XFG returned
-5% premium → 30.02 XFG to user, 1.58 XFG to treasury
-Supply: HEAT -= 100, XFG += 31.6
+HEAT exits ONLY through the Hearth AMM pool (trade HEAT for XFG).
+No protocol burn/redeem path exists.
+
+Peg defense (HEAT < peg):   Treasury buys HEAT from pool, holds it as reserve asset.
+Peg arbitrage (HEAT > peg): Protocol mints HEAT, sells to pool for XFG → Treasury.
 ```
 
 ## Hardfork Activation

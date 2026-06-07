@@ -40,6 +40,17 @@ test_specialist_report.txt
 *.tmp
 .dsp
 
+__pycache__
+.mcp.json
+fuego_blockchain_specialist.py
+fuego_specialist_config.json
+rag_system.py
+payment_gate.log
+mcp_server.py
+codebase_mapper.py
+analyze_fuego_code.py
+AGENTS.md
+
 
 /CMakeFiles/
 /src/CMakeFiles/*

@@ -32,9 +32,13 @@ jobs:
       - name: Download and Install Boost 1.85
         shell: powershell
         run: |
-          choco install boost-msvc-14.3 --version=1.85.0 -y --allow-downgrade --ignore-checksums
-          echo "BOOST_ROOT=C:\tools\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_INCLUDE_DIRS=C:\tools\boost\boost_1_85_0\include" >> $env:GITHUB_ENV
+          $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
+          $OutputPath = "$env:TEMP\boost.exe"
+          Invoke-WebRequest -Uri $Url -OutFile $OutputPath -MaximumRedirection 5
+          Get-Item $OutputPath | Select-Object Length
+          Start-Process -Wait -FilePath $OutputPath "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
+          echo "BOOST_INCLUDE_DIRS=C:\boost\include" >> $env:GITHUB_ENV
 
       - name: Build
         shell: powershell

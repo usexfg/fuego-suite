@@ -36,7 +36,6 @@ struct uint128_t {
 
     uint128_t() : lo(0), hi(0) {}
     uint128_t(uint64_t v) : lo(v), hi(0) {}
-    uint128_t(int64_t v) : lo((uint64_t)v), hi(v < 0 ? UINT64_MAX : 0) {}
     uint128_t(uint64_t _hi, uint64_t _lo) : lo(_lo), hi(_hi) {}
 
     uint128_t& operator=(uint64_t v) { lo = v; hi = 0; return *this; }
@@ -93,7 +92,7 @@ struct uint128_t {
             r.lo = _udiv128(rem, lo, o.lo, &rem);
             return r;
         }
-        uint128_t q(0);
+        uint128_t q(uint64_t(0));
         uint128_t r(*this);
         int bits = 128;
         for (int i = 127; i >= 0 && r >= o; --i) {

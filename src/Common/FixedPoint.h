@@ -61,7 +61,7 @@ private:
   struct Raw {};
   FixedPoint64(int128_t raw, Raw) : m_value(raw) {}
 
-  static const int128_t ONE = (int128_t)1 << 64;
+  static const int128_t ONE;
 };
 
 } // namespace CryptoNote

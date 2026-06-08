@@ -11,6 +11,8 @@
 
 namespace CryptoNote {
 
+const int128_t FixedPoint64::ONE = int128_t(uint64_t(1) << 64);
+
 static const uint64_t MASK64 = (uint64_t)-1;
 
 FixedPoint64 FixedPoint64::fromUint64(uint64_t v) {

@@ -1485,9 +1485,11 @@ namespace CryptoNote
 
     newStorage.flush();
     m_containerStorage.swap(newStorage);
+#ifndef _WIN32
     if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
       m_logger(WARNING) << "Failed to set restrictive permissions on wallet file";
     }
+#endif
     incNextIv();
 
     m_viewPublicKey = viewPublicKey;
@@ -1608,9 +1610,11 @@ namespace CryptoNote
       copyContainerStoragePrefix(m_containerStorage, m_key, newStorage, newStorageKey);
       copyContainerStorageKeys(m_containerStorage, m_key, newStorage, newStorageKey);
       saveWalletCache(newStorage, newStorageKey, saveLevel, extra);
+#ifndef _WIN32
       if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
         m_logger(WARNING) << "Failed to set restrictive permissions on exported keys";
       }
+#endif
 
       failExitHandler.cancel();
 
@@ -1664,9 +1668,11 @@ namespace CryptoNote
       copyContainerStoragePrefix(m_containerStorage, m_key, newStorage, newStorageKey);
       copyContainerStorageKeys(m_containerStorage, m_key, newStorage, newStorageKey);
       saveWalletCache(newStorage, newStorageKey, saveLevel, extra);
+#ifndef _WIN32
       if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
         m_logger(WARNING) << "Failed to set restrictive permissions on exported wallet";
       }
+#endif
 
       failExitHandler.cancel();
 
@@ -1741,9 +1747,11 @@ namespace CryptoNote
     }
 
     tmpFileDeleter.cancel();
+#ifndef _WIN32
     if (chmod(path.c_str(), S_IRUSR | S_IWUSR) != 0) {
       m_logger(WARNING) << "Failed to set restrictive permissions on converted wallet";
     }
+#endif
     m_logger(INFO, BRIGHT_WHITE) << "Wallet file converted! Previous version: " << bakPath;
   }
 

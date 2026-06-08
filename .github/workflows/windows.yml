@@ -20,7 +20,6 @@ jobs:
       - name: Install OpenSSL
         shell: pwsh
         run: |
-          choco install openssl --version=3.3.2 -y --no-progress
           $candidates = @(
             "C:\Program Files\OpenSSL-Win64",
             "C:\Program Files\OpenSSL",
@@ -31,7 +30,15 @@ jobs:
             $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
           }
-          if (-not $openssl) { throw "OpenSSL install not found" }
+          if (-not $openssl) {
+            choco install openssl -y --no-progress
+            $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+            if (-not $openssl) {
+              $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+            }
+          }
+          if (-not $openssl) { throw "OpenSSL not found" }
           Write-Host "OPENSSL_ROOT_DIR=$openssl"
           echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
 

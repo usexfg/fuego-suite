@@ -22,6 +22,8 @@ jobs:
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.1
+      - name: Install vcpkg dependencies
+        run: vcpkg install icu:x64-windows
 
       - name: Install Boost 1.85
         shell: pwsh
@@ -36,7 +38,8 @@ jobs:
         shell: pwsh
         run: |
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
-            -DBOOST_ROOT="C:\boost"
+            -DBOOST_ROOT="C:\boost" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           cmake --build "${{ github.workspace }}/build" --config Release -j 4
 
   build-ubuntu24:

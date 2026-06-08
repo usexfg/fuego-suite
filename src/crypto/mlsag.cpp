@@ -21,7 +21,11 @@
 #include "mlsag.h"
 #include "crypto.h"
 
+#ifdef _MSC_VER
+#include <malloc.h>
+#else
 #include <alloca.h>
+#endif
 #include <cassert>
 #include <cstring>
 

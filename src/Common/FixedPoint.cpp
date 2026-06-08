@@ -72,7 +72,7 @@ FixedPoint64 FixedPoint64::negate() const {
 }
 
 FixedPoint64 FixedPoint64::exp_approx(FixedPoint64 x) {
-  int128_t two = (int128_t)2 << 64;
+  int128_t two = int128_t(uint64_t(2)) << 64;
   if (x.m_value > two)  x.m_value = two;
   if (x.m_value < -two) x.m_value = -two;
 

@@ -167,6 +167,9 @@ struct int128_t {
         return int128_t(val * o.val, neg != o.neg);
     }
 
+    int128_t operator*(int64_t v) const  { return *this * int128_t(v); }
+    int128_t operator*(uint64_t v) const { return *this * int128_t(v); }
+
     int128_t operator/(const int128_t& o) const {
         return int128_t(val / o.val, neg != o.neg);
     }

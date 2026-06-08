@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 if(POLICY CMP0167)
-  if(WIN32)
-    cmake_policy(SET CMP0167 OLD)
-  else()
-    cmake_policy(SET CMP0167 NEW)
-  endif()
+  cmake_policy(SET CMP0167 NEW)
 endif()
 
 if(POLICY CMP0144)

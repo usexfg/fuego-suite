@@ -593,6 +593,7 @@ target_link_libraries(Optimizer PRIVATE
 )
 
 find_package(OpenSSL REQUIRED)
+target_link_libraries(Wallet PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(SwapDaemon PRIVATE
     SwapDaemonLib
     Crypto Common Logging Crypto Common

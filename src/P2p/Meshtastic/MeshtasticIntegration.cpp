@@ -14,8 +14,12 @@
 
 #include "MeshtasticIntegration.h"
 #include <cstring>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <io.h>
+#define portable_close _close
+#else
 #include <unistd.h>
+#define portable_close close
 #endif
 
 namespace FuegoMeshtastic {
@@ -29,7 +33,7 @@ MeshtasticIntegration::MeshtasticIntegration() : pImpl(std::make_unique<Impl>())
 
 MeshtasticIntegration::~MeshtasticIntegration() {
   if (pImpl->fd >= 0) {
-    close(pImpl->fd);
+    portable_close(pImpl->fd);
   }
 }
 

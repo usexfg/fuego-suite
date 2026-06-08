@@ -90,7 +90,7 @@ struct uint128_t {
             uint64_t rem;
             r.hi = hi / o.lo;
             rem  = hi % o.lo;
-            r.lo = _udiv128(r.hi, rem, lo, o.lo, &rem);
+            r.lo = _udiv128(rem, lo, o.lo, &rem);
             return r;
         }
         uint128_t q(0);

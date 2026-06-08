@@ -30,7 +30,7 @@ jobs:
         shell: powershell
         run: |
           $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
-          curl -L $Url -o "$env:TEMP\boost.exe"
+          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe"
           Start-Process -Wait "$env:TEMP\boost.exe" "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
           echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
 

@@ -32,9 +32,7 @@ jobs:
       - name: Install Boost 1.85 (vcpkg)
         shell: powershell
         run: |
-          vcpkg install boost-asio boost-filesystem boost-thread boost-date_time `
-            boost-chrono boost-regex boost-serialization boost-program-options `
-            boost-coroutine boost-context boost-atomic --triplet x64-windows-static
+          vcpkg install boost-asio boost-filesystem boost-thread boost-date-time boost-chrono boost-regex boost-serialization boost-program-options boost-coroutine boost-context boost-atomic --triplet x64-windows-static
           echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Install legacy FindBoost for CMake 4.x

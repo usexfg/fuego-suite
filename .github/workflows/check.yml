@@ -20,37 +20,24 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install msbuild
-        uses: microsoft/setup-msbuild@v1.1
+      - uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install OpenSSL
-        shell: powershell
-        run: |
-          choco install openssl -y
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
+      - name: Setup CMake 3.31
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.31.6"
 
-      - name: Install Boost 1.85 (vcpkg)
-        shell: powershell
+      - name: Install OpenSSL (choco)
+        run: choco install openssl -y
+
+      - name: Install Boost (vcpkg)
         run: |
           vcpkg install boost-asio boost-filesystem boost-thread boost-date-time boost-chrono boost-regex boost-serialization boost-program-options boost-coroutine boost-context boost-atomic --triplet x64-windows-static
-          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
-
-      - name: Install legacy FindBoost for CMake 4.x
-        shell: bash
-        run: |
-          curl -sL https://raw.githubusercontent.com/Kitware/CMake/v3.30.0/Modules/FindBoost.cmake -o FindBoost.cmake
 
       - name: Build
-        shell: powershell
         run: |
-          mkdir build
-          cd build
-          cmake -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE" `
-            -DCMAKE_MODULE_PATH=".." `
-            -DBoost_NO_BOOST_CMAKE=ON `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
-          msbuild fuegoX.sln /p:Configuration=Release /m
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL-Win64"
+          cmake --build build --config Release -j 4
 
   build-ubuntu24:
     name: Ubuntu 24.04

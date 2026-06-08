@@ -21,9 +21,9 @@ jobs:
           submodules: recursive
 
       - name: Setup CMake 3.31
-        uses: lukka/get-cmake@latest
+        uses: carloscn/setup-cmake@v1
         with:
-          cmakeVersion: "3.31.6"
+          cmake-version: "3.31.6"
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.1

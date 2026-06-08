@@ -27,19 +27,19 @@ jobs:
         run: choco install openssl -y
 
       - name: Install Boost 1.85
-        shell: powershell
+        shell: pwsh
         run: |
+          $ProgressPreference = 'SilentlyContinue'
           $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
-          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe"
-          Start-Process -Wait "$env:TEMP\boost.exe" "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
           echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
 
       - name: Build
-        shell: powershell
+        shell: pwsh
         run: |
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_POLICY_DEFAULT_CMP0167=OLD `
-            -DBOOST_ROOT="$env:BOOST_ROOT" `
+            -DBOOST_ROOT="C:\boost" `
             -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL-Win64"
           cmake --build "${{ github.workspace }}/build" --config Release -j 4
 

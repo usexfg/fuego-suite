@@ -18,38 +18,38 @@ jobs:
         uses: microsoft/setup-msbuild@v1.1
 
       - name: Install OpenSSL
-        shell: powershell
+        shell: pwsh
         run: |
           choco install openssl -y
           echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
-      - name: Download and Install Boost 1.85
-        shell: powershell
+      - name: Install Boost 1.85
+        shell: pwsh
         run: |
-          choco install boost-msvc-14.3 --version=1.85.0 -y --allow-downgrade
-          echo "BOOST_ROOT=C:\tools\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_INCLUDE_DIRS=C:\tools\boost\boost_1_85_0\include" >> $env:GITHUB_ENV
+          $ProgressPreference = 'SilentlyContinue'
+          $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
+          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
 
       - name: Build
         id: build
-        shell: powershell
+        shell: pwsh
         run: |
           $sha = "${{ github.sha }}"
           $xfg_ver = $sha.SubString(0,7)
           $release_name = "fuego-cli-win64-v$xfg_ver"
 
-          mkdir build
-          cd build
-          cmake -G "Visual Studio 17 2022" -A x64 `
-            -DBOOST_ROOT="$env:BOOST_ROOT" `
-            -DBOOST_INCLUDE_DIRS="$env:BOOST_INCLUDE_DIRS" `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
-          msbuild fuegoX.sln /p:Configuration=Release /m
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DBOOST_ROOT="C:\boost" `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+          cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS
 
-          cd src\Release
+          cd "${{ github.workspace }}/build/src/Release"
           Compress-Archive -Path *.exe -DestinationPath "$release_name.zip"
           $sha256 = (Get-FileHash "$release_name.zip").Hash
-          $asset_path = ".\src\Release\$release_name.zip"
+          $asset_path = "${{ github.workspace }}/build/src/Release/$release_name.zip"
           echo "sha256=${sha256}" >> $env:GITHUB_OUTPUT
           echo "release_name=${release_name}.zip" >> $env:GITHUB_OUTPUT
           echo "asset_path=${asset_path}" >> $env:GITHUB_OUTPUT

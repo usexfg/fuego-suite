@@ -72,6 +72,8 @@ endif()
 
 # Debug/Release flags - platform-specific
 if(MSVC)
+    # Prevent windows.h from #define'ing ERROR=0, which breaks Logging::ERROR
+    add_definitions(-DNOGDI -DNOMINMAX)
     # MSVC uses different optimization and warning flags
     set(CMAKE_C_FLAGS_DEBUG   "/Zi /Od /MDd")
     set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /MDd")

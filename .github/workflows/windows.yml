@@ -8,7 +8,7 @@ on:
 jobs:
   build-windows:
     name: Windows
-    runs-on: windows-2025
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,12 +16,6 @@ jobs:
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1.1
-
-      - name: Install OpenSSL
-        shell: pwsh
-        run: |
-          choco install openssl -y
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
       - name: Install Boost 1.85
         shell: pwsh
@@ -42,8 +36,7 @@ jobs:
 
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
             -G "Visual Studio 17 2022" -A x64 `
-            -DBOOST_ROOT="C:\boost" `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+            -DBOOST_ROOT="C:\boost"
           cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS
 
           cd "${{ github.workspace }}/build/src/Release"

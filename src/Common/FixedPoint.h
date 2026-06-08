@@ -21,9 +21,9 @@ namespace CryptoNote {
 
 class FixedPoint64 {
 public:
-  FixedPoint64() : m_value(0) {}
+  FixedPoint64() : m_value(uint64_t(0)) {}
 
-  static FixedPoint64 zero()   { return FixedPoint64(0, Raw{}); }
+  static FixedPoint64 zero()   { return FixedPoint64(int128_t(uint64_t(0)), Raw{}); }
   static FixedPoint64 one()    { return FixedPoint64(ONE, Raw{}); }
   static FixedPoint64 fromUint64(uint64_t v);
   static FixedPoint64 fromRatio(uint64_t num, uint64_t denom);

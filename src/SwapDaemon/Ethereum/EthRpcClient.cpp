@@ -18,6 +18,7 @@
 #include "Crypto/RlpEncoder.h"
 #include "crypto/keccak.h"
 
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -25,6 +26,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/select.h>
+#endif
 
 #include <atomic>
 #include <cstring>

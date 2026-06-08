@@ -2,10 +2,12 @@
 
 #include "StatusServer.h"
 
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
 #include <cstring>
 #include <sstream>
 

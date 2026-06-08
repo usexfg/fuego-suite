@@ -236,7 +236,7 @@ public:
         s(twap_lo, "twap_lo");
         s(twap_hi, "twap_hi");
         if (s.type() == ISerializer::INPUT)
-          m_bs.m_twapAccumulator = ((unsigned __int128)twap_hi << 64) | twap_lo;
+          m_bs.m_twapAccumulator = ((uint128_t)twap_hi << 64) | twap_lo;
       }
       s(m_bs.m_piState, "pi_state");
       s(m_bs.m_heatLaunchTwap, "heat_launch_twap");
@@ -3283,7 +3283,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   // TWAP accumulation per block (v11+) — spot price stored in Q64.64
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty()) {
     uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-    unsigned __int128 q64 = ((unsigned __int128)spotPrice << 64) / 1000000000000000000ULL;
+    uint128_t q64 = ((uint128_t)spotPrice << 64) / 1000000000000000000ULL;
     m_twapAccumulator += q64;
     m_twapBlockCount++;
   }
@@ -3989,11 +3989,11 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     }
 
     // Compute fee rates for this epoch on both tracks.
-    // Use __uint128_t for the intermediate product to prevent uint64_t overflow
+    // Use uint128_t for the intermediate product to prevent uint64_t overflow
     uint64_t epochFeeRate = 0;
     if (epochCdLocked > 0 && regularCdShare > 0) {
       epochFeeRate = static_cast<uint64_t>(
-          (__uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+          (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShare, epochCdLocked);
 
@@ -4001,7 +4001,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     uint64_t legacyEpochFeeRate = 0;
     if (epochLegacyBondLocked > 0 && legacyBondShare > 0) {
       legacyEpochFeeRate = static_cast<uint64_t>(
-          (__uint128_t)legacyBondShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochLegacyBondLocked);
+          (uint128_t)legacyBondShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochLegacyBondLocked);
     }
     m_commitmentIndex.recordLegacyEpochFeeRate(epochNumber, legacyEpochFeeRate, legacyBondShare, epochLegacyBondLocked);
 
@@ -4318,7 +4318,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;
-    m_twapAccumulator = ((unsigned __int128)snap.twapAccumulatorHi << 64) | snap.twapAccumulatorLo;
+    m_twapAccumulator = ((uint128_t)snap.twapAccumulatorHi << 64) | snap.twapAccumulatorLo;
     m_twapBlockCount = snap.twapBlockCount;
     m_ammPool.reserveXfg = snap.ammReserveXfg;
     m_ammPool.reserveHeat = snap.ammReserveHeat;
@@ -4720,8 +4720,8 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         if (swap.direction == 0) {
           uint64_t preXfg = m_ammPool.reserveXfg - swap.inputAmount;
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
-          uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveHeat
-            * swap.inputAmount * feeAdj) / ((unsigned __int128)preXfg * parameters::HEARTH_FEE_DIVISOR));
+          uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveHeat
+            * swap.inputAmount * feeAdj) / ((uint128_t)preXfg * parameters::HEARTH_FEE_DIVISOR));
           uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, m_ammPool.reserveHeat, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
           if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;
@@ -4730,8 +4730,8 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         } else {
           uint64_t preHeat = m_ammPool.reserveHeat - swap.inputAmount;
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
-          uint64_t outputAmount = (uint64_t)(((unsigned __int128)m_ammPool.reserveXfg
-            * swap.inputAmount * feeAdj) / ((unsigned __int128)preHeat * parameters::HEARTH_FEE_DIVISOR));
+          uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveXfg
+            * swap.inputAmount * feeAdj) / ((uint128_t)preHeat * parameters::HEARTH_FEE_DIVISOR));
           uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, m_ammPool.reserveXfg, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
           if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;

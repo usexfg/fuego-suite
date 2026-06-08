@@ -17,11 +17,13 @@
 
 #include <cstring>
 #include <algorithm>
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <netdb.h>
+#endif
 
 namespace XfgSwap {
 

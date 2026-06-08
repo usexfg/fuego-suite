@@ -14,7 +14,9 @@
 
 #include "MeshtasticIntegration.h"
 #include <cstring>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 namespace FuegoMeshtastic {
 

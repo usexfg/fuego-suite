@@ -20,6 +20,7 @@
 #pragma once
 
 #include "PoolTypes.h"
+#include "Common/Int128.h"
 #include <cstdint>
 
 namespace XfgSwap {
@@ -43,7 +44,7 @@ uint64_t poolGetInputAmount(uint64_t outputAmount,
 
 // Calculate fee amount from input.
 inline uint64_t poolGetFeeAmount(uint64_t inputAmount, uint32_t feeBps) {
-  return (uint64_t)((unsigned __int128)inputAmount * feeBps / 10000);
+  return (uint64_t)((uint128_t)inputAmount * feeBps / 10000);
 }
 
 // ─── LP share calculations ───────────────────────────────────────────

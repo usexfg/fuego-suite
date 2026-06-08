@@ -1,6 +1,7 @@
 // Copyright (c) 2017-2026 Fuego Developers
 #include "gtest/gtest.h"
 #include "CryptoNoteCore/AmmPool.h"
+#include "Common/Int128.h"
 
 using namespace CryptoNote;
 
@@ -18,8 +19,8 @@ TEST(AmmPool, SwapInvariant) {
   // Constant product must hold: (R+i)*(H-o) ≈ R*H (slightly larger from fee)
   uint64_t R = 1000, H = 2000, input = 100;
   uint64_t output = ammGetOutputAmount(input, R, H, 30);
-  unsigned __int128 before = (unsigned __int128)R * H;
-  unsigned __int128 after  = (unsigned __int128)(R + input) * (H - output);
+  uint128_t before = (uint128_t)R * H;
+  uint128_t after  = (uint128_t)(R + input) * (H - output);
   EXPECT_GE(after, before);
 }
 

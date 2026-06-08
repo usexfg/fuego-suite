@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <HTTP/httplib.h>
+#include "Common/Int128.h"
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
 #include "SwapTimelock.h"
@@ -1600,9 +1601,9 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     //   requiredCtr = fillAmount(atomic XFG) * ctrDivisor / rateNum
     // The 1e7 scaling on rateNum and (implicitly) on fillAmount cancels out.
     uint64_t ctrDiv = static_cast<uint64_t>(m_oracle.ctrDivisor(pair));
-    __uint128_t num = static_cast<__uint128_t>(fillAmount) * ctrDiv;
-    __uint128_t result = num / static_cast<__uint128_t>(targetOffer.rateNum);
-    if (result > static_cast<__uint128_t>(UINT64_MAX)) {
+    uint128_t num = static_cast<uint128_t>(fillAmount) * ctrDiv;
+    uint128_t result = num / static_cast<uint128_t>(targetOffer.rateNum);
+    if (result > static_cast<uint128_t>(UINT64_MAX)) {
       m_logger(Logging::ERROR) << "CTR amount overflow for offer " << offerId;
       return false;
     }

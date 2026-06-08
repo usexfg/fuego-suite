@@ -14,11 +14,13 @@
 
 #include "SwapP2P.h"
 
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#endif
 #include <cstring>
 #include <chrono>
 #include <algorithm>

@@ -15,11 +15,9 @@
 #pragma once
 
 #include <cstdint>
+#include "Int128.h"
 
 namespace CryptoNote {
-
-typedef          __int128  int128_t;
-typedef unsigned __int128 uint128_t;
 
 class FixedPoint64 {
 public:

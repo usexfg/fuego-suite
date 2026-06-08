@@ -21,6 +21,10 @@
 #include <fstream>
 #include <sys/stat.h>
 
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & S_IFDIR) == S_IFDIR)
+#endif
+
 #ifdef _WIN32
     #ifdef _MSC_VER
         #include <direct.h>

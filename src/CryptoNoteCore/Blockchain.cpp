@@ -3336,7 +3336,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
       computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration, parameters::HEAT_STABILITY_MODE);
     }
-    int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : 0;
+    int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : int128_t(uint64_t(0));
     // Reset TWAP for next epoch
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;

@@ -116,7 +116,7 @@ bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
   uint128_t delta = (expectedRatio > actualRatio) ?
     (expectedRatio - actualRatio) : (actualRatio - expectedRatio);
 
-  uint128_t maxDelta = expectedRatio * toleranceBps / FEE_DIVISOR;
+  uint128_t maxDelta = expectedRatio * (uint64_t)toleranceBps / FEE_DIVISOR;
   return delta <= maxDelta;
 }
 

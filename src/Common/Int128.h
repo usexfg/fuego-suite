@@ -47,6 +47,8 @@ struct uint128_t {
         return r;
     }
 
+    uint128_t operator+(int v) const { return *this + uint128_t((uint64_t)v); }
+
     uint128_t& operator+=(const uint128_t& o) {
         uint64_t old = lo;
         lo += o.lo;
@@ -81,6 +83,8 @@ struct uint128_t {
         r.hi += hi * v;
         return r;
     }
+
+    uint128_t operator*(int v) const { return *this * uint128_t((uint64_t)v); }
 
     uint128_t operator/(const uint128_t& o) const {
         if (o.hi == 0) {
@@ -130,6 +134,10 @@ struct uint128_t {
     uint128_t operator&(const uint128_t& o) const { return uint128_t(hi & o.hi, lo & o.lo); }
     uint128_t operator|(const uint128_t& o) const { return uint128_t(hi | o.hi, lo | o.lo); }
     uint128_t operator^(const uint128_t& o) const { return uint128_t(hi ^ o.hi, lo ^ o.lo); }
+    uint128_t operator&(uint64_t v) const { return uint128_t(0, lo & v); }
+    uint128_t operator|(uint64_t v) const { return uint128_t(hi, lo | v); }
+    uint128_t operator&(int v) const { return *this & uint128_t((uint64_t)v); }
+    uint128_t operator|(int v) const { return *this | uint128_t((uint64_t)v); }
 
     bool operator==(const uint128_t& o) const { return hi == o.hi && lo == o.lo; }
     bool operator!=(const uint128_t& o) const { return !(*this == o); }

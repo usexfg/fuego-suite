@@ -43,11 +43,10 @@ jobs:
       - name: Build
         shell: powershell
         run: |
-          cd ${{ github.workspace }}
-          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
             -DBOOST_ROOT="$env:BOOST_ROOT" `
-            -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL-Win64" ..
-          cmake --build build --config Release -j 4
+            -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL-Win64"
+          cmake --build "${{ github.workspace }}/build" --config Release -j 4
 
   build-ubuntu24:
     name: Ubuntu 24.04

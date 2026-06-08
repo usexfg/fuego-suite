@@ -39,8 +39,11 @@ jobs:
             }
           }
           if (-not $openssl) { throw "OpenSSL not found" }
+          $inc = Join-Path $openssl "include"
           Write-Host "OPENSSL_ROOT_DIR=$openssl"
+          Write-Host "OPENSSL_INCLUDE_DIR=$inc"
           echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
 
       - name: Install Boost 1.85
         shell: pwsh
@@ -53,7 +56,7 @@ jobs:
 
       - name: Install jsoncpp
         shell: pwsh
-        run: vcpkg install jsoncpp:x64-windows
+        run: vcpkg install jsoncpp:x64-windows openssl:x64-windows
 
       - name: Build
         id: build
@@ -68,7 +71,8 @@ jobs:
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
             -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
           cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS
 
           cd "${{ github.workspace }}/build/src/Release"

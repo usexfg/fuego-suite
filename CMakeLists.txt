@@ -339,10 +339,10 @@ if(APPLE)
 endif()
 
 # --------------------------
-# ICU (skipped on Android)
+# ICU (only needed on macOS/Linux)
 # --------------------------
-if(ANDROID)
-    message(STATUS "Android build detected: skipping ICU discovery")
+if(ANDROID OR WIN32)
+    message(STATUS "Skipping ICU discovery (not needed on this platform)")
 else()
     if(APPLE)
         # Ensure proper ICU paths for macOS

@@ -24,7 +24,22 @@ jobs:
         uses: microsoft/setup-msbuild@v1.1
 
       - name: Install OpenSSL
-        run: choco install openssl -y
+        shell: pwsh
+        run: |
+          choco install openssl --version=3.3.2 -y --no-progress
+          $candidates = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\Program Files\FireDaemon OpenSSL 3"
+          )
+          $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+          if (-not $openssl) {
+            $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+          }
+          if (-not $openssl) { throw "OpenSSL install not found" }
+          Write-Host "OPENSSL_ROOT_DIR=$openssl"
+          echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
 
       - name: Install Boost 1.85
         shell: pwsh
@@ -40,7 +55,7 @@ jobs:
         run: |
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
             -DBOOST_ROOT="C:\boost" `
-            -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL-Win64"
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
           cmake --build "${{ github.workspace }}/build" --config Release -j 4
 
   build-ubuntu24:

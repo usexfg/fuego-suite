@@ -163,6 +163,8 @@ struct int128_t {
 
     int128_t operator-(const int128_t& o) const { return *this + int128_t(o.val, !o.neg); }
 
+    int128_t& operator+=(const int128_t& o) { *this = *this + o; return *this; }
+
     int128_t operator*(const int128_t& o) const {
         return int128_t(val * o.val, neg != o.neg);
     }

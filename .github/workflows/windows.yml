@@ -51,6 +51,10 @@ jobs:
           Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
           echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
 
+      - name: Install jsoncpp
+        shell: pwsh
+        run: vcpkg install jsoncpp:x64-windows
+
       - name: Build
         id: build
         shell: pwsh

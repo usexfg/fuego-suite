@@ -384,10 +384,7 @@ the Boost CMake package configuration for details on what it provides.
 Set ``Boost_NO_BOOST_CMAKE`` to ``ON``, to disable the search for boost-cmake.
 #]=======================================================================]
 
-cmake_policy(GET CMP0167 _FindBoost_CMP0167)
-if(_FindBoost_CMP0167 STREQUAL "NEW")
-  message(FATAL_ERROR "The FindBoost module has been removed by policy CMP0167.")
-endif()
+
 
 if(_FindBoost_testing)
   set(_FindBoost_included TRUE)

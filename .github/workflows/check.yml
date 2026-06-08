@@ -25,6 +25,9 @@ jobs:
         with:
           cmakeVersion: "3.31.6"
 
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.1
+
       - name: Install OpenSSL (choco)
         run: choco install openssl -y
 

@@ -77,13 +77,35 @@ static void generate_system_random_bytes(size_t n, void *result) {
 
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION random_lock_cs;
+static int random_lock_inited = 0;
+
+static void random_lock_acquire(void) {
+    if (!random_lock_inited) {
+        InitializeCriticalSection(&random_lock_cs);
+        random_lock_inited = 1;
+    }
+    EnterCriticalSection(&random_lock_cs);
+}
+
+static void random_lock_release(void) {
+    LeaveCriticalSection(&random_lock_cs);
+}
+#else
 #include <pthread.h>
 
-static union hash_state state;
 static pthread_mutex_t random_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static void random_lock_acquire(void) { pthread_mutex_lock(&random_lock); }
+static void random_lock_release(void) { pthread_mutex_unlock(&random_lock); }
+#endif
+
+static union hash_state state;
+
 #if !defined(NDEBUG)
-static volatile int curstate; /* To catch thread safety problems. */
+static volatile int curstate;
 #endif
 
 FINALIZER(deinit_random) {
@@ -91,11 +113,12 @@ FINALIZER(deinit_random) {
   assert(curstate == 1);
   curstate = 0;
 #endif
-  pthread_mutex_lock(&random_lock);
+  random_lock_acquire();
   memset(&state, 0, sizeof(union hash_state));
-  pthread_mutex_unlock(&random_lock);
+  random_lock_release();
 }
 
+#ifndef _WIN32
 static void reinit_random_child() {
   pthread_mutex_init(&random_lock, NULL);
   generate_system_random_bytes(32, &state);
@@ -108,12 +131,15 @@ static void prepare_random_fork() {
 static void parent_random_fork() {
   pthread_mutex_unlock(&random_lock);
 }
+#endif
 
 INITIALIZER(init_random) {
-  pthread_mutex_lock(&random_lock);
+  random_lock_acquire();
   generate_system_random_bytes(32, &state);
-  pthread_mutex_unlock(&random_lock);
+  random_lock_release();
+#ifndef _WIN32
   pthread_atfork(prepare_random_fork, parent_random_fork, reinit_random_child);
+#endif
   REGISTER_FINALIZER(deinit_random);
 #if !defined(NDEBUG)
   assert(curstate == 0);
@@ -126,13 +152,13 @@ void generate_random_bytes(size_t n, void *result) {
   assert(curstate == 1);
   curstate = 2;
 #endif
-  pthread_mutex_lock(&random_lock);
+  random_lock_acquire();
   if (n == 0) {
 #if !defined(NDEBUG)
     assert(curstate == 2);
     curstate = 1;
 #endif
-    pthread_mutex_unlock(&random_lock);
+    random_lock_release();
     return;
   }
   for (;;) {
@@ -143,7 +169,7 @@ void generate_random_bytes(size_t n, void *result) {
       assert(curstate == 2);
       curstate = 1;
 #endif
-      pthread_mutex_unlock(&random_lock);
+      random_lock_release();
       return;
     } else {
       memcpy(result, &state, HASH_DATA_AREA);
@@ -151,5 +177,5 @@ void generate_random_bytes(size_t n, void *result) {
       n -= HASH_DATA_AREA;
     }
   }
-  pthread_mutex_unlock(&random_lock);
+  random_lock_release();
 }

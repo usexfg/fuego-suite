@@ -15,17 +15,15 @@
 #pragma once
 
 #include <cstdint>
+#include "Int128.h"
 
 namespace CryptoNote {
 
-typedef          __int128  int128_t;
-typedef unsigned __int128 uint128_t;
-
 class FixedPoint64 {
 public:
-  FixedPoint64() : m_value(0) {}
+  FixedPoint64() : m_value(uint64_t(0)) {}
 
-  static FixedPoint64 zero()   { return FixedPoint64(0, Raw{}); }
+  static FixedPoint64 zero()   { return FixedPoint64(int128_t(uint64_t(0)), Raw{}); }
   static FixedPoint64 one()    { return FixedPoint64(ONE, Raw{}); }
   static FixedPoint64 fromUint64(uint64_t v);
   static FixedPoint64 fromRatio(uint64_t num, uint64_t denom);
@@ -63,7 +61,7 @@ private:
   struct Raw {};
   FixedPoint64(int128_t raw, Raw) : m_value(raw) {}
 
-  static const int128_t ONE = (int128_t)1 << 64;
+  static const int128_t ONE;
 };
 
 } // namespace CryptoNote

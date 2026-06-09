@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include "Common/Int128.h"
 #include <cstring>
 #include <string>
 #include <vector>
@@ -80,7 +81,7 @@ static std::string to_hex(const void* data, size_t len) {
 
 static bool check_hash(const Crypto::Hash& hash, uint64_t difficulty) {
   auto words = reinterpret_cast<const uint64_t*>(&hash);
-  __uint128_t product = static_cast<__uint128_t>(words[3]) * difficulty;
+  uint128_t product = static_cast<uint128_t>(words[3]) * difficulty;
   return (product >> 64) == 0;
 }
 

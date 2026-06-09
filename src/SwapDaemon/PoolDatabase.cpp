@@ -18,7 +18,12 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <dirent.h>
+#endif
 #include <cstring>
 #include <algorithm>
 #include <cerrno>
@@ -45,8 +50,14 @@ PoolDatabase::PoolDatabase(const std::string& dataDir)
 }
 
 bool PoolDatabase::ensureDirectory(const std::string& dir) {
+#ifdef _WIN32
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  return true;
+#else
   mkdir(dir.c_str(), 0700);
   return true;
+#endif
 }
 
 std::string PoolDatabase::poolFilePath(const PoolId& poolId) const {
@@ -160,6 +171,16 @@ bool PoolDatabase::loadPool(const PoolId& poolId, PoolState& state) {
 std::vector<PoolId> PoolDatabase::listPools() {
   std::vector<PoolId> pools;
 
+#ifdef _WIN32
+  if (!fs::exists(m_poolsDir)) return pools;
+  for (const auto& entry : fs::directory_iterator(m_poolsDir)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+      std::string hexId = name.substr(0, name.size() - 5);
+      pools.push_back(poolIdFromHex(hexId));
+    }
+  }
+#else
   DIR* dir = opendir(m_poolsDir.c_str());
   if (!dir) {
     return pools;
@@ -175,6 +196,7 @@ std::vector<PoolId> PoolDatabase::listPools() {
   }
 
   closedir(dir);
+#endif
   return pools;
 }
 
@@ -259,6 +281,20 @@ std::vector<LPShare> PoolDatabase::listLPShares(const PoolId& poolId) {
   std::vector<LPShare> shares;
 
   std::string lpDir = m_poolsDir + "/" + poolIdToHex(poolId) + "/lp";
+#ifdef _WIN32
+  if (!fs::exists(lpDir)) return shares;
+  for (const auto& entry : fs::directory_iterator(lpDir)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+      std::string hexPub = name.substr(0, name.size() - 5);
+      Crypto::PublicKey owner = {};
+      LPShare share = {};
+      if (loadLPShare(poolId, owner, share)) {
+        shares.push_back(share);
+      }
+    }
+  }
+#else
   DIR* dir = opendir(lpDir.c_str());
   if (!dir) {
     return shares;
@@ -270,7 +306,6 @@ std::vector<LPShare> PoolDatabase::listLPShares(const PoolId& poolId) {
     if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
       std::string hexPub = name.substr(0, name.size() - 5);
       Crypto::PublicKey owner = {};
-      // Parse hex pubkey (simplified)
       LPShare share = {};
       if (loadLPShare(poolId, owner, share)) {
         shares.push_back(share);
@@ -279,6 +314,7 @@ std::vector<LPShare> PoolDatabase::listLPShares(const PoolId& poolId) {
   }
 
   closedir(dir);
+#endif
   return shares;
 }
 
@@ -313,12 +349,25 @@ bool PoolDatabase::saveCheckpoint(const PoolId& poolId, const PoolCheckpoint& ch
 bool PoolDatabase::loadLatestCheckpoint(const PoolId& poolId, PoolCheckpoint& checkpoint) {
   try {
     std::string dir = checkpointDir(poolId);
+    uint32_t maxBlock = 0;
+
+#ifdef _WIN32
+    if (!fs::exists(dir)) return false;
+    for (const auto& entry : fs::directory_iterator(dir)) {
+      std::string name = entry.path().filename().string();
+      if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+        uint32_t block = std::stoul(name.substr(0, name.size() - 5));
+        if (block > maxBlock) {
+          maxBlock = block;
+        }
+      }
+    }
+#else
     DIR* d = opendir(dir.c_str());
     if (!d) {
       return false;
     }
 
-    uint32_t maxBlock = 0;
     struct dirent* entry;
     while ((entry = readdir(d)) != nullptr) {
       std::string name = entry->d_name;
@@ -330,6 +379,7 @@ bool PoolDatabase::loadLatestCheckpoint(const PoolId& poolId, PoolCheckpoint& ch
       }
     }
     closedir(d);
+#endif
 
     if (maxBlock == 0) {
       return false;

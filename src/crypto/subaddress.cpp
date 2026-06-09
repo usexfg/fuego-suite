@@ -31,12 +31,22 @@ SubAddressKeys deriveSubAddressKeys(
   out.hasSpendSecretKey = (b != nullptr);
 
   // m = H_s("Sublime" || a || major_LE32 || minor_LE32)
-  struct __attribute__((packed)) PreImage {
+#ifdef _MSC_VER
+  #pragma pack(push, 1)
+#endif
+  struct
+#ifdef __GNUC__
+  __attribute__((packed))
+#endif
+  PreImage {
     char     domain[7];   // "Sublime" — no null terminator intentional
     SecretKey a;
     uint32_t i;
     uint32_t j;
   } pre;
+#ifdef _MSC_VER
+  #pragma pack(pop)
+#endif
 
   memcpy(pre.domain, "Sublime", 7);
   pre.a = a;

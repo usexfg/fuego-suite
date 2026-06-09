@@ -13,12 +13,16 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include <HTTP/httplib.h>
+#include "Common/Int128.h"
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
 #include "SwapTimelock.h"
 #include "SwapTxBuilder.h"
 #include "SwapPeerProtocol.h"
 #include "Common/StringTools.h"
+#include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteConfig.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
@@ -37,6 +41,8 @@
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
+#include <thread>
+#include <chrono>
 #include "../Logging/ILogger.h"
 
 namespace XfgSwap {
@@ -641,6 +647,173 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
   return processSwap(sm);
 }
 
+// ── Escrow funding ─────────────────────────────────────────────────────────
+
+bool SwapDaemon::fundEscrow(SwapParams& params) {
+  m_logger(Logging::INFO) << "  Funding escrow: " << params.xfgAmount
+    << " atomic -> " << Common::podToHex(params.escrowPubKey);
+
+  if (!m_makerKeysSet) {
+    m_logger(Logging::ERROR) << "  Maker keys not set";
+    return false;
+  }
+
+  // Configure wallet RPC from config
+  if (!m_xfgWalletRpcHost.empty() && m_xfgWalletRpcPort != 0) {
+    m_rpc.setWalletRpc(m_xfgWalletRpcHost, m_xfgWalletRpcPort);
+    if (!m_xfgWalletRpcUser.empty())
+      m_rpc.setWalletAuth(m_xfgWalletRpcUser, m_xfgWalletRpcPass);
+  } else {
+    m_logger(Logging::ERROR) << "  Wallet RPC not configured (xfg_wallet_rpc_host/port)";
+    return false;
+  }
+
+  // 1. Call optimize RPC to create a tx with known secret key
+  TransferResult opt;
+  if (!m_rpc.optimizeWallet(params.xfgAmount, opt)) {
+    m_logger(Logging::ERROR) << "  optimize RPC failed";
+    return false;
+  }
+  m_logger(Logging::INFO) << "  Optimize tx: " << opt.txHash;
+
+  // 2. Derive txPubKey and one-time secret
+  Crypto::SecretKey txSec;
+  if (!Common::podFromHex(opt.txSecretKey, txSec)) return false;
+  Crypto::PublicKey txPubKey;
+  if (!Crypto::secret_key_to_public_key(txSec, txPubKey)) return false;
+
+  Crypto::KeyDerivation derivation;
+  if (!Crypto::generate_key_derivation(txPubKey, m_makerSecretKey, derivation))
+    return false;
+
+  Crypto::PublicKey derivedKey;
+  Crypto::derive_public_key(derivation, 0, m_makerPublicKey, derivedKey);
+  Crypto::SecretKey outputSecret;
+  Crypto::derive_secret_key(derivation, 0, m_makerSecretKey, outputSecret);
+  Crypto::KeyImage keyImage;
+  Crypto::generate_key_image(derivedKey, outputSecret, keyImage);
+
+  // 3. Poll for the optimize output's global index
+  uint32_t realGI = 0;
+  bool found = false;
+  for (int retry = 0; retry < 200 && !found; ++retry) {
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::vector<RandomOutputEntry> outs;
+    if (m_rpc.getRandomOutputs(params.xfgAmount, 100, outs)) {
+      for (auto& o : outs) {
+        if (std::memcmp(&o.outKey, &derivedKey,
+                        sizeof(Crypto::PublicKey)) == 0) {
+          realGI = static_cast<uint32_t>(o.globalIndex);
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found && retry % 10 == 0)
+      m_logger(Logging::INFO) << "  Waiting for optimize tx confirmation... (" << retry << ")";
+  }
+  if (!found) {
+    m_logger(Logging::ERROR) << "  Optimize output not found after polling";
+    return false;
+  }
+  m_logger(Logging::INFO) << "  Optimize output at gi=" << realGI;
+
+  // 4. Get decoy outputs
+  std::vector<RandomOutputEntry> decoys;
+  if (!m_rpc.getRandomOutputs(params.xfgAmount, 9, decoys) || decoys.size() < 9) {
+    m_logger(Logging::ERROR) << "  Insufficient decoys: " << decoys.size();
+    return false;
+  }
+  decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
+      [realGI](const RandomOutputEntry& e) {
+        return e.globalIndex == realGI;
+      }), decoys.end());
+  if (decoys.size() < 8) {
+    m_logger(Logging::ERROR) << "  Not enough decoys after filtering";
+    return false;
+  }
+  decoys.resize(8);
+
+  // 5. Build ring
+  struct RM { uint32_t gi; Crypto::PublicKey pk; };
+  std::vector<RM> ring;
+  ring.push_back({realGI, derivedKey});
+  for (auto& d : decoys) ring.push_back({(uint32_t)d.globalIndex, d.outKey});
+  std::sort(ring.begin(), ring.end(),
+            [](const RM& a, const RM& b) { return a.gi < b.gi; });
+  size_t realIdx = 0;
+  for (size_t i = 0; i < ring.size(); ++i)
+    if (ring[i].gi == realGI) { realIdx = i; break; }
+
+  std::vector<uint32_t> abs;
+  std::vector<Crypto::PublicKey> ringKeys;
+  for (auto& r : ring) { abs.push_back(r.gi); ringKeys.push_back(r.pk); }
+  auto rel = CryptoNote::absolute_output_offsets_to_relative(abs);
+
+  // 6. Build unsigned escrow funding tx
+  CryptoNote::Transaction tx;
+  tx.version = CryptoNote::TRANSACTION_VERSION_1;
+  tx.unlockTime = 0;
+  CryptoNote::KeyPair txKey;
+  Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
+  CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+
+  CryptoNote::KeyInput input;
+  input.amount = params.xfgAmount;
+  input.outputIndexes = rel;
+  input.keyImage = keyImage;
+  tx.inputs.push_back(input);
+
+  CryptoNote::KeyOutput ko;
+  ko.key = params.escrowPubKey;
+  CryptoNote::TransactionOutput escrowOut;
+  escrowOut.amount = params.xfgAmount;
+  escrowOut.target = ko;
+  tx.outputs.push_back(escrowOut);
+  tx.signatures.push_back(std::vector<Crypto::Signature>(ring.size()));
+
+  Crypto::Hash prefixHash;
+  if (!CryptoNote::getObjectHash(
+          static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash))
+    return false;
+
+  // 7. Ring signature
+  {
+    std::vector<const Crypto::PublicKey*> ptrs;
+    for (auto& k : ringKeys) ptrs.push_back(&k);
+    Crypto::generate_ring_signature(prefixHash, keyImage, ptrs,
+        outputSecret, realIdx,
+        const_cast<Crypto::Signature*>(tx.signatures[0].data()));
+  }
+
+  // 8. Broadcast
+  std::string txHex = SwapTxBuilder::serializeToHex(tx);
+  m_logger(Logging::INFO) << "  Broadcasting escrow tx (" << txHex.size() << " hex)";
+  if (!m_rpc.sendRawTransaction(txHex)) {
+    m_logger(Logging::ERROR) << "  sendRawTransaction failed";
+    return false;
+  }
+
+  Crypto::Hash txHash;
+  CryptoNote::getObjectHash(
+      static_cast<CryptoNote::TransactionPrefix&>(tx), txHash);
+  params.escrowTxHash = txHash;
+  m_logger(Logging::INFO) << "  Escrow funded: " << Common::podToHex(txHash);
+  return true;
+}
+
+bool SwapDaemon::verifyEscrowFunding(const SwapParams& params) {
+  std::vector<TxOutputInfo> outputs;
+  if (!m_rpc.getTransactionOutputs(Common::podToHex(params.escrowTxHash), outputs))
+    return false;
+  for (size_t i = 0; i < outputs.size(); ++i)
+    if (outputs[i].amount == params.xfgAmount &&
+        std::memcmp(&outputs[i].targetKey, &params.escrowPubKey,
+                    sizeof(Crypto::PublicKey)) == 0)
+      return true;
+  return false;
+}
+
 // ── Per-state handlers (extracted from processSwap in commit b6d82cad's refactor) ──
 
 bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight) {
@@ -907,6 +1080,30 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
     case SwapState::ADAPTOR_KEYS_EXCHANGED:
       m_logger(Logging::INFO) << "  Keys aggregated. Escrow key: "
         << Common::podToHex(params.escrowPubKey);
+      {
+        Crypto::Hash zeroHash;
+        std::memset(&zeroHash, 0, sizeof(zeroHash));
+        bool escrowTxKnown = (std::memcmp(&params.escrowTxHash, &zeroHash,
+                                          sizeof(Crypto::Hash)) != 0);
+
+        if (params.role == SwapRole::BOB) {
+          if (!escrowTxKnown) {
+            if (!fundEscrow(params)) {
+              m_logger(Logging::ERROR) << "Failed to fund escrow for swap " << swapId;
+              return false;
+            }
+            m_db.saveSwap(sm);
+          } else if (verifyEscrowFunding(params)) {
+            sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+            m_db.saveSwap(sm);
+            m_logger(Logging::INFO) << "Swap " << swapId << " -> ADAPTOR_ESCROW_FUNDED";
+          }
+        } else if (escrowTxKnown && verifyEscrowFunding(params)) {
+          sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+          m_db.saveSwap(sm);
+          m_logger(Logging::INFO) << "Swap " << swapId << " -> ADAPTOR_ESCROW_FUNDED";
+        }
+      }
       break;
 
     case SwapState::ADAPTOR_ESCROW_FUNDED:
@@ -1600,9 +1797,9 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     //   requiredCtr = fillAmount(atomic XFG) * ctrDivisor / rateNum
     // The 1e7 scaling on rateNum and (implicitly) on fillAmount cancels out.
     uint64_t ctrDiv = static_cast<uint64_t>(m_oracle.ctrDivisor(pair));
-    __uint128_t num = static_cast<__uint128_t>(fillAmount) * ctrDiv;
-    __uint128_t result = num / static_cast<__uint128_t>(targetOffer.rateNum);
-    if (result > static_cast<__uint128_t>(UINT64_MAX)) {
+    uint128_t num = static_cast<uint128_t>(fillAmount) * ctrDiv;
+    uint128_t result = num / static_cast<uint128_t>(targetOffer.rateNum);
+    if (result > static_cast<uint128_t>(UINT64_MAX)) {
       m_logger(Logging::ERROR) << "CTR amount overflow for offer " << offerId;
       return false;
     }

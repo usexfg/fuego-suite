@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
+#include "Common/Int128.h"
 #include <cctype>
 #include <numeric>
 #include <boost/algorithm/string/trim.hpp>
@@ -335,7 +336,7 @@ double Currency::getBurnPercentage() const {
       uint64_t epochRate = isLegacyBond
           ? commitmentIndex.getLegacyEpochFeeRate(e)
           : commitmentIndex.getEpochFeeRate(e);
-      interest += (uint64_t)(((__uint128_t)amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION);
+      interest += (uint64_t)(((uint128_t)amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION);
     }
 
     return interest;

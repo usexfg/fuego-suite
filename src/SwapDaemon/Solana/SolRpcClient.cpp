@@ -14,12 +14,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "SolRpcClient.h"
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
+#include "Common/WinCompat.h"
 
 #include <atomic>
 #include <cstring>
@@ -561,11 +556,17 @@ std::string SolRpcClient::httpPost(const std::string& body) {
   int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   if (sock < 0) { freeaddrinfo(res); return ""; }
 
+#ifdef _WIN32
+  DWORD tvMs = 15000;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+#else
   struct timeval tv;
   tv.tv_sec  = 15;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 
   if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
     close(sock);

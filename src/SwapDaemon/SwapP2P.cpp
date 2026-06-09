@@ -13,12 +13,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "SwapP2P.h"
+#include "Common/WinCompat.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
 #include <cstring>
 #include <chrono>
 #include <algorithm>
@@ -71,7 +67,13 @@ bool SwapP2P::start() {
   }
 
   int optval = 1;
-  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+    reinterpret_cast<const char*>(&optval),
+#else
+    &optval,
+#endif
+    sizeof(optval));
 
   struct sockaddr_in addr;
   std::memset(&addr, 0, sizeof(addr));
@@ -160,10 +162,16 @@ void SwapP2P::acceptLoop() {
     }
 
     // Set a receive timeout so a misbehaving peer can't pin a worker forever.
+#ifdef _WIN32
+    DWORD rcvTimeout = 30000;
+    setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO,
+      reinterpret_cast<const char*>(&rcvTimeout), sizeof(rcvTimeout));
+#else
     struct timeval tv;
     tv.tv_sec = 30;
     tv.tv_usec = 0;
     setsockopt(clientSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
     // Dispatch to a detached worker so accept() can continue immediately.
     m_activeWorkers.fetch_add(1, std::memory_order_relaxed);
@@ -230,11 +238,19 @@ bool SwapP2P::sendMessage(const std::string& peerEndpoint, const SwapMessage& ms
   }
 
   // Connect timeout via SO_SNDTIMEO
+#ifdef _WIN32
+  DWORD timeout = 10000;
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+    reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+    reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+#else
   struct timeval tv;
   tv.tv_sec = 10;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
   // Resolve host
   struct addrinfo hints, *result;
@@ -262,7 +278,7 @@ bool SwapP2P::sendMessage(const std::string& peerEndpoint, const SwapMessage& ms
   size_t remaining = wire.size();
 
   while (remaining > 0) {
-    ssize_t sent = send(sock, ptr, remaining, MSG_NOSIGNAL);
+    ssize_t sent = send(sock, reinterpret_cast<const char*>(ptr), remaining, MSG_NOSIGNAL);
     if (sent <= 0) {
       m_logger(Logging::ERROR) << "SwapP2P: send failed to " << peerEndpoint;
       close(sock);
@@ -407,7 +423,7 @@ bool SwapP2P::parseMessage(const std::vector<uint8_t>& data, SwapMessage& msg) {
 bool SwapP2P::recvAll(int sock, uint8_t* buf, size_t len) {
   size_t received = 0;
   while (received < len) {
-    ssize_t n = recv(sock, buf + received, len - received, 0);
+    ssize_t n = recv(sock, reinterpret_cast<char*>(buf + received), len - received, 0);
     if (n <= 0) {
       return false;
     }

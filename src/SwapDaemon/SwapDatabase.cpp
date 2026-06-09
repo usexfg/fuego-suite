@@ -18,7 +18,12 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <dirent.h>
+#endif
 #include <cstring>
 #include <algorithm>
 
@@ -31,12 +36,19 @@ SwapDatabase::SwapDatabase(const std::string& dataDir)
 }
 
 bool SwapDatabase::ensureDirectory() {
+#ifdef _WIN32
+  std::error_code ec;
+  fs::create_directories(m_dataDir, ec);
+  fs::create_directories(m_swapsDir, ec);
+  return true;
+#else
   // Create data dir if it doesn't exist
   mkdir(m_dataDir.c_str(), 0700);
   // Create swaps subdir
   int ret = mkdir(m_swapsDir.c_str(), 0700);
   // ret == 0 means created, EEXIST means already exists -- both are fine
   return (ret == 0 || errno == EEXIST);
+#endif
 }
 
 std::string SwapDatabase::swapFilePath(const std::string& swapId) const {
@@ -63,7 +75,9 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
       return false;
     }
 
+#ifndef _WIN32
     chmod(tmpPath.c_str(), S_IRUSR | S_IWUSR);
+#endif
 
     // Atomic rename
     if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
@@ -128,6 +142,15 @@ std::vector<std::string> SwapDatabase::listSwaps() {
   std::lock_guard<std::mutex> lock(m_mutex);
   std::vector<std::string> swapIds;
 
+#ifdef _WIN32
+  if (!fs::exists(m_swapsDir)) return swapIds;
+  for (const auto& entry : fs::directory_iterator(m_swapsDir)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+      swapIds.push_back(name.substr(0, name.size() - 5));
+    }
+  }
+#else
   DIR* dir = opendir(m_swapsDir.c_str());
   if (!dir) {
     return swapIds;
@@ -144,6 +167,7 @@ std::vector<std::string> SwapDatabase::listSwaps() {
   }
 
   closedir(dir);
+#endif
 
   std::sort(swapIds.begin(), swapIds.end());
   return swapIds;

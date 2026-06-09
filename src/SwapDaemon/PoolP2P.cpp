@@ -14,14 +14,10 @@
 
 #include "PoolP2P.h"
 #include "Logging/LoggerRef.h"
+#include "Common/WinCompat.h"
 
 #include <cstring>
 #include <algorithm>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netdb.h>
 
 namespace XfgSwap {
 
@@ -42,7 +38,13 @@ bool PoolP2P::start() {
   }
 
   int opt = 1;
-  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+    reinterpret_cast<const char*>(&opt),
+#else
+    &opt,
+#endif
+    sizeof(opt));
 
   struct sockaddr_in addr = {};
   addr.sin_family = AF_INET;
@@ -110,7 +112,7 @@ bool PoolP2P::sendMessage(const std::string& peerEndpoint, const PoolMessage& ms
   std::vector<uint8_t> data = serializeMessage(msg);
   size_t sent = 0;
   while (sent < data.size()) {
-    ssize_t n = send(sock, data.data() + sent, data.size() - sent, 0);
+    ssize_t n = send(sock, reinterpret_cast<const char*>(data.data() + sent), data.size() - sent, 0);
     if (n <= 0) {
       close(sock);
       return false;
@@ -219,7 +221,7 @@ std::vector<uint8_t> PoolP2P::serializeMessage(const PoolMessage& msg) {
 bool PoolP2P::recvAll(int sock, uint8_t* buf, size_t len) {
   size_t received = 0;
   while (received < len) {
-    ssize_t n = recv(sock, buf + received, len - received, 0);
+    ssize_t n = recv(sock, reinterpret_cast<char*>(buf + received), len - received, 0);
     if (n <= 0) {
       return false;
     }

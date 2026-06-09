@@ -97,7 +97,7 @@ bool pool_rpc_server::handle_command_line(const boost::program_options::variable
 //------------------------------------------------------------------------------------------------------------------------------
 bool pool_rpc_server::init(const boost::program_options::variables_map& vm) {
   if (!handle_command_line(vm)) {
-    logger(ERROR) << "Failed to process command line in pool_rpc_server";
+    logger(Logging::ERROR) << "Failed to process command line in pool_rpc_server";
     return false;
   }
 

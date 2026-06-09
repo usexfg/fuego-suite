@@ -23,10 +23,10 @@ static constexpr uint64_t FEE_DIVISOR = 10000;
 namespace {
   // Integer square root for 128-bit values — deterministic, no floating point.
   // Matches the consensus-layer isqrt128 in AmmPool.cpp.
-  uint64_t isqrt128(unsigned __int128 n) {
+  uint64_t isqrt128(uint128_t n) {
     if (n <= 1) return (uint64_t)n;
-    unsigned __int128 x = n;
-    unsigned __int128 y = (x + 1) >> 1;
+    uint128_t x = n;
+    uint128_t y = (x + 1) >> 1;
     while (y < x) {
       x = y;
       y = (x + n / x) >> 1;
@@ -44,8 +44,8 @@ uint64_t poolGetOutputAmount(uint64_t inputAmount,
   }
 
   uint64_t feeAdj = FEE_DIVISOR - feeBps;
-  unsigned __int128 num = (unsigned __int128)reserveOut * inputAmount * feeAdj;
-  unsigned __int128 den = (unsigned __int128)reserveIn * FEE_DIVISOR + (unsigned __int128)inputAmount * feeAdj;
+  uint128_t num = (uint128_t)reserveOut * inputAmount * feeAdj;
+  uint128_t den = (uint128_t)reserveIn * FEE_DIVISOR + (uint128_t)inputAmount * feeAdj;
 
   if (den == 0) {
     return 0;
@@ -67,8 +67,8 @@ uint64_t poolGetInputAmount(uint64_t outputAmount,
   }
 
   uint64_t feeAdj = FEE_DIVISOR - feeBps;
-  unsigned __int128 num = (unsigned __int128)reserveIn * outputAmount * FEE_DIVISOR;
-  unsigned __int128 den = (unsigned __int128)(reserveOut - outputAmount) * feeAdj;
+  uint128_t num = (uint128_t)reserveIn * outputAmount * FEE_DIVISOR;
+  uint128_t den = (uint128_t)(reserveOut - outputAmount) * feeAdj;
 
   if (den == 0) {
     return 0;
@@ -90,7 +90,7 @@ uint64_t poolMintLPShares(uint64_t amountA,
   if (totalShares == 0) {
     // Initial liquidity: isqrt(amountA * amountB) - MIN_INITIAL_LIQUIDITY
     // Uses deterministic integer sqrt — no floating point.
-    unsigned __int128 product = (unsigned __int128)amountA * amountB;
+    uint128_t product = (uint128_t)amountA * amountB;
     uint64_t liquidity = isqrt128(product);
 
     if (liquidity <= MIN_INITIAL_LIQUIDITY) {
@@ -101,8 +101,8 @@ uint64_t poolMintLPShares(uint64_t amountA,
   }
 
   // Proportional minting: min of both ratios (128-bit intermediates)
-  uint64_t sharesA = (uint64_t)((unsigned __int128)amountA * totalShares / reserveA);
-  uint64_t sharesB = (uint64_t)((unsigned __int128)amountB * totalShares / reserveB);
+  uint64_t sharesA = (uint64_t)((uint128_t)amountA * totalShares / reserveA);
+  uint64_t sharesB = (uint64_t)((uint128_t)amountB * totalShares / reserveB);
 
   return std::min(sharesA, sharesB);
 }
@@ -124,12 +124,12 @@ WithdrawalAmounts poolGetWithdrawalAmounts(uint64_t burnAmount,
   }
 
   // Proportional share of reserves (128-bit intermediates)
-  result.amountA = (uint64_t)((unsigned __int128)burnAmount * reserveA / totalShares);
-  result.amountB = (uint64_t)((unsigned __int128)burnAmount * reserveB / totalShares);
+  result.amountA = (uint64_t)((uint128_t)burnAmount * reserveA / totalShares);
+  result.amountB = (uint64_t)((uint128_t)burnAmount * reserveB / totalShares);
 
   // Proportional share of accrued fees (128-bit intermediates)
-  result.feeA = (uint64_t)((unsigned __int128)burnAmount * feeAccumulatorA / totalShares);
-  result.feeB = (uint64_t)((unsigned __int128)burnAmount * feeAccumulatorB / totalShares);
+  result.feeA = (uint64_t)((uint128_t)burnAmount * feeAccumulatorA / totalShares);
+  result.feeB = (uint64_t)((uint128_t)burnAmount * feeAccumulatorB / totalShares);
 
   return result;
 }
@@ -139,7 +139,7 @@ uint64_t poolGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
     return 0;
   }
 
-  return (uint64_t)((unsigned __int128)reserveB * PRICE_SCALE / reserveA);
+  return (uint64_t)((uint128_t)reserveB * PRICE_SCALE / reserveA);
 }
 
 uint64_t poolGetEffectivePrice(uint64_t inputAmount,
@@ -156,7 +156,7 @@ uint64_t poolGetEffectivePrice(uint64_t inputAmount,
     return 0;
   }
 
-  return (uint64_t)((unsigned __int128)outputAmount * PRICE_SCALE / inputAmount);
+  return (uint64_t)((uint128_t)outputAmount * PRICE_SCALE / inputAmount);
 }
 
 bool poolValidateSwap(uint64_t inputAmount,
@@ -176,12 +176,12 @@ bool poolValidateSwap(uint64_t inputAmount,
   // (reserveIn * FEE_DIVISOR + inputAmount * feeAdj) * (reserveOut - outputAmount)
   //   >= reserveIn * reserveOut * FEE_DIVISOR
   uint64_t feeAdj = FEE_DIVISOR - feeBps;
-  unsigned __int128 newReserveIn = (unsigned __int128)reserveIn * FEE_DIVISOR
-                                 + (unsigned __int128)inputAmount * feeAdj;
-  unsigned __int128 newReserveOut = reserveOut - outputAmount;
+  uint128_t newReserveIn = (uint128_t)reserveIn * FEE_DIVISOR
+                                 + (uint128_t)inputAmount * feeAdj;
+  uint128_t newReserveOut = reserveOut - outputAmount;
 
-  unsigned __int128 kBefore = (unsigned __int128)reserveIn * reserveOut * FEE_DIVISOR;
-  unsigned __int128 kAfter = newReserveIn * newReserveOut;
+  uint128_t kBefore = (uint128_t)reserveIn * reserveOut * FEE_DIVISOR;
+  uint128_t kAfter = newReserveIn * newReserveOut;
 
   return kAfter >= kBefore;
 }
@@ -203,12 +203,12 @@ bool poolValidateDepositRatio(uint64_t amountA,
   // Cross-multiply to compare ratios without division (128-bit):
   // amountA / amountB ~= reserveA / reserveB
   // => amountA * reserveB ~= amountB * reserveA
-  unsigned __int128 expectedRatio = (unsigned __int128)amountA * reserveB;
-  unsigned __int128 actualRatio   = (unsigned __int128)amountB * reserveA;
-  unsigned __int128 delta = (expectedRatio > actualRatio)
+  uint128_t expectedRatio = (uint128_t)amountA * reserveB;
+  uint128_t actualRatio   = (uint128_t)amountB * reserveA;
+  uint128_t delta = (expectedRatio > actualRatio)
     ? (expectedRatio - actualRatio) : (actualRatio - expectedRatio);
 
-  unsigned __int128 maxDelta = expectedRatio * toleranceBps / FEE_DIVISOR;
+  uint128_t maxDelta = expectedRatio * (uint64_t)toleranceBps / FEE_DIVISOR;
   return delta <= maxDelta;
 }
 

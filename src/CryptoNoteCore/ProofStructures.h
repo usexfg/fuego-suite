@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include <array>
 #include "../Common/JsonValue.h"
 #include "../crypto/crypto.h"
 #include "../Serialization/ISerializer.h"

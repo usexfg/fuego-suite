@@ -8,6 +8,7 @@
 // PURPOSE. See file labeled LICENSE for more details.
 
 #include "AmmPool.h"
+#include "Common/Int128.h"
 #include "../Serialization/SerializationOverloads.h"
 
 namespace CryptoNote {
@@ -15,10 +16,10 @@ namespace CryptoNote {
 namespace {
   const uint64_t FEE_DIVISOR = 10000;
 
-  uint64_t isqrt128(unsigned __int128 n) {
+  uint64_t isqrt128(uint128_t n) {
     if (n <= 1) return (uint64_t)n;
-    unsigned __int128 x = n;
-    unsigned __int128 y = (x + 1) >> 1;
+    uint128_t x = n;
+    uint128_t y = (x + 1) >> 1;
     while (y < x) {
       x = y;
       y = (x + n / x) >> 1;
@@ -35,8 +36,8 @@ uint64_t ammGetOutputAmount(uint64_t inputAmount,
     return 0;
 
   uint64_t feeAdj = FEE_DIVISOR - feeBps;
-  unsigned __int128 num = (unsigned __int128)reserveOut * inputAmount * feeAdj;
-  unsigned __int128 den = (unsigned __int128)reserveIn * FEE_DIVISOR + (unsigned __int128)inputAmount * feeAdj;
+  uint128_t num = (uint128_t)reserveOut * inputAmount * feeAdj;
+  uint128_t den = (uint128_t)reserveIn * FEE_DIVISOR + (uint128_t)inputAmount * feeAdj;
   return (uint64_t)(num / den);
 }
 
@@ -48,14 +49,14 @@ uint64_t ammGetInputAmount(uint64_t outputAmount,
     return 0;
 
   uint64_t feeAdj = FEE_DIVISOR - feeBps;
-  unsigned __int128 num = (unsigned __int128)reserveIn * outputAmount * FEE_DIVISOR;
-  unsigned __int128 den = (unsigned __int128)(reserveOut - outputAmount) * feeAdj;
+  uint128_t num = (uint128_t)reserveIn * outputAmount * FEE_DIVISOR;
+  uint128_t den = (uint128_t)(reserveOut - outputAmount) * feeAdj;
   return (uint64_t)(num / den);
 }
 
 uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
   if (reserveB == 0) return 0;
-  unsigned __int128 scaled = (unsigned __int128)reserveA * 1000000000000000000ULL;
+  uint128_t scaled = (uint128_t)reserveA * 1000000000000000000ULL;
   return (uint64_t)(scaled / reserveB);
 }
 
@@ -65,19 +66,19 @@ uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
   if (totalShares == 0) {
     if (amountA == 0 && amountB > 0) return amountB;
     if (amountB == 0 && amountA > 0) return amountA;
-    unsigned __int128 product = (unsigned __int128)amountA * amountB;
+    uint128_t product = (uint128_t)amountA * amountB;
     uint64_t shares = isqrt128(product);
     const uint64_t MIN_LIQUIDITY = 1000;
     return shares > MIN_LIQUIDITY ? shares - MIN_LIQUIDITY : 0;
   }
 
   if (amountA == 0 && amountB > 0 && reserveB > 0)
-    return (uint64_t)((unsigned __int128)amountB * totalShares / reserveB);
+    return (uint64_t)((uint128_t)amountB * totalShares / reserveB);
   if (amountB == 0 && amountA > 0 && reserveA > 0)
-    return (uint64_t)((unsigned __int128)amountA * totalShares / reserveA);
+    return (uint64_t)((uint128_t)amountA * totalShares / reserveA);
 
-  unsigned __int128 sharesA = (unsigned __int128)amountA * totalShares / reserveA;
-  unsigned __int128 sharesB = (unsigned __int128)amountB * totalShares / reserveB;
+  uint128_t sharesA = (uint128_t)amountA * totalShares / reserveA;
+  uint128_t sharesB = (uint128_t)amountB * totalShares / reserveB;
   return sharesA < sharesB ? (uint64_t)sharesA : (uint64_t)sharesB;
 }
 
@@ -89,8 +90,8 @@ void ammGetWithdrawalAmounts(uint64_t lpSharesBurned,
     amountA = 0; amountB = 0;
     return;
   }
-  amountA = (uint64_t)((unsigned __int128)lpSharesBurned * reserveA / totalShares);
-  amountB = (uint64_t)((unsigned __int128)lpSharesBurned * reserveB / totalShares);
+  amountA = (uint64_t)((uint128_t)lpSharesBurned * reserveA / totalShares);
+  amountB = (uint64_t)((uint128_t)lpSharesBurned * reserveB / totalShares);
 }
 
 bool ammValidateSwap(uint64_t input, uint64_t output,
@@ -110,12 +111,12 @@ bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
     return false; // pool requires governance bootstrap — no arbitrary first deposit
   }
 
-  unsigned __int128 expectedRatio = (unsigned __int128)amountA * reserveB;
-  unsigned __int128 actualRatio   = (unsigned __int128)amountB * reserveA;
-  unsigned __int128 delta = (expectedRatio > actualRatio) ?
+  uint128_t expectedRatio = (uint128_t)amountA * reserveB;
+  uint128_t actualRatio   = (uint128_t)amountB * reserveA;
+  uint128_t delta = (expectedRatio > actualRatio) ?
     (expectedRatio - actualRatio) : (actualRatio - expectedRatio);
 
-  unsigned __int128 maxDelta = expectedRatio * toleranceBps / FEE_DIVISOR;
+  uint128_t maxDelta = expectedRatio * (uint64_t)toleranceBps / FEE_DIVISOR;
   return delta <= maxDelta;
 }
 

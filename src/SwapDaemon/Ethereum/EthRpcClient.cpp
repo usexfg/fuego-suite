@@ -17,14 +17,12 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "Crypto/RlpEncoder.h"
 #include "crypto/keccak.h"
+#include "Common/WinCompat.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/select.h>
+#endif
 
 #include <atomic>
 #include <cstring>
@@ -267,26 +265,53 @@ bool EthRpcClient::connectSocket() {
   m_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   if (m_sock < 0) { freeaddrinfo(res); return false; }
 
+#ifdef _WIN32
+  DWORD tvSec = 10;
+  setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO,
+    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
+  setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO,
+    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
+#else
   struct timeval tv = {10, 0};
   setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 
+#ifdef _WIN32
+  u_long nonblocking = 1;
+  ioctlsocket(m_sock, FIONBIO, &nonblocking);
+#else
   int flags = fcntl(m_sock, F_GETFL, 0);
   if (flags >= 0) fcntl(m_sock, F_SETFL, flags | O_NONBLOCK);
+#endif
 
   int connRet = connect(m_sock, res->ai_addr, res->ai_addrlen);
+#ifdef _WIN32
+  if (connRet < 0 && WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
   if (connRet < 0 && errno == EINPROGRESS) {
+#endif
     fd_set fdset;
     FD_ZERO(&fdset);
     FD_SET(m_sock, &fdset);
+#ifdef _WIN32
+    struct timeval selectTv = {10, 0};
+    if (select(0, NULL, &fdset, NULL, &selectTv) <= 0) {
+#else
     if (select(m_sock + 1, NULL, &fdset, NULL, &tv) <= 0) {
+#endif
       closeSocket(); freeaddrinfo(res); return false;
     }
   } else if (connRet < 0) {
     closeSocket(); freeaddrinfo(res); return false;
   }
 
+#ifdef _WIN32
+  u_long blocking = 0;
+  ioctlsocket(m_sock, FIONBIO, &blocking);
+#else
   if (flags >= 0) fcntl(m_sock, F_SETFL, flags);
+#endif
   freeaddrinfo(res);
   m_sockHost = m_host;
   m_sockPort = m_port;

@@ -8,6 +8,9 @@ on:
       - "*"
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     name: Windows
@@ -17,32 +20,60 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install msbuild
+      - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.1
 
       - name: Install OpenSSL
-        shell: powershell
+        shell: pwsh
         run: |
-          choco install openssl -y
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
+          $candidates = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\Program Files\FireDaemon OpenSSL 3"
+          )
+          $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+          if (-not $openssl) {
+            $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+          }
+          if (-not $openssl) {
+            choco install openssl -y --no-progress
+            $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+            if (-not $openssl) {
+              $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+            }
+          }
+          if (-not $openssl) { throw "OpenSSL not found" }
+          $inc = Join-Path $openssl "include"
+          Write-Host "OPENSSL_ROOT_DIR=$openssl"
+          Write-Host "OPENSSL_INCLUDE_DIR=$inc"
+          echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
 
-      - name: Download and Install Boost 1.85
-        shell: powershell
+      - name: Install Boost 1.85
+        shell: pwsh
         run: |
-          choco install boost-msvc-14.3 --version=1.85.0 -y --allow-downgrade
-          echo "BOOST_ROOT=C:\tools\boost\boost_1_85_0" >> $env:GITHUB_ENV
-          echo "BOOST_INCLUDE_DIRS=C:\tools\boost\boost_1_85_0\include" >> $env:GITHUB_ENV
+          $ProgressPreference = 'SilentlyContinue'
+          $Url = "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe"
+          Invoke-WebRequest -Uri $Url -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
+
+      - name: Install jsoncpp
+        shell: pwsh
+        run: vcpkg install jsoncpp:x64-windows openssl:x64-windows
 
       - name: Build
-        shell: powershell
+        shell: pwsh
         run: |
-          mkdir build
-          cd build
-          cmake -G "Visual Studio 17 2022" -A x64 `
-            -DBOOST_ROOT="$env:BOOST_ROOT" `
-            -DBOOST_INCLUDE_DIRS="$env:BOOST_INCLUDE_DIRS" `
-            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" ..
-          msbuild fuegoX.sln /p:Configuration=Release /m
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
+            -DBOOST_ROOT="C:\boost" `
+            -DBOOST_LIBRARYDIR="C:\boost\lib" `
+            -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
+          cmake --build "${{ github.workspace }}/build" --config Release -j 4
 
   build-ubuntu24:
     name: Ubuntu 24.04
@@ -88,6 +119,5 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
-            -DCMAKE_CXX_FLAGS="-D_LIBCPP_DISABLE_AVAILABILITY"
+            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3
           cmake --build build -j$(sysctl -n hw.logicalcpu)

@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "Common/Int128.h"
+
 #include <atomic>
 #include <deque>
 
@@ -370,7 +372,7 @@ namespace CryptoNote {
     CryptoNote::AmmPoolState m_ammPool;
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
-    unsigned __int128 m_twapAccumulator = 0;
+    uint128_t m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
 
     // Milæsandra — testnet fee simulator

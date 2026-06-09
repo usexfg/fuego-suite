@@ -593,6 +593,8 @@ target_link_libraries(Optimizer PRIVATE
 )
 
 find_package(OpenSSL REQUIRED)
+target_link_libraries(Wallet PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(Http PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(SwapDaemon PRIVATE
     SwapDaemonLib
     Crypto Common Logging Crypto Common
@@ -614,8 +616,6 @@ target_link_libraries(SimpleWallet PRIVATE
 # Suppress deprecation warnings for Rpc target
 if(APPLE)
   target_compile_options(Rpc PRIVATE -Wno-deprecated-declarations -Wno-deprecated -Wno-deprecated-builtins -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-copy -Wno-deprecated-copy-dtor -Wno-system-headers -w)
-  target_include_directories(Rpc SYSTEM PRIVATE /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1)
-  target_include_directories(Rpc SYSTEM PRIVATE /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
   target_include_directories(Rpc SYSTEM PRIVATE /opt/homebrew/include)
   target_include_directories(Rpc SYSTEM PRIVATE /usr/local/include)
   target_include_directories(Rpc SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/external/parallel_hashmap)

@@ -1,11 +1,8 @@
 // Copyright (c) 2017-2026 Fuego Developers
 
 #include "StatusServer.h"
+#include "Common/WinCompat.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <cstring>
 #include <sstream>
 
@@ -26,7 +23,13 @@ bool StatusServer::start() {
   }
 
   int opt = 1;
-  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+    reinterpret_cast<const char*>(&opt),
+#else
+    &opt,
+#endif
+    sizeof(opt));
 
   struct sockaddr_in addr = {};
   addr.sin_family = AF_INET;

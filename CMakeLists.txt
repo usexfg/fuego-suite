@@ -1,7 +1,4 @@
 cmake_minimum_required(VERSION 3.16)
-if(POLICY CMP0167)
-  cmake_policy(SET CMP0167 NEW)
-endif()
 
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
@@ -75,6 +72,8 @@ endif()
 
 # Debug/Release flags - platform-specific
 if(MSVC)
+    # Prevent windows.h from #define'ing ERROR=0, which breaks Logging::ERROR
+    add_definitions(-DNOGDI -DNOMINMAX)
     # MSVC uses different optimization and warning flags
     set(CMAKE_C_FLAGS_DEBUG   "/Zi /Od /MDd")
     set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /MDd")
@@ -92,6 +91,11 @@ endif()
 
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "C++ Flags: ${CMAKE_CXX_FLAGS}")
+
+# Include project cmake modules (FindBoost.cmake for CMake 4.x compat on Windows)
+if(WIN32)
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+endif()
 
 # Boost MPL limit — needed for large variant types (>20 elements) on all platforms
 add_definitions(-DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=30)
@@ -111,6 +115,9 @@ if(APPLE OR FREEBSD)
     # Add macOS specific definitions for Boost.Asio
     add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1)
 
+    # Disable libc++ availability checks — fixes _LIBCPP_USING_IF_EXISTS on Xcode 16+
+    add_definitions(-D_LIBCPP_DISABLE_AVAILABILITY)
+
     # Fix header search paths for macOS
     if(APPLE)
         # Ensure proper C++ standard library is used
@@ -121,15 +128,6 @@ if(APPLE OR FREEBSD)
             set(CMAKE_OSX_SYSROOT "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
         elseif(EXISTS "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
             set(CMAKE_OSX_SYSROOT "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
-        endif()
-
-        # Add C++ standard library headers explicitly
-        if(EXISTS "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
-            include_directories(SYSTEM /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1)
-            include_directories(SYSTEM /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include)
-        elseif(EXISTS "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
-            include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
-            include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include)
         endif()
 
         # Add C standard library headers
@@ -162,14 +160,6 @@ elseif(APPLE)
    # Only use /opt/homebrew for ARM64, skip /usr/local to avoid x86_64 Boost
    include_directories(SYSTEM /opt/homebrew/include)
 
-   # Add C++ standard library headers explicitly
-   if(EXISTS "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
-       include_directories(SYSTEM /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1)
-       include_directories(SYSTEM /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include)
-   elseif(EXISTS "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
-       include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1)
-       include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include)
-   endif()
 else()
    include_directories(src/Platform/Linux)
    include_directories(src/Platform/Posix)
@@ -182,7 +172,7 @@ include_directories(src/Platform/FreeBSD)
 # --------------------------
 # Link static BOOST libraries everywhere
 set(Boost_NO_BOOST_CMAKE OFF)
-set(Boost_USE_STATIC_LIBS OFF)
+set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 
 if(MINGW)
@@ -213,7 +203,6 @@ else()
     # Required components - system is not needed in Boost 1.80+
     find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono regex serialization program_options coroutine context atomic)
 endif()
-set(Boost_USE_STATIC_LIBS ON)
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 message(STATUS "Boost Found: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Found Boost Version: ${Boost_VERSION}")
@@ -252,7 +241,7 @@ if(APPLE)
     endif()
     execute_process(COMMAND ${_BREW_CMD} --prefix jsoncpp OUTPUT_VARIABLE BREW_JSONCPP_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE BREW_RESULT)
     if(BREW_RESULT EQUAL 0)
-      set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include/json")
+      set(JSONCPP_INCLUDE_DIRS "${BREW_JSONCPP_PREFIX}/include")
       set(JSONCPP_LIBRARY_DIRS "${BREW_JSONCPP_PREFIX}/lib")
       set(JSONCPP_LIBRARIES "${BREW_JSONCPP_PREFIX}/lib/libjsoncpp.dylib")
       set(JSONCPP_FOUND TRUE)
@@ -284,35 +273,47 @@ endif()
 if(NOT JSONCPP_FOUND)
   # Manual detection fallback
   set(JSONCPP_FOUND FALSE)
-  set(JSONCPP_LIBRARIES "jsoncpp")
   set(JSONCPP_LIBRARY_DIRS "")
 
   # Try standard locations
   if(EXISTS "/usr/include/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include")
+    set(JSONCPP_LIBRARIES "jsoncpp")
     set(JSONCPP_FOUND TRUE)
     message(STATUS "Found jsoncpp headers at /usr/include/json")
   elseif(EXISTS "/usr/include/jsoncpp/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/jsoncpp")
+    set(JSONCPP_LIBRARIES "jsoncpp")
     set(JSONCPP_FOUND TRUE)
-    message(STATUS "Found jsoncpp headers at /usr/include/jsoncpp/json")
+    message(STATUS "Found jsoncpp headers at /usr/include/jsoncpp")
   elseif(EXISTS "/usr/include/x86_64-linux-gnu/jsoncpp/json/json.h")
-    set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp/json")
+    set(JSONCPP_INCLUDE_DIRS "/usr/include/x86_64-linux-gnu/jsoncpp")
+    set(JSONCPP_LIBRARIES "jsoncpp")
     set(JSONCPP_FOUND TRUE)
-    message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp/json")
+    message(STATUS "Found jsoncpp headers at /usr/include/x86_64-linux-gnu/jsoncpp")
   elseif(WIN32)
     if(EXISTS "C:/vcpkg/installed/x64-windows/include/json/json.h")
-      set(JSONCPP_INCLUDE_DIRS "C:/vcpkg/installed/x64-windows/include/json")
+      set(JSONCPP_INCLUDE_DIRS "C:/vcpkg/installed/x64-windows/include")
+      file(GLOB _vcpkg_jsoncpp_lib "C:/vcpkg/installed/x64-windows/lib/jsoncpp*.lib")
+      if(_vcpkg_jsoncpp_lib)
+        list(GET _vcpkg_jsoncpp_lib 0 JSONCPP_LIBRARIES)
+      else()
+        set(JSONCPP_LIBRARIES "jsoncpp")
+      endif()
+      set(JSONCPP_LIBRARY_DIRS "C:/vcpkg/installed/x64-windows/lib")
       set(JSONCPP_FOUND TRUE)
       message(STATUS "Found jsoncpp via vcpkg at ${JSONCPP_INCLUDE_DIRS}")
+      message(STATUS "jsoncpp library: ${JSONCPP_LIBRARIES}")
     endif()
   endif()
 
   if(JSONCPP_FOUND)
     include_directories(SYSTEM ${JSONCPP_INCLUDE_DIRS})
-  else()
-    include_directories(SYSTEM /usr/include/json /usr/include/jsoncpp/json /usr/include/x86_64-linux-gnu/jsoncpp/json)
+  elseif(NOT WIN32)
+    include_directories(SYSTEM /usr/include /usr/include/jsoncpp /usr/include/x86_64-linux-gnu/jsoncpp)
     message(WARNING "jsoncpp headers not found, using fallback paths")
+  else()
+    message(WARNING "jsoncpp headers not found on Windows; install via vcpkg")
   endif()
 endif()
 
@@ -321,7 +322,11 @@ if(NOT DEFINED JSONCPP_LIBRARIES)
   set(JSONCPP_LIBRARIES "jsoncpp")
 endif()
 if(NOT DEFINED JSONCPP_INCLUDE_DIRS)
-  set(JSONCPP_INCLUDE_DIRS "/usr/include/json")
+  if(WIN32)
+    set(JSONCPP_INCLUDE_DIRS "")
+  else()
+    set(JSONCPP_INCLUDE_DIRS "/usr/include")
+  endif()
 endif()
 if(NOT DEFINED JSONCPP_LIBRARY_DIRS)
   set(JSONCPP_LIBRARY_DIRS "")
@@ -351,10 +356,10 @@ if(APPLE)
 endif()
 
 # --------------------------
-# ICU (skipped on Android)
+# ICU (only needed on macOS/Linux)
 # --------------------------
-if(ANDROID)
-    message(STATUS "Android build detected: skipping ICU discovery")
+if(ANDROID OR WIN32)
+    message(STATUS "Skipping ICU discovery (not needed on this platform)")
 else()
     if(APPLE)
         # Ensure proper ICU paths for macOS

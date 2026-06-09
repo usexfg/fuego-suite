@@ -265,21 +265,17 @@ bool EthRpcClient::connectSocket() {
   m_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
   if (m_sock < 0) { freeaddrinfo(res); return false; }
 
-  struct timeval tv = {10, 0};
+#ifdef _WIN32
+  DWORD tvSec = 10;
   setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO,
-#ifdef _WIN32
-    reinterpret_cast<const char*>(&tv.tv_sec),
-#else
-    &tv,
-#endif
-    sizeof(tv));
+    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
   setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO,
-#ifdef _WIN32
-    reinterpret_cast<const char*>(&tv.tv_sec),
+    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
 #else
-    &tv,
+  struct timeval tv = {10, 0};
+  setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
-    sizeof(tv));
 
 #ifdef _WIN32
   u_long nonblocking = 1;

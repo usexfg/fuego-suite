@@ -24,6 +24,7 @@
 
 #include "AdaptorSignature.h"
 
+#include <array>
 #include <cstring>
 #include <mutex>
 

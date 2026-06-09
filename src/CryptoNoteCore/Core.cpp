@@ -299,18 +299,55 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
     if (txin.type() == typeid(KeyInput)) {
-      uint64_t txMixin = boost::get<KeyInput>(txin).outputIndexes.size();
-      if (!keeped_by_block && txMixin > m_currency.maxMixin()) {
+      uint64_t ringSize = boost::get<KeyInput>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
-      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && txMixin < m_currency.minMixin(blockMajorVersion)) {
-        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count " << txMixin
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_7 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has mixIn count " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputCommitmentSpend)) {
+      uint64_t ringSize = boost::get<TransactionInputCommitmentSpend>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large commitment spend ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_10 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has commitment spend ring size " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputCommitmentTransfer)) {
+      uint64_t ringSize = boost::get<TransactionInputCommitmentTransfer>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large CD transfer ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has CD transfer ring size " << ringSize
+                      << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
+                      << " for block version " << (int)blockMajorVersion << ", rejected";
+        return false;
+      }
+    } else if (txin.type() == typeid(TransactionInputUnified)) {
+      uint64_t ringSize = boost::get<TransactionInputUnified>(txin).outputIndexes.size();
+      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large unified input ring size, rejected";
+        return false;
+      }
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+        logger(ERROR) << "Transaction " << getObjectHash(tx) << " has unified input ring size " << ringSize
                       << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
                       << " for block version " << (int)blockMajorVersion << ", rejected";
         return false;
       }
     }
+    inputIndex++;
   }
   return true;
 }

@@ -311,6 +311,10 @@ bool check_inputs_types_supported(const TransactionPrefix& tx) {
       if (tx.version < TRANSACTION_VERSION_2) {
         return false;
       }
+    } else if (inputType == typeid(TransactionInputUnified)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        return false;
+      }
     } else if (inputType != typeid(KeyInput) && inputType != typeid(BaseInput)) {
       return false;
     }

@@ -14,14 +14,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "SolRpcClient.h"
-
-#ifndef _WIN32
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#endif
+#include "Common/WinCompat.h"
 
 #include <atomic>
 #include <cstring>

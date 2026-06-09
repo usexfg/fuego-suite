@@ -18,7 +18,12 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <dirent.h>
+#endif
 #include <cstring>
 #include <algorithm>
 
@@ -128,6 +133,15 @@ std::vector<std::string> SwapDatabase::listSwaps() {
   std::lock_guard<std::mutex> lock(m_mutex);
   std::vector<std::string> swapIds;
 
+#ifdef _WIN32
+  if (!fs::exists(m_swapsDir)) return swapIds;
+  for (const auto& entry : fs::directory_iterator(m_swapsDir)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
+      swapIds.push_back(name.substr(0, name.size() - 5));
+    }
+  }
+#else
   DIR* dir = opendir(m_swapsDir.c_str());
   if (!dir) {
     return swapIds;
@@ -144,6 +158,7 @@ std::vector<std::string> SwapDatabase::listSwaps() {
   }
 
   closedir(dir);
+#endif
 
   std::sort(swapIds.begin(), swapIds.end());
   return swapIds;

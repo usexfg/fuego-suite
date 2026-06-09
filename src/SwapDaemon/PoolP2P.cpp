@@ -14,16 +14,10 @@
 
 #include "PoolP2P.h"
 #include "Logging/LoggerRef.h"
+#include "Common/WinCompat.h"
 
 #include <cstring>
 #include <algorithm>
-#ifndef _WIN32
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netdb.h>
-#endif
 
 namespace XfgSwap {
 
@@ -44,7 +38,13 @@ bool PoolP2P::start() {
   }
 
   int opt = 1;
-  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
+#ifdef _WIN32
+    reinterpret_cast<const char*>(&opt),
+#else
+    &opt,
+#endif
+    sizeof(opt));
 
   struct sockaddr_in addr = {};
   addr.sin_family = AF_INET;

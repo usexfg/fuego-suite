@@ -84,6 +84,7 @@ struct uint128_t {
         return r;
     }
 
+    uint128_t operator*(uint32_t v) const { return *this * uint128_t((uint64_t)v); }
     uint128_t operator*(int v) const { return *this * uint128_t((uint64_t)v); }
 
     uint128_t operator/(const uint128_t& o) const {
@@ -111,8 +112,12 @@ struct uint128_t {
     }
 
     uint128_t operator/(uint64_t v) const { return *this / uint128_t(v); }
+    uint128_t operator/(uint32_t v) const { return *this / uint128_t((uint64_t)v); }
+    uint128_t operator/(int v) const { return *this / uint128_t((uint64_t)v); }
     uint128_t operator%(const uint128_t& o) const { return *this - (*this / o) * o; }
     uint128_t operator%(uint64_t v) const { return *this % uint128_t(v); }
+    uint128_t operator%(uint32_t v) const { return *this % uint128_t((uint64_t)v); }
+    uint128_t operator%(int v) const { return *this % uint128_t((uint64_t)v); }
 
     uint128_t operator<<(int shift) const {
         if (shift == 0) return *this;

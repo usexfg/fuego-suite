@@ -17,14 +17,8 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "Crypto/Bip143Sighash.h"
 #include "Common/JsonValue.h"
+#include "Common/WinCompat.h"
 
-#ifndef _WIN32
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#endif
 #include <algorithm>
 #include <cstring>
 #include <sstream>

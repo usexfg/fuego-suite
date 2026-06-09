@@ -65,4 +65,5 @@ fuego_rag/
 /xfg-stark-v3
 __pycache__/
 *.pyc
-.worktrees/
+build-test/
+.worktrees/build-test/

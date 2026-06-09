@@ -146,6 +146,10 @@ struct uint128_t {
 
     bool operator==(const uint128_t& o) const { return hi == o.hi && lo == o.lo; }
     bool operator!=(const uint128_t& o) const { return !(*this == o); }
+    bool operator==(uint64_t v) const { return hi == 0 && lo == v; }
+    bool operator!=(uint64_t v) const { return !(*this == v); }
+    bool operator==(int v) const { return *this == uint128_t((uint64_t)v); }
+    bool operator!=(int v) const { return *this != uint128_t((uint64_t)v); }
     bool operator<(const uint128_t& o) const  { return hi < o.hi || (hi == o.hi && lo < o.lo); }
     bool operator>(const uint128_t& o) const  { return o < *this; }
     bool operator<=(const uint128_t& o) const { return !(o < *this); }

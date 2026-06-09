@@ -278,7 +278,7 @@ bool SwapP2P::sendMessage(const std::string& peerEndpoint, const SwapMessage& ms
   size_t remaining = wire.size();
 
   while (remaining > 0) {
-    ssize_t sent = send(sock, ptr, remaining, MSG_NOSIGNAL);
+    ssize_t sent = send(sock, reinterpret_cast<const char*>(ptr), remaining, MSG_NOSIGNAL);
     if (sent <= 0) {
       m_logger(Logging::ERROR) << "SwapP2P: send failed to " << peerEndpoint;
       close(sock);
@@ -423,7 +423,7 @@ bool SwapP2P::parseMessage(const std::vector<uint8_t>& data, SwapMessage& msg) {
 bool SwapP2P::recvAll(int sock, uint8_t* buf, size_t len) {
   size_t received = 0;
   while (received < len) {
-    ssize_t n = recv(sock, buf + received, len - received, 0);
+    ssize_t n = recv(sock, reinterpret_cast<char*>(buf + received), len - received, 0);
     if (n <= 0) {
       return false;
     }

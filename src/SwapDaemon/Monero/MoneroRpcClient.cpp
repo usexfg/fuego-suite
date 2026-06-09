@@ -20,6 +20,7 @@
 #include "MoneroAddress.h"
 #include "Common/WinCompat.h"
 
+#include <array>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -65,11 +66,17 @@ std::string MoneroRpcClient::httpPost(const std::string& host, uint16_t port,
   addr.sin_port = htons(port);
 
   // Set a 10-second connect/read timeout
+#ifdef _WIN32
+  DWORD tvMs = 10000;
+  ::setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+  ::setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+#else
   struct timeval tv;
   tv.tv_sec = 10;
   tv.tv_usec = 0;
   ::setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   ::setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 
   if (::connect(sockfd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
     ::close(sockfd);
@@ -157,7 +164,11 @@ std::string MoneroRpcClient::walletRpc(const std::string& method, const std::str
 
 void MoneroRpcClient::syncPollDelay() {
   // ~1.5s between sync polls so the from-keys wallet scan can make progress.
+#ifdef _WIN32
+  Sleep(1500);
+#else
   usleep(1500 * 1000);
+#endif
 }
 
 bool MoneroRpcClient::getHeight(uint64_t& height) {

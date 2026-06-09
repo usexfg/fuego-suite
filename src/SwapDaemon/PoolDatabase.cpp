@@ -50,8 +50,14 @@ PoolDatabase::PoolDatabase(const std::string& dataDir)
 }
 
 bool PoolDatabase::ensureDirectory(const std::string& dir) {
+#ifdef _WIN32
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  return true;
+#else
   mkdir(dir.c_str(), 0700);
   return true;
+#endif
 }
 
 std::string PoolDatabase::poolFilePath(const PoolId& poolId) const {

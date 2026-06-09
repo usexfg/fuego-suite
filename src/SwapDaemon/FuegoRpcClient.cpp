@@ -47,11 +47,17 @@ std::string FuegoRpcClient::httpPost(const std::string& host, uint16_t port,
   }
 
   // Set socket timeout (10 seconds)
+#ifdef _WIN32
+  DWORD tvMs = 10000;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+#else
   struct timeval tv;
   tv.tv_sec = 10;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 
   // Resolve host
   struct addrinfo hints, *result;

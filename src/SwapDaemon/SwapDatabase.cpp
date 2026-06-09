@@ -36,12 +36,19 @@ SwapDatabase::SwapDatabase(const std::string& dataDir)
 }
 
 bool SwapDatabase::ensureDirectory() {
+#ifdef _WIN32
+  std::error_code ec;
+  fs::create_directories(m_dataDir, ec);
+  fs::create_directories(m_swapsDir, ec);
+  return true;
+#else
   // Create data dir if it doesn't exist
   mkdir(m_dataDir.c_str(), 0700);
   // Create swaps subdir
   int ret = mkdir(m_swapsDir.c_str(), 0700);
   // ret == 0 means created, EEXIST means already exists -- both are fine
   return (ret == 0 || errno == EEXIST);
+#endif
 }
 
 std::string SwapDatabase::swapFilePath(const std::string& swapId) const {
@@ -68,7 +75,9 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
       return false;
     }
 
+#ifndef _WIN32
     chmod(tmpPath.c_str(), S_IRUSR | S_IWUSR);
+#endif
 
     // Atomic rename
     if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {

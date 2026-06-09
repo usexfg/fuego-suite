@@ -112,7 +112,7 @@ bool PoolP2P::sendMessage(const std::string& peerEndpoint, const PoolMessage& ms
   std::vector<uint8_t> data = serializeMessage(msg);
   size_t sent = 0;
   while (sent < data.size()) {
-    ssize_t n = send(sock, data.data() + sent, data.size() - sent, 0);
+    ssize_t n = send(sock, reinterpret_cast<const char*>(data.data() + sent), data.size() - sent, 0);
     if (n <= 0) {
       close(sock);
       return false;
@@ -221,7 +221,7 @@ std::vector<uint8_t> PoolP2P::serializeMessage(const PoolMessage& msg) {
 bool PoolP2P::recvAll(int sock, uint8_t* buf, size_t len) {
   size_t received = 0;
   while (received < len) {
-    ssize_t n = recv(sock, buf + received, len - received, 0);
+    ssize_t n = recv(sock, reinterpret_cast<char*>(buf + received), len - received, 0);
     if (n <= 0) {
       return false;
     }

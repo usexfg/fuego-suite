@@ -186,6 +186,70 @@ std::string FuegoRpcClient::walletJsonRpc(const std::string& method, const std::
   }
   body << "}";
 
+  // If auth is configured, add Authorization header
+  if (!m_walletUser.empty()) {
+    std::string auth = m_walletUser + ":" + m_walletPass;
+    // Simple base64
+    static const char kEnc[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string enc;
+    size_t i = 0;
+    for (; i + 2 < auth.size(); i += 3) {
+      enc += kEnc[(auth[i] >> 2) & 0x3F];
+      enc += kEnc[((auth[i] & 0x3) << 4) | ((auth[i+1] >> 4) & 0xF)];
+      enc += kEnc[((auth[i+1] & 0xF) << 2) | ((auth[i+2] >> 6) & 0x3)];
+      enc += kEnc[auth[i+2] & 0x3F];
+    }
+    if (i < auth.size()) {
+      enc += kEnc[(auth[i] >> 2) & 0x3F];
+      if (i + 1 < auth.size()) {
+        enc += kEnc[((auth[i] & 0x3) << 4) | ((auth[i+1] >> 4) & 0xF)];
+        enc += kEnc[((auth[i+1] & 0xF) << 2)];
+        enc += '=';
+      } else {
+        enc += kEnc[(auth[i] & 0x3) << 4];
+        enc += "==";
+      }
+    }
+    std::string reqBody = body.str();
+    std::string path = "/json_rpc";
+    std::ostringstream req;
+    req << "POST " << path << " HTTP/1.1\r\n";
+    req << "Host: " << m_walletHost << ":" << m_walletPort << "\r\n";
+    req << "Content-Type: application/json\r\n";
+    req << "Authorization: Basic " << enc << "\r\n";
+    req << "Content-Length: " << reqBody.size() << "\r\n";
+    req << "Connection: close\r\n\r\n";
+    req << reqBody;
+
+    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return "";
+    struct timeval tv = {10, 0};
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    struct addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
+    std::string ps = std::to_string(m_walletPort);
+    if (getaddrinfo(m_walletHost.c_str(), ps.c_str(), &hints, &res) != 0 || !res) {
+      ::close(sock); return "";
+    }
+    if (::connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+      freeaddrinfo(res); ::close(sock); return "";
+    }
+    freeaddrinfo(res);
+    std::string request = req.str();
+    if (::send(sock, request.c_str(), request.size(), 0) < 0) { ::close(sock); return ""; }
+    std::string response; char buf[4096];
+    size_t hdrEnd = std::string::npos;
+    while (hdrEnd == std::string::npos) {
+      ssize_t n = ::recv(sock, buf, sizeof(buf), 0);
+      if (n <= 0) break; response.append(buf, n); hdrEnd = response.find("\r\n\r\n");
+    }
+    if (hdrEnd == std::string::npos) { ::close(sock); return ""; }
+    size_t bodyStart = hdrEnd + 4;
+    ::close(sock);
+    return response.substr(bodyStart);
+  }
+
   return httpPost(m_walletHost, m_walletPort, "/json_rpc", body.str());
 }
 
@@ -419,6 +483,25 @@ bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& address
   } catch (const std::exception&) { return false; }
 }
 
+bool FuegoRpcClient::optimizeWallet(uint64_t threshold, TransferResult& result) {
+  try {
+    std::string params = "{\"threshold\":" + std::to_string(threshold) + "}";
+    std::string respBody = walletJsonRpc("optimize", params);
+    if (respBody.empty()) return false;
+    auto extract = [&](const std::string& key) -> std::string {
+      std::string needle = "\"" + key + "\":\"";
+      auto pos = respBody.find(needle);
+      if (pos == std::string::npos) return "";
+      pos += needle.size();
+      auto end = respBody.find("\"", pos);
+      if (end == std::string::npos) return "";
+      return respBody.substr(pos, end - pos);
+    };
+    result.txHash = extract("tx_hash");
+    result.txSecretKey = extract("tx_secret_key");
+    return !result.txHash.empty();
+  } catch (const std::exception&) { return false; }
+}
 
 bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) {
   if (m_walletHost.empty() || m_walletPort == 0) {

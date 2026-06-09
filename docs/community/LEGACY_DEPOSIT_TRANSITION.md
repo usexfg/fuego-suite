@@ -42,16 +42,15 @@ Choose a term from 1 to 72 epochs (~5 days to ~1 year). Your HEAT earns real yie
 
 ## What you should not expect
 
-The 80% figure from the original COLD system is gone. It was funded by destroying the value of everyone else's XFG. That model is Ponzi-adjacent. It cannot exist in a system that claims to be economically honest.
+The 80% figure from the original COLD system is gone. It was funded by destroying the value of everyone else's XFG. 
 
-The replacement is a real-yield system producing 15–30% from actual protocol activity. If volume grows, rates rise. If the treasury backstops shortfalls, the floor holds. The system earns its yield. It does not print it.
+The replacement is a real-yield system producing 15–30% from actual protocol activity. If volume grows, rates rise. If the treasury backstops shortfalls, the floor holds. The system earns its yield. It does not print it.  It offers what the old system cannot offer which is why there really isnt anything we CAN redeem into a system based on real yield- except for the system already built to earn as much apy as you want, just now instead of the promise of one thru token issuance. So i did say one thing and do another, but for this I'd hope you'll accept the replacement.
 
 ## Why this is better
 
 The old system asked you to trust an inflation schedule. The new system asks you to verify protocol revenue. You can see swap fees on-chain every epoch. You can calculate exactly what the pool earned and what your share is. The math is auditable. The economics are transparent.
 
-This is not the product we imagined in the early days. It is a better one. It works without asking anyone to believe a spreadsheet.
+This is not the product we imagined - it is an econmically better one. It works without asking permission from anyone to earn as much yield as you want.
 
-—
+—ALSO CDs arent available in XFG in the new system and dont exist in HEAT CDs until v11 and even then XFG deposits are only available thru burning XFG and minting HEAT then making a HEAT CD.
 
-*Fuego v10. No ICO. No premine. No token printing to pay yield. Atomic swap fees fund CDs. Hearth fees fund LPs. Verifiable by anyone who runs a node.*

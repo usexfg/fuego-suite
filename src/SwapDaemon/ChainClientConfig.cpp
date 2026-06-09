@@ -156,6 +156,12 @@ bool loadChainClientConfig(const std::string& path,
 
   // XFG wallet key for signing managed offers
   out.xfgSecretKeyHex = jsonGetStr(json, "xfg_secret_key");
+  out.xfgViewKeyHex   = jsonGetStr(json, "xfg_view_key");
+
+  out.xfgWalletRpcHost = jsonGetStr(json, "xfg_wallet_rpc_host", "");
+  out.xfgWalletRpcPort = static_cast<uint16_t>(jsonGetUint(json, "xfg_wallet_rpc_port", 0));
+  out.xfgWalletRpcUser = jsonGetStr(json, "xfg_wallet_rpc_user");
+  out.xfgWalletRpcPass = jsonGetStr(json, "xfg_wallet_rpc_pass");
 
   // ── Validate ──
   if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;

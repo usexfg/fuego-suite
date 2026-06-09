@@ -105,6 +105,13 @@ struct ChainClientConfig {
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
+  std::string xfgViewKeyHex;
+
+  // Fuego wallet RPC config for escrow funding
+  std::string xfgWalletRpcHost;
+  uint16_t    xfgWalletRpcPort = 0;
+  std::string xfgWalletRpcUser;
+  std::string xfgWalletRpcPass;
 };
 
 class SwapDaemon {
@@ -259,7 +266,13 @@ public:
 
     Crypto::SecretKey m_makerSecretKey;
     Crypto::PublicKey m_makerPublicKey;
+    Crypto::SecretKey m_makerViewSecretKey;
     bool m_makerKeysSet = false;
+
+    std::string m_xfgWalletRpcHost;
+    uint16_t m_xfgWalletRpcPort = 0;
+    std::string m_xfgWalletRpcUser;
+    std::string m_xfgWalletRpcPass;
 
    struct TakerRecord {
      std::vector<time_t> requestTimes;

@@ -55,6 +55,18 @@ public:
   // Must be called before sendTransfer().
   void setWalletRpc(const std::string& host, uint16_t port);
 
+  // Set authentication credentials for wallet RPC.
+  void setWalletAuth(const std::string& user, const std::string& pass) {
+    m_walletUser = user; m_walletPass = pass;
+  }
+
+  // Run wallet optimize/fusion to consolidate dust outputs.
+  // Returns tx_hash + tx_secret_key in TransferResult.
+  bool optimizeWallet(uint64_t threshold, TransferResult& result);
+
+  // Convenience: POST to fuegod
+  std::string daemonPost(const std::string& path, const std::string& body);
+
   // Query /getheight
   bool getHeight(uint32_t& height);
 
@@ -101,9 +113,6 @@ private:
   std::string httpPost(const std::string& host, uint16_t port,
                        const std::string& path, const std::string& body);
 
-  // Convenience: POST to fuegod
-  std::string daemonPost(const std::string& path, const std::string& body);
-
   // Convenience: JSON-RPC call to wallet RPC
   std::string walletJsonRpc(const std::string& method, const std::string& params);
 
@@ -113,6 +122,8 @@ private:
   // Wallet RPC endpoint (optional, needed for sendTransfer)
   std::string m_walletHost;
   uint16_t m_walletPort = 0;
+  std::string m_walletUser;
+  std::string m_walletPass;
 };
 
 } // namespace XfgSwap

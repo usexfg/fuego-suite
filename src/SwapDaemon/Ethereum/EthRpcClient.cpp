@@ -285,7 +285,7 @@ bool EthRpcClient::connectSocket() {
   if (flags >= 0) fcntl(m_sock, F_SETFL, flags | O_NONBLOCK);
 #endif
 
-  int connRet = connect(m_sock, res->ai_addr, res->ai_addrlen);
+  int connRet = ::connect(m_sock, res->ai_addr, res->ai_addrlen);
 #ifdef _WIN32
   if (connRet < 0 && WSAGetLastError() == WSAEWOULDBLOCK) {
 #else

@@ -199,6 +199,15 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "XMR chain client registered: "
       << chainCfg.xmrDaemonHost << ":" << chainCfg.xmrDaemonPort;
   }
+  m_xfgWalletRpcHost = chainCfg.xfgWalletRpcHost;
+  m_xfgWalletRpcPort = chainCfg.xfgWalletRpcPort;
+  m_xfgWalletRpcUser = chainCfg.xfgWalletRpcUser;
+  m_xfgWalletRpcPass = chainCfg.xfgWalletRpcPass;
+
+  // Store view key for escrow funding derivation
+  if (!chainCfg.xfgViewKeyHex.empty() && m_makerKeysSet) {
+    Common::podFromHex(chainCfg.xfgViewKeyHex, m_makerViewSecretKey);
+  }
 }
 
 SwapDaemon::~SwapDaemon() {
@@ -664,11 +673,11 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
     if (!m_xfgWalletRpcUser.empty())
       m_rpc.setWalletAuth(m_xfgWalletRpcUser, m_xfgWalletRpcPass);
   } else {
-    m_logger(Logging::ERROR) << "  Wallet RPC not configured (xfg_wallet_rpc_host/port)";
+    m_logger(Logging::ERROR) << "  Wallet RPC not configured";
     return false;
   }
 
-  // 1. Call optimize RPC to create a tx with known secret key
+  // 1. Create a known output via optimize RPC
   TransferResult opt;
   if (!m_rpc.optimizeWallet(params.xfgAmount, opt)) {
     m_logger(Logging::ERROR) << "  optimize RPC failed";
@@ -683,29 +692,48 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   if (!Crypto::secret_key_to_public_key(txSec, txPubKey)) return false;
 
   Crypto::KeyDerivation derivation;
-  if (!Crypto::generate_key_derivation(txPubKey, m_makerSecretKey, derivation))
+  if (!Crypto::generate_key_derivation(txPubKey, m_makerViewSecretKey, derivation))
     return false;
 
+  // 3. Poll for the optimize output global index.
+  // The optimize tx creates outputs at various amounts. We try all output
+  // indices (0..9) in the derivation and match against on-chain outputs.
   Crypto::PublicKey derivedKey;
-  Crypto::derive_public_key(derivation, 0, m_makerPublicKey, derivedKey);
   Crypto::SecretKey outputSecret;
-  Crypto::derive_secret_key(derivation, 0, m_makerSecretKey, outputSecret);
   Crypto::KeyImage keyImage;
-  Crypto::generate_key_image(derivedKey, outputSecret, keyImage);
-
-  // 3. Poll for the optimize output's global index
   uint32_t realGI = 0;
   bool found = false;
+  size_t foundOutIdx = 0;
+
   for (int retry = 0; retry < 200 && !found; ++retry) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
-    std::vector<RandomOutputEntry> outs;
-    if (m_rpc.getRandomOutputs(params.xfgAmount, 100, outs)) {
-      for (auto& o : outs) {
-        if (std::memcmp(&o.outKey, &derivedKey,
-                        sizeof(Crypto::PublicKey)) == 0) {
-          realGI = static_cast<uint32_t>(o.globalIndex);
-          found = true;
-          break;
+    std::vector<TxOutputInfo> optOuts;
+    if (m_rpc.getTransactionOutputs(opt.txHash, optOuts) && !optOuts.empty()) {
+      for (size_t outIdx = 0; outIdx < 10 && !found; ++outIdx) {
+        Crypto::derive_public_key(derivation, outIdx, m_makerPublicKey, derivedKey);
+        for (size_t i = 0; i < optOuts.size(); ++i) {
+          if (std::memcmp(&optOuts[i].targetKey, &derivedKey,
+                          sizeof(Crypto::PublicKey)) == 0) {
+            foundOutIdx = outIdx;
+            uint64_t realAmt = optOuts[i].amount;
+            std::vector<RandomOutputEntry> outs;
+            if (m_rpc.getRandomOutputs(realAmt, 100, outs)) {
+              for (auto& o : outs) {
+                if (std::memcmp(&o.outKey, &derivedKey,
+                                sizeof(Crypto::PublicKey)) == 0) {
+                  realGI = static_cast<uint32_t>(o.globalIndex);
+                  found = true;
+                  m_logger(Logging::INFO) << "  Optimize output at gi=" << realGI
+                    << " amt=" << realAmt << " outIdx=" << outIdx;
+                  // Re-derive secret and key image with the correct index
+                  Crypto::derive_secret_key(derivation, outIdx, m_makerSecretKey, outputSecret);
+                  Crypto::generate_key_image(derivedKey, outputSecret, keyImage);
+                  break;
+                }
+              }
+            }
+            break;
+          }
         }
       }
     }
@@ -725,9 +753,8 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
     return false;
   }
   decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
-      [realGI](const RandomOutputEntry& e) {
-        return e.globalIndex == realGI;
-      }), decoys.end());
+      [realGI](const RandomOutputEntry& e) { return e.globalIndex == realGI; }),
+      decoys.end());
   if (decoys.size() < 8) {
     m_logger(Logging::ERROR) << "  Not enough decoys after filtering";
     return false;

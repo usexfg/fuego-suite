@@ -78,15 +78,12 @@ jobs:
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE "build" "src" "Release"
           $zipName = "$release_name.zip"
           $zipPath = Join-Path $releaseDir $zipName
+          $zipPathFwd = $zipPath -replace '\\', '/'
           Compress-Archive -Path (Join-Path $releaseDir "*.exe") -DestinationPath $zipPath
           $sha256 = (Get-FileHash $zipPath).Hash
-          Write-Host "asset_path=$zipPath"
-          Write-Host "sha256=$sha256"
-          Write-Host "release_name=$zipName"
-          Write-Host "xfg_version=$xfg_ver"
           echo "sha256=$sha256" >> $env:GITHUB_OUTPUT
           echo "release_name=$zipName" >> $env:GITHUB_OUTPUT
-          echo "asset_path=$zipPath" >> $env:GITHUB_OUTPUT
+          echo "asset_path=$zipPathFwd" >> $env:GITHUB_OUTPUT
           echo "xfg_version=$xfg_ver" >> $env:GITHUB_OUTPUT
 
       - name: Create Release

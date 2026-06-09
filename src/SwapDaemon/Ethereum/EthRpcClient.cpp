@@ -295,7 +295,8 @@ bool EthRpcClient::connectSocket() {
     FD_ZERO(&fdset);
     FD_SET(m_sock, &fdset);
 #ifdef _WIN32
-    if (select(0, NULL, &fdset, NULL, &tv) <= 0) {
+    struct timeval selectTv = {10, 0};
+    if (select(0, NULL, &fdset, NULL, &selectTv) <= 0) {
 #else
     if (select(m_sock + 1, NULL, &fdset, NULL, &tv) <= 0) {
 #endif

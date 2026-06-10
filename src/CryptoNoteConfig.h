@@ -265,6 +265,8 @@ namespace CryptoNote
         const uint64_t CD_RESERVE_CAP = 200;                        // 2× base pool (scaled by 100)
         const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
+        constexpr uint64_t HEARTH_POOL_SEED_XFG = 5000;         // 5000 XFG at genesis (COIN units)
+        constexpr uint64_t HEARTH_POOL_SEED_HEAT = 5000;        // 5000 HEAT at genesis (1:1 ratio)
         const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum (aspirational depth target)
         const uint64_t HEARTH_MIN_HEAT_DEPTH = 40000;              // 40,000 HEAT minimum (at 8:1 ratio)
 

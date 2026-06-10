@@ -65,7 +65,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 9
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 10  // v10: treasury splits, 1:1 pool seed
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -396,6 +396,13 @@ private:
   m_piState.redemptionPrice = FixedPoint64::fromRatio(
     parameters::HEAT_LAUNCH_RATIO_NUM,
     parameters::HEAT_LAUNCH_RATIO_DENOM);
+  // Seed Hearth pool at 1:1 for immediate peg
+  m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
+  m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
+  // Bootstrap: protocol owes the XFG seed provider
+  if (!m_bootstrapRepaid) {
+    m_bootstrapXfgOwed = m_ammPool.reserveXfg;
+  }
 } // upgradekit
 
 bool Blockchain::addObserver(IBlockchainStorageObserver* observer) {

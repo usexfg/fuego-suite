@@ -196,8 +196,8 @@ namespace CryptoNote
         const bool     MILAESANDRA_SIMULATE_FEES = true;           // true on testnet — active at block 638
         const uint64_t MILAESANDRA_BASE_FEES_ATOMIC = 2'000'000'000; // 2,000 XFG/epoch base
         const uint64_t MILAESANDRA_FEE_MULTIPLIER = 100;           // 1.0× scale factor
-        const uint64_t MILAESANDRA_INITIAL_XFG_PRICE = 500;        // $5.00 initial (triggers activation)
-        const bool     MILAESANDRA_GROWING_PRICE = false;          // true to simulate price growth
+        const uint64_t MILAESANDRA_INITIAL_XFG_PRICE = 158;        // $1.58 (1:1 Hearth pool seed)
+        const bool     MILAESANDRA_GROWING_PRICE = true;           // slowly grow toward activation threshold
         const uint32_t MILAESANDRA_ACTIVATION_HEIGHT = 650;       // block to start fee simulation
 
         // HEAT stability — 3 switchable modes via HEAT_STABILITY_MODE

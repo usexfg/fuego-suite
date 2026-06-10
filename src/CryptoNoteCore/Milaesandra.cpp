@@ -43,21 +43,19 @@ uint64_t Milaesandra::simulateXfgPrice(const Currency& currency,
   if (!isActive(currency))
     return 0;
 
-  // XFG price simulation: grows from initial value over time
-  // Price in cents (scaled by VALUE_SCALE=100)
-  // Starts at MILAESANDRA_INITIAL_XFG_PRICE and can grow to test activation
+  // XFG price simulation: starts at $1.58 (1:1 Hearth pool)
+  // Grows ~5% per 100 blocks to simulate adoption-driven appreciation
+  uint64_t price = parameters::MILAESANDRA_INITIAL_XFG_PRICE;
 
-  uint64_t basePrice = parameters::MILAESANDRA_INITIAL_XFG_PRICE;
-
-  // Activate growth mode if configured
-  if (parameters::MILAESANDRA_GROWING_PRICE) {
-    // Price grows ~10% per 500 epochs
-    uint64_t growthEpochs = blockHeight / 500;
-    for (uint64_t i = 0; i < growthEpochs && basePrice < 100000; ++i)
-      basePrice = (basePrice * 110) / 100; // +10% each tier
+  if (parameters::MILAESANDRA_GROWING_PRICE && blockHeight > 0) {
+    uint64_t tiers = blockHeight / 100;
+    double factor = 1.0;
+    for (uint64_t i = 0; i < tiers; ++i)
+      factor *= 1.05;
+    price = static_cast<uint64_t>(price * factor);
   }
 
-  return basePrice;
+  return price;
 }
 
 } // namespace CryptoNote

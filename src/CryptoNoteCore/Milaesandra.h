@@ -19,13 +19,8 @@ class Blockchain;
 // Milaesandra — testnet atomic swap fee simulator
 // ==============================================
 // Generates simulated swap fees so the full protocol machinery
-// (CD yield, treasury, rebalancer, PI controller, oracle activation)
+// (CD yield, treasury, PI controller peg arb, oracle activation)
 // can be tested on testnet without real cross-chain activity.
-//
-// Three levers of the system:
-//   1. CD yield routing — 40% → treasury when pool lopsided
-//   2. PI controller — negative feedback on mint rate
-//   3. Rebalancer — single-sided LP for pool defense
 //
 // Testnet only. Does nothing on mainnet.
 

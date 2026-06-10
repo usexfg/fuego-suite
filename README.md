@@ -66,15 +66,17 @@ _____________________________
 #### 1. Install Dependencies
 
 ```bash
-sudo apt-get install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
+sudo apt install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
 ```
 
 #### 2. Clone and Build
 
 ```bash
-git clone https://github.com/usexfg/fuego
-cd fuego
-make
+git clone --recursive https://github.com/usexfg/fuego-suite
+cd fuego-suite && git submodule init && git submodule update
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
 ```
 
 Binaries will be in `build/release/src/`. The Go TUI builds automatically if Go 1.24+ is installed.

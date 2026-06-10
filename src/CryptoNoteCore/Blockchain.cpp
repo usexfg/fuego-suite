@@ -3993,13 +3993,28 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       legacyBondShare = (cdShare * CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT) / 100;
       regularCdShare = cdShare - legacyBondShare;
     }
-
-    // Compute fee rates for this epoch on both tracks.
-    // Use uint128_t for the intermediate product to prevent uint64_t overflow
     uint64_t epochFeeRate = 0;
     if (epochCdLocked > 0 && regularCdShare > 0) {
       epochFeeRate = static_cast<uint64_t>(
           (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+    }
+
+    // CD yield floor: if organic rate < 2% APY, inject from treasury LP reserve
+    if (epochCdLocked > 0) {
+      uint64_t floorRate = (CryptoNote::parameters::CD_YIELD_FLOOR_APY_PCT
+                           * CryptoNote::parameters::FEE_POOL_RATE_PRECISION) / 100;
+      if (epochFeeRate < floorRate) {
+        uint64_t shortfall = static_cast<uint64_t>(
+            (uint128_t)(floorRate - epochFeeRate) * epochCdLocked
+            / CryptoNote::parameters::FEE_POOL_RATE_PRECISION);
+        uint64_t injection = std::min(shortfall, m_treasuryLpReserve);
+        if (injection > 0) {
+          m_treasuryLpReserve -= injection;
+          regularCdShare += injection;
+          epochFeeRate = static_cast<uint64_t>(
+              (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+        }
+      }
     }
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShare, epochCdLocked);
 

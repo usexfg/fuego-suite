@@ -3345,55 +3345,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     // CD yield is processed in pushBlock (consolidated epoch processing).
     // m_currentEpochSwapFees is already consumed+reset by pushBlock at this point.
-
-    // Protocol pool rebalancing: single-sided LP add when pool drifts beyond basin band.
-    // Protocol-only — external actors cannot rebalance single-sided.
-    if (m_piState.basinPhase == BASIN_LOCKED && !m_ammPool.isEmpty() && m_treasuryLpReserve > 0
-        && epochTwapAvg > 0) {
-      FixedPoint64 currentSpot = FixedPoint64::fromRaw(epochTwapAvg);
-      FixedPoint64 reserveRatio = FixedPoint64::fromRatio(
-        m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-      FixedPoint64 treasuryAvail = FixedPoint64::fromUint64(
-        m_treasuryLpReserve);
-
-      bool poolIsXfgHeavy = false;
-      FixedPoint64 rebalanceAmount = computeRebalanceAmount(
-        m_piState, currentSpot, reserveRatio, treasuryAvail,
-        m_ammPool.totalLpShares, poolIsXfgHeavy);
-
-      uint64_t depositAmount = rebalanceAmount.toUint64();
-      if (depositAmount > 0 && depositAmount <= m_treasuryLpReserve) {
-        uint64_t protocolMaxShares = (m_ammPool.totalLpShares *
-          parameters::PROTOCOL_LP_MAX_FRACTION) / 100;
-        if (m_protocolLpShares < protocolMaxShares) {
-          if (poolIsXfgHeavy) {
-            // Pool XFG-heavy: mint HEAT from treasury XFG, deposit HEAT single-sided
-            // (counter-weight to CD yield buy pressure = controlled supply growth)
-            FixedPoint64 heatFp = FixedPoint64::fromUint64(depositAmount)
-                                 .div(m_piState.redemptionPrice);
-            uint64_t heatDeposit = heatFp.toUint64();
-            if (heatDeposit > 0) {
-              m_ammPool.reserveHeat += heatDeposit;
-              uint64_t newShares = ammMintLpShares(0, heatDeposit,
-                m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-              m_ammPool.totalLpShares += newShares;
-              m_protocolLpShares += newShares;
-              m_treasuryLpReserve -= depositAmount;
-              m_heatSupply += heatDeposit;
-              m_bankingIndex.addForeverDeposit(depositAmount, block.height);
-            }
-          } else {
-            // Pool HEAT-heavy: deposit XFG from treasury single-sided
-            m_ammPool.reserveXfg += depositAmount;
-            uint64_t newShares = ammMintLpShares(depositAmount, 0,
-              m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            m_ammPool.totalLpShares += newShares;
-            m_protocolLpShares += newShares;
-            m_treasuryLpReserve -= depositAmount;
-          }
-        }
-      }
-    }
   }
 /*
   // Track per-block banking fees for audit/query

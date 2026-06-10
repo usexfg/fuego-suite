@@ -343,6 +343,7 @@ namespace CryptoNote {
       uint64_t legacyBondYieldPool;
       uint64_t treasuryBalance;
       uint64_t treasuryHeatReserve;
+      uint64_t treasuryLpReserve;
       uint64_t protocolLpShares;
       uint64_t treasuryLpYield;
       uint64_t bootstrapRepaymentVault;
@@ -418,6 +419,7 @@ namespace CryptoNote {
     uint64_t m_totalRolloverAccrued = 0;       // deprecated, kept for serialization compat
     uint64_t m_treasuryBalance = 0;
     uint64_t m_treasuryHeatReserve = 0;          // HEAT bought for peg defense (sold when overvalued)
+    uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat
     // HEAT stablecoin state
     UpgradeDetector m_upgradeDetectorV2;

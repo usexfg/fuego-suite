@@ -217,6 +217,7 @@ public:
       s(m_bs.m_totalCdLocked, "total_cd_locked");
       s(m_bs.m_treasuryBalance, "treasury_balance");
       s(m_bs.m_treasuryHeatReserve, "treasury_heat_reserve");
+      s(m_bs.m_treasuryLpReserve, "treasury_lp_reserve");
       s(m_bs.m_rolloverVaultBalance, "rollover_vault_balance");
       s(m_bs.m_totalSwapFeesCollected, "total_swap_fees_collected");
       s(m_bs.m_totalCdInterestPaid, "total_cd_interest_paid");
@@ -3346,13 +3347,13 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     // Protocol pool rebalancing: single-sided LP add when pool drifts beyond basin band.
     // Protocol-only — external actors cannot rebalance single-sided.
-    if (m_piState.basinPhase == BASIN_LOCKED && !m_ammPool.isEmpty() && m_treasuryBalance > 0
+    if (m_piState.basinPhase == BASIN_LOCKED && !m_ammPool.isEmpty() && m_treasuryLpReserve > 0
         && epochTwapAvg > 0) {
       FixedPoint64 currentSpot = FixedPoint64::fromRaw(epochTwapAvg);
       FixedPoint64 reserveRatio = FixedPoint64::fromRatio(
         m_ammPool.reserveXfg, m_ammPool.reserveHeat);
       FixedPoint64 treasuryAvail = FixedPoint64::fromUint64(
-        m_treasuryBalance);
+        m_treasuryLpReserve);
 
       bool poolIsXfgHeavy = false;
       FixedPoint64 rebalanceAmount = computeRebalanceAmount(
@@ -3360,7 +3361,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         m_ammPool.totalLpShares, poolIsXfgHeavy);
 
       uint64_t depositAmount = rebalanceAmount.toUint64();
-      if (depositAmount > 0 && depositAmount <= m_treasuryBalance) {
+      if (depositAmount > 0 && depositAmount <= m_treasuryLpReserve) {
         uint64_t protocolMaxShares = (m_ammPool.totalLpShares *
           parameters::PROTOCOL_LP_MAX_FRACTION) / 100;
         if (m_protocolLpShares < protocolMaxShares) {
@@ -3376,7 +3377,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
                 m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
               m_ammPool.totalLpShares += newShares;
               m_protocolLpShares += newShares;
-              m_treasuryBalance -= depositAmount;
+              m_treasuryLpReserve -= depositAmount;
               m_heatSupply += heatDeposit;
               m_bankingIndex.addForeverDeposit(depositAmount, block.height);
             }
@@ -3387,7 +3388,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
               m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
             m_ammPool.totalLpShares += newShares;
             m_protocolLpShares += newShares;
-            m_treasuryBalance -= depositAmount;
+            m_treasuryLpReserve -= depositAmount;
           }
         }
       }
@@ -3556,7 +3557,9 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
             permanentBurns += heatCommit.amount / 2;                    // 50% → Eternal Flame (emission recycling)
-            m_treasuryBalance += heatCommit.amount - (heatCommit.amount / 2); // 50% → Treasury (peg defense)
+            uint64_t treasuryShare = heatCommit.amount - (heatCommit.amount / 2); // 50% → Treasury
+            m_treasuryLpReserve += (treasuryShare * 60) / 100;          // 60% of Treasury (30% total) → Hearth LP Provision
+            m_treasuryBalance += treasuryShare - ((treasuryShare * 60) / 100); // 40% of Treasury (20% total) → Peg Defense
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
             // Index the HEAT commitment for RPC queries
@@ -3959,6 +3962,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
     preEpoch.treasuryBalance = m_treasuryBalance;
     preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
+    preEpoch.treasuryLpReserve = m_treasuryLpReserve;
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
     preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
@@ -4295,6 +4299,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_legacyBondYieldPool = snap.legacyBondYieldPool;
     m_treasuryBalance = snap.treasuryBalance;
     m_treasuryHeatReserve = snap.treasuryHeatReserve;
+    m_treasuryLpReserve = snap.treasuryLpReserve;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;

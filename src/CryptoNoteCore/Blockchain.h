@@ -130,6 +130,7 @@ namespace CryptoNote {
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
+    uint64_t getTreasuryXfgReserve() const { return m_treasuryXfgReserve; }
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
     bool withdrawTreasuryLp(uint64_t sharesToBurn);
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
@@ -343,6 +344,7 @@ namespace CryptoNote {
       uint64_t legacyBondYieldPool;
       uint64_t treasuryBalance;
       uint64_t treasuryHeatReserve;
+      uint64_t treasuryXfgReserve;
       uint64_t treasuryLpReserve;
       uint64_t protocolLpShares;
       uint64_t treasuryLpYield;
@@ -419,6 +421,7 @@ namespace CryptoNote {
     uint64_t m_totalRolloverAccrued = 0;       // deprecated, kept for serialization compat
     uint64_t m_treasuryBalance = 0;
     uint64_t m_treasuryHeatReserve = 0;          // HEAT bought for peg defense (sold when overvalued)
+    uint64_t m_treasuryXfgReserve = 0;           // permanent XFG accumulator (never spent)
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat
     // HEAT stablecoin state

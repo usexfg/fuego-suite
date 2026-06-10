@@ -217,6 +217,7 @@ public:
       s(m_bs.m_totalCdLocked, "total_cd_locked");
       s(m_bs.m_treasuryBalance, "treasury_balance");
       s(m_bs.m_treasuryHeatReserve, "treasury_heat_reserve");
+      s(m_bs.m_treasuryXfgReserve, "treasury_xfg_reserve");
       s(m_bs.m_treasuryLpReserve, "treasury_lp_reserve");
       s(m_bs.m_rolloverVaultBalance, "rollover_vault_balance");
       s(m_bs.m_totalSwapFeesCollected, "total_swap_fees_collected");
@@ -3962,6 +3963,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
     preEpoch.treasuryBalance = m_treasuryBalance;
     preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
+    preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
     preEpoch.treasuryLpReserve = m_treasuryLpReserve;
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
@@ -4041,9 +4043,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       uint64_t xfgBuyback = (m_cdYieldPool * CryptoNote::parameters::CD_YIELD_XFG_BUYBACK_PCT) / 100;
       uint64_t heatBuyAmount = m_cdYieldPool - xfgBuyback;
 
-      // Protocol XFG buyback: retain XFG in treasury (permanent demand floor)
+      // Protocol XFG buyback: retain XFG in permanent reserve (never spent)
       if (xfgBuyback > 0) {
-        m_treasuryBalance += xfgBuyback;
+        m_treasuryXfgReserve += xfgBuyback;
       }
 
       if (heatBuyAmount > 0) {
@@ -4306,6 +4308,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_legacyBondYieldPool = snap.legacyBondYieldPool;
     m_treasuryBalance = snap.treasuryBalance;
     m_treasuryHeatReserve = snap.treasuryHeatReserve;
+    m_treasuryXfgReserve = snap.treasuryXfgReserve;
     m_treasuryLpReserve = snap.treasuryLpReserve;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;

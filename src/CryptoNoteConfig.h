@@ -162,6 +162,7 @@ namespace CryptoNote
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
         // Swap fee split: 80% CD Yield / 20% Treasury Reserve
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
+        const uint64_t CD_YIELD_XFG_BUYBACK_PCT = 20;        // 20% of CD yield → protocol XFG accumulator
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
         // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)

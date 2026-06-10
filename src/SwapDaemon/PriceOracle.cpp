@@ -19,20 +19,20 @@
 namespace XfgSwap {
 
 // =============================================================================
-// Seed prices: 1 XFG = $0.01 USD
+// Seed prices: 1 XFG = $1.58 (1:1 Hearth pool bootstrap)
 // =============================================================================
 //
-// Counterparty prices (March 2026):
-//   SOL = $170    →  1 SOL =  17,000 XFG
-//   ETH = $2,140  →  1 ETH = 214,000 XFG
-//   BCH = $469    →  1 BCH =  46,900 XFG
-//   XMR = $343    →  1 XMR =  34,300 XFG
+// Counterparty prices (June 2026):
+//   SOL = $170    →  1 SOL =     108 XFG
+//   ETH = $2,140  →  1 ETH =   1,354 XFG
+//   BCH = $469    →  1 BCH =     297 XFG
+//   XMR = $343    →  1 XMR =     217 XFG
 //
 // These seed rates bootstrap the system before any swaps complete.
 // Once >= 5 real swaps exist for a pair, TWAP takes over entirely.
 // =============================================================================
 
-static const double SEED_XFG_USD = 0.01;
+static const double SEED_XFG_USD = 1.58;
 static const double SEED_SOL_USD = 170.0;
 static const double SEED_ETH_USD = 2140.0;
 static const double SEED_BCH_USD = 469.0;

@@ -205,12 +205,12 @@ protected:
   void convertAndLoadWalletFile(const std::string &path, std::ifstream &&walletFileStream);
   size_t getTxSize(const TransactionParameters &sendingTransaction);
 
-  static void decryptKeyPair(const EncryptedWalletRecord& cipher, Crypto::PublicKey& publicKey, Crypto::SecretKey& secretKey, uint64_t& creationTimestamp, const Crypto::chacha8_key& key);
-    Crypto::chacha8_iv getNextIv() const;
-
+  static void decryptKeyPair(const EncryptedWalletRecord& cipher, Crypto::PublicKey& publicKey, Crypto::SecretKey& secretKey, uint64_t& creationTimestamp, const Crypto::chacha8_key& key, uint8_t version);
   void decryptKeyPair(const EncryptedWalletRecord& cipher, Crypto::PublicKey& publicKey, Crypto::SecretKey& secretKey, uint64_t& creationTimestamp) const;
   static EncryptedWalletRecord encryptKeyPair(const Crypto::PublicKey& publicKey, const Crypto::SecretKey& secretKey, uint64_t creationTimestamp, const Crypto::chacha8_key& key, const Crypto::chacha8_iv& iv);
   EncryptedWalletRecord encryptKeyPair(const Crypto::PublicKey& publicKey, const Crypto::SecretKey& secretKey, uint64_t creationTimestamp) const;
+  Crypto::chacha8_iv getNextIv() const;
+  static void deriveMacKey(const Crypto::chacha8_key &key, uint8_t macKey[32]);
   static void incIv(Crypto::chacha8_iv& iv);
   void incNextIv();
   void initWithKeys(const std::string& path, const std::string& password, const Crypto::PublicKey& viewPublicKey, const Crypto::SecretKey& viewSecretKey);
@@ -478,6 +478,7 @@ protected:
 
   Crypto::PublicKey m_viewPublicKey;
   Crypto::SecretKey m_viewSecretKey;
+  uint64_t m_creationTimestamp;
 
   uint64_t m_actualBalance;
   uint64_t m_pendingBalance;

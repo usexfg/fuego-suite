@@ -61,6 +61,7 @@ struct EncryptedWalletRecord {
   Crypto::chacha8_iv iv;
   // Secret key, public key and creation timestamp
   uint8_t data[sizeof(Crypto::PublicKey) + sizeof(Crypto::SecretKey) + sizeof(uint64_t)];
+  uint8_t tag[32]; // Added for HMAC-SHA256 integrity check
 };
 #pragma pack(pop)
 

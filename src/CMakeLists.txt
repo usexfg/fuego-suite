@@ -183,6 +183,10 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT ANDROID)
         target_compile_options(Crypto PRIVATE -march=armv8-a+crypto)
         target_compile_definitions(Crypto PRIVATE FORCE_USE_HEAP)
         message(STATUS "Apple Silicon detected, using ARM hardware AES (armv8-a+crypto) with heap allocation for Crypto library")
+    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|armv8-a")
+        # Linux/Generic ARM64 (e.g. Raspberry Pi): enable ARM crypto extensions.
+        target_compile_options(Crypto PRIVATE -march=armv8-a+crypto)
+        message(STATUS "ARM64 detected, using ARM hardware AES (armv8-a+crypto) for Crypto library")
     else()
         # Enable AES-NI and SSE instructions for cryptographic operations
         target_compile_options(Crypto PRIVATE -maes -msse2 -msse4.1 -msse4.2)

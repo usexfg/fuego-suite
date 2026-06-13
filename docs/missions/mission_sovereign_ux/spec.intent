@@ -1,0 +1,12 @@
+AIM: mission.sovereign.ux#intent@2.2
+
+INTENT SovereignUxSimplification {
+  SUMMARY: "A major UI/UX refactor for SWAPXFG to eliminate command redundancy, introduce a context-aware Omnibar, and establish a high-fidelity 'Sovereign Flame' aesthetic."
+  REQUIREMENTS {
+    - "Consolidate 'offer' and 'confirm-offer' into a single 'swap' command with an interactive (Y/N) confirmation."
+    - "Implement an 'Omnibar' that provides real-time command suggestions and tab-completion."
+    - "Introduce a persistent vertical sidebar for high-level mode switching (Markets, CDs, Network)."
+    - "Automate browser bridge detection to minimize manual 'connect' commands."
+    - "Refactor view logic using 'lipgloss' for a dynamic grid layout that adapts to terminal size."
+  }
+}

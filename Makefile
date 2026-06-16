@@ -27,7 +27,7 @@ build-static:
 test-release: build-release
 	cd build/release && $(MAKE) test
 
-all-release: build-release build-tui
+all-release: build-release build-tui build-swapxfg
 
 # Build TUI separately if Go is available
 build-tui:
@@ -45,6 +45,24 @@ build-tui:
 		fi; \
 	else \
 		echo "Go is not installed. Skipping TUI build."; \
+	fi
+
+# Build swapxfg separately if Go is available
+build-swapxfg:
+	@if command -v go >/dev/null 2>&1; then \
+		echo "Building swapxfg"; \
+		cd swapxfg && go mod tidy && go build -o swapxfg .; \
+		if [ -f "swapxfg" ]; then \
+			mkdir -p build/release/bin; \
+			cp swapxfg build/release/bin/; \
+			chmod +x build/release/bin/swapxfg; \
+			echo "swapxfg built successfully"; \
+		else \
+			echo "Failed to build swapxfg binary"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "Go is not installed. Skipping swapxfg build."; \
 	fi
 
 test-dynamic-supply:

@@ -198,7 +198,9 @@ namespace CryptoNote {
     virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                                   uint32_t currentHeight,
                                                   uint64_t& outInterest,
-                                                  bool isLegacyBond = false) override;
+                                                  bool isLegacyBond = false,
+                                                  uint32_t term = 0,
+                                                  bool autoRolled = false) override;
     virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
                                                        uint64_t& outFeeRate) override;
 

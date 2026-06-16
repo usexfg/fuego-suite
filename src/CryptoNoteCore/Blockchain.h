@@ -34,6 +34,7 @@
 #include "CommitmentIndex.h"
 #include "HeatMintEngine.h"
 #include "AmmPool.h"
+#include "BancorCurve.h"
 #include "PiController.h"
 #include "Milaesandra.h"
 #include "IBlockchainStorageObserver.h"
@@ -115,6 +116,15 @@ namespace CryptoNote {
     uint64_t getHeatSupply() const { return m_heatSupply; }
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
     const AmmPoolState& getAmmPool() const { return m_ammPool; }
+    const DigmPrimaryPoolState& getDigmPrimaryPool() const { return m_digmPrimaryPool; }
+    const DigmBancorPoolState& getDigmBancorPool() const { return m_digmBancorPool; }
+    bool bootstrapDigmPools();
+    // HEAT/DIGM constant-product swap (buy-only: HEAT → DIGM)
+    uint64_t digmPrimarySwap(uint64_t heatIn, bool dryRun);
+    // XFG/DIGM Bancor buy (XFG → DIGM, minting)
+    uint64_t digmBancorBuy(uint64_t xfgIn, bool dryRun);
+    // XFG/DIGM Bancor sell (DIGM → XFG, burning)
+    uint64_t digmBancorSell(uint64_t digmIn, bool dryRun);
     uint64_t getPoolLockedXfg() const { return m_poolLockedXfg; }
     uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
@@ -356,6 +366,10 @@ namespace CryptoNote {
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
       uint64_t ammAccumulatedLpFees;
+      uint64_t digmPrimaryReserveDigm;
+      uint64_t digmPrimaryReserveHeat;
+      uint64_t digmBancorReserveXfg;
+      uint64_t digmBancorSupplyDigm;
     };
 
     friend class BlockCacheSerializer;
@@ -377,6 +391,10 @@ namespace CryptoNote {
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
+
+    // DIGM pool state
+    CryptoNote::DigmPrimaryPoolState m_digmPrimaryPool;
+    CryptoNote::DigmBancorPoolState  m_digmBancorPool;
 
     // Milæsandra — testnet fee simulator
     CryptoNote::Milaesandra m_milaesandra;

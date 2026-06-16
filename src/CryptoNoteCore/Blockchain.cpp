@@ -228,6 +228,8 @@ public:
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
       s(m_bs.m_ammPool, "amm_pool");
+      s(m_bs.m_digmPrimaryPool, "digm_primary_pool");
+      s(m_bs.m_digmBancorPool, "digm_bancor_pool");
       s(m_bs.m_poolLockedXfg, "pool_locked_xfg");
       s(m_bs.m_poolLockedHeat, "pool_locked_heat");
       s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
@@ -403,6 +405,8 @@ private:
   if (!m_bootstrapRepaid) {
     m_bootstrapXfgOwed = m_ammPool.reserveXfg;
   }
+  // Init DIGM Bancor pool virtual reserves (zero-start, pump.fun style)
+  bootstrapDigmPools();
 } // upgradekit
 
 bool Blockchain::addObserver(IBlockchainStorageObserver* observer) {
@@ -2339,6 +2343,7 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
   // high-rate deposits: the real spend can only be as young as the youngest
   // ring member, so interest must be bounded by that member's epoch rate.
   uint32_t youngestRingMemberHeight = 0;
+  uint64_t maxRingInterest = 0;  // bonus-aware max across all ring members
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -2356,16 +2361,35 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
 
-      // All non-FOREVER ring members must be mature — prevents early withdrawal
-      // (we don't know which ring member is real, so all must satisfy the condition)
+      // Look up auto-roll status once per ring member (used for both interest
+      // cap and maturity check below).
+      bool rolled = (ref.term > 0) ? m_commitmentIndex.isAutoRolled(
+          memberHeight, txin.amount, ref.term) : false;
+
+      // Track max possible interest across all ring members for bonus-aware cap.
+      // Each ring member could be the real spend, so the cap must cover the
+      // highest possible interest including loyalty bonus and auto-roll compounding.
+      if (ref.term > 0 && currentHeight > memberHeight) {
+        uint64_t memberMaxInterest = m_currency.calculateCdInterest(
+            txin.amount, memberHeight, currentHeight,
+            m_commitmentIndex, false, ref.term, rolled);
+        if (memberMaxInterest > maxRingInterest) {
+          maxRingInterest = memberMaxInterest;
+        }
+      }
+
+      // All non-FOREVER ring members must be mature — prevents early withdrawal.
+      // Auto-rolled CDs have doubled maturity (one-time extension at first roll).
       if (ref.term > 0) {
-        uint32_t creationHeight = ref.transactionIndex.block;
-        uint32_t maturityHeight = creationHeight + ref.term;
-        // overflow guard: if creationHeight + term wraps around, treat as immature
-        if (maturityHeight < creationHeight || currentHeight < maturityHeight) {
+        uint32_t maturityHeight = rolled
+            ? memberHeight + 2 * ref.term
+            : memberHeight + ref.term;
+        // overflow guard
+        if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
           logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
                        << " is an immature COLD deposit (matures at block "
-                       << maturityHeight << ", current " << currentHeight << ")";
+                       << maturityHeight << ", current " << currentHeight
+                       << (rolled ? ", auto-rolled" : "") << ")";
           return false;
         }
       }
@@ -2415,12 +2439,17 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
   }
 
   // Declare-and-verify: validate claimedInterest against max possible.
-  // Cap is based on the YOUNGEST (most recent) ring member: the real spend
-  // cannot have accrued interest longer than since the youngest member was
-  // created, preventing inflation attacks via old high-rate ring decoys.
+  // Uses the maximum interest across all ring members, accounting for loyalty
+  // bonus on 72-epoch CDs. Falls back to youngest-member cap if no ring members
+  // had valid terms (conservative bound).
   if (txin.claimedInterest > 0) {
-    uint64_t maxInterest = m_currency.calculateCdInterest(
-        txin.amount, youngestRingMemberHeight, currentHeight, m_commitmentIndex);
+    uint64_t maxInterest;
+    if (maxRingInterest > 0) {
+      maxInterest = maxRingInterest;  // bonus-aware max across all ring members
+    } else {
+      maxInterest = m_currency.calculateCdInterest(
+          txin.amount, youngestRingMemberHeight, currentHeight, m_commitmentIndex);
+    }
     // Also capped by available fee pool balance
     if (maxInterest > m_feePoolBalance) {
       maxInterest = m_feePoolBalance;
@@ -3515,10 +3544,10 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
           // Check for HEAT commitment (0x08) - permanent burn
           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            permanentBurns += heatCommit.amount / 2;                    // 50% → Eternal Flame (emission recycling)
-            uint64_t treasuryShare = heatCommit.amount - (heatCommit.amount / 2); // 50% → Treasury
-            m_treasuryLpReserve += (treasuryShare * 60) / 100;          // 60% of Treasury (30% total) → Hearth LP Provision
-            m_treasuryBalance += treasuryShare - ((treasuryShare * 60) / 100); // 40% of Treasury (20% total) → Peg Defense
+            permanentBurns += (heatCommit.amount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
+            uint64_t treasuryShare = (heatCommit.amount * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
+            m_treasuryLpReserve += (treasuryShare * CryptoNote::parameters::TREASURY_LP_PCT) / 100;
+            m_treasuryBalance += (treasuryShare * CryptoNote::parameters::TREASURY_PEG_PCT) / 100;
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
             // Index the HEAT commitment for RPC queries
@@ -3933,11 +3962,21 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
     preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
     preEpoch.ammAccumulatedLpFees = m_ammPool.accumulatedLpFees;
+    preEpoch.digmPrimaryReserveDigm = m_digmPrimaryPool.reserveDigm;
+    preEpoch.digmPrimaryReserveHeat = m_digmPrimaryPool.reserveHeat;
+    preEpoch.digmBancorReserveXfg = m_digmBancorPool.reserveXfg;
+    preEpoch.digmBancorSupplyDigm = m_digmBancorPool.supplyDigm;
+
+    // Auto-roll matured CDs (one-time interest compounding at first maturity)
+    size_t autoRolled = m_commitmentIndex.processAutoRolls(newHeight);
+    if (autoRolled > 0) {
+      logger(INFO) << "Auto-rolled " << autoRolled << " CD(s) at epoch boundary";
+    }
 
     uint64_t epochNumber = newHeight / epochDuration;
     uint64_t epochStart = (epochNumber - 1) * epochDuration;
     uint64_t epochEnd = epochStart + epochDuration - 1;
-    // Split swap fees: 69% CD Yield / 21% Treasury Reserve / 10% Rollover Vault
+    // Split swap fees: 80% CD Yield / 20% Treasury Reserve
     uint64_t epochSwapFees = m_currentEpochSwapFees;
     uint64_t epochCdLocked = m_totalCdLocked;
     uint64_t cdShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_CD_SHARE_PCT) / 100;
@@ -4079,7 +4118,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
           m_ammPool.reserveHeat += heatToMint;
           m_ammPool.reserveXfg  -= xfgReceived;
           m_heatSupply          += heatToMint;
-          m_treasuryBalance     += arbSize / 2;       // 50% of mint value
+          m_treasuryBalance     += (arbSize * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
           m_treasuryBalance     += xfgReceived;        // pool XFG from sale
         } else {
           // HEAT undervalued: treasury buys HEAT from pool
@@ -4108,7 +4147,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
 
     // Bootstrap repayment: 20% of treasury inflow → repayment vault
     if (!m_bootstrapRepaid && m_bootstrapXfgOwed > 0 && treasuryShare > 0) {
-      uint64_t repayShare = (treasuryShare * 20) / 100;
+      uint64_t repayShare = (treasuryShare * CryptoNote::parameters::BOOTSTRAP_REPAY_PCT) / 100;
       if (repayShare > 0 && m_treasuryBalance >= repayShare) {
         m_treasuryBalance -= repayShare;
         m_bootstrapRepaymentVault += repayShare;
@@ -4176,6 +4215,107 @@ bool Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
     << m_currency.formatAmount(xfgReserve) << " XFG + "
     << m_currency.formatAmount(heatReserve) << " HEAT";
   return true;
+}
+
+bool Blockchain::bootstrapDigmPools() {
+  // Only bootstrap once
+  if (!m_digmBancorPool.isEmpty() || !m_digmPrimaryPool.isEmpty())
+    return false;
+
+  // HEAT/DIGM primary pool: 5,000 DIGM + computed HEAT ($0.10 per DIGM)
+  uint64_t seedDigm = parameters::DIGM_PRIMARY_POOL_SEED_DIGM * parameters::COIN;
+  uint64_t seedHeat = parameters::DIGM_PRIMARY_POOL_SEED_HEAT;
+  m_digmPrimaryPool.reserveDigm = seedDigm;
+  m_digmPrimaryPool.reserveHeat = seedHeat;
+
+  // XFG/DIGM Bancor pool: zero-start with virtual reserves
+  uint64_t vs = parameters::COIN;  // 1 whole DIGM virtual supply
+  uint64_t cwNum = parameters::DIGM_BANCOR_CW_NUM;
+  uint64_t cwDenom = parameters::DIGM_BANCOR_CW_DENOM;
+
+  // DIGM price in XFG: $0.10 / $1.58 = 10/158
+  uint64_t vr = bancorComputeVirtualReserve(vs, cwNum, cwDenom, 10, 158);
+
+  m_digmBancorPool.virtualSupply  = vs;
+  m_digmBancorPool.virtualReserve = vr;
+  m_digmBancorPool.cwNum   = cwNum;
+  m_digmBancorPool.cwDenom = cwDenom;
+  m_digmBancorPool.reserveXfg = 0;
+  m_digmBancorPool.supplyDigm = 0;
+
+  logger(INFO, BRIGHT_YELLOW) << "DIGM pools bootstrapped:"
+    << " primary=" << parameters::DIGM_PRIMARY_POOL_SEED_DIGM << " DIGM + "
+    << m_currency.formatAmount(seedHeat) << " HEAT"
+    << " | bancor V_r=" << vr << " V_s=" << vs
+    << " (zero-start, pump.fun style)";
+  return true;
+}
+
+uint64_t Blockchain::digmPrimarySwap(uint64_t heatIn, bool dryRun) {
+  if (heatIn == 0 || m_digmPrimaryPool.isEmpty())
+    return 0;
+
+  // HEAT → DIGM constant-product swap (buy-only)
+  uint64_t digmOut = ammGetOutputAmount(
+      heatIn, m_digmPrimaryPool.reserveHeat,
+      m_digmPrimaryPool.reserveDigm, parameters::DIGM_FEE_BPS);
+
+  if (digmOut == 0 || digmOut >= m_digmPrimaryPool.reserveDigm)
+    return 0;
+
+  if (!dryRun) {
+    m_digmPrimaryPool.reserveHeat += heatIn;
+    m_digmPrimaryPool.reserveDigm -= digmOut;
+    uint64_t feeHeat = (heatIn * parameters::DIGM_FEE_BPS) / parameters::DIGM_FEE_DIVISOR;
+    m_digmPrimaryPool.accumulatedLpFees += feeHeat;
+  }
+
+  return digmOut;
+}
+
+uint64_t Blockchain::digmBancorBuy(uint64_t xfgIn, bool dryRun) {
+  if (xfgIn == 0 || m_digmBancorPool.isEmpty())
+    return 0;
+
+  uint64_t maxSupply = parameters::DIGM_BANCOR_MAX_SUPPLY * parameters::COIN;
+  uint64_t remaining = (maxSupply > m_digmBancorPool.supplyDigm)
+                     ? maxSupply - m_digmBancorPool.supplyDigm : 0;
+  if (remaining == 0) return 0;
+
+  uint64_t minted = bancorBuyOutput(
+      xfgIn, m_digmBancorPool.reserveXfg, m_digmBancorPool.supplyDigm,
+      m_digmBancorPool.virtualReserve, m_digmBancorPool.virtualSupply,
+      m_digmBancorPool.cwNum, m_digmBancorPool.cwDenom);
+
+  if (minted == 0 || minted > remaining) return 0;
+
+  if (!dryRun) {
+    m_digmBancorPool.reserveXfg += xfgIn;
+    m_digmBancorPool.supplyDigm += minted;
+  }
+
+  return minted;
+}
+
+uint64_t Blockchain::digmBancorSell(uint64_t digmIn, bool dryRun) {
+  if (digmIn == 0 || m_digmBancorPool.isEmpty() || m_digmBancorPool.supplyDigm == 0)
+    return 0;
+
+  if (digmIn > m_digmBancorPool.supplyDigm) return 0;
+
+  uint64_t xfgOut = bancorSellOutput(
+      digmIn, m_digmBancorPool.reserveXfg, m_digmBancorPool.supplyDigm,
+      m_digmBancorPool.virtualReserve, m_digmBancorPool.virtualSupply,
+      m_digmBancorPool.cwNum, m_digmBancorPool.cwDenom);
+
+  if (xfgOut == 0 || xfgOut > m_digmBancorPool.reserveXfg) return 0;
+
+  if (!dryRun) {
+    m_digmBancorPool.reserveXfg -= xfgOut;
+    m_digmBancorPool.supplyDigm -= digmIn;
+  }
+
+  return xfgOut;
 }
 
 bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
@@ -4292,6 +4432,10 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.reserveHeat = snap.ammReserveHeat;
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
     m_ammPool.accumulatedLpFees = snap.ammAccumulatedLpFees;
+    m_digmPrimaryPool.reserveDigm = snap.digmPrimaryReserveDigm;
+    m_digmPrimaryPool.reserveHeat = snap.digmPrimaryReserveHeat;
+    m_digmBancorPool.reserveXfg = snap.digmBancorReserveXfg;
+    m_digmBancorPool.supplyDigm = snap.digmBancorSupplyDigm;
     m_epochSnapshots.pop_back();
   }
 

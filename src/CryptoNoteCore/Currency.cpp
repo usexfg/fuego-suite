@@ -321,7 +321,8 @@ double Currency::getBurnPercentage() const {
   uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                           uint32_t currentHeight,
                                           const CommitmentIndex& commitmentIndex,
-                                          bool isLegacyBond) const {
+                                          bool isLegacyBond, uint32_t term,
+                                          bool autoRolled) const {
     if (currentHeight <= creationHeight) return 0;
 
     uint64_t epochDuration = m_testnet
@@ -331,15 +332,51 @@ double Currency::getBurnPercentage() const {
     uint64_t endEpoch = currentHeight / epochDuration;
     uint64_t epochCount = commitmentIndex.getEpochCount();
 
-    uint64_t interest = 0;
+    // Auto-roll boundary: compound point (only for auto-rolled CDs)
+    uint64_t rolloverEpoch = autoRolled
+        ? (creationHeight + term) / epochDuration
+        : endEpoch;
+
+    // Loyalty bonus: 2.5× on last 2.5 epochs for max-term (72-epoch) CDs
+    // Only applies to the original term, not the auto-rolled extension
+    bool loyaltyApplies = (!m_testnet && !isLegacyBond && !autoRolled &&
+                           term == parameters::DEPOSIT_MAX_TERM);
+
+    uint64_t baseInterest = 0;
+    uint64_t loyaltyBonus = 0;
+    uint64_t currentBase = amount;
+
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
       uint64_t epochRate = isLegacyBond
           ? commitmentIndex.getLegacyEpochFeeRate(e)
           : commitmentIndex.getEpochFeeRate(e);
-      interest += (uint64_t)(((uint128_t)amount * epochRate) / parameters::FEE_POOL_RATE_PRECISION);
+      uint64_t epochInterest = (uint64_t)(((uint128_t)currentBase * epochRate)
+                                          / parameters::FEE_POOL_RATE_PRECISION);
+      baseInterest += epochInterest;
+
+      // Loyalty bonus: computed separately, never compounded into principal
+      if (loyaltyApplies) {
+        uint64_t maturityEpoch = (creationHeight + term) / epochDuration;
+        if (maturityEpoch > 0) {
+          int64_t epochsToMaturity = (int64_t)maturityEpoch - (int64_t)e;
+          // Bonus is computed on the ORIGINAL amount, not currentBase
+          uint64_t origEpochInterest = (uint64_t)(((uint128_t)amount * epochRate)
+                                                  / parameters::FEE_POOL_RATE_PRECISION);
+          if (epochsToMaturity < (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
+            loyaltyBonus += (origEpochInterest * parameters::LOYALTY_BONUS_PCT) / 100;
+          } else if (epochsToMaturity == (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
+            loyaltyBonus += (origEpochInterest * parameters::LOYALTY_BONUS_PCT) / 200;
+          }
+        }
+      }
+
+      // Compound at auto-roll boundary: only base interest compounds
+      if (autoRolled && e == rolloverEpoch) {
+        currentBase = amount + baseInterest;
+      }
     }
 
-    return interest;
+    return baseInterest + loyaltyBonus;
   }
 
   /* ---------------------------------------------------------------------------------------------------- */

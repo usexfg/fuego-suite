@@ -33,6 +33,7 @@ void CommitmentEntry::serialize(ISerializer& s) {
   s(blockHeight, "block_height");
   s(amount, "amount");
   s(term, "term");
+  s(autoRollApplied, "auto_roll_applied");
   s(targetChainId, "target_chain_id");
   s(isLegacyMigration, "is_legacy_migration");
   uint8_t typeVal = static_cast<uint8_t>(type);
@@ -209,6 +210,9 @@ size_t CommitmentIndex::rollbackToHeight(Height h) {
     for (const auto& commitHex : height_it->second) {
       auto it = m_commitments.find(commitHex);
       if (it != m_commitments.end()) {
+        // Clean up auto-roll flag for this commitment
+        AutoRollKey key{it->second.blockHeight, it->second.amount, it->second.term};
+        m_autoRollFlags.erase(key);
         switch (it->second.type) {
           case CommitmentEntry::Type::HEAT: m_heat_count--; break;
           case CommitmentEntry::Type::COLD: m_cold_count--; break;
@@ -381,6 +385,29 @@ std::optional<EpochReport> CommitmentIndex::getLatestEpochReport() const {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_epochReports.empty()) return std::nullopt;
   return m_epochReports.back();
+}
+
+size_t CommitmentIndex::processAutoRolls(uint32_t currentHeight) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  size_t count = 0;
+  for (auto& kv : m_commitments) {
+    CommitmentEntry& entry = kv.second;
+    if (entry.type != CommitmentEntry::Type::COLD) continue;
+    if (entry.term == 0 || entry.autoRollApplied) continue;
+    if (entry.blockHeight + entry.term > currentHeight) continue;
+    entry.autoRollApplied = true;
+    AutoRollKey key{entry.blockHeight, entry.amount, entry.term};
+    m_autoRollFlags[key] = true;
+    ++count;
+  }
+  return count;
+}
+
+bool CommitmentIndex::isAutoRolled(uint32_t blockHeight, uint64_t amount, uint32_t term) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  AutoRollKey key{blockHeight, amount, term};
+  auto it = m_autoRollFlags.find(key);
+  return it != m_autoRollFlags.end() && it->second;
 }
 
 // ============================================================================

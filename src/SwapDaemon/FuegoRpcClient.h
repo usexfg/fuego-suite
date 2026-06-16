@@ -29,6 +29,18 @@ struct NodeInfo {
   std::string status;
 };
 
+// Live Hearth pool price from fuegod /get_fuego_price
+struct FuegoPrice {
+  uint64_t reserveXfg;
+  uint64_t reserveHeat;
+  uint64_t spotPrice;           // XFG/HEAT × 10^18
+  uint64_t redemptionPriceNum;
+  uint64_t redemptionPriceDenom;
+  double   xfgHeatRatio;        // parsed from string
+  double   heatPegUsd;          // parsed from string
+  double   xfgSpotUsd;          // parsed from string
+};
+
 // Result from a wallet RPC transfer call.
 struct TransferResult {
   std::string txHash;       // hex-encoded transaction hash
@@ -78,6 +90,9 @@ public:
 
   // Query /getinfo
   bool getInfo(NodeInfo& info);
+
+  // Query /get_fuego_price — live Hearth pool XFG/USD price
+  bool getFuegoPrice(FuegoPrice& price);
 
   // ── Wallet RPC (talks to fire_wallet --rpc-bind-port) ──
 

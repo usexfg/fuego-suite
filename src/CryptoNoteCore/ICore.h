@@ -138,7 +138,9 @@ public:
   // Non-pure so mock/stub ICore implementations compile without changes.
   virtual std::error_code calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                                 uint32_t currentHeight, uint64_t& outInterest,
-                                                bool isLegacyBond = false) {
+                                                bool isLegacyBond = false,
+                                                uint32_t term = 0,
+                                                bool autoRolled = false) {
     outInterest = 0;
     return {};
   }

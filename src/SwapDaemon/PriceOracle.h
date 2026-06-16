@@ -52,11 +52,24 @@ public:
   // ---------------------------------------------------------------------------
 
   // Get the seed rate for a pair: XFG amount per 1 whole CTR coin.
-  // e.g., ETH: 214,000 XFG per 1 ETH
+  // This always uses the static seed price ($1.58). For live pool price,
+  // use getEffectiveRate().
   static double getSeedRate(SwapPair pair);
+
+  // Get the effective rate using live pool price when available, seed otherwise.
+  double getEffectiveRate(SwapPair pair) const;
 
   // Get seed XFG price in USD
   static double getSeedXfgUsd();
+
+  // ── Live pool price (from fuegod RPC) ─────────────────────────────
+
+  // Set the live XFG/USD price from the Hearth pool.
+  // When set (>0), getSeedRate uses this instead of the static seed.
+  void setLiveXfgUsd(double usd);
+
+  // Get the current live XFG/USD price. Returns 0.0 if not yet fetched.
+  double getLiveXfgUsd() const;
 
   // ---------------------------------------------------------------------------
   // TWAP from completed swaps (self-referencing price discovery)
@@ -122,6 +135,7 @@ private:
   uint64_t m_twapMaxAgeSec;    // default 604800 (7 days)
   double   m_floorThreshold;   // default 0.50
   double   m_maxBootstrapDrift; // default 0.50 (±50%)
+  double   m_liveXfgUsd;        // live pool price, 0.0 = use seed
 
   // Convert atomic amounts to a rate (XFG per 1 whole CTR coin)
   static double atomicToRate(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount);

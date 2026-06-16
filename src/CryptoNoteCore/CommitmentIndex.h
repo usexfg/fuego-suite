@@ -46,6 +46,7 @@ struct CommitmentEntry {
   uint32_t targetChainId = 0;
 
   bool isLegacyMigration = false;
+  bool autoRollApplied = false;  // one-time auto-roll at first maturity
 
   void serialize(ISerializer& s);
 };
@@ -124,6 +125,13 @@ public:
   std::optional<EpochReport> getEpochReport(uint64_t epochNumber) const;
   std::optional<EpochReport> getLatestEpochReport() const;
 
+  // Auto-roll: mark matured COLD CDs for one-time interest compounding.
+  // Called at epoch boundaries. Returns count of CDs auto-rolled.
+  size_t processAutoRolls(uint32_t currentHeight);
+
+  // Check if a CD at (blockHeight, amount, term) has auto-rolled.
+  bool isAutoRolled(uint32_t blockHeight, uint64_t amount, uint32_t term) const;
+
   void serialize(ISerializer& s);
 
 private:
@@ -143,6 +151,16 @@ private:
   std::map<std::string, CommitmentEntry> m_commitments;
   std::vector<Crypto::Hash> m_merkle_leaves;
   std::map<uint32_t, std::vector<std::string>> m_heightIndex;
+  // O(1) auto-roll flag lookup keyed by (height, amount, term)
+  struct AutoRollKey {
+    uint32_t height; uint64_t amount; uint32_t term;
+    bool operator<(const AutoRollKey& o) const {
+      if (height != o.height) return height < o.height;
+      if (amount != o.amount) return amount < o.amount;
+      return term < o.term;
+    }
+  };
+  std::map<AutoRollKey, bool> m_autoRollFlags;
   size_t m_heat_count = 0;
   size_t m_cold_count = 0;
 

@@ -336,6 +336,38 @@ bool FuegoRpcClient::getInfo(NodeInfo& info) {
   }
 }
 
+bool FuegoRpcClient::getFuegoPrice(FuegoPrice& price) {
+  try {
+    std::string responseBody = daemonPost("/get_fuego_price", "{}");
+    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+
+    if (!json.isObject() || !json.contains("spot_price")) {
+      return false;
+    }
+
+    price.reserveXfg = json.contains("reserve_xfg")
+      ? static_cast<uint64_t>(json("reserve_xfg").getInteger()) : 0;
+    price.reserveHeat = json.contains("reserve_heat")
+      ? static_cast<uint64_t>(json("reserve_heat").getInteger()) : 0;
+    price.spotPrice = static_cast<uint64_t>(json("spot_price").getInteger());
+    price.redemptionPriceNum = json.contains("redemption_price_num")
+      ? static_cast<uint64_t>(json("redemption_price_num").getInteger()) : 0;
+    price.redemptionPriceDenom = json.contains("redemption_price_denom")
+      ? static_cast<uint64_t>(json("redemption_price_denom").getInteger()) : 1;
+
+    price.xfgHeatRatio = json.contains("xfg_heat_ratio")
+      ? std::stod(json("xfg_heat_ratio").getString()) : 0.0;
+    price.heatPegUsd = json.contains("heat_peg_usd")
+      ? std::stod(json("heat_peg_usd").getString()) : 0.0;
+    price.xfgSpotUsd = json.contains("xfg_spot_usd")
+      ? std::stod(json("xfg_spot_usd").getString()) : 0.0;
+
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 // ── Wallet RPC methods ───────────────────────────────────────────────
 
 bool FuegoRpcClient::sendTransfer(const std::string& address, uint64_t amount,

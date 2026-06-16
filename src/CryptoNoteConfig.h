@@ -151,13 +151,18 @@ namespace CryptoNote
         const uint32_t CD_TRANSFER_MIN_REMAINING_TERM = 1;     // minimum term for transferred CD
 
          // CD term limits in epochs (1 epoch = 900 blocks ≈ 5 days on mainnet, 10 blocks on testnet)
-         const uint32_t CD_MIN_EPOCHS = 1;                      // minimum 1 epoch
+         const uint32_t CD_MIN_EPOCHS = 6;                      // minimum 6 epochs (~1 month)
          const uint32_t CD_MAX_EPOCHS = 72;                     // maximum 72 epochs (~1 year on mainnet)
-         const uint32_t TESTNET_CD_MIN_EPOCHS = 1;              // testnet minimum
-         const uint32_t TESTNET_CD_MAX_EPOCHS = 72;             // testnet maximum (same, for consistency)
+         const uint32_t TESTNET_CD_MIN_EPOCHS = 1;              // testnet minimum (keep 1 for fast testing)
+         const uint32_t TESTNET_CD_MAX_EPOCHS = 72;             // testnet maximum
 
          // Allowed CD Tiers (Epochs)
-         const std::vector<uint32_t> CD_ALLOWED_TIERS = {1, 18, 36, 72};
+         const std::vector<uint32_t> CD_ALLOWED_TIERS = {6, 18, 36, 72};
+
+         // Loyalty maturity bonus: 2.5× yield multiplier on last 2.5 epochs for max-term (72-epoch) CDs
+         const uint64_t LOYALTY_BONUS_PCT = 150;                // +150% extra = 2.5× total on bonus epochs
+         const uint64_t LOYALTY_BONUS_FULL_EPOCHS = 2;          // last 2 full epochs get full bonus
+         // The 0.5 epoch (3rd-to-last) gets half bonus: +75%
 
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
         // Swap fee split: 80% CD Yield / 20% Treasury Reserve
@@ -165,6 +170,20 @@ namespace CryptoNote
         const uint64_t CD_YIELD_XFG_BUYBACK_PCT = 20;        // 20% of CD yield → protocol XFG accumulator
         const uint64_t CD_YIELD_FLOOR_APY_PCT = 2;            // 2% APY floor funded by treasury LP reserve
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
+
+        // HEAT stablecoin peg reference (v11+: 1:1 Hearth pool bootstrap)
+        const double HEAT_PEG_USD = 1.58;                   // HEAT peg reference in USD (launch constant)
+
+        // HEAT mint burn split
+        const uint64_t MINT_BURN_EF_PCT = 50;               // 50% of XFG burned → Eternal Flame (permanent deflation)
+        const uint64_t MINT_BURN_TREASURY_PCT = 50;         // 50% of XFG burned → Treasury
+
+        // Treasury sub-allocation (of treasury share from mint burn)
+        const uint64_t TREASURY_LP_PCT = 60;                // 60% of treasury → LP Reserve (CD yield floor + Hearth LP)
+        const uint64_t TREASURY_PEG_PCT = 40;               // 40% of treasury → Peg Defense Balance
+
+        // Bootstrap repayment
+        const uint64_t BOOTSTRAP_REPAY_PCT = 20;            // 20% of treasury swap fee share → bootstrap repayment vault
 
         // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)
         const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
@@ -176,7 +195,7 @@ namespace CryptoNote
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 8 HEAT minimum CD
         const uint64_t BURN_DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;  // 8 HEAT minimum burn
         // CD term limits in blocks (derived from epochs)
-        const uint32_t DEPOSIT_MIN_TERM = CD_MIN_EPOCHS * EPOCH_DURATION_BLOCKS;  // 900 blocks (~5 days mainnet)
+        const uint32_t DEPOSIT_MIN_TERM = CD_MIN_EPOCHS * EPOCH_DURATION_BLOCKS;  // 6 * 900 = 5400 blocks (~1 month)
         const uint32_t DEPOSIT_MAX_TERM = CD_MAX_EPOCHS * EPOCH_DURATION_BLOCKS;  // 64,800 blocks (~1 year)
         // Testnet
         const uint32_t TESTNET_DEPOSIT_MIN_TERM = TESTNET_CD_MIN_EPOCHS * TESTNET_EPOCH_DURATION_BLOCKS;  // 10 blocks
@@ -205,10 +224,10 @@ namespace CryptoNote
         //   1 = 5:1 self-sovereign (fixed 1.50-2.50 band, activate at XFG ≥ $5)
         //   2 = 8:1 self-sovereign full float (PI-only, best APY per Monte Carlo)
         const uint8_t  HEAT_STABILITY_MODE = 2;                    // default: 8:1 full float (best APY)
-        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 0.2 (1 XFG = 5 HEAT) — used by modes 0,1
-        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 5;
-        const uint64_t HEAT_LAUNCH_RATIO_8X_NUM = 1;               // 0.125 (1 XFG = 8 HEAT) — used by mode 2
-        const uint64_t HEAT_LAUNCH_RATIO_8X_DENOM = 8;
+        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 1.0 (1 XFG = 1 HEAT) — pool ratio at launch
+        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 1;
+        const uint64_t HEAT_LAUNCH_RATIO_8X_NUM = 1;               // 1.0 (1 XFG = 1 HEAT) — pool ratio at launch
+        const uint64_t HEAT_LAUNCH_RATIO_8X_DENOM = 1;
         const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint
         const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium
         const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // 5.00 (mode 1 activation)
@@ -273,6 +292,19 @@ namespace CryptoNote
         // Hearth pool governance bootstrap (one-time initialization at v11 activation)
         const uint64_t HEARTH_INITIAL_XFG  = 1000U * 10000000U;     // 1,000 XFG pool side
         const uint64_t HEARTH_INITIAL_HEAT = 8000U * 10000000U;     // 8,000 HEAT pool side (8:1 ratio)
+
+        // DIGM pools (v11+)
+        const uint64_t DIGM_V1_CAP                      = 10000;                         // 10,000 DIGM total v1 supply
+        const uint64_t DIGM_USD_CENTS                   = 10;                            // DIGM price = $0.10 USD
+        const uint64_t DIGM_PRIMARY_POOL_SEED_DIGM      = 5000;                          // HEAT/DIGM pool: 5,000 DIGM
+        constexpr uint64_t DIGM_PRIMARY_POOL_SEED_HEAT  = (5000ULL * 10000000ULL * 10ULL) / 158ULL;  // ~316.455 HEAT ($500 / $1.58)
+        const uint64_t DIGM_FEE_BPS                     = 30;                            // 0.3% swap fee
+        const uint64_t DIGM_FEE_DIVISOR                 = 10000;
+
+        // DIGM Bancor curve (XFG/DIGM speculative pool)
+        const uint64_t DIGM_BANCOR_MAX_SUPPLY           = 5000;                          // max DIGM mintable through Bancor
+        const uint64_t DIGM_BANCOR_CW_NUM               = 8236;                          // connector weight 82.36%
+        const uint64_t DIGM_BANCOR_CW_DENOM             = 10000;
 
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
 		static_assert(DEPOSIT_MIN_TERM <= DEPOSIT_MAX_TERM, "Bad DEPOSIT_MAX_TERM");

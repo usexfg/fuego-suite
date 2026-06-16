@@ -148,6 +148,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
   { "/amm_quote",    { jsonMethod<COMMAND_RPC_AMM_QUOTE>(&RpcServer::on_amm_quote), true } },
   { "/amm_pool_info", { jsonMethod<COMMAND_RPC_AMM_POOL_INFO>(&RpcServer::on_amm_pool_info), true } },
+  { "/get_fuego_price", { jsonMethod<COMMAND_RPC_GET_FUEGO_PRICE>(&RpcServer::on_get_fuego_price), true } },
 
 
   { "/get_alias", { jsonMethod<COMMAND_RPC_GET_ALIAS>(&RpcServer::on_get_alias), true } },
@@ -2364,6 +2365,33 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.spot_price = info.spotPrice;
   res.accumulated_lp_fees = info.accumulatedLpFees;
   res.epoch_swap_fees = info.epochSwapFees;
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req,
+                                    COMMAND_RPC_GET_FUEGO_PRICE::response& res) {
+  auto info = m_core.getAmmPoolInfo();
+  auto metrics = m_core.getHeatMetrics();
+
+  res.reserve_xfg = info.reserveXfg;
+  res.reserve_heat = info.reserveHeat;
+  res.spot_price = info.spotPrice;
+  res.redemption_price_num = metrics.redemptionPriceNum;
+  res.redemption_price_denom = metrics.redemptionPriceDenom;
+
+  double heatPegUsd = CryptoNote::parameters::HEAT_PEG_USD;
+
+  if (info.reserveXfg > 0 && info.reserveHeat > 0) {
+    double xfgPerHeat = static_cast<double>(info.reserveXfg) / static_cast<double>(info.reserveHeat);
+    res.xfg_heat_ratio = std::to_string(xfgPerHeat);
+    res.xfg_spot_usd = std::to_string(xfgPerHeat * heatPegUsd);
+  } else {
+    res.xfg_heat_ratio = "0.0";
+    res.xfg_spot_usd = "0.0";
+  }
+
+  res.heat_peg_usd = std::to_string(heatPegUsd);
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

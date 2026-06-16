@@ -1427,9 +1427,11 @@ const CommitmentIndex& core::getCommitmentIndex() const {
 
 std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                            uint32_t currentHeight, uint64_t& outInterest,
-                                           bool isLegacyBond) {
+                                           bool isLegacyBond, uint32_t term,
+                                           bool autoRolled) {
   outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
-                                               m_blockchain.getCommitmentIndex(), isLegacyBond);
+                                               m_blockchain.getCommitmentIndex(),
+                                               isLegacyBond, term, autoRolled);
   return {};
 }
 

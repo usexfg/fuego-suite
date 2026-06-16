@@ -1962,6 +1962,34 @@ struct COMMAND_RPC_AMM_POOL_INFO {
   };
 };
 
+struct COMMAND_RPC_GET_FUEGO_PRICE {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t reserve_xfg;
+    uint64_t reserve_heat;
+    uint64_t spot_price;            // XFG/HEAT ratio × 10^18 (ammGetSpotPrice)
+    uint64_t redemption_price_num;  // PI controller redemption price numerator
+    uint64_t redemption_price_denom;
+    std::string xfg_heat_ratio;     // human-readable: reserveXfg / reserveHeat
+    std::string heat_peg_usd;       // HEAT peg in USD (hard-coded reference)
+    std::string xfg_spot_usd;       // implied XFG/USD: spot_price × heat_peg_usd
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(reserve_xfg)
+      KV_MEMBER(reserve_heat)
+      KV_MEMBER(spot_price)
+      KV_MEMBER(redemption_price_num)
+      KV_MEMBER(redemption_price_denom)
+      KV_MEMBER(xfg_heat_ratio)
+      KV_MEMBER(heat_peg_usd)
+      KV_MEMBER(xfg_spot_usd)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 struct COMMAND_RPC_ADD_SWAP_FEE {
   struct request {
     uint64_t amount;

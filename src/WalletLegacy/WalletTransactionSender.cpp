@@ -558,7 +558,14 @@ namespace CryptoNote
       return;
     }
 
-    context->mixIn = static_cast<uint64_t>(ringSize);
+    // DynamicRingSizeCalculator returns ring sizes (incl. real output).
+    // context->mixIn expects decoy count, so subtract 1.
+    if (ringSize < 2) {
+      // ring of size 1 means no decoys — keep mixIn=0 for sendRaw
+      context->mixIn = 0;
+    } else {
+      context->mixIn = static_cast<uint64_t>(ringSize) - 1;
+    }
     if (context->isV10AmmSwap) {
       nextRequest = doSendAmmSwapV10CommitmentTransaction(std::move(context), events,
         context->v10SwapDirection, context->v10SwapInput,
@@ -723,7 +730,9 @@ namespace CryptoNote
         return;
       }
 
-      context->mixIn = static_cast<uint64_t>(optimalRingSize);
+      // DynamicRingSizeCalculator returns ring sizes (incl. real output).
+      // context->mixIn expects decoy count, so subtract 1.
+      context->mixIn = static_cast<uint64_t>(optimalRingSize) - 1;
     } else {
       if (!checkIfEnoughMixins(context->outs, context->mixIn))
       {

@@ -9,11 +9,15 @@ Unified TUI for atomic swaps using adaptor signatures on the XFG side.
 - **CD market**: Confidential Deposits trading
 - **Orderbook & charts**: Real-time market data
 - **Browser bridges**: MetaMask (ETH), Phantom (SOL)
+- **Interactive setup**: Wizard prompts for all settings when run without flags
 
 ## Usage
 
 ```bash
-# Connect to local node
+# Interactive setup — prompts for daemon, wallet, pair, etc.
+./swapxfg
+
+# Skip wizard with any flag
 ./swapxfg --daemon http://127.0.0.1:18180
 
 # Testnet
@@ -24,6 +28,9 @@ Unified TUI for atomic swaps using adaptor signatures on the XFG side.
 
 # With ETH bridge (MetaMask)
 ./swapxfg --bridge-port 8545
+
+# Force skip interactive even with no flags
+./swapxfg -y
 ```
 
 ## Commands
@@ -43,15 +50,16 @@ Unified TUI for atomic swaps using adaptor signatures on the XFG side.
 
 ```
 swapxfg/
-├── main.go       # CLI entry
+├── main.go         # CLI entry (interactive by default)
 └── app/
-    ├── app.go    # Main run loop
-    ├── tui.go    # Bubble Tea UI
-    ├── rpc.go    # Fuego RPC client
-    ├── wallet.go # Wallet RPC client
-    ├── bridge.go # MetaMask/Phantom bridge
-    ├── pairs.go  # Pair definitions
-    └── cd_*.go   # CD market components
+    ├── app.go      # Main run loop
+    ├── interactive.go  # Interactive config wizard (bubbletea)
+    ├── tui.go      # Bubble Tea UI
+    ├── rpc.go      # Fuego RPC client
+    ├── wallet.go   # Wallet RPC client
+    ├── bridge.go   # MetaMask/Phantom bridge
+    ├── pairs.go    # Pair definitions
+    └── cd_*.go     # CD market components
 ```
 
 ## Protocol

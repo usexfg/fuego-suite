@@ -60,6 +60,27 @@ double PriceOracle::getSeedXfgUsd() {
   return SEED_XFG_USD;
 }
 
+void PriceOracle::setLiveXfgUsd(double usd) {
+  m_liveXfgUsd = usd;
+}
+
+double PriceOracle::getLiveXfgUsd() const {
+  return m_liveXfgUsd;
+}
+
+double PriceOracle::getEffectiveRate(SwapPair pair) const {
+  double xfgUsd = (m_liveXfgUsd > 0.0) ? m_liveXfgUsd : SEED_XFG_USD;
+  switch (pair) {
+    case SwapPair::SOL: return SEED_SOL_USD / xfgUsd;
+    case SwapPair::ETH: return SEED_ETH_USD / xfgUsd;
+    case SwapPair::BCH: return SEED_BCH_USD / xfgUsd;
+    case SwapPair::XMR: return SEED_XMR_USD / xfgUsd;
+    case SwapPair::ARB: return SEED_ETH_USD / xfgUsd;
+    case SwapPair::BASE: return SEED_ETH_USD / xfgUsd;
+    default:            return 0.0;
+  }
+}
+
 double PriceOracle::getSeedRate(SwapPair pair) {
   // Returns: how many XFG per 1 whole counterparty coin
   switch (pair) {

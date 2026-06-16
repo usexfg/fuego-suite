@@ -313,6 +313,14 @@ void SwapDaemon::tickLoop() {
       m_offerManager->tick(currentHeight);
     }
 
+    // Fetch live XFG/USD from Hearth pool via fuegod RPC
+    {
+      FuegoPrice livePrice;
+      if (m_rpc.getFuegoPrice(livePrice) && livePrice.xfgSpotUsd > 0.0) {
+        m_oracle.setLiveXfgUsd(livePrice.xfgSpotUsd);
+      }
+    }
+
     // Advance every non-terminal swap one step
     auto swapIds = m_db.listSwaps();
     for (const auto& id : swapIds) {

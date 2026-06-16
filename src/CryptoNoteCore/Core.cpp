@@ -300,7 +300,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
     assert(inputIndex < tx.signatures.size());
     if (txin.type() == typeid(KeyInput)) {
       uint64_t ringSize = boost::get<KeyInput>(txin).outputIndexes.size();
-      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large mixIn count, rejected";
         return false;
       }
@@ -312,7 +312,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
       }
     } else if (txin.type() == typeid(TransactionInputCommitmentSpend)) {
       uint64_t ringSize = boost::get<TransactionInputCommitmentSpend>(txin).outputIndexes.size();
-      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large commitment spend ring size, rejected";
         return false;
       }
@@ -324,7 +324,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
       }
     } else if (txin.type() == typeid(TransactionInputCommitmentTransfer)) {
       uint64_t ringSize = boost::get<TransactionInputCommitmentTransfer>(txin).outputIndexes.size();
-      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large CD transfer ring size, rejected";
         return false;
       }
@@ -336,7 +336,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
       }
     } else if (txin.type() == typeid(TransactionInputUnified)) {
       uint64_t ringSize = boost::get<TransactionInputUnified>(txin).outputIndexes.size();
-      if (!keeped_by_block && ringSize > m_currency.maxMixin()) {
+      if (!keeped_by_block && ringSize > m_currency.maxMixin() + 1) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large unified input ring size, rejected";
         return false;
       }

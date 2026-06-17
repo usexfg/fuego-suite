@@ -265,6 +265,7 @@ namespace CryptoNote
         const uint64_t PI_ABS_MAX_RATE = 1000;                      // ±1000%/yr absolute ceiling
         const int64_t  PI_INTEGRAL_CLAMP = 100;                      // ±100% (scaled)
         const uint32_t BLOCKS_PER_YEAR = 65700;                     // 180 blocks/day × 365
+        const uint64_t PEG_ARB_MAX_MINT_PCT_PER_EPOCH = 10;         // max 10% of HEAT supply per epoch from peg arb
 
         // Basin discovery — market-validated equilibrium anchoring
         const uint32_t BASIN_BOOTSTRAP_EPOCHS = 3;                  // collect initial data

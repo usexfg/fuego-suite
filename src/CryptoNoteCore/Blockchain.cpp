@@ -3116,6 +3116,11 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: share mismatch (computed="
                                      << computedShares << " declared=" << lpAddShares << ")";
         }
+        if (!ammValidateDepositRatio(lpAddAmountXfg, lpAddAmountHeat,
+              m_ammPool.reserveXfg, m_ammPool.reserveHeat, 100)) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: deposit ratio out of tolerance";
+        }
       }
 
       // v10 LP remove auth — pool math validation  
@@ -4100,6 +4105,10 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       uint64_t expectedRatioScaled = m_piState.redemptionPrice.toUint64();
       if (expectedRatioScaled == 0) goto arb_done;
 
+      // Cap total peg-arb HEAT mint per epoch to prevent unbounded inflation
+      uint64_t pegArbMintedEpoch = 0;
+      uint64_t pegArbMintCap = (m_heatSupply * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
+
       for (int round = 0; round < 40; ++round) {
         uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, uint64_t(1));
         int64_t  deviation       = ((int64_t)poolRatioScaled - (int64_t)expectedRatioScaled) * 10000
@@ -4119,6 +4128,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
           uint64_t xfgReceived = ammGetOutputAmount(
               heatToMint, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
           if (xfgReceived == 0 || xfgReceived > m_ammPool.reserveXfg) continue;
+          // Cap: stop minting if epoch peg-arb mint exceeds max % of supply
+          pegArbMintedEpoch += heatToMint;
+          if (pegArbMintCap > 0 && pegArbMintedEpoch > pegArbMintCap) break;
           m_ammPool.reserveHeat += heatToMint;
           m_ammPool.reserveXfg  -= xfgReceived;
           m_heatSupply          += heatToMint;

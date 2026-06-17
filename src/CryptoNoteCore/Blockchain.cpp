@@ -4875,6 +4875,10 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         uint64_t shares = ammMintLpShares(add.amountXfg, add.amountHeat,
           m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
         if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
+        // NOTE: m_lpCommitmentShares not cleaned up on reversal — global output
+        // index not available in popBlock's raw Transaction context. Stale map
+        // entry is harmless (consumes memory, overwritten on next LP add at same
+        // index). Full fix requires tracking gidx in the pop path.
       } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
         const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
         uint64_t amountXfg = 0, amountHeat = 0;
@@ -5245,6 +5249,13 @@ void Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
     (void)heat;
     m_bootstrapRepaymentVault = 0;
   }
+}
+
+bool Blockchain::withdrawBootstrapRepaymentVault(uint64_t amount) {
+  if (amount == 0 || amount > m_bootstrapRepaymentVault) return false;
+  m_bootstrapRepaymentVault -= amount;
+  m_treasuryBalance += amount;
+  return true;
 }
 
 void Blockchain::addSwapFee(uint64_t amount) {

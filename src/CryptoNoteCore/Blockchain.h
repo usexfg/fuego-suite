@@ -136,6 +136,7 @@ namespace CryptoNote {
     bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
     void setXfgMarketValue(uint64_t val);
     void setBootstrapAmount(uint64_t xfg, uint64_t heat);
+    bool withdrawBootstrapRepaymentVault(uint64_t amount);
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }

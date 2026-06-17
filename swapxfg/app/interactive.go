@@ -388,7 +388,7 @@ func (m wizardModel) View() string {
 	)
 }
 
-func (m wizardModel) viewConfirm(w int, promptStyle, navStyle, errStyle, sep lipgloss.Style) string {
+func (m wizardModel) viewConfirm(w int, promptStyle, navStyle, errStyle lipgloss.Style, sep string) string {
 	titleStyle := lipgloss.NewStyle().
 		Foreground(ColorAccent).
 		Bold(true).

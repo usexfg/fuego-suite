@@ -176,6 +176,7 @@ namespace CryptoNote {
     uint64_t depositAmountAtHeight(size_t height) const;
     uint64_t getBurnedXfgAtHeight(size_t height) const;
     void addSwapFee(uint64_t amount);
+    void setXfgMarketValue(uint64_t val);
 
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
 
@@ -231,7 +232,8 @@ namespace CryptoNote {
       uint64_t reserveHeat = 0;
       uint64_t totalLpShares = 0;
       uint64_t spotPrice = 0;
-      uint64_t accumulatedLpFees = 0;
+      uint64_t accumulatedLpFeesHeat = 0;
+      uint64_t accumulatedLpFeesXfg = 0;
       uint64_t epochSwapFees = 0;
     };
     AmmPoolInfo getAmmPoolInfo() const;

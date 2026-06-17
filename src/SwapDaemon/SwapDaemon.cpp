@@ -314,10 +314,14 @@ void SwapDaemon::tickLoop() {
     }
 
     // Fetch live XFG/USD from Hearth pool via fuegod RPC
+    // Feed it back to fuegod for PI controller oracle
     {
       FuegoPrice livePrice;
       if (m_rpc.getFuegoPrice(livePrice) && livePrice.xfgSpotUsd > 0.0) {
         m_oracle.setLiveXfgUsd(livePrice.xfgSpotUsd);
+        uint64_t marketValueCents = static_cast<uint64_t>(livePrice.xfgSpotUsd * 100.0);
+        if (marketValueCents > 0)
+          m_rpc.setXfgMarketValue(marketValueCents);
       }
     }
 

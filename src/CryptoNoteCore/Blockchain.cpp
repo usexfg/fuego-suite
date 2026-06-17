@@ -3263,7 +3263,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim LP shares invalid";
               break;
             }
-            uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
+            uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
             if (feeXfg < claim.minAmountXfg) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim below minimum";
@@ -3961,11 +3961,13 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.ammReserveXfg = m_ammPool.reserveXfg;
     preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
     preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
-    preEpoch.ammAccumulatedLpFees = m_ammPool.accumulatedLpFees;
+    preEpoch.ammAccumulatedLpFeesHeat = m_ammPool.accumulatedLpFeesHeat;
+    preEpoch.ammAccumulatedLpFeesXfg = m_ammPool.accumulatedLpFeesXfg;
     preEpoch.digmPrimaryReserveDigm = m_digmPrimaryPool.reserveDigm;
     preEpoch.digmPrimaryReserveHeat = m_digmPrimaryPool.reserveHeat;
     preEpoch.digmBancorReserveXfg = m_digmBancorPool.reserveXfg;
     preEpoch.digmBancorSupplyDigm = m_digmBancorPool.supplyDigm;
+    preEpoch.piState = m_piState;
 
     // Auto-roll matured CDs (one-time interest compounding at first maturity)
     size_t autoRolled = m_commitmentIndex.processAutoRolls(newHeight);
@@ -3997,9 +3999,11 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     }
 
     // CD yield floor: if organic rate < 2% APY, inject from treasury LP reserve
+    // Annualized: 2% per year → divisor = 100 * epochsPerYear
     if (epochCdLocked > 0) {
       uint64_t floorRate = (CryptoNote::parameters::CD_YIELD_FLOOR_APY_PCT
-                           * CryptoNote::parameters::FEE_POOL_RATE_PRECISION) / 100;
+                           * CryptoNote::parameters::FEE_POOL_RATE_PRECISION)
+                           / (100 * CryptoNote::parameters::EPOCHS_PER_YEAR);
       if (epochFeeRate < floorRate) {
         uint64_t shortfall = static_cast<uint64_t>(
             (uint128_t)(floorRate - epochFeeRate) * epochCdLocked
@@ -4135,12 +4139,12 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     }
     arb_done:
 
-    // Treasury LP yield: protocol claims its proportional share of accumulated LP fees
+    // Treasury LP yield: protocol claims its proportional share of accumulated LP fees (XFG only)
     if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0
-        && m_ammPool.accumulatedLpFees > 0) {
-      uint64_t treasuryFeeShare = (m_ammPool.accumulatedLpFees * m_protocolLpShares)
+        && m_ammPool.accumulatedLpFeesXfg > 0) {
+      uint64_t treasuryFeeShare = (m_ammPool.accumulatedLpFeesXfg * m_protocolLpShares)
                                 / m_ammPool.totalLpShares;
-      m_ammPool.accumulatedLpFees -= treasuryFeeShare;
+      m_ammPool.accumulatedLpFeesXfg -= treasuryFeeShare;
       m_treasuryBalance += treasuryFeeShare;
       m_treasuryLpYield += treasuryFeeShare;
     }
@@ -4431,11 +4435,13 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.reserveXfg = snap.ammReserveXfg;
     m_ammPool.reserveHeat = snap.ammReserveHeat;
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
-    m_ammPool.accumulatedLpFees = snap.ammAccumulatedLpFees;
+    m_ammPool.accumulatedLpFeesHeat = snap.ammAccumulatedLpFeesHeat;
+    m_ammPool.accumulatedLpFeesXfg = snap.ammAccumulatedLpFeesXfg;
     m_digmPrimaryPool.reserveDigm = snap.digmPrimaryReserveDigm;
     m_digmPrimaryPool.reserveHeat = snap.digmPrimaryReserveHeat;
     m_digmBancorPool.reserveXfg = snap.digmBancorReserveXfg;
     m_digmBancorPool.supplyDigm = snap.digmBancorSupplyDigm;
+    m_piState = snap.piState;
     m_epochSnapshots.pop_back();
   }
 
@@ -4602,14 +4608,14 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
             uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
             m_ammPool.reserveXfg += swap.inputAmount;
             m_ammPool.reserveHeat -= outputAmount;
-            m_ammPool.accumulatedLpFees += actualFee;
+            m_ammPool.accumulatedLpFeesHeat += actualFee;
           } else {
             outputAmount = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
             uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
             uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
             m_ammPool.reserveHeat += swap.inputAmount;
             m_ammPool.reserveXfg -= outputAmount;
-            m_ammPool.accumulatedLpFees += actualFee;
+            m_ammPool.accumulatedLpFeesXfg += actualFee;
           }
         } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
           const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
@@ -4641,9 +4647,9 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           // Auto-compound: accumulated fees are already in reserves. No state change needed.
         } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
           const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
-          uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
-          if (m_ammPool.accumulatedLpFees >= feeXfg)
-            m_ammPool.accumulatedLpFees -= feeXfg;
+          uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
+          if (m_ammPool.accumulatedLpFeesXfg >= feeXfg)
+            m_ammPool.accumulatedLpFeesXfg -= feeXfg;
           // Fee-only: principal stays in pool, LP keeps shares. No reserve drain.
         }
       }
@@ -4836,7 +4842,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
             * swap.inputAmount * feeAdj) / ((uint128_t)preXfg * parameters::HEARTH_FEE_DIVISOR));
           uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, m_ammPool.reserveHeat, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-          if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;
+          if (m_ammPool.accumulatedLpFeesHeat >= actualFee) m_ammPool.accumulatedLpFeesHeat -= actualFee;
           m_ammPool.reserveHeat += outputAmount;
           m_ammPool.reserveXfg -= swap.inputAmount;
         } else {
@@ -4846,7 +4852,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
             * swap.inputAmount * feeAdj) / ((uint128_t)preHeat * parameters::HEARTH_FEE_DIVISOR));
           uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, m_ammPool.reserveXfg, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-          if (m_ammPool.accumulatedLpFees >= actualFee) m_ammPool.accumulatedLpFees -= actualFee;
+          if (m_ammPool.accumulatedLpFeesXfg >= actualFee) m_ammPool.accumulatedLpFeesXfg -= actualFee;
           m_ammPool.reserveXfg += outputAmount;
           m_ammPool.reserveHeat -= swap.inputAmount;
         }
@@ -4869,8 +4875,8 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         // Compound was a no-op in forward; no reversal needed
       } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
         const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
-        uint64_t feeXfg = (m_ammPool.accumulatedLpFees * claim.lpShares) / m_ammPool.totalLpShares;
-        m_ammPool.accumulatedLpFees += feeXfg;
+        uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
+        m_ammPool.accumulatedLpFeesXfg += feeXfg;
       } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
         const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
         if (m_totalLegacyBondLocked >= bond.amount) {
@@ -5233,6 +5239,13 @@ void Blockchain::addSwapFee(uint64_t amount) {
   if (amount == 0) return;
   m_currentEpochSwapFees += amount;
   m_totalSwapFeesCollected += amount;
+}
+
+void Blockchain::setXfgMarketValue(uint64_t val) {
+  if (val == 0) return;
+  uint32_t h = static_cast<uint32_t>(m_blocks.size() > 0 ? m_blocks.size() - 1 : 0);
+  m_xfgMarketValue = val;
+  m_xfgMarketValueHeight = h;
 }
 
 AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {

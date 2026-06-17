@@ -365,11 +365,13 @@ namespace CryptoNote {
       uint64_t ammReserveXfg;
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
-      uint64_t ammAccumulatedLpFees;
+      uint64_t ammAccumulatedLpFeesHeat;
+      uint64_t ammAccumulatedLpFeesXfg;
       uint64_t digmPrimaryReserveDigm;
       uint64_t digmPrimaryReserveHeat;
       uint64_t digmBancorReserveXfg;
       uint64_t digmBancorSupplyDigm;
+      PiControllerState piState;        // PI controller state (redemption price, basin, integral)
     };
 
     friend class BlockCacheSerializer;

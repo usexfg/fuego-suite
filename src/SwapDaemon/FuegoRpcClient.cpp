@@ -368,6 +368,18 @@ bool FuegoRpcClient::getFuegoPrice(FuegoPrice& price) {
   }
 }
 
+bool FuegoRpcClient::setXfgMarketValue(uint64_t val) {
+  try {
+    std::ostringstream body;
+    body << "{\"val\":" << val << "}";
+    std::string res = daemonPost("/setxfgmarketvalue", body.str());
+    Common::JsonValue json = Common::JsonValue::fromString(res);
+    return json.isObject() && json.contains("status") && json("status").getString() == "OK";
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 // ── Wallet RPC methods ───────────────────────────────────────────────
 
 bool FuegoRpcClient::sendTransfer(const std::string& address, uint64_t amount,

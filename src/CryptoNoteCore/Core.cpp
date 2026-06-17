@@ -1411,6 +1411,10 @@ void core::addSwapFee(uint64_t amount) {
   m_blockchain.addSwapFee(amount);
 }
 
+void core::setXfgMarketValue(uint64_t val) {
+  m_blockchain.setXfgMarketValue(val);
+}
+
 // --- Commitment Index Accessors ---
 
 std::optional<CommitmentEntry> core::getCommitmentByHash(const Crypto::Hash& commitment) const {
@@ -1545,7 +1549,8 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
   info.reserveXfg = pool.reserveXfg;
   info.reserveHeat = pool.reserveHeat;
   info.totalLpShares = pool.totalLpShares;
-  info.accumulatedLpFees = pool.accumulatedLpFees;
+  info.accumulatedLpFeesHeat = pool.accumulatedLpFeesHeat;
+  info.accumulatedLpFeesXfg = pool.accumulatedLpFeesXfg;
   info.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   if (!pool.isEmpty()) {
     info.spotPrice = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);

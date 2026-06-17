@@ -1947,7 +1947,8 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t reserve_heat;
     uint64_t total_lp_shares;
     uint64_t spot_price;
-    uint64_t accumulated_lp_fees;
+    uint64_t accumulated_lp_fees_heat;
+    uint64_t accumulated_lp_fees_xfg;
     uint64_t epoch_swap_fees;
     std::string status;
     void serialize(ISerializer &s) {
@@ -1955,7 +1956,8 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(reserve_heat)
       KV_MEMBER(total_lp_shares)
       KV_MEMBER(spot_price)
-      KV_MEMBER(accumulated_lp_fees)
+      KV_MEMBER(accumulated_lp_fees_heat)
+      KV_MEMBER(accumulated_lp_fees_xfg)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(status)
     }
@@ -1995,6 +1997,22 @@ struct COMMAND_RPC_ADD_SWAP_FEE {
     uint64_t amount;
     void serialize(ISerializer &s) {
       KV_MEMBER(amount)
+    }
+  };
+
+  struct response {
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_SET_XFG_MARKET_VALUE {
+  struct request {
+    uint64_t val;   // XFG/USD price in cents (158 = $1.58)
+    void serialize(ISerializer &s) {
+      KV_MEMBER(val)
     }
   };
 

@@ -124,7 +124,12 @@ void AmmPoolState::serialize(ISerializer& s) {
   s(reserveXfg, "reserveXfg");
   s(reserveHeat, "reserveHeat");
   s(totalLpShares, "totalLpShares");
-  s(accumulatedLpFees, "accumulatedLpFees");
+  s(accumulatedLpFeesHeat, "accumulatedLpFeesHeat");
+  s(accumulatedLpFeesXfg, "accumulatedLpFeesXfg");
+
+  // Migration: read old single-bucket field if present, discard (irrecoverable split)
+  uint64_t legacyFees = 0;
+  s(legacyFees, "accumulatedLpFees");
 }
 
 } // namespace CryptoNote

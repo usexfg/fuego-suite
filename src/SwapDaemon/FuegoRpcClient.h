@@ -94,6 +94,9 @@ public:
   // Query /get_fuego_price — live Hearth pool XFG/USD price
   bool getFuegoPrice(FuegoPrice& price);
 
+  // Feed XFG/USD market value back to fuegod for PI controller oracle
+  bool setXfgMarketValue(uint64_t val);
+
   // ── Wallet RPC (talks to fire_wallet --rpc-bind-port) ──
 
   // Send XFG via wallet RPC "transfer" method.

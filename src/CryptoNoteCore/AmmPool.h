@@ -19,7 +19,8 @@ struct AmmPoolState {
   uint64_t reserveXfg  = 0;
   uint64_t reserveHeat = 0;
   uint64_t totalLpShares = 0;
-  uint64_t accumulatedLpFees = 0;
+  uint64_t accumulatedLpFeesHeat = 0;  // fees from XFG→HEAT swaps (denominated in HEAT)
+  uint64_t accumulatedLpFeesXfg  = 0;  // fees from HEAT→XFG swaps (denominated in XFG)
 
   bool isEmpty() const { return reserveXfg == 0 && reserveHeat == 0; }
 

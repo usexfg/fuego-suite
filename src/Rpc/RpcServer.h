@@ -123,6 +123,7 @@ private:
   bool on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req, COMMAND_RPC_AMM_POOL_INFO::response& res);
   bool on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req, COMMAND_RPC_GET_FUEGO_PRICE::response& res);
   bool on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req, COMMAND_RPC_ADD_SWAP_FEE::response& res);
+  bool on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::request& req, COMMAND_RPC_SET_XFG_MARKET_VALUE::response& res);
   bool on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req, COMMAND_RPC_GET_EPOCH_HISTORY::response& res);
   bool on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
   bool on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req, COMMAND_RPC_GET_TREASURY_INFO::response& res);

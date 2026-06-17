@@ -432,6 +432,8 @@ namespace CryptoNote {
     // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
     std::deque<uint64_t> m_blockSwapFeeContributions;
     std::deque<std::pair<uint64_t, uint64_t>> m_blockEpochDistributions;  // <treasuryShare, rolloverShare>
+    // Per-block TWAP contribution tracking — used by popBlock to undo non-boundary block TWAP accumulation.
+    std::deque<uint128_t> m_blockTwapContributions;
     // Epoch state snapshots for popBlock reversal
     std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
 

@@ -2400,6 +2400,10 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& r
 
 bool RpcServer::on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req,
                                  COMMAND_RPC_ADD_SWAP_FEE::response& res) {
+  if (m_restricted_rpc) {
+    res.status = "Access denied in restricted mode";
+    return false;
+  }
   if (req.amount == 0 || req.amount > 100000000000000ULL) {
     res.status = "Invalid fee amount";
     return false;
@@ -2411,6 +2415,10 @@ bool RpcServer::on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req,
 
 bool RpcServer::on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::request& req,
                                          COMMAND_RPC_SET_XFG_MARKET_VALUE::response& res) {
+  if (m_restricted_rpc) {
+    res.status = "Access denied in restricted mode";
+    return false;
+  }
   if (req.val == 0 || req.val > 1000000000ULL) {
     res.status = "Invalid market value";
     return false;

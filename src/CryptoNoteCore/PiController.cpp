@@ -117,12 +117,14 @@ FixedPoint64 computeTargetRatio(
     // Falls back to bootstrap 5:1 when CPI inactive or XFG below threshold.
     if (state.cpiOracleActive
         && xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
+      // Clamp oracle value to $500/XFG max to prevent manipulation
+      uint64_t clampedValue = std::min(xfgMarketValue, uint64_t(50000));
       FixedPoint64 cpiRatio = state.cpiCurrentValue.div(state.cpiLaunchValue);
       FixedPoint64 baseFloor = FixedPoint64::fromRatio(parameters::HEAT_CPI_BASE_FLOOR, parameters::VALUE_SCALE);
       FixedPoint64 baseCeil  = FixedPoint64::fromRatio(parameters::HEAT_CPI_BASE_CEIL,  parameters::VALUE_SCALE);
       FixedPoint64 floorCPI = baseFloor.mul(cpiRatio);
       FixedPoint64 ceilCPI  = baseCeil.mul(cpiRatio);
-      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(clampedValue, parameters::VALUE_SCALE);
       if (!xfgPrice.isZero()) {
         FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
         FixedPoint64 targetValue;
@@ -138,7 +140,9 @@ FixedPoint64 computeTargetRatio(
 
   case 1: // 5:1 self-sovereign (fixed $1.50-$2.50 band, activate at XFG ≥ $5)
     if (xfgMarketValue >= parameters::XFG_PRICE_ACTIVATION_THRESHOLD) {
-      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(xfgMarketValue, parameters::VALUE_SCALE);
+      // Clamp oracle value to $500/XFG max to prevent manipulation
+      uint64_t clampedValue = std::min(xfgMarketValue, uint64_t(50000));
+      FixedPoint64 xfgPrice = FixedPoint64::fromRatio(clampedValue, parameters::VALUE_SCALE);
       if (!xfgPrice.isZero()) {
         FixedPoint64 heatValue = currentTwap.mul(xfgPrice);
         FixedPoint64 floorV  = FixedPoint64::fromRatio(parameters::HEAT_VALUE_FLOOR,   parameters::VALUE_SCALE);

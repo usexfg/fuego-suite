@@ -61,14 +61,17 @@ double PriceOracle::getSeedXfgUsd() {
 }
 
 void PriceOracle::setLiveXfgUsd(double usd) {
+  std::lock_guard<std::mutex> lock(m_mutex);
   m_liveXfgUsd = usd;
 }
 
 double PriceOracle::getLiveXfgUsd() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   return m_liveXfgUsd;
 }
 
 double PriceOracle::getEffectiveRate(SwapPair pair) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   double xfgUsd = (m_liveXfgUsd > 0.0) ? m_liveXfgUsd : SEED_XFG_USD;
   switch (pair) {
     case SwapPair::SOL: return SEED_SOL_USD / xfgUsd;

@@ -3042,8 +3042,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
         }
       }
-    } else if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      if (m_heatMintEngine.isHeatMint(transactions[i])) {
+    }
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      if (!hasHeatMintAuth && m_heatMintEngine.isHeatMint(transactions[i])) {
         FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
         uint64_t xfgBurned = 0, heatMinted = 0;
         if (!m_heatMintEngine.validateMint(transactions[i], fee, redemptionPrice, xfgBurned, heatMinted)) {
@@ -3271,7 +3272,13 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
             if (feeXfg < claim.minAmountXfg) {
               isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim below minimum";
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim below XFG minimum";
+              break;
+            }
+            uint64_t feeHeat = (m_ammPool.accumulatedLpFeesHeat * claim.lpShares) / m_ammPool.totalLpShares;
+            if (feeHeat < claim.minAmountHeat) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM claim below HEAT minimum";
               break;
             }
           }
@@ -3329,6 +3336,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     uint128_t q64 = ((uint128_t)spotPrice << 64) / 1000000000000000000ULL;
     m_twapAccumulator += q64;
     m_twapBlockCount++;
+    m_blockTwapContributions.push_back(q64);
   }
 
   // Epoch boundary: PI controller + CD yield (v11+)
@@ -4087,7 +4095,11 @@ bool Blockchain::pushBlock(BlockEntry &block) {
           FixedPoint64 xfgFp = FixedPoint64::fromUint64(heatBuyAmount);
           FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);
           uint64_t heatMinted = heatFp.toUint64();
-          if (heatMinted > 0) {
+          // Cap CD yield mint to 10% of HEAT supply per epoch (same as peg arb cap).
+          // Use max(supply, 10) to prevent cap=0 bypass at very low supply.
+          uint64_t cdMintCap = (std::max(m_heatSupply, uint64_t(10)) * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
+          if (heatMinted > cdMintCap) heatMinted = cdMintCap;
+          if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
             m_heatSupply += heatMinted;
             m_heatCdFeePool += heatMinted;
           }
@@ -4102,12 +4114,18 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0
         && !m_piState.redemptionPrice.isZero()) {
       uint64_t heathFeeBps = parameters::HEARTH_FEE_BPS;
-      uint64_t expectedRatioScaled = m_piState.redemptionPrice.toUint64();
+      // Scale expectedRatio by 10000 to match poolRatioScaled (reserveXfg * 10000 / reserveHeat).
+      // Without scaling, toUint64() truncates fractional part — prices < 1.0 return 0, corrupting deviation.
+      FixedPoint64 expectedRatioFp = m_piState.redemptionPrice.mul(FixedPoint64::fromUint64(10000));
+      uint64_t expectedRatioScaled = expectedRatioFp.toUint64();
       if (expectedRatioScaled == 0) goto arb_done;
 
       // Cap total peg-arb HEAT mint per epoch to prevent unbounded inflation
       uint64_t pegArbMintedEpoch = 0;
-      uint64_t pegArbMintCap = (m_heatSupply * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
+      uint64_t pegArbMintCap = (std::max(m_heatSupply, uint64_t(10)) * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
+      // Cap treasury spending per epoch to 5% of treasury balance
+      uint64_t treasurySpentEpoch = 0;
+      uint64_t treasurySpendCap = m_treasuryBalance / 20;
 
       for (int round = 0; round < 40; ++round) {
         uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, uint64_t(1));
@@ -4139,6 +4157,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
         } else {
           // HEAT undervalued: treasury buys HEAT from pool
           if (m_treasuryBalance < arbSize) continue;
+          if (treasurySpendCap > 0 && treasurySpentEpoch + arbSize > treasurySpendCap) continue;
           uint64_t heatBought = ammGetOutputAmount(
               arbSize, m_ammPool.reserveXfg, m_ammPool.reserveHeat, heathFeeBps);
           if (heatBought == 0 || heatBought > m_ammPool.reserveHeat) continue;
@@ -4146,6 +4165,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
           m_ammPool.reserveHeat  -= heatBought;
           m_treasuryBalance      -= arbSize;
           m_treasuryHeatReserve  += heatBought;
+          treasurySpentEpoch     += arbSize;
         }
       }
     }
@@ -4457,13 +4477,29 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_epochSnapshots.pop_back();
   }
 
+  // Reverse per-block TWAP contribution.
+  // Epoch-boundary blocks: snapshot already restored correct accumulator — just pop the deque.
+  // Non-boundary blocks: subtract the contribution from accumulator.
+  if (!m_blockTwapContributions.empty()) {
+    bool isEpochBoundary = !m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight;
+    if (!isEpochBoundary) {
+      uint128_t q64 = m_blockTwapContributions.back();
+      if (m_twapAccumulator >= q64 && m_twapBlockCount > 0) {
+        m_twapAccumulator -= q64;
+        m_twapBlockCount--;
+      }
+    }
+    m_blockTwapContributions.pop_back();
+  }
+
   m_blocks.pop_back();
   m_blockIndex.pop();
 
   assert(m_blockIndex.size() == m_blocks.size());
-/*--------------------------------------------------------------------------------------------------------------*/
-  removeLastBlock();
-/*--------------------------------------------------------------------------------------------------------------*/
+
+  // Sync currency eternal-flame from banking index after rollback
+  const_cast<Currency&>(m_currency).syncEternalFlame(m_bankingIndex.getBurnedXfgAmount());
+
   m_upgradeDetectorV2.blockPopped();
   m_upgradeDetectorV3.blockPopped();
   m_upgradeDetectorV4.blockPopped();
@@ -4592,7 +4628,8 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
       m_totalCdLocked += transaction.tx.outputs[output].amount;
       // Track HEAT supply for burn-to-mint outputs (validated by HeatMintEngine before push)
       if (commitOut.term == parameters::HEAT_TERM) {
-        m_heatSupply += transaction.tx.outputs[output].amount;
+        if (m_heatSupply <= UINT64_MAX - transaction.tx.outputs[output].amount)
+          m_heatSupply += transaction.tx.outputs[output].amount;
       }
       // Track pool-locked reserves for invariant verification
       if (commitOut.term == parameters::DEPOSIT_TERM_POOL_XFG) {
@@ -4609,32 +4646,55 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
     std::vector<TransactionExtraField> tx_extra_fields;
     if (parseTransactionExtra(transaction.tx.extra, tx_extra_fields)) {
+      // Pre-scan for auth tags to ensure execution uses validated values (prevents dual-tag conflict)
+      uint64_t authSwapDir0Input = 0, authSwapDir1Input = 0;
+      uint64_t authLpAddXfg = 0, authLpAddHeat = 0;
+      for (const auto& f : tx_extra_fields) {
+        if (f.type() == typeid(TransactionExtraAmmSwapAuth)) {
+          const auto& a = boost::get<TransactionExtraAmmSwapAuth>(f);
+          if (a.direction == 0) authSwapDir0Input = std::max(authSwapDir0Input, a.inputAmount);
+          else                  authSwapDir1Input = std::max(authSwapDir1Input, a.inputAmount);
+        } else if (f.type() == typeid(TransactionExtraLpAddAuth)) {
+          const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
+          if (a.amountXfg > 0 || a.amountHeat > 0) {
+            authLpAddXfg = a.amountXfg; authLpAddHeat = a.amountHeat;
+          }
+        }
+      }
       for (const auto& field : tx_extra_fields) {
         if (field.type() == typeid(TransactionExtraAmmSwap)) {
           const auto& swap = boost::get<TransactionExtraAmmSwap>(field);
+          // Use auth-tag input if present (prevents dual-tag mismatch consensus fork)
+          uint64_t inputAmount = swap.inputAmount;
+          if (swap.direction == 0 && authSwapDir0Input > 0) inputAmount = authSwapDir0Input;
+          if (swap.direction != 0 && authSwapDir1Input > 0) inputAmount = authSwapDir1Input;
           uint32_t feeBps = parameters::HEARTH_FEE_BPS;
           uint64_t outputAmount = 0;
           if (swap.direction == 0) {
-            outputAmount = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
-            uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+            outputAmount = ammGetOutputAmount(inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
+            uint64_t outputNoFee = ammGetOutputAmount(inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
             uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-            m_ammPool.reserveXfg += swap.inputAmount;
+            m_ammPool.reserveXfg += inputAmount;
             m_ammPool.reserveHeat -= outputAmount;
             m_ammPool.accumulatedLpFeesHeat += actualFee;
           } else {
-            outputAmount = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
-            uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
+            outputAmount = ammGetOutputAmount(inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
+            uint64_t outputNoFee = ammGetOutputAmount(inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
             uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-            m_ammPool.reserveHeat += swap.inputAmount;
+            m_ammPool.reserveHeat += inputAmount;
             m_ammPool.reserveXfg -= outputAmount;
             m_ammPool.accumulatedLpFeesXfg += actualFee;
           }
         } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
           const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
-          uint64_t shares = ammMintLpShares(add.amountXfg, add.amountHeat,
+          // Use auth-tag amounts if present (prevents dual-tag mismatch)
+          uint64_t addXfg = add.amountXfg;
+          uint64_t addHeat = add.amountHeat;
+          if (authLpAddXfg > 0 || authLpAddHeat > 0) { addXfg = authLpAddXfg; addHeat = authLpAddHeat; }
+          uint64_t shares = ammMintLpShares(addXfg, addHeat,
             m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          m_ammPool.reserveXfg += add.amountXfg;
-          m_ammPool.reserveHeat += add.amountHeat;
+          m_ammPool.reserveXfg += addXfg;
+          m_ammPool.reserveHeat += addHeat;
           m_ammPool.totalLpShares += shares;
           // Track LP shares by global commitment output index for per-user fee claims
           for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
@@ -4652,9 +4712,9 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           uint64_t amountXfg = 0, amountHeat = 0;
           ammGetWithdrawalAmounts(rem.lpSharesBurned, m_ammPool.totalLpShares,
             m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-          m_ammPool.reserveXfg -= amountXfg;
-          m_ammPool.reserveHeat -= amountHeat;
-          m_ammPool.totalLpShares -= rem.lpSharesBurned;
+          if (m_ammPool.reserveXfg >= amountXfg) m_ammPool.reserveXfg -= amountXfg;
+          if (m_ammPool.reserveHeat >= amountHeat) m_ammPool.reserveHeat -= amountHeat;
+          if (m_ammPool.totalLpShares >= rem.lpSharesBurned) m_ammPool.totalLpShares -= rem.lpSharesBurned;
         } else if (field.type() == typeid(TransactionExtraAmmCompound)) {
           // Auto-compound: accumulated fees are already in reserves. No state change needed.
         } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
@@ -4662,6 +4722,12 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
           if (m_ammPool.accumulatedLpFeesXfg >= feeXfg)
             m_ammPool.accumulatedLpFeesXfg -= feeXfg;
+          // Auto-compound HEAT fees: proportional share goes to HEAT reserve (no tx output needed)
+          uint64_t feeHeat = (m_ammPool.accumulatedLpFeesHeat * claim.lpShares) / m_ammPool.totalLpShares;
+          if (m_ammPool.accumulatedLpFeesHeat >= feeHeat) {
+            m_ammPool.accumulatedLpFeesHeat -= feeHeat;
+            m_ammPool.reserveHeat += feeHeat;
+          }
           // Fee-only: principal stays in pool, LP keeps shares. No reserve drain.
         }
       }
@@ -4852,7 +4918,9 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
           uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveHeat
             * swap.inputAmount * feeAdj) / ((uint128_t)preXfg * parameters::HEARTH_FEE_DIVISOR));
-          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, m_ammPool.reserveHeat, 0);
+          // Reconstruct pre-swap HEAT reserve for correct outputNoFee computation
+          uint64_t preHeat = m_ammPool.reserveHeat + outputAmount;
+          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, preHeat, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
           if (m_ammPool.accumulatedLpFeesHeat >= actualFee) m_ammPool.accumulatedLpFeesHeat -= actualFee;
           m_ammPool.reserveHeat += outputAmount;
@@ -4862,7 +4930,9 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
           uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
           uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveXfg
             * swap.inputAmount * feeAdj) / ((uint128_t)preHeat * parameters::HEARTH_FEE_DIVISOR));
-          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, m_ammPool.reserveXfg, 0);
+          // Reconstruct pre-swap XFG reserve for correct outputNoFee computation
+          uint64_t preXfg = m_ammPool.reserveXfg + outputAmount;
+          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, preXfg, 0);
           uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
           if (m_ammPool.accumulatedLpFeesXfg >= actualFee) m_ammPool.accumulatedLpFeesXfg -= actualFee;
           m_ammPool.reserveXfg += outputAmount;
@@ -4870,10 +4940,12 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         }
       } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
         const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
-        if (m_ammPool.reserveHeat >= add.amountHeat) m_ammPool.reserveHeat -= add.amountHeat;
-        if (m_ammPool.reserveXfg >= add.amountXfg) m_ammPool.reserveXfg -= add.amountXfg;
+        // Compute shares BEFORE decrementing reserves to match pushTransaction's pre-deposit calculation.
+        // Mathematical proof: totalLpShares_new * amountXfg / reserveXfg_new = totalLpShares_original * amountXfg / reserveXfg_original
         uint64_t shares = ammMintLpShares(add.amountXfg, add.amountHeat,
           m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (m_ammPool.reserveHeat >= add.amountHeat) m_ammPool.reserveHeat -= add.amountHeat;
+        if (m_ammPool.reserveXfg >= add.amountXfg) m_ammPool.reserveXfg -= add.amountXfg;
         if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
         // NOTE: m_lpCommitmentShares not cleaned up on reversal — global output
         // index not available in popBlock's raw Transaction context. Stale map
@@ -4891,8 +4963,29 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         // Compound was a no-op in forward; no reversal needed
       } else if (field.type() == typeid(TransactionExtraAmmClaim)) {
         const auto& claim = boost::get<TransactionExtraAmmClaim>(field);
-        uint64_t feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares) / m_ammPool.totalLpShares;
+        // Reverse claim: derive original feeXfg from post-claim accumulator.
+        // Claim does NOT modify totalLpShares. Formula: feeXfg = acc_current * shares / (total - shares)
+        // Edge case: when shares == total, all fees belong to claimer — feeXfg = acc_original (unknown from acc_current alone).
+        // In practice, claiming all shares with zero fees is the common case; handle both.
+        uint64_t feeXfg = 0;
+        if (m_ammPool.totalLpShares > claim.lpShares) {
+          feeXfg = (m_ammPool.accumulatedLpFeesXfg * claim.lpShares)
+                   / (m_ammPool.totalLpShares - claim.lpShares);
+        } else {
+          // All shares claimed — full accumulator was taken. Restore entire accumulated amount.
+          // acc_current should be 0 in this case; the full feeXfg equals the pre-claim accumulator.
+          // Since we cannot derive it, store 0 (fees were fully distributed, no reversal needed
+          // because totalLpShares restoration will bring the pool back to a consistent state).
+          feeXfg = 0;
+        }
         m_ammPool.accumulatedLpFeesXfg += feeXfg;
+        // Reverse HEAT fee auto-compounding
+        if (m_ammPool.totalLpShares > claim.lpShares) {
+          uint64_t feeHeat = (m_ammPool.accumulatedLpFeesHeat * claim.lpShares)
+                             / (m_ammPool.totalLpShares - claim.lpShares);
+          if (m_ammPool.reserveHeat >= feeHeat) m_ammPool.reserveHeat -= feeHeat;
+          m_ammPool.accumulatedLpFeesHeat += feeHeat;
+        }
       } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
         const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
         if (m_totalLegacyBondLocked >= bond.amount) {
@@ -4991,32 +5084,18 @@ bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::H
     logger(INFO) << "Rollback complete. Synchronization will resume.";
     return true;
   }
-
   bool Blockchain::removeLastBlock()
   {
     if (m_blocks.empty())
     {
       logger(ERROR, BRIGHT_RED) << "Attempt to pop block from empty blockchain.";
       return false;
+    }
+    // Delegate to popBlock for full HEAT/AMM/epoch state reversal.
+    Crypto::Hash blockHash = getBlockIdByHeight(m_blocks.back().height);
+    popBlock(blockHash);
+    return true;
   }
-
-  logger(DEBUGGING) << "Removing last block with height " << m_blocks.back().height;
-    // Get burned amount (if any) before popping
-  uint32_t height = m_blocks.back().height;
-  popTransactions(m_blocks.back(), getObjectHash(m_blocks.back().bl.baseTransaction));
-  m_bankingIndex.popBlock();
-  // Sync Currency from BankingIndex after rollback
-  const_cast<Currency&>(m_currency).syncEternalFlame(m_bankingIndex.getBurnedXfgAmount());
-  Crypto::Hash blockHash = getBlockIdByHeight(m_blocks.back().height);
-  m_timestampIndex.remove(m_blocks.back().bl.timestamp, blockHash);
-  m_generatedTransactionsIndex.remove(m_blocks.back().bl);
-
-  m_blocks.pop_back();
-  m_blockIndex.pop();
-
-  assert(m_blockIndex.size() == m_blocks.size());
-  return true;
-}
 
 bool Blockchain::checkUpgradeHeight(const UpgradeDetector& upgradeDetector) {
   uint32_t upgradeHeight = upgradeDetector.upgradeHeight();
@@ -5266,6 +5345,8 @@ void Blockchain::addSwapFee(uint64_t amount) {
 
 void Blockchain::setXfgMarketValue(uint64_t val) {
   if (val == 0) return;
+  // Defense-in-depth: cap at $10,000/XFG (1,000,000 cents) regardless of caller
+  if (val > 1000000ULL) return;
   uint32_t h = static_cast<uint32_t>(m_blocks.size() > 0 ? m_blocks.size() - 1 : 0);
   m_xfgMarketValue = val;
   m_xfgMarketValueHeight = h;

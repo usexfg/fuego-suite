@@ -109,37 +109,8 @@ public:
     }
   }
 
-  // Dynamic ring ct calculation based on available outputs
-  size_t calculateOptimalRingSize(uint64_t amount, size_t availableOutputs, uint8_t blockMajorVersion) const {
-    if (blockMajorVersion < BLOCK_MAJOR_VERSION_10) {
-      return minMixin(blockMajorVersion); // Use legacy for older versions
-    }
-
-    // Standard privacy: aim for larger ring sizes when possible
-    size_t minRingSize = minMixin(blockMajorVersion); // Minimum: 8 at v10+
-    size_t maxRingSize = maxMixin(); // Maximum: 18
-
-    // For BlockMajorVersion 10+, never go below ring size 8
-    // If insufficient outputs for ring ct 8, this is handled by the caller
-    if (availableOutputs < minRingSize) {
-      // indicates insufficient outputs - caller should handle this error
-
-      return 0; // Signal to caller that ring ct 8 is not achievable - direct user to run optimizer
-    }
-
-    // Target ring sizes in order of preference
-    std::vector<size_t> targetRingSizes = {18, 15, 12, 11, 10, 9, 8};
-
-    // Find the largest achievable ring size
-    for (size_t targetSize : targetRingSizes) {
-      if (targetSize <= availableOutputs && targetSize <= maxRingSize) {
-        return targetSize;
-      }
-    }
-
-    // Fall back to standard if no targets are achievable
-    return minRingSize;
-  }
+  // Dynamic ring size calculation — use DynamicRingSizeCalculator::calculateOptimalRingSize
+  // (in src/CryptoNoteCore/DynamicRingSize.cpp) which targets {32, 16, 8} ring sizes.
 
   size_t maxMixin() const { return m_maxMixin; }
   size_t numberOfDecimalPlaces() const { return m_numberOfDecimalPlaces; }

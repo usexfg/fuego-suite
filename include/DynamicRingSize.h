@@ -77,14 +77,4 @@ public:
     IBlockchainExplorer* blockchainExplorer = nullptr
   );
 };
-
-// Privacy levels for different ring sizes
-enum class PrivacyLevel {
-  MINIMUM = 8,      //   Fuego Standard (minimum of 8)
-  SOLID = 10,      //   Solid privacy (10)
-  BETTER = 12,    //   Better privacy (12)
-  STRONG = 15,    //  Monero's Ring Size (15)
-  MAXIMUM = 18    // Fuego Max Privacy (18)
-};
-
 } // namespace CryptoNote

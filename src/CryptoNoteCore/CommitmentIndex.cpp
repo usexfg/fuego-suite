@@ -318,9 +318,12 @@ void CommitmentIndex::recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
                                            uint64_t feesCollected, uint64_t totalLocked) {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (epochNumber >= m_epochFeeRates.size()) {
-    m_epochFeeRates.resize(epochNumber + 1, 0);
+    m_epochFeeRates.resize(epochNumber + 1);
   }
-  m_epochFeeRates[epochNumber] = feeRate;
+  EpochFeeRateEntry& entry = m_epochFeeRates[epochNumber];
+  entry.feeRate = feeRate;
+  entry.feesCollected = feesCollected;
+  entry.totalLocked = totalLocked;
 }
 
 
@@ -328,6 +331,12 @@ void CommitmentIndex::recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
 uint64_t CommitmentIndex::getEpochFeeRate(uint64_t epochNumber) const {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (epochNumber >= m_epochFeeRates.size()) return 0;
+  return m_epochFeeRates[epochNumber].feeRate;
+}
+
+EpochFeeRateEntry CommitmentIndex::getEpochFeeRateEntry(uint64_t epochNumber) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_epochFeeRates.size()) return {};
   return m_epochFeeRates[epochNumber];
 }
 

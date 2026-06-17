@@ -29,6 +29,18 @@
 
 namespace CryptoNote {
 
+struct EpochFeeRateEntry {
+  uint64_t feeRate = 0;
+  uint64_t feesCollected = 0;
+  uint64_t totalLocked = 0;
+
+  void serialize(ISerializer& s) {
+    s(feeRate, "epoch_fee_rate");
+    s(feesCollected, "fees_collected");
+    s(totalLocked, "total_locked");
+  }
+};
+
 struct CommitmentEntry {
   Crypto::Hash commitment;
   Crypto::Hash txHash;
@@ -111,6 +123,7 @@ public:
   void recordEpochFeeRate(uint64_t epochNumber, uint64_t feeRate,
                            uint64_t feesCollected, uint64_t totalLocked);
   uint64_t getEpochFeeRate(uint64_t epochNumber) const;
+  EpochFeeRateEntry getEpochFeeRateEntry(uint64_t epochNumber) const;
   uint64_t getEpochCount() const;
   // Remove the most-recently recorded epoch fee rate (used by popBlock rollback).
   void popEpochFeeRate();
@@ -137,7 +150,7 @@ public:
 private:
   mutable std::mutex m_mutex;
 
-  std::vector<uint64_t> m_epochFeeRates;
+  std::vector<EpochFeeRateEntry> m_epochFeeRates;
   std::vector<uint64_t> m_legacyEpochFeeRates;
 
   mutable Crypto::Hash m_current_merkle_root;

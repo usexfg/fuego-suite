@@ -185,6 +185,8 @@ namespace CryptoNote {
     bool hasCommitment(const Crypto::Hash& commitment) const;
     size_t getCommitmentCount() const;
     size_t getHeatCommitmentCount() const;
+    uint64_t getTotalCdLocked() const;
+    uint64_t getHeatCdFeePool() const;
     size_t getColdCommitmentCount() const;
     Crypto::Hash getCommitmentMerkleRoot() const;
     std::vector<Crypto::Hash> getCommitmentMerkleProof(const Crypto::Hash& commitment) const;
@@ -209,6 +211,7 @@ namespace CryptoNote {
     struct HeatMetrics {
       uint64_t heatSupply = 0;
       uint64_t burnedXfg = 0;
+      uint64_t heatCdFeePool = 0;     // HEAT in CD fee pool (accrued, not yet distributed)
       uint64_t redemptionPriceNum = 1;  // pool XFG/HEAT ratio × 10^6 (was PI redemption price)
       uint64_t redemptionPriceDenom = 1000000;
       uint64_t redemptionRateNum = 0;   // always 0 (PI controller removed)

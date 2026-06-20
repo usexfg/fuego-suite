@@ -113,6 +113,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
     const AmmPoolState& getAmmPool() const { return m_ammPool; }
     const DigmPrimaryPoolState& getDigmPrimaryPool() const { return m_digmPrimaryPool; }

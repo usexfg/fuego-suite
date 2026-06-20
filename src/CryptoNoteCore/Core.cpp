@@ -1454,6 +1454,14 @@ size_t core::getHeatCommitmentCount() const {
   return m_blockchain.getHeatCommitmentCount();
 }
 
+uint64_t core::getTotalCdLocked() const {
+  return m_blockchain.getTotalCdLocked();
+}
+
+uint64_t core::getHeatCdFeePool() const {
+  return m_blockchain.getHeatCdFeePool();
+}
+
 size_t core::getColdCommitmentCount() const {
   return m_blockchain.getColdCommitmentCount();
 }
@@ -1508,6 +1516,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   HeatMetrics m;
   m.heatSupply = m_blockchain.getHeatSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
+  m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool ratio × 10^6 for precision (was PI redemption price)

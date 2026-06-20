@@ -3025,6 +3025,13 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
+        // Auto-seed pool at 1:1 if empty (testnet bootstrap + first mint)
+        if (m_ammPool.isEmpty()) {
+          m_ammPool.reserveXfg = CryptoNote::parameters::HEARTH_POOL_SEED_XFG
+                               * CryptoNote::parameters::COIN;
+          m_ammPool.reserveHeat = CryptoNote::parameters::HEARTH_POOL_SEED_HEAT
+                                * CryptoNote::parameters::COIN;
+        }
         FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
           ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
           : FixedPoint64::fromUint64(1);

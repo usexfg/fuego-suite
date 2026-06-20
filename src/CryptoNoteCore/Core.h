@@ -209,14 +209,12 @@ namespace CryptoNote {
     struct HeatMetrics {
       uint64_t heatSupply = 0;
       uint64_t burnedXfg = 0;
-      uint64_t redemptionPriceNum = 1;
-      uint64_t redemptionPriceDenom = 5;
-      uint64_t redemptionRateNum = 0;
+      uint64_t redemptionPriceNum = 1;  // pool XFG/HEAT ratio × 10^6 (was PI redemption price)
+      uint64_t redemptionPriceDenom = 1000000;
+      uint64_t redemptionRateNum = 0;   // always 0 (PI controller removed)
       uint64_t redemptionRateDenom = 1;
       uint64_t treasuryBalance = 0;
       uint64_t epochSwapFees = 0;
-      // CPI-adjusted purchasing power (Phase 3)
-      uint64_t heatValueCents  = 0;     // HEAT current USD value in cents (from CPI-adjusted PI band)
     };
     HeatMetrics getHeatMetrics() const;
 

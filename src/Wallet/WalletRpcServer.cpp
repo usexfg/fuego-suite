@@ -168,7 +168,12 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "create_cd",          makeMemberMethod(&wallet_rpc_server::on_create_cd) },
       { "withdraw_cd",        makeMemberMethod(&wallet_rpc_server::on_withdraw_cd) },
       { "rollover_cd",        makeMemberMethod(&wallet_rpc_server::on_rollover_cd) },
-      { "estimate_cd_yield",  makeMemberMethod(&wallet_rpc_server::on_estimate_cd_yield) }
+      { "estimate_cd_yield",  makeMemberMethod(&wallet_rpc_server::on_estimate_cd_yield) },
+      { "heat_mint",          makeMemberMethod(&wallet_rpc_server::on_heat_mint) },
+      { "send_heat",          makeMemberMethod(&wallet_rpc_server::on_send_heat) },
+      { "amm_swap",           makeMemberMethod(&wallet_rpc_server::on_amm_swap) },
+      { "amm_add_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_add_liquidity) },
+      { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) }
     };
 
     auto it = s_methods.find(jsonRequest.getMethod());
@@ -932,6 +937,130 @@ bool wallet_rpc_server::on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD
     res.tx_hash    = txHash;
     res.new_amount = newDep.amount;
     res.status     = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::request& req, wallet_rpc::COMMAND_RPC_HEAT_MINT::response& res) {
+  try {
+    if (req.xfg_burned == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "xfg_burned must be > 0");
+    if (req.heat_minted == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "heat_minted must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::TransactionId txId = m_wallet.mintHeatV10(req.xfg_burned, req.heat_minted, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT mint failed");
+    }
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res) {
+  try {
+    CryptoNote::AccountPublicAddress addr;
+    if (!m_currency.parseAccountAddressString(req.address, addr)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid address");
+    }
+    if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::TransactionId txId = m_wallet.sendHeatV10(addr, req.amount, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT failed");
+    }
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  try {
+    if (req.direction > 1) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "direction must be 0 (XFG→HEAT) or 1 (HEAT→XFG)");
+    if (req.input_amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "input_amount must be > 0");
+    if (req.expected_output < req.min_output) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "expected_output below min_output");
+    }
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::TransactionId txId = m_wallet.ammSwapV10(req.direction, req.input_amount,
+        req.expected_output, req.min_output, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap failed");
+    }
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::response& res) {
+  try {
+    if (req.amount_xfg == 0 && req.amount_heat == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "at least one of amount_xfg or amount_heat must be > 0");
+    }
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::TransactionId txId = m_wallet.lpAddV10(req.amount_xfg, req.amount_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add failed");
+    }
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::request& req, wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::response& res) {
+  try {
+    if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    if (req.term_epochs == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term_epochs must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::TransactionId txId = m_wallet.heatDepositV10(req.amount, req.term_epochs,
+        req.banking_fee, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT deposit failed");
+    }
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
   } catch (const JsonRpc::JsonRpcError&) {
     throw;
   } catch (const std::exception& e) {

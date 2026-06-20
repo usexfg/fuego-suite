@@ -883,12 +883,13 @@ namespace CryptoNote
       amount >>= 8;
     }
 
-    // Serialize metadata size and data
-    uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
+    // Serialize metadata size and data (capped at 128 bytes; must not contain PII)
+    size_t rawSize = commitment.metadata.size();
+    uint8_t metadataSize = static_cast<uint8_t>(rawSize > 128 ? 128 : rawSize);
     tx_extra.push_back(metadataSize);
 
     if (metadataSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
+      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.begin() + metadataSize);
     }
 
     return true;

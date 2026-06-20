@@ -367,7 +367,7 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
-bool SwapDaemon::initiate(SwapParams params) {
+bool SwapDaemon::initiate(SwapParams& params) {
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
     m_logger(Logging::ERROR) << "Cannot connect to fuegod";
@@ -451,7 +451,7 @@ bool SwapDaemon::initiate(SwapParams params) {
   // ── Adaptor sig step 1: generate swap keypair ──
   adaptor_generate_keys(params);
 
-  m_logger(Logging::INFO) << "Generated swap keypair: "
+  m_logger(Logging::DEBUGGING) << "Generated swap keypair: "
     << Common::podToHex(params.ourSwapPubKey);
 
   SwapStateMachine sm(params);
@@ -464,10 +464,10 @@ bool SwapDaemon::initiate(SwapParams params) {
   m_logger(Logging::INFO) << "Swap initiated: " << params.swapId;
   m_logger(Logging::INFO) << "  Pair: XFG/" << swapPairToString(params.pair);
   m_logger(Logging::INFO) << "  Role: " << (params.role == SwapRole::BOB ? "BOB (selling XFG)" : "ALICE (buying XFG)");
-  m_logger(Logging::INFO) << "  XFG amount: " << params.xfgAmount << " atomic";
-  m_logger(Logging::INFO) << "  CTR amount: " << params.ctrAmount << " atomic";
+  m_logger(Logging::DEBUGGING) << "  XFG amount: " << params.xfgAmount << " atomic";
+  m_logger(Logging::DEBUGGING) << "  CTR amount: " << params.ctrAmount << " atomic";
   m_logger(Logging::INFO) << "  Timeout height: " << params.xfgTimeoutHeight;
-  m_logger(Logging::INFO) << "  Our swap pubkey: " << Common::podToHex(params.ourSwapPubKey);
+  m_logger(Logging::DEBUGGING) << "  Our swap pubkey: " << Common::podToHex(params.ourSwapPubKey);
   m_logger(Logging::INFO) << "  Share this swap ID with your counterparty: " << params.swapId;
 
   return true;
@@ -547,15 +547,15 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     return {false, ""};
   }
   
-  m_logger(Logging::INFO) << "Musig2 escrow key: "
+  m_logger(Logging::DEBUGGING) << "Musig2 escrow key: "
     << Common::podToHex(params.escrowPubKey);
-  
+
   if (params.role == SwapRole::BOB) {
     if (!adaptor_generate_adaptor(params, params.escrowPubKey)) {
       m_logger(Logging::ERROR) << "Adaptor point generation failed";
       return {false, ""};
     }
-    m_logger(Logging::INFO) << "Adaptor point T: "
+    m_logger(Logging::DEBUGGING) << "Adaptor point T: "
       << Common::podToHex(params.adaptorPoint);
   }
   
@@ -671,7 +671,8 @@ bool SwapDaemon::processSwap(const std::string& swapId) {
 // ── Escrow funding ─────────────────────────────────────────────────────────
 
 bool SwapDaemon::fundEscrow(SwapParams& params) {
-  m_logger(Logging::INFO) << "  Funding escrow: " << params.xfgAmount
+  m_logger(Logging::INFO) << "  Funding escrow";
+  m_logger(Logging::DEBUGGING) << "  Escrow amount: " << params.xfgAmount
     << " atomic -> " << Common::podToHex(params.escrowPubKey);
 
   if (!m_makerKeysSet) {

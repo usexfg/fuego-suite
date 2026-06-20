@@ -754,5 +754,146 @@ using CryptoNote::ISerializer;
     };
   };
 
+  // HEAT mint: burn XFG to create HEAT stablecoin
+  struct COMMAND_RPC_HEAT_MINT {
+    struct request {
+      uint64_t xfg_burned;
+      uint64_t heat_minted;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(xfg_burned)
+        KV_MEMBER(heat_minted)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Send HEAT to another address
+  struct COMMAND_RPC_SEND_HEAT {
+    struct request {
+      std::string address;
+      uint64_t amount;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(address)
+        KV_MEMBER(amount)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Swap XFG↔HEAT on the Hearth AMM
+  struct COMMAND_RPC_AMM_SWAP {
+    struct request {
+      uint8_t  direction;     // 0 = XFG→HEAT, 1 = HEAT→XFG
+      uint64_t input_amount;
+      uint64_t expected_output;
+      uint64_t min_output;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(direction)
+        KV_MEMBER(input_amount)
+        KV_MEMBER(expected_output)
+        KV_MEMBER(min_output)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Add liquidity to the Hearth AMM pool
+  struct COMMAND_RPC_AMM_ADD_LIQUIDITY {
+    struct request {
+      uint64_t amount_xfg;
+      uint64_t amount_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount_xfg)
+        KV_MEMBER(amount_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Create a HEAT CD deposit (locks HEAT for term epochs)
+  struct COMMAND_RPC_HEAT_DEPOSIT {
+    struct request {
+      uint64_t amount;
+      uint32_t term_epochs;
+      uint64_t banking_fee;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(amount)
+        KV_MEMBER(term_epochs)
+        KV_MEMBER(banking_fee)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
 }
 }

@@ -124,9 +124,12 @@ struct TransactionExtraTTL {
 };
 
 struct TransactionExtraHeatCommitment {
-  Crypto::Hash commitment;       // 🔒 SECURE: Only commitment hash on blockchain
-  uint64_t amount;
-  std::vector<uint8_t> metadata;
+  Crypto::Hash commitment;       // Opaque commitment hash
+  uint64_t amount;               // Plaintext amount (privacy: visible on-chain)
+  std::vector<uint8_t> metadata; // Metadata blob (max 128 bytes on wire).
+                                 // WARNING: This field is NOT encrypted on-chain.
+                                 // Do NOT embed PII, secrets, or identifiable data.
+                                 // Prefer empty or use only for public protocol hints.
 
   bool serialize(ISerializer& serializer);
 };

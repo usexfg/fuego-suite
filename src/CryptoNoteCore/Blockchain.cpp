@@ -242,13 +242,6 @@ public:
         if (s.type() == ISerializer::INPUT)
           m_bs.m_twapAccumulator = ((uint128_t)twap_hi << 64) | twap_lo;
       }
-      s(m_bs.m_piState, "pi_state");
-      s(m_bs.m_heatLaunchTwap, "heat_launch_twap");
-      s(m_bs.m_heatLaunchTwapSet, "heat_launch_twap_set");
-      s(m_bs.m_heatCurrentCpi, "heat_current_cpi");
-      s(m_bs.m_heatLaunchCpi, "heat_launch_cpi");
-      s(m_bs.m_xfgMarketValue, "xfg_market_value");
-      s(m_bs.m_xfgMarketValueHeight, "xfg_market_value_height");
       s(m_bs.m_cdYieldPool, "cd_yield_pool");
       s(m_bs.m_cdReserve, "cd_reserve");
       s(m_bs.m_heatCdFeePool, "heat_cd_fee_pool");
@@ -394,10 +387,7 @@ private:
                         m_upgradeDetectorV10(currency, m_blocks, BLOCK_MAJOR_VERSION_10, logger),
                         m_upgradeDetectorV11(currency, m_blocks, BLOCK_MAJOR_VERSION_11, logger),
                         m_commitmentIndex(currency),
-                        m_aliasIndex() {
-  m_piState.redemptionPrice = FixedPoint64::fromRatio(
-    parameters::HEAT_LAUNCH_RATIO_NUM,
-    parameters::HEAT_LAUNCH_RATIO_DENOM);
+                         m_aliasIndex() {
   // Seed Hearth pool at 1:1 for immediate peg
   m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
   m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
@@ -3035,8 +3025,10 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
-        FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
-        if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, redemptionPrice,
+        FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+          ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+          : FixedPoint64::fromUint64(1);
+        if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, poolRate,
                                                 authXfgBurned, authHeatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
@@ -3045,9 +3037,11 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     }
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (!hasHeatMintAuth && m_heatMintEngine.isHeatMint(transactions[i])) {
-        FixedPoint64 redemptionPrice = m_piState.redemptionPrice;
+        FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+          ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+          : FixedPoint64::fromUint64(1);
         uint64_t xfgBurned = 0, heatMinted = 0;
-        if (!m_heatMintEngine.validateMint(transactions[i], fee, redemptionPrice, xfgBurned, heatMinted)) {
+        if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
         }
@@ -3339,55 +3333,11 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     m_blockTwapContributions.push_back(q64);
   }
 
-  // Epoch boundary: PI controller + CD yield (v11+)
+  // Epoch boundary: reset TWAP accumulator (v11+)
   uint32_t epochDuration = m_currency.isTestnet() ?
     parameters::TESTNET_EPOCH_DURATION_BLOCKS : parameters::EPOCH_DURATION_BLOCKS;
   if (block.height > 0 && block.height % epochDuration == 0 &&
       block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-    // Run PI controller: target = LAUNCH_RATIO × launch_twap / current_twap
-    if (m_twapBlockCount > 0 && !m_ammPool.isEmpty()) {
-      int128_t avgQ64 = (int128_t)(m_twapAccumulator / m_twapBlockCount);
-      FixedPoint64 marketPrice = FixedPoint64::fromRaw(avgQ64);
-      FixedPoint64 currentTwap = marketPrice;
-
-      if (!m_heatLaunchTwapSet) {
-        m_heatLaunchTwap = (uint64_t)avgQ64;
-        m_heatLaunchTwapSet = true;
-      }
-
-      FixedPoint64 launchTwap = m_heatLaunchTwapSet ?
-        FixedPoint64::fromRaw((int128_t)m_heatLaunchTwap) : FixedPoint64::zero();
-
-      // Oracle quality gate: reject stale data
-      uint64_t oracleValue = 0;
-      if (m_xfgMarketValueHeight > 0) {
-        uint32_t epochsSinceUpdate = (block.height - m_xfgMarketValueHeight) / epochDuration;
-        if (epochsSinceUpdate < parameters::MAX_ORACLE_STALE_EPOCHS)
-          oracleValue = m_xfgMarketValue;
-      }
-
-      // Milæsandra: inject simulated fees + oracle data for testnet testing
-      if (m_milaesandra.isActive(m_currency, block.height)) {
-        uint64_t simFees = m_milaesandra.simulateEpochFees(m_currency);
-        if (simFees > 0)
-          m_currentEpochSwapFees += simFees;
-        uint64_t simPrice = m_milaesandra.simulateXfgPrice(m_currency, block.height);
-        if (simPrice > 0)
-          oracleValue = simPrice;
-      }
-
-      FixedPoint64 targetRatio = computeTargetRatio(
-        m_piState, parameters::HEAT_STABILITY_MODE, launchTwap, currentTwap, oracleValue);
-
-      // Flatcoin CPI multiplier: target_ratio *= current_CPI / launch_CPI
-      // Preserves HEAT purchasing power vs USD inflation (Q1 2008 baseline → 1.57x)
-      if (m_heatLaunchCpi > 0) {
-        targetRatio = targetRatio.mul(FixedPoint64::fromRatio(m_heatCurrentCpi, m_heatLaunchCpi));
-      }
-
-      computeNewRedemptionPrice(m_piState, marketPrice, targetRatio, epochDuration, parameters::HEAT_STABILITY_MODE);
-    }
-    int128_t epochTwapAvg = (m_twapBlockCount > 0) ? (int128_t)(m_twapAccumulator / m_twapBlockCount) : int128_t(uint64_t(0));
     // Reset TWAP for next epoch
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
@@ -3980,7 +3930,6 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.digmPrimaryReserveHeat = m_digmPrimaryPool.reserveHeat;
     preEpoch.digmBancorReserveXfg = m_digmBancorPool.reserveXfg;
     preEpoch.digmBancorSupplyDigm = m_digmBancorPool.supplyDigm;
-    preEpoch.piState = m_piState;
 
     // Auto-roll matured CDs (one-time interest compounding at first maturity)
     size_t autoRolled = m_commitmentIndex.processAutoRolls(newHeight);
@@ -4047,129 +3996,46 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     m_treasuryBalance += treasuryShare;
     m_totalTreasuryAccrued += treasuryShare;
 
-    // Route regular CD share: to yield pool for HEAT buyback, or to treasury when pool lopsided.
-    if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-      uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 100) / m_ammPool.reserveHeat;
-      if (poolRatioScaled > 200) {
-        uint64_t routeAmount = (regularCdShare * parameters::CD_YIELD_TREASURY_ROUTE_PCT) / 100;
-        m_cdYieldPool += (regularCdShare - routeAmount);
-        m_treasuryBalance += routeAmount;
-      } else {
-        m_cdYieldPool += regularCdShare;
-      }
-    } else {
-      m_cdYieldPool += regularCdShare;
-    }
+    // Route regular CD share: 100% to yield pool for HEAT buyback
+    m_cdYieldPool += regularCdShare;
 
     // Route legacy bond share to legacy bond yield pool
     if (legacyBondShare > 0) {
       m_legacyBondYieldPool += legacyBondShare;
     }
 
-    // CD yield: buy HEAT from Hearth, or mint if pool too lopsided.
-    // 20% protocol XFG buyback retains XFG in treasury as protocol reserve.
+    // CD yield: buy HEAT from Hearth for CD-holder payout.
+    // 100% of CD yield → HEAT buy. No protocol cut, no treasury restore —
+    // CD holders selling rewards back into pool provides natural ratio restoration.
     if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
-      uint64_t xfgBuyback = (m_cdYieldPool * CryptoNote::parameters::CD_YIELD_XFG_BUYBACK_PCT) / 100;
-      uint64_t heatBuyAmount = m_cdYieldPool - xfgBuyback;
+      uint64_t heatBuyAmount = m_cdYieldPool;
 
-      // Protocol XFG buyback: retain XFG in permanent reserve (never spent)
-      if (xfgBuyback > 0) {
-        m_treasuryXfgReserve += xfgBuyback;
-      }
+      uint64_t heatBought = ammGetOutputAmount(heatBuyAmount,
+        m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
 
-      if (heatBuyAmount > 0) {
-        uint64_t heatBought = ammGetOutputAmount(heatBuyAmount,
-          m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+      uint64_t postBuyXfg = m_ammPool.reserveXfg + heatBuyAmount;
+      uint64_t postBuyHeat = (heatBought > 0 && heatBought <= m_ammPool.reserveHeat)
+                            ? m_ammPool.reserveHeat - heatBought : m_ammPool.reserveHeat;
+      uint64_t postBuyRatio = postBuyHeat > 0 ? (postBuyXfg * 100) / postBuyHeat : 999;
+      bool poolCanHandleBuy = postBuyRatio <= 400;
 
-        uint64_t postBuyXfg = m_ammPool.reserveXfg + heatBuyAmount;
-        uint64_t postBuyHeat = (heatBought > 0 && heatBought <= m_ammPool.reserveHeat)
-                             ? m_ammPool.reserveHeat - heatBought : m_ammPool.reserveHeat;
-        uint64_t postBuyRatio = postBuyHeat > 0 ? (postBuyXfg * 100) / postBuyHeat : 999;
-        bool poolCanHandleBuy = postBuyRatio <= 400;
-
-        if (poolCanHandleBuy && heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
-          m_ammPool.reserveXfg += heatBuyAmount;
-          m_ammPool.reserveHeat -= heatBought;
-          m_heatCdFeePool += heatBought;
-        } else if (!m_piState.redemptionPrice.isZero()) {
-          FixedPoint64 xfgFp = FixedPoint64::fromUint64(heatBuyAmount);
-          FixedPoint64 heatFp = xfgFp.div(m_piState.redemptionPrice);
-          uint64_t heatMinted = heatFp.toUint64();
-          // Cap CD yield mint to 10% of HEAT supply per epoch (same as peg arb cap).
-          // Use max(supply, 10) to prevent cap=0 bypass at very low supply.
-          uint64_t cdMintCap = (std::max(m_heatSupply, uint64_t(10)) * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
-          if (heatMinted > cdMintCap) heatMinted = cdMintCap;
-          if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
-            m_heatSupply += heatMinted;
-            m_heatCdFeePool += heatMinted;
-          }
+      if (poolCanHandleBuy && heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
+        m_ammPool.reserveXfg += heatBuyAmount;
+        m_ammPool.reserveHeat -= heatBought;
+        m_heatCdFeePool += heatBought;
+      } else if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        // Pool ratio fallback: mint HEAT at current AMM rate
+        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        FixedPoint64 xfgFp = FixedPoint64::fromUint64(heatBuyAmount);
+        FixedPoint64 heatFp = xfgFp.div(poolRate);
+        uint64_t heatMinted = heatFp.toUint64();
+        if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
+          m_heatSupply += heatMinted;
+          m_heatCdFeePool += heatMinted;
         }
       }
       m_cdYieldPool = 0;
     }
-
-    // ── Direct peg arbitrage ──────────────────────────────────────────
-    // Converges pool toward peg via iterative mint-sell / treasury-buy.
-    // 40 rounds per epoch matches simulation-tested convergence behavior.
-    if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0
-        && !m_piState.redemptionPrice.isZero()) {
-      uint64_t heathFeeBps = parameters::HEARTH_FEE_BPS;
-      // Scale expectedRatio by 10000 to match poolRatioScaled (reserveXfg * 10000 / reserveHeat).
-      // Without scaling, toUint64() truncates fractional part — prices < 1.0 return 0, corrupting deviation.
-      FixedPoint64 expectedRatioFp = m_piState.redemptionPrice.mul(FixedPoint64::fromUint64(10000));
-      uint64_t expectedRatioScaled = expectedRatioFp.toUint64();
-      if (expectedRatioScaled == 0) goto arb_done;
-
-      // Cap total peg-arb HEAT mint per epoch to prevent unbounded inflation
-      uint64_t pegArbMintedEpoch = 0;
-      uint64_t pegArbMintCap = (std::max(m_heatSupply, uint64_t(10)) * parameters::PEG_ARB_MAX_MINT_PCT_PER_EPOCH) / 100;
-      // Cap treasury spending per epoch to 5% of treasury balance
-      uint64_t treasurySpentEpoch = 0;
-      uint64_t treasurySpendCap = m_treasuryBalance / 20;
-
-      for (int round = 0; round < 40; ++round) {
-        uint64_t poolRatioScaled = (m_ammPool.reserveXfg * 10000) / std::max(m_ammPool.reserveHeat, uint64_t(1));
-        int64_t  deviation       = ((int64_t)poolRatioScaled - (int64_t)expectedRatioScaled) * 10000
-                                   / std::max(expectedRatioScaled, uint64_t(1));
-        if (deviation < 500 && deviation > -500) break;  // within 0.05%, stop
-
-        // Arb size: 3% of smaller reserve, max 5% of XFG reserve
-        uint64_t arbSize = (std::min(m_ammPool.reserveXfg, m_ammPool.reserveHeat) * 3) / 100;
-        arbSize = std::min(arbSize, m_ammPool.reserveXfg / 20);
-        if (arbSize == 0) break;
-
-        if (deviation > 0) {
-          // HEAT overvalued: mint HEAT at redemption price, sell to pool
-          uint64_t heatToMint = FixedPoint64::fromUint64(arbSize).div(
-              m_piState.redemptionPrice).toUint64();
-          if (heatToMint == 0 || heatToMint > m_ammPool.reserveHeat / 4) continue;
-          uint64_t xfgReceived = ammGetOutputAmount(
-              heatToMint, m_ammPool.reserveHeat, m_ammPool.reserveXfg, heathFeeBps);
-          if (xfgReceived == 0 || xfgReceived > m_ammPool.reserveXfg) continue;
-          // Cap: stop minting if epoch peg-arb mint exceeds max % of supply
-          pegArbMintedEpoch += heatToMint;
-          if (pegArbMintCap > 0 && pegArbMintedEpoch > pegArbMintCap) break;
-          m_ammPool.reserveHeat += heatToMint;
-          m_ammPool.reserveXfg  -= xfgReceived;
-          m_heatSupply          += heatToMint;
-          m_treasuryBalance     += (arbSize * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
-          m_treasuryBalance     += xfgReceived;        // pool XFG from sale
-        } else {
-          // HEAT undervalued: treasury buys HEAT from pool
-          if (m_treasuryBalance < arbSize) continue;
-          if (treasurySpendCap > 0 && treasurySpentEpoch + arbSize > treasurySpendCap) continue;
-          uint64_t heatBought = ammGetOutputAmount(
-              arbSize, m_ammPool.reserveXfg, m_ammPool.reserveHeat, heathFeeBps);
-          if (heatBought == 0 || heatBought > m_ammPool.reserveHeat) continue;
-          m_ammPool.reserveXfg   += arbSize;
-          m_ammPool.reserveHeat  -= heatBought;
-          m_treasuryBalance      -= arbSize;
-          m_treasuryHeatReserve  += heatBought;
-          treasurySpentEpoch     += arbSize;
-        }
-      }
-    }
-    arb_done:
 
     // Treasury LP yield: protocol claims its proportional share of accumulated LP fees (XFG only)
     if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0
@@ -4473,7 +4339,6 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_digmPrimaryPool.reserveHeat = snap.digmPrimaryReserveHeat;
     m_digmBancorPool.reserveXfg = snap.digmBancorReserveXfg;
     m_digmBancorPool.supplyDigm = snap.digmBancorSupplyDigm;
-    m_piState = snap.piState;
     m_epochSnapshots.pop_back();
   }
 
@@ -4579,16 +4444,6 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           logger(ERROR, BRIGHT_RED) << "Fee-pool invariant violated: CD claimedInterest "
               << cin.claimedInterest << " exceeds pool " << m_feePoolBalance
               << " at connect for tx " << transactionHash;
-        }
-      }
-      // Phase 2: 1% claim fee goes to fee pool (total swap fee = 2%: 1% initiation + 1% claim)
-      if (cin.amount > 0) {
-        uint64_t claimerFee = (cin.amount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) 
-                            / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
-        if (claimerFee > 0) {
-          m_feePoolBalance += claimerFee;
-          m_currentEpochSwapFees += claimerFee;
-          m_totalSwapFeesCollected += claimerFee;
         }
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
@@ -4878,14 +4733,6 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         if (m_totalCdInterestPaid >= cin.claimedInterest) {
           m_totalCdInterestPaid -= cin.claimedInterest;
         }
-      }
-      // Reverse claimerFee
-      uint64_t claimerFee = (cin.amount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
-                          / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
-      if (claimerFee > 0) {
-        if (m_feePoolBalance >= claimerFee) m_feePoolBalance -= claimerFee;
-        if (m_currentEpochSwapFees >= claimerFee) m_currentEpochSwapFees -= claimerFee;
-        if (m_totalSwapFeesCollected >= claimerFee) m_totalSwapFeesCollected -= claimerFee;
       }
     } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(input);
@@ -5341,15 +5188,6 @@ void Blockchain::addSwapFee(uint64_t amount) {
   if (amount == 0) return;
   m_currentEpochSwapFees += amount;
   m_totalSwapFeesCollected += amount;
-}
-
-void Blockchain::setXfgMarketValue(uint64_t val) {
-  if (val == 0) return;
-  // Defense-in-depth: cap at $10,000/XFG (1,000,000 cents) regardless of caller
-  if (val > 1000000ULL) return;
-  uint32_t h = static_cast<uint32_t>(m_blocks.size() > 0 ? m_blocks.size() - 1 : 0);
-  m_xfgMarketValue = val;
-  m_xfgMarketValueHeight = h;
 }
 
 AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {

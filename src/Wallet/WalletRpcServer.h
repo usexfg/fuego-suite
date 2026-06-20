@@ -92,6 +92,13 @@ namespace Tools
     bool on_rollover_cd(const wallet_rpc::COMMAND_RPC_ROLLOVER_CD::request& req, wallet_rpc::COMMAND_RPC_ROLLOVER_CD::response& res);
     bool on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, wallet_rpc::COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
 
+    // HEAT & Hearth wallet RPC bridges
+    bool on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::request& req, wallet_rpc::COMMAND_RPC_HEAT_MINT::response& res);
+    bool on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res);
+    bool on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res);
+    bool on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::response& res);
+    bool on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::request& req, wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::response& res);
+
     bool handle_command_line(const boost::program_options::variables_map& vm);
 
     Logging::LoggerRef logger;

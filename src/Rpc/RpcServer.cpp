@@ -220,8 +220,8 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
   JsonRpcResponse jsonResponse;
 
   try {
-    logger(TRACE) << "JSON-RPC request: " << request.getBody();
     jsonRequest.parseRequest(request.getBody());
+    logger(TRACE) << "JSON-RPC request: " << jsonRequest.getMethod();
     jsonResponse.setId(jsonRequest.getId()); // copy id
 
     static std::unordered_map<std::string, RpcServer::RpcHandler<JsonMemberMethod>> jsonRpcHandlers = {
@@ -260,7 +260,11 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
   }
 
   response.setBody(jsonResponse.getBody());
-  logger(TRACE) << "JSON-RPC response: " << jsonResponse.getBody();
+  {
+    JsonRpcError err;
+    bool hasErr = jsonResponse.getError(err);
+    logger(TRACE) << "JSON-RPC response: " << (hasErr ? "error " + std::to_string(err.code) : "ok");
+  }
   return true;
 }
 
@@ -875,11 +879,11 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
   }
 
   XfgSwap::SwapParams params;
-  params.pair        = XfgSwap::swapPairFromString(req.pair);
-  params.role        = XfgSwap::SwapRole::BOB;
-  params.xfgAmount   = req.xfg_amount;
-  params.ctrAmount   = req.ctr_amount;
-  params.ctrAddress  = req.ctr_address;
+  params.pair         = XfgSwap::swapPairFromString(req.pair);
+  params.role         = XfgSwap::SwapRole::BOB;
+  params.xfgAmount    = req.xfg_amount;
+  params.ctrAmount    = req.ctr_amount;
+  params.ctrAddress   = req.ctr_address;
   params.peerEndpoint = req.peer_endpoint;
 
   if (!req.peer_pub_key.empty()) {
@@ -896,8 +900,9 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
     return true;
   }
 
-  res.swap_id = params.swapId;
-  res.status  = CORE_RPC_STATUS_OK;
+  res.swap_id     = params.swapId;
+  res.our_pub_key = Common::podToHex(params.ourSwapPubKey);
+  res.status      = CORE_RPC_STATUS_OK;
   return true;
 }
 

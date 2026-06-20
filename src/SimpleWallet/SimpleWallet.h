@@ -134,7 +134,6 @@ namespace CryptoNote
     bool cd_info(const std::vector<std::string> &args);
     bool list_burns(const std::vector<std::string> &args);
     bool burn_info(const std::vector<std::string> &args);
-     bool migrate_deposit(const std::vector<std::string> &args);
      bool withdraw_bond(const std::vector<std::string> &args);
      bool propose_slash(const std::vector<std::string> &args);
     bool get_report(const std::vector<std::string> &args);

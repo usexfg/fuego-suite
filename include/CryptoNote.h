@@ -88,8 +88,8 @@ struct TransactionInputCommitmentTransfer {
   uint32_t newTerm;                     // new CD's term (spender-declared, >= 1)
 };
 
-// v11+ unified output — replaces KeyOutput + TransactionOutputCommitment.
-// ALL v11 transaction outputs (transfers, deposits, burns) use this type.
+// v12+ (SILENTFIRE) unified output — replaces KeyOutput + TransactionOutputCommitment.
+// ALL v12+ transaction outputs (transfers, deposits, burns) use this type.
 // Amount hidden in Pedersen commitment; denomination proved by 1-of-N membership proof.
 // term=0: regular transfer. term>0: locked deposit (blocks).
 // TransactionOutput.amount is 0 on the wire for this type (amount is in commitment).
@@ -100,8 +100,8 @@ struct TransactionOutputUnified {
   Crypto::MembershipProof proof;            // 1-of-N: amount is a valid denomination
 };
 
-// v11+ unified input — replaces KeyInput + TransactionInputCommitmentSpend.
-// ALL v11 inputs (transfers, deposit withdrawals) use this type.
+// v12+ (SILENTFIRE) unified input — replaces KeyInput + TransactionInputCommitmentSpend.
+// ALL v12+ inputs (transfers, deposit withdrawals) use this type.
 // Amount hidden; MLSAG proves spend authority + commitment balance.
 // MLSAG response scalars stored in tx.signatures[input_idx]:
 //   signatures[input_idx][j] = {s[j][0], s[j][1]} for ring member j

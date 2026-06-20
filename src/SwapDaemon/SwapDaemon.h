@@ -152,7 +152,7 @@ public:
   std::string buildStatusJson();
 
   // Start a new swap as initiator (Bob: has XFG, wants counterparty coin).
-  bool initiate(SwapParams params);
+  bool initiate(SwapParams& params);
 
   // Accept an incoming swap proposal.
   struct AcceptResult {

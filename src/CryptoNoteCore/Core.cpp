@@ -1412,7 +1412,9 @@ void core::addSwapFee(uint64_t amount) {
 }
 
 void core::setXfgMarketValue(uint64_t val) {
-  m_blockchain.setXfgMarketValue(val);
+  // PI controller removed — oracle price no longer used for peg defense.
+  // XFG price is unrestrained. Callers (SwapDaemon oracle, testnet sim) still
+  // invoke this but the value is silently ignored going forward.
 }
 
 // --- Commitment Index Accessors ---
@@ -1506,8 +1508,17 @@ core::HeatMetrics core::getHeatMetrics() const {
   HeatMetrics m;
   m.heatSupply = m_blockchain.getHeatSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
-  m.redemptionPriceNum = m_blockchain.getPiState().redemptionPrice.toUint64();
-  m.redemptionPriceDenom = 1;
+  const auto& pool = m_blockchain.getAmmPool();
+  if (!pool.isEmpty() && pool.reserveHeat > 0) {
+    // Pool ratio × 10^6 for precision (was PI redemption price)
+    m.redemptionPriceNum = (pool.reserveXfg * 1000000ULL) / pool.reserveHeat;
+    m.redemptionPriceDenom = 1000000;
+  } else {
+    m.redemptionPriceNum = 0;
+    m.redemptionPriceDenom = 1;
+  }
+  m.redemptionRateNum = 0;    // PI controller removed — always 0
+  m.redemptionRateDenom = 1;
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   return m;

@@ -160,7 +160,7 @@ namespace CryptoNote
 
       // v10 HEAT mint via auth tag — no STARK commitment needed on-chain
       success_msg_writer() << "Creating TEST burn (HEAT v10): " << m_currency.formatAmount(burn_amount) << " TEST";
-      uint64_t heatAmount = burn_amount * parameters::HEAT_LAUNCH_RATIO_DENOM / parameters::HEAT_LAUNCH_RATIO_NUM;
+      uint64_t heatAmount = burn_amount;  // 1:1 XFG→HEAT expected rate
       success_msg_writer() << "  Minting: " << m_currency.formatAmount(heatAmount) << " HEAT";
 
       CryptoNote::TransactionId txId = m_wallet->mintHeatV10(burn_amount, heatAmount, fee + banking_fee, 0);

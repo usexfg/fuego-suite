@@ -710,17 +710,24 @@ namespace CryptoNote
       std::vector<CryptoNote::OutputInfo> outputInfos;
       outputInfos.emplace_back(0, minAvailable);
 
+      // On testnet allow bootstrap ring sizes (pool is small); mainnet enforces minMixin.
+      size_t minRing = m_currency.isTestnet() ? 0 : m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10);
       size_t optimalRingSize = CryptoNote::DynamicRingSizeCalculator::calculateOptimalRingSize(
         0,
         outputInfos,
         CryptoNote::BLOCK_MAJOR_VERSION_10,
-        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10),
+        minRing,
         m_currency.maxMixin()
       );
 
       if (optimalRingSize == 0) {
-        events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::MIXIN_COUNT_TOO_BIG)));
-        return;
+        // Testnet bootstrap: ring size 0 (no decoys) when output pool is empty.
+        if (m_currency.isTestnet()) {
+          optimalRingSize = 0;
+        } else {
+          events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::MIXIN_COUNT_TOO_BIG)));
+          return;
+        }
       }
 
       context->mixIn = static_cast<uint64_t>(optimalRingSize);
@@ -1685,6 +1692,25 @@ namespace CryptoNote
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
+  // Split a HEAT amount into standard bill denominations so every output
+  // at a given bill size pools into the same decoy set. Greedy largest-first.
+  static std::vector<uint64_t> decomposeHeatIntoBills(uint64_t amount) {
+    const auto& denoms = CryptoNote::parameters::HEAT_BILL_DENOMINATIONS;
+    std::vector<uint64_t> bills;
+    uint64_t rem = amount;
+    for (uint64_t bill : denoms) {
+      while (rem >= bill) {
+        bills.push_back(bill);
+        rem -= bill;
+      }
+    }
+    if (rem > 0 && !bills.empty())
+      bills.front() += rem;
+    else if (bills.empty())
+      bills.push_back(amount);
+    return bills;
+  }
+
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendHeatMintV10Transaction(
       std::shared_ptr<SendTransactionContext> &&context,
       std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
@@ -1704,28 +1730,34 @@ namespace CryptoNote
       uint64_t changeAmount = context->foundMoney - xfgBurned - fee;
       std::vector<uint64_t> decomposedChange = splitAmount(changeAmount, context->dustPolicy.dustThreshold);
 
-      // Build HEAT commitment output (term=FOREVER for receive)
-      const uint32_t commitOutputIndex = static_cast<uint32_t>(transaction->getOutputCount());
-      std::array<uint8_t, 32> depositSecret;
-      {
-        Crypto::SecretKey txSecretKey;
-        transaction->getTransactionSecretKey(txSecretKey);
-        Crypto::KeyDerivation ecdh;
-        Crypto::generate_key_derivation(m_keys.address.viewPublicKey, txSecretKey, ecdh);
-        uint8_t preimage[36];
-        memcpy(preimage, &ecdh, 32);
-        preimage[32] = commitOutputIndex & 0xFF;
-        preimage[33] = (commitOutputIndex >> 8) & 0xFF;
-        preimage[34] = (commitOutputIndex >> 16) & 0xFF;
-        preimage[35] = (commitOutputIndex >> 24) & 0xFF;
-        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        memcpy(depositSecret.data(), h.data, 32);
+      // Build HEAT commitment outputs — split into bill denominations
+      // so all mints at the same bill size share a decoy pool.
+      std::vector<uint64_t> heatBills = decomposeHeatIntoBills(heatMinted);
+      
+      Crypto::SecretKey txSecretKey;
+      transaction->getTransactionSecretKey(txSecretKey);
+      Crypto::KeyDerivation ecdh;
+      Crypto::generate_key_derivation(m_keys.address.viewPublicKey, txSecretKey, ecdh);
+
+      for (uint64_t billAmount : heatBills) {
+        const uint32_t commitOutputIndex = static_cast<uint32_t>(transaction->getOutputCount());
+        std::array<uint8_t, 32> depositSecret;
+        {
+          uint8_t preimage[36];
+          memcpy(preimage, &ecdh, 32);
+          preimage[32] = commitOutputIndex & 0xFF;
+          preimage[33] = (commitOutputIndex >> 8) & 0xFF;
+          preimage[34] = (commitOutputIndex >> 16) & 0xFF;
+          preimage[35] = (commitOutputIndex >> 24) & 0xFF;
+          Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+          memcpy(depositSecret.data(), h.data, 32);
+        }
+        CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
+        CryptoNote::TransactionOutputCommitment heatOut;
+        heatOut.commitKey = commitKeys.commitKey;
+        heatOut.term = parameters::HEAT_TERM;
+        transaction->addOutput(billAmount, heatOut);
       }
-      CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
-      CryptoNote::TransactionOutputCommitment heatOut;
-      heatOut.commitKey = commitKeys.commitKey;
-      heatOut.term = parameters::HEAT_TERM;
-      transaction->addOutput(heatMinted, heatOut);
 
       // Change outputs
       for (uint64_t changeOut : decomposedChange)

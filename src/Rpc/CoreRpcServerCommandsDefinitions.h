@@ -1737,10 +1737,12 @@ struct COMMAND_RPC_INITIATE_SWAP {
 
   struct response {
     std::string swap_id;
+    std::string our_pub_key;   // Ed25519 pubkey generated for this swap (32 bytes hex)
     std::string status;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(swap_id)
+      KV_MEMBER(our_pub_key)
       KV_MEMBER(status)
     }
   };

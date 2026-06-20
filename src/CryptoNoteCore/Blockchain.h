@@ -35,8 +35,7 @@
 #include "HeatMintEngine.h"
 #include "AmmPool.h"
 #include "BancorCurve.h"
-#include "PiController.h"
-#include "Milaesandra.h"
+#include "../Common/FixedPoint.h"
 #include "IBlockchainStorageObserver.h"
 #include "ITransactionValidator.h"
 #include "SwappedVector.h"
@@ -129,12 +128,10 @@ namespace CryptoNote {
     uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
     AssetType classifyInputAsset(const TransactionInput& in) const;
-    const PiControllerState& getPiState() const { return m_piState; }
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
     bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
-    void setXfgMarketValue(uint64_t val);
     void setBootstrapAmount(uint64_t xfg, uint64_t heat);
     bool withdrawBootstrapRepaymentVault(uint64_t amount);
     void addSwapFee(uint64_t amount);
@@ -372,7 +369,6 @@ namespace CryptoNote {
       uint64_t digmPrimaryReserveHeat;
       uint64_t digmBancorReserveXfg;
       uint64_t digmBancorSupplyDigm;
-      PiControllerState piState;        // PI controller state (redemption price, basin, integral)
     };
 
     friend class BlockCacheSerializer;
@@ -399,17 +395,7 @@ namespace CryptoNote {
     CryptoNote::DigmPrimaryPoolState m_digmPrimaryPool;
     CryptoNote::DigmBancorPoolState  m_digmBancorPool;
 
-    // Milæsandra — testnet fee simulator
-    CryptoNote::Milaesandra m_milaesandra;
-
-    // PI Controller + CD yield state
-    CryptoNote::PiControllerState m_piState;
-    uint64_t m_heatLaunchTwap = 0;
-    bool     m_heatLaunchTwapSet = false;
-    uint64_t m_heatCurrentCpi = 158;   // Dec 2008→Apr 2026 BLS CPI-U: 333.020/210.2 = 1.58x
-    uint64_t m_heatLaunchCpi = 100;    // CPI baseline index (100 = Dec 2008 reference)
-    uint64_t m_xfgMarketValue = 0;
-    uint32_t m_xfgMarketValueHeight = 0;
+    // CD yield state
     uint64_t m_cdYieldPool = 0;
     uint64_t m_cdReserve = 0;
     uint64_t m_heatCdFeePool = 0;

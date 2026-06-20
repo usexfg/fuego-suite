@@ -167,7 +167,8 @@ namespace CryptoNote
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
         // Swap fee split: 80% CD Yield / 20% Treasury Reserve
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
-        const uint64_t CD_YIELD_XFG_BUYBACK_PCT = 20;        // 20% of CD yield → protocol XFG accumulator
+        // CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
+        // No protocol cut — CD holders selling rewards back provides natural ratio recovery.
         const uint64_t CD_YIELD_FLOOR_APY_PCT = 2;            // 2% APY floor funded by treasury LP reserve
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
@@ -210,80 +211,25 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
 
-        // Milæsandra — testnet atomic swap fee simulator (self-contained testing)
-        // Enables full protocol testing (CD yield, treasury, rebalancer, PI, oracle)
-        // without requiring real cross-chain atomic swap activity.
-        const bool     MILAESANDRA_SIMULATE_FEES = true;           // true on testnet — active at block 638
-        const uint64_t MILAESANDRA_BASE_FEES_ATOMIC = 2'000'000'000; // 2,000 XFG/epoch base
-        const uint64_t MILAESANDRA_FEE_MULTIPLIER = 100;           // 1.0× scale factor
-        const uint64_t MILAESANDRA_INITIAL_XFG_PRICE = 158;        // $1.58 (1:1 Hearth pool seed)
-        const bool     MILAESANDRA_GROWING_PRICE = true;           // slowly grow toward activation threshold
-        const uint32_t MILAESANDRA_ACTIVATION_HEIGHT = 650;       // block to start fee simulation
 
-        // HEAT stability — 3 switchable modes via HEAT_STABILITY_MODE
-        //   0 = CPI-adjusted purchasing power + EUR display
-        //   1 = 5:1 self-sovereign (fixed 1.50-2.50 band, activate at XFG ≥ $5)
-        //   2 = 8:1 self-sovereign full float (PI-only, best APY per Monte Carlo)
-        const uint8_t  HEAT_STABILITY_MODE = 2;                    // default: 8:1 full float (best APY)
-        const uint64_t HEAT_LAUNCH_RATIO_NUM = 1;                  // 1.0 (1 XFG = 1 HEAT) — pool ratio at launch
-        const uint64_t HEAT_LAUNCH_RATIO_DENOM = 1;
-        const uint64_t HEAT_LAUNCH_RATIO_8X_NUM = 1;               // 1.0 (1 XFG = 1 HEAT) — pool ratio at launch
-        const uint64_t HEAT_LAUNCH_RATIO_8X_DENOM = 1;
-        const uint64_t HEAT_MINT_MIN_XFG = 8000000;                 // 0.8 XFG minimum mint
+        const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
         const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium
-        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD = 500;       // 5.00 (mode 1 activation)
-        const uint64_t XFG_PRICE_ACTIVATION_THRESHOLD_8X = 800;    // 8.00 (mode 2 variant; unused when float)
-        const uint64_t HEAT_VALUE_FLOOR = 150;                     // 1.5 band floor (modes 0,1)
-        const uint64_t HEAT_VALUE_CEILING = 250;                   // 2.5 band ceiling (modes 0,1)
-        const uint64_t VALUE_SCALE = 100;                          // scale for oracle values
 
-        // CPI-adjusted purchasing power — used by mode 0 only
-        // HEAT targets constant real value: as USD loses purchasing power, HEAT's
-        // nominal USD value rises proportionally. EUR display for public-facing output.
-        const uint64_t HEAT_CPI_BASE_FLOOR     = 150;               // 1.50 at CPI=100 (launch baseline)
-        const uint64_t HEAT_CPI_BASE_CEIL      = 250;               // 2.50 at CPI=100
-        const uint64_t HEAT_CPI_SCALE          = 100;               // CPI index scale (100 = launch baseline)
-        const uint64_t HEAT_CPI_LAUNCH_INDEX   = 100;               // CPI at launch time
-        const uint64_t HEAT_CPI_AUTO_INFLATION_BPS = 250;           // 2.50%/yr simulated CPI drift
-        const uint64_t HEAT_CPI_UPDATE_INTERVAL = 730;               // update CPI every ~4 days
+        // HEAT output bill denominations (descending, in atomic units).
+        // Every HEAT mint decomposes into these standard sizes so outputs pool
+        // into shared per-amount decoy pools for ring-signature privacy.
+        // 1 HEAT = 10^CRYPTONOTE_DISPLAY_DECIMAL_POINT = 10,000,000 atomic.
+        const std::vector<uint64_t> HEAT_BILL_DENOMINATIONS = {
+          5000000000,    // 500 HEAT
+          1000000000,    // 100 HEAT
+          500000000,     //  50 HEAT
+          100000000,     //  10 HEAT
+          50000000,      //   5 HEAT
+          10000000,      //   1 HEAT
+          5000000,       //   0.5 HEAT
+          1000000,       //   0.1 HEAT
+        };
 
-        // PI Hill-damping (sigmoid-like soft-band for float modes 1, 2)
-        // Dampens PI rate when deviation from target is large — circuit breaker
-        // against black swan events without affecting normal operation.
-        const bool     HEAT_PI_USE_DAMP  = true;                    // Hill-damp PI at extremes
-        const uint64_t HEAT_PI_DAMP_M    = 200;                     // midpoint: 200% deviation from target
-        const uint32_t HEAT_PI_DAMP_N    = 4;                       // Hill coefficient: 4 = sigmoid-like
-
-        // EUR display — active when HEAT_STABILITY_MODE == 0
-        const uint64_t EUR_PER_USD_NUM = 92;                        // 0.92 EUR/USD
-        const uint64_t EUR_PER_USD_DEN = 100;
-
-        // PI Controller gains (simulation-validated: insane_vol_test.py)
-        const uint64_t PI_KP_NUM = 8,  PI_KP_DENOM = 100;          // 0.08
-        const uint64_t PI_KI_NUM = 15, PI_KI_DENOM = 1000;          // 0.015
-        const uint64_t PI_BASE_RATE_NUM = 50, PI_BASE_RATE_DENOM = 100; // ±50%/yr (basin locked)
-        const uint64_t PI_ABS_MAX_RATE = 1000;                      // ±1000%/yr absolute ceiling
-        const int64_t  PI_INTEGRAL_CLAMP = 100;                      // ±100% (scaled)
-        const uint32_t BLOCKS_PER_YEAR = 65700;                     // 180 blocks/day × 365
-        const uint64_t PEG_ARB_MAX_MINT_PCT_PER_EPOCH = 10;         // max 10% of HEAT supply per epoch from peg arb
-
-        // Basin discovery — market-validated equilibrium anchoring
-        const uint32_t BASIN_BOOTSTRAP_EPOCHS = 3;                  // collect initial data
-        const uint32_t BASIN_OBSERVE_EPOCHS   = 7;                  // watch for convergence
-        const uint32_t BASIN_STABLE_REQUIRED  = 4;                  // consecutive stable epochs to lock
-        const uint64_t BASIN_STABILITY_RANGE  = 10;                 // ±10% deviation = stable
-        const uint64_t BASIN_EXIT_THRESHOLD   = 3;                  // exit basin after 3 epochs outside
-        const uint64_t BASIN_REBALANCE_MULT   = 200;                // rebalance at 2× basin half-width
-        const uint64_t PROTOCOL_LP_MAX_FRACTION = 40;               // max 40% of pool owned by protocol
-        const uint64_t PROTOCOL_REBALANCE_MAX  = 10;                // max 10% of treasury per rebalance
-
-        // Oracle quality gates (game-theory defense against thin-pair manipulation)
-        const uint32_t MAX_ORACLE_STALE_EPOCHS = 2;                 // reject if not updated in 2 epochs
-        const uint64_t ORACLE_DEVIATION_CAP = 500;                  // reject if > 5× from Hearth-implied value
-
-        // CD Yield Pipeline
-        const uint64_t CD_YIELD_TREASURY_ROUTE_PCT = 40;          // 40% → treasury when pool is XFG-heavy >2:1
-        const uint64_t CD_RESERVE_CAP = 200;                        // 2× base pool (scaled by 100)
         const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
         constexpr uint64_t HEARTH_POOL_SEED_XFG = 5000;         // 5000 XFG at genesis (COIN units)
@@ -459,7 +405,7 @@ namespace CryptoNote
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */
 	const uint64_t CRYPTONOTE_SUBADDRESS_BASE58_PREFIX_TESTNET = CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET;
 	const uint32_t TESTNET_HEAT_TERM = ((uint32_t)(-1));  // Forever term for burn transactions
-    const uint64_t TESTNET_HEAT_MINT_MIN =   800000;  // 0.08 TEST minimum mint (testnet scale)
+    const uint64_t TESTNET_HEAT_MINT_MIN_HEAT = 100000;  // 0.01 HEAT minimum mint (testnet scale)
 
     //__________________________________________________________________________________________________________________________
     //                       END  OF  TESTNET  P A  R   A    M    E     T      E      R        S

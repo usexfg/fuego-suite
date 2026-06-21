@@ -3033,10 +3033,9 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
         } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-          // Route mint premium to Sovereign Wealth Fund for cross-chain liquidity
+          // Track mint premium in SWF (protocol settles from treasury later)
           uint64_t premium = authXfgBurned - authHeatMinted;
           m_swfBalance += premium;
-          if (fee >= premium) fee -= premium;
         }
       }
     }

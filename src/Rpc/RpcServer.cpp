@@ -1684,7 +1684,7 @@ bool RpcServer::f_getMixin(const Transaction& transaction, uint64_t& mixin) {
 
 bool RpcServer::f_on_transactions_pool_json(const F_COMMAND_RPC_GET_POOL::request& req, F_COMMAND_RPC_GET_POOL::response& res) {
     auto pool = m_core.getPoolTransactions();
-    for (const Transaction tx : pool) {
+    for (const Transaction& tx : pool) {
         f_transaction_short_response transaction_short;
         uint64_t amount_in = getInputAmount(tx);
         uint64_t amount_out = getOutputAmount(tx);

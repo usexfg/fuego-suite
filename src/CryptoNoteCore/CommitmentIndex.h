@@ -77,6 +77,9 @@ struct EpochReport {
   uint64_t feeRateFixedPoint = 0;
   uint64_t treasuryBalance = 0;
   uint64_t rolloverVaultBalance = 0;
+  uint64_t totalBurnedXfg = 0;       // cumulative XFG burned for HⲶ∆T minting
+  uint64_t totalEternalFlame = 0;    // cumulative XFG in Eternal Flame (50% of burn)
+  uint64_t swfBalance = 0;           // SWF balance (mint premiums)
 
   void serialize(ISerializer& s) {
     s(epochNumber, "epoch_number");
@@ -89,6 +92,9 @@ struct EpochReport {
     s(feeRateFixedPoint, "fee_rate_fixed_point");
     s(treasuryBalance, "treasury_balance");
     s(rolloverVaultBalance, "rollover_vault_balance");
+    s(totalBurnedXfg, "total_burned_xfg");
+    s(totalEternalFlame, "total_eternal_flame");
+    s(swfBalance, "swf_balance");
   }
 };
 

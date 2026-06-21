@@ -1517,6 +1517,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.heatSupply = m_blockchain.getHeatSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
+  m.swfBalance = m_blockchain.getSwfBalance();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool ratio × 10^6 for precision (was PI redemption price)

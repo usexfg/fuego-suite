@@ -211,8 +211,9 @@ namespace CryptoNote {
     struct HeatMetrics {
       uint64_t heatSupply = 0;
       uint64_t burnedXfg = 0;
-      uint64_t heatCdFeePool = 0;     // HEAT in CD fee pool (accrued, not yet distributed)
-      uint64_t redemptionPriceNum = 1;  // pool XFG/HEAT ratio × 10^6 (was PI redemption price)
+      uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)
+      uint64_t swfBalance = 0;        // SWF balance from mint premiums
+      uint64_t redemptionPriceNum = 1;  // pool XFG/HⲶ∆T ratio × 10^6 (was PI redemption price)
       uint64_t redemptionPriceDenom = 1000000;
       uint64_t redemptionRateNum = 0;   // always 0 (PI controller removed)
       uint64_t redemptionRateDenom = 1;

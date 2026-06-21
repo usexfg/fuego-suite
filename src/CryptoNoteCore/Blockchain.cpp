@@ -4090,6 +4090,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     report.feeRateFixedPoint = epochFeeRate;
     report.treasuryBalance = m_treasuryBalance;
     report.rolloverVaultBalance = 0;
+    report.totalBurnedXfg = m_bankingIndex.getBurnedXfgAmount();
+    report.totalEternalFlame = m_bankingIndex.getBurnedXfgAmount() * CryptoNote::parameters::MINT_BURN_EF_PCT / 100;
+    report.swfBalance = m_swfBalance;
     m_commitmentIndex.storeEpochReport(report);
     logger(INFO) << "=== Epoch " << epochNumber << " Report ==="
                  << " blocks=" << epochStart << "-" << epochEnd
@@ -4099,7 +4102,10 @@ bool Blockchain::pushBlock(BlockEntry &block) {
                  << " treasuryBal=" << m_treasuryBalance
                  << " feePoolBal=" << m_feePoolBalance
                  << " cdLocked=" << epochCdLocked
-                 << " feeRate=" << epochFeeRate;
+                 << " feeRate=" << epochFeeRate
+                 << " burnedXfg=" << m_bankingIndex.getBurnedXfgAmount()
+                 << " eternalFlame=" << m_bankingIndex.getBurnedXfgAmount() * CryptoNote::parameters::MINT_BURN_EF_PCT / 100
+                 << " swfBal=" << m_swfBalance;
   } else {
     // Non-epoch-boundary block: record any swap fees accumulated during this block push.
     uint64_t blockContribution = m_currentEpochSwapFees - epochFeesBefore;

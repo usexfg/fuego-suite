@@ -1680,6 +1680,10 @@ namespace CryptoNote
     context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
+    context->isV10HeatMint = true;
+    context->v10XfgBurned = xfgBurned;
+    context->v10HeatMinted = heatMinted;
+
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
 

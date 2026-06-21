@@ -3031,7 +3031,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, poolRate,
                                                 authXfgBurned, authHeatMinted)) {
           isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
+        } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
+          // Route mint premium to Sovereign Wealth Fund for cross-chain liquidity
+          uint64_t premium = authXfgBurned - authHeatMinted;
+          m_swfBalance += premium;
+          if (fee >= premium) fee -= premium;
         }
       }
     }
@@ -3918,6 +3923,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
     preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
+    preEpoch.swfBalance = m_swfBalance;
     preEpoch.twapAccumulatorLo = (uint64_t)(m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
     preEpoch.twapAccumulatorHi = (uint64_t)(m_twapAccumulator >> 64);
     preEpoch.twapBlockCount = m_twapBlockCount;
@@ -4328,6 +4334,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;
+    m_swfBalance = snap.swfBalance;
     m_twapAccumulator = ((uint128_t)snap.twapAccumulatorHi << 64) | snap.twapAccumulatorLo;
     m_twapBlockCount = snap.twapBlockCount;
     m_ammPool.reserveXfg = snap.ammReserveXfg;

@@ -25,6 +25,7 @@
 #include <iomanip>
 #include <thread>
 #include <set>
+#include <map>
 #include <sstream>
 #include <regex>
 #include <array>
@@ -4406,26 +4407,50 @@ bool simple_wallet::list_heat(const std::vector<std::string>& args) {
   uint64_t heatActual = m_wallet->actualHeatBalance();
   uint64_t heatPending = m_wallet->pendingHeatBalance();
   success_msg_writer() << "";
-  success_msg_writer() << "=== HEAT Transactions ===";
-  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HEAT";
+  success_msg_writer() << "=== HⲶ∆T Balance ===";
+  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HⲶ∆T";
   if (heatPending > 0)
-    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HEAT";
+    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HⲶ∆T";
   success_msg_writer() << "";
 
   size_t depositCount = m_wallet->getDepositCount();
   size_t shown = 0;
+
+  // Collect HEAT deposits and group by bill denomination
+  const auto& billDenoms = CryptoNote::parameters::HEAT_BILL_DENOMINATIONS;
+  std::map<uint64_t, size_t> heatByBill;
   for (size_t i = 0; i < depositCount; ++i) {
     Deposit deposit;
     if (!m_wallet->getDeposit(i, deposit)) continue;
     if (deposit.term != CryptoNote::parameters::HEAT_TERM) continue;
+    heatByBill[deposit.amount]++;
     shown++;
-    std::string status = deposit.locked ? "locked" : (deposit.spendingTransactionId != WALLET_LEGACY_INVALID_TRANSACTION_ID ? "spent" : "available");
-    success_msg_writer() << "  [" << i << "] " << m_currency.formatAmount(deposit.amount) << " HEAT"
-                         << " | " << status
-                         << " | tx " << Common::podToHex(deposit.transactionHash).substr(0, 16);
   }
-  if (shown == 0)
-    success_msg_writer() << "  (no HEAT transactions found)";
+
+  if (shown == 0) {
+    success_msg_writer() << "  (no HⲶ∆T found)";
+  } else {
+    success_msg_writer() << "  HⲶ∆T Note    |  Qty";
+    success_msg_writer() << "  --------------+------";
+    // Display all denominations, ascending
+    for (auto it = billDenoms.begin(); it != billDenoms.end(); ++it) {
+      uint64_t billAtomic = *it;
+      double billHeat = static_cast<double>(billAtomic) / CryptoNote::parameters::COIN;
+      auto found = heatByBill.find(billAtomic);
+      std::string countStr;
+      if (found != heatByBill.end())
+        countStr = std::to_string(found->second);
+      else
+        countStr = "0";
+      std::ostringstream note;
+      note << std::fixed << std::setprecision(1) << billHeat;
+      std::string noteStr = note.str();
+      // Remove trailing .0 for whole numbers
+      if (noteStr.size() > 2 && noteStr.substr(noteStr.size() - 2) == ".0")
+        noteStr = noteStr.substr(0, noteStr.size() - 2);
+      success_msg_writer() << "  【" << std::setw(6) << noteStr << "】 |  " << countStr;
+    }
+  }
   success_msg_writer() << "";
   return true;
 }

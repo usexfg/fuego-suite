@@ -138,6 +138,7 @@ namespace CryptoNote {
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
+    uint64_t getSwfBalance() const { return m_swfBalance; }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
     uint64_t getTreasuryXfgReserve() const { return m_treasuryXfgReserve; }
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
@@ -358,6 +359,7 @@ namespace CryptoNote {
       uint64_t protocolLpShares;
       uint64_t treasuryLpYield;
       uint64_t bootstrapRepaymentVault;
+      uint64_t swfBalance;
       uint64_t twapAccumulatorLo;
       uint64_t twapAccumulatorHi;
       uint64_t twapBlockCount;
@@ -405,6 +407,7 @@ namespace CryptoNote {
     bool     m_bootstrapRepaid = false;
     uint64_t m_bootstrapXfgOwed = 0;
     uint64_t m_bootstrapRepaymentVault = 0;
+    uint64_t m_swfBalance = 0;              // Sovereign Wealth Fund — mint premiums for cross-chain liquidity
     IndexManager m_indexManager;
     // LP share tracking: maps global commitment output index → LP shares held
     parallel_flat_hash_map<uint64_t, uint64_t> m_lpCommitmentShares;

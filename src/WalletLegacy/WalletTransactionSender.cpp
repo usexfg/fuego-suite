@@ -1683,6 +1683,7 @@ namespace CryptoNote
     context->isV10HeatMint = true;
     context->v10XfgBurned = xfgBurned;
     context->v10HeatMinted = heatMinted;
+    context->dynamicRingSize = m_currency.isTestnet();  // allow bootstrap ring sizes on testnet
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;

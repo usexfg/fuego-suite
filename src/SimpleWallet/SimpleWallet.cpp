@@ -4430,25 +4430,21 @@ bool simple_wallet::list_heat(const std::vector<std::string>& args) {
   if (shown == 0) {
     success_msg_writer() << "  (no HⲶ∆T found)";
   } else {
-    success_msg_writer() << "  HⲶ∆T Note    |  Qty";
-    success_msg_writer() << "  --------------+------";
-    // Display all denominations, ascending
+    success_msg_writer() << "  Note         |  Qty";
+    success_msg_writer() << "  -------------+------";
+    // Display all denominations ascending, right-aligned
     for (auto it = billDenoms.begin(); it != billDenoms.end(); ++it) {
       uint64_t billAtomic = *it;
       double billHeat = static_cast<double>(billAtomic) / CryptoNote::parameters::COIN;
       auto found = heatByBill.find(billAtomic);
-      std::string countStr;
-      if (found != heatByBill.end())
-        countStr = std::to_string(found->second);
-      else
-        countStr = "0";
+      std::string countStr = (found != heatByBill.end()) ? std::to_string(found->second) : "0";
       std::ostringstream note;
       note << std::fixed << std::setprecision(1) << billHeat;
       std::string noteStr = note.str();
-      // Remove trailing .0 for whole numbers
       if (noteStr.size() > 2 && noteStr.substr(noteStr.size() - 2) == ".0")
         noteStr = noteStr.substr(0, noteStr.size() - 2);
-      success_msg_writer() << "  【" << std::setw(6) << noteStr << "】 |  " << countStr;
+      std::string label = "【" + noteStr + "\xF0\x90\x85\xAA" + "】"; // 𐅪
+      success_msg_writer() << "  " << std::setw(13) << std::right << label << " |  " << countStr;
     }
   }
   success_msg_writer() << "";

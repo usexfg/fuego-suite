@@ -213,7 +213,7 @@ namespace CryptoNote
 
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
-        const uint64_t HEAT_MINT_PREMIUM_BPS = 500;                  // 5.00% mint premium
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 0;                    // 0.00% mint premium (PI controller removed)
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool

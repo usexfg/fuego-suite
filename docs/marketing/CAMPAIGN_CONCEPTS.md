@@ -14,14 +14,14 @@
 1. Privacy is non-negotiable
 2. Sound money through CD yield
 3. Freedom through decentralization
-4. The night is coming
+4. The LO🆖 night is coming & the DEBT comes with it.
 
 ---
 
 ## Campaign 1: "The Long Night Is Coming"
 
 ### Concept
-Position Fuego as the beacon of hope in a world of financial surveillance. The "night" represents the coming storm of centralization and loss of privacy.
+Position Fuego as the beacon of hope in a world of government surveillance & financial market ruin. The "night" represents the coming storm of untennable debt and continued loss of privacy.
 
 ### Visual Direction
 - **Primary Color:** Dark (black, navy)

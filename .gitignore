@@ -67,4 +67,4 @@ fuego_rag/
 __pycache__/
 *.pyc
 build-test/
-.worktrees/build-test/
+.worktrees/

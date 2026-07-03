@@ -36,6 +36,12 @@
 #include "TransactionExtra.h"
 #include "CommitmentIndex.h"
 #include "CryptoNoteConfig.h"
+#include "OrderbookIndex.h"
+#include "OrderbookMatcher.h"
+#include "OrderbookMempool.h"
+#include "OrderbookTypes.h"
+#include "MarketOrderExecutor.h"
+#include "PoolOrderOrchestrator.h"
 #include "parallel_hashmap/phmap_dump.h"
 
 using namespace Logging;
@@ -398,6 +404,20 @@ private:
   // Init DIGM Bancor pool virtual reserves (zero-start, pump.fun style)
   bootstrapDigmPools();
 } // upgradekit
+
+namespace {
+
+  CryptoNote::OrderbookMempool g_orderbookMempool(100, 10000);
+  CryptoNote::PoolOrderOrchestrator g_poolOrchestrator;
+  uint64_t g_orderbookLastClearingPrice = 0;
+  bool g_orderbookIsInBootstrap = true;
+  uint32_t g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
+  uint32_t g_blocksSinceLastPoolRegen = 0;
+  uint64_t g_priorPoolRegenPclear = 0;
+  uint64_t g_priorPoolXfgReserve = 0;
+  uint64_t g_priorPoolHeatReserve = 0;
+
+} // namespace
 
 bool Blockchain::addObserver(IBlockchainStorageObserver* observer) {
   return m_observerManager.add(observer);
@@ -2904,6 +2924,13 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
     bool hasLegacyBondClaim = false;
     uint64_t legacyClaimedInterest = 0;
+    // v13+ orderbook auth tags
+    bool hasMarketBuyAuth = false;
+    uint64_t marketBuyXfgWanted = 0, marketBuyMaxHeat = 0;
+    bool hasMarketSellAuth = false;
+    uint64_t marketSellXfgAmount = 0, marketSellMinHeat = 0;
+    bool hasHeatSendAuth = false;
+    uint64_t heatSendAmount = 0;
 
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
@@ -2945,6 +2972,22 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             hasLegacyBondClaim = true;
             legacyClaimedInterest = boost::get<TransactionExtraLegacyBondClaim>(field).claimedInterest;
           }
+          if (field.type() == typeid(TransactionExtraMarketBuyAuth)) {
+            hasMarketBuyAuth = true;
+            const auto& auth = boost::get<TransactionExtraMarketBuyAuth>(field);
+            marketBuyXfgWanted = auth.xfgWanted;
+            marketBuyMaxHeat = auth.maxHeatCost;
+          }
+          if (field.type() == typeid(TransactionExtraMarketSellAuth)) {
+            hasMarketSellAuth = true;
+            const auto& auth = boost::get<TransactionExtraMarketSellAuth>(field);
+            marketSellXfgAmount = auth.xfgToSell;
+            marketSellMinHeat = auth.minHeatReceive;
+          }
+          if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
+            hasHeatSendAuth = true;
+            heatSendAmount = boost::get<TransactionExtraHeatSendAuth>(field).heatAmount;
+          }
         }
       }
     }
@@ -2959,6 +3002,30 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             inAssets.heat + authHeatMinted != outAssets.heat) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth balance mismatch";
+        }
+      } else if (hasHeatSendAuth) {
+        // HEAT send: conservation of both XFG and HEAT. heatSendAmount is the
+        // declared gross send amount; the actual transfer is in tx outputs.
+        if (inAssets.xfg < outAssets.xfg + xfgFee ||
+            inAssets.heat != outAssets.heat) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT send balance mismatch";
+        }
+      } else if (hasMarketBuyAuth) {
+        // Market buy: user commits HEAT to buy XFG. At validation time,
+        // XFG is conserved; settlement locks/spends HEAT at block finalization.
+        if (inAssets.xfg < outAssets.xfg + xfgFee ||
+            inAssets.heat != outAssets.heat) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " market buy balance mismatch";
+        }
+      } else if (hasMarketSellAuth) {
+        // Market sell: user commits XFG to sell for HEAT. At validation time,
+        // HEAT is conserved; settlement locks/spends XFG at block finalization.
+        if (inAssets.xfg < outAssets.xfg + xfgFee ||
+            inAssets.heat != outAssets.heat) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " market sell balance mismatch";
         }
       } else if (hasAmmSwapAuth) {
         if (swapDirection == 0) {
@@ -3033,12 +3100,24 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
         } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-          // Track mint premium in SWF (protocol settles from treasury later)
-          uint64_t premium = authXfgBurned - authHeatMinted;
+          // Premium = excess XFG burned beyond what's required to mint the HEAT.
+          // Convert HEAT → XFG equivalent using pool rate to avoid unit mismatch.
+          FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+            : FixedPoint64::fromUint64(1);
+          FixedPoint64 heatFp = FixedPoint64::fromUint64(authHeatMinted);
+          uint64_t xfgEquivalent = heatFp.mul(poolRate).toUint64();
+          uint64_t premium = (authXfgBurned > xfgEquivalent)
+            ? authXfgBurned - xfgEquivalent
+            : 0;
           m_swfBalance += premium;
         }
       }
     }
+    // Legacy non-auth HEAT mint validation — dead code for v10+ blocks.
+    // The per-asset balance check (inAssets.heat == outAssets.heat) rejects any
+    // transaction that creates HEAT, which a mint inherently does. All v10+ mints
+    // use the auth-tag path above. Retained for historical tx validation.
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (!hasHeatMintAuth && m_heatMintEngine.isHeatMint(transactions[i])) {
         FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
@@ -3325,6 +3404,11 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     block.cumulative_difficulty += m_blocks.back().cumulative_difficulty;
   }
 
+  // v13+ Orderbook: match orders and write clearing price to block header
+  if (blockData.majorVersion >= BLOCK_MAJOR_VERSION_13) {
+    processOrderbookForBlock(block.bl, transactions, block.height);
+  }
+
   pushBlock(block);
     pushToBankingIndex(block, interestSummary);
 
@@ -3396,9 +3480,221 @@ uint64_t Blockchain::fullDepositAmount() const {
   return m_bankingIndex.fullDepositAmount();
 }
 
+uint64_t Blockchain::getOrderbookClearingPrice() const {
+  return g_orderbookLastClearingPrice;
+}
+
+bool Blockchain::isOrderbookInBootstrap() const {
+  return g_orderbookIsInBootstrap;
+}
+
+std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
+  std::vector<OrderbookLevel> levels;
+  for (const auto& level : g_orderbookMempool.getBidCurve(maxLevels)) {
+    levels.push_back({level.price, level.depth});
+  }
+  return levels;
+}
+
+std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookAskCurve(uint32_t maxLevels) const {
+  std::vector<OrderbookLevel> levels;
+  for (const auto& level : g_orderbookMempool.getAskCurve(maxLevels)) {
+    levels.push_back({level.price, level.depth});
+  }
+  return levels;
+}
+
+uint32_t Blockchain::getOrderbookNumMatches() const {
+  return 0; // Phase 2: stored in block header, not yet exposed
+}
+
+Blockchain::OrderbookEstimate Blockchain::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
+  OrderbookEstimate est = {0, 0, 0, 0, 0};
+  if (amount == 0 || m_ammPool.isEmpty()) return est;
+
+  uint64_t P_clear = g_orderbookLastClearingPrice;
+  MarketOrderExecutor executor(HEARTH_DEPTH_BAND_PCT, MAX_MARKET_ORDER_LEVELS,
+                                MAX_MARKET_PRICE_DEVIATION_PCT, parameters::HEARTH_FEE_BPS);
+
+  // Build temporary OrderbookIndex from mempool for the estimator
+  OrderbookIndex snapshot(MAX_ORDERS_PER_BLOCK, 100);
+  for (const auto& level : g_orderbookMempool.getBidCurve(50)) {
+    OrderEntry e;
+    e.price = level.price; e.amount = level.depth;
+    e.side = 0; e.expiration = 0; e.blockHeight = 0;
+    memset(e.orderId.data, 0, sizeof(e.orderId.data));
+    snapshot.addOrder(e);
+  }
+  for (const auto& level : g_orderbookMempool.getAskCurve(50)) {
+    OrderEntry e;
+    e.price = level.price; e.amount = level.depth;
+    e.side = 1; e.expiration = 0; e.blockHeight = 0;
+    memset(e.orderId.data, 0xFF, sizeof(e.orderId.data));
+    snapshot.addOrder(e);
+  }
+
+  MarketOrderResult result;
+  if (side == 0) {
+    result = executor.executeMarketBuy(amount, 0, P_clear,
+      m_ammPool.reserveXfg, m_ammPool.reserveHeat, snapshot);
+  } else {
+    result = executor.executeMarketSell(amount, 0, P_clear,
+      m_ammPool.reserveXfg, m_ammPool.reserveHeat, snapshot);
+  }
+
+  est.estimatedFill = result.filledAmount;
+  est.hearthFill = result.hearthFilled;
+  est.orderbookFill = result.orderbookFilled;
+  est.worstCasePrice = result.maxPriceDeviation;
+  est.levelsConsumed = result.levelsConsumed;
+  return est;
+}
+
 uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_bankingIndex.depositAmountAtHeight(static_cast<BankingIndex::DepositHeight>(height));
+  return m_bankingIndex.depositInterestAtHeight(static_cast<BankingIndex::DepositHeight>(height));
+}
+
+void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
+  if (height < parameters::UPGRADE_HEIGHT_V13)
+    return;
+
+  // Bootstrap: first BOOTSTRAP_BLOCKS use HEARTH pool ratio as P_clear
+  if (g_orderbookIsInBootstrap) {
+    if (g_orderbookBootstrapBlocksRemaining > 0) {
+      g_orderbookBootstrapBlocksRemaining--;
+      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+        uint64_t spotPrice = (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat;
+        g_orderbookLastClearingPrice = static_cast<uint64_t>(spotPrice);
+      }
+    } else {
+      g_orderbookIsInBootstrap = false;
+    }
+  }
+
+  // Expire stale orders from mempool
+  g_orderbookMempool.expireOrders(height);
+
+  // Pool orders: adaptive regeneration based on market conditions
+  if (!g_orderbookIsInBootstrap && !m_ammPool.isEmpty()) {
+    uint64_t priorPclear = g_priorPoolRegenPclear;
+    g_blocksSinceLastPoolRegen++;
+
+    uint64_t bandFilled = 0; // Phase 6b: track fills against pool orders
+    uint64_t bandPlaced = (static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100;
+
+    g_poolOrchestrator.recordPrice(g_orderbookLastClearingPrice);
+
+    uint32_t spreadBps = g_poolOrchestrator.computeSpreadBps(
+      g_orderbookLastClearingPrice, bandFilled, bandPlaced);
+
+    if (g_poolOrchestrator.shouldRegenerate(
+          g_orderbookLastClearingPrice, priorPclear,
+          m_ammPool.reserveXfg, m_ammPool.reserveHeat,
+          g_priorPoolXfgReserve, g_priorPoolHeatReserve,
+          bandFilled, bandPlaced, g_blocksSinceLastPoolRegen)) {
+
+      PoolOrderParams pop;
+      pop.P_clear = g_orderbookLastClearingPrice;
+      pop.bandPct = HEARTH_DEPTH_BAND_PCT;
+      pop.reserveXfg = m_ammPool.reserveXfg;
+      pop.reserveHeat = m_ammPool.reserveHeat;
+      pop.spreadBps = spreadBps;
+
+      auto poolOrders = generatePoolOrders(pop);
+      g_orderbookMempool.setPoolOrders(poolOrders);
+
+      g_blocksSinceLastPoolRegen = 0;
+      g_priorPoolRegenPclear = g_orderbookLastClearingPrice;
+      g_priorPoolXfgReserve = m_ammPool.reserveXfg;
+      g_priorPoolHeatReserve = m_ammPool.reserveHeat;
+    }
+  }
+
+  // Build aggregated curves from mempool for matching
+  // (matching engine operates on the mempool's aggregated view)
+  auto bidCurve = g_orderbookMempool.getBidCurve(MAX_ORDERS_PER_BLOCK);
+  auto askCurve = g_orderbookMempool.getAskCurve(MAX_ORDERS_PER_BLOCK);
+
+  if (!bidCurve.empty() && !askCurve.empty() && !g_orderbookIsInBootstrap) {
+    // Transfer mempool orders to an OrderbookIndex for matching
+    OrderbookIndex matchIndex(MAX_ORDERS_PER_BLOCK, 100);
+
+    for (const auto& level : bidCurve) {
+      for (uint32_t i = 0; i < level.orderCount; i++) {
+        OrderEntry e;
+        e.price = level.price;
+        e.amount = level.depth / level.orderCount;
+        e.side = 0;
+        e.expiration = 0;
+        e.blockHeight = height;
+        // Synthetic order IDs from mempool
+        e.orderId.data[0] = static_cast<uint8_t>(level.price & 0xFF);
+        e.orderId.data[1] = static_cast<uint8_t>((level.price >> 8) & 0xFF);
+        e.orderId.data[2] = static_cast<uint8_t>(i);
+        matchIndex.addOrder(e);
+      }
+    }
+    for (const auto& level : askCurve) {
+      for (uint32_t i = 0; i < level.orderCount; i++) {
+        OrderEntry e;
+        e.price = level.price;
+        e.amount = level.depth / level.orderCount;
+        e.side = 1;
+        e.expiration = 0;
+        e.blockHeight = height;
+        e.orderId.data[0] = static_cast<uint8_t>(level.price & 0xFF);
+        e.orderId.data[1] = static_cast<uint8_t>((level.price >> 8) & 0xFF);
+        e.orderId.data[2] = 0x80 | static_cast<uint8_t>(i);
+        matchIndex.addOrder(e);
+      }
+    }
+
+    OrderbookMatcher matcher(MIN_DISTINCT_PARTIES, MAX_ORDERS_PER_BLOCK);
+    MatchResult result = matcher.match(matchIndex, g_orderbookLastClearingPrice, height);
+
+    if (result.clearingValid) {
+      g_orderbookLastClearingPrice = result.P_clear;
+
+      // Build batched settlement from fills
+      // In Phase 6b: construct BatchedSettlement tx from result.fills
+      // Each fill consumes matched orders from mempool, creates counterparty outputs
+    }
+  }
+
+  // Write to block header
+  block.orderbookClearingPrice = g_orderbookLastClearingPrice;
+  block.orderbookNumMatches = 0;
+  block.orderbookDepthBidXfg = 0;
+  block.orderbookDepthAskXfg = 0;
+
+  for (const auto& level : g_orderbookMempool.getBidCurve(50)) {
+    block.orderbookDepthBidXfg += static_cast<uint32_t>(level.depth / parameters::COIN);
+  }
+  for (const auto& level : g_orderbookMempool.getAskCurve(50)) {
+    block.orderbookDepthAskXfg += static_cast<uint32_t>(level.depth / parameters::COIN);
+  }
+
+  if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+    uint64_t spot = (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat;
+    block.hearthPoolRatio = static_cast<uint64_t>(spot);
+  }
+}
+
+void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
+  g_orderbookMempool.clear();
+  g_orderbookIsInBootstrap = (height < parameters::UPGRADE_HEIGHT_V13 + BOOTSTRAP_BLOCKS);
+  g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ?
+    (parameters::UPGRADE_HEIGHT_V13 + BOOTSTRAP_BLOCKS - height) : 0;
+
+  if (g_orderbookIsInBootstrap && g_orderbookBootstrapBlocksRemaining == 0) {
+    g_orderbookIsInBootstrap = false;
+  }
+
+  // P2P offchain model: individual orders are re-gossiped on reconnect.
+  // The mempool is seeded from the orderbook receipt in the most recent
+  // settlement block. For now, bootstrap uses the empty mempool + pool orders.
+  logger(INFO, BRIGHT_WHITE) << "Orderbook reset (p2p model). Orders will re-gossip on reconnect.";
 }
 
   uint64_t Blockchain::depositInterestAtHeight(size_t height) const
@@ -3965,22 +4261,30 @@ bool Blockchain::pushBlock(BlockEntry &block) {
           (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
 
-    // CD yield floor: if organic rate < 2% APY, inject from treasury LP reserve
-    // Annualized: 2% per year → divisor = 100 * epochsPerYear
-    if (epochCdLocked > 0) {
+    // CD yield floor: if organic rate < 2% APY, inject HⲶ∆T from treasury reserve.
+    // Annualized: 2% per year → divisor = 100 * epochsPerYear.
+    if (epochCdLocked > 0 && m_treasuryHeatReserve > 0) {
       uint64_t floorRate = (CryptoNote::parameters::CD_YIELD_FLOOR_APY_PCT
                            * CryptoNote::parameters::FEE_POOL_RATE_PRECISION)
                            / (100 * CryptoNote::parameters::EPOCHS_PER_YEAR);
       if (epochFeeRate < floorRate) {
-        uint64_t shortfall = static_cast<uint64_t>(
+        uint64_t shortfallXfg = static_cast<uint64_t>(
             (uint128_t)(floorRate - epochFeeRate) * epochCdLocked
             / CryptoNote::parameters::FEE_POOL_RATE_PRECISION);
-        uint64_t injection = std::min(shortfall, m_treasuryLpReserve);
-        if (injection > 0) {
-          m_treasuryLpReserve -= injection;
-          regularCdShare += injection;
-          epochFeeRate = static_cast<uint64_t>(
-              (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+        // Convert XFG shortfall to HⲶ∆T at pool rate.
+        uint64_t heatInjection = shortfallXfg;
+        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (!poolRate.isZero()) {
+            FixedPoint64 sf = FixedPoint64::fromUint64(shortfallXfg);
+            heatInjection = sf.div(poolRate).toUint64();
+          }
+        }
+        if (heatInjection > m_treasuryHeatReserve)
+          heatInjection = m_treasuryHeatReserve;
+        if (heatInjection > 0) {
+          m_treasuryHeatReserve -= heatInjection;
+          m_heatCdFeePool += heatInjection;
         }
       }
     }
@@ -3997,11 +4301,25 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
 
-    // Route treasury share to treasury balance
-    m_treasuryBalance += treasuryShare;
-    m_totalTreasuryAccrued += treasuryShare;
+    // Route treasury share: mint HⲶ∆T from swap-fee aggregate demand.
+    // 20% → Treasury heat reserve (fuels APY floor, peg defense).
+    if (treasuryShare > 0) {
+      uint64_t treasuryHeat = treasuryShare;
+      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (!poolRate.isZero()) {
+          FixedPoint64 xfgFp = FixedPoint64::fromUint64(treasuryShare);
+          FixedPoint64 heatFp = xfgFp.div(poolRate);
+          treasuryHeat = heatFp.toUint64();
+        }
+      }
+      if (treasuryHeat > 0 && m_heatSupply <= UINT64_MAX - treasuryHeat) {
+        m_heatSupply += treasuryHeat;
+        m_treasuryHeatReserve += treasuryHeat;
+      }
+    }
 
-    // Route regular CD share: 100% to yield pool for HEAT buyback
+    // Route regular CD share: 100% to yield pool for HⲶ∆T minting.
     m_cdYieldPool += regularCdShare;
 
     // Route legacy bond share to legacy bond yield pool
@@ -4009,35 +4327,21 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       m_legacyBondYieldPool += legacyBondShare;
     }
 
-    // CD yield: buy HEAT from Hearth for CD-holder payout.
-    // 100% of CD yield → HEAT buy. No protocol cut, no treasury restore —
-    // CD holders selling rewards back into pool provides natural ratio restoration.
-    if (m_cdYieldPool > 0 && !m_ammPool.isEmpty()) {
-      uint64_t heatBuyAmount = m_cdYieldPool;
-
-      uint64_t heatBought = ammGetOutputAmount(heatBuyAmount,
-        m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
-
-      uint64_t postBuyXfg = m_ammPool.reserveXfg + heatBuyAmount;
-      uint64_t postBuyHeat = (heatBought > 0 && heatBought <= m_ammPool.reserveHeat)
-                            ? m_ammPool.reserveHeat - heatBought : m_ammPool.reserveHeat;
-      uint64_t postBuyRatio = postBuyHeat > 0 ? (postBuyXfg * 100) / postBuyHeat : 999;
-      bool poolCanHandleBuy = postBuyRatio <= 400;
-
-      if (poolCanHandleBuy && heatBought > 0 && heatBought <= m_ammPool.reserveHeat) {
-        m_ammPool.reserveXfg += heatBuyAmount;
-        m_ammPool.reserveHeat -= heatBought;
-        m_heatCdFeePool += heatBought;
-      } else if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-        // Pool ratio fallback: mint HEAT at current AMM rate
+    // CD yield: mint HⲶ∆T from swap-fee aggregate demand for CD-holder payout.
+    // 100% mint, 0% pool buyback. No phantom XFG ever enters the AMM pool.
+    if (m_cdYieldPool > 0) {
+      uint64_t heatMinted = m_cdYieldPool;
+      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
         FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        FixedPoint64 xfgFp = FixedPoint64::fromUint64(heatBuyAmount);
-        FixedPoint64 heatFp = xfgFp.div(poolRate);
-        uint64_t heatMinted = heatFp.toUint64();
-        if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
-          m_heatSupply += heatMinted;
-          m_heatCdFeePool += heatMinted;
+        if (!poolRate.isZero()) {
+          FixedPoint64 xfgFp = FixedPoint64::fromUint64(m_cdYieldPool);
+          FixedPoint64 heatFp = xfgFp.div(poolRate);
+          heatMinted = heatFp.toUint64();
         }
+      }
+      if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
+        m_heatSupply += heatMinted;
+        m_heatCdFeePool += heatMinted;
       }
       m_cdYieldPool = 0;
     }

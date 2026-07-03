@@ -81,6 +81,7 @@ namespace CryptoNote {
     virtual void getOutput(size_t index, KeyOutput& output, uint64_t& amount) const override;
     virtual void getOutput(size_t index, MultisignatureOutput& output, uint64_t& amount) const override;
     virtual void getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const override;
+    virtual void getOutput(size_t index, TransactionOutputOrder& output, uint64_t& amount) const override;
 
     virtual size_t getRequiredSignaturesCount(size_t index) const override;
     virtual bool findOutputsToAccount(const AccountPublicAddress& addr, const SecretKey& viewSecretKey, std::vector<uint32_t>& outs, uint64_t& outputAmount) const override;
@@ -112,6 +113,7 @@ namespace CryptoNote {
     virtual size_t addOutput(uint64_t amount, const KeyOutput& out) override;
     virtual size_t addOutput(uint64_t amount, const MultisignatureOutput& out) override;
     virtual size_t addOutput(uint64_t amount, const TransactionOutputCommitment& out) override;
+    virtual size_t addOutput(uint64_t amount, const TransactionOutputOrder& out) override;
     virtual void signInputKey(size_t input, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) override;
     virtual void signInputMultisignature(size_t input, const PublicKey& sourceTransactionKey, size_t outputIndex, const AccountKeys& accountKeys) override;
     virtual void signInputMultisignature(size_t input, const KeyPair& ephemeralKeys) override;
@@ -368,6 +370,16 @@ namespace CryptoNote {
     return outputIndex;
   }
 
+  size_t TransactionImpl::addOutput(uint64_t amount, const TransactionOutputOrder& out) {
+    checkIfSigning();
+    size_t outputIndex = transaction.outputs.size();
+    TransactionOutput realOut = { amount, out };
+    transaction.outputs.emplace_back(realOut);
+    transaction.version = TRANSACTION_VERSION_2;
+    invalidateHash();
+    return outputIndex;
+  }
+
   void TransactionImpl::signInputKey(size_t index, const TransactionTypes::InputKeyInfo& info, const KeyPair& ephKeys) {
     const auto& input = boost::get<KeyInput>(getInputChecked(transaction, index, TransactionTypes::InputType::Key));
     Hash prefixHash = getTransactionPrefixHash();
@@ -589,6 +601,12 @@ namespace CryptoNote {
   void TransactionImpl::getOutput(size_t index, TransactionOutputCommitment& output, uint64_t& amount) const {
     const auto& out = getOutputChecked(transaction, index, TransactionTypes::OutputType::Commitment);
     output = boost::get<TransactionOutputCommitment>(out.target);
+    amount = out.amount;
+  }
+
+  void TransactionImpl::getOutput(size_t index, TransactionOutputOrder& output, uint64_t& amount) const {
+    const auto& out = getOutputChecked(transaction, index, TransactionTypes::OutputType::Order);
+    output = boost::get<TransactionOutputOrder>(out.target);
     amount = out.amount;
   }
 

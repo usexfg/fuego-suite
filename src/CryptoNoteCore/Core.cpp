@@ -29,6 +29,7 @@
 #include "../Logging/LoggerRef.h"
 #include "../Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "AmmPool.h"
+#include "MarketOrderExecutor.h"
 #include "CryptoNoteFormatUtils.h"
 
 #include "CryptoNoteTools.h"
@@ -1530,6 +1531,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.redemptionRateNum = 0;    // PI controller removed — always 0
   m.redemptionRateDenom = 1;
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
+  m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   return m;
 }
@@ -1577,6 +1579,40 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
     info.spotPrice = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
   }
   return info;
+}
+
+core::OrderbookInfo core::getOrderbookInfo() const {
+  OrderbookInfo info;
+  const auto& pool = m_blockchain.getAmmPool();
+  info.clearingPrice = m_blockchain.getOrderbookClearingPrice();
+  info.inBootstrap = m_blockchain.isOrderbookInBootstrap();
+  if (!pool.isEmpty() && pool.reserveHeat > 0) {
+    info.hearthPoolRatio = (static_cast<uint128_t>(pool.reserveXfg) * 100000000ULL) / pool.reserveHeat;
+  }
+  // Depth and numMatches read from the latest block header — populated in processOrderbookForBlock
+  return info;
+}
+
+core::OrderbookState core::getOrderbookState(uint32_t depth) const {
+  OrderbookState state;
+  state.clearingPrice = m_blockchain.getOrderbookClearingPrice();
+
+  auto bids = m_blockchain.getOrderbookBidCurve(depth);
+  for (const auto& b : bids) {
+    state.bids.push_back({b.price, b.depth});
+  }
+
+  auto asks = m_blockchain.getOrderbookAskCurve(depth);
+  for (const auto& a : asks) {
+    state.asks.push_back({a.price, a.depth});
+  }
+
+  return state;
+}
+
+core::OrderbookEstimate core::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
+  auto est = m_blockchain.getOrderbookEstimate(side, amount);
+  return {est.estimatedFill, est.hearthFill, est.orderbookFill, est.worstCasePrice, est.levelsConsumed};
 }
 
 }

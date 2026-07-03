@@ -69,6 +69,7 @@ struct BinaryVariantTagGetter: boost::static_visitor<uint8_t> {
   uint8_t operator()(const CryptoNote::MultisignatureOutput) { return  0x3; }
   uint8_t operator()(const CryptoNote::TransactionOutputCommitment) { return  0x4; }
   uint8_t operator()(const CryptoNote::TransactionOutputUnified) { return  0x5; }
+  uint8_t operator()(const CryptoNote::TransactionOutputOrder) { return  0x6; }
   uint8_t operator()(const CryptoNote::Transaction) { return  0xcc; }
   uint8_t operator()(const CryptoNote::Block) { return  0xbb; }
 };
@@ -148,6 +149,12 @@ void getVariantValue(CryptoNote::ISerializer& serializer, uint8_t tag, CryptoNot
   }
   case 0x5: {
     CryptoNote::TransactionOutputUnified v;
+    serializer(v, "data");
+    out = v;
+    break;
+  }
+  case 0x6: {
+    CryptoNote::TransactionOutputOrder v;
     serializer(v, "data");
     out = v;
     break;
@@ -383,6 +390,14 @@ void serialize(TransactionOutputUnified& out, ISerializer& serializer) {
   serializePod(out.proof,      "proof",      serializer);
 }
 
+void serialize(TransactionOutputOrder& out, ISerializer& serializer) {
+  serializer(out.side, "side");
+  serializer(out.price, "price");
+  serializer(out.expiration, "expiration");
+  serializer(out.spendKey, "spend_key");
+  serializer(out.viewKey, "view_key");
+}
+
 void serialize(TransactionInputUnified& in, ISerializer& serializer) {
   serializeVarintVector(in.outputIndexes, serializer, "key_offsets");
   serializer(in.keyImage, "k_image");
@@ -464,7 +479,7 @@ void serialize(ParentBlockSerializer& pbs, ISerializer& serializer) {
 
 void serializeBlockHeader(BlockHeader& header, ISerializer& serializer) {
   serializer(header.majorVersion, "major_version");
-  if (header.majorVersion > BLOCK_MAJOR_VERSION_11) {  // upgradekit + hearth
+  if (header.majorVersion > BLOCK_MAJOR_VERSION_13) {  // upgradekit + hearth + orderbook
     throw std::runtime_error("Wrong major version");
   }
 
@@ -494,6 +509,14 @@ void serialize(Block& block, ISerializer& serializer) {
 
   serializer(block.baseTransaction, "miner_tx");
   serializer(block.transactionHashes, "tx_hashes");
+
+  if (block.majorVersion >= BLOCK_MAJOR_VERSION_13) {
+    serializer(block.orderbookClearingPrice, "orderbook_clearing_price");
+    serializer(block.orderbookNumMatches, "orderbook_num_matches");
+    serializer(block.orderbookDepthBidXfg, "orderbook_depth_bid");
+    serializer(block.orderbookDepthAskXfg, "orderbook_depth_ask");
+    serializer(block.hearthPoolRatio, "hearth_pool_ratio");
+  }
 }
 
 void serialize(AccountPublicAddress& address, ISerializer& serializer) {

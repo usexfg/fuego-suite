@@ -248,4 +248,82 @@ namespace CryptoNote
     const static int ID = BC_COMMANDS_POOL_BASE + 10;
     typedef NOTIFY_MISSING_TXS_request request;
   };
+
+  /************************************************************************/
+  /* v13+ Orderbook P2P (off-chain order gossip)                          */
+  /************************************************************************/
+
+  struct NOTIFY_ORDER_PLACE_request {
+    // Full order data carried in the P2P message body.
+    // Recipient validates pre-signed partial signature before accepting.
+    uint8_t  side;           // 0 = BUY_XFG, 1 = SELL_XFG
+    uint64_t amount;         // atomic units
+    uint64_t price;          // × COIN
+    uint32_t expiration;
+    Crypto::Hash orderId;
+    Crypto::Hash utxoTxHash;
+    uint32_t outputIndex;
+    Crypto::PublicKey spendKey;
+    Crypto::PublicKey viewKey;
+    std::vector<Crypto::Signature> partialSigs;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(side)
+      KV_MEMBER(amount)
+      KV_MEMBER(price)
+      KV_MEMBER(expiration)
+      s(orderId, "orderId");
+      s(utxoTxHash, "utxoTxHash");
+      KV_MEMBER(outputIndex)
+      s(spendKey, "spendKey");
+      s(viewKey, "viewKey");
+      s(partialSigs, "partialSigs");
+    }
+  };
+
+  struct NOTIFY_ORDER_PLACE {
+    const static int ID = BC_COMMANDS_POOL_BASE + 11;
+    typedef NOTIFY_ORDER_PLACE_request request;
+  };
+
+  struct NOTIFY_ORDER_CANCEL_request {
+    Crypto::Hash orderId;
+
+    void serialize(ISerializer& s) {
+      s(orderId, "orderId");
+    }
+  };
+
+  struct NOTIFY_ORDER_CANCEL {
+    const static int ID = BC_COMMANDS_POOL_BASE + 12;
+    typedef NOTIFY_ORDER_CANCEL_request request;
+  };
+
+  struct NOTIFY_ORDERBOOK_RECEIPT_request {
+    Crypto::Hash settlementTxHash;
+    uint64_t clearingPrice;
+    uint32_t numBidLevels;
+    uint32_t numAskLevels;
+    std::vector<uint64_t> bidPrices;
+    std::vector<uint64_t> bidDepths;
+    std::vector<uint64_t> askPrices;
+    std::vector<uint64_t> askDepths;
+
+    void serialize(ISerializer& s) {
+      s(settlementTxHash, "settlementTxHash");
+      KV_MEMBER(clearingPrice)
+      KV_MEMBER(numBidLevels)
+      KV_MEMBER(numAskLevels)
+      KV_MEMBER(bidPrices)
+      KV_MEMBER(bidDepths)
+      KV_MEMBER(askPrices)
+      KV_MEMBER(askDepths)
+    }
+  };
+
+  struct NOTIFY_ORDERBOOK_RECEIPT {
+    const static int ID = BC_COMMANDS_POOL_BASE + 13;
+    typedef NOTIFY_ORDERBOOK_RECEIPT_request request;
+  };
+
 } // namespace CryptoNote

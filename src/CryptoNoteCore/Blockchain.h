@@ -127,6 +127,27 @@ namespace CryptoNote {
     uint64_t digmBancorSell(uint64_t digmIn, bool dryRun);
     uint64_t getPoolLockedXfg() const { return m_poolLockedXfg; }
     uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
+
+    // Orderbook (v13+) — reads from block finalization state
+    uint64_t getOrderbookClearingPrice() const;
+    bool isOrderbookInBootstrap() const;
+
+    struct OrderbookLevel {
+      uint64_t price;
+      uint64_t depth;
+    };
+    std::vector<OrderbookLevel> getOrderbookBidCurve(uint32_t maxLevels) const;
+    std::vector<OrderbookLevel> getOrderbookAskCurve(uint32_t maxLevels) const;
+    uint32_t getOrderbookNumMatches() const;
+
+    struct OrderbookEstimate {
+      uint64_t estimatedFill;
+      uint64_t hearthFill;
+      uint64_t orderbookFill;
+      uint64_t worstCasePrice;
+      uint32_t levelsConsumed;
+    };
+    OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
     AssetType classifyInputAsset(const TransactionInput& in) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
@@ -496,6 +517,8 @@ namespace CryptoNote {
 
     bool pushBlock(BlockEntry &block);
     void popBlock(const Crypto::Hash &blockHash);
+    void processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height);
+    void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);

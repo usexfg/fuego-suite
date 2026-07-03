@@ -175,6 +175,12 @@ public:
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 0) = 0;
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 0) = 0;
 
+  // v13 Orderbook
+  virtual TransactionId placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId marketBuyV13(uint64_t xfgWanted, uint64_t maxHeatCost, uint64_t fee, uint64_t mixIn = 0) = 0;
+  virtual TransactionId marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn = 0) = 0;
+
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) = 0;
   virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;

@@ -98,7 +98,7 @@ if(WIN32)
 endif()
 
 # Boost MPL limit — needed for large variant types (>20 elements) on all platforms
-add_definitions(-DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=30)
+add_definitions(-DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=40)
 
 # --------------------------
 # Include directories
@@ -130,11 +130,18 @@ if(APPLE OR FREEBSD)
             set(CMAKE_OSX_SYSROOT "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
         endif()
 
-        # Add C standard library headers
+        # SDK sysroot — required for C compilation (miniupnpc, etc.)
+        # The C++ standard library resolves its own companion headers automatically;
+        # the explicit include can shadow libc++ companion headers on newer Xcode.
+        # Workaround: add C++ headers first so libc++ finds <string.h> etc. before C <string.h>.
         if(EXISTS "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
-            include_directories(SYSTEM /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include)
+            set(APPLE_SDK_PATH "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
         elseif(EXISTS "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
-            include_directories(SYSTEM /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include)
+            set(APPLE_SDK_PATH "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+        endif()
+        if(APPLE_SDK_PATH)
+            include_directories(BEFORE SYSTEM "${APPLE_SDK_PATH}/usr/include/c++/v1")
+            include_directories(SYSTEM "${APPLE_SDK_PATH}/usr/include")
         endif()
 
         # Add Homebrew include paths for macOS (after standard library paths)

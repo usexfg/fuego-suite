@@ -526,6 +526,14 @@ std::string simple_wallet::get_commands_str() {
     {"hearth_info", "Show Hearth AMM pool state"}
   });
 
+  add_cat("Orderbook (v13+)", {
+    {"trade", "trade <buy|sell> <amount> - Market order with pre-flight estimate"},
+    {"place_order", "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order"},
+    {"cancel_order", "cancel_order <order_id> - Cancel an unfilled limit order"},
+    {"show_orders", "List your open orders"},
+    {"orderbook", "orderbook [depth] - Show top bid/ask levels"}
+  });
+
   add_cat("Transfer / Send", {
     {"balance", "Show current wallet balance"},
     {"show_txn", "show_txn <txid> - Show detailed information for a specific transaction"},
@@ -636,6 +644,13 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   // show_txn and send_heat stubs
   m_consoleHandler.setHandler("show_txn", boost::bind(&simple_wallet::show_txn, this, boost::arg<1>()), "show_txn <txid> - Show detailed information for a specific transaction");
   m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
+
+  // Orderbook commands (v13+)
+  m_consoleHandler.setHandler("trade", boost::bind(&simple_wallet::trade, this, boost::arg<1>()), "trade <buy|sell> <amount> - Market order with pre-flight estimate");
+  m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order");
+  m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <order_id> - Cancel an unfilled limit order");
+  m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "List your open orders");
+  m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook [depth] - Show top bid/ask levels");
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -4607,5 +4622,255 @@ bool simple_wallet::send_heat(const std::vector<std::string>& args) {
   }
 
   fail_msg_writer() << "Transaction failed";
+  return true;
+}
+
+// ======== Orderbook Commands (v13+) ========
+
+bool simple_wallet::trade(const std::vector<std::string>& args) {
+  if (args.size() < 2) {
+    fail_msg_writer() << "Usage: trade <buy|sell> <amount>";
+    return false;
+  }
+
+  bool isBuy = (args[0] == "buy");
+  bool isSell = (args[0] == "sell");
+  if (!isBuy && !isSell) {
+    fail_msg_writer() << "First argument must be 'buy' or 'sell'. Got: " << args[0];
+    return false;
+  }
+
+  uint64_t amount = 0;
+  if (!m_currency.parseAmount(args[1], amount)) {
+    fail_msg_writer() << "Invalid amount: " << args[1];
+    return false;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  uint64_t available = m_wallet->actualBalance();
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  if (isBuy) {
+    std::string answer;
+    success_msg_writer() << "Market Buy: " << m_currency.formatAmount(amount) << " XFG";
+    success_msg_writer() << "HEAT will be consumed from your balance at settlement.";
+    success_msg_writer() << "";
+    std::cout << "Confirm market buy? (y/n): ";
+    std::getline(std::cin, answer);
+    if (answer != "y" && answer != "Y") {
+      fail_msg_writer() << "Cancelled.";
+      return true;
+    }
+    CryptoNote::TransactionId txId = m_wallet->marketBuyV13(amount, 0, fee, mixIn);
+    if (txId != WALLET_INVALID_TRANSACTION_ID) {
+      success_msg_writer() << "Market buy submitted (ID " << txId << ")";
+      return true;
+    }
+    fail_msg_writer() << "Transaction failed";
+    return true;
+  } else {
+    if (available < amount + fee) {
+      fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(available)
+                        << ", needed: " << m_currency.formatAmount(amount + fee);
+      return false;
+    }
+
+    success_msg_writer() << "Market Sell Preview:";
+    success_msg_writer() << "  Sell: " << m_currency.formatAmount(amount) << " XFG";
+    success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
+
+    // Call RPC for estimate (invokeJsonCommand throws on error)
+    try {
+      HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+      COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request req;
+      COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response res;
+      req.side = 1;
+      req.amount = amount;
+      invokeJsonCommand(httpClient, "/get_orderbook_estimates", req, res);
+
+      if (res.status == CORE_RPC_STATUS_OK) {
+        success_msg_writer() << "  Estimated fill: " << m_currency.formatAmount(res.estimated_fill) << " XFG";
+        success_msg_writer() << "  HEARTH band:    " << m_currency.formatAmount(res.hearth_fill) << " XFG";
+        success_msg_writer() << "  Orderbook:      " << m_currency.formatAmount(res.orderbook_fill) << " XFG";
+        if (res.levels_consumed > 0)
+          success_msg_writer() << "  Levels consumed: " << res.levels_consumed;
+        if (res.worst_case_price > 0)
+          success_msg_writer() << "  Worst price:     " << res.worst_case_price;
+      }
+    } catch (...) {
+      success_msg_writer() << "  (daemon RPC unavailable — estimate skipped)";
+    }
+
+    CryptoNote::TransactionId txId = m_wallet->marketSellV13(amount, 0, fee, mixIn);
+    if (txId != WALLET_INVALID_TRANSACTION_ID) {
+      success_msg_writer() << "Market sell submitted (ID " << txId << ")";
+      return true;
+    }
+
+    fail_msg_writer() << "Market sell failed. Check daemon connection and balance.";
+  }
+  return true;
+}
+
+bool simple_wallet::place_order(const std::vector<std::string>& args) {
+  if (args.size() < 3) {
+    fail_msg_writer() << "Usage: place_order <buy|sell> <amount> <price> [expiration_blocks]";
+    return false;
+  }
+
+  bool isBuy = (args[0] == "buy");
+  bool isSell = (args[0] == "sell");
+  if (!isBuy && !isSell) {
+    fail_msg_writer() << "First argument must be 'buy' or 'sell'. Got: " << args[0];
+    return false;
+  }
+
+  uint64_t amount = 0;
+  if (!m_currency.parseAmount(args[1], amount)) {
+    fail_msg_writer() << "Invalid amount: " << args[1];
+    return false;
+  }
+
+  uint64_t price = 0;
+  try {
+    price = std::stoull(args[2]);
+  } catch (...) {
+    fail_msg_writer() << "Invalid price (must be integer ratio × 10^8): " << args[2];
+    return false;
+  }
+  if (price == 0) {
+    fail_msg_writer() << "Price must be > 0.";
+    return false;
+  }
+
+  uint32_t expiration = DEFAULT_ORDER_EXPIRATION_BLOCKS;
+  if (args.size() >= 4) {
+    try {
+      expiration = static_cast<uint32_t>(std::stoull(args[3]));
+    } catch (...) {
+      fail_msg_writer() << "Invalid expiration blocks: " << args[3];
+      return false;
+    }
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  uint64_t available = m_wallet->actualBalance();
+
+  if (isSell && available < amount + fee) {
+    fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(available)
+                      << ", needed: " << m_currency.formatAmount(amount + fee);
+    return false;
+  }
+
+  success_msg_writer() << "Limit Order Preview:";
+  success_msg_writer() << "  Side:       " << (isBuy ? "BUY_XFG (pay HEAT, receive XFG)" : "SELL_XFG (pay XFG, receive HEAT)");
+  success_msg_writer() << "  Amount:     " << m_currency.formatAmount(amount);
+  success_msg_writer() << "  Price:      " << price << " (× 10^8)";
+  success_msg_writer() << "  Expiration: " << expiration << " blocks";
+  success_msg_writer() << "  Fee:        " << m_currency.formatAmount(fee);
+  success_msg_writer() << "";
+
+  if (isBuy) {
+    success_msg_writer() << "HEAT must be available when order fills. If unfilled at expiration,";
+    success_msg_writer() << "locked funds auto-return (no HEAT spent for unfilled portion).";
+  }
+  success_msg_writer() << "Price protection: fills only at P_clear favorable to your limit.";
+
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  std::string answer;
+  std::cout << "Confirm place order? (y/n): ";
+  std::getline(std::cin, answer);
+  if (answer != "y" && answer != "Y") {
+    fail_msg_writer() << "Cancelled.";
+    return true;
+  }
+
+  CryptoNote::TransactionId txId = m_wallet->placeOrderV13(isBuy ? 0 : 1, amount, price, expiration, fee, mixIn);
+  if (txId != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Order placed (ID " << txId << ")";
+    success_msg_writer() << "Expires: " << expiration << " blocks (~"
+      << (expiration * 480 / 86400) << " days)";
+    return true;
+  }
+
+  fail_msg_writer() << "Order placement failed";
+  return true;
+}
+
+bool simple_wallet::cancel_order(const std::vector<std::string>& args) {
+  if (args.size() < 1) {
+    fail_msg_writer() << "Usage: cancel_order <order_id>";
+    return false;
+  }
+
+  Crypto::Hash orderId;
+  if (!Common::podFromHex(args[0], orderId)) {
+    fail_msg_writer() << "Invalid order ID format: " << args[0];
+    return false;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  std::string answer;
+  std::cout << "Cancel order " << args[0] << "? (dust fee: " << m_currency.formatAmount(fee) << ") (y/n): ";
+  std::getline(std::cin, answer);
+  if (answer != "y" && answer != "Y") {
+    fail_msg_writer() << "Cancelled.";
+    return true;
+  }
+
+  CryptoNote::TransactionId txId = m_wallet->cancelOrderV13(orderId, fee, mixIn);
+  if (txId != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Cancel submitted (ID " << txId << "). Funds return at next block.";
+    return true;
+  }
+
+  fail_msg_writer() << "Cancel failed";
+  return true;
+}
+
+bool simple_wallet::show_orders(const std::vector<std::string>& args) {
+  success_msg_writer() << "Your open orders are tracked as TX_OUT_ORDER UTXOs on-chain.";
+  success_msg_writer() << "Wallet discovers them during normal stealth-address scanning.";
+  success_msg_writer() << "Order listing pending v13 wallet UTXO scan integration.";
+  return true;
+}
+
+bool simple_wallet::orderbook(const std::vector<std::string>& args) {
+  success_msg_writer() << "";
+  success_msg_writer() << "═══ ON-CHAIN ORDERBOOK (v13+) ═══";
+
+  HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+
+  COMMAND_RPC_GET_ORDERBOOK_INFO::request req;
+  COMMAND_RPC_GET_ORDERBOOK_INFO::response res;
+  try {
+    invokeJsonCommand(httpClient, "/get_orderbook_info", req, res);
+    if (res.status == CORE_RPC_STATUS_OK) {
+      success_msg_writer() << "";
+      if (res.in_bootstrap) {
+        success_msg_writer() << "Status:   BOOTSTRAP (HEARTH pool ratio as P_clear)";
+      } else {
+        success_msg_writer() << "Status:   ACTIVE";
+      }
+      success_msg_writer() << "P_clear:  " << res.clearing_price << " (XFG/HEAT × 10^8)";
+      success_msg_writer() << "Matches:  " << res.num_matches << " this block";
+      success_msg_writer() << "Bid depth:" << res.depth_bid_xfg << " XFG  |  Ask depth: " << res.depth_ask_xfg << " XFG";
+      success_msg_writer() << "Pool ratio:" << res.hearth_pool_ratio << " (post-rebalance, × 10^8)";
+    }
+  } catch (...) {
+    success_msg_writer() << "Daemon does not support orderbook RPC (requires v13+).";
+  }
+
+  success_msg_writer() << "";
+  success_msg_writer() << "Batch auction model:";
+  success_msg_writer() << "  Block time:  480 seconds (~8 minutes)";
+  success_msg_writer() << "  Matching:    per-block uniform clearing price (P_clear)";
+  success_msg_writer() << "  Depth band:  " << HEARTH_DEPTH_BAND_PCT << "% of HEARTH pool for instant market fills";
+  success_msg_writer() << "  Max levels:  " << MAX_MARKET_ORDER_LEVELS << " per market order cascade";
+  success_msg_writer() << "  Price guard: " << MAX_MARKET_PRICE_DEVIATION_PCT << "% max deviation";
+  success_msg_writer() << "";
+  success_msg_writer() << "Commands: trade | place_order | cancel_order | show_orders";
   return true;
 }

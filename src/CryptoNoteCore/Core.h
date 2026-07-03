@@ -218,6 +218,7 @@ namespace CryptoNote {
       uint64_t redemptionRateNum = 0;   // always 0 (PI controller removed)
       uint64_t redemptionRateDenom = 1;
       uint64_t treasuryBalance = 0;
+      uint64_t treasuryHeatReserve = 0;  // HⲶ∆T minted from 20% swap fee share (for APY floor)
       uint64_t epochSwapFees = 0;
     };
     HeatMetrics getHeatMetrics() const;
@@ -239,6 +240,37 @@ namespace CryptoNote {
       uint64_t epochSwapFees = 0;
     };
     AmmPoolInfo getAmmPoolInfo() const;
+
+    // Orderbook (v13+)
+    struct OrderbookInfo {
+      uint64_t clearingPrice = 0;     // P_clear, XFG/HEAT ratio × 10^8
+      uint32_t numMatches = 0;
+      uint64_t depthBidXfg = 0;      // total bid depth in atomic XFG
+      uint64_t depthAskXfg = 0;      // total ask depth in atomic XFG
+      uint64_t hearthPoolRatio = 0;  // post-rebalance pool ratio × 10^8
+      bool inBootstrap = true;
+    };
+    OrderbookInfo getOrderbookInfo() const;
+
+    struct OrderbookLevel {
+      uint64_t price;                // XFG/HEAT ratio × 10^8
+      uint64_t depth;                // aggregate depth at this level (atomic XFG)
+    };
+    struct OrderbookState {
+      uint64_t clearingPrice;
+      std::vector<OrderbookLevel> bids;
+      std::vector<OrderbookLevel> asks;
+    };
+    OrderbookState getOrderbookState(uint32_t depth) const;
+
+    struct OrderbookEstimate {
+      uint64_t estimatedFill;
+      uint64_t hearthFill;
+      uint64_t orderbookFill;
+      uint64_t worstCasePrice;
+      uint32_t levelsConsumed;
+    };
+    OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
 
 
 

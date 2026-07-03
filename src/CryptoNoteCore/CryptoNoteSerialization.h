@@ -57,6 +57,7 @@ void serialize(KeyOutput& key, ISerializer& serializer);
 void serialize(MultisignatureOutput& multisignature, ISerializer& serializer);
 void serialize(TransactionOutputCommitment& out, ISerializer& serializer);
 void serialize(TransactionOutputUnified& out, ISerializer& serializer);
+void serialize(TransactionOutputOrder& out, ISerializer& serializer);
 
 void serialize(BlockHeader& header, ISerializer& serializer);
 void serialize(Block& block, ISerializer& serializer);

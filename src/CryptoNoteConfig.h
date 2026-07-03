@@ -78,7 +78,7 @@ namespace CryptoNote
 		const uint64_t DEFAULT_DUST_THRESHOLD = UINT64_C(1000); /* < 0.0001 XFG ( under 1 Kf is dust) v10 */
 
 		const size_t   CRYPTONOTE_COIN_VERSION                       = 1;
-		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	     = 7;
+		const size_t   CRYPTONOTE_DISPLAY_DECIMAL_POINT 	         = 7;
 		const size_t   CRYPTONOTE_REWARD_BLOCKS_WINDOW               = 100;
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE     = 430080; //size of block (bytes) after reward for block is calculated in block-size (420KB)
 		const size_t   CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2  = 430080;
@@ -101,7 +101,7 @@ namespace CryptoNote
 		const uint64_t MAX_TX_MIXIN_SIZE                             = 32;
 		static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
-		// DANDELION++ tx relay 
+		// DANDELION++ tx relay
 		// Active from BLOCK_MAJOR_VERSION_10. Per-hop the stem-stay decision is a coin flip
 		// (uniform in [0,100)); staying-prob is *_STAY_PCT. After MAX_HOPS or fluff transition,
 		// the tx is broadcast normally. EMBARGO_SECONDS guards against stem black-hole: if a
@@ -128,11 +128,11 @@ namespace CryptoNote
 		  return hop_count < max_hops && rand_0_99 < stay_pct;
 		}
 
-		// HEAT CD denominations (atomic units, 7 decimal places)
-        const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 FIRE
-        const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 FIRE
-        const uint64_t AMOUNT_TIER_2 =  8000000000;  // 800 FIRE
-        const uint64_t AMOUNT_TIER_3 = 80000000000;  // 8,000 FIRE
+		// HⲶ∆T CD denominations (atomic units, 7 decimal places)
+        const uint64_t AMOUNT_TIER_0 =    80000000;  // 8 HⲶ∆T
+        const uint64_t AMOUNT_TIER_1 =   800000000;  // 80 HⲶ∆T
+        const uint64_t AMOUNT_TIER_2 =  8000000000;  // 800 HⲶ∆T
+        const uint64_t AMOUNT_TIER_3 = 80000000000;  // 8,000 HⲶ∆T
         // TESTNET TIERS
         const uint64_t TEST_AMOUNT_TIER_0 =    8000000;  // 0.8 FIRE
         const uint64_t TEST_AMOUNT_TIER_1 =   80000000;  // 8 FIRE
@@ -187,7 +187,7 @@ namespace CryptoNote
         // Bootstrap repayment
         const uint64_t BOOTSTRAP_REPAY_PCT = 20;            // 20% of treasury swap fee share → bootstrap repayment vault
 
-        // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+)
+        // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+) <<---legacy bond idea deprecated remove
         const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
         const uint64_t LEGACY_BOND_TARGET_APY = 50;          // 50% target APY on legacy bonds
         const uint64_t LEGACY_BOND_TERM_EPOCHS = 72;         // 72 epochs (~1 year) lock period
@@ -205,7 +205,7 @@ namespace CryptoNote
 
         const uint32_t HEAT_TERM = ((uint32_t)(-1));  // 0xFFFFFFFF marks HEAT (permanent)
         const uint32_t TERM_REGULAR = 0;               // 0 marks regular XFG transfer
-        const uint32_t DEPOSIT_TERM_LP      = 0xFFFFFFFD;         // LP share marker (term for Hearth liquidity)
+        const uint32_t DEPOSIT_TERM_LP = 0xFFFFFFFD;         // LP share marker (term for Hearth liquidity)
         const uint32_t DEPOSIT_TERM_YIELD = DEPOSIT_MIN_TERM;  // CD minimum term for FuCIA deposits
         const uint32_t DEPOSIT_TERM_POOL_XFG = 0x504F4C58;  // 'POLX' — AMM pool receives XFG (unspendable)
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
@@ -213,33 +213,33 @@ namespace CryptoNote
 
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
-        const uint64_t HEAT_MINT_PREMIUM_BPS = 0;                    // 0.00% mint premium (PI controller removed)
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 333;                    // 3.33% mint premium (PI controller removed)
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool
         // into shared per-amount decoy pools for ring-signature privacy.
         // 1 HEAT = 10^CRYPTONOTE_DISPLAY_DECIMAL_POINT = 10,000,000 atomic.
         const std::vector<uint64_t> HEAT_BILL_DENOMINATIONS = {
-          5000000000,    // 500 HEAT
-          1000000000,    // 100 HEAT
-          500000000,     //  50 HEAT
-          100000000,     //  10 HEAT
-          50000000,      //   5 HEAT
-          10000000,      //   1 HEAT
-          5000000,       //   0.5 HEAT
-          1000000,       //   0.1 HEAT
+          5000000000,    // 【500𐅪】 HⲶ∆T
+          1000000000,    // 【100𐅪】
+          500000000,     //  【50𐅪】
+          100000000,     //  【10𐅪】
+          50000000,      //   【5𐅪】
+          10000000,      //   【1𐅪】
+          5000000,       //  〖𐅪.5〗 HⲶ∆T
+          1000000,       //  〖𐅪.1〗
         };
 
         const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
-        constexpr uint64_t HEARTH_POOL_SEED_XFG = 5000;         // 5000 XFG at genesis (COIN units)
-        constexpr uint64_t HEARTH_POOL_SEED_HEAT = 5000;        // 5000 HEAT at genesis (1:1 ratio)
+        constexpr uint64_t HEARTH_POOL_SEED_XFG = 10000;        // 10,000 XFG at genesis (COIN units)
+        constexpr uint64_t HEARTH_POOL_SEED_HEAT = 1000;        // 1,000 HEAT at genesis (10:1 ratio, 10 XFG = 1 HEAT @ $1.58 CPI-adj)
         const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum (aspirational depth target)
-        const uint64_t HEARTH_MIN_HEAT_DEPTH = 40000;              // 40,000 HEAT minimum (at 8:1 ratio)
+        const uint64_t HEARTH_MIN_HEAT_DEPTH = 5000;               // 5,000 HEAT minimum (at 10:1 ratio)
 
         // Hearth pool governance bootstrap (one-time initialization at v11 activation)
-        const uint64_t HEARTH_INITIAL_XFG  = 1000U * 10000000U;     // 1,000 XFG pool side
-        const uint64_t HEARTH_INITIAL_HEAT = 8000U * 10000000U;     // 8,000 HEAT pool side (8:1 ratio)
+        const uint64_t HEARTH_INITIAL_XFG  = 10000U * 10000000U;    // 10,000 XFG pool side
+        const uint64_t HEARTH_INITIAL_HEAT = 1000U * 10000000U;     // 1,000 HEAT pool side (10:1 ratio)
 
         // DIGM pools (v11+)
         const uint64_t DIGM_V1_CAP                      = 10000;                         // 10,000 DIGM total v1 supply
@@ -294,6 +294,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V10                            = 1003000; //{Wildfire}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH AMM + HEAT_CDs + YELM
         const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
+        const uint32_t UPGRADE_HEIGHT_V13                            = 4222222; //{ORDERBOOK}   On-chain batch orderbook + HEARTH depth band
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
@@ -337,9 +338,21 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_7                         =  7;
 	const uint8_t  BLOCK_MAJOR_VERSION_8                         =  8;
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
-	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10; 
+	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10;
 	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11;
-	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Unified output/input types + Pedersen + MLSAG (hidden amounts)
+ 	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Unified output/input types + Pedersen + MLSAG (hidden amounts)
+ 	const uint8_t  BLOCK_MAJOR_VERSION_13                        = 13; // On-chain orderbook + HEARTH depth band
+
+ 	// Orderbook (v13+)
+ 	const uint32_t BOOTSTRAP_BLOCKS                              = 144;     // ~24 hours HEARTH-only
+ 	const uint32_t MAX_ORDERS_PER_BLOCK                          = 1000;
+ 	const uint32_t MAX_MARKET_PRICE_DEVIATION_PCT                = 150;
+ 	const uint32_t MAX_MARKET_ORDER_LEVELS                       = 5;
+ 	const uint32_t MIN_DISTINCT_PARTIES                          = 2;
+ 	const uint32_t DEFAULT_ORDER_EXPIRATION_BLOCKS                = 12600;  // ~1 week
+ 	const uint32_t HEARTH_DEPTH_BAND_PCT                         = 10;
+ 	// Mint premium funds the rebalance mechanism.
+ 	// Set via parameters::HEAT_MINT_PREMIUM_BPS above (currently 333 bps = 3.33%).
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;

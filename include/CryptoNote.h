@@ -88,6 +88,17 @@ struct TransactionInputCommitmentTransfer {
   uint32_t newTerm;                     // new CD's term (spender-declared, >= 1)
 };
 
+// v13+ orderbook limit order output.
+// Stores a locked order on the orderbook as a UTXO.
+// spend_key/view_key: sender's keys for stealth remainder returns on partial fills.
+struct TransactionOutputOrder {
+  uint8_t side;              // 0 = BUY_XFG (pay HEAT, receive XFG), 1 = SELL_XFG (pay XFG, receive HEAT)
+  uint64_t price;            // XFG/HEAT ratio × 10^8
+  uint32_t expiration;       // block height after which unfilled remainder auto-returns
+  Crypto::PublicKey spendKey;
+  Crypto::PublicKey viewKey;
+};
+
 // v12+ (SILENTFIRE) unified output — replaces KeyOutput + TransactionOutputCommitment.
 // ALL v12+ transaction outputs (transfers, deposits, burns) use this type.
 // Amount hidden in Pedersen commitment; denomination proved by 1-of-N membership proof.
@@ -115,7 +126,7 @@ struct TransactionInputUnified {
 
 typedef boost::variant<BaseInput, KeyInput, MultisignatureInput, TransactionInputCommitmentSpend, TransactionInputCommitmentTransfer, TransactionInputUnified> TransactionInput;
 
-typedef boost::variant<KeyOutput, MultisignatureOutput, TransactionOutputCommitment, TransactionOutputUnified> TransactionOutputTarget;
+typedef boost::variant<KeyOutput, MultisignatureOutput, TransactionOutputCommitment, TransactionOutputUnified, TransactionOutputOrder> TransactionOutputTarget;
 
 struct TransactionOutput {
   uint64_t amount;
@@ -158,6 +169,12 @@ struct Block : public BlockHeader {
   ParentBlock parentBlock;
   Transaction baseTransaction;
   std::vector<Crypto::Hash> transactionHashes;
+  // v13+ orderbook state (serialized only when majorVersion >= 13)
+  uint64_t orderbookClearingPrice;
+  uint32_t orderbookNumMatches;
+  uint32_t orderbookDepthBidXfg;
+  uint32_t orderbookDepthAskXfg;
+  uint64_t hearthPoolRatio;
 };
 
 struct AccountPublicAddress {

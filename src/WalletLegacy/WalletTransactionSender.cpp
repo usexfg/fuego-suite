@@ -2665,12 +2665,15 @@ namespace CryptoNote
 
       transaction->setUnlockTime(0);
 
-      // Auth tag extra
+      // v12 HEAT send auth — declares HEAT amount for per-asset balance verification.
+      // Format: tag 0xF9 + 8 bytes little-endian heatAmount.
       std::vector<uint8_t> extra;
+      uint64_t heatAmountLE = amount;
       extra.push_back(TX_EXTRA_HEAT_SEND_AUTH);
-      extra.push_back(sizeof(uint64_t));
-      for (size_t b = 0; b < sizeof(uint64_t); ++b)
-        extra.push_back(static_cast<uint8_t>((amount >> (56 - 8 * b)) & 0xFF));
+      for (size_t b = 0; b < sizeof(uint64_t); ++b) {
+        extra.push_back(static_cast<uint8_t>(heatAmountLE & 0xFF));
+        heatAmountLE >>= 8;
+      }
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 
@@ -2754,6 +2757,62 @@ namespace CryptoNote
       events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
       return {};
     }
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makePlaceOrderV13Request(
+      TransactionId& transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      uint8_t side, uint64_t amount, uint64_t price,
+      uint32_t expiration, uint64_t fee, uint64_t mixIn) {
+    // Build a transaction that locks funds in a TX_OUT_ORDER UTXO.
+    // The output's unlocking condition carries the order parameters (side, price,
+    // expiration, sender keys). The transaction extra carries TX_EXTRA_ORDER_PLACE
+    // for auth tag scanning.
+    //
+    // Implementation follows the same pattern as makeHeatMintV10Request:
+    // select inputs, build outputs, add extra fields, sign, submit.
+    //
+    // TODO: Full OrderbookPlaceTransactionContext implementation.
+    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
+      make_error_code(error::INTERNAL_WALLET_ERROR)));
+    return {};
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeCancelOrderV13Request(
+      TransactionId& transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+    // Build a transaction that spends the order UTXO (TX_OUT_ORDER) and returns
+    // funds to the owner's stealth address. The transaction extra carries
+    // TX_EXTRA_ORDER_CANCEL with the orderId for auth tag scanning.
+    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
+      make_error_code(error::INTERNAL_WALLET_ERROR)));
+    return {};
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeMarketBuyV13Request(
+      TransactionId& transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      uint64_t xfgWanted, uint64_t maxHeatCost,
+      uint64_t fee, uint64_t mixIn) {
+    // Build a market buy transaction. The transaction extra carries
+    // TX_EXTRA_MARKET_BUY_AUTH for per-asset balance verification.
+    // Actual fill happens at block finalization via processOrderbookForBlock.
+    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
+      make_error_code(error::INTERNAL_WALLET_ERROR)));
+    return {};
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeMarketSellV13Request(
+      TransactionId& transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      uint64_t xfgToSell, uint64_t minHeatReceive,
+      uint64_t fee, uint64_t mixIn) {
+    // Build a market sell transaction. The transaction extra carries
+    // TX_EXTRA_MARKET_SELL_AUTH for per-asset balance verification.
+    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
+      make_error_code(error::INTERNAL_WALLET_ERROR)));
+    return {};
   }
 
 } /* namespace CryptoNote */

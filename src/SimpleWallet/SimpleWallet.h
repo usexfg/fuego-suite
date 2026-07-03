@@ -161,6 +161,13 @@ namespace CryptoNote
     // HEAT / Hearth AMM commands (v11+)
     bool heat_info(const std::vector<std::string> &args);
     bool pool_info(const std::vector<std::string> &args);
+
+    // Orderbook commands (v13+)
+    bool trade(const std::vector<std::string>& args);
+    bool place_order(const std::vector<std::string>& args);
+    bool cancel_order(const std::vector<std::string>& args);
+    bool show_orders(const std::vector<std::string>& args);
+    bool orderbook(const std::vector<std::string>& args);
     bool mint_heat(const std::vector<std::string> &args);
     bool swap(const std::vector<std::string> &args);
     bool hearth_xfg(const std::vector<std::string> &args);

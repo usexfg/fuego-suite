@@ -2132,4 +2132,82 @@ struct COMMAND_RPC_CANCEL_CD_OFFER {
   };
 };
 
+// Orderbook (v13+)
+struct COMMAND_RPC_GET_ORDERBOOK_INFO {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t clearing_price;
+    uint32_t num_matches;
+    uint64_t depth_bid_xfg;
+    uint64_t depth_ask_xfg;
+    uint64_t hearth_pool_ratio;
+    bool in_bootstrap;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(clearing_price)
+      KV_MEMBER(num_matches)
+      KV_MEMBER(depth_bid_xfg)
+      KV_MEMBER(depth_ask_xfg)
+      KV_MEMBER(hearth_pool_ratio)
+      KV_MEMBER(in_bootstrap)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_ORDERBOOK_STATE {
+  struct request {
+    uint32_t depth;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(depth)
+    }
+  };
+
+  struct response {
+    uint64_t clearing_price;
+    std::vector<uint64_t> bid_prices;
+    std::vector<uint64_t> bid_depths;
+    std::vector<uint64_t> ask_prices;
+    std::vector<uint64_t> ask_depths;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(clearing_price)
+      KV_MEMBER(bid_prices)
+      KV_MEMBER(bid_depths)
+      KV_MEMBER(ask_prices)
+      KV_MEMBER(ask_depths)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_ORDERBOOK_ESTIMATES {
+  struct request {
+    uint8_t side;         // 0 = buy XFG, 1 = sell XFG
+    uint64_t amount;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(side)
+      KV_MEMBER(amount)
+    }
+  };
+
+  struct response {
+    uint64_t estimated_fill;
+    uint64_t hearth_fill;
+    uint64_t orderbook_fill;
+    uint64_t worst_case_price;
+    uint32_t levels_consumed;
+    std::string status;
+    void serialize(ISerializer& s) {
+      KV_MEMBER(estimated_fill)
+      KV_MEMBER(hearth_fill)
+      KV_MEMBER(orderbook_fill)
+      KV_MEMBER(worst_case_price)
+      KV_MEMBER(levels_consumed)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 }

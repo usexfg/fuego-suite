@@ -121,6 +121,9 @@ private:
   bool on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request& req, COMMAND_RPC_GET_HEAT_METRICS::response& res);
   bool on_amm_quote(const COMMAND_RPC_AMM_QUOTE::request& req, COMMAND_RPC_AMM_QUOTE::response& res);
   bool on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req, COMMAND_RPC_AMM_POOL_INFO::response& res);
+  bool on_get_orderbook_info(const COMMAND_RPC_GET_ORDERBOOK_INFO::request& req, COMMAND_RPC_GET_ORDERBOOK_INFO::response& res);
+  bool on_get_orderbook_state(const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req, COMMAND_RPC_GET_ORDERBOOK_STATE::response& res);
+  bool on_get_orderbook_estimates(const COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request& req, COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response& res);
   bool on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req, COMMAND_RPC_GET_FUEGO_PRICE::response& res);
   bool on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req, COMMAND_RPC_ADD_SWAP_FEE::response& res);
   bool on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::request& req, COMMAND_RPC_SET_XFG_MARKET_VALUE::response& res);

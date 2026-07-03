@@ -85,7 +85,20 @@
 #define TX_EXTRA_AMM_SWAP_AUTH              0xF6
 #define TX_EXTRA_AMM_LP_ADD_AUTH            0xF7
 #define TX_EXTRA_AMM_LP_REM_AUTH            0xF8
+// INCOMPLETE: TX_EXTRA_HEAT_SEND_AUTH is pushed by wallet but has no struct,
+// no parser case, and no blockchain validation. Transactions with this tag
+// hit parseTransactionExtra's default reject path (silently skipped by caller).
+// Wallet code at WalletTransactionSender.cpp:2670 pushes this tag.
+// Fixed: struct, parser, writer, and blockchain validation added below.
 #define TX_EXTRA_HEAT_SEND_AUTH             0xF9
+
+// 0xFA: Orderbook limit order placement (v13+)
+#define TX_EXTRA_ORDER_PLACE                0xFA
+
+// 0x0F: Orderbook cancel — order UTXO reference (v13+)
+#define TX_EXTRA_ORDER_CANCEL               0x0F
+#define TX_EXTRA_MARKET_BUY_AUTH            0xFC
+#define TX_EXTRA_MARKET_SELL_AUTH           0xFD
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 
@@ -286,6 +299,12 @@ struct TransactionExtraHeatMintAuth {
   bool serialize(ISerializer& serializer);
 };
 
+// v12 HEAT send authorisation — declares HEAT amount for per-asset balance
+struct TransactionExtraHeatSendAuth {
+  uint64_t heatAmount;   // total HEAT being sent (gross, before fee)
+  bool serialize(ISerializer& serializer);
+};
+
 // v12 AMM swap authorisation — pool-output binding via term + commitKey
 struct TransactionExtraAmmSwapAuth {
   uint8_t  direction;
@@ -308,6 +327,34 @@ struct TransactionExtraLpRemoveAuth {
   uint64_t lpSharesBurned;
   uint64_t minAmountXfg;
   uint64_t minAmountHeat;
+  bool serialize(ISerializer& serializer);
+};
+
+// v13 orderbook limit order placement — describes the order carried by TX_OUT_ORDER
+struct TransactionExtraOrderPlace {
+  uint8_t  side;         // 0 = BUY_XFG, 1 = SELL_XFG
+  uint64_t price;        // XFG/HEAT ratio × 10^8
+  uint32_t expiration;   // block height when unfilled remainder auto-returns
+  bool serialize(ISerializer& serializer);
+};
+
+// v13 orderbook cancel — references the order UTXO to cancel
+struct TransactionExtraOrderCancel {
+  Crypto::Hash orderId;
+  bool serialize(ISerializer& serializer);
+};
+
+// v13 market buy auth — declares max HEAT spend for XFG purchase
+struct TransactionExtraMarketBuyAuth {
+  uint64_t xfgWanted;    // desired XFG to buy
+  uint64_t maxHeatCost;  // max HEAT willing to spend (slippage protection)
+  bool serialize(ISerializer& serializer);
+};
+
+// v13 market sell auth — declares min HEAT receive for XFG sale
+struct TransactionExtraMarketSellAuth {
+  uint64_t xfgToSell;       // XFG to sell
+  uint64_t minHeatReceive;  // min HEAT to accept (slippage protection)
   bool serialize(ISerializer& serializer);
 };
 
@@ -392,7 +439,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, CryptoNote::TransactionExtraSimpleCD, CryptoNote::TransactionExtraColdCommitment, CryptoNote::TransactionExtraColdMigration, CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraDepositReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth> TransactionExtraField;
 
 
 
@@ -434,12 +481,18 @@ bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint6
 
 // v12 auth tag builders
 bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted);
+bool addHeatSendAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t heatAmount);
 bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
                            uint64_t outputAmount, uint64_t minOutput);
 bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat,
                          uint64_t lpShares);
 bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
                             uint64_t minXfg, uint64_t minHeat);
+// Orderbook (v13+)
+bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration);
+bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
+bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost);
+bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 
 // v12 deterministic pool commit key — no spendable scalar (term-based unspendability)
 Crypto::PublicKey computePoolCommitKey();

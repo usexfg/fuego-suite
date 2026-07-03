@@ -26,10 +26,10 @@ bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
 }
 
 bool HeatMintEngine::validateMint(const Transaction& tx,
-                                   uint64_t fee,
-                                   FixedPoint64 redemptionPrice,
-                                   uint64_t& xfgBurned,
-                                   uint64_t& heatMinted) const {
+                                    uint64_t fee,
+                                    FixedPoint64 redemptionPrice,
+                                    uint64_t& xfgBurned,
+                                    uint64_t& heatMinted) const {
   xfgBurned = 0;
   heatMinted = 0;
 
@@ -73,8 +73,9 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
   uint64_t expectedHeat = heatFp.toUint64();
 
-  // Exact match required — no rounding tolerance. FixedPoint64 truncates,
-  // so heatOutputs <= expectedHeat is the only valid outcome.
+  // FixedPoint64::toUint64 truncates, so expectedHeat = floor(xfgBurned / price).
+  // heatOutputs must not exceed expectedHeat. Values below expectedHeat are
+  // permitted — the user may burn more XFG than needed for the declared HEAT.
   if (heatOutputs > expectedHeat)
     return false;
 
@@ -83,27 +84,34 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
 }
 
 bool HeatMintEngine::validateMintAuth(const Transaction& tx,
-                                       uint64_t fee,
-                                       FixedPoint64 redemptionPrice,
-                                       uint64_t xfgBurned,
-                                       uint64_t heatMinted) const {
+                                        uint64_t fee,
+                                        FixedPoint64 redemptionPrice,
+                                        uint64_t xfgBurned,
+                                        uint64_t heatMinted) const {
   if (redemptionPrice.isZero())
     return false;
   if (xfgBurned == 0 || heatMinted == 0)
     return false;
 
-  // Defense-in-depth: re-derive amounts from the actual transaction
-  // and verify heat output matches the auth tag. xfgBurned may include
-  // a mint premium which is absorbed by the transaction fee — only require
-  // actualXfgBurned ≤ xfgBurned (no overspend) and heatMinted must match exactly.
+  // Re-derive actual amounts from the raw transaction to prevent
+  // the wallet from declaring different amounts than what's on-chain.
   uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
   if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted))
     return false;
+
+  // Wallet must not under-declare XFG burn — they can burn more than
+  // declared but not less (balance check in Blockchain.cpp enforces
+  // actual >= auth). Over-burning is wasteful but not inflationary.
+  if (actualXfgBurned < xfgBurned)
+    return false;
+
+  // HEAT minted must match exactly what the wallet declared.
   if (actualHeatMinted != heatMinted)
     return false;
 
-  // Ratio check: no inflation — heatMinted must not exceed the pool-rate equivalent
-  FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
+  // No inflation: heatMinted must not exceed the pool-rate equivalent
+  // of the actual XFG burned (not the declared amount).
+  FixedPoint64 xfgFp = FixedPoint64::fromUint64(actualXfgBurned);
   uint64_t expectedHeat = xfgFp.div(redemptionPrice).toUint64();
   if (heatMinted > expectedHeat)
     return false;

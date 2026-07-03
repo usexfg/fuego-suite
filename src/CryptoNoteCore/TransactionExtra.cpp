@@ -290,10 +290,20 @@ namespace CryptoNote
              for (int i = 0; i < 8; ++i)
                auth.heatMinted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
              transactionExtraFields.push_back(auth);
-             break;
-           }
+              break;
+            }
 
-           case TX_EXTRA_AMM_SWAP_AUTH:
+            case TX_EXTRA_HEAT_SEND_AUTH:
+            {
+              TransactionExtraHeatSendAuth auth;
+              auth.heatAmount = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.heatAmount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_AMM_SWAP_AUTH:
            {
              TransactionExtraAmmSwapAuth auth;
              auth.direction = read<uint8_t>(iss);
@@ -326,23 +336,71 @@ namespace CryptoNote
              break;
            }
 
-           case TX_EXTRA_AMM_LP_REM_AUTH:
-           {
-             TransactionExtraLpRemoveAuth auth;
-             auth.lpSharesBurned = 0;
-             for (int i = 0; i < 8; ++i)
-               auth.lpSharesBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-             auth.minAmountXfg = 0;
-             for (int i = 0; i < 8; ++i)
-               auth.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-             auth.minAmountHeat = 0;
-             for (int i = 0; i < 8; ++i)
-               auth.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-             transactionExtraFields.push_back(auth);
-             break;
-           }
+            case TX_EXTRA_AMM_LP_REM_AUTH:
+            {
+              TransactionExtraLpRemoveAuth auth;
+              auth.lpSharesBurned = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.lpSharesBurned |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.minAmountXfg = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.minAmountXfg |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.minAmountHeat = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.minAmountHeat |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
 
-           case TX_EXTRA_ALIAS_RELEASE:
+            case TX_EXTRA_ORDER_PLACE:
+            {
+              TransactionExtraOrderPlace order;
+              order.side = read<uint8_t>(iss);
+              order.price = 0;
+              for (int i = 0; i < 8; ++i)
+                order.price |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              order.expiration = 0;
+              for (int i = 0; i < 4; ++i)
+                order.expiration |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(order);
+              break;
+            }
+
+            case TX_EXTRA_ORDER_CANCEL:
+            {
+              TransactionExtraOrderCancel cancel;
+              read(iss, cancel.orderId.data, sizeof(cancel.orderId.data));
+              transactionExtraFields.push_back(cancel);
+              break;
+            }
+
+            case TX_EXTRA_MARKET_BUY_AUTH:
+            {
+              TransactionExtraMarketBuyAuth auth;
+              auth.xfgWanted = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.xfgWanted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.maxHeatCost = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.maxHeatCost |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_MARKET_SELL_AUTH:
+            {
+              TransactionExtraMarketSellAuth auth;
+              auth.xfgToSell = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.xfgToSell |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              auth.minHeatReceive = 0;
+              for (int i = 0; i < 8; ++i)
+                auth.minHeatReceive |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(auth);
+              break;
+            }
+
+            case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;
              if (getAliasReleaseFromExtra(transactionExtra, release)) {
@@ -516,6 +574,11 @@ namespace CryptoNote
       return addHeatMintAuthToExtra(extra, t.xfgBurned, t.heatMinted);
     }
 
+    bool operator()(const TransactionExtraHeatSendAuth &t)
+    {
+      return addHeatSendAuthToExtra(extra, t.heatAmount);
+    }
+
     bool operator()(const TransactionExtraAmmSwapAuth &t)
     {
       return addAmmSwapAuthToExtra(extra, t.direction, t.inputAmount, t.outputAmount,
@@ -530,6 +593,26 @@ namespace CryptoNote
     bool operator()(const TransactionExtraLpRemoveAuth &t)
     {
       return addLpRemoveAuthToExtra(extra, t.lpSharesBurned, t.minAmountXfg, t.minAmountHeat);
+    }
+
+    bool operator()(const TransactionExtraOrderPlace &t)
+    {
+      return addOrderPlaceToExtra(extra, t.side, t.price, t.expiration);
+    }
+
+    bool operator()(const TransactionExtraOrderCancel &t)
+    {
+      return addOrderCancelToExtra(extra, t.orderId);
+    }
+
+    bool operator()(const TransactionExtraMarketBuyAuth &t)
+    {
+      return addMarketBuyAuthToExtra(extra, t.xfgWanted, t.maxHeatCost);
+    }
+
+    bool operator()(const TransactionExtraMarketSellAuth &t)
+    {
+      return addMarketSellAuthToExtra(extra, t.xfgToSell, t.minHeatReceive);
     }
 
   };
@@ -2205,11 +2288,25 @@ bool TransactionExtraHeatMintAuth::serialize(ISerializer &s) {
   return true;
 }
 
+bool TransactionExtraHeatSendAuth::serialize(ISerializer &s) {
+  s(heatAmount, "heatAmount");
+  return true;
+}
+
 bool TransactionExtraAmmSwapAuth::serialize(ISerializer &s) {
   s(direction, "direction");
   s(inputAmount, "inputAmount");
   s(outputAmount, "outputAmount");
   s(minOutput, "minOutput");
+  return true;
+}
+
+bool addHeatSendAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t heatAmount) {
+  tx_extra.push_back(TX_EXTRA_HEAT_SEND_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(heatAmount & 0xFF));
+    heatAmount >>= 8;
+  }
   return true;
 }
 
@@ -2304,6 +2401,53 @@ bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBur
   for (int i = 0; i < 8; ++i) {
     tx_extra.push_back(static_cast<uint8_t>(minHeat & 0xFF));
     minHeat >>= 8;
+  }
+  return true;
+}
+
+bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration) {
+  tx_extra.push_back(TX_EXTRA_ORDER_PLACE);
+  tx_extra.push_back(side);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(price & 0xFF));
+    price >>= 8;
+  }
+  for (int i = 0; i < 4; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(expiration & 0xFF));
+    expiration >>= 8;
+  }
+  return true;
+}
+
+bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
+  tx_extra.push_back(TX_EXTRA_ORDER_CANCEL);
+  for (size_t i = 0; i < sizeof(orderId.data); ++i)
+    tx_extra.push_back(orderId.data[i]);
+  return true;
+}
+
+bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost) {
+  tx_extra.push_back(TX_EXTRA_MARKET_BUY_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(xfgWanted & 0xFF));
+    xfgWanted >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(maxHeatCost & 0xFF));
+    maxHeatCost >>= 8;
+  }
+  return true;
+}
+
+bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive) {
+  tx_extra.push_back(TX_EXTRA_MARKET_SELL_AUTH);
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(xfgToSell & 0xFF));
+    xfgToSell >>= 8;
+  }
+  for (int i = 0; i < 8; ++i) {
+    tx_extra.push_back(static_cast<uint8_t>(minHeatReceive & 0xFF));
+    minHeatReceive >>= 8;
   }
   return true;
 }

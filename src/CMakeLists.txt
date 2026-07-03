@@ -353,6 +353,30 @@ add_executable(XmrClaimAdaptorTests
 target_link_libraries(XmrClaimAdaptorTests PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Orderbook unit tests (Phase 1: matching engine + data structures)
+add_executable(test_orderbook
+    ../tests/CoreTests/OrderbookTest.cpp)
+target_link_libraries(test_orderbook PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(test_orderbook PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
+# Orderbook Phase 3 tests (HEARTH band + rebalance + market orders)
+add_executable(test_orderbook_phase3
+    ../tests/CoreTests/Phase3_OrderbookTest.cpp)
+target_link_libraries(test_orderbook_phase3 PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(test_orderbook_phase3 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
+# Orderbook Phase 5 adversarial tests
+add_executable(test_orderbook_phase5
+    ../tests/CoreTests/Phase5_AdversarialTests.cpp)
+target_link_libraries(test_orderbook_phase5 PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(test_orderbook_phase5 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
 add_library(Rpc STATIC ${RPC_SOURCES})
 target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)
 target_link_libraries(Rpc PUBLIC SwapDaemonLib)

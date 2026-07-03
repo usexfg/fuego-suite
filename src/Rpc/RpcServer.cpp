@@ -149,6 +149,9 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
   { "/amm_quote",    { jsonMethod<COMMAND_RPC_AMM_QUOTE>(&RpcServer::on_amm_quote), true } },
   { "/amm_pool_info", { jsonMethod<COMMAND_RPC_AMM_POOL_INFO>(&RpcServer::on_amm_pool_info), true } },
+  { "/get_orderbook_info", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_INFO>(&RpcServer::on_get_orderbook_info), true } },
+  { "/get_orderbook_state", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_STATE>(&RpcServer::on_get_orderbook_state), true } },
+  { "/get_orderbook_estimates", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_ESTIMATES>(&RpcServer::on_get_orderbook_estimates), true } },
   { "/get_fuego_price", { jsonMethod<COMMAND_RPC_GET_FUEGO_PRICE>(&RpcServer::on_get_fuego_price), true } },
 
 
@@ -2372,6 +2375,51 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.accumulated_lp_fees_heat = info.accumulatedLpFeesHeat;
   res.accumulated_lp_fees_xfg = info.accumulatedLpFeesXfg;
   res.epoch_swap_fees = info.epochSwapFees;
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_orderbook_info(const COMMAND_RPC_GET_ORDERBOOK_INFO::request& req,
+                                       COMMAND_RPC_GET_ORDERBOOK_INFO::response& res) {
+  auto info = m_core.getOrderbookInfo();
+  res.clearing_price = info.clearingPrice;
+  res.num_matches = info.numMatches;
+  res.depth_bid_xfg = info.depthBidXfg;
+  res.depth_ask_xfg = info.depthAskXfg;
+  res.hearth_pool_ratio = info.hearthPoolRatio;
+  res.in_bootstrap = info.inBootstrap;
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_orderbook_state(const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req,
+                                        COMMAND_RPC_GET_ORDERBOOK_STATE::response& res) {
+  auto state = m_core.getOrderbookState(req.depth != 0 ? req.depth : 20);
+  res.clearing_price = state.clearingPrice;
+  res.bid_prices.reserve(state.bids.size());
+  res.bid_depths.reserve(state.bids.size());
+  for (const auto& level : state.bids) {
+    res.bid_prices.push_back(level.price);
+    res.bid_depths.push_back(level.depth);
+  }
+  res.ask_prices.reserve(state.asks.size());
+  res.ask_depths.reserve(state.asks.size());
+  for (const auto& level : state.asks) {
+    res.ask_prices.push_back(level.price);
+    res.ask_depths.push_back(level.depth);
+  }
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_orderbook_estimates(const COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request& req,
+                                            COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response& res) {
+  auto est = m_core.getOrderbookEstimate(req.side, req.amount);
+  res.estimated_fill = est.estimatedFill;
+  res.hearth_fill = est.hearthFill;
+  res.orderbook_fill = est.orderbookFill;
+  res.worst_case_price = est.worstCasePrice;
+  res.levels_consumed = est.levelsConsumed;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

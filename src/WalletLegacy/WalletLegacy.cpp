@@ -917,6 +917,82 @@ TransactionId WalletLegacy::sendHeatV10(const AccountPublicAddress& recipient, u
   return txId;
 }
 
+TransactionId WalletLegacy::placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+  fee = m_currency.minimumFee();
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makePlaceOrderV13Request(txId, events, side, amount, price, expiration, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+  notifyClients(events);
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+  return txId;
+}
+
+TransactionId WalletLegacy::cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+  fee = m_currency.minimumFee();
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeCancelOrderV13Request(txId, events, orderId, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+  notifyClients(events);
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+  return txId;
+}
+
+TransactionId WalletLegacy::marketBuyV13(uint64_t xfgWanted, uint64_t maxHeatCost, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+  fee = m_currency.minimumFee();
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeMarketBuyV13Request(txId, events, xfgWanted, maxHeatCost, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+  notifyClients(events);
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+  return txId;
+}
+
+TransactionId WalletLegacy::marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn) {
+  throwIfNotInitialised();
+  TransactionId txId = 0;
+  std::unique_ptr<WalletRequest> request;
+  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
+  fee = m_currency.minimumFee();
+  {
+    std::unique_lock<std::mutex> lock(m_cacheMutex);
+    request = m_sender->makeMarketSellV13Request(txId, events, xfgToSell, minHeatReceive, fee, mixIn);
+    if (request != nullptr) pushBalanceUpdatedEvents(events);
+  }
+  notifyClients(events);
+  if (request) {
+    m_asyncContextCounter.addAsyncContext();
+    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
+  }
+  return txId;
+}
+
 TransactionId WalletLegacy::ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t outputAmount,
                                         uint64_t minOutput, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();

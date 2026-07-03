@@ -112,11 +112,28 @@ public:
                                                              uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeHeatTransferV10Request(TransactionId& transactionId,
-                                                             std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
-                                                             const AccountPublicAddress& recipient,
-                                                             uint64_t amount,
-                                                             uint64_t fee,
-                                                             uint64_t mixIn);
+                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                              const AccountPublicAddress& recipient,
+                                                              uint64_t amount,
+                                                              uint64_t fee,
+                                                              uint64_t mixIn);
+
+  // v13 Orderbook
+  std::unique_ptr<WalletRequest> makePlaceOrderV13Request(TransactionId& transactionId,
+                                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                           uint8_t side, uint64_t amount, uint64_t price,
+                                                           uint32_t expiration, uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeCancelOrderV13Request(TransactionId& transactionId,
+                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                            const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeMarketBuyV13Request(TransactionId& transactionId,
+                                                          std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                          uint64_t xfgWanted, uint64_t maxHeatCost,
+                                                          uint64_t fee, uint64_t mixIn);
+  std::unique_ptr<WalletRequest> makeMarketSellV13Request(TransactionId& transactionId,
+                                                           std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                           uint64_t xfgToSell, uint64_t minHeatReceive,
+                                                           uint64_t fee, uint64_t mixIn);
 
   std::unique_ptr<WalletRequest> makeWithdrawDepositRequest(TransactionId& transactionId,
                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,

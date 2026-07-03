@@ -1,0 +1,9 @@
+Package: boost-filesystem
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-assert, boost-atomic, boost-build, boost-config, boost-container-hash, boost-core, boost-detail, boost-io, boost-iterator, boost-modular-build-helper, boost-predef, boost-smart-ptr, boost-system, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers, boost-winapi, vcpkg-cmake
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: eeb079f09a31e4505913a3c189bfe5972522ba1f4299b5cac3cf06ec6a1899c3
+Description: Boost filesystem module
+Status: install ok installed

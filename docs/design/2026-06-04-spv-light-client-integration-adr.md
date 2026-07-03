@@ -1,6 +1,8 @@
 # ADR-0001: SPV Light-Client Integration for SwapDaemon
 
-**Status:** Proposed
+**Status:** Accepted
+**Amendment:** 2026-06-17 — KMD SPV added (SpvKmdChainClient, SwapPair::KMD_SPV). Same Electrum protocol, KMD address prefixes (0x3C P2PKH, 0x55 P2SH, WIF 0xBC).
+**Amendment:** 2026-06-16 — revised to SPV-only (Option C + A safety). Full RPC fallback removed from SpvBchChainClient. The BCH proving slice ships SPV-only; the RPC-based BchChainClient remains available for side-by-side differential testing during the proving phase but is not linked into the SPV client.
 **Date:** 2026-06-04
 **Deciders:** Swap maintainers (ColinRitman)
 **Scope:** This ADR decides *how the SPV layer integrates* with the existing
@@ -52,7 +54,9 @@ Two distinct SPV read-operations are required and they differ in testability:
 
 ## Decision
 
-Adopt **Approach A — inject `ISpvClient` as an optional verification backend**:
+**Revised 2026-06-16:** Adopt **Option C — full SPV replacement** for the production target. The BCH proving slice ships with SPV-only `SpvBchChainClient` (no RPC fallback). The full-node `BchChainClient` is retained as a standalone chain client (registered under `SwapPair::BCH`) for differential testing during the proving phase, but is not linked into the SPV path.
+
+**Original decision (2026-06-04):** Adopt **Approach A — inject `ISpvClient` as an optional verification backend**:
 
 - Add a new **UTXO-oriented `ISpvClient`** interface (generic SPV plumbing:
   header sync, tip, Merkle-verified inclusion, funding/spend lookup, raw-tx fetch).
@@ -194,24 +198,27 @@ need separate work; lumping them together would misjudge the effort.
 | **ATOM** | Cosmos / Tendermint | neither | **Third light-client family** — a Tendermint light client (verify validator-set signatures), distinct from both `ISpvClient` and Helios. HTLC via a CosmWasm contract. Highest integration friction of the six. |
 
 Sequencing implication: **BTC → LTC → DASH** are the cheap wins off this slice
-(direct `ElectrumSpvClient` reuse). **DCR** needs an infra spike first. **POLYGON**
+(direct `ElectrumSpvClient` reuse). **KMD** is the second SPV chain,
+shipping with identical tx model (P2PKH/P2SH, BIP143) and different address
+prefixes. **DCR** needs an infra spike first. **POLYGON**
 rides the existing EVM RPC path now and a future EVM light client later. **ATOM**
 is its own track.
 
 ## Action Items
 
-1. [ ] Define `ISpvClient` interface + result structs (UTXO-shaped, no script semantics).
-2. [ ] Implement `ElectrumSpvClient`: Electrum JSON-RPC, header-chain sync + PoW link,
+1. [x] Define `ISpvClient` interface + result structs (UTXO-shaped, no script semantics).
+2. [x] Implement `ElectrumSpvClient`: Electrum JSON-RPC, header-chain sync + PoW link,
        Merkle-proof verification, multi-server tip cross-reference.
-3. [ ] Add optional `ISpvClient` injection to `BchChainClient`; route `verifyLock`
+3. [x] Add optional `ISpvClient` injection to `BchChainClient`; route `verifyLock`
        + secret extraction through SPV with RPC fallback.
-4. [ ] Add additive `ADAPTOR_WAITING_SPV_CONFIRMATIONS` state + transitions +
+4. [x] Add additive `ADAPTOR_WAITING_SPV_CONFIRMATIONS` state + transitions +
        (de)serialization; SPV-only path.
-5. [ ] Config (`fuego_swapd.json`): `bch_spv_enabled`, `bch_electrum_servers[]`,
+5. [x] Config (`fuego_swapd.json`): `bch_spv_enabled`, `bch_electrum_servers[]`,
        `bch_spv_min_confs`; registration wiring in `SwapDaemon`.
-6. [ ] Tests: known-answer Merkle/header/preimage unit tests; differential
+6. [x] Tests: known-answer Merkle/header/preimage unit tests; differential
        `verifyLock` (SPV vs RPC) on recorded fixtures; opt-in live-testnet integration.
-7. [ ] Record final ratification (flip Status → Accepted) after the spec is approved.
+7. [x] Record final ratification (flip Status → Accepted) after the spec is approved.
+8. [x] KMD SPV: SpvKmdChainClient + SwapPair::KMD_SPV + config + tests (4/4 passing).
 
 ## Related
 - Baseline: [plans/spv_architecture.md](../../plans/spv_architecture.md)

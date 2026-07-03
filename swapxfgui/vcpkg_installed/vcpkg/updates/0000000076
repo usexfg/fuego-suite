@@ -1,0 +1,9 @@
+Package: boost-iterator
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-assert, boost-concept-check, boost-config, boost-conversion, boost-core, boost-detail, boost-function-types, boost-fusion, boost-mpl, boost-optional, boost-smart-ptr, boost-static-assert, boost-type-traits, boost-utility, boost-vcpkg-helpers
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: 3c073494ecfcd21ccfd59b4c21f7e88b2d86b484240169a01d1be4d287e2a629
+Description: Boost iterator module
+Status: install ok half-installed

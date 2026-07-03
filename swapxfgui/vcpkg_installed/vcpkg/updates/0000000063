@@ -1,0 +1,9 @@
+Package: boost-integer
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-assert, boost-config, boost-core, boost-static-assert, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: 67e1c7c3928a46e4ab72675714409de5f70d46a81735cdcc6c7590010df54a2f
+Description: Boost integer module
+Status: install ok installed

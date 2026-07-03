@@ -1,6 +1,6 @@
 # Mission: Sovereign UX — SWAPXFG Simplification
 
-Tuke, this document outlines the strategy for evolving SWAPXFG from a complex terminal into a clean, "vibe-coded" sovereign financial interface.
+This document outlines the strategy for evolving SWAPXFG from a complex terminal into a clean, "vibe-coded" sovereign financial interface.
 
 ## 1. Unified Command Orchestration
 Eliminate redundant preview/confirm steps. A single `swap <amount>` command will trigger an interactive TUI confirmation.

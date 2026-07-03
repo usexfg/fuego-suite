@@ -1,0 +1,9 @@
+arm64-osx/
+arm64-osx/share/
+arm64-osx/share/boost-vcpkg-helpers/
+arm64-osx/share/boost-vcpkg-helpers/boost-modular-headers.cmake
+arm64-osx/share/boost-vcpkg-helpers/boost_LICENSE_1_0.txt
+arm64-osx/share/boost-vcpkg-helpers/copyright
+arm64-osx/share/boost-vcpkg-helpers/usage
+arm64-osx/share/boost-vcpkg-helpers/vcpkg.spdx.json
+arm64-osx/share/boost-vcpkg-helpers/vcpkg_abi_info.txt

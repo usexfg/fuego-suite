@@ -18,6 +18,7 @@
 #pragma once
 
 #include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
+#include "../Common/JsonValue.h"
 #include "../CryptoNoteCore/CryptoNoteBasic.h"
 #include "../CryptoNoteCore/Difficulty.h"
 #include "../crypto/hash.h"
@@ -554,10 +555,245 @@ struct COMMAND_RPC_GET_FEE_ADDRESS {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(fee_address)
-	  KV_MEMBER(status)
+      KV_MEMBER(status)
     }
   };
 };
+
+// ─── Bitcoin-compatible RPC types for KDF/mm2 integration ─────────────────
+
+struct COMMAND_RPC_LISTUNSPENT {
+  struct request {
+    uint64_t minconf;
+    uint64_t maxconf;
+    std::vector<std::string> addresses;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(minconf)
+      KV_MEMBER(maxconf)
+      KV_MEMBER(addresses)
+    }
+  };
+
+  typedef Common::JsonValue response;
+};
+
+struct COMMAND_RPC_IMPORTADDRESS {
+  typedef std::vector<std::string> request;
+  typedef EMPTY_STRUCT response;
+};
+
+struct COMMAND_RPC_GETBLOCK {
+  struct request {
+    std::string hash;
+    bool verbosity;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hash)
+      KV_MEMBER(verbosity)
+    }
+  };
+
+  struct response {
+    std::string hash;
+    uint64_t confirmations;
+    uint64_t height;
+    uint64_t time;
+    std::string merkleroot;
+    uint64_t size;
+    std::string previousblockhash;
+    std::vector<std::string> tx;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hash)
+      KV_MEMBER(confirmations)
+      KV_MEMBER(height)
+      KV_MEMBER(time)
+      KV_MEMBER(merkleroot)
+      KV_MEMBER(size)
+      KV_MEMBER(previousblockhash)
+      KV_MEMBER(tx)
+    }
+  };
+};
+
+struct COMMAND_RPC_GETRAWTX {
+  struct request {
+    std::string txid;
+    bool verbose;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(txid)
+      KV_MEMBER(verbose)
+    }
+  };
+
+  struct response {
+    std::string hex;
+    std::string txid;
+    std::string hash;
+    uint64_t size;
+    uint64_t confirmations;
+    uint64_t time;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hex)
+      KV_MEMBER(txid)
+      KV_MEMBER(hash)
+      KV_MEMBER(size)
+      KV_MEMBER(confirmations)
+      KV_MEMBER(time)
+    }
+  };
+};
+
+struct COMMAND_RPC_GETNETWORKINFO {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t version;
+    uint64_t connections;
+    uint64_t protocolversion;
+    std::string subversion;
+    bool localrelay;
+    uint64_t networkactive;
+    uint64_t relayfee;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(version)
+      KV_MEMBER(connections)
+      KV_MEMBER(protocolversion)
+      KV_MEMBER(subversion)
+      KV_MEMBER(localrelay)
+      KV_MEMBER(networkactive)
+      KV_MEMBER(relayfee)
+    }
+  };
+};
+
+struct COMMAND_RPC_SENDRAWTRANSACTION {
+  struct request {
+    std::string hexstring;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hexstring)
+    }
+  };
+
+  typedef std::string response;
+};
+
+struct COMMAND_RPC_GETBLOCKHEADER {
+  struct request {
+    std::string hash;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hash)
+    }
+  };
+
+  struct response {
+    std::string hash;
+    uint64_t confirmations;
+    uint64_t height;
+    uint64_t time;
+    std::string previousblockhash;
+    std::string nextblockhash;
+    std::string merkleroot;
+    uint64_t version;
+    std::string bits;
+    uint64_t nonce;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(hash)
+      KV_MEMBER(confirmations)
+      KV_MEMBER(height)
+      KV_MEMBER(time)
+      KV_MEMBER(previousblockhash)
+      KV_MEMBER(nextblockhash)
+      KV_MEMBER(merkleroot)
+      KV_MEMBER(version)
+      KV_MEMBER(bits)
+      KV_MEMBER(nonce)
+    }
+  };
+};
+
+struct COMMAND_RPC_VALIDATEADDRESS {
+  struct request {
+    std::string address;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(address)
+    }
+  };
+
+  struct response {
+    bool isvalid;
+    std::string address;
+    std::string scriptPubKey;
+    bool iswatchonly;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(isvalid)
+      KV_MEMBER(address)
+      KV_MEMBER(scriptPubKey)
+      KV_MEMBER(iswatchonly)
+    }
+  };
+};
+
+struct COMMAND_RPC_ESTIMATESMARTFEE {
+  struct request {
+    uint64_t conf_target;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(conf_target)
+    }
+  };
+
+  struct response {
+    double feerate;
+    uint64_t blocks;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(feerate)
+      KV_MEMBER(blocks)
+    }
+  };
+};
+
+struct COMMAND_RPC_GETBLOCKCOUNT_JSON {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t result;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(result)
+    }
+  };
+};
+
+struct COMMAND_RPC_GETBLOCKHASH_JSON {
+  struct request {
+    uint64_t height;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(height)
+    }
+  };
+
+  typedef std::string response;
+};
+
+struct COMMAND_RPC_EMPTY_LIST {
+  typedef EMPTY_STRUCT request;
+  typedef std::vector<std::string> response;
+};
+
+// ─── End Bitcoin-compatible types ─────────────────────────────────────────
+
 
 struct COMMAND_RPC_GETBLOCKHASH {
   typedef std::vector<uint64_t> request;

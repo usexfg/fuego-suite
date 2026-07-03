@@ -1,0 +1,15 @@
+[package]
+name = "fuego-adaptor"
+version = "0.1.0"
+edition = "2021"
+description = "Adaptor signature protocol for Fuego DEX — MuSig2 + Schnorr + DLEQ"
+
+[dependencies]
+secp256k1 = { version = "0.29", features = ["rand", "hashes", "global-context"] }
+rand = "0.8"
+num-bigint = "0.4"
+num-traits = "0.2"
+hex = "0.4"
+
+[dev-dependencies]
+rand = { version = "0.8", features = ["std_rng"] }

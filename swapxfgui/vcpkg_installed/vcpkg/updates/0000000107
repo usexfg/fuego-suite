@@ -1,0 +1,9 @@
+Package: boost-math
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-assert, boost-build, boost-concept-check, boost-config, boost-core, boost-integer, boost-lexical-cast, boost-modular-build-helper, boost-predef, boost-random, boost-static-assert, boost-throw-exception, boost-vcpkg-helpers, vcpkg-cmake
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: 084bf0cc5d8ebcf6aa9024425bf69117e9002665cd1e51c93d7a990c2b956683
+Description: Boost math module
+Status: install ok installed

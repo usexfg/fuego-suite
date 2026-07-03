@@ -1,0 +1,9 @@
+Package: boost-lockfree
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-align, boost-array, boost-assert, boost-atomic, boost-config, boost-core, boost-integer, boost-iterator, boost-mpl, boost-parameter, boost-predef, boost-static-assert, boost-tuple, boost-type-traits, boost-utility, boost-vcpkg-helpers
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: 1c9b78613ffe65d63fef8ba33e856ba3ea6eeaaf0e396d0047c3849b2d866b77
+Description: Boost lockfree module
+Status: install ok half-installed

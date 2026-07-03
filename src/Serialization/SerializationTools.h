@@ -69,6 +69,9 @@ Common::JsonValue storeToJsonValue(const std::list<T>& v) { return storeContaine
 template <>
 inline Common::JsonValue storeToJsonValue(const std::string& v) { return Common::JsonValue(v); }
 
+template <>
+inline Common::JsonValue storeToJsonValue(const Common::JsonValue& v) { return v; }
+
 template <typename T>
 void loadFromJsonValue(T& v, const Common::JsonValue& js) {
   JsonInputValueSerializer s(js);

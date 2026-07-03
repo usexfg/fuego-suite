@@ -1,0 +1,13 @@
+arm64-osx/
+arm64-osx/include/
+arm64-osx/include/boost/
+arm64-osx/include/boost/assert.hpp
+arm64-osx/include/boost/assert/
+arm64-osx/include/boost/assert/source_location.hpp
+arm64-osx/include/boost/current_function.hpp
+arm64-osx/share/
+arm64-osx/share/boost-assert/
+arm64-osx/share/boost-assert/copyright
+arm64-osx/share/boost-assert/usage
+arm64-osx/share/boost-assert/vcpkg.spdx.json
+arm64-osx/share/boost-assert/vcpkg_abi_info.txt

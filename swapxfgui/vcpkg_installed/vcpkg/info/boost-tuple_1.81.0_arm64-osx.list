@@ -1,0 +1,15 @@
+arm64-osx/
+arm64-osx/include/
+arm64-osx/include/boost/
+arm64-osx/include/boost/tuple/
+arm64-osx/include/boost/tuple/detail/
+arm64-osx/include/boost/tuple/detail/tuple_basic.hpp
+arm64-osx/include/boost/tuple/tuple.hpp
+arm64-osx/include/boost/tuple/tuple_comparison.hpp
+arm64-osx/include/boost/tuple/tuple_io.hpp
+arm64-osx/share/
+arm64-osx/share/boost-tuple/
+arm64-osx/share/boost-tuple/copyright
+arm64-osx/share/boost-tuple/usage
+arm64-osx/share/boost-tuple/vcpkg.spdx.json
+arm64-osx/share/boost-tuple/vcpkg_abi_info.txt

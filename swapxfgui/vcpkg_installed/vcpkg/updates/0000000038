@@ -1,0 +1,9 @@
+Package: boost-preprocessor
+Version: 1.81.0
+Port-Version: 2
+Depends: boost-vcpkg-helpers
+Architecture: arm64-osx
+Multi-Arch: same
+Abi: 39d75c58d2e129c7ac572f445dfca6be83bdc55d1d2180ba78d4d79ee209467e
+Description: Boost preprocessor module
+Status: install ok half-installed

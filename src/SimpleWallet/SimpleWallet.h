@@ -168,6 +168,7 @@ namespace CryptoNote
     bool cancel_order(const std::vector<std::string>& args);
     bool show_orders(const std::vector<std::string>& args);
     bool orderbook(const std::vector<std::string>& args);
+    bool market(const std::vector<std::string>& args);
     bool mint_heat(const std::vector<std::string> &args);
     bool swap(const std::vector<std::string> &args);
     bool hearth_xfg(const std::vector<std::string> &args);

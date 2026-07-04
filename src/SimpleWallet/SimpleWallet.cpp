@@ -527,11 +527,12 @@ std::string simple_wallet::get_commands_str() {
   });
 
   add_cat("Orderbook (v13+)", {
+    {"orderbook", "orderbook [depth] - Show bid/ask ladder"},
+    {"market", "market [depth] - Show orderbook + trade estimates for 1 XFG"},
     {"trade", "trade <buy|sell> <amount> - Market order with pre-flight estimate"},
     {"place_order", "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order"},
     {"cancel_order", "cancel_order <order_id> - Cancel an unfilled limit order"},
-    {"show_orders", "List your open orders"},
-    {"orderbook", "orderbook [depth] - Show top bid/ask levels"}
+    {"show_orders", "List your open orders"}
   });
 
   add_cat("Transfer / Send", {
@@ -646,11 +647,12 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
 
   // Orderbook commands (v13+)
+  m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook [depth] - Show bid/ask ladder");
+  m_consoleHandler.setHandler("market", boost::bind(&simple_wallet::market, this, boost::arg<1>()), "market [depth] - Show orderbook + trade estimates for 1 XFG");
   m_consoleHandler.setHandler("trade", boost::bind(&simple_wallet::trade, this, boost::arg<1>()), "trade <buy|sell> <amount> - Market order with pre-flight estimate");
   m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order");
   m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <order_id> - Cancel an unfilled limit order");
   m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "List your open orders");
-  m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook [depth] - Show top bid/ask levels");
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -4838,39 +4840,215 @@ bool simple_wallet::show_orders(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::orderbook(const std::vector<std::string>& args) {
-  success_msg_writer() << "";
-  success_msg_writer() << "═══ ON-CHAIN ORDERBOOK (v13+) ═══";
+  uint32_t depth = 10;
+  if (!args.empty()) {
+    try { depth = std::stoul(args[0]); } catch (...) {}
+    if (depth < 1) depth = 1;
+    if (depth > 50) depth = 50;
+  }
 
   HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
 
-  COMMAND_RPC_GET_ORDERBOOK_INFO::request req;
-  COMMAND_RPC_GET_ORDERBOOK_INFO::response res;
+  // Fetch summary info
+  COMMAND_RPC_GET_ORDERBOOK_INFO::request infoReq;
+  COMMAND_RPC_GET_ORDERBOOK_INFO::response infoRes;
+  bool haveInfo = false;
   try {
-    invokeJsonCommand(httpClient, "/get_orderbook_info", req, res);
-    if (res.status == CORE_RPC_STATUS_OK) {
-      success_msg_writer() << "";
-      if (res.in_bootstrap) {
-        success_msg_writer() << "Status:   BOOTSTRAP (HEARTH pool ratio as P_clear)";
-      } else {
-        success_msg_writer() << "Status:   ACTIVE";
-      }
-      success_msg_writer() << "P_clear:  " << res.clearing_price << " (XFG/HEAT × 10^8)";
-      success_msg_writer() << "Matches:  " << res.num_matches << " this block";
-      success_msg_writer() << "Bid depth:" << res.depth_bid_xfg << " XFG  |  Ask depth: " << res.depth_ask_xfg << " XFG";
-      success_msg_writer() << "Pool ratio:" << res.hearth_pool_ratio << " (post-rebalance, × 10^8)";
-    }
+    invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
+    haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
   } catch (...) {
     success_msg_writer() << "Daemon does not support orderbook RPC (requires v13+).";
+    return true;
+  }
+
+  // Fetch ladder
+  COMMAND_RPC_GET_ORDERBOOK_STATE::request stateReq;
+  COMMAND_RPC_GET_ORDERBOOK_STATE::response stateRes;
+  stateReq.depth = depth;
+  bool haveState = false;
+  try {
+    invokeJsonCommand(httpClient, "/get_orderbook_state", stateReq, stateRes);
+    haveState = (stateRes.status == CORE_RPC_STATUS_OK);
+  } catch (...) {}
+
+  success_msg_writer() << "";
+  success_msg_writer() << "═══════════ HEARTH MARKET (XFG/HEAT) ═══════════";
+
+  if (haveInfo) {
+    if (infoRes.in_bootstrap) {
+      success_msg_writer() << "  Status:  BOOTSTRAP (pool ratio = P_clear)";
+    } else {
+      success_msg_writer() << "  Status:  ACTIVE";
+    }
+    success_msg_writer() << "  P_clear: " << m_currency.formatAmount(infoRes.clearing_price) << " XFG/HEAT";
+    success_msg_writer() << "  Matches: " << infoRes.num_matches << " this block";
+    success_msg_writer() << "  Depth:   " << m_currency.formatAmount(infoRes.depth_bid_xfg) << " XFG bid | "
+                         << m_currency.formatAmount(infoRes.depth_ask_xfg) << " XFG ask";
+  }
+
+  if (haveState && (!stateRes.bid_prices.empty() || !stateRes.ask_prices.empty())) {
+    success_msg_writer() << "";
+    success_msg_writer() << "  BIDS (buy XFG)                    ASKS (sell XFG)";
+    success_msg_writer() << "  ──────────────────────────────    ──────────────────────────────";
+
+    size_t maxRows = std::max(stateRes.bid_prices.size(), stateRes.ask_prices.size());
+    for (size_t i = 0; i < maxRows; ++i) {
+      std::string bidLine, askLine;
+      if (i < stateRes.bid_prices.size()) {
+        bidLine = "  " + m_currency.formatAmount(stateRes.bid_depths[i]) + " XFG @ "
+                + m_currency.formatAmount(stateRes.bid_prices[i]);
+      }
+      if (i < stateRes.ask_prices.size()) {
+        askLine = m_currency.formatAmount(stateRes.ask_prices[i]) + "  |  "
+                + m_currency.formatAmount(stateRes.ask_depths[i]) + " XFG";
+      }
+      // Pad bid side to fixed width
+      while (bidLine.size() < 36) bidLine += ' ';
+      success_msg_writer() << bidLine << askLine;
+    }
+
+    success_msg_writer() << "";
+    success_msg_writer() << "  Spread: ";
+    if (!stateRes.bid_prices.empty() && !stateRes.ask_prices.empty()) {
+      uint64_t bestBid = stateRes.bid_prices.front();
+      uint64_t bestAsk = stateRes.ask_prices.front();
+      if (bestAsk > bestBid) {
+        double spreadPct = 100.0 * static_cast<double>(bestAsk - bestBid) / static_cast<double>(bestBid);
+        success_msg_writer() << m_currency.formatAmount(bestAsk - bestBid) << " XFG (" << std::fixed << std::setprecision(2) << spreadPct << "%)";
+      } else {
+        success_msg_writer() << "crossed";
+      }
+    } else {
+      success_msg_writer() << "no orders";
+    }
+  } else {
+    success_msg_writer() << "";
+    success_msg_writer() << "  (no orderbook levels — waiting for limit orders)";
   }
 
   success_msg_writer() << "";
-  success_msg_writer() << "Batch auction model:";
-  success_msg_writer() << "  Block time:  480 seconds (~8 minutes)";
-  success_msg_writer() << "  Matching:    per-block uniform clearing price (P_clear)";
-  success_msg_writer() << "  Depth band:  " << HEARTH_DEPTH_BAND_PCT << "% of HEARTH pool for instant market fills";
-  success_msg_writer() << "  Max levels:  " << MAX_MARKET_ORDER_LEVELS << " per market order cascade";
-  success_msg_writer() << "  Price guard: " << MAX_MARKET_PRICE_DEVIATION_PCT << "% max deviation";
+  success_msg_writer() << "  Block time: 480s | Matching: batch auction | Price guard: " << MAX_MARKET_PRICE_DEVIATION_PCT << "%";
+  success_msg_writer() << "  Commands: market | trade | place_order | cancel_order | show_orders";
+  return true;
+}
+
+bool simple_wallet::market(const std::vector<std::string>& args) {
+  uint32_t depth = 10;
+  if (!args.empty()) {
+    try { depth = std::stoul(args[0]); } catch (...) {}
+    if (depth < 1) depth = 1;
+    if (depth > 50) depth = 50;
+  }
+
+  HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+
+  // Fetch summary + ladder
+  COMMAND_RPC_GET_ORDERBOOK_INFO::request infoReq;
+  COMMAND_RPC_GET_ORDERBOOK_INFO::response infoRes;
+  COMMAND_RPC_GET_ORDERBOOK_STATE::request stateReq;
+  COMMAND_RPC_GET_ORDERBOOK_STATE::response stateRes;
+  COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request buyReq, sellReq;
+  COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response buyRes, sellRes;
+
+  bool haveInfo = false, haveState = false, haveEstimates = false;
+  uint64_t oneXfg = 10000000; // 1 XFG in atomic units
+
+  try {
+    invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
+    haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
+  } catch (...) {
+    success_msg_writer() << "Daemon does not support orderbook RPC (requires v13+).";
+    return true;
+  }
+
+  stateReq.depth = depth;
+  try {
+    invokeJsonCommand(httpClient, "/get_orderbook_state", stateReq, stateRes);
+    haveState = (stateRes.status == CORE_RPC_STATUS_OK);
+  } catch (...) {}
+
+  // Buy estimate: spend 1 XFG to buy HEAT (side=0 = buy XFG with HEAT)
+  buyReq.side = 0;
+  buyReq.amount = oneXfg;
+  // Sell estimate: sell 1 XFG for HEAT (side=1 = sell XFG for HEAT)
+  sellReq.side = 1;
+  sellReq.amount = oneXfg;
+  try {
+    invokeJsonCommand(httpClient, "/get_orderbook_estimates", buyReq, buyRes);
+    invokeJsonCommand(httpClient, "/get_orderbook_estimates", sellReq, sellRes);
+    haveEstimates = (buyRes.status == CORE_RPC_STATUS_OK && sellRes.status == CORE_RPC_STATUS_OK);
+  } catch (...) {}
+
   success_msg_writer() << "";
-  success_msg_writer() << "Commands: trade | place_order | cancel_order | show_orders";
+  success_msg_writer() << "═══════════════ HEARTH MARKET ═══════════════";
+
+  if (haveInfo) {
+    if (infoRes.in_bootstrap) {
+      success_msg_writer() << " Status:  BOOTSTRAP (pool ratio = P_clear)";
+    } else {
+      success_msg_writer() << " Status:  ACTIVE";
+    }
+    success_msg_writer() << " P_clear: " << m_currency.formatAmount(infoRes.clearing_price) << " XFG/HEAT";
+    success_msg_writer() << " Matches: " << infoRes.num_matches << " this block";
+    success_msg_writer() << " Depth:   " << m_currency.formatAmount(infoRes.depth_bid_xfg) << " XFG bid | "
+                         << m_currency.formatAmount(infoRes.depth_ask_xfg) << " XFG ask";
+  }
+
+  // Ladder
+  if (haveState && (!stateRes.bid_prices.empty() || !stateRes.ask_prices.empty())) {
+    success_msg_writer() << "";
+    success_msg_writer() << " BIDS (buy XFG)                     ASKS (sell XFG)";
+    success_msg_writer() << " ────────────────────────────────   ────────────────────────────────";
+
+    size_t maxRows = std::max(stateRes.bid_prices.size(), stateRes.ask_prices.size());
+    for (size_t i = 0; i < maxRows; ++i) {
+      std::string bidLine, askLine;
+      if (i < stateRes.bid_prices.size()) {
+        bidLine = " " + m_currency.formatAmount(stateRes.bid_depths[i]) + " XFG @ "
+                + m_currency.formatAmount(stateRes.bid_prices[i]);
+      }
+      if (i < stateRes.ask_prices.size()) {
+        askLine = m_currency.formatAmount(stateRes.ask_prices[i]) + "  |  "
+                + m_currency.formatAmount(stateRes.ask_depths[i]) + " XFG";
+      }
+      while (bidLine.size() < 37) bidLine += ' ';
+      success_msg_writer() << bidLine << askLine;
+    }
+
+    if (!stateRes.bid_prices.empty() && !stateRes.ask_prices.empty()) {
+      uint64_t bestBid = stateRes.bid_prices.front();
+      uint64_t bestAsk = stateRes.ask_prices.front();
+      if (bestAsk > bestBid) {
+        double spreadPct = 100.0 * static_cast<double>(bestAsk - bestBid) / static_cast<double>(bestBid);
+        success_msg_writer() << "";
+        success_msg_writer() << " Spread: " << m_currency.formatAmount(bestAsk - bestBid) << " XFG ("
+                             << std::fixed << std::setprecision(2) << spreadPct << "%)";
+      }
+    }
+  } else {
+    success_msg_writer() << "";
+    success_msg_writer() << " (no orderbook levels — waiting for limit orders)";
+  }
+
+  // Trade estimates for 1 XFG
+  if (haveEstimates) {
+    success_msg_writer() << "";
+    success_msg_writer() << " ── Trade Estimates (1 XFG) ──";
+    success_msg_writer() << " Buy 1 XFG:  receive " << m_currency.formatAmount(buyRes.estimated_fill) << " HEAT"
+                         << "  (HEARTH: " << m_currency.formatAmount(buyRes.hearth_fill)
+                         << ", orderbook: " << m_currency.formatAmount(buyRes.orderbook_fill) << ")";
+    if (buyRes.levels_consumed > 0)
+      success_msg_writer() << "             " << buyRes.levels_consumed << " levels consumed, worst "
+                           << m_currency.formatAmount(buyRes.worst_case_price) << " XFG/HEAT";
+    success_msg_writer() << " Sell 1 XFG: receive " << m_currency.formatAmount(sellRes.estimated_fill) << " HEAT"
+                         << "  (HEARTH: " << m_currency.formatAmount(sellRes.hearth_fill)
+                         << ", orderbook: " << m_currency.formatAmount(sellRes.orderbook_fill) << ")";
+    if (sellRes.levels_consumed > 0)
+      success_msg_writer() << "             " << sellRes.levels_consumed << " levels consumed, worst "
+                           << m_currency.formatAmount(sellRes.worst_case_price) << " XFG/HEAT";
+  }
+
+  success_msg_writer() << "";
+  success_msg_writer() << " Commands: trade <buy|sell> <amount> | place_order | cancel_order | show_orders";
   return true;
 }

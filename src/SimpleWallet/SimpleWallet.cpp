@@ -40,6 +40,7 @@
 
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
+#include "Common/FixedPoint.h"
 #include "Common/SignalHandler.h"
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
@@ -4123,23 +4124,47 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Apply mint premium — makes Hearth AMM the cheaper default
-  // Expected rate: 1:1 XFG→HEAT (daemon validates at current pool rate)
+  // Query daemon for current pool rate (XFG/HEAT ratio)
+  uint64_t reserveXfg = 0, reserveHeat = 0;
+  try {
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    COMMAND_RPC_GET_FUEGO_PRICE::request priceReq;
+    COMMAND_RPC_GET_FUEGO_PRICE::response priceRes;
+    invokeJsonCommand(httpClient, "/get_fuego_price", priceReq, priceRes);
+    reserveXfg = priceRes.reserve_xfg;
+    reserveHeat = priceRes.reserve_heat;
+  } catch (...) {
+    fail_msg_writer() << "Cannot query daemon for pool rate. Is the daemon running?";
+    return false;
+  }
+
+  if (reserveXfg == 0 || reserveHeat == 0) {
+    fail_msg_writer() << "Pool is empty — cannot determine XFG/HEAT rate. Use hearth_xfg instead.";
+    return false;
+  }
+
+  // Pool rate: 1 HEAT = (reserveXfg / reserveHeat) XFG
+  // Inverse: burn X XFG → mint X × reserveHeat / reserveXfg HEAT
   uint64_t premiumBps = CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS;
   uint64_t effectiveXfg = xfgAmount * (10000 - premiumBps) / 10000;
-  uint64_t heatAmount = effectiveXfg;  // 1:1 XFG→HEAT expected rate
+  FixedPoint64 poolRateFp = FixedPoint64::fromRatio(reserveXfg, reserveHeat);
+  FixedPoint64 effectiveFp = FixedPoint64::fromUint64(effectiveXfg);
+  uint64_t heatAmount = effectiveFp.div(poolRateFp).toUint64();
   uint64_t premiumAmount = xfgAmount - effectiveXfg;
 
   uint64_t minHeat = m_currency.isTestnet() ? CryptoNote::TESTNET_HEAT_MINT_MIN_HEAT : CryptoNote::parameters::HEAT_MINT_MIN_HEAT;
   if (heatAmount < minHeat) {
-    uint64_t minXfg = minHeat;  // 1:1 expected rate
-    uint64_t minXfgWithPremium = minXfg * 10000 / (10000 - premiumBps);
+    // Reverse: minHeat × poolRate = min effective XFG needed (before premium)
+    uint64_t minEffectiveXfg = poolRateFp.mulToUint64(minHeat);
+    uint64_t minXfg = minEffectiveXfg * 10000 / (10000 - premiumBps);
     fail_msg_writer() << "Minimum HEAT mint: " << m_currency.formatAmount(minHeat) << " HEAT"
-                      << " (~" << m_currency.formatAmount(minXfgWithPremium) << " XFG with premium).";
+                      << " (~" << m_currency.formatAmount(minXfg) << " XFG with premium).";
     return false;
   }
 
+  double poolRate = static_cast<double>(reserveXfg) / static_cast<double>(reserveHeat);
   success_msg_writer() << "HEAT Mint (v10 auth):";
+  success_msg_writer() << "  Pool rate: " << std::fixed << std::setprecision(4) << poolRate << " XFG/HEAT";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   if (premiumAmount > 0)
     success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% - use hearth_xfg to avoid)";

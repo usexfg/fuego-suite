@@ -23,7 +23,7 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
 | **Assets** | HⲶ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
-| **Assets** | Hearth AMM | Constant-product XFG/HⲶ∆T pool; swap, add/remove liquidity, yield from LP fees |
+| **Assets** | Hearth Orderbook | On-chain orderbook XFG/HⲶ∆T; swap at spread, MM pool orders regenerate each block |
 | **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
 | **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |
@@ -166,28 +166,25 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HⲶ∆T Stablecoin & Hearth AMM
+### HⲶ∆T Stablecoin & Hearth Orderbook
 
 HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
 | Mint HEAT | `mint_heat <xfg_amount>` | Burn XFG to create HEAT at PI redemption price |
-| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth AMM (0.3% fee to LPs) |
-| Add Liquidity | `add_liq <xfg> <heat>` | Provide both assets to Hearth pool, earn LP fee share |
-| Remove Liquidity | `remove_liq <shares> <min_xfg> <min_heat>` | Burn LP shares for proportional reserves |
-| Pool Info | `pool_info` | Show pool reserves, spot price, LP fees |
+| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth orderbook at bid/ask spread |
+| MM Pool Info | `pool_info` | Show orderbook depth, MM pool orders, spread |
 | HEAT Metrics | `heat_info` | Show HEAT supply, redemption price, treasury, CD yield |
 | HEAT Balance | `balance` | Now shows HEAT balance alongside XFG |
 
 **Daemon RPC endpoints**: `/heat_metrics`, `/amm_quote`, `/amm_pool_info`, `/addswapfee`
 
 **Key Properties**:
-- Fixed launch ratio 0.2 (1 XFG = 5 HEAT) bootstrapping
+- Launch ratio 10:1 (1 XFG = 10 HⲶ∆T) at genesis
 - PI controller with negative feedback converges toward value-band target
-- Protocol buys HⲶ∆⟙ from Hearth AMM for CD yield payments (structural demand, protocol pays 0% fee)
-- Buy-or-mint safety valve when pool lopsided beyond 4:1
-- HEARTH rebalancer LP for pool equilibrium defense
+- Protocol buys or mints HⲶ∆T for CD yield payments (structural demand, protocol pays 0% fee)
+- On-chain orderbook replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
 - Pool reserves tracked on-chain with unspendable pool keys
 
 ### Certificates of Deposit (CD)

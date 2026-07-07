@@ -23,7 +23,7 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
 | **Assets** | HⲶ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
-| **Assets** | Hearth Orderbook | Block-discrete CLOB with adaptive-spread AMM pool band; batch-clearing at VWAP |
+| **Assets** | Hearth Exchange | Block-discrete on-chain exchange with adaptive-spread AMM pool band; batch-clears at VWAP |
 | **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
 | **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |
@@ -43,15 +43,15 @@ _____________________________
 
 ##### Build Status [‣]:http://agilemanifesto.org/
 
-[![Build check](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/check.yml)
-[![macOS](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/macOS.yml)
-[![AppImage Linux](https://github.com/usexfg/fuego-suite/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/appimage.yml)
-[![Ubuntu 24.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu24.yml)
-[![Ubuntu 22.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/ubuntu22.yml)
-[![Windows](https://github.com/usexfg/fuego-suite/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/windows.yml)
-[![Docker Images](https://github.com/usexfg/fuego-suite/actions/workflows/docker.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/docker.yml)
-[![Android (Termux)](https://github.com/usexfg/fuego-suite/actions/workflows/termux.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/termux.yml)
-[![Raspberry Pi (ARM64)](https://github.com/usexfg/fuego-suite/actions/workflows/raspberry-pi.yml/badge.svg)](https://github.com/usexfg/fuego/actions/workflows/raspberry-pi.yml)
+[![Build check](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml)
+[![macOS](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml)
+[![AppImage Linux](https://github.com/usexfg/fuego-suite/actions/workflows/appimage.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/appimage.yml)
+[![Ubuntu 24.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu24.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu24.yml)
+[![Ubuntu 22.04](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu22.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/ubuntu22.yml)
+[![Windows](https://github.com/usexfg/fuego-suite/actions/workflows/windows.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/windows.yml)
+[![Docker Images](https://github.com/usexfg/fuego-suite/actions/workflows/docker.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/docker.yml)
+[![Android (Termux)](https://github.com/usexfg/fuego-suite/actions/workflows/termux.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/termux.yml)
+[![Raspberry Pi (ARM64)](https://github.com/usexfg/fuego-suite/actions/workflows/raspberry-pi.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/raspberry-pi.yml)
 
 ### Build Requirements
 
@@ -166,15 +166,15 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HⲶ∆T Stablecoin & Hearth Orderbook
+### HⲶ∆T Stablecoin & Hearth Exchange
 
 HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
 | Mint HEAT | `mint_heat <xfg_amount>` | Burn XFG to create HEAT at PI redemption price |
-| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth orderbook at bid/ask spread |
-| MM Pool Info | `pool_info` | Show orderbook depth, MM pool orders, spread |
+| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth exchange at bid/ask spread |
+| MM Pool Info | `pool_info` | Show exchange depth, MM pool orders, spread |
 | HEAT Metrics | `heat_info` | Show HEAT supply, redemption price, treasury, CD yield |
 | HEAT Balance | `balance` | Now shows HEAT balance alongside XFG |
 
@@ -184,7 +184,7 @@ HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegg
 - Launch ratio 10:1 (1 XFG = 10 HⲶ∆T) at genesis
 - PI controller with negative feedback converges toward value-band target
 - Protocol buys or mints HⲶ∆T for CD yield payments (structural demand, protocol pays 0% fee)
-- On-chain orderbook replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
+- On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
 - Pool reserves tracked on-chain with unspendable pool keys
 
 ### Certificates of Deposit (CD)

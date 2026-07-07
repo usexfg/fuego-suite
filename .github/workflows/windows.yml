@@ -62,12 +62,14 @@ jobs:
         id: build
         shell: pwsh
         run: |
-          $sha = "${{ github.sha }}"
-          $xfg_ver = $sha.SubString(0,7)
+          $xfg_ver = "${{ github.ref_name }}"
           $release_name = "fuego-cli-win64-v$xfg_ver"
 
+          $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
+          $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
             -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
             -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `

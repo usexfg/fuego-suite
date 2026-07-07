@@ -29,7 +29,7 @@ fuego-suite/
 
 ## Key Subsystems
 
-### Hearth Orderbook (block-discrete hybrid CLOB/AMM)
+### Hearth Exchange (block-discrete on-chain CLOB/AMM hybrid)
 - Batch-clearing once per block at volume-weighted average price (VWAP)
 - Two-phase: match → settle (Phase 1 fully implemented)
 - Adaptive-spread pool liquidity band: HEARTH AMM reserves injected as limit orders on both sides, regenerated each block

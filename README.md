@@ -23,7 +23,7 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
 | **Assets** | HⲶ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
-| **Assets** | Hearth Orderbook | On-chain orderbook XFG/HⲶ∆T; swap at spread, MM pool orders regenerate each block |
+| **Assets** | Hearth Orderbook | Block-discrete CLOB with adaptive-spread AMM pool band; batch-clearing at VWAP |
 | **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
 | **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |

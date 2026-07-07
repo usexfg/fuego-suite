@@ -1,9 +1,0 @@
-Package: boost-utility
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-assert, boost-config, boost-core, boost-io, boost-preprocessor, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: d32c2010ec8062d8e75bf89234e5115ed962abaec9429e3f0da285a2afa7d627
-Description: Boost utility module
-Status: install ok installed

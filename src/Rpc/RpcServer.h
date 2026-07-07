@@ -165,20 +165,6 @@ private:
   bool on_get_block_header_by_hash(const COMMAND_RPC_GET_BLOCK_HEADER_BY_HASH::request& req, COMMAND_RPC_GET_BLOCK_HEADER_BY_HASH::response& res);
   bool on_get_block_header_by_height(const COMMAND_RPC_GET_BLOCK_HEADER_BY_HEIGHT::request& req, COMMAND_RPC_GET_BLOCK_HEADER_BY_HEIGHT::response& res);
 
-  // Bitcoin-compatible RPC methods for KDF/mm2
-  bool on_listunspent(const COMMAND_RPC_LISTUNSPENT::request& req, COMMAND_RPC_LISTUNSPENT::response& res);
-  bool on_importaddress(const COMMAND_RPC_IMPORTADDRESS::request& req, COMMAND_RPC_IMPORTADDRESS::response& res);
-  bool on_getblock_btc(const COMMAND_RPC_GETBLOCK::request& req, COMMAND_RPC_GETBLOCK::response& res);
-  bool on_getrawtx(const COMMAND_RPC_GETRAWTX::request& req, COMMAND_RPC_GETRAWTX::response& res);
-  bool on_getnetworkinfo(const COMMAND_RPC_GETNETWORKINFO::request& req, COMMAND_RPC_GETNETWORKINFO::response& res);
-  bool on_sendrawtransaction(const COMMAND_RPC_SENDRAWTRANSACTION::request& req, COMMAND_RPC_SENDRAWTRANSACTION::response& res);
-  bool on_getblockheader_btc(const COMMAND_RPC_GETBLOCKHEADER::request& req, COMMAND_RPC_GETBLOCKHEADER::response& res);
-  bool on_validateaddress(const COMMAND_RPC_VALIDATEADDRESS::request& req, COMMAND_RPC_VALIDATEADDRESS::response& res);
-  bool on_estimatesmartfee(const COMMAND_RPC_ESTIMATESMARTFEE::request& req, COMMAND_RPC_ESTIMATESMARTFEE::response& res);
-  bool on_listtransactions(const COMMAND_RPC_EMPTY_LIST::request& req, COMMAND_RPC_EMPTY_LIST::response& res);
-  bool on_listsinceblock(const COMMAND_RPC_EMPTY_LIST::request& req, COMMAND_RPC_EMPTY_LIST::response& res);
-  bool on_listreceivedbyaddress(const COMMAND_RPC_EMPTY_LIST::request& req, COMMAND_RPC_EMPTY_LIST::response& res);
-
   void fill_block_header_response(const Block& blk, bool orphan_status, uint64_t height, const Crypto::Hash& hash, block_header_response& responce);
 
   bool f_on_blocks_list_json(const F_COMMAND_RPC_GET_BLOCKS_LIST::request& req, F_COMMAND_RPC_GET_BLOCKS_LIST::response& res);

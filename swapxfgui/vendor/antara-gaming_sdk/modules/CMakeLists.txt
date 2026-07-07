@@ -1,6 +1,0 @@
-add_subdirectory(core)
-add_subdirectory(event)
-add_subdirectory(timer)
-add_subdirectory(ecs)
-add_subdirectory(world)
-add_subdirectory(net)

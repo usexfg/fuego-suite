@@ -1,9 +1,0 @@
-Package: boost-numeric-conversion
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-config, boost-conversion, boost-core, boost-mpl, boost-preprocessor, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: 171d3433c12d2ea02e69f4618986c93cdfe7e2e3110f825eb44b0f265947e8d1
-Description: Boost numeric_conversion module
-Status: install ok half-installed

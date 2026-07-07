@@ -1,9 +1,0 @@
-Package: boost-stacktrace
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-array, boost-build, boost-config, boost-container-hash, boost-core, boost-modular-build-helper, boost-predef, boost-static-assert, boost-type-traits, boost-vcpkg-helpers, boost-winapi, vcpkg-cmake
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: d267e607543664a0759138d42ebd5bf611c6ccab7c9c42e653d3228f236e3ca8
-Description: Boost stacktrace module
-Status: install ok installed

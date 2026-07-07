@@ -1,9 +1,0 @@
-Package: boost-conversion
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-assert, boost-config, boost-core, boost-smart-ptr, boost-throw-exception, boost-type-traits, boost-typeof, boost-vcpkg-helpers
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: 57beed3d045fcbc9bf4e076e0384e01713f8f5b4f5e59d6cb4f000d97fddf536
-Description: Boost conversion module
-Status: install ok installed

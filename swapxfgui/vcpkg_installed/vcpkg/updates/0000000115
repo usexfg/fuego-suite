@@ -1,9 +1,0 @@
-Package: boost-tokenizer
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-assert, boost-config, boost-core, boost-iterator, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: 4d9cec0f3e11b1b698f55199f058259187e2159b354a2ff2b4708108304cbc70
-Description: Boost tokenizer module
-Status: install ok installed

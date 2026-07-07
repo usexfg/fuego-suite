@@ -1,9 +1,0 @@
-Package: boost-lexical-cast
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-array, boost-assert, boost-config, boost-container, boost-core, boost-integer, boost-numeric-conversion, boost-range, boost-static-assert, boost-throw-exception, boost-type-traits, boost-vcpkg-helpers
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: 84ce25716489b2249d7a4a064db54fcf6fe04d07c8e676d35f0595e338ada3c9
-Description: Boost lexical_cast module
-Status: install ok installed

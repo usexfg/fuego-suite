@@ -1,9 +1,0 @@
-Package: boost-chrono
-Version: 1.81.0
-Port-Version: 2
-Depends: boost-assert, boost-build, boost-config, boost-core, boost-integer, boost-modular-build-helper, boost-move, boost-mpl, boost-predef, boost-ratio, boost-static-assert, boost-system, boost-throw-exception, boost-type-traits, boost-typeof, boost-utility, boost-vcpkg-helpers, boost-winapi, vcpkg-cmake
-Architecture: arm64-osx
-Multi-Arch: same
-Abi: 0f3e8ecef6fcb6e0e20bf1f5e8723a97199e2016bd143d2d2f2ee539db9275a9
-Description: Boost chrono module
-Status: install ok installed

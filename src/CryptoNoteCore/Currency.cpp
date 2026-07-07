@@ -91,7 +91,8 @@ namespace CryptoNote
 			m_upgradeHeightV8 = 18;
 		m_upgradeHeightV9 = 19;
 		m_upgradeHeightV10 = 25;
-		m_upgradeHeightV11 = 111;
+		m_upgradeHeightV11 = 30;
+		m_upgradeHeightV12 = 180;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
@@ -179,6 +180,9 @@ namespace CryptoNote
 		else if (majorVersion == BLOCK_MAJOR_VERSION_11) {
 			return m_upgradeHeightV11;
 		}  // HearthAMM+HEAT
+		else if (majorVersion == BLOCK_MAJOR_VERSION_12) {
+			return m_upgradeHeightV12;
+		}  // CDs + unified outputs
 		else {
 			return static_cast<uint32_t>(-1);
 		}
@@ -186,7 +190,10 @@ namespace CryptoNote
 
 	uint8_t Currency::blockMajorVersionAtHeight(uint32_t height) const {
 		// Check from highest version to lowest
-		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+		if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_12)) {
+			return BLOCK_MAJOR_VERSION_12;
+		}
+		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
 			return BLOCK_MAJOR_VERSION_11;
 		}
 		else if (height >= upgradeHeight(BLOCK_MAJOR_VERSION_10)) {
@@ -1488,6 +1495,7 @@ double Currency::getBurnPercentage() const {
 		case BLOCK_MAJOR_VERSION_9:
 		case BLOCK_MAJOR_VERSION_10:  // upgradekit
 		case BLOCK_MAJOR_VERSION_11:  // HearthAMM + HEAT
+		case BLOCK_MAJOR_VERSION_12:  // CDs + unified outputs
 
 			return checkProofOfWorkV2(context, block, currentDiffic, proofOfWork);
 		}

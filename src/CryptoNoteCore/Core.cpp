@@ -341,7 +341,7 @@ bool core::check_tx_mixin(const Transaction& tx, uint8_t blockMajorVersion, bool
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has too large unified input ring size, rejected";
         return false;
       }
-      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && ringSize < m_currency.minMixin(blockMajorVersion)) {
+      if (!keeped_by_block && blockMajorVersion >= BLOCK_MAJOR_VERSION_12 && ringSize < m_currency.minMixin(blockMajorVersion)) {
         logger(ERROR) << "Transaction " << getObjectHash(tx) << " has unified input ring size " << ringSize
                       << " below the required minimum " << m_currency.minMixin(blockMajorVersion)
                       << " for block version " << (int)blockMajorVersion << ", rejected";

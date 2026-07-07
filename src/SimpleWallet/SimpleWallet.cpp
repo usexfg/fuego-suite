@@ -527,7 +527,7 @@ std::string simple_wallet::get_commands_str() {
     {"hearth_info", "Show Hearth AMM pool state"}
   });
 
-  add_cat("Orderbook (v13+)", {
+  add_cat("Orderbook (v11+)", {
     {"orderbook", "orderbook [depth] - Show bid/ask ladder"},
     {"market", "market [depth] - Show orderbook + trade estimates for 1 XFG"},
     {"trade", "trade <buy|sell> <amount> - Market order with pre-flight estimate"},
@@ -647,7 +647,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("show_txn", boost::bind(&simple_wallet::show_txn, this, boost::arg<1>()), "show_txn <txid> - Show detailed information for a specific transaction");
   m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
 
-  // Orderbook commands (v13+)
+  // Orderbook commands (v11+)
   m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook [depth] - Show bid/ask ladder");
   m_consoleHandler.setHandler("market", boost::bind(&simple_wallet::market, this, boost::arg<1>()), "market [depth] - Show orderbook + trade estimates for 1 XFG");
   m_consoleHandler.setHandler("trade", boost::bind(&simple_wallet::trade, this, boost::arg<1>()), "trade <buy|sell> <amount> - Market order with pre-flight estimate");
@@ -4069,6 +4069,17 @@ bool simple_wallet::requireV11(const char* commandName) {
   return true;
 }
 
+bool simple_wallet::requireV12(const char* commandName) {
+  uint64_t v12Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_12);
+  uint64_t currentHeight = m_node->getLastLocalBlockHeight();
+  if (currentHeight < v12Height) {
+    fail_msg_writer() << commandName << " requires block major version 12 (height " << v12Height
+                      << "), current height is " << currentHeight;
+    return false;
+  }
+  return true;
+}
+
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   if (!requireV11("info_heat")) return false;
   success_msg_writer() << "HEAT flatcoin: $"
@@ -4359,7 +4370,7 @@ bool simple_wallet::hearth_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
-  if (!requireV11("cd_create")) return false;
+  if (!requireV12("cd_create")) return false;
   if (args.size() < 2) {
     fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
     return false;
@@ -4398,7 +4409,7 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
-  if (!requireV11("cd_claim")) return false;
+  if (!requireV12("cd_claim")) return false;
   if (args.size() < 1) {
     fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
     return false;
@@ -4652,7 +4663,7 @@ bool simple_wallet::send_heat(const std::vector<std::string>& args) {
   return true;
 }
 
-// ======== Orderbook Commands (v13+) ========
+// ======== Orderbook Commands (v11+) ========
 
 bool simple_wallet::trade(const std::vector<std::string>& args) {
   if (args.size() < 2) {
@@ -4860,7 +4871,7 @@ bool simple_wallet::cancel_order(const std::vector<std::string>& args) {
 bool simple_wallet::show_orders(const std::vector<std::string>& args) {
   success_msg_writer() << "Your open orders are tracked as TX_OUT_ORDER UTXOs on-chain.";
   success_msg_writer() << "Wallet discovers them during normal stealth-address scanning.";
-  success_msg_writer() << "Order listing pending v13 wallet UTXO scan integration.";
+  success_msg_writer() << "Order listing pending v11 wallet UTXO scan integration.";
   return true;
 }
 
@@ -4882,7 +4893,7 @@ bool simple_wallet::orderbook(const std::vector<std::string>& args) {
     invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
     haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
   } catch (...) {
-    success_msg_writer() << "Daemon does not support orderbook RPC (requires v13+).";
+    success_msg_writer() << "Daemon does not support orderbook RPC (requires v11+).";
     return true;
   }
 
@@ -4982,7 +4993,7 @@ bool simple_wallet::market(const std::vector<std::string>& args) {
     invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
     haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
   } catch (...) {
-    success_msg_writer() << "Daemon does not support orderbook RPC (requires v13+).";
+    success_msg_writer() << "Daemon does not support orderbook RPC (requires v11+).";
     return true;
   }
 

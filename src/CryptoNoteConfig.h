@@ -292,9 +292,8 @@ namespace CryptoNote
 	const uint32_t UPGRADE_HEIGHT_V8                             = 800000; //Dragonborne (emission|deposits)
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //{Godflame}  (emission|UPX2|Fuego)
         const uint32_t UPGRADE_HEIGHT_V10                            = 1003000; //{Wildfire}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
-        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH AMM + HEAT_CDs + YELM
-        const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  Unified outputs + hidden amounts + MLSAG + BP+
-        const uint32_t UPGRADE_HEIGHT_V13                            = 4222222; //{ORDERBOOK}   On-chain batch orderbook + HEARTH depth band
+        const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH exchange
+        const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG + BP+
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent
@@ -340,10 +339,10 @@ namespace CryptoNote
 	const uint8_t  BLOCK_MAJOR_VERSION_9                         =  9;
 	const uint8_t  BLOCK_MAJOR_VERSION_10                        = 10;
 	const uint8_t  BLOCK_MAJOR_VERSION_11                        = 11;
- 	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // Unified output/input types + Pedersen + MLSAG (hidden amounts)
- 	const uint8_t  BLOCK_MAJOR_VERSION_13                        = 13; // On-chain orderbook + HEARTH depth band
+ 	const uint8_t  BLOCK_MAJOR_VERSION_12                        = 12; // HEAT CDs + unified output/input types + hidden amounts + MLSAG
+ 	const uint8_t  BLOCK_MAJOR_VERSION_13                        = 13; // Deprecated: orderbook moved to v11
 
- 	// Orderbook (v13+)
+ 	// Orderbook (v11+)
  	const uint32_t BOOTSTRAP_BLOCKS                              = 144;     // ~24 hours HEARTH-only
  	const uint32_t MAX_ORDERS_PER_BLOCK                          = 1000;
  	const uint32_t MAX_MARKET_PRICE_DEVIATION_PCT                = 150;

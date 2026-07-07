@@ -41,12 +41,12 @@ fuego-suite/
 
 ### HEAT Stablecoin
 - Algorithmic MoE, peg target adjusts for inflation
-- Mint by burning XFG at PI redemption price
+- Mint by burning XFG at PI redemption price with 3.33% premium (hardcoded, PI controller removed)
 - Launch ratio: 1 XFG = 10 HEAT
-- PI controller with negative feedback for value-band equilibrium
-- Certificates of Deposit (CD): epoch-term-locked HEAT earning protocol revenue yield
+- Peg reference: $1.58 USD (HEAT_PEG_USD)
+- Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 
-### Hearth Orderbook — Data Flow Per Block
+### Hearth Exchange — Data Flow Per Block
 1. `OrderbookMempool::expireOrders()`
 2. `PoolOrderOrchestrator`: record price, decide regeneration, compute adaptive spread
 3. `generatePoolOrders()` — new band from AMM reserves, replace pool orders

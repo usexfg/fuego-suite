@@ -149,6 +149,7 @@ namespace CryptoNote
   protected:
     void launchSwapxfg(bool testnet = false);
     bool requireV11(const char* commandName);
+    bool requireV12(const char* commandName);
 
   private:
 
@@ -162,7 +163,7 @@ namespace CryptoNote
     bool heat_info(const std::vector<std::string> &args);
     bool pool_info(const std::vector<std::string> &args);
 
-    // Orderbook commands (v13+)
+    // Orderbook commands (v11+)
     bool trade(const std::vector<std::string>& args);
     bool place_order(const std::vector<std::string>& args);
     bool cancel_order(const std::vector<std::string>& args);

@@ -182,12 +182,12 @@ HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegg
 
 **Key Properties**:
 - Launch ratio 10:1 (1 XFG = 10 HⲶ∆T) at genesis
-- PI controller with negative feedback converges toward value-band target
+- Peg target $1.58 USD; mint at +3.33% premium (hardcoded, PI controller removed)
 - Protocol buys or mints HⲶ∆T for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
 - Pool reserves tracked on-chain with unspendable pool keys
 
-### Certificates of Deposit (CD)
+### Certificates of Deposit (CD) — V12 activation
 
 Epoch (900 blocks) term-locked HⲶ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HⲶ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
 

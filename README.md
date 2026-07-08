@@ -21,27 +21,26 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | CryptoNote | Ring-signature privacy at protocol level |
 | **Core** | Dynamic Ring Size | 32, 16, or min 8 decoys per transaction, adaptive to pool depth |
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
-| **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
-| **Assets** | HΞ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
+| **Core** | Fire Aliases | ONLY 8 characters, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
+| **Assets** | HΞ∆T colored-flatcoin | Stable inflation-adjusted (since Q1 2009 1 USD) value ⩰ $1.58 | Burn XFG to mint at PI redemption price |
 | **Assets** | Hearth Exchange | Block-discrete on-chain exchange with adaptive-spread AMM pool band; batch-clears at VWAP |
 | **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
-| **Stability** | Mælisandre Simulator | (`Testnet`**only**) ЅШ𑫛𑫒**❋**XFG fee injection to test protocol liquidity operations w/o needing actual cross-chain testnet activity |
-| **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with HTLC adaptor signatures |
+| **Swaps** | atomic swaps | Cross-chain XFG swaps via COMIT protocol with HTLC adaptor signatures |
 | **Swaps** | ЅШ𑫛𑫒**❋**XFG | Integrated TUI, Go-based swap engine with inter-chain fee routing |
 | **Network** | I2P / Tor / Meshtastic* | Pluggable transport-layer privacy (*)research phase|
 | **Wallet** | `fire_wallet`| Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
 | **Wallet** | TUI(suite) | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
-| **GUI Wallet/SDK** | Fuego Wallet | Cross-platform GUI — [fuego-wallet](https://github.com/usexfg/fuego-wallet) Fuego SDK |
-| **Dev Tools** | RPC API | JSON-RPC: heat_metrics, amm_quote, amm_pool_info, swap fees, CD queries |
+| **GUI Wallet/SDK** | Fuego Wallet | Cross-platform GUI (Flutter/Rust) — [fuego-wallet](https://github.com/usexfg/fuego-wallet) Fuego SDK |
+| **Tools** | RPC API | JSON-RPC: heat_metrics, amm_quote, amm_pool_info, swap fees, CD queries |
 | **Dev Tools** | MCP Server | AI-agent integration for swap/mint automation |
 | **Dev Tools** | Fuego-Skills | AI-agent tools for codebase analytics, knowledge graph, and specialization |
 
 _____________________________
 
-<sup>"Working software is the primary measure of progress." [‣]</sup>
+<sup>"Working software is the primary measure of progress." [‣](http://agilemanifesto.org/)</sup>
 
-##### Build Status [‣]:http://agilemanifesto.org/
+##### Build Status :
 
 [![Build check](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/check.yml)
 [![macOS](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml/badge.svg)](https://github.com/usexfg/fuego-suite/actions/workflows/macOS.yml)
@@ -166,17 +165,17 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HΞ∆T Stablecoin & Hearth Exchange
+### HΞ∆T Flatcoin & Hearth Exchange
 
-HΞ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
+HΞ∆⟙ is Fuego's algorithmic flatcoin — a stable asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time beginning Jan 2009 ⩰ $1.58 ||  XFG/HΞ∆⟙ ratio at launch mints 10:1 (1 XFG ⩰ $0.15)
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
-| Mint HEAT | `mint_heat <xfg_amount>` | Burn XFG to create HEAT at PI redemption price |
-| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HΞ∆T on Hearth exchange at bid/ask spread |
+| Mint HΞ∆⟙ | `mint_heat <xfg_amount>` | Burn XFG to create HΞ∆⟙ at PI redemption price |
+| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HΞ∆T on Hearth Exchange at bid/ask spread |
 | MM Pool Info | `pool_info` | Show exchange depth, MM pool orders, spread |
-| HEAT Metrics | `heat_info` | Show HEAT supply, redemption price, treasury, CD yield |
-| HEAT Balance | `balance` | Now shows HEAT balance alongside XFG |
+| HΞ∆⟙ Metrics | `heat_info` | Show HΞ∆⟙ supply, redemption price, treasury, CD yield |
+| HΞ∆⟙ Balance | `balance` | Shows HΞ∆⟙ balance alongside XFG |
 
 **Daemon RPC endpoints**: `/heat_metrics`, `/amm_quote`, `/amm_pool_info`, `/addswapfee`
 
@@ -185,21 +184,21 @@ HΞ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegge
 - Peg target $1.58 USD; mint at +3.33% premium (hardcoded, PI controller removed)
 - Protocol buys or mints HΞ∆T for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
-- Pool reserves tracked on-chain with unspendable pool keys
+- Pool reserves tracked (as a whole) on-chain with unspendable pool keys
 
 ### Certificates of Deposit (CD) — V12 activation
 
-Epoch (900 blocks) term-locked HΞ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HΞ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
+Epoch (900 blocks) term-locked HΞ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HΞ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to Fuego Development Fund.
 
 | Command | Description |
 |---------|-------------|
-| `heat_deposit <amount> <term_epochs>` | Lock HEAT for epoch-based yield |
+| `heat_deposit <amount> <term_epochs>` | Lock HΞ∆⟙ for epoch-based yield |
 | `heat_withdraw <deposit_id>` | Redeem matured CD with accrued interest |
-| `heat_list` | List active HEAT CDs and balance |
+| `heat_list` | List active HΞ∆⟙ CDs and balance |
 
 ### Atomic Swaps (swapxfg)
 
-Cross-chain XFG atomic swaps via COMIT protocol with HTLC adaptor signatures. Fee routing bridges SwapDaemon into on-chain CD yield and treasury.
+Cross-chain XFG atomic swaps via COMIT protocol with DLEQ adaptor signatures. Fee routing bridges SwapDaemon into on-chain CD yield and treasury.
 
 ### Documentation
 

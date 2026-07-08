@@ -4157,14 +4157,6 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   // Pool rate: 1 HEAT = (reserveXfg / reserveHeat) XFG
   // Inverse: burn X XFG → mint X × reserveHeat / reserveXfg HEAT
   uint64_t premiumBps = CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS;
-
-  // During bootstrap window, premium is waived for initial liquidity seeding
-  uint64_t currentHeight = m_node->getLastLocalBlockHeight();
-  uint64_t v11Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
-  if (currentHeight < v11Height + m_currency.bootstrapBlocks()) {
-    premiumBps = 0;
-  }
-
   uint64_t effectiveXfg = xfgAmount * (10000 - premiumBps) / 10000;
   FixedPoint64 poolRateFp = FixedPoint64::fromRatio(reserveXfg, reserveHeat);
   FixedPoint64 effectiveFp = FixedPoint64::fromUint64(effectiveXfg);

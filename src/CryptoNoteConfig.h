@@ -344,6 +344,7 @@ namespace CryptoNote
 
  	// Orderbook (v11+)
  	const uint32_t BOOTSTRAP_BLOCKS                              = 144;     // ~24 hours HEARTH-only
+ 	const uint32_t TESTNET_BOOTSTRAP_BLOCKS                        = 72;
  	const uint32_t MAX_ORDERS_PER_BLOCK                          = 1000;
  	const uint32_t MAX_MARKET_PRICE_DEVIATION_PCT                = 150;
  	const uint32_t MAX_MARKET_ORDER_LEVELS                       = 5;
@@ -411,7 +412,7 @@ namespace CryptoNote
  		      "207.244.247.64:20808"
 		};
 
-    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712701febbfb69c5e4579824b105c4041860afd466176975248042e000479e96f1acb20204e0c81000";
+    const char GENESIS_COINBASE_TX_HEX_TESTNET[] = "010001ff0001b4bcc29101029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071270141fe48f7498f42b4b4d0434a49be8294e4fdfd4cd4410f8b3d239c96ff3909520204f84d0f00";
  	const int P2P_DEFAULT_PORT_TESTNET = 20808;
  	const int RPC_DEFAULT_PORT_TESTNET = 28280;
  	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX_TESTNET = 1075740; /* "TEST" address prefix */

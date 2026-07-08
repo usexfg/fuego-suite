@@ -171,6 +171,8 @@ public:
     uint32_t depositMinTerm() const { return m_depositMinTerm; }
     uint32_t depositMaxTerm() const { return m_depositMaxTerm; }
 
+  uint32_t bootstrapBlocks() const { return m_bootstrapBlocks; }
+
   size_t maxBlockSizeInitial() const { return m_maxBlockSizeInitial; }
   uint64_t maxBlockSizeGrowthSpeedNumerator() const { return m_maxBlockSizeGrowthSpeedNumerator; }
   uint64_t maxBlockSizeGrowthSpeedDenominator() const { return m_maxBlockSizeGrowthSpeedDenominator; }
@@ -416,6 +418,8 @@ private:
     uint32_t m_upgradeHeightV11; // HearthAMM + HEAT
     uint32_t m_upgradeHeightV12; // HEAT CDs + unified outputs
 
+  uint32_t m_bootstrapBlocks;
+
   unsigned int m_upgradeVotingThreshold;
   uint32_t m_upgradeVotingWindow;
   uint32_t m_upgradeWindow;
@@ -551,6 +555,7 @@ public:
   CurrencyBuilder& upgradeHeightV10(uint64_t val) { m_currency.m_upgradeHeightV10 = static_cast<uint32_t>(val); return *this; }//upgradekit
     CurrencyBuilder& upgradeHeightV11(uint64_t val) { m_currency.m_upgradeHeightV11 = static_cast<uint32_t>(val); return *this; }//HearthAMM+HEAT
     CurrencyBuilder& upgradeHeightV12(uint64_t val) { m_currency.m_upgradeHeightV12 = static_cast<uint32_t>(val); return *this; }//CDs+unified outputs
+    CurrencyBuilder& bootstrapBlocks(uint64_t val) { m_currency.m_bootstrapBlocks = static_cast<uint32_t>(val); return *this; }
 
 
   CurrencyBuilder& upgradeVotingThreshold(unsigned int val);

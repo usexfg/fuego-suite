@@ -2924,7 +2924,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
     bool hasLegacyBondClaim = false;
     uint64_t legacyClaimedInterest = 0;
-    // v13+ orderbook auth tags
+    // v11+ orderbook auth tags
     bool hasMarketBuyAuth = false;
     uint64_t marketBuyXfgWanted = 0, marketBuyMaxHeat = 0;
     bool hasMarketSellAuth = false;
@@ -3132,8 +3132,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     }
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      // v10 AMM swap + LP auth pool-math validation
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasAmmSwapAuth) {
+      // AMM swap + LP auth pool-math validation — pre-v11 only (orderbook replaces AMM at v11)
+      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasAmmSwapAuth) {
         uint32_t feeBps = parameters::HEARTH_FEE_BPS;
         uint64_t expectedOutput;
         if (swapDirection == 0) {
@@ -3181,8 +3181,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
       }
 
-      // v10 LP add auth — pool math validation
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasLpAddAuth) {
+      // v10 LP add auth — pool math validation (pre-v11 only)
+      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasLpAddAuth) {
         if (lpAddAmountXfg == 0 && lpAddAmountHeat == 0) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: zero amounts";
@@ -3201,8 +3201,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
       }
 
-      // v10 LP remove auth — pool math validation  
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && hasLpRemoveAuth) {
+      // v10 LP remove auth — pool math validation (pre-v11 only)
+      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasLpRemoveAuth) {
         if (lpRemoveShares == 0 || lpRemoveShares > m_ammPool.totalLpShares) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: invalid shares";
@@ -3285,7 +3285,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
       }
 
-      // Original v11 AMM validation (backward compat for pre-auth-tag txs)
+      // Original v11 AMM validation — pre-v11 only (orderbook replaces AMM at v11)
+      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
       std::vector<TransactionExtraField> tx_extra_fields;
       if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
         for (const auto& field : tx_extra_fields) {
@@ -3361,6 +3362,7 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           }
         }
       }
+      } // end pre-v11 AMM legacy validation
     }
 
     if (!isTransactionValid) {
@@ -3404,8 +3406,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     block.cumulative_difficulty += m_blocks.back().cumulative_difficulty;
   }
 
-  // v13+ Orderbook: match orders and write clearing price to block header
-  if (blockData.majorVersion >= BLOCK_MAJOR_VERSION_13) {
+  // v11+ Orderbook: match orders and write clearing price to block header
+  if (blockData.majorVersion >= BLOCK_MAJOR_VERSION_11) {
     processOrderbookForBlock(block.bl, transactions, block.height);
   }
 
@@ -3556,7 +3558,7 @@ uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
 }
 
 void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
-  if (height < parameters::UPGRADE_HEIGHT_V13)
+  if (height < parameters::UPGRADE_HEIGHT_V11)
     return;
 
   // Bootstrap: first BOOTSTRAP_BLOCKS use HEARTH pool ratio as P_clear
@@ -3683,9 +3685,9 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
 
 void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   g_orderbookMempool.clear();
-  g_orderbookIsInBootstrap = (height < parameters::UPGRADE_HEIGHT_V13 + BOOTSTRAP_BLOCKS);
+  g_orderbookIsInBootstrap = (height < parameters::UPGRADE_HEIGHT_V11 + m_currency.bootstrapBlocks());
   g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ?
-    (parameters::UPGRADE_HEIGHT_V13 + BOOTSTRAP_BLOCKS - height) : 0;
+    (parameters::UPGRADE_HEIGHT_V11 + m_currency.bootstrapBlocks() - height) : 0;
 
   if (g_orderbookIsInBootstrap && g_orderbookBootstrapBlocksRemaining == 0) {
     g_orderbookIsInBootstrap = false;
@@ -5160,6 +5162,7 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       }
     }
   }
+
 }
 
 void Blockchain::popTransactions(const BlockEntry& block, const Crypto::Hash& minerTransactionHash) {

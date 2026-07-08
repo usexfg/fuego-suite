@@ -93,6 +93,7 @@ namespace CryptoNote
 		m_upgradeHeightV10 = 25;
 		m_upgradeHeightV11 = 30;
 		m_upgradeHeightV12 = 180;
+		m_bootstrapBlocks = parameters::TESTNET_BOOTSTRAP_BLOCKS;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
@@ -1633,6 +1634,9 @@ double Currency::getBurnPercentage() const {
     upgradeHeightV9(parameters::UPGRADE_HEIGHT_V9);
     upgradeHeightV10(parameters::UPGRADE_HEIGHT_V10); // upgradekit
     upgradeHeightV11(parameters::UPGRADE_HEIGHT_V11); // HearthAMM+HEAT
+    upgradeHeightV12(parameters::UPGRADE_HEIGHT_V12); // CDs + unified outputs
+
+    bootstrapBlocks(parameters::BOOTSTRAP_BLOCKS);
 
     upgradeVotingThreshold(parameters::UPGRADE_VOTING_THRESHOLD);
     upgradeVotingWindow(parameters::UPGRADE_VOTING_WINDOW);

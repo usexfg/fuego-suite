@@ -181,7 +181,7 @@ HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegg
 **Daemon RPC endpoints**: `/heat_metrics`, `/amm_quote`, `/amm_pool_info`, `/addswapfee`
 
 **Key Properties**:
-- Launch ratio 10:1 (1 XFG = 10 HⲶ∆T) at genesis
+- Launch ratio 10:1 (1 HⲶ∆T = 10 XFG) at genesis
 - Peg target $1.58 USD; mint at +3.33% premium (hardcoded, PI controller removed)
 - Protocol buys or mints HⲶ∆T for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth

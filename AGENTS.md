@@ -42,7 +42,7 @@ fuego-suite/
 ### HEAT Stablecoin
 - Algorithmic MoE, peg target adjusts for inflation
 - Mint by burning XFG at PI redemption price with 3.33% premium (hardcoded, PI controller removed)
-- Launch ratio: 1 XFG = 10 HEAT
+- Launch ratio: 1 HEAT = 10 XFG (10:1 XFG per HEAT)
 - Peg reference: $1.58 USD (HEAT_PEG_USD)
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 

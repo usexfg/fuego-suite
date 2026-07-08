@@ -4460,10 +4460,10 @@ bool simple_wallet::list_heat(const std::vector<std::string>& args) {
   uint64_t heatActual = m_wallet->actualHeatBalance();
   uint64_t heatPending = m_wallet->pendingHeatBalance();
   success_msg_writer() << "";
-  success_msg_writer() << "=== HⲶ∆T Balance ===";
-  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HⲶ∆T";
+  success_msg_writer() << "=== HΞ∆T Balance ===";
+  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HΞ∆T";
   if (heatPending > 0)
-    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HⲶ∆T";
+    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HΞ∆T";
   success_msg_writer() << "";
 
   size_t depositCount = m_wallet->getDepositCount();
@@ -4481,7 +4481,7 @@ bool simple_wallet::list_heat(const std::vector<std::string>& args) {
   }
 
   if (shown == 0) {
-    success_msg_writer() << "  (no HⲶ∆T found)";
+    success_msg_writer() << "  (no HΞ∆T found)";
   } else {
     success_msg_writer() << "  Note         |  Qty";
     success_msg_writer() << "  -------------+------";

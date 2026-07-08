@@ -22,7 +22,7 @@ Based upon the CryptoNote protocol & philosophy.
 | **Core** | Dynamic Ring Size | 32, 16, or min 8 decoys per transaction, adaptive to pool depth |
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 character only, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
-| **Assets** | HⲶ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
+| **Assets** | HΞ∆T colored-coin | Stable value | Algorithmic MoE (medium of exchange) — burn XFG to mint at PI redemption price |
 | **Assets** | Hearth Exchange | Block-discrete on-chain exchange with adaptive-spread AMM pool band; batch-clears at VWAP |
 | **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
 | **Stability** | PI Controller | Negative-feedback redemption price targeting value-band equilibrium |
@@ -166,14 +166,14 @@ make build-tui
 
 Navigate with arrow keys or j/k, select with Enter, quit with q or Ctrl+C.
 
-### HⲶ∆T Stablecoin & Hearth Exchange
+### HΞ∆T Stablecoin & Hearth Exchange
 
-HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
+HΞ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegged to purchasing power. It is **not** pegged to a fiat currency; its target band adjusts for inflation over time.
 
 | Operation | CLI Command | Description |
 |-----------|------------|-------------|
 | Mint HEAT | `mint_heat <xfg_amount>` | Burn XFG to create HEAT at PI redemption price |
-| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HⲶ∆T on Hearth exchange at bid/ask spread |
+| Swap | `swap <dir> <in> <out> <min>` | Swap XFG↔HΞ∆T on Hearth exchange at bid/ask spread |
 | MM Pool Info | `pool_info` | Show exchange depth, MM pool orders, spread |
 | HEAT Metrics | `heat_info` | Show HEAT supply, redemption price, treasury, CD yield |
 | HEAT Balance | `balance` | Now shows HEAT balance alongside XFG |
@@ -181,15 +181,15 @@ HⲶ∆⟙ is Fuego's algorithmic stablecoin — a medium-of-exchange asset pegg
 **Daemon RPC endpoints**: `/heat_metrics`, `/amm_quote`, `/amm_pool_info`, `/addswapfee`
 
 **Key Properties**:
-- Launch ratio 10:1 (1 HⲶ∆T = 10 XFG) at genesis
+- Launch ratio 10:1 (1 HΞ∆T = 10 XFG) at genesis
 - Peg target $1.58 USD; mint at +3.33% premium (hardcoded, PI controller removed)
-- Protocol buys or mints HⲶ∆T for CD yield payments (structural demand, protocol pays 0% fee)
+- Protocol buys or mints HΞ∆T for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
 - Pool reserves tracked on-chain with unspendable pool keys
 
 ### Certificates of Deposit (CD) — V12 activation
 
-Epoch (900 blocks) term-locked HⲶ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HⲶ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
+Epoch (900 blocks) term-locked HΞ∆⟙ deposits earning real yield thru protocol revenue, not inflation. Each CD requires an upfront banking fee of a mere 0.1% of CD amount (fee also in HΞ∆⟙) paid at time of CD creation (no fees at claim) and sent to **@fuegoxfg** as a donation to the Fuego Developer Fund.
 
 | Command | Description |
 |---------|-------------|

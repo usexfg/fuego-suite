@@ -44,6 +44,12 @@ public:
   // Record P_clear snapshot for volatility tracking
   void recordPrice(uint64_t P_clear);
 
+  // 30-block trailing average of P_clear (primary spot price at v11+)
+  uint64_t getAveragePrice() const;
+
+  // Current number of recorded prices
+  size_t priceHistorySize() const { return m_priceHistory.size(); }
+
 private:
   std::deque<uint64_t> m_priceHistory;  // last 30 blocks of P_clear
   uint64_t m_lastRegenPclear = 0;

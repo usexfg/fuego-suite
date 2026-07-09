@@ -182,10 +182,6 @@ private:
   std::thread m_cleanupThread;
   void cleanupThread();
 
-  // Exbitron fetcher thread
-  std::thread m_exbitronThread;
-  void exbitronFetchThread();
-
   // Active offers indexed by offerId
   static constexpr size_t MAX_OFFERS = 10000;
   std::map<std::string, SwapOfferMsg> m_offers;

@@ -25,7 +25,6 @@
 #include "PriceOracle.h"
 #include "../Logging/ILogger.h"
 #include "../Logging/LoggerRef.h"
-#include "PoolOrganizer.h"
 #include "ChainRegistry.h"
 
 namespace CryptoNote {
@@ -188,24 +187,6 @@ public:
    // Access the price oracle for configuration.
    PriceOracle& priceOracle();
 
-   // Pool operations
-   bool createPool(const PoolId& poolId);
-   bool getPool(const PoolId& poolId, PoolState& state) const;
-   std::vector<PoolId> getActivePools() const;
-   PoolCheckpoint processDeposit(const LPDepositParams& params, uint64_t shareAmount);
-   PoolCheckpoint processWithdrawal(const LPWithdrawalParams& params, WithdrawalAmounts& amounts);
-   PoolOrganizer::SwapResult executeSwap(const PoolSwapOrder& order);
-   uint64_t getExpectedOutput(const PoolId& poolId, bool swapAforB, uint64_t inputAmount) const;
-   PoolOrganizer::ClaimableFees getClaimableFees(const Crypto::PublicKey& owner, const PoolId& poolId) const;
-   PoolCheckpoint processFeeClaim(const Crypto::PublicKey& owner, const PoolId& poolId, PoolOrganizer::ClaimableFees& claimed);
-   PoolCheckpoint generateCheckpoint(const PoolId& poolId);
-   bool getCurrentCheckpoint(const PoolId& poolId, PoolCheckpoint& checkpoint) const;
-   bool verifyCheckpoint(const PoolId& poolId, const PoolCheckpoint& checkpoint) const;
-   bool getLPShares(const Crypto::PublicKey& owner, const PoolId& poolId, LPShare& shares) const;
-   std::vector<Crypto::Hash> getLPShareProof(const Crypto::PublicKey& owner, const PoolId& poolId, size_t& leafIndex) const;
-   PoolOrganizer::PoolStats getPoolStats(const PoolId& poolId) const;
-   uint64_t getSpotPrice(const PoolId& poolId) const;
-
  private:
   // Scan non-terminal swaps and warn about any stuck longer than threshold.
   // Called from checkTimeouts().
@@ -256,7 +237,6 @@ public:
    FuegoRpcClient m_rpc;
    SwapDatabase m_db;
    PriceOracle m_oracle;
-   PoolOrganizer m_poolOrganizer;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
 

@@ -2349,8 +2349,6 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   res.burned_xfg = metrics.burnedXfg;
   res.redemption_price_num = metrics.redemptionPriceNum;
   res.redemption_price_denom = metrics.redemptionPriceDenom;
-  res.redemption_rate_num = metrics.redemptionRateNum;
-  res.redemption_rate_denom = metrics.redemptionRateDenom;
   res.treasury_balance = metrics.treasuryBalance;
   res.epoch_swap_fees = metrics.epochSwapFees;
   res.status = CORE_RPC_STATUS_OK;
@@ -2439,16 +2437,31 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& r
 
   double heatPegUsd = CryptoNote::parameters::HEAT_PEG_USD;
 
-  if (info.reserveXfg > 0 && info.reserveHeat > 0) {
-    double xfgPerHeat = static_cast<double>(info.reserveXfg) / static_cast<double>(info.reserveHeat);
-    res.xfg_heat_ratio = std::to_string(xfgPerHeat);
-    res.xfg_spot_usd = std::to_string(xfgPerHeat * heatPegUsd);
+  if (info.spotPrice > 0) {
+    double xfgPerHeat = static_cast<double>(info.spotPrice) / 1e18;
+    double xfgInHeat = 1.0 / xfgPerHeat;
+    double xfgUsd = xfgInHeat * heatPegUsd;
+    res.xfg_heat_ratio = std::to_string(xfgInHeat);
+    res.xfg_spot_usd = std::to_string(xfgUsd);
+    res.price_ticker = "1 XFG = $" + std::to_string(xfgUsd).substr(0, 6)
+                     + " USD | " + std::to_string(xfgInHeat).substr(0, 6) + " HEAT";
   } else {
     res.xfg_heat_ratio = "0.0";
     res.xfg_spot_usd = "0.0";
+    res.price_ticker = "1 XFG = $0.00 USD | 0.00 HEAT";
   }
 
   res.heat_peg_usd = std::to_string(heatPegUsd);
+
+  uint64_t twap = m_core.getPoolTwap();
+  if (twap > 0) {
+    double twapD = static_cast<double>(twap) / 1e18;
+    double twapInverse = 1.0 / twapD;
+    res.pool_twap = std::to_string(twapInverse) + " HEAT/XFG";
+  } else {
+    res.pool_twap = "0.0";
+  }
+
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

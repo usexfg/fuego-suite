@@ -28,8 +28,6 @@
 #include "../CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h"
 #include "../Logging/LoggerRef.h"
 #include "../Rpc/CoreRpcServerCommandsDefinitions.h"
-#include "AmmPool.h"
-#include "MarketOrderExecutor.h"
 #include "CryptoNoteFormatUtils.h"
 
 #include "CryptoNoteTools.h"
@@ -1413,9 +1411,8 @@ void core::addSwapFee(uint64_t amount) {
 }
 
 void core::setXfgMarketValue(uint64_t val) {
-  // PI controller removed — oracle price no longer used for peg defense.
-  // XFG price is unrestrained. Callers (SwapDaemon oracle, testnet sim) still
-  // invoke this but the value is silently ignored going forward.
+  // PI controller removed — XFG price is unrestrained via Hearth AMM.
+  // Callers (SwapDaemon oracle, testnet sim) still invoke this but the value is ignored.
 }
 
 // --- Commitment Index Accessors ---
@@ -1521,15 +1518,13 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.swfBalance = m_blockchain.getSwfBalance();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
-    // Pool ratio × 10^6 for precision (was PI redemption price)
+    // Pool ratio × 10^6 for precision
     m.redemptionPriceNum = (pool.reserveXfg * 1000000ULL) / pool.reserveHeat;
     m.redemptionPriceDenom = 1000000;
   } else {
     m.redemptionPriceNum = 0;
     m.redemptionPriceDenom = 1;
   }
-  m.redemptionRateNum = 0;    // PI controller removed — always 0
-  m.redemptionRateDenom = 1;
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
   m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
@@ -1538,29 +1533,16 @@ core::HeatMetrics core::getHeatMetrics() const {
 
 core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const {
   AmmQuote q;
-  const auto& pool = m_blockchain.getAmmPool();
-  uint32_t feeBps = parameters::HEARTH_FEE_BPS;
-  if (direction == 0) {
-    q.expectedOutput = ammGetOutputAmount(inputAmount, pool.reserveXfg, pool.reserveHeat, feeBps);
-  } else {
-    q.expectedOutput = ammGetOutputAmount(inputAmount, pool.reserveHeat, pool.reserveXfg, feeBps);
-  }
-  q.fee = (inputAmount * feeBps) / parameters::HEARTH_FEE_DIVISOR;
-  if (!pool.isEmpty()) {
-    uint64_t spotPrice = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
-    uint64_t basePrice = direction == 0 ?
-      ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat) :
-      ammGetSpotPrice(pool.reserveHeat, pool.reserveXfg);
-    uint64_t newReserveIn = direction == 0 ?
-      pool.reserveXfg + inputAmount : pool.reserveHeat + inputAmount;
-    uint64_t newReserveOut = direction == 0 ?
-      pool.reserveHeat - q.expectedOutput : pool.reserveXfg - q.expectedOutput;
-    uint64_t newPrice = direction == 0 ?
-      ammGetSpotPrice(newReserveIn, newReserveOut) :
-      ammGetSpotPrice(newReserveOut, newReserveIn);
-    if (basePrice > 0) {
-      uint64_t delta = (newPrice > basePrice) ? (newPrice - basePrice) : (basePrice - newPrice);
-      q.priceImpactBps = (delta * 10000) / basePrice;
+  auto est = m_blockchain.getOrderbookEstimate(direction, inputAmount);
+  q.expectedOutput = est.estimatedFill;
+  q.fee = (inputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+  uint64_t spotPrice = m_blockchain.getHearthSpotPrice();
+  if (spotPrice > 0) {
+    if (est.worstCasePrice > 0 && spotPrice > 0) {
+      if (direction == 0) {
+        uint64_t delta = (est.worstCasePrice > spotPrice) ? (est.worstCasePrice - spotPrice) : (spotPrice - est.worstCasePrice);
+        q.priceImpactBps = (delta * 10000) / spotPrice;
+      }
     }
   }
   return q;
@@ -1575,20 +1557,19 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
   info.accumulatedLpFeesHeat = pool.accumulatedLpFeesHeat;
   info.accumulatedLpFeesXfg = pool.accumulatedLpFeesXfg;
   info.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
-  if (!pool.isEmpty()) {
-    info.spotPrice = ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
-  }
+  info.spotPrice = m_blockchain.getHearthSpotPrice();
   return info;
+}
+
+uint64_t core::getPoolTwap() const {
+  return m_blockchain.getPoolTwap();
 }
 
 core::OrderbookInfo core::getOrderbookInfo() const {
   OrderbookInfo info;
-  const auto& pool = m_blockchain.getAmmPool();
   info.clearingPrice = m_blockchain.getOrderbookClearingPrice();
   info.inBootstrap = m_blockchain.isOrderbookInBootstrap();
-  if (!pool.isEmpty() && pool.reserveHeat > 0) {
-    info.hearthPoolRatio = (static_cast<uint128_t>(pool.reserveXfg) * 100000000ULL) / pool.reserveHeat;
-  }
+  info.hearthPoolRatio = m_blockchain.getHearthSpotPrice();
   // Depth and numMatches read from the latest block header — populated in processOrderbookForBlock
   return info;
 }

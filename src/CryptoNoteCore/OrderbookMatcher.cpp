@@ -57,13 +57,17 @@ void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlock
 }
 
 uint32_t OrderbookMatcher::countDistinctParties(const std::vector<FillRecord>& fills,
-                                                  const OrderbookIndex& index) {
-  std::set<Crypto::Hash, HashLess> orderIds;
+                                                  const OrderbookIndex& /*index*/) {
+  std::set<OrderbookIndex::SenderKey, OrderbookIndex::SenderKeyHash> parties;
   for (const auto& fill : fills) {
-    orderIds.insert(fill.bidOrderId);
-    orderIds.insert(fill.askOrderId);
+    if (fill.bidSpendKey != Crypto::PublicKey{} && fill.bidViewKey != Crypto::PublicKey{}) {
+      parties.insert({fill.bidSpendKey, fill.bidViewKey});
+    }
+    if (fill.askSpendKey != Crypto::PublicKey{} && fill.askViewKey != Crypto::PublicKey{}) {
+      parties.insert({fill.askSpendKey, fill.askViewKey});
+    }
   }
-  return static_cast<uint32_t>(orderIds.size());
+  return static_cast<uint32_t>(parties.size());
 }
 
 MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
@@ -187,6 +191,10 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
     FillRecord fill;
     fill.bidOrderId = cm.bidOrderId;
     fill.askOrderId = cm.askOrderId;
+    fill.bidSpendKey = cm.bidEntry.spendKey;
+    fill.bidViewKey = cm.bidEntry.viewKey;
+    fill.askSpendKey = cm.askEntry.spendKey;
+    fill.askViewKey = cm.askEntry.viewKey;
     fill.amount = cm.matchAmount;
     fill.price = cm.askPrice;
     result.fills.push_back(fill);

@@ -175,6 +175,8 @@ namespace CryptoNote
 
         // HEAT stablecoin peg reference (v11+: 1:1 Hearth pool bootstrap)
         const double HEAT_PEG_USD = 1.58;                   // HEAT peg reference in USD (launch constant)
+        // TODO(Phase 2): CPI adjustment — when enabled, HEAT_PEG_USD updates periodically
+        // via BLS CPI-U oracle to preserve purchasing power. Until then, HEAT is fixed at $1.58.
 
         // HEAT mint burn split
         const uint64_t MINT_BURN_EF_PCT = 50;               // 50% of XFG burned → Eternal Flame (permanent deflation)
@@ -182,7 +184,7 @@ namespace CryptoNote
 
         // Treasury sub-allocation (of treasury share from mint burn)
         const uint64_t TREASURY_LP_PCT = 60;                // 60% of treasury → LP Reserve (CD yield floor + Hearth LP)
-        const uint64_t TREASURY_PEG_PCT = 40;               // 40% of treasury → Peg Defense Balance
+        const uint64_t TREASURY_RESERVE_PCT = 40;            // 40% of treasury → Reserve Balance (CD yield floor backstop)
 
         // Bootstrap repayment
         const uint64_t BOOTSTRAP_REPAY_PCT = 20;            // 20% of treasury swap fee share → bootstrap repayment vault
@@ -213,7 +215,7 @@ namespace CryptoNote
 
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
-        const uint64_t HEAT_MINT_PREMIUM_BPS = 333;                    // 3.33% mint premium (PI controller removed)
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 333;                    // 3.33% mint premium (goes to SWF)
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool
@@ -351,8 +353,7 @@ namespace CryptoNote
  	const uint32_t MIN_DISTINCT_PARTIES                          = 2;
  	const uint32_t DEFAULT_ORDER_EXPIRATION_BLOCKS                = 12600;  // ~1 week
  	const uint32_t HEARTH_DEPTH_BAND_PCT                         = 10;
- 	// Mint premium funds the rebalance mechanism.
- 	// Set via parameters::HEAT_MINT_PREMIUM_BPS above (currently 333 bps = 3.33%).
+ 	// Mint premium funds treasury reserves.
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;

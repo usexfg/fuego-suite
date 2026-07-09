@@ -250,7 +250,7 @@ namespace CryptoNote
   };
 
   /************************************************************************/
-  /* v13+ Orderbook P2P (off-chain order gossip)                          */
+  /* v11+ Orderbook P2P (off-chain order gossip)                          */
   /************************************************************************/
 
   struct NOTIFY_ORDER_PLACE_request {

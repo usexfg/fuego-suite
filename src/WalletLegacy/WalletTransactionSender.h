@@ -118,7 +118,7 @@ public:
                                                               uint64_t fee,
                                                               uint64_t mixIn);
 
-  // v13 Orderbook
+  // v11 Orderbook
   std::unique_ptr<WalletRequest> makePlaceOrderV13Request(TransactionId& transactionId,
                                                            std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                            uint8_t side, uint64_t amount, uint64_t price,

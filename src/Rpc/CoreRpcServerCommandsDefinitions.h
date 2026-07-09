@@ -555,8 +555,151 @@ struct COMMAND_RPC_GET_FEE_ADDRESS {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(fee_address)
+	  KV_MEMBER(status)
+    }
+  };
+};
+
+// HEAT metrics
+struct COMMAND_RPC_GET_HEAT_METRICS {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t heat_supply;
+    uint64_t burned_xfg;
+    uint64_t redemption_price_num;
+    uint64_t redemption_price_denom;
+    uint64_t redemption_rate_num;
+    uint64_t redemption_rate_denom;
+    uint64_t treasury_balance;
+    uint64_t epoch_swap_fees;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(heat_supply)
+      KV_MEMBER(burned_xfg)
+      KV_MEMBER(redemption_price_num)
+      KV_MEMBER(redemption_price_denom)
+      KV_MEMBER(redemption_rate_num)
+      KV_MEMBER(redemption_rate_denom)
+      KV_MEMBER(treasury_balance)
+      KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(status)
     }
   };
 };
+
+struct COMMAND_RPC_AMM_QUOTE {
+  struct request {
+    uint64_t input_amount;
+    uint8_t  direction;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(input_amount)
+      KV_MEMBER(direction)
+    }
+  };
+
+  struct response {
+    uint64_t expected_output;
+    uint64_t price_impact_bps;
+    uint64_t fee;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(expected_output)
+      KV_MEMBER(price_impact_bps)
+      KV_MEMBER(fee)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_AMM_POOL_INFO {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t reserve_xfg;
+    uint64_t reserve_heat;
+    uint64_t total_lp_shares;
+    uint64_t spot_price;
+    uint64_t accumulated_lp_fees_heat;
+    uint64_t accumulated_lp_fees_xfg;
+    uint64_t epoch_swap_fees;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(reserve_xfg)
+      KV_MEMBER(reserve_heat)
+      KV_MEMBER(total_lp_shares)
+      KV_MEMBER(spot_price)
+      KV_MEMBER(accumulated_lp_fees_heat)
+      KV_MEMBER(accumulated_lp_fees_xfg)
+      KV_MEMBER(epoch_swap_fees)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_FUEGO_PRICE {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t reserve_xfg;
+    uint64_t reserve_heat;
+    uint64_t spot_price;            // XFG/HEAT ratio × 10^18 (ammGetSpotPrice)
+    uint64_t redemption_price_num;  // PI controller redemption price numerator
+    uint64_t redemption_price_denom;
+    std::string xfg_heat_ratio;     // human-readable: 1 HEAT = N XFG (inverted from pool ratio)
+    std::string heat_peg_usd;       // HEAT peg in USD (hardcoded: $1.58)
+    std::string xfg_spot_usd;       // implied XFG/USD: (1 / poolRatio) × heat_peg_usd
+    std::string price_ticker;       // human-readable: "1 XFG = $X USD | ≋Y HEAT"
+    std::string pool_twap;          // epoch time-weighted average pool ratio (10^18 precision)
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(reserve_xfg)
+      KV_MEMBER(reserve_heat)
+      KV_MEMBER(spot_price)
+      KV_MEMBER(redemption_price_num)
+      KV_MEMBER(redemption_price_denom)
+      KV_MEMBER(xfg_heat_ratio)
+      KV_MEMBER(heat_peg_usd)
+      KV_MEMBER(xfg_spot_usd)
+      KV_MEMBER(price_ticker)
+      KV_MEMBER(pool_twap)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_ADD_SWAP_FEE {
+  struct request {
+    uint64_t amount;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(amount)
+    }
+  };
+
+  struct response {
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_SET_XFG_MARKET_VALUE {
+  struct request {
+    uint64_t val;   // XFG/USD price in cents (158 = $1.58)
+    void serialize(ISerializer &s) {
+      KV_MEMBER(val)
+    }
+  };
+
+  struct response {
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(status)
+    }
+  };
+};
+
 }

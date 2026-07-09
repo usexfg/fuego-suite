@@ -63,6 +63,10 @@ public:
   std::vector<AggregatedLevel> getBidCurve(uint32_t maxLevels = 50) const;
   std::vector<AggregatedLevel> getAskCurve(uint32_t maxLevels = 50) const;
 
+  // Copy individual orders into an OrderbookIndex for matching, preserving real
+  // amounts, order IDs, and sender keys.
+  void copyToIndex(OrderbookIndex& idx) const;
+
   size_t totalOrders() const { return m_orders.size(); }
   size_t poolOrders() const { return m_poolOrders.size(); }
 

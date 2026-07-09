@@ -1,6 +1,9 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
 // HEAT Integration Test - Merkle Proof Compatibility
+// REMOVED: cross-chain swap pool deleted.
+
+#if 0
 //
 // This test verifies that PoolMerkleTree (C++) generates merkle proofs
 // that are compatible with HEATClaimer.sol smart contract verification.
@@ -232,3 +235,5 @@ TEST(HEATMerkleTest, CheckpointBuildAndVerify) {
 }
 
 } // namespace XfgSwap
+
+#endif

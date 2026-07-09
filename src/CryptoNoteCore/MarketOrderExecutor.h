@@ -21,44 +21,31 @@ namespace CryptoNote {
 struct MarketOrderResult {
   uint64_t filledAmount;     // XFG atomic units (buy) or HEAT atomic (sell)
   uint64_t totalCost;        // HEAT atomic (buy) or XFG atomic (sell)
-  uint64_t hearthFilled;     // amount filled from HEARTH band
-  uint64_t orderbookFilled;  // amount filled from orderbook
-  uint32_t levelsConsumed;   // orderbook price levels consumed
-  uint64_t maxPriceDeviation; // worst price encountered (for estimate)
+  uint32_t levelsConsumed;   // price levels consumed
+  uint64_t maxPriceDeviation; // worst price encountered
   bool halted;               // true if guard stopped the order
 };
 
 class MarketOrderExecutor {
 public:
-  MarketOrderExecutor(uint64_t hearthDepthBandPct, uint32_t maxLevels,
-                       uint32_t maxPriceDeviationPct, uint32_t feeBps);
+  MarketOrderExecutor(uint32_t maxPriceDeviationPct);
 
   MarketOrderResult executeMarketBuy(
     uint64_t xfgWanted,
     uint64_t maxHeatCost,
     uint64_t P_clear,
-    uint64_t xfgReserve,
-    uint64_t heatReserve,
     OrderbookIndex& orderbook);
 
   MarketOrderResult executeMarketSell(
     uint64_t xfgToSell,
     uint64_t minHeatReceive,
     uint64_t P_clear,
-    uint64_t xfgReserve,
-    uint64_t heatReserve,
     OrderbookIndex& orderbook);
 
 private:
-  uint64_t m_depthBandPct;
-  uint32_t m_maxLevels;
   uint32_t m_maxPriceDeviationPct;
-  uint32_t m_feeBps;
 
   uint64_t computeMaxPrice(uint64_t P_clear, bool buying) const;
-  uint64_t executeSwapOnHearth(
-    uint64_t inputAmount, uint64_t reserveIn, uint64_t reserveOut,
-    uint64_t P_clear, bool isBuy) const;
 
   struct CascadeState {
     uint64_t filled;
@@ -74,7 +61,5 @@ private:
     OrderbookIndex& orderbook,
     bool isBuy);
 };
-
-uint64_t computeDepthBand(uint64_t totalReserve, uint64_t depthPct);
 
 } // namespace CryptoNote

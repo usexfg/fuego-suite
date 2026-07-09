@@ -127,4 +127,11 @@ void PoolOrderOrchestrator::recordPrice(uint64_t P_clear) {
     m_priceHistory.pop_front();
 }
 
+uint64_t PoolOrderOrchestrator::getAveragePrice() const {
+  if (m_priceHistory.empty()) return 0;
+  uint64_t sum = 0;
+  for (auto p : m_priceHistory) sum += p;
+  return sum / static_cast<uint64_t>(m_priceHistory.size());
+}
+
 } // namespace CryptoNote

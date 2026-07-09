@@ -833,6 +833,10 @@ public:
 
 bool perform7()
 {
+  // Pool attestation tests removed (cross-chain swap pool deleted).
+  return true;
+#if 0
+{
   using namespace XfgSwap;
   LOG_TRACE("=== Starting Merkle Proof Integration Test (perform7) ===");
 
@@ -967,6 +971,7 @@ bool perform7()
 
   LOG_TRACE("=== All Merkle Proof Tests PASSED (perform7) ===");
   return true;
+#endif
 }
 };
 

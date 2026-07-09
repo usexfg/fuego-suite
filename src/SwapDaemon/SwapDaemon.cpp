@@ -104,7 +104,6 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& dataDir, Logging::ILogger& logger)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
-  , m_poolOrganizer(logger)
   , m_logger(logger, "SwapDaemon") {
   // Chain clients not configured — processSwap() will warn if needed.
 }
@@ -114,7 +113,6 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const ChainClientConfig& chainCfg)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
-  , m_poolOrganizer(logger)
   , m_logger(logger, "SwapDaemon") {
   if (!chainCfg.bchHost.empty()) {
     auto rpc = std::make_unique<BchRpcClient>(
@@ -314,7 +312,7 @@ void SwapDaemon::tickLoop() {
     }
 
     // Fetch live XFG/USD from Hearth pool via fuegod RPC
-    // Feed it back to fuegod for PI controller oracle
+    // Feed it back to fuegod (PI controller removed — value is ignored)
     {
       FuegoPrice livePrice;
       if (m_rpc.getFuegoPrice(livePrice) && livePrice.xfgSpotUsd > 0.0) {
@@ -1703,51 +1701,6 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
 PriceOracle& SwapDaemon::priceOracle() {
    return m_oracle;
  }
-
- // Pool operations delegated to PoolOrganizer
- bool SwapDaemon::createPool(const PoolId& poolId) {
-   return m_poolOrganizer.createPool(poolId);
- }
-
- bool SwapDaemon::getPool(const PoolId& poolId, PoolState& state) const {
-   return m_poolOrganizer.getPool(poolId, state);
- }
-
- std::vector<PoolId> SwapDaemon::getActivePools() const {
-   return m_poolOrganizer.getActivePools();
- }
-
- PoolCheckpoint SwapDaemon::processDeposit(const LPDepositParams& params, uint64_t shareAmount) {
-   return m_poolOrganizer.processDeposit(params, shareAmount);
- }
-
- PoolCheckpoint SwapDaemon::processWithdrawal(const LPWithdrawalParams& params, WithdrawalAmounts& amounts) {
-   return m_poolOrganizer.processWithdrawal(params, amounts);
- }
-
- PoolOrganizer::SwapResult SwapDaemon::executeSwap(const PoolSwapOrder& order) {
-   return m_poolOrganizer.executeSwap(order);
- }
-
- uint64_t SwapDaemon::getExpectedOutput(const PoolId& poolId, bool swapAforB, uint64_t inputAmount) const {
-   return m_poolOrganizer.getExpectedOutput(poolId, swapAforB, inputAmount);
- }
-
- PoolOrganizer::ClaimableFees SwapDaemon::getClaimableFees(const Crypto::PublicKey& owner, const PoolId& poolId) const {
-   return m_poolOrganizer.getClaimableFees(owner, poolId);
- }
-
- PoolCheckpoint SwapDaemon::processFeeClaim(const Crypto::PublicKey& owner, const PoolId& poolId, PoolOrganizer::ClaimableFees& claimed) {
-   return m_poolOrganizer.processFeeClaim(owner, poolId, claimed);
- }
-
- PoolCheckpoint SwapDaemon::generateCheckpoint(const PoolId& poolId) {
-   return m_poolOrganizer.generateCheckpoint(poolId);
- }
-
-  bool SwapDaemon::getCurrentCheckpoint(const PoolId& poolId, PoolCheckpoint& checkpoint) const {
-    return m_poolOrganizer.getCurrentCheckpoint(poolId, checkpoint);
-  }
 
   std::vector<SwapStateMachine> SwapDaemon::getActiveAfkOffers() {
     std::vector<SwapStateMachine> activeOffers;

@@ -175,6 +175,38 @@ void OrderbookMempool::clear() {
   m_senderCounts.clear();
 }
 
+void OrderbookMempool::copyToIndex(OrderbookIndex& idx) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (const auto& [price, ptrs] : m_bids) {
+    for (const auto& ptr : ptrs) {
+      OrderEntry e;
+      e.orderId    = ptr.order->orderId;
+      e.side       = ptr.order->side;
+      e.price      = ptr.order->price;
+      e.amount     = ptr.order->amount;
+      e.expiration = ptr.order->expiration;
+      e.spendKey   = ptr.order->spendKey;
+      e.viewKey    = ptr.order->viewKey;
+      e.blockHeight = 0;
+      idx.addOrder(e);
+    }
+  }
+  for (const auto& [price, ptrs] : m_asks) {
+    for (const auto& ptr : ptrs) {
+      OrderEntry e;
+      e.orderId    = ptr.order->orderId;
+      e.side       = ptr.order->side;
+      e.price      = ptr.order->price;
+      e.amount     = ptr.order->amount;
+      e.expiration = ptr.order->expiration;
+      e.spendKey   = ptr.order->spendKey;
+      e.viewKey    = ptr.order->viewKey;
+      e.blockHeight = 0;
+      idx.addOrder(e);
+    }
+  }
+}
+
 void OrderbookMempool::insertBid(const Order& order, bool isPool) {
   OrderPtr ptr{&order, isPool};
   // Pool orders at same price level go AFTER user orders

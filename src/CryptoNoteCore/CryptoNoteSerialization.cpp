@@ -479,7 +479,7 @@ void serialize(ParentBlockSerializer& pbs, ISerializer& serializer) {
 
 void serializeBlockHeader(BlockHeader& header, ISerializer& serializer) {
   serializer(header.majorVersion, "major_version");
-  if (header.majorVersion > BLOCK_MAJOR_VERSION_13) {  // upgradekit + hearth + orderbook
+  if (header.majorVersion > BLOCK_MAJOR_VERSION_13) {  // max: v11 hearth orderbook, v13 DIGM
     throw std::runtime_error("Wrong major version");
   }
 
@@ -510,7 +510,7 @@ void serialize(Block& block, ISerializer& serializer) {
   serializer(block.baseTransaction, "miner_tx");
   serializer(block.transactionHashes, "tx_hashes");
 
-  if (block.majorVersion >= BLOCK_MAJOR_VERSION_13) {
+  if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
     serializer(block.orderbookClearingPrice, "orderbook_clearing_price");
     serializer(block.orderbookNumMatches, "orderbook_num_matches");
     serializer(block.orderbookDepthBidXfg, "orderbook_depth_bid");

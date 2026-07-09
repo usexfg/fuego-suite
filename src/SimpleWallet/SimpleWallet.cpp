@@ -4084,15 +4084,15 @@ bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   if (!requireV11("info_heat")) return false;
   success_msg_writer() << "HEAT flatcoin: $"
     << CryptoNote::parameters::HEAT_PEG_USD << " USD (fixed)";
-  success_msg_writer() << "  Status: hard peg — no PI controller, no target ratio, no bands";
-  success_msg_writer() << "  XFG price: fully unrestrained, floats freely via Hearth AMM";
+  success_msg_writer() << "  Status: hard peg — adjusted for USD inflation since Q1:2009";
+  success_msg_writer() << "  XFG price: fully unrestrained, floats freely via Hearth orderbook";
   success_msg_writer() << "  Mint min: 0.1 HEAT (" << CryptoNote::parameters::HEAT_MINT_MIN_HEAT
     << " atomic)";
   success_msg_writer() << "  Mint premium: " << (CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS / 100.0)
-    << "% (use hearth_xfg to avoid)";
+    << "%";
   success_msg_writer() << "  Bills: {500,100,50,10,5,1,0.5,0.1} HEAT — mints split into denominations";
-  success_msg_writer() << "  Mint: mint_heat <xfg> — burn XFG for HEAT at pool rate";
-  success_msg_writer() << "  Trade: hearth_xfg / hearth_heat — swap on Hearth AMM (0.3% fee)";
+  success_msg_writer() << "  Mint: mint_heat <xfg> — burn XFG for HEAT at orderbook rate";
+  success_msg_writer() << "  Trade: place orders on Hearth's orderbook (pool band 0.3% spread)";
   success_msg_writer() << "  Query daemon: /heat_metrics  /amm_pool_info";
   return true;
 }

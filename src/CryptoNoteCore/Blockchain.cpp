@@ -410,6 +410,7 @@ namespace {
   CryptoNote::OrderbookMempool g_orderbookMempool(100, 10000);
   CryptoNote::PoolOrderOrchestrator g_poolOrchestrator;
   uint64_t g_orderbookLastClearingPrice = 0;
+  uint32_t g_orderbookLastNumMatches = 0;
   bool g_orderbookIsInBootstrap = true;
   uint32_t g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
   uint32_t g_blocksSinceLastPoolRegen = 0;
@@ -2915,9 +2916,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     AssetBalance inAssets, outAssets;
     bool hasHeatMintAuth = false;
     uint64_t authXfgBurned = 0, authHeatMinted = 0;
-    bool hasAmmSwapAuth = false;
-    uint8_t swapDirection = 0;
-    uint64_t swapInputAmount = 0, swapOutputAmount = 0, swapMinOutput = 0;
     bool hasLpAddAuth = false;
     uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
     bool hasLpRemoveAuth = false;
@@ -2945,14 +2943,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             const auto& auth = boost::get<TransactionExtraHeatMintAuth>(field);
             authXfgBurned = auth.xfgBurned;
             authHeatMinted = auth.heatMinted;
-          }
-          if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
-            hasAmmSwapAuth = true;
-            const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
-            swapDirection = auth.direction;
-            swapInputAmount = auth.inputAmount;
-            swapOutputAmount = auth.outputAmount;
-            swapMinOutput = auth.minOutput;
           }
           if (field.type() == typeid(TransactionExtraLpAddAuth)) {
             hasLpAddAuth = true;
@@ -3027,22 +3017,6 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " market sell balance mismatch";
         }
-      } else if (hasAmmSwapAuth) {
-        if (swapDirection == 0) {
-          if (inAssets.xfg < outAssets.xfg + xfgFee ||
-              inAssets.heat + swapOutputAmount != outAssets.heat) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap balance mismatch (XFG->HEAT)";
-          }
-        } else {
-          // Direction=1: fee paid from swap output. Override flat-sum fee for block reward.
-          fee = m_currency.minimumFee(blockData.majorVersion);
-          if (inAssets.xfg + swapOutputAmount < outAssets.xfg + fee ||
-              inAssets.heat < outAssets.heat) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap balance mismatch (HEAT->XFG)";
-          }
-        }
       } else {
         if (inAssets.xfg < outAssets.xfg + xfgFee ||
             inAssets.heat != outAssets.heat ||
@@ -3110,7 +3084,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           uint64_t premium = (authXfgBurned > xfgEquivalent)
             ? authXfgBurned - xfgEquivalent
             : 0;
-          m_swfBalance += premium;
+          // Route mint premium to treasury HEAT reserve (convert XFG → HEAT at pool rate)
+          if (premium > 0 && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+            FixedPoint64 premiumFp = FixedPoint64::fromUint64(premium);
+            uint64_t heatPremium = premiumFp.div(poolRate).toUint64();
+            m_treasuryHeatReserve += heatPremium;
+          }
         }
       }
     }
@@ -3132,54 +3111,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     }
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      // AMM swap + LP auth pool-math validation — pre-v11 only (orderbook replaces AMM at v11)
-      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasAmmSwapAuth) {
-        uint32_t feeBps = parameters::HEARTH_FEE_BPS;
-        uint64_t expectedOutput;
-        if (swapDirection == 0) {
-          expectedOutput = ammGetOutputAmount(swapInputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
-        } else {
-          expectedOutput = ammGetOutputAmount(swapInputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
-        }
-        if (swapOutputAmount != expectedOutput || swapOutputAmount < swapMinOutput || swapOutputAmount == 0) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap auth output mismatch (expected="
-                                     << expectedOutput << " declared=" << swapOutputAmount << ")";
-        }
-        // Verify pool-deposit output exists with correct term and amount
-        bool foundPoolDeposit = false;
-        Crypto::PublicKey poolKey = computePoolCommitKey();
-        uint32_t expectedTerm = (swapDirection == 0) ? parameters::DEPOSIT_TERM_POOL_XFG
-                                                     : parameters::DEPOSIT_TERM_POOL_HEAT;
-        for (const auto& out : transactions[i].outputs) {
-          if (out.target.type() == typeid(TransactionOutputCommitment)) {
-            const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-            if (co.term == expectedTerm && co.commitKey == poolKey && out.amount == swapInputAmount) {
-              foundPoolDeposit = true;
-            }
-          }
-        }
-        if (!foundPoolDeposit) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap missing pool-deposit output";
-        }
-        // Verify user-receive output
-        bool foundUserReceive = false;
-        uint32_t expectedReceiveTerm = (swapDirection == 0) ? parameters::HEAT_TERM
-                                                            : parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
-        for (const auto& out : transactions[i].outputs) {
-          if (out.target.type() == typeid(TransactionOutputCommitment)) {
-            const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-            if (co.term == expectedReceiveTerm && out.amount == swapOutputAmount) {
-              foundUserReceive = true;
-            }
-          }
-        }
-        if (!foundUserReceive) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap missing user-receive output";
-        }
-      }
+      // AMM swap validation removed — no swaps ever completed pre-v11.
+      // LP auth validation retained (pre-v11 only, for historical block sync)
 
       // v10 LP add auth — pool math validation (pre-v11 only)
       if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasLpAddAuth) {
@@ -3285,26 +3218,12 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         }
       }
 
-      // Original v11 AMM validation — pre-v11 only (orderbook replaces AMM at v11)
+      // Legacy v10 LP validation — pre-v11 only (AMM swap removed, no swaps completed)
       if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
       std::vector<TransactionExtraField> tx_extra_fields;
       if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
         for (const auto& field : tx_extra_fields) {
-          if (field.type() == typeid(TransactionExtraAmmSwap)) {
-            const auto& swap = boost::get<TransactionExtraAmmSwap>(field);
-            uint32_t feeBps = parameters::HEARTH_FEE_BPS;
-            uint64_t expectedOutput;
-            if (swap.direction == 0) {
-              expectedOutput = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
-            } else {
-              expectedOutput = ammGetOutputAmount(swap.inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
-            }
-            if (expectedOutput < swap.minOutput || expectedOutput == 0) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap output insufficient";
-              break;
-            }
-          } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
+          if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
             const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
             if (add.amountXfg == 0 && add.amountHeat == 0) {
               isTransactionValid = false;
@@ -3490,6 +3409,22 @@ bool Blockchain::isOrderbookInBootstrap() const {
   return g_orderbookIsInBootstrap;
 }
 
+uint64_t Blockchain::getHearthSpotPrice() const {
+  uint64_t pclearAvg = g_poolOrchestrator.getAveragePrice();
+  if (pclearAvg > 0) return pclearAvg;
+
+  const auto& pool = getAmmPool();
+  if (!pool.isEmpty() && pool.reserveHeat > 0) {
+    return ammGetSpotPrice(pool.reserveXfg, pool.reserveHeat);
+  }
+  return 0;
+}
+
+uint64_t Blockchain::getPoolTwap() const {
+  if (m_twapBlockCount == 0) return 0;
+  return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
+}
+
 std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
   std::vector<OrderbookLevel> levels;
   for (const auto& level : g_orderbookMempool.getBidCurve(maxLevels)) {
@@ -3507,16 +3442,15 @@ std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookAskCurve(uint32_
 }
 
 uint32_t Blockchain::getOrderbookNumMatches() const {
-  return 0; // Phase 2: stored in block header, not yet exposed
+  return g_orderbookLastNumMatches;
 }
 
 Blockchain::OrderbookEstimate Blockchain::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
   OrderbookEstimate est = {0, 0, 0, 0, 0};
-  if (amount == 0 || m_ammPool.isEmpty()) return est;
+  if (amount == 0) return est;
 
   uint64_t P_clear = g_orderbookLastClearingPrice;
-  MarketOrderExecutor executor(HEARTH_DEPTH_BAND_PCT, MAX_MARKET_ORDER_LEVELS,
-                                MAX_MARKET_PRICE_DEVIATION_PCT, parameters::HEARTH_FEE_BPS);
+  MarketOrderExecutor executor(MAX_MARKET_PRICE_DEVIATION_PCT);
 
   // Build temporary OrderbookIndex from mempool for the estimator
   OrderbookIndex snapshot(MAX_ORDERS_PER_BLOCK, 100);
@@ -3537,16 +3471,14 @@ Blockchain::OrderbookEstimate Blockchain::getOrderbookEstimate(uint8_t side, uin
 
   MarketOrderResult result;
   if (side == 0) {
-    result = executor.executeMarketBuy(amount, 0, P_clear,
-      m_ammPool.reserveXfg, m_ammPool.reserveHeat, snapshot);
+    result = executor.executeMarketBuy(amount, 0, P_clear, snapshot);
   } else {
-    result = executor.executeMarketSell(amount, 0, P_clear,
-      m_ammPool.reserveXfg, m_ammPool.reserveHeat, snapshot);
+    result = executor.executeMarketSell(amount, 0, P_clear, snapshot);
   }
 
   est.estimatedFill = result.filledAmount;
-  est.hearthFill = result.hearthFilled;
-  est.orderbookFill = result.orderbookFilled;
+  est.hearthFill = result.filledAmount;
+  est.orderbookFill = 0;
   est.worstCasePrice = result.maxPriceDeviation;
   est.levelsConsumed = result.levelsConsumed;
   return est;
@@ -3613,44 +3545,9 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
     }
   }
 
-  // Build aggregated curves from mempool for matching
-  // (matching engine operates on the mempool's aggregated view)
-  auto bidCurve = g_orderbookMempool.getBidCurve(MAX_ORDERS_PER_BLOCK);
-  auto askCurve = g_orderbookMempool.getAskCurve(MAX_ORDERS_PER_BLOCK);
-
-  if (!bidCurve.empty() && !askCurve.empty() && !g_orderbookIsInBootstrap) {
-    // Transfer mempool orders to an OrderbookIndex for matching
+  if (!g_orderbookIsInBootstrap && g_orderbookMempool.totalOrders() > 0) {
     OrderbookIndex matchIndex(MAX_ORDERS_PER_BLOCK, 100);
-
-    for (const auto& level : bidCurve) {
-      for (uint32_t i = 0; i < level.orderCount; i++) {
-        OrderEntry e;
-        e.price = level.price;
-        e.amount = level.depth / level.orderCount;
-        e.side = 0;
-        e.expiration = 0;
-        e.blockHeight = height;
-        // Synthetic order IDs from mempool
-        e.orderId.data[0] = static_cast<uint8_t>(level.price & 0xFF);
-        e.orderId.data[1] = static_cast<uint8_t>((level.price >> 8) & 0xFF);
-        e.orderId.data[2] = static_cast<uint8_t>(i);
-        matchIndex.addOrder(e);
-      }
-    }
-    for (const auto& level : askCurve) {
-      for (uint32_t i = 0; i < level.orderCount; i++) {
-        OrderEntry e;
-        e.price = level.price;
-        e.amount = level.depth / level.orderCount;
-        e.side = 1;
-        e.expiration = 0;
-        e.blockHeight = height;
-        e.orderId.data[0] = static_cast<uint8_t>(level.price & 0xFF);
-        e.orderId.data[1] = static_cast<uint8_t>((level.price >> 8) & 0xFF);
-        e.orderId.data[2] = 0x80 | static_cast<uint8_t>(i);
-        matchIndex.addOrder(e);
-      }
-    }
+    g_orderbookMempool.copyToIndex(matchIndex);
 
     OrderbookMatcher matcher(MIN_DISTINCT_PARTIES, MAX_ORDERS_PER_BLOCK);
     MatchResult result = matcher.match(matchIndex, g_orderbookLastClearingPrice, height);
@@ -3658,15 +3555,43 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
     if (result.clearingValid) {
       g_orderbookLastClearingPrice = result.P_clear;
 
-      // Build batched settlement from fills
-      // In Phase 6b: construct BatchedSettlement tx from result.fills
-      // Each fill consumes matched orders from mempool, creates counterparty outputs
+      // Settle pool order fills: update reserves, accumulate LP fees
+      if (!m_ammPool.isEmpty()) {
+        for (const auto& fill : result.fills) {
+          bool bidIsPool = (fill.bidOrderId.data[0] == 0xF0);
+          bool askIsPool = (fill.askOrderId.data[0] == 0xF0);
+          if (!bidIsPool && !askIsPool) continue;
+
+          uint64_t fillCost = (static_cast<uint128_t>(fill.amount) * fill.price) / parameters::COIN;
+
+          if (bidIsPool) {
+            m_ammPool.reserveXfg += fill.amount;
+            m_ammPool.reserveHeat -= fillCost;
+          }
+          if (askIsPool) {
+            m_ammPool.reserveXfg -= fill.amount;
+            m_ammPool.reserveHeat += fillCost;
+          }
+
+          // Fee = spread between fill price and P_clear
+          if (fill.price > result.P_clear) {
+            uint64_t fee = (static_cast<uint128_t>(fill.amount) *
+                           (fill.price - result.P_clear)) / parameters::COIN;
+            m_ammPool.accumulatedLpFeesHeat += fee;
+          } else if (result.P_clear > fill.price) {
+            uint64_t fee = (static_cast<uint128_t>(fill.amount) *
+                           (result.P_clear - fill.price)) / parameters::COIN;
+            m_ammPool.accumulatedLpFeesHeat += fee;
+          }
+        }
+      }
+      block.orderbookNumMatches = result.numMatches;
+      g_orderbookLastNumMatches = result.numMatches;
     }
   }
 
   // Write to block header
   block.orderbookClearingPrice = g_orderbookLastClearingPrice;
-  block.orderbookNumMatches = 0;
   block.orderbookDepthBidXfg = 0;
   block.orderbookDepthAskXfg = 0;
 
@@ -3678,8 +3603,7 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
   }
 
   if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-    uint64_t spot = (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat;
-    block.hearthPoolRatio = static_cast<uint64_t>(spot);
+    block.hearthPoolRatio = getHearthSpotPrice();
   }
 }
 
@@ -3812,7 +3736,7 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             permanentBurns += (heatCommit.amount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
             uint64_t treasuryShare = (heatCommit.amount * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
             m_treasuryLpReserve += (treasuryShare * CryptoNote::parameters::TREASURY_LP_PCT) / 100;
-            m_treasuryBalance += (treasuryShare * CryptoNote::parameters::TREASURY_PEG_PCT) / 100;
+            m_treasuryBalance += (treasuryShare * CryptoNote::parameters::TREASURY_RESERVE_PCT) / 100;
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
             // Index the HEAT commitment for RPC queries
@@ -4303,8 +4227,8 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
 
-    // Route treasury share: mint HⲶ∆T from swap-fee aggregate demand.
-    // 20% → Treasury heat reserve (fuels APY floor, peg defense).
+    // Route treasury share: mint HEAT from swap-fee aggregate demand.
+    // 20% → Treasury heat reserve (fuels APY floor).
     if (treasuryShare > 0) {
       uint64_t treasuryHeat = treasuryShare;
       if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
@@ -4815,19 +4739,13 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
 
   m_paymentIdIndex.add(transaction.tx);
 
-  // AMM state mutation (v11+)
+  // AMM state mutation — LP operations only (swap removed, no swaps completed)
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
     std::vector<TransactionExtraField> tx_extra_fields;
     if (parseTransactionExtra(transaction.tx.extra, tx_extra_fields)) {
-      // Pre-scan for auth tags to ensure execution uses validated values (prevents dual-tag conflict)
-      uint64_t authSwapDir0Input = 0, authSwapDir1Input = 0;
       uint64_t authLpAddXfg = 0, authLpAddHeat = 0;
       for (const auto& f : tx_extra_fields) {
-        if (f.type() == typeid(TransactionExtraAmmSwapAuth)) {
-          const auto& a = boost::get<TransactionExtraAmmSwapAuth>(f);
-          if (a.direction == 0) authSwapDir0Input = std::max(authSwapDir0Input, a.inputAmount);
-          else                  authSwapDir1Input = std::max(authSwapDir1Input, a.inputAmount);
-        } else if (f.type() == typeid(TransactionExtraLpAddAuth)) {
+        if (f.type() == typeid(TransactionExtraLpAddAuth)) {
           const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
           if (a.amountXfg > 0 || a.amountHeat > 0) {
             authLpAddXfg = a.amountXfg; authLpAddHeat = a.amountHeat;
@@ -4835,30 +4753,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
         }
       }
       for (const auto& field : tx_extra_fields) {
-        if (field.type() == typeid(TransactionExtraAmmSwap)) {
-          const auto& swap = boost::get<TransactionExtraAmmSwap>(field);
-          // Use auth-tag input if present (prevents dual-tag mismatch consensus fork)
-          uint64_t inputAmount = swap.inputAmount;
-          if (swap.direction == 0 && authSwapDir0Input > 0) inputAmount = authSwapDir0Input;
-          if (swap.direction != 0 && authSwapDir1Input > 0) inputAmount = authSwapDir1Input;
-          uint32_t feeBps = parameters::HEARTH_FEE_BPS;
-          uint64_t outputAmount = 0;
-          if (swap.direction == 0) {
-            outputAmount = ammGetOutputAmount(inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, feeBps);
-            uint64_t outputNoFee = ammGetOutputAmount(inputAmount, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
-            uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-            m_ammPool.reserveXfg += inputAmount;
-            m_ammPool.reserveHeat -= outputAmount;
-            m_ammPool.accumulatedLpFeesHeat += actualFee;
-          } else {
-            outputAmount = ammGetOutputAmount(inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, feeBps);
-            uint64_t outputNoFee = ammGetOutputAmount(inputAmount, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
-            uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-            m_ammPool.reserveHeat += inputAmount;
-            m_ammPool.reserveXfg -= outputAmount;
-            m_ammPool.accumulatedLpFeesXfg += actualFee;
-          }
-        } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
+        if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
           const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
           // Use auth-tag amounts if present (prevents dual-tag mismatch)
           uint64_t addXfg = add.amountXfg;
@@ -4876,6 +4771,7 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
               if (co.term == parameters::DEPOSIT_TERM_LP) {
                 uint64_t gidx = transaction.m_global_output_indexes[o];
                 m_lpCommitmentShares[gidx] = shares;
+                m_lpCommitTxGidx[transactionHash] = gidx;
                 break;
               }
             }
@@ -5070,40 +4966,12 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       "Blockchain consistency broken - cannot find transaction by hash.";
   }
 
-  // Reverse AMM state mutations (v11+)
+  // Reverse AMM state mutations — LP only (swap removed, no swaps completed)
   std::vector<TransactionExtraField> tx_extra_fields;
   if (parseTransactionExtra(transaction.extra, tx_extra_fields)) {
     for (auto it = tx_extra_fields.rbegin(); it != tx_extra_fields.rend(); ++it) {
       const auto& field = *it;
-      if (field.type() == typeid(TransactionExtraAmmSwap)) {
-        const auto& swap = boost::get<TransactionExtraAmmSwap>(field);
-        uint32_t feeBps = parameters::HEARTH_FEE_BPS;
-        if (swap.direction == 0) {
-          uint64_t preXfg = m_ammPool.reserveXfg - swap.inputAmount;
-          uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
-          uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveHeat
-            * swap.inputAmount * feeAdj) / ((uint128_t)preXfg * parameters::HEARTH_FEE_DIVISOR));
-          // Reconstruct pre-swap HEAT reserve for correct outputNoFee computation
-          uint64_t preHeat = m_ammPool.reserveHeat + outputAmount;
-          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preXfg, preHeat, 0);
-          uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-          if (m_ammPool.accumulatedLpFeesHeat >= actualFee) m_ammPool.accumulatedLpFeesHeat -= actualFee;
-          m_ammPool.reserveHeat += outputAmount;
-          m_ammPool.reserveXfg -= swap.inputAmount;
-        } else {
-          uint64_t preHeat = m_ammPool.reserveHeat - swap.inputAmount;
-          uint64_t feeAdj = parameters::HEARTH_FEE_DIVISOR - feeBps;
-          uint64_t outputAmount = (uint64_t)(((uint128_t)m_ammPool.reserveXfg
-            * swap.inputAmount * feeAdj) / ((uint128_t)preHeat * parameters::HEARTH_FEE_DIVISOR));
-          // Reconstruct pre-swap XFG reserve for correct outputNoFee computation
-          uint64_t preXfg = m_ammPool.reserveXfg + outputAmount;
-          uint64_t outputNoFee = ammGetOutputAmount(swap.inputAmount, preHeat, preXfg, 0);
-          uint64_t actualFee = outputNoFee > outputAmount ? outputNoFee - outputAmount : 0;
-          if (m_ammPool.accumulatedLpFeesXfg >= actualFee) m_ammPool.accumulatedLpFeesXfg -= actualFee;
-          m_ammPool.reserveXfg += outputAmount;
-          m_ammPool.reserveHeat -= swap.inputAmount;
-        }
-      } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
+      if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
         const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
         // Compute shares BEFORE decrementing reserves to match pushTransaction's pre-deposit calculation.
         // Mathematical proof: totalLpShares_new * amountXfg / reserveXfg_new = totalLpShares_original * amountXfg / reserveXfg_original
@@ -5112,10 +4980,11 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         if (m_ammPool.reserveHeat >= add.amountHeat) m_ammPool.reserveHeat -= add.amountHeat;
         if (m_ammPool.reserveXfg >= add.amountXfg) m_ammPool.reserveXfg -= add.amountXfg;
         if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
-        // NOTE: m_lpCommitmentShares not cleaned up on reversal — global output
-        // index not available in popBlock's raw Transaction context. Stale map
-        // entry is harmless (consumes memory, overwritten on next LP add at same
-        // index). Full fix requires tracking gidx in the pop path.
+        auto lpIt = m_lpCommitTxGidx.find(transactionHash);
+        if (lpIt != m_lpCommitTxGidx.end()) {
+          m_lpCommitmentShares.erase(lpIt->second);
+          m_lpCommitTxGidx.erase(lpIt);
+        }
       } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
         const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
         uint64_t amountXfg = 0, amountHeat = 0;

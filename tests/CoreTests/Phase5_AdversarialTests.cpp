@@ -14,8 +14,6 @@
 #include "CryptoNoteCore/OrderbookIndex.h"
 #include "CryptoNoteCore/OrderbookMatcher.h"
 #include "CryptoNoteCore/MarketOrderExecutor.h"
-#include "CryptoNoteCore/HearthRebalance.h"
-#include "CryptoNoteCore/AmmPool.h"
 #include "Common/Int128.h"
 
 #include <cstdio>
@@ -211,6 +209,8 @@ int main() {
     fprintf(stderr, "  [PASS] Extreme bid handled via 150% guard\n");
   }
 
+#if 0
+  // HearthRebalance tests removed (class deleted, pre-v11 only)
   // REBALANCE: pool stays at target after rebalance swap
   {
     HearthRebalance rebalancer(30);
@@ -242,6 +242,7 @@ int main() {
     fprintf(stderr, "  [PASS] Rebalance moves pool ratio toward P_clear (%.6f → %.6f)\n",
       oldRatio / 1000000.0, newRatio / 1000000.0);
   }
+#endif
 
   // BOOTSTRAP RACE: order during bootstrap correctly carries forward
   {
@@ -345,7 +346,9 @@ int main() {
     fprintf(stderr, "  [PASS] Same-price ordering handled correctly\n");
   }
 
-  // REBALANCE TOLERANCE: small drift doesn't trigger rebalance
+#if 0
+  // HearthRebalance + AMM invariant tests removed (code deleted, pre-v11 only)
+  
   {
     HearthRebalance rebalancer(30);
     // Pool almost exactly at P_clear
@@ -375,6 +378,7 @@ int main() {
     TEST(k_after >= k_before);  // invariant grows due to fee
     fprintf(stderr, "  [PASS] AMM constant-product invariant preserved\n");
   }
+#endif
 
   fprintf(stderr, "\n=== Phase 5 Adversarial Tests ===\n");
   fprintf(stderr, "Passed: %d / %d\n", tests_passed, tests_run);

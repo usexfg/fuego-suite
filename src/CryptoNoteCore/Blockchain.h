@@ -128,9 +128,16 @@ namespace CryptoNote {
     uint64_t getPoolLockedXfg() const { return m_poolLockedXfg; }
     uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
 
-    // Orderbook (v13+) — reads from block finalization state
+    // Orderbook (v11+) — reads from block finalization state
     uint64_t getOrderbookClearingPrice() const;
     bool isOrderbookInBootstrap() const;
+
+    // Hearth spot price: 30-block P_clear average, fallback to pool ratio
+    uint64_t getHearthSpotPrice() const;
+
+    // Epoch pool TWAP: time-weighted average pool ratio (10^18 precision).
+    // Returns 0 if no blocks accumulated this epoch.
+    uint64_t getPoolTwap() const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -432,6 +439,8 @@ namespace CryptoNote {
     IndexManager m_indexManager;
     // LP share tracking: maps global commitment output index → LP shares held
     parallel_flat_hash_map<uint64_t, uint64_t> m_lpCommitmentShares;
+    struct HashLess { bool operator()(const Crypto::Hash& a, const Crypto::Hash& b) const { return memcmp(a.data, b.data, sizeof(a.data)) < 0; } };
+    std::map<Crypto::Hash, uint64_t, HashLess> m_lpCommitTxGidx;
 
     // Fee pool: accumulates swap fees, distributed as interest to CD holders.
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
@@ -454,7 +463,7 @@ namespace CryptoNote {
     uint64_t m_totalTreasuryAccrued = 0;
     uint64_t m_totalRolloverAccrued = 0;       // deprecated, kept for serialization compat
     uint64_t m_treasuryBalance = 0;
-    uint64_t m_treasuryHeatReserve = 0;          // HEAT bought for peg defense (sold when overvalued)
+    uint64_t m_treasuryHeatReserve = 0;          // HEAT minted from swap fee share (CD yield floor backstop)
     uint64_t m_treasuryXfgReserve = 0;           // permanent XFG accumulator (never spent)
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat

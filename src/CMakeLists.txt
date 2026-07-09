@@ -234,7 +234,6 @@ add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 
 # Swap core library: shared by libRpc and the xfg-swapd binary
 # Active sources: adaptor-signature atomic swaps (v1)
-# Pool sources are deferred to v11 — see src/SwapDaemon/pool_v11/README.md
 add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapTypes.cpp
     SwapDaemon/SwapStateMachine.cpp
@@ -250,19 +249,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/PriceOracle.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/StatusServer.cpp
-    SwapDaemon/PoolTypes.cpp
-    SwapDaemon/PoolAMM.cpp
-    SwapDaemon/PoolAttestation.cpp
-    SwapDaemon/PoolDatabase.cpp
-    # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
-    # SwapDaemon/pool_v11/PoolTypes.cpp
-    # SwapDaemon/pool_v11/PoolAMM.cpp
-    # SwapDaemon/pool_v11/PoolAttestation.cpp
-    # SwapDaemon/pool_v11/PoolOrganizer.cpp
-    # SwapDaemon/pool_v11/PoolP2P.cpp
-    # SwapDaemon/pool_v11/PoolDatabase.cpp
-    # SwapDaemon/pool_v11/PoolDatabase.cpp
-    SwapDaemon/PoolOrganizer.cpp
+
     SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
@@ -444,8 +431,6 @@ add_executable(PaymentGateService ${PaymentGateService})
 add_executable(Optimizer ${OPTIMIZER_SOURCES})
 
 # Swap Daemon executable (xfg-swapd) — active v1 atomic swap sources only
-# v11 pool trading sources are in SwapDaemon/pool_v11/ and excluded here.
-# See src/SwapDaemon/pool_v11/README.md for reintegration instructions.
 add_executable(SwapDaemon
     SwapDaemon/main.cpp
     SwapDaemon/AdaptorSwap.cpp
@@ -475,13 +460,6 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     SwapDaemon/SwapHashLock.cpp
-    # v11: pool trading — sources moved to SwapDaemon/pool_v11/, not compiled in v1
-    # SwapDaemon/pool_v11/PoolTypes.cpp
-    # SwapDaemon/pool_v11/PoolAMM.cpp
-    # SwapDaemon/pool_v11/PoolAttestation.cpp
-    # SwapDaemon/pool_v11/PoolOrganizer.cpp
-    # SwapDaemon/pool_v11/PoolP2P.cpp
-    # SwapDaemon/pool_v11/PoolDatabase.cpp
 )
 
 # Add TestnetWallet executable (extends simple_wallet with testnet-specific commands)

@@ -92,10 +92,10 @@
 // Fixed: struct, parser, writer, and blockchain validation added below.
 #define TX_EXTRA_HEAT_SEND_AUTH             0xF9
 
-// 0xFA: Orderbook limit order placement (v13+)
+// 0xFA: Orderbook limit order placement (v11+)
 #define TX_EXTRA_ORDER_PLACE                0xFA
 
-// 0x0F: Orderbook cancel — order UTXO reference (v13+)
+// 0x0F: Orderbook cancel — order UTXO reference (v11+)
 #define TX_EXTRA_ORDER_CANCEL               0x0F
 #define TX_EXTRA_MARKET_BUY_AUTH            0xFC
 #define TX_EXTRA_MARKET_SELL_AUTH           0xFD
@@ -330,7 +330,7 @@ struct TransactionExtraLpRemoveAuth {
   bool serialize(ISerializer& serializer);
 };
 
-// v13 orderbook limit order placement — describes the order carried by TX_OUT_ORDER
+// v11 orderbook limit order placement — describes the order carried by TX_OUT_ORDER
 struct TransactionExtraOrderPlace {
   uint8_t  side;         // 0 = BUY_XFG, 1 = SELL_XFG
   uint64_t price;        // XFG/HEAT ratio × 10^8
@@ -338,20 +338,20 @@ struct TransactionExtraOrderPlace {
   bool serialize(ISerializer& serializer);
 };
 
-// v13 orderbook cancel — references the order UTXO to cancel
+// v11 orderbook cancel — references the order UTXO to cancel
 struct TransactionExtraOrderCancel {
   Crypto::Hash orderId;
   bool serialize(ISerializer& serializer);
 };
 
-// v13 market buy auth — declares max HEAT spend for XFG purchase
+// v11 market buy auth — declares max HEAT spend for XFG purchase
 struct TransactionExtraMarketBuyAuth {
   uint64_t xfgWanted;    // desired XFG to buy
   uint64_t maxHeatCost;  // max HEAT willing to spend (slippage protection)
   bool serialize(ISerializer& serializer);
 };
 
-// v13 market sell auth — declares min HEAT receive for XFG sale
+// v11 market sell auth — declares min HEAT receive for XFG sale
 struct TransactionExtraMarketSellAuth {
   uint64_t xfgToSell;       // XFG to sell
   uint64_t minHeatReceive;  // min HEAT to accept (slippage protection)
@@ -488,7 +488,7 @@ bool addLpAddAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uin
                          uint64_t lpShares);
 bool addLpRemoveAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned,
                             uint64_t minXfg, uint64_t minHeat);
-// Orderbook (v13+)
+// Orderbook (v11+)
 bool addOrderPlaceToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t price, uint32_t expiration);
 bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
 bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost);

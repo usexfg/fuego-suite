@@ -213,10 +213,8 @@ namespace CryptoNote {
       uint64_t burnedXfg = 0;
       uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)
       uint64_t swfBalance = 0;        // SWF balance from mint premiums
-      uint64_t redemptionPriceNum = 1;  // pool XFG/HⲶ∆T ratio × 10^6 (was PI redemption price)
+      uint64_t redemptionPriceNum = 1;  // pool XFG/HⲶ∆T ratio × 10^6
       uint64_t redemptionPriceDenom = 1000000;
-      uint64_t redemptionRateNum = 0;   // always 0 (PI controller removed)
-      uint64_t redemptionRateDenom = 1;
       uint64_t treasuryBalance = 0;
       uint64_t treasuryHeatReserve = 0;  // HⲶ∆T minted from 20% swap fee share (for APY floor)
       uint64_t epochSwapFees = 0;
@@ -240,14 +238,15 @@ namespace CryptoNote {
       uint64_t epochSwapFees = 0;
     };
     AmmPoolInfo getAmmPoolInfo() const;
+    uint64_t getPoolTwap() const;
 
-    // Orderbook (v13+)
+    // Orderbook (v11+)
     struct OrderbookInfo {
       uint64_t clearingPrice = 0;     // P_clear, XFG/HEAT ratio × 10^8
       uint32_t numMatches = 0;
       uint64_t depthBidXfg = 0;      // total bid depth in atomic XFG
       uint64_t depthAskXfg = 0;      // total ask depth in atomic XFG
-      uint64_t hearthPoolRatio = 0;  // post-rebalance pool ratio × 10^8
+      uint64_t hearthPoolRatio = 0;  // P_clear 33-block avg (pool ratio fallback) × 10^8
       bool inBootstrap = true;
     };
     OrderbookInfo getOrderbookInfo() const;

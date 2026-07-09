@@ -13,7 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "MerkleTree.h"
-#include "crypto/hash.h"
+#include "../crypto/hash.h"
 #include <cstring>
 
 namespace CryptoNote {

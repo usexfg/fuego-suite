@@ -210,6 +210,7 @@ namespace CryptoNote {
     // HEAT stablecoin / Hearth AMM metrics (v11+)
     struct HeatMetrics {
       uint64_t heatSupply = 0;
+      uint64_t digmSupply = 0;
       uint64_t burnedXfg = 0;
       uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)
       uint64_t swfBalance = 0;        // SWF balance from mint premiums
@@ -249,6 +250,18 @@ namespace CryptoNote {
     };
     AmmPoolInfo getAmmPoolInfo() const;
     uint64_t getPoolTwap() const;
+
+    // DIGM pool info
+    struct DigmPoolInfo {
+      uint64_t reserveDigm = 0;
+      uint64_t reserveHeat = 0;
+      uint64_t totalLpShares = 0;
+      uint64_t accumulatedLpFees = 0;
+      uint64_t pegHeat = 0;
+    };
+    DigmPoolInfo getDigmPoolInfo() const;
+    bool executeDigmSwap(uint64_t heatIn, uint64_t expectedDigmOut);
+    bool executeDigmSell(uint64_t digmIn, uint64_t expectedHeatOut);
 
     // Orderbook (v11+)
     struct OrderbookInfo {

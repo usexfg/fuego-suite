@@ -119,6 +119,23 @@ public:
     outFeeRate = 0;
     return {};
   }
+
+  // Limit order deposit info from the daemon (all orders, filtered by wallet).
+  // Default returns empty so existing INode implementations compile.
+  struct LimitDepositRpcEntry {
+    std::string order_id;
+    std::string address_hash; // cn_fast_hash(spendKey||viewKey) — wallet filters by this
+    uint8_t side;
+    uint64_t amount;
+    uint64_t target_price;
+    uint32_t expiration;
+    bool withdrawn;
+    bool expired;
+  };
+  virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) {
+    deposits.clear();
+    return {};
+  }
 };
 
 }

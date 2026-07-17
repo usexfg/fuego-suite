@@ -20,7 +20,6 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
-#include <set>
 
 using namespace CryptoNote;
 
@@ -42,17 +41,11 @@ static Crypto::Hash makeHash(uint8_t v) {
   return h;
 }
 
-static Crypto::PublicKey makePubKey(uint8_t v) {
-  Crypto::PublicKey k;
-  memset(k.data, v, sizeof(k.data));
-  return k;
-}
-
 static OrderEntry makeBid(uint8_t id, uint64_t price, uint64_t amount, uint32_t expiration = 0) {
   OrderEntry e;
   e.orderId = makeHash(id); e.side = 0; e.price = price; e.amount = amount;
   e.expiration = expiration;
-  e.spendKey = makePubKey(id); e.viewKey = makePubKey(id + 100);
+  e.addressHash = makeHash(id);
   e.blockHeight = 1000;
   return e;
 }
@@ -61,7 +54,7 @@ static OrderEntry makeAsk(uint8_t id, uint64_t price, uint64_t amount, uint32_t 
   OrderEntry e;
   e.orderId = makeHash(id); e.side = 1; e.price = price; e.amount = amount;
   e.expiration = expiration;
-  e.spendKey = makePubKey(id); e.viewKey = makePubKey(id + 100);
+  e.addressHash = makeHash(id + 100);
   e.blockHeight = 1000;
   return e;
 }
@@ -72,12 +65,13 @@ int main() {
   // WASH TRADE: 2 wallets from same keys, bid + ask at same price
   {
     OrderbookIndex idx;
-    OrderbookIndex::SenderKey sameSender{makePubKey(1), makePubKey(101)};
+    Crypto::Hash sameAddrHash = makeHash(42);
+    SenderKey sameSender{sameAddrHash};
 
     OrderEntry b1 = makeBid(1, 12500000, 500);
     OrderEntry a1 = makeAsk(2, 12500000, 500);
-    b1.spendKey = sameSender.spendKey; b1.viewKey = sameSender.viewKey;
-    a1.spendKey = sameSender.spendKey; a1.viewKey = sameSender.viewKey;
+    b1.addressHash = sameAddrHash;
+    a1.addressHash = sameAddrHash;
 
     idx.addOrder(b1);
     idx.addOrder(a1);
@@ -85,30 +79,29 @@ int main() {
     OrderbookMatcher matcher(2, 1000);
     auto result = matcher.match(idx, 12000000, 2000);
 
-    // Both orders from same sender produce 2 order IDs but same sender keys.
-    // Phase 1 counts distinct parties by order IDs (conservative).
-    // Real defense: 150% price guard, not min-party count.
-    // This is a known tradeoff documented in the design (D11).
-    TEST(result.clearingValid || !result.clearingValid);  // both acceptable for POC
-    fprintf(stderr, "  [PASS] Wash trade: order IDs counted as distinct parties (POC tradeoff)\n");
+    // Both orders from same sender produce 2 order IDs but same address hash.
+    // Real defense: MIN_DISTINCT_PARTIES=2 rejects wash trades.
+    TEST(!result.clearingValid);  // same party on both sides → invalid
+    fprintf(stderr, "  [PASS] Wash trade: same party rejected (MIN_DISTINCT_PARTIES)\n");
   }
 
   // SYBIL FLOOD: same sender places many orders at different price levels
   {
     OrderbookIndex idx(1000, 5);  // max 5 per sender
-    OrderbookIndex::SenderKey sybil{makePubKey(9), makePubKey(109)};
+    Crypto::Hash sybilHash = makeHash(9);
+    SenderKey sybil{sybilHash};
 
-    // Place 6 orders from same sender
+    // Place 5 orders from same sender
     for (int i = 0; i < 5; i++) {
       OrderEntry b = makeBid(i + 10, 13000000 - i * 1000, 100);
-      b.spendKey = sybil.spendKey; b.viewKey = sybil.viewKey;
+      b.addressHash = sybilHash;
       idx.addOrder(b);
     }
     // After 5 orders, canPlaceOrder returns false (limit=5)
     TEST(!idx.canPlaceOrder(sybil));  // count=5, max=5, 5<5 is false
 
     OrderEntry b6 = makeBid(20, 12000000, 100);
-    b6.spendKey = sybil.spendKey; b6.viewKey = sybil.viewKey;
+    b6.addressHash = sybilHash;
     idx.addOrder(b6);  // 6th order — exceeds display limit
     TEST(!idx.canPlaceOrder(sybil));
 
@@ -120,38 +113,35 @@ int main() {
     OrderbookIndex idx;
     idx.addOrder(makeAsk(1, 300000000, 10000000000ULL)); // ask at 3.0
 
-    MarketOrderExecutor exec(10, 5, 150, 30);
-    uint64_t xfgReserve = 1000000000;
-    uint64_t heatReserve = 1000000000;
-    uint64_t P_clear = 100000000;  // 1.0
+    MarketOrderExecutor exec(150);
 
     auto result = exec.executeMarketBuy(
-      10000000000ULL, 0, P_clear,
-      xfgReserve, heatReserve, idx);
+      10000000000ULL, 0, 100000000,
+      idx);
 
     // Should halt because ask at 3.0 exceeds 150% of P_clear (1.0)
-    TEST(result.halted || result.orderbookFilled == 0);
-    fprintf(stderr, "  [PASS] Price pump blocked (ask at 3.0 > 150% of 1.0)\n");
+    TEST(result.halted || result.levelsConsumed == 0);
+    fprintf(stderr, "  [PASS] Price pump blocked (ask at 3.0 > 150%% of 1.0)\n");
   }
 
-  // MARKET ORDER EXHAUSTION: 5 level guard
+  // MARKET ORDER EXHAUSTION: large buy consumes all available levels within price guard
   {
     OrderbookIndex idx;
-    // Place asks at 6 different price levels
+    // Place asks at 6 different price levels, all within 150% of P_clear
     for (int i = 0; i < 6; i++) {
       idx.addOrder(makeAsk(i + 1, 101000000 + i * 10000, 100000000));
     }
 
-    MarketOrderExecutor exec(10, 5, 150, 30);
-    uint64_t xfgReserve = 100000000000ULL;
-    uint64_t heatReserve = 100000000000ULL;
+    MarketOrderExecutor exec(150);  // 150% deviation → max price 250M
     auto result = exec.executeMarketBuy(
       10000000000ULL, 0, 100000000,
-      xfgReserve, heatReserve, idx);
+      idx);
 
-    // Should halt at 5 levels consumed (or earlier if HEARTH band fills part)
-    TEST(result.levelsConsumed <= 5);
-    fprintf(stderr, "  [PASS] Market order halted at 5-level guard\n");
+    // All 6 levels are within price guard, so all get consumed
+    TEST(result.levelsConsumed == 6u);
+    TEST(result.filledAmount > 0);
+    TEST(!result.halted);
+    fprintf(stderr, "  [PASS] Market order consumes all levels within price guard\n");
   }
 
   // STALE ORDER: expired order excluded from matching
@@ -172,19 +162,19 @@ int main() {
     fprintf(stderr, "  [PASS] Expired order excluded from matching\n");
   }
 
-  // EMPTY BOOK: market buy against empty book returns gracefully
+  // EMPTY BOOK: market buy against empty book returns zero
   {
     OrderbookIndex idx;
-    MarketOrderExecutor exec(10, 5, 150, 30);
+    MarketOrderExecutor exec(150);
 
     auto result = exec.executeMarketBuy(
       100000000, 0, 100000000,
-      10000000000, 10000000000, idx);
+      idx);
 
-    // Should fill what HEARTH band provides
-    TEST(result.filledAmount > 0);
-    TEST(result.orderbookFilled == 0);
-    fprintf(stderr, "  [PASS] Empty orderbook cascade handled gracefully\n");
+    TEST(result.filledAmount == 0);
+    TEST(result.levelsConsumed == 0);
+    TEST(!result.halted);
+    fprintf(stderr, "  [PASS] Empty orderbook returns zero fill\n");
   }
 
   // PRICE COLLAPSE: market sell at 150% below P_clear
@@ -192,22 +182,19 @@ int main() {
     OrderbookIndex idx;
     idx.addOrder(makeBid(1, 50000000, 10000000000ULL)); // bid at 0.5 (50% below P_clear=1.0)
 
-    MarketOrderExecutor exec(10, 5, 150, 30);
-    uint64_t xfgReserve = 1000000000;
-    uint64_t heatReserve = 1000000000;
-    uint64_t P_clear = 100000000;  // 1.0
+    MarketOrderExecutor exec(150);
 
     auto result = exec.executeMarketSell(
-      10000000000ULL, 0, P_clear,
-      xfgReserve, heatReserve, idx);
+      10000000000ULL, 0, 100000000,
+      idx);
 
     // Max price for sell: P_clear * (1 - 150%) = -0.5, floor at 1
     // Bid at 0.5 is >= floor → should match
     // Actually 150% deviation means: max_price = P_clear - (P_clear * 1.5) = -0.5...
     // The guard floors at 1. So any bid >= 1 should match.
     // The bid at 50M is well above 1, so it should match.
-    TEST(result.orderbookFilled > 0 || result.halted);
-    fprintf(stderr, "  [PASS] Extreme bid handled via 150% guard\n");
+    TEST(result.filledAmount > 0 || result.halted);
+    fprintf(stderr, "  [PASS] Extreme bid handled via 150%% guard\n");
   }
 
 #if 0

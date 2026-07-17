@@ -34,7 +34,6 @@ class core;
 class NodeServer;
 class ICryptoNoteProtocolQuery;
 class SwapOfferRelay;
-class CdOfferRelay;
 
 class RpcServer : public HttpServer {
 public:
@@ -50,7 +49,6 @@ public:
   bool enableCors(const std::string domain);
   bool remotenode_check_incoming_tx(const BinaryArray& tx_blob);
   void setSwapRelay(SwapOfferRelay* relay);
-  void setCdRelay(CdOfferRelay* relay);
   void setSwapDb(XfgSwap::SwapDatabase* db);
   void setSwapDaemon(XfgSwap::SwapDaemon* daemon);
 
@@ -82,7 +80,6 @@ private:
   bool on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res);
   bool on_get_random_commitment_outs(const COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request& req, COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response& res);
   bool on_get_random_outs_json(const COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON::response& res);
-  bool on_get_outputs_heights(const COMMAND_RPC_GET_OUTPUTS_HEIGHTS::request& req, COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response& res);
 
   bool onGetPoolChanges(const COMMAND_RPC_GET_POOL_CHANGES::request& req, COMMAND_RPC_GET_POOL_CHANGES::response& rsp);
   bool onGetPoolChangesLite(const COMMAND_RPC_GET_POOL_CHANGES_LITE::request& req, COMMAND_RPC_GET_POOL_CHANGES_LITE::response& rsp);
@@ -109,32 +106,30 @@ private:
   bool on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& req, COMMAND_RPC_GET_SWAP_TRADES::response& res);
   bool on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::request& req, COMMAND_RPC_SUBMIT_SWAP_OFFER::response& res);
   bool on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::request& req, COMMAND_RPC_CANCEL_SWAP_OFFER::response& res);
-  bool on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res);
 
   bool on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res);
   bool on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request& req, COMMAND_RPC_GET_TRANSACTIONS::response& res);
   // ZK prover data endpoints
   bool on_get_block_range(const COMMAND_RPC_GET_BLOCK_RANGE::request& req, COMMAND_RPC_GET_BLOCK_RANGE::response& res);
+  bool on_get_commitment_leaves(const COMMAND_RPC_GET_COMMITMENT_LEAVES::request& req, COMMAND_RPC_GET_COMMITMENT_LEAVES::response& res);
+
+  // Commitment Index RPC endpoints (Fuego → EVM bridge)
+  bool on_get_commitment(const COMMAND_RPC_GET_COMMITMENT::request& req, COMMAND_RPC_GET_COMMITMENT::response& res);
+  bool on_get_commitment_stats(const COMMAND_RPC_GET_COMMITMENT_STATS::request& req, COMMAND_RPC_GET_COMMITMENT_STATS::response& res);
+  bool on_get_commitment_merkle_root(const COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::response& res);
+  bool on_get_commitment_merkle_proof(const COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::request& req, COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::response& res);
+  bool on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EXISTS::request& req, COMMAND_RPC_CHECK_COMMITMENT_EXISTS::response& res);
 
   // Fee pool analytics + treasury
   bool on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req, COMMAND_RPC_GET_FEE_POOL_INFO::response& res);
   bool on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request& req, COMMAND_RPC_GET_HEAT_METRICS::response& res);
   bool on_amm_quote(const COMMAND_RPC_AMM_QUOTE::request& req, COMMAND_RPC_AMM_QUOTE::response& res);
   bool on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req, COMMAND_RPC_AMM_POOL_INFO::response& res);
-  bool on_get_orderbook_info(const COMMAND_RPC_GET_ORDERBOOK_INFO::request& req, COMMAND_RPC_GET_ORDERBOOK_INFO::response& res);
-  bool on_get_orderbook_state(const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req, COMMAND_RPC_GET_ORDERBOOK_STATE::response& res);
-  bool on_get_orderbook_estimates(const COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request& req, COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response& res);
-  bool on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req, COMMAND_RPC_GET_FUEGO_PRICE::response& res);
+  bool on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req, COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
   bool on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req, COMMAND_RPC_ADD_SWAP_FEE::response& res);
-  bool on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::request& req, COMMAND_RPC_SET_XFG_MARKET_VALUE::response& res);
-  bool on_prepare_cd_withdrawal(const COMMAND_RPC_PREPARE_CD_WITHDRAWAL::request& req, COMMAND_RPC_PREPARE_CD_WITHDRAWAL::response& res);
   bool on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req, COMMAND_RPC_GET_EPOCH_HISTORY::response& res);
   bool on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
   bool on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req, COMMAND_RPC_GET_TREASURY_INFO::response& res);
-  
-  bool on_get_cd_offers(const COMMAND_RPC_GET_CD_OFFERS::request& req, COMMAND_RPC_GET_CD_OFFERS::response& res);
-  bool on_submit_cd_offer(const COMMAND_RPC_SUBMIT_CD_OFFER::request& req, COMMAND_RPC_SUBMIT_CD_OFFER::response& res);
-  bool on_cancel_cd_offer(const COMMAND_RPC_CANCEL_CD_OFFER::request& req, COMMAND_RPC_CANCEL_CD_OFFER::response& res);
   bool on_get_maturing_deposits(const COMMAND_RPC_GET_MATURING_DEPOSITS::request& req, COMMAND_RPC_GET_MATURING_DEPOSITS::response& res);
   bool on_rollover_deposit(const COMMAND_RPC_ROLLOVER_DEPOSIT::request& req, COMMAND_RPC_ROLLOVER_DEPOSIT::response& res);
 
@@ -184,7 +179,6 @@ private:
   Crypto::SecretKey m_view_key = NULL_SECRET_KEY;
   AccountPublicAddress m_fee_acc;
   SwapOfferRelay* m_swapRelay = nullptr;
-  CdOfferRelay* m_cdRelay = nullptr;
   XfgSwap::SwapDatabase* m_swapDb = nullptr;
   XfgSwap::SwapDaemon* m_swapDaemon = nullptr;
 

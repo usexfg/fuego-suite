@@ -44,5 +44,7 @@ namespace CryptoNote
 
     // swapxfg launcher override (passes --testnet)
     bool swap_tui(const std::vector<std::string> &args);
+
+    bool requireV11(const std::string& cmdName);
   };
 }

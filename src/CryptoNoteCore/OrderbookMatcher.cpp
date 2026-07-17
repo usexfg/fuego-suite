@@ -19,6 +19,15 @@
 
 namespace CryptoNote {
 
+namespace {
+
+  bool isNonNullHash(const Crypto::Hash& h) {
+    static const Crypto::Hash zero{};
+    return memcmp(&h, &zero, sizeof(Crypto::Hash)) != 0;
+  }
+
+}
+
 void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlockHeight,
                                      std::vector<RemainderRecord>& remainders) {
   for (const auto& [price, entries] : index.getBidCurve()) {
@@ -27,8 +36,7 @@ void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlock
         RemainderRecord r;
         r.orderId = entry.orderId;
         r.remainingAmount = entry.amount;
-        r.spendKey = entry.spendKey;
-        r.viewKey = entry.viewKey;
+        r.addressHash = entry.addressHash;
         r.price = entry.price;
         r.side = entry.side;
         r.expiration = entry.expiration;
@@ -42,8 +50,7 @@ void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlock
         RemainderRecord r;
         r.orderId = entry.orderId;
         r.remainingAmount = entry.amount;
-        r.spendKey = entry.spendKey;
-        r.viewKey = entry.viewKey;
+        r.addressHash = entry.addressHash;
         r.price = entry.price;
         r.side = entry.side;
         r.expiration = entry.expiration;
@@ -58,16 +65,13 @@ void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlock
 
 uint32_t OrderbookMatcher::countDistinctParties(const std::vector<FillRecord>& fills,
                                                   const OrderbookIndex& /*index*/) {
-  std::set<OrderbookIndex::SenderKey> parties;
-  static const Crypto::PublicKey zeroKey{};
+  std::set<Crypto::Hash, HashLess> parties;
   for (const auto& fill : fills) {
-    if (memcmp(fill.bidSpendKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0 &&
-        memcmp(fill.bidViewKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0) {
-      parties.insert({fill.bidSpendKey, fill.bidViewKey});
+    if (isNonNullHash(fill.bidAddressHash)) {
+      parties.insert(fill.bidAddressHash);
     }
-    if (memcmp(fill.askSpendKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0 &&
-        memcmp(fill.askViewKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0) {
-      parties.insert({fill.askSpendKey, fill.askViewKey});
+    if (isNonNullHash(fill.askAddressHash)) {
+      parties.insert(fill.askAddressHash);
     }
   }
   return static_cast<uint32_t>(parties.size());
@@ -172,8 +176,7 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
       RemainderRecord br;
       br.orderId = cm.bidOrderId;
       br.remainingAmount = cm.matchAmount + cm.bidRemaining;
-      br.spendKey = cm.bidEntry.spendKey;
-      br.viewKey = cm.bidEntry.viewKey;
+      br.addressHash = cm.bidEntry.addressHash;
       br.price = cm.bidPrice;
       br.side = 0;
       br.expiration = cm.bidEntry.expiration;
@@ -182,8 +185,7 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
       RemainderRecord ar;
       ar.orderId = cm.askOrderId;
       ar.remainingAmount = cm.matchAmount + cm.askRemaining;
-      ar.spendKey = cm.askEntry.spendKey;
-      ar.viewKey = cm.askEntry.viewKey;
+      ar.addressHash = cm.askEntry.addressHash;
       ar.price = cm.askPrice;
       ar.side = 1;
       ar.expiration = cm.askEntry.expiration;
@@ -194,10 +196,8 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
     FillRecord fill;
     fill.bidOrderId = cm.bidOrderId;
     fill.askOrderId = cm.askOrderId;
-    fill.bidSpendKey = cm.bidEntry.spendKey;
-    fill.bidViewKey = cm.bidEntry.viewKey;
-    fill.askSpendKey = cm.askEntry.spendKey;
-    fill.askViewKey = cm.askEntry.viewKey;
+    fill.bidAddressHash = cm.bidEntry.addressHash;
+    fill.askAddressHash = cm.askEntry.addressHash;
     fill.amount = cm.matchAmount;
     fill.price = cm.askPrice;
     result.fills.push_back(fill);
@@ -212,8 +212,7 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
       RemainderRecord r;
       r.orderId = cm.bidOrderId;
       r.remainingAmount = cm.bidRemaining;
-      r.spendKey = cm.bidEntry.spendKey;
-      r.viewKey = cm.bidEntry.viewKey;
+      r.addressHash = cm.bidEntry.addressHash;
       r.price = cm.bidPrice;
       r.side = 0;
       r.expiration = cm.bidEntry.expiration;
@@ -223,8 +222,7 @@ MatchResult OrderbookMatcher::match(OrderbookIndex& index, uint64_t prevPclear,
       RemainderRecord r;
       r.orderId = cm.askOrderId;
       r.remainingAmount = cm.askRemaining;
-      r.spendKey = cm.askEntry.spendKey;
-      r.viewKey = cm.askEntry.viewKey;
+      r.addressHash = cm.askEntry.addressHash;
       r.price = cm.askPrice;
       r.side = 1;
       r.expiration = cm.askEntry.expiration;

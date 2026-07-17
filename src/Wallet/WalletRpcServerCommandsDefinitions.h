@@ -895,5 +895,92 @@ using CryptoNote::ISerializer;
     };
   };
 
+  // v11+ Hearth limit order commands
+  struct COMMAND_RPC_PLACE_LIMIT_ORDER {
+    struct request {
+      uint8_t side;           // 0=BUY_XFG, 1=SELL_XFG
+      uint64_t amount;        // XFG for sells, HEAT for buys
+      uint64_t target_price;  // HEAT/XFG ratio × COIN
+      uint32_t expiration;    // 0 = no expiry, else block height
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(side)
+        KV_MEMBER(amount)
+        KV_MEMBER(target_price)
+        KV_MEMBER(expiration)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_CANCEL_LIMIT_ORDER {
+    struct request {
+      std::string order_id;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(order_id)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  struct COMMAND_RPC_GET_LIMIT_ORDERS {
+    typedef CryptoNote::EMPTY_STRUCT request;
+
+    struct LimitOrderInfo {
+      std::string order_id;
+      uint8_t side;
+      uint64_t amount;
+      uint64_t target_price;
+      uint32_t expiration;
+      bool withdrawn;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(order_id)
+        KV_MEMBER(side)
+        KV_MEMBER(amount)
+        KV_MEMBER(target_price)
+        KV_MEMBER(expiration)
+        KV_MEMBER(withdrawn)
+      }
+    };
+
+    struct response {
+      std::vector<LimitOrderInfo> orders;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orders)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
 }
 }

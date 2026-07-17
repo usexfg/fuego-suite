@@ -18,6 +18,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Blockchain.h"
+#include "DigmMintEngine.h"
 
 #include <algorithm>
 #include <cstring>
@@ -238,6 +239,7 @@ public:
 
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
+      s(m_bs.m_digmSupply, "digm_supply");
       s(m_bs.m_ammPool, "amm_pool");
       s(m_bs.m_digmPrimaryPool, "digm_primary_pool");
       s(m_bs.m_digmBancorPool, "digm_bancor_pool");
@@ -379,7 +381,7 @@ private:
   Crypto::Hash m_lastBlockHash;
 };
 
-  Blockchain::Blockchain(const Currency &currency, tx_memory_pool &tx_pool, ILogger &logger, bool blockchainIndexesEnabled, bool blockchainAutosaveEnabled) :
+  CryptoNote::Blockchain::Blockchain(const Currency &currency, tx_memory_pool &tx_pool, ILogger &logger, bool blockchainIndexesEnabled, bool blockchainAutosaveEnabled) :
     logger(logger, "Blockchain"),
                          m_currency(currency),
                          m_tx_pool(tx_pool),
@@ -424,22 +426,23 @@ namespace {
   uint64_t g_priorPoolRegenPclear = 0;
   uint64_t g_priorPoolXfgReserve = 0;
   uint64_t g_priorPoolHeatReserve = 0;
+  uint64_t g_poolBandFilledLastBlock = 0;
 
 } // namespace
 
-bool Blockchain::addObserver(IBlockchainStorageObserver* observer) {
+bool CryptoNote::Blockchain::addObserver(IBlockchainStorageObserver* observer) {
   return m_observerManager.add(observer);
 }
 
-bool Blockchain::removeObserver(IBlockchainStorageObserver* observer) {
+bool CryptoNote::Blockchain::removeObserver(IBlockchainStorageObserver* observer) {
   return m_observerManager.remove(observer);
 }
 
-bool Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock) {
   return checkTransactionInputs(tx, maxUsedBlock.height, maxUsedBlock.id) && check_tx_outputs(tx, maxUsedBlock.height);
 }
 
-bool Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) {
 
   BlockInfo tail;
 
@@ -481,13 +484,13 @@ bool Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, Block
   return true;
 }
 
-bool Blockchain::haveSpentKeyImages(const CryptoNote::Transaction& tx) {
+bool CryptoNote::Blockchain::haveSpentKeyImages(const CryptoNote::Transaction& tx) {
   return this->haveTransactionKeyImagesAsSpent(tx);
 }
 
 // pre m_blockchain_lock is locked
 
-bool Blockchain::checkTransactionSize(size_t blobSize) {
+bool CryptoNote::Blockchain::checkTransactionSize(size_t blobSize) {
   if (blobSize > getCurrentCumulativeBlocksizeLimit() - m_currency.minerTxBlobReservedSize()) {
     logger(ERROR) << "transaction is too big " << blobSize << ", maximum allowed size is " <<
       (getCurrentCumulativeBlocksizeLimit() - m_currency.minerTxBlobReservedSize());
@@ -497,35 +500,35 @@ bool Blockchain::checkTransactionSize(size_t blobSize) {
   return true;
 }
 
-bool Blockchain::haveTransaction(const Crypto::Hash &id) {
+bool CryptoNote::Blockchain::haveTransaction(const Crypto::Hash &id) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_indexManager.transactionMap().find(id) != m_indexManager.transactionMap().end();
 }
 
-bool Blockchain::have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im) {
+bool CryptoNote::Blockchain::have_tx_keyimg_as_spent(const Crypto::KeyImage &key_im) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_indexManager.spentKeys().find(key_im) != m_indexManager.spentKeys().end();
 }
 
-uint32_t Blockchain::getCurrentBlockchainHeight() {
+uint32_t CryptoNote::Blockchain::getCurrentBlockchainHeight() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return static_cast<uint32_t>(m_blocks.size());
 }
 
 // @ Alias system proxies (delegated to standalone AliasIndex)
-bool Blockchain::aliasExists(const std::string& alias) const {
+bool CryptoNote::Blockchain::aliasExists(const std::string& alias) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_aliasIndex.aliasExists(alias);
 }
 
-std::optional<AliasEntry> Blockchain::getAliasByName(const std::string& alias) const {
+std::optional<AliasEntry> CryptoNote::Blockchain::getAliasByName(const std::string& alias) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_aliasIndex.getAliasByName(alias);
 }
 
-std::optional<AliasEntry> Blockchain::getAliasByAddress(const std::string& address) const {
+std::optional<AliasEntry> CryptoNote::Blockchain::getAliasByAddress(const std::string& address) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   // v2 addressHash scheme: cn_fast_hash(spendKey||viewKey) instead of cn_fast_hash(base58).
   // Parse the address to extract raw key bytes for consistent hash computation.
@@ -542,22 +545,22 @@ std::optional<AliasEntry> Blockchain::getAliasByAddress(const std::string& addre
   return m_aliasIndex.getAliasByAddress(address);
 }
 
-std::vector<AliasEntry> Blockchain::getAllAliases() const {
+std::vector<AliasEntry> CryptoNote::Blockchain::getAllAliases() const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_aliasIndex.getAllAliases();
 }
 
-bool Blockchain::removeAlias(const std::string& alias) {
+bool CryptoNote::Blockchain::removeAlias(const std::string& alias) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_aliasIndex.removeAlias(alias);
 }
 
-bool Blockchain::replaceAliasOwnership(const std::string& alias, const Crypto::Hash& newAddressHash) {
+bool CryptoNote::Blockchain::replaceAliasOwnership(const std::string& alias, const Crypto::Hash& newAddressHash) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_aliasIndex.replaceAliasOwnership(alias, newAddressHash);
 }
 
-bool Blockchain::init(const std::string& config_folder, bool load_existing) {
+bool CryptoNote::Blockchain::init(const std::string& config_folder, bool load_existing) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   if (!config_folder.empty() && !Tools::create_directories_if_necessary(config_folder)) {
@@ -714,11 +717,31 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
               const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
               totalRescannedBurns += heatCommit.amount;
               m_bankingIndex.addForeverDeposit(heatCommit.amount, b);
-            }
+          }
+        }
+      }
+
+      // Auto-return expired limit deposits — mark as expired so user can claim
+      // via cancel_order. Deposit stays in pending until claimed; cannot be
+      // stolen because it's keyed to user's spendKey/viewKey.
+      {
+        m_autoReturnedThisBlock.clear();
+        for (auto& kv : m_limitDeposits) {
+          if (kv.second.withdrawn || kv.second.expired) continue;
+          if (g_orderbookMempool.hasOrder(kv.first)) continue;
+          // Order gone from mempool (expired or orphaned) → mark as claimable
+          m_autoReturnedThisBlock.push_back(kv);
+        }
+        for (auto& entry : m_autoReturnedThisBlock) {
+          auto it = m_limitDeposits.find(entry.first);
+          if (it != m_limitDeposits.end()) {
+            it->second.expired = true;
+            logger(Logging::DEBUGGING) << "Orderbook: marked expired deposit " << entry.first << " for auto-return";
           }
         }
       }
     }
+  }
     if (totalRescannedBurns > 0) {
       logger(INFO, BRIGHT_GREEN) << "Rescan found " << m_currency.formatAmount(totalRescannedBurns)
                                  << " burned " << (m_currency.isTestnet() ? "TEST" : "XFG") << " across blockchain";
@@ -743,7 +766,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
   return true;
 }
 
-  bool Blockchain::checkCheckpoints(uint32_t &lastValidCheckpointHeight)
+  bool CryptoNote::Blockchain::checkCheckpoints(uint32_t &lastValidCheckpointHeight)
   {
     std::vector<uint32_t> checkpointHeights = m_checkpoints.getCheckpointHeights();
     for (const auto &checkpointHeight : checkpointHeights)
@@ -770,7 +793,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     return true;
   }
 
-  void Blockchain::rebuildCache()
+  void CryptoNote::Blockchain::rebuildCache()
   {
     logger(INFO, BRIGHT_WHITE) << "Rebuilding cache";
 
@@ -880,7 +903,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
   }
 
-bool Blockchain::storeCache() {
+bool CryptoNote::Blockchain::storeCache() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   logger(INFO, BRIGHT_WHITE) << "Saving blockchain...";
@@ -893,7 +916,7 @@ bool Blockchain::storeCache() {
   return true;
 }
 
-bool Blockchain::deinit() {
+bool CryptoNote::Blockchain::deinit() {
   storeCache();
   if (m_blockchainIndexesEnabled) {
     storeBlockchainIndices();
@@ -902,7 +925,7 @@ bool Blockchain::deinit() {
   return true;
 }
 
-bool Blockchain::resetAndSetGenesisBlock(const Block& b) {
+bool CryptoNote::Blockchain::resetAndSetGenesisBlock(const Block& b) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   m_blocks.clear();
   m_blockIndex.clear();
@@ -924,31 +947,31 @@ bool Blockchain::resetAndSetGenesisBlock(const Block& b) {
   return bvc.m_added_to_main_chain && !bvc.m_verification_failed;
 }
 
-Crypto::Hash Blockchain::getTailId(uint32_t& height) {
+Crypto::Hash CryptoNote::Blockchain::getTailId(uint32_t& height) {
   assert(!m_blocks.empty());
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   height = getCurrentBlockchainHeight() - 1;
   return getTailId();
 }
 
-Crypto::Hash Blockchain::getTailId() {
+Crypto::Hash CryptoNote::Blockchain::getTailId() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_blocks.empty() ? NULL_HASH : m_blockIndex.getTailId();
 }
 
-std::vector<Crypto::Hash> Blockchain::buildSparseChain() {
+std::vector<Crypto::Hash> CryptoNote::Blockchain::buildSparseChain() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   assert(m_blockIndex.size() != 0);
   return doBuildSparseChain(m_blockIndex.getTailId());
 }
 
-std::vector<Crypto::Hash> Blockchain::buildSparseChain(const Crypto::Hash& startBlockId) {
+std::vector<Crypto::Hash> CryptoNote::Blockchain::buildSparseChain(const Crypto::Hash& startBlockId) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   assert(haveBlock(startBlockId));
   return doBuildSparseChain(startBlockId);
 }
 
-std::vector<Crypto::Hash> Blockchain::doBuildSparseChain(const Crypto::Hash& startBlockId) const {
+std::vector<Crypto::Hash> CryptoNote::Blockchain::doBuildSparseChain(const Crypto::Hash& startBlockId) const {
   assert(m_blockIndex.size() != 0);
 
   std::vector<Crypto::Hash> sparseChain;
@@ -979,13 +1002,13 @@ std::vector<Crypto::Hash> Blockchain::doBuildSparseChain(const Crypto::Hash& sta
   return sparseChain;
 }
 
-Crypto::Hash Blockchain::getBlockIdByHeight(uint32_t height) {
+Crypto::Hash CryptoNote::Blockchain::getBlockIdByHeight(uint32_t height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   assert(height < m_blockIndex.size());
   return m_blockIndex.getBlockId(height);
 }
 
-bool Blockchain::getBlockByHash(const Crypto::Hash& blockHash, Block& b) {
+bool CryptoNote::Blockchain::getBlockByHash(const Crypto::Hash& blockHash, Block& b) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   uint32_t height = 0;
@@ -1006,12 +1029,12 @@ bool Blockchain::getBlockByHash(const Crypto::Hash& blockHash, Block& b) {
   return false;
 }
 
-bool Blockchain::getBlockHeight(const Crypto::Hash& blockId, uint32_t& blockHeight) {
+bool CryptoNote::Blockchain::getBlockHeight(const Crypto::Hash& blockId, uint32_t& blockHeight) {
   std::lock_guard<decltype(m_blockchain_lock)> lock(m_blockchain_lock);
   return m_blockIndex.getBlockHeight(blockId, blockHeight);
 }
 
-difficulty_type Blockchain::getDifficultyForNextBlock() {
+difficulty_type CryptoNote::Blockchain::getDifficultyForNextBlock() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   uint32_t currentHeight = static_cast<uint32_t>(m_blocks.size());
@@ -1037,12 +1060,12 @@ difficulty_type Blockchain::getDifficultyForNextBlock() {
   return m_currency.nextDifficulty(currentHeight, BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 
-uint64_t Blockchain::getBlockTimestamp(uint32_t height) {
+uint64_t CryptoNote::Blockchain::getBlockTimestamp(uint32_t height) {
   assert(height < m_blocks.size());
   return m_blocks[height].bl.timestamp;
 }
 
-uint64_t Blockchain::getCoinsInCirculation() {
+uint64_t CryptoNote::Blockchain::getCoinsInCirculation() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (m_blocks.empty()) {
     return 0;
@@ -1051,13 +1074,13 @@ uint64_t Blockchain::getCoinsInCirculation() {
   }
 }
 
-uint64_t Blockchain::coinsEmittedAtHeight(uint64_t height) {
+uint64_t CryptoNote::Blockchain::coinsEmittedAtHeight(uint64_t height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   const auto& block = m_blocks[height];
   return block.already_generated_coins;
 }
 
-  difficulty_type Blockchain::difficultyAtHeight(uint64_t height)
+  difficulty_type CryptoNote::Blockchain::difficultyAtHeight(uint64_t height)
   {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     const auto &current = m_blocks[height];
@@ -1070,7 +1093,7 @@ uint64_t Blockchain::coinsEmittedAtHeight(uint64_t height) {
     return current.cumulative_difficulty - previous.cumulative_difficulty;
   }
 
-uint8_t Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
+uint8_t CryptoNote::Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
   if (height > m_upgradeDetectorV11.upgradeHeight()) {
     return m_upgradeDetectorV11.targetVersion();
   } else if (height > m_upgradeDetectorV10.upgradeHeight()) {
@@ -1096,7 +1119,7 @@ uint8_t Blockchain::getBlockMajorVersionForHeight(uint32_t height) const {
   }
 }
 
-bool Blockchain::rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height) {
+bool CryptoNote::Blockchain::rollback_blockchain_switching(std::list<Block> &original_chain, size_t rollback_height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   // remove failed subchain
   for (size_t i = m_blocks.size() - 1; i >= rollback_height; i--) {
@@ -1138,7 +1161,7 @@ double calc_poisson_ln(double lam, uint64_t k)
   return logx;
 }
 
-bool Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator>& alt_chain, bool discard_disconnected_chain) {
+bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator>& alt_chain, bool discard_disconnected_chain) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   if (!(alt_chain.size())) {
@@ -1300,7 +1323,7 @@ bool Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::
 
 //------------------------------------------------------------------
 // This function calculates the difficulty target for the block being added to an alternate chain.
-difficulty_type Blockchain::get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator>& alt_chain, BlockEntry& bei) {
+difficulty_type CryptoNote::Blockchain::get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator>& alt_chain, BlockEntry& bei) {
   std::vector<uint64_t> timestamps;
   std::vector<difficulty_type> cumulative_difficulties;
   uint8_t BlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(m_blocks.size()));
@@ -1353,7 +1376,7 @@ difficulty_type Blockchain::get_next_difficulty_for_alternative_chain(const std:
   return m_currency.nextDifficulty(static_cast<uint32_t>(m_blocks.size()), BlockMajorVersion, timestamps, cumulative_difficulties);
 }
 
-bool Blockchain::prevalidate_miner_transaction(const Block& b, uint32_t height) {
+bool CryptoNote::Blockchain::prevalidate_miner_transaction(const Block& b, uint32_t height) {
 
   if (!(b.baseTransaction.inputs.size() == 1)) {
     logger(ERROR, BRIGHT_RED)
@@ -1394,7 +1417,7 @@ bool Blockchain::prevalidate_miner_transaction(const Block& b, uint32_t height) 
   return true;
 }
 
-bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, size_t cumulativeBlockSize,
+bool CryptoNote::Blockchain::validate_miner_transaction(const Block& b, uint32_t height, size_t cumulativeBlockSize,
   uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t& reward, int64_t& emissionChange, const std::vector<Transaction>& blockTransactions) {
 
   uint64_t coinbaseTotal = 0;
@@ -1458,7 +1481,7 @@ bool Blockchain::validate_miner_transaction(const Block& b, uint32_t height, siz
 }
 
 
-bool Blockchain::getBackwardBlocksSize(size_t from_height, std::vector<size_t>& sz, size_t count) {
+bool CryptoNote::Blockchain::getBackwardBlocksSize(size_t from_height, std::vector<size_t>& sz, size_t count) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (!(from_height < m_blocks.size())) {
     logger(ERROR, BRIGHT_RED)
@@ -1475,7 +1498,7 @@ bool Blockchain::getBackwardBlocksSize(size_t from_height, std::vector<size_t>& 
 }
 
 
-bool Blockchain::get_last_n_blocks_sizes(std::vector<size_t>& sz, size_t count) {
+bool CryptoNote::Blockchain::get_last_n_blocks_sizes(std::vector<size_t>& sz, size_t count) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (!m_blocks.size()) {
     return true;
@@ -1489,11 +1512,11 @@ bool Blockchain::get_last_n_blocks_sizes(std::vector<size_t>& sz, size_t count) 
   return getBackwardBlocksSize(height, sz, count);
 }
 
-uint64_t Blockchain::getCurrentCumulativeBlocksizeLimit() {
+uint64_t CryptoNote::Blockchain::getCurrentCumulativeBlocksizeLimit() {
   return m_current_block_cumul_sz_limit;
 }
 
-bool Blockchain::complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_top_height, std::vector<uint64_t>& timestamps) {
+bool CryptoNote::Blockchain::complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t start_top_height, std::vector<uint64_t>& timestamps) {
   if (m_blocks.empty()) {
     logger(WARNING, BRIGHT_YELLOW) << "Cannot complete timestamps vector: blockchain is empty";
     return false;
@@ -1514,7 +1537,7 @@ bool Blockchain::complete_timestamps_vector(uint8_t blockMajorVersion, uint64_t 
   return true;
 }
 
-bool Blockchain::handle_alternative_block(const Block& b, const Crypto::Hash& id, block_verification_context& bvc, bool sendNewAlternativeBlockMessage) {
+bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Crypto::Hash& id, block_verification_context& bvc, bool sendNewAlternativeBlockMessage) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   auto block_height = get_block_height(b);
@@ -1696,7 +1719,7 @@ bool Blockchain::handle_alternative_block(const Block& b, const Crypto::Hash& id
   return true;
 }
 
-bool Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks, std::list<Transaction>& txs) {
+bool CryptoNote::Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks, std::list<Transaction>& txs) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (start_offset >= m_blocks.size())
     return false;
@@ -1710,7 +1733,7 @@ bool Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Bloc
   return true;
 }
 
-bool Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks) {
+bool CryptoNote::Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Block>& blocks) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (start_offset >= m_blocks.size()) {
     return false;
@@ -1723,7 +1746,7 @@ bool Blockchain::getBlocks(uint32_t start_offset, uint32_t count, std::list<Bloc
   return true;
 }
 
-bool Blockchain::handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTIFY_RESPONSE_GET_OBJECTS::request& rsp) { //Deprecated. Should be removed with CryptoNoteProtocolHandler.
+bool CryptoNote::Blockchain::handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTIFY_RESPONSE_GET_OBJECTS::request& rsp) { //Deprecated. Should be removed with CryptoNoteProtocolHandler.
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   rsp.current_blockchain_height = getCurrentBlockchainHeight();
   std::list<Block> blocks;
@@ -1755,7 +1778,7 @@ bool Blockchain::handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTI
   return true;
 }
 
-bool Blockchain::getAlternativeBlocks(std::list<Block>& blocks) {
+bool CryptoNote::Blockchain::getAlternativeBlocks(std::list<Block>& blocks) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   for (auto& alt_bl : m_alternative_chains) {
     blocks.push_back(alt_bl.second.bl);
@@ -1764,12 +1787,12 @@ bool Blockchain::getAlternativeBlocks(std::list<Block>& blocks) {
   return true;
 }
 
-uint32_t Blockchain::getAlternativeBlocksCount() {
+uint32_t CryptoNote::Blockchain::getAlternativeBlocksCount() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return static_cast<uint32_t>(m_alternative_chains.size());
 }
 
-bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>>& amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount& result_outs, uint64_t amount, size_t i) {
+bool CryptoNote::Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint16_t>>& amount_outs, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount& result_outs, uint64_t amount, size_t i) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   const Transaction& tx = transactionByIndex(amount_outs[i].first).tx;
   if (!(tx.outputs.size() > amount_outs[i].second)) {
@@ -1788,7 +1811,7 @@ bool Blockchain::add_out_to_get_random_outs(std::vector<std::pair<TxIndex, uint1
   return true;
 }
 
-size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<TxIndex, uint16_t>>& amount_outs) {
+size_t CryptoNote::Blockchain::find_end_of_allowed_index(const std::vector<std::pair<TxIndex, uint16_t>>& amount_outs) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (amount_outs.empty()) {
     return 0;
@@ -1805,7 +1828,7 @@ size_t Blockchain::find_end_of_allowed_index(const std::vector<std::pair<TxIndex
   return 0;
 }
 
-bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res) {
+bool CryptoNote::Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -1852,7 +1875,7 @@ bool Blockchain::getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return true;
 }
 
-bool Blockchain::getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
+bool CryptoNote::Blockchain::getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
                                   std::vector<uint32_t>& heights) {
   heights.assign(queries.size(), 0);
   if (!m_indexManager.isReady()) return false;
@@ -1870,7 +1893,7 @@ bool Blockchain::getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t
   return true;
 }
 
-bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
+bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
     std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
@@ -1936,7 +1959,7 @@ bool Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t c
   return true;
 }
 
-uint32_t Blockchain::findBlockchainSupplement(const std::vector<Crypto::Hash>& qblock_ids) {
+uint32_t CryptoNote::Blockchain::findBlockchainSupplement(const std::vector<Crypto::Hash>& qblock_ids) {
   assert(!qblock_ids.empty());
   assert(qblock_ids.back() == m_blockIndex.getBlockId(0));
 
@@ -1947,16 +1970,16 @@ uint32_t Blockchain::findBlockchainSupplement(const std::vector<Crypto::Hash>& q
   return blockIndex;
 }
 
-uint64_t Blockchain::blockDifficulty(size_t i) {
+uint64_t CryptoNote::Blockchain::blockDifficulty(size_t i) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  if (!(i < m_blocks.size())) { logger(ERROR, BRIGHT_RED) << "wrong block index i = " << i << " at Blockchain::block_difficulty()"; return false; }
+  if (!(i < m_blocks.size())) { logger(ERROR, BRIGHT_RED) << "wrong block index i = " << i << " at CryptoNote::Blockchain::block_difficulty()"; return 0; }
   if (i == 0)
     return m_blocks[i].cumulative_difficulty;
 
   return m_blocks[i].cumulative_difficulty - m_blocks[i - 1].cumulative_difficulty;
 }
 
-void Blockchain::print_blockchain(uint64_t start_index, uint64_t end_index) {
+void CryptoNote::Blockchain::print_blockchain(uint64_t start_index, uint64_t end_index) {
   std::stringstream ss;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (start_index >= m_blocks.size()) {
@@ -1976,7 +1999,7 @@ void Blockchain::print_blockchain(uint64_t start_index, uint64_t end_index) {
     "Blockchain printed with log level 1";
 }
 
-void Blockchain::print_blockchain_index() {
+void CryptoNote::Blockchain::print_blockchain_index() {
   std::stringstream ss;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -1990,7 +2013,7 @@ void Blockchain::print_blockchain_index() {
 
 }
 
-void Blockchain::print_blockchain_outs(const std::string& file) {
+void CryptoNote::Blockchain::print_blockchain_outs(const std::string& file) {
   std::stringstream ss;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   for (const outputs_container::value_type& v : m_indexManager.outputs().data()) {
@@ -2012,7 +2035,7 @@ void Blockchain::print_blockchain_outs(const std::string& file) {
   }
 }
 
-std::vector<Crypto::Hash> Blockchain::findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
+std::vector<Crypto::Hash> CryptoNote::Blockchain::findBlockchainSupplement(const std::vector<Crypto::Hash>& remoteBlockIds, size_t maxCount,
   uint32_t& totalBlockCount, uint32_t& startBlockIndex) {
 
   assert(!remoteBlockIds.empty());
@@ -2025,7 +2048,7 @@ std::vector<Crypto::Hash> Blockchain::findBlockchainSupplement(const std::vector
   return m_blockIndex.getBlockIds(startBlockIndex, static_cast<uint32_t>(maxCount));
 }
 
-bool Blockchain::haveBlock(const Crypto::Hash& id) {
+bool CryptoNote::Blockchain::haveBlock(const Crypto::Hash& id) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   if (m_blockIndex.hasBlock(id))
     return true;
@@ -2036,13 +2059,13 @@ bool Blockchain::haveBlock(const Crypto::Hash& id) {
   return false;
 }
 
-size_t Blockchain::getTotalTransactions() {
+size_t CryptoNote::Blockchain::getTotalTransactions() {
   if (!m_indexManager.isReady()) return 0;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_indexManager.transactionMap().size();
 }
 
-bool Blockchain::getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
+bool CryptoNote::Blockchain::getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   auto it = m_indexManager.transactionMap().find(tx_id);
@@ -2061,7 +2084,7 @@ bool Blockchain::getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, st
   return true;
 }
 
-bool Blockchain::get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) {
+bool CryptoNote::Blockchain::get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   auto it = m_indexManager.multisigOutputs().find(amount);
@@ -2085,7 +2108,7 @@ bool Blockchain::get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, Multis
 
 
 
-bool Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t& max_used_block_height, Crypto::Hash& max_used_block_id, BlockInfo* tail) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t& max_used_block_height, Crypto::Hash& max_used_block_id, BlockInfo* tail) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   if (tail)
@@ -2098,7 +2121,7 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t& max_use
   return true;
 }
 
-bool Blockchain::haveTransactionKeyImagesAsSpent(const Transaction &tx) {
+bool CryptoNote::Blockchain::haveTransactionKeyImagesAsSpent(const Transaction &tx) {
   for (const auto& in : tx.inputs) {
     if (in.type() == typeid(KeyInput)) {
       if (have_tx_keyimg_as_spent(boost::get<KeyInput>(in).keyImage)) {
@@ -2118,12 +2141,12 @@ bool Blockchain::haveTransactionKeyImagesAsSpent(const Transaction &tx) {
   return false;
 }
 
-bool Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, uint32_t* pmax_used_block_height) {
   Crypto::Hash tx_prefix_hash = getObjectHash(*static_cast<const TransactionPrefix*>(&tx));
   return checkTransactionInputs(tx, tx_prefix_hash, pmax_used_block_height);
 }
 
-bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height) {
+bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Hash& tx_prefix_hash, uint32_t* pmax_used_block_height) {
   size_t inputIndex = 0;
   if (pmax_used_block_height) {
     *pmax_used_block_height = 0;
@@ -2230,7 +2253,7 @@ bool Blockchain::checkTransactionInputs(const Transaction& tx, const Crypto::Has
   return true;
 }
 
-bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) {
+bool CryptoNote::Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) {
   if (unlock_time < m_currency.maxBlockHeight()) {
     //interpret as block index
     if (getCurrentBlockchainHeight() - 1 + m_currency.lockedTxAllowedDeltaBlocks() >= unlock_time)
@@ -2249,7 +2272,7 @@ bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) {
   return false;
 }
 
-bool Blockchain::check_tx_input(const KeyInput& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height) {
+bool CryptoNote::Blockchain::check_tx_input(const KeyInput& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   struct outputs_visitor {
@@ -2318,7 +2341,7 @@ bool Blockchain::check_tx_input(const KeyInput& txin, const Crypto::Hash& tx_pre
 // validates TransactionInputCommitmentSpend ring-sig against global
 // commitment output index (m_commitmentOutputs) using same algorithm as
 // check_tx_input for KeyInput ring sigs.
-bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin,
+bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin,
                                             const Crypto::Hash& tx_prefix_hash,
                                             const std::vector<Crypto::Signature>& sig,
                                             uint32_t* pmax_related_block_height) {
@@ -2483,7 +2506,7 @@ bool Blockchain::checkCommitmentSpendInput(const TransactionInputCommitmentSpend
   return true;
 }
 
-bool Blockchain::checkCommitmentTransferInput(
+bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     const TransactionInputCommitmentTransfer& txin,
     const Crypto::Hash& tx_prefix_hash,
     const std::vector<Crypto::Signature>& sig,
@@ -2578,12 +2601,12 @@ bool Blockchain::checkCommitmentTransferInput(
   return valid;
 }
 
-uint64_t Blockchain::get_adjusted_time() {
+uint64_t CryptoNote::Blockchain::get_adjusted_time() {
   //TODO: add collecting median time
   return time(NULL);
 }
 
-bool Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {
+bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {
   for (TransactionOutput out : tx.outputs) {
     if (out.target.type() == typeid(MultisignatureOutput)) {
       if (tx.version < CryptoNote::TRANSACTION_VERSION_2) {
@@ -2610,7 +2633,7 @@ bool Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const 
 }
 
 
-bool Blockchain::check_block_timestamp_main(const Block& b) {
+bool CryptoNote::Blockchain::check_block_timestamp_main(const Block& b) {
    if (b.timestamp > get_adjusted_time() + m_currency.blockFutureTimeLimit(b.majorVersion)) {
 	   logger(INFO, BRIGHT_WHITE) <<
       "Timestamp of block with id: " << get_block_hash(b) << ", " << b.timestamp << ", bigger than adjusted time + 8 min.";
@@ -2633,7 +2656,7 @@ bool Blockchain::check_block_timestamp_main(const Block& b) {
 //   true if the block's timestamp is not less than the median timestamp
 //       of the selected blocks
 //   false otherwise
-bool Blockchain::check_block_timestamp(std::vector<uint64_t> timestamps, const Block& b) {
+bool CryptoNote::Blockchain::check_block_timestamp(std::vector<uint64_t> timestamps, const Block& b) {
     if (timestamps.size() < m_currency.timestampCheckWindow(b.majorVersion)) {
 	return true;
   }
@@ -2650,7 +2673,7 @@ bool Blockchain::check_block_timestamp(std::vector<uint64_t> timestamps, const B
   return true;
 }
 
-bool Blockchain::checkBlockVersion(const Block& b, const Crypto::Hash& blockHash) {
+bool CryptoNote::Blockchain::checkBlockVersion(const Block& b, const Crypto::Hash& blockHash) {
   uint32_t height = get_block_height(b);
   const uint8_t expectedBlockVersion = getBlockMajorVersionForHeight(height);
   if (b.majorVersion != expectedBlockVersion) {
@@ -2668,7 +2691,7 @@ bool Blockchain::checkBlockVersion(const Block& b, const Crypto::Hash& blockHash
   return true;
 }
 
-bool Blockchain::checkParentBlockSize(const Block& b, const Crypto::Hash& blockHash) {
+bool CryptoNote::Blockchain::checkParentBlockSize(const Block& b, const Crypto::Hash& blockHash) {
   if (b.majorVersion >= BLOCK_MAJOR_VERSION_2) {
     auto serializer = makeParentBlockSerializer(b, false, false);
     size_t parentBlockSize;
@@ -2689,7 +2712,7 @@ bool Blockchain::checkParentBlockSize(const Block& b, const Crypto::Hash& blockH
   return true;
 }
 
-bool Blockchain::checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cumulativeBlockSize, uint64_t height) {
+bool CryptoNote::Blockchain::checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cumulativeBlockSize, uint64_t height) {
   size_t maxBlockCumulativeSize = m_currency.maxBlockCumulativeSize(height);
   if (cumulativeBlockSize > maxBlockCumulativeSize) {
     logger(INFO, BRIGHT_WHITE) <<
@@ -2702,7 +2725,7 @@ bool Blockchain::checkCumulativeBlockSize(const Crypto::Hash& blockId, size_t cu
 }
 
 // Returns true, if cumulativeSize is calculated precisely, else returns false.
-bool Blockchain::getBlockCumulativeSize(const Block& block, size_t& cumulativeSize) {
+bool CryptoNote::Blockchain::getBlockCumulativeSize(const Block& block, size_t& cumulativeSize) {
   std::vector<Transaction> blockTxs;
   std::vector<Crypto::Hash> missedTxs;
   getTransactions(block.transactionHashes, blockTxs, missedTxs, true);
@@ -2716,7 +2739,7 @@ bool Blockchain::getBlockCumulativeSize(const Block& block, size_t& cumulativeSi
 }
 
 // Precondition: m_blockchain_lock is locked.
-bool Blockchain::update_next_comulative_size_limit() {
+bool CryptoNote::Blockchain::update_next_comulative_size_limit() {
   uint8_t nextBlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(m_blocks.size()));
   size_t nextBlockGrantedFullRewardZone = m_currency.blockGrantedFullRewardZoneByBlockVersion(nextBlockMajorVersion);
 
@@ -2732,7 +2755,7 @@ bool Blockchain::update_next_comulative_size_limit() {
   return true;
 }
 
-bool Blockchain::addNewBlock(const Block& bl_, block_verification_context& bvc) {
+bool CryptoNote::Blockchain::addNewBlock(const Block& bl_, block_verification_context& bvc) {
   //copy block here to let modify block.target
   Block bl = bl_;
   Crypto::Hash id;
@@ -2796,11 +2819,11 @@ bool Blockchain::addNewBlock(const Block& bl_, block_verification_context& bvc) 
   return add_result;
 }
 
-const Blockchain::TransactionEntry& Blockchain::transactionByIndex(TxIndex index) {
+const CryptoNote::Blockchain::TransactionEntry& CryptoNote::Blockchain::transactionByIndex(TxIndex index) {
   return m_blocks[index.block].transactions[index.transaction];
 }
 
-bool Blockchain::pushBlock(const Block &blockData, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
+bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
   std::vector<Transaction> transactions;
   if (!loadTransactions(blockData, transactions, height)) {
     bvc.m_verification_failed = true;
@@ -2815,7 +2838,7 @@ bool Blockchain::pushBlock(const Block &blockData, const Crypto::Hash &id, block
   return true;
 }
 
-bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
+bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   auto blockProcessingStart = std::chrono::steady_clock::now();
@@ -2937,6 +2960,16 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     bool hasHeatSendAuth = false;
     uint64_t heatSendAmount = 0;
 
+    bool hasLimitDeposit = false;
+    bool hasLimitWithdraw = false;
+    uint8_t limitDepositSide = 0;
+    uint64_t limitDepositAmount = 0;
+    uint64_t limitDepositTargetPrice = 0;
+    uint32_t limitDepositExpiration = 0;
+    Crypto::Hash limitDepositOrderId = Crypto::Hash();
+    Crypto::Hash limitDepositAddressHash = Crypto::Hash();
+    Crypto::Hash limitWithdrawOrderId = Crypto::Hash();
+
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
       outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i]);
@@ -2985,6 +3018,20 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
             hasHeatSendAuth = true;
             heatSendAmount = boost::get<TransactionExtraHeatSendAuth>(field).heatAmount;
           }
+          if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+            hasLimitDeposit = true;
+            const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
+            limitDepositSide = dep.side;
+            limitDepositAmount = dep.amount;
+            limitDepositTargetPrice = dep.targetPrice;
+            limitDepositExpiration = dep.expiration;
+            limitDepositOrderId = dep.orderId;
+            limitDepositAddressHash = dep.addressHash;
+          }
+          if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+            hasLimitWithdraw = true;
+            limitWithdrawOrderId = boost::get<TransactionExtraLimitWithdraw>(field).orderId;
+          }
         }
       }
     }
@@ -3024,6 +3071,30 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " market sell balance mismatch";
         }
+      } else if (hasLimitDeposit) {
+        // Limit deposit: one-sided deposit into pool pending reserves.
+        // SELL_XFG (side=1): user deposits XFG, no HEAT change.
+        // BUY_XFG (side=0): user deposits HEAT, no XFG change.
+        if (limitDepositSide == 1) {
+          if (inAssets.xfg < outAssets.xfg + xfgFee + limitDepositAmount ||
+              inAssets.heat != outAssets.heat) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit SELL_XFG balance mismatch";
+          }
+        } else {
+          if (inAssets.heat < outAssets.heat + limitDepositAmount ||
+              inAssets.xfg < outAssets.xfg + xfgFee) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit BUY_XFG balance mismatch";
+          }
+        }
+        if (limitDepositAmount == 0) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit zero amount";
+        }
+      } else if (hasLimitWithdraw) {
+        // Limit withdraw: reclaim pending one-sided deposit. No balance change
+        // beyond returning the deposited amount (already reflected in tx outputs).
       } else {
         if (inAssets.xfg < outAssets.xfg + xfgFee ||
             inAssets.heat != outAssets.heat ||
@@ -3047,6 +3118,17 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     if (!check_tx_outputs(transactions[i], block.height)) {
       isTransactionValid = false;
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has at least one invalid output";
+    }
+
+    // DIGM mint validation: ensure HEAT inputs cover DIGM outputs at peg rate
+    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      if (m_digmMintEngine.isDigmMint(transactions[i])) {
+        uint64_t heatLocked = 0, digmMinted = 0;
+        if (!m_digmMintEngine.validateMint(transactions[i], fee, heatLocked, digmMinted)) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint validation failed: HEAT inputs do not cover DIGM outputs at 0.10 HEAT/DIGM peg";
+        }
+      }
     }
 
     // F-001 fix: per-transaction CD-interest fee-pool cap.
@@ -3127,6 +3209,17 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
+        }
+      }
+    }
+
+    // DIGM mint validation — lock HEAT → mint DIGM at 0.10 HEAT per DIGM
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      if (m_digmMintEngine.isDigmMint(transactions[i])) {
+        uint64_t heatLocked = 0, digmMinted = 0;
+        if (!m_digmMintEngine.validateMint(transactions[i], fee, heatLocked, digmMinted)) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint validation failed";
         }
       }
     }
@@ -3417,20 +3510,20 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
   return true;
 }
 
-uint64_t Blockchain::fullDepositAmount() const {
+uint64_t CryptoNote::Blockchain::fullDepositAmount() const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_bankingIndex.fullDepositAmount();
 }
 
-uint64_t Blockchain::getOrderbookClearingPrice() const {
+uint64_t CryptoNote::Blockchain::getOrderbookClearingPrice() const {
   return g_orderbookLastClearingPrice;
 }
 
-bool Blockchain::isOrderbookInBootstrap() const {
+bool CryptoNote::Blockchain::isOrderbookInBootstrap() const {
   return g_orderbookIsInBootstrap;
 }
 
-uint64_t Blockchain::getHearthSpotPrice() const {
+uint64_t CryptoNote::Blockchain::getHearthSpotPrice() const {
   uint64_t pclearAvg = g_poolOrchestrator.getAveragePrice();
   if (pclearAvg > 0) return pclearAvg;
 
@@ -3441,12 +3534,12 @@ uint64_t Blockchain::getHearthSpotPrice() const {
   return 0;
 }
 
-uint64_t Blockchain::getPoolTwap() const {
+uint64_t CryptoNote::Blockchain::getPoolTwap() const {
   if (m_twapBlockCount == 0) return 0;
   return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
 }
 
-std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
+std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
   std::vector<OrderbookLevel> levels;
   for (const auto& level : g_orderbookMempool.getBidCurve(maxLevels)) {
     levels.push_back({level.price, level.depth});
@@ -3454,7 +3547,7 @@ std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookBidCurve(uint32_
   return levels;
 }
 
-std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookAskCurve(uint32_t maxLevels) const {
+std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookAskCurve(uint32_t maxLevels) const {
   std::vector<OrderbookLevel> levels;
   for (const auto& level : g_orderbookMempool.getAskCurve(maxLevels)) {
     levels.push_back({level.price, level.depth});
@@ -3462,11 +3555,11 @@ std::vector<Blockchain::OrderbookLevel> Blockchain::getOrderbookAskCurve(uint32_
   return levels;
 }
 
-uint32_t Blockchain::getOrderbookNumMatches() const {
+uint32_t CryptoNote::Blockchain::getOrderbookNumMatches() const {
   return g_orderbookLastNumMatches;
 }
 
-Blockchain::OrderbookEstimate Blockchain::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
+CryptoNote::Blockchain::OrderbookEstimate CryptoNote::Blockchain::getOrderbookEstimate(uint8_t side, uint64_t amount) const {
   OrderbookEstimate est = {0, 0, 0, 0, 0};
   if (amount == 0) return est;
 
@@ -3505,14 +3598,34 @@ Blockchain::OrderbookEstimate Blockchain::getOrderbookEstimate(uint8_t side, uin
   return est;
 }
 
-uint64_t Blockchain::depositAmountAtHeight(size_t height) const {
+uint64_t CryptoNote::Blockchain::depositAmountAtHeight(size_t height) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_bankingIndex.depositInterestAtHeight(static_cast<BankingIndex::DepositHeight>(height));
 }
 
-void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
+void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
   if (height < parameters::UPGRADE_HEIGHT_V11)
     return;
+
+  // Save pre-block orderbook snapshot for popBlock rollback
+  {
+    OrderbookRollbackSnapshot snap;
+    snap.lastClearingPrice = g_orderbookLastClearingPrice;
+    snap.isInBootstrap = g_orderbookIsInBootstrap;
+    snap.bootstrapBlocksRemaining = g_orderbookBootstrapBlocksRemaining;
+    snap.lastNumMatches = g_orderbookLastNumMatches;
+    snap.blocksSinceLastPoolRegen = g_blocksSinceLastPoolRegen;
+    snap.priorPoolRegenPclear = g_priorPoolRegenPclear;
+    snap.priorPoolXfgReserve = g_priorPoolXfgReserve;
+    snap.priorPoolHeatReserve = g_priorPoolHeatReserve;
+    snap.poolBandFilledLastBlock = g_poolBandFilledLastBlock;
+    snap.autoReturnedThisBlock = m_autoReturnedThisBlock;
+    snap.orders = g_orderbookMempool.getAllUserOrders();
+    snap.poolOrders = g_orderbookMempool.getAllPoolOrders();
+    m_orderbookSnapshots.push_back({height, std::move(snap)});
+    while (m_orderbookSnapshots.size() > 100)
+      m_orderbookSnapshots.pop_front();
+  }
 
   // Bootstrap: first BOOTSTRAP_BLOCKS use HEARTH pool ratio as P_clear
   if (g_orderbookIsInBootstrap) {
@@ -3535,7 +3648,8 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
     uint64_t priorPclear = g_priorPoolRegenPclear;
     g_blocksSinceLastPoolRegen++;
 
-    uint64_t bandFilled = 0; // Phase 6b: track fills against pool orders
+    uint64_t bandFilled = g_poolBandFilledLastBlock;
+    g_poolBandFilledLastBlock = 0; // reset for this block
     uint64_t bandPlaced = (static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100;
 
     g_poolOrchestrator.recordPrice(g_orderbookLastClearingPrice);
@@ -3583,31 +3697,92 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
           bool askIsPool = (fill.askOrderId.data[0] == 0xF0);
           if (!bidIsPool && !askIsPool) continue;
 
+          g_poolBandFilledLastBlock += fill.amount;
           uint64_t fillCost = (static_cast<uint128_t>(fill.amount) * fill.price) / parameters::COIN;
 
           if (bidIsPool) {
             m_ammPool.reserveXfg += fill.amount;
-            m_ammPool.reserveHeat -= fillCost;
+            if (m_ammPool.reserveHeat >= fillCost) m_ammPool.reserveHeat -= fillCost;
           }
           if (askIsPool) {
-            m_ammPool.reserveXfg -= fill.amount;
+            if (m_ammPool.reserveXfg >= fill.amount) m_ammPool.reserveXfg -= fill.amount;
             m_ammPool.reserveHeat += fillCost;
           }
 
-          // Fee = spread between fill price and P_clear
+          // LP fee: 0.3% of fill value (HEAT), on top of spread
+          uint64_t lpFee = (fillCost * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+          m_ammPool.accumulatedLpFeesHeat = (m_ammPool.accumulatedLpFeesHeat > UINT64_MAX - lpFee)
+            ? UINT64_MAX : m_ammPool.accumulatedLpFeesHeat + lpFee;
+
+          // LP spread reward: |fill.price - P_clear| × amount / COIN
           if (fill.price > result.P_clear) {
             uint64_t fee = (static_cast<uint128_t>(fill.amount) *
                            (fill.price - result.P_clear)) / parameters::COIN;
-            m_ammPool.accumulatedLpFeesHeat += fee;
+            m_ammPool.accumulatedLpFeesHeat = (m_ammPool.accumulatedLpFeesHeat > UINT64_MAX - fee)
+              ? UINT64_MAX : m_ammPool.accumulatedLpFeesHeat + fee;
           } else if (result.P_clear > fill.price) {
             uint64_t fee = (static_cast<uint128_t>(fill.amount) *
                            (result.P_clear - fill.price)) / parameters::COIN;
-            m_ammPool.accumulatedLpFeesHeat += fee;
+            m_ammPool.accumulatedLpFeesHeat = (m_ammPool.accumulatedLpFeesHeat > UINT64_MAX - fee)
+              ? UINT64_MAX : m_ammPool.accumulatedLpFeesHeat + fee;
           }
         }
       }
       block.orderbookNumMatches = result.numMatches;
       g_orderbookLastNumMatches = result.numMatches;
+
+      // Settle out-of-band limit orders
+      if (!m_ammPool.isEmpty()) {
+        auto oobOrders = g_orderbookMempool.getOutOfBandOrders();
+        for (const auto& oob : oobOrders) {
+          bool shouldFill = (oob.side == 1 && result.P_clear >= oob.targetPrice)
+                         || (oob.side == 0 && result.P_clear <= oob.targetPrice);
+          if (!shouldFill) continue;
+
+          auto depIt = m_limitDeposits.find(oob.orderId);
+          if (depIt == m_limitDeposits.end() || depIt->second.withdrawn || depIt->second.expired) continue;
+
+          uint64_t fillAmountXfg = 0;
+          uint64_t fillAmountHeat = 0;
+
+          if (oob.side == 1) { // SELL_XFG
+            uint64_t maxFillByHeat = (m_ammPool.reserveHeat * parameters::COIN) / oob.targetPrice;
+            uint64_t amountToFill = std::min(oob.amount, maxFillByHeat);
+            if (m_ammPool.pendingXfg < amountToFill) continue;
+
+            fillAmountXfg = amountToFill;
+            fillAmountHeat = (static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN;
+
+            m_ammPool.pendingXfg -= fillAmountXfg;
+            m_ammPool.reserveXfg += fillAmountXfg;
+            m_ammPool.reserveHeat -= fillAmountHeat;
+          } else { // BUY_XFG
+            uint64_t maxFillByXfg = m_ammPool.reserveXfg;
+            uint64_t desiredXfg = (static_cast<uint128_t>(oob.amount) * parameters::COIN) / oob.targetPrice;
+            uint64_t amountToFill = std::min(desiredXfg, maxFillByXfg);
+            uint64_t heatCost = (static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN;
+            if (m_ammPool.pendingHeat < heatCost) continue;
+
+            fillAmountXfg = amountToFill;
+            fillAmountHeat = heatCost;
+
+            m_ammPool.pendingHeat -= fillAmountHeat;
+            m_ammPool.reserveHeat += fillAmountHeat;
+            m_ammPool.reserveXfg -= fillAmountXfg;
+          }
+
+          if (fillAmountXfg > 0 || fillAmountHeat > 0) {
+            uint64_t filledAmount = (oob.side == 1) ? fillAmountXfg : fillAmountHeat;
+            g_orderbookMempool.fillOrder(oob.orderId, filledAmount);
+            depIt->second.amount -= filledAmount;
+            if (depIt->second.amount == 0) {
+              m_limitDeposits.erase(depIt);
+            }
+            block.orderbookNumMatches++;
+            g_orderbookLastNumMatches = block.orderbookNumMatches;
+          }
+        }
+      }
     }
   }
 
@@ -3628,7 +3803,7 @@ void Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transa
   }
 }
 
-void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
+void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   g_orderbookMempool.clear();
   g_orderbookIsInBootstrap = (height < parameters::UPGRADE_HEIGHT_V11 + m_currency.bootstrapBlocks());
   g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ?
@@ -3644,13 +3819,13 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   logger(INFO, BRIGHT_WHITE) << "Orderbook reset (p2p model). Orders will re-gossip on reconnect.";
 }
 
-  uint64_t Blockchain::depositInterestAtHeight(size_t height) const
+  uint64_t CryptoNote::Blockchain::depositInterestAtHeight(size_t height) const
   {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_bankingIndex.depositInterestAtHeight(static_cast<BankingIndex::DepositHeight>(height));
   }
 
-  uint64_t Blockchain::getBurnedXfgAtHeight(size_t height) const
+  uint64_t CryptoNote::Blockchain::getBurnedXfgAtHeight(size_t height) const
   {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_bankingIndex.getBurnedXfgAtHeight(static_cast<BankingIndex::DepositHeight>(height));
@@ -3658,57 +3833,57 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
 
   // --- Commitment Index Accessors ---
 
-  std::optional<CommitmentEntry> Blockchain::getCommitmentByHash(const Crypto::Hash& commitment) const {
+  std::optional<CryptoNote::CommitmentEntry> CryptoNote::Blockchain::getCommitmentByHash(const Crypto::Hash& commitment) const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.getByCommitment(commitment);
   }
 
-  bool Blockchain::hasCommitment(const Crypto::Hash& commitment) const {
+  bool CryptoNote::Blockchain::hasCommitment(const Crypto::Hash& commitment) const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.hasCommitment(commitment);
   }
 
-  size_t Blockchain::getCommitmentCount() const {
+  size_t CryptoNote::Blockchain::getCommitmentCount() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.size();
   }
 
-  size_t Blockchain::getHeatCommitmentCount() const {
+  size_t CryptoNote::Blockchain::getHeatCommitmentCount() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.heatCount();
   }
 
-  size_t Blockchain::getColdCommitmentCount() const {
+  size_t CryptoNote::Blockchain::getColdCommitmentCount() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.coldCount();
   }
 
-  Crypto::Hash Blockchain::getCommitmentMerkleRoot() const {
+  Crypto::Hash CryptoNote::Blockchain::getCommitmentMerkleRoot() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.computeMerkleRoot();
   }
 
-  std::vector<Crypto::Hash> Blockchain::getCommitmentMerkleProof(const Crypto::Hash& commitment) const {
+  std::vector<Crypto::Hash> CryptoNote::Blockchain::getCommitmentMerkleProof(const Crypto::Hash& commitment) const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.getMerkleProof(commitment);
   }
 
-  int64_t Blockchain::getCommitmentLeafIndex(const Crypto::Hash& commitment) const {
+  int64_t CryptoNote::Blockchain::getCommitmentLeafIndex(const Crypto::Hash& commitment) const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.getLeafIndex(commitment);
   }
 
-  CommitmentIndex::Height Blockchain::getCommitmentHighestBlock() const {
+  CryptoNote::CommitmentIndex::Height CryptoNote::Blockchain::getCommitmentHighestBlock() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.highestBlock();
   }
 
-  std::vector<Crypto::Hash> Blockchain::getCommitmentLeaves() const {
+  std::vector<Crypto::Hash> CryptoNote::Blockchain::getCommitmentLeaves() const {
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
     return m_commitmentIndex.getAllLeaves();
   }
 
-  uint64_t Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs) {
+  uint64_t CryptoNote::Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs) {
     // Banking fees go to miners. Fixed rate: 0.1% on HEAT/COLD commitments.
     uint64_t totalBankingFees = 0;
     for (const auto& tx : txs) {
@@ -3727,7 +3902,7 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
     return totalBankingFees;
   }
 
-  void Blockchain::pushToBankingIndex(const BlockEntry &block, uint64_t interest)
+  void CryptoNote::Blockchain::pushToBankingIndex(const BlockEntry &block, uint64_t interest)
   {
     int64_t deposit = 0;
     uint64_t permanentBurns = 0;  // Track permanent burns for ethereal_xfg
@@ -4133,7 +4308,7 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
     }
   }
 
-bool Blockchain::pushBlock(BlockEntry &block) {
+bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
   Crypto::Hash blockHash = get_block_hash(block.bl);
 
   m_blocks.push_back(block);
@@ -4475,7 +4650,7 @@ bool Blockchain::pushBlock(BlockEntry &block) {
   return true;
 }
 
-bool Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
+bool CryptoNote::Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
   if (xfgReserve == 0 || heatReserve == 0)
     return false;
   if (!m_ammPool.isEmpty())
@@ -4490,12 +4665,12 @@ bool Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
   return true;
 }
 
-bool Blockchain::bootstrapDigmPools() {
+bool CryptoNote::Blockchain::bootstrapDigmPools() {
   // Only bootstrap once
   if (!m_digmBancorPool.isEmpty() || !m_digmPrimaryPool.isEmpty())
     return false;
 
-  // HEAT/DIGM primary pool: 5,000 DIGM + computed HEAT ($0.10 per DIGM)
+  // HEAT/DIGM primary pool: 5,000 DIGM + 500 HEAT (0.1 HEAT per DIGM fixed-rate peg)
   uint64_t seedDigm = parameters::DIGM_PRIMARY_POOL_SEED_DIGM * parameters::COIN;
   uint64_t seedHeat = parameters::DIGM_PRIMARY_POOL_SEED_HEAT;
   m_digmPrimaryPool.reserveDigm = seedDigm;
@@ -4524,29 +4699,63 @@ bool Blockchain::bootstrapDigmPools() {
   return true;
 }
 
-uint64_t Blockchain::digmPrimarySwap(uint64_t heatIn, bool dryRun) {
+uint64_t CryptoNote::Blockchain::digmPrimarySwap(uint64_t heatIn, bool dryRun) {
   if (heatIn == 0 || m_digmPrimaryPool.isEmpty())
     return 0;
 
-  // HEAT → DIGM constant-product swap (buy-only)
-  uint64_t digmOut = ammGetOutputAmount(
-      heatIn, m_digmPrimaryPool.reserveHeat,
-      m_digmPrimaryPool.reserveDigm, parameters::DIGM_FEE_BPS);
+  // HEAT → DIGM fixed-rate swap: 1 DIGM = 0.1 HEAT (DIGM_PEG_HEAT atomic units)
+  uint64_t feeBps = parameters::DIGM_FEE_BPS;
+  uint64_t feeDiv = parameters::DIGM_FEE_DIVISOR;
+  uint128_t tmp = (uint128_t)heatIn * (feeDiv - feeBps) / feeDiv * parameters::COIN;
+  uint64_t digmOut = (uint64_t)(tmp / parameters::DIGM_PEG_HEAT);
 
-  if (digmOut == 0 || digmOut >= m_digmPrimaryPool.reserveDigm)
+  if (digmOut == 0 || digmOut > m_digmPrimaryPool.reserveDigm)
     return 0;
 
   if (!dryRun) {
     m_digmPrimaryPool.reserveHeat += heatIn;
     m_digmPrimaryPool.reserveDigm -= digmOut;
-    uint64_t feeHeat = (heatIn * parameters::DIGM_FEE_BPS) / parameters::DIGM_FEE_DIVISOR;
+    uint64_t feeHeat = (heatIn * feeBps) / feeDiv;
     m_digmPrimaryPool.accumulatedLpFees += feeHeat;
   }
 
   return digmOut;
 }
 
-uint64_t Blockchain::digmBancorBuy(uint64_t xfgIn, bool dryRun) {
+uint64_t CryptoNote::Blockchain::digmPrimarySell(uint64_t digmIn, bool dryRun) {
+  if (digmIn == 0 || m_digmPrimaryPool.isEmpty() || m_digmPrimaryPool.reserveHeat == 0)
+    return 0;
+
+  // DIGM → HEAT fixed-rate swap: 1 DIGM = 0.1 HEAT (DIGM_PEG_HEAT atomic units)
+  uint64_t feeBps = parameters::DIGM_FEE_BPS;
+  uint64_t feeDiv = parameters::DIGM_FEE_DIVISOR;
+  uint128_t tmp = (uint128_t)digmIn * (feeDiv - feeBps) / feeDiv * parameters::DIGM_PEG_HEAT;
+  uint64_t heatOut = (uint64_t)(tmp / parameters::COIN);
+
+  if (heatOut == 0 || heatOut > m_digmPrimaryPool.reserveHeat)
+    return 0;
+
+  if (!dryRun) {
+    m_digmPrimaryPool.reserveDigm += digmIn;
+    m_digmPrimaryPool.reserveHeat -= heatOut;
+    uint64_t feeDigm = (digmIn * feeBps) / feeDiv;
+    m_digmPrimaryPool.accumulatedLpFees += feeDigm;
+  }
+
+  return heatOut;
+}
+
+CryptoNote::Blockchain::DigmPoolInfo CryptoNote::Blockchain::getDigmPoolInfo() const {
+  DigmPoolInfo info;
+  info.reserveDigm = m_digmPrimaryPool.reserveDigm;
+  info.reserveHeat = m_digmPrimaryPool.reserveHeat;
+  info.totalLpShares = m_digmPrimaryPool.totalLpShares;
+  info.accumulatedLpFees = m_digmPrimaryPool.accumulatedLpFees;
+  info.pegHeat = parameters::DIGM_PEG_HEAT;
+  return info;
+}
+
+uint64_t CryptoNote::Blockchain::digmBancorBuy(uint64_t xfgIn, bool dryRun) {
   if (xfgIn == 0 || m_digmBancorPool.isEmpty())
     return 0;
 
@@ -4570,7 +4779,7 @@ uint64_t Blockchain::digmBancorBuy(uint64_t xfgIn, bool dryRun) {
   return minted;
 }
 
-uint64_t Blockchain::digmBancorSell(uint64_t digmIn, bool dryRun) {
+uint64_t CryptoNote::Blockchain::digmBancorSell(uint64_t digmIn, bool dryRun) {
   if (digmIn == 0 || m_digmBancorPool.isEmpty() || m_digmBancorPool.supplyDigm == 0)
     return 0;
 
@@ -4591,7 +4800,7 @@ uint64_t Blockchain::digmBancorSell(uint64_t digmIn, bool dryRun) {
   return xfgOut;
 }
 
-bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
+bool CryptoNote::Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   if (sharesToBurn == 0 || sharesToBurn > m_protocolLpShares)
     return false;
   if (m_ammPool.totalLpShares == 0 || m_ammPool.isEmpty())
@@ -4636,7 +4845,7 @@ bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   return true;
 }
 
-void Blockchain::popBlock(const Crypto::Hash& blockHash) {
+void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (m_blocks.empty()) {
     logger(ERROR, BRIGHT_RED) <<
       "Attempt to pop block from empty blockchain.";
@@ -4730,6 +4939,35 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_epochSnapshots.pop_back();
   }
 
+  // Restore orderbook state if the popped block was v11+
+  {
+    if (!m_orderbookSnapshots.empty() && m_orderbookSnapshots.back().first == poppedHeight) {
+      const auto& snap = m_orderbookSnapshots.back().second;
+      g_orderbookLastClearingPrice = snap.lastClearingPrice;
+      g_orderbookIsInBootstrap = snap.isInBootstrap;
+      g_orderbookBootstrapBlocksRemaining = snap.bootstrapBlocksRemaining;
+      g_orderbookLastNumMatches = snap.lastNumMatches;
+      g_blocksSinceLastPoolRegen = snap.blocksSinceLastPoolRegen;
+      g_priorPoolRegenPclear = snap.priorPoolRegenPclear;
+      g_priorPoolXfgReserve = snap.priorPoolXfgReserve;
+      g_priorPoolHeatReserve = snap.priorPoolHeatReserve;
+      g_poolBandFilledLastBlock = snap.poolBandFilledLastBlock;
+      m_autoReturnedThisBlock = snap.autoReturnedThisBlock;
+      // Restore expired flags that were set during this block's processing
+      for (auto& entry : m_autoReturnedThisBlock) {
+        auto it = m_limitDeposits.find(entry.first);
+        if (it != m_limitDeposits.end()) it->second.expired = false;
+      }
+      g_orderbookMempool.clear();
+      // Restore user orders
+      for (const auto& o : snap.orders)
+        g_orderbookMempool.addOrder(o);
+      // Restore pool orders
+      g_orderbookMempool.setPoolOrders(snap.poolOrders);
+      m_orderbookSnapshots.pop_back();
+    }
+  }
+
   // Reverse per-block TWAP contribution.
   // Epoch-boundary blocks: snapshot already restored correct accumulator — just pop the deque.
   // Non-boundary blocks: subtract the contribution from accumulator.
@@ -4767,7 +5005,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
 }
 
-bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transactionHash, TxIndex transactionIndex) {
+bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transactionHash, TxIndex transactionIndex) {
   auto result = m_indexManager.transactionMap().insert(std::make_pair(transactionHash, transactionIndex));
   if (!result.second) {
     logger(ERROR, BRIGHT_RED) <<
@@ -4912,6 +5150,11 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
         if (m_heatSupply <= UINT64_MAX - transaction.tx.outputs[output].amount)
           m_heatSupply += transaction.tx.outputs[output].amount;
       }
+      // Track DIGM supply for DIGM colored coin outputs
+      if (commitOut.term == parameters::DIGM_TERM) {
+        if (m_digmSupply <= UINT64_MAX - transaction.tx.outputs[output].amount)
+          m_digmSupply += transaction.tx.outputs[output].amount;
+      }
       // Track pool-locked reserves for invariant verification
       if (commitOut.term == parameters::DEPOSIT_TERM_POOL_XFG) {
         m_poolLockedXfg += transaction.tx.outputs[output].amount;
@@ -4984,13 +5227,47 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
           // Fee-only: principal stays in pool, LP keeps shares. No reserve drain.
         }
       }
+
+      // Limit order deposit/withdraw state mutations (v11+)
+      for (const auto& field : tx_extra_fields) {
+        if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+          const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
+          if (dep.side == 1) {
+            // SELL_XFG: deposit XFG into pending reserves
+            if (m_ammPool.reserveXfg >= dep.amount || true) { // pending has no reserve backing requirement
+              m_ammPool.pendingXfg += dep.amount;
+            }
+          } else {
+            // BUY_XFG: deposit HEAT into pending reserves
+            m_ammPool.pendingHeat += dep.amount;
+          }
+          m_limitDeposits[dep.orderId] = LimitDepositInfo{
+            dep.side, dep.amount, dep.targetPrice, dep.expiration,
+            dep.addressHash, false};
+        } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+          const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
+          auto depIt = m_limitDeposits.find(wd.orderId);
+          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
+            // Return pending deposit to user
+            if (depIt->second.side == 1) {
+              if (m_ammPool.pendingXfg >= depIt->second.amount)
+                m_ammPool.pendingXfg -= depIt->second.amount;
+            } else {
+              if (m_ammPool.pendingHeat >= depIt->second.amount)
+                m_ammPool.pendingHeat -= depIt->second.amount;
+            }
+            depIt->second.withdrawn = true;
+            g_orderbookMempool.cancelOrder(wd.orderId);
+          }
+        }
+      }
     }
   }
 
   return true;
 }
 
-void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
+void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
   TxIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
@@ -5087,6 +5364,13 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
         if (commitOut.term == parameters::HEAT_TERM) {
           m_heatSupply -= output.amount;
+        }
+      }
+      // Reverse DIGM supply for DIGM colored coin outputs
+      if (m_digmSupply >= output.amount) {
+        const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
+        if (commitOut.term == parameters::DIGM_TERM) {
+          m_digmSupply -= output.amount;
         }
       }
       // Reverse pool-locked reserves
@@ -5217,21 +5501,53 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
       } else if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
         const auto& claim = boost::get<TransactionExtraLegacyBondClaim>(field);
         m_legacyBondYieldPool += claim.claimedInterest;
+      } else if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+        const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
+        // Rollback: undo the pending deposit addition
+        if (dep.side == 1) {
+          if (m_ammPool.pendingXfg >= dep.amount)
+            m_ammPool.pendingXfg -= dep.amount;
+        } else {
+          if (m_ammPool.pendingHeat >= dep.amount)
+            m_ammPool.pendingHeat -= dep.amount;
+        }
+        m_limitDeposits.erase(dep.orderId);
+      } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+        const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
+        auto depIt = m_limitDeposits.find(wd.orderId);
+        if (depIt != m_limitDeposits.end()) {
+          // Rollback: restore the withdrawn deposit
+          if (depIt->second.side == 1) {
+            m_ammPool.pendingXfg += depIt->second.amount;
+          } else {
+            m_ammPool.pendingHeat += depIt->second.amount;
+          }
+          depIt->second.withdrawn = false;
+        }
       }
     }
   }
 
 }
 
-void Blockchain::popTransactions(const BlockEntry& block, const Crypto::Hash& minerTransactionHash) {
+void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Crypto::Hash& minerTransactionHash) {
   for (size_t i = 0; i < block.transactions.size() - 1; ++i) {
     popTransaction(block.transactions[block.transactions.size() - 1 - i].tx, block.bl.transactionHashes[block.transactions.size() - 2 - i]);
   }
 
   popTransaction(block.bl.baseTransaction, minerTransactionHash);
+
+  // Restore auto-returned limit deposits (reversed on chain rollback)
+  for (const auto& entry : m_autoReturnedThisBlock) {
+    auto it = m_limitDeposits.find(entry.first);
+    if (it != m_limitDeposits.end()) {
+      it->second.expired = false;
+    }
+  }
+  m_autoReturnedThisBlock.clear();
 }
 
-bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::Hash& transactionHash, const Crypto::Hash& transactionPrefixHash, const std::vector<Crypto::Signature>& transactionSignatures) {
+bool CryptoNote::Blockchain::validateInput(const MultisignatureInput& input, const Crypto::Hash& transactionHash, const Crypto::Hash& transactionPrefixHash, const std::vector<Crypto::Signature>& transactionSignatures) {
   assert(input.signatureCount == transactionSignatures.size());
   MultisignatureOutputsContainer::const_iterator amountOutputs = m_indexManager.multisigOutputs().find(input.amount);
   if (amountOutputs == m_indexManager.multisigOutputs().end()) {
@@ -5298,7 +5614,7 @@ bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::H
   return true;
 }
 
-  bool Blockchain::rollbackBlockchainTo(uint32_t height)
+  bool CryptoNote::Blockchain::rollbackBlockchainTo(uint32_t height)
   {
     logger(INFO) << "Rolling back blockchain to " << height;
     while (height + 1 < m_blocks.size())
@@ -5308,7 +5624,7 @@ bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::H
     logger(INFO) << "Rollback complete. Synchronization will resume.";
     return true;
   }
-  bool Blockchain::removeLastBlock()
+  bool CryptoNote::Blockchain::removeLastBlock()
   {
     if (m_blocks.empty())
     {
@@ -5321,7 +5637,7 @@ bool Blockchain::validateInput(const MultisignatureInput& input, const Crypto::H
     return true;
   }
 
-bool Blockchain::checkUpgradeHeight(const UpgradeDetector& upgradeDetector) {
+bool CryptoNote::Blockchain::checkUpgradeHeight(const UpgradeDetector& upgradeDetector) {
   uint32_t upgradeHeight = upgradeDetector.upgradeHeight();
   if (upgradeHeight != UpgradeDetectorBase::UNDEF_HEIGHT && upgradeHeight + 1 < m_blocks.size()) {
     logger(INFO) << "Checking block version at " << upgradeHeight + 1;
@@ -5333,7 +5649,7 @@ bool Blockchain::checkUpgradeHeight(const UpgradeDetector& upgradeDetector) {
   return true;
 }
 
-bool Blockchain::getLowerBound(uint64_t timestamp, uint64_t startOffset, uint32_t& height) {
+bool CryptoNote::Blockchain::getLowerBound(uint64_t timestamp, uint64_t startOffset, uint32_t& height) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   assert(startOffset < m_blocks.size());
@@ -5349,12 +5665,12 @@ bool Blockchain::getLowerBound(uint64_t timestamp, uint64_t startOffset, uint32_
   return true;
 }
 
-std::vector<Crypto::Hash> Blockchain::getBlockIds(uint32_t startHeight, uint32_t maxCount) {
+std::vector<Crypto::Hash> CryptoNote::Blockchain::getBlockIds(uint32_t startHeight, uint32_t maxCount) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_blockIndex.getBlockIds(startHeight, maxCount);
 }
 
-bool Blockchain::getBlockContainingTransaction(const Crypto::Hash& txId, Crypto::Hash& blockId, uint32_t& blockHeight) {
+bool CryptoNote::Blockchain::getBlockContainingTransaction(const Crypto::Hash& txId, Crypto::Hash& blockId, uint32_t& blockHeight) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   auto it = m_indexManager.transactionMap().find(txId);
   if (it == m_indexManager.transactionMap().end()) {
@@ -5366,7 +5682,7 @@ bool Blockchain::getBlockContainingTransaction(const Crypto::Hash& txId, Crypto:
   }
 }
 
-bool Blockchain::getAlreadyGeneratedCoins(const Crypto::Hash& hash, uint64_t& generatedCoins) {
+bool CryptoNote::Blockchain::getAlreadyGeneratedCoins(const Crypto::Hash& hash, uint64_t& generatedCoins) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   // try to find block in main chain
@@ -5387,7 +5703,7 @@ bool Blockchain::getAlreadyGeneratedCoins(const Crypto::Hash& hash, uint64_t& ge
   return false;
 }
 
-bool Blockchain::getBlockSize(const Crypto::Hash& hash, size_t& size) {
+bool CryptoNote::Blockchain::getBlockSize(const Crypto::Hash& hash, size_t& size) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   // try to find block in main chain
@@ -5408,7 +5724,7 @@ bool Blockchain::getBlockSize(const Crypto::Hash& hash, size_t& size) {
   return false;
 }
 
-bool Blockchain::getMultisigOutputReference(const MultisignatureInput& txInMultisig, std::pair<Crypto::Hash, size_t>& outputReference) {
+bool CryptoNote::Blockchain::getMultisigOutputReference(const MultisignatureInput& txInMultisig, std::pair<Crypto::Hash, size_t>& outputReference) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   MultisignatureOutputsContainer::const_iterator amountIter = m_indexManager.multisigOutputs().find(txInMultisig.amount);
   if (amountIter == m_indexManager.multisigOutputs().end()) {
@@ -5426,7 +5742,7 @@ bool Blockchain::getMultisigOutputReference(const MultisignatureInput& txInMulti
   return true;
 }
 
-bool Blockchain::storeBlockchainIndices() {
+bool CryptoNote::Blockchain::storeBlockchainIndices() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   logger(INFO, BRIGHT_WHITE) << "Saving blockchain indices...";
@@ -5440,7 +5756,7 @@ bool Blockchain::storeBlockchainIndices() {
   return true;
 }
 
-bool Blockchain::loadBlockchainIndices() {
+bool CryptoNote::Blockchain::loadBlockchainIndices() {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   logger(INFO, BRIGHT_WHITE) << "Loading blockchain indices for BlockchainExplorer...";
@@ -5475,27 +5791,27 @@ bool Blockchain::loadBlockchainIndices() {
   return true;
 }
 
-bool Blockchain::getGeneratedTransactionsNumber(uint32_t height, uint64_t& generatedTransactions) {
+bool CryptoNote::Blockchain::getGeneratedTransactionsNumber(uint32_t height, uint64_t& generatedTransactions) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_generatedTransactionsIndex.find(height, generatedTransactions);
 }
 
-bool Blockchain::getOrphanBlockIdsByHeight(uint32_t height, std::vector<Crypto::Hash>& blockHashes) {
+bool CryptoNote::Blockchain::getOrphanBlockIdsByHeight(uint32_t height, std::vector<Crypto::Hash>& blockHashes) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_orthanBlocksIndex.find(height, blockHashes);
 }
 
-bool Blockchain::getBlockIdsByTimestamp(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t blocksNumberLimit, std::vector<Crypto::Hash>& hashes, uint32_t& blocksNumberWithinTimestamps) {
+bool CryptoNote::Blockchain::getBlockIdsByTimestamp(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t blocksNumberLimit, std::vector<Crypto::Hash>& hashes, uint32_t& blocksNumberWithinTimestamps) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_timestampIndex.find(timestampBegin, timestampEnd, blocksNumberLimit, hashes, blocksNumberWithinTimestamps);
 }
 
-bool Blockchain::getTransactionIdsByPaymentId(const Crypto::Hash& paymentId, std::vector<Crypto::Hash>& transactionHashes) {
+bool CryptoNote::Blockchain::getTransactionIdsByPaymentId(const Crypto::Hash& paymentId, std::vector<Crypto::Hash>& transactionHashes) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
   return m_paymentIdIndex.find(paymentId, transactionHashes);
 }
 
-bool Blockchain::loadTransactions(const Block& block, std::vector<Transaction>& transactions, uint32_t height) {
+bool CryptoNote::Blockchain::loadTransactions(const Block& block, std::vector<Transaction>& transactions, uint32_t height) {
   transactions.resize(block.transactionHashes.size());
   size_t transactionSize;
   uint64_t fee;
@@ -5504,7 +5820,7 @@ bool Blockchain::loadTransactions(const Block& block, std::vector<Transaction>& 
       tx_verification_context context;
       for (size_t j = 0; j < i; ++j) {
         if (!m_tx_pool.add_tx(transactions[i - 1 - j], context, true, height)) {
-          throw std::runtime_error("Blockchain::loadTransactions, failed to add transaction to pool");
+          throw std::runtime_error("CryptoNote::Blockchain::loadTransactions, failed to add transaction to pool");
         }
       }
 
@@ -5515,38 +5831,38 @@ bool Blockchain::loadTransactions(const Block& block, std::vector<Transaction>& 
   return true;
 }
 
-void Blockchain::saveTransactions(const std::vector<Transaction>& transactions, uint32_t height) {
+void CryptoNote::Blockchain::saveTransactions(const std::vector<Transaction>& transactions, uint32_t height) {
   tx_verification_context context;
   for (size_t i = 0; i < transactions.size(); ++i) {
     if (!m_tx_pool.add_tx(transactions[transactions.size() - 1 - i], context, true, height)) {
-      logger(WARNING, BRIGHT_MAGENTA) << "Blockchain::saveTransactions, failed to add transaction to pool";
+      logger(WARNING, BRIGHT_MAGENTA) << "CryptoNote::Blockchain::saveTransactions, failed to add transaction to pool";
     }
   }
 }
 
-bool Blockchain::addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
+bool CryptoNote::Blockchain::addMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
   return m_messageQueueList.insert(messageQueue);
 }
 
-bool Blockchain::removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
+bool CryptoNote::Blockchain::removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) {
   return m_messageQueueList.remove(messageQueue);
 }
 
-void Blockchain::sendMessage(const BlockchainMessage& message) {
+void CryptoNote::Blockchain::sendMessage(const BlockchainMessage& message) {
   for (IntrusiveLinkedList<MessageQueue<BlockchainMessage>>::iterator iter = m_messageQueueList.begin(); iter != m_messageQueueList.end(); ++iter) {
     iter->push(message);
   }
 }
 
-bool Blockchain::isBlockInMainChain(const Crypto::Hash& blockId) {
+bool CryptoNote::Blockchain::isBlockInMainChain(const Crypto::Hash& blockId) {
   return m_blockIndex.hasBlock(blockId);
 }
 
-bool Blockchain::isInCheckpointZone(const uint32_t height) {
+bool CryptoNote::Blockchain::isInCheckpointZone(const uint32_t height) {
   return m_checkpoints.is_in_checkpoint_zone(height);
 }
 
-void Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
+void CryptoNote::Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
   if (!m_bootstrapRepaid && m_bootstrapXfgOwed == 0) {
     m_bootstrapXfgOwed = xfg;
     (void)heat;
@@ -5554,20 +5870,20 @@ void Blockchain::setBootstrapAmount(uint64_t xfg, uint64_t heat) {
   }
 }
 
-bool Blockchain::withdrawBootstrapRepaymentVault(uint64_t amount) {
+bool CryptoNote::Blockchain::withdrawBootstrapRepaymentVault(uint64_t amount) {
   if (amount == 0 || amount > m_bootstrapRepaymentVault) return false;
   m_bootstrapRepaymentVault -= amount;
   m_treasuryBalance += amount;
   return true;
 }
 
-void Blockchain::addSwapFee(uint64_t amount) {
+void CryptoNote::Blockchain::addSwapFee(uint64_t amount) {
   if (amount == 0) return;
   m_currentEpochSwapFees += amount;
   m_totalSwapFeesCollected += amount;
 }
 
-AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {
+CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const TransactionInput& in) const {
   if (in.type() == typeid(KeyInput) || in.type() == typeid(MultisignatureInput)) {
     return AssetType::XFG;
   }
@@ -5594,7 +5910,7 @@ AssetType Blockchain::classifyInputAsset(const TransactionInput& in) const {
   return AssetType::XFG;
 }
 
-AssetBalance Blockchain::getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const {
+CryptoNote::AssetBalance CryptoNote::Blockchain::getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const {
   AssetBalance bal;
   for (const auto& in : tx.inputs) {
     AssetType asset = classifyInputAsset(in);

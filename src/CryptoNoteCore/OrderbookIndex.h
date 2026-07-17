@@ -14,12 +14,12 @@
 #pragma once
 
 #include <map>
-#include <unordered_map>
 #include <vector>
 
 #include <boost/functional/hash.hpp>
 
 #include "../../include/CryptoNote.h"
+#include "OrderbookTypes.h"
 
 namespace CryptoNote {
 
@@ -43,13 +43,13 @@ struct HashEqual {
 
 struct OrderEntry {
   Crypto::Hash orderId;
-  uint8_t  side;         // 0 = BUY_XFG, 1 = SELL_XFG
-  uint64_t price;        // XFG/HEAT ratio × 10^8
-  uint64_t amount;       // atomic units
-  uint32_t expiration;   // block height
-  Crypto::PublicKey spendKey;
-  Crypto::PublicKey viewKey;
-  uint32_t blockHeight;  // block when order was placed (tiebreaker for time priority)
+  uint8_t  side;
+  uint64_t price;
+  uint64_t amount;
+  uint64_t targetPrice;
+  uint32_t expiration;
+  Crypto::Hash addressHash; // cn_fast_hash(spendKey||viewKey)
+  uint32_t blockHeight;
 };
 
 class OrderbookIndex {
@@ -58,32 +58,9 @@ public:
   explicit OrderbookIndex(uint32_t maxOrdersPerBlock, uint32_t maxOrdersPerSender)
     : m_maxOrdersPerBlock(maxOrdersPerBlock), m_maxOrdersPerSender(maxOrdersPerSender) {}
 
-  struct SenderKey {
-    Crypto::PublicKey spendKey;
-    Crypto::PublicKey viewKey;
-
-    bool operator<(const SenderKey& other) const {
-      int cmp = memcmp(spendKey.data, other.spendKey.data, sizeof(spendKey.data));
-      if (cmp != 0) return cmp < 0;
-      return memcmp(viewKey.data, other.viewKey.data, sizeof(viewKey.data)) < 0;
-    }
-
-    bool operator==(const SenderKey& other) const {
-      return memcmp(spendKey.data, other.spendKey.data, sizeof(spendKey.data)) == 0 &&
-             memcmp(viewKey.data, other.viewKey.data, sizeof(viewKey.data)) == 0;
-    }
-  };
-
-  struct SenderKeyHash {
-    size_t operator()(const SenderKey& k) const {
-      size_t h1 = boost::hash_range(k.spendKey.data, k.spendKey.data + sizeof(k.spendKey.data));
-      size_t h2 = boost::hash_range(k.viewKey.data, k.viewKey.data + sizeof(k.viewKey.data));
-      return h1 ^ (h2 << 1);
-    }
-  };
-
   void addOrder(const OrderEntry& entry);
   void removeOrder(const Crypto::Hash& orderId);
+  size_t removeOutOfBandOrders();
 
   const std::map<uint64_t, std::vector<OrderEntry>, std::greater<uint64_t>>& getBidCurve() const { return m_bidCurve; }
   const std::map<uint64_t, std::vector<OrderEntry>>& getAskCurve() const { return m_askCurve; }
@@ -99,7 +76,7 @@ public:
 private:
   std::map<uint64_t, std::vector<OrderEntry>, std::greater<uint64_t>> m_bidCurve;
   std::map<uint64_t, std::vector<OrderEntry>> m_askCurve;
-  std::unordered_map<SenderKey, uint32_t, SenderKeyHash> m_perSenderCount;
+  std::map<SenderKey, uint32_t> m_perSenderCount;
   std::map<Crypto::Hash, uint64_t, HashLess> m_orderIdToPrice;
   std::map<Crypto::Hash, uint8_t, HashLess> m_orderIdToSide;
 

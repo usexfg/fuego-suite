@@ -29,8 +29,9 @@ bool OrderbookMempool::addOrder(const Order& order) {
 
   if (m_orders.size() >= m_maxOrdersTotal) return false;
   if (order.amount == 0 || order.price == 0) return false;
+  if (order.orderId.data[0] == 0xF0) return false; // reserved for pool-generated orders
 
-  SenderKey sk{order.spendKey, order.viewKey};
+  SenderKey sk{order.addressHash};
   auto it = m_senderCounts.find(sk);
   if (it != m_senderCounts.end() && it->second >= m_maxOrdersPerSender)
     return false;
@@ -51,7 +52,7 @@ bool OrderbookMempool::cancelOrder(const Crypto::Hash& orderId) {
   if (it == m_orders.end()) return false;
 
   removeFromIndex(it->second);
-  SenderKey sk{it->second.spendKey, it->second.viewKey};
+  SenderKey sk{it->second.addressHash};
   auto sc = m_senderCounts.find(sk);
   if (sc != m_senderCounts.end()) {
     if (sc->second <= 1) m_senderCounts.erase(sc);
@@ -129,7 +130,7 @@ uint32_t OrderbookMempool::expireOrders(uint32_t currentHeight) {
   while (it != m_orders.end()) {
     if (it->second.expiration > 0 && currentHeight >= it->second.expiration) {
       removeFromIndex(it->second);
-      SenderKey sk{it->second.spendKey, it->second.viewKey};
+      SenderKey sk{it->second.addressHash};
       auto sc = m_senderCounts.find(sk);
       if (sc != m_senderCounts.end()) {
         if (sc->second <= 1) m_senderCounts.erase(sc);
@@ -161,9 +162,8 @@ OrderbookReceipt OrderbookMempool::generateReceipt() const {
 
 void OrderbookMempool::restoreFromReceipt(const OrderbookReceipt& receipt) {
   std::lock_guard<std::mutex> lock(m_mutex);
-  m_lastClearingPrice = receipt.clearingPrice;
-  // Individual orders are re-gossiped on reconnect.
-  // The receipt provides the aggregate state for checkpointing.
+  if (receipt.clearingPrice > 0)
+    m_lastClearingPrice = receipt.clearingPrice;
 }
 
 void OrderbookMempool::clear() {
@@ -180,13 +180,13 @@ void OrderbookMempool::copyToIndex(OrderbookIndex& idx) const {
   for (const auto& [price, ptrs] : m_bids) {
     for (const auto& ptr : ptrs) {
       OrderEntry e;
-      e.orderId    = ptr.order->orderId;
-      e.side       = ptr.order->side;
-      e.price      = ptr.order->price;
-      e.amount     = ptr.order->amount;
-      e.expiration = ptr.order->expiration;
-      e.spendKey   = ptr.order->spendKey;
-      e.viewKey    = ptr.order->viewKey;
+      e.orderId     = ptr.order->orderId;
+      e.side        = ptr.order->side;
+      e.price       = ptr.order->price;
+      e.targetPrice = ptr.order->targetPrice;
+      e.amount      = ptr.order->amount;
+      e.expiration  = ptr.order->expiration;
+      e.addressHash = ptr.order->addressHash;
       e.blockHeight = 0;
       idx.addOrder(e);
     }
@@ -194,17 +194,19 @@ void OrderbookMempool::copyToIndex(OrderbookIndex& idx) const {
   for (const auto& [price, ptrs] : m_asks) {
     for (const auto& ptr : ptrs) {
       OrderEntry e;
-      e.orderId    = ptr.order->orderId;
-      e.side       = ptr.order->side;
-      e.price      = ptr.order->price;
-      e.amount     = ptr.order->amount;
-      e.expiration = ptr.order->expiration;
-      e.spendKey   = ptr.order->spendKey;
-      e.viewKey    = ptr.order->viewKey;
+      e.orderId     = ptr.order->orderId;
+      e.side        = ptr.order->side;
+      e.price       = ptr.order->price;
+      e.targetPrice = ptr.order->targetPrice;
+      e.amount      = ptr.order->amount;
+      e.expiration  = ptr.order->expiration;
+      e.addressHash = ptr.order->addressHash;
       e.blockHeight = 0;
       idx.addOrder(e);
     }
   }
+  // Filter out-of-band orders from standard matching
+  idx.removeOutOfBandOrders();
 }
 
 void OrderbookMempool::insertBid(const Order& order, bool isPool) {
@@ -237,6 +239,56 @@ void OrderbookMempool::removeFromIndex(const Order& order) {
 
   if (order.side == 0) removeFrom(m_bids);
   else removeFrom(m_asks);
+}
+
+void OrderbookMempool::fillOrder(const Crypto::Hash& orderId, uint64_t fillAmount) {
+  if (fillAmount == 0) return;
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_orders.find(orderId);
+  if (it == m_orders.end()) return;
+
+  Order& order = it->second;
+  if (order.amount <= fillAmount) {
+    removeFromIndex(order);
+    SenderKey sk{order.addressHash};
+    auto sc = m_senderCounts.find(sk);
+    if (sc != m_senderCounts.end()) {
+      if (sc->second <= 1) m_senderCounts.erase(sc);
+      else sc->second--;
+    }
+    m_orders.erase(it);
+  } else {
+    order.amount -= fillAmount;
+  }
+}
+
+std::vector<OrderbookMempool::OutOfBandOrder> OrderbookMempool::getOutOfBandOrders() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<OutOfBandOrder> result;
+  for (const auto& [id, order] : m_orders) {
+    if (order.targetPrice != 0) {
+      result.push_back({order.orderId, order.side, order.amount, order.targetPrice});
+    }
+  }
+  return result;
+}
+
+std::vector<Order> OrderbookMempool::getAllPoolOrders() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<Order> result;
+  result.reserve(m_poolOrders.size());
+  for (const auto& [id, order] : m_poolOrders)
+    result.push_back(order);
+  return result;
+}
+
+std::vector<Order> OrderbookMempool::getAllUserOrders() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<Order> result;
+  result.reserve(m_orders.size());
+  for (const auto& [id, order] : m_orders)
+    result.push_back(order);
+  return result;
 }
 
 } // namespace CryptoNote

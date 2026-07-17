@@ -200,6 +200,14 @@ private:
                                                                    std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                    const AccountPublicAddress& recipient,
                                                                    uint64_t amount);
+  std::unique_ptr<WalletRequest> doSendPlaceOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  uint8_t side, uint64_t amount, uint64_t targetPrice,
+                                                                  uint32_t expiration, const Crypto::Hash& orderId,
+                                                                  const Crypto::Hash& addressHash);
+  std::unique_ptr<WalletRequest> doSendCancelOrderV13Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                                  std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                                  const Crypto::Hash& orderId);
   void sendLpAddCommitmentOutsByAmount(std::shared_ptr<SendTransactionContext> context,
                                         const std::vector<DepositId> heatIds,
                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,

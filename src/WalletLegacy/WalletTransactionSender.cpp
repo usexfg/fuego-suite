@@ -757,6 +757,18 @@ namespace CryptoNote
         context->v10SwapDirection, context->v10SwapInput,
         context->v10SwapOutput, context->v10SwapMinOutput);
     }
+    else if (context->isV11LimitDeposit)
+    {
+      nextRequest = doSendPlaceOrderV13Transaction(std::move(context), events,
+        context->v11DepositSide, context->v11DepositAmount, context->v11DepositTargetPrice,
+        context->v11DepositExpiration, context->v11DepositOrderId,
+        context->v11DepositAddressHash);
+    }
+    else if (context->isV11LimitWithdraw)
+    {
+      nextRequest = doSendCancelOrderV13Transaction(std::move(context), events,
+        context->v11WithdrawOrderId);
+    }
     else if (isMultisigTransaction)
     {
       nextRequest = doSendMultisigTransaction(std::move(context), events);
@@ -2764,30 +2776,69 @@ namespace CryptoNote
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
       uint8_t side, uint64_t amount, uint64_t price,
       uint32_t expiration, uint64_t fee, uint64_t mixIn) {
-    // Build a transaction that locks funds in a TX_OUT_ORDER UTXO.
-    // The output's unlocking condition carries the order parameters (side, price,
-    // expiration, sender keys). The transaction extra carries TX_EXTRA_ORDER_PLACE
-    // for auth tag scanning.
-    //
-    // Implementation follows the same pattern as makeHeatMintV10Request:
-    // select inputs, build outputs, add extra fields, sign, submit.
-    //
-    // TODO: Full OrderbookPlaceTransactionContext implementation.
-    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
-      make_error_code(error::INTERNAL_WALLET_ERROR)));
-    return {};
+    throwIf(amount == 0, error::WRONG_AMOUNT);
+    throwIf(side > 1, error::WRONG_AMOUNT);
+
+    uint64_t neededMoney = getSumWithOverflowCheck(amount, fee);
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+    context->mixIn = mixIn;
+
+    context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
+    throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
+
+    // Generate random orderId
+    Crypto::Hash orderId;
+    Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+
+    // Limit deposits always go to the pool commit key (one-sided deposit)
+    // The pool tracks pendingXfg/pendingHeat and uses m_limitDeposits map
+    Crypto::PublicKey poolKey = CryptoNote::computePoolCommitKey();
+
+    context->isV11LimitDeposit = true;
+    context->v11DepositSide = side;
+    context->v11DepositAmount = amount;
+    context->v11DepositTargetPrice = price;
+    context->v11DepositExpiration = expiration;
+    context->v11DepositOrderId = orderId;
+
+    // Compute address_hash = cn_fast_hash(spendKey||viewKey) for privacy
+    uint8_t keyData[64];
+    memcpy(keyData, m_keys.address.spendPublicKey.data, 32);
+    memcpy(keyData + 32, m_keys.address.viewPublicKey.data, 32);
+    Crypto::cn_fast_hash(keyData, 64, context->v11DepositAddressHash);
+
+    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
+    context->transactionId = transactionId;
+
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, side, amount, price, expiration, orderId, context->v11DepositAddressHash);
+    context->extra = std::string(extra.begin(), extra.end());
+
+    Crypto::SecretKey transactionSK;
+    return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeCancelOrderV13Request(
       TransactionId& transactionId,
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
       const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn) {
-    // Build a transaction that spends the order UTXO (TX_OUT_ORDER) and returns
-    // funds to the owner's stealth address. The transaction extra carries
-    // TX_EXTRA_ORDER_CANCEL with the orderId for auth tag scanning.
-    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
-      make_error_code(error::INTERNAL_WALLET_ERROR)));
-    return {};
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+    context->mixIn = mixIn;
+
+    context->isV11LimitWithdraw = true;
+    context->v11WithdrawOrderId = orderId;
+
+    transactionId = m_transactionsCache.addNewTransaction(0, fee, std::string(), {}, 0, {});
+    context->transactionId = transactionId;
+
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, orderId);
+    context->extra = std::string(extra.begin(), extra.end());
+
+    Crypto::SecretKey transactionSK;
+    return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeMarketBuyV13Request(
@@ -2795,12 +2846,11 @@ namespace CryptoNote
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
       uint64_t xfgWanted, uint64_t maxHeatCost,
       uint64_t fee, uint64_t mixIn) {
-    // Build a market buy transaction. The transaction extra carries
-    // TX_EXTRA_MARKET_BUY_AUTH for per-asset balance verification.
-    // Actual fill happens at block finalization via processOrderbookForBlock.
-    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
-      make_error_code(error::INTERNAL_WALLET_ERROR)));
-    return {};
+    // Market buy (BUY_XFG with HEAT) uses AMM swap: direction=0 (XFG→HEAT swap from pool perspective)
+    // Actual: user pays HEAT, receives XFG. AMM direction=1 (HEAT→XFG from pool view).
+    throwIf(xfgWanted == 0, error::WRONG_AMOUNT);
+    uint64_t heatInput = maxHeatCost;
+    return makeAmmSwapV10Request(transactionId, events, 1, heatInput, xfgWanted, 1, fee, mixIn);
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeMarketSellV13Request(
@@ -2808,11 +2858,137 @@ namespace CryptoNote
       std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
       uint64_t xfgToSell, uint64_t minHeatReceive,
       uint64_t fee, uint64_t mixIn) {
-    // Build a market sell transaction. The transaction extra carries
-    // TX_EXTRA_MARKET_SELL_AUTH for per-asset balance verification.
-    events.push_back(makeCompleteEvent(m_transactionsCache, transactionId,
-      make_error_code(error::INTERNAL_WALLET_ERROR)));
-    return {};
+    // Market sell (SELL_XFG for HEAT) uses AMM swap: direction=0 (XFG→HEAT)
+    throwIf(xfgToSell == 0, error::WRONG_AMOUNT);
+    return makeAmmSwapV10Request(transactionId, events, 0, xfgToSell, minHeatReceive, minHeatReceive, fee, mixIn);
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendPlaceOrderV13Transaction(
+      std::shared_ptr<SendTransactionContext>&& context,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      uint8_t side, uint64_t amount, uint64_t targetPrice,
+      uint32_t expiration, const Crypto::Hash& orderId,
+      const Crypto::Hash& addressHash) {
+    if (m_isStoping) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
+      return {};
+    }
+
+    try {
+      WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      uint64_t fee = m_currency.minimumFee();
+
+      // Deposit output → pool commit key (one-sided deposit, tracked by m_limitDeposits)
+      Crypto::PublicKey poolKey = CryptoNote::computePoolCommitKey();
+      uint32_t poolTerm = (side == 1)
+        ? parameters::DEPOSIT_TERM_POOL_XFG   // 'POLX' — pool receives XFG
+        : parameters::DEPOSIT_TERM_POOL_HEAT;  // 'POLH' — pool receives HEAT
+      CryptoNote::TransactionOutputCommitment poolOut;
+      poolOut.commitKey = poolKey;
+      poolOut.term = poolTerm;
+      transaction->addOutput(amount, poolOut);
+
+      // Change output → user
+      uint64_t changeAmount = context->foundMoney - amount - fee;
+      std::vector<uint64_t> decomposedChange = splitAmount(changeAmount, context->dustPolicy.dustThreshold);
+      for (uint64_t changeOut : decomposedChange)
+        transaction->addOutput(changeOut, m_keys.address);
+
+      transaction->setUnlockTime(0);
+
+      // Add limit deposit extra
+      std::vector<uint8_t> extra;
+      addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
+      CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+      transaction->appendExtra(extraData);
+
+      // Inputs with ring signing
+      std::vector<TransactionSourceEntry> sources;
+      prepareKeyInputs(context->selectedTransfers, context->outs, sources, context->mixIn);
+      std::vector<TransactionTypes::InputKeyInfo> inputs = convertSources(std::vector<TransactionSourceEntry>(sources));
+
+      std::vector<KeyPair> ephKeys;
+      for (size_t i = 0; i < inputs.size(); ++i) {
+        KeyPair ephKey;
+        transaction->addInput(m_keys, inputs[i], ephKey);
+        ephKeys.push_back(std::move(ephKey));
+      }
+      for (size_t i = 0; i < inputs.size(); ++i)
+        transaction->signInputKey(i, inputs[i], ephKeys[i]);
+
+      Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
+      m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, amount, context->selectedTransfers);
+      notifyBalanceChanged(events);
+
+      return std::unique_ptr<WalletRequest>(new WalletRelayTransactionRequest(lowlevelTransaction,
+        std::bind(&WalletTransactionSender::relayTransactionCallback, this, context,
+          std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+    } catch (std::exception& e) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
+      return {};
+    }
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendCancelOrderV13Transaction(
+      std::shared_ptr<SendTransactionContext>&& context,
+      std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+      const Crypto::Hash& orderId) {
+    if (m_isStoping) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
+      return {};
+    }
+
+    try {
+      WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      uint64_t fee = m_currency.minimumFee();
+
+      // Cancel tx only needs TX_EXTRA_LIMIT_WITHDRAW — the blockchain
+      // validates against m_limitDeposits and returns the deposit.
+      // The return output is implied by the deposit record (side + amount).
+      transaction->setUnlockTime(0);
+
+      std::vector<uint8_t> extra;
+      addLimitWithdrawToExtra(extra, orderId);
+      CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+      transaction->appendExtra(extraData);
+
+      // Cancel does not spend regular UTXOs — the pool returns the deposit.
+      // Still need a fee input — user covers the cancellation tx fee.
+      uint64_t neededFee = getSumWithOverflowCheck(fee, context->dustPolicy.dustThreshold);
+      context->foundMoney = selectTransfersToSend(neededFee, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
+      throwIf(context->foundMoney < neededFee, error::WRONG_AMOUNT);
+
+      uint64_t changeAmount = context->foundMoney - fee;
+      std::vector<uint64_t> decomposedChange = splitAmount(changeAmount, context->dustPolicy.dustThreshold);
+      for (uint64_t changeOut : decomposedChange)
+        transaction->addOutput(changeOut, m_keys.address);
+
+      std::vector<TransactionSourceEntry> sources;
+      prepareKeyInputs(context->selectedTransfers, context->outs, sources, context->mixIn);
+      std::vector<TransactionTypes::InputKeyInfo> inputs = convertSources(std::vector<TransactionSourceEntry>(sources));
+
+      std::vector<KeyPair> ephKeys;
+      for (size_t i = 0; i < inputs.size(); ++i) {
+        KeyPair ephKey;
+        transaction->addInput(m_keys, inputs[i], ephKey);
+        ephKeys.push_back(std::move(ephKey));
+      }
+      for (size_t i = 0; i < inputs.size(); ++i)
+        transaction->signInputKey(i, inputs[i], ephKeys[i]);
+
+      Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
+      m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, 0, context->selectedTransfers);
+      notifyBalanceChanged(events);
+
+      return std::unique_ptr<WalletRequest>(new WalletRelayTransactionRequest(lowlevelTransaction,
+        std::bind(&WalletTransactionSender::relayTransactionCallback, this, context,
+          std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+    } catch (std::exception& e) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
+      return {};
+    }
   }
 
 } /* namespace CryptoNote */

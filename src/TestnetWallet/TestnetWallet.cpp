@@ -65,6 +65,21 @@ namespace CryptoNote
     register_testnet_commands();
   }
 
+  bool CryptoNote::testnet_wallet::requireV11(const std::string& cmdName) {
+    try {
+      uint64_t height = m_node->getLastLocalBlockHeight();
+      if (height < CryptoNote::parameters::UPGRADE_HEIGHT_V11) {
+        fail_msg_writer() << cmdName << " requires v11+ (block " << CryptoNote::parameters::UPGRADE_HEIGHT_V11
+                          << "), current height: " << height;
+        return false;
+      }
+    } catch (...) {
+      fail_msg_writer() << cmdName << ": cannot determine block height, try again later";
+      return false;
+    }
+    return true;
+  }
+
   //----------------------------------------------------------------------------------------------------
   void CryptoNote::testnet_wallet::register_testnet_commands()
   {

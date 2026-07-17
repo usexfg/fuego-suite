@@ -173,7 +173,11 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "send_heat",          makeMemberMethod(&wallet_rpc_server::on_send_heat) },
       { "amm_swap",           makeMemberMethod(&wallet_rpc_server::on_amm_swap) },
       { "amm_add_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_add_liquidity) },
-      { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) }
+      { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) },
+      // v11+ Hearth limit order commands
+      { "place_limit_order",  makeMemberMethod(&wallet_rpc_server::on_place_limit_order) },
+      { "cancel_limit_order", makeMemberMethod(&wallet_rpc_server::on_cancel_limit_order) },
+      { "get_limit_orders",   makeMemberMethod(&wallet_rpc_server::on_get_limit_orders) }
     };
 
     auto it = s_methods.find(jsonRequest.getMethod());
@@ -1104,6 +1108,117 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
     throw;
   } catch (const std::exception& e) {
     logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+// v11+ Hearth limit order wallet RPC handlers
+bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::request& req,
+                                              wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::response& res) {
+  try {
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+    if (req.target_price == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "target_price must be > 0");
+    }
+    if (req.side > 1) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "side must be 0 (BUY) or 1 (SELL)");
+    }
+
+    uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
+
+    CryptoNote::TransactionId txId = m_wallet.placeOrderV13(
+      req.side, req.amount, req.target_price, req.expiration, fee, mixin);
+
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to place limit order");
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC place_limit_order error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::request& req,
+                                               wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::response& res) {
+  try {
+    Crypto::Hash orderId;
+    if (!Common::podFromHex(req.order_id, orderId)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Invalid order_id hex");
+    }
+
+    uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
+
+    CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin);
+
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to cancel limit order");
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC cancel_limit_order error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::request& req,
+                                             wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::response& res) {
+  try {
+    // Query daemon for all limit deposits
+    std::vector<INode::LimitDepositRpcEntry> allDeposits;
+    std::error_code ec = m_node.getLimitDeposits(allDeposits);
+    if (ec) {
+      logger(WARNING) << "Wallet RPC get_limit_orders: daemon query failed: " << ec.message();
+      res.orders.clear();
+      res.status = WALLET_RPC_STATUS_OK;
+      return true;
+    }
+
+    // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
+    AccountKeys accountKeys;
+    m_wallet.getAccountKeys(accountKeys);
+    std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
+    memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
+    memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
+    Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
+    std::string myAddressHash = Common::podToHex(myAddrHash);
+
+    // Return only orders belonging to this wallet
+    for (const auto& dep : allDeposits) {
+      if (dep.address_hash != myAddressHash) continue;
+      wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
+      info.order_id = dep.order_id;
+      info.side = dep.side;
+      info.amount = dep.amount;
+      info.target_price = dep.target_price;
+      info.expiration = dep.expiration;
+      info.withdrawn = dep.withdrawn || dep.expired;
+      res.orders.push_back(std::move(info));
+    }
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC get_limit_orders error: " << e.what();
     throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
   }
   return true;

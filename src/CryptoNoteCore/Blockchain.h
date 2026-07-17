@@ -33,7 +33,9 @@
 #include "BankingIndex.h"
 #include "CommitmentIndex.h"
 #include "HeatMintEngine.h"
+#include "DigmMintEngine.h"
 #include "AmmPool.h"
+#include "OrderbookTypes.h"
 #include "BancorCurve.h"
 #include "../Common/FixedPoint.h"
 #include "Treasury/VaultTypes.h"
@@ -117,14 +119,28 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getDigmSupply() const { return m_digmSupply; }
     uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
+    const DigmMintEngine& getDigmMintEngine() const { return m_digmMintEngine; }
     const AmmPoolState& getAmmPool() const { return m_ammPool; }
     const DigmPrimaryPoolState& getDigmPrimaryPool() const { return m_digmPrimaryPool; }
     const DigmBancorPoolState& getDigmBancorPool() const { return m_digmBancorPool; }
     bool bootstrapDigmPools();
-    // HEAT/DIGM constant-product swap (buy-only: HEAT → DIGM)
-    uint64_t digmPrimarySwap(uint64_t heatIn, bool dryRun);
+    // HEAT/DIGM fixed-rate swap (1 DIGM = 0.1 HEAT at peg)
+    uint64_t digmPrimarySwap(uint64_t heatIn, bool dryRun);   // HEAT → DIGM
+    uint64_t digmPrimarySell(uint64_t digmIn, bool dryRun);   // DIGM → HEAT
+    uint64_t getDigmPegHeat() const { return parameters::DIGM_PEG_HEAT; }
+    uint64_t getDigmFeeBps() const { return parameters::DIGM_FEE_BPS; }
+
+    struct DigmPoolInfo {
+      uint64_t reserveDigm = 0;
+      uint64_t reserveHeat = 0;
+      uint64_t totalLpShares = 0;
+      uint64_t accumulatedLpFees = 0;
+      uint64_t pegHeat = 0;
+    };
+    DigmPoolInfo getDigmPoolInfo() const;
     // XFG/DIGM Bancor buy (XFG → DIGM, minting)
     uint64_t digmBancorBuy(uint64_t xfgIn, bool dryRun);
     // XFG/DIGM Bancor sell (DIGM → XFG, burning)
@@ -428,6 +444,10 @@ namespace CryptoNote {
     uint64_t m_heatSupply = 0;
     CryptoNote::HeatMintEngine m_heatMintEngine;
 
+    // DIGM stablecoin state (on-chain commitments)
+    uint64_t m_digmSupply = 0;
+    CryptoNote::DigmMintEngine m_digmMintEngine;
+
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
@@ -458,6 +478,25 @@ namespace CryptoNote {
     // Vault UTXO spending: maps tx hash → spent vault UTXO indices (for popBlock reversal)
     std::map<Crypto::Hash, std::vector<uint64_t>, HashLess> m_vaultSpentByTx;
 
+    // Limit order deposit tracking: orderId → (side, amount, addressHash) for withdrawal
+    // Persists after order expires from mempool so user can reclaim pending deposit
+    struct LimitDepositInfo {
+      uint8_t  side;      // 0 = BUY_XFG, 1 = SELL_XFG
+      uint64_t amount;    // XFG for sells, HEAT for buys
+      uint64_t targetPrice;
+      uint32_t expiration;
+      Crypto::Hash addressHash; // cn_fast_hash(spendKey||viewKey) — privacy-preserving
+      bool withdrawn = false;
+      bool expired = false; // auto-returned on expiry
+    };
+    std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+
+  public:
+    const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }
+  private:
+    // Track auto-returned deposits for block rollback
+    std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> m_autoReturnedThisBlock;
+
     // Fee pool: accumulates swap fees, distributed as interest to CD holders.
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
     uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
@@ -472,6 +511,23 @@ namespace CryptoNote {
     std::deque<uint128_t> m_blockTwapContributions;
     // Epoch state snapshots for popBlock reversal
     std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
+
+    // Orderbook state snapshot for popBlock reversal (v11+)
+    struct OrderbookRollbackSnapshot {
+      std::vector<Order> orders;
+      std::vector<Order> poolOrders;
+      uint64_t lastClearingPrice = 0;
+      bool isInBootstrap = true;
+      uint32_t bootstrapBlocksRemaining = 0;
+      uint32_t lastNumMatches = 0;
+      uint32_t blocksSinceLastPoolRegen = 0;
+      uint64_t priorPoolRegenPclear = 0;
+      uint64_t priorPoolXfgReserve = 0;
+      uint64_t priorPoolHeatReserve = 0;
+      uint64_t poolBandFilledLastBlock = 0;
+      std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> autoReturnedThisBlock;
+    };
+    std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 
     // Cumulative fee pool accounting (lifetime totals, never reset)
     uint64_t m_totalSwapFeesCollected = 0;    // all swap fees ever entering the pool

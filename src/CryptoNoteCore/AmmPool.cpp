@@ -126,6 +126,8 @@ void AmmPoolState::serialize(ISerializer& s) {
   s(totalLpShares, "totalLpShares");
   s(accumulatedLpFeesHeat, "accumulatedLpFeesHeat");
   s(accumulatedLpFeesXfg, "accumulatedLpFeesXfg");
+  s(pendingXfg, "pendingXfg");
+  s(pendingHeat, "pendingHeat");
 
   // Migration: read old single-bucket field if present, discard (irrecoverable split)
   uint64_t legacyFees = 0;

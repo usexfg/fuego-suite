@@ -12,6 +12,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "OrderbookIndex.h"
+#include <algorithm>
+#include <algorithm>
 
 namespace CryptoNote {
 
@@ -27,7 +29,7 @@ void OrderbookIndex::addOrder(const OrderEntry& entry) {
   }
   m_orderIdToPrice[entry.orderId] = entry.price;
 
-  SenderKey sender{entry.spendKey, entry.viewKey};
+  SenderKey sender{entry.addressHash};
   m_perSenderCount[sender]++;
 }
 
@@ -57,7 +59,7 @@ void OrderbookIndex::removeOrder(const Crypto::Hash& orderId) {
   if (curve) {
     for (auto it = curve->begin(); it != curve->end(); ++it) {
       if (memcmp(it->orderId.data, orderId.data, sizeof(orderId.data)) == 0) {
-        SenderKey sender{it->spendKey, it->viewKey};
+        SenderKey sender{it->addressHash};
         auto sc = m_perSenderCount.find(sender);
         if (sc != m_perSenderCount.end()) {
           if (sc->second <= 1) m_perSenderCount.erase(sc);
@@ -90,6 +92,64 @@ void OrderbookIndex::clear() {
   m_orderIdToSide.clear();
   m_bidCount = 0;
   m_askCount = 0;
+}
+
+size_t OrderbookIndex::removeOutOfBandOrders() {
+  size_t removed = 0;
+
+  // Remove from bids
+  for (auto it = m_bidCurve.begin(); it != m_bidCurve.end(); ) {
+    auto& vec = it->second;
+    size_t before = vec.size();
+    vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const OrderEntry& e) {
+      if (e.targetPrice != 0) {
+        SenderKey sender{e.addressHash};
+        auto sc = m_perSenderCount.find(sender);
+        if (sc != m_perSenderCount.end()) {
+          if (sc->second <= 1) m_perSenderCount.erase(sc);
+          else sc->second--;
+        }
+        m_orderIdToPrice.erase(e.orderId);
+        m_orderIdToSide.erase(e.orderId);
+        return true;
+      }
+      return false;
+    }), vec.end());
+    removed += before - vec.size();
+    if (vec.empty()) it = m_bidCurve.erase(it);
+    else ++it;
+  }
+
+  // Remove from asks
+  for (auto it = m_askCurve.begin(); it != m_askCurve.end(); ) {
+    auto& vec = it->second;
+    size_t before = vec.size();
+    vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const OrderEntry& e) {
+      if (e.targetPrice != 0) {
+        SenderKey sender{e.addressHash};
+        auto sc = m_perSenderCount.find(sender);
+        if (sc != m_perSenderCount.end()) {
+          if (sc->second <= 1) m_perSenderCount.erase(sc);
+          else sc->second--;
+        }
+        m_orderIdToPrice.erase(e.orderId);
+        m_orderIdToSide.erase(e.orderId);
+        return true;
+      }
+      return false;
+    }), vec.end());
+    removed += before - vec.size();
+    if (vec.empty()) it = m_askCurve.erase(it);
+    else ++it;
+  }
+
+  // Recount for accuracy after bulk removal
+  m_bidCount = 0;
+  for (const auto& lvl : m_bidCurve) m_bidCount += lvl.second.size();
+  m_askCount = 0;
+  for (const auto& lvl : m_askCurve) m_askCount += lvl.second.size();
+
+  return removed;
 }
 
 } // namespace CryptoNote

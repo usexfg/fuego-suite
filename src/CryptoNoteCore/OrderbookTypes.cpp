@@ -42,47 +42,51 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
 
   uint64_t sellDepth = (static_cast<uint128_t>(params.reserveXfg) * params.bandPct) / 100;
   uint64_t buyDepth  = (static_cast<uint128_t>(params.reserveHeat) * params.bandPct) / 100;
-  // Convert HEAT depth to XFG-equivalent for bid side
   uint64_t buyDepthXfg = (static_cast<uint128_t>(buyDepth) * parameters::COIN) / params.P_clear;
 
   uint64_t spread = (static_cast<uint128_t>(params.P_clear) * params.spreadBps) / 10000;
   if (spread == 0) spread = 1;
 
-  // Generate pool sell orders (asks — sell XFG, receive HEAT)
-  // Tiered: larger chunks near P_clear, smaller at extremes
+  auto makePoolId = [&](int tier, uint8_t side, uint64_t price) -> Crypto::Hash {
+    // Deterministic but unique ID: hash of (P_clear || reserveXfg || reserveHeat || tier || side || price)
+    // Prefix 0xF0 marks pool-generated; aggressive collision rejection in addOrder().
+    uint8_t seed[56];
+    for (int i = 0; i < 8; i++) {
+      seed[i]      = static_cast<uint8_t>((params.P_clear      >> (8*i)) & 0xFF);
+      seed[8 + i]  = static_cast<uint8_t>((params.reserveXfg   >> (8*i)) & 0xFF);
+      seed[16 + i] = static_cast<uint8_t>((params.reserveHeat  >> (8*i)) & 0xFF);
+      seed[24 + i]  = static_cast<uint8_t>((price              >> (8*i)) & 0xFF);
+      seed[32 + i]  = static_cast<uint8_t>((uint64_t(tier)     >> (8*i)) & 0xFF);
+      seed[40 + i]  = static_cast<uint8_t>((uint64_t(side)     >> (8*i)) & 0xFF);
+    }
+    Crypto::Hash id;
+    Crypto::cn_fast_hash(seed, sizeof(seed), id);
+    id.data[0] = 0xF0;
+    return id;
+  };
+
   uint64_t remainingSell = sellDepth;
   uint64_t sellPrice = params.P_clear + spread / 2;
   uint64_t chunkSize = sellDepth / 10;
-  if (chunkSize < parameters::COIN / 100) chunkSize = parameters::COIN / 100; // min 0.01 XFG
+  if (chunkSize < parameters::COIN / 100) chunkSize = parameters::COIN / 100;
 
   for (int tier = 0; tier < 10 && remainingSell > 0; tier++) {
     uint64_t tierAmount = std::min(chunkSize, remainingSell);
     if (tierAmount == 0) break;
 
     Order o;
-    o.side = 1;  // sell XFG
+    o.side = 1;
     o.amount = tierAmount;
     o.price = sellPrice;
-    o.expiration = 0; // pool orders auto-refresh, no expiry
-    o.spendKey = Crypto::PublicKey{};
-    o.viewKey = Crypto::PublicKey{};
-    // Pool orders use a synthetic order ID based on the tier
-    memset(o.orderId.data, 0, sizeof(o.orderId.data));
-    o.orderId.data[0] = 0xF0;  // marker for pool-generated
-    o.orderId.data[1] = static_cast<uint8_t>(tier);
-    o.orderId.data[2] = 0; // ask side
-    // Deterministic pool order ID from tier + price
-    o.orderId.data[0] = 0xF0;
-    o.orderId.data[1] = static_cast<uint8_t>(tier);
-    o.orderId.data[2] = 0; // ask side
-    for (int i = 3; i < 10; i++) o.orderId.data[i] = static_cast<uint8_t>((sellPrice >> (8*(i-3))) & 0xFF);
+    o.expiration = 0;
+    o.addressHash = Crypto::Hash{};
+    o.orderId = makePoolId(tier, 1, sellPrice);
 
     orders.push_back(o);
     remainingSell -= tierAmount;
     sellPrice += spread / 10;
   }
 
-  // Generate pool buy orders (bids — buy XFG, pay HEAT)
   uint64_t remainingBuy = buyDepthXfg;
   uint64_t bidPrice = params.P_clear - spread / 2;
   chunkSize = buyDepthXfg / 10;
@@ -93,17 +97,12 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
     if (tierAmount == 0 || bidPrice == 0) break;
 
     Order o;
-    o.side = 0;  // buy XFG
+    o.side = 0;
     o.amount = tierAmount;
     o.price = bidPrice;
     o.expiration = 0;
-    o.spendKey = Crypto::PublicKey{};
-    o.viewKey = Crypto::PublicKey{};
-    memset(o.orderId.data, 0, sizeof(o.orderId.data));
-    o.orderId.data[0] = 0xF0;
-    o.orderId.data[1] = static_cast<uint8_t>(10 + tier);
-    o.orderId.data[2] = 1; // bid side
-    for (int i = 3; i < 10; i++) o.orderId.data[i] = static_cast<uint8_t>((bidPrice >> (8*(i-3))) & 0xFF);
+    o.addressHash = Crypto::Hash{};
+    o.orderId = makePoolId(10 + tier, 0, bidPrice);
 
     orders.push_back(o);
     remainingBuy -= tierAmount;

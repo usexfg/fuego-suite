@@ -312,34 +312,6 @@ struct COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS {
 };
 
 //-----------------------------------------------
-// Sidecar lookup: get block heights for a list of (amount, global_index) outputs.
-// Used by wallets to enrich OSPEAD-aware decoy selection without breaking the
-// packed binary wire format of COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS.
-// Queries are sent as two parallel vectors (amounts[i], global_indices[i]);
-// heights[i] corresponds to that pair. Height 0 means unknown/invalid.
-struct COMMAND_RPC_GET_OUTPUTS_HEIGHTS {
-  struct request {
-    std::vector<uint64_t> amounts;
-    std::vector<uint32_t> global_indices;  // must be amounts.size()-aligned
-
-    void serialize(ISerializer &s) {
-      KV_MEMBER(amounts)
-      KV_MEMBER(global_indices)
-    }
-  };
-
-  struct response {
-    std::vector<uint32_t> heights;  // 1:1 with request.amounts; 0 means unknown/invalid
-    std::string status;
-
-    void serialize(ISerializer &s) {
-      KV_MEMBER(heights)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-//-----------------------------------------------
 // Random commitment outputs for ring-signature deposit withdrawals.
 // Works like COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS but indexes m_commitmentOutputs.
 #pragma pack(push, 1)
@@ -671,6 +643,7 @@ struct f_transaction_details_response {
   uint64_t mixin;
   uint64_t fee;
   uint64_t amount_out;
+  std::string networkId;  // Added for STARK proof validation
 
   void serialize(ISerializer &s) {
     KV_MEMBER(hash)
@@ -679,6 +652,7 @@ struct f_transaction_details_response {
     KV_MEMBER(mixin)
     KV_MEMBER(fee)
     KV_MEMBER(amount_out)
+    KV_MEMBER(networkId)
   }
 };
 
@@ -995,14 +969,148 @@ struct COMMAND_RPC_GEN_PAYMENT_ID {
   typedef EMPTY_STRUCT request;
 
   struct response {
-    std::string payment_id;
-    bool deprecated = true;
-    std::string deprecated_message = "Payment IDs are deprecated. Use integrated addresses or subaddresses for recipient identification.";
+	  std::string payment_id;
 
+	  void serialize(ISerializer &s) {
+		  KV_MEMBER(payment_id)
+	  }
+  };
+};
+
+// v11+ Hearth Orderbook commands
+struct COMMAND_RPC_GET_ORDERBOOK_INFO {
+  typedef EMPTY_STRUCT request;
+  struct response {
+    uint64_t clearing_price;
+    uint32_t num_matches;
+    uint32_t depth_bid_xfg;
+    uint32_t depth_ask_xfg;
+    uint64_t hearth_pool_ratio;
+    bool in_bootstrap;
+    std::string status;
     void serialize(ISerializer &s) {
-      KV_MEMBER(payment_id)
-      KV_MEMBER(deprecated)
-      KV_MEMBER(deprecated_message)
+      KV_MEMBER(clearing_price)
+      KV_MEMBER(num_matches)
+      KV_MEMBER(depth_bid_xfg)
+      KV_MEMBER(depth_ask_xfg)
+      KV_MEMBER(hearth_pool_ratio)
+      KV_MEMBER(in_bootstrap)
+      KV_MEMBER(status)
+    }
+  };
+};
+struct COMMAND_RPC_GET_ORDERBOOK_STATE {
+  struct request {
+    uint32_t depth;
+    void serialize(ISerializer &s) { KV_MEMBER(depth) }
+  };
+  struct response {
+    uint64_t clearing_price;
+    std::vector<uint64_t> bid_prices;
+    std::vector<uint64_t> bid_depths;
+    std::vector<uint64_t> ask_prices;
+    std::vector<uint64_t> ask_depths;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(clearing_price)
+      KV_MEMBER(bid_prices)
+      KV_MEMBER(bid_depths)
+      KV_MEMBER(ask_prices)
+      KV_MEMBER(ask_depths)
+      KV_MEMBER(status)
+    }
+  };
+};
+struct COMMAND_RPC_GET_ORDERBOOK_ESTIMATES {
+  struct request {
+    uint8_t side;
+    uint64_t amount;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(side)
+      KV_MEMBER(amount)
+    }
+  };
+  struct response {
+    uint64_t estimated_fill;
+    uint64_t hearth_fill;
+    uint64_t orderbook_fill;
+    uint64_t worst_case_price;
+    uint32_t levels_consumed;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(estimated_fill)
+      KV_MEMBER(hearth_fill)
+      KV_MEMBER(orderbook_fill)
+      KV_MEMBER(worst_case_price)
+      KV_MEMBER(levels_consumed)
+      KV_MEMBER(status)
+    }
+  };
+};
+struct COMMAND_RPC_PLACE_LIMIT_ORDER {
+  struct request {
+    uint8_t side;
+    uint64_t amount;
+    uint64_t target_price;
+    uint32_t expiration;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(side)
+      KV_MEMBER(amount)
+      KV_MEMBER(target_price)
+      KV_MEMBER(expiration)
+    }
+  };
+  struct response {
+    std::string order_id;
+    std::string tx_hash;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(order_id)
+      KV_MEMBER(tx_hash)
+      KV_MEMBER(status)
+    }
+  };
+};
+struct COMMAND_RPC_CANCEL_LIMIT_ORDER {
+  struct request {
+    std::string order_id;
+    void serialize(ISerializer &s) { KV_MEMBER(order_id) }
+  };
+  struct response {
+    std::string tx_hash;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(tx_hash)
+      KV_MEMBER(status)
+    }
+  };
+};
+struct COMMAND_RPC_GET_LIMIT_ORDERS {
+  typedef EMPTY_STRUCT request;
+  struct LimitOrderInfo {
+    std::string order_id;
+    std::string address_hash; // cn_fast_hash(spendKey||viewKey) — wallet filters by this
+    uint8_t side;
+    uint64_t amount;
+    uint64_t target_price;
+    uint32_t expiration;
+    bool withdrawn;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(order_id)
+      KV_MEMBER(address_hash)
+      KV_MEMBER(side)
+      KV_MEMBER(amount)
+      KV_MEMBER(target_price)
+      KV_MEMBER(expiration)
+      KV_MEMBER(withdrawn)
+    }
+  };
+  struct response {
+    std::vector<LimitOrderInfo> orders;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(orders)
+      KV_MEMBER(status)
     }
   };
 };
@@ -1166,11 +1274,13 @@ struct COMMAND_RPC_GET_ALL_ALIASES {
 
 	struct alias_entry {
 		std::string alias;
+		std::string address;
 		uint32_t registered_block;
 		uint8_t alias_type;
 
 		void serialize(ISerializer& s) {
 			KV_MEMBER(alias)
+			KV_MEMBER(address)
 			KV_MEMBER(registered_block)
 			KV_MEMBER(alias_type)
 		}
@@ -1189,6 +1299,140 @@ struct COMMAND_RPC_GET_ALL_ALIASES {
 	};
 };
 
+// ============================================================
+// Commitment Index RPC endpoints (Fuego → EVM bridge support)
+// Used by xfg-stark-cli to fetch commitment data + merkle proofs
+// ============================================================
+
+struct COMMAND_RPC_GET_COMMITMENT {
+  struct request {
+    std::string commitment_hash;  // Hex-encoded commitment hash (64 chars)
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(commitment_hash)
+    }
+  };
+
+  struct response {
+    bool found;
+    std::string commitment_hash;
+    std::string tx_hash;
+    uint32_t block_height;
+    uint64_t amount;
+    uint32_t term;
+    uint8_t type;               // 0=HEAT, 1=YIELD/COLD
+    uint32_t target_chain_id;
+    uint32_t leaf_index;
+    bool is_legacy;         // true only for 0xCE migrations (original tx had MultisignatureOutput)
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(found)
+      KV_MEMBER(commitment_hash)
+      KV_MEMBER(tx_hash)
+      KV_MEMBER(block_height)
+      KV_MEMBER(amount)
+      KV_MEMBER(term)
+      KV_MEMBER(type)
+      KV_MEMBER(target_chain_id)
+      KV_MEMBER(leaf_index)
+      KV_MEMBER(is_legacy)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_COMMITMENT_STATS {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t total_commitments;
+    uint64_t heat_commitments;
+    uint64_t cold_commitments;
+    uint32_t highest_block;
+    std::string merkle_root;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(total_commitments)
+      KV_MEMBER(heat_commitments)
+      KV_MEMBER(cold_commitments)
+      KV_MEMBER(highest_block)
+      KV_MEMBER(merkle_root)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    std::string merkle_root;    // Hex-encoded current merkle root
+    uint64_t total_leaves;
+    uint32_t highest_block;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(merkle_root)
+      KV_MEMBER(total_leaves)
+      KV_MEMBER(highest_block)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF {
+  struct request {
+    std::string commitment_hash;  // Hex-encoded commitment hash
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(commitment_hash)
+    }
+  };
+
+  struct response {
+    bool found;
+    std::string merkle_root;              // Current root
+    std::string leaf_hash;                // The commitment being proved
+    std::vector<std::string> proof_path;  // Sibling hashes in hex
+    std::vector<uint32_t> proof_indices;  // Left(0) or right(1) at each level
+    uint32_t leaf_index;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(found)
+      KV_MEMBER(merkle_root)
+      KV_MEMBER(leaf_hash)
+      KV_MEMBER(proof_path)
+      KV_MEMBER(proof_indices)
+      KV_MEMBER(leaf_index)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_CHECK_COMMITMENT_EXISTS {
+  struct request {
+    std::string commitment_hash;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(commitment_hash)
+    }
+  };
+
+  struct response {
+    bool exists;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(exists)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+
 // ============================================================================
 // SWAP ORDERBOOK RPC ENDPOINTS
 // ============================================================================
@@ -1202,7 +1446,6 @@ struct swap_offer_rpc_entry {
   uint64_t timestamp;
   uint32_t ttlBlocks;
   uint32_t postedHeight;
-  bool isSoftOrder;
 
   void serialize(ISerializer& s) {
     KV_MEMBER(offerId)
@@ -1213,7 +1456,6 @@ struct swap_offer_rpc_entry {
     KV_MEMBER(timestamp)
     KV_MEMBER(ttlBlocks)
     KV_MEMBER(postedHeight)
-    KV_MEMBER(isSoftOrder)
   }
 };
 
@@ -1288,9 +1530,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
     std::string xfgUsdHigh;
     std::string xfgUsdMid;
     std::vector<pair_implied_rpc_entry> pairImplied;
-    
-    std::string hearthRatio;      // HEAT/XFG ratio from Hearth AMM
-    std::string heatUsd;          // Implicit HEAT USD value
 
     std::string status;
 
@@ -1304,8 +1543,6 @@ struct COMMAND_RPC_GET_SWAP_PRICE {
       KV_MEMBER(xfgUsdHigh)
       KV_MEMBER(xfgUsdMid)
       KV_MEMBER(pairImplied)
-      KV_MEMBER(hearthRatio)
-      KV_MEMBER(heatUsd)
       KV_MEMBER(status)
     }
   };
@@ -1390,33 +1627,11 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
     std::string offerId;
     std::string makerPubKey;  // hex
     std::string signature;    // hex
+
     void serialize(ISerializer& s) {
       KV_MEMBER(offerId)
       KV_MEMBER(makerPubKey)
       KV_MEMBER(signature)
-    }
-  };
-
-  struct response {
-    std::string status;
-    void serialize(ISerializer& s) {
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_REQUEST_SWAP {
-  struct request {
-    std::string offerId;
-    uint64_t    amount;
-    std::string takerPubKey;
-    std::string proofOfFunds;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(offerId)
-      KV_MEMBER(amount)
-      KV_MEMBER(takerPubKey)
-      KV_MEMBER(proofOfFunds)
     }
   };
 
@@ -1470,6 +1685,7 @@ struct COMMAND_RPC_GET_EPOCH_HISTORY {
     uint64_t total_cd_locked_at_start;
     uint64_t fee_rate_fixed_point;
     uint64_t total_fees_distributed;
+    uint64_t active_efier_count;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(epoch_number)
@@ -1477,6 +1693,7 @@ struct COMMAND_RPC_GET_EPOCH_HISTORY {
       KV_MEMBER(total_cd_locked_at_start)
       KV_MEMBER(fee_rate_fixed_point)
       KV_MEMBER(total_fees_distributed)
+      KV_MEMBER(active_efier_count)
     }
   };
 
@@ -1735,12 +1952,10 @@ struct COMMAND_RPC_INITIATE_SWAP {
 
   struct response {
     std::string swap_id;
-    std::string our_pub_key;   // Ed25519 pubkey generated for this swap (32 bytes hex)
     std::string status;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(swap_id)
-      KV_MEMBER(our_pub_key)
       KV_MEMBER(status)
     }
   };
@@ -1825,6 +2040,8 @@ struct COMMAND_RPC_GET_BLOCK_RANGE {
     uint32_t nonce;
     uint64_t timestamp;
     std::string previous_block_hash; // hex string
+
+    // Per-transaction tx_extra bytes (hex encoded)
     std::vector<std::string> tx_extras;
 
     void serialize(ISerializer &s) {
@@ -1843,6 +2060,22 @@ struct COMMAND_RPC_GET_BLOCK_RANGE {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(blocks)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+struct COMMAND_RPC_GET_COMMITMENT_LEAVES {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    std::vector<std::string> leaves; // hex-encoded keccak256 commitment hashes
+    uint64_t count;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(leaves)
+      KV_MEMBER(count)
       KV_MEMBER(status)
     }
   };
@@ -1965,8 +2198,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t reserve_heat;
     uint64_t total_lp_shares;
     uint64_t spot_price;
-    uint64_t accumulated_lp_fees_heat;
-    uint64_t accumulated_lp_fees_xfg;
+    uint64_t accumulated_lp_fees;
     uint64_t epoch_swap_fees;
     std::string status;
     void serialize(ISerializer &s) {
@@ -1974,41 +2206,8 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(reserve_heat)
       KV_MEMBER(total_lp_shares)
       KV_MEMBER(spot_price)
-      KV_MEMBER(accumulated_lp_fees_heat)
-      KV_MEMBER(accumulated_lp_fees_xfg)
+      KV_MEMBER(accumulated_lp_fees)
       KV_MEMBER(epoch_swap_fees)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_FUEGO_PRICE {
-  typedef EMPTY_STRUCT request;
-
-  struct response {
-    uint64_t reserve_xfg;
-    uint64_t reserve_heat;
-    uint64_t spot_price;            // XFG/HEAT ratio × 10^18 (ammGetSpotPrice)
-    uint64_t redemption_price_num;  // PI controller redemption price numerator
-    uint64_t redemption_price_denom;
-    std::string xfg_heat_ratio;     // human-readable: 1 HEAT = N XFG (inverted from pool ratio)
-    std::string heat_peg_usd;       // HEAT peg in USD (hardcoded: $1.58)
-    std::string xfg_spot_usd;       // implied XFG/USD: (1 / poolRatio) × heat_peg_usd
-    std::string price_ticker;       // human-readable: "1 XFG = $X USD | ≋Y HEAT"
-    std::string pool_twap;          // epoch time-weighted average pool ratio (10^18 precision)
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(reserve_xfg)
-      KV_MEMBER(reserve_heat)
-      KV_MEMBER(spot_price)
-      KV_MEMBER(redemption_price_num)
-      KV_MEMBER(redemption_price_denom)
-      KV_MEMBER(xfg_heat_ratio)
-      KV_MEMBER(heat_peg_usd)
-      KV_MEMBER(xfg_spot_usd)
-      KV_MEMBER(price_ticker)
-      KV_MEMBER(pool_twap)
       KV_MEMBER(status)
     }
   };
@@ -2030,294 +2229,4 @@ struct COMMAND_RPC_ADD_SWAP_FEE {
   };
 };
 
-struct COMMAND_RPC_SET_XFG_MARKET_VALUE {
-  struct request {
-    uint64_t val;   // XFG/USD price in cents (158 = $1.58)
-    void serialize(ISerializer &s) {
-      KV_MEMBER(val)
-    }
-  };
-
-  struct response {
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_CD_OFFERS {
-  struct request {
-    uint64_t amount; // 0 means all
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(amount)
-    }
-  };
-
-  struct cd_offer_entry {
-    std::string offerId;
-    bool isSell;
-    uint64_t cdAmount;
-    uint32_t cdTerm;
-    uint32_t cdEpoch;
-    std::string cdKeyImage;
-    uint64_t askPrice;
-    std::string makerPubKey;
-    uint64_t timestamp;
-    uint32_t ttlBlocks;
-    uint32_t postedHeight;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(offerId)
-      KV_MEMBER(isSell)
-      KV_MEMBER(cdAmount)
-      KV_MEMBER(cdTerm)
-      KV_MEMBER(cdEpoch)
-      KV_MEMBER(cdKeyImage)
-      KV_MEMBER(askPrice)
-      KV_MEMBER(makerPubKey)
-      KV_MEMBER(timestamp)
-      KV_MEMBER(ttlBlocks)
-      KV_MEMBER(postedHeight)
-    }
-  };
-
-  struct response {
-    std::vector<cd_offer_entry> offers;
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(offers)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_SUBMIT_CD_OFFER {
-  struct request {
-    std::string offerId;
-    bool isSell;
-    uint64_t cdAmount;
-    uint32_t cdTerm;
-    uint32_t cdEpoch;
-    std::string cdKeyImage;
-    uint64_t askPrice;
-    std::string makerPubKey;
-    std::string signature;
-    uint32_t ttlBlocks;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(offerId)
-      KV_MEMBER(isSell)
-      KV_MEMBER(cdAmount)
-      KV_MEMBER(cdTerm)
-      KV_MEMBER(cdEpoch)
-      KV_MEMBER(cdKeyImage)
-      KV_MEMBER(askPrice)
-      KV_MEMBER(makerPubKey)
-      KV_MEMBER(signature)
-      KV_MEMBER(ttlBlocks)
-    }
-  };
-
-  struct response {
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_CANCEL_CD_OFFER {
-  struct request {
-    std::string offerId;
-    std::string makerPubKey;
-    std::string signature;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(offerId)
-      KV_MEMBER(makerPubKey)
-      KV_MEMBER(signature)
-    }
-  };
-
-  struct response {
-    std::string status;
-
-    void serialize(ISerializer& s) {
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct OrderbookRpcEntry {
-  std::string offerId;
-  uint64_t amount;
-  uint64_t price;
-  std::string makerPubKey;
-  uint64_t timestamp;
-  uint32_t ttlBlocks;
-  uint32_t postedHeight;
-
-  void serialize(ISerializer& s) {
-    KV_MEMBER(offerId)
-    KV_MEMBER(amount)
-    KV_MEMBER(price)
-    KV_MEMBER(makerPubKey)
-    KV_MEMBER(timestamp)
-    KV_MEMBER(ttlBlocks)
-    KV_MEMBER(postedHeight)
-  }
-};
-
-struct COMMAND_RPC_GET_ORDERBOOK_INFO {
-  typedef EMPTY_STRUCT request;
-
-  struct response {
-    uint64_t clearing_price;
-    uint64_t num_matches;
-    uint64_t depth_bid_xfg;
-    uint64_t depth_ask_xfg;
-    std::string hearth_pool_ratio;
-    bool in_bootstrap;
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(clearing_price)
-      KV_MEMBER(num_matches)
-      KV_MEMBER(depth_bid_xfg)
-      KV_MEMBER(depth_ask_xfg)
-      KV_MEMBER(hearth_pool_ratio)
-      KV_MEMBER(in_bootstrap)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_ORDERBOOK_STATE {
-  struct request {
-    uint32_t depth; // 0 for full orderbook
-    void serialize(ISerializer &s) {
-      KV_MEMBER(depth)
-    }
-  };
-
-  struct response {
-    uint64_t clearing_price;
-    std::vector<uint64_t> bid_prices;
-    std::vector<uint64_t> bid_depths;
-    std::vector<uint64_t> ask_prices;
-    std::vector<uint64_t> ask_depths;
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(clearing_price)
-      KV_MEMBER(bid_prices)
-      KV_MEMBER(bid_depths)
-      KV_MEMBER(ask_prices)
-      KV_MEMBER(ask_depths)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_GET_ORDERBOOK_ESTIMATES {
-  struct request {
-    uint8_t side; // 0 for bid, 1 for ask
-    uint64_t amount;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(side)
-      KV_MEMBER(amount)
-    }
-  };
-
-  struct response {
-    uint64_t estimated_fill;
-    uint64_t hearth_fill;
-    uint64_t orderbook_fill;
-    uint64_t worst_case_price;
-    uint64_t levels_consumed;
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(estimated_fill)
-      KV_MEMBER(hearth_fill)
-      KV_MEMBER(orderbook_fill)
-      KV_MEMBER(worst_case_price)
-      KV_MEMBER(levels_consumed)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_DIGM_POOL_INFO {
-  typedef EMPTY_STRUCT request;
-  struct response {
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_DIGM_SWAP {
-  struct request {
-    std::string tx_hex;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(tx_hex)
-    }
-  };
-  struct response {
-    std::string tx_hash;
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(tx_hash)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-struct COMMAND_RPC_DIGM_SWAP_SELL {
-  struct request {
-    std::string tx_hex;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(tx_hex)
-    }
-  };
-  struct response {
-    std::string tx_hash;
-    std::string status;
-    void serialize(ISerializer &s) {
-      KV_MEMBER(tx_hash)
-      KV_MEMBER(status)
-    }
-    };
-};
-
-struct COMMAND_RPC_PREPARE_CD_WITHDRAWAL {
-  struct request {
-    std::string tx_as_hex;       // Unsigned tx from wallet (commitment_spend + principal output)
-    uint64_t claimedInterest;    // Interest amount the wallet is claiming
-    std::string recipientSpendKey; // Hex-encoded spend key of CD holder (for interest output)
-
-    void serialize(ISerializer &s) {
-      KV_MEMBER(tx_as_hex)
-      KV_MEMBER(claimedInterest)
-      KV_MEMBER(recipientSpendKey)
-    }
-  };
-
-  struct response {
-    // This RPC only confirms the interest cap, it does not modify the tx
-    // The wallet constructs the tx with the correct interest amount
-    // The vault UTXOs are spent during block connection (already implemented)
-    uint64_t vaultInputAmount;   // Amount of vault backing confirmed for interest
-    std::string status;
-
-    void serialize(ISerializer &s) {
-      KV_MEMBER(vaultInputAmount)
-      KV_MEMBER(status)
-    }
-  };
-};
-
-} // namespace CryptoNote
+}

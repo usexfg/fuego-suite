@@ -46,6 +46,12 @@ static Crypto::PublicKey makePubKey(uint8_t v) {
   return k;
 }
 
+static Crypto::Hash makeAddressHash(uint8_t v) {
+  Crypto::Hash h;
+  memset(h.data, v, sizeof(h.data));
+  return h;
+}
+
 static OrderEntry makeBid(uint8_t id, uint64_t price, uint64_t amount, uint32_t expiration = 0) {
   OrderEntry e;
   e.orderId = makeHash(id);
@@ -53,8 +59,7 @@ static OrderEntry makeBid(uint8_t id, uint64_t price, uint64_t amount, uint32_t 
   e.price = price;
   e.amount = amount;
   e.expiration = expiration;
-  e.spendKey = makePubKey(id);
-  e.viewKey = makePubKey(id + 100);
+  e.addressHash = makeAddressHash(id);
   e.blockHeight = 1000;
   return e;
 }
@@ -66,8 +71,7 @@ static OrderEntry makeAsk(uint8_t id, uint64_t price, uint64_t amount, uint32_t 
   e.price = price;
   e.amount = amount;
   e.expiration = expiration;
-  e.spendKey = makePubKey(id);
-  e.viewKey = makePubKey(id + 100);
+  e.addressHash = makeAddressHash(id + 100);
   e.blockHeight = 1000;
   return e;
 }
@@ -127,7 +131,7 @@ int main() {
     OrderbookIndex idx(1000, 50);
     auto bid = makeBid(1, 12500000, 1000);
     idx.addOrder(bid);
-    OrderbookIndex::SenderKey sender{bid.spendKey, bid.viewKey};
+    SenderKey sender{bid.addressHash};
     TEST(idx.getSenderOpenOrderCount(sender) == 1u);
     TEST(idx.canPlaceOrder(sender));
     idx.removeOrder(bid.orderId);
@@ -137,13 +141,13 @@ int main() {
   // Sender limit (all orders from same sender)
   {
     OrderbookIndex idx(1000, 2);
-    OrderbookIndex::SenderKey sender{makePubKey(1), makePubKey(101)};
+    SenderKey sender{makeAddressHash(1)};
     OrderEntry b1 = makeBid(10, 12000000, 1000);
     OrderEntry b2 = makeBid(20, 13000000, 1000);
     OrderEntry b3 = makeBid(30, 14000000, 1000);
-    b1.spendKey = sender.spendKey; b1.viewKey = sender.viewKey;
-    b2.spendKey = sender.spendKey; b2.viewKey = sender.viewKey;
-    b3.spendKey = sender.spendKey; b3.viewKey = sender.viewKey;
+    b1.addressHash = sender.hash;
+    b2.addressHash = sender.hash;
+    b3.addressHash = sender.hash;
     idx.addOrder(b1);
     TEST(idx.canPlaceOrder(sender));
     idx.addOrder(b2);

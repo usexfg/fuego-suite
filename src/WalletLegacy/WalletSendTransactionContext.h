@@ -67,6 +67,23 @@ struct SendTransactionContext
   AccountPublicAddress v10HeatRecipient;
   uint64_t v10HeatTransferAmount = 0;
 
+  // v11+ orderbook context
+  bool isV11LimitDeposit = false;
+  uint8_t  v11DepositSide = 0;
+  uint64_t v11DepositAmount = 0;
+  uint64_t v11DepositTargetPrice = 0;
+  uint32_t v11DepositExpiration = 0;
+  Crypto::Hash  v11DepositOrderId;
+  Crypto::Hash  v11DepositAddressHash;
+  bool isV11LimitWithdraw = false;
+  Crypto::Hash v11WithdrawOrderId;
+  bool isV11MarketBuy = false;
+  uint64_t v11XfgWanted = 0;
+  uint64_t v11MaxHeatCost = 0;
+  bool isV11MarketSell = false;
+  uint64_t v11XfgToSell = 0;
+  uint64_t v11MinHeatReceive = 0;
+
   // OSPEAD async pipeline state (populated between WalletGetRandomOutsByAmountsRequest
   // and WalletGetOutputsHeightsRequest; consumed by sendTransactionAfterOspeadHeights).
   // Queries are kept in iteration order so heights[i] aligns 1:1 with the i-th

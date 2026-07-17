@@ -220,7 +220,11 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_POOL_XFG = 0x504F4C58;  // 'POLX' — AMM pool receives XFG (unspendable)
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
+        const uint32_t DIGM_TERM = 0x44494D47;                       // 'DIMG' — DIGM colored coin marker
 
+        // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
+        const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000;              // 0.10 HEAT in atomic units
+        const uint64_t DIGM_MINT_MIN_HEAT = 1000000;                // 0.10 HEAT minimum (1 DIGM)
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
         const uint64_t HEAT_MINT_PREMIUM_BPS = 333;                    // 3.33% mint premium (goes to SWF)
@@ -251,17 +255,28 @@ namespace CryptoNote
         const uint64_t HEARTH_INITIAL_XFG  = 10000U * 10000000U;    // 10,000 XFG pool side
         const uint64_t HEARTH_INITIAL_HEAT = 1000U * 10000000U;     // 1,000 HEAT pool side (10:1 ratio)
 
-        // DIGM pools (v11+)
+        // DIGM stablecoin — pegged to 0.10 HEAT (CPI-adjusted, not USD)
         const uint64_t DIGM_V1_CAP                      = 10000;                         // 10,000 DIGM total v1 supply
-        const uint64_t DIGM_USD_CENTS                   = 10;                            // DIGM price = $0.10 USD
+        const uint64_t DIGM_PEG_HEAT                    = 1000000;                       // 0.1 HEAT in atomic units (HEAT COIN = 10^7)
         const uint64_t DIGM_PRIMARY_POOL_SEED_DIGM      = 5000;                          // HEAT/DIGM pool: 5,000 DIGM
-        constexpr uint64_t DIGM_PRIMARY_POOL_SEED_HEAT  = (5000ULL * 10000000ULL * 10ULL) / 158ULL;  // ~316.455 HEAT ($500 / $1.58)
+        const uint64_t DIGM_PRIMARY_POOL_SEED_HEAT      = 5000000000ULL;                 // 500 HEAT = 5,000 DIGM × 0.1 HEAT/DIGM
         const uint64_t DIGM_FEE_BPS                     = 30;                            // 0.3% swap fee
         const uint64_t DIGM_FEE_DIVISOR                 = 10000;
 
-        // DIGM Bancor curve (XFG/DIGM speculative pool)
-        const uint64_t DIGM_BANCOR_MAX_SUPPLY           = 5000;                          // max DIGM mintable through Bancor
-        const uint64_t DIGM_BANCOR_CW_NUM               = 8236;                          // connector weight 82.36%
+        // DIGM cross-chain lock terms (HTLC-style for STARK bridge)
+        const uint64_t DIGM_LOCK_TERM                   = 0x44494D4C;                    // "DIML" — DIGM lock
+        const uint64_t DIGM_UNLOCK_TERM                 = 0x44494D55;                    // "DIMU" — DIGM unlock
+        const uint64_t STARK_TARGET_CHAIN_BASE          = 8453;                          // Base chain ID for DIGM bridge
+        const uint32_t STARK_NETWORK_ID_MAINNET          = 1;                            // Mainnet network ID
+        const uint32_t STARK_NETWORK_ID_TESTNET          = 2;                            // Testnet network ID
+        const uint32_t STARK_TARGET_CHAIN_ETH            = 1;                            // Ethereum mainnet chain ID
+        const uint32_t STARK_COMMITMENT_VERSION          = 3;                            // STARK commitment version (v3)
+        const uint64_t HEAT_LAUNCH_RATIO_NUM             = 10;                           // 10 XFG per 1 HEAT
+        const uint64_t HEAT_LAUNCH_RATIO_DENOM           = 1;                            // denominator (1)
+
+        // DIGM Bancor curve — DISABLED (replaced by fixed HEAT pool peg)
+        const uint64_t DIGM_BANCOR_MAX_SUPPLY           = 0;                            // disabled
+        const uint64_t DIGM_BANCOR_CW_NUM               = 10000;                        // 100% (unused)
         const uint64_t DIGM_BANCOR_CW_DENOM             = 10000;
 
         static_assert(DEPOSIT_MIN_TERM > 0, "Bad DEPOSIT_MIN_TERM");
@@ -361,7 +376,9 @@ namespace CryptoNote
  	const uint32_t MIN_DISTINCT_PARTIES                          = 2;
  	const uint32_t DEFAULT_ORDER_EXPIRATION_BLOCKS                = 12600;  // ~1 week
  	const uint32_t HEARTH_DEPTH_BAND_PCT                         = 10;
- 	// Mint premium funds treasury reserves.
+ 	const uint32_t ORDERBOOK_DEFAULT_EXPIRY                     = 4320;  // ~3 days at 1-min blocks — prevents stale P2P orders
+ 	const uint32_t ORDERBOOK_MAX_ENDURANCE                      = 20160;  // ~14 days absolute max
+	// Mint premium funds treasury reserves.
 
 	const uint8_t  BLOCK_MINOR_VERSION_0 			             =  0;
 	const uint8_t  BLOCK_MINOR_VERSION_1 			             =  1;

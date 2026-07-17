@@ -25,7 +25,6 @@
 #include <iomanip>
 #include <thread>
 #include <set>
-#include <map>
 #include <sstream>
 #include <regex>
 #include <array>
@@ -40,7 +39,6 @@
 
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
-#include "Common/FixedPoint.h"
 #include "Common/SignalHandler.h"
 #include "Common/StringTools.h"
 #include "Common/PathTools.h"
@@ -57,6 +55,7 @@
 #include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/DepositCommitment.h"
 #include "CryptoNoteCore/AliasIndex.h"
+#include "CryptoNoteCore/Currency.h"
 #include "crypto/crypto.h"
 #include "crypto/keccak.h"
 
@@ -67,24 +66,9 @@
 #include "SwapDaemon/AdaptorSwap.h"
 #include "Mnemonics/electrum-words.cpp"
 
-#include "Common/CommandLine.h"
-#include "Common/SignalHandler.h"
-#include "Common/StringTools.h"
-#include "Common/PathTools.h"
-#include "Common/Util.h"
-#include "CryptoNoteCore/CryptoNoteFormatUtils.h"
-#include "CryptoNoteCore/Currency.h"
-#include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
-#include "NodeRpcProxy/NodeRpcProxy.h"
-
 namespace CryptoNote {
   std::string remote_fee_address;
 }
-#include "Rpc/CoreRpcServerCommandsDefinitions.h"
-#include "Rpc/HttpClient.h"
-
-#include "Wallet/WalletRpcServer.h"
-#include "WalletLegacy/WalletHelper.h"
 
 #include <Logging/LoggerManager.h>
 
@@ -473,95 +457,10 @@ std::string tryToOpenWalletOrLoadKeysOrThrow(LoggerRef& logger, std::unique_ptr<
 std::string simple_wallet::get_commands_str() {
   std::stringstream ss;
   ss << "Commands: " << ENDL;
-
-  auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
-    if (cmds.empty()) return;
-    ss << "\n\033[1;33m" << cat << "\n___________________\033[0m" << ENDL;
-    for (const auto& cmd : cmds) {
-      ss << "  \033[1m" << std::setw(20) << std::left << cmd.first << "\033[0m : " << cmd.second << ENDL;
-    }
-    ss << ENDL;
-  };
-
-  add_cat("Address", {
-    {"address", "Show current wallet public address"},
-    {"list_subs", "List all sub-addresses for this wallet"},
-    {"new_sub", "Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N)."}
-  });
-
-  add_cat("Aliases", {
-    {"alias_search", "Look up an @ alias by name or wallet address"},
-    {"alias_all", "List all registered @ aliases on the network"},
-    {"alias_register", "Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy."},
-    {"alias_release", "Release (delete) your @ alias back to the network"},
-    {"alias_transfer", "Transfer your @ alias to a new owner"}
-  });
-
-  add_cat("Balance / Outputs", {
-    {"balance", "Show current wallet balance"},
-    {"outputs", "Show the number of unlocked outputs available for a transaction"},
-    {"optimize", "Combine many available outputs into a few by sending a transaction to self"},
-    {"optimize_all", "Optimize your wallet several times so you can send large transactions"},
-    {"show_dust", "Show the number of unmixable dust outputs"}
-  });
-
-  add_cat("CDs / Bonds", {
-    {"cd_create", "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)"},
-    {"cd_claim", "cd_claim <deposit_id> - Withdraw HEAT CD with interest"},
-    {"cd_list", "cd_list - List HEAT CDs (active/complete/claimed)"},
-    {"withdraw_bond", "withdraw_bond <id> - Withdraw a mature Legacy Bond and claim accrued fee-pool interest."}
-  });
-
-  add_cat("HEAT", {
-    {"info_heat", "Show HEAT flatcoin metrics"},
-    {"mint_heat", "mint_heat <xfg_amount> - Burn XFG to mint HEAT"},
-    {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"},
-    {"view_heat", "view_heat - View HEAT balance and transactions"}
-  });
-
-  add_cat("Hearth", {
-    {"hearth_add", "hearth_add <xfg_amount> <heat_amount> - Add liquidity to Hearth"},
-    {"hearth_heat", "hearth_heat <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth"},
-    {"hearth_xfg", "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth"},
-    {"hearth_exit", "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth"},
-    {"hearth_info", "Show Hearth AMM pool state"}
-  });
-
-  add_cat("Orderbook (v11+)", {
-    {"orderbook", "orderbook [depth] - Show bid/ask ladder"},
-    {"market", "market [depth] - Show orderbook + trade estimates for 1 XFG"},
-    {"trade", "trade <buy|sell> <amount> - Market order with pre-flight estimate"},
-    {"place_order", "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order"},
-    {"cancel_order", "cancel_order <order_id> - Cancel an unfilled limit order"},
-    {"show_orders", "List your open orders"}
-  });
-
-  add_cat("Transfer / Send", {
-    {"balance", "Show current wallet balance"},
-    {"show_txn", "show_txn <txid> - Show detailed information for a specific transaction"},
-    {"list_transfers", "list_transfers <block_height> - Show all known transfers, optionally from a certain block height"},
-    {"transfer", "transfer <addr_1> <amount_1> [<addr_2> <amount_2> ... <addr_N> <amount_N>] [-m message] - Transfer <amount_1>,... <amount_N> to <address_1>,... <address_N>, respectively. "},
-    {"send_heat", "send_heat <address|alias> <amount> - Send HEAT to a recipient"}
-  });
-
-  add_cat("Sign / Keys / Proof", {
-    {"sign_message", "Sign a message with your wallet keys"},
-    {"verify_signature", "Verify a signed message"},
-    {"get_reserve_proof", "Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. "},
-    {"get_tx_proof", "Generate a signature to prove payment: <txid> <address> [<txkey>]"},
-    {"export_keys", "Show the secret keys of the current wallet"}
-  });
-
-  add_cat("Blockchain", {
-    {"height", "Show blockchain height"},
-    {"start_mining", "start_mining [<threads>] - Start mining to your wallet"},
-    {"stop_mining", "stop_mining - Stop mining"},
-    {"reset", "Discard cache data and start synchronizing from the start"},
-    {"set_log", "set_log <level> - Change current log level, <level> is a number 0-4"},
-    {"save", "Save wallet synchronized data"},
-    {"exit", "Close wallet"}
-  });
-
+  std::string usage = m_consoleHandler.getUsage();
+  boost::replace_all(usage, "\n", "\n  ");
+  usage.insert(0, "  ");
+  ss << usage << ENDL;
   return ss.str();
 }
 
@@ -583,14 +482,17 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   logger(log, "firewallet"),
   m_refresh_progress_reporter(*this),
   m_walletSynchronized(false) {
+  m_consoleHandler.setHandler("create_integrated", boost::bind(&simple_wallet::create_integrated, this, boost::arg<1>()), "create_integrated <payment_id> - Create an integrated address with a payment ID");
   m_consoleHandler.setHandler("export_keys", boost::bind(&simple_wallet::export_keys, this, boost::arg<1>()), "Show the secret keys of the current wallet");
   m_consoleHandler.setHandler("balance", boost::bind(&simple_wallet::show_balance, this, boost::arg<1>()), "Show current wallet balance");
   m_consoleHandler.setHandler("sign_message", boost::bind(&simple_wallet::sign_message, this, boost::arg<1>()), "Sign a message with your wallet keys");
   m_consoleHandler.setHandler("verify_signature", boost::bind(&simple_wallet::verify_signature, this, boost::arg<1>()), "Verify a signed message");
   m_consoleHandler.setHandler("incoming_transfers", boost::bind(&simple_wallet::show_incoming_transfers, this, boost::arg<1>()), "Show incoming transfers");
   m_consoleHandler.setHandler("list_transfers", boost::bind(&simple_wallet::listTransfers, this, boost::arg<1>()), "list_transfers <block_height> - Show all known transfers, optionally from a certain block height");
+  m_consoleHandler.setHandler("payments", boost::bind(&simple_wallet::show_payments, this, boost::arg<1>()), "payments <payment_id_1> [<payment_id_2> ... <payment_id_N>] - Show payments <payment_id_1>, ... <payment_id_N>");
   m_consoleHandler.setHandler("get_tx_proof", boost::bind(&simple_wallet::get_tx_proof, this, boost::arg<1>()), "Generate a signature to prove payment: <txid> <address> [<txkey>]");
   m_consoleHandler.setHandler("get_reserve_proof", boost::bind(&simple_wallet::get_reserve_proof, this, boost::arg<1>()), "all|<amount> [<message>] - Generate a signature proving that you own at least <amount>, optionally with a challenge string <message>. ");
+  // m_consoleHandler.setHandler("get_swapKey", boost::bind(&simple_wallet::get_swapKey, this, boost::arg<1>()), "Show the public spend key for atomic swaps");
   m_consoleHandler.setHandler("height", boost::bind(&simple_wallet::show_blockchain_height, this, boost::arg<1>()), "Show blockchain height");
   m_consoleHandler.setHandler("show_dust", boost::bind(&simple_wallet::show_dust, this, boost::arg<1>()), "Show the number of unmixable dust outputs");
   m_consoleHandler.setHandler("outputs", boost::bind(&simple_wallet::show_num_unlocked_outputs, this, boost::arg<1>()), "Show the number of unlocked outputs available for a transaction");
@@ -603,57 +505,48 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("reset", boost::bind(&simple_wallet::reset, this, boost::arg<1>()), "Discard cache data and start synchronizing from the start");
   m_consoleHandler.setHandler("help", boost::bind(&simple_wallet::help, this, boost::arg<1>()), "Show this help");
   m_consoleHandler.setHandler("exit", boost::bind(&simple_wallet::exit, this, boost::arg<1>()), "Close wallet");
+  m_consoleHandler.setHandler("payment_id", boost::bind(&simple_wallet::payment_id, this, _1), "Generate random Payment ID");
   m_consoleHandler.setHandler("start_mining", boost::bind(&simple_wallet::start_mining, this, boost::arg<1>()), "start_mining [<threads>] - Start mining to your wallet");
   m_consoleHandler.setHandler("stop_mining", boost::bind(&simple_wallet::stop_mining, this, boost::arg<1>()), "stop_mining - Stop mining");
 
   // Deposit commands
   // m_consoleHandler.setHandler("deposit", boost::bind(&simple_wallet::deposit, this, boost::arg<1>()), "deposit <amount> <epochs> - Create CD / Certificate of Deposit (0.8, 8, 80, 800 XFG, 1-72 epochs where 1 epoch=900 blocks or about 5 days and 72 is about 1yr).");
-  // m_consoleHandler.setHandler("cd_rollover", boost::bind(&simple_wallet::cd_rollover, this, boost::arg<1>()), "cd_rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).");
+  // m_consoleHandler.setHandler("rollover", boost::bind(&simple_wallet::rollover, this, boost::arg<1>()), "rollover <id> <new_epochs> - Rollover a matured CD with compound interest (principal + interest reinvested).");
   // m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all CD (Certificate of Deposit) yield accounts");
   // m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Get detailed info on CD by ID");
   // m_consoleHandler.setHandler("withdraw", boost::bind(&simple_wallet::withdraw, this, boost::arg<1>()), "withdraw <id> - Withdraw a matured CD");
+  // Cold/off-chain STARK commands - hidden
   // m_consoleHandler.setHandler("list_burns", boost::bind(&simple_wallet::list_burns, this, boost::arg<1>()), "list_burns - List all XFG burn transactions (HEAT)");
   // m_consoleHandler.setHandler("burn_info", boost::bind(&simple_wallet::burn_info, this, boost::arg<1>()), "burn_info <id> - Get detailed info of burn by ID");
-  m_consoleHandler.setHandler("withdraw_bond", boost::bind(&simple_wallet::withdraw_bond, this, boost::arg<1>()), "withdraw_bond <id> - Withdraw a mature Legacy Bond and claim accrued fee-pool interest.");
+  // m_consoleHandler.setHandler("migrate_legacy_deposit", boost::bind(&simple_wallet::migrate_legacy_deposit, this, boost::arg<1>()), "migrate_legacy_deposit <id> - Migrate a pre-v3 legacy deposit to v3 format");
   // m_consoleHandler.setHandler("create_cold_secret", boost::bind(&simple_wallet::create_cold_secret, this, boost::arg<1>()), "create_cold_secret <amount> <term_blocks> <chain_code> <metadata> - Create COLD commitment");
+  // m_consoleHandler.setHandler("gen_proof", boost::bind(&simple_wallet::gen_proof, this, boost::arg<1>()), "gen_proof <tx_hash> - Data needed to generate STARK proof for deposit transaction (for L2 claims)");
 
   // @ Alias system commands
-  m_consoleHandler.setHandler("alias_register", boost::bind(&simple_wallet::alias_register, this, boost::arg<1>()), "alias_register <alias> [<address>] - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy.");
-  m_consoleHandler.setHandler("alias_search", boost::bind(&simple_wallet::alias_search, this, boost::arg<1>()), "alias_search <alias_or_address> - Look up an @ alias by name or wallet address");
-  m_consoleHandler.setHandler("alias_all", boost::bind(&simple_wallet::alias_all, this, boost::arg<1>()), "alias_all - List all registered @ aliases on the network");
-  m_consoleHandler.setHandler("alias_release", boost::bind(&simple_wallet::alias_release, this, boost::arg<1>()), "alias_release <alias> - Release (delete) your @ alias back to the network");
-  m_consoleHandler.setHandler("alias_transfer", boost::bind(&simple_wallet::alias_transfer, this, boost::arg<1>()), "alias_transfer <alias> <new_address> - Transfer your @ alias to a new owner");
-  m_consoleHandler.setHandler("new_sub", boost::bind(&simple_wallet::new_sub, this, boost::arg<1>()), "new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
+  m_consoleHandler.setHandler("register_alias", boost::bind(&simple_wallet::register_alias, this, boost::arg<1>()), "register_alias <alias> - Register an @ alias (8 chars [a-z0-9&], costs 1 XFG).");
+  m_consoleHandler.setHandler("lookup_alias", boost::bind(&simple_wallet::lookup_alias, this, boost::arg<1>()), "lookup_alias <alias_or_address> - Look up an @ alias by name or wallet address");
+  m_consoleHandler.setHandler("list_aliases", boost::bind(&simple_wallet::list_aliases, this, boost::arg<1>()), "list_aliases - List all registered @ aliases on the network");
+  m_consoleHandler.setHandler("gen_new_sub", boost::bind(&simple_wallet::gen_new_sub, this, boost::arg<1>()), "gen_new_sub [major] [minor] - Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N).");
   m_consoleHandler.setHandler("list_subs", boost::bind(&simple_wallet::list_subs, this, boost::arg<1>()), "list_subs - List all sub-addresses for this wallet");
 
   // HEAT / Hearth AMM commands (v11+)
-  m_consoleHandler.setHandler("info_heat", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
-  m_consoleHandler.setHandler("hearth_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
+  m_consoleHandler.setHandler("heat_info", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
+  m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
-  m_consoleHandler.setHandler("hearth_xfg", boost::bind(&simple_wallet::hearth_xfg, this, boost::arg<1>()), "hearth_xfg <xfg_amount> <expected_heat> <min_heat> - Buy HEAT with XFG on Hearth");
-  m_consoleHandler.setHandler("hearth_heat", boost::bind(&simple_wallet::hearth_heat, this, boost::arg<1>()), "hearth_heat <heat_amount> <expected_xfg> <min_xfg> - Sell HEAT for XFG on Hearth");
-  m_consoleHandler.setHandler("hearth_add", boost::bind(&simple_wallet::hearth_add, this, boost::arg<1>()), "hearth_add <xfg_amount> <heat_amount> - Add liquidity to Hearth");
-  m_consoleHandler.setHandler("hearth_exit", boost::bind(&simple_wallet::hearth_exit, this, boost::arg<1>()), "hearth_exit <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
+  m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq <xfg_amount> <heat_amount> - Add liquidity to Hearth");
+  m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
   // HEAT CD commands (v11+)
-  m_consoleHandler.setHandler("cd_create", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "cd_create <amount> <term_epochs> - Create HEAT CD (0.1% fee → @fuegoxfg)");
-  m_consoleHandler.setHandler("cd_claim", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "cd_claim <deposit_id> - Withdraw HEAT CD with interest");
-  m_consoleHandler.setHandler("cd_list", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "cd_list - List HEAT CDs (active/complete/claimed)");
+  m_consoleHandler.setHandler("heat_deposit", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_deposit <amount> <term_epochs> - Create HEAT CD");
+  m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
+  m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List active HEAT CDs");
 
-  m_consoleHandler.setHandler("view_heat", boost::bind(&simple_wallet::list_heat, this, boost::arg<1>()), "view_heat - List all HEAT balance and transactions");
-
-  // show_txn and send_heat stubs
-  m_consoleHandler.setHandler("show_txn", boost::bind(&simple_wallet::show_txn, this, boost::arg<1>()), "show_txn <txid> - Show detailed information for a specific transaction");
-  m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address|alias> <amount> - Send HEAT to a recipient");
-
-  // Orderbook commands (v11+)
-  m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook [depth] - Show bid/ask ladder");
-  m_consoleHandler.setHandler("market", boost::bind(&simple_wallet::market, this, boost::arg<1>()), "market [depth] - Show orderbook + trade estimates for 1 XFG");
-  m_consoleHandler.setHandler("trade", boost::bind(&simple_wallet::trade, this, boost::arg<1>()), "trade <buy|sell> <amount> - Market order with pre-flight estimate");
-  m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [expiration_blocks] - Place limit order");
-  m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <order_id> - Cancel an unfilled limit order");
-  m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "List your open orders");
+  // Hearth orderbook commands (v11+)
+  m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [exp_blocks] - Place limit order on Hearth");
+  m_consoleHandler.setHandler("cancel_order", boost::bind(&simple_wallet::cancel_order, this, boost::arg<1>()), "cancel_order <tx_hash> - Cancel limit order by transaction hash");
+  m_consoleHandler.setHandler("orderbook", boost::bind(&simple_wallet::orderbook, this, boost::arg<1>()), "orderbook - Show Hearth CLOB orderbook");
+  m_consoleHandler.setHandler("show_orders", boost::bind(&simple_wallet::show_orders, this, boost::arg<1>()), "show_orders - Show your open limit orders on Hearth");
 }
 
 bool simple_wallet::show_dust(const std::vector<std::string>& args) {
@@ -729,9 +622,6 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   }
 
   if (m_generate_new.empty() && m_wallet_file_arg.empty()) {
-    if (!m_currency.isTestnet()) {
-      Common::Console::setTextColor(Common::Console::Color::BrightYellow);
-    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        " << "\n";
@@ -740,9 +630,6 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     std::cout << "       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       " << "\n";
     std::cout << "       ██       ██████  ███████  ██████   ██████        " << "\n";
     std::cout << "\n";
-    if (!m_currency.isTestnet()) {
-      Common::Console::setTextColor(Common::Console::Color::Default);
-    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "Welcome to Fuego command-line wallet." << "\n";
@@ -1067,9 +954,10 @@ bool simple_wallet::new_wallet(Crypto::SecretKey &secret_key, Crypto::SecretKey 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::deposit(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   // No ETH address required at deposit time
+  // Recipient binding happens at STARK proof generation (xfg-stark-cli)
   // This prevents linking Fuego deposits to ETH addresses on-chain
   if (args.size() != 2)
   {
@@ -1079,6 +967,7 @@ bool simple_wallet::deposit(const std::vector<std::string> &args)
     fail_msg_writer() << "";
     fail_msg_writer() << "For XFG burns (HEAT), use: burn <amount>";
     fail_msg_writer() << "";
+    fail_msg_writer() << "ETH address is provided later when generating STARK proof.";
     fail_msg_writer() << "         This prevents linking your Fuego wallet to your ETH address on-chain.";
     return true;
   }
@@ -1205,7 +1094,7 @@ success_msg_writer(true) << "CD deposit transaction created successfully!";
     success_msg_writer() << "Term: " << term_label << " (" << deposit_term << " blocks)";
     success_msg_writer() << "";
     success_msg_writer() << "Your CD will earn interest from the swap fee pool.";
-    success_msg_writer() << "Use 'cd_rollover <id> <epochs>' to compound interest when mature.";
+    success_msg_writer() << "Use 'rollover <id> <epochs>' to compound interest when mature.";
     success_msg_writer() << "Use 'withdraw <id>' to withdraw principal + interest when mature.";
   }
   catch (const std::system_error& e)
@@ -1228,6 +1117,7 @@ success_msg_writer(true) << "CD deposit transaction created successfully!";
 // DISABLED: Internal command - users should not create their own commitments
 
 bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
+ // ETH address recipient binding at STARK proof generation time for privacy
  if (args.size() != 3) {
    fail_msg_writer() << "usage: create_cold_secret <amount> <term_blocks> <chain_code>";
    fail_msg_writer() << "  amount: amount in atomic XFG (e.g., 80000000 for 8 XFG)";
@@ -1235,6 +1125,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    fail_msg_writer() << "  chain_code: target claim chain (1=ETH, 2=ARB)";
    fail_msg_writer() << "";
    fail_msg_writer() << "PRIVACY NOTE: ETH address NOT required for XFG deposits.";
+   fail_msg_writer() << "         You will provide your ETH address when generating the STARK proof.";
    fail_msg_writer() << "";
    fail_msg_writer() << "Example: create_cold_secret 80000000 16440 1";
    return true;
@@ -1246,10 +1137,13 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    uint8_t chain_code = boost::lexical_cast<uint8_t>(args[2]);
 
    // Validate amount is a valid tier
-    if (amount == 0) {
-     fail_msg_writer() << "Invalid amount. Must be one of: 8000000 (0.8 XFG), 80000000 (8 XFG), 800000000 (80 XFG), 8000000000 (800 XFG)";
-     return true;
-   }
+    static const uint64_t valid_amounts[] = {8000000, 80000000, 800000000, 8000000000};
+    bool valid = false;
+    for (auto v : valid_amounts) { if (amount == v) { valid = true; break; } }
+    if (!valid) {
+      fail_msg_writer() << "Invalid amount. Must be one of: 8000000 (0.8 XFG), 80000000 (8 XFG), 800000000 (80 XFG), 8000000000 (800 XFG)";
+      return true;
+    }
 
    // Generate a random secret key
    Crypto::PublicKey public_key;
@@ -1274,6 +1168,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    }
 
    // PRIVACY MODEL: Compute COLD commitment WITHOUT recipient (ETH address)
+   // Recipient binding happens at STARK proof generation time
    uint32_t network_id = 1;
    uint32_t target_chain_id = chain_code;  // Use chain_code as target chain
    uint32_t commitment_version = 1;
@@ -1306,7 +1201,9 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    success_msg_writer() << "Term: " << term_blocks << " blocks";
    success_msg_writer() << "Chain Code: " << static_cast<int>(chain_code);
    success_msg_writer() << "";
+   success_msg_writer() << "For privacy, your ETH address is added during zkSTARK generation & never in Fuego blockchain.";
    success_msg_writer() << "IMPORTANT: Save the secret key! You will need it when generating";
+   success_msg_writer() << "           your STARK proof for interest redemption using xfg-stark-cli.";
 
  } catch (const std::exception& e) {
    fail_msg_writer() << "Failed to parse arguments: " << e.what();
@@ -1347,9 +1244,109 @@ bool simple_wallet::save(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::list_cds(const std::vector<std::string> &)
+{
+  size_t deposit_count = m_wallet->getDepositCount();
+
+  if (deposit_count == 0)
+  {
+    success_msg_writer() << "No deposits found";
+    return true;
+  }
+
+   success_msg_writer() << "Deposits (" << deposit_count << "):";
+   success_msg_writer() << "ID    | Amount             | Term          | Unlock Height | Status | Key Image";
+   success_msg_writer() << "------|--------------------|---------------|---------------|--------|---------";
+
+   // go through deposits ids for the amount of deposits in wallet
+   for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
+   {
+     // get deposit info from id and store it to deposit
+     CryptoNote::Deposit deposit;
+     if (!m_wallet->getDeposit(id, deposit)) {
+       continue; // Skip invalid deposits
+     }
+
+     // Skip burns / HEAT txns — those belong in list_burns only
+     if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
+       continue;
+     }
+
+     // Extract commitment (Key Image) from transaction extra
+     std::string key_image_str = "";
+     if (!deposit.extra.empty()) {
+       std::vector<TransactionExtraField> extraFields;
+       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+       if (parseTransactionExtra(extraBytes, extraFields)) {
+         for (const auto& field : extraFields) {
+           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
+             key_image_str = Common::podToHex(heatCommit.commitment);
+             break;
+           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+             key_image_str = Common::podToHex(coldCommit.commitment);
+             break;
+           }
+         }
+       }
+     }
+
+     // Format amount
+     std::string amount_str = m_currency.formatAmount(deposit.amount);
+
+     // Format term (CD deposits)
+     uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
+                                                 : CryptoNote::parameters::DEPOSIT_MIN_TERM;
+     uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
+                                                 : CryptoNote::parameters::DEPOSIT_MAX_TERM;
+
+     std::string term_str;
+     // Convert blocks to epochs (1 epoch = 900 blocks ≈ 5 days)
+     if (deposit.term >= cdMin && deposit.term <= cdMax) {
+       uint32_t epochs = deposit.term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+       uint32_t days_approx = epochs * 5;
+       term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
+     } else {
+       term_str = std::to_string(deposit.term) + " blocks";
+     }
+
+     // Format unlock height
+     std::string unlock_str = "";
+     if (deposit.locked) {
+       unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
+     } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+       unlock_str = "Withdrawn";
+     } else {
+       unlock_str = "Unlocked";
+     }
+
+     // Format status
+     std::string status_str = "";
+     if (deposit.locked) {
+       status_str = "Locked";
+     } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+       status_str = "Unlocked";
+     } else {
+       status_str = "Withdrawn";
+     }
+
+     success_msg_writer() << std::left <<
+       std::setw(5)  << std::to_string(id) << " | " <<
+       std::setw(18) << amount_str << " | " <<
+       std::setw(13) << term_str << " | " <<
+       std::setw(13) << unlock_str << " | " <<
+       std::setw(8) << status_str << " | " <<
+       key_image_str;
+   }
+
+  return true;
+}
+
+//----------------------------------------------------------------------------------------------------
 bool simple_wallet::burn(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   // Simplified burn command - just takes amount, term is always FOREVER
   if (args.size() != 1)
@@ -1358,6 +1355,7 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
     fail_msg_writer() << "Valid amounts: 0.8, 8, 80, 800 XFG";
     fail_msg_writer() << "";
     fail_msg_writer() << "Creates an XFG burn (PERMANENT!) for minting an equivalent amount of HEAT.";
+    fail_msg_writer() << "ETH address is provided later when generating STARK proof.";
     return true;
   }
 
@@ -1400,7 +1398,7 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
     size_t amount_index = std::distance(valid_amounts.begin(), it);
     std::string amount_label = amount_labels[amount_index];
 
-    // HEAT burn deposits always use HEAT_TERM
+    // HEAT burn deposits always use DEPOSIT_TERM_FOREVER
     uint32_t burn_term = CryptoNote::parameters::HEAT_TERM;
     std::string term_label = "XFG burn (forever)";
 
@@ -1435,25 +1433,38 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
       return true;
     }
 
+    // Generate unified STARK commitment (v3) for burn
+    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
         burn_amount,
         CryptoNote::parameters::HEAT_TERM,
+        CryptoNote::parameters::STARK_NETWORK_ID_MAINNET,
+        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
+        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
 
+    // Display secret — user's claim ticket for xfg-stark-cli proof generation
     success_msg_writer() << "";
+    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim HEAT):";
+    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
+    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
+    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
     success_msg_writer() << "";
 
     std::vector<uint8_t> extra;
     CryptoNote::TransactionExtraHeatCommitment heatCommitment;
+    heatCommitment.commitment = starkResult.commitment;
     heatCommitment.amount = burn_amount;
     heatCommitment.metadata = {0x08};
 
     CryptoNote::addHeatCommitmentToExtra(extra, heatCommitment);
 
+    // Encrypt STARK secret into tx extra (0xD5) so burn_info can retrieve it
     CryptoNote::AccountKeys walletKeys;
     m_wallet->getAccountKeys(walletKeys);
     CryptoNote::DepositSecretPayload secretPayload;
     secretPayload.depositType = 0x08; // HEAT
     secretPayload.amount = burn_amount;
     secretPayload.term = CryptoNote::parameters::HEAT_TERM;
+    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
     CryptoNote::TransactionExtraDepositSecret encSecret;
     if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
       CryptoNote::addDepositSecretToExtra(extra, encSecret);
@@ -1491,7 +1502,6 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
-/*
 bool simple_wallet::cold(const std::vector<std::string> &args)
 {
   // Simplified COLD deposit command - amount + term code (3 or 12)
@@ -1599,24 +1609,40 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
       return true;
     }
 
+    // Generate unified STARK commitment (v3) for COLD deposit
+    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
+        cold_amount,
+        cold_term,
+        CryptoNote::parameters::STARK_NETWORK_ID_MAINNET,
+        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
+        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
+
+    // Display secret — user's claim ticket for xfg-stark-cli proof generation
     success_msg_writer() << "";
+    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
+    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
+    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
+    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
     success_msg_writer() << "";
 
-
+    /*
     std::vector<uint8_t> extra;
     CryptoNote::TransactionExtraColdCommitment coldCommitment;
+    coldCommitment.commitment = starkResult.commitment;
     coldCommitment.amount = cold_amount;
     coldCommitment.term = cold_term;
     coldCommitment.claimChainCode = 1;  // Default to ETH chain
 
     CryptoNote::addColdCommitmentToExtra(extra, coldCommitment);
 
+    // Encrypt STARK secret into tx extra (0xD5) so cd_info can retrieve it
     CryptoNote::AccountKeys walletKeys;
     m_wallet->getAccountKeys(walletKeys);
     CryptoNote::DepositSecretPayload secretPayload;
     secretPayload.depositType = 0xCD; // COLD
     secretPayload.amount = cold_amount;
     secretPayload.term = cold_term;
+    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
     CryptoNote::TransactionExtraDepositSecret encSecret;
     if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
       CryptoNote::addDepositSecretToExtra(extra, encSecret);
@@ -1645,8 +1671,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
 
     success_msg_writer() << "COLD transaction sent! ID: " << txId;
     return true;
-
-    return true;
+    */
   }
   catch (const std::exception& e)
   {
@@ -1654,14 +1679,14 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     return true;
   }
 }
-*/
+
 //----------------------------------------------------------------------------------------------------
 
 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::withdraw(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   if (args.size() != 1)
   {
@@ -1735,18 +1760,18 @@ bool simple_wallet::withdraw(const std::vector<std::string> &args)
  //----------------------------------------------------------------------------------------------------
  //----------------------------------------------------------------------------------------------------
 // Rollover matured CD with compound interest (principal + interest reinvested)
-bool simple_wallet::cd_rollover(const std::vector<std::string> &args)
+bool simple_wallet::rollover(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   if (args.size() != 2)
   {
-    fail_msg_writer() << "Usage: cd_rollover <id> <new_epochs>";
-    fail_msg_writer() << "  <id>: Deposit ID to cd_rollover";
+    fail_msg_writer() << "Usage: rollover <id> <new_epochs>";
+    fail_msg_writer() << "  <id>: Deposit ID to rollover";
     fail_msg_writer() << "  <new_epochs>: New term in epochs (1-72, where 1 epoch = 900 blocks ≈ 5 days)";
     fail_msg_writer() << "";
     fail_msg_writer() << "Rollover reinvests principal + accrued interest into a new CD.";
-    fail_msg_writer() << "NOTE: This command shows cd_rollover info. To execute, manually:";
+    fail_msg_writer() << "NOTE: This command shows rollover info. To execute, manually:";
     fail_msg_writer() << "  1. withdraw <id>  (withdraw matured CD)";
     fail_msg_writer() << "  2. deposit <amount> <epochs>  (create new CD with principal+interest)";
     return true;
@@ -1808,7 +1833,7 @@ bool simple_wallet::cd_rollover(const std::vector<std::string> &args)
     success_msg_writer() << "  Term: " << new_epochs << " epoch(s) (" << new_term_blocks << " blocks, ~" << (new_epochs * 5) << " days)";
     success_msg_writer() << "  New unlock height: " << new_unlock_height;
     success_msg_writer() << "";
-    success_msg_writer() << "To execute this cd_rollover:";
+    success_msg_writer() << "To execute this rollover:";
     success_msg_writer() << "  1. withdraw " << deposit_id << "  (withdraw matured CD with interest)";
     success_msg_writer() << "  2. deposit " << total_reinvest << " " << new_epochs << "  (create new CD)";
   }
@@ -1820,6 +1845,234 @@ bool simple_wallet::cd_rollover(const std::vector<std::string> &args)
   return true;
 }
 
+//----------------------------------------------------------------------------------------------------
+// USER-FACING: Users MUST generate STARK proofs from deposits for L2 claims
+bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
+   if (args.size() != 1) {
+     fail_msg_writer() << "Usage: gen_proof <tx_hash>";
+     return true;
+   }
+
+   const std::string& tx_hash = args[0];
+
+   try {
+     // Parse transaction hash
+     Crypto::Hash hash;
+     if (!parse_hash256(tx_hash, hash)) {
+       fail_msg_writer() << "Failed to parse transaction hash";
+       return true;
+     }
+
+     // Fetch transaction from daemon via /gettransactions RPC
+     CryptoNote::COMMAND_RPC_GET_TRANSACTIONS::request req;
+     CryptoNote::COMMAND_RPC_GET_TRANSACTIONS::response res;
+     req.txs_hashes.push_back(tx_hash);
+
+     try {
+       HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+       invokeJsonCommand(httpClient, "/gettransactions", req, res);
+     } catch (const ConnectException&) {
+       fail_msg_writer() << "Failed to connect to daemon. Is the node running?";
+       return true;
+     } catch (const std::exception& e) {
+       fail_msg_writer() << "Error querying daemon: " << e.what();
+       return true;
+     }
+
+     if (!res.missed_tx.empty() || res.txs_as_hex.empty()) {
+       fail_msg_writer() << "Transaction not found on blockchain: " << tx_hash;
+       return true;
+     }
+
+     // Decode raw transaction from hex blob
+     BinaryArray txBlob;
+     if (!Common::fromHex(res.txs_as_hex[0], txBlob)) {
+       fail_msg_writer() << "Failed to decode transaction data";
+       return true;
+     }
+
+     CryptoNote::Transaction tx;
+     if (!fromBinaryArray(tx, txBlob)) {
+       fail_msg_writer() << "Failed to parse transaction";
+       return true;
+     }
+
+     // Check for HEAT commitment (0x08 tag in tx_extra)
+     std::vector<CryptoNote::TransactionExtraField> extraFields;
+     if (CryptoNote::parseTransactionExtra(tx.extra, extraFields)) {
+       for (const auto& field : extraFields) {
+         if (field.type() == typeid(CryptoNote::TransactionExtraHeatCommitment)) {
+           const auto& heatCommitment = boost::get<CryptoNote::TransactionExtraHeatCommitment>(field);
+
+           success_msg_writer() << "Found XFG burn transaction: " << tx_hash;
+           success_msg_writer() << "Amount: " << m_currency.formatAmount(heatCommitment.amount);
+
+           std::cout << "\n=== PROOF DATA NEEDED FOR STARK GENERATION ===" << std::endl;
+           std::cout << "Transaction Hash: " << tx_hash << std::endl;
+           std::cout << "Commitment: " << Common::podToHex(heatCommitment.commitment) << std::endl;
+           std::cout << "Amount: " << heatCommitment.amount << " heat / atomic XFG" << std::endl;
+           std::cout << "=====================================" << std::endl;
+
+           logger(INFO, BRIGHT_GREEN) << "Proof data generated for XFG burn (HEAT) transaction " << tx_hash;
+           return true;
+         }
+          // Check for CD deposit commitment (0xCD = 205 tag in tx_extra)
+          else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+            const auto& coldDeposit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+
+            success_msg_writer() << "Found CD transaction: " << tx_hash;
+            success_msg_writer() << "Amount: " << m_currency.formatAmount(coldDeposit.amount);
+            success_msg_writer() << "Term: " << coldDeposit.term << " blocks";
+
+            std::cout << "\n=== XFG CERTIFICATE OF LEDGER DEPOSIT PROOF ===" << std::endl;
+            std::cout << "Transaction Hash: " << tx_hash << std::endl;
+            std::cout << "Commitment: " << Common::podToHex(coldDeposit.commitment) << std::endl;
+            std::cout << "Amount: " << coldDeposit.amount << " heat (atomic XFG)" << std::endl;
+            std::cout << "Term: " << coldDeposit.term << " blocks" << std::endl;
+            std::cout << "=================================" << std::endl;
+
+            logger(INFO, BRIGHT_GREEN) << "Proof data generated for CD transaction " << tx_hash;
+            return true;
+          }
+       }
+     }
+
+     fail_msg_writer() << "No HEAT (burn) or COLD commitment found in transaction: " << tx_hash;
+     return true;
+   } catch (const std::exception& e) {
+     fail_msg_writer() << "Error processing transaction: " << e.what();
+   }
+
+   return true;
+ }
+
+
+
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::cd_info(const std::vector<std::string> &args)
+{
+  if (args.size() != 1)
+  {
+    fail_msg_writer() << "Usage: cd_info <id>";
+    return true;
+  }
+
+  try {
+    uint64_t deposit_id = boost::lexical_cast<uint64_t>(args[0]);
+
+    if (deposit_id >= m_wallet->getDepositCount()) {
+      fail_msg_writer() << "Invalid deposit ID.";
+      return true;
+    }
+
+    CryptoNote::Deposit deposit;
+    if (!m_wallet->getDeposit(deposit_id, deposit)) {
+      fail_msg_writer() << "Failed to retrieve deposit information.";
+      return true;
+    }
+
+    success_msg_writer() << "Deposit Information:";
+    success_msg_writer() << "ID:            " << deposit_id;
+    success_msg_writer() << "Amount:        " << m_currency.formatAmount(deposit.amount);
+    // NOTE: No interest display on Fuego - interest handled off-chain via L2
+
+    // Display deposit type (from transaction extra field)
+    std::string depositType = "Unknown";
+    std::string typeDescription = "";
+
+    switch (deposit.depositType) {
+      case CryptoNote::Deposit::Type::HEAT:
+        depositType = "XFG Burn (HEAT/0x08)";
+        typeDescription = "Permanent 'forever' deposit - removed from circulation";
+        break;
+      case CryptoNote::Deposit::Type::COLD:
+        depositType = "CD (Certificate of Deposit)";
+        typeDescription = "On-chain yield deposit - locked for your specified term, earns interest from fee pool";
+        break;
+      default:
+        depositType = "Unknown";
+        typeDescription = "Unknown deposit type";
+    }
+
+    // Display term (user-defined unlock time, independent of deposit type)
+    if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
+      success_msg_writer() << "Term:          FOREVER";
+    } else if (deposit.term == CryptoNote::parameters::DEPOSIT_MIN_TERM) {
+      success_msg_writer() << "Term:          3 months (16,440 blocks)";
+    } else if (deposit.term == CryptoNote::parameters::DEPOSIT_MAX_TERM) {
+      success_msg_writer() << "Term:          1 year (65,000 blocks)";
+    } else {
+      success_msg_writer() << "Term:          " << deposit.term << " blocks";
+    }
+
+    success_msg_writer() << "Height:        " << deposit.height;
+
+    // Show unlock height for non-HEAT deposits; 0 means pending (not yet confirmed)
+    if (deposit.depositType != CryptoNote::Deposit::Type::HEAT) {
+      if (deposit.unlockHeight == 0) {
+        success_msg_writer() << "Unlock Height: Pending (not yet confirmed)";
+      } else {
+        success_msg_writer() << "Unlock Height: " << deposit.unlockHeight;
+      }
+    }
+
+    // Show status
+    if (deposit.locked) {
+      success_msg_writer() << "Status:        Locked";
+    } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      success_msg_writer() << "Status:        Unlocked";
+    } else {
+      success_msg_writer() << "Status:        Withdrawn";
+    }
+
+    success_msg_writer() << "Transaction:   " << Common::podToHex(deposit.transactionHash);
+
+    // Show deposit type information
+    success_msg_writer() << "Type:          " << depositType;
+    success_msg_writer() << "Description:   " << typeDescription;
+
+    // Parse and display commitment from transaction extra
+    if (!deposit.extra.empty()) {
+      std::vector<TransactionExtraField> extraFields;
+      std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+
+      if (parseTransactionExtra(extraBytes, extraFields)) {
+        for (const auto& field : extraFields) {
+             if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+               const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
+               success_msg_writer() << "Key Image:     " << Common::podToHex(heatCommit.commitment);
+             } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+               const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+               success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
+             }
+        }
+      }
+
+      // Also show raw extra hex for debugging
+      success_msg_writer() << "Extra (hex):   " << Common::toHex(extraBytes);
+
+      // Decrypt and display STARK secret if present (0xD5 tag)
+      CryptoNote::TransactionExtraDepositSecret encSecret;
+      if (CryptoNote::getDepositSecretFromExtra(extraBytes, encSecret)) {
+        CryptoNote::AccountKeys walletKeys;
+        m_wallet->getAccountKeys(walletKeys);
+        CryptoNote::DepositSecretPayload decrypted;
+        if (CryptoNote::decryptDepositSecret(encSecret, walletKeys.viewSecretKey, decrypted)) {
+          Crypto::SecretKey secret;
+          memcpy(&secret, decrypted.depositSecret, 32);
+          success_msg_writer() << "";
+          success_msg_writer() << "STARK Secret:  " << Common::podToHex(secret);
+        }
+      }
+    }
+
+  } catch (const std::exception &e) {
+    fail_msg_writer() << "Error: " << e.what();
+    return false;
+  }
+
+  return true;
+}
 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::list_burns(const std::vector<std::string> &)
@@ -1939,6 +2192,7 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
 
       success_msg_writer() << "Extra (hex):   " << Common::toHex(extraBytes);
 
+      // Decrypt and display STARK secret if present (0xD5 tag)
       CryptoNote::TransactionExtraDepositSecret encSecret;
       if (CryptoNote::getDepositSecretFromExtra(extraBytes, encSecret)) {
         CryptoNote::AccountKeys walletKeys;
@@ -1948,9 +2202,13 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
           Crypto::SecretKey secret;
           memcpy(&secret, decrypted.depositSecret, 32);
           success_msg_writer() << "";
+          success_msg_writer() << "STARK Secret:  " << Common::podToHex(secret);
         }
       }
     }
+
+    success_msg_writer() << "";
+    success_msg_writer() << "Use 'gen_proof " << Common::podToHex(deposit.transactionHash) << "' to generate STARK proof data.";
 
   } catch (const std::exception &e) {
     fail_msg_writer() << "Error: " << e.what();
@@ -1961,10 +2219,10 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------
-bool simple_wallet::withdraw_bond(const std::vector<std::string> &args) {
+bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: withdraw_bond <deposit_id>";
+    fail_msg_writer() << "Usage: migrate_legacy_deposit <deposit_id>";
+    fail_msg_writer() << "Migrates a pre-v3 legacy deposit to v3 format, registering a commitment for L2 claims.";
     return true;
   }
 
@@ -1973,7 +2231,7 @@ bool simple_wallet::withdraw_bond(const std::vector<std::string> &args) {
     size_t depositCount = m_wallet->getDepositCount();
 
     if (depositId >= depositCount) {
-      fail_msg_writer() << "Invalid deposit ID: " << depositId;
+      fail_msg_writer() << "Invalid deposit ID: " << depositId << ". You have " << depositCount << " deposits.";
       return true;
     }
 
@@ -1983,79 +2241,157 @@ bool simple_wallet::withdraw_bond(const std::vector<std::string> &args) {
       return true;
     }
 
-    // Must be a Legacy Bond
-    bool isLegacyBond = false;
+    // Must be a COLD deposit (not HEAT burn or legacy staking)
+    if (deposit.depositType == CryptoNote::Deposit::Type::HEAT) {
+      fail_msg_writer() << "Deposit " << depositId << " is a HEAT burn. Use burn_info to view it.";
+      fail_msg_writer() << "HEAT burns already have v3 commitments if created after the v3 upgrade.";
+      return true;
+    }
+
+    // Check if already has a 0xD5 secret (already v3)
     std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+    CryptoNote::TransactionExtraDepositSecret existingSecret;
+    if (CryptoNote::getDepositSecretFromExtra(extraBytes, existingSecret)) {
+      fail_msg_writer() << "Deposit " << depositId << " already has a STARK secret (v3 format).";
+      fail_msg_writer() << "Use 'cd_info " << depositId << "' to view it.";
+      return true;
+    }
+
+    // Check if already has a 0xCE migration tag
     std::vector<CryptoNote::TransactionExtraField> extraFields;
     if (CryptoNote::parseTransactionExtra(extraBytes, extraFields)) {
       for (const auto& field : extraFields) {
-        if (field.type() == typeid(CryptoNote::TransactionExtraLegacyBond)) {
-          isLegacyBond = true;
-          break;
+        if (field.type() == typeid(CryptoNote::TransactionExtraColdMigration)) {
+          fail_msg_writer() << "Deposit " << depositId << " already has a migration tag.";
+          return true;
         }
       }
     }
 
-    if (!isLegacyBond) {
-      fail_msg_writer() << "Deposit " << depositId << " is not a registered Legacy Bond.";
-      return true;
-    }
-
-    if (deposit.unlockHeight > m_node->getLastLocalBlockHeight()) {
-      fail_msg_writer() << "Legacy Bond is still locked until height " << deposit.unlockHeight
-                        << " (Current: " << m_node->getLastLocalBlockHeight() << ")";
-      return true;
-    }
-
-    // Calculate accrued interest from fee pool
-    uint64_t accruedInterest = 0;
-    std::error_code ec = m_node->getCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height),
-                                              m_node->getLastLocalBlockHeight(), accruedInterest, true);
-    if (ec) {
-      fail_msg_writer() << "Failed to calculate bond interest: " << ec.message();
-      return true;
-    }
-
+    // Display deposit info and confirm
     success_msg_writer() << "";
-    success_msg_writer() << "=== Legacy Bond Withdrawal ===";
-    success_msg_writer() << "Principal:      " << m_currency.formatAmount(deposit.amount) << " XFG";
-    success_msg_writer() << "Interest:       " << m_currency.formatAmount(accruedInterest) << " XFG";
-    success_msg_writer() << "Total:          " << m_currency.formatAmount(deposit.amount + accruedInterest) << " XFG";
-    success_msg_writer() << "Fee:            0 (Free staged unlock)";
+    success_msg_writer() << "=== Legacy COLD Deposit Migration ===";
     success_msg_writer() << "";
-    success_msg_writer() << "Confirm withdrawal? (1) OK  (2) No ";
+    success_msg_writer() << "Deposit ID:    " << depositId;
+    success_msg_writer() << "Amount:        " << m_currency.formatAmount(deposit.amount) << " XFG";
+    if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
+      success_msg_writer() << "Term:          FOREVER";
+    } else {
+      success_msg_writer() << "Term:          " << deposit.term << " blocks";
+    }
+    success_msg_writer() << "TX Hash:       " << Common::podToHex(deposit.transactionHash);
+    success_msg_writer() << "";
+    success_msg_writer() << "This will create a migration transaction that registers a v3";
+    success_msg_writer() << "commitment for this legacy deposit, enabling L2 claims via xfg-stark-cli.";
+    success_msg_writer() << "Cost: network fee only (" << m_currency.formatAmount(m_currency.minimumFee()) << " XFG)";
+    success_msg_writer() << "";
+    success_msg_writer() << "Confirm? (1) OK  (2) No ";
 
     std::string confirm;
     m_consoleHandler.readLine(confirm);
-    if (confirm != "1" && confirm != "OK" && confirm != "ok") {
+
+    if (confirm != "1" && confirm != "OK" && confirm != "Ok" && confirm != "ok") {
       success_msg_writer() << "Cancelled.";
       return true;
     }
 
-    // Send withdrawal transaction
+    // Generate v3 STARK commitment for this legacy deposit
+    uint32_t networkId = m_currency.isTestnet()
+        ? CryptoNote::parameters::STARK_NETWORK_ID_TESTNET
+        : CryptoNote::parameters::STARK_NETWORK_ID_MAINNET;
+    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
+        deposit.amount,
+        deposit.term,
+        networkId,
+        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
+        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
+
+    // Display secret
+    success_msg_writer() << "";
+    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim CD interest):";
+    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
+    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
+    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
+    success_msg_writer() << "";
+
+    // Build migration extra data
+    std::vector<uint8_t> migrationExtra;
+
+    // 0xCE migration tag — references original deposit
+    CryptoNote::TransactionExtraColdMigration migration;
+    migration.originalTxHash = deposit.transactionHash;
+    migration.commitment = starkResult.commitment;
+    migration.amount = deposit.amount;
+    migration.term = deposit.term;
+    migration.targetChainId = 1; // ETH
+    CryptoNote::addColdMigrationToExtra(migrationExtra, migration);
+
+    // 0xD5 encrypted secret — so cd_info can decrypt it later
+    CryptoNote::AccountKeys walletKeys;
+    m_wallet->getAccountKeys(walletKeys);
+    CryptoNote::DepositSecretPayload secretPayload;
+    secretPayload.depositType = 0xCD; // COLD
+    secretPayload.amount = deposit.amount;
+    secretPayload.term = deposit.term;
+    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
+    CryptoNote::TransactionExtraDepositSecret encSecret;
+    if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
+      CryptoNote::addDepositSecretToExtra(migrationExtra, encSecret);
+    }
+
+    std::string extraString(migrationExtra.begin(), migrationExtra.end());
+
+    // Send as self-transfer (just carries the extra data, costs only network fee)
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-    CryptoNote::TransactionId txId = m_wallet->withdrawLegacyBond(depositId, accruedInterest, 0);
-    if (CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID == txId) {
-      removeGuard.removeObserver();
-      fail_msg_writer() << "Failed to create withdrawal transaction.";
+    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+    CryptoNote::WalletLegacyTransfer selfTransfer;
+    selfTransfer.address = m_wallet->getAddress();
+    selfTransfer.amount = m_currency.minimumFee(); // minimum self-transfer
+    transfers.push_back(selfTransfer);
+
+    std::vector<CryptoNote::TransactionMessage> messages;
+    uint64_t fee = m_currency.minimumFee();
+    uint64_t mixIn = 0;
+    uint64_t unlockTimestamp = 0;
+    uint64_t ttl = 0;
+    Crypto::SecretKey transactionSK;
+
+    CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
+
+    if (tx == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      fail_msg_writer() << "Failed to create migration transaction.";
       return true;
     }
 
-    std::error_code sendError = sent.wait(txId);
+    std::error_code sendError = sent.wait(tx);
     removeGuard.removeObserver();
+
     if (sendError) {
-      fail_msg_writer() << "Withdrawal failed: " << sendError.message();
+      fail_msg_writer() << "Migration transaction failed: " << sendError.message();
       return true;
     }
 
-    success_msg_writer(true) << "Legacy Bond withdrawal transaction sent!";
-    success_msg_writer() << "Transaction ID: " << txId;
-    success_msg_writer() << "Withdrawn amount: " << m_currency.formatAmount(deposit.amount + accruedInterest) << " XFG";
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet->getTransaction(tx, txInfo);
+
+    success_msg_writer(true) << "";
+    success_msg_writer(true) << "Legacy deposit migrated successfully!";
+    success_msg_writer(true) << "  Migration TX: " << Common::podToHex(txInfo.hash);
+    success_msg_writer(true) << "  Original TX:  " << Common::podToHex(deposit.transactionHash);
+    success_msg_writer(true) << "";
+    success_msg_writer(true) << "Once confirmed, use 'gen_proof " << Common::podToHex(deposit.transactionHash) << "' to generate STARK proof data.";
+
+    try {
+      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
+    } catch (const std::exception& e) {
+      fail_msg_writer() << e.what();
+      return true;
+    }
 
   } catch (const std::exception &e) {
-    fail_msg_writer() << "Failed to withdraw bond: " << e.what();
+    fail_msg_writer() << "Migration error: " << e.what();
   }
 
   return true;
@@ -2135,7 +2471,7 @@ static std::string findSwapxfg() {
     std::string dir(self);
     auto pos = dir.rfind('\\');
     if (pos != std::string::npos) {
-      std::string candidate = dir.substr(0, pos + 1) + "xfg-swapd.exe";
+      std::string candidate = dir.substr(0, pos + 1) + "xfg-swap.exe";
       if (GetFileAttributesA(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
         return candidate;
     }
@@ -2162,16 +2498,16 @@ static std::string findSwapxfg() {
   if (!self.empty()) {
     std::string dir = self;
     dir = dir.substr(0, dir.rfind('/'));
-    std::string candidate = dir + "/xfg-swapd";
+    std::string candidate = dir + "/xfg-swap";
     if (access(candidate.c_str(), X_OK) == 0) return candidate;
   }
 
   // 1.5. Current working directory fallback
-  if (access("./xfg-swapd", X_OK) == 0) return "./xfg-swapd";
+  if (access("./xfg-swap", X_OK) == 0) return "./xfg-swap";
 
   // 2. PATH fallback
-  if (system("which xfg-swapd > /dev/null 2>&1") == 0)
-    return "xfg-swapd";
+  if (system("which xfg-swap > /dev/null 2>&1") == 0)
+    return "xfg-swap";
   return "";
 #endif
 }
@@ -2179,11 +2515,11 @@ static std::string findSwapxfg() {
 void simple_wallet::launchSwapxfg(bool testnet) {
   std::string swapxfgPath = findSwapxfg();
   if (swapxfgPath.empty()) {
-    logger(Logging::WARNING) << "xfg-swapd not found. To use the swap terminal, install xfg-swapd:";
+    logger(Logging::WARNING) << "xfg-swap not found. To use the swap terminal, install xfg-swap:";
     logger(Logging::WARNING) << "  - Download from https://github.com/usexfg/fuego-suite/releases";
-    logger(Logging::WARNING) << "  - Place xfg-swapd in the same directory as fire_wallet";
+    logger(Logging::WARNING) << "  - Place xfg-swap in the same directory as fire_wallet";
     logger(Logging::INFO)    << "Alternatively, run manually:";
-    logger(Logging::INFO)    << "  xfg-swapd --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
+    logger(Logging::INFO)    << "  xfg-swap --wallet http://127.0.0.1:18182 --daemon http://127.0.0.1:" << m_daemon_port;
     return;
   }
 
@@ -2204,22 +2540,22 @@ void simple_wallet::launchSwapxfg(bool testnet) {
     if (m_wallet_rpc_port) {
       std::string walletEndpoint = "http://127.0.0.1:" + std::to_string(m_wallet_rpc_port);
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swapd",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swapd",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--wallet", walletEndpoint.c_str(),
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     } else {
       if (testnet) {
-        execlp(swapxfgPath.c_str(), "xfg-swapd",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--daemon", daemonEndpoint.c_str(),
                "--testnet", nullptr);
       } else {
-        execlp(swapxfgPath.c_str(), "xfg-swapd",
+        execlp(swapxfgPath.c_str(), "xfg-swap",
                "--daemon", daemonEndpoint.c_str(), nullptr);
       }
     }
@@ -2234,7 +2570,7 @@ void simple_wallet::launchSwapxfg(bool testnet) {
 }
 
 bool simple_wallet::swap_tui(const std::vector<std::string>& /*args*/) {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.02 Wildfire.";
+  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
   return true;
   launchSwapxfg(false);
   return true;
@@ -2248,7 +2584,7 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     fail_msg_writer() << "Usage: initiate_swap <amount> <peer_pubkey_hex> <pair> [role]";
     fail_msg_writer() << "  amount:        XFG to lock in Musig2 escrow";
     fail_msg_writer() << "  peer_pubkey:   64-char hex Ed25519 public key of swap counterparty";
-    fail_msg_writer() << "  pair:          XMR, ETH, BCH, or SOL";
+    fail_msg_writer() << "  pair:          XMR, ETH, or BCH";
     fail_msg_writer() << "  role:          alice (default) or bob";
     return true;
   }
@@ -2272,8 +2608,11 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     std::string pairStr = args[2];
     std::transform(pairStr.begin(), pairStr.end(), pairStr.begin(), ::toupper);
     XfgSwap::SwapPair pair;
-    if (!XfgSwap::swapPairFromString(pairStr, pair)) {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Supported: XMR, ETH, BCH, SOL";
+    if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
+    else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
+    else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
+    else {
+      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use XMR, ETH, or BCH.";
       return true;
     }
 
@@ -2688,12 +3027,6 @@ void simple_wallet::synchronizationProgressUpdated(uint32_t current, uint32_t to
 bool simple_wallet::show_balance(const std::vector<std::string>& args) {
   success_msg_writer() << "available balance: " << m_currency.formatAmount(m_wallet->actualBalance()) <<
     ", locked amount: " << m_currency.formatAmount(m_wallet->pendingBalance());
-  uint64_t heatActual = m_wallet->actualHeatBalance();
-  uint64_t heatPending = m_wallet->pendingHeatBalance();
-  if (heatActual > 0 || heatPending > 0) {
-    success_msg_writer() << "HEAT balance: " << m_currency.formatAmount(heatActual) <<
-      " (locked: " << m_currency.formatAmount(heatPending) << ")";
-  }
   return true;
 }
 
@@ -2812,9 +3145,20 @@ bool simple_wallet::export_keys(const std::vector<std::string>& args) {
 
   logger(INFO, BRIGHT_GREEN) << std::endl << "fire_wallet is an open-source, client-side, free wallet which allows you to send & receive Fuego instantly on the blockchain. You are in control of your funds & your private keys. When you generate a new wallet, login, send, receive or deposit XFG - everything happens locally. Your seed is never transmitted, received or stored. That's why IT IS IMPERATIVE to write down, print or save your seed somewhere safe. The backup of keys is your responsibility only. If you lose your seed, your account can not be recovered. Freedom isn't free - the cost is responsibility. Protect your keys." << std::endl << std::endl;
 
-    std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
-    std::cout << "Private view key: " << Common::podToHex(keys.viewSecretKey) << std::endl;
+  std::cout << "Private spend key: " << Common::podToHex(keys.spendSecretKey) << std::endl;
+  std::cout << "Public spend key: " << Common::podToHex(keys.address.spendPublicKey) << std::endl;
+  std::cout << "Private view key: " <<  Common::podToHex(keys.viewSecretKey) << std::endl;
+
+  Crypto::PublicKey unused_dummy_variable;
+  Crypto::SecretKey deterministic_private_view_key;
+
+  AccountBase::generateViewFromSpend(keys.spendSecretKey, deterministic_private_view_key, unused_dummy_variable);
+
+  bool deterministic_private_keys = deterministic_private_view_key == keys.viewSecretKey;
+
+  if (deterministic_private_keys) {
     std::cout << "Mnemonic seed: " << generate_mnemonic(keys.spendSecretKey) << std::endl << std::endl;
+  }
   return true;
 }
 
@@ -3255,11 +3599,11 @@ bool simple_wallet::process_command(const std::vector<std::string> &args) {
 //----------------------------------------------------------------------------------------------------
 // @ ALIAS SYSTEM COMMANDS
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::alias_register(const std::vector<std::string> &args) {
+bool simple_wallet::register_alias(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: alias_register <alias>";
+    fail_msg_writer() << "Usage: register_alias <alias>";
     fail_msg_writer() << "  Alias must be exactly 8 characters [a-z0-9&] (e.g., firenode)";
-    fail_msg_writer() << "  A unique sub-address is auto-generated for privacy.";
+    fail_msg_writer() << "  Alias must use lowercase [a-z0-9&] characters";
     return true;
   }
 
@@ -3311,7 +3655,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     return true;
   }
 
-  // Check if master identity already has an alias (one alias per address pair)
+  // Check if address already has an alias
   try {
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
     COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
@@ -3321,7 +3665,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
 
     if (addrRes.found) {
       fail_msg_writer() << "Your address already has alias @" << addrRes.alias;
-      fail_msg_writer() << "Each master identity can only have one alias.";
+      fail_msg_writer() << "Each address can only have one alias.";
       return true;
     }
   } catch (const ConnectException&) {
@@ -3343,7 +3687,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       if (txInfo.blockHeight == WALLET_LEGACY_UNCONFIRMED_TRANSACTION_HEIGHT) {
         // Check if transaction has alias registration tag (0xEA)
         if (!txInfo.extra.empty()) {
-          if (static_cast<uint8_t>(txInfo.extra[0]) == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
+          if (txInfo.extra[0] == 0xEA) {  // TX_EXTRA_ALIAS_REGISTRATION
             hasPendingAlias = true;
             break;
           }
@@ -3359,47 +3703,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     return true;
   }
 
-  // Auto-generate a unique sub-address for the alias (privacy).
-  // Uses the same auto-increment scheme as new_sub: major=0, minor=next_unused.
-  std::string walletAddress;
-  {
-    uint32_t major = 0;
-    uint32_t minor = 1;
-    for (const auto& e : m_subAddresses) {
-      if (std::get<0>(e) == 0) {
-        minor = std::max(minor, std::get<1>(e) + 1);
-      }
-    }
-
-    bool found = false;
-    for (const auto& e : m_subAddresses) {
-      if (std::get<0>(e) == major && std::get<1>(e) == minor) {
-        walletAddress = std::get<2>(e);
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) {
-      try {
-        walletAddress = m_wallet->registerSubAddress(major, minor);
-      } catch (const std::exception& e) {
-        fail_msg_writer() << "Failed to generate sub-address for alias: " << e.what();
-        return true;
-      } catch (...) {
-        fail_msg_writer() << "Failed to generate sub-address for alias: Unknown error";
-        return true;
-      }
-
-      if (walletAddress.empty() || walletAddress.size() < 10) {
-        fail_msg_writer() << "Failed to generate sub-address for alias registration.";
-        return true;
-      }
-
-      m_subAddresses.emplace_back(major, minor, walletAddress);
-      saveSubAddresses();
-    }
-  }
+  std::string walletAddress = m_wallet->getAddress();
 
   // Show confirmation summary
   success_msg_writer() << "";
@@ -3412,11 +3716,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       success_msg_writer() << "  Fee: 1 XFG sent to Fuego Developer Fund";
     }
   }
-  success_msg_writer() << "  Sub-address: " << walletAddress;
-  success_msg_writer() << "";
-  success_msg_writer() << "  This sub-address belongs to your wallet. Incoming payments sent to it";
-  success_msg_writer() << "  will appear in your balance just like payments to your main address.";
-  success_msg_writer() << "  Aliases use sub-addresses to avoid linking your on-chain identity.";
+  success_msg_writer() << "  Address: " << walletAddress;
   success_msg_writer() << "";
   success_msg_writer() << "Confirm? (1) OK  (2) No ";
 
@@ -3448,7 +3748,7 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       memcpy(preimage + 32, &addr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = walletAddress;  // Stored in tx_extra for on-chain resolution
+    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy — addressHash is sufficient
     aliasReg.aliasType = aliasType;
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
@@ -3478,21 +3778,10 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
       selfTransfer.amount = m_currency.minimumFee();
       transfers.push_back(selfTransfer);
     } else {
-      // Mainnet: 1 XFG fee + random dust to Fuego Developer Fund
-      // Random dust prevents fingerprinting of exact 1 XFG alias registration txns
-      uint64_t randomDust = 0;
-      {
-        uint8_t randBytes[8] = {};
-        Crypto::generate_random_bytes(sizeof(randBytes), randBytes);
-        randomDust = 0;
-        for (int i = 0; i < 8; ++i) {
-          randomDust = (randomDust << 8) | randBytes[i];
-        }
-        randomDust = randomDust % (CryptoNote::parameters::ALIAS_REGISTRATION_FEE_MAX_RANDOM + 1);
-      }
+      // Regular alias on mainnet: 1 XFG fee to Fuego Developer Fund
       CryptoNote::WalletLegacyTransfer devFundTransfer;
       devFundTransfer.address = CryptoNote::FUEGO_DEV_FUND_ADDRESS;
-      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE + randomDust;
+      devFundTransfer.amount = CryptoNote::parameters::ALIAS_REGISTRATION_FEE;
       transfers.push_back(devFundTransfer);
     }
 
@@ -3523,7 +3812,6 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
     success_msg_writer(true) << "";
     success_msg_writer(true) << " XFG Alias registered successfully!";
     success_msg_writer(true) << "  Alias: @" << alias;
-    success_msg_writer(true) << "  Sub-address: " << walletAddress;
     success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
     success_msg_writer(true) << "  The alias will be active after the transaction is confirmed.";
 
@@ -3541,9 +3829,9 @@ bool simple_wallet::alias_register(const std::vector<std::string> &args) {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::alias_search(const std::vector<std::string> &args) {
+bool simple_wallet::lookup_alias(const std::vector<std::string> &args) {
   if (args.size() != 1) {
-    fail_msg_writer() << "Usage: alias_search <alias_or_address>";
+    fail_msg_writer() << "Usage: lookup_alias <alias_or_address>";
     return true;
   }
 
@@ -3595,7 +3883,7 @@ bool simple_wallet::alias_search(const std::vector<std::string> &args) {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::alias_all(const std::vector<std::string> &args) {
+bool simple_wallet::list_aliases(const std::vector<std::string> &args) {
   try {
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
 
@@ -3616,7 +3904,8 @@ bool simple_wallet::alias_all(const std::vector<std::string> &args) {
       std::string typeStr = (entry.alias_type == 0) ? "Sys  " : "User ";
       success_msg_writer() << "  @" << entry.alias
                            << "  [" << typeStr << "]"
-                           << "  Block: " << entry.registered_block;
+                           << "  Block: " << entry.registered_block
+                           << "  Addr: " << entry.address.substr(0, 12) << "...";
     }
 
     success_msg_writer() << "────────────────────────────────────────────────";
@@ -3630,306 +3919,6 @@ bool simple_wallet::alias_all(const std::vector<std::string> &args) {
 
   return true;
 }
-
-bool simple_wallet::alias_release(const std::vector<std::string> &args) {
-  if (args.size() != 1) {
-    fail_msg_writer() << "Usage: alias_release <alias>";
-    fail_msg_writer() << "  Releases (deletes) your @ alias, making it available for re-registration.";
-    fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
-    return true;
-  }
-
-  std::string alias = args[0];
-  if (alias.length() != 8) {
-    fail_msg_writer() << "Alias must be exactly 8 characters.";
-    return true;
-  }
-
-  try {
-    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-
-    // Get wallet address
-    std::string walletAddress = m_wallet->getAddress();
-
-    // Verify alias exists and is owned by this wallet
-    COMMAND_RPC_GET_ALIAS::request checkReq;
-    COMMAND_RPC_GET_ALIAS::response checkRes;
-    checkReq.alias = alias;
-    invokeJsonCommand(httpClient, "/get_alias", checkReq, checkRes);
-
-    if (!checkRes.found) {
-      fail_msg_writer() << "Alias @" << alias << " is not registered.";
-      return true;
-    }
-
-    // Verify ownership: compute addressHash from our wallet address and compare
-    CryptoNote::AccountPublicAddress walletAddr;
-    if (!m_currency.parseAccountAddressString(walletAddress, walletAddr)) {
-      fail_msg_writer() << "Cannot parse wallet address.";
-      return true;
-    }
-    uint8_t preimage[64];
-    memcpy(preimage,      &walletAddr.spendPublicKey, 32);
-    memcpy(preimage + 32, &walletAddr.viewPublicKey,  32);
-    Crypto::Hash addrHash;
-    Crypto::cn_fast_hash(preimage, 64, addrHash);
-
-    Crypto::Hash storedHash;
-    if (!Common::podFromHex(checkRes.address_hash, storedHash) ||
-        memcmp(&storedHash, &addrHash, sizeof(Crypto::Hash)) != 0) {
-      fail_msg_writer() << "You do not own alias @" << alias << ".";
-      fail_msg_writer() << "  Release requires the alias owner's wallet.";
-      return true;
-    }
-
-    // Sign the release challenge: cn_fast_hash(alias || addressHash || 0x00)
-    uint8_t challengePreimage[8 + 32 + 1];
-    memcpy(challengePreimage,       alias.data(), 8);
-    memcpy(challengePreimage + 8,   &addrHash,    32);
-    challengePreimage[40] = 0x00;
-    Crypto::Hash challenge;
-    Crypto::cn_fast_hash(challengePreimage, sizeof(challengePreimage), challenge);
-
-    Crypto::Signature proof;
-    CryptoNote::AccountKeys keys;
-    m_wallet->getAccountKeys(keys);
-    Crypto::generate_signature(challenge, keys.address.spendPublicKey, keys.spendSecretKey, proof);
-
-    // Build release tx extra (0xEC)
-    CryptoNote::TransactionExtraAliasRelease aliasRel;
-    aliasRel.version = 1;
-    aliasRel.alias = alias;
-    aliasRel.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    aliasRel.ownerAddress = walletAddress;
-    aliasRel.proof = proof;
-
-    std::vector<uint8_t> extra;
-    if (!CryptoNote::addAliasReleaseToExtra(extra, aliasRel)) {
-      fail_msg_writer() << "Failed to build alias release transaction extra.";
-      return true;
-    }
-
-    std::string extraString(extra.begin(), extra.end());
-
-    // Create a self-transfer with the release extra (minimal fee)
-    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-    CryptoNote::WalletLegacyTransfer selfTransfer;
-    selfTransfer.address = walletAddress;
-    selfTransfer.amount = m_currency.minimumFee();
-    transfers.push_back(selfTransfer);
-
-    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-    std::vector<CryptoNote::TransactionMessage> messages;
-    uint64_t fee = m_currency.minimumFee();
-    uint64_t mixIn = 0;
-    uint64_t unlockTimestamp = 0;
-    uint64_t ttl = 0;
-    Crypto::SecretKey transactionSK;
-
-    CryptoNote::TransactionId tx = m_wallet->sendTransaction(
-        transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
-
-    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      fail_msg_writer() << "Failed to create alias release transaction.";
-      return true;
-    }
-
-    std::error_code sendError = sent.wait(tx);
-    removeGuard.removeObserver();
-
-    if (sendError) {
-      fail_msg_writer() << "Alias release failed: " << sendError.message();
-      return true;
-    }
-
-    CryptoNote::WalletLegacyTransaction txInfo;
-    m_wallet->getTransaction(tx, txInfo);
-    success_msg_writer(true) << "";
-    success_msg_writer(true) << " XFG Alias released successfully!";
-    success_msg_writer(true) << "  Alias: @" << alias;
-    success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
-    success_msg_writer(true) << "  The alias will be available for re-registration after confirmation.";
-
-    try {
-      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
-    } catch (const std::exception& e) {
-      fail_msg_writer() << e.what();
-    }
-  } catch (const ConnectException&) {
-    printConnectionError();
-  } catch (const std::exception& e) {
-    fail_msg_writer() << "Alias release error: " << e.what();
-  }
-
-  return true;
-}
-
-bool simple_wallet::alias_transfer(const std::vector<std::string> &args) {
-  if (args.size() != 2) {
-    fail_msg_writer() << "Usage: alias_transfer <alias> <new_address>";
-    fail_msg_writer() << "  Transfers ownership of your @ alias to another address.";
-    fail_msg_writer() << "  Requires: the wallet that owns the alias must be the current wallet.";
-    return true;
-  }
-
-  std::string alias = args[0];
-  std::string newAddress = args[1];
-  if (alias.length() != 8) {
-    fail_msg_writer() << "Alias must be exactly 8 characters.";
-    return true;
-  }
-
-  try {
-    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-
-    // Get wallet address
-    std::string walletAddress = m_wallet->getAddress();
-
-    // Verify alias exists and is owned by this wallet
-    COMMAND_RPC_GET_ALIAS::request checkReq;
-    COMMAND_RPC_GET_ALIAS::response checkRes;
-    checkReq.alias = alias;
-    invokeJsonCommand(httpClient, "/get_alias", checkReq, checkRes);
-
-    if (!checkRes.found) {
-      fail_msg_writer() << "Alias @" << alias << " is not registered.";
-      return true;
-    }
-
-    // Verify new address is valid
-    CryptoNote::AccountPublicAddress newAddr;
-    if (!m_currency.parseAccountAddressString(newAddress, newAddr)) {
-      fail_msg_writer() << "Invalid new owner address.";
-      return true;
-    }
-
-    // Check new address doesn't already have an alias
-    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::request addrReq;
-    COMMAND_RPC_GET_ALIAS_BY_ADDRESS::response addrRes;
-    addrReq.address = newAddress;
-    invokeJsonCommand(httpClient, "/get_alias_by_address", addrReq, addrRes);
-    if (addrRes.found) {
-      fail_msg_writer() << "The new address already has alias @" << addrRes.alias;
-      fail_msg_writer() << "  Each address can only have one alias. Release the existing one first.";
-      return true;
-    }
-
-    // Verify old ownership
-    CryptoNote::AccountPublicAddress oldAddr;
-    if (!m_currency.parseAccountAddressString(walletAddress, oldAddr)) {
-      fail_msg_writer() << "Cannot parse wallet address.";
-      return true;
-    }
-    uint8_t oldPreimage[64];
-    memcpy(oldPreimage,      &oldAddr.spendPublicKey, 32);
-    memcpy(oldPreimage + 32, &oldAddr.viewPublicKey,  32);
-    Crypto::Hash oldAddrHash;
-    Crypto::cn_fast_hash(oldPreimage, 64, oldAddrHash);
-
-    Crypto::Hash storedHash;
-    if (!Common::podFromHex(checkRes.address_hash, storedHash) ||
-        memcmp(&storedHash, &oldAddrHash, sizeof(Crypto::Hash)) != 0) {
-      fail_msg_writer() << "You do not own alias @" << alias << ".";
-      return true;
-    }
-
-    // Compute new address hash
-    uint8_t newPreimage[64];
-    memcpy(newPreimage,      &newAddr.spendPublicKey, 32);
-    memcpy(newPreimage + 32, &newAddr.viewPublicKey,  32);
-    Crypto::Hash newAddrHash;
-    Crypto::cn_fast_hash(newPreimage, 64, newAddrHash);
-
-    // Sign transfer challenge: cn_fast_hash(alias || oldAddrHash || newAddrHash || 0x01)
-    uint8_t challengePreimage[8 + 32 + 32 + 1];
-    memcpy(challengePreimage,       alias.data(), 8);
-    memcpy(challengePreimage + 8,   &oldAddrHash, 32);
-    memcpy(challengePreimage + 40,  &newAddrHash, 32);
-    challengePreimage[72] = 0x01;
-    Crypto::Hash challenge;
-    Crypto::cn_fast_hash(challengePreimage, sizeof(challengePreimage), challenge);
-
-    Crypto::Signature proof;
-    CryptoNote::AccountKeys keys2;
-    m_wallet->getAccountKeys(keys2);
-    Crypto::generate_signature(challenge, keys2.address.spendPublicKey, keys2.spendSecretKey, proof);
-
-    // Build transfer tx extra (0xED)
-    CryptoNote::TransactionExtraAliasTransfer aliasXfer;
-    aliasXfer.version = 1;
-    aliasXfer.alias = alias;
-    aliasXfer.aliasHash = Crypto::cn_fast_hash(alias.data(), alias.size());
-    aliasXfer.oldOwnerAddress = walletAddress;
-    aliasXfer.newOwnerAddress = newAddress;
-    aliasXfer.newAddressHash = newAddrHash;
-    aliasXfer.proof = proof;
-
-    std::vector<uint8_t> extra;
-    if (!CryptoNote::addAliasTransferToExtra(extra, aliasXfer)) {
-      fail_msg_writer() << "Failed to build alias transfer transaction extra.";
-      return true;
-    }
-
-    std::string extraString(extra.begin(), extra.end());
-
-    // Create a self-transfer with the transfer extra
-    std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-    CryptoNote::WalletLegacyTransfer selfTransfer;
-    selfTransfer.address = walletAddress;
-    selfTransfer.amount = m_currency.minimumFee();
-    transfers.push_back(selfTransfer);
-
-    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
-    WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
-
-    std::vector<CryptoNote::TransactionMessage> messages;
-    uint64_t fee = m_currency.minimumFee();
-    uint64_t mixIn = 0;
-    uint64_t unlockTimestamp = 0;
-    uint64_t ttl = 0;
-    Crypto::SecretKey transactionSK;
-
-    CryptoNote::TransactionId tx = m_wallet->sendTransaction(
-        transactionSK, transfers, fee, extraString, mixIn, unlockTimestamp, messages, ttl);
-
-    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-      fail_msg_writer() << "Failed to create alias transfer transaction.";
-      return true;
-    }
-
-    std::error_code sendError = sent.wait(tx);
-    removeGuard.removeObserver();
-
-    if (sendError) {
-      fail_msg_writer() << "Alias transfer failed: " << sendError.message();
-      return true;
-    }
-
-    CryptoNote::WalletLegacyTransaction txInfo;
-    m_wallet->getTransaction(tx, txInfo);
-    success_msg_writer(true) << "";
-    success_msg_writer(true) << " XFG Alias transferred successfully!";
-    success_msg_writer(true) << "  Alias: @" << alias;
-    success_msg_writer(true) << "  Old owner: " << walletAddress.substr(0, 12) << "...";
-    success_msg_writer(true) << "  New owner: " << newAddress.substr(0, 12) << "...";
-    success_msg_writer(true) << "  TX Hash: " << Common::podToHex(txInfo.hash);
-
-    try {
-      CryptoNote::WalletHelper::storeWallet(*m_wallet, m_wallet_file);
-    } catch (const std::exception& e) {
-      fail_msg_writer() << e.what();
-    }
-  } catch (const ConnectException&) {
-    printConnectionError();
-  } catch (const std::exception& e) {
-    fail_msg_writer() << "Alias transfer error: " << e.what();
-  }
-
-  return true;
-}
-
 
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::printConnectionError() const {
@@ -3968,7 +3957,7 @@ void simple_wallet::saveSubAddresses() const {
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::new_sub(const std::vector<std::string>& args) {
+bool simple_wallet::gen_new_sub(const std::vector<std::string>& args) {
   // Determine index.
   uint32_t major = 0;
   uint32_t minor = 0;
@@ -3978,11 +3967,11 @@ bool simple_wallet::new_sub(const std::vector<std::string>& args) {
       major = static_cast<uint32_t>(std::stoul(args[0]));
       minor = static_cast<uint32_t>(std::stoul(args[1]));
     } catch (...) {
-      fail_msg_writer() << "Usage: new_sub [major] [minor]";
+      fail_msg_writer() << "Usage: gen_new_sub [major] [minor]";
       return true;
     }
   } else if (args.size() == 1) {
-    fail_msg_writer() << "Usage: new_sub [major] [minor]  (provide both or neither)";
+    fail_msg_writer() << "Usage: gen_new_sub [major] [minor]  (provide both or neither)";
     return true;
   } else {
     // Auto-increment: major=0, minor = next unused
@@ -4047,7 +4036,7 @@ bool simple_wallet::new_sub(const std::vector<std::string>& args) {
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::list_subs(const std::vector<std::string>& args) {
   if (m_subAddresses.empty()) {
-    success_msg_writer() << "No sub-addresses generated yet. Use: new_sub";
+    success_msg_writer() << "No sub-addresses generated yet. Use: gen_new_sub";
     return true;
   }
   success_msg_writer() << "Sub-addresses for this wallet:";
@@ -4058,64 +4047,29 @@ bool simple_wallet::list_subs(const std::vector<std::string>& args) {
   return true;
 }
 
-bool simple_wallet::requireV11(const char* commandName) {
-  uint64_t v11Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
-  uint64_t currentHeight = m_node->getLastLocalBlockHeight();
-  if (currentHeight < v11Height) {
-    fail_msg_writer() << commandName << " requires block major version 11 (height " << v11Height
-                      << "), current height is " << currentHeight;
-    return false;
-  }
-  return true;
-}
-
-bool simple_wallet::requireV12(const char* commandName) {
-  uint64_t v12Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_12);
-  uint64_t currentHeight = m_node->getLastLocalBlockHeight();
-  if (currentHeight < v12Height) {
-    fail_msg_writer() << commandName << " requires block major version 12 (height " << v12Height
-                      << "), current height is " << currentHeight;
-    return false;
-  }
-  return true;
-}
-
 bool simple_wallet::heat_info(const std::vector<std::string>& args) {
-  if (!requireV11("info_heat")) return false;
-  success_msg_writer() << "HEAT flatcoin: $"
-    << CryptoNote::parameters::HEAT_PEG_USD << " USD (fixed)";
-  success_msg_writer() << "  Status: hard peg — adjusted for USD inflation since Q1:2009";
-  success_msg_writer() << "  XFG price: fully unrestrained, floats freely via Hearth orderbook";
-  success_msg_writer() << "  Mint min: 0.1 HEAT (" << CryptoNote::parameters::HEAT_MINT_MIN_HEAT
-    << " atomic)";
-  success_msg_writer() << "  Mint premium: " << (CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS / 100.0)
-    << "%";
-  success_msg_writer() << "  Bills: {500,100,50,10,5,1,0.5,0.1} HEAT — mints split into denominations";
-  success_msg_writer() << "  Mint: mint_heat <xfg> — burn XFG for HEAT at orderbook rate";
-  success_msg_writer() << "  Trade: place orders on Hearth's orderbook (pool band 0.3% spread)";
-  success_msg_writer() << "  Query daemon: /heat_metrics  /amm_pool_info";
+  success_msg_writer() << "HEAT algorithmic supply-rate coin (v10+):";
+  success_msg_writer() << "  Initial redemption price: 0.2 XFG per HEAT";
+  success_msg_writer() << "  Mint: burn XFG -> mint HEAT at current redemption price";
+  success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM (0.3% fee to LP providers)";
+  success_msg_writer() << "  PI Controller: value-band target, KP=0.08 KI=0.015";
+  success_msg_writer() << "  Query daemon for live metrics: /heat_metrics";
   return true;
 }
 
 bool simple_wallet::pool_info(const std::vector<std::string>& args) {
-  if (!requireV11("hearth_info")) return false;
   success_msg_writer() << "Hearth AMM pool (v11+):";
-  success_msg_writer() << "  Model: XFG/HEAT constant-product (X*Y=K)";
-  success_msg_writer() << "  Fee: 0.3% (30 bps) → LP providers + CD yield";
-  success_msg_writer() << "  Pool seed: " << CryptoNote::parameters::HEARTH_POOL_SEED_XFG
-    << " XFG / " << CryptoNote::parameters::HEARTH_POOL_SEED_HEAT
-    << " HEAT (" << CryptoNote::parameters::HEARTH_POOL_SEED_XFG << ":"
-    << CryptoNote::parameters::HEARTH_POOL_SEED_HEAT << " at genesis)";
-  success_msg_writer() << "  Add LP:  hearth_add <xfg> <heat>";
-  success_msg_writer() << "  Remove:  hearth_exit <shares> <min_xfg> <min_heat>";
-  success_msg_writer() << "  Buy HEAT: hearth_xfg <xfg> <expected> <min>";
-  success_msg_writer() << "  Sell HEAT: hearth_heat <heat> <expected> <min>";
-  success_msg_writer() << "  Live state: /amm_pool_info";
+  success_msg_writer() << "  Pool: XFG/HEAT constant-product (X * Y = K)";
+  success_msg_writer() << "  Fee: 0.3% (30 bps), routed to LP providers";
+  success_msg_writer() << "  Bootstrap: first user LP transaction at v11 fork";
+  success_msg_writer() << "  Query daemon for live state: /amm_pool_info";
+  success_msg_writer() << "  Add liquidity: add_liq <xfg> <heat>";
+  success_msg_writer() << "  Remove liquidity: remove_liq <lp_shares> <min_xfg> <min_heat>";
+  success_msg_writer() << "  Swap: swap <0|1> <amount> <min_output>";
   return true;
 }
 
 bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
-  if (!requireV11("mint_heat")) return false;
   if (args.size() < 1) {
     fail_msg_writer() << "Usage: mint_heat <xfg_amount>";
     return false;
@@ -4135,70 +4089,33 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Query daemon for current pool rate (XFG/HEAT ratio)
-  uint64_t reserveXfg = 0, reserveHeat = 0;
-  try {
-    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-    COMMAND_RPC_GET_FUEGO_PRICE::request priceReq;
-    COMMAND_RPC_GET_FUEGO_PRICE::response priceRes;
-    invokeJsonCommand(httpClient, "/get_fuego_price", priceReq, priceRes);
-    reserveXfg = priceRes.reserve_xfg;
-    reserveHeat = priceRes.reserve_heat;
-  } catch (...) {
-    fail_msg_writer() << "Cannot query daemon for pool rate. Is the daemon running?";
-    return false;
-  }
+  uint64_t heatAmount = xfgAmount * parameters::HEAT_LAUNCH_RATIO_DENOM
+                        / parameters::HEAT_LAUNCH_RATIO_NUM;
 
-  if (reserveXfg == 0 || reserveHeat == 0) {
-    fail_msg_writer() << "Pool is empty — cannot determine XFG/HEAT rate. Use hearth_xfg instead.";
-    return false;
-  }
-
-  // Pool rate: 1 HEAT = (reserveXfg / reserveHeat) XFG
-  // Inverse: burn X XFG → mint X × reserveHeat / reserveXfg HEAT
-  uint64_t premiumBps = CryptoNote::parameters::HEAT_MINT_PREMIUM_BPS;
-  uint64_t effectiveXfg = xfgAmount * (10000 - premiumBps) / 10000;
-  FixedPoint64 poolRateFp = FixedPoint64::fromRatio(reserveXfg, reserveHeat);
-  FixedPoint64 effectiveFp = FixedPoint64::fromUint64(effectiveXfg);
-  uint64_t heatAmount = effectiveFp.div(poolRateFp).toUint64();
-  uint64_t premiumAmount = xfgAmount - effectiveXfg;
-
-  uint64_t minHeat = m_currency.isTestnet() ? CryptoNote::TESTNET_HEAT_MINT_MIN_HEAT : CryptoNote::parameters::HEAT_MINT_MIN_HEAT;
-  if (heatAmount < minHeat) {
-    // Reverse: minHeat × poolRate = min effective XFG needed (before premium)
-    uint64_t minEffectiveXfg = poolRateFp.mulToUint64(minHeat);
-    uint64_t minXfg = minEffectiveXfg * 10000 / (10000 - premiumBps);
-    fail_msg_writer() << "Minimum HEAT mint: " << m_currency.formatAmount(minHeat) << " HEAT"
-                      << " (~" << m_currency.formatAmount(minXfg) << " XFG with premium).";
-    return false;
-  }
-
-  double poolRate = static_cast<double>(reserveXfg) / static_cast<double>(reserveHeat);
-  success_msg_writer() << "HEAT Mint (v10 auth):";
-  success_msg_writer() << "  Pool rate: " << std::fixed << std::setprecision(4) << poolRate << " XFG/HEAT";
+  success_msg_writer() << "HEAT Mint:";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
-  if (premiumAmount > 0)
-    success_msg_writer() << "  Premium: " << m_currency.formatAmount(premiumAmount) << " XFG (" << (premiumBps / 100.0) << "% - use hearth_xfg to avoid)";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
+  success_msg_writer() << "  Rate: " << parameters::HEAT_LAUNCH_RATIO_DENOM << "/"
+                       << parameters::HEAT_LAUNCH_RATIO_NUM << " HEAT per XFG";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
+  std::string myAddress = m_wallet->getAddress();
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  CryptoNote::WalletLegacyTransfer selfTransfer;
+  selfTransfer.address = myAddress;
+  selfTransfer.amount = static_cast<int64_t>(xfgAmount - fee);
+  transfers.push_back(selfTransfer);
+
+  std::vector<uint8_t> extra;
+  addAmmSwapToExtra(extra, 0, xfgAmount - fee, 1);
+  std::string extraStr(extra.begin(), extra.end());
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
 
-  success_msg_writer() << "";
-  std::string answer;
-  std::cout << "Confirm minting " << m_currency.formatAmount(heatAmount) << " HEAT"
-            << " (burn " << m_currency.formatAmount(xfgAmount) << " XFG)? (y/n): ";
-  std::getline(std::cin, answer);
-  if (answer != "y" && answer != "Y") {
-    fail_msg_writer() << "Cancelled.";
-    return true;
-  }
+  Crypto::SecretKey transactionSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
 
-  CryptoNote::TransactionId txId = m_wallet->mintHeatV10(xfgAmount, heatAmount, fee, mixIn);
-
-  if (txId != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "HEAT mint submitted (ID " << txId << ")";
-    success_msg_writer() << "Use 'show_txn <hash>' to track — hash available after block confirms.";
+  if (tx != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Transaction submitted: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";
@@ -4206,11 +4123,9 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::swap(const std::vector<std::string>& args) {
-  if (!requireV11("swap")) return false;
-  if (args.size() < 4) {
-    fail_msg_writer() << "Usage: swap <direction> <input_amount> <expected_output> <min_output>";
+  if (args.size() < 3) {
+    fail_msg_writer() << "Usage: swap <direction> <amount> <min_output>";
     fail_msg_writer() << "  direction: 0 = XFG->HEAT, 1 = HEAT->XFG";
-    fail_msg_writer() << "  expected_output: query via 'amm_quote' on daemon RPC";
     return false;
   }
 
@@ -4220,16 +4135,15 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t amount, expectedOutput, minOutput;
-  if (!m_currency.parseAmount(args[1], amount) ||
-      !m_currency.parseAmount(args[2], expectedOutput) ||
-      !m_currency.parseAmount(args[3], minOutput)) {
-    fail_msg_writer() << "Invalid amount(s)";
+  uint64_t amount;
+  if (!m_currency.parseAmount(args[1], amount)) {
+    fail_msg_writer() << "Invalid amount";
     return false;
   }
 
-  if (expectedOutput < minOutput) {
-    fail_msg_writer() << "Expected output below minimum";
+  uint64_t minOutput;
+  if (!m_currency.parseAmount(args[2], minOutput)) {
+    fail_msg_writer() << "Invalid min_output";
     return false;
   }
 
@@ -4241,27 +4155,35 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  success_msg_writer() << "AMM Swap (v10): " << m_currency.formatAmount(amount)
-                        << (direction == 0 ? " XFG → " : " HEAT → ")
-                        << m_currency.formatAmount(expectedOutput)
-                        << (direction == 0 ? " HEAT" : " XFG")
-                        << " | min: " << m_currency.formatAmount(minOutput);
-
+  std::vector<uint8_t> extra;
+  addAmmSwapToExtra(extra, direction, amount, minOutput);
+  std::string extraStr(extra.begin(), extra.end());
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  CryptoNote::TransactionId tx = m_wallet->ammSwapV10(direction, amount, expectedOutput, minOutput, fee, mixIn);
+
+  std::string myAddress = m_wallet->getAddress();
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  CryptoNote::WalletLegacyTransfer selfTransfer;
+  selfTransfer.address = myAddress;
+  selfTransfer.amount = static_cast<int64_t>(amount);
+  transfers.push_back(selfTransfer);
+
+  Crypto::SecretKey transactionSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Swap submitted (ID " << tx << ")";
+    success_msg_writer() << "Swap submitted: " << m_currency.formatAmount(amount)
+                         << (direction == 0 ? " XFG to HEAT" : " HEAT to XFG")
+                         << " | min output: " << m_currency.formatAmount(minOutput)
+                         << " | tx: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";
   return false;
 }
 
-bool simple_wallet::hearth_add(const std::vector<std::string>& args) {
-  if (!requireV11("hearth_add")) return false;
+bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   if (args.size() < 2) {
-    fail_msg_writer() << "Usage: hearth_add <xfg_amount> <heat_amount>";
+    fail_msg_writer() << "Usage: add_liq <xfg_amount> <heat_amount>";
     return false;
   }
 
@@ -4280,30 +4202,32 @@ bool simple_wallet::hearth_add(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t heatAvailable = m_wallet->actualHeatBalance();
-  if (heatAvailable < heatAmount) {
-    fail_msg_writer() << "Insufficient HEAT balance. Available: " << m_currency.formatAmount(heatAvailable);
-    return false;
-  }
-
-  success_msg_writer() << "LP Add (v10): " << m_currency.formatAmount(xfgAmount) << " XFG + "
-                        << m_currency.formatAmount(heatAmount) << " HEAT";
-
+  std::vector<uint8_t> extra;
+  addAmmAddLiquidityToExtra(extra, xfgAmount, heatAmount);
+  std::string extraStr(extra.begin(), extra.end());
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  CryptoNote::TransactionId tx = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
+
+  std::string myAddress = m_wallet->getAddress();
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  transfers.push_back({myAddress, static_cast<int64_t>(xfgAmount)});
+  transfers.push_back({myAddress, static_cast<int64_t>(heatAmount)});
+
+  Crypto::SecretKey transactionSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
 
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "LP add submitted (ID " << tx << ")";
+    success_msg_writer() << "Liquidity add submitted: " << m_currency.formatAmount(xfgAmount)
+                         << " XFG + " << m_currency.formatAmount(heatAmount) << " HEAT"
+                         << " | tx: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";
   return false;
 }
 
-bool simple_wallet::hearth_exit(const std::vector<std::string>& args) {
-  if (!requireV11("hearth_exit")) return false;
+bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   if (args.size() < 3) {
-    fail_msg_writer() << "Usage: hearth_exit <lp_shares> <min_xfg> <min_heat>";
+    fail_msg_writer() << "Usage: remove_liq <lp_shares> <min_xfg> <min_heat>";
     return false;
   }
 
@@ -4347,30 +4271,7 @@ bool simple_wallet::hearth_exit(const std::vector<std::string>& args) {
   return false;
 }
 
-bool simple_wallet::hearth_xfg(const std::vector<std::string>& args) {
-  if (!requireV11("hearth_xfg")) return false;
-  // Wrapper: buy HEAT with XFG (direction=0)
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: hearth_xfg <xfg_amount> <expected_heat> <min_heat>";
-    return false;
-  }
-  std::vector<std::string> swapArgs = {"0", args[0], args[1], args[2]};
-  return swap(swapArgs);
-}
-
-bool simple_wallet::hearth_heat(const std::vector<std::string>& args) {
-  if (!requireV11("hearth_heat")) return false;
-  // Wrapper: sell HEAT for XFG (direction=1)
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: hearth_heat <heat_amount> <expected_xfg> <min_xfg>";
-    return false;
-  }
-  std::vector<std::string> swapArgs = {"1", args[0], args[1], args[2]};
-  return swap(swapArgs);
-}
-
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
-  if (!requireV12("cd_create")) return false;
   if (args.size() < 2) {
     fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
     return false;
@@ -4382,26 +4283,29 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t bankingFee = amount / 1000;
-  if (bankingFee == 0) bankingFee = 1;
+  uint64_t bankingFee = amount / 1000;  // 0.1% banking fee → Fuego dev fund
+  if (bankingFee == 0) bankingFee = 1;   // minimum 1 atomic unit
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t heatAvailable = m_wallet->actualHeatBalance();
-  if (heatAvailable < amount + bankingFee) {
-    fail_msg_writer() << "Insufficient HEAT balance (" << m_currency.formatAmount(heatAvailable) << "), need "
-                      << m_currency.formatAmount(amount + bankingFee);
+  uint64_t balance = m_wallet->actualBalance();
+  if (balance < amount + bankingFee + fee) {
+    fail_msg_writer() << "Insufficient balance (includes 0.1% banking fee)";
     return false;
   }
 
-  success_msg_writer() << "HEAT CD (v10): " << m_currency.formatAmount(amount) << " HEAT | "
-                        << termEpochs << " epochs | fee: " << m_currency.formatAmount(bankingFee)
-                        << " → @fuegoxfg";
+  std::string myAddress = m_wallet->getAddress();
+  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
+  transfers.push_back({myAddress, static_cast<int64_t>(amount)});
+  transfers.push_back({CryptoNote::FUEGO_DEV_FUND_ADDRESS, static_cast<int64_t>(bankingFee)});
 
   uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  CryptoNote::TransactionId tx = m_wallet->heatDepositV10(amount, termEpochs, bankingFee, fee, mixIn);
-
+  Crypto::SecretKey txSK;
+  CryptoNote::TransactionId tx = m_wallet->sendTransaction(txSK, transfers, fee, "", mixIn, 0, {}, 0);
   if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "CD created (ID " << tx << ") — 0.1% fee → @fuegoxfg";
+    success_msg_writer() << "HEAT CD | " << m_currency.formatAmount(amount)
+                         << " HEAT | " << termEpochs << " epochs | fee: "
+                         << m_currency.formatAmount(bankingFee)
+                         << " | tx: " << tx;
     return true;
   }
   fail_msg_writer() << "Transaction failed";
@@ -4409,682 +4313,188 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
-  if (!requireV12("cd_claim")) return false;
   if (args.size() < 1) {
     fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
     return false;
   }
-  DepositId id;
-  if (!Common::fromString(args[0], id)) {
-    fail_msg_writer() << "Invalid deposit ID";
-    return false;
-  }
-
-  Deposit deposit;
-  if (!m_wallet->getDeposit(id, deposit)) {
-    fail_msg_writer() << "Deposit not found";
-    return false;
-  }
-  if (deposit.locked) {
-    fail_msg_writer() << "Deposit is locked";
-    return false;
-  }
-
-  uint64_t fee = m_currency.minimumFee();
-  success_msg_writer() << "Withdrawing HEAT CD #" << id << ": " << m_currency.formatAmount(deposit.amount) << " HEAT";
-
-  std::vector<DepositId> ids{id};
-  CryptoNote::TransactionId tx = m_wallet->withdrawDeposits(ids, fee);
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Withdrawal submitted: " << tx;
-    return true;
-  }
-  fail_msg_writer() << "Withdrawal failed";
-  return false;
+  success_msg_writer() << "HEAT CD withdrawal: " << args[0];
+  return true;
 }
 
 bool simple_wallet::heat_list(const std::vector<std::string>& args) {
-  uint64_t heatActual = m_wallet->actualHeatBalance();
-  uint64_t heatPending = m_wallet->pendingHeatBalance();
-  success_msg_writer() << "HEAT Balance:";
-  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HEAT";
-  if (heatPending > 0)
-    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HEAT";
-  if (heatActual == 0 && heatPending == 0)
-    success_msg_writer() << "  (no HEAT outputs detected)";
-  return true;
-}
-
-bool simple_wallet::list_heat(const std::vector<std::string>& args) {
-  if (!requireV11("view_heat")) return false;
-  uint64_t heatActual = m_wallet->actualHeatBalance();
-  uint64_t heatPending = m_wallet->pendingHeatBalance();
-  success_msg_writer() << "";
-  success_msg_writer() << "=== HΞ∆T Balance ===";
-  success_msg_writer() << "  Available: " << m_currency.formatAmount(heatActual) << " HΞ∆T";
-  if (heatPending > 0)
-    success_msg_writer() << "  Locked:    " << m_currency.formatAmount(heatPending) << " HΞ∆T";
-  success_msg_writer() << "";
-
-  size_t depositCount = m_wallet->getDepositCount();
-  size_t shown = 0;
-
-  // Collect HEAT deposits and group by bill denomination
-  const auto& billDenoms = CryptoNote::parameters::HEAT_BILL_DENOMINATIONS;
-  std::map<uint64_t, size_t> heatByBill;
-  for (size_t i = 0; i < depositCount; ++i) {
-    Deposit deposit;
-    if (!m_wallet->getDeposit(i, deposit)) continue;
-    if (deposit.term != CryptoNote::parameters::HEAT_TERM) continue;
-    heatByBill[deposit.amount]++;
-    shown++;
-  }
-
-  if (shown == 0) {
-    success_msg_writer() << "  (no HΞ∆T found)";
-  } else {
-    success_msg_writer() << "  Note         |  Qty";
-    success_msg_writer() << "  -------------+------";
-    // Display all denominations ascending, right-aligned
-    for (auto it = billDenoms.begin(); it != billDenoms.end(); ++it) {
-      uint64_t billAtomic = *it;
-      double billHeat = static_cast<double>(billAtomic) / CryptoNote::parameters::COIN;
-      auto found = heatByBill.find(billAtomic);
-      std::string countStr = (found != heatByBill.end()) ? std::to_string(found->second) : "0";
-      std::ostringstream note;
-      note << std::fixed << std::setprecision(1) << billHeat;
-      std::string noteStr = note.str();
-      if (noteStr.size() > 2 && noteStr.substr(noteStr.size() - 2) == ".0")
-        noteStr = noteStr.substr(0, noteStr.size() - 2);
-      std::string label = "【" + noteStr + "\xF0\x90\x85\xAA" + "】"; // 𐅪
-      success_msg_writer() << "  " << std::setw(13) << std::right << label << " |  " << countStr;
-    }
-  }
-  success_msg_writer() << "";
-  return true;
-}
-
-bool simple_wallet::list_cds(const std::vector<std::string>& args) {
-  success_msg_writer() << "";
-  success_msg_writer() << "=== HEAT Certificates of Deposit ===";
-  success_msg_writer() << "  ID | Status   | Amount      | Interest | Term(ep) | TX Hash";
-  success_msg_writer() << " ----+----------+-------------+----------+----------+------------------";
-
-  size_t depositCount = m_wallet->getDepositCount();
-  size_t shown = 0;
-  uint32_t epochBlocks = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-
-  for (size_t i = 0; i < depositCount; ++i) {
-    Deposit deposit;
-    if (!m_wallet->getDeposit(i, deposit)) continue;
-    if (deposit.term == CryptoNote::parameters::HEAT_TERM) continue;
-    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_LP) continue;
-    if (deposit.term == 0) continue;  // skip non-deposit outputs
-
-    shown++;
-    std::string status;
-    if (deposit.spendingTransactionId != WALLET_LEGACY_INVALID_TRANSACTION_ID)
-      status = "claimed";
-    else if (!deposit.locked)
-      status = "complete";
-    else
-      status = "active";
-
-    uint32_t termEpochs = (epochBlocks > 0) ? deposit.term / epochBlocks : 0;
-    success_msg_writer() << "  " << std::setw(3) << i
-                         << " | " << std::setw(8) << status
-                         << " | " << std::setw(11) << m_currency.formatAmount(deposit.amount)
-                         << " | " << std::setw(8) << m_currency.formatAmount(deposit.interest)
-                         << " | " << std::setw(8) << termEpochs
-                         << " | " << Common::podToHex(deposit.transactionHash).substr(0, 16);
-  }
-  if (shown == 0)
-    success_msg_writer() << "  (no HEAT CDs found)";
-  success_msg_writer() << "";
-  return true;
-}
-
-bool simple_wallet::show_txn(const std::vector<std::string>& args) {
-  if (args.size() < 1) {
-    fail_msg_writer() << "usage: show_txn <txid>";
-    return true;
-  }
-
-  Crypto::Hash txid;
-  if (!parse_hash256(args[0], txid)) {
-    fail_msg_writer() << "Failed to parse txid";
-    return true;
-  }
-
-  size_t transactionsCount = m_wallet->getTransactionCount();
-  for (size_t i = 0; i < transactionsCount; ++i) {
-    WalletLegacyTransaction txInfo;
-    m_wallet->getTransaction(i, txInfo);
-    if (txInfo.hash != txid) continue;
-
-    std::string stateStr;
-    switch (txInfo.state) {
-      case WalletLegacyTransactionState::Active: stateStr = "active"; break;
-      case WalletLegacyTransactionState::Deleted: stateStr = "deleted"; break;
-      case WalletLegacyTransactionState::Sending: stateStr = "sending"; break;
-      case WalletLegacyTransactionState::Cancelled: stateStr = "cancelled"; break;
-      case WalletLegacyTransactionState::Failed: stateStr = "failed"; break;
-    }
-
-    char timeBuf[32];
-    time_t ts = static_cast<time_t>(txInfo.timestamp);
-    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", std::gmtime(&ts));
-
-    success_msg_writer() << "Transaction " << Common::podToHex(txInfo.hash);
-    success_msg_writer() << "  State:      " << stateStr;
-    success_msg_writer() << "  Amount:     " << m_currency.formatAmount(static_cast<int64_t>(std::llabs(txInfo.totalAmount)))
-                         << (txInfo.totalAmount < 0 ? " (outgoing)" : " (incoming)");
-    success_msg_writer() << "  Fee:        " << m_currency.formatAmount(txInfo.fee);
-    success_msg_writer() << "  Height:     " << txInfo.blockHeight;
-    success_msg_writer() << "  Timestamp:  " << timeBuf;
-    success_msg_writer() << "  Unlock:     " << txInfo.unlockTime;
-    success_msg_writer() << "  Coinbase:   " << (txInfo.isCoinbase ? "yes" : "no");
-
-    if (txInfo.totalAmount < 0 && txInfo.transferCount > 0) {
-      success_msg_writer() << "  Transfers:";
-      for (TransferId tid = txInfo.firstTransferId; tid < txInfo.firstTransferId + txInfo.transferCount; ++tid) {
-        WalletLegacyTransfer tr;
-        m_wallet->getTransfer(tid, tr);
-        success_msg_writer() << "    " << tr.address << "  " << m_currency.formatAmount(tr.amount);
-      }
-    }
-
-    if (!txInfo.messages.empty()) {
-      success_msg_writer() << "  Messages:";
-      for (const auto& msg : txInfo.messages)
-        success_msg_writer() << "    " << msg;
-    }
-
-    return true;
-  }
-
-  fail_msg_writer() << "Transaction not found in wallet history";
-  return true;
-}
-
-bool simple_wallet::send_heat(const std::vector<std::string>& args) {
-  if (!requireV11("send_heat")) return false;
-  if (args.size() < 2) {
-    fail_msg_writer() << "usage: send_heat <address|alias> <amount>";
-    return true;
-  }
-
-  std::string address_str = resolveAlias(args[0]);
-  AccountPublicAddress recipient;
-  if (!m_currency.parseAccountAddressString(address_str, recipient)) {
-    fail_msg_writer() << "Invalid address: " << args[0];
-    return true;
-  }
-
-  uint64_t amount = 0;
-  if (!m_currency.parseAmount(args[1], amount)) {
-    fail_msg_writer() << "Invalid HEAT amount: " << args[1];
-    return true;
-  }
-
-  if (amount == 0) {
-    fail_msg_writer() << "Amount must be greater than 0";
-    return true;
-  }
-
-  uint64_t available = m_wallet->actualHeatBalance();
-  if (available < amount) {
-    fail_msg_writer() << "Insufficient HEAT balance. Available: "
-                      << m_currency.formatAmount(available) << " HEAT";
-    return true;
-  }
-
-  uint64_t fee = m_currency.minimumFee();
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  std::string answer;
-  std::cout << "Confirm sending " << m_currency.formatAmount(amount) << " HEAT to "
-            << address_str << " (y/n): ";
-  std::getline(std::cin, answer);
-  if (answer != "y") {
-    fail_msg_writer() << "Transaction cancelled";
-    return true;
-  }
-
-  CryptoNote::TransactionId txId = m_wallet->sendHeatV10(recipient, amount, fee, mixIn);
-
-  if (txId != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "HEAT transfer submitted (ID " << txId << ")";
-    success_msg_writer() << "Use show_txn to track the transaction status";
-    return true;
-  }
-
-  fail_msg_writer() << "Transaction failed";
-  return true;
-}
-
-// ======== Orderbook Commands (v11+) ========
-
-bool simple_wallet::trade(const std::vector<std::string>& args) {
-  if (args.size() < 2) {
-    fail_msg_writer() << "Usage: trade <buy|sell> <amount>";
-    return false;
-  }
-
-  bool isBuy = (args[0] == "buy");
-  bool isSell = (args[0] == "sell");
-  if (!isBuy && !isSell) {
-    fail_msg_writer() << "First argument must be 'buy' or 'sell'. Got: " << args[0];
-    return false;
-  }
-
-  uint64_t amount = 0;
-  if (!m_currency.parseAmount(args[1], amount)) {
-    fail_msg_writer() << "Invalid amount: " << args[1];
-    return false;
-  }
-
-  uint64_t fee = m_currency.minimumFee();
-  uint64_t available = m_wallet->actualBalance();
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-
-  if (isBuy) {
-    std::string answer;
-    success_msg_writer() << "Market Buy: " << m_currency.formatAmount(amount) << " XFG";
-    success_msg_writer() << "HEAT will be consumed from your balance at settlement.";
-    success_msg_writer() << "";
-    std::cout << "Confirm market buy? (y/n): ";
-    std::getline(std::cin, answer);
-    if (answer != "y" && answer != "Y") {
-      fail_msg_writer() << "Cancelled.";
-      return true;
-    }
-    CryptoNote::TransactionId txId = m_wallet->marketBuyV13(amount, 0, fee, mixIn);
-    if (txId != WALLET_INVALID_TRANSACTION_ID) {
-      success_msg_writer() << "Market buy submitted (ID " << txId << ")";
-      return true;
-    }
-    fail_msg_writer() << "Transaction failed";
-    return true;
-  } else {
-    if (available < amount + fee) {
-      fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(available)
-                        << ", needed: " << m_currency.formatAmount(amount + fee);
-      return false;
-    }
-
-    success_msg_writer() << "Market Sell Preview:";
-    success_msg_writer() << "  Sell: " << m_currency.formatAmount(amount) << " XFG";
-    success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
-
-    // Call RPC for estimate (invokeJsonCommand throws on error)
-    try {
-      HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-      COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request req;
-      COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response res;
-      req.side = 1;
-      req.amount = amount;
-      invokeJsonCommand(httpClient, "/get_orderbook_estimates", req, res);
-
-      if (res.status == CORE_RPC_STATUS_OK) {
-        success_msg_writer() << "  Estimated fill: " << m_currency.formatAmount(res.estimated_fill) << " XFG";
-        success_msg_writer() << "  HEARTH band:    " << m_currency.formatAmount(res.hearth_fill) << " XFG";
-        success_msg_writer() << "  Orderbook:      " << m_currency.formatAmount(res.orderbook_fill) << " XFG";
-        if (res.levels_consumed > 0)
-          success_msg_writer() << "  Levels consumed: " << res.levels_consumed;
-        if (res.worst_case_price > 0)
-          success_msg_writer() << "  Worst price:     " << res.worst_case_price;
-      }
-    } catch (...) {
-      success_msg_writer() << "  (daemon RPC unavailable — estimate skipped)";
-    }
-
-    CryptoNote::TransactionId txId = m_wallet->marketSellV13(amount, 0, fee, mixIn);
-    if (txId != WALLET_INVALID_TRANSACTION_ID) {
-      success_msg_writer() << "Market sell submitted (ID " << txId << ")";
-      return true;
-    }
-
-    fail_msg_writer() << "Market sell failed. Check daemon connection and balance.";
-  }
+  success_msg_writer() << "HEAT CDs earn interest from epoch swap fees (distributed as HEAT)";
   return true;
 }
 
 bool simple_wallet::place_order(const std::vector<std::string>& args) {
   if (args.size() < 3) {
-    fail_msg_writer() << "Usage: place_order <buy|sell> <amount> <price> [expiration_blocks]";
+    fail_msg_writer() << "Usage: place_order <buy|sell> <amount> <price> [exp_blocks]";
+    fail_msg_writer() << "  buy:  deposit HEAT, receive XFG at target price";
+    fail_msg_writer() << "  sell: deposit XFG, receive HEAT at target price";
+    fail_msg_writer() << "  exp_blocks: blocks until expiry (default: 4320 = ~3 days)";
     return false;
   }
 
-  bool isBuy = (args[0] == "buy");
-  bool isSell = (args[0] == "sell");
-  if (!isBuy && !isSell) {
-    fail_msg_writer() << "First argument must be 'buy' or 'sell'. Got: " << args[0];
+  uint8_t side = 0;
+  if (args[0] == "sell") side = 1;
+  else if (args[0] != "buy") {
+    fail_msg_writer() << "Invalid side: use 'buy' or 'sell'";
     return false;
   }
 
   uint64_t amount = 0;
-  if (!m_currency.parseAmount(args[1], amount)) {
-    fail_msg_writer() << "Invalid amount: " << args[1];
+  if (!m_currency.parseAmount(args[1], amount) || amount == 0) {
+    fail_msg_writer() << "Invalid amount";
     return false;
   }
 
   uint64_t price = 0;
-  try {
-    price = std::stoull(args[2]);
-  } catch (...) {
-    fail_msg_writer() << "Invalid price (must be integer ratio × 10^8): " << args[2];
-    return false;
-  }
-  if (price == 0) {
-    fail_msg_writer() << "Price must be > 0.";
+  if (!m_currency.parseAmount(args[2], price) || price == 0) {
+    fail_msg_writer() << "Invalid price (in atomic units per COIN)";
     return false;
   }
 
-  uint32_t expiration = DEFAULT_ORDER_EXPIRATION_BLOCKS;
+  uint32_t expiration = ORDERBOOK_DEFAULT_EXPIRY;
   if (args.size() >= 4) {
-    try {
-      expiration = static_cast<uint32_t>(std::stoull(args[3]));
-    } catch (...) {
-      fail_msg_writer() << "Invalid expiration blocks: " << args[3];
+    if (!Common::fromString(args[3], expiration) || expiration == 0) {
+      fail_msg_writer() << "Invalid expiration (blocks)";
+      return false;
+    }
+    if (expiration > ORDERBOOK_MAX_ENDURANCE) {
+      fail_msg_writer() << "Expiration exceeds max (" << ORDERBOOK_MAX_ENDURANCE << " blocks)";
       return false;
     }
   }
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t available = m_wallet->actualBalance();
-
-  if (isSell && available < amount + fee) {
-    fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(available)
+  uint64_t balance = m_wallet->actualBalance();
+  if (balance < amount + fee) {
+    fail_msg_writer() << "Insufficient balance. Available: " << m_currency.formatAmount(balance)
                       << ", needed: " << m_currency.formatAmount(amount + fee);
     return false;
   }
 
-  success_msg_writer() << "Limit Order Preview:";
-  success_msg_writer() << "  Side:       " << (isBuy ? "BUY_XFG (pay HEAT, receive XFG)" : "SELL_XFG (pay XFG, receive HEAT)");
-  success_msg_writer() << "  Amount:     " << m_currency.formatAmount(amount);
-  success_msg_writer() << "  Price:      " << price << " (× 10^8)";
-  success_msg_writer() << "  Expiration: " << expiration << " blocks";
-  success_msg_writer() << "  Fee:        " << m_currency.formatAmount(fee);
-  success_msg_writer() << "";
-
-  if (isBuy) {
-    success_msg_writer() << "HEAT must be available when order fills. If unfilled at expiration,";
-    success_msg_writer() << "locked funds auto-return (no HEAT spent for unfilled portion).";
-  }
-  success_msg_writer() << "Price protection: fills only at P_clear favorable to your limit.";
-
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  std::string answer;
-  std::cout << "Confirm place order? (y/n): ";
-  std::getline(std::cin, answer);
-  if (answer != "y" && answer != "Y") {
-    fail_msg_writer() << "Cancelled.";
+  Crypto::SecretKey txSK;
+  TransactionId tx = m_wallet->placeOrderV13(side, amount, price, expiration, fee, CryptoNote::parameters::MIN_TX_MIXIN_SIZE);
+  if (tx != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Limit order placed: " << (side == 0 ? "BUY" : "SELL")
+                         << " " << m_currency.formatAmount(amount)
+                         << (side == 0 ? " HEAT" : " XFG")
+                         << " @ " << m_currency.formatAmount(price)
+                         << " | expires in " << expiration << " blocks"
+                         << " | tx: " << tx;
     return true;
   }
-
-  CryptoNote::TransactionId txId = m_wallet->placeOrderV13(isBuy ? 0 : 1, amount, price, expiration, fee, mixIn);
-  if (txId != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Order placed (ID " << txId << ")";
-    success_msg_writer() << "Expires: " << expiration << " blocks (~"
-      << (expiration * 480 / 86400) << " days)";
-    return true;
-  }
-
-  fail_msg_writer() << "Order placement failed";
-  return true;
+  fail_msg_writer() << "Transaction failed";
+  return false;
 }
 
 bool simple_wallet::cancel_order(const std::vector<std::string>& args) {
   if (args.size() < 1) {
-    fail_msg_writer() << "Usage: cancel_order <order_id>";
+    fail_msg_writer() << "Usage: cancel_order <tx_hash>";
+    fail_msg_writer() << "  Cancel a limit order by its deposit transaction hash";
     return false;
   }
 
   Crypto::Hash orderId;
   if (!Common::podFromHex(args[0], orderId)) {
-    fail_msg_writer() << "Invalid order ID format: " << args[0];
+    fail_msg_writer() << "Invalid transaction hash: " << args[0];
     return false;
   }
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  uint64_t balance = m_wallet->actualBalance();
+  if (balance < fee) {
+    fail_msg_writer() << "Insufficient balance for fee (" << m_currency.formatAmount(fee) << ")";
+    return false;
+  }
 
-  std::string answer;
-  std::cout << "Cancel order " << args[0] << "? (dust fee: " << m_currency.formatAmount(fee) << ") (y/n): ";
-  std::getline(std::cin, answer);
-  if (answer != "y" && answer != "Y") {
-    fail_msg_writer() << "Cancelled.";
+  Crypto::SecretKey txSK;
+  TransactionId tx = m_wallet->cancelOrderV13(orderId, fee, CryptoNote::parameters::MIN_TX_MIXIN_SIZE);
+  if (tx != WALLET_INVALID_TRANSACTION_ID) {
+    success_msg_writer() << "Cancel order submitted: tx " << tx;
+    return true;
+  }
+  fail_msg_writer() << "Transaction failed";
+  return false;
+}
+
+bool simple_wallet::orderbook(const std::vector<std::string>& args) {
+  CryptoNote::COMMAND_RPC_GET_ORDERBOOK_STATE::request req;
+  req.depth = 20;
+  CryptoNote::COMMAND_RPC_GET_ORDERBOOK_STATE::response res;
+  std::error_code ec = m_node->jsonCommand("/get_orderbook_state", req, res);
+  if (ec) {
+    fail_msg_writer() << "Failed to query orderbook: " << ec.message();
+    return false;
+  }
+
+  success_msg_writer() << "Hearth CLOB Orderbook (v11+):";
+  success_msg_writer() << "  Clearing price: " << m_currency.formatAmount(res.clearing_price);
+
+  if (res.bid_prices.empty() && res.ask_prices.empty()) {
+    success_msg_writer() << "  (empty)";
     return true;
   }
 
-  CryptoNote::TransactionId txId = m_wallet->cancelOrderV13(orderId, fee, mixIn);
-  if (txId != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Cancel submitted (ID " << txId << "). Funds return at next block.";
-    return true;
+  // Print asks (reversed so lowest ask is closest to center)
+  success_msg_writer() << "  ASKS:";
+  for (size_t i = res.ask_prices.size(); i > 0; --i) {
+    success_msg_writer() << "    " << m_currency.formatAmount(res.ask_prices[i-1])
+                         << "  xfg: " << res.ask_depths[i-1];
   }
 
-  fail_msg_writer() << "Cancel failed";
+  success_msg_writer() << "  ---";
+
+  // Print bids (highest bid first)
+  for (size_t i = 0; i < res.bid_prices.size(); ++i) {
+    success_msg_writer() << "  BID: " << m_currency.formatAmount(res.bid_prices[i])
+                         << "  xfg: " << res.bid_depths[i];
+  }
+
+  success_msg_writer() << "  Status: " << res.status;
   return true;
 }
 
 bool simple_wallet::show_orders(const std::vector<std::string>& args) {
-  success_msg_writer() << "Your open orders are tracked as TX_OUT_ORDER UTXOs on-chain.";
-  success_msg_writer() << "Wallet discovers them during normal stealth-address scanning.";
-  success_msg_writer() << "Order listing pending v11 wallet UTXO scan integration.";
-  return true;
-}
-
-bool simple_wallet::orderbook(const std::vector<std::string>& args) {
-  uint32_t depth = 10;
-  if (!args.empty()) {
-    try { depth = std::stoul(args[0]); } catch (...) {}
-    if (depth < 1) depth = 1;
-    if (depth > 50) depth = 50;
+  // Query daemon for all limit deposits
+  CryptoNote::COMMAND_RPC_GET_LIMIT_ORDERS::request req;
+  CryptoNote::COMMAND_RPC_GET_LIMIT_ORDERS::response res;
+  std::error_code ec = m_node->jsonCommand("/get_limit_orders", req, res);
+  if (ec) {
+    fail_msg_writer() << "Failed to query limit orders: " << ec.message();
+    return false;
   }
 
-  HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+  // Compute wallet's own address_hash = cn_fast_hash(spendKey||viewKey)
+  AccountKeys accountKeys;
+  m_wallet->getAccountKeys(accountKeys);
+  std::vector<uint8_t> keyData(sizeof(accountKeys.address.spendPublicKey.data) + sizeof(accountKeys.address.viewPublicKey.data));
+  memcpy(keyData.data(), accountKeys.address.spendPublicKey.data, sizeof(accountKeys.address.spendPublicKey.data));
+  memcpy(keyData.data() + sizeof(accountKeys.address.spendPublicKey.data), accountKeys.address.viewPublicKey.data, sizeof(accountKeys.address.viewPublicKey.data));
+  Crypto::Hash myAddrHash = Crypto::cn_fast_hash(keyData.data(), keyData.size());
+  std::string myAddressHash = Common::podToHex(myAddrHash);
 
-  // Fetch summary info
-  COMMAND_RPC_GET_ORDERBOOK_INFO::request infoReq;
-  COMMAND_RPC_GET_ORDERBOOK_INFO::response infoRes;
-  bool haveInfo = false;
-  try {
-    invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
-    haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
-  } catch (...) {
-    success_msg_writer() << "Daemon does not support orderbook RPC (requires v11+).";
+  // Filter to wallet's own orders
+  std::vector<CryptoNote::COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo> myOrders;
+  for (const auto& o : res.orders) {
+    if (o.address_hash == myAddressHash) {
+      myOrders.push_back(o);
+    }
+  }
+
+  success_msg_writer() << "Your open limit orders (" << myOrders.size() << "):";
+  if (myOrders.empty()) {
     return true;
   }
 
-  // Fetch ladder
-  COMMAND_RPC_GET_ORDERBOOK_STATE::request stateReq;
-  COMMAND_RPC_GET_ORDERBOOK_STATE::response stateRes;
-  stateReq.depth = depth;
-  bool haveState = false;
-  try {
-    invokeJsonCommand(httpClient, "/get_orderbook_state", stateReq, stateRes);
-    haveState = (stateRes.status == CORE_RPC_STATUS_OK);
-  } catch (...) {}
-
-  success_msg_writer() << "";
-  success_msg_writer() << "═══════════ HEARTH MARKET (XFG/HEAT) ═══════════";
-
-  if (haveInfo) {
-    if (infoRes.in_bootstrap) {
-      success_msg_writer() << "  Status:  BOOTSTRAP (pool ratio = P_clear)";
-    } else {
-      success_msg_writer() << "  Status:  ACTIVE";
-    }
-    success_msg_writer() << "  P_clear: " << m_currency.formatAmount(infoRes.clearing_price) << " XFG/HEAT";
-    success_msg_writer() << "  Matches: " << infoRes.num_matches << " this block";
-    success_msg_writer() << "  Depth:   " << m_currency.formatAmount(infoRes.depth_bid_xfg) << " XFG bid | "
-                         << m_currency.formatAmount(infoRes.depth_ask_xfg) << " XFG ask";
+  for (const auto& o : myOrders) {
+    std::string sideStr = (o.side == 1) ? "SELL" : "BUY";
+    success_msg_writer() << "  " << sideStr
+                         << "  " << m_currency.formatAmount(o.amount)
+                         << "  price: " << m_currency.formatAmount(o.target_price)
+                         << "  exp: " << o.expiration
+                         << "  id: " << o.order_id.substr(0, 16) << "...";
   }
-
-  if (haveState && (!stateRes.bid_prices.empty() || !stateRes.ask_prices.empty())) {
-    success_msg_writer() << "";
-    success_msg_writer() << "  BIDS (buy XFG)                    ASKS (sell XFG)";
-    success_msg_writer() << "  ──────────────────────────────    ──────────────────────────────";
-
-    size_t maxRows = std::max(stateRes.bid_prices.size(), stateRes.ask_prices.size());
-    for (size_t i = 0; i < maxRows; ++i) {
-      std::string bidLine, askLine;
-      if (i < stateRes.bid_prices.size()) {
-        bidLine = "  " + m_currency.formatAmount(stateRes.bid_depths[i]) + " XFG @ "
-                + m_currency.formatAmount(stateRes.bid_prices[i]);
-      }
-      if (i < stateRes.ask_prices.size()) {
-        askLine = m_currency.formatAmount(stateRes.ask_prices[i]) + "  |  "
-                + m_currency.formatAmount(stateRes.ask_depths[i]) + " XFG";
-      }
-      // Pad bid side to fixed width
-      while (bidLine.size() < 36) bidLine += ' ';
-      success_msg_writer() << bidLine << askLine;
-    }
-
-    success_msg_writer() << "";
-    success_msg_writer() << "  Spread: ";
-    if (!stateRes.bid_prices.empty() && !stateRes.ask_prices.empty()) {
-      uint64_t bestBid = stateRes.bid_prices.front();
-      uint64_t bestAsk = stateRes.ask_prices.front();
-      if (bestAsk > bestBid) {
-        double spreadPct = 100.0 * static_cast<double>(bestAsk - bestBid) / static_cast<double>(bestBid);
-        success_msg_writer() << m_currency.formatAmount(bestAsk - bestBid) << " XFG (" << std::fixed << std::setprecision(2) << spreadPct << "%)";
-      } else {
-        success_msg_writer() << "crossed";
-      }
-    } else {
-      success_msg_writer() << "no orders";
-    }
-  } else {
-    success_msg_writer() << "";
-    success_msg_writer() << "  (no orderbook levels — waiting for limit orders)";
-  }
-
-  success_msg_writer() << "";
-  success_msg_writer() << "  Block time: 480s | Matching: batch auction | Price guard: " << MAX_MARKET_PRICE_DEVIATION_PCT << "%";
-  success_msg_writer() << "  Commands: market | trade | place_order | cancel_order | show_orders";
-  return true;
-}
-
-bool simple_wallet::market(const std::vector<std::string>& args) {
-  uint32_t depth = 10;
-  if (!args.empty()) {
-    try { depth = std::stoul(args[0]); } catch (...) {}
-    if (depth < 1) depth = 1;
-    if (depth > 50) depth = 50;
-  }
-
-  HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
-
-  // Fetch summary + ladder
-  COMMAND_RPC_GET_ORDERBOOK_INFO::request infoReq;
-  COMMAND_RPC_GET_ORDERBOOK_INFO::response infoRes;
-  COMMAND_RPC_GET_ORDERBOOK_STATE::request stateReq;
-  COMMAND_RPC_GET_ORDERBOOK_STATE::response stateRes;
-  COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request buyReq, sellReq;
-  COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response buyRes, sellRes;
-
-  bool haveInfo = false, haveState = false, haveEstimates = false;
-  uint64_t oneXfg = 10000000; // 1 XFG in atomic units
-
-  try {
-    invokeJsonCommand(httpClient, "/get_orderbook_info", infoReq, infoRes);
-    haveInfo = (infoRes.status == CORE_RPC_STATUS_OK);
-  } catch (...) {
-    success_msg_writer() << "Daemon does not support orderbook RPC (requires v11+).";
-    return true;
-  }
-
-  stateReq.depth = depth;
-  try {
-    invokeJsonCommand(httpClient, "/get_orderbook_state", stateReq, stateRes);
-    haveState = (stateRes.status == CORE_RPC_STATUS_OK);
-  } catch (...) {}
-
-  // Buy estimate: spend 1 XFG to buy HEAT (side=0 = buy XFG with HEAT)
-  buyReq.side = 0;
-  buyReq.amount = oneXfg;
-  // Sell estimate: sell 1 XFG for HEAT (side=1 = sell XFG for HEAT)
-  sellReq.side = 1;
-  sellReq.amount = oneXfg;
-  try {
-    invokeJsonCommand(httpClient, "/get_orderbook_estimates", buyReq, buyRes);
-    invokeJsonCommand(httpClient, "/get_orderbook_estimates", sellReq, sellRes);
-    haveEstimates = (buyRes.status == CORE_RPC_STATUS_OK && sellRes.status == CORE_RPC_STATUS_OK);
-  } catch (...) {}
-
-  success_msg_writer() << "";
-  success_msg_writer() << "═══════════════ HEARTH MARKET ═══════════════";
-
-  if (haveInfo) {
-    if (infoRes.in_bootstrap) {
-      success_msg_writer() << " Status:  BOOTSTRAP (pool ratio = P_clear)";
-    } else {
-      success_msg_writer() << " Status:  ACTIVE";
-    }
-    success_msg_writer() << " P_clear: " << m_currency.formatAmount(infoRes.clearing_price) << " XFG/HEAT";
-    success_msg_writer() << " Matches: " << infoRes.num_matches << " this block";
-    success_msg_writer() << " Depth:   " << m_currency.formatAmount(infoRes.depth_bid_xfg) << " XFG bid | "
-                         << m_currency.formatAmount(infoRes.depth_ask_xfg) << " XFG ask";
-  }
-
-  // Ladder
-  if (haveState && (!stateRes.bid_prices.empty() || !stateRes.ask_prices.empty())) {
-    success_msg_writer() << "";
-    success_msg_writer() << " BIDS (buy XFG)                     ASKS (sell XFG)";
-    success_msg_writer() << " ────────────────────────────────   ────────────────────────────────";
-
-    size_t maxRows = std::max(stateRes.bid_prices.size(), stateRes.ask_prices.size());
-    for (size_t i = 0; i < maxRows; ++i) {
-      std::string bidLine, askLine;
-      if (i < stateRes.bid_prices.size()) {
-        bidLine = " " + m_currency.formatAmount(stateRes.bid_depths[i]) + " XFG @ "
-                + m_currency.formatAmount(stateRes.bid_prices[i]);
-      }
-      if (i < stateRes.ask_prices.size()) {
-        askLine = m_currency.formatAmount(stateRes.ask_prices[i]) + "  |  "
-                + m_currency.formatAmount(stateRes.ask_depths[i]) + " XFG";
-      }
-      while (bidLine.size() < 37) bidLine += ' ';
-      success_msg_writer() << bidLine << askLine;
-    }
-
-    if (!stateRes.bid_prices.empty() && !stateRes.ask_prices.empty()) {
-      uint64_t bestBid = stateRes.bid_prices.front();
-      uint64_t bestAsk = stateRes.ask_prices.front();
-      if (bestAsk > bestBid) {
-        double spreadPct = 100.0 * static_cast<double>(bestAsk - bestBid) / static_cast<double>(bestBid);
-        success_msg_writer() << "";
-        success_msg_writer() << " Spread: " << m_currency.formatAmount(bestAsk - bestBid) << " XFG ("
-                             << std::fixed << std::setprecision(2) << spreadPct << "%)";
-      }
-    }
-  } else {
-    success_msg_writer() << "";
-    success_msg_writer() << " (no orderbook levels — waiting for limit orders)";
-  }
-
-  // Trade estimates for 1 XFG
-  if (haveEstimates) {
-    success_msg_writer() << "";
-    success_msg_writer() << " ── Trade Estimates (1 XFG) ──";
-    success_msg_writer() << " Buy 1 XFG:  receive " << m_currency.formatAmount(buyRes.estimated_fill) << " HEAT"
-                         << "  (HEARTH: " << m_currency.formatAmount(buyRes.hearth_fill)
-                         << ", orderbook: " << m_currency.formatAmount(buyRes.orderbook_fill) << ")";
-    if (buyRes.levels_consumed > 0)
-      success_msg_writer() << "             " << buyRes.levels_consumed << " levels consumed, worst "
-                           << m_currency.formatAmount(buyRes.worst_case_price) << " XFG/HEAT";
-    success_msg_writer() << " Sell 1 XFG: receive " << m_currency.formatAmount(sellRes.estimated_fill) << " HEAT"
-                         << "  (HEARTH: " << m_currency.formatAmount(sellRes.hearth_fill)
-                         << ", orderbook: " << m_currency.formatAmount(sellRes.orderbook_fill) << ")";
-    if (sellRes.levels_consumed > 0)
-      success_msg_writer() << "             " << sellRes.levels_consumed << " levels consumed, worst "
-                           << m_currency.formatAmount(sellRes.worst_case_price) << " XFG/HEAT";
-  }
-
-  success_msg_writer() << "";
-  success_msg_writer() << " Commands: trade <buy|sell> <amount> | place_order | cancel_order | show_orders";
   return true;
 }

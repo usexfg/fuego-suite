@@ -96,7 +96,7 @@ namespace CryptoNote
 		m_bootstrapBlocks = TESTNET_BOOTSTRAP_BLOCKS;
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
-      m_blocksCacheFileName = "tesnet_" + m_blocksCacheFileName; // find 2x testnet_
+      m_blocksCacheFileName = "testnet_" + m_blocksCacheFileName;
       m_blockIndexesFileName = "testnet_" + m_blockIndexesFileName;
       m_txPoolFileName = "testnet_" + m_txPoolFileName;
       m_blockchinIndicesFileName = "testnet_" + m_blockchinIndicesFileName;
@@ -1748,8 +1748,8 @@ double Currency::getBurnPercentage() const {
 	}
 
 	bool Currency::isValidBurnDepositTerm(uint32_t term) const {
-		// Valid burn terms: HEAT_TERM (4294967295)
-		return (term == m_depositTermForever);
+		// Valid burn terms: HEAT_TERM (4294967295) or DIGM_TERM (0x44494D47)
+		return (term == m_depositTermForever || term == parameters::DIGM_TERM);
 	}
 
 	bool Currency::isBurnDeposit(uint32_t term) const {

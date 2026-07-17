@@ -15,9 +15,22 @@
 #include "Common/Int128.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace CryptoNote {
+
+namespace {
+  uint64_t isqrt(uint64_t n) {
+    if (n <= 1) return n;
+    uint64_t x0 = n / 2;
+    if (x0 == 0) return n;
+    uint64_t x1 = (x0 + n / x0) / 2;
+    while (x1 < x0) {
+      x0 = x1;
+      x1 = (x0 + n / x0) / 2;
+    }
+    return x0;
+  }
+}
 
 PoolOrderOrchestrator::PoolOrderOrchestrator() {}
 
@@ -89,24 +102,25 @@ uint32_t PoolOrderOrchestrator::computeSpreadBps(
   uint32_t spread = BASE_SPREAD_BPS;
 
   // Volatility multiplier: 30-block stddev as fraction of P_clear
+  // Use integer-only arithmetic for consensus determinism
   if (m_priceHistory.size() >= 2 && P_clear > 0) {
-    // Compute mean
-    uint64_t sum = 0;
+    uint128_t sum = 0;
     for (auto p : m_priceHistory) sum += p;
-    uint64_t mean = sum / static_cast<uint64_t>(m_priceHistory.size());
+    uint64_t mean = static_cast<uint64_t>(sum / static_cast<uint64_t>(m_priceHistory.size()));
 
-    // Compute variance
-    uint64_t varSum = 0;
+    uint128_t varSum = 0;
     for (auto p : m_priceHistory) {
       int64_t diff = static_cast<int64_t>(p) - static_cast<int64_t>(mean);
-      varSum += static_cast<uint64_t>(diff * diff);
+      uint128_t diffSq = static_cast<uint128_t>(diff > 0 ? diff : -diff);
+      diffSq = diffSq * diffSq;
+      varSum += diffSq;
     }
-    uint64_t variance = varSum / static_cast<uint64_t>(m_priceHistory.size());
-    double stddev = std::sqrt(static_cast<double>(variance));
+    uint64_t variance = static_cast<uint64_t>(varSum / static_cast<uint64_t>(m_priceHistory.size()));
+    uint64_t stddev = isqrt(variance);
 
-    // volatility = stddev / P_clear as basis points
-    double volBps = (stddev / static_cast<double>(P_clear)) * 10000.0;
-    uint32_t volMultiplier = static_cast<uint32_t>(1.0 + volBps / 100.0);
+    // volatility = stddev / P_clear as basis points (×10000)
+    uint64_t volBps = (static_cast<uint128_t>(stddev) * 10000) / P_clear;
+    uint32_t volMultiplier = 1 + static_cast<uint32_t>(volBps / 100);
     spread = std::max(spread, BASE_SPREAD_BPS * volMultiplier);
   }
 

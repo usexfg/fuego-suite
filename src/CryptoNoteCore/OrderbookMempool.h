@@ -34,26 +34,9 @@ public:
   bool hasOrder(const Crypto::Hash& orderId) const;
   const Order* getOrder(const Crypto::Hash& orderId) const;
 
-  // Pool order management (treasury/HEARTH)
   void setPoolOrders(const std::vector<Order>& orders);
   void clearPoolOrders();
 
-  // Matching support
-  struct SenderKey {
-    Crypto::PublicKey spendKey;
-    Crypto::PublicKey viewKey;
-    bool operator<(const SenderKey& o) const {
-      int c = memcmp(spendKey.data, o.spendKey.data, sizeof(spendKey.data));
-      if (c) return c < 0;
-      return memcmp(viewKey.data, o.viewKey.data, sizeof(viewKey.data)) < 0;
-    }
-    bool operator==(const SenderKey& o) const {
-      return memcmp(spendKey.data, o.spendKey.data, sizeof(spendKey.data)) == 0 &&
-             memcmp(viewKey.data, o.viewKey.data, sizeof(viewKey.data)) == 0;
-    }
-  };
-
-  // Curves for matching (bids = buy XFG, asks = sell XFG)
   struct AggregatedLevel {
     uint64_t price;
     uint64_t depth;
@@ -63,29 +46,35 @@ public:
   std::vector<AggregatedLevel> getBidCurve(uint32_t maxLevels = 50) const;
   std::vector<AggregatedLevel> getAskCurve(uint32_t maxLevels = 50) const;
 
-  // Copy individual orders into an OrderbookIndex for matching, preserving real
-  // amounts, order IDs, and sender keys.
   void copyToIndex(OrderbookIndex& idx) const;
+
+  struct OutOfBandOrder {
+    Crypto::Hash orderId;
+    uint8_t  side;
+    uint64_t amount;
+    uint64_t targetPrice;
+  };
+
+  void fillOrder(const Crypto::Hash& orderId, uint64_t fillAmount);
+  std::vector<OutOfBandOrder> getOutOfBandOrders() const;
 
   size_t totalOrders() const { return m_orders.size(); }
   size_t poolOrders() const { return m_poolOrders.size(); }
+  std::vector<Order> getAllPoolOrders() const;
+  std::vector<Order> getAllUserOrders() const;
 
-  // Expiry: remove orders where expiration <= currentHeight. Returns count removed.
   uint32_t expireOrders(uint32_t currentHeight);
 
-  // Persistence: produce a receipt for embedding in settlement blocks
   OrderbookReceipt generateReceipt() const;
 
-  // Restore from receipt (on chain restart)
   void restoreFromReceipt(const OrderbookReceipt& receipt);
 
   void clear();
 
 private:
-  // Bid = buy XFG with HEAT. Sorted descending by price, then ascending by time.
   struct OrderPtr {
     const Order* order;
-    bool isPool;  // pool orders fill last at same price
+    bool isPool;
   };
 
   std::map<uint64_t, std::vector<OrderPtr>, std::greater<uint64_t>> m_bids;

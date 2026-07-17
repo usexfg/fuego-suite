@@ -1513,6 +1513,7 @@ bool core::replaceAliasOwnership(const std::string& alias,
 core::HeatMetrics core::getHeatMetrics() const {
   HeatMetrics m;
   m.heatSupply = m_blockchain.getHeatSupply();
+  m.digmSupply = m_blockchain.getDigmSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   m.swfBalance = m_blockchain.getSwfBalance();
@@ -1576,6 +1577,33 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
 
 uint64_t core::getPoolTwap() const {
   return m_blockchain.getPoolTwap();
+}
+
+bool core::executeDigmSwap(uint64_t heatIn, uint64_t expectedDigmOut) {
+  LockedBlockchainStorage lock(m_blockchain);
+  uint64_t digmOut = m_blockchain.digmPrimarySwap(heatIn, false);
+  if (digmOut == 0 || digmOut < expectedDigmOut)
+    return false;
+  return true;
+}
+
+bool core::executeDigmSell(uint64_t digmIn, uint64_t expectedHeatOut) {
+  LockedBlockchainStorage lock(m_blockchain);
+  uint64_t heatOut = m_blockchain.digmPrimarySell(digmIn, false);
+  if (heatOut == 0 || heatOut < expectedHeatOut)
+    return false;
+  return true;
+}
+
+core::DigmPoolInfo core::getDigmPoolInfo() const {
+  auto poolInfo = m_blockchain.getDigmPoolInfo();
+  DigmPoolInfo info;
+  info.reserveDigm = poolInfo.reserveDigm;
+  info.reserveHeat = poolInfo.reserveHeat;
+  info.totalLpShares = poolInfo.totalLpShares;
+  info.accumulatedLpFees = poolInfo.accumulatedLpFees;
+  info.pegHeat = poolInfo.pegHeat;
+  return info;
 }
 
 core::OrderbookInfo core::getOrderbookInfo() const {

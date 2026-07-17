@@ -22,7 +22,6 @@
 
 // CryptoNote
 #include "BlockchainExplorerData.h"
-#include "CryptoNoteCore/CdOfferRelay.h"
 #include "Common/StringTools.h"
 #include "Common/Base58.h"
 #include "CryptoNoteCore/TransactionUtils.h"
@@ -35,8 +34,6 @@
 #include "CryptoNoteProtocol/ICryptoNoteProtocolQuery.h"
 
 #include "P2p/NetNode.h"
-#include "P2p/P2pProtocolDefinitions.h"
-#include "P2p/LevinProtocol.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
 
 #include "CoreRpcServerErrorCodes.h"
@@ -99,7 +96,6 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getrandom_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS>(&RpcServer::on_get_random_outs), false } },
   { "/getrandom_commitment_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS>(&RpcServer::on_get_random_commitment_outs), false } },
   { "/getrandom_outs_json", { jsonMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON>(&RpcServer::on_get_random_outs_json), true } },
-  { "/get_outputs_heights", { jsonMethod<COMMAND_RPC_GET_OUTPUTS_HEIGHTS>(&RpcServer::on_get_outputs_heights), true } },
   { "/get_pool_changes.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES>(&RpcServer::onGetPoolChanges), false } },
   { "/get_pool_changes_lite.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES_LITE>(&RpcServer::onGetPoolChangesLite), false } },
 
@@ -131,29 +127,20 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getswaptrades", { jsonMethod<COMMAND_RPC_GET_SWAP_TRADES>(&RpcServer::on_get_swap_trades), true } },
   { "/submitswap", { jsonMethod<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
   { "/cancelswap", { jsonMethod<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
-  { "/requestswap", { jsonMethod<COMMAND_RPC_REQUEST_SWAP>(&RpcServer::on_request_swap), false } },
-
-  // CD secondary market orderbook
-  { "/getcdoffers", { jsonMethod<COMMAND_RPC_GET_CD_OFFERS>(&RpcServer::on_get_cd_offers), true } },
-  { "/submitcd",    { jsonMethod<COMMAND_RPC_SUBMIT_CD_OFFER>(&RpcServer::on_submit_cd_offer), false } },
-  { "/cancelcd",    { jsonMethod<COMMAND_RPC_CANCEL_CD_OFFER>(&RpcServer::on_cancel_cd_offer), false } },
 
   // disabled in restricted rpc mode
   { "/start_mining", { jsonMethod<COMMAND_RPC_START_MINING>(&RpcServer::on_start_mining), false } },
   { "/stop_mining", { jsonMethod<COMMAND_RPC_STOP_MINING>(&RpcServer::on_stop_mining), false } },
   { "/stop_daemon", { jsonMethod<COMMAND_RPC_STOP_DAEMON>(&RpcServer::on_stop_daemon), true } },
   { "/addswapfee",  { jsonMethod<COMMAND_RPC_ADD_SWAP_FEE>(&RpcServer::on_add_swap_fee), false } },
-  { "/setxfgmarketvalue", { jsonMethod<COMMAND_RPC_SET_XFG_MARKET_VALUE>(&RpcServer::on_set_xfg_market_value), false } },
-  { "/preparecdwithdrawal", { jsonMethod<COMMAND_RPC_PREPARE_CD_WITHDRAWAL>(&RpcServer::on_prepare_cd_withdrawal), false } },
 
   // HEAT / Hearth AMM endpoints (v11+)
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
   { "/amm_quote",    { jsonMethod<COMMAND_RPC_AMM_QUOTE>(&RpcServer::on_amm_quote), true } },
   { "/amm_pool_info", { jsonMethod<COMMAND_RPC_AMM_POOL_INFO>(&RpcServer::on_amm_pool_info), true } },
-  { "/get_orderbook_info", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_INFO>(&RpcServer::on_get_orderbook_info), true } },
-  { "/get_orderbook_state", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_STATE>(&RpcServer::on_get_orderbook_state), true } },
-  { "/get_orderbook_estimates", { jsonMethod<COMMAND_RPC_GET_ORDERBOOK_ESTIMATES>(&RpcServer::on_get_orderbook_estimates), true } },
-  { "/get_fuego_price", { jsonMethod<COMMAND_RPC_GET_FUEGO_PRICE>(&RpcServer::on_get_fuego_price), true } },
+
+  // Limit order endpoints
+  { "/get_limit_orders", { jsonMethod<COMMAND_RPC_GET_LIMIT_ORDERS>(&RpcServer::on_get_limit_orders), true } },
 
 
   { "/get_alias", { jsonMethod<COMMAND_RPC_GET_ALIAS>(&RpcServer::on_get_alias), true } },
@@ -162,7 +149,14 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
 
   // ZK prover data endpoints
   { "/get_block_range", { jsonMethod<COMMAND_RPC_GET_BLOCK_RANGE>(&RpcServer::on_get_block_range), false } },
-  { "/get_maturing_deposits", { jsonMethod<COMMAND_RPC_GET_MATURING_DEPOSITS>(&RpcServer::on_get_maturing_deposits), false } },
+  { "/get_commitment_leaves", { jsonMethod<COMMAND_RPC_GET_COMMITMENT_LEAVES>(&RpcServer::on_get_commitment_leaves), false } },
+
+  // Commitment Index endpoints (bridge support)
+  { "/get_commitment", { jsonMethod<COMMAND_RPC_GET_COMMITMENT>(&RpcServer::on_get_commitment), true } },
+  { "/get_commitment_stats", { jsonMethod<COMMAND_RPC_GET_COMMITMENT_STATS>(&RpcServer::on_get_commitment_stats), true } },
+  { "/get_commitment_merkle_root", { jsonMethod<COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT>(&RpcServer::on_get_commitment_merkle_root), true } },
+  { "/get_commitment_merkle_proof", { jsonMethod<COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF>(&RpcServer::on_get_commitment_merkle_proof), true } },
+  { "/check_commitment_exists", { jsonMethod<COMMAND_RPC_CHECK_COMMITMENT_EXISTS>(&RpcServer::on_check_commitment_exists), true } },
 
   // Fee pool analytics + treasury
   { "/get_fee_pool_info", { jsonMethod<COMMAND_RPC_GET_FEE_POOL_INFO>(&RpcServer::on_get_fee_pool_info), true } },
@@ -224,8 +218,8 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
   JsonRpcResponse jsonResponse;
 
   try {
+    logger(TRACE) << "JSON-RPC request: " << request.getBody();
     jsonRequest.parseRequest(request.getBody());
-    logger(TRACE) << "JSON-RPC request: " << jsonRequest.getMethod();
     jsonResponse.setId(jsonRequest.getId()); // copy id
 
     static std::unordered_map<std::string, RpcServer::RpcHandler<JsonMemberMethod>> jsonRpcHandlers = {
@@ -243,9 +237,7 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
         {"submitblock", {makeMemberMethod(&RpcServer::on_submitblock), false}},
         {"getlastblockheader", {makeMemberMethod(&RpcServer::on_get_last_block_header), false}},
         {"getblockheaderbyhash", {makeMemberMethod(&RpcServer::on_get_block_header_by_hash), false}},
-        {"getblockheaderbyheight", {makeMemberMethod(&RpcServer::on_get_block_header_by_height), false}},
-
-    };
+        {"getblockheaderbyheight", {makeMemberMethod(&RpcServer::on_get_block_header_by_height), false}}};
 
     auto it = jsonRpcHandlers.find(jsonRequest.getMethod());
     if (it == jsonRpcHandlers.end()) {
@@ -261,16 +253,11 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
   } catch (const JsonRpcError& err) {
     jsonResponse.setError(err);
   } catch (const std::exception& e) {
-    logger(WARNING) << "RPC internal error (not sent to client): " << e.what();
-    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, "Internal error"));
+    jsonResponse.setError(JsonRpcError(JsonRpc::errInternalError, e.what()));
   }
 
   response.setBody(jsonResponse.getBody());
-  {
-    JsonRpcError err;
-    bool hasErr = jsonResponse.getError(err);
-    logger(TRACE) << "JSON-RPC response: " << (hasErr ? "error " + std::to_string(err.code) : "ok");
-  }
+  logger(TRACE) << "JSON-RPC response: " << jsonResponse.getBody();
   return true;
 }
 
@@ -712,24 +699,6 @@ bool RpcServer::on_get_random_outs_json(const COMMAND_RPC_GET_RANDOM_OUTPUTS_JSO
   return true;
 }
 
-bool RpcServer::on_get_outputs_heights(const COMMAND_RPC_GET_OUTPUTS_HEIGHTS::request& req,
-                                       COMMAND_RPC_GET_OUTPUTS_HEIGHTS::response& res) {
-  res.status = "Failed";
-
-  if (req.amounts.size() != req.global_indices.size()) return true;
-
-  std::vector<std::pair<uint64_t, uint32_t>> queries;
-  queries.reserve(req.amounts.size());
-  for (size_t i = 0; i < req.amounts.size(); ++i) {
-    queries.emplace_back(req.amounts[i], req.global_indices[i]);
-  }
-
-  if (!m_core.get_output_heights(queries, res.heights)) return true;
-
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
 bool RpcServer::onGetPoolChanges(const COMMAND_RPC_GET_POOL_CHANGES::request& req, COMMAND_RPC_GET_POOL_CHANGES::response& rsp) {
   rsp.status = CORE_RPC_STATUS_OK;
   std::vector<CryptoNote::Transaction> addedTransactions;
@@ -838,10 +807,6 @@ void RpcServer::setSwapRelay(SwapOfferRelay* relay) {
   m_swapRelay = relay;
 }
 
-void RpcServer::setCdRelay(CdOfferRelay* relay) {
-  m_cdRelay = relay;
-}
-
 void RpcServer::setSwapDb(XfgSwap::SwapDatabase* db) {
   m_swapDb = db;
 }
@@ -885,11 +850,11 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
   }
 
   XfgSwap::SwapParams params;
-  params.pair         = XfgSwap::swapPairFromString(req.pair);
-  params.role         = XfgSwap::SwapRole::BOB;
-  params.xfgAmount    = req.xfg_amount;
-  params.ctrAmount    = req.ctr_amount;
-  params.ctrAddress   = req.ctr_address;
+  params.pair        = XfgSwap::swapPairFromString(req.pair);
+  params.role        = XfgSwap::SwapRole::BOB;
+  params.xfgAmount   = req.xfg_amount;
+  params.ctrAmount   = req.ctr_amount;
+  params.ctrAddress  = req.ctr_address;
   params.peerEndpoint = req.peer_endpoint;
 
   if (!req.peer_pub_key.empty()) {
@@ -906,9 +871,8 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
     return true;
   }
 
-  res.swap_id     = params.swapId;
-  res.our_pub_key = Common::podToHex(params.ourSwapPubKey);
-  res.status      = CORE_RPC_STATUS_OK;
+  res.swap_id = params.swapId;
+  res.status  = CORE_RPC_STATUS_OK;
   return true;
 }
 
@@ -1042,7 +1006,6 @@ bool RpcServer::on_get_swap_offers(const COMMAND_RPC_GET_SWAP_OFFERS::request& r
     entry.timestamp   = o.timestamp;
     entry.ttlBlocks   = o.ttlBlocks;
     entry.postedHeight = o.postedHeight;
-    entry.isSoftOrder = o.isSoftOrder;
     res.offers.push_back(std::move(entry));
   }
   res.status = CORE_RPC_STATUS_OK;
@@ -1088,21 +1051,6 @@ bool RpcServer::on_get_swap_price(const COMMAND_RPC_GET_SWAP_PRICE::request& req
     e.pair       = kv.first;
     e.impliedUsd = std::to_string(kv.second);
     res.pairImplied.push_back(std::move(e));
-  }
-
-  // Calculate Hearth Ratio and HEAT USD
-  auto poolInfo = m_core.getAmmPoolInfo();
-  double hRatio = 0.0;
-  if (poolInfo.reserveXfg > 0) {
-    hRatio = static_cast<double>(poolInfo.reserveHeat) / static_cast<double>(poolInfo.reserveXfg);
-  }
-  res.hearthRatio = std::to_string(hRatio);
-
-  if (hRatio > 0.0 && range.midUsd > 0.0) {
-    // XFG_USD = HEAT_USD * hRatio -> HEAT_USD = XFG_USD / hRatio
-    res.heatUsd = std::to_string(range.midUsd / hRatio);
-  } else {
-    res.heatUsd = "0.0";
   }
 
   res.status = CORE_RPC_STATUS_OK;
@@ -1200,27 +1148,6 @@ bool RpcServer::on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::reques
   }
 
   m_swapRelay->cancelOffer(req.offerId, pubkey, sig);
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res) {
-  if (!m_swapRelay) {
-    res.status = "Swap relay not running";
-    return true;
-  }
-
-  m_swapRelay->handleSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
-
-  COMMAND_SWAP_REQUEST::request msg;
-  msg.offerId = req.offerId;
-  msg.amount = req.amount;
-  msg.takerPubKey = req.takerPubKey;
-  msg.proofOfFunds = req.proofOfFunds;
-
-  auto buf = LevinProtocol::encode(msg);
-  m_p2p.externalRelayNotifyToAll(COMMAND_SWAP_REQUEST::ID, buf, nullptr);
-
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -1670,6 +1597,8 @@ bool RpcServer::f_on_transaction_json(const F_COMMAND_RPC_GET_TRANSACTION_DETAIL
     res.txDetails.paymentId = "";
   }
 
+      res.txDetails.networkId = "93385046440755750514194170694064996624";  // Fuego network mainnet ID
+
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -1690,7 +1619,7 @@ bool RpcServer::f_getMixin(const Transaction& transaction, uint64_t& mixin) {
 
 bool RpcServer::f_on_transactions_pool_json(const F_COMMAND_RPC_GET_POOL::request& req, F_COMMAND_RPC_GET_POOL::response& res) {
     auto pool = m_core.getPoolTransactions();
-    for (const Transaction& tx : pool) {
+    for (const Transaction tx : pool) {
         f_transaction_short_response transaction_short;
         uint64_t amount_in = getInputAmount(tx);
         uint64_t amount_out = getOutputAmount(tx);
@@ -1705,88 +1634,8 @@ bool RpcServer::f_on_transactions_pool_json(const F_COMMAND_RPC_GET_POOL::reques
         res.transactions.push_back(transaction_short);
     }
 
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_get_cd_offers(const COMMAND_RPC_GET_CD_OFFERS::request& req, COMMAND_RPC_GET_CD_OFFERS::response& res) {
-  if (!m_cdRelay) {
-    res.status = "CD offer relay not running";
+    res.status = CORE_RPC_STATUS_OK;
     return true;
-  }
-  auto offers = m_cdRelay->getOffers(req.amount);
-  for (const auto& o : offers) {
-    COMMAND_RPC_GET_CD_OFFERS::cd_offer_entry e;
-    e.offerId = o.offerId;
-    e.isSell = o.isSell;
-    e.cdAmount = o.cdAmount;
-    e.cdTerm = o.cdTerm;
-    e.cdEpoch = o.cdEpoch;
-    e.cdKeyImage = o.cdKeyImage;
-    e.askPrice = o.askPrice;
-    e.makerPubKey = Common::podToHex(o.makerPubKey);
-    e.timestamp = o.timestamp;
-    e.ttlBlocks = o.ttlBlocks;
-    e.postedHeight = o.postedHeight;
-    res.offers.push_back(std::move(e));
-  }
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_submit_cd_offer(const COMMAND_RPC_SUBMIT_CD_OFFER::request& req, COMMAND_RPC_SUBMIT_CD_OFFER::response& res) {
-  if (!m_cdRelay) {
-    res.status = "CD offer relay not running";
-    return true;
-  }
-  Crypto::PublicKey pubkey;
-  Crypto::Signature sig;
-  if (!Common::podFromHex(req.makerPubKey, pubkey) || !Common::podFromHex(req.signature, sig)) {
-    res.status = "Invalid hex keys";
-    return true;
-  }
-  COMMAND_CD_OFFER::request msg;
-  msg.offerId = req.offerId;
-  msg.isSell = req.isSell;
-  msg.cdAmount = req.cdAmount;
-  msg.cdTerm = req.cdTerm;
-  msg.cdEpoch = req.cdEpoch;
-  msg.cdKeyImage = req.cdKeyImage;
-  msg.askPrice = req.askPrice;
-  msg.makerPubKey = pubkey;
-  msg.signature = sig;
-  msg.timestamp = static_cast<uint64_t>(std::time(nullptr));
-  msg.ttlBlocks = req.ttlBlocks;
-  uint32_t height = 0;
-  Crypto::Hash top;
-  m_core.get_blockchain_top(height, top);
-  msg.postedHeight = height;
-
-  if (!m_cdRelay->submitOffer(msg)) {
-    res.status = "Validation failed";
-    return true;
-  }
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_cancel_cd_offer(const COMMAND_RPC_CANCEL_CD_OFFER::request& req, COMMAND_RPC_CANCEL_CD_OFFER::response& res) {
-  if (!m_cdRelay) {
-    res.status = "CD offer relay not running";
-    return true;
-  }
-  Crypto::PublicKey pubkey;
-  Crypto::Signature sig;
-  if (!Common::podFromHex(req.makerPubKey, pubkey) || !Common::podFromHex(req.signature, sig)) {
-    res.status = "Invalid hex keys";
-    return true;
-  }
-  if (!m_cdRelay->cancelOffer(req.offerId, pubkey, sig)) {
-    res.status = "Validation failed";
-    return true;
-  }
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
 }
 
 bool RpcServer::on_getblockcount(const COMMAND_RPC_GETBLOCKCOUNT::request& req, COMMAND_RPC_GETBLOCKCOUNT::response& res) {
@@ -2169,6 +2018,7 @@ bool RpcServer::on_get_all_aliases(const COMMAND_RPC_GET_ALL_ALIASES::request& /
     for (const auto& entry : all) {
       COMMAND_RPC_GET_ALL_ALIASES::alias_entry ae;
       ae.alias = entry.alias;
+      ae.address = entry.ownerAddress;
       ae.registered_block = entry.registeredBlock;
       ae.alias_type = entry.aliasType;
       res.aliases.push_back(ae);
@@ -2187,6 +2037,163 @@ bool RpcServer::on_get_all_aliases(const COMMAND_RPC_GET_ALL_ALIASES::request& /
 // ============================================================
 // Commitment Index RPC handlers (Fuego → EVM bridge)
 // ============================================================
+
+bool RpcServer::on_get_commitment(const COMMAND_RPC_GET_COMMITMENT::request& req,
+                                   COMMAND_RPC_GET_COMMITMENT::response& res) {
+  try {
+    if (req.commitment_hash.empty() || req.commitment_hash.length() != 64) {
+      res.found = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    Crypto::Hash commitHash;
+    if (!Common::podFromHex(req.commitment_hash, commitHash)) {
+      res.found = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    auto entry = m_core.getCommitmentByHash(commitHash);
+    if (entry.has_value()) {
+      res.found = true;
+      res.commitment_hash = Common::podToHex(entry->commitment);
+      res.tx_hash = Common::podToHex(entry->txHash);
+      res.block_height = entry->blockHeight;
+      res.amount = entry->amount;
+      res.term = entry->term;
+      res.type = static_cast<uint8_t>(entry->type);
+      res.target_chain_id = entry->targetChainId;
+      res.leaf_index = static_cast<uint32_t>(m_core.getCommitmentLeafIndex(commitHash));
+      res.is_legacy = entry->isLegacyMigration;
+    } else {
+      res.found = false;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.found = false;
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+}
+
+bool RpcServer::on_get_commitment_stats(const COMMAND_RPC_GET_COMMITMENT_STATS::request& /*req*/,
+                                         COMMAND_RPC_GET_COMMITMENT_STATS::response& res) {
+  try {
+    res.total_commitments = m_core.getCommitmentCount();
+    res.heat_commitments = m_core.getHeatCommitmentCount();
+    res.cold_commitments = m_core.getColdCommitmentCount();
+    res.highest_block = static_cast<uint32_t>(m_core.getCommitmentHighestBlock());
+    res.merkle_root = Common::podToHex(m_core.getCommitmentMerkleRoot());
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.total_commitments = 0;
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+}
+
+bool RpcServer::on_get_commitment_merkle_root(const COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::request& /*req*/,
+                                               COMMAND_RPC_GET_COMMITMENT_MERKLE_ROOT::response& res) {
+  try {
+    res.merkle_root = Common::podToHex(m_core.getCommitmentMerkleRoot());
+    res.total_leaves = m_core.getCommitmentCount();
+    res.highest_block = static_cast<uint32_t>(m_core.getCommitmentHighestBlock());
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.merkle_root = "";
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+}
+
+bool RpcServer::on_get_commitment_merkle_proof(const COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::request& req,
+                                                COMMAND_RPC_GET_COMMITMENT_MERKLE_PROOF::response& res) {
+  try {
+    if (req.commitment_hash.empty() || req.commitment_hash.length() != 64) {
+      res.found = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    Crypto::Hash commitHash;
+    if (!Common::podFromHex(req.commitment_hash, commitHash)) {
+      res.found = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    if (!m_core.hasCommitment(commitHash)) {
+      res.found = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    // Get merkle proof path
+    auto proofPath = m_core.getCommitmentMerkleProof(commitHash);
+
+    res.found = true;
+    res.merkle_root = Common::podToHex(m_core.getCommitmentMerkleRoot());
+    res.leaf_hash = req.commitment_hash;
+    res.leaf_index = static_cast<uint32_t>(m_core.getCommitmentLeafIndex(commitHash));
+
+    // Convert proof path hashes to hex strings
+    for (const auto& hash : proofPath) {
+      res.proof_path.push_back(Common::podToHex(hash));
+    }
+
+    // Generate proof indices from leaf index
+    // For a standard binary merkle tree: at each level, if leaf_index bit is 0 → sibling is right (1),
+    // if bit is 1 → sibling is left (0)
+    uint32_t idx = res.leaf_index;
+    for (size_t i = 0; i < proofPath.size(); ++i) {
+      res.proof_indices.push_back(idx & 1);  // 0 = left child, 1 = right child
+      idx >>= 1;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.found = false;
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+}
+
+bool RpcServer::on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EXISTS::request& req,
+                                            COMMAND_RPC_CHECK_COMMITMENT_EXISTS::response& res) {
+  try {
+    if (req.commitment_hash.empty() || req.commitment_hash.length() != 64) {
+      res.exists = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    Crypto::Hash commitHash;
+    if (!Common::podFromHex(req.commitment_hash, commitHash)) {
+      res.exists = false;
+      res.status = CORE_RPC_STATUS_OK;
+      return true;
+    }
+
+    res.exists = m_core.hasCommitment(commitHash);
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.exists = false;
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+}
+
+
+//-----------------------------------------------
+// Fee pool analytics + treasury RPC handlers
+//-----------------------------------------------
 
 bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req,
                                       COMMAND_RPC_GET_FEE_POOL_INFO::response& res) {
@@ -2280,8 +2287,7 @@ bool RpcServer::on_get_maturing_deposits(const COMMAND_RPC_GET_MATURING_DEPOSITS
     res.status = CORE_RPC_STATUS_OK;
     return true;
   } catch (const std::exception& e) {
-    logger(WARNING) << "get_maturing_deposits error: " << e.what();
-    res.status = "Error";
+    res.status = "Error: " + std::string(e.what());
     return false;
   }
 }
@@ -2297,8 +2303,7 @@ bool RpcServer::on_rollover_deposit(const COMMAND_RPC_ROLLOVER_DEPOSIT::request&
     res.status = "Error: Rollover must be called from wallet RPC, not daemon RPC";
     return false;
   } catch (const std::exception& e) {
-    logger(WARNING) << "rollover_deposit error: " << e.what();
-    res.status = "Error";
+    res.status = "Error: " + std::string(e.what());
     return false;
   }
 }
@@ -2343,6 +2348,17 @@ bool RpcServer::on_get_block_range(const COMMAND_RPC_GET_BLOCK_RANGE::request& r
   return true;
 }
 
+bool RpcServer::on_get_commitment_leaves(const COMMAND_RPC_GET_COMMITMENT_LEAVES::request& /*req*/, COMMAND_RPC_GET_COMMITMENT_LEAVES::response& res) {
+  auto leaves = m_core.getCommitmentLeaves();
+  res.leaves.reserve(leaves.size());
+  for (const auto& h : leaves) {
+    res.leaves.push_back(Common::podToHex(h));
+  }
+  res.count = res.leaves.size();
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
 bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request& req,
                                      COMMAND_RPC_GET_HEAT_METRICS::response& res) {
   auto metrics = m_core.getHeatMetrics();
@@ -2383,159 +2399,39 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.reserve_heat = info.reserveHeat;
   res.total_lp_shares = info.totalLpShares;
   res.spot_price = info.spotPrice;
-  res.accumulated_lp_fees_heat = info.accumulatedLpFeesHeat;
-  res.accumulated_lp_fees_xfg = info.accumulatedLpFeesXfg;
+  res.accumulated_lp_fees = info.accumulatedLpFeesXfg;
   res.epoch_swap_fees = info.epochSwapFees;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
 
-bool RpcServer::on_get_orderbook_info(const COMMAND_RPC_GET_ORDERBOOK_INFO::request& req,
-                                       COMMAND_RPC_GET_ORDERBOOK_INFO::response& res) {
-  auto info = m_core.getOrderbookInfo();
-  res.clearing_price = info.clearingPrice;
-  res.num_matches = info.numMatches;
-  res.depth_bid_xfg = info.depthBidXfg;
-  res.depth_ask_xfg = info.depthAskXfg;
-  res.hearth_pool_ratio = info.hearthPoolRatio;
-  res.in_bootstrap = info.inBootstrap;
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_get_orderbook_state(const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req,
-                                        COMMAND_RPC_GET_ORDERBOOK_STATE::response& res) {
-  auto state = m_core.getOrderbookState(req.depth != 0 ? req.depth : 20);
-  res.clearing_price = state.clearingPrice;
-  res.bid_prices.reserve(state.bids.size());
-  res.bid_depths.reserve(state.bids.size());
-  for (const auto& level : state.bids) {
-    res.bid_prices.push_back(level.price);
-    res.bid_depths.push_back(level.depth);
+bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req,
+                                    COMMAND_RPC_GET_LIMIT_ORDERS::response& res) {
+  const auto& deposits = m_core.get_blockchain_storage().getLimitDeposits();
+  for (const auto& kv : deposits) {
+    COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
+    info.order_id = Common::podToHex(kv.first);
+    info.address_hash = Common::podToHex(kv.second.addressHash);
+    info.side = kv.second.side;
+    info.amount = kv.second.amount;
+    info.target_price = kv.second.targetPrice;
+    info.expiration = kv.second.expiration;
+    info.withdrawn = kv.second.withdrawn;
+    if (kv.second.expired) info.withdrawn = true;
+    res.orders.push_back(std::move(info));
   }
-  res.ask_prices.reserve(state.asks.size());
-  res.ask_depths.reserve(state.asks.size());
-  for (const auto& level : state.asks) {
-    res.ask_prices.push_back(level.price);
-    res.ask_depths.push_back(level.depth);
-  }
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_get_orderbook_estimates(const COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::request& req,
-                                            COMMAND_RPC_GET_ORDERBOOK_ESTIMATES::response& res) {
-  auto est = m_core.getOrderbookEstimate(req.side, req.amount);
-  res.estimated_fill = est.estimatedFill;
-  res.hearth_fill = est.hearthFill;
-  res.orderbook_fill = est.orderbookFill;
-  res.worst_case_price = est.worstCasePrice;
-  res.levels_consumed = est.levelsConsumed;
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req,
-                                    COMMAND_RPC_GET_FUEGO_PRICE::response& res) {
-  auto info = m_core.getAmmPoolInfo();
-  auto metrics = m_core.getHeatMetrics();
-
-  res.reserve_xfg = info.reserveXfg;
-  res.reserve_heat = info.reserveHeat;
-  res.spot_price = info.spotPrice;
-  res.redemption_price_num = metrics.redemptionPriceNum;
-  res.redemption_price_denom = metrics.redemptionPriceDenom;
-
-  double heatPegUsd = CryptoNote::parameters::HEAT_PEG_USD;
-
-  if (info.spotPrice > 0) {
-    double xfgPerHeat = static_cast<double>(info.spotPrice) / 1e18;
-    double xfgInHeat = 1.0 / xfgPerHeat;
-    double xfgUsd = xfgInHeat * heatPegUsd;
-    res.xfg_heat_ratio = std::to_string(xfgInHeat);
-    res.xfg_spot_usd = std::to_string(xfgUsd);
-    res.price_ticker = "1 XFG = $" + std::to_string(xfgUsd).substr(0, 6)
-                     + " USD | " + std::to_string(xfgInHeat).substr(0, 6) + " HEAT";
-  } else {
-    res.xfg_heat_ratio = "0.0";
-    res.xfg_spot_usd = "0.0";
-    res.price_ticker = "1 XFG = $0.00 USD | 0.00 HEAT";
-  }
-
-  res.heat_peg_usd = std::to_string(heatPegUsd);
-
-  uint64_t twap = m_core.getPoolTwap();
-  if (twap > 0) {
-    double twapD = static_cast<double>(twap) / 1e18;
-    double twapInverse = 1.0 / twapD;
-    res.pool_twap = std::to_string(twapInverse) + " HEAT/XFG";
-  } else {
-    res.pool_twap = "0.0";
-  }
-
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
 
 bool RpcServer::on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req,
                                  COMMAND_RPC_ADD_SWAP_FEE::response& res) {
-  if (m_restricted_rpc) {
-    res.status = "Access denied in restricted mode";
-    return false;
-  }
   if (req.amount == 0 || req.amount > 100000000000000ULL) {
     res.status = "Invalid fee amount";
     return false;
   }
   m_core.addSwapFee(req.amount);
   res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::request& req,
-                                         COMMAND_RPC_SET_XFG_MARKET_VALUE::response& res) {
-  if (m_restricted_rpc) {
-    res.status = "Access denied in restricted mode";
-    return false;
-  }
-  if (req.val == 0 || req.val > 1000000000ULL) {
-    res.status = "Invalid market value";
-    return false;
-  }
-  m_core.setXfgMarketValue(req.val);
-  res.status = CORE_RPC_STATUS_OK;
-  return true;
-}
-
-bool RpcServer::on_prepare_cd_withdrawal(const COMMAND_RPC_PREPARE_CD_WITHDRAWAL::request& req,
-                                           COMMAND_RPC_PREPARE_CD_WITHDRAWAL::response& res) {
-  if (req.claimedInterest == 0) {
-    res.status = "OK";
-    res.vaultInputAmount = 0;
-    return true;
-  }
-
-  // Validate against fee pool balance
-  uint64_t feePoolAvailable = m_core.get_blockchain_storage().getFeePoolBalance();
-  if (req.claimedInterest > feePoolAvailable) {
-    res.status = "FAILED";
-    res.vaultInputAmount = 0;
-    return true;
-  }
-
-  // Validate against vault CD_APY_POOL HEAT balance
-  const auto& vault = m_core.get_blockchain_storage().getVault();
-  uint64_t vaultAvailable = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
-  if (req.claimedInterest > vaultAvailable) {
-    res.status = "FAILED";
-    res.vaultInputAmount = 0;
-    return true;
-  }
-
-  // Interest is backed by vault UTXOs — spent during block connection.
-  // Return the confirmed backing amount so the wallet knows the interest is valid.
-  res.status = "OK";
-  res.vaultInputAmount = req.claimedInterest;
   return true;
 }
 

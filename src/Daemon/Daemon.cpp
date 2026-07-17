@@ -345,12 +345,6 @@ int main(int argc, char* argv[])
     rpcServer.setSwapRelay(swapRelay.get());
     logger(INFO) << "Swap offer relay started";
 
-    // Initialize CD offer relay
-    auto cdRelay = std::make_unique<CryptoNote::CdOfferRelay>(ccore, p2psrv, &p2psrv);
-    cdRelay->start();
-    rpcServer.setCdRelay(cdRelay.get());
-    logger(INFO) << "CD offer relay started";
-
     // Initialize SwapDaemon (embedded — replaces standalone swapdaemon binary)
     std::string swapDataDir = coreConfig.configFolder + "/swaps";
     boost::filesystem::create_directories(swapDataDir);

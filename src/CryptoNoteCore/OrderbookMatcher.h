@@ -24,19 +24,16 @@ namespace CryptoNote {
 struct FillRecord {
   Crypto::Hash bidOrderId;
   Crypto::Hash askOrderId;
-  Crypto::PublicKey bidSpendKey;
-  Crypto::PublicKey bidViewKey;
-  Crypto::PublicKey askSpendKey;
-  Crypto::PublicKey askViewKey;
-  uint64_t amount;      // XFG amount matched (atomic units)
-  uint64_t price;       // match price (the ask price)
+  Crypto::Hash bidAddressHash;
+  Crypto::Hash askAddressHash;
+  uint64_t amount;
+  uint64_t price;
 };
 
 struct RemainderRecord {
   Crypto::Hash orderId;
-  uint64_t remainingAmount;    // atomic units
-  Crypto::PublicKey spendKey;
-  Crypto::PublicKey viewKey;
+  uint64_t remainingAmount;
+  Crypto::Hash addressHash;
   uint64_t price;
   uint8_t side;
   uint32_t expiration;

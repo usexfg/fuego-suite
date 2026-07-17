@@ -36,6 +36,10 @@
 #include "AmmPool.h"
 #include "BancorCurve.h"
 #include "../Common/FixedPoint.h"
+#include "Treasury/VaultTypes.h"
+#include "Treasury/VaultKeys.h"
+#include "Treasury/VaultUtxoSet.h"
+#include "Treasury/VaultPolicy.h"
 #include "IBlockchainStorageObserver.h"
 #include "ITransactionValidator.h"
 #include "SwappedVector.h"
@@ -166,8 +170,12 @@ namespace CryptoNote {
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
+    const VaultUtxoSet& getVault() const { return m_vault; }
     uint64_t getSwfBalance() const { return m_swfBalance; }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
+    uint64_t getTreasurySwapFeeXfg() const { return m_treasurySwapFeeXfg; }
+    uint64_t getTreasuryCounterXFG() const { return m_treasuryCounterXFG; }
+    uint64_t getSwfHeatBalance() const { return m_swfHeatBalance; }
     uint64_t getTreasuryXfgReserve() const { return m_treasuryXfgReserve; }
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
     bool withdrawTreasuryLp(uint64_t sharesToBurn);
@@ -400,6 +408,11 @@ namespace CryptoNote {
       uint64_t digmPrimaryReserveHeat;
       uint64_t digmBancorReserveXfg;
       uint64_t digmBancorSupplyDigm;
+      uint64_t vaultUtxoCount;
+      uint64_t vaultSpentCount;
+      uint64_t treasurySwapFeeXfg;
+      uint64_t treasuryCounterXFG;
+      uint64_t swfHeatBalance;
     };
 
     friend class BlockCacheSerializer;
@@ -442,6 +455,9 @@ namespace CryptoNote {
     struct HashLess { bool operator()(const Crypto::Hash& a, const Crypto::Hash& b) const { return memcmp(a.data, b.data, sizeof(a.data)) < 0; } };
     std::map<Crypto::Hash, uint64_t, HashLess> m_lpCommitTxGidx;
 
+    // Vault UTXO spending: maps tx hash → spent vault UTXO indices (for popBlock reversal)
+    std::map<Crypto::Hash, std::vector<uint64_t>, HashLess> m_vaultSpentByTx;
+
     // Fee pool: accumulates swap fees, distributed as interest to CD holders.
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
     uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
@@ -466,7 +482,14 @@ namespace CryptoNote {
     uint64_t m_treasuryHeatReserve = 0;          // HEAT minted from swap fee share (CD yield floor backstop)
     uint64_t m_treasuryXfgReserve = 0;           // permanent XFG accumulator (never spent)
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
+    uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
+    uint64_t m_treasuryCounterXFG = 0;          // XFG burned + credited to Treasury (ready for HEAT conversion)
+    uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
     uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat
+    // Autonomous Treasury Vault
+    VaultUtxoSet m_vault;
+    VaultKeypair m_vaultKeys;
+    uint64_t m_vaultUtxoCounter = 0;
     // HEAT stablecoin state
     UpgradeDetector m_upgradeDetectorV2;
     UpgradeDetector m_upgradeDetectorV3;

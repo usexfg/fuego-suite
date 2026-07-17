@@ -186,6 +186,14 @@ namespace CryptoNote
         const uint64_t TREASURY_LP_PCT = 60;                // 60% of treasury → LP Reserve (CD yield floor + Hearth LP)
         const uint64_t TREASURY_RESERVE_PCT = 40;            // 40% of treasury → Reserve Balance (CD yield floor backstop)
 
+        // Autonomous Treasury Vault
+        const char VAULT_KEY_SEED[] = "xfgo_treasury_vault_v1";
+        const uint64_t VAULT_EPOCH_SNAPSHOT_DEPTH = 100;
+
+        // Treasury virtual counter intervals (in epochs)
+        const uint32_t TREASURY_COUNTER_XFG_MINT_EPOCH_INTERVAL = 8;   // every 8th epoch: convert SWF burn credits → counter HEAT
+        const uint64_t GENERAL_RESERVE_EPOCH_CONVERT_PCT = 80;          // 80% of GENERAL_RESERVE swap fee XFG converted at epoch boundary
+
         // Bootstrap repayment
         const uint64_t BOOTSTRAP_REPAY_PCT = 20;            // 20% of treasury swap fee share → bootstrap repayment vault
 

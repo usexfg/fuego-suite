@@ -58,12 +58,15 @@ void OrderbookMatcher::expireOrders(OrderbookIndex& index, uint32_t currentBlock
 
 uint32_t OrderbookMatcher::countDistinctParties(const std::vector<FillRecord>& fills,
                                                   const OrderbookIndex& /*index*/) {
-  std::set<OrderbookIndex::SenderKey, OrderbookIndex::SenderKeyHash> parties;
+  std::set<OrderbookIndex::SenderKey> parties;
+  static const Crypto::PublicKey zeroKey{};
   for (const auto& fill : fills) {
-    if (fill.bidSpendKey != Crypto::PublicKey{} && fill.bidViewKey != Crypto::PublicKey{}) {
+    if (memcmp(fill.bidSpendKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0 &&
+        memcmp(fill.bidViewKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0) {
       parties.insert({fill.bidSpendKey, fill.bidViewKey});
     }
-    if (fill.askSpendKey != Crypto::PublicKey{} && fill.askViewKey != Crypto::PublicKey{}) {
+    if (memcmp(fill.askSpendKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0 &&
+        memcmp(fill.askViewKey.data, zeroKey.data, sizeof(zeroKey.data)) != 0) {
       parties.insert({fill.askSpendKey, fill.askViewKey});
     }
   }

@@ -143,11 +143,11 @@
 **Style:** Declarative. Direct. Technical enough to be credible, accessible enough to convert. Write like a manifesto, not a press release. Short sentences. German sentence structures (end on the verb/impact). No passive voice. No hedging ("may," "could," "potentially").
 
 **Personality:** 
-- **Sovereign** — answers to no one. Does not "partner" with centralized entities. Does not seek permission.
+- **Sovereign** — answers to **`no one`**. Does not "partner" with centralized entities. Does. not. seek. permission.
 - **Builder** — ships working code. The opposite of whitepaper vaporware.
 - **Patient** — not chasing this cycle's narrative. Building multi-decade infrastructure.
 - **Cult-ish** — deliberately creates in-group language. Makes you earn belonging. You get it or you don't.
-- **Fatalistic** — "The long night is coming." Prepares for civilizational collapse, not quarterly earnings.
+- **Fatalistic** — "The Long Night is coming & the Debt Clock with it." Prepares for an inevitable collapse of fiat currency, not 'quarterly earnings'
 
 ## Proof Points
 

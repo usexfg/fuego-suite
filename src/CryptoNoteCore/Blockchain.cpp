@@ -225,11 +225,16 @@ public:
       s(m_bs.m_treasuryHeatReserve, "treasury_heat_reserve");
       s(m_bs.m_treasuryXfgReserve, "treasury_xfg_reserve");
       s(m_bs.m_treasuryLpReserve, "treasury_lp_reserve");
+      s(m_bs.m_treasurySwapFeeXfg, "treasury_swap_fee_xfg");
+      s(m_bs.m_treasuryCounterXFG, "treasury_counter_xfg");
+      s(m_bs.m_swfHeatBalance, "swf_heat_balance");
       s(m_bs.m_rolloverVaultBalance, "rollover_vault_balance");
       s(m_bs.m_totalSwapFeesCollected, "total_swap_fees_collected");
       s(m_bs.m_totalCdInterestPaid, "total_cd_interest_paid");
       s(m_bs.m_totalTreasuryAccrued, "total_treasury_accrued");
       s(m_bs.m_totalRolloverAccrued, "total_rollover_accrued");
+      s(m_bs.m_vault, "treasury_vault");
+      s(m_bs.m_vaultUtxoCounter, "vault_utxo_counter");
 
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
@@ -392,8 +397,10 @@ private:
                          m_upgradeDetectorV9(currency, m_blocks, BLOCK_MAJOR_VERSION_9, logger),
                         m_upgradeDetectorV10(currency, m_blocks, BLOCK_MAJOR_VERSION_10, logger),
                         m_upgradeDetectorV11(currency, m_blocks, BLOCK_MAJOR_VERSION_11, logger),
-                        m_commitmentIndex(currency),
-                         m_aliasIndex() {
+                         m_commitmentIndex(currency),
+                          m_aliasIndex() {
+  m_vaultKeys = deriveVaultKeys(m_currency.genesisBlockHash());
+  m_vault.setSpendKey(m_vaultKeys.spendKey);
   // Seed Hearth pool at 1:1 for immediate peg
   m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
   m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
@@ -3051,6 +3058,8 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
     // adds it to the input side of the conservation check), the excess is
     // unbacked supply. The fee pool is the sole backing for CD interest, so the
     // aggregate must be enforced here, before pushTransaction draws it down.
+    // Vault balance is also checked: the vault must hold sufficient H∆T UTXOs
+    // in CD_APY_POOL to back the claimed interest.
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       uint64_t txClaimedInterest = 0;
       if (!m_currency.sumCommitmentClaimedInterest(transactions[i], txClaimedInterest)) {
@@ -3061,6 +3070,14 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
         logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
             << " aggregate CD interest " << txClaimedInterest
             << " exceeds fee pool " << m_feePoolBalance;
+      } else if (txClaimedInterest > 0) {
+        uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+        if (txClaimedInterest > vaultAvailable) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " aggregate CD interest " << txClaimedInterest
+              << " exceeds vault CD_APY_POOL " << vaultAvailable;
+        }
       }
     }
 
@@ -3088,6 +3105,10 @@ bool Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction
           if (premium > 0 && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
             FixedPoint64 premiumFp = FixedPoint64::fromUint64(premium);
             uint64_t heatPremium = premiumFp.div(poolRate).toUint64();
+            if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
+              logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
+              return false;
+            }
             m_treasuryHeatReserve += heatPremium;
           }
         }
@@ -3735,8 +3756,11 @@ void Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
             permanentBurns += (heatCommit.amount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
             uint64_t treasuryShare = (heatCommit.amount * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
-            m_treasuryLpReserve += (treasuryShare * CryptoNote::parameters::TREASURY_LP_PCT) / 100;
-            m_treasuryBalance += (treasuryShare * CryptoNote::parameters::TREASURY_RESERVE_PCT) / 100;
+            if (m_swfBalance <= UINT64_MAX - treasuryShare) {
+              m_swfBalance += treasuryShare;
+            } else {
+              logger(ERROR, BRIGHT_RED) << "SWF balance overflow in HEAT burn routing";
+            }
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
             // Index the HEAT commitment for RPC queries
@@ -4141,6 +4165,9 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
     preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
     preEpoch.treasuryLpReserve = m_treasuryLpReserve;
+    preEpoch.treasurySwapFeeXfg = m_treasurySwapFeeXfg;
+    preEpoch.treasuryCounterXFG = m_treasuryCounterXFG;
+    preEpoch.swfHeatBalance = m_swfHeatBalance;
     preEpoch.protocolLpShares = m_protocolLpShares;
     preEpoch.treasuryLpYield = m_treasuryLpYield;
     preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
@@ -4211,6 +4238,10 @@ bool Blockchain::pushBlock(BlockEntry &block) {
         if (heatInjection > 0) {
           m_treasuryHeatReserve -= heatInjection;
           m_heatCdFeePool += heatInjection;
+          uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(vI, heatInjection, AssetType::HEAT,
+                          VaultPartition::CD_APY_POOL, blockHash,
+                          m_vaultKeys.viewPub);
         }
       }
     }
@@ -4227,21 +4258,111 @@ bool Blockchain::pushBlock(BlockEntry &block) {
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
 
-    // Route treasury share: mint HEAT from swap-fee aggregate demand.
-    // 20% → Treasury heat reserve (fuels APY floor).
+    // Route atomic swap fee treasury share to GENERAL_RESERVE (counter XFG).
+    // At epoch: 80% burned → HEAT → CD_APY_POOL, 20% stays as reserve.
     if (treasuryShare > 0) {
-      uint64_t treasuryHeat = treasuryShare;
-      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (!poolRate.isZero()) {
-          FixedPoint64 xfgFp = FixedPoint64::fromUint64(treasuryShare);
-          FixedPoint64 heatFp = xfgFp.div(poolRate);
-          treasuryHeat = heatFp.toUint64();
+      if (m_treasuryCounterXFG > UINT64_MAX - treasuryShare) {
+        logger(ERROR, BRIGHT_RED) << "Treasury counter XFG overflow detected";
+        return false;
+      }
+      m_treasuryCounterXFG += treasuryShare;
+    }
+
+    // At every epoch: convert 80% of GENERAL_RESERVE counter XFG → HEAT → CD_APY_POOL UTXOs.
+    // The consumed XFG is burned: 50% → Eternal Flame, 50% → SWF burn credits.
+    // 20% → LP_RESERVE → Hearth AMM pool.
+    if (m_treasuryCounterXFG > 0) {
+      uint64_t convertAmount = (m_treasuryCounterXFG * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
+      if (convertAmount > 0) {
+        uint64_t heatConverted = convertAmount;
+        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (!poolRate.isZero()) {
+            FixedPoint64 xfgFp = FixedPoint64::fromUint64(convertAmount);
+            FixedPoint64 heatFp = xfgFp.div(poolRate);
+            heatConverted = heatFp.toUint64();
+          }
+        }
+        if (heatConverted > 0 && m_heatSupply <= UINT64_MAX - heatConverted) {
+          m_heatSupply += heatConverted;
+          uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(vI, heatConverted, AssetType::HEAT,
+                          VaultPartition::CD_APY_POOL, blockHash,
+                          m_vaultKeys.viewPub);
+          // Burn the consumed XFG: 50% → EF, 50% → SWF
+          uint64_t efShare = (convertAmount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
+          uint64_t swfShare = (convertAmount * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
+          m_bankingIndex.addForeverDeposit(efShare, newHeight);
+          const_cast<Currency&>(m_currency).syncEternalFlame(m_bankingIndex.getBurnedXfgAmount());
+          if (m_swfBalance > UINT64_MAX - swfShare) {
+            logger(ERROR, BRIGHT_RED) << "SWF balance overflow detected";
+            return false;
+          }
+          m_swfBalance += swfShare;
+          m_treasuryCounterXFG -= convertAmount;
+          logger(INFO) << "GENERAL_RESERVE → HEAT CD_APY_POOL (epoch " << epochNumber << "): "
+                       << m_currency.formatAmount(heatConverted) << " HEAT minted | "
+                       << m_currency.formatAmount(efShare) << " XFG → EF | "
+                       << m_currency.formatAmount(swfShare) << " XFG → SWF";
         }
       }
-      if (treasuryHeat > 0 && m_heatSupply <= UINT64_MAX - treasuryHeat) {
-        m_heatSupply += treasuryHeat;
-        m_treasuryHeatReserve += treasuryHeat;
+
+      // Remaining 20% → LP_RESERVE → Hearth AMM pool
+      if (m_treasuryCounterXFG > 0 && !m_ammPool.isEmpty()
+          && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        uint64_t lpXfg = m_treasuryCounterXFG;
+        // Convert half to HEAT at pool rate for balanced LP deposit
+        uint64_t lpHeat = lpXfg;
+        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (!poolRate.isZero()) {
+          FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
+          lpHeat = halfFp.div(poolRate).toUint64();
+        }
+        uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
+            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (lpShares > 0) {
+          m_ammPool.reserveXfg += lpXfg / 2;
+          m_ammPool.reserveHeat += lpHeat;
+          m_ammPool.totalLpShares += lpShares;
+          m_protocolLpShares += lpShares;
+          m_treasuryLpReserve += lpXfg / 2;
+          // LP_RESERVE vault UTXOs: create accounting tokens for XFG deposited into AMM.
+          // These track the protocol's capital locked in the pool.
+          uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(lpVIdx, lpXfg / 2, AssetType::XFG,
+                          VaultPartition::LP_RESERVE, blockHash,
+                          m_vaultKeys.viewPub);
+          logger(INFO) << "GENERAL_RESERVE → Hearth LP (epoch " << epochNumber << "): "
+                       << m_currency.formatAmount(lpXfg / 2) << " XFG + "
+                       << m_currency.formatAmount(lpHeat) << " HEAT → "
+                       << lpShares << " LP shares"
+                       << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
+        }
+        m_treasuryCounterXFG = 0;
+      }
+    }
+
+    // SWF collateral conversion: every 8 epochs, convert 50% of XFG → HEAT (counter only, no burn).
+    // Converted HEAT stays in SWF as off-chain DIGM collateral.
+    if (epochNumber > 0 && epochNumber % CryptoNote::parameters::TREASURY_COUNTER_XFG_MINT_EPOCH_INTERVAL == 0) {
+      if (m_swfBalance > 0) {
+        uint64_t xfgToConvert = m_swfBalance / 2;
+        uint64_t heatConverted = xfgToConvert;
+        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (!poolRate.isZero()) {
+            FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToConvert);
+            FixedPoint64 heatFp = xfgFp.div(poolRate);
+            heatConverted = heatFp.toUint64();
+          }
+        }
+        if (heatConverted > 0) {
+          m_swfHeatBalance += heatConverted;
+          m_swfBalance -= xfgToConvert;
+          logger(INFO) << "SWF collateral conversion (epoch " << epochNumber << "): "
+                       << m_currency.formatAmount(xfgToConvert) << " XFG → "
+                       << m_currency.formatAmount(heatConverted) << " HEAT (counter)";
+        }
       }
     }
 
@@ -4268,17 +4389,26 @@ bool Blockchain::pushBlock(BlockEntry &block) {
       if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
         m_heatSupply += heatMinted;
         m_heatCdFeePool += heatMinted;
+        uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+        m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
+                        VaultPartition::CD_APY_POOL, blockHash,
+                        m_vaultKeys.viewPub);
       }
       m_cdYieldPool = 0;
     }
 
-    // Treasury LP yield: protocol claims its proportional share of accumulated LP fees (XFG only)
+    // Treasury LP yield: protocol claims its proportional share of accumulated LP fees.
+    // Compounds back to LP_RESERVE counter XFG — no UTXOs created here.
     if (m_protocolLpShares > 0 && m_ammPool.totalLpShares > 0
         && m_ammPool.accumulatedLpFeesXfg > 0) {
       uint64_t treasuryFeeShare = (m_ammPool.accumulatedLpFeesXfg * m_protocolLpShares)
                                 / m_ammPool.totalLpShares;
       m_ammPool.accumulatedLpFeesXfg -= treasuryFeeShare;
-      m_treasuryBalance += treasuryFeeShare;
+      if (m_treasuryLpReserve > UINT64_MAX - treasuryFeeShare) {
+        logger(ERROR, BRIGHT_RED) << "Treasury LP reserve overflow in yield compound";
+        return false;
+      }
+      m_treasuryLpReserve += treasuryFeeShare;
       m_treasuryLpYield += treasuryFeeShare;
     }
 
@@ -4477,11 +4607,22 @@ bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   if (xfgOut > m_ammPool.reserveXfg || heatOut > m_ammPool.reserveHeat)
     return false;
 
+  // Spend LP_RESERVE vault UTXOs for XFG withdrawn from AMM.
+  // The vault LP_RESERVE balance tracks protocol capital locked in the pool.
+  auto spendResult = m_vault.spendUtxos(VaultPartition::LP_RESERVE, AssetType::XFG, xfgOut);
+  if (spendResult.amountSpent < xfgOut) {
+    logger(WARNING) << "Treasury LP withdrawal: LP_RESERVE vault underflow — "
+                    << "requested " << m_currency.formatAmount(xfgOut)
+                    << " XFG but only " << m_currency.formatAmount(spendResult.amountSpent)
+                    << " available";
+    // Allow partial withdrawal with what's available
+  }
+
   m_ammPool.totalLpShares -= sharesToBurn;
   m_ammPool.reserveXfg    -= xfgOut;
   m_ammPool.reserveHeat   -= heatOut;
   m_protocolLpShares      -= sharesToBurn;
-  m_treasuryBalance       += xfgOut;
+  m_treasuryLpReserve     += xfgOut;
   m_treasuryHeatReserve   += heatOut;
 
   logger(INFO, BRIGHT_GREEN) << "Treasury LP withdrawal: "
@@ -4489,8 +4630,9 @@ bool Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
     << m_currency.formatAmount(xfgOut) << " XFG + "
     << m_currency.formatAmount(heatOut) << " HEAT"
     << " | protocolLpShares=" << m_protocolLpShares
-    << " | treasuryBal=" << m_currency.formatAmount(m_treasuryBalance)
-    << " | treasuryHeatRes=" << m_currency.formatAmount(m_treasuryHeatReserve);
+    << " | lpReserve=" << m_currency.formatAmount(m_treasuryLpReserve)
+    << " | treasuryHeatRes=" << m_currency.formatAmount(m_treasuryHeatReserve)
+    << " | vault LP_RESERVE spent=" << spendResult.spentIndices.size() << " UTXOs";
   return true;
 }
 
@@ -4566,6 +4708,9 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_treasuryHeatReserve = snap.treasuryHeatReserve;
     m_treasuryXfgReserve = snap.treasuryXfgReserve;
     m_treasuryLpReserve = snap.treasuryLpReserve;
+    m_treasurySwapFeeXfg = snap.treasurySwapFeeXfg;
+    m_treasuryCounterXFG = snap.treasuryCounterXFG;
+    m_swfHeatBalance = snap.swfHeatBalance;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;
     m_bootstrapRepaymentVault = snap.bootstrapRepaymentVault;
@@ -4581,6 +4726,7 @@ void Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_digmPrimaryPool.reserveHeat = snap.digmPrimaryReserveHeat;
     m_digmBancorPool.reserveXfg = snap.digmBancorReserveXfg;
     m_digmBancorPool.supplyDigm = snap.digmBancorSupplyDigm;
+    m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
     m_epochSnapshots.pop_back();
   }
 
@@ -4658,6 +4804,35 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
     }
   }
 
+  // Vault consensus gate: reject unauthorized vault spends
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    bool isVaultSpend = false;
+    for (const auto& inv : transaction.tx.inputs) {
+      if (inv.type() == typeid(KeyInput)) {
+        if (m_vault.isVaultKeyImage(boost::get<KeyInput>(inv).keyImage)) {
+          isVaultSpend = true; break;
+        }
+      } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
+        if (m_vault.isVaultKeyImage(boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
+          isVaultSpend = true; break;
+        }
+      } else if (inv.type() == typeid(TransactionInputUnified)) {
+        if (m_vault.isVaultKeyImage(boost::get<TransactionInputUnified>(inv).keyImage)) {
+          isVaultSpend = true; break;
+        }
+      }
+    }
+    if (isVaultSpend) {
+      VaultPartition vaultSource = VaultPolicy::classifySpend(transaction.tx, m_vault);
+      if (!VaultPolicy::isPermitted(transaction.tx, vaultSource, m_vault)) {
+        logger(ERROR, BRIGHT_RED) << "Rejected unauthorized vault spend for partition "
+            << vaultPartitionName(vaultSource);
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+    }
+  }
+
   for (const auto& inv : transaction.tx.inputs) {
     if (inv.type() == typeid(MultisignatureInput)) {
       const MultisignatureInput& in = ::boost::get<MultisignatureInput>(inv);
@@ -4671,10 +4846,19 @@ bool Blockchain::pushTransaction(BlockEntry& block, const Crypto::Hash& transact
         m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
-      // CD redemption: reduce locked supply, deduct claimed interest from fee pool
+      // CD redemption: reduce locked supply, spend vault UTXOs for claimed interest
       m_totalCdLocked -= cin.amount;
       if (cin.claimedInterest > 0) {
-        if (cin.claimedInterest <= m_feePoolBalance) {
+        uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+        uint64_t effectiveCap = std::min(m_feePoolBalance, vaultAvailable);
+        if (cin.claimedInterest <= effectiveCap) {
+          auto spendResult = m_vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, cin.claimedInterest);
+          if (spendResult.amountSpent == cin.claimedInterest) {
+            m_vaultSpentByTx[transactionHash] = std::move(spendResult.spentIndices);
+          } else {
+            logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
+                << cin.claimedInterest << " but could only spend " << spendResult.amountSpent;
+          }
           m_feePoolBalance -= cin.claimedInterest;
           m_totalCdInterestPaid += cin.claimedInterest;
         } else {
@@ -4940,12 +5124,17 @@ void Blockchain::popTransaction(const Transaction& transaction, const Crypto::Ha
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent commitment key.";
       }
-      // Reverse: restore locked supply and fee pool
+      // Reverse: restore locked supply and fee pool, un-spend vault UTXOs
       m_totalCdLocked += cin.amount;
       if (cin.claimedInterest > 0) {
         m_feePoolBalance += cin.claimedInterest;
         if (m_totalCdInterestPaid >= cin.claimedInterest) {
           m_totalCdInterestPaid -= cin.claimedInterest;
+        }
+        auto vaultIt = m_vaultSpentByTx.find(transactionHash);
+        if (vaultIt != m_vaultSpentByTx.end()) {
+          m_vault.unSpendUtxos(vaultIt->second);
+          m_vaultSpentByTx.erase(vaultIt);
         }
       }
     } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {

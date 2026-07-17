@@ -859,7 +859,10 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
   SwapParams& params = sm.params();
   m_logger(Logging::INFO) << "  Escrow funded (tx: "
     << Common::podToHex(params.escrowTxHash) << ").";
-  // Phase 1: 1% sender surcharge added to escrow amount (total swap fee = 2%: 1% init + 1% claim)
+  // Phase 1: 1% sender surcharge added to escrow amount.
+  // The surcharge is part of the HTLC — the claimant receives it when they claim.
+  // It is NOT reported as a protocol fee because the protocol never holds it.
+  // Total swap fee = 2%: 1% init (goes to claimant via HTLC) + 1% claim (protocol fee).
   if (params.xfgAmount > 0) {
     if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
       m_logger(Logging::ERROR) << "Fee surcharge multiplication overflow on swap";
@@ -874,9 +877,9 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
         return false;
       }
       params.xfgAmount += senderSurcharge;
-      m_rpc.addSwapFee(senderSurcharge);
-      m_logger(Logging::INFO) << "  Swap initiation fee (1%): " << senderSurcharge
-                               << " XFG reported to daemon fee pool";
+      // Do NOT report surcharge as protocol fee — it goes to claimant via HTLC.
+      m_logger(Logging::INFO) << "  Swap initiation surcharge (1%): " << senderSurcharge
+                               << " XFG added to HTLC (claimant receives this)";
     }
   }
   m_logger(Logging::INFO) << "  Next: exchange Musig2 nonces and create adaptor pre-sigs.";
@@ -1576,7 +1579,8 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
 
   m_logger(Logging::INFO) << "  " << txType << " tx broadcast successfully!";
 
-  // Phase 2: 1% claim fee reported to daemon (total swap fee = 2%: 1% init + 1% claim)
+  // Phase 2: 1% claim fee — the ONLY protocol-level swap fee.
+  // The initiation surcharge (1%) goes to the claimant via the HTLC, not the protocol.
   if (params.xfgAmount > 0) {
     if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
       m_logger(Logging::ERROR) << "Claim fee multiplication overflow on swap";
@@ -1587,7 +1591,7 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
     if (claimFee > 0) {
       m_rpc.addSwapFee(claimFee);
       m_logger(Logging::INFO) << "  Swap claim fee (1%): " << claimFee
-                               << " XFG reported to daemon fee pool";
+                               << " XFG reported to daemon fee pool (sole protocol fee)";
     }
   }
 

@@ -1527,7 +1527,20 @@ core::HeatMetrics core::getHeatMetrics() const {
   }
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
   m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
+  m.treasurySwapFeeXfg = m_blockchain.getTreasurySwapFeeXfg();
+  m.treasuryCounterXFG = m_blockchain.getTreasuryCounterXFG();
+  m.swfHeatBalance = m_blockchain.getSwfHeatBalance();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
+  {
+    VaultBalance vb = m_blockchain.getVault().allBalances();
+    m.vaultHeatCdFeePool = vb.heatCdFeePool;
+    m.vaultHeatLpReserve = vb.heatLpReserve;
+    m.vaultHeatGeneral    = vb.heatGeneral;
+    m.vaultHeatSwf        = vb.heatSwf;
+    m.vaultXfgCdFeePool  = vb.xfgCdFeePool;
+    m.vaultXfgLpReserve   = vb.xfgLpReserve;
+    m.vaultXfgGeneral     = vb.xfgGeneral;
+  }
   return m;
 }
 

@@ -53,7 +53,7 @@ namespace CryptoNote {
      ~core();
 
      bool on_idle() override;
-     virtual bool handle_incoming_tx(const BinaryArray& tx_blob, tx_verification_context& tvc, bool keeped_by_block) override; //Deprecated. Should be removed with CryptoNoteProtocolHandler.
+     virtual bool handle_incoming_tx(const BinaryArray& tx_blob, tx_verification_context& tvc, bool kept_by_block) override; //Deprecated. Should be removed with CryptoNoteProtocolHandler.
      bool handle_incoming_block_blob(const BinaryArray& block_blob, block_verification_context& bvc, bool control_miner, bool relay_block) override;
      virtual i_cryptonote_protocol* get_protocol() override {return m_pprotocol;}
      virtual const Currency& currency() const override { return m_currency; }
@@ -104,7 +104,7 @@ namespace CryptoNote {
      virtual bool removeMessageQueue(MessageQueue<BlockchainMessage>& messageQueue) override;
 
      virtual std::time_t getStartTime() const;
-     uint8_t getCurrentBlockMajorVersion();
+     uint8_t getCurrentBlockMajorVersion() override;
      uint32_t get_current_blockchain_height();
      bool have_block(const Crypto::Hash& id) override;
      std::vector<Crypto::Hash> buildSparseChain() override;
@@ -151,7 +151,7 @@ namespace CryptoNote {
     virtual bool get_tx_outputs_gindexs(const Crypto::Hash &tx_id, std::vector<uint32_t> &indexs) override;
     Crypto::Hash get_tail_id();
     virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request &req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response &res) override;
-    bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result);
+    virtual bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) override;
     virtual bool get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
                                     std::vector<uint32_t>& heights) override;
     void pause_mining() override;
@@ -217,7 +217,17 @@ namespace CryptoNote {
       uint64_t redemptionPriceDenom = 1000000;
       uint64_t treasuryBalance = 0;
       uint64_t treasuryHeatReserve = 0;  // HⲶ∆T minted from 20% swap fee share (for APY floor)
+      uint64_t treasurySwapFeeXfg = 0;    // Swap fee XFG pending burn (counter-based)
+      uint64_t treasuryCounterXFG = 0;    // XFG burned + credited to Treasury (ready for HEAT conversion)
+      uint64_t swfHeatBalance = 0;        // SWF counter HEAT (off-chain DIGM collateral)
       uint64_t epochSwapFees = 0;
+      uint64_t vaultHeatCdFeePool = 0;
+      uint64_t vaultHeatLpReserve = 0;
+      uint64_t vaultHeatGeneral = 0;
+      uint64_t vaultHeatSwf = 0;
+      uint64_t vaultXfgCdFeePool = 0;
+      uint64_t vaultXfgLpReserve = 0;
+      uint64_t vaultXfgGeneral = 0;
     };
     HeatMetrics getHeatMetrics() const;
 
@@ -270,7 +280,6 @@ namespace CryptoNote {
       uint32_t levelsConsumed;
     };
     OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
-
 
 
     // @ Alias system proxies

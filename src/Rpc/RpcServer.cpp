@@ -144,6 +144,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/stop_daemon", { jsonMethod<COMMAND_RPC_STOP_DAEMON>(&RpcServer::on_stop_daemon), true } },
   { "/addswapfee",  { jsonMethod<COMMAND_RPC_ADD_SWAP_FEE>(&RpcServer::on_add_swap_fee), false } },
   { "/setxfgmarketvalue", { jsonMethod<COMMAND_RPC_SET_XFG_MARKET_VALUE>(&RpcServer::on_set_xfg_market_value), false } },
+  { "/preparecdwithdrawal", { jsonMethod<COMMAND_RPC_PREPARE_CD_WITHDRAWAL>(&RpcServer::on_prepare_cd_withdrawal), false } },
 
   // HEAT / Hearth AMM endpoints (v11+)
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
@@ -2350,7 +2351,17 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   res.redemption_price_num = metrics.redemptionPriceNum;
   res.redemption_price_denom = metrics.redemptionPriceDenom;
   res.treasury_balance = metrics.treasuryBalance;
+  res.treasury_swap_fee_xfg = metrics.treasurySwapFeeXfg;
+  res.treasury_counter_xfg = metrics.treasuryCounterXFG;
+  res.swf_heat_balance = metrics.swfHeatBalance;
   res.epoch_swap_fees = metrics.epochSwapFees;
+  res.vault_heat_cd_fee_pool = metrics.vaultHeatCdFeePool;
+  res.vault_heat_lp_reserve  = metrics.vaultHeatLpReserve;
+  res.vault_heat_general     = metrics.vaultHeatGeneral;
+  res.vault_heat_swf         = metrics.vaultHeatSwf;
+  res.vault_xfg_cd_fee_pool  = metrics.vaultXfgCdFeePool;
+  res.vault_xfg_lp_reserve   = metrics.vaultXfgLpReserve;
+  res.vault_xfg_general      = metrics.vaultXfgGeneral;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -2493,6 +2504,38 @@ bool RpcServer::on_set_xfg_market_value(const COMMAND_RPC_SET_XFG_MARKET_VALUE::
   }
   m_core.setXfgMarketValue(req.val);
   res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_prepare_cd_withdrawal(const COMMAND_RPC_PREPARE_CD_WITHDRAWAL::request& req,
+                                           COMMAND_RPC_PREPARE_CD_WITHDRAWAL::response& res) {
+  if (req.claimedInterest == 0) {
+    res.status = "OK";
+    res.vaultInputAmount = 0;
+    return true;
+  }
+
+  // Validate against fee pool balance
+  uint64_t feePoolAvailable = m_core.get_blockchain_storage().getFeePoolBalance();
+  if (req.claimedInterest > feePoolAvailable) {
+    res.status = "FAILED";
+    res.vaultInputAmount = 0;
+    return true;
+  }
+
+  // Validate against vault CD_APY_POOL HEAT balance
+  const auto& vault = m_core.get_blockchain_storage().getVault();
+  uint64_t vaultAvailable = vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+  if (req.claimedInterest > vaultAvailable) {
+    res.status = "FAILED";
+    res.vaultInputAmount = 0;
+    return true;
+  }
+
+  // Interest is backed by vault UTXOs — spent during block connection.
+  // Return the confirmed backing amount so the wallet knows the interest is valid.
+  res.status = "OK";
+  res.vaultInputAmount = req.claimedInterest;
   return true;
 }
 

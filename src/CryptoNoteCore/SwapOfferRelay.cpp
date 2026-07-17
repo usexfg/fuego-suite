@@ -547,4 +547,6 @@ NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
   }
 
   return range;
+}
+
 }  // namespace CryptoNote

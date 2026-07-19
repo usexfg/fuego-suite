@@ -57,6 +57,10 @@ enum class SwapState : uint8_t {
   ADAPTOR_XFG_SPENT      = 15,   // adapted sig broadcast, escrow spent
   ADAPTOR_REFUNDED       = 16,   // cooperative refund completed
 
+  // ── SPV CONFIRMATION STATES (v1.1) ─────────────────────────────────────────
+  ADAPTOR_WAITING_SPV           = 17, // waiting for SPV confirmation of counterparty's lock tx
+  ADAPTOR_SECRET_CONFIRMED_SPV  = 18, // secret confirmed + SPV verified
+
   // ── AFK ADAPTOR SWAP STATES (v2) ───────────────────────────────────────────
   // Non-interactive "Pre-lock" flow for AFK makers
   AFK_OFFER_LOCKED   = 100,  // Maker locked XFG on-chain with adaptor sig
@@ -76,7 +80,8 @@ enum class SwapPair : uint8_t {
   XMR = 2,
   BCH = 3,
   ARB = 4,
-  BASE = 5
+  BASE = 5,
+  KMD_SPV = 6
 };
 
 // Musig2 session state persisted across swap steps.
@@ -132,6 +137,7 @@ struct SwapParams {
   // Chain state
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
+  uint32_t requiredConfirmations = 6;  // SPV confirmations required (default 6 for BCH)
 
   // Counterparty-specific
   std::string ctrAddress;       // counterparty chain address (SOL/ETH/XMR/BCH)

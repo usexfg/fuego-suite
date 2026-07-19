@@ -1021,6 +1021,136 @@ struct COMMAND_RPC_GET_ORDERBOOK_STATE {
     }
   };
 };
+
+// New P2P swap orderbook commands (Phase 1)
+struct COMMAND_RPC_GET_ORDER_BOOK {
+  struct request {
+    uint8_t pair;
+    int     depth;
+
+    request() : pair(0), depth(20) {}
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(pair);
+      KV_MEMBER(depth);
+    }
+  };
+
+  struct response {
+    struct OrderBookLevelJson {
+      uint64_t price;
+      uint64_t amount;
+      int      orderCount;
+
+      void serialize(ISerializer &s) {
+        KV_MEMBER(price);
+        KV_MEMBER(amount);
+        KV_MEMBER(orderCount);
+      }
+    };
+
+    std::vector<OrderBookLevelJson> bids;
+    std::vector<OrderBookLevelJson> asks;
+    uint64_t spread;
+    uint64_t height;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(bids);
+      KV_MEMBER(asks);
+      KV_MEMBER(spread);
+      KV_MEMBER(height);
+      KV_MEMBER(status);
+    }
+  };
+};
+
+struct COMMAND_RPC_PLACE_ORDER {
+  struct request {
+    uint8_t  side;
+    uint8_t  pair;
+    uint64_t price;
+    uint64_t amount;
+    uint32_t ttlBlocks;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(side);
+      KV_MEMBER(pair);
+      KV_MEMBER(price);
+      KV_MEMBER(amount);
+      KV_MEMBER(ttlBlocks);
+    }
+  };
+
+  struct response {
+    std::string orderId;
+    std::string status;
+    uint64_t    filled;
+    std::string statusMsg;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(orderId);
+      KV_MEMBER(status);
+      KV_MEMBER(filled);
+      KV_MEMBER(statusMsg);
+    }
+  };
+};
+
+struct COMMAND_RPC_CANCEL_ORDER {
+  struct request {
+    std::string orderId;
+
+    void serialize(ISerializer &s) { KV_MEMBER(orderId); }
+  };
+
+  struct response {
+    std::string status;
+
+    void serialize(ISerializer &s) { KV_MEMBER(status); }
+  };
+};
+
+struct COMMAND_RPC_GET_OPEN_ORDERS {
+  struct request {
+    std::string address;
+
+    void serialize(ISerializer &s) { KV_MEMBER(address); }
+  };
+
+  struct response {
+    struct OrderJson {
+      std::string orderId;
+      std::string side;
+      uint8_t     pair;
+      uint64_t    price;
+      uint64_t    amount;
+      uint64_t    filled;
+      uint64_t    timestamp;
+      uint32_t    ttlBlocks;
+
+      void serialize(ISerializer &s) {
+        KV_MEMBER(orderId);
+        KV_MEMBER(side);
+        KV_MEMBER(pair);
+        KV_MEMBER(price);
+        KV_MEMBER(amount);
+        KV_MEMBER(filled);
+        KV_MEMBER(timestamp);
+        KV_MEMBER(ttlBlocks);
+      }
+    };
+
+    std::vector<OrderJson> orders;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(orders);
+      KV_MEMBER(status);
+    }
+  };
+};
+
 struct COMMAND_RPC_GET_ORDERBOOK_ESTIMATES {
   struct request {
     uint8_t side;

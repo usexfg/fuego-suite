@@ -24,10 +24,10 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
         params.ctrTimeoutBlock,
         params.ctrAmount,
         contractAddress);
-    if (!ok) return ChainClientResult::fail("ETH deployHtlc failed");
+    if (!ok) return ChainClientResult::fail(m_chainName + " deployHtlc failed");
     return ChainClientResult::ok(contractAddress);
   } catch (const std::runtime_error& e) {
-    auto r = ChainClientResult::fail(std::string("ETH lock error: ") + e.what());
+    auto r = ChainClientResult::fail(m_chainName + " lock error: " + e.what());
     r.fatal = true;
     return r;
   }
@@ -35,7 +35,7 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
   bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount);
-  if (!ok) return ChainClientResult::fail("ETH lock not verified");
+  if (!ok) return ChainClientResult::fail(m_chainName + " lock not verified");
   return ChainClientResult::ok(params.ctrLockTxId);
 }
 
@@ -47,10 +47,10 @@ ChainClientResult EthChainClient::claim(const SwapParams& params) {
         params.ctrLockTxId,
         Common::podToHex(params.adaptorSecret),
         claimTxHash);
-    if (!ok) return ChainClientResult::fail("ETH claimHtlc failed");
+    if (!ok) return ChainClientResult::fail(m_chainName + " claimHtlc failed");
     return ChainClientResult::ok(claimTxHash);
   } catch (const std::runtime_error& e) {
-    auto r = ChainClientResult::fail(std::string("ETH claim error: ") + e.what());
+    auto r = ChainClientResult::fail(m_chainName + " claim error: " + e.what());
     r.fatal = true;
     return r;
   }
@@ -63,10 +63,10 @@ ChainClientResult EthChainClient::refund(const SwapParams& params) {
         m_address,
         params.ctrLockTxId,
         refundTxHash);
-    if (!ok) return ChainClientResult::fail("ETH refundHtlc failed");
+    if (!ok) return ChainClientResult::fail(m_chainName + " refundHtlc failed");
     return ChainClientResult::ok(refundTxHash);
   } catch (const std::runtime_error& e) {
-    auto r = ChainClientResult::fail(std::string("ETH refund error: ") + e.what());
+    auto r = ChainClientResult::fail(m_chainName + " refund error: " + e.what());
     r.fatal = true;
     return r;
   }
@@ -77,7 +77,7 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
   if (c1 == std::string::npos || c2 == std::string::npos)
-    return ChainClientResult::fail("ETH reserve proof: invalid format (expected address:signature:message)");
+    return ChainClientResult::fail(m_chainName + " reserve proof: invalid format (expected address:signature:message)");
 
   std::string address   = proof.substr(0, c1);
   std::string sigHex    = proof.substr(c1 + 1, c2 - c1 - 1);
@@ -85,7 +85,7 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
 
   // Parse 65-byte recoverable signature: r(32) + s(32) + v(1)
   if (sigHex.size() != 130)
-    return ChainClientResult::fail("ETH reserve proof: signature must be 65 bytes hex (130 chars)");
+    return ChainClientResult::fail(m_chainName + " reserve proof: signature must be 65 bytes hex (130 chars)");
 
   auto hexNibble = [](char c) -> int {
     if (c >= '0' && c <= '9') return c - '0';
@@ -121,7 +121,7 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   try {
     pubkey = signer.recoverPublicKey(msgHash, sig);
   } catch (const std::runtime_error&) {
-    return ChainClientResult::fail("ETH reserve proof: ecrecover failed");
+    return ChainClientResult::fail(m_chainName + " reserve proof: ecrecover failed");
   }
 
   // Derive ETH address: last 20 bytes of keccak256(pubkey[1..64])
@@ -137,20 +137,20 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   // Case-insensitive compare
   std::string derivedAddr = derived.str();
   if (address.size() != derivedAddr.size())
-    return ChainClientResult::fail("ETH reserve proof: invalid signature (address mismatch)");
+    return ChainClientResult::fail(m_chainName + " reserve proof: invalid signature (address mismatch)");
   for (size_t i = 0; i < address.size(); ++i) {
     if (std::tolower(address[i]) != std::tolower(derivedAddr[i]))
-      return ChainClientResult::fail("ETH reserve proof: invalid signature (address mismatch)");
+      return ChainClientResult::fail(m_chainName + " reserve proof: invalid signature (address mismatch)");
   }
 
   if (!expectedMessage.empty() && message != expectedMessage)
-    return ChainClientResult::fail("ETH reserve proof: message not bound to this offer");
+    return ChainClientResult::fail(m_chainName + " reserve proof: message not bound to this offer");
 
   uint64_t balanceWei = 0;
   if (!m_rpc->getBalance(address, balanceWei))
-    return ChainClientResult::fail("ETH reserve proof: balance check RPC failed");
+    return ChainClientResult::fail(m_chainName + " reserve proof: balance check RPC failed");
   if (balanceWei < minAmount)
-    return ChainClientResult::fail("ETH reserve proof: insufficient balance (" +
+    return ChainClientResult::fail(m_chainName + " reserve proof: insufficient balance (" +
                                    std::to_string(balanceWei) + " < " + std::to_string(minAmount) + ")");
 
   return ChainClientResult::ok(address);

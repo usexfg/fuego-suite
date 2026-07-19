@@ -32,6 +32,7 @@
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
 #include "Monero/XmrChainClient.h"
+#include "Spv/ElectrumSpvClient.h"
 
 #include <algorithm>
 #include <iostream>
@@ -114,14 +115,28 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
   , m_logger(logger, "SwapDaemon") {
-  if (!chainCfg.bchHost.empty()) {
-    auto rpc = std::make_unique<BchRpcClient>(
-        chainCfg.bchHost, chainCfg.bchPort,
-        chainCfg.bchRpcUser, chainCfg.bchRpcPass);
-    m_chainRegistry.registerChain(SwapPair::BCH,
-        std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif));
-    m_logger(Logging::INFO) << "BCH chain client registered: "
-      << chainCfg.bchHost << ":" << chainCfg.bchPort;
+  if (!chainCfg.bchHost.empty() || chainCfg.bchMode == "spv") {
+    if (chainCfg.bchMode == "spv" && !chainCfg.bchSpvServers.empty()) {
+      // SPV mode: create ElectrumSpvClient with BCH checkpoints
+      auto spvClient = std::make_shared<ElectrumSpvClient>(
+          chainCfg.bchSpvServers,
+          chainCfg.bchSpvMinServers,
+          chainCfg.bchSpvCheckpointHeight,
+          chainCfg.bchSpvCheckpointHash);
+      m_chainRegistry.registerChain(SwapPair::BCH,
+          std::make_unique<BchChainClient>(spvClient));
+      m_logger(Logging::INFO) << "BCH chain client registered: SPV mode ("
+        << chainCfg.bchSpvServers.size() << " server(s))";
+    } else if (!chainCfg.bchHost.empty()) {
+      // Full-node RPC mode
+      auto rpc = std::make_unique<BchRpcClient>(
+          chainCfg.bchHost, chainCfg.bchPort,
+          chainCfg.bchRpcUser, chainCfg.bchRpcPass);
+      m_chainRegistry.registerChain(SwapPair::BCH,
+          std::make_unique<BchChainClient>(std::move(rpc), chainCfg.bchWif));
+      m_logger(Logging::INFO) << "BCH chain client registered: "
+        << chainCfg.bchHost << ":" << chainCfg.bchPort;
+    }
   }
   if (!chainCfg.ethHost.empty()) {
     std::unique_ptr<EthRpcClient> rpc;
@@ -300,7 +315,7 @@ void SwapDaemon::tickLoop() {
     if (m_swapRelay) {
       auto pendingRequests = m_swapRelay->getPendingSwapRequests();
       for (const auto& req : pendingRequests) {
-        handleSwapRequest(std::get<0>(req), std::get<1>(req), std::get<2>(req), std::get<3>(req));
+        handleSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
       }
     }
 
@@ -1089,6 +1104,83 @@ bool SwapDaemon::handleSecretRevealed(SwapStateMachine& sm) {
   return true;
 }
 
+bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
+  SwapParams& params = sm.params();
+  const std::string& swapId = params.swapId;
+
+  auto* client = m_chainRegistry.getClient(params.pair);
+  if (!client) {
+    m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
+      << " client not configured — cannot verify SPV";
+    return false;
+  }
+
+  ChainClientResult spvResult;
+  client->getTransactionDetails(params.ctrLockTxId, spvResult);
+
+  if (spvResult.fatal) {
+    m_logger(Logging::ERROR) << "  SPV verification failed fatally: " << spvResult.error;
+    sm.transition(SwapState::FAILED);
+    m_db.saveSwap(sm);
+    return true;
+  }
+
+  if (!spvResult.success) {
+    m_logger(Logging::INFO) << "  SPV lookup failed (will retry): " << spvResult.error;
+    return false;
+  }
+
+  uint32_t required = params.requiredConfirmations;
+  if (required == 0) required = 6;
+
+  if (spvResult.confirmed && spvResult.confirmations >= required) {
+    sm.transition(SwapState::ADAPTOR_SECRET_CONFIRMED_SPV);
+    m_db.saveSwap(sm);
+    m_logger(Logging::INFO) << "  SPV verified (" << spvResult.confirmations
+      << " confirmations). Swap " << swapId << " -> ADAPTOR_SECRET_CONFIRMED_SPV";
+    return true;
+  }
+
+  m_logger(Logging::INFO) << "  SPV not yet confirmed (confirmations="
+    << spvResult.confirmations << "/" << required << "). Will retry next tick.";
+  return false;
+}
+
+bool SwapDaemon::handleSecretConfirmedSpv(SwapStateMachine& sm) {
+  SwapParams& params = sm.params();
+  const std::string& swapId = params.swapId;
+
+  if (params.role != SwapRole::BOB) {
+    m_logger(Logging::INFO) << "  SPV confirmed. Waiting for Bob to broadcast escrow spend.";
+    return true;
+  }
+
+  m_logger(Logging::INFO) << "  SPV confirmed. Building adapted escrow spend tx...";
+
+  if (params.ringTxBroadcast) {
+    sm.transition(SwapState::ADAPTOR_XFG_SPENT);
+    m_db.saveSwap(sm);
+    m_logger(Logging::INFO) << "  Escrow spend confirmed. Swap " << swapId << " completed.";
+    return true;
+  }
+
+  if (params.ringPeerRound1Received && params.ringPeerRound2Received) {
+    Crypto::PublicKey alicePub = params.peerSwapPubKey;
+    if (buildAndBroadcastEscrowTx(params, alicePub, "spend")) {
+      params.ringTxBroadcast = true;
+      sm.transition(SwapState::ADAPTOR_XFG_SPENT);
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Escrow spend broadcast. Swap " << swapId << " completed.";
+      return true;
+    }
+    m_logger(Logging::ERROR) << "  Failed to build/broadcast escrow spend tx";
+    return false;
+  }
+
+  m_logger(Logging::INFO) << "  Awaiting peer ring data for escrow spend.";
+  return true;
+}
+
 bool SwapDaemon::processSwap(SwapStateMachine& sm) {
   const std::string& swapId = sm.params().swapId;
 
@@ -1163,6 +1255,14 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
       handleSecretRevealed(sm);
       break;
 
+    case SwapState::ADAPTOR_WAITING_SPV:
+      handleWaitingSpv(sm);
+      break;
+
+    case SwapState::ADAPTOR_SECRET_CONFIRMED_SPV:
+      handleSecretConfirmedSpv(sm);
+      break;
+
     default:
       break;
   }
@@ -1174,16 +1274,17 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
       params.ringPeerRound1Received && params.ringPeerRound2Received &&
       !params.ringTxBroadcast) {
     // Both peer rounds received — finalize and broadcast.
+    bool isSpendPath = (current == SwapState::ADAPTOR_SECRET_REVEALED ||
+                        current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV);
     Crypto::PublicKey destKey =
-        (current == SwapState::ADAPTOR_SECRET_REVEALED && params.role == SwapRole::BOB)
+        (isSpendPath && params.role == SwapRole::BOB)
             ? params.peerSwapPubKey   // spend: Alice gets XFG
             : params.ourSwapPubKey;    // refund: Bob gets XFG back
-    std::string txType =
-        (current == SwapState::ADAPTOR_SECRET_REVEALED) ? "spend" : "refund";
+    std::string txType = isSpendPath ? "spend" : "refund";
 
     if (buildAndBroadcastEscrowTx(params, destKey, txType)) {
       params.ringTxBroadcast = true;
-      if (current == SwapState::ADAPTOR_SECRET_REVEALED) {
+      if (isSpendPath) {
         sm.transition(SwapState::ADAPTOR_XFG_SPENT);
       } else {
         sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);

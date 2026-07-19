@@ -130,6 +130,40 @@ type NodeInfo struct {
 	Status        string `json:"status"`
 }
 
+// --- OrderBook RPC types (mirror COMMAND_RPC_GET_ORDER_BOOK response) ---
+
+type OrderBookLevel struct {
+	Price      uint64 `json:"price"`
+	Amount     uint64 `json:"amount"`
+	OrderCount int    `json:"orderCount"`
+}
+
+type OrderBookSnapshot struct {
+	Bids   []OrderBookLevel `json:"bids"`
+	Asks   []OrderBookLevel `json:"asks"`
+	Spread uint64           `json:"spread"`
+	Height uint64           `json:"height"`
+	Status string           `json:"status"`
+}
+
+type PlaceOrderResult struct {
+	OrderId  string `json:"orderId"`
+	Status   string `json:"status"`
+	Filled   uint64 `json:"filled"`
+	StatusMsg string `json:"statusMsg"`
+}
+
+type OpenOrder struct {
+	OrderId   string `json:"orderId"`
+	Side      string `json:"side"`
+	Pair      uint8  `json:"pair"`
+	Price     uint64 `json:"price"`
+	Amount    uint64 `json:"amount"`
+	Filled    uint64 `json:"filled"`
+	Timestamp uint64 `json:"timestamp"`
+	TtlBlocks uint32 `json:"ttlBlocks"`
+}
+
 // --- Per-pair fetch methods ---
 
 func (c *FuegoClient) GetOffers(pair uint8) ([]SwapOffer, error) {
@@ -222,6 +256,58 @@ func (c *FuegoClient) GetActiveSwaps() ([]SwapStatus, error) {
 	return resp.Swaps, nil
 }
 
+// --- OrderBook RPC methods ---
+
+func (c *FuegoClient) GetOrderBook(pair uint8, depth int) (*OrderBookSnapshot, error) {
+	req := map[string]interface{}{"pair": pair, "depth": depth}
+	var resp OrderBookSnapshot
+	if err := c.post("/getorderbook", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *FuegoClient) PlaceOrder(side uint8, pair uint8, price, amount uint64, ttlBlocks uint32) (*PlaceOrderResult, error) {
+	req := map[string]interface{}{
+		"side":      side,
+		"pair":      pair,
+		"price":     price,
+		"amount":    amount,
+		"ttlBlocks": ttlBlocks,
+	}
+	var resp PlaceOrderResult
+	if err := c.post("/placeorder", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *FuegoClient) CancelOrder(orderId string) error {
+	req := map[string]interface{}{"orderId": orderId}
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if err := c.post("/cancelorder", req, &resp); err != nil {
+		return err
+	}
+	if resp.Status != "OK" {
+		return fmt.Errorf("cancel failed: %s", resp.Status)
+	}
+	return nil
+}
+
+func (c *FuegoClient) GetOpenOrders(address string) ([]OpenOrder, error) {
+	req := map[string]interface{}{"address": address}
+	var resp struct {
+		Orders []OpenOrder `json:"orders"`
+		Status string      `json:"status"`
+	}
+	if err := c.post("/openorders", req, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Orders, nil
+}
+
 func (c *FuegoClient) GetInfo() (*NodeInfo, error) {
 	var resp NodeInfo
 	if err := c.post("/getinfo", nil, &resp); err != nil {
@@ -235,12 +321,14 @@ func (c *FuegoClient) GetInfo() (*NodeInfo, error) {
 
 // AllPairData holds fetched data for all active pairs + CD market.
 type AllPairData struct {
-	Offers   map[uint8][]SwapOffer
-	Prices   map[uint8]*SwapPriceResponse
-	Trades   map[uint8][]SwapTrade
-	Height   uint64
-	CdOffers []CdOffer
-	CdPrices map[uint64]*CdPriceStats // keyed by CD amount tier
+	Offers      map[uint8][]SwapOffer
+	Prices      map[uint8]*SwapPriceResponse
+	Trades      map[uint8][]SwapTrade
+	Books       map[uint8]*OrderBookSnapshot // new P2P orderbook (bids/asks depth)
+	Height      uint64
+	CdOffers    []CdOffer
+	CdPrices    map[uint64]*CdPriceStats // keyed by CD amount tier
+	ExtPrices   *ExternalPrices          // reference USD prices from DeFiLlama
 }
 
 // FetchAll fetches offers, prices, and trades for the given pairs in parallel,
@@ -254,6 +342,7 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		Offers:   make(map[uint8][]SwapOffer),
 		Prices:   make(map[uint8]*SwapPriceResponse),
 		Trades:   make(map[uint8][]SwapTrade),
+		Books:    make(map[uint8]*OrderBookSnapshot),
 		CdPrices: make(map[uint64]*CdPriceStats),
 	}
 
@@ -279,10 +368,10 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		mu.Unlock()
 	}()
 
-	// Fetch offers + prices + trades per pair
+	// Fetch offers + prices + trades + orderbook per pair
 	for _, pair := range pairs {
 		p := pair
-		wg.Add(3)
+		wg.Add(4)
 		go func() {
 			defer wg.Done()
 			offers, err := c.GetOffers(p)
@@ -316,6 +405,17 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 			}
 			mu.Unlock()
 		}()
+		go func() {
+			defer wg.Done()
+			book, err := c.GetOrderBook(p, 20)
+			mu.Lock()
+			if err == nil {
+				data.Books[p] = book
+			} else if firstErr == nil {
+				firstErr = err
+			}
+			mu.Unlock()
+		}()
 	}
 
 	// Fetch CD market offers
@@ -342,6 +442,10 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 	}()
 
 	wg.Wait()
+
+	// Fetch reference USD prices from DeFiLlama — non-blocking, uses cache
+	data.ExtPrices = GetExternalPrices()
+
 	return data, firstErr
 }
 

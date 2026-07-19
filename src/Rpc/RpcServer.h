@@ -107,6 +107,12 @@ private:
   bool on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::request& req, COMMAND_RPC_SUBMIT_SWAP_OFFER::response& res);
   bool on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::request& req, COMMAND_RPC_CANCEL_SWAP_OFFER::response& res);
 
+  // v2 Orderbook RPC endpoints
+  bool on_get_order_book(const COMMAND_RPC_GET_ORDER_BOOK::request& req, COMMAND_RPC_GET_ORDER_BOOK::response& res);
+  bool on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMMAND_RPC_PLACE_ORDER::response& res);
+  bool on_cancel_order(const COMMAND_RPC_CANCEL_ORDER::request& req, COMMAND_RPC_CANCEL_ORDER::response& res);
+  bool on_get_open_orders(const COMMAND_RPC_GET_OPEN_ORDERS::request& req, COMMAND_RPC_GET_OPEN_ORDERS::response& res);
+
   bool on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res);
   bool on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request& req, COMMAND_RPC_GET_TRANSACTIONS::response& res);
   // ZK prover data endpoints

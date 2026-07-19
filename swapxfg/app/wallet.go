@@ -50,6 +50,12 @@ type SignedCancel struct {
 	Signature   string `json:"signature"`
 }
 
+type SignOrderResult struct {
+	OrderId     string `json:"orderId"`
+	MakerPubKey string `json:"makerPubKey"`
+	Signature   string `json:"signature"`
+}
+
 type AfkLockResult struct {
 	LockID       string `json:"lockId"`
 	AdaptorPoint string `json:"adaptorPoint"`
@@ -123,6 +129,27 @@ func (w *WalletClient) SignOffer(xfgAmount, rateNum uint64, pair uint8, ttlBlock
 			"pair":      pair,
 			"ttlBlocks": ttlBlocks,
 			"isSell":    isSell,
+		},
+		"id": 1,
+	}, &outer); err != nil {
+		return nil, err
+	}
+	return &outer.Result, nil
+}
+
+func (w *WalletClient) SignOrder(side uint8, pair uint8, price, amount uint64, ttlBlocks uint32) (*SignOrderResult, error) {
+	var outer struct {
+		Result SignOrderResult `json:"result"`
+	}
+	if err := w.fc.post("/json_rpc", map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "sign_order",
+		"params": map[string]interface{}{
+			"side":      side,
+			"pair":      pair,
+			"price":     price,
+			"amount":    amount,
+			"ttlBlocks": ttlBlocks,
 		},
 		"id": 1,
 	}, &outer); err != nil {

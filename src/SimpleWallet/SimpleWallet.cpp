@@ -2611,8 +2611,11 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
     else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
     else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
+    else if (pairStr == "SOL") pair = XfgSwap::SwapPair::SOL;
+    else if (pairStr == "ARB") pair = XfgSwap::SwapPair::ARB;
+    else if (pairStr == "BASE") pair = XfgSwap::SwapPair::BASE;
     else {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use XMR, ETH, or BCH.";
+      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use SOL, ETH, XMR, BCH, ARB, or BASE.";
       return true;
     }
 

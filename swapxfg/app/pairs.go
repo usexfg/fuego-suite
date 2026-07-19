@@ -8,12 +8,14 @@ const (
 	PairBCH    uint8 = 3
 	PairARB    uint8 = 4
 	PairBASE   uint8 = 5
+	PairKMD    uint8 = 6 // KMD_SPV (daemon-side only)
+	PairBNB    uint8 = 7
 	PairCD     uint8 = 99 // not a swap pair — CD/XFG secondary market mode
 	PairDaemon uint8 = 100 // daemon status monitoring view
 )
 
 // ActivePairs lists all supported pairs in display order (SOL first).
-var ActivePairs = []uint8{PairSOL, PairETH, PairXMR, PairBCH, PairARB, PairBASE}
+var ActivePairs = []uint8{PairSOL, PairETH, PairXMR, PairBCH, PairARB, PairBASE, PairBNB}
 
 // PairName returns the display name for a pair (e.g. "ETH/XFG").
 func PairName(pair uint8) string {
@@ -30,6 +32,8 @@ func PairName(pair uint8) string {
 		return "ARB/XFG"
 	case PairBASE:
 		return "BASE/XFG"
+	case PairBNB:
+		return "BNB/XFG"
 	case PairCD:
 		return "CD"
 	default:
@@ -51,6 +55,8 @@ func PairLabelLong(pair uint8) string {
 		return "Arbitrum L2"
 	case PairBASE:
 		return "Base L2"
+	case PairBNB:
+		return "BNB Chain"
 	case PairCD:
 		return "Certificates Of Deposit"
 	case PairDaemon:
@@ -75,6 +81,8 @@ func PairShort(pair uint8) string {
 		return "ARB"
 	case PairBASE:
 		return "BASE"
+	case PairBNB:
+		return "BNB"
 	default:
 		return "?"
 	}
@@ -95,10 +103,35 @@ func PairFromString(s string) uint8 {
 		return PairARB
 	case "base", "BASE":
 		return PairBASE
+	case "bnb", "BNB":
+		return PairBNB
 	case "cd", "CD":
 		return PairCD
 	default:
 		return 255
+	}
+}
+
+// TradingViewSymbol returns a TradingView symbol URL fragment for the pair.
+// Returns empty string if no TradingView symbol exists for the pair.
+func TradingViewSymbol(pair uint8) string {
+	switch pair {
+	case PairSOL:
+		return "BINANCE:XFGLSOL"
+	case PairETH:
+		return "BINANCE:XFGETH"
+	case PairXMR:
+		return "BINANCE:FGXMR"
+	case PairBCH:
+		return "BINANCE:FGXBCH"
+	case PairARB:
+		return "BINANCE:FGXARB"
+	case PairBASE:
+		return "BINANCE:FGXBASE"
+	case PairBNB:
+		return "BINANCE:FGXBNB"
+	default:
+		return ""
 	}
 }
 
@@ -117,6 +150,8 @@ func HotkeyPair(r rune) uint8 {
 		return PairARB
 	case '5':
 		return PairBASE
+	case '6':
+		return PairBNB
 	case 'c':
 		return PairCD
 	default:

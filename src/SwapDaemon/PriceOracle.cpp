@@ -91,7 +91,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::ETH: return SEED_ETH_USD / SEED_XFG_USD;  // 214,000
     case SwapPair::BCH: return SEED_BCH_USD / SEED_XFG_USD;  //  46,900
     case SwapPair::XMR: return SEED_XMR_USD / SEED_XFG_USD;  //  34,300
-    case SwapPair::ARB: return SEED_ETH_USD / SEED_XFG_USD;  // ARB = ETH on L2
+    case SwapPair::ARB: return SEED_ETH_USD / SEED_XFG_USD; // ARB = ETH on L2
     case SwapPair::BASE: return SEED_ETH_USD / SEED_XFG_USD; // BASE = ETH on L2
     default:            return 0.0;
   }

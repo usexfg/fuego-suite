@@ -65,6 +65,7 @@ namespace Tools
     bool on_get_address(const wallet_rpc::COMMAND_RPC_GET_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS::response& res);
     bool on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_OFFER::response& res);
     bool on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL::request& req, wallet_rpc::COMMAND_RPC_SIGN_CANCEL::response& res);
+    bool on_sign_order(const wallet_rpc::COMMAND_RPC_SIGN_ORDER::request& req, wallet_rpc::COMMAND_RPC_SIGN_ORDER::response& res);
     bool on_initiate_swap(const wallet_rpc::COMMAND_RPC_INITIATE_SWAP::request& req, wallet_rpc::COMMAND_RPC_INITIATE_SWAP::response& res);
     bool on_complete_swap(const wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::request& req, wallet_rpc::COMMAND_RPC_COMPLETE_SWAP::response& res);
     bool on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP::request& req, wallet_rpc::COMMAND_RPC_REFUND_SWAP::response& res);

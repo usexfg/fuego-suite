@@ -103,6 +103,24 @@ public:
   // Build a P2SH scriptPubKey: OP_HASH160 <hash> OP_EQUAL
   static std::vector<uint8_t> buildP2shScriptPubKey(const std::vector<uint8_t>& scriptHash);
 
+  // Convert a redeem script to its P2SH scriptPubKey.
+  // Equivalent to: buildP2shScriptPubKey(hash160(redeemScript))
+  static std::vector<uint8_t> redeemScriptToP2shScriptPubKey(const std::vector<uint8_t>& redeemScript);
+
+  // Extract the claim preimage from a raw spending transaction.
+  //
+  // The claim scriptSig for BCH P2SH HTLC is:
+  //   <signature> <preimage> OP_TRUE <redeemScript>
+  //
+  // This function parses the raw tx, finds inputs whose scriptSig contains a
+  // P2SH redeemScript whose hash160 matches htlcP2shScriptPubKey, and returns
+  // the preimage (second push item) from the first matching input.
+  //
+  // Returns empty vector if no matching input is found.
+  static std::vector<uint8_t> parseClaimPreimage(
+      const std::vector<uint8_t>& rawTx,
+      const std::vector<uint8_t>& htlcP2shScriptPubKey);
+
 private:
   // Push data onto script with correct length prefix
   static void pushData(std::vector<uint8_t>& script, const std::vector<uint8_t>& data);

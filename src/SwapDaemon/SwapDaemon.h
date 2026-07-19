@@ -54,6 +54,13 @@ struct ChainClientConfig {
   std::string bchRpcPass;
   std::string bchWif;          // WIF-encoded private key for HTLC signing
 
+  // BCH SPV mode — when bchMode == "spv", use ElectrumSpvClient instead of RPC
+  std::string bchMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> bchSpvServers;      // "host:port" strings
+  size_t    bchSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  bchSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string bchSpvCheckpointHash;            // checkpoint hash (display hex)
+
   // ETH
   std::string ethHost;
   uint16_t    ethPort     = 8545;
@@ -209,6 +216,8 @@ public:
   bool handleSecretRevealed(SwapStateMachine& sm);
   bool handleCtrLocked(SwapStateMachine& sm);
   bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
+  bool handleWaitingSpv(SwapStateMachine& sm);
+  bool handleSecretConfirmedSpv(SwapStateMachine& sm);
 
   // Verify that the escrow funding tx exists and contains an output
   // with the expected amount to the joint escrow key.

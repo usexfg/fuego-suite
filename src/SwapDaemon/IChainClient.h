@@ -24,6 +24,15 @@ public:
                                                uint64_t minAmount,
                                                const std::string& proof) = 0;
 
+  // Get transaction details including SPV confirmation status.
+  // Populates ChainClientResult with confirmed/spvVerified/confirmations fields.
+  virtual ChainClientResult getTransactionDetails(const std::string& txId,
+                                                  ChainClientResult& result) {
+    (void)txId;
+    result = ChainClientResult::fail("getTransactionDetails not implemented");
+    return result;
+  }
+
   virtual bool getCurrentHeight(uint64_t& height) { (void)height; return false; }
 };
 

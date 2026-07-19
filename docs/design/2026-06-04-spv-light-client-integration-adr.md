@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Amendment:** 2026-06-17 — KMD SPV added (SpvKmdChainClient, SwapPair::KMD_SPV). Same Electrum protocol, KMD address prefixes (0x3C P2PKH, 0x55 P2SH, WIF 0xBC).
 **Amendment:** 2026-06-16 — revised to SPV-only (Option C + A safety). Full RPC fallback removed from SpvBchChainClient. The BCH proving slice ships SPV-only; the RPC-based BchChainClient remains available for side-by-side differential testing during the proving phase but is not linked into the SPV client.
+**Amendment:** 2026-07-18 — chain priorities updated. Added BNB (EVM clone, ARB/BASE pattern, chainId 56). Added TON (priority, TVM smart contracts, Ed25519, async messaging). Added Zano (CryptoNote, native HTLC outputs). Added Sia (decentralized storage for DIGM). Removed DASH/ATOM/Kaspa/Aztec/Beam/DOGE from active expansion targets.
 **Date:** 2026-06-04
 **Deciders:** Swap maintainers (ColinRitman)
 **Scope:** This ADR decides *how the SPV layer integrates* with the existing
@@ -192,17 +193,20 @@ need separate work; lumping them together would misjudge the effort.
 |--------|--------|--------|-------|
 | **BTC** | UTXO / Electrum SPV | `ElectrumSpvClient` directly | Native ElectrumX ecosystem; P2WSH HTLC; ~90% of BCH script code reusable (BIP-143 sighash, no `SIGHASH_FORKID`) |
 | **LTC** | UTXO / Electrum SPV | `ElectrumSpvClient` directly | Near-identical to BTC; ElectrumX servers exist |
-| **DASH** | UTXO / Electrum SPV | `ElectrumSpvClient` directly | Dash Electrum (ElectrumX-compatible) servers exist; standard HTLC scripting |
+| **KMD** | UTXO / Electrum SPV | `ElectrumSpvClient` directly | Same as BCH/BTC tx model, different address prefixes (0x3C P2PKH, 0x55 P2SH, WIF 0xBC) |
+| **BNB** | EVM (account-based) | `EthChainClient` pattern | **Not `ISpvClient`.** Clone ARB/BASE pattern, chainId 56. Largest NFT marketplace volume in Asia, 1M+ daily active users. |
 | **DCR** | UTXO (Bitcoin-derived) | partial | Scripting supports `OP_SHA256`/`CLTV` (DCRDEX relies on it), but Decred's light-client infra is dcrwallet SPV, **not** ElectrumX — needs an Electrum-compatible server or a Decred-specific SPV backend. Evaluate before committing. |
 | **POLYGON** | EVM (account-based) | `EthChainClient` pattern | **Not `ISpvClient`.** Near-term: same RPC path as ARB/BASE (chainId 137). Trustless path = future EVM light client (Helios sync-committee), a separate interface. |
-| **ATOM** | Cosmos / Tendermint | neither | **Third light-client family** — a Tendermint light client (verify validator-set signatures), distinct from both `ISpvClient` and Helios. HTLC via a CosmWasm contract. Highest integration friction of the six. |
+| **TON** | TVM (smart contract) | none — new protocol | **Not `ISpvClient`.** TVM smart contracts handle HTLC. Ed25519 signing, async message passing, account-based. Needs `TonChainClient` with Toncenter RPC + Tact HTLC contract. |
+| **Zano** | CryptoNote | XMR adaptor pattern | CryptoNote derivative like Fuego. Native HTLC outputs with auto-refund. Monero-derived RPC API (simplewallet). Reuse XMR adaptor signature patterns. |
+| **Sia** | Storage (UTXO) | none — storage layer | Decentralized storage for DIGM audio. renterd S3-compatible API. UTXO model with file contracts. Not a swap chain — storage backend. |
 
-Sequencing implication: **BTC → LTC → DASH** are the cheap wins off this slice
+Sequencing implication: **BTC → LTC** are the cheap wins off this slice
 (direct `ElectrumSpvClient` reuse). **KMD** is the second SPV chain,
 shipping with identical tx model (P2PKH/P2SH, BIP143) and different address
-prefixes. **DCR** needs an infra spike first. **POLYGON**
-rides the existing EVM RPC path now and a future EVM light client later. **ATOM**
-is its own track.
+prefixes. **BNB** and **POLYGON** ride the existing EVM RPC path (clone ARB/BASE pattern). **DCR** needs an infra spike first. **TON**
+is priority work (new protocol chain, TVM + Ed25519). **Zano** reuses XMR patterns.
+**Sia** is the storage layer for DIGM content.
 
 ## Action Items
 

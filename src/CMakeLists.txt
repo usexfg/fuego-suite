@@ -272,6 +272,18 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     SwapDaemon/SwapHashLock.cpp
+    SwapDaemon/Spv/SpvMerkle.cpp
+    SwapDaemon/Spv/SpvHeader.cpp
+    SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/ElectrumConnection.cpp
+    SwapDaemon/Spv/ElectrumSpvClient.cpp
+    SwapDaemon/Bitcoin/BtcHtlcScript.cpp
+    SwapDaemon/Bitcoin/BtcChainClient.cpp
+    SwapDaemon/Litecoin/LtcHtlcScript.cpp
+    SwapDaemon/Litecoin/LtcChainClient.cpp
+    SwapDaemon/Komodo/KmdHtlcScript.cpp
+    SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -329,6 +341,84 @@ add_executable(test_xmr_sweep_sequence
 target_link_libraries(test_xmr_sweep_sequence PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon unit test: SPV Merkle proof verification
+add_executable(test_spv_merkle
+    SwapDaemon/tests/test_spv_merkle.cpp)
+target_link_libraries(test_spv_merkle PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: SPV header parsing, PoW, chain store
+add_executable(test_spv_headers
+    SwapDaemon/tests/test_spv_headers.cpp)
+target_link_libraries(test_spv_headers PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Electrum protocol + SPV client (headers, merkle, spend)
+add_executable(test_spv_electrum
+    SwapDaemon/tests/test_spv_electrum.cpp)
+target_link_libraries(test_spv_electrum PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: SPV config parsing and wiring
+add_executable(test_spv_config_wiring
+    SwapDaemon/tests/test_spv_config_wiring.cpp)
+target_link_libraries(test_spv_config_wiring PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: SwapStateMachine SPV state transitions
+add_executable(test_swap_state_machine_spv
+    SwapDaemon/tests/test_swap_state_machine_spv.cpp)
+target_link_libraries(test_swap_state_machine_spv PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: BCH HTLC helpers (parseClaimPreimage, redeemScriptToP2sh)
+add_executable(test_bch_htlc
+    SwapDaemon/BitcoinCash/tests/test_bch_htlc.cpp)
+target_link_libraries(test_bch_htlc PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: BCH chain client SPV mode
+add_executable(test_bch_chain_client
+    SwapDaemon/BitcoinCash/tests/test_bch_chain_client.cpp)
+target_link_libraries(test_bch_chain_client PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: BTC HTLC (P2WSH) + chain client
+add_executable(test_btc_htlc
+    SwapDaemon/Bitcoin/tests/test_btc_htlc.cpp)
+target_link_libraries(test_btc_htlc PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: LTC HTLC (P2WSH) + chain client
+add_executable(test_ltc_htlc
+    SwapDaemon/Litecoin/tests/test_ltc_htlc.cpp)
+target_link_libraries(test_ltc_htlc PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: KMD HTLC (P2SH) + chain client
+add_executable(test_kmd_htlc
+    SwapDaemon/Komodo/tests/test_kmd_htlc.cpp)
+target_link_libraries(test_kmd_htlc PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Neutrino SPV (BIP-157-158 compact block filters)
+add_executable(test_neutrino
+    SwapDaemon/Spv/Neutrino/tests/test_neutrino.cpp)
+target_link_libraries(test_neutrino PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: BSC chain client (EVM clone)
+add_executable(test_bsc_chain_client
+    SwapDaemon/BSC/tests/test_bsc_chain_client.cpp)
+target_link_libraries(test_bsc_chain_client PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Polygon chain client (EVM clone)
+add_executable(test_polygon_chain_client
+    SwapDaemon/Polygon/tests/test_polygon_chain_client.cpp)
+target_link_libraries(test_polygon_chain_client PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)
 add_executable(test_xmr_live_e2e
     SwapDaemon/tests/test_xmr_live_e2e.cpp)
@@ -364,6 +454,14 @@ add_executable(test_orderbook_phase5
 target_link_libraries(test_orderbook_phase5 PRIVATE
     CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 target_include_directories(test_orderbook_phase5 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
+# P2P orderbook data structures + matching tests (Phase 7)
+add_executable(test_p2p_orderbook
+    ../tests/CoreTests/SwapOrderbookTests.cpp)
+target_link_libraries(test_p2p_orderbook PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(test_p2p_orderbook PRIVATE
     ${CMAKE_SOURCE_DIR}/src)
 
 add_library(Rpc STATIC ${RPC_SOURCES})
@@ -462,6 +560,18 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     SwapDaemon/SwapHashLock.cpp
+    SwapDaemon/Spv/SpvMerkle.cpp
+    SwapDaemon/Spv/SpvHeader.cpp
+    SwapDaemon/Spv/SpvHeaderStore.cpp
+    SwapDaemon/Spv/ElectrumConnection.cpp
+    SwapDaemon/Spv/ElectrumSpvClient.cpp
+    SwapDaemon/Bitcoin/BtcHtlcScript.cpp
+    SwapDaemon/Bitcoin/BtcChainClient.cpp
+    SwapDaemon/Litecoin/LtcHtlcScript.cpp
+    SwapDaemon/Litecoin/LtcChainClient.cpp
+    SwapDaemon/Komodo/KmdHtlcScript.cpp
+    SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 
 # Add TestnetWallet executable (extends simple_wallet with testnet-specific commands)
@@ -605,6 +715,7 @@ target_link_libraries(Wallet PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(Http PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(SwapDaemon PRIVATE
     SwapDaemonLib
+    CryptoNoteCore
     Crypto Common Logging Crypto Common
     ${Boost_LIBRARIES}
     OpenSSL::SSL

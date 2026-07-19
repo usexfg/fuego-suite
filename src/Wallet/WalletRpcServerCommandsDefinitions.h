@@ -568,6 +568,38 @@ using CryptoNote::ISerializer;
     };
   };
 
+  struct COMMAND_RPC_SIGN_ORDER {
+    struct request {
+      uint8_t     side;       // 0=BID, 1=ASK
+      uint8_t     pair;
+      uint64_t    price;      // XFG per 1 CTR, scaled by 1e7
+      uint64_t    amount;     // XFG amount (atomic units)
+      uint32_t    ttlBlocks;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(price)
+        KV_MEMBER(amount)
+        KV_MEMBER(ttlBlocks)
+      }
+    };
+
+    struct response {
+      std::string orderId;      // hex-encoded order ID
+      std::string makerPubKey;  // hex-encoded spend public key
+      std::string signature;    // hex-encoded Ed25519 signature over orderId hash
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
   // ── Phase 7: CD / COLD wallet RPC bridges ─────────────────────────────────
 
   struct COMMAND_RPC_CREATE_AFK_LOCK {

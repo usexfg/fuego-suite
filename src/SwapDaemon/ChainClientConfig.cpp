@@ -118,6 +118,20 @@ bool loadChainClientConfig(const std::string& path,
   out.bchRpcUser = jsonGetStr(json, "bch_rpc_user");
   out.bchRpcPass = jsonGetStr(json, "bch_rpc_pass");
 
+  // BCH SPV mode configuration
+  out.bchMode = jsonGetStr(json, "bch_mode", "");
+  out.bchSpvMinServers = static_cast<size_t>(jsonGetUint(json, "bch_spv_min_servers", 1));
+  out.bchSpvCheckpointHeight = jsonGetUint(json, "bch_spv_checkpoint_height", 0);
+  out.bchSpvCheckpointHash = jsonGetStr(json, "bch_spv_checkpoint_hash", "");
+
+  // Parse SPV server list: bch_spv_server_0, bch_spv_server_1, ...
+  for (size_t i = 0; i < 16; ++i) {
+    std::string key = "bch_spv_server_" + std::to_string(i);
+    std::string server = jsonGetStr(json, key, "");
+    if (server.empty()) break;
+    out.bchSpvServers.push_back(server);
+  }
+
   out.xmrDaemonHost = jsonGetStr(json, "xmr_daemon_host", "");
   out.xmrDaemonPort = static_cast<uint16_t>(jsonGetUint(json, "xmr_daemon_port", 18081));
   out.xmrWalletHost = jsonGetStr(json, "xmr_wallet_host", "");

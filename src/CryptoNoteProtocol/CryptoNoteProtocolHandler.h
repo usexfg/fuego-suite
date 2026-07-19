@@ -101,6 +101,12 @@ namespace CryptoNote
     int handle_swap_request(int command, COMMAND_SWAP_REQUEST::request& arg, CryptoNoteConnectionContext& context);
     int handle_swap_trade(int command, COMMAND_SWAP_TRADE::request& arg, CryptoNoteConnectionContext& context);
 
+    int handle_order_open(int command, COMMAND_ORDER_OPEN::request& arg, CryptoNoteConnectionContext& context);
+    int handle_order_cancel(int command, COMMAND_ORDER_CANCEL::request& arg, CryptoNoteConnectionContext& context);
+    int handle_order_fill(int command, COMMAND_ORDER_FILL::request& arg, CryptoNoteConnectionContext& context);
+    int handle_order_reserve(int command, COMMAND_ORDER_RESERVE::request& arg, CryptoNoteConnectionContext& context);
+    int handle_order_reserve_ack(int command, COMMAND_ORDER_RESERVE_ACK::request& arg, CryptoNoteConnectionContext& context);
+
     //----------------- i_cryptonote_protocol ----------------------------------
     virtual void relay_block(NOTIFY_NEW_BLOCK::request& arg) override;
     virtual void relay_transactions(NOTIFY_NEW_TRANSACTIONS::request& arg) override;

@@ -422,10 +422,167 @@ namespace CryptoNote
     typedef EMPTY_STRUCT response;
   };
 
+  /************************************************************************/
+  /* ORDER BOOK - P2P relay for atomic swap orders (new v2 format)           */
+  /************************************************************************/
+  struct COMMAND_ORDER_OPEN
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 20 };
+
+    struct request
+    {
+      std::string        orderId;
+      uint8_t           side;            // 0 = BID, 1 = ASK
+      uint8_t           pair;
+      uint64_t          price;
+      uint64_t          amount;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t          nonce;
+      uint64_t          timestamp;
+      uint32_t          ttlBlocks;
+      uint32_t          postedHeight;
+      uint8_t           dandelion_stem;
+      uint32_t          hop_count;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(price)
+        KV_MEMBER(amount)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(nonce)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlBlocks)
+        KV_MEMBER(postedHeight)
+        KV_MEMBER(dandelion_stem)
+        KV_MEMBER(hop_count)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER CANCEL - P2P relay for cancelling a swap order                */
+  /************************************************************************/
+  struct COMMAND_ORDER_CANCEL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 21 };
+
+    struct request
+    {
+      std::string        orderId;
+      uint8_t           side;
+      uint8_t           pair;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature signature;
+      uint64_t          timestamp;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(orderId)
+        KV_MEMBER(side)
+        KV_MEMBER(pair)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER EXCHANGE - P2P relay for completing an order book fill        */
+  /************************************************************************/
+  struct COMMAND_ORDER_FILL
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 22 };
+
+    struct request
+    {
+      std::string takerOrderId;
+      std::string makerOrderId;
+      uint64_t    fillAmount;
+      uint64_t    fillPrice;
+      uint64_t    timestamp;
+      uint32_t    blockHeight;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(takerOrderId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(fillAmount)
+        KV_MEMBER(fillPrice)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(blockHeight)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER RESERVATION - pre-commit phase for order fills                   */
+  /************************************************************************/
+  struct COMMAND_ORDER_RESERVE
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 23 };
+
+    struct request
+    {
+      std::string reservationId;
+      std::string takerOrderId;
+      std::string makerOrderId;
+      uint64_t    amount;
+      std::string takerPubKey;
+      uint64_t    timestamp;
+      uint32_t    ttlSeconds;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(reservationId)
+        KV_MEMBER(takerOrderId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(amount)
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(timestamp)
+        KV_MEMBER(ttlSeconds)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* ORDER RESERVATION ACKNOWLEDGMENT - maker signs reservation          */
+  /************************************************************************/
+  struct COMMAND_ORDER_RESERVE_ACK
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 24 };
+
+    struct request
+    {
+      std::string reservationId;
+      std::string makerOrderId;
+      Crypto::PublicKey makerPubKey;
+      Crypto::Signature    signature;
+      uint64_t            timestamp;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(reservationId)
+        KV_MEMBER(makerOrderId)
+        KV_MEMBER(makerPubKey)
+        KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
+  /************************************************************************/
+  /* COMMAND_CD_OFFER - Confidential Deposit offer                           */
+  /************************************************************************/
   struct COMMAND_CD_OFFER
   {
     enum { ID = P2P_COMMANDS_POOL_BASE + 17 };
-    
+
     struct request
     {
       std::string offerId;
@@ -459,6 +616,9 @@ namespace CryptoNote
     typedef EMPTY_STRUCT response;
   };
 
+  /************************************************************************/
+  /* COMMAND_CD_CANCEL - cancel a Confidential Deposit offer                 */
+  /************************************************************************/
   struct COMMAND_CD_CANCEL
   {
     enum { ID = P2P_COMMANDS_POOL_BASE + 18 };
@@ -478,4 +638,4 @@ namespace CryptoNote
     typedef EMPTY_STRUCT response;
   };
 
-}
+} // namespace CryptoNote

@@ -94,7 +94,17 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
              newState == SwapState::ADAPTOR_REFUNDED;
 
     case SwapState::ADAPTOR_SECRET_REVEALED:
-      return newState == SwapState::ADAPTOR_XFG_SPENT;
+      return newState == SwapState::ADAPTOR_XFG_SPENT ||
+             newState == SwapState::ADAPTOR_WAITING_SPV;
+
+    case SwapState::ADAPTOR_WAITING_SPV:
+      return newState == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV ||
+             newState == SwapState::ADAPTOR_XFG_SPENT ||
+             newState == SwapState::ADAPTOR_REFUNDED;
+
+    case SwapState::ADAPTOR_SECRET_CONFIRMED_SPV:
+      return newState == SwapState::ADAPTOR_XFG_SPENT ||
+             newState == SwapState::ADAPTOR_REFUNDED;
 
     case SwapState::AFK_OFFER_LOCKED:
       return newState == SwapState::AFK_OFFER_ACCEPTED ||

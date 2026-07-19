@@ -16,15 +16,17 @@
 
 #include <string>
 #include <vector>
-#include <deque>
 #include <map>
+#include <deque>
 #include <mutex>
 #include <thread>
 #include <atomic>
-#include <cstdint>
-#include <ctime>
+#include <functional>
+#include <tuple>
+#include <chrono>
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
+#include "P2p/P2pProtocolDefinitions.h"
 
 namespace CryptoNote {
 
@@ -32,179 +34,256 @@ class core;
 class NodeServer;
 class IP2pEndpoint;
 
-// A swap offer relayed over P2P
+// ═══════════════════════════════════════════════════════════════════════════════
+// Legacy v1 types — used by existing RPC handlers, OfferManager, SwapDaemon
+// ═══════════════════════════════════════════════════════════════════════════════
+
 struct SwapOfferMsg {
-  std::string offerId;      // SHA-256 of (maker_pubkey || pair || amount || rate || timestamp)
-  bool        isSell;       // true = selling XFG for CTR
-  uint64_t    xfgAmount;    // atomic units (7 decimals) — total offered amount
-  uint64_t    filledAmount; // atomic units already locked via partial fills
-  uint64_t    rateNum;      // rate numerator (XFG per 1 CTR, scaled by 1e7)
-  uint8_t     pair;         // 0=SOL, 1=ETH, 2=XMR, 3=BCH, 4=ARB
-  Crypto::PublicKey makerPubKey;  // maker's wallet pubkey
-  Crypto::Signature signature;   // signs (offerId) with maker's key
-  uint64_t    timestamp;
-  uint32_t    ttlBlocks;    // offer expires after this many blocks from posting
-  uint32_t    postedHeight; // block height when posted
-  bool        isSoftOrder;  // true if this is an intent without an on-chain lock
-  uint8_t     allowedSlippagePct; // allowed slippage
+  std::string offerId;
+  bool        isSell      = true;
+  uint64_t    xfgAmount   = 0;
+  uint64_t    rateNum     = 0;   // XFG per 1 CTR, scaled by 1e7
+  uint8_t     pair        = 0;   // 0=XMR, 1=ETH, 2=BCH, 3=SOL, 4=ARB, 5=BASE
+  Crypto::PublicKey makerPubKey;
+  Crypto::Signature signature;
+  uint64_t    timestamp   = 0;
+  uint32_t    ttlBlocks   = 0;
+  uint32_t    postedHeight = 0;
+  bool        isSoftOrder = false;
+  uint8_t     allowedSlippagePct = 0;
+  uint64_t    filledAmount = 0;
 };
 
-// A completed swap trade (for TWAP tracking)
 struct SwapTradeRecord {
-  uint8_t     pair;
-  uint64_t    xfgAmount;
-  uint64_t    ctrAmount;
-  double      rate;
-  uint32_t    blockHeight;
-  uint64_t    timestamp;
+  uint8_t     pair        = 0;
+  uint64_t    xfgAmount   = 0;
+  uint64_t    ctrAmount   = 0;
+  double      rate        = 0.0;
+  uint32_t    blockHeight = 0;
+  uint64_t    timestamp   = 0;
 };
 
-// ============================================================================
-// External price source abstraction
-// ============================================================================
-
-// Each source contributes a rate (XFG per 1 CTR) for a given pair.
-// Weight determines influence in the composite price.
-// Sources with rate=0 or stale=true are excluded from the composite.
 struct PriceSource {
-  std::string name;       // e.g. "atomic_swap", "heat_eth_pool", "coingecko"
-  uint8_t     pair;       // 0=SOL, 1=ETH, 2=XMR, 3=BCH, 255=USD (direct)
-  double      weight;     // relative weight (higher = more influence)
-  double      rate;       // XFG per 1 CTR coin (0 = no data)
-  uint64_t    updatedAt;  // unix timestamp of last update
-  bool        stale;      // true if data is too old to trust
+  std::string name;
+  uint8_t     pair    = 0;
+  double      weight  = 0.0;
+  double      rate    = 0.0;
+  uint64_t    updatedAt = 0;
+  bool        stale   = false;
 };
 
-// Composite price result with source breakdown
 struct CompositePrice {
-  double      rate;                       // weighted average XFG/CTR
-  double      totalWeight;                // sum of contributing weights
-  size_t      sourceCount;                // how many sources contributed
-  std::vector<PriceSource> sources;       // individual source snapshots
+  double rate        = 0.0;
+  size_t sourceCount = 0;
+  std::vector<PriceSource> sources;
 };
 
-// Cross-pair native XFG price range (USD-equivalent via CTR reference prices)
 struct NativeXfgPriceRange {
-  double      lowUsd;       // lowest implied USD price across all pairs
-  double      highUsd;      // highest implied USD price across all pairs
-  double      midUsd;       // average
-  size_t      pairCount;    // how many pairs contributed
-
-  // Per-pair implied prices (pair index → implied USD)
-  std::map<uint8_t, double> pairImplied;
+  double lowUsd  = 0.0;
+  double highUsd = 0.0;
+  double midUsd  = 0.0;
+  std::vector<std::pair<uint8_t, double>> pairImplied;
 };
 
-// HEAT/ETH pool config — drop-in when pool address is known
-// 1 private XFG = 10,000,000 HEAT (public ERC-20)
-static const uint64_t HEAT_PER_XFG = 10000000ULL;
+// ═══════════════════════════════════════════════════════════════════════════════
+// v2 Orderbook types — price-ladder CLOB for cross-chain swap pairs
+// ═══════════════════════════════════════════════════════════════════════════════
 
-struct PoolSourceConfig {
-  std::string name;             // "heat_eth_pool", "uniswap_v3", etc.
-  std::string endpoint;         // RPC/API URL (empty = disabled)
-  std::string poolAddress;      // contract address (empty = disabled)
-  uint8_t     pair;             // which pair this maps to
-  double      weight;           // relative weight
-  uint64_t    pollIntervalSec;  // how often to fetch (0 = manual only)
-  uint64_t    maxAgeSec;        // mark stale after this many seconds
+struct SwapOrder {
+  enum class Side : uint8_t { BID = 0, ASK = 1 };
+
+  std::string  orderId;       // daemon-generated: cn_fast_hash(canonical fields)
+  Side         side;
+  uint8_t      pair;          // 0=XMR..5=BASE
+  uint64_t     price;         // XFG per 1 CTR, scaled by 1e7
+  uint64_t     amount;        // total order size in XFG atomic units
+  uint64_t     filled;        // amount filled so far
+  Crypto::PublicKey makerPubKey;
+  Crypto::Signature signature;  // signs canonical(orderId+side+pair+price+amount+nonce)
+  uint64_t     nonce;         // maker monotonic counter (replay protection)
+  uint64_t     timestamp;
+  uint32_t     ttlBlocks;
+  uint32_t     postedHeight;
 };
 
-// ============================================================================
-// Swap offer relay service
-// ============================================================================
+struct PriceLevel {
+  std::deque<SwapOrder> orders;  // FIFO at same price
 
-// Swap offer relay service
+  uint64_t totalDepth() const {
+    uint64_t d = 0;
+    for (const auto& o : orders) d += (o.amount - o.filled);
+    return d;
+  }
+};
+
+struct PairOrderBook {
+  std::map<uint64_t, PriceLevel> bids;  // highest first (operator> for uint64_t)
+  std::map<uint64_t, PriceLevel> asks;  // lowest first
+
+  uint64_t bestBid() const { return bids.empty() ? 0 : bids.rbegin()->first; }
+  uint64_t bestAsk() const { return asks.empty() ? 0 : asks.begin()->first; }
+
+  void clear() { bids.clear(); asks.clear(); }
+};
+
+struct Reservation {
+  std::string reservationId;
+  std::string takerOrderId;
+  std::string makerOrderId;
+  uint64_t    amount     = 0;
+  uint64_t    expiresAt  = 0;  // unix timestamp
+  std::string takerPubKey;
+};
+
+struct OrderBookSnapshot {
+  struct LevelJson {
+    uint64_t price      = 0;
+    uint64_t amount     = 0;
+    int      orderCount = 0;
+  };
+  std::vector<LevelJson> bids;
+  std::vector<LevelJson> asks;
+  uint64_t spread  = 0;
+  uint64_t height  = 0;
+};
+
+struct PendingSwapRequest {
+  std::string offerId;
+  uint64_t    amount      = 0;
+  std::string takerPubKey;
+  std::string proofOfFunds;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SwapOfferRelay — unified relay for legacy v1 + v2 orderbook
+// ═══════════════════════════════════════════════════════════════════════════════
+
 class SwapOfferRelay {
 public:
   SwapOfferRelay(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint = nullptr);
   ~SwapOfferRelay();
 
-  // Start/stop the relay service
   void start();
   void stop();
 
-  // Handle incoming offer from P2P
-  void handleOfferMessage(const SwapOfferMsg& offer);
+  // ── Legacy v1 interface (used by CryptoNoteProtocolHandler, RpcServer, SwapDaemon) ──
 
-  // Handle incoming cancel from P2P
-  void handleCancelMessage(const std::string& offerId, const Crypto::PublicKey& pubkey,
+  void handleOfferMessage(const COMMAND_SWAP_OFFER::request& msg);
+  void handleCancelMessage(const std::string& offerId,
+                           const Crypto::PublicKey& pubkey,
                            const Crypto::Signature& sig);
-
-  // Handle incoming swap request from taker P2P (auto-execution trigger)
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
-
-  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> getPendingSwapRequests();
-
-  // Handle completed swap notification (for TWAP)
   void handleTradeCompleted(const SwapTradeRecord& trade);
 
-  // Query interface (used by RPC handlers)
   std::vector<SwapOfferMsg> getOffers(uint8_t pair) const;
   std::vector<SwapOfferMsg> getAllOffers() const;
-  std::vector<SwapTradeRecord> getRecentTrades(uint8_t pair, size_t limit) const;
-  double getTwap(uint8_t pair) const;
-
-  // Composite pricing — weighted across all sources
-  CompositePrice getCompositePrice(uint8_t pair) const;
-
-  // Cross-pair native XFG price range (USD-equivalent)
-  NativeXfgPriceRange getNativeXfgPrice() const;
-
-  // Register an external price source (HEAT pool, DEX, CEX)
-  // Call updateExternalPrice() to push new data when available.
-  void addExternalSource(const PoolSourceConfig& config);
-  void updateExternalPrice(const std::string& sourceName, uint8_t pair, double rate);
-
-  // Submit a new offer (from local RPC)
   bool submitOffer(const SwapOfferMsg& offer);
-
-  // Cancel an offer (from local RPC)
-  bool cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey,
+  bool cancelOffer(const std::string& offerId,
+                   const Crypto::PublicKey& pubkey,
                    const Crypto::Signature& sig);
+  bool updateOfferAmount(const std::string& offerId, uint64_t newRemaining);
 
-  // Update offer amount after partial fill. Removes offer if below dust threshold.
-  bool updateOfferAmount(const std::string& offerId, uint64_t newAmount);
+  double getTwap(uint8_t pair) const;
+  CompositePrice getCompositePrice(uint8_t pair) const;
+  NativeXfgPriceRange getNativeXfgPrice() const;
+  std::vector<SwapTradeRecord> getRecentTrades(uint8_t pair, uint32_t limit) const;
 
-  // Seed rates: XFG per 1 whole CTR coin (1 XFG = $0.01 USD)
   static double getSeedRate(uint8_t pair);
 
-  // Reference USD prices for CTR coins (for cross-pair triangulation)
-  static double getCtrUsdPrice(uint8_t pair);
+  std::vector<PendingSwapRequest> getPendingSwapRequests();
+
+  // ── v2 Orderbook interface ──
+
+  // Handle incoming COMMAND_ORDER_OPEN from P2P
+  void handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg);
+  // Handle incoming COMMAND_ORDER_CANCEL from P2P
+  void handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg);
+  // Handle incoming COMMAND_ORDER_FILL from P2P (replay protection only)
+  void handleOrderFill(const COMMAND_ORDER_FILL::request& msg);
+  // Handle incoming COMMAND_ORDER_RESERVE from P2P
+  void handleOrderReserve(const COMMAND_ORDER_RESERVE::request& msg);
+  // Handle incoming COMMAND_ORDER_RESERVE_ACK from P2P
+  void handleOrderReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg);
+
+  // RPC handlers
+  OrderBookSnapshot getOrderBookSnapshot(uint8_t pair, int depth) const;
+  bool placeOrder(SwapOrder::Side side, uint8_t pair, uint64_t price,
+                  uint64_t amount, uint32_t ttlBlocks, std::string& outOrderId);
+  bool cancelOrderByClient(const std::string& orderId);
+
+  // Match an incoming taker order against the book
+  // Returns fills: vector of (makerOrderId, fillPrice, fillAmount)
+  struct Fill {
+    std::string makerOrderId;
+    uint64_t    fillPrice;
+    uint64_t    fillAmount;
+  };
+  std::vector<Fill> matchOrder(SwapOrder::Side takerSide, uint8_t pair,
+                               uint64_t takerPrice, uint64_t takerAmount);
 
 private:
+  // ── Legacy v1 internals ──
+  bool validateOffer(const SwapOfferMsg& offer) const;
+  void cleanupLegacyOffers();
+
+  // ── v2 Orderbook internals ──
+  std::string generateOrderId(const SwapOrder& o) const;
+  bool validateOrderSignature(const SwapOrder& o) const;
+  void insertOrderIntoBook(SwapOrder&& order);
+  void broadcastOrderOpen(const COMMAND_ORDER_OPEN::request& msg);
+  void broadcastOrderCancel(const COMMAND_ORDER_CANCEL::request& msg);
+  void broadcastOrderFill(const COMMAND_ORDER_FILL::request& msg);
+  void broadcastReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg);
+  void cleanupExpiredOrders();
+  void cleanupExpiredReservations();
+  static constexpr uint32_t RESERVATION_TTL_SECS = 30;
+  static constexpr size_t MAX_ORDERS_PER_PAIR = 50000;
+  static constexpr size_t MAX_TRADES = 10000;
+
+  // ── Cleanup thread ──
+  void cleanupThread();
+
   core& m_core;
   NodeServer& m_p2p;
   IP2pEndpoint* m_p2pEndpoint;
   mutable std::mutex m_mutex;
   std::atomic<bool> m_running{false};
-
-  // Cleanup thread — prunes expired offers
   std::thread m_cleanupThread;
-  void cleanupThread();
 
-  // Active offers indexed by offerId
-  static constexpr size_t MAX_OFFERS = 10000;
+  // ── Legacy v1 state ──
+  static constexpr size_t MAX_LEGACY_OFFERS = 10000;
   std::map<std::string, SwapOfferMsg> m_offers;
-  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> m_pendingRequests;
+  std::vector<SwapTradeRecord> m_trades;
+  std::vector<PendingSwapRequest> m_pendingRequests;
 
-  // Completed trades for TWAP (bounded deque, newest at back)
-  std::deque<SwapTradeRecord> m_trades;
-  static const size_t MAX_TRADE_HISTORY = 200;
+  // TWAP state per pair
+  struct TwapState {
+    double sumProduct = 0.0;  // sum of (rate * volume)
+    double sumVolume  = 0.0;
+    uint32_t windowStart = 0;
+    static constexpr uint32_t WINDOW_BLOCKS = 33;
+  };
+  std::map<uint8_t, TwapState> m_twap;
 
-  // TWAP parameters
-  static const size_t TWAP_WINDOW = 20;
-  static const uint64_t TWAP_MAX_AGE = 604800;  // 7 days
-  static const size_t TWAP_MIN_TRADES = 5;
+  // Composite price state per pair
+  struct CompositeState {
+    std::vector<PriceSource> sources;
+    double rate = 0.0;
+  };
+  std::map<uint8_t, CompositeState> m_composite;
 
-  // Price drift auto-cancel: soft orders drifting beyond this % from TWAP are pruned
-  static constexpr double SOFT_ORDER_MAX_DRIFT_PCT = 15.0;
+  // Native XFG price
+  NativeXfgPriceRange m_nativeXfgPrice;
 
-  // External price sources (keyed by name)
-  std::map<std::string, PriceSource> m_externalSources;
-  std::vector<PoolSourceConfig> m_poolConfigs;
+  // ── v2 Orderbook state ──
+  PairOrderBook m_orderBooks[8];  // indexed by pair (0..7)
+  std::map<std::string, SwapOrder> m_allOrders;  // orderId → order (all orders across all pairs)
+  std::vector<std::string> m_filledOrderIds;  // for replay protection on COMMAND_ORDER_FILL
+  std::map<std::string, Reservation> m_reservations;  // reservationId → Reservation
 
-  // Validate offer signature
-  bool validateOffer(const SwapOfferMsg& offer) const;
+  // Client pubkey → orderId lookup (for cancel-by-client)
+  std::map<Crypto::PublicKey, std::vector<std::string>> m_clientOrders;
 };
 
-}  // namespace CryptoNote
+} // namespace CryptoNote

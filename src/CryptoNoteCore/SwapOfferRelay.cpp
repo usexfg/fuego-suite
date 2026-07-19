@@ -14,53 +14,15 @@
 
 #include "SwapOfferRelay.h"
 #include "Core.h"
-#include "P2p/NetNode.h"
-#include "P2p/NetNodeCommon.h"
-#include "P2p/P2pProtocolDefinitions.h"
 #include "P2p/LevinProtocol.h"
-#include "crypto/crypto.h"
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <map>
-#include <HTTP/httplib.h>
-#include <json/json.h>
+#include "Logging/LoggerRef.h"
+#include "Common/Util.h"
 
 namespace CryptoNote {
 
-// Seed rates: XFG per 1 whole CTR coin (1 XFG = $0.01 USD, March 2026)
-//   SOL = $170   →  17,000 XFG/SOL  (pair 0)
-//   ETH = $2,140 → 214,000 XFG/ETH  (pair 1)
-//   XMR = $343   →  34,300 XFG/XMR  (pair 2)
-//   BCH = $469   →  46,900 XFG/BCH  (pair 3)
-//   ARB = $2,140 → 214,000 XFG/ARB  (pair 4, same asset as ETH)
-double SwapOfferRelay::getSeedRate(uint8_t pair) {
-  static const std::map<uint8_t, double> rates = {
-    {0, 17000.0},   // SOL
-    {1, 214000.0},  // ETH
-    {2, 34300.0},   // XMR
-    {3, 46900.0},   // BCH
-    {4, 214000.0},  // ARB
-    {5, 214000.0},  // BASE
-  };
-  auto it = rates.find(pair);
-  return (it != rates.end()) ? it->second : 0.0;
-}
-
-// Reference USD prices for counterparty coins (for cross-pair triangulation)
-// These are bootstrap values; external sources override when available.
-double SwapOfferRelay::getCtrUsdPrice(uint8_t pair) {
-  static const std::map<uint8_t, double> prices = {
-    {0, 170.0},    // SOL
-    {1, 2140.0},   // ETH
-    {2, 343.0},    // XMR
-    {3, 469.0},    // BCH
-    {4, 2140.0},   // ARB
-    {5, 2140.0},   // BASE
-  };
-  auto it = prices.find(pair);
-  return (it != prices.end()) ? it->second : 0.0;
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// Construction / lifecycle
+// ═══════════════════════════════════════════════════════════════════════════════
 
 SwapOfferRelay::SwapOfferRelay(core& ccore, NodeServer& p2psrv, IP2pEndpoint* p2pEndpoint)
   : m_core(ccore), m_p2p(p2psrv), m_p2pEndpoint(p2pEndpoint) {
@@ -73,9 +35,8 @@ SwapOfferRelay::~SwapOfferRelay() {
 void SwapOfferRelay::start() {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_running) return;
-
   m_running = true;
-  m_cleanupThread = std::thread([this] { cleanupThread(); });
+  m_cleanupThread = std::thread(&SwapOfferRelay::cleanupThread, this);
 }
 
 void SwapOfferRelay::stop() {
@@ -85,90 +46,122 @@ void SwapOfferRelay::stop() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Cleanup thread
+// ═══════════════════════════════════════════════════════════════════════════════
+
 void SwapOfferRelay::cleanupThread() {
   while (m_running) {
     try {
-      uint32_t currentHeight = 0;
-      Crypto::Hash topId;
-      m_core.get_blockchain_top(currentHeight, topId);
+      cleanupLegacyOffers();
+      cleanupExpiredOrders();
+      cleanupExpiredReservations();
+    } catch (...) {}
 
-      {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        for (auto it = m_offers.begin(); it != m_offers.end(); ) {
-          if (currentHeight > it->second.postedHeight + it->second.ttlBlocks) {
-            it = m_offers.erase(it);
-          } else {
-            ++it;
-          }
-        }
-
-        while (m_trades.size() > MAX_TRADE_HISTORY) {
-          m_trades.pop_front();
-        }
-      }
-
-      double twap[6] = {};
-      for (int p = 0; p < 6; ++p) {
-        twap[p] = getTwap(static_cast<uint8_t>(p));
-      }
-
-      {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        for (auto it = m_offers.begin(); it != m_offers.end(); ) {
-          if (it->second.isSoftOrder && it->second.pair < 6) {
-            double offerRate = static_cast<double>(it->second.rateNum) / 1e7;
-            double pairTwap = twap[it->second.pair];
-            if (pairTwap > 0.0 && offerRate > 0.0) {
-              double drift = std::abs(offerRate - pairTwap) / pairTwap * 100.0;
-              if (drift > SOFT_ORDER_MAX_DRIFT_PCT) {
-                it = m_offers.erase(it);
-                continue;
-              }
-            }
-          }
-          ++it;
-        }
-      }
-    } catch (...) {
-      // Non-fatal
-    }
-
-    // Clean up every 30 seconds
     for (int i = 0; i < 30 && m_running; ++i) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
 }
 
+void SwapOfferRelay::cleanupLegacyOffers() {
+  uint32_t currentHeight = 0;
+  Crypto::Hash topId;
+  m_core.get_blockchain_top(currentHeight, topId);
+
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (auto it = m_offers.begin(); it != m_offers.end(); ) {
+    if (currentHeight > it->second.postedHeight + it->second.ttlBlocks) {
+      it = m_offers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void SwapOfferRelay::cleanupExpiredOrders() {
+  uint32_t currentHeight = 0;
+  Crypto::Hash topId;
+  m_core.get_blockchain_top(currentHeight, topId);
+
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (int pair = 0; pair < 8; ++pair) {
+    auto& book = m_orderBooks[pair];
+    auto cleanLadder = [&](std::map<uint64_t, PriceLevel>& ladder) {
+      for (auto priceIt = ladder.begin(); priceIt != ladder.end(); ) {
+        auto& q = priceIt->second;
+        for (auto oit = q.orders.begin(); oit != q.orders.end(); ) {
+          if (currentHeight > oit->postedHeight + oit->ttlBlocks) {
+            m_allOrders.erase(oit->orderId);
+            oit = q.orders.erase(oit);
+          } else {
+            ++oit;
+          }
+        }
+        if (q.orders.empty()) {
+          priceIt = ladder.erase(priceIt);
+        } else {
+          ++priceIt;
+        }
+      }
+    };
+    cleanLadder(book.bids);
+    cleanLadder(book.asks);
+  }
+}
+
+void SwapOfferRelay::cleanupExpiredReservations() {
+  uint64_t now = static_cast<uint64_t>(std::time(nullptr));
+  std::lock_guard<std::mutex> lock(m_mutex);
+  for (auto it = m_reservations.begin(); it != m_reservations.end(); ) {
+    if (now > it->second.expiresAt) {
+      it = m_reservations.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Legacy v1 implementation
+// ═══════════════════════════════════════════════════════════════════════════════
+
 bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
-  if (offer.xfgAmount == 0) return false;
-  if (offer.rateNum == 0) return false;
-  if (offer.pair > 5) return false;
-  if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;  // max ~6 days at 8min blocks
-
-  // Verify signature: maker signs the offerId hash
+  if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
+  if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
   Crypto::Hash offerHash;
   cn_fast_hash(offer.offerId.data(), offer.offerId.size(), offerHash);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
 }
 
-void SwapOfferRelay::handleOfferMessage(const SwapOfferMsg& offer) {
-  if (!validateOffer(offer)) return;
+void SwapOfferRelay::handleOfferMessage(const COMMAND_SWAP_OFFER::request& msg) {
+  SwapOfferMsg offer;
+  offer.offerId            = msg.offerId;
+  offer.xfgAmount          = msg.xfgAmount;
+  offer.rateNum            = msg.rateNum;
+  offer.pair               = msg.pair;
+  offer.makerPubKey        = msg.makerPubKey;
+  offer.signature          = msg.signature;
+  offer.timestamp          = msg.timestamp;
+  offer.ttlBlocks          = msg.ttlBlocks;
+  offer.postedHeight       = msg.postedHeight;
+  offer.isSoftOrder        = msg.isSoftOrder;
+  offer.allowedSlippagePct = msg.allowedSlippagePct;
+  offer.isSell             = true;
 
+  if (!validateOffer(offer)) return;
   std::lock_guard<std::mutex> lock(m_mutex);
-  // Don't replace existing offers — first-seen wins
   if (m_offers.find(offer.offerId) != m_offers.end()) return;
-  if (m_offers.size() >= MAX_OFFERS) return; // DoS protection
-  m_offers[offer.offerId] = offer;
+  if (m_offers.size() >= MAX_LEGACY_OFFERS) return;
+  m_offers[offer.offerId] = std::move(offer);
 }
 
 void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
-                                          const Crypto::PublicKey& pubkey,
-                                          const Crypto::Signature& sig) {
-  // Verify the canceller is the maker
-  Crypto::Hash cancelHash;
+                                         const Crypto::PublicKey& pubkey,
+                                         const Crypto::Signature& sig) {
   std::string cancelData = "cancel:" + offerId;
+  Crypto::Hash cancelHash;
   cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
   if (!Crypto::check_signature(cancelHash, pubkey, sig)) return;
 
@@ -180,85 +173,44 @@ void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
 }
 
 void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amount,
-                                       const std::string& takerPubKey, const std::string& proofOfFunds) {
+                                       const std::string& takerPubKey,
+                                       const std::string& proofOfFunds) {
   std::lock_guard<std::mutex> lock(m_mutex);
-  auto it = m_offers.find(offerId);
-  if (it != m_offers.end()) {
-    m_pendingRequests.push_back(std::make_tuple(offerId, amount, takerPubKey, proofOfFunds));
-  }
-}
-
-std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> SwapOfferRelay::getPendingSwapRequests() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  std::vector<std::tuple<std::string, uint64_t, std::string, std::string>> result = m_pendingRequests;
-  m_pendingRequests.clear();
-  return result;
+  m_pendingRequests.push_back({offerId, amount, takerPubKey, proofOfFunds});
 }
 
 void SwapOfferRelay::handleTradeCompleted(const SwapTradeRecord& trade) {
   std::lock_guard<std::mutex> lock(m_mutex);
+
   m_trades.push_back(trade);
-  while (m_trades.size() > MAX_TRADE_HISTORY) {
-    m_trades.pop_front();
+  if (m_trades.size() > MAX_TRADES) {
+    m_trades.erase(m_trades.begin(), m_trades.begin() + (m_trades.size() - MAX_TRADES));
   }
+
+  auto& ts = m_twap[trade.pair];
+  ts.sumProduct += trade.rate * static_cast<double>(trade.xfgAmount);
+  ts.sumVolume  += static_cast<double>(trade.xfgAmount);
 }
 
 std::vector<SwapOfferMsg> SwapOfferRelay::getOffers(uint8_t pair) const {
   std::lock_guard<std::mutex> lock(m_mutex);
-  std::vector<SwapOfferMsg> result;
+  std::vector<SwapOfferMsg> res;
   for (const auto& kv : m_offers) {
     if (kv.second.pair == pair) {
-      result.push_back(kv.second);
+      res.push_back(kv.second);
     }
   }
-  return result;
+  return res;
 }
 
 std::vector<SwapOfferMsg> SwapOfferRelay::getAllOffers() const {
   std::lock_guard<std::mutex> lock(m_mutex);
-  std::vector<SwapOfferMsg> result;
-  result.reserve(m_offers.size());
+  std::vector<SwapOfferMsg> res;
+  res.reserve(m_offers.size());
   for (const auto& kv : m_offers) {
-    result.push_back(kv.second);
+    res.push_back(kv.second);
   }
-  return result;
-}
-
-std::vector<SwapTradeRecord> SwapOfferRelay::getRecentTrades(uint8_t pair, size_t limit) const {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  std::vector<SwapTradeRecord> result;
-  for (auto it = m_trades.rbegin(); it != m_trades.rend() && result.size() < limit; ++it) {
-    if (it->pair == pair) {
-      result.push_back(*it);
-    }
-  }
-  return result;
-}
-
-double SwapOfferRelay::getTwap(uint8_t pair) const {
-  std::lock_guard<std::mutex> lock(m_mutex);
-
-  time_t now = std::time(nullptr);
-  double weightedSum = 0.0;
-  double volumeSum = 0.0;
-  size_t count = 0;
-
-  for (auto it = m_trades.rbegin(); it != m_trades.rend() && count < TWAP_WINDOW; ++it) {
-    if (it->pair != pair) continue;
-    if (TWAP_MAX_AGE > 0 && (now - static_cast<time_t>(it->timestamp)) > static_cast<time_t>(TWAP_MAX_AGE)) {
-      continue;
-    }
-    double volume = static_cast<double>(it->xfgAmount) / 1e7;
-    weightedSum += it->rate * volume;
-    volumeSum += volume;
-    ++count;
-  }
-
-  if (count < TWAP_MIN_TRADES || volumeSum <= 0.0) {
-    return getSeedRate(pair);  // Not enough data, use seed rate
-  }
-
-  return weightedSum / volumeSum;
+  return res;
 }
 
 bool SwapOfferRelay::submitOffer(const SwapOfferMsg& offer) {
@@ -266,287 +218,540 @@ bool SwapOfferRelay::submitOffer(const SwapOfferMsg& offer) {
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_offers.find(offer.offerId) != m_offers.end()) return false;  // duplicate
+    if (m_offers.find(offer.offerId) != m_offers.end()) return false;
+    if (m_offers.size() >= MAX_LEGACY_OFFERS) return false;
     m_offers[offer.offerId] = offer;
   }
 
-  // Relay to P2P peers
   if (m_p2pEndpoint) {
     COMMAND_SWAP_OFFER::request msg;
-    msg.offerId = offer.offerId;
-    msg.xfgAmount = offer.xfgAmount;
-    msg.rateNum = offer.rateNum;
-    msg.pair = offer.pair;
-    msg.makerPubKey = offer.makerPubKey;
-    msg.signature = offer.signature;
-    msg.timestamp = offer.timestamp;
-    msg.ttlBlocks = offer.ttlBlocks;
-    msg.postedHeight = offer.postedHeight;
-    msg.isSoftOrder = offer.isSoftOrder;
-
-    if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
-      msg.dandelion_stem = true;
-    }
-
+    msg.offerId            = offer.offerId;
+    msg.xfgAmount          = offer.xfgAmount;
+    msg.rateNum            = offer.rateNum;
+    msg.pair               = offer.pair;
+    msg.makerPubKey        = offer.makerPubKey;
+    msg.signature          = offer.signature;
+    msg.timestamp          = offer.timestamp;
+    msg.ttlBlocks          = offer.ttlBlocks;
+    msg.postedHeight       = offer.postedHeight;
+    msg.isSoftOrder        = offer.isSoftOrder;
+    msg.allowedSlippagePct = offer.allowedSlippagePct;
     auto buf = LevinProtocol::encode(msg);
-    if (msg.dandelion_stem) {
-      m_p2pEndpoint->externalRelayNotifyToStem(COMMAND_SWAP_OFFER::ID, buf, nullptr);
-    } else {
-      m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
-    }
+    m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
   }
-
   return true;
 }
 
 bool SwapOfferRelay::cancelOffer(const std::string& offerId,
-                                  const Crypto::PublicKey& pubkey,
-                                  const Crypto::Signature& sig) {
+                                 const Crypto::PublicKey& pubkey,
+                                 const Crypto::Signature& sig) {
   handleCancelMessage(offerId, pubkey, sig);
 
-  // Relay cancel to P2P peers
   if (m_p2pEndpoint) {
     COMMAND_SWAP_CANCEL::request msg;
-    msg.offerId = offerId;
+    msg.offerId    = offerId;
     msg.makerPubKey = pubkey;
-    msg.signature = sig;
-
+    msg.signature   = sig;
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_CANCEL::ID, buf, nullptr);
   }
-
   return true;
 }
 
-bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newAmount) {
+bool SwapOfferRelay::updateOfferAmount(const std::string& offerId, uint64_t newRemaining) {
   std::lock_guard<std::mutex> lock(m_mutex);
   auto it = m_offers.find(offerId);
   if (it == m_offers.end()) return false;
-
-  static constexpr uint64_t DUST_THRESHOLD = 10000000ULL;
-
-  if (newAmount <= it->second.xfgAmount) {
-    it->second.filledAmount += (it->second.xfgAmount - newAmount);
-  }
-  it->second.xfgAmount = newAmount;
-
-  if (newAmount < DUST_THRESHOLD) {
+  it->second.filledAmount = it->second.xfgAmount - newRemaining;
+  if (newRemaining == 0) {
     m_offers.erase(it);
-    return true;
+  }
+  return true;
+}
+
+double SwapOfferRelay::getTwap(uint8_t pair) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_twap.find(pair);
+  if (it == m_twap.end() || it->second.sumVolume == 0.0) {
+    return getSeedRate(pair);
+  }
+  return it->second.sumProduct / it->second.sumVolume;
+}
+
+CompositePrice SwapOfferRelay::getCompositePrice(uint8_t pair) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_composite.find(pair);
+  if (it == m_composite.end()) {
+    CompositePrice cp;
+    cp.rate = getSeedRate(pair);
+    cp.sourceCount = 0;
+    return cp;
+  }
+  CompositePrice cp;
+  cp.rate        = it->second.rate;
+  cp.sourceCount = it->second.sources.size();
+  cp.sources     = it->second.sources;
+  return cp;
+}
+
+NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_nativeXfgPrice;
+}
+
+std::vector<SwapTradeRecord> SwapOfferRelay::getRecentTrades(uint8_t pair, uint32_t limit) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<SwapTradeRecord> res;
+  for (auto it = m_trades.rbegin(); it != m_trades.rend() && res.size() < limit; ++it) {
+    if (it->pair == pair) {
+      res.push_back(*it);
+    }
+  }
+  return res;
+}
+
+double SwapOfferRelay::getSeedRate(uint8_t pair) {
+  switch (pair) {
+    case 0: return 145.0;   // XMR
+    case 1: return 3500.0;  // ETH
+    case 2: return 450.0;   // BCH
+    case 3: return 170.0;   // SOL
+    case 4: return 1800.0;  // ARB
+    case 5: return 1800.0;  // BASE
+    case 6: return 380.0;   // BNB
+    default: return 0.0;
+  }
+}
+
+std::vector<PendingSwapRequest> SwapOfferRelay::getPendingSwapRequests() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  std::vector<PendingSwapRequest> result;
+  result.swap(m_pendingRequests);
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// v2 Orderbook implementation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+std::string SwapOfferRelay::generateOrderId(const SwapOrder& o) const {
+  std::string data;
+  data.append(reinterpret_cast<const char*>(&o.makerPubKey), sizeof(o.makerPubKey));
+  data.append(reinterpret_cast<const char*>(&o.side), sizeof(o.side));
+  data.append(reinterpret_cast<const char*>(&o.pair), sizeof(o.pair));
+  data.append(reinterpret_cast<const char*>(&o.price), sizeof(o.price));
+  data.append(reinterpret_cast<const char*>(&o.amount), sizeof(o.amount));
+  data.append(reinterpret_cast<const char*>(&o.nonce), sizeof(o.nonce));
+  data.append(reinterpret_cast<const char*>(&o.timestamp), sizeof(o.timestamp));
+
+  Crypto::Hash hash;
+  cn_fast_hash(data.data(), data.size(), hash);
+  return Common::podToHex(hash);
+}
+
+bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
+  if (o.orderId.empty()) return false;
+  if (o.amount == 0 || o.price == 0) return false;
+  if (o.ttlBlocks == 0 || o.ttlBlocks > 1080) return false;
+
+  // Sign canonical fields: orderId + side + pair + price + amount + nonce
+  std::string data;
+  data.append(o.orderId);
+  data.append(reinterpret_cast<const char*>(&o.side), sizeof(o.side));
+  data.append(reinterpret_cast<const char*>(&o.pair), sizeof(o.pair));
+  data.append(reinterpret_cast<const char*>(&o.price), sizeof(o.price));
+  data.append(reinterpret_cast<const char*>(&o.amount), sizeof(o.amount));
+  data.append(reinterpret_cast<const char*>(&o.nonce), sizeof(o.nonce));
+
+  Crypto::Hash hash;
+  cn_fast_hash(data.data(), data.size(), hash);
+  return Crypto::check_signature(hash, o.makerPubKey, o.signature);
+}
+
+void SwapOfferRelay::insertOrderIntoBook(SwapOrder&& order) {
+  uint8_t pair = order.pair;
+  uint64_t price = order.price;
+  auto& book = m_orderBooks[pair];
+
+  if (order.side == SwapOrder::Side::ASK) {
+    book.asks[price].orders.push_back(std::move(order));
+  } else {
+    book.bids[price].orders.push_back(std::move(order));
+  }
+}
+
+void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
+  SwapOrder order;
+  order.orderId      = msg.orderId;
+  order.side         = static_cast<SwapOrder::Side>(msg.side);
+  order.pair         = msg.pair;
+  order.price        = msg.price;
+  order.amount       = msg.amount;
+  order.makerPubKey  = msg.makerPubKey;
+  order.signature    = msg.signature;
+  order.nonce        = msg.nonce;
+  order.timestamp    = msg.timestamp;
+  order.ttlBlocks    = msg.ttlBlocks;
+  order.postedHeight = msg.postedHeight;
+  order.filled       = 0;
+
+  if (!validateOrderSignature(order)) return;
+
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (m_allOrders.size() >= MAX_ORDERS_PER_PAIR) return;
+  if (m_allOrders.find(order.orderId) != m_allOrders.end()) return;
+
+  // Check if this order can match
+  auto fills = matchOrder(order.side, order.pair, order.price, order.amount);
+
+  if (!fills.empty()) {
+    // Record fills
+    for (const auto& fill : fills) {
+      COMMAND_ORDER_FILL::request fillMsg;
+      fillMsg.takerOrderId = order.orderId;
+      fillMsg.makerOrderId = fill.makerOrderId;
+      fillMsg.fillAmount   = fill.fillAmount;
+      fillMsg.fillPrice    = fill.fillPrice;
+      fillMsg.timestamp    = order.timestamp;
+      fillMsg.blockHeight  = order.postedHeight;
+
+      // Update maker in book
+      auto makerIt = m_allOrders.find(fill.makerOrderId);
+      if (makerIt != m_allOrders.end()) {
+        makerIt->second.filled += fill.fillAmount;
+        if (makerIt->second.filled >= makerIt->second.amount) {
+          // Fully filled — remove from ladder
+          uint8_t makerPair = makerIt->second.pair;
+          uint64_t makerPrice = makerIt->second.price;
+          auto& ladder = (makerIt->second.side == SwapOrder::Side::ASK)
+                         ? m_orderBooks[makerPair].asks
+                         : m_orderBooks[makerPair].bids;
+          auto priceIt = ladder.find(makerPrice);
+          if (priceIt != ladder.end()) {
+            auto& q = priceIt->second.orders;
+            for (auto oit = q.begin(); oit != q.end(); ++oit) {
+              if (oit->orderId == fill.makerOrderId) {
+                q.erase(oit);
+                break;
+              }
+            }
+            if (q.empty()) ladder.erase(priceIt);
+          }
+          m_allOrders.erase(makerIt);
+        }
+      }
+
+      m_filledOrderIds.push_back(fillMsg.makerOrderId);
+      broadcastOrderFill(fillMsg);
+    }
+
+    order.filled = 0;
+    for (const auto& f : fills) order.filled += f.fillAmount;
   }
 
-  if (m_p2pEndpoint) {
-    COMMAND_SWAP_OFFER::request msg;
-    msg.offerId = it->second.offerId;
-    msg.xfgAmount = it->second.xfgAmount;
-    msg.rateNum = it->second.rateNum;
-    msg.pair = it->second.pair;
-    msg.makerPubKey = it->second.makerPubKey;
-    msg.signature = it->second.signature;
-    msg.timestamp = it->second.timestamp;
-    msg.ttlBlocks = it->second.ttlBlocks;
-    msg.postedHeight = it->second.postedHeight;
-    msg.isSoftOrder = it->second.isSoftOrder;
+  // Insert remaining into book
+  if (order.filled < order.amount) {
+    order.amount -= order.filled;
+    order.filled = 0;
+    std::string oid = order.orderId;
+    insertOrderIntoBook(std::move(order));
+    m_allOrders[oid] = order;  // re-insert with reduced amount
 
-    if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
-      msg.dandelion_stem = true;
+    COMMAND_ORDER_OPEN::request relay = msg;
+    broadcastOrderOpen(relay);
+  }
+}
+
+void SwapOfferRelay::handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  auto it = m_allOrders.find(msg.orderId);
+  if (it == m_allOrders.end()) return;
+  if (it->second.makerPubKey != msg.makerPubKey) return;
+
+  // Remove from ladder
+  uint8_t pair = it->second.pair;
+  uint64_t price = it->second.price;
+  auto& ladder = (it->second.side == SwapOrder::Side::ASK)
+                 ? m_orderBooks[pair].asks
+                 : m_orderBooks[pair].bids;
+  auto priceIt = ladder.find(price);
+  if (priceIt != ladder.end()) {
+    auto& q = priceIt->second.orders;
+    for (auto oit = q.begin(); oit != q.end(); ++oit) {
+      if (oit->orderId == msg.orderId) {
+        q.erase(oit);
+        break;
+      }
+    }
+    if (q.empty()) ladder.erase(priceIt);
+  }
+
+  m_allOrders.erase(it);
+  broadcastOrderCancel(msg);
+}
+
+void SwapOfferRelay::handleOrderFill(const COMMAND_ORDER_FILL::request& msg) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  // Replay protection: ignore if we already processed this fill
+  for (const auto& id : m_filledOrderIds) {
+    if (id == msg.makerOrderId) return;
+  }
+  m_filledOrderIds.push_back(msg.makerOrderId);
+}
+
+void SwapOfferRelay::handleOrderReserve(const COMMAND_ORDER_RESERVE::request& msg) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  auto makerIt = m_allOrders.find(msg.makerOrderId);
+  if (makerIt == m_allOrders.end()) return;
+  if (msg.amount == 0 || msg.amount > (makerIt->second.amount - makerIt->second.filled)) return;
+
+  Reservation r;
+  r.reservationId = msg.reservationId;
+  r.takerOrderId  = msg.takerOrderId;
+  r.makerOrderId  = msg.makerOrderId;
+  r.amount        = msg.amount;
+  r.takerPubKey   = msg.takerPubKey;
+  r.expiresAt     = static_cast<uint64_t>(std::time(nullptr)) + RESERVATION_TTL_SECS;
+  m_reservations[msg.reservationId] = std::move(r);
+}
+
+void SwapOfferRelay::handleOrderReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_reservations.find(msg.reservationId);
+  if (it == m_reservations.end()) return;
+  if (it->second.makerOrderId != msg.makerOrderId) return;
+  // Ack valid — taker can now proceed to SwapDaemon.initiate()
+}
+
+std::vector<SwapOfferRelay::Fill> SwapOfferRelay::matchOrder(
+    SwapOrder::Side takerSide, uint8_t pair,
+    uint64_t takerPrice, uint64_t takerAmount) {
+
+  // NOTE: caller must hold m_mutex
+  std::vector<Fill> fills;
+  auto& oppositeLadder = (takerSide == SwapOrder::Side::ASK)
+                         ? m_orderBooks[pair].bids
+                         : m_orderBooks[pair].asks;
+
+  uint64_t remaining = takerAmount;
+
+  if (takerSide == SwapOrder::Side::ASK) {
+    // Taker selling XFG for CTR: match against bids (highest first)
+    for (auto priceIt = oppositeLadder.rbegin();
+         priceIt != oppositeLadder.rend() && remaining > 0; ) {
+      if (priceIt->first < takerPrice) break;  // bid price too low
+      auto& q = priceIt->second;
+      while (!q.orders.empty() && remaining > 0) {
+        auto& maker = q.orders.front();
+        uint64_t available = maker.amount - maker.filled;
+        uint64_t fillAmt = std::min(remaining, available);
+        fills.push_back({maker.orderId, priceIt->first, fillAmt});
+        remaining -= fillAmt;
+        maker.filled += fillAmt;
+        if (maker.filled >= maker.amount) {
+          m_allOrders.erase(maker.orderId);
+          q.orders.pop_front();
+        }
+      }
+      if (q.orders.empty()) {
+        oppositeLadder.erase(priceIt.base());
+        priceIt = oppositeLadder.rbegin();  // restart after erase
+      } else {
+        ++priceIt;
+      }
+    }
+  } else {
+    // Taker buying XFG with CTR: match against asks (lowest first)
+    for (auto priceIt = oppositeLadder.begin();
+         priceIt != oppositeLadder.end() && remaining > 0; ) {
+      if (priceIt->first > takerPrice) break;  // ask price too high
+      auto& q = priceIt->second;
+      while (!q.orders.empty() && remaining > 0) {
+        auto& maker = q.orders.front();
+        uint64_t available = maker.amount - maker.filled;
+        uint64_t fillAmt = std::min(remaining, available);
+        fills.push_back({maker.orderId, priceIt->first, fillAmt});
+        remaining -= fillAmt;
+        maker.filled += fillAmt;
+        if (maker.filled >= maker.amount) {
+          m_allOrders.erase(maker.orderId);
+          q.orders.pop_front();
+        }
+      }
+      if (q.orders.empty()) {
+        priceIt = oppositeLadder.erase(priceIt);
+      } else {
+        ++priceIt;
+      }
+    }
+  }
+
+  return fills;
+}
+
+// ── RPC handlers ──
+
+OrderBookSnapshot SwapOfferRelay::getOrderBookSnapshot(uint8_t pair, int depth) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  OrderBookSnapshot snap;
+  snap.height = m_core.get_current_blockchain_height();
+
+  const auto& book = m_orderBooks[pair];
+
+  // Bids: highest first
+  int count = 0;
+  for (auto it = book.bids.rbegin(); it != book.bids.rend() && count < depth; ++it, ++count) {
+    OrderBookSnapshot::LevelJson lvl;
+    lvl.price      = it->first;
+    lvl.amount     = it->second.totalDepth();
+    lvl.orderCount = static_cast<int>(it->second.orders.size());
+    snap.bids.push_back(std::move(lvl));
+  }
+
+  // Asks: lowest first
+  count = 0;
+  for (auto it = book.asks.begin(); it != book.asks.end() && count < depth; ++it, ++count) {
+    OrderBookSnapshot::LevelJson lvl;
+    lvl.price      = it->first;
+    lvl.amount     = it->second.totalDepth();
+    lvl.orderCount = static_cast<int>(it->second.orders.size());
+    snap.asks.push_back(std::move(lvl));
+  }
+
+  if (!snap.bids.empty() && !snap.asks.empty()) {
+    snap.spread = snap.asks.front().price - snap.bids.front().price;
+  }
+
+  return snap;
+}
+
+bool SwapOfferRelay::placeOrder(SwapOrder::Side side, uint8_t pair, uint64_t price,
+                                uint64_t amount, uint32_t ttlBlocks,
+                                std::string& outOrderId) {
+  if (pair > 7) return false;
+  if (amount == 0 || price == 0) return false;
+
+  // Generate a dummy order for ID computation (caller provides pubkey via RPC auth)
+  // For daemon-generated orderId, we need the maker's pubkey from the RPC context
+  // The caller must set orderId after receiving this
+
+  uint32_t currentHeight = 0;
+  Crypto::Hash topId;
+  m_core.get_blockchain_top(currentHeight, topId);
+
+  // Build order
+  SwapOrder order;
+  order.side         = side;
+  order.pair         = pair;
+  order.price        = price;
+  order.amount       = amount;
+  order.filled       = 0;
+  order.ttlBlocks    = ttlBlocks;
+  order.postedHeight = currentHeight;
+  order.timestamp    = static_cast<uint64_t>(std::time(nullptr));
+  order.nonce        = 0;  // will be set by caller
+
+  // orderId is set by the caller (from RPC request, containing the signed canonical form)
+  if (outOrderId.empty()) return false;
+  order.orderId = outOrderId;
+
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (m_allOrders.size() >= MAX_ORDERS_PER_PAIR) return false;
+  if (m_allOrders.find(order.orderId) != m_allOrders.end()) return false;
+
+  // Try matching first
+  auto fills = matchOrder(side, pair, price, amount);
+
+  if (!fills.empty()) {
+    for (const auto& fill : fills) {
+      COMMAND_ORDER_FILL::request fillMsg;
+      fillMsg.takerOrderId = order.orderId;
+      fillMsg.makerOrderId = fill.makerOrderId;
+      fillMsg.fillAmount   = fill.fillAmount;
+      fillMsg.fillPrice    = fill.fillPrice;
+      fillMsg.timestamp    = order.timestamp;
+      fillMsg.blockHeight  = currentHeight;
+
+      m_filledOrderIds.push_back(fillMsg.makerOrderId);
+      broadcastOrderFill(fillMsg);
     }
 
-    auto buf = LevinProtocol::encode(msg);
-    if (msg.dandelion_stem) {
-      m_p2pEndpoint->externalRelayNotifyToStem(COMMAND_SWAP_OFFER::ID, buf, nullptr);
-    } else {
-      m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_OFFER::ID, buf, nullptr);
+    uint64_t totalFilled = 0;
+    for (const auto& f : fills) totalFilled += f.fillAmount;
+
+    // Insert remainder
+    if (totalFilled < amount) {
+      order.amount -= totalFilled;
+      order.filled = 0;
+      insertOrderIntoBook(std::move(order));
+      m_allOrders[order.orderId] = order;
     }
+
+    outOrderId = order.orderId;
+  } else {
+    insertOrderIntoBook(std::move(order));
+    m_allOrders[order.orderId] = order;
+    outOrderId = order.orderId;
   }
 
   return true;
 }
 
-// ============================================================================
-// External price sources
-// ============================================================================
-
-void SwapOfferRelay::addExternalSource(const PoolSourceConfig& config) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  m_poolConfigs.push_back(config);
-
-  // Initialize the source entry (rate=0, stale until first update)
-  PriceSource src;
-  src.name      = config.name;
-  src.pair      = config.pair;
-  src.weight    = config.weight;
-  src.rate      = 0.0;
-  src.updatedAt = 0;
-  src.stale     = true;
-  m_externalSources[config.name] = src;
-}
-
-void SwapOfferRelay::updateExternalPrice(const std::string& sourceName, uint8_t pair, double rate) {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  auto it = m_externalSources.find(sourceName);
-  if (it == m_externalSources.end()) {
-    // Auto-register unknown source with default weight
-    PriceSource src;
-    src.name      = sourceName;
-    src.pair      = pair;
-    src.weight    = 1.0;
-    src.rate      = rate;
-    src.updatedAt = static_cast<uint64_t>(std::time(nullptr));
-    src.stale     = false;
-    m_externalSources[sourceName] = src;
-    return;
-  }
-  it->second.rate      = rate;
-  it->second.pair      = pair;
-  it->second.updatedAt = static_cast<uint64_t>(std::time(nullptr));
-  it->second.stale     = false;
-}
-
-// ============================================================================
-// Composite pricing — weighted average across all sources for a pair
-// ============================================================================
-
-CompositePrice SwapOfferRelay::getCompositePrice(uint8_t pair) const {
+bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  CompositePrice result;
-  result.rate        = 0.0;
-  result.totalWeight = 0.0;
-  result.sourceCount = 0;
+  auto it = m_allOrders.find(orderId);
+  if (it == m_allOrders.end()) return false;
 
-  time_t now = std::time(nullptr);
-
-  // Source 1: native atomic swap TWAP (always weight=10 when available)
-  {
-    double weightedSum = 0.0;
-    double volumeSum   = 0.0;
-    size_t count       = 0;
-
-    for (auto it = m_trades.rbegin(); it != m_trades.rend() && count < TWAP_WINDOW; ++it) {
-      if (it->pair != pair) continue;
-      if (TWAP_MAX_AGE > 0 && (now - static_cast<time_t>(it->timestamp)) > static_cast<time_t>(TWAP_MAX_AGE)) {
-        continue;
-      }
-      double volume = static_cast<double>(it->xfgAmount) / 1e7;
-      weightedSum += it->rate * volume;
-      volumeSum += volume;
-      ++count;
-    }
-
-    if (count >= TWAP_MIN_TRADES && volumeSum > 0.0) {
-      double twapRate = weightedSum / volumeSum;
-      double swapWeight = 10.0;  // native swaps are highest-trust source
-
-      PriceSource src;
-      src.name      = "atomic_swap";
-      src.pair      = pair;
-      src.weight    = swapWeight;
-      src.rate      = twapRate;
-      src.updatedAt = (m_trades.empty()) ? 0 : m_trades.back().timestamp;
-      src.stale     = false;
-      result.sources.push_back(src);
-
-      result.rate        += twapRate * swapWeight;
-      result.totalWeight += swapWeight;
-      result.sourceCount++;
-    }
-  }
-
-  // Source 2+: external sources (HEAT pool, DEX, CEX)
-  for (const auto& kv : m_externalSources) {
-    const PriceSource& ext = kv.second;
-    if (ext.pair != pair) continue;
-    if (ext.rate <= 0.0) continue;
-    if (ext.stale) continue;
-
-    // Check staleness against config maxAgeSec
-    bool isStale = false;
-    for (const auto& cfg : m_poolConfigs) {
-      if (cfg.name == ext.name && cfg.maxAgeSec > 0) {
-        isStale = (now - static_cast<time_t>(ext.updatedAt)) > static_cast<time_t>(cfg.maxAgeSec);
+  uint8_t pair = it->second.pair;
+  uint64_t price = it->second.price;
+  auto& ladder = (it->second.side == SwapOrder::Side::ASK)
+                 ? m_orderBooks[pair].asks
+                 : m_orderBooks[pair].bids;
+  auto priceIt = ladder.find(price);
+  if (priceIt != ladder.end()) {
+    auto& q = priceIt->second.orders;
+    for (auto oit = q.begin(); oit != q.end(); ++oit) {
+      if (oit->orderId == orderId) {
+        q.erase(oit);
         break;
       }
     }
-    if (isStale) continue;
-
-    PriceSource snap = ext;
-    result.sources.push_back(snap);
-
-    result.rate        += ext.rate * ext.weight;
-    result.totalWeight += ext.weight;
-    result.sourceCount++;
+    if (q.empty()) ladder.erase(priceIt);
   }
 
-  // Compute weighted average
-  if (result.totalWeight > 0.0) {
-    result.rate /= result.totalWeight;
-  } else {
-    // No sources — fall back to seed rate
-    result.rate = getSeedRate(pair);
-
-    PriceSource seed;
-    seed.name      = "seed";
-    seed.pair      = pair;
-    seed.weight    = 1.0;
-    seed.rate      = result.rate;
-    seed.updatedAt = 0;
-    seed.stale     = false;
-    result.sources.push_back(seed);
-    result.totalWeight = 1.0;
-    result.sourceCount = 1;
-  }
-
-  return result;
+  m_allOrders.erase(it);
+  return true;
 }
 
-// ============================================================================
-// Cross-pair native XFG price range
-// ============================================================================
+// ── P2P broadcast helpers ──
 
-NativeXfgPriceRange SwapOfferRelay::getNativeXfgPrice() const {
-  // For each pair, compute implied XFG/USD:
-  //   XFG/USD = CTR_USD_price / (XFG_per_CTR rate)
-  // Use composite price for each pair.
-
-  NativeXfgPriceRange range;
-  range.lowUsd   = 0.0;
-  range.highUsd  = 0.0;
-  range.midUsd   = 0.0;
-  range.pairCount = 0;
-
-  double sum = 0.0;
-
-  for (uint8_t p = 0; p <= 5; ++p) {
-    CompositePrice cp = getCompositePrice(p);
-    if (cp.rate <= 0.0) continue;
-
-    double ctrUsd = getCtrUsdPrice(p);
-    if (ctrUsd <= 0.0) continue;
-
-    // Implied XFG price in USD
-    // rate = XFG per 1 CTR, so 1 XFG = ctrUsd / rate
-    double impliedUsd = ctrUsd / cp.rate;
-
-    range.pairImplied[p] = impliedUsd;
-
-    if (range.pairCount == 0) {
-      range.lowUsd  = impliedUsd;
-      range.highUsd = impliedUsd;
-    } else {
-      if (impliedUsd < range.lowUsd)  range.lowUsd  = impliedUsd;
-      if (impliedUsd > range.highUsd) range.highUsd = impliedUsd;
-    }
-
-    sum += impliedUsd;
-    range.pairCount++;
-  }
-
-  if (range.pairCount > 0) {
-    range.midUsd = sum / static_cast<double>(range.pairCount);
-  }
-
-  return range;
+void SwapOfferRelay::broadcastOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
+  if (!m_p2pEndpoint) return;
+  auto buf = LevinProtocol::encode(msg);
+  m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_ORDER_OPEN::ID, buf, nullptr);
 }
 
-}  // namespace CryptoNote
+void SwapOfferRelay::broadcastOrderCancel(const COMMAND_ORDER_CANCEL::request& msg) {
+  if (!m_p2pEndpoint) return;
+  auto buf = LevinProtocol::encode(msg);
+  m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_ORDER_CANCEL::ID, buf, nullptr);
+}
+
+void SwapOfferRelay::broadcastOrderFill(const COMMAND_ORDER_FILL::request& msg) {
+  if (!m_p2pEndpoint) return;
+  auto buf = LevinProtocol::encode(msg);
+  m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_ORDER_FILL::ID, buf, nullptr);
+}
+
+void SwapOfferRelay::broadcastReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg) {
+  if (!m_p2pEndpoint) return;
+  auto buf = LevinProtocol::encode(msg);
+  m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_ORDER_RESERVE_ACK::ID, buf, nullptr);
+}
+
+} // namespace CryptoNote

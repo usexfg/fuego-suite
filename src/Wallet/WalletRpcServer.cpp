@@ -145,6 +145,7 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "get_address", makeMemberMethod(&wallet_rpc_server::on_get_address) },
       { "sign_offer",    makeMemberMethod(&wallet_rpc_server::on_sign_offer)    },
       { "sign_cancel",   makeMemberMethod(&wallet_rpc_server::on_sign_cancel)   },
+      { "sign_order",    makeMemberMethod(&wallet_rpc_server::on_sign_order)    },
       { "initiate_swap", makeMemberMethod(&wallet_rpc_server::on_initiate_swap) },
       { "complete_swap", makeMemberMethod(&wallet_rpc_server::on_complete_swap) },
       { "refund_swap",   makeMemberMethod(&wallet_rpc_server::on_refund_swap)   },
@@ -263,6 +264,45 @@ bool wallet_rpc_server::on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL
   Crypto::generate_signature(cancelHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
 
   res.offerId     = req.offerId;
+  res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
+  res.signature   = Common::podToHex(sig);
+  res.status      = WALLET_RPC_STATUS_OK;
+  return true;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_sign_order(const wallet_rpc::COMMAND_RPC_SIGN_ORDER::request& req, wallet_rpc::COMMAND_RPC_SIGN_ORDER::response& res) {
+  CryptoNote::AccountKeys keys;
+  m_wallet.getAccountKeys(keys);
+
+  // orderId = SHA-256(spendPubKey || side || pair || price || amount || nonce)
+  // nonce is random 8 bytes to make orderId unique
+  uint64_t nonce;
+  Crypto::generate_random_bytes(sizeof(nonce), reinterpret_cast<uint8_t*>(&nonce));
+
+  struct OrderIdInput {
+    uint8_t  spendPubKey[32];
+    uint8_t  side;
+    uint8_t  pair;
+    uint64_t price;
+    uint64_t amount;
+    uint64_t nonce;
+  } orderIdInput;
+
+  std::memcpy(orderIdInput.spendPubKey, &keys.address.spendPublicKey, 32);
+  orderIdInput.side   = req.side;
+  orderIdInput.pair   = req.pair;
+  orderIdInput.price  = req.price;
+  orderIdInput.amount = req.amount;
+  orderIdInput.nonce  = nonce;
+
+  Crypto::Hash orderIdHash;
+  Crypto::cn_fast_hash(&orderIdInput, sizeof(orderIdInput), orderIdHash);
+
+  // Sign the order ID hash with spend key
+  Crypto::Signature sig;
+  Crypto::generate_signature(orderIdHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+
+  res.orderId     = Common::podToHex(orderIdHash);
   res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
   res.signature   = Common::podToHex(sig);
   res.status      = WALLET_RPC_STATUS_OK;

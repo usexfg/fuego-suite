@@ -3,6 +3,7 @@ package app
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,12 @@ type tuiModel struct {
 	draftAmount string
 	draftPair   uint8
 	draftRate   string
+
+	// P2P order entry
+	orderEntry orderEntryModel
+
+	// Chart mode: candlestick or line
+	chartMode ChartMode
 }
 
 // ── Messages ──
@@ -93,6 +100,16 @@ type bchConnectedMsg struct {
 // bridgeAttemptMsg triggers an auto-bridge connection attempt for a pair.
 type bridgeAttemptMsg struct {
 	pair uint8
+}
+
+// P2P order messages
+type placeOrderResultMsg struct {
+	result *PlaceOrderResult
+	err    error
+}
+
+type cancelOrderResultMsg struct {
+	err error
 }
 
 // ── Ticks ──
@@ -228,6 +245,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Delegate to order entry form when active
+	if m.orderEntry.active {
+		var cmd tea.Cmd
+		m.orderEntry, cmd = m.orderEntry.Update(msg)
+		if !m.orderEntry.active {
+			// Form was closed (esc), just return
+			return m, cmd
+		}
+		if cmd == nil {
+			// Check for Enter on submit field
+			if kmsg, ok := msg.(tea.KeyMsg); ok && kmsg.Type == tea.KeyEnter {
+				return m, m.executePlaceOrder()
+			}
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -290,6 +324,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.bchBal = msg.bal
 			m.statusMsg = "BCH connected: " + msg.bal
 		}
+
+	case placeOrderResultMsg:
+		if msg.err != nil {
+			m.lastErr = "order failed: " + msg.err.Error()
+		} else if msg.result != nil {
+			if msg.result.Filled > 0 {
+				m.statusMsg = fmt.Sprintf("order %s placed, filled %d", msg.result.OrderId[:8], msg.result.Filled)
+			} else {
+				m.statusMsg = "order placed: " + msg.result.OrderId[:8]
+			}
+		}
+
+	case cancelOrderResultMsg:
+		if msg.err != nil {
+			m.lastErr = "cancel failed: " + msg.err.Error()
+		} else {
+			m.statusMsg = "order cancelled"
+		}
 	}
 
 	return m, nil
@@ -334,7 +386,7 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.fetchData()
 	case "?":
-		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  /:cmd  r:refresh  q:quit"
+		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  t:TradingView  /:cmd  r:refresh  q:quit"
 	}
 
 	// Sidebar view navigation
@@ -369,6 +421,15 @@ func (m tuiModel) handleMarketsKey(k string) (tea.Model, tea.Cmd) {
 	case "down":
 		m.activePair = nextPair(m.activePair)
 		return m, m.autoBridgeCmd(m.activePair)
+	case "t":
+		return m, m.openTradingView()
+	case "l":
+		if m.chartMode == ChartCandles {
+			m.chartMode = ChartLine
+		} else {
+			m.chartMode = ChartCandles
+		}
+		return m, nil
 	default:
 		if len(k) == 1 {
 			r := rune(k[0])
@@ -465,20 +526,31 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 	case "connect":
 		return m.handleBridgeCmd(parts)
 
-	// ── Offer / place (backwards compat, simplified) ──
-	case "offer":
-		return m.handleOfferCmd(parts)
-
 	// ── Sell XFG or CD ──
 	case "sell":
 		if len(parts) >= 2 && parts[1] == "cd" {
 			return m.handleSellCDCmd(parts)
 		}
-		return m.handleOfferCmd(parts)
+		return m.handleSwapCmd(parts)
 
-	// ── Confirm offer ──
-	case "confirm-offer":
-		return m.handleConfirmOfferCmd(parts)
+	// ── P2P order entry form ──
+	case "order", "placeorder":
+		m.orderEntry.open(m.activePair)
+		m.cmdBuf = ""
+		m.cmdFocus = false
+		return nil
+
+	// ── P2P cancel order ──
+	case "cancelorder":
+		return m.handleCancelOrderCmd(parts)
+
+	// ── P2P my open orders ──
+	case "myorders":
+		return m.handleMyOrdersCmd(parts)
+
+	// ── TradingView ──
+	case "tv", "chartview":
+		return m.openTradingView()
 
 	// ── Accept ──
 	case "accept":
@@ -499,13 +571,11 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 	case "cancel":
 		return m.handleCancelCmd(parts)
 
-	// ── Initiate (legacy direct p2p) ──
-	case "initiate":
-		return m.handleInitiateCmd(parts)
-
 	// ── Help ──
 	case "help":
-		m.statusMsg = "swap <amt> [pair] | pair <name> | m:c:status | connect metamask|phantom|bch | bch lock|claim|refund | accept [id] | cancel <id> | q:quit"
+		m.statusMsg = "swap <amt> | order | cancelorder <id> | myorders | tv | pair <name> | m:c:s | legend | connect | q:quit"
+	case "legend":
+		m.statusMsg = "Ticker: ETH 214,000 ($2140) → rate=on-chain XFG/ETH (TWAP), ($)=DeFiLlama ref USD"
 
 	default:
 		m.statusMsg = "unknown: " + cmd + " (type help)"
@@ -650,94 +720,6 @@ func (m *tuiModel) handleBridgeCmd(parts []string) tea.Cmd {
 	}
 	m.statusMsg = "usage: connect metamask | connect phantom | connect bch"
 	return nil
-}
-
-func (m *tuiModel) handleOfferCmd(parts []string) tea.Cmd {
-	// Redirect to swap flow
-	if len(parts) >= 2 {
-		return m.handleSwapCmd([]string{"swap", parts[1]})
-	}
-	m.statusMsg = "use: swap <amount> [pair]"
-	return nil
-}
-
-func (m *tuiModel) handleConfirmOfferCmd(parts []string) tea.Cmd {
-	if len(parts) < 5 {
-		m.statusMsg = "use: swap <amount> [pair]"
-		return nil
-	}
-	if m.wallet == nil {
-		m.statusMsg = "no wallet connected"
-		return nil
-	}
-	// Legacy path: still works for backwards compat
-	amtXfg, amtCtr, pair, timeout := parts[1], parts[2], parts[3], parts[4]
-	isSoftOrder := true
-	if len(parts) > 5 && parts[5] == "false" {
-		isSoftOrder = false
-	}
-	wallet := m.wallet
-	client := m.client
-	return func() tea.Msg {
-		xfgAtomic, err := parseAmountAtomic(amtXfg, 1e7)
-		if err != nil {
-			return statusUpdateMsg{text: "invalid amount: " + err.Error()}
-		}
-		var timeoutHrs uint32
-		if _, err := fmt.Sscanf(timeout, "%d", &timeoutHrs); err != nil {
-			return statusUpdateMsg{text: "invalid timeout: " + err.Error()}
-		}
-		ctrFloat, _ := strconv.ParseFloat(amtCtr, 64)
-		rateFloat := (float64(xfgAtomic) / 1e7) / ctrFloat
-		rateNum := uint64(rateFloat * 1e7)
-		pairID := PairFromString(pair)
-
-		if isSoftOrder {
-			res, err := wallet.SignOffer(xfgAtomic, rateNum, pairID, timeoutHrs*30, true)
-			if err != nil {
-				return statusUpdateMsg{text: "sign_offer failed: " + err.Error()}
-			}
-			offerReq := map[string]interface{}{
-				"offerId":     res.OfferID,
-				"xfgAmount":   xfgAtomic,
-				"rateNum":     rateNum,
-				"pair":        pairID,
-				"makerPubKey": res.MakerPubKey,
-				"signature":   res.Signature,
-				"ttlBlocks":   timeoutHrs * 30,
-				"isSoftOrder": true,
-			}
-			var submitResp struct {
-				Status string `json:"status"`
-			}
-			if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
-				return statusUpdateMsg{text: "submit failed: " + err.Error()}
-			}
-			return statusUpdateMsg{text: fmt.Sprintf("Soft intent posted: %s...", res.OfferID[:12])}
-		}
-		res, err := wallet.CreateAfkLock(xfgAtomic, timeoutHrs, pairID)
-		if err != nil {
-			return statusUpdateMsg{text: "create_afk_lock failed: " + err.Error()}
-		}
-		offerReq := map[string]interface{}{
-			"offerId":      res.LockID,
-			"xfgAmount":    xfgAtomic,
-			"ctrAmount":    amtCtr,
-			"pair":         pairID,
-			"adaptorPoint": res.AdaptorPoint,
-			"preSig":       res.PreSig,
-			"timeoutHrs":   timeoutHrs,
-			"isSell":       true,
-			"isSoftOrder":  false,
-		}
-		var submitResp struct {
-			Status string `json:"status"`
-		}
-		if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
-			return statusUpdateMsg{text: "submit failed: " + err.Error()}
-		}
-		return statusUpdateMsg{text: fmt.Sprintf("AFK offer locked: %s...", res.LockID[:12])}
-	}
 }
 
 func (m *tuiModel) handleAcceptCmd(parts []string) tea.Cmd {
@@ -935,33 +917,6 @@ func (m *tuiModel) handleCancelCmd(parts []string) tea.Cmd {
 	}
 }
 
-func (m *tuiModel) handleInitiateCmd(parts []string) tea.Cmd {
-	if len(parts) < 5 {
-		m.statusMsg = "usage: initiate <amount> <peer_pubkey> <pair> [role]"
-		return nil
-	}
-	if m.wallet == nil {
-		m.statusMsg = "no wallet connected"
-		return nil
-	}
-	amtStr, peerPub, pair, role := parts[1], parts[2], parts[3], "alice"
-	if len(parts) > 4 {
-		role = parts[4]
-	}
-	wallet := m.wallet
-	return func() tea.Msg {
-		xfgAtomic, err := parseAmountAtomic(amtStr, 1e7)
-		if err != nil {
-			return statusUpdateMsg{text: "invalid amount: " + err.Error()}
-		}
-		result, err := wallet.InitiateSwap(xfgAtomic, peerPub, pair, role)
-		if err != nil {
-			return statusUpdateMsg{text: "initiate_swap failed: " + err.Error()}
-		}
-		return statusUpdateMsg{text: fmt.Sprintf("swap %s started | escrow: %s...", result.SwapID, result.EscrowKey[:12])}
-	}
-}
-
 // ── View ──
 
 func (m tuiModel) View() string {
@@ -1050,12 +1005,31 @@ func (m tuiModel) View() string {
 		result = overlayAt(result, modal, sidebarW+4, placeY)
 	}
 
+	// Order entry form overlay
+	if m.orderEntry.active {
+		formW := 38
+		if mainW-4 < formW {
+			formW = mainW - 4
+		}
+		form := m.orderEntry.Render(formW)
+		_, formH := lipgloss.Size(form)
+		placeY := (h - formH) / 2
+		if placeY < 1 {
+			placeY = 1
+		}
+		placeX := sidebarW + (mainW-formW)/2
+		if placeX < sidebarW+1 {
+			placeX = sidebarW + 1
+		}
+		result = overlayAt(result, form, placeX, placeY)
+	}
+
 	return result
 }
 
 func (m tuiModel) renderMarketsContent(w, h int) string {
 	// Ticker row
-	ticker := RenderTicker(m.activePair, m.data.Prices, m.data.Height, w, m.connected)
+	ticker := RenderTicker(m.activePair, m.data.Prices, m.data.ExtPrices, m.data.Height, w, m.connected)
 
 	chartH := h - 4
 	if chartH < 3 {
@@ -1074,8 +1048,13 @@ func (m tuiModel) renderMarketsContent(w, h int) string {
 
 	// Chart (left)
 	trades := m.data.Trades[m.activePair]
-	chart := RenderChart(trades, leftW, chartH)
-	priceLine := RenderPriceLine(m.activePair, m.data.Prices)
+	var chart string
+	if m.chartMode == ChartLine {
+		chart = RenderChartLine(trades, leftW, chartH)
+	} else {
+		chart = RenderChart(trades, leftW, chartH)
+	}
+	priceLine := RenderPriceLine(m.activePair, m.data.Prices, m.data.ExtPrices)
 	leftPanel := lipgloss.JoinVertical(lipgloss.Left, chart, priceLine)
 
 	// Orderbook + tape (right)
@@ -1088,8 +1067,8 @@ func (m tuiModel) renderMarketsContent(w, h int) string {
 		tapeH = 3
 	}
 
-	offers := m.data.Offers[m.activePair]
-	ob := RenderOrderbook(offers, rightW, obH)
+	book := m.data.Books[m.activePair]
+	ob := RenderOrderbook(book, rightW, obH)
 	tape := RenderTape(m.data.Trades[m.activePair], rightW, tapeH)
 	rightPanel := lipgloss.JoinVertical(lipgloss.Left, ob, tape)
 
@@ -1148,6 +1127,71 @@ func RenderDaemonStatus(status *DaemonStatus, lastErr string, w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
+// ── P2P Order Commands ──
+
+func (m *tuiModel) executePlaceOrder() tea.Cmd {
+	side := m.orderEntry.side
+	pair := m.orderEntry.pair
+	price, ok := m.orderEntry.ParsePrice()
+	if !ok {
+		m.lastErr = "invalid price"
+		return nil
+	}
+	amount, ok := m.orderEntry.ParseAmount()
+	if !ok {
+		m.lastErr = "invalid amount"
+		return nil
+	}
+	ttl := m.orderEntry.ParseTTL()
+
+	client := m.client
+	wallet := m.wallet
+	return func() tea.Msg {
+		// Sign the order through the local wallet (proves ownership of spend key)
+		if wallet != nil {
+			sig, err := wallet.SignOrder(side, pair, price, amount, ttl)
+			if err != nil {
+				return placeOrderResultMsg{err: fmt.Errorf("sign_order: %w", err)}
+			}
+			_ = sig // signature is embedded in the order by the daemon
+		}
+		result, err := client.PlaceOrder(side, pair, price, amount, ttl)
+		return placeOrderResultMsg{result: result, err: err}
+	}
+}
+
+func (m *tuiModel) handleCancelOrderCmd(parts []string) tea.Cmd {
+	if len(parts) < 2 {
+		m.statusMsg = "usage: cancelorder <orderId>"
+		return nil
+	}
+	orderId := parts[1]
+	client := m.client
+	return func() tea.Msg {
+		err := client.CancelOrder(orderId)
+		return cancelOrderResultMsg{err: err}
+	}
+}
+
+func (m *tuiModel) handleMyOrdersCmd(parts []string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		orders, err := client.GetOpenOrders("")
+		if err != nil {
+			return placeOrderResultMsg{err: err}
+		}
+		if len(orders) == 0 {
+			return statusUpdateMsg{text: "no open orders"}
+		}
+		var lines []string
+		for _, o := range orders {
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s  price=%d  amt=%d  filled=%d",
+				o.OrderId[:8], o.Side, PairShort(o.Pair), o.Price, o.Amount, o.Filled))
+		}
+		return statusUpdateMsg{text: strings.Join(lines, "\n")}
+	}
+}
+
 // overlayAt places an overlay string at position (x, y) over the base string.
 func overlayAt(base, overlay string, x, y int) string {
 	baseLines := strings.Split(base, "\n")
@@ -1173,4 +1217,20 @@ func overlayAt(base, overlay string, x, y int) string {
 	}
 
 	return strings.Join(baseLines, "\n")
+}
+
+// ── TradingView ──
+
+func (m tuiModel) openTradingView() tea.Cmd {
+	symbol := TradingViewSymbol(m.activePair)
+	if symbol == "" {
+		m.statusMsg = "no TradingView symbol for this pair"
+		return nil
+	}
+	url := fmt.Sprintf("https://www.tradingview.com/chart/?symbol=%s", symbol)
+	pairName := PairName(m.activePair)
+	return func() tea.Msg {
+		_ = exec.Command("open", url).Start() // macOS
+		return statusUpdateMsg{text: fmt.Sprintf("opened TradingView %s in browser", pairName)}
+	}
 }

@@ -277,6 +277,12 @@ int CryptoNoteProtocolHandler::handleCommand(bool is_notify, int command, const 
     HANDLE_NOTIFY(COMMAND_SWAP_REQUEST, &CryptoNoteProtocolHandler::handle_swap_request)
     HANDLE_NOTIFY(COMMAND_SWAP_TRADE, &CryptoNoteProtocolHandler::handle_swap_trade)
 
+    HANDLE_NOTIFY(COMMAND_ORDER_OPEN, &CryptoNoteProtocolHandler::handle_order_open)
+    HANDLE_NOTIFY(COMMAND_ORDER_CANCEL, &CryptoNoteProtocolHandler::handle_order_cancel)
+    HANDLE_NOTIFY(COMMAND_ORDER_FILL, &CryptoNoteProtocolHandler::handle_order_fill)
+    HANDLE_NOTIFY(COMMAND_ORDER_RESERVE, &CryptoNoteProtocolHandler::handle_order_reserve)
+    HANDLE_NOTIFY(COMMAND_ORDER_RESERVE_ACK, &CryptoNoteProtocolHandler::handle_order_reserve_ack)
+
   default:
     handled = false;
   }
@@ -1189,22 +1195,7 @@ int CryptoNoteProtocolHandler::doPushLiteBlock(NOTIFY_NEW_LITE_BLOCK::request ar
 }
 
 int CryptoNoteProtocolHandler::handle_swap_offer(int command, COMMAND_SWAP_OFFER::request& arg, CryptoNoteConnectionContext& context) {
-  SwapOfferMsg offer;
-  offer.offerId = arg.offerId;
-  offer.xfgAmount = arg.xfgAmount;
-  offer.rateNum = arg.rateNum;
-  offer.pair = arg.pair;
-
-  offer.makerPubKey = arg.makerPubKey;
-  offer.signature = arg.signature;
-
-  offer.timestamp = arg.timestamp;
-  offer.ttlBlocks = arg.ttlBlocks;
-  offer.postedHeight = arg.postedHeight;
-  offer.isSoftOrder = arg.isSoftOrder;
-  offer.allowedSlippagePct = arg.allowedSlippagePct;
-
-  m_core.getSwapRelay().handleOfferMessage(offer);
+  m_core.getSwapRelay().handleOfferMessage(arg);
 
   if (m_core.getCurrentBlockMajorVersion() >= BLOCK_MAJOR_VERSION_10) {
     if (arg.dandelion_stem) {
@@ -1262,6 +1253,50 @@ int CryptoNoteProtocolHandler::handle_swap_trade(int command, COMMAND_SWAP_TRADE
   trade.blockHeight = arg.blockHeight;
   trade.timestamp = arg.timestamp;
   m_core.getSwapRelay().handleTradeCompleted(trade);
+  return 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// v2 Orderbook P2P handlers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+int CryptoNoteProtocolHandler::handle_order_open(int command, COMMAND_ORDER_OPEN::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleOrderOpen(arg);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_ORDER_OPEN::ID, buf, &context.m_connection_id);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_order_cancel(int command, COMMAND_ORDER_CANCEL::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleOrderCancel(arg);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_ORDER_CANCEL::ID, buf, &context.m_connection_id);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_order_fill(int command, COMMAND_ORDER_FILL::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleOrderFill(arg);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_ORDER_FILL::ID, buf, &context.m_connection_id);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_order_reserve(int command, COMMAND_ORDER_RESERVE::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleOrderReserve(arg);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_ORDER_RESERVE::ID, buf, &context.m_connection_id);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_order_reserve_ack(int command, COMMAND_ORDER_RESERVE_ACK::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleOrderReserveAck(arg);
+
+  auto buf = LevinProtocol::encode(arg);
+  m_p2p->relay_notify_to_all(COMMAND_ORDER_RESERVE_ACK::ID, buf, &context.m_connection_id);
   return 1;
 }
 

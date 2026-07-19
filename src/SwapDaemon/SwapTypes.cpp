@@ -27,7 +27,7 @@ static bool iequal(const char* a, const char* b, int n) {
 }
 
 bool swapPairFromString(const std::string& s, SwapPair& out) {
-  if (s.size() < 3 || s.size() > 4) return false;
+  if (s.size() < 3 || s.size() > 7) return false;
   const char* p = s.c_str();
   int n = static_cast<int>(s.size());
   if (iequal(p, "SOL", n))  { out = SwapPair::SOL;  return true; }
@@ -36,6 +36,8 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (iequal(p, "BCH", n))  { out = SwapPair::BCH;  return true; }
   if (iequal(p, "ARB", n))  { out = SwapPair::ARB;  return true; }
   if (iequal(p, "BASE", n)) { out = SwapPair::BASE; return true; }
+  if (iequal(p, "KMD", n))  { out = SwapPair::KMD_SPV; return true; }
+  if (iequal(p, "KMD_SPV", n)) { out = SwapPair::KMD_SPV; return true; }
   return false;
 }
 
@@ -54,6 +56,7 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::BCH: return "BCH";
     case SwapPair::ARB:  return "ARB";
     case SwapPair::BASE: return "BASE";
+    case SwapPair::KMD_SPV: return "KMD_SPV";
   }
   return "???";
 }
@@ -77,6 +80,9 @@ const char* swapStateToString(SwapState s) {
     case SwapState::ADAPTOR_SECRET_REVEALED: return "ADAPTOR_SECRET_REVEALED";
     case SwapState::ADAPTOR_XFG_SPENT:       return "ADAPTOR_XFG_SPENT";
     case SwapState::ADAPTOR_REFUNDED:        return "ADAPTOR_REFUNDED";
+    // SPV confirmation
+    case SwapState::ADAPTOR_WAITING_SPV:          return "ADAPTOR_WAITING_SPV";
+    case SwapState::ADAPTOR_SECRET_CONFIRMED_SPV: return "ADAPTOR_SECRET_CONFIRMED_SPV";
     // AFK v2
     case SwapState::AFK_OFFER_LOCKED:        return "AFK_OFFER_LOCKED";
     case SwapState::AFK_OFFER_ACCEPTED:      return "AFK_OFFER_ACCEPTED";

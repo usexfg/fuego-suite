@@ -596,4 +596,158 @@ std::vector<uint8_t> BchHtlcScript::buildRawTransaction(
   return tx;
 }
 
+// =============================================================================
+// P2SH scriptPubKey from redeem script
+// =============================================================================
+
+std::vector<uint8_t> BchHtlcScript::redeemScriptToP2shScriptPubKey(
+    const std::vector<uint8_t>& redeemScript) {
+  return buildP2shScriptPubKey(hash160(redeemScript));
+}
+
+// =============================================================================
+// Raw transaction parser: extract claim preimage from a spending tx
+// =============================================================================
+
+// Helper: read a Bitcoin CompactSize (varint) from a byte range.
+// Returns false on underflow.
+static bool readVarInt(const uint8_t*& p, const uint8_t* end, uint64_t& out) {
+  if (p >= end) return false;
+  uint8_t first = *p++;
+  if (first < 0xFD) {
+    out = first;
+    return true;
+  } else if (first == 0xFD) {
+    if (p + 2 > end) return false;
+    out = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8);
+    p += 2;
+    return true;
+  } else if (first == 0xFE) {
+    if (p + 4 > end) return false;
+    out = static_cast<uint64_t>(p[0]) | (static_cast<uint64_t>(p[1]) << 8) |
+          (static_cast<uint64_t>(p[2]) << 16) | (static_cast<uint64_t>(p[3]) << 24);
+    p += 4;
+    return true;
+  } else {
+    if (p + 8 > end) return false;
+    out = 0;
+    for (int i = 0; i < 8; ++i) {
+      out |= static_cast<uint64_t>(p[i]) << (i * 8);
+    }
+    p += 8;
+    return true;
+  }
+}
+
+std::vector<uint8_t> BchHtlcScript::parseClaimPreimage(
+    const std::vector<uint8_t>& rawTx,
+    const std::vector<uint8_t>& htlcP2shScriptPubKey) {
+
+  // P2SH scriptPubKey format: OP_HASH160 (0xA9) PUSH20 (0x14) <20-byte-hash> OP_EQUAL (0x87)
+  // Total length: 23 bytes. The hash is at bytes [2..22).
+  if (htlcP2shScriptPubKey.size() != 23) return {};
+  if (htlcP2shScriptPubKey[0] != OpCode::OP_HASH160) return {};
+  if (htlcP2shScriptPubKey[1] != 0x14) return {};
+  if (htlcP2shScriptPubKey[22] != OpCode::OP_EQUAL) return {};
+  std::vector<uint8_t> expectedHash(htlcP2shScriptPubKey.begin() + 2,
+                                     htlcP2shScriptPubKey.begin() + 22);
+
+  const uint8_t* p = rawTx.data();
+  const uint8_t* end = rawTx.data() + rawTx.size();
+
+  // Skip version (4 bytes LE)
+  if (p + 4 > end) return {};
+  p += 4;
+
+  // Read number of inputs
+  uint64_t vinCount = 0;
+  if (!readVarInt(p, end, vinCount)) return {};
+
+  // Parse each input
+  for (uint64_t i = 0; i < vinCount; ++i) {
+    // Skip prev txid (32 bytes) + prev vout (4 bytes) + sequence (4 bytes) = 40 bytes
+    // We only care about scriptSig
+    if (p + 36 > end) return {};
+    p += 36;  // txid + vout
+
+    // Read scriptSig
+    uint64_t scriptSigLen = 0;
+    if (!readVarInt(p, end, scriptSigLen)) return {};
+    if (p + scriptSigLen > end) return {};
+    const uint8_t* scriptSigStart = p;
+    const uint8_t* scriptSigEnd = p + scriptSigLen;
+    p = scriptSigEnd;
+
+    // Skip sequence (4 bytes)
+    if (p + 4 > end) return {};
+    p += 4;
+
+    // Parse the scriptSig: for a P2SH claim it's:
+    //   <signature-push> <preimage-push> OP_TRUE <redeemScript-push>
+    //
+    // Scan for push-data items separated by non-push opcodes.
+    const uint8_t* sp = scriptSigStart;
+    std::vector<std::pair<const uint8_t*, size_t>> pushItems;
+
+    while (sp < scriptSigEnd) {
+      uint8_t opcode = *sp;
+      if (opcode == OpCode::OP_TRUE || opcode == OpCode::OP_FALSE ||
+          opcode == OpCode::OP_IF || opcode == OpCode::OP_ELSE ||
+          opcode == OpCode::OP_ENDIF || opcode == OpCode::OP_DROP ||
+          opcode == OpCode::OP_EQUAL || opcode == OpCode::OP_EQUALVERIFY ||
+          opcode == OpCode::OP_CHECKSIG || opcode == OpCode::OP_CHECKLOCKTIMEVERIFY ||
+          opcode == OpCode::OP_SHA256 || opcode == OpCode::OP_HASH160 ||
+          opcode == OpCode::OP_DUP) {
+        // Non-push opcode
+        ++sp;
+        continue;
+      }
+
+      // Data push
+      uint64_t pushLen = 0;
+      if (opcode == OpCode::OP_PUSHDATA1) {
+        ++sp;
+        if (sp >= scriptSigEnd) break;
+        pushLen = *sp++;
+      } else if (opcode == 0x4D) {  // OP_PUSHDATA2
+        ++sp;
+        if (sp + 2 > scriptSigEnd) break;
+        pushLen = static_cast<uint64_t>(sp[0]) | (static_cast<uint64_t>(sp[1]) << 8);
+        sp += 2;
+      } else if (opcode <= 75) {
+        pushLen = opcode;
+        ++sp;
+      } else {
+        // Unknown opcode — skip
+        ++sp;
+        continue;
+      }
+
+      if (sp + pushLen > scriptSigEnd) break;
+      pushItems.emplace_back(sp, pushLen);
+      sp += pushLen;
+    }
+
+    // A P2SH claim scriptSig has at least 4 items: <sig> <preimage> OP_TRUE <redeemScript>
+    // The OP_TRUE is a non-push opcode between the 2nd and 3rd push items.
+    // We need at least 3 push items (sig, preimage, redeemScript).
+    if (pushItems.size() < 3) continue;
+
+    // The last push item is the redeemScript. Check its hash160 matches the HTLC P2SH.
+    const auto& redeemScriptPush = pushItems.back();
+    std::vector<uint8_t> redeemScript(redeemScriptPush.first,
+                                      redeemScriptPush.first + redeemScriptPush.second);
+    std::vector<uint8_t> p2shHash = hash160(redeemScript);
+
+    if (p2shHash != expectedHash) continue;
+
+    // Found the HTLC input. The preimage is the second push item.
+    const auto& preimagePush = pushItems[1];
+    return std::vector<uint8_t>(preimagePush.first,
+                                preimagePush.first + preimagePush.second);
+  }
+
+  return {};  // No matching input found
+}
+
 } // namespace XfgSwap

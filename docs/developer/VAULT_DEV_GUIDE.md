@@ -12,17 +12,17 @@ Replace all virtual treasury accounting counters with real UTXOs owned by a dete
                                      │
                                      ▼
               ┌──────────────────────────────────────────┐
-              │            TREASURY VAULT                │
-              │ (one keypair, deterministic from genesis)│
+              │            TREASURY VAULT                 │
+              │  (one keypair, deterministic from genesis) │
               │                                          │
               │  ┌────────────────────────────────────┐  │
               │  │ CD_FEE_POOL    │ XFG + HEAT UTXOs  │  │  → pays CD APY
               │  ├────────────────┼───────────────────┤  │
               │  │ LP_RESERVE     │ XFG + HEAT UTXOs  │  │  → deploys to Hearth
               │  ├────────────────┼───────────────────┤  │
-              │  │ GENERAL_RESERVE│ XFG + HEAT UTXOs  │  │  → strap repay,transfers
+              │  │ GENERAL_RESERVE│ XFG + HEAT UTXOs  │  │  → bootstrap repay, transfers
               │  ├────────────────┼───────────────────┤  │
-              │  │ DIGM COLLATERAL│ HEAT UTXOs        │  │  → SWF-->change to DIGM 
+              │  │ SWF            │ HEAT UTXOs        │  │  → sovereign wealth fund
               │  └────────────────────────────────────┘  │
               │                                          │
               │  Consensus gate: 4 ops only              │
@@ -278,3 +278,16 @@ Test: honest nodes reject compromised node's theft block
   Modify node to skip vault gate, mine theft block.
   → Honest nodes reject. pushTransaction() validation runs on all nodes.
 ```
+
+## Future Work
+
+### DIGM Redemption for HEAT
+
+SWF counter HEAT (`m_swfHeatBalance`) is counter-only — never UTXOs. When DIGM holders redeem for HEAT:
+
+1. Burn DIGM tokens via burn-to-mint gate
+2. Mint new HEAT at pool rate
+3. Decrement `m_swfHeatBalance` by the redeemed amount
+4. Send minted HEAT to the redeemer
+
+This avoids creating SWF vault UTXOs while still backing DIGM with SWF reserves. The counter acts as an internal accounting offset — DIGM redemption mints fresh HEAT and reduces the SWF obligation accordingly.

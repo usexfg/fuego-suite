@@ -61,7 +61,7 @@ void GetViewKey::Request::serialize(CryptoNote::ISerializer &serializer)
 
 void GetViewKey::Response::serialize(CryptoNote::ISerializer &serializer)
 {
-  serializer(viewSecretKey, "privateViewKey");
+  serializer(viewPublicKey, "publicViewKey");
 }
 
 void GetStatus::Request::serialize(CryptoNote::ISerializer &serializer)
@@ -206,7 +206,6 @@ void GetSpendKeys::Request::serialize(CryptoNote::ISerializer &serializer)
 
 void GetSpendKeys::Response::serialize(CryptoNote::ISerializer &serializer)
 {
-  serializer(spendSecretKey, "privateSpendKey");
   serializer(spendPublicKey, "publicSpendKey");
 }
 

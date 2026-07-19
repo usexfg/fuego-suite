@@ -46,9 +46,20 @@ void HttpServer::start(const std::string& address, uint16_t port, const std::str
   m_listener = System::TcpListener(m_dispatcher, System::Ipv4Address(address), port);
   workingContextGroup.spawn(std::bind(&HttpServer::acceptLoop, this));
 
-  		if (!user.empty() || !password.empty()) {
-			m_credentials = Tools::Base64::encode(user + ":" + password);
-		}
+  if (!user.empty() || !password.empty()) {
+    m_credentials = Tools::Base64::encode(user + ":" + password);
+  }
+
+  if (address != "127.0.0.1" && address != "0.0.0.0" && address != "::1" && address != "[::]") {
+    logger(Logging::WARNING, Logging::BRIGHT_YELLOW)
+      << "RPC bound to non-local address '" << address << "'. "
+      << "Credentials and data (including tx_secret_key) will traverse the network in cleartext without TLS. "
+      << "Use SSH tunnel or TLS for remote access.";
+  } else if ((address == "0.0.0.0" || address == "[::]") && (user.empty() || password.empty())) {
+    logger(Logging::WARNING, Logging::BRIGHT_RED)
+      << "RPC bound to all interfaces (" << address << ") with empty credentials. "
+      << "This exposes wallet data without authentication!";
+  }
 }
 
 void HttpServer::stop() {

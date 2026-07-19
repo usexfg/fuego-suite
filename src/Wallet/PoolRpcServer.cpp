@@ -101,6 +101,13 @@ bool pool_rpc_server::init(const boost::program_options::variables_map& vm) {
     return false;
   }
 
+  if (m_rpcUser.empty() || m_rpcPassword.empty()) {
+    logger(Logging::ERROR, Logging::BRIGHT_RED) << "RPC credentials are REQUIRED for security."
+      << " Set --rpc-user and --rpc-password (strong, random values)."
+      << " Running with empty credentials is disabled.";
+    return false;
+  }
+
   return true;
 }
 

@@ -186,7 +186,8 @@ std::error_code PaymentServiceJsonRpcServer::handleDeleteAddress(const DeleteAdd
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetSpendKeys(const GetSpendKeys::Request& request, GetSpendKeys::Response& response) {
-  return service.getSpendkeys(request.address, response.spendPublicKey, response.spendSecretKey);
+  std::string dummy;
+  return service.getSpendkeys(request.address, response.spendPublicKey, dummy);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetBalance(const GetBalance::Request& request, GetBalance::Response& response) {
@@ -246,7 +247,7 @@ std::error_code PaymentServiceJsonRpcServer::handleSendDelayedTransaction(const 
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetViewKey(const GetViewKey::Request& request, GetViewKey::Response& response) {
-  return service.getViewKey(response.viewSecretKey);
+  return service.getViewKey(response.viewPublicKey);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleGetStatus(const GetStatus::Request& request, GetStatus::Response& response) {

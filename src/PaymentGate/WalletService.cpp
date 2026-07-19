@@ -973,7 +973,7 @@ namespace PaymentService
       CryptoNote::KeyPair key = wallet.getAddressSpendKey(address);
 
       publicSpendKeyText = Common::podToHex(key.publicKey);
-      secretSpendKeyText = Common::podToHex(key.secretKey);
+      secretSpendKeyText.clear();  // secret key no longer exposed via RPC
     }
     catch (std::system_error &x)
     {
@@ -1060,7 +1060,7 @@ namespace PaymentService
     {
       System::EventLock lk(readyEvent);
       CryptoNote::KeyPair viewKey = wallet.getViewKey();
-      viewSecretKey = Common::podToHex(viewKey.secretKey);
+      viewSecretKey = Common::podToHex(viewKey.publicKey);  // return public key, not secret
     }
     catch (std::system_error &x)
     {

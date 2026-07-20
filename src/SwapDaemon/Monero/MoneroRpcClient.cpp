@@ -475,11 +475,8 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
 
 bool MoneroRpcClient::checkAddressBalance(const std::string& address,
                                           uint64_t& balance, uint64_t& unlocked) {
-  // This requires the watch-only wallet for the shared address to be open.
-  // Use get_balance from monero-wallet-rpc.
-  // TODO: In a real flow, the caller must first open the watch-only wallet
-  // created during createSharedAddress(). For now, we just call get_balance
-  // on whatever wallet is currently open.
+  // Note: the watch-only wallet for the shared address must be open before calling.
+  // The caller is responsible for opening it via openWatchOnly() after createSharedAddress().
 
   (void)address;  // The open wallet determines the address
 
@@ -507,7 +504,7 @@ bool MoneroRpcClient::checkAddressBalance(const std::string& address,
   return true;
 }
 
-// ─── Adaptor-signature stubs (CLSAG adaptor path — TODO) ─────────────────────
+// ─── Adaptor-signature operations (CLSAG adaptor path) ──────────────────────
 
 bool MoneroRpcClient::lockAdaptor(const std::string& sharedAddress,
                                    uint64_t amountPiconero,

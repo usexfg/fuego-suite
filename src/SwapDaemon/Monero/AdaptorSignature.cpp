@@ -396,9 +396,8 @@ bool AdaptorSigScheme::verifySignature(
   //    with R instead of R_hat and recompute s differently. This is a
   //    protocol design choice.
   //
-  // TODO: Decide whether to support standalone Schnorr verify or only
-  // adaptor verify + extract. For the atomic swap protocol, only
-  // verifyAdaptor + extractSecret are needed on the critical path.
+  // Note: standalone Schnorr verify (without adaptor) is not needed for the
+  // atomic swap protocol — only verifyAdaptor + extractSecret are on the critical path.
 
   ge_p3 P_p3;
   if (ge_frombytes_vartime(&P_p3, asBytes(pubKey)) != 0) return false;

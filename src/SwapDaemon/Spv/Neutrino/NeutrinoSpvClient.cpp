@@ -112,14 +112,27 @@ static void flushBits(std::vector<uint8_t>& out, uint64_t& bitBuf, int& bitCount
   }
 }
 
-// Write a varint (CompactSize) to the bit stream
-static void writeVarInt(std::vector<uint8_t>& out, uint64_t n,
-                         uint64_t& bitBuf, int& bitCount) {
-  while (n >= 0x80) {
-    writeBitsLE(out, (n & 0x7F) | 0x80, 8, bitBuf, bitCount);
-    n >>= 7;
+// Write a Bitcoin CompactSize to the bit stream
+static void writeCompactSize(std::vector<uint8_t>& out, uint64_t n,
+                              uint64_t& bitBuf, int& bitCount) {
+  if (n < 0xFD) {
+    writeBitsLE(out, n, 8, bitBuf, bitCount);
+  } else if (n <= 0xFFFF) {
+    writeBitsLE(out, 0xFD, 8, bitBuf, bitCount);
+    writeBitsLE(out, n & 0xFF, 8, bitBuf, bitCount);
+    writeBitsLE(out, (n >> 8) & 0xFF, 8, bitBuf, bitCount);
+  } else if (n <= 0xFFFFFFFF) {
+    writeBitsLE(out, 0xFE, 8, bitBuf, bitCount);
+    writeBitsLE(out, n & 0xFF, 8, bitBuf, bitCount);
+    writeBitsLE(out, (n >> 8) & 0xFF, 8, bitBuf, bitCount);
+    writeBitsLE(out, (n >> 16) & 0xFF, 8, bitBuf, bitCount);
+    writeBitsLE(out, (n >> 24) & 0xFF, 8, bitBuf, bitCount);
+  } else {
+    writeBitsLE(out, 0xFF, 8, bitBuf, bitCount);
+    for (int i = 0; i < 8; ++i) {
+      writeBitsLE(out, (n >> (8 * i)) & 0xFF, 8, bitBuf, bitCount);
+    }
   }
-  writeBitsLE(out, n, 8, bitBuf, bitCount);
 }
 
 std::vector<uint8_t> NeutrinoSpvClient::buildFilter(
@@ -152,8 +165,8 @@ std::vector<uint8_t> NeutrinoSpvClient::buildFilter(
   uint64_t bitBuf = 0;
   int bitCount = 0;
 
-  // Write item count as varint
-  writeVarInt(filter, hashes.size(), bitBuf, bitCount);
+  // Write item count as CompactSize
+  writeCompactSize(filter, hashes.size(), bitBuf, bitCount);
 
   // Golomb-Rice encode each delta
   uint64_t prev = 0;
@@ -198,39 +211,59 @@ bool NeutrinoSpvClient::matchFilter(
 
   uint64_t targetHash = SipHash(data.data(), data.size(), k0, k1) % params.M;
 
-  // Decode varint item count
+  // Decode CompactSize item count
   size_t pos = 0;
   uint64_t itemCount = 0;
-  int shift = 0;
-  while (true) {
-    if (pos / 8 >= filter.size()) return false;
-    uint8_t byte = filter[pos / 8];
-    pos += 8;
-    itemCount |= (static_cast<uint64_t>(byte & 0x7F) << shift);
-    shift += 7;
-    if ((byte & 0x80) == 0) break;
+  if (filter.empty()) return false;
+  uint8_t first = filter[0];
+  pos = 8;  // consumed first byte
+  if (first < 0xFD) {
+    itemCount = first;
+  } else if (first == 0xFD) {
+    if (filter.size() < 3) return false;
+    itemCount = static_cast<uint64_t>(filter[1]) |
+               (static_cast<uint64_t>(filter[2]) << 8);
+    pos = 24;
+  } else if (first == 0xFE) {
+    if (filter.size() < 5) return false;
+    itemCount = static_cast<uint64_t>(filter[1]) |
+               (static_cast<uint64_t>(filter[2]) << 8) |
+               (static_cast<uint64_t>(filter[3]) << 16) |
+               (static_cast<uint64_t>(filter[4]) << 24);
+    pos = 40;
+  } else {
+    if (filter.size() < 9) return false;
+    itemCount = 0;
+    for (int i = 0; i < 8; ++i) {
+      itemCount |= static_cast<uint64_t>(filter[1 + i]) << (8 * i);
+    }
+    pos = 72;
   }
 
   // Golomb-Rice decode: reconstruct sorted hashes via delta accumulation
   uint64_t prev = 0;
+  const size_t totalBits = filter.size() * 8;
   for (uint64_t i = 0; i < itemCount; ++i) {
     // Read unary quotient (count leading 0-bits until a 1-bit)
     uint64_t quotient = 0;
-    while (readBit(filter, pos) == 0) {
+    while (pos < totalBits && readBit(filter, pos) == 0) {
       ++quotient;
       ++pos;
-      if (pos / 8 >= filter.size()) return false;
+      if (quotient > totalBits) return false;  // bounds: prevent unbounded loop
     }
+    if (pos >= totalBits) return false;
     ++pos;  // skip the terminating 1-bit
 
     // Read P-bit remainder
-    if (pos + params.P > filter.size() * 8) return false;
+    if (pos + params.P > totalBits) return false;
     uint64_t remainder = 0;
     for (uint32_t j = 0; j < params.P; ++j) {
       remainder = (remainder << 1) | readBit(filter, pos);
       ++pos;
     }
 
+    // Overflow check: quotient << P must not overflow uint64_t
+    if (quotient > (UINT64_MAX >> params.P)) return false;
     uint64_t delta = (quotient << params.P) | remainder;
     uint64_t h = prev + delta;
 

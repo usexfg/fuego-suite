@@ -172,6 +172,20 @@ bool loadChainClientConfig(const std::string& path,
   out.xfgSecretKeyHex = jsonGetStr(json, "xfg_secret_key");
   out.xfgViewKeyHex   = jsonGetStr(json, "xfg_view_key");
 
+  // BSC (Binance Smart Chain)
+  out.bscHost       = jsonGetStr(json, "bsc_rpc_host", "");
+  out.bscPort       = static_cast<uint16_t>(jsonGetUint(json, "bsc_rpc_port", 8545));
+  out.bscPrivKeyHex = jsonGetStr(json, "bsc_priv_key");
+  out.bscAddress    = jsonGetStr(json, "bsc_address");
+  out.bscChainId    = jsonGetUint(json, "bsc_chain_id", 56);
+  out.bscHtlcBinPath = jsonGetStr(json, "bsc_htlc_bin");
+
+  // DCR (Decred)
+  out.dcrHost    = jsonGetStr(json, "dcr_rpc_host", "");
+  out.dcrPort    = static_cast<uint16_t>(jsonGetUint(json, "dcr_rpc_port", 9108));
+  out.dcrRpcUser = jsonGetStr(json, "dcr_rpc_user");
+  out.dcrRpcPass = jsonGetStr(json, "dcr_rpc_pass");
+
   out.xfgWalletRpcHost = jsonGetStr(json, "xfg_wallet_rpc_host", "");
   out.xfgWalletRpcPort = static_cast<uint16_t>(jsonGetUint(json, "xfg_wallet_rpc_port", 0));
   out.xfgWalletRpcUser = jsonGetStr(json, "xfg_wallet_rpc_user");
@@ -195,6 +209,12 @@ bool loadChainClientConfig(const std::string& path,
   }
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
+
+  if (!validateHex(out.bscPrivKeyHex, 32, "bsc_priv_key", errorMsg)) return false;
+  if (!out.bscAddress.empty() && (out.bscAddress.size() < 2 || out.bscAddress.substr(0, 2) != "0x")) {
+    errorMsg = "bsc_address must start with 0x";
+    return false;
+  }
 
   return true;
 }

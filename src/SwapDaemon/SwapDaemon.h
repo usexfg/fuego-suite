@@ -109,6 +109,20 @@ struct ChainClientConfig {
   // Solana keypair JSON file path (as produced by `solana-keygen new`)
   std::string solKeypairPath;
 
+  // BNB (Binance Smart Chain — EVM)
+  std::string bscHost;
+  uint16_t    bscPort     = 8545;
+  std::string bscPrivKeyHex;
+  std::string bscAddress;
+  uint64_t    bscChainId  = 56;
+  std::string bscHtlcBinPath;
+
+  // DCR (Decred — hybrid PoW/PoS UTXO)
+  std::string dcrHost;
+  uint16_t    dcrPort     = 9108;
+  std::string dcrRpcUser;
+  std::string dcrRpcPass;
+
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
   std::string xfgViewKeyHex;

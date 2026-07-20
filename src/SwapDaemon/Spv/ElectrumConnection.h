@@ -16,6 +16,9 @@ public:
   ElectrumConnection();
   ~ElectrumConnection();
 
+  ElectrumConnection(const ElectrumConnection&) = delete;
+  ElectrumConnection& operator=(const ElectrumConnection&) = delete;
+
   // Connect to an Electrum server. Returns true on success.
   bool connect(const std::string& host, uint16_t port);
 

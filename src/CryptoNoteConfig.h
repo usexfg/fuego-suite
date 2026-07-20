@@ -227,7 +227,7 @@ namespace CryptoNote
         const uint64_t DIGM_MINT_MIN_HEAT = 1000000;                // 0.10 HEAT minimum (1 DIGM)
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
-        const uint64_t HEAT_MINT_PREMIUM_BPS = 333;                    // 3.33% mint premium (goes to SWF)
+        const uint64_t HEAT_MINT_PREMIUM_BPS = 0;                      // mint premium disabled for launch (re-enable later if needed)
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool

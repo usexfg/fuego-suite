@@ -283,6 +283,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Litecoin/LtcChainClient.cpp
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Decred/DcrRpcClient.cpp
+    SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
@@ -417,6 +419,12 @@ target_link_libraries(test_bsc_chain_client PRIVATE
 add_executable(test_polygon_chain_client
     SwapDaemon/Polygon/tests/test_polygon_chain_client.cpp)
 target_link_libraries(test_polygon_chain_client PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: DCR chain client
+add_executable(test_dcr_chain_client
+    SwapDaemon/Decred/tests/test_dcr_chain_client.cpp)
+target_link_libraries(test_dcr_chain_client PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)
@@ -571,6 +579,8 @@ add_executable(SwapDaemon
     SwapDaemon/Litecoin/LtcChainClient.cpp
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Decred/DcrRpcClient.cpp
+    SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 

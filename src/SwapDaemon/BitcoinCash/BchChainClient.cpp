@@ -141,7 +141,20 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
     p += 8;
   }
 
+  // Extract the expected P2SH script hash from swap params for verification.
+  // The redeem script hex is stored in params.chainState from the lock() call.
+  std::vector<uint8_t> expectedScriptHash;
+  bool haveExpectedHash = false;
+  if (!params.chainState.empty()) {
+    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
+    if (!redeemScript.empty()) {
+      expectedScriptHash = BchHtlcScript::hash160(redeemScript);
+      haveExpectedHash = true;
+    }
+  }
+
   bool foundP2sh = false;
+  std::vector<uint8_t> onChainScriptHash;
   for (uint64_t i = 0; i < voutCount; ++i) {
     if (p + 8 > end) return ChainClientResult::fail("BCH verifyLock SPV: truncated output value");
     uint64_t value = 0;
@@ -168,6 +181,7 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
     if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
       if (value >= params.ctrAmount) {
         foundP2sh = true;
+        onChainScriptHash.assign(p + 2, p + 22);
       }
     }
 
@@ -177,6 +191,14 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
   if (!foundP2sh) {
     return ChainClientResult::fail("BCH verifyLock SPV: no P2SH output with expected amount " +
                                    std::to_string(params.ctrAmount));
+  }
+
+  // Verify that the P2SH script hash matches the expected HTLC contract.
+  if (haveExpectedHash && !expectedScriptHash.empty()) {
+    if (onChainScriptHash != expectedScriptHash) {
+      return ChainClientResult::fail(
+          "BCH verifyLock SPV: P2SH script hash does not match expected HTLC contract");
+    }
   }
 
   // Verify inclusion via SPV
@@ -268,6 +290,46 @@ bool BchChainClient::getCurrentHeight(uint64_t& height) {
     return m_rpc->getBlockCount(height);
   }
   return false;
+}
+
+ChainClientResult BchChainClient::getTransactionDetails(const std::string& txId,
+                                                        ChainClientResult& result) {
+  if (m_spvClient) {
+    // SPV mode: check if tx is confirmed via header chain
+    uint64_t tipHeight = 0;
+    if (!m_spvClient->getTipHeight(tipHeight)) {
+      result = ChainClientResult::fail("BCH SPV: cannot get tip height");
+      return result;
+    }
+
+    // Try to verify tx inclusion (fetches header + merkle proof)
+    SpvTxInclusion inclusion;
+    if (!m_spvClient->verifyTxInclusion(txId, inclusion)) {
+      // Tx not yet found — may still be unconfirmed or not relayed
+      result = ChainClientResult::fail("BCH SPV: tx not found or not yet included in a block");
+      result.confirmed = false;
+      result.confirmations = 0;
+      return result;
+    }
+
+    result.success = true;
+    result.confirmed = true;
+    result.spvVerified = true;
+    result.blockHeight = inclusion.blockHeight;
+    result.confirmations = (tipHeight >= inclusion.blockHeight)
+        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    return result;
+  }
+
+  if (m_rpc) {
+    // Full-node RPC mode: use gettransaction
+    // TODO: implement via BchRpcClient when available
+    result = ChainClientResult::fail("BCH RPC: getTransactionDetails not yet implemented");
+    return result;
+  }
+
+  result = ChainClientResult::fail("BCH: no RPC or SPV client available");
+  return result;
 }
 
 std::string BchChainClient::extractSecret(const std::string& spendingTxid,

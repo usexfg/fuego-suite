@@ -81,7 +81,9 @@ enum class SwapPair : uint8_t {
   BCH = 3,
   ARB = 4,
   BASE = 5,
-  KMD_SPV = 6
+  KMD_SPV = 6,
+  BNB = 7,
+  DCR = 8
 };
 
 // Musig2 session state persisted across swap steps.
@@ -141,6 +143,7 @@ struct SwapParams {
 
   // Counterparty-specific
   std::string ctrAddress;       // counterparty chain address (SOL/ETH/XMR/BCH)
+  std::string ctrPubKey;        // counterparty's compressed pubkey for HTLC claim (hex, 66 chars)
   std::string peerEndpoint;     // swap counterparty's network address
 
   std::string chainState;

@@ -24,6 +24,8 @@ public:
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
   bool getCurrentHeight(uint64_t& height) override;
 
   // Extract the HTLC claim preimage from a spending transaction.

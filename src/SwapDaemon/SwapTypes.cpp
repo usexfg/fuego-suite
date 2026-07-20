@@ -38,6 +38,8 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (iequal(p, "BASE", n)) { out = SwapPair::BASE; return true; }
   if (iequal(p, "KMD", n))  { out = SwapPair::KMD_SPV; return true; }
   if (iequal(p, "KMD_SPV", n)) { out = SwapPair::KMD_SPV; return true; }
+  if (iequal(p, "BNB", n))  { out = SwapPair::BNB;  return true; }
+  if (iequal(p, "DCR", n))  { out = SwapPair::DCR;  return true; }
   return false;
 }
 
@@ -57,6 +59,8 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::ARB:  return "ARB";
     case SwapPair::BASE: return "BASE";
     case SwapPair::KMD_SPV: return "KMD_SPV";
+    case SwapPair::BNB:     return "BNB";
+    case SwapPair::DCR:     return "DCR";
   }
   return "???";
 }

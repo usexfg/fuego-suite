@@ -37,6 +37,8 @@ static const double SEED_SOL_USD = 170.0;
 static const double SEED_ETH_USD = 2140.0;
 static const double SEED_BCH_USD = 469.0;
 static const double SEED_XMR_USD = 343.0;
+static const double SEED_BNB_USD = 590.0;
+static const double SEED_DCR_USD = 20.0;
 
 // Minimum completed swaps before TWAP replaces seed rate
 static const size_t TWAP_MIN_TRADES = 5;
@@ -80,6 +82,8 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::XMR: return SEED_XMR_USD / xfgUsd;
     case SwapPair::ARB: return SEED_ETH_USD / xfgUsd;
     case SwapPair::BASE: return SEED_ETH_USD / xfgUsd;
+    case SwapPair::BNB: return SEED_BNB_USD / xfgUsd;
+    case SwapPair::DCR: return SEED_DCR_USD / xfgUsd;
     default:            return 0.0;
   }
 }
@@ -87,12 +91,14 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
 double PriceOracle::getSeedRate(SwapPair pair) {
   // Returns: how many XFG per 1 whole counterparty coin
   switch (pair) {
-    case SwapPair::SOL: return SEED_SOL_USD / SEED_XFG_USD;  //  17,000
-    case SwapPair::ETH: return SEED_ETH_USD / SEED_XFG_USD;  // 214,000
-    case SwapPair::BCH: return SEED_BCH_USD / SEED_XFG_USD;  //  46,900
-    case SwapPair::XMR: return SEED_XMR_USD / SEED_XFG_USD;  //  34,300
-    case SwapPair::ARB: return SEED_ETH_USD / SEED_XFG_USD; // ARB = ETH on L2
-    case SwapPair::BASE: return SEED_ETH_USD / SEED_XFG_USD; // BASE = ETH on L2
+    case SwapPair::SOL: return SEED_SOL_USD / SEED_XFG_USD;
+    case SwapPair::ETH: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::BCH: return SEED_BCH_USD / SEED_XFG_USD;
+    case SwapPair::XMR: return SEED_XMR_USD / SEED_XFG_USD;
+    case SwapPair::ARB: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::BASE: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::BNB: return SEED_BNB_USD / SEED_XFG_USD;
+    case SwapPair::DCR: return SEED_DCR_USD / SEED_XFG_USD;
     default:            return 0.0;
   }
 }
@@ -107,8 +113,10 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::ETH: return 1e18;  // wei
     case SwapPair::BCH: return 1e8;   // satoshi
     case SwapPair::XMR: return 1e12;  // piconero
-    case SwapPair::ARB: return 1e18;  // wei (EVM L2)
-    case SwapPair::BASE: return 1e18; // wei (EVM L2)
+    case SwapPair::ARB: return 1e18;
+    case SwapPair::BASE: return 1e18;
+    case SwapPair::BNB: return 1e18;
+    case SwapPair::DCR: return 1e8;
     default:            return 1e8;
   }
 }

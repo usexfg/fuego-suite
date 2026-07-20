@@ -280,6 +280,28 @@ bool BchRpcClient::listUnspent(const std::string& address, std::vector<BchUtxo>&
   }
 }
 
+bool BchRpcClient::getRawTransaction(const std::string& txid, std::string& rawTxHex) {
+  try {
+    std::string params = "[\"" + txid + "\", true]";
+    std::string responseBody = rpcCall("getrawtransaction", params);
+    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+
+    if (!json.isObject() || !json.contains("result")) {
+      return false;
+    }
+
+    const auto& result = json("result");
+    if (!result.isString()) {
+      return false;
+    }
+
+    rawTxHex = result.getString();
+    return !rawTxHex.empty();
+  } catch (...) {
+    return false;
+  }
+}
+
 bool BchRpcClient::sendRawTransaction(const std::string& rawTxHex, std::string& txid) {
   try {
     std::string params = "[\"" + rawTxHex + "\"]";

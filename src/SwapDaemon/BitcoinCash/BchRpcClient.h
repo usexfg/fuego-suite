@@ -48,6 +48,7 @@ public:
   bool listUnspent(const std::string& address, std::vector<BchUtxo>& utxos);
 
   // Raw transaction
+  bool getRawTransaction(const std::string& txid, std::string& rawTxHex);
   bool sendRawTransaction(const std::string& rawTxHex, std::string& txid);
   bool decodeRawTransaction(const std::string& rawTxHex, std::string& jsonResult);
 

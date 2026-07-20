@@ -341,9 +341,23 @@ std::string BchChainClient::extractSecret(const std::string& spendingTxid,
     return extractSecretSpv(spendingTxid, p2shScriptPubKey);
   }
 
-  // Full-node mode not implemented for extractSecret (needs raw tx decode)
-  // Fall back to SPV if available, otherwise fail
-  return {};
+  // RPC mode: fetch raw tx via getrawtransaction, then parse
+  if (!m_rpc) {
+    return {};
+  }
+
+  std::string rawTxHex;
+  if (!m_rpc->getRawTransaction(spendingTxid, rawTxHex)) {
+    return {};
+  }
+
+  std::vector<uint8_t> rawTx = BchHtlcScript::hexToBytes(rawTxHex);
+  std::vector<uint8_t> preimage = BchHtlcScript::parseClaimPreimage(rawTx, p2shScriptPubKey);
+  if (preimage.empty()) {
+    return {};
+  }
+
+  return BchHtlcScript::bytesToHex(preimage);
 }
 
 std::string BchChainClient::extractSecretSpv(const std::string& spendingTxid,

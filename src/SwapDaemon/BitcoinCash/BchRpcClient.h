@@ -109,12 +109,14 @@ public:
   // htlcVout:       output index of the HTLC output.
   // htlcAmount:     satoshis locked.
   // redeemScriptHex: hex-encoded redeem script.
+  // timeoutBlock:   CLTV timeout block height for nLocktime.
   // destAddress:    where to send the refunded BCH.
   bool refundHtlc(const std::string& senderWif,
                   const std::string& htlcTxid,
                   uint32_t htlcVout,
                   uint64_t htlcAmount,
                   const std::string& redeemScriptHex,
+                  uint32_t timeoutBlock,
                   const std::string& destAddress,
                   std::string& refundTxId);
 

@@ -243,6 +243,7 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
       m_wif,
       params.ctrLockTxId, 0, params.ctrAmount,
       params.chainState,
+      static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
       refundTxId);
   if (!ok) return ChainClientResult::fail("BCH refundHtlc failed");
@@ -323,8 +324,20 @@ ChainClientResult BchChainClient::getTransactionDetails(const std::string& txId,
 
   if (m_rpc) {
     // Full-node RPC mode: use gettransaction
-    // TODO: implement via BchRpcClient when available
-    result = ChainClientResult::fail("BCH RPC: getTransactionDetails not yet implemented");
+    BchTxInfo txInfo;
+    if (!m_rpc->getTransaction(txId, txInfo)) {
+      result = ChainClientResult::fail("BCH RPC: gettransaction failed for " + txId);
+      return result;
+    }
+
+    uint64_t tipHeight = 0;
+    m_rpc->getBlockCount(tipHeight);
+
+    result.success = true;
+    result.confirmed = txInfo.confirmations > 0;
+    result.spvVerified = false;  // RPC mode: no SPV proof
+    result.blockHeight = txInfo.blockHeight;
+    result.confirmations = txInfo.confirmations;
     return result;
   }
 

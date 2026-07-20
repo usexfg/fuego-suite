@@ -592,12 +592,13 @@ bool BchRpcClient::claim(const std::string& claimerWif,
 }
 
 bool BchRpcClient::refundHtlc(const std::string& senderWif,
-                               const std::string& htlcTxid,
-                               uint32_t htlcVout,
-                               uint64_t htlcAmount,
-                               const std::string& redeemScriptHex,
-                               const std::string& destAddress,
-                               std::string& refundTxId) {
+                              const std::string& htlcTxid,
+                              uint32_t htlcVout,
+                              uint64_t htlcAmount,
+                              const std::string& redeemScriptHex,
+                              uint32_t timeoutBlock,
+                              const std::string& destAddress,
+                              std::string& refundTxId) {
   std::array<uint8_t, 32> privKey{};
   if (!wifToPrivKey(senderWif, privKey)) return false;
 
@@ -607,11 +608,8 @@ bool BchRpcClient::refundHtlc(const std::string& senderWif,
   // In BchHtlcScript::createRedeemScript the timeout is pushed as a script
   // number at offset 36 (after OP_ELSE byte at offset 35).
   // Rather than parsing the script, we require the caller to pass it via a
-  // separate parameter in future refactoring.  For now we extract it from
-  // the nLocktime we set in the refund tx — the caller must set nLocktime
-  // equal to the timeout.  We leave it at 0 here and note the limitation.
-  // TODO(C3): add timeoutBlock to refundHtlc signature.
-  uint32_t nLocktime = 0;
+  // CLTV requires nLocktime >= timeoutBlock for the refund path to activate.
+  uint32_t nLocktime = timeoutBlock;
 
   // Build output.
   uint8_t addrVersion = 0;

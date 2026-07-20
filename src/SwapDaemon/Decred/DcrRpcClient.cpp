@@ -1,6 +1,8 @@
 #include "DcrRpcClient.h"
 #include "DcrHtlcScript.h"
 #include "Common/JsonValue.h"
+#include "../Crypto/Secp256k1Signer.h"
+#include <openssl/sha.h>
 #include <algorithm>
 #include <cstring>
 #include <sstream>
@@ -19,6 +21,177 @@ static constexpr uint8_t OP_EQUAL     = 0x87;
 static constexpr uint8_t OP_EQUALVERIFY = 0x88;
 static constexpr uint8_t OP_CHECKSIG  = 0xAC;
 
+namespace XfgSwap {
+
+// ---- Helpers ----------------------------------------------------------------
+
+static void writeLE32(std::vector<uint8_t>& buf, uint32_t val) {
+  buf.push_back(static_cast<uint8_t>(val));
+  buf.push_back(static_cast<uint8_t>(val >> 8));
+  buf.push_back(static_cast<uint8_t>(val >> 16));
+  buf.push_back(static_cast<uint8_t>(val >> 24));
+}
+
+static void writeLE64(std::vector<uint8_t>& buf, uint64_t val) {
+  for (int i = 0; i < 8; ++i) {
+    buf.push_back(static_cast<uint8_t>((val >> (8 * i)) & 0xFF));
+  }
+}
+
+static void writeCompactSize(std::vector<uint8_t>& buf, uint64_t val) {
+  if (val < 0xFD) {
+    buf.push_back(static_cast<uint8_t>(val));
+  } else if (val <= 0xFFFF) {
+    buf.push_back(0xFD);
+    buf.push_back(static_cast<uint8_t>(val & 0xFF));
+    buf.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+  } else if (val <= 0xFFFFFFFF) {
+    buf.push_back(0xFE);
+    buf.push_back(static_cast<uint8_t>(val & 0xFF));
+    buf.push_back(static_cast<uint8_t>((val >> 8) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((val >> 16) & 0xFF));
+    buf.push_back(static_cast<uint8_t>((val >> 24) & 0xFF));
+  } else {
+    buf.push_back(0xFF);
+    for (int i = 0; i < 8; ++i) {
+      buf.push_back(static_cast<uint8_t>((val >> (8 * i)) & 0xFF));
+    }
+  }
+}
+
+// DCR legacy sighash: SHA256d(tx_modified || sighash_type_LE)
+// For SIGHASH_ALL: input being signed gets scriptCode, all others empty.
+static std::vector<uint8_t> dcrSighash(
+    uint32_t txVersion,
+    const std::string& inputTxid,
+    uint32_t inputVout,
+    const std::vector<uint8_t>& scriptCode,
+    uint32_t nSequence,
+    const std::vector<std::vector<uint8_t>>& outputScripts,
+    const std::vector<uint64_t>& outputAmounts,
+    uint32_t nLocktime,
+    uint32_t expiry) {
+
+  std::vector<uint8_t> tx;
+
+  // Version
+  writeLE32(tx, txVersion);
+
+  // Input count = 1
+  writeCompactSize(tx, 1);
+
+  // Input: txid (32 bytes reversed LE) + vout (4 bytes LE) + tree (0) + blockHeight (0) + blockIndex (0) + scriptCode + sequence
+  auto txidBytes = DcrHtlcScript::hexToBytes(inputTxid);
+  if (txidBytes.size() != 32) return {};
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  tx.insert(tx.end(), txidBytes.begin(), txidBytes.end());
+  writeLE32(tx, inputVout);
+  tx.push_back(0x00);  // tree
+  writeCompactSize(tx, 0);  // blockHeight (irregular, not coinbase)
+  writeCompactSize(tx, 0);  // blockIndex
+  writeCompactSize(tx, scriptCode.size());
+  tx.insert(tx.end(), scriptCode.begin(), scriptCode.end());
+  writeLE32(tx, nSequence);
+
+  // Output count
+  writeCompactSize(tx, outputScripts.size());
+  for (size_t i = 0; i < outputScripts.size(); ++i) {
+    writeLE64(tx, outputAmounts[i]);
+    // DCR output: value (8) + version (2) + script length + script
+    writeCompactSize(tx, 2);  // output version 2
+    tx.pop_back();  // remove version prefix; DCR output format: value(8) + scriptPubKeyLen(varint) + scriptPubKey
+    // Actually DCR output: value (8 bytes LE) + version (2 bytes LE) + script length (varint) + script
+    tx.push_back(0x02);  // output version low byte
+    tx.push_back(0x00);  // output version high byte
+    writeCompactSize(tx, outputScripts[i].size());
+    tx.insert(tx.end(), outputScripts[i].begin(), outputScripts[i].end());
+  }
+
+  // Locktime + expiry
+  writeLE32(tx, nLocktime);
+  writeLE32(tx, expiry);
+
+  // SIGHASH_ALL = 0x01
+  writeLE32(tx, 0x01);
+
+  // Double SHA256
+  std::vector<uint8_t> hash1(32);
+  SHA256(tx.data(), tx.size(), hash1.data());
+  std::vector<uint8_t> hash2(32);
+  SHA256(hash1.data(), 32, hash2.data());
+  return hash2;
+}
+
+// Sign a DCR P2SH input and produce a DER-encoded signature with sighash byte.
+static std::vector<uint8_t> signDcrP2shInput(
+    const std::array<uint8_t, 32>& privKey,
+    uint32_t txVersion,
+    const std::string& inputTxid,
+    uint32_t inputVout,
+    const std::vector<uint8_t>& redeemScript,
+    uint32_t nSequence,
+    const std::vector<std::vector<uint8_t>>& outputScripts,
+    const std::vector<uint64_t>& outputAmounts,
+    uint32_t nLocktime,
+    uint32_t expiry) {
+
+  auto sighashVec = dcrSighash(txVersion, inputTxid, inputVout,
+                             redeemScript, nSequence,
+                             outputScripts, outputAmounts,
+                             nLocktime, expiry);
+  if (sighashVec.empty() || sighashVec.size() != 32) return {};
+
+  std::array<uint8_t, 32> sighash;
+  std::memcpy(sighash.data(), sighashVec.data(), 32);
+
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(sighash, privKey);
+
+  // DER encode: 0x30 <len> 0x02 <rlen> <r> 0x02 <slen> <s> <sighash_type>
+  auto& r = sig.r;
+  auto& s = sig.s;
+
+  size_t rStart = 0, sStart = 0;
+  while (rStart < 31 && r[rStart] == 0) ++rStart;
+  while (sStart < 31 && s[sStart] == 0) ++sStart;
+
+  bool rPad = (r[rStart] & 0x80) != 0;
+  bool sPad = (s[sStart] & 0x80) != 0;
+
+  size_t rLen = 32 - rStart + (rPad ? 1 : 0);
+  size_t sLen = 32 - sStart + (sPad ? 1 : 0);
+  size_t seqLen = 2 + rLen + 2 + sLen;
+
+  std::vector<uint8_t> der;
+  der.push_back(0x30);
+  der.push_back(static_cast<uint8_t>(seqLen));
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(rLen));
+  if (rPad) der.push_back(0x00);
+  der.insert(der.end(), r.begin() + rStart, r.end());
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(sLen));
+  if (sPad) der.push_back(0x00);
+  der.insert(der.end(), s.begin() + sStart, s.end());
+  der.push_back(0x01);  // SIGHASH_ALL
+
+  return der;
+}
+
+// WIF decode helper (strip version byte and checksum).
+static bool dcrWifToPrivKey(const std::string& wif, std::array<uint8_t, 32>& privKey) {
+  auto bytes = DcrHtlcScript::hexToBytes(wif);
+  if (bytes.size() == 33) {
+    std::memcpy(privKey.data(), bytes.data() + 1, 32);
+    return true;
+  }
+  if (bytes.size() == 34 && bytes.back() == 0x01) {
+    std::memcpy(privKey.data(), bytes.data() + 1, 32);
+    return true;
+  }
+  return false;
+}
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -29,8 +202,6 @@ static constexpr uint8_t OP_CHECKSIG  = 0xAC;
 #include <netdb.h>
 #include <unistd.h>
 #endif
-
-namespace XfgSwap {
 
 // ---- Base64 -----------------------------------------------------------------
 
@@ -309,10 +480,12 @@ bool DcrRpcClient::claim(const std::string& claimerWif,
                           const std::string& destAddress,
                           std::string& claimTxId) {
   try {
+    std::array<uint8_t, 32> privKey{};
+    if (!dcrWifToPrivKey(claimerWif, privKey)) return false;
+
     auto redeemScript = DcrHtlcScript::hexToBytes(redeemScriptHex);
     auto preimage     = DcrHtlcScript::hexToBytes(preimageHex);
 
-    // Build output: decode destAddress to get scriptPubKey
     uint8_t addrVersion = 0;
     std::vector<uint8_t> addrHash;
     if (!DcrHtlcScript::base58CheckDecode(destAddress, addrVersion, addrHash)) return false;
@@ -333,45 +506,32 @@ bool DcrRpcClient::claim(const std::string& claimerWif,
     } else {
       return false;
     }
-    std::string outputScriptHex = DcrHtlcScript::bytesToHex(outputScript);
 
     const uint64_t fee = 10000;
     if (htlcAmount <= fee) return false;
     uint64_t outputAmount = htlcAmount - fee;
 
-    // Build the P2SH scriptPubKey for the HTLC input
-    auto htlcP2shSpk = DcrHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-    std::string htlcP2shSpkHex = DcrHtlcScript::bytesToHex(htlcP2shSpk);
+    // Sign locally with redeemScript as scriptCode
+    std::vector<std::vector<uint8_t>> outScripts = { outputScript };
+    std::vector<uint64_t> outAmounts = { outputAmount };
 
-    // Build inputs and outputs JSON for createrawtransaction
-    std::string inputsJson = "[{\"txid\":\"" + htlcTxid + "\",\"vout\":" +
-        std::to_string(htlcVout) + ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
-        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}]";
+    auto der = signDcrP2shInput(
+        privKey, /*txVersion=*/1, htlcTxid, htlcVout,
+        redeemScript, /*nSequence=*/0xFFFFFFFE,
+        outScripts, outAmounts,
+        /*nLocktime=*/0, /*expiry=*/0);
+    if (der.empty()) return false;
 
-    std::string outputsJson = "{\"" + destAddress + "\":" +
-        std::to_string(static_cast<double>(outputAmount) / 1e8) + "}";
+    // Build HTLC claim scriptSig: <sig> <preimage> OP_TRUE <redeemScript>
+    auto scriptSig = DcrHtlcScript::createClaimScriptSig(der, preimage, redeemScript);
 
-    std::string rawTxHex;
-    if (!createRawTransaction(inputsJson, outputsJson, 0, rawTxHex)) return false;
+    // Build raw tx and broadcast
+    auto rawTx = DcrHtlcScript::buildRawTransaction(
+        htlcTxid, htlcVout, htlcAmount,
+        scriptSig, destAddress, outputAmount, /*lockTime=*/0);
 
-    // Build scriptSig: <sig> <preimage> OP_TRUE <redeemScript>
-    // For signing, we need to construct the scriptSig to embed in the raw tx.
-    // DCR signrawtransaction can sign with the redeemScript provided separately.
-    std::string signParams = "[\"" + rawTxHex + "\",[" +
-        "{\"txid\":\"" + htlcTxid + "\",\"vout\":" + std::to_string(htlcVout) +
-        ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
-        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}" +
-        "],[\"" + claimerWif + "\"],\"ALL\"]";
-    std::string resp = rpcCall("signrawtransaction", signParams);
-    Common::JsonValue json = Common::JsonValue::fromString(resp);
-    if (!json.isObject() || !json.contains("result")) return false;
-    const auto& result = json("result");
-    if (!result.isObject()) return false;
-    if (!result.contains("hex")) return false;
-    std::string signedHex = result("hex").getString();
-    if (signedHex.empty()) return false;
-
-    return sendRawTransaction(signedHex, claimTxId);
+    std::string txHex = DcrHtlcScript::bytesToHex(rawTx);
+    return sendRawTransaction(txHex, claimTxId);
   } catch (...) { return false; }
 }
 
@@ -384,9 +544,11 @@ bool DcrRpcClient::refundHtlc(const std::string& senderWif,
                                 const std::string& destAddress,
                                 std::string& refundTxId) {
   try {
+    std::array<uint8_t, 32> privKey{};
+    if (!dcrWifToPrivKey(senderWif, privKey)) return false;
+
     auto redeemScript = DcrHtlcScript::hexToBytes(redeemScriptHex);
 
-    // Build output: decode destAddress to get scriptPubKey
     uint8_t addrVersion = 0;
     std::vector<uint8_t> addrHash;
     if (!DcrHtlcScript::base58CheckDecode(destAddress, addrVersion, addrHash)) return false;
@@ -412,38 +574,27 @@ bool DcrRpcClient::refundHtlc(const std::string& senderWif,
     if (htlcAmount <= fee) return false;
     uint64_t outputAmount = htlcAmount - fee;
 
-    // Build the P2SH scriptPubKey for the HTLC input
-    auto htlcP2shSpk = DcrHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
-    std::string htlcP2shSpkHex = DcrHtlcScript::bytesToHex(htlcP2shSpk);
+    // Sign locally — refund uses nLocktime=timeoutBlock, nSequence<0xFFFFFFFF for CLTV
+    std::vector<std::vector<uint8_t>> outScripts = { outputScript };
+    std::vector<uint64_t> outAmounts = { outputAmount };
 
-    // CLTV requires nLocktime >= timeoutBlock for the refund path to activate.
-    std::string inputsJson = "[{\"txid\":\"" + htlcTxid + "\",\"vout\":" +
-        std::to_string(htlcVout) + ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
-        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}]";
+    auto der = signDcrP2shInput(
+        privKey, /*txVersion=*/1, htlcTxid, htlcVout,
+        redeemScript, /*nSequence=*/0xFFFFFFFE,
+        outScripts, outAmounts,
+        timeoutBlock, /*expiry=*/0);
+    if (der.empty()) return false;
 
-    std::string outputsJson = "{\"" + destAddress + "\":" +
-        std::to_string(static_cast<double>(outputAmount) / 1e8) + "}";
+    // Build refund scriptSig: <sig> OP_FALSE <redeemScript>
+    auto scriptSig = DcrHtlcScript::createRefundScriptSig(der, redeemScript);
 
-    std::string rawTxHex;
-    if (!createRawTransaction(inputsJson, outputsJson, timeoutBlock, rawTxHex)) return false;
+    // Build raw tx — lockTime must be >= timeoutBlock for CLTV
+    auto rawTx = DcrHtlcScript::buildRawTransaction(
+        htlcTxid, htlcVout, htlcAmount,
+        scriptSig, destAddress, outputAmount, timeoutBlock);
 
-    // Sign with redeemScript — signrawtransaction needs the redeemScript to
-    // resolve P2SH inputs and apply CLTV logic correctly.
-    std::string signParams = "[\"" + rawTxHex + "\",[" +
-        "{\"txid\":\"" + htlcTxid + "\",\"vout\":" + std::to_string(htlcVout) +
-        ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
-        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}" +
-        "],[\"" + senderWif + "\"],\"ALL\"]";
-    std::string resp = rpcCall("signrawtransaction", signParams);
-    Common::JsonValue json = Common::JsonValue::fromString(resp);
-    if (!json.isObject() || !json.contains("result")) return false;
-    const auto& result = json("result");
-    if (!result.isObject()) return false;
-    if (!result.contains("hex")) return false;
-    std::string signedHex = result("hex").getString();
-    if (signedHex.empty()) return false;
-
-    return sendRawTransaction(signedHex, refundTxId);
+    std::string txHex = DcrHtlcScript::bytesToHex(rawTx);
+    return sendRawTransaction(txHex, refundTxId);
   } catch (...) { return false; }
 }
 

@@ -65,14 +65,16 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
   // Create raw transaction: sendtoaddress equivalent
   // Build inputs JSON: listunspent to find a UTXO
   std::vector<std::pair<std::string, uint64_t>> utxos;
-  if (!m_rpc->listUnspent(htlcAddress, utxos)) {
-    // Import the HTLC address and retry
+  if (!m_rpc->listUnspent(htlcAddress, utxos) || utxos.empty()) {
     m_rpc->importAddress(htlcAddress, "htlc", false);
+    if (!m_rpc->listUnspent(htlcAddress, utxos) || utxos.empty()) {
+      return ChainClientResult::fail("DCR lock: no UTXOs available for " + htlcAddress);
+    }
   }
 
-  // Use createrawtransaction + signrawtransaction + sendrawtransaction
   try {
-    std::string inputsJson = "[{\"txid\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"vout\":0}]";
+    const auto& utxo = utxos[0];
+    std::string inputsJson = "[{\"txid\":\"" + utxo.first + "\",\"vout\":0}]";
     std::string outputsJson = "{\"" + htlcAddress + "\":" +
         std::to_string(static_cast<double>(params.ctrAmount) / 1e8) + "}";
 

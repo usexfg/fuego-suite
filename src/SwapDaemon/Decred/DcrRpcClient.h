@@ -47,6 +47,20 @@ public:
                   const std::string& destAddress,
                   std::string& refundTxId);
 
+  // Local sighash computation for DCR P2SH HTLC signing.
+  static std::vector<uint8_t> computeLegacySighash(
+      uint32_t txVersion,
+      const std::string& inputTxid,
+      uint32_t inputVout,
+      const std::vector<uint8_t>& scriptCode,
+      uint32_t inputAmount,
+      uint32_t nSequence,
+      const std::vector<std::vector<uint8_t>>& outputScripts,
+      const std::vector<uint64_t>& outputAmounts,
+      uint32_t nLocktime,
+      uint32_t expiry,
+      uint8_t sighashType);
+
   // Address monitoring
   bool importAddress(const std::string& address, const std::string& label, bool rescan);
   bool listUnspent(const std::string& address, std::vector<std::pair<std::string, uint64_t>>& utxos);

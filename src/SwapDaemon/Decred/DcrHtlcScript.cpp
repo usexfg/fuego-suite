@@ -135,9 +135,12 @@ bool DcrHtlcScript::base58CheckDecode(const std::string& encoded,
     }
   }
 
-  for (char c : encoded) { if (c == '1') num.push_back(0); else break; }
+  // Count leading '1' chars — each produces a leading zero byte in decoded output
+  size_t leadingZeros = 0;
+  for (char c : encoded) { if (c == '1') leadingZeros++; else break; }
 
-  std::vector<uint8_t> data(num.rbegin(), num.rend());
+  std::vector<uint8_t> data(leadingZeros, 0);
+  data.insert(data.end(), num.rbegin(), num.rend());
   if (data.size() < 5) return false;
 
   std::vector<uint8_t> payloadAndChecksum(data.begin(), data.end() - 4);
@@ -349,6 +352,17 @@ std::vector<uint8_t> DcrHtlcScript::parseClaimPreimage(
         if (sp >= sigEnd) break;
         uint8_t len = *sp++;
         sp += len;
+      } else if (pushByte == 0x4D) {  // OP_PUSHDATA2
+        if (sp + 2 > sigEnd) break;
+        uint16_t len = static_cast<uint16_t>(sp[0]) | (static_cast<uint16_t>(sp[1]) << 8);
+        sp += 2;
+        sp += len;
+      } else if (pushByte == 0x4E) {  // OP_PUSHDATA4
+        if (sp + 4 > sigEnd) break;
+        uint32_t len = static_cast<uint32_t>(sp[0]) | (static_cast<uint32_t>(sp[1]) << 8) |
+                       (static_cast<uint32_t>(sp[2]) << 16) | (static_cast<uint32_t>(sp[3]) << 24);
+        sp += 4;
+        sp += len;
       } else {
         break;  // non-push opcode
       }
@@ -394,6 +408,17 @@ std::vector<uint8_t> DcrHtlcScript::parseClaimPreimage(
               walk++;
               if (walk >= pushData) break;
               wlen = *walk++;
+            } else if (wb == 0x4D) {
+              walk++;
+              if (walk + 2 > pushData) break;
+              wlen = static_cast<uint64_t>(walk[0]) | (static_cast<uint64_t>(walk[1]) << 8);
+              walk += 2;
+            } else if (wb == 0x4E) {
+              walk++;
+              if (walk + 4 > pushData) break;
+              wlen = static_cast<uint64_t>(walk[0]) | (static_cast<uint64_t>(walk[1]) << 8) |
+                     (static_cast<uint64_t>(walk[2]) << 16) | (static_cast<uint64_t>(walk[3]) << 24);
+              walk += 4;
             } else {
               break;
             }
@@ -495,13 +520,23 @@ std::vector<uint8_t> DcrHtlcScript::buildRawTransaction(
 
   std::vector<uint8_t> outputScript;
   if (addrHash.size() == 20) {
-    // P2PKH or P2SH — both use the same format for the output
-    outputScript.push_back(OP_DUP);
-    outputScript.push_back(OP_HASH160);
-    outputScript.push_back(0x14);
-    outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
-    outputScript.push_back(OP_EQUALVERIFY);
-    outputScript.push_back(OP_CHECKSIG);
+    if (addrVersion == DCR_P2PKH_VERSION || addrVersion == DCR_P2PKH_TEST) {
+      // P2PKH output
+      outputScript.push_back(OP_DUP);
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUALVERIFY);
+      outputScript.push_back(OP_CHECKSIG);
+    } else if (addrVersion == DCR_P2SH_VERSION || addrVersion == DCR_P2SH_TEST) {
+      // P2SH output
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUAL);
+    } else {
+      return {};
+    }
   } else {
     return {};
   }

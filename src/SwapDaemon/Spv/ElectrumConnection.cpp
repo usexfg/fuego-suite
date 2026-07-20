@@ -130,7 +130,8 @@ std::string ElectrumConnection::call(const std::string& method, const std::strin
     sent += static_cast<size_t>(n);
   }
 
-  // Read response until newline
+  // Read response until newline (with 1MB size limit to prevent OOM)
+  static constexpr size_t MAX_RESPONSE_SIZE = 1024 * 1024;
   std::string response;
   while (true) {
     char buf[4096];
@@ -144,6 +145,9 @@ std::string ElectrumConnection::call(const std::string& method, const std::strin
     }
     buf[n] = '\0';
     response.append(buf, static_cast<size_t>(n));
+    if (response.size() > MAX_RESPONSE_SIZE) {
+      return "";
+    }
 
     // Check if we have a complete line
     auto nl = response.find('\n');

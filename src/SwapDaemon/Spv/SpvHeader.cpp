@@ -119,6 +119,9 @@ std::vector<uint8_t> SpvHeader::nBitsToTargetBE(uint32_t bits) {
     mantissa >>= (8 * (3 - exponent));
   }
 
+  // Clamp exponent to 32 to prevent underflow: 32 - exponent must be >= 0
+  if (exponent > 32) exponent = 32;
+
   if (exponent >= 3) {
     uint32_t pos = 32 - exponent;
     target[pos]     = static_cast<uint8_t>((mantissa >> 16) & 0xFF);

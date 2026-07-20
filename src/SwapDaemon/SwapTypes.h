@@ -162,6 +162,8 @@ struct SwapParams {
   bool ringOurRound2Sent = false;      // we already generated & sent Round 2
   bool ringTxBroadcast = false;        // escrow spend/refund tx was broadcast
 
+  bool useSpvVerification = false;     // use SPV path for counterparty lock verification
+
   std::vector<uint8_t> encBlob;        // encrypted adaptorSecret blob (from disk)
 };
 

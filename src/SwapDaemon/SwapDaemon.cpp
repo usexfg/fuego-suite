@@ -245,7 +245,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
   m_xfgWalletRpcPass = chainCfg.xfgWalletRpcPass;
 
   // Store view key for escrow funding derivation
-  if (!chainCfg.xfgViewKeyHex.empty() && m_makerKeysSet) {
+  if (!chainCfg.xfgViewKeyHex.empty()) {
     Common::podFromHex(chainCfg.xfgViewKeyHex, m_makerViewSecretKey);
   }
 }
@@ -990,6 +990,16 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
     return true;
   }
 
+  // SPV path: if SPV verification is configured, wait for block confirmation
+  // instead of claiming immediately.
+  if (params.useSpvVerification) {
+    m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
+      << " locked. SPV mode — transitioning to ADAPTOR_WAITING_SPV";
+    sm.transition(SwapState::ADAPTOR_WAITING_SPV);
+    m_db.saveSwap(sm);
+    return true;
+  }
+
   // Alice claims the counterparty funds, revealing the adaptor secret.
   m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
     << " locked. Alice claiming to reveal adaptor secret...";
@@ -1340,27 +1350,39 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
       break;
 
     case SwapState::ADAPTOR_ESCROW_FUNDED:
-      handleEscrowFunded(sm, currentHeight);
+      if (!handleEscrowFunded(sm, currentHeight)) {
+        m_logger(Logging::INFO) << "  handleEscrowFunded not yet complete";
+      }
       break;
 
     case SwapState::ADAPTOR_PRESIGS_READY:
-      handlePreSigsReady(sm);
+      if (!handlePreSigsReady(sm)) {
+        m_logger(Logging::INFO) << "  handlePreSigsReady not yet complete";
+      }
       break;
 
     case SwapState::ADAPTOR_CTR_LOCKED:
-      handleCtrLocked(sm);
+      if (!handleCtrLocked(sm)) {
+        m_logger(Logging::INFO) << "  handleCtrLocked not yet complete";
+      }
       break;
 
     case SwapState::ADAPTOR_SECRET_REVEALED:
-      handleSecretRevealed(sm);
+      if (!handleSecretRevealed(sm)) {
+        m_logger(Logging::INFO) << "  handleSecretRevealed not yet complete";
+      }
       break;
 
     case SwapState::ADAPTOR_WAITING_SPV:
-      handleWaitingSpv(sm);
+      if (!handleWaitingSpv(sm)) {
+        m_logger(Logging::INFO) << "  handleWaitingSpv not yet complete";
+      }
       break;
 
     case SwapState::ADAPTOR_SECRET_CONFIRMED_SPV:
-      handleSecretConfirmedSpv(sm);
+      if (!handleSecretConfirmedSpv(sm)) {
+        m_logger(Logging::INFO) << "  handleSecretConfirmedSpv not yet complete";
+      }
       break;
 
     default:

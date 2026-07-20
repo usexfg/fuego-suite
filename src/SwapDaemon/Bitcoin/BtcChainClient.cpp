@@ -168,7 +168,17 @@ ChainClientResult BtcChainClient::verifyLockSpv(const SwapParams& params) {
     // Total: 34 bytes
     if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20) {
       if (value >= params.ctrAmount) {
-        foundP2wsh = true;
+        // Verify the witness program hash matches the expected HTLC script
+        if (!params.chainState.empty()) {
+          auto redeemScript = BtcHtlcScript::hexToBytes(params.chainState);
+          auto expectedHash = BtcHtlcScript::sha256(redeemScript);
+          if (std::memcmp(p + 2, expectedHash.data(), 32) == 0) {
+            foundP2wsh = true;
+          }
+        } else {
+          // No chainState available — accept any P2WSH (fallback)
+          foundP2wsh = true;
+        }
       }
     }
 

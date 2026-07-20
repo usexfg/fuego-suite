@@ -42,6 +42,8 @@ static uint64_t hexToUint64(const std::string& hex) {
   if (s.size() >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
     s = s.substr(2);
   }
+  // Reject hex values longer than 16 hex chars (64 bits) to prevent overflow
+  if (s.size() > 16) return UINT64_MAX;
   uint64_t result = 0;
   for (char c : s) {
     result <<= 4;
@@ -266,7 +268,7 @@ bool EthRpcClient::connectSocket() {
   if (m_sock < 0) { freeaddrinfo(res); return false; }
 
 #ifdef _WIN32
-  DWORD tvSec = 10;
+  DWORD tvSec = 10000;  // 10 seconds in milliseconds for SO_RCVTIMEO
   setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO,
     reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
   setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO,
@@ -777,13 +779,22 @@ bool EthRpcClient::deployHtlc(const std::string& /*fromAddress*/,
   std::string rawHex = bytesToHex(rawTx);
   if (!sendRawTransaction(rawHex, txHash)) return false;
 
-  // Poll for receipt to get the contract address.
+  // Poll for receipt to get the contract address (with 1s delay between attempts).
   EthTxReceipt receipt;
   for (int i = 0; i < 60; ++i) {
-    if (getTransactionReceipt(txHash, receipt)) break;
+    if (getTransactionReceipt(txHash, receipt)) {
+      if (receipt.success && !receipt.contractAddress.empty()) break;
+      // Receipt exists but deployment failed
+      if (!receipt.contractAddress.empty()) return false;
+    }
+#ifdef _WIN32
+    Sleep(1000);
+#else
+    usleep(1000000);
+#endif
   }
   contractAddress = receipt.contractAddress;
-  return !contractAddress.empty();
+  return receipt.success && !contractAddress.empty();
 }
 
 bool EthRpcClient::verifyLock(const std::string& contractAddress,

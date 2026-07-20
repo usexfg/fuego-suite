@@ -595,6 +595,12 @@ bool ElectrumSpvClient::getRawTx(
     return false;
   }
 
+  // Validate txid is hex-only to prevent JSON injection
+  static const char hexChars[] = "0123456789abcdefABCDEF";
+  if (txid.size() != 64 || txid.find_first_not_of(hexChars) != std::string::npos) {
+    return false;
+  }
+
   std::string params = "[\"" + txid + "\"]";
   std::string result = m_conns[0]->call("blockchain.transaction.get", params);
   if (result.empty()) {

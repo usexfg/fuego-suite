@@ -358,12 +358,11 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
       p += itemLen;
     }
 
-    // For a P2WSH HTLC claim, the witness stack is:
-    //   [<signature>, <preimage>, <redeemScript>]
-    //
-    // The last item is the witnessScript (redeemScript). We verify its SHA256
+    // P2WSH HTLC claim witness stack layouts:
+    //   3-item: [<sig>, <preimage>, <redeemScript>]
+    //   4-item: [<sig>, <preimage>, <OP_TRUE>, <redeemScript>] (SegWit v0)
+    // The last item is always the witnessScript. We verify its SHA256
     // matches the expected hash from the P2WSH scriptPubKey.
-    // If it matches, the second-to-last item is the preimage.
     if (witnessStack.size() < 3) continue;
 
     const auto& lastItem = witnessStack.back();
@@ -372,8 +371,8 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
 
     if (computedHash != expectedHash) continue;
 
-    // Found the HTLC witness stack. The preimage is the second-to-last item.
-    const auto& preimageItem = witnessStack[witnessStack.size() - 2];
+    // Found the HTLC witness stack. The preimage is always at index 1.
+    const auto& preimageItem = witnessStack[1];
     return preimageItem;
   }
 

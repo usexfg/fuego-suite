@@ -44,6 +44,19 @@ public:
       const std::vector<uint8_t>& rawTx,
       const std::vector<uint8_t>& htlcP2shScriptPubKey);
 
+  // Create the scriptSig for CLAIMING (preimage path).
+  // scriptSig: <signature> <preimage> OP_TRUE <redeemScript>
+  static std::vector<uint8_t> createClaimScriptSig(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& preimage,
+      const std::vector<uint8_t>& redeemScript);
+
+  // Create the scriptSig for REFUNDING (timeout path).
+  // scriptSig: <signature> OP_FALSE <redeemScript>
+  static std::vector<uint8_t> createRefundScriptSig(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& redeemScript);
+
   // Build raw DCR transaction.
   static std::vector<uint8_t> buildRawTransaction(
       const std::string& inputTxid,

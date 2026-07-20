@@ -1,9 +1,23 @@
 #include "DcrRpcClient.h"
+#include "DcrHtlcScript.h"
 #include "Common/JsonValue.h"
 #include <algorithm>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
+
+// Decred address version bytes (must match DcrHtlcScript.cpp)
+static constexpr uint8_t DCR_P2PKH_VERSION = 0x07;
+static constexpr uint8_t DCR_P2SH_VERSION  = 0x0A;
+static constexpr uint8_t DCR_P2PKH_TEST    = 0x1E;
+static constexpr uint8_t DCR_P2SH_TEST     = 0x13;
+
+// Script opcodes
+static constexpr uint8_t OP_DUP       = 0x76;
+static constexpr uint8_t OP_HASH160   = 0xA9;
+static constexpr uint8_t OP_EQUAL     = 0x87;
+static constexpr uint8_t OP_EQUALVERIFY = 0x88;
+static constexpr uint8_t OP_CHECKSIG  = 0xAC;
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -281,6 +295,155 @@ bool DcrRpcClient::listUnspent(const std::string& address,
       }
     }
     return true;
+  } catch (...) { return false; }
+}
+
+// ---- HTLC operations --------------------------------------------------------
+
+bool DcrRpcClient::claim(const std::string& claimerWif,
+                          const std::string& htlcTxid,
+                          uint32_t htlcVout,
+                          uint64_t htlcAmount,
+                          const std::string& redeemScriptHex,
+                          const std::string& preimageHex,
+                          const std::string& destAddress,
+                          std::string& claimTxId) {
+  try {
+    auto redeemScript = DcrHtlcScript::hexToBytes(redeemScriptHex);
+    auto preimage     = DcrHtlcScript::hexToBytes(preimageHex);
+
+    // Build output: decode destAddress to get scriptPubKey
+    uint8_t addrVersion = 0;
+    std::vector<uint8_t> addrHash;
+    if (!DcrHtlcScript::base58CheckDecode(destAddress, addrVersion, addrHash)) return false;
+
+    std::vector<uint8_t> outputScript;
+    if (addrVersion == DCR_P2PKH_VERSION || addrVersion == DCR_P2PKH_TEST) {
+      outputScript.push_back(OP_DUP);
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUALVERIFY);
+      outputScript.push_back(OP_CHECKSIG);
+    } else if (addrVersion == DCR_P2SH_VERSION || addrVersion == DCR_P2SH_TEST) {
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUAL);
+    } else {
+      return false;
+    }
+    std::string outputScriptHex = DcrHtlcScript::bytesToHex(outputScript);
+
+    const uint64_t fee = 10000;
+    if (htlcAmount <= fee) return false;
+    uint64_t outputAmount = htlcAmount - fee;
+
+    // Build the P2SH scriptPubKey for the HTLC input
+    auto htlcP2shSpk = DcrHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
+    std::string htlcP2shSpkHex = DcrHtlcScript::bytesToHex(htlcP2shSpk);
+
+    // Build inputs and outputs JSON for createrawtransaction
+    std::string inputsJson = "[{\"txid\":\"" + htlcTxid + "\",\"vout\":" +
+        std::to_string(htlcVout) + ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
+        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}]";
+
+    std::string outputsJson = "{\"" + destAddress + "\":" +
+        std::to_string(static_cast<double>(outputAmount) / 1e8) + "}";
+
+    std::string rawTxHex;
+    if (!createRawTransaction(inputsJson, outputsJson, 0, rawTxHex)) return false;
+
+    // Build scriptSig: <sig> <preimage> OP_TRUE <redeemScript>
+    // For signing, we need to construct the scriptSig to embed in the raw tx.
+    // DCR signrawtransaction can sign with the redeemScript provided separately.
+    std::string signParams = "[\"" + rawTxHex + "\",[" +
+        "{\"txid\":\"" + htlcTxid + "\",\"vout\":" + std::to_string(htlcVout) +
+        ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
+        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}" +
+        "],[\"" + claimerWif + "\"],\"ALL\"]";
+    std::string resp = rpcCall("signrawtransaction", signParams);
+    Common::JsonValue json = Common::JsonValue::fromString(resp);
+    if (!json.isObject() || !json.contains("result")) return false;
+    const auto& result = json("result");
+    if (!result.isObject()) return false;
+    if (!result.contains("hex")) return false;
+    std::string signedHex = result("hex").getString();
+    if (signedHex.empty()) return false;
+
+    return sendRawTransaction(signedHex, claimTxId);
+  } catch (...) { return false; }
+}
+
+bool DcrRpcClient::refundHtlc(const std::string& senderWif,
+                                const std::string& htlcTxid,
+                                uint32_t htlcVout,
+                                uint64_t htlcAmount,
+                                const std::string& redeemScriptHex,
+                                uint32_t timeoutBlock,
+                                const std::string& destAddress,
+                                std::string& refundTxId) {
+  try {
+    auto redeemScript = DcrHtlcScript::hexToBytes(redeemScriptHex);
+
+    // Build output: decode destAddress to get scriptPubKey
+    uint8_t addrVersion = 0;
+    std::vector<uint8_t> addrHash;
+    if (!DcrHtlcScript::base58CheckDecode(destAddress, addrVersion, addrHash)) return false;
+
+    std::vector<uint8_t> outputScript;
+    if (addrVersion == DCR_P2PKH_VERSION || addrVersion == DCR_P2PKH_TEST) {
+      outputScript.push_back(OP_DUP);
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUALVERIFY);
+      outputScript.push_back(OP_CHECKSIG);
+    } else if (addrVersion == DCR_P2SH_VERSION || addrVersion == DCR_P2SH_TEST) {
+      outputScript.push_back(OP_HASH160);
+      outputScript.push_back(0x14);
+      outputScript.insert(outputScript.end(), addrHash.begin(), addrHash.end());
+      outputScript.push_back(OP_EQUAL);
+    } else {
+      return false;
+    }
+
+    const uint64_t fee = 10000;
+    if (htlcAmount <= fee) return false;
+    uint64_t outputAmount = htlcAmount - fee;
+
+    // Build the P2SH scriptPubKey for the HTLC input
+    auto htlcP2shSpk = DcrHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
+    std::string htlcP2shSpkHex = DcrHtlcScript::bytesToHex(htlcP2shSpk);
+
+    // CLTV requires nLocktime >= timeoutBlock for the refund path to activate.
+    std::string inputsJson = "[{\"txid\":\"" + htlcTxid + "\",\"vout\":" +
+        std::to_string(htlcVout) + ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
+        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}]";
+
+    std::string outputsJson = "{\"" + destAddress + "\":" +
+        std::to_string(static_cast<double>(outputAmount) / 1e8) + "}";
+
+    std::string rawTxHex;
+    if (!createRawTransaction(inputsJson, outputsJson, timeoutBlock, rawTxHex)) return false;
+
+    // Sign with redeemScript — signrawtransaction needs the redeemScript to
+    // resolve P2SH inputs and apply CLTV logic correctly.
+    std::string signParams = "[\"" + rawTxHex + "\",[" +
+        "{\"txid\":\"" + htlcTxid + "\",\"vout\":" + std::to_string(htlcVout) +
+        ",\"scriptPubKey\":\"" + htlcP2shSpkHex +
+        "\",\"redeemScript\":\"" + redeemScriptHex + "\"}" +
+        "],[\"" + senderWif + "\"],\"ALL\"]";
+    std::string resp = rpcCall("signrawtransaction", signParams);
+    Common::JsonValue json = Common::JsonValue::fromString(resp);
+    if (!json.isObject() || !json.contains("result")) return false;
+    const auto& result = json("result");
+    if (!result.isObject()) return false;
+    if (!result.contains("hex")) return false;
+    std::string signedHex = result("hex").getString();
+    if (signedHex.empty()) return false;
+
+    return sendRawTransaction(signedHex, refundTxId);
   } catch (...) { return false; }
 }
 

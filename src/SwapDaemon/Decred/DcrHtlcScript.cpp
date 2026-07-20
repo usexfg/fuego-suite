@@ -416,6 +416,44 @@ std::vector<uint8_t> DcrHtlcScript::parseClaimPreimage(
   return {};
 }
 
+// ---- ScriptSig construction for claiming and refunding ----------------------
+
+std::vector<uint8_t> DcrHtlcScript::createClaimScriptSig(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& preimage,
+    const std::vector<uint8_t>& redeemScript) {
+  //
+  // To claim, the stack must contain (bottom to top):
+  //   <signature> <preimage> OP_TRUE <serialized redeemScript>
+  //
+  std::vector<uint8_t> scriptSig;
+  scriptSig.reserve(signature.size() + preimage.size() + redeemScript.size() + 10);
+
+  pushData(scriptSig, signature);
+  pushData(scriptSig, preimage);
+  scriptSig.push_back(OP_TRUE);
+  pushData(scriptSig, redeemScript);
+
+  return scriptSig;
+}
+
+std::vector<uint8_t> DcrHtlcScript::createRefundScriptSig(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& redeemScript) {
+  //
+  // To refund, the stack must contain (bottom to top):
+  //   <signature> OP_FALSE <serialized redeemScript>
+  //
+  std::vector<uint8_t> scriptSig;
+  scriptSig.reserve(signature.size() + redeemScript.size() + 5);
+
+  pushData(scriptSig, signature);
+  scriptSig.push_back(OP_FALSE);
+  pushData(scriptSig, redeemScript);
+
+  return scriptSig;
+}
+
 // ---- Raw transaction building ------------------------------------------------
 
 std::vector<uint8_t> DcrHtlcScript::buildRawTransaction(

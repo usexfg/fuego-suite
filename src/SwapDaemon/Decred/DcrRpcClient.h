@@ -28,6 +28,25 @@ public:
                             std::string& rawTxHex);
   bool signRawTransaction(const std::string& rawTxHex, std::string& signedTxHex);
 
+  // HTLC operations
+  bool claim(const std::string& claimerWif,
+             const std::string& htlcTxid,
+             uint32_t htlcVout,
+             uint64_t htlcAmount,
+             const std::string& redeemScriptHex,
+             const std::string& preimageHex,
+             const std::string& destAddress,
+             std::string& claimTxId);
+
+  bool refundHtlc(const std::string& senderWif,
+                  const std::string& htlcTxid,
+                  uint32_t htlcVout,
+                  uint64_t htlcAmount,
+                  const std::string& redeemScriptHex,
+                  uint32_t timeoutBlock,
+                  const std::string& destAddress,
+                  std::string& refundTxId);
+
   // Address monitoring
   bool importAddress(const std::string& address, const std::string& label, bool rescan);
   bool listUnspent(const std::string& address, std::vector<std::pair<std::string, uint64_t>>& utxos);

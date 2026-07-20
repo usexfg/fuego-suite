@@ -3,6 +3,7 @@
 #include "../SwapHashLock.h"
 #include "Crypto/Secp256k1Signer.h"
 #include "Common/JsonValue.h"
+#include "Common/StringTools.h"
 #include <cstring>
 #include <algorithm>
 
@@ -125,10 +126,20 @@ ChainClientResult DcrChainClient::verifyLock(const SwapParams& params) {
 ChainClientResult DcrChainClient::claim(const SwapParams& params) {
   if (!m_rpc)
     return ChainClientResult::fail("DCR claim: RPC client not available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("DCR claim: no WIF key configured");
 
-  // Claim requires building a spending tx with the preimage in the scriptSig.
-  // For now, delegate to refund-style construction with preimage revealed.
-  return ChainClientResult::fail("DCR claim: not yet implemented (requires raw tx construction with preimage)");
+  std::string claimTxId;
+  bool ok = m_rpc->claim(
+      m_wif,
+      params.ctrLockTxId, 0, params.ctrAmount,
+      params.chainState,
+      Common::podToHex(params.adaptorSecret),
+      params.ctrAddress,
+      claimTxId);
+
+  if (!ok) return ChainClientResult::fail("DCR claim failed");
+  return ChainClientResult::ok(claimTxId);
 }
 
 // ---- Refund: timelocked spending -------------------------------------------
@@ -136,9 +147,20 @@ ChainClientResult DcrChainClient::claim(const SwapParams& params) {
 ChainClientResult DcrChainClient::refund(const SwapParams& params) {
   if (!m_rpc)
     return ChainClientResult::fail("DCR refund: RPC client not available");
+  if (m_wif.empty())
+    return ChainClientResult::fail("DCR refund: no WIF key configured");
 
-  // Refund requires building a spending tx after timeout.
-  return ChainClientResult::fail("DCR refund: not yet implemented (requires raw tx construction with CLTV)");
+  std::string refundTxId;
+  bool ok = m_rpc->refundHtlc(
+      m_wif,
+      params.ctrLockTxId, 0, params.ctrAmount,
+      params.chainState,
+      static_cast<uint32_t>(params.ctrTimeoutBlock),
+      params.ctrAddress,
+      refundTxId);
+
+  if (!ok) return ChainClientResult::fail("DCR refundHtlc failed");
+  return ChainClientResult::ok(refundTxId);
 }
 
 ChainClientResult DcrChainClient::verifyReserveProof(const std::string& expectedMessage,

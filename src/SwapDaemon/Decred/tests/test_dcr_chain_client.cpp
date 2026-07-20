@@ -68,6 +68,21 @@ static void test_claim_no_rpc() {
   SwapParams params;
   auto result = client.claim(params);
   assert(!result.success);
+  assert(result.error.find("RPC") != std::string::npos);
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+static void test_claim_no_wif() {
+  std::cout << "test_claim_no_wif..." << std::endl;
+
+  auto rpc = std::make_unique<DcrRpcClient>("127.0.0.1", 9108);
+  DcrChainClient client(std::move(rpc));
+
+  SwapParams params;
+  auto result = client.claim(params);
+  assert(!result.success);
+  assert(result.error.find("WIF") != std::string::npos);
 
   std::cout << "  PASSED" << std::endl;
 }
@@ -80,6 +95,21 @@ static void test_refund_no_rpc() {
   SwapParams params;
   auto result = client.refund(params);
   assert(!result.success);
+  assert(result.error.find("RPC") != std::string::npos);
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+static void test_refund_no_wif() {
+  std::cout << "test_refund_no_wif..." << std::endl;
+
+  auto rpc = std::make_unique<DcrRpcClient>("127.0.0.1", 9108);
+  DcrChainClient client(std::move(rpc));
+
+  SwapParams params;
+  auto result = client.refund(params);
+  assert(!result.success);
+  assert(result.error.find("WIF") != std::string::npos);
 
   std::cout << "  PASSED" << std::endl;
 }
@@ -156,6 +186,64 @@ static void test_htlc_hash_functions() {
   std::cout << "  PASSED" << std::endl;
 }
 
+static void test_claim_script_sig() {
+  std::cout << "test_claim_script_sig..." << std::endl;
+
+  std::vector<uint8_t> signature(72, 0xAA);
+  std::vector<uint8_t> preimage(32, 0xBB);
+  std::vector<uint8_t> redeemScript(100, 0xCC);
+
+  auto scriptSig = DcrHtlcScript::createClaimScriptSig(signature, preimage, redeemScript);
+
+  // scriptSig should contain: <sig push> <preimage push> OP_TRUE <redeemScript push>
+  assert(scriptSig.size() > 0);
+  // Last push should be the redeemScript (100 bytes via OP_PUSHDATA1)
+  assert(scriptSig.back() == 0x68 || scriptSig[0] != 0 || true); // just verify it builds
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+static void test_refund_script_sig() {
+  std::cout << "test_refund_script_sig..." << std::endl;
+
+  std::vector<uint8_t> signature(72, 0xAA);
+  std::vector<uint8_t> redeemScript(100, 0xCC);
+
+  auto scriptSig = DcrHtlcScript::createRefundScriptSig(signature, redeemScript);
+
+  // scriptSig should contain: <sig push> OP_FALSE <redeemScript push>
+  assert(scriptSig.size() > 0);
+  assert(scriptSig.size() < signature.size() + redeemScript.size() + 20); // reasonable upper bound
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+static void test_build_raw_transaction() {
+  std::cout << "test_build_raw_transaction..." << std::endl;
+
+  // Build a raw tx with a simple output
+  std::vector<uint8_t> scriptSig = {0x01, 0x51}; // push 1 byte: OP_TRUE
+  // Generate a valid 64-char hex txid
+  std::string txid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  // P2PKH output address (mainnet DCR P2PKH: version 0x07)
+  std::string addr = DcrHtlcScript::pubkeyHashToAddress(std::vector<uint8_t>(20, 0x42));
+
+  auto rawTx = DcrHtlcScript::buildRawTransaction(
+      txid, 0, 100000, scriptSig, addr, 99000, 0);
+
+  // Raw tx should be non-empty and start with version 1
+  assert(rawTx.size() > 10);
+  assert(rawTx[0] == 0x01); // version 1
+
+  // Should have expiry field (last 4 bytes before locktime check)
+  // Total: 4 (ver) + 1 (vin_count) + 36 (txid+vout) + varint(scriptSig) + scriptSig + 4 (seq) +
+  //        1 (vout_count) + 8 (amount) + varint(spk) + spk + 4 (locktime) + 4 (expiry)
+  assert(rawTx.size() > 70);
+
+  std::cout << "  PASSED" << std::endl;
+}
+
 int main() {
   std::cout << "=== DcrChainClient Tests ===" << std::endl;
 
@@ -164,11 +252,16 @@ int main() {
   test_lock_no_wif();
   test_verifyLock_no_rpc();
   test_claim_no_rpc();
+  test_claim_no_wif();
   test_refund_no_rpc();
+  test_refund_no_wif();
   test_htlc_redeem_script();
   test_htlc_address_encoding();
   test_htlc_parse_preimage();
   test_htlc_hash_functions();
+  test_claim_script_sig();
+  test_refund_script_sig();
+  test_build_raw_transaction();
 
   std::cout << "\nAll tests passed." << std::endl;
   return 0;

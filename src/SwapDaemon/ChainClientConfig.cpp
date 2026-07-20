@@ -185,6 +185,7 @@ bool loadChainClientConfig(const std::string& path,
   out.dcrPort    = static_cast<uint16_t>(jsonGetUint(json, "dcr_rpc_port", 9108));
   out.dcrRpcUser = jsonGetStr(json, "dcr_rpc_user");
   out.dcrRpcPass = jsonGetStr(json, "dcr_rpc_pass");
+  out.dcrWif     = jsonGetStr(json, "dcr_wif", "");
 
   out.xfgWalletRpcHost = jsonGetStr(json, "xfg_wallet_rpc_host", "");
   out.xfgWalletRpcPort = static_cast<uint16_t>(jsonGetUint(json, "xfg_wallet_rpc_port", 0));

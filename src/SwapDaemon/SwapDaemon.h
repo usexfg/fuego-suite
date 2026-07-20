@@ -122,6 +122,7 @@ struct ChainClientConfig {
   uint16_t    dcrPort     = 9108;
   std::string dcrRpcUser;
   std::string dcrRpcPass;
+  std::string dcrWif;
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;

@@ -285,6 +285,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
+    SwapDaemon/Decred/DcrHtlcScript.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
@@ -581,6 +582,7 @@ add_executable(SwapDaemon
     SwapDaemon/Komodo/KmdChainClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
+    SwapDaemon/Decred/DcrHtlcScript.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
 )
 

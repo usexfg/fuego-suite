@@ -235,7 +235,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         chainCfg.dcrHost, chainCfg.dcrPort,
         chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);
     m_chainRegistry.registerChain(SwapPair::DCR,
-        std::make_unique<DcrChainClient>(std::move(rpc)));
+        std::make_unique<DcrChainClient>(std::move(rpc), chainCfg.dcrWif));
     m_logger(Logging::INFO) << "DCR chain client registered: "
       << chainCfg.dcrHost << ":" << chainCfg.dcrPort;
   }

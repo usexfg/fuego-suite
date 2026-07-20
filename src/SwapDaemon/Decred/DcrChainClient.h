@@ -9,15 +9,13 @@ namespace XfgSwap {
 
 // Decred (DCR) chain client — hybrid PoW/PoS UTXO chain.
 //
-// DCR uses a different transaction format than Bitcoin:
-// - Tx includes stake transactions (SSGen, SStx)
-// - P2SH HTLCs work similarly to Bitcoin but with different opcodes
-// - 3-byte P2PKH prefix (0x3a for mainnet) instead of 4-byte
-//
-// For atomic swaps, we use standard P2SH HTLC contracts.
+// DCR uses Bitcoin-like scripts with P2SH HTLCs.
+// Transaction format includes version, locktime, expiry.
+// Address prefixes: P2PKH 0x073F, P2SH 0x071A (mainnet).
 class DcrChainClient : public IChainClient {
 public:
-  DcrChainClient(std::unique_ptr<DcrRpcClient> rpc);
+  DcrChainClient(std::unique_ptr<DcrRpcClient> rpc,
+                 const std::string& wif = "");
 
   std::string chainName() const override { return "DCR"; }
   ChainClientResult lock(const SwapParams& params) override;
@@ -31,12 +29,12 @@ public:
                                           ChainClientResult& result) override;
   bool getCurrentHeight(uint64_t& height) override;
 
-  // Extract HTLC claim preimage from a spending transaction.
   std::string extractSecret(const std::string& spendingTxid,
                             const std::string& htlcRedeemScriptHex);
 
 private:
   std::unique_ptr<DcrRpcClient> m_rpc;
+  std::string m_wif;  // WIF private key for signing
 };
 
 } // namespace XfgSwap

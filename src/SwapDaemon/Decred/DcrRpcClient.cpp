@@ -21,6 +21,9 @@ static constexpr uint8_t OP_EQUAL     = 0x87;
 static constexpr uint8_t OP_EQUALVERIFY = 0x88;
 static constexpr uint8_t OP_CHECKSIG  = 0xAC;
 
+// Default transaction fee in atoms (10000 atoms ≈ 0.0001 DCR)
+static constexpr uint64_t DCR_DEFAULT_FEE = 10000;
+
 namespace XfgSwap {
 
 // ---- Helpers ----------------------------------------------------------------
@@ -203,6 +206,17 @@ static bool dcrWifToPrivKey(const std::string& wif, std::array<uint8_t, 32>& pri
 #include <unistd.h>
 #endif
 
+// ---- RAII socket wrapper ---------------------------------------------------
+
+struct ScopedSocket {
+  int fd;
+  ScopedSocket() : fd(-1) {}
+  ~ScopedSocket() { if (fd >= 0) close(fd); }
+  ScopedSocket(const ScopedSocket&) = delete;
+  ScopedSocket& operator=(const ScopedSocket&) = delete;
+  operator bool() const { return fd >= 0; }
+};
+
 // ---- Base64 -----------------------------------------------------------------
 
 static const char kBase64Table[] =
@@ -239,19 +253,20 @@ DcrRpcClient::DcrRpcClient(const std::string& host, uint16_t port,
 // ---- HTTP POST --------------------------------------------------------------
 
 std::string DcrRpcClient::httpPost(const std::string& body) {
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) throw std::runtime_error("DcrRpcClient: socket failed");
+  ScopedSocket sock;
+  sock.fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock.fd < 0) throw std::runtime_error("DcrRpcClient: socket failed");
 
 #ifdef _WIN32
   DWORD tvMs = 10000;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+  setsockopt(sock.fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
+  setsockopt(sock.fd, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tvMs), sizeof(tvMs));
 #else
   struct timeval tv;
   tv.tv_sec = 10;
   tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  setsockopt(sock.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(sock.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 
   struct addrinfo hints, *result;
@@ -262,14 +277,12 @@ std::string DcrRpcClient::httpPost(const std::string& body) {
   std::string portStr = std::to_string(m_port);
   int gai = getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &result);
   if (gai != 0) {
-    close(sock);
     throw std::runtime_error("DcrRpcClient: getaddrinfo failed for " + m_host);
   }
 
-  int ret = connect(sock, result->ai_addr, result->ai_addrlen);
+  int ret = connect(sock.fd, result->ai_addr, result->ai_addrlen);
   freeaddrinfo(result);
   if (ret < 0) {
-    close(sock);
     throw std::runtime_error("DcrRpcClient: connect failed");
   }
 
@@ -284,20 +297,19 @@ std::string DcrRpcClient::httpPost(const std::string& body) {
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = send(sock, request.c_str(), request.size(), 0);
+  ssize_t sent = send(sock.fd, request.c_str(), request.size(), 0);
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
-    close(sock);
     throw std::runtime_error("DcrRpcClient: send failed");
   }
 
   std::string response;
   char buf[4096];
   while (true) {
-    ssize_t n = recv(sock, buf, sizeof(buf), 0);
+    ssize_t n = recv(sock.fd, buf, sizeof(buf), 0);
     if (n <= 0) break;
     response.append(buf, static_cast<size_t>(n));
   }
-  close(sock);
+  // ScopedSocket destructor closes fd
 
   size_t headerEnd = response.find("\r\n\r\n");
   if (headerEnd == std::string::npos) {
@@ -507,7 +519,7 @@ bool DcrRpcClient::claim(const std::string& claimerWif,
       return false;
     }
 
-    const uint64_t fee = 10000;
+    const uint64_t fee = DCR_DEFAULT_FEE;
     if (htlcAmount <= fee) return false;
     uint64_t outputAmount = htlcAmount - fee;
 
@@ -570,7 +582,7 @@ bool DcrRpcClient::refundHtlc(const std::string& senderWif,
       return false;
     }
 
-    const uint64_t fee = 10000;
+    const uint64_t fee = DCR_DEFAULT_FEE;
     if (htlcAmount <= fee) return false;
     uint64_t outputAmount = htlcAmount - fee;
 

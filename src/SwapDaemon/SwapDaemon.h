@@ -234,6 +234,10 @@ public:
   bool handleWaitingSpv(SwapStateMachine& sm);
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
 
+  // Shared ring-sig finalization logic for ADAPTOR_SECRET_REVEALED and
+  // ADAPTOR_SECRET_CONFIRMED_SPV (both perform the same spend flow).
+  bool finalizeEscrowSpend(SwapStateMachine& sm, const std::string& logContext);
+
   // Verify that the escrow funding tx exists and contains an output
   // with the expected amount to the joint escrow key.
   // Returns true if the escrow is confirmed on chain.

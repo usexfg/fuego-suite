@@ -801,17 +801,17 @@ bool EthRpcClient::verifyLock(const std::string& contractAddress,
                                uint64_t expectedWei,
                                uint64_t minConfirmBlocks) {
   // Read-only check: call eth_getBalance on the HTLC contract address.
-  // This does not require signing and works without secp256k1.
   uint64_t balance = 0;
   if (!getBalance(contractAddress, balance)) return false;
   if (balance < expectedWei) return false;
 
-  // Optionally check confirmations via eth_getCode (contract must exist)
+  // Verify the contract has code deployed (HTLC exists)
   if (minConfirmBlocks > 0) {
-    std::string result;
-    std::string params = "[\"" + contractAddress + "\",\"latest\"]";
-    std::string resp = jsonRpc("eth_getCode", params);
-    if (resp.empty()) return false;
+    std::string codeParams = "[\"" + contractAddress + "\",\"latest\"]";
+    std::string codeResp = jsonRpc("eth_getCode", codeParams);
+    if (codeResp.empty() || jsonHasError(codeResp)) return false;
+    std::string codeResult = jsonGetResult(codeResp);
+    if (codeResult.empty() || codeResult == "0x" || codeResult == "0x0") return false;
   }
   return true;
 }

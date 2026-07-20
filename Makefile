@@ -33,16 +33,11 @@ all-release: build-release build-tui build-swapxfg
 build-tui:
 	@if command -v go >/dev/null 2>&1; then \
 		echo "Building Fuego TUI"; \
-		cd tui && go mod tidy && go build -o fuego-tui; \
-		if [ -f "fuego-tui" ]; then \
-			mkdir -p ../build/release/src; \
-			cp fuego-tui ../build/release/src/; \
-			chmod +x ../build/release/src/fuego-tui; \
-			echo "Fuego TUI built successfully"; \
-		else \
-			echo "Failed to build fuego-tui binary"; \
-			exit 1; \
-		fi; \
+		cd tui && go mod tidy && go build -o fuego-tui && \
+		mkdir -p ../build/release/src && \
+		cp fuego-tui ../build/release/src/ && \
+		chmod +x ../build/release/src/fuego-tui && \
+		echo "Fuego TUI built successfully"; \
 	else \
 		echo "Go is not installed. Skipping TUI build."; \
 	fi
@@ -51,16 +46,11 @@ build-tui:
 build-swapxfg:
 	@if command -v go >/dev/null 2>&1; then \
 		echo "Building swapxfg"; \
-		cd swapxfg && go mod tidy && go build -o swapxfg .; \
-		if [ -f "swapxfg" ]; then \
-			mkdir -p build/release/bin; \
-			cp swapxfg build/release/bin/; \
-			chmod +x build/release/bin/swapxfg; \
-			echo "swapxfg built successfully"; \
-		else \
-			echo "Failed to build swapxfg binary"; \
-			exit 1; \
-		fi; \
+		cd swapxfg && go mod tidy && go build -o swapxfg . && \
+		mkdir -p ../build/release/bin && \
+		cp swapxfg ../build/release/bin/ && \
+		chmod +x ../build/release/bin/swapxfg && \
+		echo "swapxfg built successfully"; \
 	else \
 		echo "Go is not installed. Skipping swapxfg build."; \
 	fi

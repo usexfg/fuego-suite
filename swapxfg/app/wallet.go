@@ -54,6 +54,8 @@ type SignOrderResult struct {
 	OrderId     string `json:"orderId"`
 	MakerPubKey string `json:"makerPubKey"`
 	Signature   string `json:"signature"`
+	Nonce       uint64 `json:"nonce"`
+	Status      string `json:"status"`
 }
 
 type AfkLockResult struct {

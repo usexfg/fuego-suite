@@ -3093,8 +3093,43 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit zero amount";
         }
       } else if (hasLimitWithdraw) {
-        // Limit withdraw: reclaim pending one-sided deposit. No balance change
-        // beyond returning the deposited amount (already reflected in tx outputs).
+        // Limit withdraw: reclaim pending one-sided deposit.
+        // CRITICAL: deposit must exist, not already withdrawn, and net extra
+        // outputs cannot exceed the deposited amount (prevents unbacked mint).
+        if (limitWithdrawOrderId == Crypto::Hash()) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit withdraw missing orderId";
+        } else {
+          auto depIt = m_limitDeposits.find(limitWithdrawOrderId);
+          if (depIt == m_limitDeposits.end() || depIt->second.withdrawn) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " limit withdraw: unknown or already-withdrawn orderId";
+          } else if (depIt->second.expired) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " limit withdraw: deposit already auto-returned/expired";
+          } else {
+            const auto& dep = depIt->second;
+            // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
+            if (dep.side == 1) {
+              // XFG may increase by at most deposit amount; HEAT conserved
+              if (outAssets.xfg + xfgFee > inAssets.xfg + dep.amount ||
+                  inAssets.heat != outAssets.heat) {
+                isTransactionValid = false;
+                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                  << " limit withdraw SELL_XFG balance mismatch";
+              }
+            } else {
+              if (outAssets.heat > inAssets.heat + dep.amount ||
+                  outAssets.xfg + xfgFee > inAssets.xfg) {
+                isTransactionValid = false;
+                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                  << " limit withdraw BUY_XFG balance mismatch";
+              }
+            }
+          }
+        }
       } else {
         if (inAssets.xfg < outAssets.xfg + xfgFee ||
             inAssets.heat != outAssets.heat ||
@@ -5247,8 +5282,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
           const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
           auto depIt = m_limitDeposits.find(wd.orderId);
-          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
-            // Return pending deposit to user
+          // Apply only after validation already enforced conservation; double-check
+          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn && !depIt->second.expired) {
             if (depIt->second.side == 1) {
               if (m_ammPool.pendingXfg >= depIt->second.amount)
                 m_ammPool.pendingXfg -= depIt->second.amount;

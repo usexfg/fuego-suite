@@ -586,15 +586,17 @@ using CryptoNote::ISerializer;
     };
 
     struct response {
-      std::string orderId;      // hex-encoded order ID
+      std::string orderId;      // hex-encoded order ID (canonical)
       std::string makerPubKey;  // hex-encoded spend public key
       std::string signature;    // hex-encoded Ed25519 signature over orderId hash
+      uint64_t    nonce;        // included so daemon can re-verify orderId
       std::string status;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(orderId)
         KV_MEMBER(makerPubKey)
         KV_MEMBER(signature)
+        KV_MEMBER(nonce)
         KV_MEMBER(status)
       }
     };
@@ -635,11 +637,13 @@ using CryptoNote::ISerializer;
       std::string swapId;
       std::string secret_s;
       std::string target_chain;
+      std::string payout_address; // required: real XFG address for claim proceeds
 
       void serialize(ISerializer& s) {
         KV_MEMBER(swapId)
         KV_MEMBER(secret_s)
         KV_MEMBER(target_chain)
+        KV_MEMBER(payout_address)
       }
     };
 

@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 
 namespace CryptoNote {

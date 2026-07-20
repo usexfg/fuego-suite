@@ -1147,15 +1147,15 @@ func (m *tuiModel) executePlaceOrder() tea.Cmd {
 	client := m.client
 	wallet := m.wallet
 	return func() tea.Msg {
-		// Sign the order through the local wallet (proves ownership of spend key)
-		if wallet != nil {
-			sig, err := wallet.SignOrder(side, pair, price, amount, ttl)
-			if err != nil {
-				return placeOrderResultMsg{err: fmt.Errorf("sign_order: %w", err)}
-			}
-			_ = sig // signature is embedded in the order by the daemon
+		if wallet == nil {
+			return placeOrderResultMsg{err: fmt.Errorf("wallet required to sign orders")}
 		}
-		result, err := client.PlaceOrder(side, pair, price, amount, ttl)
+		sig, err := wallet.SignOrder(side, pair, price, amount, ttl)
+		if err != nil {
+			return placeOrderResultMsg{err: fmt.Errorf("sign_order: %w", err)}
+		}
+		result, err := client.PlaceSignedOrder(side, pair, price, amount, ttl,
+			sig.OrderId, sig.MakerPubKey, sig.Signature, sig.Nonce)
 		return placeOrderResultMsg{result: result, err: err}
 	}
 }
@@ -1167,8 +1167,18 @@ func (m *tuiModel) handleCancelOrderCmd(parts []string) tea.Cmd {
 	}
 	orderId := parts[1]
 	client := m.client
+	wallet := m.wallet
 	return func() tea.Msg {
-		err := client.CancelOrder(orderId)
+		if wallet == nil {
+			return cancelOrderResultMsg{err: fmt.Errorf("wallet required to sign cancel")}
+		}
+		sig, err := wallet.SignCancel(orderId)
+		if err != nil {
+			return cancelOrderResultMsg{err: fmt.Errorf("sign_cancel: %w", err)}
+		}
+		err = client.CancelOrderSigned(orderId, sig.MakerPubKey, sig.Signature)
+		// SignCancel returns OfferID for both offers and orders (same cancel scheme)
+		_ = sig.OfferID
 		return cancelOrderResultMsg{err: err}
 	}
 }

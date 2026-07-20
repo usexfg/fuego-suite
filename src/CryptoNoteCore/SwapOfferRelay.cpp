@@ -17,6 +17,7 @@
 #include "P2p/LevinProtocol.h"
 #include "Logging/LoggerRef.h"
 #include "Common/Util.h"
+#include "Common/StringTools.h"
 
 namespace CryptoNote {
 
@@ -92,6 +93,7 @@ void SwapOfferRelay::cleanupExpiredOrders() {
         auto& q = priceIt->second;
         for (auto oit = q.orders.begin(); oit != q.orders.end(); ) {
           if (currentHeight > oit->postedHeight + oit->ttlBlocks) {
+            tombstoneOrder(oit->orderId);
             m_allOrders.erase(oit->orderId);
             oit = q.orders.erase(oit);
           } else {
@@ -115,6 +117,12 @@ void SwapOfferRelay::cleanupExpiredReservations() {
   std::lock_guard<std::mutex> lock(m_mutex);
   for (auto it = m_reservations.begin(); it != m_reservations.end(); ) {
     if (now > it->second.expiresAt) {
+      // Return reserved amount to the maker order's available depth
+      auto rbm = m_reservedByMaker.find(it->second.makerOrderId);
+      if (rbm != m_reservedByMaker.end()) {
+        if (rbm->second <= it->second.amount) m_reservedByMaker.erase(rbm);
+        else rbm->second -= it->second.amount;
+      }
       it = m_reservations.erase(it);
     } else {
       ++it;
@@ -334,15 +342,19 @@ std::vector<PendingSwapRequest> SwapOfferRelay::getPendingSwapRequests() {
 // v2 Orderbook implementation
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Canonical orderId (must match wallet sign_order):
+//   orderId = hex(cn_fast_hash(pubkey || side || pair || price || amount || nonce))
+// Signature: check_signature(orderIdHash, makerPubKey, signature)
+// where orderIdHash is the raw 32-byte hash (not the hex string).
 std::string SwapOfferRelay::generateOrderId(const SwapOrder& o) const {
   std::string data;
   data.append(reinterpret_cast<const char*>(&o.makerPubKey), sizeof(o.makerPubKey));
-  data.append(reinterpret_cast<const char*>(&o.side), sizeof(o.side));
+  uint8_t side = static_cast<uint8_t>(o.side);
+  data.append(reinterpret_cast<const char*>(&side), sizeof(side));
   data.append(reinterpret_cast<const char*>(&o.pair), sizeof(o.pair));
   data.append(reinterpret_cast<const char*>(&o.price), sizeof(o.price));
   data.append(reinterpret_cast<const char*>(&o.amount), sizeof(o.amount));
   data.append(reinterpret_cast<const char*>(&o.nonce), sizeof(o.nonce));
-  data.append(reinterpret_cast<const char*>(&o.timestamp), sizeof(o.timestamp));
 
   Crypto::Hash hash;
   cn_fast_hash(data.data(), data.size(), hash);
@@ -350,25 +362,58 @@ std::string SwapOfferRelay::generateOrderId(const SwapOrder& o) const {
 }
 
 bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
-  if (o.orderId.empty()) return false;
+  if (o.orderId.empty() || o.orderId.size() != 64) return false;
   if (o.amount == 0 || o.price == 0) return false;
   if (o.ttlBlocks == 0 || o.ttlBlocks > 1080) return false;
+  if (!isValidPair(o.pair)) return false;
+  if (o.side != SwapOrder::Side::BID && o.side != SwapOrder::Side::ASK) return false;
 
-  // Sign canonical fields: orderId + side + pair + price + amount + nonce
-  std::string data;
-  data.append(o.orderId);
-  data.append(reinterpret_cast<const char*>(&o.side), sizeof(o.side));
-  data.append(reinterpret_cast<const char*>(&o.pair), sizeof(o.pair));
-  data.append(reinterpret_cast<const char*>(&o.price), sizeof(o.price));
-  data.append(reinterpret_cast<const char*>(&o.amount), sizeof(o.amount));
-  data.append(reinterpret_cast<const char*>(&o.nonce), sizeof(o.nonce));
+  // orderId must be the canonical hash of maker fields
+  if (o.orderId != generateOrderId(o)) return false;
 
-  Crypto::Hash hash;
-  cn_fast_hash(data.data(), data.size(), hash);
-  return Crypto::check_signature(hash, o.makerPubKey, o.signature);
+  Crypto::Hash orderIdHash;
+  if (!Common::podFromHex(o.orderId, orderIdHash)) return false;
+  return Crypto::check_signature(orderIdHash, o.makerPubKey, o.signature);
 }
 
-void SwapOfferRelay::insertOrderIntoBook(SwapOrder&& order) {
+bool SwapOfferRelay::validateCancelSignature(const std::string& orderId,
+                                             const Crypto::PublicKey& makerPubKey,
+                                             const Crypto::Signature& signature) const {
+  if (orderId.empty()) return false;
+  std::string cancelData = "cancel:" + orderId;
+  Crypto::Hash cancelHash;
+  cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
+  return Crypto::check_signature(cancelHash, makerPubKey, signature);
+}
+
+bool SwapOfferRelay::isTombstoned(const std::string& orderId) const {
+  return m_tombstones.find(orderId) != m_tombstones.end();
+}
+
+void SwapOfferRelay::tombstoneOrder(const std::string& orderId) {
+  if (orderId.empty()) return;
+  m_tombstones[orderId] = static_cast<uint64_t>(std::time(nullptr));
+  while (m_tombstones.size() > MAX_TOMBSTONES) {
+    m_tombstones.erase(m_tombstones.begin());
+  }
+}
+
+std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request& msg) const {
+  std::string data;
+  data.append(msg.takerOrderId);
+  data.push_back('|');
+  data.append(msg.makerOrderId);
+  data.push_back('|');
+  data.append(reinterpret_cast<const char*>(&msg.fillAmount), sizeof(msg.fillAmount));
+  data.append(reinterpret_cast<const char*>(&msg.fillPrice), sizeof(msg.fillPrice));
+  data.append(reinterpret_cast<const char*>(&msg.blockHeight), sizeof(msg.blockHeight));
+  Crypto::Hash h;
+  cn_fast_hash(data.data(), data.size(), h);
+  return Common::podToHex(h);
+}
+
+void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
+  if (!isValidPair(order.pair)) return;
   uint8_t pair = order.pair;
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
@@ -381,6 +426,10 @@ void SwapOfferRelay::insertOrderIntoBook(SwapOrder&& order) {
 }
 
 void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
+  // CRITICAL: pair bounds before any book access
+  if (!isValidPair(msg.pair)) return;
+  if (msg.side > 1) return;
+
   SwapOrder order;
   order.orderId      = msg.orderId;
   order.side         = static_cast<SwapOrder::Side>(msg.side);
@@ -399,14 +448,13 @@ void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  if (isTombstoned(order.orderId)) return;
   if (m_allOrders.size() >= MAX_ORDERS_PER_PAIR) return;
   if (m_allOrders.find(order.orderId) != m_allOrders.end()) return;
 
-  // Check if this order can match
   auto fills = matchOrder(order.side, order.pair, order.price, order.amount);
 
   if (!fills.empty()) {
-    // Record fills
     for (const auto& fill : fills) {
       COMMAND_ORDER_FILL::request fillMsg;
       fillMsg.takerOrderId = order.orderId;
@@ -416,33 +464,37 @@ void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
       fillMsg.timestamp    = order.timestamp;
       fillMsg.blockHeight  = order.postedHeight;
 
-      // Update maker in book
       auto makerIt = m_allOrders.find(fill.makerOrderId);
       if (makerIt != m_allOrders.end()) {
         makerIt->second.filled += fill.fillAmount;
         if (makerIt->second.filled >= makerIt->second.amount) {
-          // Fully filled — remove from ladder
           uint8_t makerPair = makerIt->second.pair;
           uint64_t makerPrice = makerIt->second.price;
-          auto& ladder = (makerIt->second.side == SwapOrder::Side::ASK)
-                         ? m_orderBooks[makerPair].asks
-                         : m_orderBooks[makerPair].bids;
-          auto priceIt = ladder.find(makerPrice);
-          if (priceIt != ladder.end()) {
-            auto& q = priceIt->second.orders;
-            for (auto oit = q.begin(); oit != q.end(); ++oit) {
-              if (oit->orderId == fill.makerOrderId) {
-                q.erase(oit);
-                break;
+          if (isValidPair(makerPair)) {
+            auto& ladder = (makerIt->second.side == SwapOrder::Side::ASK)
+                           ? m_orderBooks[makerPair].asks
+                           : m_orderBooks[makerPair].bids;
+            auto priceIt = ladder.find(makerPrice);
+            if (priceIt != ladder.end()) {
+              auto& q = priceIt->second.orders;
+              for (auto oit = q.begin(); oit != q.end(); ++oit) {
+                if (oit->orderId == fill.makerOrderId) {
+                  q.erase(oit);
+                  break;
+                }
               }
+              if (q.empty()) ladder.erase(priceIt);
             }
-            if (q.empty()) ladder.erase(priceIt);
           }
+          tombstoneOrder(fill.makerOrderId);
           m_allOrders.erase(makerIt);
         }
       }
 
-      m_filledOrderIds.push_back(fillMsg.makerOrderId);
+      m_fillReplay[makeFillReplayKey(fillMsg)] = static_cast<uint64_t>(std::time(nullptr));
+      while (m_fillReplay.size() > MAX_FILL_REPLAY) {
+        m_fillReplay.erase(m_fillReplay.begin());
+      }
       broadcastOrderFill(fillMsg);
     }
 
@@ -450,27 +502,35 @@ void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
     for (const auto& f : fills) order.filled += f.fillAmount;
   }
 
-  // Insert remaining into book
   if (order.filled < order.amount) {
     order.amount -= order.filled;
     order.filled = 0;
     std::string oid = order.orderId;
-    insertOrderIntoBook(std::move(order));
-    m_allOrders[oid] = order;  // re-insert with reduced amount
+    // Copy into map first, then insert a copy into the ladder (no use-after-move)
+    m_allOrders[oid] = order;
+    insertOrderIntoBook(order);
 
     COMMAND_ORDER_OPEN::request relay = msg;
     broadcastOrderOpen(relay);
+  } else {
+    tombstoneOrder(order.orderId);
   }
 }
 
 void SwapOfferRelay::handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg) {
+  // HIGH: require cancel signature (same scheme as legacy v1 cancel)
+  if (!validateCancelSignature(msg.orderId, msg.makerPubKey, msg.signature)) return;
+
   std::lock_guard<std::mutex> lock(m_mutex);
 
   auto it = m_allOrders.find(msg.orderId);
   if (it == m_allOrders.end()) return;
   if (it->second.makerPubKey != msg.makerPubKey) return;
+  if (!isValidPair(it->second.pair)) {
+    m_allOrders.erase(it);
+    return;
+  }
 
-  // Remove from ladder
   uint8_t pair = it->second.pair;
   uint64_t price = it->second.price;
   auto& ladder = (it->second.side == SwapOrder::Side::ASK)
@@ -488,25 +548,40 @@ void SwapOfferRelay::handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg)
     if (q.empty()) ladder.erase(priceIt);
   }
 
+  tombstoneOrder(msg.orderId);
   m_allOrders.erase(it);
   broadcastOrderCancel(msg);
 }
 
 void SwapOfferRelay::handleOrderFill(const COMMAND_ORDER_FILL::request& msg) {
   std::lock_guard<std::mutex> lock(m_mutex);
-  // Replay protection: ignore if we already processed this fill
-  for (const auto& id : m_filledOrderIds) {
-    if (id == msg.makerOrderId) return;
+  // Replay protection keyed by full fill identity (not maker alone)
+  std::string key = makeFillReplayKey(msg);
+  if (m_fillReplay.find(key) != m_fillReplay.end()) return;
+  m_fillReplay[key] = static_cast<uint64_t>(std::time(nullptr));
+  while (m_fillReplay.size() > MAX_FILL_REPLAY) {
+    m_fillReplay.erase(m_fillReplay.begin());
   }
-  m_filledOrderIds.push_back(msg.makerOrderId);
 }
 
 void SwapOfferRelay::handleOrderReserve(const COMMAND_ORDER_RESERVE::request& msg) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  if (msg.reservationId.empty() || msg.makerOrderId.empty()) return;
+  if (m_reservations.find(msg.reservationId) != m_reservations.end()) return;
+
   auto makerIt = m_allOrders.find(msg.makerOrderId);
   if (makerIt == m_allOrders.end()) return;
-  if (msg.amount == 0 || msg.amount > (makerIt->second.amount - makerIt->second.filled)) return;
+
+  uint64_t available = makerIt->second.amount - makerIt->second.filled;
+  uint64_t alreadyReserved = 0;
+  auto resIt = m_reservedByMaker.find(msg.makerOrderId);
+  if (resIt != m_reservedByMaker.end()) alreadyReserved = resIt->second;
+  if (msg.amount == 0 || msg.amount > available - alreadyReserved) return;
+
+  // Taker pubkey must be present (hex-encoded). Full signed reserve is preferred;
+  // reject empty / clearly invalid taker keys to reduce spam reservations.
+  if (msg.takerPubKey.empty() || msg.takerPubKey.size() < 64) return;
 
   Reservation r;
   r.reservationId = msg.reservationId;
@@ -516,6 +591,7 @@ void SwapOfferRelay::handleOrderReserve(const COMMAND_ORDER_RESERVE::request& ms
   r.takerPubKey   = msg.takerPubKey;
   r.expiresAt     = static_cast<uint64_t>(std::time(nullptr)) + RESERVATION_TTL_SECS;
   m_reservations[msg.reservationId] = std::move(r);
+  m_reservedByMaker[msg.makerOrderId] = alreadyReserved + msg.amount;
 }
 
 void SwapOfferRelay::handleOrderReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg) {
@@ -523,6 +599,26 @@ void SwapOfferRelay::handleOrderReserveAck(const COMMAND_ORDER_RESERVE_ACK::requ
   auto it = m_reservations.find(msg.reservationId);
   if (it == m_reservations.end()) return;
   if (it->second.makerOrderId != msg.makerOrderId) return;
+
+  // Verify maker signature over "reserve_ack:"+reservationId
+  auto makerIt = m_allOrders.find(msg.makerOrderId);
+  if (makerIt == m_allOrders.end()) return;
+  if (makerIt->second.makerPubKey != msg.makerPubKey) return;
+
+  std::string ackData = "reserve_ack:" + msg.reservationId;
+  Crypto::Hash ackHash;
+  cn_fast_hash(ackData.data(), ackData.size(), ackHash);
+  if (!Crypto::check_signature(ackHash, msg.makerPubKey, msg.signature)) {
+    // Invalid ack — drop reservation (do not proceed to initiate)
+    uint64_t amt = it->second.amount;
+    auto rbm = m_reservedByMaker.find(msg.makerOrderId);
+    if (rbm != m_reservedByMaker.end()) {
+      if (rbm->second <= amt) m_reservedByMaker.erase(rbm);
+      else rbm->second -= amt;
+    }
+    m_reservations.erase(it);
+    return;
+  }
   // Ack valid — taker can now proceed to SwapDaemon.initiate()
 }
 
@@ -532,6 +628,8 @@ std::vector<SwapOfferRelay::Fill> SwapOfferRelay::matchOrder(
 
   // NOTE: caller must hold m_mutex
   std::vector<Fill> fills;
+  if (!isValidPair(pair)) return fills;
+
   auto& oppositeLadder = (takerSide == SwapOrder::Side::ASK)
                          ? m_orderBooks[pair].bids
                          : m_orderBooks[pair].asks;
@@ -598,6 +696,7 @@ OrderBookSnapshot SwapOfferRelay::getOrderBookSnapshot(uint8_t pair, int depth) 
   std::lock_guard<std::mutex> lock(m_mutex);
   OrderBookSnapshot snap;
   snap.height = m_core.get_current_blockchain_height();
+  if (!isValidPair(pair) || depth <= 0) return snap;
 
   const auto& book = m_orderBooks[pair];
 
@@ -628,84 +727,84 @@ OrderBookSnapshot SwapOfferRelay::getOrderBookSnapshot(uint8_t pair, int depth) 
   return snap;
 }
 
-bool SwapOfferRelay::placeOrder(SwapOrder::Side side, uint8_t pair, uint64_t price,
-                                uint64_t amount, uint32_t ttlBlocks,
-                                std::string& outOrderId) {
-  if (pair > 7) return false;
-  if (amount == 0 || price == 0) return false;
-
-  // Generate a dummy order for ID computation (caller provides pubkey via RPC auth)
-  // For daemon-generated orderId, we need the maker's pubkey from the RPC context
-  // The caller must set orderId after receiving this
+bool SwapOfferRelay::placeSignedOrder(const SwapOrder& inOrder, uint64_t* outFilled) {
+  if (outFilled) *outFilled = 0;
+  if (!validateOrderSignature(inOrder)) return false;
 
   uint32_t currentHeight = 0;
   Crypto::Hash topId;
   m_core.get_blockchain_top(currentHeight, topId);
 
-  // Build order
-  SwapOrder order;
-  order.side         = side;
-  order.pair         = pair;
-  order.price        = price;
-  order.amount       = amount;
-  order.filled       = 0;
-  order.ttlBlocks    = ttlBlocks;
-  order.postedHeight = currentHeight;
-  order.timestamp    = static_cast<uint64_t>(std::time(nullptr));
-  order.nonce        = 0;  // will be set by caller
-
-  // orderId is set by the caller (from RPC request, containing the signed canonical form)
-  if (outOrderId.empty()) return false;
-  order.orderId = outOrderId;
+  SwapOrder order = inOrder;
+  order.filled = 0;
+  if (order.postedHeight == 0) order.postedHeight = currentHeight;
+  if (order.timestamp == 0) order.timestamp = static_cast<uint64_t>(std::time(nullptr));
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  if (isTombstoned(order.orderId)) return false;
   if (m_allOrders.size() >= MAX_ORDERS_PER_PAIR) return false;
   if (m_allOrders.find(order.orderId) != m_allOrders.end()) return false;
 
-  // Try matching first
-  auto fills = matchOrder(side, pair, price, amount);
+  auto fills = matchOrder(order.side, order.pair, order.price, order.amount);
+  uint64_t totalFilled = 0;
+  for (const auto& fill : fills) {
+    COMMAND_ORDER_FILL::request fillMsg;
+    fillMsg.takerOrderId = order.orderId;
+    fillMsg.makerOrderId = fill.makerOrderId;
+    fillMsg.fillAmount   = fill.fillAmount;
+    fillMsg.fillPrice    = fill.fillPrice;
+    fillMsg.timestamp    = order.timestamp;
+    fillMsg.blockHeight  = currentHeight;
 
-  if (!fills.empty()) {
-    for (const auto& fill : fills) {
-      COMMAND_ORDER_FILL::request fillMsg;
-      fillMsg.takerOrderId = order.orderId;
-      fillMsg.makerOrderId = fill.makerOrderId;
-      fillMsg.fillAmount   = fill.fillAmount;
-      fillMsg.fillPrice    = fill.fillPrice;
-      fillMsg.timestamp    = order.timestamp;
-      fillMsg.blockHeight  = currentHeight;
-
-      m_filledOrderIds.push_back(fillMsg.makerOrderId);
-      broadcastOrderFill(fillMsg);
-    }
-
-    uint64_t totalFilled = 0;
-    for (const auto& f : fills) totalFilled += f.fillAmount;
-
-    // Insert remainder
-    if (totalFilled < amount) {
-      order.amount -= totalFilled;
-      order.filled = 0;
-      insertOrderIntoBook(std::move(order));
-      m_allOrders[order.orderId] = order;
-    }
-
-    outOrderId = order.orderId;
-  } else {
-    insertOrderIntoBook(std::move(order));
-    m_allOrders[order.orderId] = order;
-    outOrderId = order.orderId;
+    m_fillReplay[makeFillReplayKey(fillMsg)] = static_cast<uint64_t>(std::time(nullptr));
+    broadcastOrderFill(fillMsg);
+    totalFilled += fill.fillAmount;
   }
+  if (outFilled) *outFilled = totalFilled;
 
+  if (totalFilled < order.amount) {
+    order.amount -= totalFilled;
+    order.filled = 0;
+    m_allOrders[order.orderId] = order;
+    insertOrderIntoBook(order);
+
+    COMMAND_ORDER_OPEN::request openMsg;
+    openMsg.orderId = order.orderId;
+    openMsg.side = static_cast<uint8_t>(order.side);
+    openMsg.pair = order.pair;
+    openMsg.price = order.price;
+    openMsg.amount = order.amount;
+    openMsg.makerPubKey = order.makerPubKey;
+    openMsg.signature = order.signature;
+    openMsg.nonce = order.nonce;
+    openMsg.timestamp = order.timestamp;
+    openMsg.ttlBlocks = order.ttlBlocks;
+    openMsg.postedHeight = order.postedHeight;
+    openMsg.dandelion_stem = 0;
+    openMsg.hop_count = 0;
+    broadcastOrderOpen(openMsg);
+  } else {
+    tombstoneOrder(order.orderId);
+  }
   return true;
 }
 
-bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId) {
+bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId,
+                                         const Crypto::PublicKey& makerPubKey,
+                                         const Crypto::Signature& signature) {
+  if (!validateCancelSignature(orderId, makerPubKey, signature)) return false;
+
   std::lock_guard<std::mutex> lock(m_mutex);
 
   auto it = m_allOrders.find(orderId);
   if (it == m_allOrders.end()) return false;
+  if (it->second.makerPubKey != makerPubKey) return false;
+  if (!isValidPair(it->second.pair)) {
+    tombstoneOrder(orderId);
+    m_allOrders.erase(it);
+    return true;
+  }
 
   uint8_t pair = it->second.pair;
   uint64_t price = it->second.price;
@@ -724,7 +823,15 @@ bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId) {
     if (q.empty()) ladder.erase(priceIt);
   }
 
+  tombstoneOrder(orderId);
   m_allOrders.erase(it);
+
+  COMMAND_ORDER_CANCEL::request cancelMsg;
+  cancelMsg.orderId = orderId;
+  cancelMsg.makerPubKey = makerPubKey;
+  cancelMsg.signature = signature;
+  cancelMsg.timestamp = static_cast<uint64_t>(std::time(nullptr));
+  broadcastOrderCancel(cancelMsg);
   return true;
 }
 

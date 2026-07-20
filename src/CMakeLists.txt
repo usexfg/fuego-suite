@@ -464,13 +464,8 @@ target_link_libraries(test_orderbook_phase5 PRIVATE
 target_include_directories(test_orderbook_phase5 PRIVATE
     ${CMAKE_SOURCE_DIR}/src)
 
-# P2P orderbook data structures + matching tests (Phase 7)
-add_executable(test_p2p_orderbook
-    ../tests/CoreTests/SwapOrderbookTests.cpp)
-target_link_libraries(test_p2p_orderbook PRIVATE
-    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
-target_include_directories(test_p2p_orderbook PRIVATE
-    ${CMAKE_SOURCE_DIR}/src)
+# P2P orderbook Phase 7 tests (SwapOrderbookTests.cpp) — not yet committed;
+# covered in part by test_orderbook / test_orderbook_phase3 / phase5.
 
 add_library(Rpc STATIC ${RPC_SOURCES})
 target_include_directories(Rpc PRIVATE ${CMAKE_SOURCE_DIR}/external/httplib)

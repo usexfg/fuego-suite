@@ -2019,9 +2019,27 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   return std::error_code();
 }
 
-std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, std::string& txHash) {
+std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, const std::string& payout_address, std::string& txHash) {
   std::unique_lock<std::mutex> lock(m_cacheMutex);
   throwIfNotInitialised();
+  (void)target_chain;
+
+  // Refuse placeholder / empty destinations — funds must go to a real address
+  if (payout_address.empty() ||
+      payout_address.find("Placeholder") != std::string::npos ||
+      payout_address.find("placeholder") != std::string::npos) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
+  AccountPublicAddress payoutAcc;
+  if (!m_currency.parseAccountAddressString(payout_address, payoutAcc)) {
+    return make_error_code(CryptoNote::error::BAD_ADDRESS);
+  }
+  if (!fee_address.empty()) {
+    AccountPublicAddress feeAcc;
+    if (!m_currency.parseAccountAddressString(fee_address, feeAcc)) {
+      return make_error_code(CryptoNote::error::BAD_ADDRESS);
+    }
+  }
 
   auto it = m_afkLockSecrets.find(swapId);
   if (it == m_afkLockSecrets.end()) {
@@ -2041,12 +2059,16 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
   if (!Crypto::extract_afk_secret(pre_sig, finalSig, s)) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }
+  // Secret s is required for full lock-UTXO claim; keep it in scope for future
+  // lock-spend path. Current path still spends from wallet balance after secret
+  // verification (proves counterparty completed the target-chain claim).
+  (void)s;
 
   // 2. Calculate payouts (Net 99% for Taker)
   uint64_t baseAmount = it->second.amount;
   uint64_t minFee = m_currency.minimumFee();
   uint64_t totalLocked = baseAmount + (baseAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR);
-  
+
   uint64_t takerNet = baseAmount - (baseAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR);
   uint64_t takerGross = takerNet + minFee;
   uint64_t feePoolAmount = totalLocked - takerGross - minFee;
@@ -2055,10 +2077,10 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
     return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
   }
 
-  // 3. Build and broadcast the XFG claim transaction.
+  // 3. Build and broadcast claim to the authenticated payout address only
   std::vector<WalletLegacyTransfer> transfers;
-  transfers.push_back({ "TakerAddress_Placeholder", static_cast<int64_t>(takerGross) });
-  if (!fee_address.empty()) {
+  transfers.push_back({ payout_address, static_cast<int64_t>(takerGross) });
+  if (!fee_address.empty() && feePoolAmount > 0) {
     transfers.push_back({ fee_address, static_cast<int64_t>(feePoolAmount) });
   }
 
@@ -2066,7 +2088,7 @@ std::error_code WalletLegacy::claim_afk_swap(const std::string& swapId, const st
   Crypto::PublicKey txPK;
   Crypto::generate_keys(txPK, txSK);
   TransactionId txId = sendTransaction(txSK, transfers, minFee);
-  
+
   if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }

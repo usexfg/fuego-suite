@@ -1196,28 +1196,53 @@ bool RpcServer::on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMM
     res.status = "Swap relay not running";
     return true;
   }
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return true;
+  }
 
-  if (req.pair > 7) {
-    res.status = "Invalid pair";
+  if (req.pair > 7 || req.side > 1) {
+    res.status = "Invalid pair or side";
     return true;
   }
   if (req.amount == 0 || req.price == 0) {
     res.status = "Amount and price must be > 0";
     return true;
   }
-
-  std::string orderId;
-  bool ok = m_swapRelay->placeOrder(
-    static_cast<CryptoNote::SwapOrder::Side>(req.side),
-    req.pair, req.price, req.amount, req.ttlBlocks, orderId);
-
-  if (!ok) {
-    res.status = "Order rejected";
+  if (req.orderId.empty() || req.makerPubKey.empty() || req.signature.empty()) {
+    res.status = "Signed order required (orderId, makerPubKey, signature, nonce)";
     return true;
   }
 
-  res.orderId  = orderId;
-  res.status   = CORE_RPC_STATUS_OK;
+  CryptoNote::SwapOrder order;
+  order.side = static_cast<CryptoNote::SwapOrder::Side>(req.side);
+  order.pair = req.pair;
+  order.price = req.price;
+  order.amount = req.amount;
+  order.ttlBlocks = req.ttlBlocks ? req.ttlBlocks : 8640;
+  order.orderId = req.orderId;
+  order.nonce = req.nonce;
+  order.timestamp = req.timestamp;
+  order.filled = 0;
+  if (!Common::podFromHex(req.makerPubKey, order.makerPubKey)) {
+    res.status = "Invalid makerPubKey";
+    return true;
+  }
+  if (!Common::podFromHex(req.signature, order.signature)) {
+    res.status = "Invalid signature";
+    return true;
+  }
+
+  uint64_t filled = 0;
+  bool ok = m_swapRelay->placeSignedOrder(order, &filled);
+  if (!ok) {
+    res.status = "Order rejected (bad signature, replay, or limits)";
+    return true;
+  }
+
+  res.orderId   = order.orderId;
+  res.filled    = filled;
+  res.status    = CORE_RPC_STATUS_OK;
   res.statusMsg = "Order placed";
   return true;
 }
@@ -1227,9 +1252,24 @@ bool RpcServer::on_cancel_order(const COMMAND_RPC_CANCEL_ORDER::request& req, CO
     res.status = "Swap relay not running";
     return true;
   }
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return true;
+  }
+  if (req.orderId.empty() || req.makerPubKey.empty() || req.signature.empty()) {
+    res.status = "Signed cancel required (orderId, makerPubKey, signature)";
+    return true;
+  }
 
-  bool ok = m_swapRelay->cancelOrderByClient(req.orderId);
-  res.status = ok ? CORE_RPC_STATUS_OK : "Order not found";
+  Crypto::PublicKey pubkey;
+  Crypto::Signature sig;
+  if (!Common::podFromHex(req.makerPubKey, pubkey) || !Common::podFromHex(req.signature, sig)) {
+    res.status = "Invalid makerPubKey or signature hex";
+    return true;
+  }
+
+  bool ok = m_swapRelay->cancelOrderByClient(req.orderId, pubkey, sig);
+  res.status = ok ? CORE_RPC_STATUS_OK : "Cancel rejected (bad sig or not found)";
   return true;
 }
 

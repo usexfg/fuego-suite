@@ -206,11 +206,15 @@ public:
   // Handle incoming COMMAND_ORDER_RESERVE_ACK from P2P
   void handleOrderReserveAck(const COMMAND_ORDER_RESERVE_ACK::request& msg);
 
-  // RPC handlers
+  // RPC handlers — require fully signed orders / cancels
   OrderBookSnapshot getOrderBookSnapshot(uint8_t pair, int depth) const;
-  bool placeOrder(SwapOrder::Side side, uint8_t pair, uint64_t price,
-                  uint64_t amount, uint32_t ttlBlocks, std::string& outOrderId);
-  bool cancelOrderByClient(const std::string& orderId);
+  // Place a fully signed order (orderId, makerPubKey, signature, nonce must be set).
+  // Returns false on invalid pair/sig/replay/limits. outOrderId set to order.orderId on success.
+  bool placeSignedOrder(const SwapOrder& order, uint64_t* outFilled = nullptr);
+  // Cancel with maker signature over "cancel:"+orderId
+  bool cancelOrderByClient(const std::string& orderId,
+                           const Crypto::PublicKey& makerPubKey,
+                           const Crypto::Signature& signature);
 
   // Match an incoming taker order against the book
   // Returns fills: vector of (makerOrderId, fillPrice, fillAmount)
@@ -228,9 +232,17 @@ private:
   void cleanupLegacyOffers();
 
   // ── v2 Orderbook internals ──
+  static constexpr uint8_t MAX_PAIR_INDEX = 7; // m_orderBooks[8] valid indices 0..7
+  bool isValidPair(uint8_t pair) const { return pair <= MAX_PAIR_INDEX; }
   std::string generateOrderId(const SwapOrder& o) const;
   bool validateOrderSignature(const SwapOrder& o) const;
-  void insertOrderIntoBook(SwapOrder&& order);
+  bool validateCancelSignature(const std::string& orderId,
+                               const Crypto::PublicKey& makerPubKey,
+                               const Crypto::Signature& signature) const;
+  bool isTombstoned(const std::string& orderId) const;
+  void tombstoneOrder(const std::string& orderId);
+  std::string makeFillReplayKey(const COMMAND_ORDER_FILL::request& msg) const;
+  void insertOrderIntoBook(SwapOrder order); // by value — copy into ladder, keep original for map
   void broadcastOrderOpen(const COMMAND_ORDER_OPEN::request& msg);
   void broadcastOrderCancel(const COMMAND_ORDER_CANCEL::request& msg);
   void broadcastOrderFill(const COMMAND_ORDER_FILL::request& msg);
@@ -240,6 +252,8 @@ private:
   static constexpr uint32_t RESERVATION_TTL_SECS = 30;
   static constexpr size_t MAX_ORDERS_PER_PAIR = 50000;
   static constexpr size_t MAX_TRADES = 10000;
+  static constexpr size_t MAX_TOMBSTONES = 100000;
+  static constexpr size_t MAX_FILL_REPLAY = 100000;
 
   // ── Cleanup thread ──
   void cleanupThread();
@@ -277,10 +291,15 @@ private:
   NativeXfgPriceRange m_nativeXfgPrice;
 
   // ── v2 Orderbook state ──
-  PairOrderBook m_orderBooks[8];  // indexed by pair (0..7)
+  PairOrderBook m_orderBooks[8];  // indexed by pair (0..7) — ALWAYS bounds-check pair first
   std::map<std::string, SwapOrder> m_allOrders;  // orderId → order (all orders across all pairs)
-  std::vector<std::string> m_filledOrderIds;  // for replay protection on COMMAND_ORDER_FILL
+  // Fill replay keys: hash(taker|maker|amount|price|height) — not maker-only
+  std::map<std::string, uint64_t> m_fillReplay; // key → insert time (unix)
+  // Cancelled / fully filled orderIds — reject re-open of same signed payload
+  std::map<std::string, uint64_t> m_tombstones; // orderId → insert time
   std::map<std::string, Reservation> m_reservations;  // reservationId → Reservation
+  // Amount already reserved per maker order (prevents double-reserve)
+  std::map<std::string, uint64_t> m_reservedByMaker;
 
   // Client pubkey → orderId lookup (for cancel-by-client)
   std::map<Crypto::PublicKey, std::vector<std::string>> m_clientOrders;

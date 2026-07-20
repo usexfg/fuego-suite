@@ -274,37 +274,39 @@ bool wallet_rpc_server::on_sign_order(const wallet_rpc::COMMAND_RPC_SIGN_ORDER::
   CryptoNote::AccountKeys keys;
   m_wallet.getAccountKeys(keys);
 
-  // orderId = SHA-256(spendPubKey || side || pair || price || amount || nonce)
-  // nonce is random 8 bytes to make orderId unique
-  uint64_t nonce;
+  if (req.pair > 7 || req.side > 1) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_WRONG_ADDRESS, "Invalid pair or side");
+  }
+  if (req.price == 0 || req.amount == 0) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "price and amount must be > 0");
+  }
+
+  // Canonical encoding MUST match SwapOfferRelay::generateOrderId (no struct padding):
+  //   orderId = hex(cn_fast_hash(pubkey || side || pair || price || amount || nonce))
+  // Signature: generate_signature(orderIdHash, spendPub, spendSec)
+  uint64_t nonce = 0;
   Crypto::generate_random_bytes(sizeof(nonce), reinterpret_cast<uint8_t*>(&nonce));
 
-  struct OrderIdInput {
-    uint8_t  spendPubKey[32];
-    uint8_t  side;
-    uint8_t  pair;
-    uint64_t price;
-    uint64_t amount;
-    uint64_t nonce;
-  } orderIdInput;
-
-  std::memcpy(orderIdInput.spendPubKey, &keys.address.spendPublicKey, 32);
-  orderIdInput.side   = req.side;
-  orderIdInput.pair   = req.pair;
-  orderIdInput.price  = req.price;
-  orderIdInput.amount = req.amount;
-  orderIdInput.nonce  = nonce;
+  std::string data;
+  data.append(reinterpret_cast<const char*>(&keys.address.spendPublicKey), sizeof(keys.address.spendPublicKey));
+  uint8_t side = req.side;
+  uint8_t pair = req.pair;
+  data.append(reinterpret_cast<const char*>(&side), sizeof(side));
+  data.append(reinterpret_cast<const char*>(&pair), sizeof(pair));
+  data.append(reinterpret_cast<const char*>(&req.price), sizeof(req.price));
+  data.append(reinterpret_cast<const char*>(&req.amount), sizeof(req.amount));
+  data.append(reinterpret_cast<const char*>(&nonce), sizeof(nonce));
 
   Crypto::Hash orderIdHash;
-  Crypto::cn_fast_hash(&orderIdInput, sizeof(orderIdInput), orderIdHash);
+  Crypto::cn_fast_hash(data.data(), data.size(), orderIdHash);
 
-  // Sign the order ID hash with spend key
   Crypto::Signature sig;
   Crypto::generate_signature(orderIdHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
 
   res.orderId     = Common::podToHex(orderIdHash);
   res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
   res.signature   = Common::podToHex(sig);
+  res.nonce       = nonce;
   res.status      = WALLET_RPC_STATUS_OK;
   return true;
 }
@@ -411,12 +413,16 @@ bool wallet_rpc_server::on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_
 }
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_claim_afk_swap(const wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::request& req, wallet_rpc::COMMAND_RPC_CLAIM_AFK_SWAP::response& res) {
-  // Fetch fee address from node if possible, or use a default.
-  std::string fee_address = ""; 
-  // In a real deployment, this would be a call to m_rpc.getFeeAddress()
-  
+  if (req.payout_address.empty()) {
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_WRONG_ADDRESS,
+      "payout_address is required (no placeholder destinations allowed)");
+  }
+  // Fee address optional — empty means no separate fee-pool transfer
+  std::string fee_address;
+
   std::string txHash;
-  std::error_code ec = m_wallet.claim_afk_swap(req.swapId, req.secret_s, req.target_chain, fee_address, txHash);
+  std::error_code ec = m_wallet.claim_afk_swap(req.swapId, req.secret_s, req.target_chain,
+                                               fee_address, req.payout_address, txHash);
   if (ec) {
     throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
   }

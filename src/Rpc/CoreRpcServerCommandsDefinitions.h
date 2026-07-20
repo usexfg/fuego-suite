@@ -1066,12 +1066,18 @@ struct COMMAND_RPC_GET_ORDER_BOOK {
 };
 
 struct COMMAND_RPC_PLACE_ORDER {
+  // Fully signed order only — unsigned placement is rejected.
   struct request {
-    uint8_t  side;
-    uint8_t  pair;
-    uint64_t price;
-    uint64_t amount;
-    uint32_t ttlBlocks;
+    uint8_t     side;
+    uint8_t     pair;
+    uint64_t    price;
+    uint64_t    amount;
+    uint32_t    ttlBlocks;
+    std::string orderId;      // hex, from wallet sign_order
+    std::string makerPubKey;  // hex
+    std::string signature;    // hex
+    uint64_t    nonce;
+    uint64_t    timestamp;    // optional; 0 = daemon fills
 
     void serialize(ISerializer &s) {
       KV_MEMBER(side);
@@ -1079,6 +1085,11 @@ struct COMMAND_RPC_PLACE_ORDER {
       KV_MEMBER(price);
       KV_MEMBER(amount);
       KV_MEMBER(ttlBlocks);
+      KV_MEMBER(orderId);
+      KV_MEMBER(makerPubKey);
+      KV_MEMBER(signature);
+      KV_MEMBER(nonce);
+      KV_MEMBER(timestamp);
     }
   };
 
@@ -1098,10 +1109,17 @@ struct COMMAND_RPC_PLACE_ORDER {
 };
 
 struct COMMAND_RPC_CANCEL_ORDER {
+  // Signed cancel — orderId alone is insufficient
   struct request {
     std::string orderId;
+    std::string makerPubKey; // hex
+    std::string signature;   // hex, signs "cancel:"+orderId
 
-    void serialize(ISerializer &s) { KV_MEMBER(orderId); }
+    void serialize(ISerializer &s) {
+      KV_MEMBER(orderId);
+      KV_MEMBER(makerPubKey);
+      KV_MEMBER(signature);
+    }
   };
 
   struct response {

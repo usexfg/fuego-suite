@@ -267,23 +267,37 @@ func (c *FuegoClient) GetOrderBook(pair uint8, depth int) (*OrderBookSnapshot, e
 	return &resp, nil
 }
 
-func (c *FuegoClient) PlaceOrder(side uint8, pair uint8, price, amount uint64, ttlBlocks uint32) (*PlaceOrderResult, error) {
+// PlaceSignedOrder submits a fully signed limit order (required by daemon).
+func (c *FuegoClient) PlaceSignedOrder(side, pair uint8, price, amount uint64, ttlBlocks uint32,
+	orderId, makerPubKey, signature string, nonce uint64) (*PlaceOrderResult, error) {
 	req := map[string]interface{}{
-		"side":      side,
-		"pair":      pair,
-		"price":     price,
-		"amount":    amount,
-		"ttlBlocks": ttlBlocks,
+		"side":        side,
+		"pair":        pair,
+		"price":       price,
+		"amount":      amount,
+		"ttlBlocks":   ttlBlocks,
+		"orderId":     orderId,
+		"makerPubKey": makerPubKey,
+		"signature":   signature,
+		"nonce":       nonce,
 	}
 	var resp PlaceOrderResult
 	if err := c.post("/placeorder", req, &resp); err != nil {
 		return nil, err
 	}
+	if resp.Status != "" && resp.Status != "OK" {
+		return &resp, fmt.Errorf("placeorder: %s", resp.Status)
+	}
 	return &resp, nil
 }
 
-func (c *FuegoClient) CancelOrder(orderId string) error {
-	req := map[string]interface{}{"orderId": orderId}
+// CancelOrderSigned cancels with maker signature over "cancel:"+orderId.
+func (c *FuegoClient) CancelOrderSigned(orderId, makerPubKey, signature string) error {
+	req := map[string]interface{}{
+		"orderId":     orderId,
+		"makerPubKey": makerPubKey,
+		"signature":   signature,
+	}
 	var resp struct {
 		Status string `json:"status"`
 	}

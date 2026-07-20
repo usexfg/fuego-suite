@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 
 namespace XfgSwap {
 
@@ -166,8 +167,8 @@ long double SpvHeader::work() const {
 
   // work = 2^256 / (target + 1)
   // Use log2 to avoid overflow: log2(work) = 256 - log2(target + 1)
-  long double log2Work = 256.0L - std::log2l(targetVal + 1.0L);
-  return std::powl(2.0L, log2Work);
+  long double log2Work = 256.0L - std::log2(targetVal + 1.0L);
+  return std::pow(2.0L, log2Work);
 }
 
 } // namespace XfgSwap

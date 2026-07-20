@@ -15,6 +15,7 @@
 // SpvHeader parse + PoW verification using real BCH block data.
 // SpvHeaderStore tests with synthetic regtest-difficulty headers.
 
+#include <algorithm>
 #include <cassert>
 #include <string>
 #include <vector>

@@ -94,7 +94,13 @@ std::string MoneroRpcClient::httpPost(const std::string& host, uint16_t port,
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = ::send(sockfd, request.c_str(), request.size(), 0);
+  ssize_t sent = ::send(sockfd, request.c_str(), request.size(),
+#ifndef _WIN32
+                       MSG_NOSIGNAL
+#else
+                       0
+#endif
+                       );
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
     ::close(sockfd);
     return {};

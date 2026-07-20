@@ -297,7 +297,13 @@ std::string DcrRpcClient::httpPost(const std::string& body) {
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = send(sock.fd, request.c_str(), request.size(), 0);
+  ssize_t sent = send(sock.fd, request.c_str(), request.size(),
+#ifndef _WIN32
+                      MSG_NOSIGNAL
+#else
+                      0
+#endif
+                      );
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
     throw std::runtime_error("DcrRpcClient: send failed");
   }

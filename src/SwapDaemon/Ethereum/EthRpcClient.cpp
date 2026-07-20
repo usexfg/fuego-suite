@@ -384,7 +384,13 @@ std::string EthRpcClient::httpPost(const std::string& path, const std::string& b
       closeSocket();
       if (!connectSocket()) return "";
     }
-    if (send(m_sock, request.data(), request.size(), 0) < 0)
+    if (send(m_sock, request.data(), request.size(),
+#ifndef _WIN32
+             MSG_NOSIGNAL
+#else
+             0
+#endif
+             ) < 0)
       continue;
 
     std::string response;

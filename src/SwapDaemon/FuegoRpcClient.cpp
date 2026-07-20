@@ -91,7 +91,13 @@ std::string FuegoRpcClient::httpPost(const std::string& host, uint16_t port,
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = send(sock, request.c_str(), request.size(), 0);
+  ssize_t sent = send(sock, request.c_str(), request.size(),
+#ifndef _WIN32
+                      MSG_NOSIGNAL
+#else
+                      0
+#endif
+                      );
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
     close(sock);
     throw std::runtime_error("Failed to send HTTP request");
@@ -243,7 +249,13 @@ std::string FuegoRpcClient::walletJsonRpc(const std::string& method, const std::
     }
     freeaddrinfo(res);
     std::string request = req.str();
-    if (::send(sock, request.c_str(), request.size(), 0) < 0) { ::close(sock); return ""; }
+    if (::send(sock, request.c_str(), request.size(),
+#ifndef _WIN32
+               MSG_NOSIGNAL
+#else
+               0
+#endif
+               ) < 0) { ::close(sock); return ""; }
     std::string response; char buf[4096];
     size_t hdrEnd = std::string::npos;
     while (hdrEnd == std::string::npos) {

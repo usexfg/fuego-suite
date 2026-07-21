@@ -35,6 +35,7 @@
 #include "BSC/BscChainClient.h"
 #include "Decred/DcrChainClient.h"
 #include "Spv/ElectrumSpvClient.h"
+#include "Spv/Neutrino/NeutrinoSpvClient.h"
 
 #include <algorithm>
 #include <iostream>
@@ -230,14 +231,35 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << chainCfg.bscHost << ":" << chainCfg.bscPort
       << " (chainId=" << chainCfg.bscChainId << ")";
   }
-  if (!chainCfg.dcrHost.empty()) {
-    auto rpc = std::make_unique<DcrRpcClient>(
-        chainCfg.dcrHost, chainCfg.dcrPort,
-        chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);
-    m_chainRegistry.registerChain(SwapPair::DCR,
-        std::make_unique<DcrChainClient>(std::move(rpc), chainCfg.dcrWif));
-    m_logger(Logging::INFO) << "DCR chain client registered: "
-      << chainCfg.dcrHost << ":" << chainCfg.dcrPort;
+  if (!chainCfg.dcrHost.empty() || chainCfg.dcrMode == "spv") {
+    if (chainCfg.dcrMode == "spv" && !chainCfg.dcrSpvServers.empty()) {
+      // SPV mode: create NeutrinoSpvClient with DCR checkpoints
+      auto headerStore = std::make_shared<SpvHeaderStore>();
+      if (chainCfg.dcrSpvCheckpointHeight > 0 && !chainCfg.dcrSpvCheckpointHash.empty()) {
+        headerStore->anchor(chainCfg.dcrSpvCheckpointHeight, chainCfg.dcrSpvCheckpointHash);
+      }
+      m_spvHeaderStores[SwapPair::DCR] = headerStore;
+      auto spvClient = std::make_shared<NeutrinoSpvClient>(
+          *headerStore,
+          std::vector<SpvHeaderStore::Checkpoint>(),
+          GcsFilterParams());
+      auto rpc = std::make_unique<DcrRpcClient>(
+          chainCfg.dcrHost, chainCfg.dcrPort,
+          chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);
+      m_chainRegistry.registerChain(SwapPair::DCR,
+          std::make_unique<DcrChainClient>(spvClient, std::move(rpc), chainCfg.dcrWif));
+      m_logger(Logging::INFO) << "DCR chain client registered: SPV mode ("
+        << chainCfg.dcrSpvServers.size() << " server(s))";
+    } else if (!chainCfg.dcrHost.empty()) {
+      // Full-node RPC mode
+      auto rpc = std::make_unique<DcrRpcClient>(
+          chainCfg.dcrHost, chainCfg.dcrPort,
+          chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);
+      m_chainRegistry.registerChain(SwapPair::DCR,
+          std::make_unique<DcrChainClient>(std::move(rpc), chainCfg.dcrWif));
+      m_logger(Logging::INFO) << "DCR chain client registered: "
+        << chainCfg.dcrHost << ":" << chainCfg.dcrPort;
+    }
   }
   m_xfgWalletRpcHost = chainCfg.xfgWalletRpcHost;
   m_xfgWalletRpcPort = chainCfg.xfgWalletRpcPort;

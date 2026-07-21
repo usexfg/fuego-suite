@@ -18,6 +18,7 @@
 #include "StatusServer.h"
 #include "SwapTypes.h"
 #include "SwapStateMachine.h"
+#include "Spv/SpvHeaderStore.h"
 #include "SwapDatabase.h"
 #include "SwapTxBuilder.h"
 #include "SwapPeerProtocol.h"
@@ -123,6 +124,13 @@ struct ChainClientConfig {
   std::string dcrRpcUser;
   std::string dcrRpcPass;
   std::string dcrWif;
+
+  // DCR SPV mode — when dcrMode == "spv", use NeutrinoSpvClient instead of RPC
+  std::string dcrMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> dcrSpvServers;      // "host:port" strings
+  size_t    dcrSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  dcrSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string dcrSpvCheckpointHash;            // checkpoint hash (display hex)
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
@@ -298,6 +306,9 @@ public:
    std::atomic<bool>     m_running{false};
    std::mutex            m_tickMutex;
     std::condition_variable m_tickCv;
+
+    // SPV header stores for Neutrino clients (must outlive the chain clients)
+    std::map<SwapPair, std::shared_ptr<SpvHeaderStore>> m_spvHeaderStores;
 };
 
 // Load a ChainClientConfig from a JSON file.

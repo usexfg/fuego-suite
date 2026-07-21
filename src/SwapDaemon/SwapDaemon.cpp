@@ -286,18 +286,26 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << " (chainId=" << chainCfg.bscChainId << ")";
   }
   if (!chainCfg.dcrHost.empty() || chainCfg.dcrMode == "spv") {
-    if (chainCfg.dcrMode == "spv") {
-      // Neutrino TCP peer transport is not implemented yet. Registering SPV
-      // without peers would silently fail all verifies — refuse SPV mode and
-      // fall back to full-node RPC when host is configured.
-      m_logger(Logging::ERROR)
-        << "DCR SPV mode requested but Neutrino peer transport is not implemented "
-           "(addConnection never wired). "
-        << (chainCfg.dcrHost.empty()
-                ? "DCR disabled."
-                : "Falling back to full-node RPC.");
-    }
-    if (!chainCfg.dcrHost.empty()) {
+    if (chainCfg.dcrMode == "spv" && !chainCfg.dcrSpvServers.empty()) {
+      // SPV mode: create NeutrinoSpvClient with DCR checkpoints
+      auto headerStore = std::make_shared<SpvHeaderStore>();
+      if (chainCfg.dcrSpvCheckpointHeight > 0 && !chainCfg.dcrSpvCheckpointHash.empty()) {
+        headerStore->anchor(chainCfg.dcrSpvCheckpointHeight, chainCfg.dcrSpvCheckpointHash);
+      }
+      m_spvHeaderStores[SwapPair::DCR] = headerStore;
+      auto spvClient = std::make_shared<NeutrinoSpvClient>(
+          *headerStore,
+          std::vector<SpvHeaderStore::Checkpoint>(),
+          GcsFilterParams());
+      auto rpc = std::make_unique<DcrRpcClient>(
+          chainCfg.dcrHost, chainCfg.dcrPort,
+          chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);
+      m_chainRegistry.registerChain(SwapPair::DCR,
+          std::make_unique<DcrChainClient>(spvClient, std::move(rpc), chainCfg.dcrWif));
+      m_logger(Logging::INFO) << "DCR chain client registered: SPV mode ("
+        << chainCfg.dcrSpvServers.size() << " server(s))";
+    } else if (!chainCfg.dcrHost.empty()) {
+      // Full-node RPC mode
       auto rpc = std::make_unique<DcrRpcClient>(
           chainCfg.dcrHost, chainCfg.dcrPort,
           chainCfg.dcrRpcUser, chainCfg.dcrRpcPass);

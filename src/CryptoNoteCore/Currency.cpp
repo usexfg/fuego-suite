@@ -1156,8 +1156,9 @@ double Currency::getBurnPercentage() const {
 			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET_DRGL;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V3; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
-			   uint32_t Dracarys = CryptoNote::parameters::UPGRADE_HEIGHT_V4;
-	   		   uint64_t difficulty_plate = 10000;
+			   // Prefer currency upgrade height (testnet rewrites these) over mainnet constants.
+			   uint32_t Dracarys = m_upgradeHeightV4;
+	   		   uint64_t difficulty_plate = isTestnet() ? 100 : 10000;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
@@ -1223,8 +1224,9 @@ double Currency::getBurnPercentage() const {
 			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V4; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
-			   uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
-	   		   uint64_t difficulty_plate = isTestnet() ? 10000 : 100000;
+			   // Prefer currency upgrade height (testnet V7≈17, not mainnet 657000).
+			   uint32_t FanG = m_upgradeHeightV7;
+	   		   uint64_t difficulty_plate = isTestnet() ? 100 : 100000;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size());
@@ -1377,7 +1379,12 @@ double Currency::getBurnPercentage() const {
 
 		const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET;
 		const uint64_t N = 39;
-		const uint64_t minDifficulty = isTestnet() ? 10000 : 1000000;
+		// Testnet: keep difficulty CPU-mineable. min=100 is enough to exercise PoW
+		// without the old floor of 10k + fast-block LWMA ratchet locking solo nodes
+		// at ~800k+ difficulty (chain stall once hashrate cannot solve a block).
+		const uint64_t minDifficulty = isTestnet() ? 100 : 1000000;
+		// Soft ceiling on testnet so burst-mined early blocks cannot trap the chain.
+		const uint64_t testnetMaxDifficulty = 5000;
 
 		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() <= N) {
 			return minDifficulty;
@@ -1392,8 +1399,11 @@ double Currency::getBurnPercentage() const {
 			else { this_timestamp = previous_timestamp; }
 			// Symmetric solve time clamp: T/3 floor, 6*T ceiling.
 			// T/3 prevents fast blocks from biasing LWMA downward (Poisson fast-block bias).
+			// On testnet use a milder T/8 floor so local burst mining does not push
+			// next_D toward the ~3x-per-window growth path as aggressively.
 			uint64_t solveTime = this_timestamp - previous_timestamp;
-			solveTime = std::max(T / 3, std::min(6 * T, solveTime));
+			const uint64_t minSolve = isTestnet() ? (T / 8) : (T / 3);
+			solveTime = std::max(minSolve, std::min(6 * T, solveTime));
 			L += i * solveTime;
 			previous_timestamp = this_timestamp;
 		}
@@ -1423,7 +1433,11 @@ double Currency::getBurnPercentage() const {
 			else { i /= 10; }
 		}
 
-		return std::max(minDifficulty, next_D);
+		next_D = std::max(minDifficulty, next_D);
+		if (isTestnet() && next_D > testnetMaxDifficulty) {
+			next_D = testnetMaxDifficulty;
+		}
+		return next_D;
 	}
 
 

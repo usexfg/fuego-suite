@@ -796,7 +796,23 @@ bool core::handle_block_found(Block& b) {
   handle_incoming_block(b, bvc, true, true);
 
   if (bvc.m_verification_failed) {
-    logger(ERROR) << "mined block failed verification";
+    // Surface the concrete rejection path: many pushBlock failures already log at INFO,
+    // but the sole ERROR line previously gave no height/version/prev context.
+    const uint32_t height = get_block_height(b);
+    logger(ERROR) << "mined block failed verification"
+      << " height=" << height
+      << " majorVersion=" << static_cast<int>(b.majorVersion)
+      << " prev=" << b.previousBlockHash
+      << " already_exists=" << bvc.m_already_exists
+      << " orphaned=" << bvc.m_marked_as_orphaned
+      << " added=" << bvc.m_added_to_main_chain
+      << " (see preceding Blockchain INFO/ERROR lines for the exact reject reason)";
+  } else if (!bvc.m_added_to_main_chain) {
+    logger(WARNING) << "mined block not added to main chain"
+      << " height=" << get_block_height(b)
+      << " majorVersion=" << static_cast<int>(b.majorVersion)
+      << " already_exists=" << bvc.m_already_exists
+      << " orphaned=" << bvc.m_marked_as_orphaned;
   }
 
   return bvc.m_added_to_main_chain;

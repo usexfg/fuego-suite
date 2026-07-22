@@ -72,6 +72,7 @@ namespace CryptoNote {
 
     std::atomic<bool> m_stop;
     std::mutex m_template_lock;
+    std::mutex m_submit_lock; // serializes found-block submission across worker threads
     Block m_template;
     std::atomic<uint32_t> m_template_no;
     std::atomic<uint32_t> m_starter_nonce;

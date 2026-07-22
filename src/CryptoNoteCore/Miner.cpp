@@ -405,16 +405,38 @@ namespace CryptoNote
 
       if (!m_stop && check_hash(h, local_diff))
       {
-        //we lucky!
-        ++m_config.current_extra_message_index;
+        // Discard stale finds: another thread may have already submitted a block
+        // for this template (or the chain advanced and refreshed the template).
+        // Submitting a stale block hits handle_block_found → verification failure.
+        if (local_template_ver != m_template_no.load()) {
+          logger(DEBUGGING) << "Discarding stale PoW find (template changed) thread=" << th_local_index;
+          continue;
+        }
 
-        logger(INFO, BRIGHT_YELLOW) << "Fuego block found at difficulty of: " << local_diff;  // add block height to message
+        // Serialize submissions on a dedicated mutex (NOT m_template_lock — that is
+        // re-acquired inside set_block_template when handle_block_found refreshes
+        // the template, which would deadlock).
+        {
+          std::lock_guard<std::mutex> submit_lk(m_submit_lock);
+          if (local_template_ver != m_template_no.load()) {
+            logger(DEBUGGING) << "Discarding stale PoW find after lock (template changed) thread=" << th_local_index;
+            continue;
+          }
 
-        if(!m_handler.handle_block_found(b)) {
-          --m_config.current_extra_message_index;
-        } else {
-          //success update, lets update config
-          Common::saveStringToFile(m_config_folder_path + "/" + CryptoNote::parameters::MINER_CONFIG_FILE_NAME, storeToJson(m_config));
+          //we lucky!
+          ++m_config.current_extra_message_index;
+
+          logger(INFO, BRIGHT_YELLOW) << "Fuego block found at difficulty of: " << local_diff
+            << " majorVersion=" << static_cast<int>(b.majorVersion)
+            << " nonce=" << b.nonce
+            << " thread=" << th_local_index;
+
+          if(!m_handler.handle_block_found(b)) {
+            --m_config.current_extra_message_index;
+          } else {
+            //success update, lets update config
+            Common::saveStringToFile(m_config_folder_path + "/" + CryptoNote::parameters::MINER_CONFIG_FILE_NAME, storeToJson(m_config));
+          }
         }
       }
 

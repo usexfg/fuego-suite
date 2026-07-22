@@ -138,9 +138,8 @@ ChainClientResult KmdChainClient::verifyLockSpv(const SwapParams& params) {
           if (expectedHash.size() == 20 && std::memcmp(p + 2, expectedHash.data(), 20) == 0) {
             foundP2sh = true;
           }
-        } else {
-          foundP2sh = true;
         }
+        // Fail closed without chainState (redeem script) — no any-P2SH fallback.
       }
     }
 

@@ -428,6 +428,42 @@ add_executable(test_dcr_chain_client
 target_link_libraries(test_dcr_chain_client PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Production gate checklist (timelock, offer sig, soft-order, secret crash-restart)
+add_executable(test_production_gates
+    SwapDaemon/tests/test_production_gates.cpp)
+target_link_libraries(test_production_gates PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# ETH protocol offline (hashlock, contractId packing, ABI, RLP 0xc0)
+add_executable(test_eth_protocol
+    SwapDaemon/tests/test_eth_protocol.cpp)
+target_link_libraries(test_eth_protocol PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# Collaborative ring: Alice+Bob produce sig that check_ring_signature accepts
+add_executable(test_ring_collab
+    SwapDaemon/tests/test_ring_collab.cpp)
+target_link_libraries(test_ring_collab PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
+# BCH Alice-locks secret reveal offline (H(t)=SHA256, claim parse recovers t)
+add_executable(test_bch_secret_reveal
+    SwapDaemon/tests/test_bch_secret_reveal.cpp)
+target_link_libraries(test_bch_secret_reveal PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# XFG spend path state machine (SECRET_REVEALED / SPV → XFG_SPENT)
+add_executable(test_xfg_spend_states
+    SwapDaemon/tests/test_xfg_spend_states.cpp)
+target_link_libraries(test_xfg_spend_states PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# Dual-party protocol: keys + adaptor extract + collab ring spend (offline)
+add_executable(test_xfg_dual_protocol
+    SwapDaemon/tests/test_xfg_dual_protocol.cpp)
+target_link_libraries(test_xfg_dual_protocol PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)
 add_executable(test_xmr_live_e2e
     SwapDaemon/tests/test_xmr_live_e2e.cpp)

@@ -86,6 +86,10 @@ namespace
   const command_line::arg_descriptor<std::string> arg_set_view_key = { "view-key", "Set secret view-key for remote node fee confirmation", "" };
 
   const command_line::arg_descriptor<bool>        arg_restricted_rpc = {"restricted-rpc", "Restrict RPC to view only commands to prevent abuse"};
+  const command_line::arg_descriptor<std::string> arg_swap_control_token = {
+      "swap-control-token",
+      "Require this token on swap control RPC (X-Swap-Token or Authorization: Bearer). Empty = no token (dev only).",
+      ""};
   const command_line::arg_descriptor<std::string> arg_enable_cors = { "enable-cors", "Adds header 'Access-Control-Allow-Origin' to the daemon's RPC responses. Uses the value as domain. Use * for all", "" };
   const command_line::arg_descriptor<int>         arg_log_level   = {"log-level", "", 2}; // info level
   const command_line::arg_descriptor<bool>        arg_console     = {"no-console", "Disable daemon console commands"};
@@ -158,6 +162,7 @@ int main(int argc, char* argv[])
    command_line::add_arg(desc_cmd_only, command_line::arg_data_dir, Tools::getDefaultDataDirectory());
    command_line::add_arg(desc_cmd_only, arg_config_file);
    command_line::add_arg(desc_cmd_sett, arg_restricted_rpc);
+   command_line::add_arg(desc_cmd_sett, arg_swap_control_token);
 
    command_line::add_arg(desc_cmd_sett, arg_set_fee_address);
    command_line::add_arg(desc_cmd_sett, arg_log_file);
@@ -393,6 +398,13 @@ int main(int argc, char* argv[])
  
     rpcServer.start(rpcConfig.bindIp, rpcConfig.bindPort);
     rpcServer.restrictRPC(command_line::get_arg(vm, arg_restricted_rpc));
+    {
+      std::string tok = command_line::get_arg(vm, arg_swap_control_token);
+      if (!tok.empty()) {
+        rpcServer.setSwapControlToken(tok);
+        logger(INFO) << "Swap control RPC token configured (X-Swap-Token / Bearer)";
+      }
+    }
     rpcServer.enableCors(command_line::get_arg(vm, arg_enable_cors));
     logger(INFO) << "Core rpc server started ok";
 

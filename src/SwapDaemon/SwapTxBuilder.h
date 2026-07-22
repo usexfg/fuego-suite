@@ -116,8 +116,23 @@ public:
   // point and key image, fill in the deterministic decoy sigs, and
   // derive the real-position challenge c_j.
   // Both parties call this with identical inputs and get identical c_j.
+  //
+  // CRITICAL: prefixHash MUST be computed AFTER writing aggregateKeyImage into
+  // the KeyInput. Call order:
+  //   1. ringRound1Generate (or restore persisted our Round 1 material)
+  //   2. set peer Round 1 fields
+  //   3. writeAggregateKeyImageToTx(tx, ringState)  // aggregates KI + sets input
+  //   4. recompute prefixHash from tx
+  //   5. ringRound1Finalize(prefixHash, ringState)
+  //   6. ringRound2Sign / ringRound2Finalize
   static bool ringRound1Finalize(
       const Crypto::Hash& prefixHash,
+      CollaborativeRingState& ringState);
+
+  // Aggregate our+peer partial key images and write into tx.inputs[0].keyImage.
+  // Must be called before computing the prefix hash used by ringRound1Finalize.
+  static bool writeAggregateKeyImageToTx(
+      CryptoNote::Transaction& tx,
       CollaborativeRingState& ringState);
 
   // ── Step 4: Collaborative ring signature (Round 2) ───────────────────

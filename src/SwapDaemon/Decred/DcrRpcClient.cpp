@@ -462,7 +462,11 @@ bool DcrRpcClient::importAddress(const std::string& address,
 bool DcrRpcClient::listUnspent(const std::string& address,
                                 std::vector<std::pair<std::string, uint64_t>>& utxos) {
   try {
-    std::string params = "[1, 9999999, [\"" + address + "\"]]";
+    // Empty address → all wallet UTXOs (funder selection). Non-empty → filter.
+    // first of pair is "txid:vout" so callers can createrawtransaction correctly.
+    std::string params = address.empty()
+        ? "[1, 9999999]"
+        : "[1, 9999999, [\"" + address + "\"]]";
     std::string resp = rpcCall("listunspent", params);
     Common::JsonValue json = Common::JsonValue::fromString(resp);
     if (!json.isObject() || !json.contains("result")) return false;
@@ -474,13 +478,14 @@ bool DcrRpcClient::listUnspent(const std::string& address,
       const auto& utxo = result[i];
       if (!utxo.isObject()) continue;
       std::string txid = utxo.contains("txid") ? utxo("txid").getString() : "";
+      int64_t vout = utxo.contains("vout") ? utxo("vout").getInteger() : 0;
       uint64_t amount = 0;
       if (utxo.contains("amount")) {
         double dcr = utxo("amount").isReal() ? utxo("amount").getReal() : 0;
         amount = static_cast<uint64_t>(dcr * 1e8);
       }
       if (!txid.empty() && amount > 0) {
-        utxos.push_back({txid, amount});
+        utxos.push_back({txid + ":" + std::to_string(vout), amount});
       }
     }
     return true;

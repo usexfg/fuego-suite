@@ -67,6 +67,16 @@ int main(int argc, char** argv) {
             << "\n  err=" << cr.error << "\n\n";
   if (!cok) { std::cerr << "CLAIM FAILED\n"; return 1; }
 
-  std::cout << "=== SOL HTLC lock -> claim COMPLETED on-chain ===\n";
+  // ── EXTRACT (Alice learns t from on-chain state — Alice-locks secret reveal) ──
+  std::string extracted;
+  bool eok = sol.waitForClaim(lr.htlcAddress, extracted, /*poll*/500, /*max*/15000);
+  std::cout << "EXTRACT ok=" << eok
+            << "\n  preimage=" << extracted << "\n\n";
+  if (!eok || extracted != secretHex) {
+    std::cerr << "EXTRACT FAILED (expected " << secretHex << ")\n";
+    return 1;
+  }
+
+  std::cout << "=== SOL HTLC lock -> claim -> extract COMPLETED on-chain ===\n";
   return 0;
 }

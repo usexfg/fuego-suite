@@ -58,6 +58,7 @@ void printUsage() {
     "  --offer-config <file>   JSON config for managed auto-pricing offers\n"
     "  --service               Run as background service (no interactive commands)\n"
     "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
+    "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
     "  --swap-p2p-bind <addr>  P2P bind address (default: 127.0.0.1)\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --help                  Show this help message\n"
@@ -98,6 +99,7 @@ int main(int argc, char* argv[]) {
   std::string swapConfigPath;
   std::string offerConfigPath;
   uint16_t statusPort = 18900;
+  uint16_t p2pPort = 18901;
   std::string p2pBindAddr = "127.0.0.1";
   bool testnet = false;
   bool serviceMode = false;
@@ -148,6 +150,12 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       statusPort = static_cast<uint16_t>(std::atoi(argv[argIdx]));
+    } else if (opt == "--swap-p2p-port") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --swap-p2p-port requires an argument" << std::endl;
+        return 1;
+      }
+      p2pPort = static_cast<uint16_t>(std::atoi(argv[argIdx]));
     } else if (opt == "--swap-p2p-bind") {
       if (++argIdx >= argc) {
         std::cerr << "Error: --swap-p2p-bind requires an argument" << std::endl;
@@ -238,10 +246,13 @@ int main(int argc, char* argv[]) {
   // Service mode: run tick loop continuously
   if (serviceMode) {
     logger(Logging::INFO) << "Starting as background service...";
-    daemon.start();
+    daemon.start(p2pPort, p2pBindAddr);
 
     if (daemon.startStatusServer(statusPort)) {
       logger(Logging::INFO) << "Status endpoint: 127.0.0.1:" << statusPort;
+    }
+    if (p2pPort != 0) {
+      logger(Logging::INFO) << "Swap P2P: " << p2pBindAddr << ":" << p2pPort;
     }
 
     while (true) {

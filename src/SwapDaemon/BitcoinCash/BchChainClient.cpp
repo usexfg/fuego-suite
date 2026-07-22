@@ -21,18 +21,47 @@ BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient)
   : m_spvClient(std::move(spvClient)) {}
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
-  if (isZeroSecret(params.adaptorSecret))
-    return ChainClientResult::fail("BCH lock: adaptor secret not set — cannot derive hashlock");
-
   if (!m_rpc)
     return ChainClientResult::fail("BCH lock: RPC client not available (SPV mode does not support lock)");
+
+  // Hashlock: Alice-locks uses published H(t)=SHA256(t); Bob-with-secret can derive.
+  std::string hashHex;
+  if (!isZeroSecret(params.adaptorSecret)) {
+    hashHex = bchHashLockHex(params.adaptorSecret);
+  } else {
+    bool nonzero = false;
+    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
+      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
+    if (!nonzero)
+      return ChainClientResult::fail("BCH lock: no adaptor secret or hashLock (need H(t) from Bob)");
+    hashHex = Common::podToHex(params.hashLock);
+  }
+
+  // Recipient compressed pubkey for claim path. Prefer ctrPubKey; try getaddressinfo.
+  std::string recipientKey = params.ctrPubKey;
+  if (recipientKey.empty() && params.ctrAddress.size() == 66) {
+    try {
+      auto bytes = BchHtlcScript::hexToBytes(params.ctrAddress);
+      if (bytes.size() == 33 && (bytes[0] == 0x02 || bytes[0] == 0x03))
+        recipientKey = params.ctrAddress;
+    } catch (...) {}
+  }
+  if (recipientKey.size() != 66 && !params.ctrAddress.empty()) {
+    std::string resolved;
+    if (m_rpc->getAddressPubkey(params.ctrAddress, resolved) && resolved.size() == 66)
+      recipientKey = resolved;
+  }
+  if (recipientKey.size() != 66)
+    return ChainClientResult::fail(
+        "BCH lock: ctrPubKey must be 33-byte compressed pubkey hex (66 chars). "
+        "Cashaddr cannot be inverted to a pubkey; set ctrPubKey or use a wallet-known address.");
 
   std::string lockTxId;
   std::string redeemScriptHex;
   bool ok = m_rpc->lockHtlc(
       m_wif,
-      params.ctrAddress,
-      bchHashLockHex(params.adaptorSecret),
+      recipientKey,
+      hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAmount,
       lockTxId,
@@ -49,8 +78,26 @@ ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {
   if (!m_rpc)
     return ChainClientResult::fail("BCH verifyLock: no RPC or SPV client available");
 
-  bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount);
-  if (!ok) return ChainClientResult::fail("BCH lock not verified");
+  // ctrLockTxId is the funding txid; chainState holds redeemScript hex when
+  // available. Prefer P2SH address from redeem script (correct API for
+  // listunspent) over treating txid as an address.
+  std::string htlcAddress;
+  if (!params.chainState.empty()) {
+    auto redeem = BchHtlcScript::hexToBytes(params.chainState);
+    if (redeem.empty())
+      return ChainClientResult::fail("BCH verifyLock: invalid redeem script in chainState");
+    htlcAddress = BchHtlcScript::computeP2shAddress(redeem, /*testnet=*/false);
+  } else if (!params.ctrAddress.empty() && params.ctrAddress.size() != 64) {
+    // ctrAddress may already be the P2SH cashaddr/base58 (not a 64-char txid)
+    htlcAddress = params.ctrAddress;
+  } else {
+    return ChainClientResult::fail(
+        "BCH verifyLock: need chainState (redeem script) or P2SH address — "
+        "cannot listunspent by txid alone");
+  }
+
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  if (!ok) return ChainClientResult::fail("BCH lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
 
@@ -386,6 +433,44 @@ std::string BchChainClient::extractSecretSpv(const std::string& spendingTxid,
   }
 
   return BchHtlcScript::bytesToHex(preimage);
+}
+
+std::string BchChainClient::tryExtractClaimedSecret(const SwapParams& params) {
+  if (params.chainState.empty() || params.ctrLockTxId.empty()) return {};
+
+  // chainState is redeem-script hex; optional suffix ":<claimTxid>" if Bob told us the claim.
+  std::string redeemHex = params.chainState;
+  std::string knownClaimTxid;
+  auto colon = params.chainState.find(':');
+  if (colon != std::string::npos && colon + 1 < params.chainState.size()) {
+    // Only treat as claim suffix if left part looks like hex redeem (even length)
+    std::string left = params.chainState.substr(0, colon);
+    std::string right = params.chainState.substr(colon + 1);
+    if (!left.empty() && (left.size() % 2) == 0 && right.size() == 64) {
+      redeemHex = left;
+      knownClaimTxid = right;
+    }
+  }
+
+  // Prefer SPV findSpend on the lock tx (vout 0 is typical for single-output HTLC fund)
+  if (m_spvClient) {
+    for (uint32_t vout = 0; vout < 4; ++vout) {
+      SpvSpend spend;
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+        continue;
+      if (spend.spendingTxid.empty()) continue;
+      std::string secret = extractSecret(spend.spendingTxid, redeemHex);
+      if (!secret.empty()) return secret;
+    }
+  }
+
+  // Full-node: if we already know the claim txid (P2P or chainState suffix), parse it.
+  if (m_rpc && !knownClaimTxid.empty()) {
+    std::string secret = extractSecret(knownClaimTxid, redeemHex);
+    if (!secret.empty()) return secret;
+  }
+
+  return {};
 }
 
 } // namespace XfgSwap

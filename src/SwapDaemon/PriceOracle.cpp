@@ -51,7 +51,8 @@ PriceOracle::PriceOracle()
   : m_twapMaxTrades(20)
   , m_twapMaxAgeSec(604800)   // 7 days
   , m_floorThreshold(0.80)    // reject if rate diverges beyond 80% band
-  , m_maxBootstrapDrift(0.50) { // ±50% drift from seed in bootstrap
+  , m_maxBootstrapDrift(0.50) // ±50% drift from seed in bootstrap
+  , m_liveXfgUsd(0.0) {
 }
 
 // =============================================================================

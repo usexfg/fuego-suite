@@ -556,7 +556,7 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
   preSig.writeBytes(to);
   preSig.writeUint(valueWei);
   preSig.writeBytes(data);
-  preSig.writeBytes({});            // empty access list
+  preSig.writeEmptyList();          // empty access list MUST be RLP list 0xc0, not empty string 0x80
   preSig.endList();
   auto preSigBytes = preSig.finalize();
 
@@ -572,9 +572,9 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
   Secp256k1Signer signer;
   auto sig = signer.signRecoverable(msgHash, m_privKey);
 
-  // v for EIP-1559 is just the recid (0 or 1)
-  // Build signed payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
-  //                                    gasLimit, to, value, data, v, r, s])
+  // yParity for EIP-1559 is the recid (0 or 1).
+  // Signed payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
+  //                              gasLimit, to, value, data, accessList, yParity, r, s])
   RlpEncoder signedEnc;
   signedEnc.beginList();
   signedEnc.writeUint(m_chainId);
@@ -585,7 +585,8 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
   signedEnc.writeBytes(to);
   signedEnc.writeUint(valueWei);
   signedEnc.writeBytes(data);
-  signedEnc.writeUint(sig.recid);
+  signedEnc.writeEmptyList();       // accessList (must match pre-image)
+  signedEnc.writeUint(sig.recid);   // yParity
   signedEnc.writeBytes(sig.r.data(), sig.r.size());
   signedEnc.writeBytes(sig.s.data(), sig.s.size());
   signedEnc.endList();
@@ -727,127 +728,181 @@ bool EthRpcClient::callContract(const std::string& to, const std::string& data,
   return !result.empty();
 }
 
-// ─── HTLC operations (stubs — EIP-155 signing not yet implemented) ──────────
+// ─── HTLC operations (HashedTimelock.sol registry) ──────────────────────────
 
-bool EthRpcClient::deployHtlc(const std::string& /*fromAddress*/,
-                               const std::string& recipientAddress,
-                               const std::string& hashLockHex,
-                               uint64_t timeoutBlock,
-                               uint64_t valueWei,
-                               std::string& contractAddress) {
-  // HTLC bytecode must be pre-loaded via setHtlcBytecode().
-  if (m_htlcBytecode.empty()) {
-    throw std::runtime_error("EthRpcClient::deployHtlc: HTLC bytecode not configured — "
-                             "call setHtlcBytecode() with the HashedTimelock .bin contents");
+static std::string normalizeAddr20(const std::string& addr) {
+  std::string a = addr;
+  if (a.size() >= 2 && a[0] == '0' && (a[1] == 'x' || a[1] == 'X')) a = a.substr(2);
+  // lowercase for consistency
+  for (char& c : a) if (c >= 'A' && c <= 'F') c = static_cast<char>(c - 'A' + 'a');
+  return a;
+}
+
+std::string EthRpcClient::computeContractId(const std::string& sender,
+                                            const std::string& recipient,
+                                            uint64_t valueWei,
+                                            const std::string& hashLockHex,
+                                            uint64_t timeoutBlock) {
+  // abi.encodePacked(address, address, uint256, bytes32, uint256)
+  // addresses are 20 bytes (not left-padded), uint256/bytes32 are 32 bytes.
+  auto sendBytes = hexToBytes(sender);
+  auto recvBytes = hexToBytes(recipient);
+  auto hashBytes = hexToBytes(hashLockHex);
+  if (sendBytes.size() != 20 || recvBytes.size() != 20 || hashBytes.size() != 32)
+    return {};
+
+  std::vector<uint8_t> packed;
+  packed.reserve(20 + 20 + 32 + 32 + 32);
+  packed.insert(packed.end(), sendBytes.begin(), sendBytes.end());
+  packed.insert(packed.end(), recvBytes.begin(), recvBytes.end());
+
+  // valueWei as big-endian uint256 (32 bytes)
+  {
+    std::vector<uint8_t> valBuf(32, 0);
+    for (int i = 0; i < 8; ++i)
+      valBuf[31 - i] = static_cast<uint8_t>((valueWei >> (i * 8)) & 0xFF);
+    packed.insert(packed.end(), valBuf.begin(), valBuf.end());
   }
 
-  // Build deploy calldata: bytecode || ABI-encoded constructor args.
-  // HashedTimelock constructor: (address recipient, bytes32 hashLock, uint256 timeoutBlock).
-  // No function selector for constructors — just the three ABI-encoded params.
+  packed.insert(packed.end(), hashBytes.begin(), hashBytes.end());
+
+  // timeout as big-endian uint256 (32 bytes)
+  {
+    std::vector<uint8_t> toBuf(32, 0);
+    for (int i = 0; i < 8; ++i)
+      toBuf[31 - i] = static_cast<uint8_t>((timeoutBlock >> (i * 8)) & 0xFF);
+    packed.insert(packed.end(), toBuf.begin(), toBuf.end());
+  }
+
+  uint8_t digest[32];
+  keccak(packed.data(), static_cast<int>(packed.size()), digest, 32);
+  return bytesToHex(digest, 32, /*prefix=*/false);
+}
+
+bool EthRpcClient::lockHtlc(const std::string& fromAddress,
+                            const std::string& recipientAddress,
+                            const std::string& hashLockHex,
+                            uint64_t timeoutBlock,
+                            uint64_t valueWei,
+                            std::string& contractIdHex) {
+  if (m_htlcRegistry.empty()) {
+    throw std::runtime_error("EthRpcClient::lockHtlc: HTLC registry address not set — "
+                             "call setHtlcRegistry() with the deployed HashedTimelock address");
+  }
   auto hashBytes = hexToBytes(hashLockHex);
   if (hashBytes.size() != 32) return false;
 
-  std::string ctorArgs =
-      EthAbi::padAddress(recipientAddress) +
-      bytesToHex(hashBytes.data(), 32, /*prefix=*/false) +
-      EthAbi::encodeUint256(timeoutBlock);
+  Crypto::Hash hashLock;
+  std::memcpy(&hashLock, hashBytes.data(), 32);
+  std::string calldata = EthAbi::encodeLock(recipientAddress, hashLock, timeoutBlock);
+  auto toBytes   = hexToBytes(m_htlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
 
-  // Concatenate bytecode + ctor args (both hex, no 0x prefix) into raw bytes.
-  auto deployData = hexToBytes(m_htlcBytecode + ctorArgs);
-
-  // Build nonce + signed tx manually so we can include the ETH value.
-  uint64_t nonce = 0;
-  if (!getNonce(m_signerAddress, nonce)) return false;
-
-  uint64_t deployGasLimit = 800000;
-  if (m_txType == EthTxType::Eip1559) {
-    // Try dynamic gas estimation for deploy
-    uint64_t estimated = 0;
-    if (estimateGas("", m_htlcBytecode, valueWei, estimated) && estimated > 0) {
-      deployGasLimit = estimated;
-    }
-  }
-
-  std::vector<uint8_t> rawTx;
-  if (m_txType == EthTxType::Eip1559) {
-    uint64_t maxPriorityFeePerGas = 0;
-    uint64_t maxFeePerGas = 0;
-    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) return false;
-    rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
-                                  deployGasLimit, /*to=*/{}, valueWei, deployData);
-  } else {
-    uint64_t gasPriceWei = m_gasPriceFallback;
-    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
-    rawTx = buildLegacySignedTx(nonce, gasPriceWei, deployGasLimit,
-                                /*to=*/{}, valueWei, deployData);
-  }
   std::string txHash;
-  std::string rawHex = bytesToHex(rawTx);
-  if (!sendRawTransaction(rawHex, txHash)) return false;
+  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+    return false;
 
-  // Poll for receipt to get the contract address (with 1s delay between attempts).
+  // Wait for success receipt (lock does not create a new contract address)
   EthTxReceipt receipt;
   for (int i = 0; i < 60; ++i) {
-    if (getTransactionReceipt(txHash, receipt)) {
-      if (receipt.success && !receipt.contractAddress.empty()) break;
-      // Receipt exists but deployment failed
-      if (!receipt.contractAddress.empty()) return false;
-    }
+    if (getTransactionReceipt(txHash, receipt) && receipt.success) break;
 #ifdef _WIN32
     Sleep(1000);
 #else
     usleep(1000000);
 #endif
   }
-  contractAddress = receipt.contractAddress;
-  return receipt.success && !contractAddress.empty();
+  if (!receipt.success) return false;
+
+  contractIdHex = computeContractId(fromAddress, recipientAddress, valueWei,
+                                    hashLockHex, timeoutBlock);
+  return !contractIdHex.empty();
 }
 
-bool EthRpcClient::verifyLock(const std::string& contractAddress,
-                               uint64_t expectedWei,
-                               uint64_t minConfirmBlocks) {
-  // Read-only check: call eth_getBalance on the HTLC contract address.
-  uint64_t balance = 0;
-  if (!getBalance(contractAddress, balance)) return false;
-  if (balance < expectedWei) return false;
+bool EthRpcClient::deployHtlc(const std::string& fromAddress,
+                               const std::string& recipientAddress,
+                               const std::string& hashLockHex,
+                               uint64_t timeoutBlock,
+                               uint64_t valueWei,
+                               std::string& contractAddressOrId) {
+  // Prefer registry lock() path (matches HashedTimelock.sol).
+  if (!m_htlcRegistry.empty()) {
+    return lockHtlc(fromAddress, recipientAddress, hashLockHex,
+                    timeoutBlock, valueWei, contractAddressOrId);
+  }
+  throw std::runtime_error(
+      "EthRpcClient::deployHtlc: set HTLC registry via setHtlcRegistry() "
+      "(HashedTimelock is a single registry, not a per-swap constructor deploy)");
+}
 
-  // Verify the contract has code deployed (HTLC exists)
-  if (minConfirmBlocks > 0) {
-    std::string codeParams = "[\"" + contractAddress + "\",\"latest\"]";
-    std::string codeResp = jsonRpc("eth_getCode", codeParams);
-    if (codeResp.empty() || jsonHasError(codeResp)) return false;
-    std::string codeResult = jsonGetResult(codeResp);
-    if (codeResult.empty() || codeResult == "0x" || codeResult == "0x0") return false;
+bool EthRpcClient::verifyLock(const std::string& contractIdHex,
+                               uint64_t expectedWei,
+                               const std::string& expectedRecipient,
+                               const std::string& expectedHashLockHex) {
+  if (m_htlcRegistry.empty()) return false;
+
+  std::string calldata = EthAbi::encodeGetContract(contractIdHex);
+  std::string result;
+  if (!callContract(m_htlcRegistry, calldata, result)) return false;
+
+  EthAbi::ContractInfo info;
+  if (!EthAbi::decodeGetContract(result, info)) return false;
+  if (info.amount < expectedWei) return false;
+  if (info.claimed || info.refunded) return false;
+
+  if (!expectedRecipient.empty()) {
+    std::string er = normalizeAddr20(expectedRecipient);
+    std::string ir = normalizeAddr20(info.recipient);
+    if (er != ir) return false;
+  }
+  if (!expectedHashLockHex.empty()) {
+    std::string eh = expectedHashLockHex;
+    if (eh.size() >= 2 && eh[0] == '0' && (eh[1] == 'x' || eh[1] == 'X')) eh = eh.substr(2);
+    std::string ih = bytesToHex(reinterpret_cast<const uint8_t*>(&info.hashLock), 32, false);
+    if (eh != ih) return false;
   }
   return true;
 }
 
+std::string EthRpcClient::getClaimedPreimage(const std::string& contractIdHex) {
+  if (m_htlcRegistry.empty() || contractIdHex.empty()) return {};
+  std::string calldata = EthAbi::encodeGetContract(contractIdHex);
+  std::string result;
+  if (!callContract(m_htlcRegistry, calldata, result)) return {};
+  EthAbi::ContractInfo info;
+  if (!EthAbi::decodeGetContract(result, info)) return {};
+  if (!info.claimed) return {};
+  // Zero preimage means not set
+  bool nonzero = false;
+  for (int i = 0; i < 32; ++i) if (info.preimage.data[i]) { nonzero = true; break; }
+  if (!nonzero) return {};
+  return bytesToHex(reinterpret_cast<const uint8_t*>(&info.preimage), 32, /*prefix=*/false);
+}
+
 bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/,
-                               const std::string& contractAddress,
+                               const std::string& contractIdHex,
                                const std::string& preimageHex,
                                std::string& claimTxHash) {
-  // ABI-encode claim(contractId, preimage).
-  // The contractId in the HashedTimelock contract is the hash of the lock params;
-  // here we use the contractAddress itself as the identifier (as stored in SwapParams).
+  if (m_htlcRegistry.empty()) return false;
   Crypto::Hash preimage;
   auto preimageBytes = hexToBytes(preimageHex);
   if (preimageBytes.size() != 32) return false;
   std::copy(preimageBytes.begin(), preimageBytes.end(),
             reinterpret_cast<uint8_t*>(&preimage));
 
-  std::string calldata = EthAbi::encodeClaim(contractAddress, preimage);
-  auto toBytes   = hexToBytes(contractAddress);
-  auto dataBytes = hexToBytes(calldata.substr(2));  // strip 0x
+  std::string calldata = EthAbi::encodeClaim(contractIdHex, preimage);
+  auto toBytes   = hexToBytes(m_htlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
   return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
 }
 
 bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
-                                const std::string& contractAddress,
+                                const std::string& contractIdHex,
                                 std::string& refundTxHash) {
-  // ABI-encode refund(contractId).
-  std::string calldata = EthAbi::encodeRefund(contractAddress);
-  auto toBytes   = hexToBytes(contractAddress);
-  auto dataBytes = hexToBytes(calldata.substr(2));  // strip 0x
+  if (m_htlcRegistry.empty()) return false;
+  std::string calldata = EthAbi::encodeRefund(contractIdHex);
+  auto toBytes   = hexToBytes(m_htlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
   return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
 }
 

@@ -7,19 +7,18 @@
 //   - XFG side: Musig2 joint escrow (adaptor signatures)
 //   - SOL side: HTLC with Keccak-256 hashlock derived from adaptor secret
 //
-// Flow:
-//   1. Bob generates adaptor secret t, computes H = Keccak256(t)
-//   2. Alice funds XFG → Musig2 escrow
-//   3. Bob locks SOL in this HTLC with hashlock H and slot timeout
-//   4. Alice claims SOL by revealing t (preimage)
-//   5. Bob sees t on-chain, adapts XFG pre-sig, spends escrow
+// Flow (Alice-locks):
+//   1. Bob generates adaptor secret t, publishes H = Keccak256(t)
+//   2. XFG funded to Musig2 escrow
+//   3. Alice locks SOL in this HTLC with hashlock H and slot timeout
+//   4. Bob claims SOL by revealing t (preimage) — on-chain secret reveal
+//   5. Alice extracts t; Bob spends XFG escrow
 //
 // Build/deploy: see program/README.md (uses cargo build-sbf with a pinned
 // Cargo.lock to fit the Solana SBF toolchain's rust ceiling).
 //
-// declare_id below is a dev/localnet deployment. To deploy under your own
-// program ID, generate a program keypair and update this value (or run
-// `anchor keys sync`).
+// declare_id must match the deployed program keypair (regen + rebuild for local e2e).
+// Default illustrative localnet id; operators set sol_program_id to their deploy.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::keccak::hash as keccak256;

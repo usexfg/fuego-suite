@@ -14,10 +14,13 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "AdaptorSwap.h"
+#include "BitcoinCash/HtlcScript.h"
 #include <cstring>
+#include <vector>
 
 extern "C" {
 #include "crypto/crypto-ops.h"
+#include "crypto/keccak.h"
 }
 
 namespace XfgSwap {
@@ -63,6 +66,24 @@ bool adaptor_generate_adaptor(SwapParams& params,
                               const Crypto::PublicKey& dleq_base_point) {
   // Generate adaptor secret t, point T = t*G
   Crypto::generate_keys(params.adaptorPoint, params.adaptorSecret);
+
+  // HTLC hashlock H(t) so Alice can lock without learning t (Alice-locks model).
+  // Match the counterparty program's hash: SHA-256 for UTXO, keccak for EVM/SOL.
+  switch (params.pair) {
+    case SwapPair::BCH:
+    case SwapPair::DCR:
+    case SwapPair::KMD_SPV: {
+      std::vector<uint8_t> in(reinterpret_cast<const uint8_t*>(&params.adaptorSecret),
+                              reinterpret_cast<const uint8_t*>(&params.adaptorSecret) + 32);
+      auto md = BchHtlcScript::sha256(in);
+      std::memcpy(&params.hashLock, md.data(), 32);
+      break;
+    }
+    default:
+      keccak(reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32,
+             reinterpret_cast<uint8_t*>(&params.hashLock), 32);
+      break;
+  }
 
   // Compute Q = t * base_point (for DLEQ proof)
   ge_p3 P_p3;

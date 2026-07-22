@@ -112,8 +112,19 @@ void OfferManager::submitManagedOffer(OfferState& state, uint32_t currentHeight,
   offer.isSoftOrder = true;
   offer.allowedSlippagePct = state.config.slippagePct;
 
+  // Sign canonical economic fields (must match SwapOfferRelay::validateOffer).
+  std::string sigData;
+  sigData.reserve(offer.offerId.size() + 64);
+  sigData.append(offer.offerId);
+  sigData.append(1, static_cast<char>(offer.pair));
+  sigData.append(reinterpret_cast<const char*>(&offer.xfgAmount), sizeof(offer.xfgAmount));
+  sigData.append(reinterpret_cast<const char*>(&offer.rateNum), sizeof(offer.rateNum));
+  sigData.append(1, offer.isSoftOrder ? '\x01' : '\x00');
+  sigData.append(reinterpret_cast<const char*>(&offer.ttlBlocks), sizeof(offer.ttlBlocks));
+  sigData.append(1, static_cast<char>(offer.allowedSlippagePct));
+  sigData.append(reinterpret_cast<const char*>(&offer.timestamp), sizeof(offer.timestamp));
   Crypto::Hash sigHash;
-  cn_fast_hash(offer.offerId.data(), offer.offerId.size(), sigHash);
+  cn_fast_hash(sigData.data(), sigData.size(), sigHash);
   Crypto::generate_signature(sigHash, offer.makerPubKey, m_makerSecretKey, offer.signature);
 
   if (m_relay.submitOffer(offer)) {

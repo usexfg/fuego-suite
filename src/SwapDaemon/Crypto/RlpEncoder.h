@@ -58,6 +58,10 @@ class RlpEncoder {
   void writeBytes(const std::vector<uint8_t>& data);
   void writeBytes(const uint8_t* data, size_t len);
 
+  // Encode an empty RLP list (0xc0). Required for EIP-1559 accessList: an empty
+  // access list is RLP list-of-zero-items, NOT the empty string (0x80).
+  void writeEmptyList();
+
   // Return the fully encoded RLP bytes.
   // Must be called after exactly one complete beginList/endList pair
   // (or with no list for a single item).

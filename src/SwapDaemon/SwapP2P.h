@@ -33,6 +33,9 @@ enum class SwapMsgType : uint8_t {
   NONCE_EXCHANGE = 1,
   PRESIG_EXCHANGE = 2,
   SECRET_REVEAL  = 3,
+  // Full signed PeerMessage JSON (SwapPeerProtocol) in payload.
+  // Preferred for all authenticated swap protocol messages.
+  PEER_PROTOCOL  = 4,
   ERROR          = 0xFF
 };
 

@@ -126,12 +126,31 @@ void SwapOfferRelay::cleanupExpiredReservations() {
 // Legacy v1 implementation
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Canonical offer digest: all economic fields (not just offerId) so rebroadcast
+// with mutated amount/rate/pair/isSoftOrder cannot reuse a valid signature.
+static Crypto::Hash offerCanonicalHash(const SwapOfferMsg& offer) {
+  std::string data;
+  data.reserve(offer.offerId.size() + 64);
+  data.append(offer.offerId);
+  data.append(1, static_cast<char>(offer.pair));
+  data.append(reinterpret_cast<const char*>(&offer.xfgAmount), sizeof(offer.xfgAmount));
+  data.append(reinterpret_cast<const char*>(&offer.rateNum), sizeof(offer.rateNum));
+  data.append(1, offer.isSoftOrder ? '\x01' : '\x00');
+  data.append(reinterpret_cast<const char*>(&offer.ttlBlocks), sizeof(offer.ttlBlocks));
+  data.append(1, static_cast<char>(offer.allowedSlippagePct));
+  data.append(reinterpret_cast<const char*>(&offer.timestamp), sizeof(offer.timestamp));
+  Crypto::Hash h;
+  cn_fast_hash(data.data(), data.size(), h);
+  return h;
+}
+
 bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
-  Crypto::Hash offerHash;
-  cn_fast_hash(offer.offerId.data(), offer.offerId.size(), offerHash);
+  // pair must index a valid order book slot (0..7)
+  if (offer.pair >= 8) return false;
+  Crypto::Hash offerHash = offerCanonicalHash(offer);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
 }
 
@@ -176,10 +195,20 @@ void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amou
                                        const std::string& takerPubKey,
                                        const std::string& proofOfFunds) {
   std::lock_guard<std::mutex> lock(m_mutex);
+  // Bound queue to prevent memory-exhaustion DoS from gossip floods.
+  static constexpr size_t MAX_PENDING_REQUESTS = 256;
+  if (m_pendingRequests.size() >= MAX_PENDING_REQUESTS) {
+    m_pendingRequests.erase(m_pendingRequests.begin());  // drop oldest
+  }
   m_pendingRequests.push_back({offerId, amount, takerPubKey, proofOfFunds});
 }
 
-void SwapOfferRelay::handleTradeCompleted(const SwapTradeRecord& trade) {
+void SwapOfferRelay::handleTradeCompleted(const SwapTradeRecord& /*trade*/) {
+  // Drop unsigned P2P gossip trades (audit: TWAP manipulation).
+  // Peers could inject fake rates with no proof. Only recordLocalTrade is trusted.
+}
+
+void SwapOfferRelay::recordLocalTrade(const SwapTradeRecord& trade) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
   m_trades.push_back(trade);
@@ -370,6 +399,7 @@ bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
 
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder&& order) {
   uint8_t pair = order.pair;
+  if (pair >= 8) return;  // bounds: m_orderBooks has 8 slots
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
 
@@ -381,6 +411,9 @@ void SwapOfferRelay::insertOrderIntoBook(SwapOrder&& order) {
 }
 
 void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
+  if (msg.pair >= 8) return;  // reject OOB pair before book access
+  if (msg.side > 1) return;
+
   SwapOrder order;
   order.orderId      = msg.orderId;
   order.side         = static_cast<SwapOrder::Side>(msg.side);
@@ -470,8 +503,23 @@ void SwapOfferRelay::handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg)
   if (it == m_allOrders.end()) return;
   if (it->second.makerPubKey != msg.makerPubKey) return;
 
+  // Verify maker signed cancel of this orderId (prevents anyone from cancelling
+  // by replaying a public makerPubKey without the secret key).
+  {
+    std::string cancelData = "cancel:" + msg.orderId;
+    Crypto::Hash cancelHash;
+    cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
+    if (!Crypto::check_signature(cancelHash, msg.makerPubKey, msg.signature)) {
+      return;
+    }
+  }
+
   // Remove from ladder
   uint8_t pair = it->second.pair;
+  if (pair >= 8) {
+    m_allOrders.erase(it);
+    return;
+  }
   uint64_t price = it->second.price;
   auto& ladder = (it->second.side == SwapOrder::Side::ASK)
                  ? m_orderBooks[pair].asks
@@ -497,6 +545,12 @@ void SwapOfferRelay::handleOrderFill(const COMMAND_ORDER_FILL::request& msg) {
   // Replay protection: ignore if we already processed this fill
   for (const auto& id : m_filledOrderIds) {
     if (id == msg.makerOrderId) return;
+  }
+  // Bound fill-id set (LRU: drop oldest half when over cap)
+  static constexpr size_t MAX_FILLED_IDS = 10000;
+  if (m_filledOrderIds.size() >= MAX_FILLED_IDS) {
+    m_filledOrderIds.erase(m_filledOrderIds.begin(),
+                           m_filledOrderIds.begin() + static_cast<long>(MAX_FILLED_IDS / 2));
   }
   m_filledOrderIds.push_back(msg.makerOrderId);
 }

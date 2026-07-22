@@ -125,18 +125,23 @@ ChainClientResult LtcChainClient::verifyLockSpv(const SwapParams& params) {
     if (p + spkLen > end) return ChainClientResult::fail("LTC verifyLock SPV: truncated scriptPubKey");
 
     // Check for P2WSH output (34 bytes): OP_0 PUSH32 <32-byte-hash>
-    if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20) {
-      if (value >= params.ctrAmount) {
-        foundOutput = true;
+    // Require chainState redeem script so we bind to the negotiated HTLC.
+    if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20 && value >= params.ctrAmount) {
+      if (!params.chainState.empty()) {
+        auto redeemScript = LtcHtlcScript::hexToBytes(params.chainState);
+        auto expectedHash = LtcHtlcScript::sha256(redeemScript);
+        if (expectedHash.size() == 32 && std::memcmp(p + 2, expectedHash.data(), 32) == 0) {
+          foundOutput = true;
+        }
       }
+      // Fail closed without chainState — never accept any P2WSH of matching amount.
     }
 
     p += spkLen;
   }
 
   if (!foundOutput) {
-    return ChainClientResult::fail("LTC verifyLock SPV: no P2WSH output with expected amount " +
-                                   std::to_string(params.ctrAmount));
+    return ChainClientResult::fail("LTC verifyLock SPV: no matching P2WSH HTLC output (need chainState redeem script)");
   }
 
   // Verify inclusion via SPV

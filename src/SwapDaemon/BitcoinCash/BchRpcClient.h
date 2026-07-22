@@ -55,6 +55,13 @@ public:
   // Address utilities
   bool validateAddress(const std::string& address, bool& isValid);
 
+  // Resolve compressed pubkey for an address known to the node wallet
+  // (getaddressinfo → pubkey). Returns false if unknown / watch-only without key.
+  bool getAddressPubkey(const std::string& address, std::string& pubkeyHex);
+
+  // Fee estimation (satoshis). Uses estimatesmartfee; falls back to floor.
+  bool estimateFeeSatoshis(uint64_t& feeSats, int confTarget = 2);
+
   // Import address for watching (no private key)
   bool importAddress(const std::string& address, const std::string& label, bool rescan);
 

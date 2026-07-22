@@ -11,8 +11,9 @@ services:
     container_name: fuego-node
     restart: unless-stopped
     ports:
-      - "20808:20808"  # P2P port
-      - "28180:28180"  # RPC port
+      - "20808:20808"  # P2P port (public OK)
+      # RPC: loopback only — never expose control endpoints on 0.0.0.0
+      - "127.0.0.1:28180:28180"
     volumes:
       - fuego-data:/home/fuego/.fuego
       - ./config:/home/fuego/config:ro
@@ -26,6 +27,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    # Prefer: enable --restricted-rpc on the node command so /initiate,
+    # /refundswap, /placeorder, etc. are blocked for unauthenticated clients.
 
   fuego-wallet:
     build:
@@ -34,7 +37,8 @@ services:
     container_name: fuego-wallet
     restart: unless-stopped
     ports:
-      - "8070:8070"   # Wallet RPC port
+      # Wallet RPC holds spend keys — loopback only
+      - "127.0.0.1:8070:8070"
     volumes:
       - fuego-wallet-data:/home/fuego/.fuego-wallet
     environment:
@@ -48,7 +52,7 @@ services:
       "--daemon-host=fuego-node",
       "--daemon-port=28180",
       "--bind-port=8070",
-      "--bind-ip=0.0.0.0",
+      "--bind-ip=127.0.0.1",
       "--wallet-dir=/home/fuego/.fuego-wallet"
     ]
 

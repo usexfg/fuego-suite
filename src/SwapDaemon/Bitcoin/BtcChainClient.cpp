@@ -175,10 +175,9 @@ ChainClientResult BtcChainClient::verifyLockSpv(const SwapParams& params) {
           if (std::memcmp(p + 2, expectedHash.data(), 32) == 0) {
             foundP2wsh = true;
           }
-        } else {
-          // No chainState available — accept any P2WSH (fallback)
-          foundP2wsh = true;
         }
+        // Fail closed: without chainState redeem script we cannot bind the
+        // output to the negotiated HTLC — never accept any matching amount.
       }
     }
 

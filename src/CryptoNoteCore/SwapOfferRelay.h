@@ -174,7 +174,11 @@ public:
                            const Crypto::Signature& sig);
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
+  // P2P gossip path: intentionally ignored (unsigned, manipulable). Use
+  // recordLocalTrade() when a swap is observed completing on this node.
   void handleTradeCompleted(const SwapTradeRecord& trade);
+  // Authenticated local path: updates TWAP from a real completed swap.
+  void recordLocalTrade(const SwapTradeRecord& trade);
 
   std::vector<SwapOfferMsg> getOffers(uint8_t pair) const;
   std::vector<SwapOfferMsg> getAllOffers() const;

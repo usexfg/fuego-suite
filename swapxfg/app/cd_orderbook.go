@@ -9,6 +9,34 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// HEAT CD amount tiers (atomic units, 1e7 = 1 HEAT)
+const (
+	CdTier0 = 80000000    // 8 HEAT
+	CdTier1 = 800000000   // 80 HEAT
+	CdTier2 = 8000000000  // 800 HEAT
+	CdTier3 = 80000000000 // 8000 HEAT
+)
+
+// EpochBlocks is the mainnet epoch duration in blocks.
+// Testnet overrides this at 10 blocks for fast testing.
+const EpochBlocks = 900 // 5 days (180 blocks/day)
+
+// CdTierLabel returns the human label for a CD amount tier.
+func CdTierLabel(amount uint64) string {
+	switch amount {
+	case CdTier0:
+		return "8 HEAT"
+	case CdTier1:
+		return "80 HEAT"
+	case CdTier2:
+		return "800 HEAT"
+	case CdTier3:
+		return "8000 HEAT"
+	default:
+		return fmt.Sprintf("%.0f HEAT", float64(amount)/1e7)
+	}
+}
+
 // sortCdOffers returns a copy of offers sorted most-discounted first.
 func sortCdOffers(offers []CdOffer) []CdOffer {
 	sorted := make([]CdOffer, len(offers))
@@ -21,63 +49,112 @@ func sortCdOffers(offers []CdOffer) []CdOffer {
 	return sorted
 }
 
-// RenderCdOrderbook renders the CD offer list as a fixed-size panel.
-// selected is the highlighted row index (-1 = none).
-func RenderCdOrderbook(offers []CdOffer, selected, width, height int) string {
-	hdr := StyleMuted.Render(fmt.Sprintf(
-		"%-10s %-6s %-6s %-10s %s",
-		"AMOUNT", "TERM", "EPOCH", "ASK", "DISC",
-	))
-	sep := StyleMuted.Render(strings.Repeat("─", width))
+// RenderCdOrderbook renders the CD depth ladder as a table:
+// TERM | REM | AMOUNT | DISC | INT | PRICE (XFG)
+func RenderCdOrderbook(offers []CdOffer, prices map[uint64]*CdPriceStats, currentHeight uint64, selected, width, height int) string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(ColorActiveTab).
+		Width(width).Align(lipgloss.Center).Render("HEAT CDs — priced in XFG")
 
-	rows := []string{hdr, sep}
-	sorted := sortCdOffers(offers)
+	sep := StyleMuted.Render(strings.Repeat("─", width-2))
 
-	maxRows := height - 2
-	if maxRows < 1 {
-		maxRows = 1
+	if len(offers) == 0 {
+		empty := StyleMuted.Render("  no HEAT CD offers")
+		help := StyleMuted.Render("  ↑↓: select  n: create CD")
+		return lipgloss.JoinVertical(lipgloss.Left, title, sep, "", empty, "", help)
 	}
 
-	for i, o := range sorted {
-		if i >= maxRows {
-			break
-		}
-		disc := CdDiscount(o.CdAmount, o.AskPrice)
-		amtXfg := float64(o.CdAmount) / 1e7
-		askXfg := float64(o.AskPrice) / 1e7
+	sorted := sortCdOffers(offers)
 
+	// Column header
+	hdr := fmt.Sprintf("  %-5s  %-4s  %-10s  %-7s  %-8s  %s",
+		"TERM", "REM", "AMOUNT", "DISC", "INT", "PRICE")
+	rows := []string{title, sep, StyleMuted.Render(hdr), sep}
+
+	for i, o := range sorted {
+		// Term (total epochs)
+		termStr := fmt.Sprintf("%dep", o.CdTerm)
+
+		// Remaining epochs: CdTerm - (currentHeight - PostedHeight) / EpochBlocks
+		remStr := "—"
+		if currentHeight > 0 && o.PostedHeight > 0 && currentHeight > uint64(o.PostedHeight) {
+			elapsed := currentHeight - uint64(o.PostedHeight)
+			elapsedEpochs := uint32(elapsed / EpochBlocks)
+			if elapsedEpochs < o.CdTerm {
+				rem := o.CdTerm - elapsedEpochs
+				remStr = fmt.Sprintf("%dep", rem)
+			} else {
+				remStr = "0ep"
+			}
+		} else if o.TTLBlocks > 0 {
+			// Fallback: derive from TTLBlocks
+			rem := o.TTLBlocks / EpochBlocks
+			if rem > 0 {
+				remStr = fmt.Sprintf("%dep", rem)
+			}
+		}
+
+		// Amount tier label
+		amtLabel := CdTierLabel(o.CdAmount)
+
+		// Discount
+		disc := CdDiscount(o.CdAmount, o.AskPrice)
 		var discStyle lipgloss.Style
 		if disc < 0 {
 			discStyle = StyleSpread // yellow for discount
 		} else {
 			discStyle = StyleBull // green for premium
 		}
+		discStr := discStyle.Render(fmt.Sprintf("%+.1f%%", disc))
 
-		line := fmt.Sprintf("%-10s %-6s %-6s %-10s %s",
-			fmt.Sprintf("%.1f XFG", amtXfg),
-			fmt.Sprintf("%dmo", o.CdTerm),
-			fmt.Sprintf("ep.%d", o.CdEpoch),
-			fmt.Sprintf("%.1f XFG", askXfg),
-			discStyle.Render(fmt.Sprintf("%+.1f%%", disc)),
-		)
+		// Interest (from price stats)
+		intStr := "—"
+		if p, ok := prices[o.CdAmount]; ok && p.EstimatedInterest > 0 {
+			intF := float64(p.EstimatedInterest) / 1e7
+			intStr = fmt.Sprintf("%.2f", intF)
+		}
+
+		// Price in XFG
+		priceXfg := float64(o.AskPrice) / 1e7
+		priceStr := fmt.Sprintf("%.4f", priceXfg)
+
+		line := fmt.Sprintf("  %-5s  %-4s  %-10s  %-7s  %-8s  %s",
+			termStr, remStr, amtLabel, discStr, intStr, priceStr)
+
+		if len([]rune(line)) > width-2 {
+			line = string([]rune(line)[:width-2])
+		}
 
 		if i == selected {
-			line = lipgloss.NewStyle().
-				Foreground(ColorAccent).Bold(true).
-				Render("▶ " + line)
+			rows = append(rows, StyleActiveTab.Render("▸ "+line))
 		} else {
-			line = "  " + line
+			rows = append(rows, "  "+line)
 		}
-		rows = append(rows, line)
 	}
 
-	if len(sorted) == 0 {
-		rows = append(rows, StyleMuted.Render("  no offers"))
+	// Summary
+	totalOffers := len(offers)
+	totalXfg := uint64(0)
+	for _, o := range offers {
+		// Check for overflow
+		if o.AskPrice > 0 && totalXfg+o.AskPrice < totalXfg {
+			totalXfg = ^uint64(0) // cap at max
+		} else {
+			totalXfg += o.AskPrice
+		}
 	}
+	totalXfgF := float64(totalXfg) / 1e7
+
+	rows = append(rows, sep)
+	rows = append(rows, StyleMuted.Render(fmt.Sprintf(
+		"  %d offers  %.1f XFG total value", totalOffers, totalXfgF)))
+	rows = append(rows, StyleMuted.Render("  ↑↓ select  enter accept  n create"))
 
 	// Pad to height
 	for len(rows) < height {
 		rows = append(rows, "")
+	}
+	if len(rows) > height {
+		rows = rows[:height]
 	}
 
 	return strings.Join(rows, "\n")
@@ -99,7 +176,7 @@ func RenderCdDetail(offer *CdOffer, price *CdPriceStats, width int) string {
 
 	var estInt string
 	if price != nil && price.EstimatedInterest > 0 {
-		estInt = fmt.Sprintf("~%.4f XFG", float64(price.EstimatedInterest)/1e7)
+		estInt = fmt.Sprintf("~%.4f HEAT", float64(price.EstimatedInterest)/1e7)
 	} else {
 		estInt = "—"
 	}
@@ -112,17 +189,20 @@ func RenderCdDetail(offer *CdOffer, price *CdPriceStats, width int) string {
 	}
 
 	lines := []string{
-		StyleMuted.Render("SELECTED OFFER"),
+		StyleAccent.Render(" SELECTED OFFER"),
+		StyleMuted.Render(strings.Repeat("─", width-2)),
 		"",
-		fmt.Sprintf("  Amount:   %.7f XFG", amtXfg),
-		fmt.Sprintf("  Term:     %d months", offer.CdTerm),
+		fmt.Sprintf("  Tier:     %s", CdTierLabel(offer.CdAmount)),
+		fmt.Sprintf("  Amount:   %.1f HEAT (%.0f atomic)", amtXfg, float64(offer.CdAmount)),
+		fmt.Sprintf("  Term:     %d epochs", offer.CdTerm),
+		fmt.Sprintf("  Posted:   block %d", offer.PostedHeight),
 		fmt.Sprintf("  Epoch:    %d", offer.CdEpoch),
 		fmt.Sprintf("  Est.int:  %s", estInt),
-		fmt.Sprintf("  Ask:      %.7f XFG", askXfg),
+		fmt.Sprintf("  Ask:      %.4f XFG", askXfg),
 		fmt.Sprintf("  Disc:     %s", discStr),
 		fmt.Sprintf("  Seller:   %s", seller),
 		"",
-		StyleMuted.Render("  [enter: accept]  [b: bid]"),
+		StyleMuted.Render("  [enter: accept]  [n: create CD]"),
 	}
 
 	_ = width

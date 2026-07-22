@@ -88,6 +88,19 @@ func PairShort(pair uint8) string {
 	}
 }
 
+// swapPairs lists all tradeable pairs in cycle order.
+var swapPairs = []uint8{PairSOL, PairETH, PairXMR, PairBCH, PairARB, PairBASE, PairBNB}
+
+// nextSwapPair returns the next tradeable pair in cycle order.
+func nextSwapPair(current uint8) uint8 {
+	for i, p := range swapPairs {
+		if p == current {
+			return swapPairs[(i+1)%len(swapPairs)]
+		}
+	}
+	return swapPairs[0]
+}
+
 // PairFromString returns the pair ID for a string name, or 255 if unknown.
 func PairFromString(s string) uint8 {
 	switch s {

@@ -7,8 +7,8 @@ import "fmt"
 type CdOffer struct {
 	OfferID      string `json:"offerId"`
 	IsSell       bool   `json:"isSell"`
-	CdAmount     uint64 `json:"cdAmount"` // atomic units
-	CdTerm       uint32 `json:"cdTerm"`   // months
+	CdAmount     uint64 `json:"cdAmount"` // atomic units (HEAT)
+	CdTerm       uint32 `json:"cdTerm"`   // epochs (6, 18, 36, 72)
 	CdEpoch      uint32 `json:"cdEpoch"`
 	CdKeyImage   string `json:"cdKeyImage"`
 	AskPrice     uint64 `json:"askPrice"` // atomic units XFG
@@ -55,9 +55,8 @@ func (c *FuegoClient) GetCdOffers(amount uint64) ([]CdOffer, error) {
 		Status string    `json:"status"`
 	}
 	if err := c.post("/getcdoffers", req, &resp); err != nil {
-		// Endpoint does not yet exist — return empty list, not a fatal error,
-		// so the rest of FetchAll continues normally.
-		return nil, nil //nolint:nilerr
+		// Endpoint does not yet exist — return the error so FetchAll can handle it
+		return nil, err
 	}
 	return resp.Offers, nil
 }
@@ -112,10 +111,29 @@ func (w *WalletClient) CreateCd(amount uint64, term uint32) (*CreateCdResponse, 
 	return &outer.Result, nil
 }
 
-// AcceptCdOffer is not yet implemented — no real daemon equivalent for
-// co-signed CD transfers exists.
-func (c *FuegoClient) AcceptCdOffer(offerID, buyerCommitKey string) (*AcceptCdResponse, error) {
-	return nil, fmt.Errorf("not yet implemented: /acceptcd — no real daemon equivalent")
+// AcceptCdOffer attempts to accept a CD offer via the wallet's accept_cd
+// JSON-RPC method. Returns an error if the daemon does not yet support this.
+func (w *WalletClient) AcceptCdOffer(offerID string) (*AcceptCdResponse, error) {
+	var outer struct {
+		Result AcceptCdResponse `json:"result"`
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
+	}
+	if err := w.fc.post("/json_rpc", map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "accept_cd",
+		"params": map[string]interface{}{
+			"offer_id": offerID,
+		},
+		"id": 1,
+	}, &outer); err != nil {
+		return nil, fmt.Errorf("accept_cd: %w", err)
+	}
+	if outer.Error != nil {
+		return nil, fmt.Errorf("accept_cd: %s", outer.Error.Message)
+	}
+	return &outer.Result, nil
 }
 
 // SubmitCdOffer is not yet implemented on FuegoClient.
@@ -130,11 +148,16 @@ func (c *FuegoClient) CancelCdOffer(offerID, pubKey, sig string) error {
 	return fmt.Errorf("not yet implemented: /cancelcd — no real daemon equivalent")
 }
 
-// CdDiscount returns the discount percentage vs face value.
+// HEAT_LAUNCH_RATIO is the launch conversion: 1 HEAT = 10 XFG.
+const HEAT_LAUNCH_RATIO uint64 = 10
+
+// CdDiscount returns the discount percentage vs face value in XFG.
+// cdAmount is in HEAT atomic units, askPrice is in XFG atomic units.
 // Negative = selling below face value (discount), positive = premium.
 func CdDiscount(cdAmount, askPrice uint64) float64 {
 	if cdAmount == 0 {
 		return 0
 	}
-	return (float64(askPrice) - float64(cdAmount)) / float64(cdAmount) * 100.0
+	faceValueXfg := cdAmount * HEAT_LAUNCH_RATIO
+	return (float64(askPrice) - float64(faceValueXfg)) / float64(faceValueXfg) * 100.0
 }

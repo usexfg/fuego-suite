@@ -24,18 +24,71 @@ const (
 	ChartLine
 )
 
+// Chart timeframes
+var timeframes = []time.Duration{
+	5 * time.Minute,
+	15 * time.Minute,
+	1 * time.Hour,
+	4 * time.Hour,
+	24 * time.Hour,
+	7 * 24 * time.Hour,
+}
+
+func prevTimeframe(tf time.Duration) time.Duration {
+	for i := len(timeframes) - 1; i >= 0; i-- {
+		if timeframes[i] < tf {
+			return timeframes[i]
+		}
+	}
+	return timeframes[len(timeframes)-1]
+}
+
+func nextTimeframe(tf time.Duration) time.Duration {
+	for i := 0; i < len(timeframes); i++ {
+		if timeframes[i] > tf {
+			return timeframes[i]
+		}
+	}
+	return timeframes[0]
+}
+
+func timeframeLabel(tf time.Duration) string {
+	switch tf {
+	case 5 * time.Minute:
+		return "5m"
+	case 15 * time.Minute:
+		return "15m"
+	case 1 * time.Hour:
+		return "1h"
+	case 4 * time.Hour:
+		return "4h"
+	case 24 * time.Hour:
+		return "1d"
+	case 7 * 24 * time.Hour:
+		return "1w"
+	default:
+		return "?"
+	}
+}
+
 // RenderChart draws ASCII candlestick chart for the given trades.
-func RenderChart(trades []SwapTrade, width, height int) string {
-	return renderChartMode(trades, width, height, ChartCandles)
+// If daemonCandles is non-nil, those are used directly (better for longer timeframes).
+func RenderChart(trades []SwapTrade, width, height int, tf time.Duration, daemonCandles []DaemonCandle) string {
+	return renderChartMode(trades, width, height, ChartCandles, tf, daemonCandles)
 }
 
 // RenderChartLine draws an ASCII line chart for the given trades.
-func RenderChartLine(trades []SwapTrade, width, height int) string {
-	return renderChartMode(trades, width, height, ChartLine)
+func RenderChartLine(trades []SwapTrade, width, height int, tf time.Duration, daemonCandles []DaemonCandle) string {
+	return renderChartMode(trades, width, height, ChartLine, tf, daemonCandles)
 }
 
-func renderChartMode(trades []SwapTrade, width, height int, mode ChartMode) string {
-	candles := BucketCandles(trades, 5*time.Minute)
+func renderChartMode(trades []SwapTrade, width, height int, mode ChartMode, tf time.Duration, daemonCandles []DaemonCandle) string {
+	var candles []Candle
+	if len(daemonCandles) > 0 {
+		candles = convertDaemonCandles(daemonCandles)
+	} else {
+		candles = BucketCandles(trades, tf)
+	}
 	if len(candles) == 0 {
 		placeholder := StyleMuted.Render("  awaiting trades...")
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, placeholder)

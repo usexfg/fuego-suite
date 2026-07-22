@@ -14,6 +14,16 @@ import (
 
 const refreshInterval = 5 * time.Second
 
+// truncHex safely truncates a hex string to maxLen visible characters,
+// returning "..." suffix if truncated. Never panics on short strings.
+func truncHex(s string, maxLen int) string {
+	r := []rune(s)
+	if len(r) <= maxLen {
+		return s
+	}
+	return string(r[:maxLen]) + "..."
+}
+
 type tuiModel struct {
 	cfg    Config
 	client *FuegoClient
@@ -68,8 +78,23 @@ type tuiModel struct {
 	// P2P order entry
 	orderEntry orderEntryModel
 
+	// Open orders panel
+	openOrders openOrdersModel
+
+	// Trade history panel
+	tradeHistory tradeHistoryModel
+
+	// Fill tracking: pending orders with partial fills
+	pendingOrders map[string]uint64 // orderId → original amount
+
 	// Chart mode: candlestick or line
 	chartMode ChartMode
+
+	// Order book aggregation: raw or aggregated
+	aggMode bool // false=raw, true=aggregated
+
+	// Chart timeframe
+	chartTimeframe time.Duration
 }
 
 // ── Messages ──
@@ -105,6 +130,7 @@ type bridgeAttemptMsg struct {
 // P2P order messages
 type placeOrderResultMsg struct {
 	result *PlaceOrderResult
+	amount uint64 // original order amount for fill tracking
 	err    error
 }
 
@@ -137,6 +163,8 @@ func newTuiModel(cfg Config) tuiModel {
 		activePair:       cfg.StartPair,
 		daemonStatusAddr: daemonAddr,
 		bridgeAttempted:  make(map[uint8]bool),
+		pendingOrders:    make(map[string]uint64),
+		chartTimeframe:   5 * time.Minute,
 		data: &AllPairData{
 			Offers:   make(map[uint8][]SwapOffer),
 			Prices:   make(map[uint8]*SwapPriceResponse),
@@ -262,6 +290,32 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Delegate to open orders panel when active
+	if m.openOrders.active {
+		var cmd tea.Cmd
+		m.openOrders, cmd = m.openOrders.Update(msg)
+		if cmd != nil {
+			return m, cmd
+		}
+		if !m.openOrders.active {
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Delegate to trade history panel when active
+	if m.tradeHistory.active {
+		var cmd tea.Cmd
+		m.tradeHistory, cmd = m.tradeHistory.Update(msg)
+		if cmd != nil {
+			return m, cmd
+		}
+		if !m.tradeHistory.active {
+			return m, nil
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -281,6 +335,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.data = msg.data
 			m.cdMarket.offers = msg.data.CdOffers
 			m.cdMarket.prices = msg.data.CdPrices
+			m.cdMarket.currentHeight = msg.data.Height
 		}
 		if msg.balance != nil {
 			m.balance = msg.balance
@@ -330,9 +385,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = "order failed: " + msg.err.Error()
 		} else if msg.result != nil {
 			if msg.result.Filled > 0 {
-				m.statusMsg = fmt.Sprintf("order %s placed, filled %d", msg.result.OrderId[:8], msg.result.Filled)
+				m.statusMsg = fmt.Sprintf("order %s placed, filled %d", truncHex(msg.result.OrderId, 8), msg.result.Filled)
 			} else {
-				m.statusMsg = "order placed: " + msg.result.OrderId[:8]
+				m.statusMsg = "order placed: " + truncHex(msg.result.OrderId, 8)
+			}
+			// Track partially filled orders for live fill updates
+			if msg.amount > 0 && msg.result.Filled < msg.amount {
+				m.pendingOrders[msg.result.OrderId] = msg.amount
 			}
 		}
 
@@ -341,6 +400,52 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = "cancel failed: " + msg.err.Error()
 		} else {
 			m.statusMsg = "order cancelled"
+		}
+
+	case openOrdersFetchedMsg:
+		if msg.err != nil {
+			m.lastErr = "failed to fetch orders: " + msg.err.Error()
+		} else {
+			m.openOrders.open(msg.orders)
+		}
+
+	case tradeHistoryFetchedMsg:
+		if msg.err != nil {
+			m.lastErr = "failed to fetch trade history: " + msg.err.Error()
+		} else {
+			m.tradeHistory.open(msg.trades)
+		}
+
+	case cancelOrderRequestMsg:
+		client := m.client
+		orderId := msg.orderId
+		return m, func() tea.Msg {
+			err := client.CancelOrder(orderId)
+			return cancelOrderResultMsg{err: err}
+		}
+
+	case cdCreateRequestMsg:
+		wallet := m.wallet
+		amountAtomic := uint64(msg.amountXfg * 1e7)
+		term := msg.termEpochs
+		return m, func() tea.Msg {
+			resp, err := wallet.CreateCd(amountAtomic, term)
+			return cdCreateResultMsg{resp: resp, err: err}
+		}
+
+	case cdCreateResultMsg:
+		if msg.err != nil {
+			m.lastErr = "create CD failed: " + msg.err.Error()
+		} else if msg.resp != nil {
+			m.statusMsg = fmt.Sprintf("CD created: tx=%s deposit=%d unlock=blk%d",
+				truncHex(msg.resp.TxHash, 16), msg.resp.DepositID, msg.resp.UnlockHeight)
+		}
+
+	case cdAcceptResultMsg:
+		if msg.err != nil {
+			m.lastErr = "accept CD failed: " + msg.err.Error()
+		} else if msg.resp != nil {
+			m.statusMsg = fmt.Sprintf("CD accepted: partial_tx=%s", truncHex(msg.resp.PartialTx, 20))
 		}
 	}
 
@@ -365,7 +470,7 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdBuf = m.cmdBuf[:len(m.cmdBuf)-1]
 			}
 		default:
-			if len(k) == 1 {
+			if len(k) == 1 && len(m.cmdBuf) < 256 {
 				m.cmdBuf += k
 			}
 		}
@@ -386,7 +491,11 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.fetchData()
 	case "?":
-		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  t:TradingView  /:cmd  r:refresh  q:quit"
+		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  o:orders  h:history  t:TradingView  /:cmd  r:refresh  q:quit"
+	case "o":
+		return m, m.toggleOpenOrders()
+	case "h":
+		return m, m.toggleTradeHistory()
 	}
 
 	// Sidebar view navigation
@@ -430,6 +539,15 @@ func (m tuiModel) handleMarketsKey(k string) (tea.Model, tea.Cmd) {
 			m.chartMode = ChartCandles
 		}
 		return m, nil
+	case "d":
+		m.aggMode = !m.aggMode
+		return m, nil
+	case "[":
+		m.chartTimeframe = prevTimeframe(m.chartTimeframe)
+		return m, nil
+	case "]":
+		m.chartTimeframe = nextTimeframe(m.chartTimeframe)
+		return m, nil
 	default:
 		if len(k) == 1 {
 			r := rune(k[0])
@@ -446,6 +564,13 @@ func (m tuiModel) handleMarketsKey(k string) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) handleCDKey(k string) (tea.Model, tea.Cmd) {
+	// Delegate to CD model if create form is active
+	if m.cdMarket.createActive {
+		var cmd tea.Cmd
+		m.cdMarket, cmd = m.cdMarket.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		return m, cmd
+	}
+
 	switch k {
 	case "up":
 		m.cdMarket.moveUp()
@@ -453,8 +578,20 @@ func (m tuiModel) handleCDKey(k string) (tea.Model, tea.Cmd) {
 		m.cdMarket.moveDown()
 	case "enter":
 		if o := m.cdMarket.selectedOffer(); o != nil {
-			m.statusMsg = fmt.Sprintf("accept offer %s (enter: confirm <addr> <amt> <pair>)", o.OfferID[:min(12, len(o.OfferID))])
+			offerID := o.OfferID
+			m.statusMsg = fmt.Sprintf("accepting CD offer %s...", truncHex(offerID, 12))
+			return m, func() tea.Msg {
+				wallet := m.wallet
+				resp, err := wallet.AcceptCdOffer(offerID)
+				return cdAcceptResultMsg{resp: resp, err: err}
+			}
 		}
+	case "n":
+		m.cdMarket.createActive = true
+		m.cdMarket.createAmount = ""
+		m.cdMarket.createTerm = ""
+		m.cdMarket.createFocus = 0
+		m.cdMarket.createErr = ""
 	}
 	return m, nil
 }
@@ -535,7 +672,11 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 
 	// ── P2P order entry form ──
 	case "order", "placeorder":
-		m.orderEntry.open(m.activePair)
+		var bal uint64
+		if m.balance != nil {
+			bal = m.balance.Available
+		}
+		m.orderEntry.open(m.activePair, bal)
 		m.cmdBuf = ""
 		m.cmdFocus = false
 		return nil
@@ -573,9 +714,7 @@ func (m *tuiModel) handleCommand(cmd string) tea.Cmd {
 
 	// ── Help ──
 	case "help":
-		m.statusMsg = "swap <amt> | order | cancelorder <id> | myorders | tv | pair <name> | m:c:s | legend | connect | q:quit"
-	case "legend":
-		m.statusMsg = "Ticker: ETH 214,000 ($2140) → rate=on-chain XFG/ETH (TWAP), ($)=DeFiLlama ref USD"
+		m.statusMsg = "swap <amt> | order | cancelorder <id> | myorders | tv | pair <name> | m:c:s | connect | q:quit"
 
 	default:
 		m.statusMsg = "unknown: " + cmd + " (type help)"
@@ -657,7 +796,7 @@ func (m *tuiModel) executeSwap() tea.Cmd {
 			"pair":        pair,
 			"makerPubKey": res.MakerPubKey,
 			"signature":   res.Signature,
-			"ttlBlocks":   uint32(8640),
+			"ttlBlocks":   uint32(DefaultTTLBlocks),
 			"isSoftOrder": true,
 		}
 		var submitResp struct {
@@ -666,7 +805,7 @@ func (m *tuiModel) executeSwap() tea.Cmd {
 		if err := client.post("/submitswap", offerReq, &submitResp); err != nil {
 			return statusUpdateMsg{text: "submit failed: " + err.Error()}
 		}
-		return statusUpdateMsg{text: fmt.Sprintf("Swap posted: %s XFG for %s @ %s (%s...)", amount, PairShort(pair), rate, res.OfferID[:12])}
+		return statusUpdateMsg{text: fmt.Sprintf("Swap posted: %s XFG for %s @ %s (%s...)", amount, PairShort(pair), rate, truncHex(res.OfferID, 12))}
 	}
 }
 
@@ -883,13 +1022,13 @@ func (m *tuiModel) handleAcceptCDCmd(parts []string) tea.Cmd {
 		m.statusMsg = "no wallet connected"
 		return nil
 	}
-	client := m.client
+	wallet := m.wallet
 	return func() tea.Msg {
-		resp, err := client.AcceptCdOffer(offerID, "")
+		resp, err := wallet.AcceptCdOffer(offerID)
 		if err != nil {
 			return statusUpdateMsg{text: "accept_cd failed: " + err.Error()}
 		}
-		return statusUpdateMsg{text: fmt.Sprintf("partial tx ready (expires blk %d): %s...", resp.ExpiresAt, resp.PartialTx[:min(20, len(resp.PartialTx))])}
+		return statusUpdateMsg{text: fmt.Sprintf("partial tx ready (expires blk %d): %s...", resp.ExpiresAt, truncHex(resp.PartialTx, 20))}
 	}
 }
 
@@ -1024,6 +1163,36 @@ func (m tuiModel) View() string {
 		result = overlayAt(result, form, placeX, placeY)
 	}
 
+	// Open orders panel overlay
+	if m.openOrders.active {
+		panel := m.openOrders.View()
+		_, panelH := lipgloss.Size(panel)
+		placeY := (h - panelH) / 2
+		if placeY < 1 {
+			placeY = 1
+		}
+		placeX := sidebarW + (mainW-70)/2
+		if placeX < sidebarW+1 {
+			placeX = sidebarW + 1
+		}
+		result = overlayAt(result, panel, placeX, placeY)
+	}
+
+	// Trade history panel overlay
+	if m.tradeHistory.active {
+		panel := m.tradeHistory.View()
+		_, panelH := lipgloss.Size(panel)
+		placeY := (h - panelH) / 2
+		if placeY < 1 {
+			placeY = 1
+		}
+		placeX := sidebarW + (mainW-76)/2
+		if placeX < sidebarW+1 {
+			placeX = sidebarW + 1
+		}
+		result = overlayAt(result, panel, placeX, placeY)
+	}
+
 	return result
 }
 
@@ -1048,12 +1217,16 @@ func (m tuiModel) renderMarketsContent(w, h int) string {
 
 	// Chart (left)
 	trades := m.data.Trades[m.activePair]
+	daemonCandles := m.data.Candles[m.activePair]
 	var chart string
+	tfLabel := timeframeLabel(m.chartTimeframe)
+	chartTitle := StyleMuted.Render(fmt.Sprintf("CHART [%s]  [/] timeframe", tfLabel))
 	if m.chartMode == ChartLine {
-		chart = RenderChartLine(trades, leftW, chartH)
+		chart = RenderChartLine(trades, leftW, chartH, m.chartTimeframe, daemonCandles)
 	} else {
-		chart = RenderChart(trades, leftW, chartH)
+		chart = RenderChart(trades, leftW, chartH, m.chartTimeframe, daemonCandles)
 	}
+	chart = lipgloss.JoinVertical(lipgloss.Left, chartTitle, chart)
 	priceLine := RenderPriceLine(m.activePair, m.data.Prices, m.data.ExtPrices)
 	leftPanel := lipgloss.JoinVertical(lipgloss.Left, chart, priceLine)
 
@@ -1068,7 +1241,7 @@ func (m tuiModel) renderMarketsContent(w, h int) string {
 	}
 
 	book := m.data.Books[m.activePair]
-	ob := RenderOrderbook(book, rightW, obH)
+	ob := RenderOrderbook(book, rightW, obH, m.aggMode)
 	tape := RenderTape(m.data.Trades[m.activePair], rightW, tapeH)
 	rightPanel := lipgloss.JoinVertical(lipgloss.Left, ob, tape)
 
@@ -1113,7 +1286,7 @@ func RenderDaemonStatus(status *DaemonStatus, lastErr string, w, h int) string {
 		pairName := PairShort(uint8(o.Pair))
 		lines = append(lines,
 			fmt.Sprintf("  %s  %-8s %12d / %-12d XFG  rate=%d  height=%d",
-				o.OfferId[:8], pairName, avail, o.XfgAmount, o.RateNum, o.PostedHeight))
+				truncHex(o.OfferId, 8), pairName, avail, o.XfgAmount, o.RateNum, o.PostedHeight))
 	}
 
 	lines = append(lines, "")
@@ -1121,7 +1294,7 @@ func RenderDaemonStatus(status *DaemonStatus, lastErr string, w, h int) string {
 		pairName := PairShort(uint8(s.Pair))
 		lines = append(lines,
 			fmt.Sprintf("  %s  %-8s %-24s  timeout=%d",
-				s.SwapId[:8], pairName, s.State, s.TimeoutHeight))
+				truncHex(s.SwapId, 8), pairName, s.State, s.TimeoutHeight))
 	}
 
 	return strings.Join(lines, "\n")
@@ -1156,7 +1329,7 @@ func (m *tuiModel) executePlaceOrder() tea.Cmd {
 			_ = sig // signature is embedded in the order by the daemon
 		}
 		result, err := client.PlaceOrder(side, pair, price, amount, ttl)
-		return placeOrderResultMsg{result: result, err: err}
+		return placeOrderResultMsg{result: result, amount: amount, err: err}
 	}
 }
 
@@ -1186,10 +1359,76 @@ func (m *tuiModel) handleMyOrdersCmd(parts []string) tea.Cmd {
 		var lines []string
 		for _, o := range orders {
 			lines = append(lines, fmt.Sprintf("  %s  %s  %s  price=%d  amt=%d  filled=%d",
-				o.OrderId[:8], o.Side, PairShort(o.Pair), o.Price, o.Amount, o.Filled))
+				truncHex(o.OrderId, 8), o.Side, PairShort(o.Pair), o.Price, o.Amount, o.Filled))
 		}
 		return statusUpdateMsg{text: strings.Join(lines, "\n")}
 	}
+}
+
+func (m *tuiModel) toggleOpenOrders() tea.Cmd {
+	if m.openOrders.active {
+		m.openOrders.close()
+		return nil
+	}
+	client := m.client
+	return func() tea.Msg {
+		orders, err := client.GetOpenOrders("")
+		if err != nil {
+			return openOrdersFetchedMsg{err: err}
+		}
+		return openOrdersFetchedMsg{orders: orders}
+	}
+}
+
+type openOrdersFetchedMsg struct {
+	orders []OpenOrder
+	err    error
+}
+
+func (m *tuiModel) toggleTradeHistory() tea.Cmd {
+	if m.tradeHistory.active {
+		m.tradeHistory.close()
+		return nil
+	}
+	client := m.client
+	pair := m.activePair
+	return func() tea.Msg {
+		trades, err := client.GetTrades(pair, 200)
+		if err != nil {
+			return tradeHistoryFetchedMsg{err: err}
+		}
+		return tradeHistoryFetchedMsg{trades: trades}
+	}
+}
+
+type tradeHistoryFetchedMsg struct {
+	trades []SwapTrade
+	err    error
+}
+
+// splitAtVisual splits s at the given visual column, returning (left, right).
+// ANSI escape sequences are preserved but don't count toward visual width.
+func splitAtVisual(s string, col int) (string, string) {
+	width := 0
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' {
+			// skip ANSI escape sequence: ESC[ ... m
+			end := strings.IndexAny(s[i:], "mHJK")
+			if end == -1 {
+				i = len(s)
+			} else {
+				i += end + 1
+			}
+			continue
+		}
+		if width == col {
+			break
+		}
+		width++
+		i++
+	}
+	return s[:i], s[i:]
 }
 
 // overlayAt places an overlay string at position (x, y) over the base string.
@@ -1205,15 +1444,15 @@ func overlayAt(base, overlay string, x, y int) string {
 		bl := baseLines[ty]
 		olW := lipgloss.Width(ol)
 
-		if x+olW >= len(bl) {
+		if x+olW >= lipgloss.Width(bl) {
 			// Pad base line to accommodate overlay
 			bl = lipgloss.NewStyle().Width(x + olW).Render(bl)
 		}
 
-		// Build new line: base[left of x] + overlay + base[right of x+olW]
-		prefix := lipgloss.NewStyle().Inline(true).Width(x).Render("")
-		_ = prefix
-		baseLines[ty] = bl[:x] + ol + bl[x+olW:]
+		left, right := splitAtVisual(bl, x)
+		// Trim right side to olW visual columns
+		_, right = splitAtVisual(right, olW)
+		baseLines[ty] = left + ol + right
 	}
 
 	return strings.Join(baseLines, "\n")

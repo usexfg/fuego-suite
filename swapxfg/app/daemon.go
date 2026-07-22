@@ -34,7 +34,7 @@ func RunHeadless(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("wallet address: %w", err)
 	}
-	log.Printf("wallet connected: %s...%s", addr[:12], addr[len(addr)-8:])
+	log.Printf("wallet connected: %s", truncHex(addr, 20))
 
 	info, err := client.GetInfo()
 	if err != nil {
@@ -53,7 +53,7 @@ func RunHeadless(cfg Config) error {
 			totalOffers += len(offers)
 		}
 		resp := map[string]interface{}{
-			"wallet":    addr[:12] + "...",
+			"wallet":    truncHex(addr, 12),
 			"connected": wallet.IsConnected(),
 			"offers":    totalOffers,
 		}
@@ -124,7 +124,7 @@ func RunHeadless(cfg Config) error {
 			return
 		}
 
-		log.Printf("soft order posted: %s", signed.OfferID[:12])
+		log.Printf("soft order posted: %s", truncHex(signed.OfferID, 12))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"offerId": signed.OfferID,

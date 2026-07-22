@@ -10,9 +10,47 @@ import (
 
 const priceDivisor = 1e7 // prices are in piconeros
 
+// aggregateLevels merges price levels within 1% of each other into buckets.
+// Levels closer to the spread keep fine granularity, levels further out are coarser.
+func aggregateLevels(levels []OrderBookLevel) []OrderBookLevel {
+	if len(levels) == 0 {
+		return levels
+	}
+
+	var result []OrderBookLevel
+	current := levels[0]
+
+	for i := 1; i < len(levels); i++ {
+		next := levels[i]
+		// Check if within 1% of current bucket's price
+		curPrice := float64(current.Price)
+		nextPrice := float64(next.Price)
+		if curPrice > 0 && nextPrice > 0 {
+			diff := nextPrice - curPrice
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff/curPrice < 0.01 {
+				// Merge into current bucket (check for overflow)
+				if next.Amount > 0 && current.Amount+next.Amount < current.Amount {
+					current.Amount = ^uint64(0) // cap at max
+				} else {
+					current.Amount += next.Amount
+				}
+				continue
+			}
+		}
+		result = append(result, current)
+		current = next
+	}
+	result = append(result, current)
+	return result
+}
+
 // RenderOrderbook draws a depth-ladder orderbook from an OrderBookSnapshot.
 // Asks are shown with lowest at bottom (near spread), bids with highest at top (near spread).
-func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
+// If aggregate is true, levels within 1% of each other are merged into buckets.
+func RenderOrderbook(book *OrderBookSnapshot, width, height int, aggregate bool) string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(ColorActiveTab).
 		Width(width).Align(lipgloss.Center).Render("ORDER BOOK")
 
@@ -24,6 +62,14 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 		return lipgloss.JoinVertical(lipgloss.Left, title, sep, empty)
 	}
 
+	// Aggregate levels if requested
+	asks := book.Asks
+	bids := book.Bids
+	if aggregate {
+		asks = aggregateLevels(asks)
+		bids = aggregateLevels(bids)
+	}
+
 	// Reserve rows: 2 header/sep, 1 spread line, 1 footer = 4
 	maxRows := height - 4
 	if maxRows < 2 {
@@ -31,7 +77,7 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 	}
 
 	// Show asks (reversed so lowest ask is at bottom, nearest spread)
-	askCount := len(book.Asks)
+	askCount := len(asks)
 	askShow := askCount
 	if askShow > maxRows/2 {
 		askShow = maxRows / 2
@@ -41,7 +87,7 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 	}
 
 	// Show bids (best bid at top, nearest spread at bottom)
-	bidCount := len(book.Bids)
+	bidCount := len(bids)
 	bidShow := bidCount
 	if bidShow > maxRows-askShow {
 		bidShow = maxRows - askShow
@@ -55,7 +101,7 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 	depth := uint64(0)
 	for i := askCount - askShow; i < askCount; i++ {
 		if i >= 0 && i < askCount {
-			depth += book.Asks[i].Amount
+			depth += asks[i].Amount
 			if depth > maxDepth {
 				maxDepth = depth
 			}
@@ -63,7 +109,7 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 	}
 	depth = 0
 	for i := 0; i < bidShow && i < bidCount; i++ {
-		depth += book.Bids[i].Amount
+		depth += bids[i].Amount
 		if depth > maxDepth {
 			maxDepth = depth
 		}
@@ -91,7 +137,7 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 	}
 	cumDepth := uint64(0)
 	for i := askCount - 1; i >= askStart; i-- {
-		lvl := book.Asks[i]
+		lvl := asks[i]
 		cumDepth += lvl.Amount
 		price := float64(lvl.Price) / priceDivisor
 		amtXfg := float64(lvl.Amount) / priceDivisor
@@ -110,20 +156,36 @@ func RenderOrderbook(book *OrderBookSnapshot, width, height int) string {
 
 	// Spread line
 	spreadStr := "—"
-	if len(book.Asks) > 0 && len(book.Bids) > 0 {
-		bestAsk := float64(book.Asks[0].Price) / priceDivisor
-		bestBid := float64(book.Bids[0].Price) / priceDivisor
-		spreadStr = fmt.Sprintf("%.5f", bestAsk-bestBid)
+	pctStr := ""
+	midStr := ""
+	if len(asks) > 0 && len(bids) > 0 {
+		bestAsk := float64(asks[0].Price) / priceDivisor
+		bestBid := float64(bids[0].Price) / priceDivisor
+		spread := bestAsk - bestBid
+		spreadStr = fmt.Sprintf("%.5f", spread)
+		mid := (bestAsk + bestBid) / 2
+		midStr = fmt.Sprintf("mid %.5f", mid)
+		if mid > 0 {
+			pct := spread / mid * 100
+			pctStr = fmt.Sprintf("%.2f%%", pct)
+		}
+	}
+	spreadRender := fmt.Sprintf("━━ spread %s", spreadStr)
+	if pctStr != "" {
+		spreadRender += fmt.Sprintf(" (%s)", pctStr)
+	}
+	if midStr != "" {
+		spreadRender += fmt.Sprintf("  %s", midStr)
 	}
 	spreadLine := StyleSpread.Render(
 		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).
-			Render(fmt.Sprintf("━━ spread %s ━━", spreadStr)))
+			Render(spreadRender + " ━━"))
 	lines = append(lines, spreadLine)
 
 	// Bids: show the `bidShow` best bids, top row = highest bid (best bid)
 	depth = 0
 	for i := 0; i < bidShow && i < bidCount; i++ {
-		lvl := book.Bids[i]
+		lvl := bids[i]
 		depth += lvl.Amount
 		price := float64(lvl.Price) / priceDivisor
 		amtXfg := float64(lvl.Amount) / priceDivisor

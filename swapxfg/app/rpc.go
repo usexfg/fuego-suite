@@ -14,6 +14,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// Default limits for RPC calls
+const (
+	DefaultTradesLimit    = 50
+	DefaultOrderBookDepth = 20
+	DefaultCandlesLimit   = 200
+	DefaultTTLBlocks      = 8640
+)
+
 // FuegoClient talks to a fuegod node via JSON-RPC.
 type FuegoClient struct {
 	endpoint     string
@@ -308,6 +316,30 @@ func (c *FuegoClient) GetOpenOrders(address string) ([]OpenOrder, error) {
 	return resp.Orders, nil
 }
 
+// DaemonCandle represents a single OHLCV candle from the daemon RPC.
+type DaemonCandle struct {
+	Timestamp uint64  `json:"timestamp"`
+	Open      float64 `json:"open"`
+	High      float64 `json:"high"`
+	Low       float64 `json:"low"`
+	Close     float64 `json:"close"`
+	Volume    float64 `json:"volume"`
+}
+
+// GetCandles fetches OHLCV candle data from the daemon.
+// Returns nil, nil if the daemon doesn't support this endpoint.
+func (c *FuegoClient) GetCandles(pair uint8, interval string, limit int) ([]DaemonCandle, error) {
+	req := map[string]interface{}{"pair": pair, "interval": interval, "limit": limit}
+	var resp struct {
+		Candles []DaemonCandle `json:"candles"`
+		Status  string         `json:"status"`
+	}
+	if err := c.post("/getcandles", req, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Candles, nil
+}
+
 func (c *FuegoClient) GetInfo() (*NodeInfo, error) {
 	var resp NodeInfo
 	if err := c.post("/getinfo", nil, &resp); err != nil {
@@ -325,6 +357,7 @@ type AllPairData struct {
 	Prices      map[uint8]*SwapPriceResponse
 	Trades      map[uint8][]SwapTrade
 	Books       map[uint8]*OrderBookSnapshot // new P2P orderbook (bids/asks depth)
+	Candles     map[uint8][]DaemonCandle     // daemon OHLCV candles (nil if unsupported)
 	Height      uint64
 	CdOffers    []CdOffer
 	CdPrices    map[uint64]*CdPriceStats // keyed by CD amount tier
@@ -343,6 +376,7 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		Prices:   make(map[uint8]*SwapPriceResponse),
 		Trades:   make(map[uint8][]SwapTrade),
 		Books:    make(map[uint8]*OrderBookSnapshot),
+		Candles:  make(map[uint8][]DaemonCandle),
 		CdPrices: make(map[uint64]*CdPriceStats),
 	}
 
@@ -368,10 +402,10 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		mu.Unlock()
 	}()
 
-	// Fetch offers + prices + trades + orderbook per pair
+	// Fetch offers + prices + trades + orderbook + candles per pair
 	for _, pair := range pairs {
 		p := pair
-		wg.Add(4)
+		wg.Add(5)
 		go func() {
 			defer wg.Done()
 			offers, err := c.GetOffers(p)
@@ -396,7 +430,7 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		}()
 		go func() {
 			defer wg.Done()
-			trades, err := c.GetTrades(p, 50)
+			trades, err := c.GetTrades(p, DefaultTradesLimit)
 			mu.Lock()
 			if err == nil {
 				data.Trades[p] = trades
@@ -407,13 +441,23 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 		}()
 		go func() {
 			defer wg.Done()
-			book, err := c.GetOrderBook(p, 20)
+			book, err := c.GetOrderBook(p, DefaultOrderBookDepth)
 			mu.Lock()
 			if err == nil {
 				data.Books[p] = book
 			} else if firstErr == nil {
 				firstErr = err
 			}
+			mu.Unlock()
+		}()
+		go func() {
+			defer wg.Done()
+			candles, err := c.GetCandles(p, "auto", DefaultCandlesLimit)
+			mu.Lock()
+			if err == nil && len(candles) > 0 {
+				data.Candles[p] = candles
+			}
+			// Don't set firstErr — candles are optional (daemon may not support)
 			mu.Unlock()
 		}()
 	}
@@ -423,20 +467,30 @@ func (c *FuegoClient) FetchAll(pairs []uint8) (*AllPairData, error) {
 	go func() {
 		defer wg.Done()
 		offers, err := c.GetCdOffers(0)
-		mu.Lock()
-		if err == nil {
-			data.CdOffers = offers
-			// Fetch price stats for each distinct CD amount tier
-			seen := make(map[uint64]bool)
-			for _, o := range offers {
-				if seen[o.CdAmount] {
-					continue
-				}
-				seen[o.CdAmount] = true
-				if ps, err2 := c.GetCdPrice(o.CdAmount); err2 == nil {
-					data.CdPrices[o.CdAmount] = ps
-				}
+		if err != nil {
+			mu.Lock()
+			if firstErr == nil {
+				firstErr = err
 			}
+			mu.Unlock()
+			return
+		}
+		// Collect price stats outside the mutex to avoid blocking other goroutines
+		prices := make(map[uint64]*CdPriceStats)
+		seen := make(map[uint64]bool)
+		for _, o := range offers {
+			if seen[o.CdAmount] {
+				continue
+			}
+			seen[o.CdAmount] = true
+			if ps, err2 := c.GetCdPrice(o.CdAmount); err2 == nil {
+				prices[o.CdAmount] = ps
+			}
+		}
+		mu.Lock()
+		data.CdOffers = offers
+		for k, v := range prices {
+			data.CdPrices[k] = v
 		}
 		mu.Unlock()
 	}()
@@ -467,6 +521,8 @@ func (c *FuegoClient) ResolveAlias(alias string) (string, bool) {
 
 // --- HTTP helper ---
 
+const maxRPCResponseSize = 1 << 20 // 1 MiB
+
 func (c *FuegoClient) post(path string, reqBody interface{}, result interface{}) error {
 	var body io.Reader
 	if reqBody != nil {
@@ -496,9 +552,12 @@ func (c *FuegoClient) post(path string, reqBody interface{}, result interface{})
 		return fmt.Errorf("rpc: server returned %d %s", resp.StatusCode, resp.Status)
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRPCResponseSize+1))
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(raw)) > maxRPCResponseSize {
+		return fmt.Errorf("rpc response %s exceeds %d bytes", path, maxRPCResponseSize)
 	}
 
 	if err := json.Unmarshal(raw, result); err != nil {

@@ -18,68 +18,35 @@ The TUI (`swapxfg/app/`) is a Bubbletea app with:
 
 | Feature | Status |
 |---------|--------|
-| Multi-pair display (SOL/ETH/XMR/BCH/ARB) | done |
+| Multi-pair display (SOL/ETH/XMR/BCH/ARB/BASE/BNB) | done |
 | P2P orderbook depth ladder (asks/bids) | done |
+| Order book aggregation (toggle raw/agg with `d`) | done |
+| Spread line (absolute + percentage + mid-price) | done |
 | Trade tape (recent fills) | done |
-| Price chart (ASCII) | done |
+| Price chart (ASCII, candlestick + line) | done |
+| Chart timeframes (5m/15m/1h/4h/1d/1w via `[/]`) | done |
+| Chart daemon candles (OHLCV from `/getcandles`) | done |
 | Swap modal (sign + submit) | done |
 | Order entry form overlay | done |
+| Amount validation (min 10 XFG, balance check) | done |
+| Fill tracking (post-place partial fill %) | done |
+| Form keyboard help (contextual hints) | done |
+| Pair switch in order form (`p` key) | done |
+| Open orders panel (`O` key, select + cancel) | done |
+| Trade history panel (`h` key, scrollable) | done |
 | Bridge connect (ETH/SOL/BCH) | done |
 | Wallet balance in input bar | done |
 | Daemon status view | done |
-| CD offer list | done |
+| CD market depth ladder (aggregated by tier) | done |
+| CD create form (`n` key, amount + term) | done |
 
 ## What's missing
 
-### 1. Open orders panel
-No persistent view of your own open orders. `myorders` dumps to status bar text — should be a dedicated panel or overlay.
+### 1. CD create form submit
+CD create form renders but `Enter` on submit doesn't call `CreateCd` RPC yet.
 
-**Implementation**: Add `OpenOrders` field to `tuiModel`, fetch in `FetchAll`. Render as a persistent bottom panel in markets view or a toggleable overlay (`O` key). Show orderId, side, pair, price, amount, filled, TTL countdown. Allow selection + cancel via Enter or `x`.
-
-### 2. Trade history panel
-Tape shows last N trades but no scrollable history. Useful for checking fills.
-
-**Implementation**: `GET /trades?pair=X&limit=100` RPC (may need daemon-side addition). Render as scrollable list in overlay (`h` key) or replace tape on toggle.
-
-### 3. Partial fill feedback
-When an order is placed and partially filled, the TUI shows a one-shot status message. No tracking of unfilled portion.
-
-**Implementation**: After `PlaceOrder`, if `filled < amount`, store the orderId + remaining amount. On each refresh tick, check `myorders` for fill updates. Show live fill progress in status bar or open orders panel.
-
-### 4. Order book spread line
-The depth ladder shows asks and bids but no explicit spread indicator between best bid and best ask.
-
-**Implementation**: Already computed in `RenderOrderbook` (spread line). Verify it renders at the boundary between asks and bids sections with the spread value displayed.
-
-### 5. Amount input validation
-Order entry form accepts any string. No guard against amounts exceeding wallet balance or below minimum trade size.
-
-**Implementation**: In `ParseAmount()`, validate against `m.balance.Available` (if wallet connected). Show warning in form if amount > balance. Add minimum amount constant (e.g., 10 XFG = 100000000 atomic).
-
-### 6. Pair quick-switch from order entry
-Order entry form defaults to `m.activePair` but has no way to change pair without closing the form.
-
-**Implementation**: Add `p` key in order entry form to cycle pairs. Or add a pair selector field to the form.
-
-### 7. Order book depth aggregation
-Current depth ladder shows individual price levels. For active pairs with many levels, this is noisy.
-
-**Implementation**: Aggregate levels within 1% of each other into buckets. Show fine granularity near spread, coarse granularity further out. Toggle with `d` key (raw / aggregated).
-
-### 8. Keyboard shortcut reference
-`?` shows a one-line help string. No discoverability for form-specific keys.
-
-**Implementation**: When order entry is active, show form-specific help line (Tab/ShiftTab: navigate, Space: toggle side, Enter: submit, Esc: cancel). When swap modal is active, show (y: confirm, n: cancel). Update help line contextually based on active overlay.
-
-### 9. Chart timeframe
-Chart is a single view of recent trades. No way to zoom in/out or switch timeframes.
-
-**Implementation**: Add `1h / 4h / 1d / 1w` timeframe selector. Fetch candle data via `GET /candles?pair=X&interval=1h`. Render with adaptive X-axis labels. `[/]` keys to cycle timeframes.
-
-### 10. CD market integration
-CD view shows offers but no orderbook or price ladder. CD trading is buy/sell at protocol-set rates.
-
-**Implementation**: Fetch CD orderbook via `GET /cdorderbook`. Render depth ladder same as P2P orderbook. Add CD-specific entry form (`cd order`).
+### 2. CD accept offer flow
+`Enter` on selected CD offer shows a status message but doesn't trigger accept/swap flow.
 
 ## Not planned
 
@@ -91,20 +58,22 @@ These are explicitly out of scope:
 - **Mobile/responsive layout**: Terminal-only app. Responsive is not a concern.
 - **Dark/light theme toggle**: Single theme, hardcoded. No plan to add theme switching.
 
-## Priority order
+## Completed
 
-| # | Item | Effort | Impact |
-|---|------|--------|--------|
-| 1 | Open orders panel | medium | high — you can't see your own orders |
-| 2 | Amount validation | small | high — prevents bad orders |
-| 3 | Fill tracking | medium | high — know when your order fills |
-| 4 | Form keyboard help | small | medium — discoverability |
-| 5 | Order book aggregation | medium | medium — reduces noise |
-| 6 | Trade history panel | medium | medium — audit trail |
-| 7 | Chart timeframes | medium | medium — analysis |
-| 8 | Pair switch in order form | small | low — minor QoL |
-| 9 | CD orderbook | large | low — CD is niche |
-| 10 | Spread line polish | small | low — already mostly there |
+All 10 original priority items are done:
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Open orders panel | done — `O` key overlay |
+| 2 | Amount validation | done — min 10 XFG, balance check |
+| 3 | Fill tracking | done — post-place partial fill % |
+| 4 | Form keyboard help | done — contextual hints |
+| 5 | Order book aggregation | done — `d` toggle, 1% buckets |
+| 6 | Trade history panel | done — `h` key overlay |
+| 7 | Chart timeframes | done — `[/]` cycles 5m→1w |
+| 8 | Pair switch in order form | done — `p` key cycles |
+| 9 | CD orderbook | done — depth ladder by tier |
+| 10 | Spread line polish | done — %, mid-price |
 
 ## Architecture notes
 

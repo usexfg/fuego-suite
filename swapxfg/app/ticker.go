@@ -80,8 +80,7 @@ func RenderTicker(activePair uint8, prices map[uint8]*SwapPriceResponse, ext *Ex
 			rate = pr.CompositeRate
 		}
 
-		// Rate = XFG per 1 CTR coin (on-chain swap rate)
-		// USD in parens = DeFiLlama reference (for context only)
+		// Show reference USD price in parentheses
 		ctrUsd := pairCtrUsd(p, ext)
 		label := fmt.Sprintf("%s %s", name, rate)
 		if ctrUsd != "" {

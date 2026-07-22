@@ -1,5 +1,5 @@
-// Copyright (c) 2017-2025 Fuego Developers
-// Copyright (c) 2020-2025 Elderfire Privacy Group
+// Copyright (c) 2017-2026 Fuego Developers
+// Copyright (c) 2020-2026 Elderfire Privacy Group
 // Copyright (c) 2014-2025 The Monero project
 //
 // This file is part of Fuego.

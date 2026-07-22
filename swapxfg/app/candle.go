@@ -80,3 +80,19 @@ func BucketCandles(trades []SwapTrade, interval time.Duration) []Candle {
 
 	return candles
 }
+
+// convertDaemonCandles converts daemon RPC candles to the local Candle type.
+func convertDaemonCandles(dc []DaemonCandle) []Candle {
+	candles := make([]Candle, len(dc))
+	for i, d := range dc {
+		candles[i] = Candle{
+			Time:   time.Unix(int64(d.Timestamp), 0),
+			Open:   d.Open,
+			High:   d.High,
+			Low:    d.Low,
+			Close:  d.Close,
+			Volume: d.Volume,
+		}
+	}
+	return candles
+}

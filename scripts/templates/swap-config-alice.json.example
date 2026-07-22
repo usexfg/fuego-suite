@@ -1,0 +1,48 @@
+{
+  "xfg_secret_key": "REPLACE_WITH_ALICE_64HEX_SPEND_SECRET_KEY",
+  "xfg_view_key": "REPLACE_WITH_ALICE_64HEX_VIEW_SECRET_KEY",
+
+  "xfg_wallet_rpc_host": "127.0.0.1",
+  "xfg_wallet_rpc_port": 18071,
+  "xfg_wallet_rpc_user": "",
+  "xfg_wallet_rpc_pass": "",
+
+  "eth_rpc_host": "127.0.0.1",
+  "eth_rpc_port": 8545,
+  "eth_chain_id": 31337,
+  "eth_priv_key": "REPLACE_WITH_ALICE_64HEX_ETH_PRIV_KEY",
+  "eth_address": "0xREPLACE_WITH_ALICE_ETH_ADDRESS",
+  "eth_htlc_bin_path": "",
+  "eth_htlc_registry": "0xREPLACE_WITH_DEPLOYED_HASHEDTIMELOCK",
+
+  "sol_rpc_host": "127.0.0.1",
+  "sol_rpc_port": 8899,
+  "sol_program_id": "REPLACE_WITH_XFG_HTLC_PROGRAM_ID",
+  "sol_keypair_path": "/path/to/alice-solana-keypair.json",
+
+  "arb_rpc_host": "",
+  "arb_rpc_port": 8547,
+  "arb_chain_id": 42161,
+  "arb_priv_key": "",
+  "arb_address": "",
+
+  "base_rpc_host": "",
+  "base_rpc_port": 8545,
+  "base_chain_id": 8453,
+  "base_priv_key": "",
+  "base_address": "",
+
+  "bch_rpc_host": "",
+  "bch_rpc_port": 8332,
+  "bch_rpc_user": "",
+  "bch_rpc_pass": "",
+  "bch_wif": "",
+  "bch_mode": "",
+
+  "xmr_daemon_host": "",
+  "xmr_daemon_port": 18081,
+  "xmr_wallet_host": "",
+  "xmr_wallet_port": 18082,
+  "xmr_spend_key": "",
+  "xmr_view_key": ""
+}

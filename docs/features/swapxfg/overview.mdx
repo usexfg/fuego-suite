@@ -1,0 +1,42 @@
+---
+title: "SwapXFG"
+description: "SwapXFG is the Fuego-facing swap and market UI/daemon surface for atomic swaps and related order flow."
+keywords: ["SwapXFG", "xfg-swapd", "atomic swap", "TUI", "orderbook"]
+---
+
+## What SwapXFG is
+
+**SwapXFG** is the product surface for **cross-chain atomic swaps** and related market UX on Fuego:
+
+- **`xfg-swapd`** — swap daemon (initiate/accept, chain clients, peer protocol, status)
+- **TUI / app** (`swapxfg/`) — operator and trader-facing UI (pairs, orderbook views, CD market surfaces, RPC)
+
+It is **not** Hearth. Hearth is the **on-chain XFG/HEAT** exchange. SwapXFG drives **atomic** XFG↔SOL/ETH/XMR/BCH/… flows and feeds **atomic-swap fee** policy that funds **HEAT CDs**.
+
+## Protocol shape (current)
+
+Modern path is **adaptor-signature atomic swaps** with an **Alice-locks** HTLC model on many counterparty chains:
+
+1. Keys + Musig2 joint escrow on XFG  
+2. Bob publishes adaptor secret commitment \(H(t)\)  
+3. Alice locks CTR with \(H(t)\)  
+4. Bob claims CTR with preimage \(t\) (on-chain secret reveal)  
+5. Alice extracts \(t\); collaborative spend of XFG escrow  
+
+Details and readiness: production review docs under `docs/review/` (lab/testnet status).
+
+## Supported pair labels
+
+Daemon pairs include SOL, ETH, XMR, BCH, ARB, BASE, and related EVM clones where configured. Readiness varies by chain client (see swap production checklist).
+
+## Fees
+
+- **Atomic swap (XFG side):** protocol fee split — majority toward **CD yield** (buy HEAT for depositors), minority **treasury** (see config constants).
+- **Hearth trades:** separate 0.3% to **LPs** — not SwapXFG atomic-swap fees.
+
+## Related
+
+- [How atomic swaps work](/features/atomic-swaps/how-swaps-work)
+- [Supported pairs](/features/atomic-swaps/supported-pairs)
+- [Hearth](/hearth/overview)
+- [HEAT CDs](/features/commitment-deposits/how-cds-work)

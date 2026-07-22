@@ -1,49 +1,53 @@
 ---
 title: "Fuego (XFG)"
-description: "A privacy-first blockchain with commitment deposits, atomic swaps, and on-chain liquidity."
-keywords: ["fuego", "xfg", "privacy", "blockchain", "commitment deposits", "atomic swaps"]
+description: "Privacy money + purchasing-power flatcoin HΞ∆₮, Hearth exchange, atomic swaps, and HEAT CDs."
+keywords: ["fuego", "xfg", "HEAT", "Hearth", "privacy", "flatcoin", "atomic swaps"]
 ---
 
-Fuego is a privacy-first blockchain built on CryptoNote with ring signatures. It gives you financial tools that traditional systems can't offer: locked deposits that earn yield without revealing your balance, trustless cross-chain swaps, and on-chain liquidity with private LP positions.
+Fuego is a privacy-first CryptoNote chain with **two native assets** and **two markets**:
 
-## What you can do with Fuego
+| Asset / surface | Role |
+|-----------------|------|
+| **XFG** | Private base money (dynamixn rings) |
+| **HΞ∆₮ (HEAT)** | Colored **flatcoin** (purchasing power; Fuego-only) |
+| **Hearth** | On-chain **XFG/HΞ∆₮** AMM + hybrid orderbook band |
+| **SwapXFG** | Cross-chain **atomic swaps** (XMR, ETH, SOL, BCH, …) |
+
+## What you can do
 
 <Columns cols={2}>
-  <Card title="Commitment deposits" icon="vault" href="/features/commitment-deposits/how-cds-work">
-    Lock XFG for a term and earn variable interest funded by atomic swap fees.
+  <Card title="HΞ∆₮ flatcoin" icon="flame" href="/heat/overview">
+    Burn XFG to mint HEAT. Launch purchasing-power reference \$1.58 — not a bank USD stablecoin.
   </Card>
-  <Card title="Atomic swaps" icon="arrow-left-right" href="/features/atomic-swaps/how-swaps-work">
-    Swap XFG with XMR, ETH, SOL, and BCH — trustless, no custodian required.
+  <Card title="Hearth" icon="chart-bar" href="/hearth/overview">
+    Trade XFG/HEAT. 0.3% fees go to LPs. Hybrid AMM + market band.
   </Card>
-  <Card title="LP swap pool" icon="chart-bar" href="/features/lp-pool/how-liquidity-works">
-    Provide liquidity and earn 0.3% on every trade through the pool.
+  <Card title="HEAT CDs" icon="vault" href="/features/commitment-deposits/how-cds-work">
+    Lock HEAT and earn yield funded by atomic-swap fee activity.
   </Card>
-  <Card title="HEAT burns" icon="flame" href="/features/heat-burns/what-are-burns">
-    Permanently burn XFG to earn HEAT tokens via zero-knowledge proofs.
+  <Card title="Atomic swaps / SwapXFG" icon="arrow-left-right" href="/features/swapxfg/overview">
+    Trustless cross-chain swaps; protocol fees feed CD yield (not Hearth LP fees).
   </Card>
 </Columns>
 
 ## Core properties
 
-**Privacy by default.** Ring signatures hide the sender in every transaction. Commitment deposits hide your balance and interest behind cryptographic commitments. No one can determine your deposit amount from on-chain data.
+**Privacy by default.** Dynamixn selects ring sizes **32, 16, or 8** (BMV 10+) from same-amount decoy pools. Subaddresses keep receives unlinkable to a single published address.
 
-**No counterparty risk.** Atomic swaps are enforced by cryptography, not escrow services. Commitment deposits are enforced by the consensus rules, not a bank. Your funds are controlled by your keys.
+**No counterparty risk on swaps.** Atomic swaps are cryptographic. CDs are consensus-enforced locks.
 
-**Transferable and compoundable.** Unlike traditional CDs, you can transfer a locked deposit to another party before maturity. You can also roll over a mature deposit to compound interest — the new deposit amount equals your principal plus accrued interest.
+**Purchasing-power asset.** HEAT is a **flatcoin**: launch reference **\$1.58** (USD purchasing power since Jan 2009). Intended path: adjust with inflation (quarterly) — not “print to peg \$1.”
 
-## Fee structure
-
-Two separate fee pools fund different parts of the system:
+## Fee structure (do not mix these up)
 
 | Fee | Source | Goes to |
 |-----|--------|---------|
-| 1% | XFG side of every atomic swap | CD interest pool |
-| 0.3% | Every trade through the LP pool | Liquidity providers |
+| Atomic-swap XFG fees | SwapXFG / cross-chain | Mostly **HEAT CD yield**; minority treasury |
+| Hearth 0.3% | XFG↔HEAT trades | **Liquidity providers** |
 
-These are completely independent. CD interest comes from swap activity, not LP trades.
+## Privacy & UX
 
-## Get started
-
-<Card title="Install and run Fuego" icon="rocket" href="/getting-started/installation">
-  Build from source or run with Docker. Five minutes to your first running node.
-</Card>
+- [Dynamixn](/privacy/dynamixn) — ring 32 / 16 / 8  
+- [Subaddresses](/privacy/subaddresses) — receive hygiene  
+- [Dual-asset architecture](/fuego-dual-asset-architecture)  
+- [Docs roadmap](/roadmap/docs-roadmap)  

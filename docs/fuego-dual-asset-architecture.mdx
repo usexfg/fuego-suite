@@ -1,0 +1,54 @@
+---
+title: "Dual-asset architecture"
+description: "XFG privacy money + HΞ∆₮ purchasing-power flatcoin on one chain, with separate fee pipes."
+keywords: ["XFG", "HEAT", "architecture", "Hearth", "atomic swap", "CD"]
+---
+
+## Two assets, one chain
+
+| Asset | Role |
+|-------|------|
+| **XFG** | Base privacy currency (ring signatures, decoy pools) |
+| **HΞ∆₮ (HEAT)** | Colored **flatcoin** (purchasing-power unit; Fuego-only) |
+
+HEAT is minted by **burning XFG**, held/spent as colored outputs, locked in **HEAT CDs**, and traded against XFG on **Hearth**.
+
+## Markets and fee pipes
+
+```text
+Cross-chain atomic swaps (SwapXFG)
+  → protocol XFG fees
+  → mostly CD yield (buy HEAT for HEAT CD holders)
+  → rest treasury
+
+Hearth (XFG/HEAT AMM + hybrid orderbook band)
+  → 0.3% swap fee
+  → liquidity providers (LPs)
+```
+
+These pipes **must not be conflated** in product copy.
+
+## Privacy stack (high level)
+
+- **Dynamixn** ring sizes **32 / 16 / 8** (BMV 10+)
+- Same-amount decoy selection
+- HEAT bill denominations for shared HEAT decoy pools
+- Subaddresses for receive hygiene
+- Roadmap privacy (MLSAG / hidden amounts on later majors) — see privacy roadmap docs
+
+## Activation majors (mainnet heights — code)
+
+| Version | Theme |
+|---------|--------|
+| V10 Wildfire | Dynamixn, aliases, dandelion+, SwapXFG foundations |
+| V11 HEATWAVE | HEAT + Hearth |
+| V12 SILENTFIRE | HEAT CDs, unified types, stronger privacy primitives |
+
+Testnet compresses these heights for local development.
+
+## Related
+
+- [HEAT overview](/heat/overview)
+- [Hearth](/hearth/overview)
+- [Dynamixn](/privacy/dynamixn)
+- [SwapXFG](/features/swapxfg/overview)

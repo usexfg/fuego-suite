@@ -1,0 +1,18 @@
+---
+title: "How to burn XFG"
+description: "Operator outline for minting HEAT by burning XFG."
+keywords: ["burn", "mint", "wallet", "HEAT"]
+---
+
+Exact wallet UI/RPC commands vary by release. Conceptually:
+
+1. Ensure wallet is synced and funded with XFG.  
+2. Invoke the burn/mint flow (wallet or RPC) specifying HEAT amount / burn amount per current UI.  
+3. Confirm HEAT balance and bill-split outputs.  
+4. Optionally open a HEAT CD or trade on Hearth.
+
+See developer RPC docs for the methods exposed in your build, and [HEAT overview](/heat/overview) for economics.
+
+<Warning>
+  Burns are irreversible. Confirm amounts carefully. HEAT is a flatcoin with a purchasing-power design — not a promise of \$1 USD redemption by a bank.
+</Warning>

@@ -34,7 +34,16 @@
     {
       "group": "Core architecture",
       "pages": [
-        "fuego-dual-asset-architecture"
+        "fuego-dual-asset-architecture",
+        "heat/overview",
+        "hearth/overview"
+      ]
+    },
+    {
+      "group": "Privacy",
+      "pages": [
+        "privacy/dynamixn",
+        "privacy/subaddresses"
       ]
     },
     {
@@ -49,8 +58,9 @@
       ]
     },
     {
-      "group": "Atomic swaps",
+      "group": "Atomic swaps & SwapXFG",
       "pages": [
+        "features/swapxfg/overview",
         "features/atomic-swaps/how-swaps-work",
         "features/atomic-swaps/supported-pairs",
         "features/atomic-swaps/step-by-step-guide",
@@ -67,7 +77,7 @@
       ]
     },
     {
-      "group": "LP swap pool",
+      "group": "Hearth LP pool",
       "pages": [
         "features/lp-pool/how-liquidity-works",
         "features/lp-pool/providing-liquidity",
@@ -113,6 +123,12 @@
         "developer/architecture",
         "developer/building",
         "developer/rpc-reference"
+      ]
+    },
+    {
+      "group": "Roadmaps",
+      "pages": [
+        "roadmap/docs-roadmap"
       ]
     }
   ],

@@ -1,0 +1,41 @@
+---
+title: "Dynamixn (dynamic ring size)"
+description: "From BMV 10, Fuego uses uniform ring sizes 32, 16, or 8 based on available same-amount outputs."
+keywords: ["dynamixn", "ring size", "mixin", "privacy", "8", "16", "32", "decoy"]
+---
+
+## What dynamixn is
+
+From **block major version 10 (Wildfire)** onward, Fuego uses **dynamixn**: the wallet/daemon picks an **approved uniform ring size** from a fixed ladder instead of arbitrary mixins.
+
+### Approved ring sizes (preference order)
+
+| Ring size | Role |
+|-----------|------|
+| **32** | Maximum privacy (preferred when the pool allows) |
+| **16** | Strong privacy |
+| **8** | Standard / **minimum** on mainnet for BMV 10+ |
+
+Code: `DynamicRingSizeCalculator::getTargetRingSizes()` returns `{32, 16, 8}`.
+
+**Max** related constant: `MAX_TX_MIXIN_SIZE = 32` (upper bound for ring construction).
+
+### How selection works
+
+1. Only applies for **BMV ≥ 10** (older versions use legacy static minima).
+2. For the spend **amount**, count same-amount outputs available as decoys (same-amount rings — mixed amounts would leak which member is real).
+3. Try **32 → 16 → 8**; pick the **largest** size the decoy pool can support.
+4. On **mainnet**, if even **8** is impossible → transaction construction fails (run optimizer / wait for pool depth).
+5. On **testnet**, bootstrap may allow smaller rings (including mixIn **0**) until the pool grows — see developer/testnet notes.
+
+### Ring size vs “mixin”
+
+Docs and wallets sometimes say “mixin.” In Fuego’s dynamixn path, think in **ring size** (real output + decoys):
+
+- Ring size **8** ≈ standard privacy floor on mainnet V10+
+- Ring size **32** ≈ maximum of the approved ladder
+
+### Related
+
+- Implementation: `src/CryptoNoteCore/DynamicRingSize.cpp`
+- Config: `MIN_TX_MIXIN_SIZE_V10 = 8`, `MAX_TX_MIXIN_SIZE = 32`

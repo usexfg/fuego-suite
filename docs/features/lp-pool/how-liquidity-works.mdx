@@ -6,20 +6,21 @@ keywords: ["LP pool", "liquidity", "AMM", "0.3%", "swap", "fuego", "xfg"]
 
 ## What the LP pool is
 
-The LP swap pool is an on-chain automated market maker (AMM) for XFG trades. Liquidity providers deposit XFG into the pool. Traders swap through the pool and pay a 0.3% fee per trade. That fee is distributed to LPs in proportion to their pool share.
+The LP surface is **Hearth**: on-chain **XFG/HΞ∆₮** AMM (plus hybrid orderbook market band). Liquidity providers supply XFG and HEAT. Traders pay **0.3%** per Hearth trade. That fee goes to **LPs** in proportion to pool share.
+
+See [Hearth overview](/hearth/overview) for the hybrid band / pool-order design.
 
 ## Separate from CD interest
 
 <Info>
-  The LP pool fee (0.3% per trade) and the CD interest pool (1% per atomic swap) are completely independent. LP fees go to liquidity providers. Atomic swap fees go to CD holders. There is no overlap.
+  **Hearth LP fees (0.3%)** and **atomic-swap → CD yield** are independent. Hearth fees → LPs. Atomic-swap protocol fees → HEAT CD holders (majority) and treasury. There is no overlap.
 </Info>
 
-| | CD interest pool | LP pool |
-|--|-----------------|---------|
-| Fee rate | 1% per atomic swap | 0.3% per pool trade |
-| Fee recipient | CD holders | LP providers |
-| Distribution | Per epoch | Per epoch |
-| Privacy | ZK commitment | ZK commitment |
+| | HEAT CD yield | Hearth LP pool |
+|--|---------------|----------------|
+| Fee source | Atomic swaps (SwapXFG) | Hearth XFG/HEAT trades |
+| Fee recipient | HEAT CD holders | LP providers |
+| Not paid by | Hearth LP fee | Atomic-swap CD pipe |
 
 ## ZK proofs for LP positions
 

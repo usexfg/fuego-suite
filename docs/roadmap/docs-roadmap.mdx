@@ -1,0 +1,80 @@
+---
+title: "Documentation roadmap"
+description: "Mintlify (docs.usexfg.org) content roadmap — what is current, stale, and next."
+keywords: ["documentation", "mintlify", "roadmap", "docs.usexfg.org"]
+---
+
+## Purpose
+
+Track **Mintlify** content (`docs/docs.json` → [docs.usexfg.org](https://docs.usexfg.org)) against **current code** so product language stays accurate.
+
+Last major doc refresh for this roadmap: **2026-07-22** (post swap fund-safety work, HEAT flatcoin wording, dynamixn 8/16/32, Hearth hybrid band).
+
+## Current (shipped pages)
+
+| Topic | Page | Source of truth in code |
+|-------|------|-------------------------|
+| HEAT flatcoin \$1.58 launch | [HEAT overview](/heat/overview) | `HEAT_PEG_USD`, mint/burn constants |
+| Hearth hybrid market | [Hearth overview](/hearth/overview) | Hearth fee bps, pool seed, orderbook band |
+| Dynamixn 32/16/8 | [Dynamixn](/privacy/dynamixn) | `DynamicRingSize.cpp` |
+| Subaddresses | [Subaddresses](/privacy/subaddresses) | `WalletGreen::createSubAddress` |
+| SwapXFG | [SwapXFG overview](/features/swapxfg/overview) | `xfg-swapd`, Alice-locks protocol |
+| Dual-asset map | [Architecture](/fuego-dual-asset-architecture) | fee splits, majors |
+
+## Correct language (do not regress)
+
+| Prefer | Avoid |
+|--------|--------|
+| HEAT **flatcoin** / purchasing power | HEAT “stablecoin” / “always \$1” |
+| Launch **\$1.58** CPI-adj reference | “\$1 HEAT” |
+| CD yield from **atomic swap** fees | “Hearth fees pay CDs” |
+| Hearth fees → **LPs** | Mixing Hearth and SwapXFG fee stories |
+| Ring sizes **8 / 16 / 32** | Old ladder 18/15/12/10/8 as current |
+
+## Stale / internal (not primary Mintlify nav)
+
+These remain useful for engineers but are **not** user-facing truth if they conflict:
+
+- `docs/privacy/DYNAMIC_RING_SIZE.md` — still describes 18→8 ladder; **code is 32/16/8**
+- `docs/heat/HEAT_STABLECOIN_VISION.md` — title/vision; prefer **flatcoin** pages
+- `docs/features/(derecated)old-stark-burns/*` — deprecated STARK burn UX
+- Many `docs/CD-apy/*`, `docs/implementation/*` — design history; trim before promoting to nav
+
+## Next documentation work
+
+### P0 — accuracy
+- [x] HEAT flatcoin + \$1.58 launch  
+- [x] Fee pipe split (atomic vs Hearth)  
+- [x] Dynamixn 32/16/8  
+- [x] Subaddresses receive  
+- [x] Hearth hybrid band overview  
+- [ ] Sweep Mintlify pages that still say “stablecoin” or old ring ladder  
+- [ ] Align `features/heat-burns/*` nav paths with real files (or re-home content)
+
+### P1 — product surfaces
+- [ ] SwapXFG TUI screenshots / operator runbook  
+- [ ] Alice-locks step diagram in atomic-swaps guide  
+- [ ] Hearth orderbook UX vs AMM depth  
+- [ ] Testnet ops (mixIn=0 bootstrap, mining peer/RPC) for developers  
+
+### P2 — protocol depth
+- [ ] CPI quarterly update design (when oracle live)  
+- [ ] DIGM peg-to-HEAT (not USD) user page  
+- [ ] Production swap readiness status (lab vs mainnet)  
+
+### P3 — site hygiene
+- [ ] Remove or archive deprecated STARK burn group from nav  
+- [ ] Changelog entry for HEATWAVE / dynamixn / SwapXFG  
+- [ ] Link check after each Mintlify deploy  
+
+## Engineering roadmaps (separate)
+
+| Track | Location |
+|-------|----------|
+| Swap production / fund-safety | `docs/review/2026-07-22-production-checklist.md` |
+| HEAT CPI / flatcoin Phase 2 | `docs/heat/HEAT-flatcoin-how.md` |
+| Orderbook implementation | `docs/orderbook/IMPLEMENTATION_PLAN.md` |
+
+## Deploy note
+
+Mintlify builds from the repo’s `docs/` + `docs/docs.json`. After content merges, redeploy the Mintlify project connected to `usexfg/fuego-suite` (branch as configured for docs.usexfg.org).

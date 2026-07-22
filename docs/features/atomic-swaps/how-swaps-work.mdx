@@ -12,23 +12,30 @@ An atomic swap is either:
 
 There is no partial outcome. No escrow service holds your funds. No custodian can steal or freeze them. The exchange is enforced by cryptography.
 
-## Adaptor signatures
+## Adaptor signatures + Alice-locks
 
-Fuego uses **adaptor signatures** rather than hash time-locked contracts (HTLCs). Adaptor signatures are more efficient and more private than HTLCs — they don't embed a hash on-chain, so the swap looks like a normal transaction to observers.
+Fuego uses **adaptor signatures** on the XFG escrow (Musig2 joint key) plus **HTLCs on many counterparty chains**.
 
-The protocol works roughly as follows:
+Current **Alice-locks** model (lab/testnet readiness varies by chain):
 
-1. Both parties exchange public adaptor keys
-2. Each party creates a transaction that requires the counterparty's adaptor secret to complete
-3. When one party broadcasts their transaction, the adaptor secret is revealed on-chain
-4. The other party uses that secret to claim their funds
-5. If neither party broadcasts within the timeout, both parties reclaim their funds
+1. Parties exchange keys and aggregate a joint **XFG escrow** key  
+2. Bob publishes adaptor secret commitment \(H(t)\) (and DLEQ as required)  
+3. **Alice locks** the counterparty coin with hashlock \(H(t)\)  
+4. **Bob claims** CTR with preimage \(t\) — that is the **on-chain secret reveal**  
+5. Alice **extracts** \(t\); collaborative ring spend completes XFG escrow  
+6. Timeouts refund each side independently  
+
+P2P `SECRET_REVEAL` may exist as backup; **trust is the chain preimage**, not gossip.
+
+See [SwapXFG overview](/features/swapxfg/overview) and production checklist under `docs/review/`.
 
 ## XFG-side fee
 
-Every completed swap deducts a **1% fee from the XFG amount** and credits it to the CD interest pool. This fee is not paid to the counterparty — it is a protocol fee that funds CD yield.
+Atomic-swap protocol fees on the XFG side fund **HEAT CD yield** (and treasury share), **not** Hearth LP fees.
 
-The counterparty chain (XMR, ETH, SOL, BCH) does not charge a Fuego protocol fee — only their network transaction fees apply.
+Exact bps/splits live in protocol config (`SWAP_FEE_CD_SHARE_PCT` / treasury share). Counterparty chains only charge their own network fees.
+
+Hearth’s **0.3%** XFG/HEAT fee is a **separate** pipe for LPs — see [Hearth](/hearth/overview).
 
 ## Timeout and refund
 

@@ -1,0 +1,63 @@
+---
+title: "HΞ∆₮ (HEAT) flatcoin"
+description: "HΞ∆₮ is a purchasing-power colored flatcoin on Fuego — not a fiat stablecoin."
+keywords: ["HEAT", "HΞ∆₮", "flatcoin", "colored coin", "purchasing power", "CPI", "1.58"]
+---
+
+## What HEAT is
+
+**HΞ∆₮ (HEAT)** is a **colored flatcoin** that exists **only on Fuego**.
+
+It is **not** a classic USD stablecoin. It is designed around **purchasing power**, not a permanent 1:1 bank-dollar peg.
+
+| Property | HEAT |
+|----------|------|
+| Home chain | **Fuego only** |
+| Type | Colored coin / flatcoin |
+| Launch reference | **\$1.58** USD-equivalent purchasing power |
+| How you get it | **Burn XFG → mint HEAT** |
+| Where it trades | **Hearth** as **XFG / HΞ∆₮** |
+| Yield use | **HEAT CDs** earn from **atomic-swap fee activity** (not Hearth LP fees) |
+
+### Why \$1.58 at launch
+
+The launch constant measures inflation on **\$1 of USD purchasing power from January 2009 through today**. Roughly: each 2009 dollar needs about **\$1.58** of today’s dollars to match the same basket of goods. HEAT’s launch reference encodes that adjustment so HEAT starts as a **purchasing-power unit**, not a naked \$1 token.
+
+In code this is `HEAT_PEG_USD = 1.58` (`CryptoNoteConfig.h`).
+
+### Flatcoin vs stablecoin
+
+- **Stablecoin (common usage):** target a fiat unit (e.g. 1 token ≈ 1 USD forever).
+- **Flatcoin (HEAT):** target **real purchasing power**. Launch is fixed at the CPI-adjusted reference; **quarterly inflation updates** are the intended long-run path (oracle / attestation — see design docs). Until CPI auto-update is fully live, the **launch constant \$1.58** is the on-chain reference.
+
+Do **not** document HEAT as “USD stablecoin” or “always \$1.”
+
+## Burn → mint
+
+Burning XFG mints HEAT (colored outputs marked with the HEAT term). Launch mint ratio is protocol-configured (e.g. **10 XFG → 1 HEAT** seed ratio on Hearth bootstrap). Mint premiums may be zero at launch and re-enabled later.
+
+Burn split (protocol):
+
+- Share of burned XFG → **Eternal Flame** (permanent deflation)
+- Share → **Treasury** (LP reserve / backstop — see treasury docs)
+
+## HEAT CDs vs Hearth LPs
+
+| | **HEAT CDs** | **Hearth LPs** |
+|--|--------------|----------------|
+| What you lock | HEAT (commitment deposit) | XFG + HEAT in the AMM pool |
+| Yield source | **Atomic swap** epoch fees (buy HEAT → CD holders) | **Hearth** trade fees (0.3% → LPs) |
+| Not funded by | Hearth LP fee share | Atomic-swap CD pool |
+
+**Atomic swaps** (cross-chain / SwapXFG activity) fund **CD yield**.  
+**Hearth** trades fund **liquidity providers**. Keep those stories separate.
+
+## Where HEAT trades
+
+HEAT is the quote asset on **Hearth**: the native **XFG/HΞ∆₮** market (AMM + hybrid orderbook / pool band — see [Hearth](/hearth/overview)).
+
+## Related
+
+- [Hearth overview](/hearth/overview)
+- [Commitment deposits](/features/commitment-deposits/how-cds-work)
+- Design notes: `docs/heat/HEAT-flatcoin-how.md`, `docs/heat/HEAT_FLATCOIN_FORMULA.md`

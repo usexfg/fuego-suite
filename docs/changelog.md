@@ -5,7 +5,17 @@ description: "Fuego Suite Updates & Features"
 
 <CodeGroup>
 ```text Changelog
-v1.10.02 (Current)
+v1.11 docs + HEATWAVE-era product (Mintlify 2026-07)
+* HΞ∆₮ documented as purchasing-power flatcoin (launch \$1.58), not USD stablecoin.
+* Hearth: XFG/HEAT AMM + hybrid orderbook market band (pool orders).
+* Dynamixn: approved ring sizes 32 / 16 / 8 (BMV 10+); same-amount decoys.
+* Subaddresses for receive documented (WalletGreen createSubAddress).
+* SwapXFG / Alice-locks atomic-swap narrative; fee pipes split vs Hearth LPs.
+* HEAT CDs earn from atomic-swap fees; Hearth 0.3% → LPs only.
+* Testnet: mixIn=0 wallet bootstrap; mining race + difficulty floor fixes.
+* Docs roadmap page for Mintlify accuracy work.
+
+v1.10.02
 * AFK atomic swaps: soft-order auto-execution engine (OfferManager), griefing
   protection with taker rate-limiting, partial fills, price-drift auto-cancel,
   headless daemon mode with StatusServer monitoring endpoint.
@@ -54,4 +64,4 @@ v1.9.0
 ```
 </CodeGroup>
 
-> **Privacy Note:** Fuego relies on Ring Signatures and stealth addresses to provide privacy by hiding the sender, receiver, and breaking transaction linkage. Fuego uses per-amount decoy selection, and HEAT burns provide permanent decoys that bulk up the ring pool. Amounts transferred are currently visible on-chain. Deposit types are also visible (HEAT=0x08, CD=0xCD, YIELD=0x07) unless obscured.
+> **Privacy Note:** Fuego relies on ring signatures (dynamixn sizes 32/16/8 on BMV 10+) and receive subaddresses. Per-amount decoy selection and HEAT bill denominations bulk the ring pool. Amounts transferred may still be visible on-chain until later privacy majors.

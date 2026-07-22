@@ -1,0 +1,52 @@
+---
+title: "Hearth exchange"
+description: "Hearth is Fuego’s hybrid XFG/HΞ∆₮ market: AMM pool plus orderbook market band."
+keywords: ["Hearth", "AMM", "orderbook", "market band", "pool orders", "XFG", "HEAT"]
+---
+
+## What Hearth is
+
+**Hearth** is Fuego’s native exchange surface for **XFG / HΞ∆₮**.
+
+It is **hybrid**:
+
+1. **AMM pool** — constant-product style liquidity (seeded at HEATWAVE activation)
+2. **Orderbook + market band** — pool-generated orders around a clearing price so the book has continuous depth from reserves
+
+Trades on Hearth are **not** the same fee pipe as cross-chain atomic swaps.
+
+## AMM pool
+
+| Parameter | Value (code) |
+|-----------|----------------|
+| Pair | XFG ↔ HEAT |
+| Swap fee | **0.3%** (`HEARTH_FEE_BPS = 30`) → **LP providers** |
+| Genesis seed (illustrative) | ~10,000 XFG + 1,000 HEAT (10:1 seed ratio at \$1.58 CPI-adj launch) |
+
+Providing balanced liquidity mints LP shares. LP fees accrue to LPs — **not** to HEAT CD holders.
+
+## Hybrid orderbook & market band
+
+Beyond pure AMM quotes, the protocol can place **pool orders** in a band around the clearing price:
+
+- Inputs include clearing price `P_clear`, **band percent** of reserves, XFG/HEAT reserve depths, and adaptive **spread (bps)**
+- `generatePoolOrders()` sizes buy/sell depth from reserves × `bandPct`
+- `PoolOrderOrchestrator` decides when to **regenerate** the band (price move, reserve drift, band consumption, time)
+
+That is the **hybrid orderbook / market-band pool**: the pool acts as a market-maker on the book while the AMM remains the deep liquidity backstop.
+
+## Fee separation (important)
+
+| Activity | Fee | Who earns |
+|----------|-----|-----------|
+| **Hearth** XFG/HEAT trade | 0.3% | **LPs** |
+| **Atomic swap** (SwapXFG / cross-chain) | Protocol split of XFG-side fees | **HEAT CDs** (majority) + treasury (minority) |
+
+Do not say “Hearth fees pay CD yield.” CD yield is driven by **atomic-swap** fee policy (buy HEAT for depositors). Hearth fees pay **liquidity providers**.
+
+## Related
+
+- [HEAT flatcoin](/heat/overview)
+- [LP pool guides](/features/lp-pool/how-liquidity-works)
+- [Atomic swaps](/features/atomic-swaps/how-swaps-work)
+- Design: `docs/orderbook/FUEGO_ORDERBOOK_DESIGN.md`

@@ -1,0 +1,43 @@
+---
+title: "Subaddresses (receive)"
+description: "Create deterministic receive-only subaddresses so each counterparty can pay a unique address without new spend keys."
+keywords: ["subaddress", "receive", "privacy", "wallet", "Fuego"]
+---
+
+## What subaddresses are
+
+A **subaddress** is a **deterministic receive address** derived from your wallet’s master spend and view keys. Outputs sent to a subaddress still appear in your balance; spending uses the derived spend secret automatically.
+
+Use them so:
+
+- Each customer / swap / invoice gets a **fresh receive address**
+- You do not rotate the primary address or export new seed material
+- Chain observers cannot as easily link all receives to one published address
+
+## API (wallet)
+
+In `WalletGreen`:
+
+```text
+createSubAddress(major, minor, creationTimestamp = 0) → address string
+listSubAddresses() → list of (major, minor, address)
+```
+
+Notes from the implementation:
+
+- Derived from master spend + view keys
+- **Do not use index (0, 0)** — that is the **primary** address
+- Spending from sub-address outputs uses derived spend secret \(b_{ij} = b + m\) automatically
+
+Also available: multiple spend addresses via `createAddress()` / `createAddressList()` for multi-account style wallets.
+
+## Receive best practice
+
+1. Generate a subaddress per inbound relationship (or per swap invoice).
+2. Publish only that subaddress for payment.
+3. Keep the primary address for change / internal use unless you intentionally share it.
+
+## Related
+
+- [Wallet setup](/getting-started/wallet-setup)
+- [Security basics](/getting-started/security-basics)

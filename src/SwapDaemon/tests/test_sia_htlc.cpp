@@ -29,8 +29,8 @@ int main() {
     std::vector<uint8_t> input = {0x48, 0x65, 0x6c, 0x6c, 0x6f};  // "Hello"
     std::vector<uint8_t> hash = SiaHtlcScript::sha256(input);
 
-    // SHA256("Hello") = 185f8db32271fe25f561a6fc938b2e264306ec304eda6182f70dc6a63a5f5d50
-    std::string expectedHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda6182f70dc6a63a5f5d50";
+    // SHA256("Hello") = 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969
+    std::string expectedHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969";
     std::string actualHex = SiaHtlcScript::bytesToHex(hash);
     assert(actualHex == expectedHex);
     std::cout << "Test 1 PASSED: SHA256 of known input" << std::endl;
@@ -46,7 +46,8 @@ int main() {
 
     std::string address = SiaHtlcScript::computeAddress(pubKey);
     assert(!address.empty());
-    assert(address[0] == 'a');  // Mainnet prefix
+    assert(address.size() == 76);  // Sia addresses are 76 hex characters
+    assert(address.substr(0, 2) == "00");  // Mainnet prefix (0x00)
     std::cout << "Test 2 PASSED: Address computation" << std::endl;
   }
 
@@ -141,9 +142,10 @@ int main() {
     std::vector<uint8_t> pubKey(32, 0x01);
     std::string address = SiaHtlcScript::computeAddress(pubKey);
 
-    // Modify the address to have wrong prefix
-    if (!address.empty()) {
-      address[0] = 'b';
+    // Modify the address to have wrong prefix (change version byte from 00 to 01)
+    if (address.size() >= 2) {
+      address[0] = '0';
+      address[1] = '1';
     }
 
     std::vector<uint8_t> unlockHash;

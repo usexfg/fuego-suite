@@ -200,32 +200,68 @@ std::vector<uint8_t> SiaHtlcScript::computeUnlockHash(const std::vector<uint8_t>
 std::string SiaHtlcScript::computeAddress(const std::vector<uint8_t>& pubKey) {
   std::vector<uint8_t> unlockHash = computeUnlockHash(pubKey);
 
-  // Sia address format: base64(0x00 || unlockHash)
-  // The 0x00 is the version byte (mainnet)
-  std::vector<uint8_t> addressData;
-  addressData.reserve(1 + unlockHash.size());
-  addressData.push_back(SiaConstants::SIA_ADDRESS_PREFIX);
-  addressData.insert(addressData.end(), unlockHash.begin(), unlockHash.end());
+  // Sia address format (76 hex chars):
+  // - 1 byte version (0x00 for mainnet)
+  // - 32 bytes unlock hash (SHA256 of public key)
+  // - 5 bytes checksum (first 5 bytes of SHA256(unlockHash))
+  std::vector<uint8_t> checksum = sha256(unlockHash);
 
-  return base64Encode(addressData);
+  std::string result;
+  result.reserve(76);
+
+  // Version byte
+  result += bytesToHex(std::vector<uint8_t>{SiaConstants::SIA_ADDRESS_PREFIX});
+
+  // Unlock hash (32 bytes = 64 hex chars)
+  result += bytesToHex(unlockHash);
+
+  // Checksum (first 5 bytes = 10 hex chars)
+  result += bytesToHex(std::vector<uint8_t>(checksum.begin(), checksum.begin() + 5));
+
+  return result;
 }
 
 bool SiaHtlcScript::decodeAddress(const std::string& address, std::vector<uint8_t>& unlockHash) {
   try {
-    std::vector<uint8_t> decoded = base64Decode(address);
-
-    // Must be at least 33 bytes (1 version + 32 unlock hash)
-    if (decoded.size() < 33) {
+    // Sia addresses are 76 hex characters
+    if (address.size() != 76) {
       return false;
     }
 
-    // Check version byte
-    if (decoded[0] != SiaConstants::SIA_ADDRESS_PREFIX) {
+    // Check prefix (should start with 'a' for mainnet in base64, or '00' in hex)
+    // In hex format, mainnet addresses start with "00"
+    if (address.substr(0, 2) != "00") {
       return false;
     }
 
-    // Extract unlock hash (32 bytes)
-    unlockHash.assign(decoded.begin() + 1, decoded.begin() + 33);
+    // Decode version byte (2 hex chars = 1 byte)
+    std::string versionHex = address.substr(0, 2);
+    std::vector<uint8_t> versionBytes = hexToBytes(versionHex);
+    if (versionBytes[0] != SiaConstants::SIA_ADDRESS_PREFIX) {
+      return false;
+    }
+
+    // Decode unlock hash (64 hex chars = 32 bytes)
+    std::string unlockHashHex = address.substr(2, 64);
+    unlockHash = hexToBytes(unlockHashHex);
+    if (unlockHash.size() != 32) {
+      return false;
+    }
+
+    // Verify checksum (last 10 hex chars = 5 bytes)
+    std::string checksumHex = address.substr(66, 10);
+    std::vector<uint8_t> checksum = hexToBytes(checksumHex);
+    if (checksum.size() != 5) {
+      return false;
+    }
+
+    std::vector<uint8_t> expectedChecksum = sha256(unlockHash);
+    for (int i = 0; i < 5; ++i) {
+      if (checksum[i] != expectedChecksum[i]) {
+        return false;
+      }
+    }
+
     return true;
   } catch (...) {
     return false;

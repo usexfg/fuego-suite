@@ -295,13 +295,18 @@ bool FuegoRpcClient::sendRawTransaction(const std::string& txHex) {
     reqJson.insert("tx_as_hex", txHex);
 
     std::string responseBody = daemonPost("/sendrawtransaction", reqJson.toString());
+    if (responseBody.empty()) return false;
     Common::JsonValue json = Common::JsonValue::fromString(responseBody);
 
-    if (!json.isObject() || !json.contains("status")) {
+    if (!json.isObject()) {
       return false;
     }
-
-    return json("status").getString() == "OK";
+    if (json.contains("status") && json("status").isString()
+        && json("status").getString() == "OK") {
+      return true;
+    }
+    // Common non-OK statuses: "Failed", "Not relayed", etc.
+    return false;
   } catch (const std::exception&) {
     return false;
   }
@@ -546,10 +551,45 @@ bool FuegoRpcClient::resolveAlias(const std::string& alias, std::string& address
 }
 
 bool FuegoRpcClient::optimizeWallet(uint64_t threshold, TransferResult& result) {
+  // Create a known self-transfer output of exactly `threshold` atomic units so
+  // fundEscrow can derive the one-time key from tx_secret_key.
+  // walletd exposes sendTransaction (not "optimize" / monero-style "transfer").
   try {
-    std::string params = "{\"threshold\":" + std::to_string(threshold) + "}";
-    std::string respBody = walletJsonRpc("optimize", params);
+    std::string addrResp = walletJsonRpc("getAddresses", "{}");
+    if (addrResp.empty()) return false;
+    // Prefer structured parse; fall back to simple extract.
+    std::string address;
+    try {
+      Common::JsonValue json = Common::JsonValue::fromString(addrResp);
+      // walletJsonRpc may return the whole JSON-RPC envelope or just result body.
+      const Common::JsonValue* res = &json;
+      if (json.isObject() && json.contains("result")) res = &json("result");
+      if (res->isObject() && res->contains("addresses") && (*res)("addresses").isArray()
+          && (*res)("addresses").size() > 0) {
+        address = (*res)("addresses")[0].getString();
+      }
+    } catch (...) {}
+    if (address.empty()) {
+      // Naive extract: first TEST... / fire... address string
+      auto p = addrResp.find("TEST");
+      if (p == std::string::npos) p = addrResp.find("fire");
+      if (p == std::string::npos) return false;
+      auto end = addrResp.find_first_of("\"", p);
+      if (end == std::string::npos) return false;
+      address = addrResp.substr(p, end - p);
+    }
+
+    // anonymity 0 is allowed on testnet (mixIn=0 bootstrap builds).
+    std::ostringstream params;
+    params << "{\"transfers\":[{\"address\":\"" << address
+           << "\",\"amount\":" << threshold << "}]"
+           << ",\"fee\":100000"
+           << ",\"anonymity\":0"
+           << ",\"changeAddress\":\"" << address << "\"}";
+
+    std::string respBody = walletJsonRpc("sendTransaction", params.str());
     if (respBody.empty()) return false;
+
     auto extract = [&](const std::string& key) -> std::string {
       std::string needle = "\"" + key + "\":\"";
       auto pos = respBody.find(needle);
@@ -559,9 +599,12 @@ bool FuegoRpcClient::optimizeWallet(uint64_t threshold, TransferResult& result) 
       if (end == std::string::npos) return "";
       return respBody.substr(pos, end - pos);
     };
-    result.txHash = extract("tx_hash");
-    result.txSecretKey = extract("tx_secret_key");
-    return !result.txHash.empty();
+    // Payment service returns transactionHash / transactionSecretKey
+    result.txHash = extract("transactionHash");
+    if (result.txHash.empty()) result.txHash = extract("tx_hash");
+    result.txSecretKey = extract("transactionSecretKey");
+    if (result.txSecretKey.empty()) result.txSecretKey = extract("tx_secret_key");
+    return !result.txHash.empty() && !result.txSecretKey.empty();
   } catch (const std::exception&) { return false; }
 }
 

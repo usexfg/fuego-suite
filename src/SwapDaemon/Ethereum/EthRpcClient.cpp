@@ -341,10 +341,27 @@ static bool httpReadResponse(int sock, std::string& response) {
     accum.append(buf, static_cast<size_t>(n));
     hdrEnd = accum.find("\r\n\r\n");
   }
-  // Parse Content-Length
-  size_t clPos = accum.find("Content-Length:");
+  // Parse Content-Length (case-insensitive — anvil/foundry send lowercase headers)
+  size_t clPos = std::string::npos;
+  for (const char* needle : {
+         "\r\nContent-Length:", "\r\ncontent-length:", "\r\nContent-length:"}) {
+    clPos = accum.find(needle);
+    if (clPos != std::string::npos) {
+      clPos += std::strlen(needle);
+      break;
+    }
+  }
+  // Also allow header at start of response (no leading CRLF)
+  if (clPos == std::string::npos) {
+    for (const char* needle : {"Content-Length:", "content-length:"}) {
+      if (accum.size() >= std::strlen(needle) &&
+          accum.compare(0, std::strlen(needle), needle) == 0) {
+        clPos = std::strlen(needle);
+        break;
+      }
+    }
+  }
   if (clPos == std::string::npos) return false;
-  clPos += 15;
   while (clPos < accum.size() && accum[clPos] == ' ') ++clPos;
   size_t contentLen = 0;
   while (clPos < accum.size() && accum[clPos] >= '0' && accum[clPos] <= '9')
@@ -357,6 +374,8 @@ static bool httpReadResponse(int sock, std::string& response) {
     if (n <= 0) return false;
     response.append(buf, static_cast<size_t>(n));
   }
+  // Trim any extra bytes beyond Content-Length
+  if (response.size() > contentLen) response.resize(contentLen);
   return true;
 }
 

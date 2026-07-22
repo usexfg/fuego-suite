@@ -414,10 +414,6 @@ void SwapDaemon::stop() {
 }
 
 bool SwapDaemon::deliverPeerMessage(const PeerMessage& msg) {
-  if (!m_p2p) {
-    m_logger(Logging::WARNING) << "deliverPeerMessage: SwapP2P not running";
-    return false;
-  }
   SwapStateMachine sm;
   if (!m_db.loadSwap(msg.swapId, sm)) {
     m_logger(Logging::ERROR) << "deliverPeerMessage: unknown swap " << msg.swapId;
@@ -432,7 +428,17 @@ bool SwapDaemon::deliverPeerMessage(const PeerMessage& msg) {
   wire.type = SwapMsgType::PEER_PROTOCOL;
   wire.swapId = msg.swapId;
   wire.payload = serializePeerMessage(msg);
-  if (!m_p2p->sendMessage(endpoint, wire)) {
+
+  // Prefer the long-lived service P2P; for one-shot CLI (initiate/accept/join)
+  // create an ephemeral sender (sendMessage does not require listen/start).
+  bool ok = false;
+  if (m_p2p) {
+    ok = m_p2p->sendMessage(endpoint, wire);
+  } else {
+    SwapP2P ephemeral(0, "127.0.0.1", m_logger);
+    ok = ephemeral.sendMessage(endpoint, wire);
+  }
+  if (!ok) {
     m_logger(Logging::ERROR) << "deliverPeerMessage: send failed to " << endpoint
       << " type=" << static_cast<int>(msg.type);
     return false;
@@ -678,7 +684,72 @@ bool SwapDaemon::initiate(SwapParams& params) {
   m_logger(Logging::INFO) << "  Timeout height: " << params.xfgTimeoutHeight;
   m_logger(Logging::DEBUGGING) << "  Our swap pubkey: " << Common::podToHex(params.ourSwapPubKey);
   m_logger(Logging::INFO) << "  Share this swap ID with your counterparty: " << params.swapId;
+  m_logger(Logging::INFO) << "  Counterparty should: join " << params.swapId
+    << " " << swapPairToString(params.pair) << " <xfg> <ctr> <your-bob-p2p>";
 
+  return true;
+}
+
+bool SwapDaemon::join(SwapParams& params) {
+  // Alice joins a Bob-initiated swap using the shared swapId + terms.
+  if (params.swapId.empty()) {
+    m_logger(Logging::ERROR) << "join: swapId required (from Bob initiate)";
+    return false;
+  }
+  if (params.xfgAmount == 0 || params.ctrAmount == 0) {
+    m_logger(Logging::ERROR) << "join: amounts must be > 0";
+    return false;
+  }
+  if (params.peerEndpoint.empty()) {
+    m_logger(Logging::ERROR) << "join: peerEndpoint (Bob swap P2P) required";
+    return false;
+  }
+
+  SwapStateMachine existing;
+  if (m_db.loadSwap(params.swapId, existing)) {
+    m_logger(Logging::ERROR) << "join: swap already exists locally: " << params.swapId;
+    return false;
+  }
+
+  uint32_t currentHeight = 0;
+  if (!m_rpc.getHeight(currentHeight)) {
+    m_logger(Logging::ERROR) << "Cannot connect to fuegod";
+    return false;
+  }
+
+  params.role = SwapRole::ALICE;
+  if (params.xfgTimeoutHeight == 0) {
+    // Mirror Bob's default if Alice joins before Bob shared timeouts.
+    params.xfgTimeoutHeight = currentHeight + 180;
+  }
+
+  IChainClient* client = m_chainRegistry.getClient(params.pair);
+  uint64_t ctrCurrentHeight = 0;
+  bool ctrHeightOk = client && client->getCurrentHeight(ctrCurrentHeight) && ctrCurrentHeight > 0;
+  if (params.ctrTimeoutBlock == 0) {
+    if (!ctrHeightOk) {
+      m_logger(Logging::ERROR) << "join: cannot auto-derive ctrTimeoutBlock (chain height unavailable)";
+      return false;
+    }
+    uint64_t xfgRemainingMs = (params.xfgTimeoutHeight - currentHeight) * 480000ULL;
+    uint64_t ctrWindowMs = xfgRemainingMs / 2;
+    uint64_t ctrBlocks = ctrWindowMs / msPerBlock(params.pair);
+    if (ctrBlocks == 0) ctrBlocks = 1;
+    params.ctrTimeoutBlock = ctrCurrentHeight + ctrBlocks;
+  }
+
+  adaptor_generate_keys(params);
+
+  SwapStateMachine sm(params);
+  if (!m_db.saveSwap(sm)) {
+    m_logger(Logging::ERROR) << "join: failed to save swap";
+    return false;
+  }
+
+  m_logger(Logging::INFO) << "Joined swap as ALICE: " << params.swapId;
+  m_logger(Logging::INFO) << "  Pair: XFG/" << swapPairToString(params.pair);
+  m_logger(Logging::INFO) << "  Peer (Bob): " << params.peerEndpoint;
+  m_logger(Logging::INFO) << "  Next: both sides run 'accept " << params.swapId << "'";
   return true;
 }
 
@@ -751,6 +822,57 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     }
   }
   
+  // ── Deliver our swap pubkey to peer (KEY_EXCHANGE) ──
+  if (!params.peerEndpoint.empty()) {
+    PeerMessage kx;
+    kx.type = PeerMessageType::KEY_EXCHANGE;
+    kx.swapId = params.swapId;
+    kx.keyExchange.swapPubKey = params.ourSwapPubKey;
+    signPeerMessage(kx, params.ourSwapPubKey, params.ourSwapSecKey);
+    if (deliverPeerMessage(kx)) {
+      m_logger(Logging::INFO) << "Delivered KEY_EXCHANGE to peer " << params.peerEndpoint;
+    } else {
+      m_logger(Logging::WARNING) << "KEY_EXCHANGE delivery failed — peer may still accept later";
+    }
+  }
+
+  // Wait for peer KEY_EXCHANGE (service P2P handler writes peerSwapPubKey into DB).
+  // One-shot CLI and dual-service both poll the shared swap file.
+  {
+    static const Crypto::PublicKey ZERO_KEY{};
+    bool havePeer = (std::memcmp(&params.peerSwapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) != 0);
+    for (int i = 0; !havePeer && i < 60; ++i) { // up to ~60s
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      SwapStateMachine refreshed;
+      if (!m_db.loadSwap(swapId, refreshed)) continue;
+      const auto& rp = refreshed.params();
+      if (std::memcmp(&rp.peerSwapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) != 0) {
+        params.peerSwapPubKey = rp.peerSwapPubKey;
+        // Keep our local secrets/keys; peer pubkey is the only missing piece.
+        havePeer = true;
+        m_logger(Logging::INFO) << "Received peer swap pubkey after " << (i + 1) << "s";
+        break;
+      }
+      if (i % 10 == 9) {
+        m_logger(Logging::INFO) << "Waiting for peer KEY_EXCHANGE... (" << (i + 1) << "s)";
+        // Re-send ours periodically in case peer joined late
+        if (!params.peerEndpoint.empty()) {
+          PeerMessage kx;
+          kx.type = PeerMessageType::KEY_EXCHANGE;
+          kx.swapId = params.swapId;
+          kx.keyExchange.swapPubKey = params.ourSwapPubKey;
+          signPeerMessage(kx, params.ourSwapPubKey, params.ourSwapSecKey);
+          deliverPeerMessage(kx);
+        }
+      }
+    }
+    if (!havePeer) {
+      const std::string msg = "Timed out waiting for peer KEY_EXCHANGE (join + accept on both sides)";
+      m_logger(Logging::ERROR) << msg;
+      return {false, msg};
+    }
+  }
+
   // ── Adaptor sig step 2: key aggregation ──
   if (!adaptor_key_aggregate(params)) {
     m_logger(Logging::ERROR) << "Musig2 key aggregation failed";
@@ -917,110 +1039,109 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
     return false;
   }
 
-  // 1. Create a known output via optimize RPC
-  TransferResult opt;
-  if (!m_rpc.optimizeWallet(params.xfgAmount, opt)) {
-    m_logger(Logging::ERROR) << "  optimize RPC failed";
+  // Escrow spend needs a positive network fee. Non-"pretty" amounts (e.g.
+  // xfgAmount+fee as one number) are NOT indexed for ring selection, so we
+  // fund with TWO pretty-amount inputs: escrow principal + MINIMUM_FEE.
+  const uint64_t kEscrowFee = CryptoNote::parameters::MINIMUM_FEE; // 8000 (pretty)
+  if (params.xfgAmount == 0) {
+    m_logger(Logging::ERROR) << "  Invalid escrow amount";
     return false;
   }
-  m_logger(Logging::INFO) << "  Optimize tx: " << opt.txHash;
 
-  // 2. Derive txPubKey and one-time secret
-  Crypto::SecretKey txSec;
-  if (!Common::podFromHex(opt.txSecretKey, txSec)) return false;
-  Crypto::PublicKey txPubKey;
-  if (!Crypto::secret_key_to_public_key(txSec, txPubKey)) return false;
+  struct FundedOut {
+    uint64_t amount = 0;
+    Crypto::PublicKey derivedKey{};
+    Crypto::SecretKey outputSecret{};
+    Crypto::KeyImage keyImage{};
+    uint32_t realGI = 0;
+  };
 
-  Crypto::KeyDerivation derivation;
-  if (!Crypto::generate_key_derivation(txPubKey, m_makerViewSecretKey, derivation))
-    return false;
+  auto createKnownOut = [&](uint64_t amount, FundedOut& fo) -> bool {
+    TransferResult opt;
+    if (!m_rpc.optimizeWallet(amount, opt)) {
+      m_logger(Logging::ERROR) << "  self-transfer failed for amount " << amount;
+      return false;
+    }
+    m_logger(Logging::INFO) << "  Self-transfer " << amount << " tx=" << opt.txHash;
+    Crypto::SecretKey txSec;
+    if (!Common::podFromHex(opt.txSecretKey, txSec)) return false;
+    Crypto::PublicKey txPubKey;
+    if (!Crypto::secret_key_to_public_key(txSec, txPubKey)) return false;
+    Crypto::KeyDerivation derivation;
+    if (!Crypto::generate_key_derivation(txPubKey, m_makerViewSecretKey, derivation))
+      return false;
 
-  // 3. Poll for the optimize output global index.
-  // The optimize tx creates outputs at various amounts. We try all output
-  // indices (0..9) in the derivation and match against on-chain outputs.
-  Crypto::PublicKey derivedKey;
-  Crypto::SecretKey outputSecret;
-  Crypto::KeyImage keyImage;
-  uint32_t realGI = 0;
-  bool found = false;
-  size_t foundOutIdx = 0;
-
-  for (int retry = 0; retry < 200 && !found; ++retry) {
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    std::vector<TxOutputInfo> optOuts;
-    if (m_rpc.getTransactionOutputs(opt.txHash, optOuts) && !optOuts.empty()) {
-      for (size_t outIdx = 0; outIdx < 10 && !found; ++outIdx) {
+    for (int retry = 0; retry < 200; ++retry) {
+      std::this_thread::sleep_for(std::chrono::seconds(2));
+      std::vector<TxOutputInfo> optOuts;
+      if (!m_rpc.getTransactionOutputs(opt.txHash, optOuts) || optOuts.empty())
+        continue;
+      for (size_t outIdx = 0; outIdx < 16; ++outIdx) {
+        Crypto::PublicKey derivedKey;
         Crypto::derive_public_key(derivation, outIdx, m_makerPublicKey, derivedKey);
         for (size_t i = 0; i < optOuts.size(); ++i) {
-          if (std::memcmp(&optOuts[i].targetKey, &derivedKey,
-                          sizeof(Crypto::PublicKey)) == 0) {
-            foundOutIdx = outIdx;
-            uint64_t realAmt = optOuts[i].amount;
-            std::vector<RandomOutputEntry> outs;
-            if (m_rpc.getRandomOutputs(realAmt, 100, outs)) {
-              for (auto& o : outs) {
-                if (std::memcmp(&o.outKey, &derivedKey,
-                                sizeof(Crypto::PublicKey)) == 0) {
-                  realGI = static_cast<uint32_t>(o.globalIndex);
-                  found = true;
-                  m_logger(Logging::INFO) << "  Optimize output at gi=" << realGI
-                    << " amt=" << realAmt << " outIdx=" << outIdx;
-                  // Re-derive secret and key image with the correct index
-                  Crypto::derive_secret_key(derivation, outIdx, m_makerSecretKey, outputSecret);
-                  Crypto::generate_key_image(derivedKey, outputSecret, keyImage);
-                  break;
-                }
-              }
-            }
-            break;
+          if (optOuts[i].amount != amount) continue;
+          if (std::memcmp(&optOuts[i].targetKey, &derivedKey, sizeof(Crypto::PublicKey)) != 0)
+            continue;
+          std::vector<RandomOutputEntry> outs;
+          // Large sample for high-volume amounts (e.g. 1 XFG after mining).
+          if (!m_rpc.getRandomOutputs(amount, 10000, outs)) continue;
+          for (auto& o : outs) {
+            if (std::memcmp(&o.outKey, &derivedKey, sizeof(Crypto::PublicKey)) != 0)
+              continue;
+            fo.amount = amount;
+            fo.derivedKey = derivedKey;
+            fo.realGI = static_cast<uint32_t>(o.globalIndex);
+            Crypto::derive_secret_key(derivation, outIdx, m_makerSecretKey, fo.outputSecret);
+            Crypto::generate_key_image(derivedKey, fo.outputSecret, fo.keyImage);
+            m_logger(Logging::INFO) << "  Known out amount=" << amount
+              << " gi=" << fo.realGI << " outIdx=" << outIdx;
+            return true;
           }
         }
       }
+      if (retry % 10 == 0)
+        m_logger(Logging::INFO) << "  Waiting for amount " << amount
+          << " out confirmation... (" << retry << ")";
     }
-    if (!found && retry % 10 == 0)
-      m_logger(Logging::INFO) << "  Waiting for optimize tx confirmation... (" << retry << ")";
-  }
-  if (!found) {
-    m_logger(Logging::ERROR) << "  Optimize output not found after polling";
+    m_logger(Logging::ERROR) << "  Could not resolve GI for amount " << amount;
     return false;
-  }
-  // realGI is the optimize *input* global index — NOT the escrow output.
-  // escrowOutputIndex is resolved after the escrow funding tx confirms.
-  m_logger(Logging::INFO) << "  Optimize input at gi=" << realGI
-    << " (local outIdx=" << foundOutIdx << ")";
+  };
 
-  // 4. Get decoy outputs
-  std::vector<RandomOutputEntry> decoys;
-  if (!m_rpc.getRandomOutputs(params.xfgAmount, 9, decoys) || decoys.size() < 9) {
-    m_logger(Logging::ERROR) << "  Insufficient decoys: " << decoys.size();
-    return false;
-  }
-  decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
-      [realGI](const RandomOutputEntry& e) { return e.globalIndex == realGI; }),
-      decoys.end());
-  if (decoys.size() < 8) {
-    m_logger(Logging::ERROR) << "  Not enough decoys after filtering";
-    return false;
-  }
-  decoys.resize(8);
+  auto buildRing = [&](const FundedOut& fo, std::vector<uint32_t>& rel,
+                       std::vector<Crypto::PublicKey>& ringKeys, size_t& realIdx) {
+    struct RM { uint32_t gi; Crypto::PublicKey pk; };
+    std::vector<RM> ring;
+    ring.push_back({fo.realGI, fo.derivedKey});
+    std::vector<RandomOutputEntry> decoys;
+    if (m_rpc.getRandomOutputs(fo.amount, 16, decoys)) {
+      for (auto& d : decoys) {
+        if (d.globalIndex == fo.realGI) continue;
+        ring.push_back({static_cast<uint32_t>(d.globalIndex), d.outKey});
+        if (ring.size() >= 9) break; // real + up to 8 decoys
+      }
+    }
+    if (ring.size() == 1) {
+      m_logger(Logging::WARNING) << "  mixIn=0 ring for amount " << fo.amount;
+    }
+    std::sort(ring.begin(), ring.end(),
+              [](const RM& a, const RM& b) { return a.gi < b.gi; });
+    realIdx = 0;
+    for (size_t i = 0; i < ring.size(); ++i)
+      if (ring[i].gi == fo.realGI) { realIdx = i; break; }
+    std::vector<uint32_t> abs;
+    ringKeys.clear();
+    for (auto& r : ring) { abs.push_back(r.gi); ringKeys.push_back(r.pk); }
+    rel = CryptoNote::absolute_output_offsets_to_relative(abs);
+  };
 
-  // 5. Build ring
-  struct RM { uint32_t gi; Crypto::PublicKey pk; };
-  std::vector<RM> ring;
-  ring.push_back({realGI, derivedKey});
-  for (auto& d : decoys) ring.push_back({(uint32_t)d.globalIndex, d.outKey});
-  std::sort(ring.begin(), ring.end(),
-            [](const RM& a, const RM& b) { return a.gi < b.gi; });
-  size_t realIdx = 0;
-  for (size_t i = 0; i < ring.size(); ++i)
-    if (ring[i].gi == realGI) { realIdx = i; break; }
+  // 1–3. Create two pretty-amount known outputs: principal + fee
+  FundedOut principal, feeOut;
+  if (!createKnownOut(params.xfgAmount, principal)) return false;
+  if (!createKnownOut(kEscrowFee, feeOut)) return false;
 
-  std::vector<uint32_t> abs;
-  std::vector<Crypto::PublicKey> ringKeys;
-  for (auto& r : ring) { abs.push_back(r.gi); ringKeys.push_back(r.pk); }
-  auto rel = CryptoNote::absolute_output_offsets_to_relative(abs);
-
-  // 6. Build unsigned escrow funding tx
+  // 4–6. Build 2-input / 1-output escrow funding tx
+  //      inputs: principal + fee  →  output: escrow(principal)  (fee is network fee)
   CryptoNote::Transaction tx;
   tx.version = CryptoNote::TRANSACTION_VERSION_1;
   tx.unlockTime = 0;
@@ -1028,11 +1149,25 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
   CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
 
-  CryptoNote::KeyInput input;
-  input.amount = params.xfgAmount;
-  input.outputIndexes = rel;
-  input.keyImage = keyImage;
-  tx.inputs.push_back(input);
+  std::vector<uint32_t> relP, relF;
+  std::vector<Crypto::PublicKey> ringKeysP, ringKeysF;
+  size_t realIdxP = 0, realIdxF = 0;
+  buildRing(principal, relP, ringKeysP, realIdxP);
+  buildRing(feeOut, relF, ringKeysF, realIdxF);
+
+  {
+    CryptoNote::KeyInput inP;
+    inP.amount = principal.amount;
+    inP.outputIndexes = relP;
+    inP.keyImage = principal.keyImage;
+    tx.inputs.push_back(inP);
+
+    CryptoNote::KeyInput inF;
+    inF.amount = feeOut.amount;
+    inF.outputIndexes = relF;
+    inF.keyImage = feeOut.keyImage;
+    tx.inputs.push_back(inF);
+  }
 
   CryptoNote::KeyOutput ko;
   ko.key = params.escrowPubKey;
@@ -1040,68 +1175,65 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   escrowOut.amount = params.xfgAmount;
   escrowOut.target = ko;
   tx.outputs.push_back(escrowOut);
-  tx.signatures.push_back(std::vector<Crypto::Signature>(ring.size()));
+  tx.signatures.push_back(std::vector<Crypto::Signature>(ringKeysP.size()));
+  tx.signatures.push_back(std::vector<Crypto::Signature>(ringKeysF.size()));
 
   Crypto::Hash prefixHash;
   if (!CryptoNote::getObjectHash(
           static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash))
     return false;
 
-  // 7. Ring signature
+  // 7. Ring signatures (one per input)
   {
-    std::vector<const Crypto::PublicKey*> ptrs;
-    for (auto& k : ringKeys) ptrs.push_back(&k);
-    Crypto::generate_ring_signature(prefixHash, keyImage, ptrs,
-        outputSecret, realIdx,
+    std::vector<const Crypto::PublicKey*> ptrsP;
+    for (auto& k : ringKeysP) ptrsP.push_back(&k);
+    Crypto::generate_ring_signature(prefixHash, principal.keyImage, ptrsP,
+        principal.outputSecret, realIdxP,
         const_cast<Crypto::Signature*>(tx.signatures[0].data()));
+
+    std::vector<const Crypto::PublicKey*> ptrsF;
+    for (auto& k : ringKeysF) ptrsF.push_back(&k);
+    Crypto::generate_ring_signature(prefixHash, feeOut.keyImage, ptrsF,
+        feeOut.outputSecret, realIdxF,
+        const_cast<Crypto::Signature*>(tx.signatures[1].data()));
   }
 
   // 8. Broadcast
   std::string txHex = SwapTxBuilder::serializeToHex(tx);
   m_logger(Logging::INFO) << "  Broadcasting escrow tx (" << txHex.size() << " hex)";
-  if (!m_rpc.sendRawTransaction(txHex)) {
-    m_logger(Logging::ERROR) << "  sendRawTransaction failed";
-    return false;
+  {
+    // Capture daemon response body for diagnostics (sendRawTransaction only returns bool).
+    std::string resp = m_rpc.daemonPost("/sendrawtransaction",
+        std::string("{\"tx_as_hex\":\"") + txHex + "\"}");
+    m_logger(Logging::INFO) << "  sendrawtransaction response: " << resp.substr(0, 400);
+    bool ok = false;
+    try {
+      Common::JsonValue json = Common::JsonValue::fromString(resp);
+      ok = json.isObject() && json.contains("status") && json("status").isString()
+           && json("status").getString() == "OK";
+    } catch (...) { ok = false; }
+    if (!ok) {
+      m_logger(Logging::ERROR) << "  sendRawTransaction failed";
+      return false;
+    }
   }
 
+  // Full transaction hash (not prefix hash) — matches what the daemon indexes.
   Crypto::Hash txHash;
-  CryptoNote::getObjectHash(
-      static_cast<CryptoNote::TransactionPrefix&>(tx), txHash);
+  if (!CryptoNote::getObjectHash(tx, txHash)) {
+    m_logger(Logging::ERROR) << "  Failed to hash escrow tx";
+    return false;
+  }
   params.escrowTxHash = txHash;
   m_logger(Logging::INFO) << "  Escrow funded: " << Common::podToHex(txHash);
 
-  // Resolve the escrow output's *global* index (required for spend ring).
-  // Poll getTransactionOutputs + getRandomOutputs until the escrow key appears.
-  uint32_t escrowGi = 0;
-  bool giFound = false;
-  for (int retry = 0; retry < 200 && !giFound; ++retry) {
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    std::vector<TxOutputInfo> outs;
-    if (!m_rpc.getTransactionOutputs(Common::podToHex(txHash), outs)) continue;
-    for (const auto& o : outs) {
-      if (o.amount != params.xfgAmount) continue;
-      if (std::memcmp(&o.targetKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) != 0)
-        continue;
-      std::vector<RandomOutputEntry> candidates;
-      if (!m_rpc.getRandomOutputs(params.xfgAmount, 200, candidates)) continue;
-      for (const auto& c : candidates) {
-        if (std::memcmp(&c.outKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) == 0) {
-          escrowGi = static_cast<uint32_t>(c.globalIndex);
-          giFound = true;
-          break;
-        }
-      }
-      break;
-    }
-    if (!giFound && retry % 10 == 0)
-      m_logger(Logging::INFO) << "  Waiting for escrow output global index... (" << retry << ")";
+  // Resolve escrow output GI best-effort (do not block the tick for minutes).
+  // processSwap / resolveEscrowGlobalIndex will finish this on later ticks.
+  if (resolveEscrowGlobalIndex(params)) {
+    m_logger(Logging::INFO) << "  Escrow output global index=" << params.escrowOutputIndex;
+  } else {
+    m_logger(Logging::INFO) << "  Escrow GI not yet indexed — will resolve on later ticks";
   }
-  if (!giFound) {
-    m_logger(Logging::ERROR) << "  Escrow output global index not found after funding";
-    return false;
-  }
-  params.escrowOutputIndex = escrowGi;
-  m_logger(Logging::INFO) << "  Escrow output global index=" << escrowGi;
   return true;
 }
 
@@ -1135,7 +1267,7 @@ bool SwapDaemon::resolveEscrowGlobalIndex(SwapParams& params) {
     if (std::memcmp(&o.targetKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) != 0)
       continue;
     std::vector<RandomOutputEntry> candidates;
-    if (!m_rpc.getRandomOutputs(params.xfgAmount, 200, candidates)) return false;
+    if (!m_rpc.getRandomOutputs(params.xfgAmount, 10000, candidates)) return false;
     for (const auto& c : candidates) {
       if (std::memcmp(&c.outKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) == 0) {
         params.escrowOutputIndex = static_cast<uint32_t>(c.globalIndex);
@@ -2176,9 +2308,11 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "KEY_EXCHANGE signature invalid for swap " << msg.swapId;
           return false;
         }
+        // Store peer pubkey only. Aggregation + state transition happen in accept()
+        // so both sides can exchange keys concurrently without racing the SM.
         params.peerSwapPubKey = msg.keyExchange.swapPubKey;
-        if (!adaptor_key_aggregate(params)) return false;
-        sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+        m_logger(Logging::INFO) << "Stored peer swap pubkey for " << msg.swapId
+          << " (run accept to aggregate)";
         return true;
 
       default:
@@ -2442,6 +2576,14 @@ void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicK
   m_makerSecretKey = sk;
   m_makerPublicKey = pk;
   m_makerKeysSet = true;
+  // One-shot CLI paths (initiate/accept/list) never call start(), but still
+  // need the DB encryption key so serialize() can persist secrets at rest.
+  std::string keyInput(Common::podToHex(m_makerSecretKey));
+  keyInput += "::swap-escrow-enc-key";
+  Crypto::cn_context ctx;
+  Crypto::Hash derived;
+  Crypto::cn_slow_hash(ctx, keyInput.data(), keyInput.size(), derived, 0, 0, 0);
+  m_db.setEncryptionKey(std::string(reinterpret_cast<const char*>(derived.data), sizeof(derived.data)));
 }
 
 bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {

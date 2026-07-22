@@ -60,6 +60,11 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
     auto& mutableSm = const_cast<SwapStateMachine&>(sm);
     if (!m_encKey.empty()) mutableSm.setEncryptionKey(m_encKey);
     std::string json = mutableSm.serialize();
+    // serialize() returns empty when secrets are present but no enc key is set.
+    // Never write a zero-byte swap file (that permanently bricks the swap id).
+    if (json.empty()) {
+      return false;
+    }
     std::string path = swapFilePath(sm.params().swapId);
 
     // Write to a temp file first, then rename for atomicity

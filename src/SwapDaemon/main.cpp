@@ -43,8 +43,9 @@ void printUsage() {
     "Usage: xfg-swapd [options] <command> [args...]\n"
     "\n"
     "Commands:\n"
-    "  initiate <pair> <xfg_amount> <ctr_amount> <peer>  -- start a swap\n"
-    "  accept <swap_id>                                    -- accept incoming swap\n"
+    "  initiate <pair> <xfg_amount> <ctr_amount> <peer>  -- start a swap (Bob)\n"
+    "  join <swap_id> <pair> <xfg_amount> <ctr_amount> <peer>  -- join as Alice\n"
+    "  accept <swap_id>                                    -- exchange keys / accept\n"
     "  status [swap_id]                                    -- show swap(s) status\n"
     "  refund <swap_id>                                    -- force refund (if timeout elapsed)\n"
     "  list                                                -- list all swaps\n"
@@ -331,6 +332,64 @@ int main(int argc, char* argv[]) {
       params.htlcOutputIndex = 0;
 
       if (!daemon.initiate(params)) {
+        return 1;
+      }
+
+    } else if (command == "join") {
+      if (argIdx + 4 >= argc) {
+        std::cerr << "Usage: xfg-swapd join <swap_id> <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
+        return 1;
+      }
+      std::string swapId = argv[argIdx++];
+      std::string pairStr = argv[argIdx++];
+      std::string xfgAmountStr = argv[argIdx++];
+      std::string ctrAmountStr = argv[argIdx++];
+      std::string peer = argv[argIdx++];
+
+      XfgSwap::SwapParams params;
+      params.swapId = swapId;
+      try {
+        params.pair = XfgSwap::swapPairFromString(pairStr);
+      } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+      }
+      params.role = XfgSwap::SwapRole::ALICE;
+      auto parseAmount = [](const std::string& s, const char* label, uint64_t& out) {
+        if (s.empty()) {
+          std::cerr << "Error: " << label << " is empty" << std::endl;
+          return false;
+        }
+        char* endp = nullptr;
+        unsigned long long v = std::strtoull(s.c_str(), &endp, 10);
+        if (endp == s.c_str() || endp == nullptr || *endp != '\0' || v == 0) {
+          std::cerr << "Error: " << label << " must be a positive integer" << std::endl;
+          return false;
+        }
+        out = static_cast<uint64_t>(v);
+        return true;
+      };
+      if (!parseAmount(xfgAmountStr, "xfg_amount", params.xfgAmount)) return 1;
+      if (!parseAmount(ctrAmountStr, "ctr_amount", params.ctrAmount)) return 1;
+      params.peerEndpoint = peer;
+
+      std::memset(&params.aliceXfgPubKey, 0, sizeof(params.aliceXfgPubKey));
+      std::memset(&params.bobXfgPubKey, 0, sizeof(params.bobXfgPubKey));
+      std::memset(&params.ourSwapSecKey, 0, sizeof(params.ourSwapSecKey));
+      std::memset(&params.ourSwapPubKey, 0, sizeof(params.ourSwapPubKey));
+      std::memset(&params.peerSwapPubKey, 0, sizeof(params.peerSwapPubKey));
+      std::memset(&params.escrowPubKey, 0, sizeof(params.escrowPubKey));
+      std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
+      std::memset(&params.adaptorSecret, 0, sizeof(params.adaptorSecret));
+      std::memset(&params.escrowTxHash, 0, sizeof(params.escrowTxHash));
+      std::memset(&params.hashLock, 0, sizeof(params.hashLock));
+      std::memset(&params.preimage, 0, sizeof(params.preimage));
+      params.xfgTimeoutHeight = 0;
+      params.ctrTimeoutBlock = 0;
+      params.escrowOutputIndex = 0;
+      params.htlcOutputIndex = 0;
+
+      if (!daemon.join(params)) {
         return 1;
       }
 

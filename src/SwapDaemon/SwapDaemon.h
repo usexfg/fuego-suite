@@ -192,6 +192,10 @@ public:
   // Start a new swap as initiator (Bob: has XFG, wants counterparty coin).
   bool initiate(SwapParams& params);
 
+  // Alice-side join: create INITIATED swap with the Bob-provided swapId so
+  // both parties share an id before accept / KEY_EXCHANGE.
+  bool join(SwapParams& params);
+
   // Accept an incoming swap proposal.
   struct AcceptResult {
     bool success;

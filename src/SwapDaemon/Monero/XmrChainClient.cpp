@@ -20,8 +20,12 @@ ChainClientResult XmrChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult XmrChainClient::verifyLock(const SwapParams& params) {
-  bool ok = m_rpc->verifyLock(params.ctrAddress, params.ctrAmount);
-  if (!ok) return ChainClientResult::fail("XMR lock not verified");
+  // Must open a watch-only wallet for the negotiated shared address using the
+  // shared view key — never trust whichever wallet is currently open on RPC.
+  if (m_viewKeyHex.empty())
+    return ChainClientResult::fail("XMR verifyLock: shared view key not configured");
+  bool ok = m_rpc->verifyLock(params.ctrAddress, m_viewKeyHex, params.ctrAmount);
+  if (!ok) return ChainClientResult::fail("XMR lock not verified for shared address");
   return ChainClientResult::ok(params.ctrAddress);
 }
 

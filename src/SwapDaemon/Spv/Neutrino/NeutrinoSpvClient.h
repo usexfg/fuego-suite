@@ -26,6 +26,8 @@ namespace XfgSwap {
 struct GcsFilterParams {
   uint32_t M = 784931;   // SipHash modulator (BIP-158 default)
   uint32_t P = 19;       // Filter pruning threshold (2^P false positive rate)
+  uint64_t k0 = 0;       // SipHash key part 0 (0 = derive from block hash)
+  uint64_t k1 = 0;       // SipHash key part 1 (0 = derive from block hash)
 };
 
 // Abstract connection to a Neutrino (BIP-157/158) peer.
@@ -39,6 +41,11 @@ public:
 // Compute SipHash-2-4 of data with given 128-bit key (k0, k1).
 // This is the PRF used by BIP-158 GCS filters.
 uint64_t SipHash(const uint8_t* data, size_t len, uint64_t k0, uint64_t k1);
+
+// Derive BIP-158 SipHash key from block hash: SHA256(blockHash)[0:8] = k0, SHA256(blockHash)[8:16] = k1.
+// If blockHash is empty, falls back to legacy key (k0 = M, k1 = P) for backward compatibility.
+GcsFilterParams deriveFilterKey(const std::vector<uint8_t>& blockHash,
+                                const GcsFilterParams& base = GcsFilterParams());
 
 // BIP-157/158 compact block filter SPV client.
 //

@@ -148,6 +148,7 @@ bool loadChainClientConfig(const std::string& path,
   out.ethAddress     = jsonGetStr(json, "eth_address");
   out.ethChainId     = jsonGetUint(json, "eth_chain_id", 1);
   out.ethHtlcBinPath = jsonGetStr(json, "eth_htlc_bin_path");
+  out.ethHtlcRegistry = jsonGetStr(json, "eth_htlc_registry");
 
   // ARB
   out.arbHost       = jsonGetStr(json, "arb_rpc_host", "");
@@ -185,6 +186,21 @@ bool loadChainClientConfig(const std::string& path,
   out.dcrPort    = static_cast<uint16_t>(jsonGetUint(json, "dcr_rpc_port", 9108));
   out.dcrRpcUser = jsonGetStr(json, "dcr_rpc_user");
   out.dcrRpcPass = jsonGetStr(json, "dcr_rpc_pass");
+  out.dcrWif     = jsonGetStr(json, "dcr_wif", "");
+
+  // DCR SPV mode configuration
+  out.dcrMode = jsonGetStr(json, "dcr_mode", "");
+  out.dcrSpvMinServers = static_cast<size_t>(jsonGetUint(json, "dcr_spv_min_servers", 1));
+  out.dcrSpvCheckpointHeight = jsonGetUint(json, "dcr_spv_checkpoint_height", 0);
+  out.dcrSpvCheckpointHash = jsonGetStr(json, "dcr_spv_checkpoint_hash", "");
+
+  // Parse DCR SPV server list: dcr_spv_server_0, dcr_spv_server_1, ...
+  for (size_t i = 0; i < 16; ++i) {
+    std::string key = "dcr_spv_server_" + std::to_string(i);
+    std::string server = jsonGetStr(json, key, "");
+    if (server.empty()) break;
+    out.dcrSpvServers.push_back(server);
+  }
 
   out.xfgWalletRpcHost = jsonGetStr(json, "xfg_wallet_rpc_host", "");
   out.xfgWalletRpcPort = static_cast<uint16_t>(jsonGetUint(json, "xfg_wallet_rpc_port", 0));

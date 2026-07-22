@@ -319,8 +319,9 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
     return true;
   }
 
-  // Multi-server: query all servers for their tip, take minimum (conservative)
-  uint64_t minTip = UINT64_MAX;
+  // Multi-server: query all servers for their tip, take maximum (most advanced).
+  // Cross-check at the target height to prevent eclipse attacks from a minority.
+  uint64_t maxTip = 0;
   for (auto& conn : m_conns) {
     std::string result = conn->call("blockchain.headers.subscribe", "[]");
     if (result.empty()) {
@@ -336,27 +337,27 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
       continue;
     }
     uint64_t h = static_cast<uint64_t>(json("height").getInteger());
-    if (h < minTip) {
-      minTip = h;
+    if (h > maxTip) {
+      maxTip = h;
     }
   }
 
-  if (minTip == UINT64_MAX) {
+  if (maxTip == 0) {
     return false;
   }
 
-  // Cross-check: verify header at minTip agrees across servers
+  // Cross-check: verify header at maxTip agrees across servers
   std::vector<uint8_t> rootLE;
-  if (!m_store.merkleRootAt(minTip, rootLE)) {
+  if (!m_store.merkleRootAt(maxTip, rootLE)) {
     return false;
   }
   std::vector<uint8_t> rootBE(rootLE.rbegin(), rootLE.rend());
   std::string rootDisplay = BchHtlcScript::bytesToHex(rootBE);
-  if (!crossCheckHeader(minTip, rootDisplay)) {
+  if (!crossCheckHeader(maxTip, rootDisplay)) {
     return false;
   }
 
-  height = minTip;
+  height = maxTip;
   return true;
 }
 
@@ -592,6 +593,12 @@ bool ElectrumSpvClient::getRawTx(
   rawTx.clear();
 
   if (m_conns.empty()) {
+    return false;
+  }
+
+  // Validate txid is hex-only to prevent JSON injection
+  static const char hexChars[] = "0123456789abcdefABCDEF";
+  if (txid.size() != 64 || txid.find_first_not_of(hexChars) != std::string::npos) {
     return false;
   }
 

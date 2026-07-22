@@ -18,9 +18,11 @@
 #include "StatusServer.h"
 #include "SwapTypes.h"
 #include "SwapStateMachine.h"
+#include "Spv/SpvHeaderStore.h"
 #include "SwapDatabase.h"
 #include "SwapTxBuilder.h"
 #include "SwapPeerProtocol.h"
+#include "SwapP2P.h"
 #include "FuegoRpcClient.h"
 #include "PriceOracle.h"
 #include "../Logging/ILogger.h"
@@ -83,6 +85,8 @@ struct ChainClientConfig {
   uint64_t    ethChainId = 1;  // EIP-155 chain ID (1=mainnet, 11155111=Sepolia)
   // Optional: path to the pre-compiled HashedTimelock .bin file
   std::string ethHtlcBinPath;
+  // Pre-deployed HashedTimelock registry address ("0x...")
+  std::string ethHtlcRegistry;
 
   // ARB
   std::string arbHost;
@@ -122,6 +126,14 @@ struct ChainClientConfig {
   uint16_t    dcrPort     = 9108;
   std::string dcrRpcUser;
   std::string dcrRpcPass;
+  std::string dcrWif;
+
+  // DCR SPV mode — when dcrMode == "spv", use NeutrinoSpvClient instead of RPC
+  std::string dcrMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> dcrSpvServers;      // "host:port" strings
+  size_t    dcrSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  dcrSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string dcrSpvCheckpointHash;            // checkpoint hash (display hex)
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
@@ -151,10 +163,16 @@ public:
 
   // Load persisted non-terminal swaps, log recovery summary, and start the
   // background tick thread.  Call once after construction.
-  void start();
+  // p2pPort: swap peer protocol listen port (0 = disable P2P).
+  // p2pBind: bind address (default loopback).
+  void start(uint16_t p2pPort = 18901, const std::string& p2pBind = "127.0.0.1");
 
-  // Stop the background tick thread.  Safe to call multiple times.
+  // Stop the background tick thread and P2P.  Safe to call multiple times.
   void stop();
+
+  // Send a signed PeerMessage to the swap's peerEndpoint over SwapP2P.
+  // Returns false if P2P is down, peerEndpoint empty, or send fails.
+  bool deliverPeerMessage(const PeerMessage& msg);
 
   // Configure wallet RPC endpoint for escrow funding.
   // Must be called before processSwap() can fund escrow.
@@ -233,10 +251,15 @@ public:
   bool handleWaitingSpv(SwapStateMachine& sm);
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
 
+  // Shared ring-sig finalization logic for ADAPTOR_SECRET_REVEALED and
+  // ADAPTOR_SECRET_CONFIRMED_SPV (both perform the same spend flow).
+  bool finalizeEscrowSpend(SwapStateMachine& sm, const std::string& logContext);
+
   // Verify that the escrow funding tx exists and contains an output
   // with the expected amount to the joint escrow key.
   // Returns true if the escrow is confirmed on chain.
   bool verifyEscrowFunding(const SwapParams& params);
+  bool resolveEscrowGlobalIndex(SwapParams& params);
 
   // Returns the resolved XFG address. If input is an alias (@name or short name),
   // resolves via RPC. If already an address, returns as-is. Returns "" on failure.
@@ -252,8 +275,14 @@ public:
   // Handle an incoming peer message for an active swap.
   bool handlePeerMessage(const PeerMessage& msg);
 
+  // Feed TWAP/oracle from a completed swap (local authenticated path only).
+  void recordCompletedTrade(const SwapStateMachine& sm);
+
   // Background tick thread — runs checkTimeouts + processSwap every 30 s
   void tickLoop();
+
+  // Inbound SwapP2P callback: payload is serializePeerMessage() JSON.
+  void onP2pMessage(const SwapMessage& msg);
 
   static constexpr int TICK_INTERVAL_SECS = 30;
 
@@ -262,6 +291,7 @@ public:
    PriceOracle m_oracle;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
+   std::unique_ptr<SwapP2P> m_p2p;
 
     CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
     std::unique_ptr<OfferManager> m_offerManager;
@@ -293,6 +323,9 @@ public:
    std::atomic<bool>     m_running{false};
    std::mutex            m_tickMutex;
     std::condition_variable m_tickCv;
+
+    // SPV header stores for Neutrino clients (must outlive the chain clients)
+    std::map<SwapPair, std::shared_ptr<SpvHeaderStore>> m_spvHeaderStores;
 };
 
 // Load a ChainClientConfig from a JSON file.

@@ -131,7 +131,15 @@ ChainClientResult KmdChainClient::verifyLockSpv(const SwapParams& params) {
     // Check if this is a P2SH output: OP_HASH160 <20 bytes> OP_EQUAL (23 bytes)
     if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
       if (value >= params.ctrAmount) {
-        foundP2sh = true;
+        // Verify the P2SH hash matches the expected HTLC script
+        if (!params.chainState.empty()) {
+          auto redeemScript = KmdHtlcScript::hexToBytes(params.chainState);
+          auto expectedHash = KmdHtlcScript::hash160(redeemScript);
+          if (expectedHash.size() == 20 && std::memcmp(p + 2, expectedHash.data(), 20) == 0) {
+            foundP2sh = true;
+          }
+        }
+        // Fail closed without chainState (redeem script) — no any-P2SH fallback.
       }
     }
 

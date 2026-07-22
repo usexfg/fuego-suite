@@ -130,6 +130,12 @@ void RlpEncoder::writeBytes(const uint8_t* data, size_t len) {
   writeEncodedBytes(data, len, out);
 }
 
+void RlpEncoder::writeEmptyList() {
+  // Empty list encodes as single byte 0xc0 (list prefix with length 0).
+  auto& out = m_inList ? m_listContent : m_top;
+  out.push_back(0xc0);
+}
+
 std::vector<uint8_t> RlpEncoder::finalize() const {
   if (m_inList) {
     throw std::logic_error("RlpEncoder::finalize: endList not called");

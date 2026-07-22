@@ -79,6 +79,24 @@ uint64_t SipHash(const uint8_t* in, size_t inlen, uint64_t k0, uint64_t k1) {
 #undef SIPROUND
 
 // =============================================================================
+// BIP-158 key derivation
+// =============================================================================
+
+GcsFilterParams deriveFilterKey(const std::vector<uint8_t>& blockHash,
+                                const GcsFilterParams& base) {
+  GcsFilterParams p = base;
+  if (blockHash.size() >= 32) {
+    auto digest = BchHtlcScript::sha256(blockHash);
+    if (digest.size() == 32) {
+      std::memcpy(&p.k0, digest.data(), 8);
+      std::memcpy(&p.k1, digest.data() + 8, 8);
+    }
+  }
+  // If blockHash empty or sha256 failed, k0/k1 remain 0 (caller uses defaults)
+  return p;
+}
+
+// =============================================================================
 // GCS filter construction and matching (BIP-158)
 //
 // Filter format:
@@ -142,8 +160,9 @@ std::vector<uint8_t> NeutrinoSpvClient::buildFilter(
     return {};
   }
 
-  uint64_t k0 = params.M;
-  uint64_t k1 = params.P;
+  // Use explicit k0/k1 if provided (BIP-158 per-block key), else fall back to legacy M/P
+  uint64_t k0 = params.k0 ? params.k0 : params.M;
+  uint64_t k1 = params.k1 ? params.k1 : params.P;
 
   // Hash all items with SipHash mod M
   // M is the hash range; with P-bit Golomb-Rice coding, the average
@@ -206,8 +225,9 @@ bool NeutrinoSpvClient::matchFilter(
     return false;
   }
 
-  uint64_t k0 = params.M;
-  uint64_t k1 = params.P;
+  // Use explicit k0/k1 if provided (BIP-158 per-block key), else fall back to legacy M/P
+  uint64_t k0 = params.k0 ? params.k0 : params.M;
+  uint64_t k1 = params.k1 ? params.k1 : params.P;
 
   uint64_t targetHash = SipHash(data.data(), data.size(), k0, k1) % params.M;
 

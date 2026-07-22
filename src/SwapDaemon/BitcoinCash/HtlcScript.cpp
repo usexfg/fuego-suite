@@ -577,7 +577,10 @@ std::vector<uint8_t> BchHtlcScript::buildRawTransaction(
   // Input: sequence
   // For refund (CLTV): must be < 0xFFFFFFFF so CHECKLOCKTIMEVERIFY is not bypassed
   // For claim: 0xFFFFFFFF is fine (no timelock constraint)
-  uint32_t nSequence = (nLockTime > 0) ? 0xFFFFFFFE : 0xFFFFFFFF;
+  // Opt-in BIP-125 RBF (0xFFFFFFFD) when not using CLTV sequence for refund.
+  // Refund path needs nSequence < 0xFFFFFFFF for CLTV; use 0xFFFFFFFE there.
+  // Claim path: RBF-capable so stuck claims can be fee-bumped.
+  uint32_t nSequence = (nLockTime > 0) ? 0xFFFFFFFE : 0xFFFFFFFD;
   writeLE32(tx, nSequence);
 
   // Number of outputs = 1

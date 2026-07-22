@@ -94,7 +94,13 @@ std::string MoneroRpcClient::httpPost(const std::string& host, uint16_t port,
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = ::send(sockfd, request.c_str(), request.size(), 0);
+  ssize_t sent = ::send(sockfd, request.c_str(), request.size(),
+#ifndef _WIN32
+                       MSG_NOSIGNAL
+#else
+                       0
+#endif
+                       );
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
     ::close(sockfd);
     return {};
@@ -473,41 +479,75 @@ bool MoneroRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
   return true;
 }
 
-bool MoneroRpcClient::checkAddressBalance(const std::string& address,
-                                          uint64_t& balance, uint64_t& unlocked) {
-  // This requires the watch-only wallet for the shared address to be open.
-  // Use get_balance from monero-wallet-rpc.
-  // TODO: In a real flow, the caller must first open the watch-only wallet
-  // created during createSharedAddress(). For now, we just call get_balance
-  // on whatever wallet is currently open.
+bool MoneroRpcClient::openWatchOnly(const std::string& address,
+                                    const std::string& viewKeyHex,
+                                    const std::string& walletName,
+                                    uint64_t restoreHeight) {
+  if (address.empty() || viewKeyHex.size() != 64) return false;
 
-  (void)address;  // The open wallet determines the address
+  walletRpc("close_wallet", "{}");
 
-  std::string raw = walletRpc("get_balance", "{\"account_index\":0}");
+  const std::string filename =
+      walletName.empty() ? std::string("swap_watch_default")
+                         : std::string("swap_watch_") + walletName;
 
-  Common::JsonValue res(Common::JsonValue::NIL);
-  if (!parseJsonRpcResult(raw, res)) {
-    balance = 0;
-    unlocked = 0;
-    return false;
+  // Watch-only: spendkey empty. monero-wallet-rpc opens a view-only wallet.
+  std::ostringstream genParams;
+  genParams << "{\"filename\":\"" << filename << "\""
+            << ",\"address\":\"" << address << "\""
+            << ",\"viewkey\":\"" << viewKeyHex << "\""
+            << ",\"spendkey\":\"\""
+            << ",\"password\":\"\""
+            << ",\"restore_height\":" << restoreHeight
+            << "}";
+
+  std::string genRaw = walletRpc("generate_from_keys", genParams.str());
+  Common::JsonValue genRes(Common::JsonValue::NIL);
+  if (!parseJsonRpcResult(genRaw, genRes)) {
+    // Wallet may already exist — try open_wallet
+    std::ostringstream openParams;
+    openParams << "{\"filename\":\"" << filename << "\",\"password\":\"\"}";
+    std::string openRaw = walletRpc("open_wallet", openParams.str());
+    Common::JsonValue openRes(Common::JsonValue::NIL);
+    if (!parseJsonRpcResult(openRaw, openRes)) return false;
   }
 
-  if (res.contains("balance")) {
-    balance = static_cast<uint64_t>(res("balance").getInteger());
-  } else {
-    balance = 0;
+  // Drive a short refresh so outputs are visible
+  for (int i = 0; i < 5; ++i) {
+    walletRpc("refresh", "{}");
+    syncPollDelay();
   }
-
-  if (res.contains("unlocked_balance")) {
-    unlocked = static_cast<uint64_t>(res("unlocked_balance").getInteger());
-  } else {
-    unlocked = 0;
-  }
-
   return true;
 }
 
-// ─── Adaptor-signature stubs (CLSAG adaptor path — TODO) ─────────────────────
+bool MoneroRpcClient::checkAddressBalance(const std::string& address,
+                                          const std::string& viewKeyHex,
+                                          uint64_t& balance, uint64_t& unlocked,
+                                          uint64_t restoreHeight) {
+  balance = 0;
+  unlocked = 0;
+  if (!openWatchOnly(address, viewKeyHex, /*walletName=*/address.substr(0, 16),
+                     restoreHeight)) {
+    return false;
+  }
+
+  std::string raw = walletRpc("get_balance", "{\"account_index\":0}");
+  Common::JsonValue res(Common::JsonValue::NIL);
+  if (!parseJsonRpcResult(raw, res)) {
+    walletRpc("close_wallet", "{}");
+    return false;
+  }
+
+  if (res.contains("balance"))
+    balance = static_cast<uint64_t>(res("balance").getInteger());
+  if (res.contains("unlocked_balance"))
+    unlocked = static_cast<uint64_t>(res("unlocked_balance").getInteger());
+
+  walletRpc("close_wallet", "{}");
+  return true;
+}
+
+// ─── Adaptor-signature operations (CLSAG adaptor path) ──────────────────────
 
 bool MoneroRpcClient::lockAdaptor(const std::string& sharedAddress,
                                    uint64_t amountPiconero,
@@ -518,11 +558,13 @@ bool MoneroRpcClient::lockAdaptor(const std::string& sharedAddress,
 }
 
 bool MoneroRpcClient::verifyLock(const std::string& sharedAddress,
+                                  const std::string& viewKeyHex,
                                   uint64_t expectedPiconero) {
+  if (viewKeyHex.empty()) return false;
   uint64_t balance = 0, unlocked = 0;
-  if (!checkAddressBalance(sharedAddress, balance, unlocked)) return false;
-  // Require UNLOCKED balance: XMR needs ~10 confirmations to become spendable,
-  // and a swap must not treat a still-locked deposit as a verified lock.
+  if (!checkAddressBalance(sharedAddress, viewKeyHex, balance, unlocked))
+    return false;
+  // Require UNLOCKED balance: XMR needs ~10 confirmations to become spendable.
   return unlocked >= expectedPiconero;
 }
 

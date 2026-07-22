@@ -35,6 +35,12 @@ namespace XfgSwap {
 // keccak256(adaptorSecret) — Solana HTLC hashlock.
 std::string solHashLockHex(const Crypto::SecretKey& adaptorSecret);
 
+// keccak256(adaptorSecret) — EVM HashedTimelock hashlock (same digest as Solana).
+// Solidity claim: keccak256(abi.encodePacked(preimage)) == hashLock.
+inline std::string ethHashLockHex(const Crypto::SecretKey& adaptorSecret) {
+  return solHashLockHex(adaptorSecret);
+}
+
 // sha256(adaptorSecret) — BCH HTLC hashlock.
 std::string bchHashLockHex(const Crypto::SecretKey& adaptorSecret);
 

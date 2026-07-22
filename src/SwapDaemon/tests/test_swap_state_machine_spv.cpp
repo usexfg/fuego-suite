@@ -304,14 +304,17 @@ static bool test_state_string_mapping() {
 
 static bool test_serialization_roundtrip() {
   std::cout << "  test_serialization_roundtrip... ";
+  // Fail-closed serialize: live secrets require an encryption key.
 
-  SwapParams params;
+  SwapParams params{};
   params.swapId = "test_serial";
   params.pair = SwapPair::BCH;
   params.role = SwapRole::BOB;
   params.requiredConfirmations = 6;
-
+  // Value-init zeros secret pods so needEnc is false without a key; still set
+  // a key so tests match production (enc key always present when persisting).
   SwapStateMachine sm(params);
+  sm.setEncryptionKey("test-spv-serial-enc-key");
   sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
   sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
   sm.transition(SwapState::ADAPTOR_PRESIGS_READY);

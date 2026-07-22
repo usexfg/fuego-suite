@@ -84,6 +84,29 @@ RpcServer::HandlerFunction jsonMethod(bool (RpcServer::*handler)(typename Comman
   };
 }
 
+// Swap control endpoints that require optional X-Swap-Token when configured.
+template <typename Command>
+RpcServer::HandlerFunction jsonMethodSwapAuth(bool (RpcServer::*handler)(typename Command::request const&, typename Command::response&)) {
+  return [handler](RpcServer* obj, const HttpRequest& request, HttpResponse& response) {
+    if (!obj->checkSwapControlAuth(request)) {
+      response.setStatus(HttpResponse::STATUS_401);
+      response.setBody("{\"status\":\"Unauthorized: missing or invalid X-Swap-Token\"}");
+      return true;
+    }
+
+    boost::value_initialized<typename Command::request> req;
+    boost::value_initialized<typename Command::response> res;
+
+    if (!loadFromJson(static_cast<typename Command::request&>(req), request.getBody())) {
+      return false;
+    }
+
+    bool result = (obj->*handler)(req, res);
+    response.setBody(storeToJson(static_cast<typename Command::response&>(res)));
+    return result;
+  };
+}
+
 }
 
 std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction>> RpcServer::s_handlers = {
@@ -114,24 +137,24 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/listswaps",      { jsonMethod<COMMAND_RPC_LIST_SWAPS>(&RpcServer::on_list_swaps), true } },
   { "/getswapstatus",  { jsonMethod<COMMAND_RPC_GET_SWAP_STATUS>(&RpcServer::on_get_swap_status), true } },
 
-  // swap execution endpoints (SwapDaemon bridge)
+  // swap execution endpoints (SwapDaemon bridge) — token-gated when configured
   { "/getactiveswaps", { jsonMethod<COMMAND_RPC_GET_ACTIVE_SWAPS>(&RpcServer::on_get_active_swaps), true } },
-  { "/initiate",       { jsonMethod<COMMAND_RPC_INITIATE_SWAP>(&RpcServer::on_initiate_swap), false } },
-  { "/accept",         { jsonMethod<COMMAND_RPC_ACCEPT_SWAP>(&RpcServer::on_accept_swap), false } },
-  { "/processswap",    { jsonMethod<COMMAND_RPC_PROCESS_SWAP>(&RpcServer::on_process_swap), false } },
-  { "/refundswap",     { jsonMethod<COMMAND_RPC_REFUND_SWAP>(&RpcServer::on_refund_swap), false } },
+  { "/initiate",       { jsonMethodSwapAuth<COMMAND_RPC_INITIATE_SWAP>(&RpcServer::on_initiate_swap), false } },
+  { "/accept",         { jsonMethodSwapAuth<COMMAND_RPC_ACCEPT_SWAP>(&RpcServer::on_accept_swap), false } },
+  { "/processswap",    { jsonMethodSwapAuth<COMMAND_RPC_PROCESS_SWAP>(&RpcServer::on_process_swap), false } },
+  { "/refundswap",     { jsonMethodSwapAuth<COMMAND_RPC_REFUND_SWAP>(&RpcServer::on_refund_swap), false } },
 
   // swap orderbook endpoints
   { "/getswapoffers", { jsonMethod<COMMAND_RPC_GET_SWAP_OFFERS>(&RpcServer::on_get_swap_offers), true } },
   { "/getswapprice", { jsonMethod<COMMAND_RPC_GET_SWAP_PRICE>(&RpcServer::on_get_swap_price), true } },
   { "/getswaptrades", { jsonMethod<COMMAND_RPC_GET_SWAP_TRADES>(&RpcServer::on_get_swap_trades), true } },
-  { "/submitswap", { jsonMethod<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
-  { "/cancelswap", { jsonMethod<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
+  { "/submitswap", { jsonMethodSwapAuth<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
+  { "/cancelswap", { jsonMethodSwapAuth<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
 
   // v2 orderbook endpoints
   { "/getorderbook", { jsonMethod<COMMAND_RPC_GET_ORDER_BOOK>(&RpcServer::on_get_order_book), true } },
-  { "/placeorder", { jsonMethod<COMMAND_RPC_PLACE_ORDER>(&RpcServer::on_place_order), false } },
-  { "/cancelorder", { jsonMethod<COMMAND_RPC_CANCEL_ORDER>(&RpcServer::on_cancel_order), false } },
+  { "/placeorder", { jsonMethodSwapAuth<COMMAND_RPC_PLACE_ORDER>(&RpcServer::on_place_order), false } },
+  { "/cancelorder", { jsonMethodSwapAuth<COMMAND_RPC_CANCEL_ORDER>(&RpcServer::on_cancel_order), false } },
   { "/openorders", { jsonMethod<COMMAND_RPC_GET_OPEN_ORDERS>(&RpcServer::on_get_open_orders), true } },
 
   // disabled in restricted rpc mode
@@ -270,6 +293,25 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
 bool RpcServer::restrictRPC(const bool is_restricted) {
   m_restricted_rpc = is_restricted;
   return true;
+}
+
+bool RpcServer::checkSwapControlAuth(const HttpRequest& request) const {
+  if (m_swapControlToken.empty()) return true;
+  const auto& headers = request.getHeaders();
+  auto it = headers.find("x-swap-token");
+  if (it != headers.end() && it->second == m_swapControlToken) return true;
+  it = headers.find("authorization");
+  if (it != headers.end()) {
+    const std::string& v = it->second;
+    const std::string prefix = "Bearer ";
+    if (v.size() > prefix.size() &&
+        (v.compare(0, prefix.size(), prefix) == 0 ||
+         v.compare(0, 7, "bearer ") == 0) &&
+        v.substr(v.find(' ') + 1) == m_swapControlToken) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool RpcServer::enableCors(const std::string domain) {

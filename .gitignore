@@ -11,7 +11,16 @@ Cargo.lock
 *.swp
 *.swo
 *~
-.claude/
+# Claude Code: ignore local noise, keep shared automations committable
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/skills/**
+!.claude/agents/
+!.claude/agents/**
+!.claude/hooks/
+!.claude/hooks/**
+.claude/settings.local.json
 .opencode/
 .zed/
 .serena/
@@ -42,7 +51,6 @@ test_specialist_report.txt
 .dsp
 
 __pycache__
-.mcp.json
 fuego_blockchain_specialist.py
 fuego_specialist_config.json
 rag_system.py

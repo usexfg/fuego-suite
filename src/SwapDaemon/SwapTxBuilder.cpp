@@ -254,11 +254,25 @@ void SwapTxBuilder::ringRound1Generate(
   ge_tobytes(reinterpret_cast<unsigned char*>(&ringState.ourRingNonceHp), &kHp);
 }
 
+bool SwapTxBuilder::writeAggregateKeyImageToTx(
+    CryptoNote::Transaction& tx,
+    CollaborativeRingState& ringState) {
+  if (tx.inputs.empty()) return false;
+  if (!aggregateKeyImages(ringState.ourPartialKeyImage,
+                          ringState.peerPartialKeyImage,
+                          ringState.aggregateKeyImage)) {
+    return false;
+  }
+  auto& input = boost::get<CryptoNote::KeyInput>(tx.inputs[0]);
+  input.keyImage = ringState.aggregateKeyImage;
+  return true;
+}
+
 bool SwapTxBuilder::ringRound1Finalize(
     const Crypto::Hash& prefixHash,
     CollaborativeRingState& ringState) {
 
-  // Aggregate key image
+  // Aggregate key image (idempotent if writeAggregateKeyImageToTx already ran)
   if (!aggregateKeyImages(ringState.ourPartialKeyImage,
                           ringState.peerPartialKeyImage,
                           ringState.aggregateKeyImage)) {

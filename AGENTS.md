@@ -39,11 +39,11 @@ fuego-suite/
 - `MIN_DISTINCT_PARTIES = 2` anti-manipulation floor
 - Bootstrap window: 144 blocks of AMM-only operation after upgrade
 
-### HEAT Stablecoin
-- Algorithmic MoE, peg target adjusts for inflation
-- Mint by burning XFG at PI redemption price with 3.33% premium (hardcoded, PI controller removed)
+### HEAT Flatcoin (colored coin)
+- Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
+- Mint by burning XFG at hearth pool price with 0% launch premium (hardcoded, PI controller removed)
 - Launch ratio: 1 HEAT = 10 XFG (10:1 XFG per HEAT)
-- Peg reference: $1.58 USD (HEAT_PEG_USD)
+- Peg reference: $1.58 USD (HEAT_PEG_USD)  adjusted for inflation starting Q1|2009 1 USD 
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
 
 ### Hearth Exchange — Data Flow Per Block
@@ -103,6 +103,18 @@ fuego-suite/
 - Update after code changes: `graphify update .`
 - Navigation: read `graphify-out/GRAPH_REPORT.md` first
 - Query: `graphify query "<question>"`, `graphify path "<A>" "<B>"`
+
+## Claude Code automations (project)
+
+| Kind | Path |
+|------|------|
+| Entry | `CLAUDE.md` |
+| Settings / hooks | `.claude/settings.json`, `.claude/hooks/` |
+| Skills | `.claude/skills/fuego-build`, `.claude/skills/crypto-change-gate` |
+| Agents | `.claude/agents/build-doctor.md`, `.claude/agents/crypto-security-reviewer.md` |
+| MCP | `.mcp.json` (`fuego-mcp`, `github`) |
+
+Hooks block edits to `.env` / wallets / keys. Build ground truth is `make -j$(nproc)`.
 
 ## OKOC Skill Chain
 

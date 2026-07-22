@@ -44,6 +44,9 @@ public:
   bool setFeeAddress(const std::string& fee_address, const AccountPublicAddress& fee_acc);
   bool setViewKey(const std::string& view_key);
   bool restrictRPC(const bool is_resctricted);
+  // Require X-Swap-Token / Bearer for swap control endpoints when non-empty.
+  void setSwapControlToken(const std::string& token) { m_swapControlToken = token; }
+  bool checkSwapControlAuth(const HttpRequest& request) const;
   bool k_on_check_tx_proof(const K_COMMAND_RPC_CHECK_TX_PROOF::request& req, K_COMMAND_RPC_CHECK_TX_PROOF::response& res);
   bool k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF::request& req, K_COMMAND_RPC_CHECK_RESERVE_PROOF::response& res);
   bool enableCors(const std::string domain);
@@ -180,6 +183,10 @@ private:
   NodeServer& m_p2p;
   const ICryptoNoteProtocolQuery& m_protocolQuery;
   bool m_restricted_rpc;
+  // Optional bearer token for swap control endpoints (/initiate, /accept, …).
+  // Empty = no token required (legacy). When set, require header
+  //   X-Swap-Token: <token>  or  Authorization: Bearer <token>
+  std::string m_swapControlToken;
   std::string m_cors_domain;
   std::string m_fee_address;
   Crypto::SecretKey m_view_key = NULL_SECRET_KEY;

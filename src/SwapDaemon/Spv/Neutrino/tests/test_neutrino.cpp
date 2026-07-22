@@ -373,6 +373,49 @@ static void test_neutrino_get_filter() {
 }
 
 // =============================================================================
+// BIP-158 per-block key derivation tests
+// =============================================================================
+
+static void test_derive_filter_key() {
+  // Test 1: empty blockHash falls back to legacy M/P
+  GcsFilterParams base;
+  base.M = 784931;
+  base.P = 19;
+  GcsFilterParams derived = deriveFilterKey({}, base);
+  assert(derived.k0 == 0 && derived.k1 == 0);  // not set
+  assert(derived.M == 784931 && derived.P == 19);
+
+  // Test 2: valid blockHash produces non-zero k0/k1
+  std::vector<uint8_t> blockHash(32, 0xAB);
+  derived = deriveFilterKey(blockHash, base);
+  assert(derived.k0 != 0 || derived.k1 != 0);
+  assert(derived.M == 784931 && derived.P == 19);
+
+  // Test 3: different block hashes produce different keys
+  std::vector<uint8_t> blockHash2(32, 0xCD);
+  GcsFilterParams derived2 = deriveFilterKey(blockHash2, base);
+  assert(derived.k0 != derived2.k0 || derived.k1 != derived2.k1);
+
+  // Test 4: filter built with per-block key cannot be matched with legacy key
+  std::vector<std::vector<uint8_t>> items = {{0x01, 0x02}, {0x03, 0x04}};
+  std::vector<uint8_t> filter = NeutrinoSpvClient::buildFilter(items, derived);
+  assert(!filter.empty());
+  // Should match with correct per-block key
+  assert(NeutrinoSpvClient::matchFilter(filter, items[0], derived));
+  // Should NOT match with legacy key (k0=0,k1=0 falls back to M/P)
+  GcsFilterParams legacy;
+  legacy.M = 784931;
+  legacy.P = 19;
+  assert(!NeutrinoSpvClient::matchFilter(filter, items[0], legacy));
+
+  // Test 5: filter built with legacy key matches with legacy key
+  std::vector<uint8_t> filterLegacy = NeutrinoSpvClient::buildFilter(items, legacy);
+  assert(NeutrinoSpvClient::matchFilter(filterLegacy, items[0], legacy));
+
+  std::cout << "test_derive_filter_key passed." << std::endl;
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -386,6 +429,9 @@ int main() {
   test_gcs_false_positive_rate();
   test_gcs_empty_filter();
   test_gcs_duplicate_items();
+
+  // BIP-158 key derivation
+  test_derive_filter_key();
 
   // NeutrinoSpvClient tests
   test_neutrino_client_protocolName();

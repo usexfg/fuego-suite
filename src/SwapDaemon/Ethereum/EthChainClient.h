@@ -21,6 +21,7 @@ public:
                                        uint64_t minAmount,
                                        const std::string& proof) override;
   bool getCurrentHeight(uint64_t& height) override;
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
 
 private:
   std::unique_ptr<EthRpcClient> m_rpc;

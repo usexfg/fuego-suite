@@ -100,6 +100,7 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       appendPod(buf, msg.adaptorExchange.adaptorPoint);
       appendPod(buf, msg.adaptorExchange.adaptorDleqQ);
       appendPod(buf, msg.adaptorExchange.dleqProof);
+      appendPod(buf, msg.adaptorExchange.htlcHashLock);
       break;
     case PeerMessageType::NONCE_EXCHANGE:
       appendPod(buf, msg.nonceExchange.pubNonce);
@@ -114,6 +115,9 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       break;
     case PeerMessageType::RING_ROUND2:
       appendPod(buf, msg.ringRound2.partialResponse);
+      break;
+    case PeerMessageType::SECRET_REVEAL:
+      appendPod(buf, msg.secretReveal.adaptorSecret);
       break;
     case PeerMessageType::ABORT:
       break;
@@ -155,6 +159,7 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("adaptorPoint", podHex(msg.adaptorExchange.adaptorPoint));
       payload.insert("adaptorDleqQ", podHex(msg.adaptorExchange.adaptorDleqQ));
       payload.insert("dleqProof", dleqToHex(msg.adaptorExchange.dleqProof));
+      payload.insert("htlcHashLock", podHex(msg.adaptorExchange.htlcHashLock));
       break;
 
     case PeerMessageType::NONCE_EXCHANGE:
@@ -173,6 +178,10 @@ std::string serializePeerMessage(const PeerMessage& msg) {
 
     case PeerMessageType::RING_ROUND2:
       payload.insert("partialResponse", podHex(msg.ringRound2.partialResponse));
+      break;
+
+    case PeerMessageType::SECRET_REVEAL:
+      payload.insert("adaptorSecret", podHex(msg.secretReveal.adaptorSecret));
       break;
 
     case PeerMessageType::ABORT:
@@ -211,6 +220,10 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
           return false;
         if (!hexToDleq(p("dleqProof").getString(), msg.adaptorExchange.dleqProof))
           return false;
+        if (p.contains("htlcHashLock") && !p("htlcHashLock").getString().empty()) {
+          if (!hexPod(p("htlcHashLock").getString(), msg.adaptorExchange.htlcHashLock))
+            return false;
+        }
         break;
 
       case PeerMessageType::NONCE_EXCHANGE:
@@ -234,6 +247,11 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
 
       case PeerMessageType::RING_ROUND2:
         if (!hexPod(p("partialResponse").getString(), msg.ringRound2.partialResponse))
+          return false;
+        break;
+
+      case PeerMessageType::SECRET_REVEAL:
+        if (!hexPod(p("adaptorSecret").getString(), msg.secretReveal.adaptorSecret))
           return false;
         break;
 

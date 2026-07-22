@@ -73,39 +73,62 @@ public:
   // Send raw signed transaction
   bool sendRawTransaction(const std::string& signedTxHex, std::string& txHash);
 
-  // ─── HTLC operations ─────────────────────────────────────────────────────
+  // ─── HTLC operations (HashedTimelock.sol registry model) ─────────────────
   //
-  // Deploy the XFG HashedTimelock ETH contract and return the contract address.
-  //
-  // hashLockHex:      64-char hex of keccak256(adaptor_secret).
-  // recipientAddress: ETH address for the claim path.
-  // timeoutBlock:     block number after which refund is valid.
-  // valueWei:         ETH to lock (in wei).
-  // fromAddress:      sender's ETH address (must match signer address).
-  // On success sets contractAddress.
+  // The contract is deployed once. Each lock is a payable lock() call that
+  // returns contractId = keccak256(sender, recipient, amount, hashLock, timeout).
+  // claim/refund take that contractId (NOT the registry address as id).
+
+  // Set the pre-deployed HashedTimelock registry address ("0x...").
+  void setHtlcRegistry(const std::string& registryAddress) { m_htlcRegistry = registryAddress; }
+  const std::string& htlcRegistry() const { return m_htlcRegistry; }
+
+  // Optional: bytecode for one-time factory deploy (legacy path; lock uses registry).
+  void setHtlcBytecode(const std::string& bytecodeHex) { m_htlcBytecode = bytecodeHex; }
+
+  // Compute contractId = keccak256(abi.encodePacked(sender, recipient, value, hashLock, timeout))
+  // matching Solidity HashedTimelock.lock().
+  static std::string computeContractId(const std::string& sender,
+                                       const std::string& recipient,
+                                       uint64_t valueWei,
+                                       const std::string& hashLockHex,
+                                       uint64_t timeoutBlock);
+
+  // Call lock() on the registry; on success sets contractIdHex (64 hex chars).
+  bool lockHtlc(const std::string& fromAddress,
+                const std::string& recipientAddress,
+                const std::string& hashLockHex,
+                uint64_t timeoutBlock,
+                uint64_t valueWei,
+                std::string& contractIdHex);
+
+  // verify via getContract(contractId): amount, recipient, hashLock, not claimed/refunded.
+  bool verifyLock(const std::string& contractIdHex,
+                  uint64_t expectedWei,
+                  const std::string& expectedRecipient = "",
+                  const std::string& expectedHashLockHex = "");
+
+  // If claimed, returns 64-char hex preimage; empty if not claimed / error.
+  std::string getClaimedPreimage(const std::string& contractIdHex);
+
+  // Claim ETH: claim(contractId, preimage) on the registry.
+  bool claimHtlc(const std::string& fromAddress,
+                 const std::string& contractIdHex,
+                 const std::string& preimageHex,
+                 std::string& claimTxHash);
+
+  // Refund ETH after timeout: refund(contractId) on the registry.
+  bool refundHtlc(const std::string& fromAddress,
+                   const std::string& contractIdHex,
+                   std::string& refundTxHash);
+
+  // Legacy name kept for callers still wiring bytecode-only deploys.
   bool deployHtlc(const std::string& fromAddress,
                   const std::string& recipientAddress,
                   const std::string& hashLockHex,
                   uint64_t timeoutBlock,
                   uint64_t valueWei,
-                  std::string& contractAddress);
-
-  // Verify the HTLC contract is deployed and holds the expected value.
-  // Read-only (eth_call), does not require a private key.
-  bool verifyLock(const std::string& contractAddress,
-                  uint64_t expectedWei,
-                  uint64_t minConfirmBlocks = 1);
-
-  // Claim ETH from the HTLC by revealing the adaptor secret preimage.
-  bool claimHtlc(const std::string& fromAddress,
-                 const std::string& contractAddress,
-                 const std::string& preimageHex,
-                 std::string& claimTxHash);
-
-  // Refund ETH from the HTLC after timeout.
-  bool refundHtlc(const std::string& fromAddress,
-                   const std::string& contractAddress,
-                   std::string& refundTxHash);
+                  std::string& contractAddressOrId);
 
   // Estimate gas for a transaction (eth_estimateGas).
   bool estimateGas(const std::string& to, const std::string& data,
@@ -152,10 +175,6 @@ private:
   // Returns false if the RPC call fails; caller should use m_gasPriceFallback.
   bool queryGasPrice(uint64_t& gasPriceWei);
 
-  // Set the pre-compiled HashedTimelock contract bytecode (hex, no 0x prefix).
-  // Must be called before deployHtlc if deploying a new contract.
-  void setHtlcBytecode(const std::string& bytecodeHex) { m_htlcBytecode = bytecodeHex; }
-
   std::string m_host;
   uint16_t    m_port;
 
@@ -165,8 +184,10 @@ private:
   uint64_t                 m_chainId = 0;
   bool                     m_hasSigner = false;
 
-  // Pre-compiled HTLC contract bytecode (hex, no 0x prefix).
+  // Pre-compiled HTLC contract bytecode (hex, no 0x prefix) — optional.
   std::string m_htlcBytecode;
+  // Pre-deployed HashedTimelock registry address ("0x..." + 40 hex).
+  std::string m_htlcRegistry;
 
   // Transaction type: EIP-1559 (default) or Legacy.
   EthTxType m_txType = EthTxType::Eip1559;

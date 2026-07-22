@@ -19,6 +19,7 @@ public:
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
   bool getCurrentHeight(uint64_t& height) override;
 
 private:

@@ -35,6 +35,8 @@ public:
   std::string extractSecret(const std::string& spendingTxid,
                             const std::string& htlcRedeemScriptHex);
 
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
+
 private:
   // SPV-mode verifyLock: fetch raw tx, parse outputs, verify amount and inclusion
   ChainClientResult verifyLockSpv(const SwapParams& params);

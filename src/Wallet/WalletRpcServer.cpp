@@ -239,12 +239,30 @@ bool wallet_rpc_server::on_sign_offer(const wallet_rpc::COMMAND_RPC_SIGN_OFFER::
 
   Crypto::Hash offerIdHash;
   Crypto::cn_fast_hash(&offerIdInput, sizeof(offerIdInput), offerIdHash);
+  std::string offerId = Common::podToHex(offerIdHash);
 
-  // Sign the offer ID hash with spend key
+  // Signature must cover all economic fields (matches SwapOfferRelay::validateOffer).
+  // Wallet-RPC soft-order defaults: isSoftOrder=false, allowedSlippagePct=0.
+  const bool isSoftOrder = false;
+  const uint8_t allowedSlippagePct = 0;
+  const uint32_t ttlBlocks = req.ttlBlocks;
+  std::string sigData;
+  sigData.reserve(offerId.size() + 64);
+  sigData.append(offerId);
+  sigData.append(1, static_cast<char>(req.pair));
+  sigData.append(reinterpret_cast<const char*>(&req.xfgAmount), sizeof(req.xfgAmount));
+  sigData.append(reinterpret_cast<const char*>(&req.rateNum), sizeof(req.rateNum));
+  sigData.append(1, isSoftOrder ? '\x01' : '\x00');
+  sigData.append(reinterpret_cast<const char*>(&ttlBlocks), sizeof(ttlBlocks));
+  sigData.append(1, static_cast<char>(allowedSlippagePct));
+  sigData.append(reinterpret_cast<const char*>(&ts), sizeof(ts));
+
+  Crypto::Hash sigHash;
+  Crypto::cn_fast_hash(sigData.data(), sigData.size(), sigHash);
   Crypto::Signature sig;
-  Crypto::generate_signature(offerIdHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
+  Crypto::generate_signature(sigHash, keys.address.spendPublicKey, keys.spendSecretKey, sig);
 
-  res.offerId     = Common::podToHex(offerIdHash);
+  res.offerId     = offerId;
   res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
   res.signature   = Common::podToHex(sig);
   res.timestamp   = ts;

@@ -48,11 +48,19 @@ public:
   bool listUnspent(const std::string& address, std::vector<BchUtxo>& utxos);
 
   // Raw transaction
+  bool getRawTransaction(const std::string& txid, std::string& rawTxHex);
   bool sendRawTransaction(const std::string& rawTxHex, std::string& txid);
   bool decodeRawTransaction(const std::string& rawTxHex, std::string& jsonResult);
 
   // Address utilities
   bool validateAddress(const std::string& address, bool& isValid);
+
+  // Resolve compressed pubkey for an address known to the node wallet
+  // (getaddressinfo → pubkey). Returns false if unknown / watch-only without key.
+  bool getAddressPubkey(const std::string& address, std::string& pubkeyHex);
+
+  // Fee estimation (satoshis). Uses estimatesmartfee; falls back to floor.
+  bool estimateFeeSatoshis(uint64_t& feeSats, int confTarget = 2);
 
   // Import address for watching (no private key)
   bool importAddress(const std::string& address, const std::string& label, bool rescan);
@@ -108,12 +116,14 @@ public:
   // htlcVout:       output index of the HTLC output.
   // htlcAmount:     satoshis locked.
   // redeemScriptHex: hex-encoded redeem script.
+  // timeoutBlock:   CLTV timeout block height for nLocktime.
   // destAddress:    where to send the refunded BCH.
   bool refundHtlc(const std::string& senderWif,
                   const std::string& htlcTxid,
                   uint32_t htlcVout,
                   uint64_t htlcAmount,
                   const std::string& redeemScriptHex,
+                  uint32_t timeoutBlock,
                   const std::string& destAddress,
                   std::string& refundTxId);
 

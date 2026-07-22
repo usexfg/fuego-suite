@@ -37,23 +37,23 @@ enum class SwapState : uint8_t {
   CTR_REFUNDED = 6,     // Alice refunded counterparty chain (timeout)
   FAILED = 7,
 
-  // ── ADAPTOR SWAP STATES (active — v1) ────────────────────────────────────
+  // ── ADAPTOR SWAP STATES (active — v1, Alice-locks) ───────────────────────
   //
-  // Protocol (Alice sells XFG, Bob buys XFG):
+  // Protocol (Alice has CTR, wants XFG; Bob has XFG, wants CTR):
   //   1. Both exchange pubkeys → Musig2 joint key P
-  //   2. Bob picks adaptor secret t, publishes T = t*G + DLEQ proof
-  //   3. Alice funds escrow: XFG → P (standard KeyOutput)
+  //   2. Bob picks adaptor secret t, publishes T = t*G + DLEQ proof + H(t)
+  //   3. Bob funds escrow: XFG → P (standard KeyOutput)
   //   4. Both exchange nonces + adaptor pre-sigs
-  //   5. Bob locks counterparty coins (ETH/BCH HTLC or XMR adaptor)
-  //   6. Alice claims counterparty → reveals t
-  //   7. Bob adapts pre-sig → valid Musig2 sig → spends P → Bob
-  //   8. Alice extracts t from on-chain tx
+  //   5. Alice locks counterparty with H(t) (does not know t)
+  //   6. Bob claims CTR with preimage t  → on-chain secret reveal
+  //   7. Alice extracts t via tryExtractClaimedSecret
+  //   8. Bob spends XFG escrow (adapted / collaborative ring)
   //
   ADAPTOR_KEYS_EXCHANGED = 10,   // pubkeys shared, Musig2 key aggregated
   ADAPTOR_ESCROW_FUNDED  = 11,   // XFG sent to Musig2 joint address
   ADAPTOR_PRESIGS_READY  = 12,   // nonces exchanged, partial sigs created
   ADAPTOR_CTR_LOCKED     = 13,   // counterparty chain locked
-  ADAPTOR_SECRET_REVEALED = 14,  // adaptor secret learned (from ctr chain claim)
+  ADAPTOR_SECRET_REVEALED = 14,  // t learned (Bob claimed CTR / Alice extracted)
   ADAPTOR_XFG_SPENT      = 15,   // adapted sig broadcast, escrow spent
   ADAPTOR_REFUNDED       = 16,   // cooperative refund completed
 
@@ -162,7 +162,24 @@ struct SwapParams {
   bool ringOurRound2Sent = false;      // we already generated & sent Round 2
   bool ringTxBroadcast = false;        // escrow spend/refund tx was broadcast
 
+  // Our Round 1 contributions (must be restored across ticks — never regenerate
+  // after ringOurRound1Sent, or the peer's copy of our nonce becomes invalid).
+  Crypto::KeyImage             ringOurPartialKeyImage;
+  Crypto::PublicKey            ringOurRingNoncePub;
+  Crypto::EllipticCurvePoint   ringOurRingNonceHp;
+  Crypto::EllipticCurveScalar  ringOurRingNonceSec;   // secret k; encrypted at rest
+  Crypto::EllipticCurveScalar  ringOurPartialResponse;
+  bool ringOurRound1MaterialValid = false;
+
+  bool useSpvVerification = false;     // use SPV path for counterparty lock verification
+
+  // Bob→Alice: adaptor preimage revealed out-of-band so Alice can claim CTR HTLC.
+  bool adaptorSecretRevealedToPeer = false;  // Bob: we already sent SECRET_REVEAL
+  bool adaptorSecretReceived = false;        // Alice: we received t from Bob
+
   std::vector<uint8_t> encBlob;        // encrypted adaptorSecret blob (from disk)
+  std::vector<uint8_t> encSecKeyBlob;  // encrypted ourSwapSecKey blob (from disk)
+  std::vector<uint8_t> encRingNonceBlob; // encrypted ringOurRingNonceSec blob
 };
 
 const char* swapStateToString(SwapState s);

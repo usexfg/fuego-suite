@@ -76,25 +76,33 @@ public:
                                    uint64_t targetHeight = 0,
                                    uint64_t networkPrefix = 18 /* Monero mainnet */);
 
-  // Check if an address has received funds
-  bool checkAddressBalance(const std::string& address, uint64_t& balance, uint64_t& unlocked);
+  // Check if an address has received funds. Requires viewKeyHex so a temporary
+  // watch-only wallet can be opened for THAT address (never trusts whatever
+  // wallet happens to be open on the RPC).
+  bool checkAddressBalance(const std::string& address,
+                           const std::string& viewKeyHex,
+                           uint64_t& balance, uint64_t& unlocked,
+                           uint64_t restoreHeight = 0);
+
+  // Open a temporary watch-only wallet for address+viewKey, refresh, then
+  // close. Used by checkAddressBalance / verifyLock.
+  bool openWatchOnly(const std::string& address, const std::string& viewKeyHex,
+                     const std::string& walletName, uint64_t restoreHeight = 0);
 
   // ─── Adaptor-signature lock/claim/refund ──────────────────────────────────
   //
   // For the XMR/XFG atomic swap the XMR side uses a view-key adaptor scheme
   // (no on-chain script; lock = send to shared address, reveal = spend key).
-  // All methods below are stubs pending the full CLSAG adaptor implementation.
 
   // Lock XMR by transferring to the shared 2-of-2 address.
-  // adaptorPointHex: Bob's adaptor point T = t*G (hex), used to derive the lock.
-  // amountPiconero:  amount to lock.
-  // On success sets lockTxHash.
   bool lockAdaptor(const std::string& sharedAddress,
                    uint64_t amountPiconero,
                    MoneroTransferResult& result);
 
-  // Verify the shared address holds the expected amount (unlocked).
+  // Verify the shared address holds the expected unlocked amount.
+  // viewKeyHex must be the shared view secret for `sharedAddress`.
   bool verifyLock(const std::string& sharedAddress,
+                   const std::string& viewKeyHex,
                    uint64_t expectedPiconero);
 
   bool checkReserveProof(const std::string& address, const std::string& message,

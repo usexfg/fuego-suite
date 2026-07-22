@@ -20,14 +20,23 @@ ChainClientResult SolChainClient::lock(const SwapParams& params) {
   // claim() reveals the adaptor secret t as the preimage. So the hashlock MUST
   // be keccak256(t) — NOT the adaptor point T = t*G. Committing T (the old bug)
   // made every claim fail with InvalidPreimage; funds could only be refunded.
-  if (isZeroSecret(params.adaptorSecret))
-    return ChainClientResult::fail("SOL lock: adaptor secret not set — cannot derive hashlock");
+  std::string hashHex;
+  if (!isZeroSecret(params.adaptorSecret)) {
+    hashHex = solHashLockHex(params.adaptorSecret);
+  } else {
+    bool nz = false;
+    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
+      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nz = true; break; }
+    if (!nz)
+      return ChainClientResult::fail("SOL lock: need adaptor secret or hashLock H(t) from Bob");
+    hashHex = Common::podToHex(params.hashLock);
+  }
 
   SolTxResult solResult;
   bool ok = m_rpc->lock(
       m_keypairBase58,
       params.ctrAddress,
-      solHashLockHex(params.adaptorSecret),
+      hashHex,
       params.ctrTimeoutBlock,
       params.ctrAmount,
       solResult);
@@ -56,6 +65,23 @@ ChainClientResult SolChainClient::claim(const SwapParams& params) {
   if (!ok || !solResult.confirmed)
     return ChainClientResult::fail("SOL claim failed: " + solResult.error);
   return ChainClientResult::ok(solResult.signature);
+}
+
+std::string SolChainClient::tryExtractClaimedSecret(const SwapParams& params) {
+  // Alice-locks: Bob's claim writes preimage t into the HTLC state account.
+  // ctrLockTxId is the HTLC PDA (not the lock signature) after a successful lock().
+  if (params.ctrLockTxId.empty() || !m_rpc) return {};
+  SolHtlcInfo info;
+  if (!m_rpc->getHtlcState(params.ctrLockTxId, info)) return {};
+  if (!info.claimed) return {};
+  // Reject all-zero / empty preimage
+  if (info.preimage.empty() || info.preimage.size() != 64) return {};
+  bool any = false;
+  for (char c : info.preimage) {
+    if (c != '0') { any = true; break; }
+  }
+  if (!any) return {};
+  return info.preimage;
 }
 
 ChainClientResult SolChainClient::refund(const SwapParams& params) {

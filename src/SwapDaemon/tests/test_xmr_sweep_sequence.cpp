@@ -29,16 +29,32 @@ int main() {
   const std::string SK(64, 'a');
   const std::string VK(64, 'b');
 
-  // 1. verifyLock: unlocked-only.
+  // 1. verifyLock: unlocked-only + opens watch-only for the address.
   {
     TestMoneroWalletRpc w;
+    w.queue("close_wallet", "{\"result\":{}}");
+    w.queue("generate_from_keys", "{\"result\":{}}");
+    w.queue("refresh", "{\"result\":{}}");
+    w.queue("refresh", "{\"result\":{}}");
+    w.queue("refresh", "{\"result\":{}}");
+    w.queue("refresh", "{\"result\":{}}");
+    w.queue("refresh", "{\"result\":{}}");
     w.queue("get_balance", "{\"result\":{\"balance\":1000000,\"unlocked_balance\":0}}");
-    assert(w.verifyLock("addr", 500000) == false && "locked-only must NOT verify");
+    w.queue("close_wallet", "{\"result\":{}}");
+    assert(w.verifyLock("addr", VK, 500000) == false && "locked-only must NOT verify");
 
     TestMoneroWalletRpc w2;
+    w2.queue("close_wallet", "{\"result\":{}}");
+    w2.queue("generate_from_keys", "{\"result\":{}}");
+    w2.queue("refresh", "{\"result\":{}}");
+    w2.queue("refresh", "{\"result\":{}}");
+    w2.queue("refresh", "{\"result\":{}}");
+    w2.queue("refresh", "{\"result\":{}}");
+    w2.queue("refresh", "{\"result\":{}}");
     w2.queue("get_balance", "{\"result\":{\"balance\":1000000,\"unlocked_balance\":1000000}}");
-    assert(w2.verifyLock("addr", 500000) == true && "unlocked covering amount verifies");
-    std::cout << "  [1] verifyLock unlocked-only OK\n";
+    w2.queue("close_wallet", "{\"result\":{}}");
+    assert(w2.verifyLock("addr", VK, 500000) == true && "unlocked covering amount verifies");
+    std::cout << "  [1] verifyLock unlocked-only + watch-only OK\n";
   }
 
   // 2. sweep: generate -> poll get_height until synced -> sweep_all; per-swap

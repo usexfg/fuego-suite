@@ -2,6 +2,7 @@
 #include "Common/StringTools.h"
 #include "crypto/keccak.h"
 #include "../Crypto/Secp256k1Signer.h"
+#include "../SwapHashLock.h"
 #include <stdexcept>
 #include <cctype>
 #include <cstring>
@@ -10,17 +11,42 @@
 
 namespace XfgSwap {
 
+namespace {
+bool isZeroSecret(const Crypto::SecretKey& s) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+  for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) {
+    if (p[i]) return false;
+  }
+  return true;
+}
+} // namespace
+
 EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::string& address,
                                const std::string& chainName)
   : m_rpc(std::move(rpc)), m_address(address), m_chainName(chainName) {}
 
 ChainClientResult EthChainClient::lock(const SwapParams& params) {
   try {
+    // Hashlock MUST be keccak256(adaptorSecret) / params.hashLock from Bob.
+    // Alice-locks model: Alice has hashLock (H(t)) but not t; Bob has t for claim.
+    std::string hashHex;
+    if (!isZeroSecret(params.adaptorSecret)) {
+      hashHex = ethHashLockHex(params.adaptorSecret);
+    } else {
+      // Use Bob's published H(t)
+      bool nonzero = false;
+      for (size_t i = 0; i < sizeof(params.hashLock); ++i)
+        if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
+      if (!nonzero)
+        return ChainClientResult::fail(m_chainName + " lock: no adaptor secret or hashLock");
+      hashHex = Common::podToHex(params.hashLock);
+    }
+
     std::string contractAddress;
     bool ok = m_rpc->deployHtlc(
         m_address,
         params.ctrAddress,
-        Common::podToHex(params.adaptorPoint),
+        hashHex,
         params.ctrTimeoutBlock,
         params.ctrAmount,
         contractAddress);
@@ -34,7 +60,14 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
-  bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount);
+  // ctrLockTxId holds the HashedTimelock contractId (not a tx hash).
+  // Verify amount + recipient + hashlock + not claimed/refunded via getContract.
+  std::string expectedHash;
+  if (!isZeroSecret(params.adaptorSecret)) {
+    expectedHash = ethHashLockHex(params.adaptorSecret);
+  }
+  bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount,
+                              params.ctrAddress, expectedHash);
   if (!ok) return ChainClientResult::fail(m_chainName + " lock not verified");
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -158,6 +191,11 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
 
 bool EthChainClient::getCurrentHeight(uint64_t& height) {
   return m_rpc->getBlockNumber(height);
+}
+
+std::string EthChainClient::tryExtractClaimedSecret(const SwapParams& params) {
+  // ctrLockTxId is the HashedTimelock contractId; after claim, preimage is stored on-chain.
+  return m_rpc->getClaimedPreimage(params.ctrLockTxId);
 }
 
 } // namespace XfgSwap

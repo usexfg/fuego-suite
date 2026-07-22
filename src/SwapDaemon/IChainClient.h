@@ -33,6 +33,14 @@ public:
     return result;
   }
 
+  // If the counterparty HTLC has been claimed on-chain, recover the preimage
+  // (adaptor secret) from the claim path. Returns lowercase hex of 32-byte
+  // secret, or empty if not yet claimed / not supported.
+  virtual std::string tryExtractClaimedSecret(const SwapParams& params) {
+    (void)params;
+    return {};
+  }
+
   virtual bool getCurrentHeight(uint64_t& height) { (void)height; return false; }
 };
 

@@ -43,6 +43,10 @@ enum class PeerMessageType : uint8_t {
   RING_ROUND1         = 10,   // Partial key image + ring nonce pub + ring nonce Hp
   RING_ROUND2         = 11,   // Partial response scalar
 
+  // Phase 6: Bob reveals adaptor preimage t so Alice can claim the CTR HTLC.
+  // Only sent after XFG escrow is funded and CTR is locked (Bob-locks model).
+  SECRET_REVEAL       = 12,   // adaptorSecret (32 bytes)
+
   // Control
   ABORT               = 99,   // Abort the swap
 };
@@ -54,11 +58,13 @@ struct MsgKeyExchange {
   Crypto::PublicKey swapPubKey;
 };
 
-// Phase 2: Bob sends adaptor point T, DLEQ Q, and proof to Alice.
+// Phase 2: Bob sends adaptor point T, DLEQ Q, proof, and HTLC hashlock to Alice.
+// htlcHashLock = H(t) so Alice can lock CTR without learning t (Alice-locks model).
 struct MsgAdaptorExchange {
   Crypto::PublicKey adaptorPoint;   // T = t*G
   Crypto::PublicKey adaptorDleqQ;   // Q = t*escrowPubKey
   Crypto::DLEQProof dleqProof;
+  Crypto::Hash htlcHashLock{};      // H(t) for HTLC lock; zero for XMR-style adaptor-only
 };
 
 // Phase 3: Both parties send their Musig2 public nonces.
@@ -83,6 +89,11 @@ struct MsgRingRound2 {
   Crypto::EllipticCurveScalar partialResponse;
 };
 
+// Phase 6: Bob reveals adaptor secret t to Alice for CTR HTLC claim.
+struct MsgSecretReveal {
+  Crypto::SecretKey adaptorSecret;
+};
+
 // ── Wire envelope ────────────────────────────────────────────────────
 
 // All messages are wrapped in a JSON envelope:
@@ -103,6 +114,7 @@ struct PeerMessage {
   MsgPartialSig partialSig;
   MsgRingRound1 ringRound1;
   MsgRingRound2 ringRound2;
+  MsgSecretReveal secretReveal;
 
   // Ed25519 signature over peerMessageDigest(msg) by the sender's swap pubkey.
   // For KEY_EXCHANGE: signed by the keyExchange.swapPubKey carried in the body

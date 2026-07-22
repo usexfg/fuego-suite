@@ -64,6 +64,9 @@ SwapStateMachine::SwapStateMachine(SwapParams params)
   , m_state(SwapState::INITIATED)
   , m_createdAt(std::time(nullptr))
   , m_updatedAt(m_createdAt) {
+  // Crypto POD fields in SwapParams may be uninitialized if the caller used
+  // bare `SwapParams p;` — leave encryption fail-closed honest only when
+  // secrets are intentionally non-zero.
 }
 
 bool SwapStateMachine::isValidTransition(SwapState newState) const {
@@ -206,24 +209,49 @@ std::string SwapStateMachine::serialize() const {
   root.insert("escrowTxHash", Common::podToHex(m_params.escrowTxHash));
   root.insert("escrowOutputIndex", static_cast<int64_t>(m_params.escrowOutputIndex));
 
-  // Persist adaptorSecret — always encrypted at rest. No plaintext fallback.
-  // The encryption key must be set by the caller before serialize().
-  // Format: nonce(8) || salt(16) || ciphertext(32) || tag(32) = 88 bytes → 176 hex.
-  if (hasEncryptionKey()) {
+  // Persist secrets encrypted at rest. No plaintext fallback.
+  // Encryption key must be set before serialize(). Format per secret:
+  //   nonce(8) || salt(16) || ciphertext(32) || tag(32) = 88 bytes → 176 hex.
+  auto isNonZero = [](const Crypto::SecretKey& s) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+    for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return true;
+    return false;
+  };
+  const bool needEnc = isNonZero(m_params.adaptorSecret) || isNonZero(m_params.ourSwapSecKey)
+      || m_params.ringOurRound1MaterialValid;
+  if (needEnc && !hasEncryptionKey()) {
+    // Refuse to write a record that would permanently drop live secrets.
+    return "";
+  }
+
+  auto packEncrypted = [&](const Crypto::SecretKey& secret, std::string& hexOut) -> bool {
     SwapSecretEncryption::EncryptedSecret encrypted;
-    if (SwapSecretEncryption::encrypt(m_params.adaptorSecret, m_encryptionKey, encrypted)) {
-      std::string encData;
-      encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
-      encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
-      encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
-      encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
-      encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
-      root.insert("adaptorSecretEnc", Common::toHex(encData.data(), encData.size()));
-    } else {
-      return "";
-    }
+    if (!SwapSecretEncryption::encrypt(secret, m_encryptionKey, encrypted)) return false;
+    std::string encData;
+    encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
+    encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
+    encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
+    encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
+    encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
+    hexOut = Common::toHex(encData.data(), encData.size());
+    return true;
+  };
+
+  if (hasEncryptionKey()) {
+    std::string adaptorHex, secKeyHex, ringNonceHex;
+    if (!packEncrypted(m_params.adaptorSecret, adaptorHex)) return "";
+    if (!packEncrypted(m_params.ourSwapSecKey, secKeyHex)) return "";
+    // ring nonce secret is an EllipticCurveScalar (32 bytes) — same size as SecretKey
+    Crypto::SecretKey ringNonceAsKey;
+    std::memcpy(&ringNonceAsKey, &m_params.ringOurRingNonceSec, 32);
+    if (!packEncrypted(ringNonceAsKey, ringNonceHex)) return "";
+    root.insert("adaptorSecretEnc", adaptorHex);
+    root.insert("ourSwapSecKeyEnc", secKeyHex);
+    root.insert("ringOurRingNonceSecEnc", ringNonceHex);
   } else {
     root.insert("adaptorSecretEnc", "");
+    root.insert("ourSwapSecKeyEnc", "");
+    root.insert("ringOurRingNonceSecEnc", "");
   }
 
   // Legacy fields (kept for backward compat in DB)
@@ -238,7 +266,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("peerEndpoint", m_params.peerEndpoint);
   root.insert("chainState", m_params.chainState);
 
-  // Collaborative ring state (peer data, survives daemon restart)
+  // Collaborative ring state (peer + our public Round 1 material)
   root.insert("ringPeerPartialKeyImage", Common::podToHex(m_params.ringPeerPartialKeyImage));
   root.insert("ringPeerRingNoncePub",    Common::podToHex(m_params.ringPeerRingNoncePub));
   root.insert("ringPeerRingNonceHp",     Common::podToHex(m_params.ringPeerRingNonceHp));
@@ -249,6 +277,17 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ringOurRound2Sent", static_cast<int64_t>(m_params.ringOurRound2Sent ? 1 : 0));
   root.insert("ringTxBroadcast", static_cast<int64_t>(m_params.ringTxBroadcast ? 1 : 0));
 
+  root.insert("ringOurPartialKeyImage", Common::podToHex(m_params.ringOurPartialKeyImage));
+  root.insert("ringOurRingNoncePub",    Common::podToHex(m_params.ringOurRingNoncePub));
+  root.insert("ringOurRingNonceHp",     Common::podToHex(m_params.ringOurRingNonceHp));
+  root.insert("ringOurPartialResponse", Common::podToHex(m_params.ringOurPartialResponse));
+  root.insert("ringOurRound1MaterialValid",
+              static_cast<int64_t>(m_params.ringOurRound1MaterialValid ? 1 : 0));
+  root.insert("adaptorSecretRevealedToPeer",
+              static_cast<int64_t>(m_params.adaptorSecretRevealedToPeer ? 1 : 0));
+  root.insert("adaptorSecretReceived",
+              static_cast<int64_t>(m_params.adaptorSecretReceived ? 1 : 0));
+
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
 
@@ -258,7 +297,13 @@ std::string SwapStateMachine::serialize() const {
 SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   Common::JsonValue root = Common::JsonValue::fromString(json);
 
-  SwapParams params;
+  SwapParams params{};
+  // Secrets are never in plaintext JSON. Zero them until decryptStoredSecret().
+  std::memset(&params.ourSwapSecKey, 0, sizeof(params.ourSwapSecKey));
+  std::memset(&params.adaptorSecret, 0, sizeof(params.adaptorSecret));
+  std::memset(&params.ringOurRingNonceSec, 0, sizeof(params.ringOurRingNonceSec));
+  std::memset(&params.preimage, 0, sizeof(params.preimage));
+
   params.swapId = root("swapId").getString();
   params.pair = static_cast<SwapPair>(static_cast<uint8_t>(root("pair").getInteger()));
   params.role = static_cast<SwapRole>(static_cast<uint8_t>(root("role").getInteger()));
@@ -281,14 +326,19 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   if (root.contains("escrowOutputIndex"))
     params.escrowOutputIndex = static_cast<uint32_t>(root("escrowOutputIndex").getInteger());
 
-  // Restore adaptorSecret: encrypted blob only. Decrypted into m_params.adaptorSecret
-  // by decryptStoredSecret() once the in-memory encryption key is applied.
+  // Restore secrets: encrypted blobs only. Decrypted by decryptStoredSecret()
+  // once the in-memory encryption key is applied.
+  // NOTE: use Common::fromHex into a vector — podFromHex(T) uses sizeof(T), which
+  // for std::vector is the object size (~24), not the hex payload length. That
+  // bug permanently broke crash-restart recovery of adaptorSecret / ourSwapSecKey.
+  auto decodeEncBlob = [](const std::string& hex, std::vector<uint8_t>& out) {
+    out.clear();
+    if (hex.empty() || (hex.size() % 2) != 0) return;
+    if (!Common::fromHex(hex, out)) out.clear();
+  };
+
   if (root.contains("adaptorSecretEnc") && !root("adaptorSecretEnc").getString().empty()) {
-    std::string stored = root("adaptorSecretEnc").getString();
-    params.encBlob.resize(stored.size() / 2);
-    if (!Common::podFromHex(stored, params.encBlob)) {
-      params.encBlob.clear();
-    }
+    decodeEncBlob(root("adaptorSecretEnc").getString(), params.encBlob);
   } else if (root.contains("adaptorSecret")) {
     // Legacy v2 record: the adaptor secret was stored under "adaptorSecret"
     // (with an inline "encKey"). That scheme is removed in v3 and cannot be
@@ -299,6 +349,13 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     throw std::runtime_error(
       "legacy v2 swap record (pre-Wildfire) cannot be migrated to v3 — "
       "adaptorSecret unrecoverable; manual on-chain refund required");
+  }
+
+  if (root.contains("ourSwapSecKeyEnc") && !root("ourSwapSecKeyEnc").getString().empty()) {
+    decodeEncBlob(root("ourSwapSecKeyEnc").getString(), params.encSecKeyBlob);
+  }
+  if (root.contains("ringOurRingNonceSecEnc") && !root("ringOurRingNonceSecEnc").getString().empty()) {
+    decodeEncBlob(root("ringOurRingNonceSecEnc").getString(), params.encRingNonceBlob);
   }
 
   // Legacy fields
@@ -326,6 +383,21 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ringOurRound2Sent      = root("ringOurRound2Sent").getInteger() != 0;
   params.ringTxBroadcast        = root("ringTxBroadcast").getInteger() != 0;
 
+  if (root.contains("ringOurPartialKeyImage"))
+    Common::podFromHex(root("ringOurPartialKeyImage").getString(), params.ringOurPartialKeyImage);
+  if (root.contains("ringOurRingNoncePub"))
+    Common::podFromHex(root("ringOurRingNoncePub").getString(), params.ringOurRingNoncePub);
+  if (root.contains("ringOurRingNonceHp"))
+    Common::podFromHex(root("ringOurRingNonceHp").getString(), params.ringOurRingNonceHp);
+  if (root.contains("ringOurPartialResponse"))
+    Common::podFromHex(root("ringOurPartialResponse").getString(), params.ringOurPartialResponse);
+  if (root.contains("ringOurRound1MaterialValid"))
+    params.ringOurRound1MaterialValid = root("ringOurRound1MaterialValid").getInteger() != 0;
+  if (root.contains("adaptorSecretRevealedToPeer"))
+    params.adaptorSecretRevealedToPeer = root("adaptorSecretRevealedToPeer").getInteger() != 0;
+  if (root.contains("adaptorSecretReceived"))
+    params.adaptorSecretReceived = root("adaptorSecretReceived").getInteger() != 0;
+
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));
   sm.m_createdAt = static_cast<time_t>(root("createdAt").getInteger());
@@ -347,18 +419,31 @@ bool SwapStateMachine::hasEncryptionKey() const {
 }
 
 void SwapStateMachine::decryptStoredSecret() {
-  if (m_params.encBlob.empty() || m_encryptionKey.empty()) return;
-  if (m_params.encBlob.size() < CHACHA8_NONCE_SIZE + SALT_SIZE + 32 + TAG_SIZE) return;
+  if (m_encryptionKey.empty()) return;
 
-  SwapSecretEncryption::EncryptedSecret encrypted;
-  std::memcpy(encrypted.nonce.data(), m_params.encBlob.data(), CHACHA8_NONCE_SIZE);
-  std::memcpy(encrypted.salt.data(),  m_params.encBlob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
-  encrypted.ciphertext.assign(m_params.encBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
-                               m_params.encBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32);
-  std::memcpy(encrypted.tag.data(), m_params.encBlob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32, TAG_SIZE);
+  auto unpack = [&](const std::vector<uint8_t>& blob, Crypto::SecretKey& out) -> bool {
+    if (blob.size() < CHACHA8_NONCE_SIZE + SALT_SIZE + 32 + TAG_SIZE) return false;
+    SwapSecretEncryption::EncryptedSecret encrypted;
+    std::memcpy(encrypted.nonce.data(), blob.data(), CHACHA8_NONCE_SIZE);
+    std::memcpy(encrypted.salt.data(),  blob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
+    encrypted.ciphertext.assign(blob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
+                                blob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32);
+    std::memcpy(encrypted.tag.data(), blob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + 32, TAG_SIZE);
+    return SwapSecretEncryption::decrypt(encrypted, m_encryptionKey, out);
+  };
 
-  if (SwapSecretEncryption::decrypt(encrypted, m_encryptionKey, m_params.adaptorSecret)) {
+  if (!m_params.encBlob.empty() && unpack(m_params.encBlob, m_params.adaptorSecret)) {
     m_params.encBlob.clear();
+  }
+  if (!m_params.encSecKeyBlob.empty() && unpack(m_params.encSecKeyBlob, m_params.ourSwapSecKey)) {
+    m_params.encSecKeyBlob.clear();
+  }
+  if (!m_params.encRingNonceBlob.empty()) {
+    Crypto::SecretKey ringNonceAsKey;
+    if (unpack(m_params.encRingNonceBlob, ringNonceAsKey)) {
+      std::memcpy(&m_params.ringOurRingNonceSec, &ringNonceAsKey, 32);
+      m_params.encRingNonceBlob.clear();
+    }
   }
 }
 

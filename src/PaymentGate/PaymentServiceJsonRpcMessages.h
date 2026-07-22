@@ -26,6 +26,9 @@
 namespace PaymentService
 {
 
+// Default decoy count for RPC send when client omits "anonymity".
+// Mainnet callers should set anonymity explicitly; testnet clients can pass 0
+// (and WalletService forces/allows mixIn=0 on testnet for decoy-pool bootstrap).
 const uint32_t DEFAULT_ANONYMITY_LEVEL = 4;
 
 class RequestSerializationError : public std::exception

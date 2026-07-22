@@ -1426,8 +1426,15 @@ namespace PaymentService
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
       sendParams.fee = currency.minimumFee();
-      // Use dynamic ring sizing for optimal privacy (aim for 18, fallback to 8 minimum)
-      sendParams.mixIn = parameters::MIN_TX_MIXIN_SIZE_V10;
+      // Mainnet: enforce V10 minimum decoy count (8).
+      // Testnet: force mixIn=0 until the decoy/ring pool is large enough
+      // (avoids MIXIN_COUNT_TOO_BIG on fresh chains). Raise again when pool grows.
+      if (currency.isTestnet()) {
+        sendParams.mixIn = 0;
+        logger(Logging::INFO) << "testnet sendTransaction: mixIn=0 (decoy-pool bootstrap)";
+      } else {
+        sendParams.mixIn = std::max<uint64_t>(request.anonymity, parameters::MIN_TX_MIXIN_SIZE_V10);
+      }
       sendParams.unlockTimestamp = request.unlockTime;
       sendParams.changeDestination = request.changeAddress;
 
@@ -1490,8 +1497,12 @@ namespace PaymentService
       sendParams.destinations = convertWalletRpcOrdersToWalletOrders(request.transfers);
       sendParams.messages = convertWalletRpcMessagesToWalletMessages(messages);
       sendParams.fee = request.fee;
-      // Use dynamic ring sizing for optimal privacy (aim for 18, fallback to 8 minimum)
-      sendParams.mixIn = parameters::MIN_TX_MIXIN_SIZE_V10;
+      // Same policy as sendTransaction: testnet bootstrap mixIn=0.
+      if (currency.isTestnet()) {
+        sendParams.mixIn = 0;
+      } else {
+        sendParams.mixIn = std::max<uint64_t>(request.anonymity, parameters::MIN_TX_MIXIN_SIZE_V10);
+      }
       sendParams.unlockTimestamp = request.unlockTime;
       sendParams.changeDestination = request.changeAddress;
 

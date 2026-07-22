@@ -1581,6 +1581,9 @@ double Currency::getBurnPercentage() const {
     if (m_currency.m_testnet) {
       depositMinTerm(parameters::TESTNET_CD_MIN_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
       depositMaxTerm(parameters::TESTNET_CD_MAX_EPOCHS * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
+      // Fresh testnet chains have few outputs; allow mixIn=0 until the ring pool grows.
+      // (minMixin(blockMajorVersion) already returns 0 on testnet for V10+.)
+      minMixin(0);
     }
 
     // Burn deposit configuration

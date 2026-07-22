@@ -287,6 +287,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
+    SwapDaemon/Sia/SiaHtlcScript.cpp
+    SwapDaemon/Sia/SiaRpcClient.cpp
+    SwapDaemon/Sia/SiaChainClient.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -426,6 +429,12 @@ target_link_libraries(test_polygon_chain_client PRIVATE
 add_executable(test_dcr_chain_client
     SwapDaemon/Decred/tests/test_dcr_chain_client.cpp)
 target_link_libraries(test_dcr_chain_client PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: Sia HTLC script (v2 opcodes, ed25519 addresses)
+add_executable(test_sia_htlc
+    SwapDaemon/tests/test_sia_htlc.cpp)
+target_link_libraries(test_sia_htlc PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)

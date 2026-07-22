@@ -28,7 +28,9 @@
 | XFG spend state machine SECRET→XFG_SPENT | `test_xfg_spend_states` 18/18 | **GREEN** |
 | Local `fuegod --testnet` RPC + `xfg-swapd list` | `scripts/smoke-swap-local.sh` | **GREEN** |
 | Dual-party XFG protocol (keys→adaptor→ring spend) | `test_xfg_dual_protocol` 4/4 | **GREEN** |
-| On-chain fundEscrow local testnet | blocked | **BLOCKED** (miner `mined block failed verification`; MixIn/decoys sparse) |
+| Testnet wallet send (mixIn=0) | retested after `42b77393` | **GREEN** (tx hashes accepted) |
+| Testnet mining after race/diff fixes | retested with RPC `start_mining` | **GREEN** (height advances, diff capped ~100) |
+| On-chain fundEscrow dual swapd | next | **IN PROGRESS** (fund+mine unblocked; wire optimize/swapd next) |
 
 ## Protocol (code)
 

@@ -186,7 +186,9 @@ Workstreams completed under user plan **A** (audit → fix CRITICAL/HIGH → the
 - [x] XFG spend SM: SECRET_REVEALED / SPV → XFG_SPENT (`test_xfg_spend_states`)
 - [x] Dual-party XFG protocol: keys + adaptor extract + collab ring (`test_xfg_dual_protocol`)
 - [x] Local smoke: `fuegod --testnet` RPC + `xfg-swapd list` (`scripts/smoke-swap-local.sh`)
-- [ ] On-chain fundEscrow e2e (testnet miner currently fails block verification; MixIn sparse)
+- [x] Testnet mixIn=0 wallet send (`WalletService` bootstrap; retested 2026-07-22)
+- [x] Testnet mining: stale race + difficulty floor (`Miner`/`Currency`; RPC start_mining advances height)
+- [ ] On-chain fundEscrow e2e (optimize + dual swapd) — unblocked by mixIn/mine fixes
 - [ ] Two swapd funded swap end-to-end
 - [ ] BCH live chain node claim + extract
 - [x] Offer rebroadcast with mutated rate is rejected

@@ -19,6 +19,7 @@ Last major doc refresh for this roadmap: **2026-07-22** (post swap fund-safety w
 | Dynamixn 32/16/8 | [Dynamixn](/privacy/dynamixn) | `DynamicRingSize.cpp` |
 | Subaddresses | [Subaddresses](/privacy/subaddresses) | `WalletGreen::createSubAddress` |
 | SwapXFG | [SwapXFG overview](/features/swapxfg/overview) | `xfg-swapd`, Alice-locks protocol |
+| SwapXFG + Hearth ops | [User guide](/tutorials/swapxfg-and-hearth-user-guide) | dual-swapd scripts, fee pipes, soft/AFK |
 | Dual-asset map | [Architecture](/fuego-dual-asset-architecture) | fee splits, majors |
 
 ## Correct language (do not regress)
@@ -52,10 +53,12 @@ These remain useful for engineers but are **not** user-facing truth if they conf
 - [ ] Align `features/heat-burns/*` nav paths with real files (or re-home content)
 
 ### P1 — product surfaces
-- [ ] SwapXFG TUI screenshots / operator runbook  
-- [ ] Alice-locks step diagram in atomic-swaps guide  
-- [ ] Hearth orderbook UX vs AMM depth  
-- [ ] Testnet ops (mixIn=0 bootstrap, mining peer/RPC) for developers  
+- [x] Blended SwapXFG + Hearth step-by-step user guide (`tutorials/swapxfg-and-hearth-user-guide`)  
+- [x] Soft-redirect stale swap tutorials to `xfg-swapd` + unified guide  
+- [x] Alice-locks state ladder + dual-swapd CLI in user guide  
+- [ ] SwapXFG TUI screenshots (visuals) / expand operator runbook  
+- [ ] Hearth orderbook UX vs AMM depth (screenshots)  
+- [ ] Testnet ops deep-dive (mixIn=0 bootstrap, mining peer/RPC) for developers  
 
 ### P2 — protocol depth
 - [ ] CPI quarterly update design (when oracle live)  

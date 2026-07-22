@@ -61,6 +61,7 @@
       "group": "Atomic swaps & SwapXFG",
       "pages": [
         "features/swapxfg/overview",
+        "tutorials/swapxfg-and-hearth-user-guide",
         "features/atomic-swaps/how-swaps-work",
         "features/atomic-swaps/supported-pairs",
         "features/atomic-swaps/step-by-step-guide",
@@ -93,6 +94,7 @@
     {
       "group": "Tutorials",
       "pages": [
+        "tutorials/swapxfg-and-hearth-user-guide",
         "tutorials/your-first-deposit",
         "tutorials/hearth-amm-cd-real-yield",
         "tutorials/fuego-tui-node-management",

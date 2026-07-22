@@ -6,14 +6,15 @@ keywords: ["swap pairs", "XMR", "ETH", "SOL", "BCH", "fuego", "xfg"]
 
 ## Available pairs
 
-| Pair | Counterparty chain | Daemon binary |
-|------|--------------------|---------------|
-| XFG ↔ XMR | Monero | `xfg-xmr-swap` |
-| XFG ↔ ETH | Ethereum | `xfg-eth-swap` |
-| XFG ↔ SOL | Solana | `xfg-sol-swap` |
-| XFG ↔ BCH | Bitcoin Cash | `xfg-bch-swap` |
+| Pair | Counterparty chain | Daemon |
+|------|--------------------|--------|
+| XFG ↔ XMR | Monero | **`xfg-swapd`** (unified) |
+| XFG ↔ ETH | Ethereum | **`xfg-swapd`** |
+| XFG ↔ SOL | Solana | **`xfg-swapd`** |
+| XFG ↔ BCH | Bitcoin Cash | **`xfg-swapd`** |
+| XFG ↔ ARB / BASE | Arbitrum / Base (EVM) | **`xfg-swapd`** where configured |
 
-Each pair has a dedicated swap daemon binary. You only need to run the daemon for the pair you are using.
+One daemon, pair selected at `initiate` / in config. Older docs naming `xfg-xmr-swap` (etc.) are obsolete.
 
 ## On-chain price discovery
 
@@ -21,17 +22,19 @@ XFG also has on-chain swaps for price discovery. These operate within the Fuego 
 
 ## Running a swap daemon
 
-Start the swap daemon for your chosen pair alongside `fuegod`:
+Start **`xfg-swapd`** alongside `fuegod` with a swap-config that fills the pair’s RPC fields:
 
 ```bash
-# XFG ↔ XMR example
-./xfg-xmr-swap \
-  --fuego-rpc http://127.0.0.1:28080 \
-  --xmr-rpc http://127.0.0.1:18081 \
-  --data-dir ~/.xfg-xmr-swap
+# Service mode — see scripts/when-testnet-ready.sh for dual Alice/Bob ports
+./xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir ~/.xfg-swapd \
+  --swap-config scripts/templates/swap-config-bob.json \
+  --status-port 18900 --swap-p2p-port 18901 --swap-p2p-bind 127.0.0.1 \
+  --service
 ```
 
-The daemon connects to both the Fuego node and the counterparty chain's node. Both nodes must be synced before initiating a swap.
+Configs: `scripts/templates/swap-config-*.json.example`. Full walkthrough: [user guide](/tutorials/swapxfg-and-hearth-user-guide).
 
 ## Confirmation requirements
 
@@ -49,10 +52,10 @@ These values may be configurable in the swap daemon — check the daemon's `--he
 
 ## Alias support
 
-When initiating a swap, you can use a Fuego alias instead of a full 98-character address:
+CLI initiate uses peer endpoint + pair label (not only aliases):
 
-```
-initiate @alice 10 XMR
+```bash
+xfg-swapd initiate XMR <xfg_atomic> <ctr_atomic> 127.0.0.1:18911
 ```
 
-The swap daemon resolves the alias to a full address via the daemon's `/get_alias` endpoint before initiating.
+The **swapxfg** TUI also supports alias-style initiate where configured — see [user guide](/tutorials/swapxfg-and-hearth-user-guide) and `swapxfg/README.md`.

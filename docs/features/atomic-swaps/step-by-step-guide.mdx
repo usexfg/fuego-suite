@@ -1,51 +1,65 @@
 ---
 title: "Step-by-step swap guide"
-description: "Initiate and complete a cross-chain atomic swap from start to finish."
-keywords: ["swap guide", "initiate swap", "atomic swap", "XFG", "XMR"]
+description: "Initiate and complete a cross-chain atomic swap from start to finish with xfg-swapd."
+keywords: ["swap guide", "initiate swap", "atomic swap", "XFG", "xfg-swapd"]
 ---
 
-This guide walks through a complete XFG ↔ XMR swap. The flow is identical for other pairs.
+<Warning>
+  **Start here for the full product path:** [SwapXFG + Hearth user guide](/tutorials/swapxfg-and-hearth-user-guide) — decision table, fee pipes, dual-daemon configs, soft/AFK orders, Hearth, and troubleshooting.
+
+  Use **`xfg-swapd`** (not the legacy `xfg-xmr-swap` name).
+</Warning>
+
+This page is a compact CLI walkthrough. The flow is the same for ETH, SOL, XMR, BCH, and other configured pairs.
 
 ## Prerequisites
 
 - `fuegod` running and synced
-- `xmrd` (Monero daemon) running and synced
-- `xfg-xmr-swap` daemon running
-- XFG in your Fuego wallet
-- Counterparty: someone with XMR willing to swap
+- Counterparty chain RPC running and synced (for the pair)
+- **`xfg-swapd`** with configs from `scripts/templates/swap-config-*.json.example`
+- XFG in your Fuego wallet (Bob) and CTR funds on the acceptor side (Alice)
+- Optional: `./scripts/when-testnet-ready.sh` soft checklist
 
-## Initiate the swap
+## Initiate the swap (Bob)
 
-In the TUI or via CLI, run:
-
-```
-initiate <counterparty_address_or_alias> <xfg_amount> XMR
-```
-
-Example:
-
-```
-initiate @bob 25 XMR
+```bash
+xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json \
+  initiate ETH 10000000 1000000000000000 127.0.0.1:18911
 ```
 
-If you used an alias, the daemon resolves it first and shows you the full address. Confirm it matches what you expect before proceeding.
+Usage:
 
-The daemon outputs a **swap ID** — save it. You will use it to monitor and complete the swap.
+```text
+xfg-swapd initiate <pair> <xfg_amount> <ctr_amount> <peer>
+```
+
+- Amounts are **atomic integers** (`1 XFG = 10_000_000`)
+- `peer` is Alice’s swap P2P endpoint (`host:port`)
+- Save the **swap id** for accept / status / refund
+
+## Accept (Alice)
+
+```bash
+xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-alice \
+  --swap-config scripts/templates/swap-config-alice.json \
+  accept <swap_id>
+```
+
+Keep both daemons in **`--service`** mode so fund-escrow, lock, and claim ticks run.
 
 ## Monitor swap progress
 
 ```bash
-curl -X POST http://127.0.0.1:28080/getswapstatus \
-  -H 'Content-Type: application/json' \
-  -d '{"swap_id": "YOUR_SWAP_ID"}'
-```
+xfg-swapd --testnet --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json list
 
-Or list all active swaps:
-
-```bash
-curl -X POST http://127.0.0.1:28080/listswaps \
-  -H 'Content-Type: application/json' \
-  -d '{}'
+xfg-swapd --testnet --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json status <swap_id>
 ```
 
 ## Swap state progression
@@ -55,43 +69,34 @@ curl -X POST http://127.0.0.1:28080/listswaps \
     Both daemons exchange adaptor public keys. State: `ADAPTOR_KEYS_EXCHANGED`.
   </Step>
   <Step title="Escrow funded">
-    Your XFG is locked in a time-locked output. State: `ADAPTOR_ESCROW_FUNDED`.
-
-    The counterparty can now see your locked XFG but cannot spend it without the adaptor secret.
+    XFG is locked in the MuSig2 / time-locked escrow. State: `ADAPTOR_ESCROW_FUNDED`.
   </Step>
   <Step title="Pre-signatures ready">
-    Both parties prepare adaptor-signed transactions. State: `ADAPTOR_PRESIGS_READY`.
+    Parties prepare adaptor-signed material. State: `ADAPTOR_PRESIGS_READY`.
   </Step>
-  <Step title="Counterparty locks XMR">
-    The counterparty locks their XMR. State: `ADAPTOR_CTR_LOCKED`.
+  <Step title="Alice locks CTR">
+    Counterparty HTLC locked with \(H(t)\). State: `ADAPTOR_CTR_LOCKED`.
   </Step>
   <Step title="Secret revealed">
-    One party broadcasts their transaction, revealing the adaptor secret on-chain. State: `ADAPTOR_SECRET_REVEALED`.
+    Bob claims CTR with preimage \(t\); Alice extracts \(t\). State: `ADAPTOR_SECRET_REVEALED`.
   </Step>
-  <Step title="Complete">
-    Both parties claim their funds. Final state: `ADAPTOR_XFG_SPENT`.
+  <Step title="Complete or refund">
+    Success: `ADAPTOR_XFG_SPENT`. Timeout path: `ADAPTOR_REFUNDED`.
 
-    The 1% XFG fee is deducted and credited to the CD interest pool at this point.
+    XFG-side protocol fees feed **HEAT CDs** (majority) and treasury (minority) — **not** Hearth’s 0.3% LP fees.
   </Step>
 </Steps>
 
 ## If the counterparty disappears
 
-If the swap stalls in any state for too long, initiate a cooperative refund:
+After the timelock expires:
 
 ```bash
-# Refund your locked XFG after timeout
-refund YOUR_SWAP_ID
+xfg-swapd ... refund <swap_id>
 ```
 
-This reclaims your XFG via the timelock. You cannot refund before the timelock expires — attempting to do so returns an error. Check `getswapstatus` to see the expiry height.
+Do not refund before expiry — the daemon will reject early attempts. Check `status` for timeout height.
 
 ## After the swap
 
-Your XFG is either spent (successful swap) or returned (refund). Check your wallet balance:
-
-```
-balance
-```
-
-The swap daemon keeps a record of all completed and refunded swaps. Query with `listswaps` to see history.
+Confirm wallet balances. Run `list` to see history of completed and refunded swaps. For soft vs AFK offers, bridges, and Hearth connectivity, use the [unified user guide](/tutorials/swapxfg-and-hearth-user-guide).

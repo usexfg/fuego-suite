@@ -1,0 +1,392 @@
+---
+title: "SwapXFG + Hearth user guide"
+description: "When to use cross-chain atomic swaps vs the on-chain XFG/HEAT market — fees, setup, step-by-step flows, and how they connect."
+keywords: ["SwapXFG", "Hearth", "xfg-swapd", "atomic swap", "HEAT", "AMM", "tutorial", "soft order", "AFK"]
+---
+
+This guide is the **single place** to decide between **SwapXFG** (cross-chain atomic swaps) and **Hearth** (on-chain XFG/HΞ∆₮), run the modern **`xfg-swapd`** path, trade or LP on Hearth, and understand how fees and HEAT CDs connect — without mixing fee pipes.
+
+<Info>
+  **Daemon name:** use **`xfg-swapd`**. Older docs that mention `xfg-xmr-swap` (or per-pair `xfg-*-swap` binaries) are stale for the unified daemon.
+</Info>
+
+## When to use SwapXFG vs Hearth
+
+| Goal | Use | Why |
+|------|-----|-----|
+| Move value **between Fuego and another chain** (ETH, SOL, XMR, BCH, ARB, BASE, …) | **SwapXFG** / `xfg-swapd` | Trustless **atomic** swap; cryptography enforces complete or refund |
+| Trade **XFG ↔ HEAT** on Fuego | **Hearth** | Native AMM + hybrid orderbook **market band** |
+| Earn fees from **on-chain XFG/HEAT volume** | **Hearth LP** | **0.3%** trade fee → liquidity providers |
+| Earn yield by locking **HEAT** | **HEAT CDs** | Funded by **atomic-swap** XFG-side protocol fees (not Hearth LP fees) |
+| Mint HEAT from XFG | **Burn → mint** | One-way burn of XFG mints HEAT (flatcoin) |
+| Leave an order while offline | **SwapXFG soft / AFK offers** | Soft = intent only; AFK = funds locked in MuSig2 escrow |
+
+```text
+Need other chain?  ──►  SwapXFG (atomic)
+Only XFG ↔ HEAT?  ──►  Hearth
+Want yield on HEAT? ──►  HEAT CD  (fed by atomic-swap fees)
+Want LP yield?      ──►  Hearth pool  (0.3% → LPs)
+```
+
+## Fee pipes (keep these separate)
+
+| Activity | Fee | Who earns | Not this |
+|----------|-----|-----------|----------|
+| **Hearth** XFG/HEAT trade | **0.3%** (`HEARTH_FEE_BPS = 30`) | **Liquidity providers** | Does **not** pay CD yield |
+| **Atomic swap** (XFG side, SwapXFG) | Protocol fee on XFG (config: `SWAP_FEE_RATE_BPS`) | **Majority → HEAT CDs**, minority → **treasury** | Not Hearth LP fees |
+| Counterparty chain (ETH gas, XMR fee, …) | Network fee | Miners / validators on that chain | Unrelated to Fuego fee pools |
+
+**Never say “Hearth fees pay CD yield.”**  
+CD yield is driven by **atomic-swap** fee policy (buy HEAT for depositors). Hearth fees pay **LPs**.
+
+Exact CD / treasury split percentages live in protocol config (`SWAP_FEE_CD_SHARE_PCT` majority / `SWAP_FEE_TREASURY_SHARE_PCT` minority). See [fees and timeouts](/features/atomic-swaps/fees-and-timeouts) and [Hearth](/hearth/overview).
+
+---
+
+## Prerequisites
+
+### Common (both surfaces)
+
+| Component | Role |
+|-----------|------|
+| **`fuegod`** | Fuego full node, synced (mainnet or `--testnet`) |
+| **Wallet** (`walletd` / `fuego-walletd` / suite wallet RPC) | Spend keys, balance, ring spends |
+| Spendable **XFG** (and **HEAT** for Hearth / CDs as needed) | Fund trades, escrow, LP, burns |
+
+### SwapXFG / atomic swaps only
+
+| Component | Role |
+|-----------|------|
+| **`xfg-swapd`** | Unified swap daemon: initiate, accept, list, refund, service mode |
+| **Swap config JSON** | Keys + chain RPCs — see `scripts/templates/swap-config-*.json.example` |
+| **Counterparty chain RPC** | e.g. anvil/ETH, Solana validator, monerod — empty `*_rpc_host` means that chain is not registered |
+| **Peer connectivity** | Swap P2P ports between Alice and Bob (or public peer) |
+| Optional **swapxfg TUI** | Operator UI for pairs, soft/AFK offers, bridges (`swapxfg/README.md`) |
+
+### Hearth only
+
+| Component | Role |
+|-----------|------|
+| Synced **`fuegod`** + wallet with **XFG and/or HEAT** | Trade or deposit LP |
+| Protocol feature active for your network (HEATWAVE / majors) | HEAT + Hearth activation |
+
+### Dual-swapd reference ports (local testnet)
+
+From `scripts/when-testnet-ready.sh` (defaults you can override with env):
+
+| Service | Default |
+|---------|---------|
+| fuegod RPC (testnet) | `127.0.0.1:28280` |
+| Bob walletd | `127.0.0.1:18070` |
+| Alice walletd | `127.0.0.1:18071` |
+| Bob xfg-swapd status / P2P | `18900` / `18901` |
+| Alice xfg-swapd status / P2P | `18910` / `18911` |
+| Local ETH (anvil) | `8545` |
+| Local SOL validator | `8899` |
+
+**Atomic units:** `1 XFG = 10_000_000` atomic units (`COIN`). Example: `10000000` = 1 XFG.
+
+**Privacy note:** on mainnet BMV 10+, dynamixn uses ring sizes **32 / 16 / 8**. Fresh testnet may bootstrap with reduced mixin (including mixIn 0) until the decoy pool grows — see [Dynamixn](/privacy/dynamixn).
+
+---
+
+## Part A — SwapXFG step-by-step
+
+### A1. Materialize configs
+
+```bash
+# From repo root
+cp -n scripts/templates/swap-config-bob.json.example   scripts/templates/swap-config-bob.json
+cp -n scripts/templates/swap-config-alice.json.example scripts/templates/swap-config-alice.json
+```
+
+Fill at least:
+
+- **Bob (XFG funder / initiator):** `xfg_secret_key`, `xfg_view_key`, `xfg_wallet_rpc_host` / `port` (and user/pass if set)
+- **Alice (CTR locker / acceptor):** counterparty keys for the pair (`eth_*`, `sol_*`, `xmr_*`, …) plus optional XFG wallet RPC for claim paths
+- Pair RPCs: empty `eth_rpc_host` / `sol_rpc_host` / … means that chain client is **not** registered — `initiate` needs the pair’s height query to succeed
+
+Full field list is in the example JSON files. Soft readiness check:
+
+```bash
+./scripts/when-testnet-ready.sh
+```
+
+### A2. Start node, wallets, dual `xfg-swapd`
+
+```bash
+# Binary path example — adjust to your build
+BIN=build_wt/src   # or build/release/src
+
+# fuegod (testnet example)
+$BIN/fuegod --testnet --data-dir /tmp/fuego-testnet \
+  --rpc-bind-ip 127.0.0.1 --rpc-bind-port 28280 \
+  --p2p-bind-port 20808 --log-level 1
+
+# Bob + Alice walletd against fuegod (ports 18070 / 18071) — ensure Bob has spendable balance
+
+mkdir -p /tmp/xfg-swapd-bob /tmp/xfg-swapd-alice
+
+# Bob (initiator / XFG funder) — service mode
+$BIN/xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json \
+  --status-port 18900 \
+  --swap-p2p-port 18901 --swap-p2p-bind 127.0.0.1 \
+  --service
+
+# Alice (CTR locker) — second terminal
+$BIN/xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-alice \
+  --swap-config scripts/templates/swap-config-alice.json \
+  --status-port 18910 \
+  --swap-p2p-port 18911 --swap-p2p-bind 127.0.0.1 \
+  --service
+```
+
+Service mode ticks drive fund-escrow, lock, and claim automation. Keep both daemons running through the swap.
+
+### A3. Soft orders vs AFK locks (TUI / offer flow)
+
+Via **swapxfg** TUI (`swapxfg/README.md` and operator docs):
+
+| Mode | Funds locked up front? | Typical use |
+|------|------------------------|-------------|
+| **Soft order** | **No** — off-chain intent | Multiple quotes without committing capital; auto-execution when a taker matches (headless optional) |
+| **AFK lock** | **Yes** — XFG into 2-of-2 **MuSig2** escrow | Safer long-running “away from keyboard” maker quotes |
+
+Illustrative TUI-style commands (see TUI help for exact syntax in your build):
+
+```text
+pair eth
+offer <xfg_amt> <target_amt> <pair> <timeout_hrs>   # prepare soft offer
+confirm-offer … true    # publish soft intent (no lock)
+confirm-offer … false   # AFK: lock on-chain + post offer
+accept <offer_id>       # take an offer from the book
+```
+
+Bridges for browser wallets:
+
+```bash
+./swapxfg --bridge-port 8545
+# then in TUI: connect metamask | connect phantom | connect bch
+```
+
+### A4. Initiate / accept via `xfg-swapd` CLI
+
+**Bob initiates** (amounts are **atomic** integers):
+
+```bash
+$BIN/xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json \
+  initiate ETH 10000000 1000000000000000 127.0.0.1:18911
+```
+
+Usage: `xfg-swapd initiate <pair> <xfg_amount> <ctr_amount> <peer>`  
+Pairs include labels such as `ETH`, `SOL`, `XMR`, `BCH`, `ARB`, `BASE` (readiness varies by chain client).
+
+**Alice accepts** with the swap id from initiate / list:
+
+```bash
+$BIN/xfg-swapd --testnet \
+  --fuegod-host 127.0.0.1 --fuegod-port 28280 \
+  --data-dir /tmp/xfg-swapd-alice \
+  --swap-config scripts/templates/swap-config-alice.json \
+  accept <swap_id>
+```
+
+### A5. Protocol state ladder (Alice-locks)
+
+Adaptor-signature atomic swaps with **MuSig2** on the XFG escrow and **HTLC** on many counterparty chains:
+
+1. Keys + MuSig2 joint escrow setup on XFG  
+2. Bob publishes adaptor secret commitment \(H(t)\)  
+3. **Alice locks** CTR HTLC with \(H(t)\)  
+4. **Bob claims** CTR with preimage \(t\) (on-chain secret reveal)  
+5. Alice **extracts** \(t\); collaborative ring spend completes XFG escrow  
+6. Timeouts → independent refunds  
+
+Daemon states (persisted to disk):
+
+```text
+ADAPTOR_KEYS_EXCHANGED
+        ↓
+ADAPTOR_ESCROW_FUNDED
+        ↓
+ADAPTOR_PRESIGS_READY
+        ↓
+ADAPTOR_CTR_LOCKED
+        ↓
+ADAPTOR_SECRET_REVEALED
+        ↓
+ADAPTOR_XFG_SPENT     ← success
+   or
+ADAPTOR_REFUNDED      ← refund after timelock / cooperative refund
+```
+
+Trust the **chain preimage**, not P2P gossip alone. Details: [How atomic swaps work](/features/atomic-swaps/how-swaps-work).
+
+### A6. Monitor and refund
+
+```bash
+# List all swaps (either party’s data-dir)
+$BIN/xfg-swapd --testnet --data-dir /tmp/xfg-swapd-bob \
+  --swap-config scripts/templates/swap-config-bob.json list
+
+$BIN/xfg-swapd --testnet --data-dir /tmp/xfg-swapd-alice \
+  --swap-config scripts/templates/swap-config-alice.json list
+
+# One swap
+$BIN/xfg-swapd ... status <swap_id>
+
+# After timelock — reclaim XFG
+$BIN/xfg-swapd ... refund <swap_id>
+```
+
+Watchdog may log warnings (e.g. stuck in `ADAPTOR_KEYS_EXCHANGED` ~10m, escrow funded ~30m) without auto-refunding every case — use `refund` when the timeout height is reached. AFK paths may auto-refund expired makers when the service detects timeout.
+
+---
+
+## Part B — Hearth step-by-step
+
+### B1. What you are trading
+
+**Hearth** is Fuego’s native **XFG / HΞ∆₮** market:
+
+1. **AMM pool** — constant-product style liquidity  
+2. **Hybrid orderbook + market band** — pool-generated orders around a clearing price so the book has continuous depth from reserves  
+
+| Parameter | Value |
+|-----------|--------|
+| Pair | XFG ↔ HEAT |
+| Trade fee | **0.3%** → **LPs** |
+| HEAT | **Flatcoin**, launch ref **\$1.58** purchasing power — **not** a USD bank stablecoin |
+
+### B2. Trade XFG / HEAT
+
+1. Ensure `fuegod` is synced and your wallet holds the input asset.  
+2. Use wallet / suite RPC or UI methods for Hearth swap (see [Hearth overview](/hearth/overview) and [LP guides](/features/lp-pool/how-liquidity-works)).  
+3. Check pool depth before large size — AMM trades move price (slippage).  
+4. Confirm the **0.3%** fee is the Hearth LP fee, not an atomic-swap CD fee.
+
+### B3. Provide liquidity (LP)
+
+1. Deposit **balanced XFG + HEAT** into the pool (protocol mints LP shares).  
+2. You earn a share of **Hearth** trade fees (0.3%).  
+3. Withdraw principal + accrued LP fees; watch **impermanent loss** if the XFG/HEAT ratio moves.  
+
+High-level deposit/withdraw RPC patterns: [Providing liquidity](/features/lp-pool/providing-liquidity).
+
+### B4. Market band (concept)
+
+Beyond pure AMM quotes, the pool can place **pool orders** in a **band** around clearing price `P_clear`:
+
+- Band size from reserves × band percent  
+- Adaptive spread (bps)  
+- Orchestrator regenerates the band on price move, reserve drift, band consumption, or time  
+
+Traders see continuous depth; the AMM remains the deep liquidity backstop. Design notes: `docs/orderbook/FUEGO_ORDERBOOK_DESIGN.md`.
+
+---
+
+## Part C — How SwapXFG and Hearth connect
+
+They are **different markets** that share the same dual-asset chain:
+
+```text
+  Burn XFG ──mint──► HEAT (flatcoin @ launch $1.58 ref)
+                         │
+                         ├─► Hearth: trade XFG/HEAT (0.3% → LPs)
+                         │
+                         └─► Lock HEAT in a CD ──► yield from ATOMIC-SWAP fees
+
+  Cross-chain SwapXFG activity
+         │
+         └─► XFG-side protocol fees ──► majority HEAT CDs + minority treasury
+                                         (NOT Hearth LP fees)
+```
+
+Typical user journeys:
+
+| Journey | Path |
+|---------|------|
+| Get HEAT | Burn XFG → mint HEAT |
+| Rebalance XFG/HEAT on-chain | Hearth trade |
+| Exit Fuego to ETH/SOL/XMR/… | SwapXFG atomic swap |
+| Earn “real” CD yield | Hold HEAT CD; volume of **atomic swaps** funds the CD pool |
+| Earn trading-fee yield | Be a Hearth LP |
+
+Related overviews:
+
+- [SwapXFG](/features/swapxfg/overview)  
+- [Hearth](/hearth/overview)  
+- [HEAT flatcoin](/heat/overview)  
+- [How atomic swaps work](/features/atomic-swaps/how-swaps-work)  
+- [HEAT CDs](/features/commitment-deposits/how-cds-work)  
+- [Dual-asset architecture](/fuego-dual-asset-architecture)  
+
+---
+
+## Troubleshooting
+
+### Stuck swap states
+
+| Symptom | What to check |
+|---------|----------------|
+| Stuck at `ADAPTOR_KEYS_EXCHANGED` | Peer `xfg-swapd` online? Correct P2P endpoint? Firewall? |
+| Stuck at `ADAPTOR_ESCROW_FUNDED` | Counterparty must progress CTR lock; check their service logs |
+| Stuck at `ADAPTOR_CTR_LOCKED` | Claim / secret reveal path; CTR RPC and balance for fees |
+| `Cannot query counterparty chain height` | Set the pair’s `*_rpc_host` / port in swap-config |
+| Refund fails | Timelock height not reached — check `status` / timeout fields |
+| After daemon restart | State is on disk — run `list`; resume service mode |
+
+### Wallet / fundEscrow
+
+- Bob config **must** include `xfg_secret_key`, `xfg_view_key`, and wallet RPC host/port for escrow funding.  
+- Need **spendable outputs** and enough decoys for ring size (mainnet 8+; testnet may allow lower mixin while bootstrapping).  
+- `fundEscrow` path may call wallet optimize + ring spend — insufficient balance or mixin failures show in walletd / swapd logs.
+
+### Bridges (TUI)
+
+- **“No wallet connected”** — start walletd; match `--wallet` / wizard RPC URL.  
+- **Bridge port in use** — pick another `--bridge-port` and reconnect MetaMask/Phantom.  
+- BCH may require manual claim steps while automation is incomplete — follow TUI `bch claim` prompts.
+
+### Testnet notes (light)
+
+- Use `--testnet` on `fuegod`, wallets, and `xfg-swapd`.  
+- Run `./scripts/when-testnet-ready.sh` as a soft checklist (exits 0 even if services are still starting).  
+- Fresh chains: **mixIn / decoy pool** may be thin; lab builds sometimes use mixIn 0 until the UTXO set grows.  
+- Mining / peer connectivity required before meaningful confirmations.
+
+### Product language checklist
+
+| Prefer | Avoid |
+|--------|--------|
+| HEAT **flatcoin**, launch **\$1.58** | “USD stablecoin”, “always \$1” |
+| CD yield from **atomic swaps** | “Hearth fees pay CDs” |
+| Hearth **0.3% → LPs** | Mixing Hearth and SwapXFG fee stories |
+| Daemon **`xfg-swapd`** | Only documenting `xfg-xmr-swap` as current |
+
+---
+
+## Related pages
+
+| Topic | Link |
+|-------|------|
+| SwapXFG overview | [features/swapxfg/overview](/features/swapxfg/overview) |
+| How swaps work | [features/atomic-swaps/how-swaps-work](/features/atomic-swaps/how-swaps-work) |
+| Fees & timeouts | [features/atomic-swaps/fees-and-timeouts](/features/atomic-swaps/fees-and-timeouts) |
+| Supported pairs | [features/atomic-swaps/supported-pairs](/features/atomic-swaps/supported-pairs) |
+| Hearth | [hearth/overview](/hearth/overview) |
+| HEAT flatcoin | [heat/overview](/heat/overview) |
+| HEAT CDs | [features/commitment-deposits/how-cds-work](/features/commitment-deposits/how-cds-work) |
+| LP pool | [features/lp-pool/how-liquidity-works](/features/lp-pool/how-liquidity-works) |
+| Architecture | [fuego-dual-asset-architecture](/fuego-dual-asset-architecture) |
+| Docs roadmap | [roadmap/docs-roadmap](/roadmap/docs-roadmap) |
+
+Repo operators: dual-daemon examples in `scripts/when-testnet-ready.sh`; TUI in `swapxfg/README.md`.

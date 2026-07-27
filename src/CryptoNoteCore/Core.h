@@ -210,6 +210,7 @@ namespace CryptoNote {
     // HEAT stablecoin / Hearth AMM metrics (v11+)
     struct HeatMetrics {
       uint64_t heatSupply = 0;
+      uint64_t heatOnDeposit = 0;     // HEAT locked in CDs (excludes mint outputs)
       uint64_t digmSupply = 0;
       uint64_t burnedXfg = 0;
       uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)

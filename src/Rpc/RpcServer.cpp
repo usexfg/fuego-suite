@@ -2548,6 +2548,7 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
                                      COMMAND_RPC_GET_HEAT_METRICS::response& res) {
   auto metrics = m_core.getHeatMetrics();
   res.heat_supply = metrics.heatSupply;
+  res.heat_on_deposit = metrics.heatOnDeposit;
   res.burned_xfg = metrics.burnedXfg;
   res.redemption_price_num = metrics.redemptionPriceNum;
   res.redemption_price_denom = metrics.redemptionPriceDenom;

@@ -1513,6 +1513,7 @@ bool core::replaceAliasOwnership(const std::string& alias,
 core::HeatMetrics core::getHeatMetrics() const {
   HeatMetrics m;
   m.heatSupply = m_blockchain.getHeatSupply();
+  m.heatOnDeposit = m_blockchain.getHeatOnDeposit();
   m.digmSupply = m_blockchain.getDigmSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();

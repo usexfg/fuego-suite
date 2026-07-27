@@ -239,6 +239,7 @@ public:
 
       logger(INFO) << operation << "HEAT/AMM/PI state";
       s(m_bs.m_heatSupply, "heat_supply");
+      s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_digmSupply, "digm_supply");
       s(m_bs.m_ammPool, "amm_pool");
       s(m_bs.m_digmPrimaryPool, "digm_primary_pool");
@@ -4367,6 +4368,7 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
     // Save pre-epoch snapshot for popBlock reversal
     EpochStateSnapshot preEpoch;
     preEpoch.heatSupply = m_heatSupply;
+    preEpoch.heatOnDeposit = m_heatOnDeposit;
     preEpoch.heatCdFeePool = m_heatCdFeePool;
     preEpoch.cdYieldPool = m_cdYieldPool;
     preEpoch.cdReserve = m_cdReserve;
@@ -4944,6 +4946,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight) {
     const auto& snap = m_epochSnapshots.back().second;
     m_heatSupply = snap.heatSupply;
+    m_heatOnDeposit = snap.heatOnDeposit;
     m_heatCdFeePool = snap.heatCdFeePool;
     m_cdYieldPool = snap.cdYieldPool;
     m_cdReserve = snap.cdReserve;
@@ -5121,6 +5124,9 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       }
       // CD redemption: reduce locked supply, spend vault UTXOs for claimed interest
       m_totalCdLocked -= cin.amount;
+      if (m_heatOnDeposit >= cin.amount) {
+        m_heatOnDeposit -= cin.amount;
+      }
       if (cin.claimedInterest > 0) {
         uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
         uint64_t effectiveCap = std::min(m_feePoolBalance, vaultAvailable);
@@ -5195,6 +5201,13 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         m_poolLockedXfg += transaction.tx.outputs[output].amount;
       } else if (commitOut.term == parameters::DEPOSIT_TERM_POOL_HEAT) {
         m_poolLockedHeat += transaction.tx.outputs[output].amount;
+      }
+      // Track HEAT locked in CDs (finite term commitments, NOT mint outputs)
+      if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
+          commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
+          commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
+        if (m_heatOnDeposit <= UINT64_MAX - transaction.tx.outputs[output].amount)
+          m_heatOnDeposit += transaction.tx.outputs[output].amount;
       }
     }
   }
@@ -5417,6 +5430,15 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           if (m_poolLockedHeat >= output.amount) m_poolLockedHeat -= output.amount;
         }
       }
+      // Reverse HEAT-on-deposit for CD outputs (finite term, non-HEAT_TERM, non-pool)
+      {
+        const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
+        if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
+            commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
+            commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
+          if (m_heatOnDeposit >= output.amount) m_heatOnDeposit -= output.amount;
+        }
+      }
     }
   }
 
@@ -5445,6 +5467,8 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       }
       // Reverse: restore locked supply and fee pool, un-spend vault UTXOs
       m_totalCdLocked += cin.amount;
+      if (m_heatOnDeposit <= UINT64_MAX - cin.amount)
+        m_heatOnDeposit += cin.amount;
       if (cin.claimedInterest > 0) {
         m_feePoolBalance += cin.claimedInterest;
         if (m_totalCdInterestPaid >= cin.claimedInterest) {

@@ -2271,6 +2271,7 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
   struct response {
     uint64_t heat_supply;
+    uint64_t heat_on_deposit;
     uint64_t burned_xfg;
     uint64_t redemption_price_num;
     uint64_t redemption_price_denom;
@@ -2292,6 +2293,7 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
 
     void serialize(ISerializer &s) {
       KV_MEMBER(heat_supply)
+      KV_MEMBER(heat_on_deposit)
       KV_MEMBER(burned_xfg)
       KV_MEMBER(redemption_price_num)
       KV_MEMBER(redemption_price_denom)

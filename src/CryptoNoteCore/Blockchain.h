@@ -119,6 +119,7 @@ namespace CryptoNote {
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
+    uint64_t getHeatOnDeposit() const { return m_heatOnDeposit; }
     uint64_t getDigmSupply() const { return m_digmSupply; }
     uint64_t getHeatCdFeePool() const { return m_heatCdFeePool; }
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
@@ -400,6 +401,7 @@ namespace CryptoNote {
     // Stores epoch-level state before processing for popBlock reversal
     struct EpochStateSnapshot {
       uint64_t heatSupply;
+      uint64_t heatOnDeposit;
       uint64_t heatCdFeePool;
       uint64_t cdYieldPool;
       uint64_t cdReserve;
@@ -442,6 +444,7 @@ namespace CryptoNote {
 
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
+    uint64_t m_heatOnDeposit = 0;       // HEAT locked in CDs (excludes mint outputs, HEAT_TERM)
     CryptoNote::HeatMintEngine m_heatMintEngine;
 
     // DIGM stablecoin state (on-chain commitments)

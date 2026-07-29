@@ -112,24 +112,25 @@ func PairFromString(s string) uint8 {
 	}
 }
 
-// TradingViewSymbol returns a TradingView symbol URL fragment for the pair.
-// Returns empty string if no TradingView symbol exists for the pair.
+// TradingViewSymbol returns a TradingView symbol for the counterparty asset.
+// XFG itself is not listed on any CEX — it trades solely on the Fuego Hearth
+// DEX. We show the counterparty asset's market chart as a reference so users
+// can see market context for the asset they're swapping.
+// Returns empty string if no TradingView symbol exists.
 func TradingViewSymbol(pair uint8) string {
 	switch pair {
 	case PairSOL:
-		return "BINANCE:XFGLSOL"
+		return "BINANCE:SOLUSDT"
 	case PairETH:
-		return "BINANCE:XFGETH"
+		return "BINANCE:ETHUSDT"
 	case PairXMR:
-		return "BINANCE:FGXMR"
+		return "BINANCE:XMRUSDT"
 	case PairBCH:
-		return "BINANCE:FGXBCH"
+		return "BINANCE:BCHUSDT"
 	case PairARB:
-		return "BINANCE:FGXARB"
-	case PairBASE:
-		return "BINANCE:FGXBASE"
+		return "BINANCE:ARBUSDT"
 	case PairBNB:
-		return "BINANCE:FGXBNB"
+		return "BINANCE:BNBUSDT"
 	default:
 		return ""
 	}

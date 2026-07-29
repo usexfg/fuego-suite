@@ -386,7 +386,7 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.fetchData()
 	case "?":
-		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  t:TradingView  /:cmd  r:refresh  q:quit"
+		m.statusMsg = "m:markets  c:CD  s:status  ↑↓:pair  t:chart(ref)  l:candle/line  /:cmd  r:refresh  q:quit"
 	}
 
 	// Sidebar view navigation
@@ -1231,16 +1231,20 @@ func overlayAt(base, overlay string, x, y int) string {
 
 // ── TradingView ──
 
+// openTradingView opens a TradingView chart for the selected swap pair's
+// counterparty asset (ETH, SOL, etc.) as a market reference. XFG itself is
+// not listed on any CEX — it trades solely on the Fuego Hearth DEX. Use the
+// internal chart view (press 'l' to toggle) for XFG price action.
 func (m tuiModel) openTradingView() tea.Cmd {
 	symbol := TradingViewSymbol(m.activePair)
 	if symbol == "" {
-		m.statusMsg = "no TradingView symbol for this pair"
+		m.statusMsg = "no TradingView symbol — " + PairShort(m.activePair) + " is a rollup, not a listed token"
 		return nil
 	}
-	url := fmt.Sprintf("https://www.tradingview.com/chart/?symbol=%s", symbol)
-	pairName := PairName(m.activePair)
+	url := fmt.Sprintf("https://www.tradingview.com/chart/?symbol=%s&theme=dark", symbol)
+	short := PairShort(m.activePair)
 	return func() tea.Msg {
 		_ = exec.Command("open", url).Start() // macOS
-		return statusUpdateMsg{text: fmt.Sprintf("opened TradingView %s in browser", pairName)}
+		return statusUpdateMsg{text: fmt.Sprintf("opened TradingView %s/USDT (market ref; XFG is Hearth DEX only)", short)}
 	}
 }

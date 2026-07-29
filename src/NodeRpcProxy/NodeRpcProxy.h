@@ -67,8 +67,14 @@ public:
   virtual void relayTransaction(const CryptoNote::Transaction& transaction, const Callback& callback) override;
   virtual void getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback) override;
   virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) override;
-  /* virtual void getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries, std::vector<uint32_t>& heights, const Callback& callback) override; */
-  virtual bool supportsOutputsHeights() const override { return true; }  // Async chain via WalletGetOutputsHeightsRequest — no event-loop deadlock.
+  // virtual void getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries, std::vector<uint32_t>& heights, const Callback& callback) override;
+  // DISABLED: getOutputsHeights is commented out and the daemon lacks the /get_outputs_heights
+  // RPC endpoint. The INode base class default clears heights and calls the callback
+  // synchronously, which causes infinite recursion in the OSPEAD chain (shouldChainOspeadHeights
+  // never sees populated heights → re-chains → 30k+ depth → coroutine stack overflow SIGBUS).
+  // Re-enable once getOutputsHeights is properly implemented via scheduleRequest and the daemon
+  // endpoint exists.
+  virtual bool supportsOutputsHeights() const override { return false; }
   virtual void getNewBlocks(std::vector<Crypto::Hash>&& knownBlockIds, std::vector<CryptoNote::block_complete_entry>& newBlocks, uint32_t& startHeight, const Callback& callback) override;
   virtual void getTransactionOutsGlobalIndices(const Crypto::Hash& transactionHash, std::vector<uint32_t>& outsGlobalIndices, const Callback& callback) override;
   virtual void queryBlocks(std::vector<Crypto::Hash>&& knownBlockIds, uint64_t timestamp, std::vector<BlockShortEntry>& newBlocks, uint32_t& startHeight, const Callback& callback) override;

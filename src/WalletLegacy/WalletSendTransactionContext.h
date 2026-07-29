@@ -90,6 +90,7 @@ struct SendTransactionContext
   // decoy across all amount groups in `outs`.
   std::vector<std::pair<uint64_t, uint32_t>> ospeadHeightQueries;
   std::vector<uint32_t> ospeadHeights;
+  bool ospeadHeightsRequested = false; // guard: prevent re-entry into heights chain
 };
 
 } //namespace CryptoNote

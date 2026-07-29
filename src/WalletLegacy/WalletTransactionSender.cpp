@@ -602,6 +602,7 @@ namespace CryptoNote
     if (!context->dynamicRingSize) return false;
     if (!m_node.supportsOutputsHeights()) return false;
     if (!context->ospeadHeights.empty()) return false;  // second pass — heights already in hand
+    if (context->ospeadHeightsRequested) return false;   // guard: already attempted, don't re-chain
 
     context->ospeadHeightQueries.clear();
     for (const auto& oa : context->outs) {
@@ -609,7 +610,9 @@ namespace CryptoNote
         context->ospeadHeightQueries.emplace_back(oa.amount, static_cast<uint32_t>(oe.global_amount_index));
       }
     }
-    return !context->ospeadHeightQueries.empty();
+    if (context->ospeadHeightQueries.empty()) return false;
+    context->ospeadHeightsRequested = true; // set BEFORE returning true so re-entry is blocked
+    return true;
   }
 
   // Consumes context->ospeadHeights (populated by WalletGetOutputsHeightsRequest)

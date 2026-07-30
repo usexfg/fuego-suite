@@ -862,3 +862,17 @@ set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")
 set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")
 set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
+
+# --------------------------
+# Install targets
+# --------------------------
+include(GNUInstallDirs)
+
+install(TARGETS Daemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS SimpleWallet RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS PaymentGateService RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS TestnetDaemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS testnet-wallet-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS Optimizer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS SwapDaemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS FuegoI2P RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

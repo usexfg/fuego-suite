@@ -22,7 +22,17 @@ namespace XfgSwap {
 // Construction
 // =============================================================================
 
-SpvHeaderStore::SpvHeaderStore() : m_bestTipHeight(0) {}
+SpvHeaderStore::SpvHeaderStore() : m_bestTipHeight(0), m_maxHeightDelta(0) {}
+
+// =============================================================================
+// Public API
+// =============================================================================
+
+void SpvHeaderStore::setMaxHeightDelta(uint64_t depth) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
+  m_maxHeightDelta = depth;
+  pruneOldHeaders();
+}
 
 // =============================================================================
 // Checkpoint
@@ -30,6 +40,7 @@ SpvHeaderStore::SpvHeaderStore() : m_bestTipHeight(0) {}
 
 bool SpvHeaderStore::anchor(uint64_t checkpointHeight,
                             const std::string& checkpointHashDisplay) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   m_checkpointHeight = checkpointHeight;
   m_checkpointHash = checkpointHashDisplay;
   m_hasCheckpoint = true;
@@ -41,6 +52,7 @@ bool SpvHeaderStore::anchor(uint64_t checkpointHeight,
 // =============================================================================
 
 bool SpvHeaderStore::addHeader(const SpvHeader& header) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   std::string headerHash = header.hashDisplay();
   std::string prevDisplay = header.prevHashDisplay();
 
@@ -111,7 +123,7 @@ bool SpvHeaderStore::addHeader(const SpvHeader& header) {
   } else {
     updateBestTip();
   }
-
+  pruneOldHeaders();
   return true;
 }
 
@@ -120,6 +132,7 @@ bool SpvHeaderStore::addHeader(const SpvHeader& header) {
 // =============================================================================
 
 bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height) {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   std::string headerHash = header.hashDisplay();
   std::string prevDisplay = header.prevHashDisplay();
 
@@ -206,6 +219,7 @@ bool SpvHeaderStore::addHeaderAtHeight(const SpvHeader& header, uint64_t height)
 // =============================================================================
 
 bool SpvHeaderStore::bestTip(uint64_t& height, std::string& hashDisplay) const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   if (m_bestTipHeight == 0 && m_bestTipHash.empty()) {
     return false;
   }
@@ -215,6 +229,7 @@ bool SpvHeaderStore::bestTip(uint64_t& height, std::string& hashDisplay) const {
 }
 
 bool SpvHeaderStore::merkleRootAt(uint64_t height, std::vector<uint8_t>& rootLE) const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   auto it = m_entries.find(height);
   if (it == m_entries.end()) {
     return false;
@@ -231,6 +246,7 @@ bool SpvHeaderStore::merkleRootAt(uint64_t height, std::vector<uint8_t>& rootLE)
 }
 
 uint32_t SpvHeaderStore::depthOf(uint64_t height) const {
+  std::lock_guard<std::recursive_mutex> lock(m_mutex);
   if (height > m_bestTipHeight) {
     return 0;
   }
@@ -340,6 +356,30 @@ void SpvHeaderStore::updateBestTip() {
   if (!bestHash.empty()) {
     m_bestTipHeight = maxHeight;
     m_bestTipHash = bestHash;
+  }
+}
+
+// Remove headers older than the retention limit.
+void SpvHeaderStore::pruneOldHeaders() {
+  if (m_maxHeightDelta == 0) {
+    return; // no pruning
+  }
+  // Determine the lowest height to keep
+  uint64_t keepMinHeight = 0;
+  if (m_bestTipHeight > m_maxHeightDelta) {
+    keepMinHeight = m_bestTipHeight - m_maxHeightDelta;
+  }
+  // Ensure we keep at least the checkpoint height (if set)
+  if (m_hasCheckpoint && m_checkpointHeight > keepMinHeight) {
+    keepMinHeight = m_checkpointHeight;
+  }
+  // Remove all entries with height < keepMinHeight
+  for (auto it = m_entries.begin(); it != m_entries.end(); ) {
+    if (it->first < keepMinHeight) {
+      it = m_entries.erase(it);
+    } else {
+      ++it;
+    }
   }
 }
 

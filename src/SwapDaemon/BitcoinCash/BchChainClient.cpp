@@ -3,6 +3,7 @@
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
 
+#include <array>
 #include <cstring>
 #include <algorithm>
 
@@ -17,8 +18,8 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
 BchChainClient::BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif)
   : m_rpc(std::move(rpc)), m_wif(wif) {}
 
-BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient)
-  : m_spvClient(std::move(spvClient)) {}
+BchChainClient::BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif)
+  : m_spvClient(std::move(spvClient)), m_wif(wif) {}
 
 ChainClientResult BchChainClient::lock(const SwapParams& params) {
   if (!m_rpc)
@@ -266,8 +267,47 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
 }
 
 ChainClientResult BchChainClient::claim(const SwapParams& params) {
-  if (!m_rpc)
-    return ChainClientResult::fail("BCH claim: RPC client not available (SPV mode does not support claim)");
+  if (!m_rpc) {
+    if (m_wif.empty())
+      return ChainClientResult::fail("BCH claim: no RPC or WIF available (SPV mode needs WIF for local signing)");
+
+    std::array<uint8_t, 32> privKey{};
+    if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
+      return ChainClientResult::fail("BCH claim: invalid WIF");
+
+    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
+    auto preimageBytes = BchHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
+
+    uint8_t addrVersion = 0;
+    std::vector<uint8_t> pubKeyHash;
+    if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+      return ChainClientResult::fail("BCH claim: invalid destination address");
+    auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+
+    uint64_t fee = 1000;
+    if (params.ctrAmount <= fee)
+      return ChainClientResult::fail("BCH claim: amount too small for fee");
+    uint64_t outputAmount = params.ctrAmount - fee;
+
+    const uint32_t nSequence = 0xFFFFFFFD;
+
+    auto der = BchHtlcScript::signInput(privKey, 1, 0, nSequence,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        outputScript, outputAmount);
+    if (der.empty())
+      return ChainClientResult::fail("BCH claim SPV: signing failed");
+
+    auto scriptSig = BchHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
+
+    auto rawTx = BchHtlcScript::buildRawTransaction(
+        params.ctrLockTxId, 0, params.ctrAmount,
+        scriptSig, params.ctrAddress, outputAmount, 0);
+
+    std::string txid;
+    if (!m_spvClient->broadcastTx(rawTx, txid))
+      return ChainClientResult::fail("BCH claim SPV: broadcast failed");
+    return ChainClientResult::ok(txid);
+  }
 
   std::string claimTxId;
   bool ok = m_rpc->claim(
@@ -282,8 +322,47 @@ ChainClientResult BchChainClient::claim(const SwapParams& params) {
 }
 
 ChainClientResult BchChainClient::refund(const SwapParams& params) {
-  if (!m_rpc)
-    return ChainClientResult::fail("BCH refund: RPC client not available (SPV mode does not support refund)");
+  if (!m_rpc) {
+    if (m_wif.empty())
+      return ChainClientResult::fail("BCH refund: no RPC or WIF available (SPV mode needs WIF for local signing)");
+
+    std::array<uint8_t, 32> privKey{};
+    if (!BchHtlcScript::wifToPrivKey(m_wif, privKey))
+      return ChainClientResult::fail("BCH refund: invalid WIF");
+
+    auto redeemScript = BchHtlcScript::hexToBytes(params.chainState);
+
+    uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
+
+    uint8_t addrVersion = 0;
+    std::vector<uint8_t> pubKeyHash;
+    if (!BchHtlcScript::base58CheckDecode(params.ctrAddress, addrVersion, pubKeyHash))
+      return ChainClientResult::fail("BCH refund: invalid destination address");
+    auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
+
+    uint64_t fee = 1000;
+    if (params.ctrAmount <= fee)
+      return ChainClientResult::fail("BCH refund: amount too small for fee");
+    uint64_t outputAmount = params.ctrAmount - fee;
+
+    auto der = BchHtlcScript::signInput(privKey, 1, nLocktime,
+        0xFFFFFFFE,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        outputScript, outputAmount);
+    if (der.empty())
+      return ChainClientResult::fail("BCH refund SPV: signing failed");
+
+    auto scriptSig = BchHtlcScript::createRefundScriptSig(der, redeemScript);
+
+    auto rawTx = BchHtlcScript::buildRawTransaction(
+        params.ctrLockTxId, 0, params.ctrAmount,
+        scriptSig, params.ctrAddress, outputAmount, nLocktime);
+
+    std::string txid;
+    if (!m_spvClient->broadcastTx(rawTx, txid))
+      return ChainClientResult::fail("BCH refund SPV: broadcast failed");
+    return ChainClientResult::ok(txid);
+  }
 
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(

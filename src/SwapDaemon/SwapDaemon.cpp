@@ -29,10 +29,17 @@
 #include "crypto/hash.h"
 #include "crypto/crypto.h"
 #include "BitcoinCash/BchChainClient.h"
+#include "Bitcoin/BtcRpcClient.h"
+#include "Bitcoin/BtcChainClient.h"
+#include "Litecoin/LtcRpcClient.h"
+#include "Litecoin/LtcChainClient.h"
+#include "Komodo/KmdRpcClient.h"
+#include "Komodo/KmdChainClient.h"
 #include "Ethereum/EthChainClient.h"
 #include "Solana/SolChainClient.h"
 #include "Monero/XmrChainClient.h"
 #include "BSC/BscChainClient.h"
+#include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
 #include "Spv/ElectrumSpvClient.h"
 #include "Spv/Neutrino/NeutrinoSpvClient.h"
@@ -171,7 +178,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.bchSpvCheckpointHeight,
           chainCfg.bchSpvCheckpointHash);
       m_chainRegistry.registerChain(SwapPair::BCH,
-          std::make_unique<BchChainClient>(spvClient));
+          std::make_unique<BchChainClient>(spvClient, chainCfg.bchWif));
       m_logger(Logging::INFO) << "BCH chain client registered: SPV mode ("
         << chainCfg.bchSpvServers.size() << " server(s))";
     } else if (!chainCfg.bchHost.empty()) {
@@ -285,6 +292,25 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << chainCfg.bscHost << ":" << chainCfg.bscPort
       << " (chainId=" << chainCfg.bscChainId << ")";
   }
+  if (!chainCfg.polyHost.empty()) {
+    std::unique_ptr<EthRpcClient> rpc;
+    if (!chainCfg.polyPrivKeyHex.empty() && !chainCfg.polyAddress.empty()) {
+      rpc = std::make_unique<EthRpcClient>(
+          chainCfg.polyHost, chainCfg.polyPort,
+          chainCfg.polyPrivKeyHex, chainCfg.polyAddress, chainCfg.polyChainId,
+          EthTxType::Eip1559);
+    } else {
+      rpc = std::make_unique<EthRpcClient>(chainCfg.polyHost, chainCfg.polyPort);
+    }
+    applyHtlcConfig(*rpc,
+                    chainCfg.polyHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.polyHtlcBinPath,
+                    chainCfg.ethHtlcRegistry, m_logger, "POLYGON");
+    m_chainRegistry.registerChain(SwapPair::POLYGON,
+        std::make_unique<PolygonChainClient>(std::move(rpc), chainCfg.polyAddress));
+    m_logger(Logging::INFO) << "Polygon chain client registered: "
+      << chainCfg.polyHost << ":" << chainCfg.polyPort
+      << " (chainId=" << chainCfg.polyChainId << ")";
+  }
   if (!chainCfg.dcrHost.empty() || chainCfg.dcrMode == "spv") {
     if (chainCfg.dcrMode == "spv" && !chainCfg.dcrSpvServers.empty()) {
       // SPV mode: create NeutrinoSpvClient with DCR checkpoints
@@ -292,6 +318,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       if (chainCfg.dcrSpvCheckpointHeight > 0 && !chainCfg.dcrSpvCheckpointHash.empty()) {
         headerStore->anchor(chainCfg.dcrSpvCheckpointHeight, chainCfg.dcrSpvCheckpointHash);
       }
+      headerStore->setMaxHeightDelta(2000);
       m_spvHeaderStores[SwapPair::DCR] = headerStore;
       auto spvClient = std::make_shared<NeutrinoSpvClient>(
           *headerStore,
@@ -315,6 +342,81 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         << chainCfg.dcrHost << ":" << chainCfg.dcrPort;
     }
   }
+  // BTC (Bitcoin — P2WSH SegWit)
+  if (!chainCfg.btcHost.empty() || chainCfg.btcMode == "spv") {
+    if (chainCfg.btcMode == "spv" && !chainCfg.btcSpvServers.empty()) {
+      // SPV mode: create ElectrumSpvClient with BTC checkpoints
+      auto spvClient = std::make_shared<ElectrumSpvClient>(
+          chainCfg.btcSpvServers,
+          chainCfg.btcSpvMinServers,
+          chainCfg.btcSpvCheckpointHeight,
+          chainCfg.btcSpvCheckpointHash);
+      m_chainRegistry.registerChain(SwapPair::BTC,
+          std::make_unique<BtcChainClient>(spvClient, chainCfg.btcWif));
+      m_logger(Logging::INFO) << "BTC chain client registered: SPV mode ("
+        << chainCfg.btcSpvServers.size() << " server(s))";
+    } else if (!chainCfg.btcHost.empty()) {
+      // Full-node RPC mode
+      auto rpc = std::make_unique<BtcRpcClient>(
+          chainCfg.btcHost, chainCfg.btcPort,
+          chainCfg.btcRpcUser, chainCfg.btcRpcPass);
+      m_chainRegistry.registerChain(SwapPair::BTC,
+          std::make_unique<BtcChainClient>(std::move(rpc), chainCfg.btcWif));
+      m_logger(Logging::INFO) << "BTC chain client registered: "
+        << chainCfg.btcHost << ":" << chainCfg.btcPort;
+    }
+  }
+
+  // LTC (Litecoin — P2WSH SegWit)
+  if (!chainCfg.ltcHost.empty() || chainCfg.ltcMode == "spv") {
+    if (chainCfg.ltcMode == "spv" && !chainCfg.ltcSpvServers.empty()) {
+      // SPV mode: create ElectrumSpvClient with LTC checkpoints
+      auto spvClient = std::make_shared<ElectrumSpvClient>(
+          chainCfg.ltcSpvServers,
+          chainCfg.ltcSpvMinServers,
+          chainCfg.ltcSpvCheckpointHeight,
+          chainCfg.ltcSpvCheckpointHash);
+      m_chainRegistry.registerChain(SwapPair::LTC,
+          std::make_unique<LtcChainClient>(spvClient, chainCfg.ltcWif));
+      m_logger(Logging::INFO) << "LTC chain client registered: SPV mode ("
+        << chainCfg.ltcSpvServers.size() << " server(s))";
+    } else if (!chainCfg.ltcHost.empty()) {
+      // Full-node RPC mode
+      auto rpc = std::make_unique<LtcRpcClient>(
+          chainCfg.ltcHost, chainCfg.ltcPort,
+          chainCfg.ltcRpcUser, chainCfg.ltcRpcPass);
+      m_chainRegistry.registerChain(SwapPair::LTC,
+          std::make_unique<LtcChainClient>(std::move(rpc), chainCfg.ltcWif));
+      m_logger(Logging::INFO) << "LTC chain client registered: "
+        << chainCfg.ltcHost << ":" << chainCfg.ltcPort;
+    }
+  }
+
+  // KMD (Komodo — P2SH, Bitcoin-like RPC)
+  if (!chainCfg.kmdHost.empty() || chainCfg.kmdMode == "spv") {
+    if (chainCfg.kmdMode == "spv" && !chainCfg.kmdSpvServers.empty()) {
+      // SPV mode: create ElectrumSpvClient with KMD checkpoints
+      auto spvClient = std::make_shared<ElectrumSpvClient>(
+          chainCfg.kmdSpvServers,
+          chainCfg.kmdSpvMinServers,
+          chainCfg.kmdSpvCheckpointHeight,
+          chainCfg.kmdSpvCheckpointHash);
+      m_chainRegistry.registerChain(SwapPair::KMD_SPV,
+          std::make_unique<KmdChainClient>(spvClient, chainCfg.kmdWif));
+      m_logger(Logging::INFO) << "KMD chain client registered: SPV mode ("
+        << chainCfg.kmdSpvServers.size() << " server(s))";
+    } else if (!chainCfg.kmdHost.empty()) {
+      // Full-node RPC mode
+      auto rpc = std::make_unique<KmdRpcClient>(
+          chainCfg.kmdHost, chainCfg.kmdPort,
+          chainCfg.kmdRpcUser, chainCfg.kmdRpcPass);
+      m_chainRegistry.registerChain(SwapPair::KMD_SPV,
+          std::make_unique<KmdChainClient>(std::move(rpc), chainCfg.kmdWif));
+      m_logger(Logging::INFO) << "KMD chain client registered: "
+        << chainCfg.kmdHost << ":" << chainCfg.kmdPort;
+    }
+  }
+
   m_xfgWalletRpcHost = chainCfg.xfgWalletRpcHost;
   m_xfgWalletRpcPort = chainCfg.xfgWalletRpcPort;
   m_xfgWalletRpcUser = chainCfg.xfgWalletRpcUser;
@@ -349,6 +451,9 @@ void SwapDaemon::start(uint16_t p2pPort, const std::string& p2pBind) {
   }
   // NOTE: XFG_SWAP_ENC_KEY env var fallback removed for security.
   // The maker key is the only valid encryption key source.
+
+  // Migrate terminal swaps to archive so the tick loop never loads them.
+  m_db.migrateTerminalSwaps();
 
   std::vector<std::string> swapIds = m_db.listSwaps();
   int recovered = 0;
@@ -539,6 +644,9 @@ void SwapDaemon::tickLoop() {
           m_rpc.setXfgMarketValue(marketValueCents);
       }
     }
+
+    // Prune stale taker history
+    pruneTakerHistory();
 
     // Advance every non-terminal swap one step
     auto swapIds = m_db.listSwaps();
@@ -2444,6 +2552,23 @@ void SwapDaemon::recordTakerFailure(const std::string& takerPubKey) {
   auto& record = m_takerHistory[takerPubKey];
   record.requestTimes.push_back(time(nullptr));
   record.failedSwaps++;
+}
+
+void SwapDaemon::pruneTakerHistory() {
+  std::lock_guard<std::mutex> lock(m_takerMutex);
+  time_t now = std::time(nullptr);
+  for (auto it = m_takerHistory.begin(); it != m_takerHistory.end(); ) {
+    // Drop entries with no failed swaps and no recent requests (older than 2 hours)
+    it->second.requestTimes.erase(
+        std::remove_if(it->second.requestTimes.begin(), it->second.requestTimes.end(),
+                       [now](time_t t) { return (now - t) > 7200; }),
+        it->second.requestTimes.end());
+    if (it->second.requestTimes.empty() && it->second.failedSwaps == 0) {
+      it = m_takerHistory.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk) {

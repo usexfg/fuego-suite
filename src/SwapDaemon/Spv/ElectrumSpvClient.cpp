@@ -27,6 +27,8 @@ ElectrumSpvClient::ElectrumSpvClient(
   if (checkpointHeight > 0) {
     m_store.anchor(checkpointHeight, checkpointHashDisplay);
   }
+  // Limit memory: keep only last 2000 block headers
+  m_store.setMaxHeightDelta(2000);
 }
 
 ElectrumSpvClient::~ElectrumSpvClient() = default;
@@ -726,6 +728,39 @@ bool ElectrumSpvClient::findSpend(
   }
 
   return true;
+}
+
+bool ElectrumSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) {
+  if (m_conns.empty()) {
+    return false;
+  }
+
+  // Convert raw tx to hex string
+  std::string hexTx = BchHtlcScript::bytesToHex(rawTx);
+  if (hexTx.empty()) {
+    return false;
+  }
+
+  std::string params = "[\"" + hexTx + "\"]";
+  std::string result = m_conns[0]->call("blockchain.transaction.broadcast", params);
+  if (result.empty()) {
+    return false;
+  }
+
+  // Parse result as JSON string
+  Common::JsonValue json;
+  try {
+    json = Common::JsonValue::fromString(result);
+  } catch (...) {
+    return false;
+  }
+
+  if (!json.isString()) {
+    return false;
+  }
+
+  txid = json.getString();
+  return txid.size() == 64;
 }
 
 // =============================================================================

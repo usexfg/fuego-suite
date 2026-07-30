@@ -31,6 +31,12 @@ public:
   // (getRawTx(txid) -> output[vout].scriptPubKey -> scripthash -> get_history).
   virtual bool findSpend(const std::string& txid, uint32_t vout, SpvSpend& out) = 0;
   virtual bool getRawTx(const std::string& txid, std::vector<uint8_t>& rawTx) = 0;
+
+  // Broadcast a raw transaction to the network.
+  // rawTx: serialized transaction bytes.
+  // txid: (output) the transaction ID on success.
+  // Returns true on success.
+  virtual bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) = 0;
 };
 
 } // namespace XfgSwap

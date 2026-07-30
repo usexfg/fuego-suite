@@ -2,6 +2,7 @@
 
 #include "../IChainClient.h"
 #include "../Spv/ISpvClient.h"
+#include "BtcRpcClient.h"
 #include <string>
 #include <memory>
 
@@ -9,8 +10,11 @@ namespace XfgSwap {
 
 class BtcChainClient : public IChainClient {
 public:
-  // SPV-only mode (no RPC client)
-  explicit BtcChainClient(std::shared_ptr<ISpvClient> spvClient);
+  // Full-node mode
+  BtcChainClient(std::unique_ptr<BtcRpcClient> rpc, const std::string& wif);
+
+  // SPV mode (no RPC client)
+  BtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "BTC"; }
   ChainClientResult lock(const SwapParams& params) override;
@@ -20,10 +24,15 @@ public:
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
   bool getCurrentHeight(uint64_t& height) override;
 
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
+
   // Extract the HTLC claim preimage from a spending transaction.
-  // Fetches the raw tx via the SPV client and parses witness data for the preimage.
+  // In SPV mode, fetches the raw tx via the SPV client.
+  // In full-node mode, uses the RPC client.
   // Returns empty string on failure.
   std::string extractSecret(const std::string& spendingTxid,
                             const std::string& htlcRedeemScriptHex);
@@ -36,7 +45,9 @@ private:
   std::string extractSecretSpv(const std::string& spendingTxid,
                                const std::vector<uint8_t>& htlcP2wshScriptPubKey);
 
-  std::shared_ptr<ISpvClient> m_spvClient;
+  std::unique_ptr<BtcRpcClient> m_rpc;    // null in SPV mode
+  std::string m_wif;                       // empty in SPV mode
+  std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
 };
 
 } // namespace XfgSwap

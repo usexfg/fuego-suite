@@ -106,6 +106,14 @@ struct ChainClientConfig {
   uint64_t    baseChainId  = 8453;
   std::string baseHtlcBinPath;
 
+  // POLYGON (Polygon PoS — EVM, EIP-1559)
+  std::string polyHost;
+  uint16_t    polyPort     = 8545;
+  std::string polyPrivKeyHex;
+  std::string polyAddress;
+  uint64_t    polyChainId  = 137;
+  std::string polyHtlcBinPath;
+
   // XMR spend/view keys (64 hex chars each)
   std::string xmrSpendKeyHex;
   std::string xmrViewKeyHex;
@@ -134,6 +142,48 @@ struct ChainClientConfig {
   size_t    dcrSpvMinServers  = 1;             // min servers for cross-check
   uint64_t  dcrSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string dcrSpvCheckpointHash;            // checkpoint hash (display hex)
+
+  // BTC
+  std::string btcHost;
+  uint16_t    btcPort     = 8332;
+  std::string btcRpcUser;
+  std::string btcRpcPass;
+  std::string btcWif;
+
+  // BTC SPV mode — when btcMode == "spv", use ElectrumSpvClient instead of RPC
+  std::string btcMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> btcSpvServers;      // "host:port" strings
+  size_t    btcSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  btcSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string btcSpvCheckpointHash;            // checkpoint hash (display hex)
+
+  // LTC
+  std::string ltcHost;
+  uint16_t    ltcPort     = 9332;
+  std::string ltcRpcUser;
+  std::string ltcRpcPass;
+  std::string ltcWif;
+
+  // LTC SPV mode — when ltcMode == "spv", use ElectrumSpvClient instead of RPC
+  std::string ltcMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> ltcSpvServers;      // "host:port" strings
+  size_t    ltcSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  ltcSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string ltcSpvCheckpointHash;            // checkpoint hash (display hex)
+
+  // KMD
+  std::string kmdHost;
+  uint16_t    kmdPort     = 7771;
+  std::string kmdRpcUser;
+  std::string kmdRpcPass;
+  std::string kmdWif;
+
+  // KMD SPV mode — when kmdMode == "spv", use ElectrumSpvClient instead of RPC
+  std::string kmdMode;                         // "rpc" (default) or "spv"
+  std::vector<std::string> kmdSpvServers;      // "host:port" strings
+  size_t    kmdSpvMinServers  = 1;             // min servers for cross-check
+  uint64_t  kmdSpvCheckpointHeight = 0;        // checkpoint anchor height
+  std::string kmdSpvCheckpointHash;            // checkpoint hash (display hex)
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
@@ -223,8 +273,12 @@ public:
    // Attempt to refund a specific swap (if timeout has elapsed).
    bool refund(const std::string& swapId);
 
-   // Access the price oracle for configuration.
-   PriceOracle& priceOracle();
+  // Access the price oracle for configuration.
+  PriceOracle& priceOracle();
+
+  // Access the swap database (for RPC server).
+  SwapDatabase& database() { return m_db; }
+  const SwapDatabase& database() const { return m_db; }
 
  private:
   // Scan non-terminal swaps and warn about any stuck longer than threshold.
@@ -318,6 +372,9 @@ public:
 
    bool isTakerRateLimited(const std::string& takerPubKey);
    void recordTakerFailure(const std::string& takerPubKey);
+
+   // Prune stale taker history entries to free memory.
+   void pruneTakerHistory();
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

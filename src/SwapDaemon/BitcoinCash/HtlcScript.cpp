@@ -13,6 +13,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "HtlcScript.h"
+#include "Crypto/Secp256k1Signer.h"
+#include "Crypto/Bip143Sighash.h"
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
@@ -751,6 +753,84 @@ std::vector<uint8_t> BchHtlcScript::parseClaimPreimage(
   }
 
   return {};  // No matching input found
+}
+
+// =============================================================================
+// WIF decode and BCH signing helpers
+// =============================================================================
+
+bool BchHtlcScript::wifToPrivKey(const std::string& wif,
+                                   std::array<uint8_t, 32>& privKey) {
+  uint8_t version = 0;
+  std::vector<uint8_t> payload;
+  if (!base58CheckDecode(wif, version, payload)) return false;
+  if (payload.size() == 33 && payload.back() == 0x01) {
+    payload.pop_back();
+  }
+  if (payload.size() != 32) return false;
+  std::copy(payload.begin(), payload.end(), privKey.begin());
+  return true;
+}
+
+std::vector<uint8_t> BchHtlcScript::signInput(
+    const std::array<uint8_t, 32>& privKey,
+    uint32_t txVersion,
+    uint32_t nLocktime,
+    uint32_t nSequence,
+    const std::string& htlcTxid,
+    uint32_t htlcVout,
+    const std::vector<uint8_t>& redeemScript,
+    uint64_t htlcAmount,
+    const std::vector<uint8_t>& outputScript,
+    uint64_t outputAmount) {
+
+  auto txidBytes = hexToBytes(htlcTxid);
+  if (txidBytes.size() != 32) return {};
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  std::array<uint8_t, 32> txidLE;
+  std::copy(txidBytes.begin(), txidBytes.end(), txidLE.begin());
+
+  CryptoNote::SwapDaemon::Crypto::Bip143Sighash bip143;
+  auto sighash = bip143.computeForP2sh(
+      txVersion, nLocktime, nSequence,
+      txidLE, htlcVout,
+      redeemScript,
+      htlcAmount,
+      outputScript,
+      outputAmount,
+      /*sighashType=*/0x41);
+
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(sighash, privKey);
+
+  auto& r = sig.r;
+  auto& s = sig.s;
+
+  size_t rStart = 0, sStart = 0;
+  while (rStart < 31 && r[rStart] == 0) ++rStart;
+  while (sStart < 31 && s[sStart] == 0) ++sStart;
+
+  bool rPad = (r[rStart] & 0x80) != 0;
+  bool sPad = (s[sStart] & 0x80) != 0;
+
+  size_t rLen = 32 - rStart + (rPad ? 1 : 0);
+  size_t sLen = 32 - sStart + (sPad ? 1 : 0);
+  size_t seqLen = 2 + rLen + 2 + sLen;
+
+  std::vector<uint8_t> der;
+  der.push_back(0x30);
+  der.push_back(static_cast<uint8_t>(seqLen));
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(rLen));
+  if (rPad) der.push_back(0x00);
+  der.insert(der.end(), r.begin() + rStart, r.end());
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(sLen));
+  if (sPad) der.push_back(0x00);
+  der.insert(der.end(), s.begin() + sStart, s.end());
+  der.push_back(0x41);
+
+  return der;
 }
 
 } // namespace XfgSwap

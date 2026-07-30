@@ -17,6 +17,7 @@
 #include <vector>
 #include <map>
 #include <cstdint>
+#include <mutex>
 #include "SpvHeader.h"
 
 namespace XfgSwap {
@@ -33,6 +34,10 @@ namespace XfgSwap {
 //
 // The store tracks the best chain tip and can answer height queries,
 // merkle root lookups, and depth calculations.
+//
+// Old headers can be pruned automatically to limit memory usage.
+// By default, no pruning is performed (retains all headers).
+// Use setMaxHeightDelta() to limit how many blocks behind the tip are kept.
 class SpvHeaderStore {
 public:
   struct Checkpoint {
@@ -73,6 +78,11 @@ public:
   // best chain.  Used for fork comparison.
   long double cumulativeWorkAt(uint64_t height) const;
 
+  // Set the maximum number of blocks to keep below the tip.
+  // If depth > 0, headers older than (tipHeight - depth) will be removed.
+  // If depth == 0, no pruning is performed (default).
+  void setMaxHeightDelta(uint64_t depth);
+
 private:
   struct ChainEntry {
     SpvHeader header;
@@ -83,6 +93,7 @@ private:
 
   // height → list of headers at that height (may be >1 during a fork)
   std::map<uint64_t, std::vector<ChainEntry>> m_entries;
+  mutable std::recursive_mutex m_mutex;
 
   // Best chain state
   uint64_t m_bestTipHeight = 0;
@@ -92,6 +103,9 @@ private:
   uint64_t m_checkpointHeight = 0;
   std::string m_checkpointHash;
   bool m_hasCheckpoint = false;
+
+  // Maximum number of blocks to keep below the tip (0 = keep all).
+  uint64_t m_maxHeightDelta = 0;
 
   // Find a header by display hash across all heights.
   // Returns (height, index) or (-1, 0) if not found.
@@ -103,6 +117,9 @@ private:
 
   // Rebuild the best chain tip after a potential reorg.
   void updateBestTip();
+
+  // Remove headers older than the retention limit.
+  void pruneOldHeaders();
 };
 
 } // namespace XfgSwap

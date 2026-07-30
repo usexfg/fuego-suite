@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
+#include <array>
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -120,6 +121,24 @@ public:
   static std::vector<uint8_t> parseClaimPreimage(
       const std::vector<uint8_t>& rawTx,
       const std::vector<uint8_t>& htlcP2shScriptPubKey);
+
+  // WIF to private key (32 bytes). BCH WIF version: 0x80 (mainnet)
+  static bool wifToPrivKey(const std::string& wif,
+                           std::array<uint8_t, 32>& privKey);
+
+  // Sign a BCH P2SH input using BIP143 sighash with SIGHASH_FORKID (0x41).
+  // Returns DER-encoded signature with 0x41 sighash byte appended.
+  static std::vector<uint8_t> signInput(
+      const std::array<uint8_t, 32>& privKey,
+      uint32_t txVersion,
+      uint32_t nLocktime,
+      uint32_t nSequence,
+      const std::string& htlcTxid,
+      uint32_t htlcVout,
+      const std::vector<uint8_t>& redeemScript,
+      uint64_t htlcAmount,
+      const std::vector<uint8_t>& outputScript,
+      uint64_t outputAmount);
 
 private:
   // Push data onto script with correct length prefix

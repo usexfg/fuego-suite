@@ -13,10 +13,14 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "BtcHtlcScript.h"
-#include <stdexcept>
-#include <cstring>
+#include "Crypto/Bip143Sighash.h"
+#include "Crypto/Secp256k1Signer.h"
+
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <openssl/sha.h>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -377,6 +381,328 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
   }
 
   return {};  // No matching witness stack found
+}
+
+// =============================================================================
+// Base58 and Base58Check helpers
+// =============================================================================
+
+namespace {
+  const char kBase58Alphabet[] =
+      "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+}
+
+std::vector<uint8_t> BtcHtlcScript::base58Decode(const std::string& s) {
+  std::vector<uint8_t> result;
+  for (char c : s) {
+    const char* pos = strchr(kBase58Alphabet, c);
+    if (!pos) return {};
+    size_t digit = static_cast<size_t>(pos - kBase58Alphabet);
+    uint32_t carry = static_cast<uint32_t>(digit);
+    for (auto& b : result) {
+      carry += static_cast<uint32_t>(b) * 58;
+      b = static_cast<uint8_t>(carry & 0xFF);
+      carry >>= 8;
+    }
+    while (carry > 0) {
+      result.push_back(static_cast<uint8_t>(carry & 0xFF));
+      carry >>= 8;
+    }
+  }
+  size_t leading = 0;
+  while (leading < s.size() && s[leading] == '1') {
+    result.push_back(0);
+    ++leading;
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
+}
+
+bool BtcHtlcScript::base58CheckDecode(const std::string& encoded, uint8_t& version,
+                                      std::vector<uint8_t>& payload) {
+  auto decoded = base58Decode(encoded);
+  if (decoded.size() < 5) return false;
+  std::vector<uint8_t> data(decoded.begin(), decoded.end() - 4);
+  std::array<uint8_t, 4> checksum;
+  std::copy(decoded.end() - 4, decoded.end(), checksum.begin());
+  auto hash = doubleSha256(data);
+  if (hash[0] != checksum[0] || hash[1] != checksum[1] ||
+      hash[2] != checksum[2] || hash[3] != checksum[3]) {
+    return false;
+  }
+  if (data.empty()) return false;
+  version = data[0];
+  payload.assign(data.begin() + 1, data.end());
+  return true;
+}
+
+// =============================================================================
+// WIF decode and signing
+// =============================================================================
+
+bool BtcHtlcScript::wifToPrivKey(const std::string& wif,
+                                  std::array<uint8_t, 32>& privKey) {
+  uint8_t version = 0;
+  std::vector<uint8_t> payload;
+  if (!base58CheckDecode(wif, version, payload)) return false;
+  if (version != 0x80) return false;
+  if (payload.size() == 33 && payload.back() == 0x01) {
+    payload.pop_back();
+  }
+  if (payload.size() != 32) return false;
+  std::copy(payload.begin(), payload.end(), privKey.begin());
+  return true;
+}
+
+std::vector<uint8_t> BtcHtlcScript::signInput(
+    const std::array<uint8_t, 32>& privKey,
+    uint32_t txVersion,
+    uint32_t nLocktime,
+    uint32_t nSequence,
+    const std::string& htlcTxid,
+    uint32_t htlcVout,
+    const std::vector<uint8_t>& witnessScript,
+    uint64_t htlcAmount,
+    const std::vector<uint8_t>& outputScript,
+    uint64_t outputAmount) {
+
+  auto txidBytes = hexToBytes(htlcTxid);
+  if (txidBytes.size() != 32) return {};
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  std::array<uint8_t, 32> txidLE;
+  std::copy(txidBytes.begin(), txidBytes.end(), txidLE.begin());
+
+  CryptoNote::SwapDaemon::Crypto::Bip143Sighash bip143;
+  auto sighash = bip143.computeForP2sh(
+      txVersion, nLocktime, nSequence,
+      txidLE, htlcVout,
+      witnessScript,
+      htlcAmount,
+      outputScript,
+      outputAmount,
+      /*sighashType=*/0x01);
+
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(sighash, privKey);
+
+  auto& r = sig.r;
+  auto& s = sig.s;
+
+  size_t rStart = 0;
+  while (rStart < 31 && r[rStart] == 0) ++rStart;
+  size_t sStart = 0;
+  while (sStart < 31 && s[sStart] == 0) ++sStart;
+
+  bool rPad = (r[rStart] & 0x80) != 0;
+  bool sPad = (s[sStart] & 0x80) != 0;
+
+  size_t rLen = 32 - rStart + (rPad ? 1 : 0);
+  size_t sLen = 32 - sStart + (sPad ? 1 : 0);
+  size_t seqLen = 2 + rLen + 2 + sLen;
+
+  std::vector<uint8_t> der;
+  der.push_back(0x30);
+  der.push_back(static_cast<uint8_t>(seqLen));
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(rLen));
+  if (rPad) der.push_back(0x00);
+  der.insert(der.end(), r.begin() + rStart, r.end());
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(sLen));
+  if (sPad) der.push_back(0x00);
+  der.insert(der.end(), s.begin() + sStart, s.end());
+  der.push_back(0x01);  // SIGHASH_ALL (no fork ID for BTC)
+
+  return der;
+}
+
+// =============================================================================
+// Bech32 encoding helpers
+// =============================================================================
+
+static const char kBech32Charset[] = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+static const uint32_t kBech32Gen[] = {
+  0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3
+};
+
+static uint32_t bech32Polymod(const std::vector<uint8_t>& values) {
+  uint32_t chk = 1;
+  for (uint8_t v : values) {
+    uint32_t b = chk >> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (size_t i = 0; i < 5; ++i) {
+      if ((b >> i) & 1) chk ^= kBech32Gen[i];
+    }
+  }
+  return chk;
+}
+
+static std::vector<uint8_t> hrpExpand(const std::string& hrp) {
+  std::vector<uint8_t> exp;
+  exp.reserve(hrp.size() * 2 + 1);
+  for (char c : hrp) exp.push_back(static_cast<uint8_t>(c >> 5));
+  exp.push_back(0);
+  for (char c : hrp) exp.push_back(static_cast<uint8_t>(c & 31));
+  return exp;
+}
+
+static std::vector<uint8_t> convertBits8to5(const std::vector<uint8_t>& data) {
+  uint32_t acc = 0;
+  int bits = 0;
+  const uint8_t maxv = 31;
+  std::vector<uint8_t> result;
+  for (uint8_t v : data) {
+    acc = (acc << 8) | v;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      result.push_back(static_cast<uint8_t>((acc >> bits) & maxv));
+    }
+  }
+  if (bits > 0) {
+    result.push_back(static_cast<uint8_t>((acc << (5 - bits)) & maxv));
+  }
+  return result;
+}
+
+static std::string bech32Encode(const std::string& hrp,
+                                 const std::vector<uint8_t>& data5) {
+  auto hrpExp = hrpExpand(hrp);
+  std::vector<uint8_t> combined = hrpExp;
+  combined.insert(combined.end(), data5.begin(), data5.end());
+  combined.insert(combined.end(), 6, 0);
+  uint32_t checksum = bech32Polymod(combined) ^ 1;
+  std::string result = hrp + "1";
+  for (uint8_t v : data5) result += kBech32Charset[v];
+  for (int i = 0; i < 6; ++i)
+    result += kBech32Charset[(checksum >> (5 * (5 - i))) & 31];
+  return result;
+}
+
+// =============================================================================
+// witnessScriptToAddress: compute bech32 P2WSH address
+// =============================================================================
+
+std::string BtcHtlcScript::witnessScriptToAddress(
+    const std::vector<uint8_t>& witnessScript, const std::string& hrp) {
+  auto hash = sha256(witnessScript);
+  std::vector<uint8_t> witnessProgram;
+  witnessProgram.push_back(0x00);
+  witnessProgram.insert(witnessProgram.end(), hash.begin(), hash.end());
+  auto data5 = convertBits8to5(witnessProgram);
+  return bech32Encode(hrp, data5);
+}
+
+// =============================================================================
+// buildRawSegWitTx: build a raw SegWit transaction wire format
+// =============================================================================
+
+static void writeLE64(std::vector<uint8_t>& out, uint64_t v) {
+  for (int i = 0; i < 8; ++i) {
+    out.push_back(static_cast<uint8_t>(v & 0xFF));
+    v >>= 8;
+  }
+}
+
+std::vector<uint8_t> BtcHtlcScript::buildRawSegWitTx(
+    const std::string& inputTxid, uint32_t inputVout, uint64_t inputAmount,
+    const std::vector<uint8_t>& scriptSig,
+    const std::vector<std::vector<uint8_t>>& witnessStack,
+    const std::string& outputAddress, uint64_t outputAmount,
+    uint32_t nLockTime) {
+  (void)inputAmount;
+
+  std::vector<uint8_t> tx;
+
+  // Version (4 bytes LE)
+  writeLE32(tx, 2);
+
+  // SegWit marker + flag
+  tx.push_back(0x00);
+  tx.push_back(0x01);
+
+  // Input count
+  writeVarInt(tx, 1);
+
+  // Input txid (little-endian: reverse the hex bytes)
+  auto txidBytes = hexToBytes(inputTxid);
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  tx.insert(tx.end(), txidBytes.begin(), txidBytes.end());
+
+  // Input vout
+  writeLE32(tx, inputVout);
+
+  // scriptSig
+  writeVarInt(tx, scriptSig.size());
+  tx.insert(tx.end(), scriptSig.begin(), scriptSig.end());
+
+  // Sequence
+  writeLE32(tx, 0xFFFFFFFE);
+
+  // Output count
+  writeVarInt(tx, 1);
+
+  // Output value
+  writeLE64(tx, outputAmount);
+
+  // Output scriptPubKey (P2PKH)
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!base58CheckDecode(outputAddress, addrVersion, pubKeyHash) ||
+      pubKeyHash.size() != 20) {
+    throw std::runtime_error("buildRawSegWitTx: invalid P2PKH output address");
+  }
+  if (addrVersion != 0x00) {
+    throw std::runtime_error("buildRawSegWitTx: not a P2PKH address");
+  }
+  auto scriptPubKey = buildP2pkhScriptPubKey(pubKeyHash);
+  writeVarInt(tx, scriptPubKey.size());
+  tx.insert(tx.end(), scriptPubKey.begin(), scriptPubKey.end());
+
+  // Witness data
+  writeVarInt(tx, witnessStack.size());
+  for (const auto& item : witnessStack) {
+    writeVarInt(tx, item.size());
+    tx.insert(tx.end(), item.begin(), item.end());
+  }
+
+  // nLockTime
+  writeLE32(tx, nLockTime);
+
+  return tx;
+}
+
+// =============================================================================
+// createClaimWitness: <sig> <preimage> OP_1 <witnessScript>
+// =============================================================================
+
+std::vector<std::vector<uint8_t>> BtcHtlcScript::createClaimWitness(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& preimage,
+    const std::vector<uint8_t>& witnessScript) {
+  std::vector<std::vector<uint8_t>> witness;
+  witness.reserve(4);
+  witness.push_back(signature);
+  witness.push_back(preimage);
+  witness.push_back({BtcOpCode::OP_TRUE});  // OP_1 = 0x51
+  witness.push_back(witnessScript);
+  return witness;
+}
+
+// =============================================================================
+// createRefundWitness: <sig> OP_0 <witnessScript>
+// =============================================================================
+
+std::vector<std::vector<uint8_t>> BtcHtlcScript::createRefundWitness(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& witnessScript) {
+  std::vector<std::vector<uint8_t>> witness;
+  witness.reserve(3);
+  witness.push_back(signature);
+  witness.push_back({BtcOpCode::OP_FALSE});  // OP_0 = 0x00
+  witness.push_back(witnessScript);
+  return witness;
 }
 
 } // namespace XfgSwap

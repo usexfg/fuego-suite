@@ -13,11 +13,14 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "LtcHtlcScript.h"
-#include <stdexcept>
-#include <cstring>
+#include "Crypto/Bip143Sighash.h"
+#include "Crypto/Secp256k1Signer.h"
+
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <openssl/sha.h>
-#include <openssl/evp.h>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -487,6 +490,178 @@ std::vector<uint8_t> LtcHtlcScript::parseClaimPreimage(
   }
 
   return {};  // No matching input found
+}
+
+// =============================================================================
+// WIF decode and signing
+// =============================================================================
+
+bool LtcHtlcScript::wifToPrivKey(const std::string& wif,
+                                  std::array<uint8_t, 32>& privKey) {
+  uint8_t version = 0;
+  std::vector<uint8_t> payload;
+  if (!base58CheckDecode(wif, version, payload)) return false;
+  if (version != 0xB0) return false;
+  if (payload.size() == 33 && payload.back() == 0x01) {
+    payload.pop_back();
+  }
+  if (payload.size() != 32) return false;
+  std::copy(payload.begin(), payload.end(), privKey.begin());
+  return true;
+}
+
+std::vector<uint8_t> LtcHtlcScript::signInput(
+    const std::array<uint8_t, 32>& privKey,
+    uint32_t txVersion,
+    uint32_t nLocktime,
+    uint32_t nSequence,
+    const std::string& htlcTxid,
+    uint32_t htlcVout,
+    const std::vector<uint8_t>& witnessScript,
+    uint64_t htlcAmount,
+    const std::vector<uint8_t>& outputScript,
+    uint64_t outputAmount) {
+
+  auto txidBytes = hexToBytes(htlcTxid);
+  if (txidBytes.size() != 32) return {};
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  std::array<uint8_t, 32> txidLE;
+  std::copy(txidBytes.begin(), txidBytes.end(), txidLE.begin());
+
+  CryptoNote::SwapDaemon::Crypto::Bip143Sighash bip143;
+  auto sighash = bip143.computeForP2sh(
+      txVersion, nLocktime, nSequence,
+      txidLE, htlcVout,
+      witnessScript,
+      htlcAmount,
+      outputScript,
+      outputAmount,
+      /*sighashType=*/0x01);
+
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(sighash, privKey);
+
+  auto& r = sig.r;
+  auto& s = sig.s;
+
+  size_t rStart = 0;
+  while (rStart < 31 && r[rStart] == 0) ++rStart;
+  size_t sStart = 0;
+  while (sStart < 31 && s[sStart] == 0) ++sStart;
+
+  bool rPad = (r[rStart] & 0x80) != 0;
+  bool sPad = (s[sStart] & 0x80) != 0;
+
+  size_t rLen = 32 - rStart + (rPad ? 1 : 0);
+  size_t sLen = 32 - sStart + (sPad ? 1 : 0);
+  size_t seqLen = 2 + rLen + 2 + sLen;
+
+  std::vector<uint8_t> der;
+  der.push_back(0x30);
+  der.push_back(static_cast<uint8_t>(seqLen));
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(rLen));
+  if (rPad) der.push_back(0x00);
+  der.insert(der.end(), r.begin() + rStart, r.end());
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(sLen));
+  if (sPad) der.push_back(0x00);
+  der.insert(der.end(), s.begin() + sStart, s.end());
+  der.push_back(0x01);  // SIGHASH_ALL (no fork ID for LTC)
+
+  return der;
+}
+
+// =============================================================================
+// createClaimWitness: <sig> <preimage> OP_1 <witnessScript>
+// =============================================================================
+
+std::vector<std::vector<uint8_t>> LtcHtlcScript::createClaimWitness(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& preimage,
+    const std::vector<uint8_t>& witnessScript) {
+  std::vector<std::vector<uint8_t>> witness;
+  witness.reserve(4);
+  witness.push_back(signature);
+  witness.push_back(preimage);
+  witness.push_back({0x51});  // OP_1
+  witness.push_back(witnessScript);
+  return witness;
+}
+
+// =============================================================================
+// createRefundWitness: <sig> OP_0 <witnessScript>
+// =============================================================================
+
+std::vector<std::vector<uint8_t>> LtcHtlcScript::createRefundWitness(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& witnessScript) {
+  std::vector<std::vector<uint8_t>> witness;
+  witness.reserve(3);
+  witness.push_back(signature);
+  witness.push_back({0x00});  // OP_0
+  witness.push_back(witnessScript);
+  return witness;
+}
+
+// =============================================================================
+// buildRawSegWitTx
+// =============================================================================
+
+std::vector<uint8_t> LtcHtlcScript::buildRawSegWitTx(
+    const std::string& inputTxid, uint32_t inputVout, uint64_t inputAmount,
+    const std::vector<uint8_t>& scriptSig,
+    const std::vector<std::vector<uint8_t>>& witnessStack,
+    const std::string& outputAddress, uint64_t outputAmount,
+    uint32_t nLockTime) {
+  (void)inputAmount;
+
+  std::vector<uint8_t> tx;
+
+  writeLE32(tx, 2);
+
+  tx.push_back(0x00);
+  tx.push_back(0x01);
+
+  writeVarInt(tx, 1);
+
+  auto txidBytes = hexToBytes(inputTxid);
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  tx.insert(tx.end(), txidBytes.begin(), txidBytes.end());
+
+  writeLE32(tx, inputVout);
+
+  writeVarInt(tx, scriptSig.size());
+  tx.insert(tx.end(), scriptSig.begin(), scriptSig.end());
+
+  writeLE32(tx, 0xFFFFFFFE);
+
+  writeVarInt(tx, 1);
+
+  writeLE64(tx, outputAmount);
+
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> pubKeyHash;
+  if (!base58CheckDecode(outputAddress, addrVersion, pubKeyHash) ||
+      pubKeyHash.size() != 20) {
+    throw std::runtime_error("buildRawSegWitTx: invalid P2PKH output address");
+  }
+  if (addrVersion != 0x30) {
+    throw std::runtime_error("buildRawSegWitTx: not a LTC P2PKH address");
+  }
+  auto scriptPubKey = buildP2pkhScriptPubKey(pubKeyHash);
+  writeVarInt(tx, scriptPubKey.size());
+  tx.insert(tx.end(), scriptPubKey.begin(), scriptPubKey.end());
+
+  writeVarInt(tx, witnessStack.size());
+  for (const auto& item : witnessStack) {
+    writeVarInt(tx, item.size());
+    tx.insert(tx.end(), item.begin(), item.end());
+  }
+
+  writeLE32(tx, nLockTime);
+
+  return tx;
 }
 
 } // namespace XfgSwap

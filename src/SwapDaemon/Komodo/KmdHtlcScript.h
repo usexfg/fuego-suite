@@ -16,6 +16,7 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <array>
 
 namespace XfgSwap {
 
@@ -85,11 +86,59 @@ public:
   // Build a P2SH scriptPubKey: OP_HASH160 <hash> OP_EQUAL
   static std::vector<uint8_t> buildP2shScriptPubKey(const std::vector<uint8_t>& scriptHash);
 
+  // Base58Check decode (returns false if checksum invalid)
+  static bool base58CheckDecode(const std::string& encoded, uint8_t& version,
+                                std::vector<uint8_t>& payload);
+
+  // WIF to private key (32 bytes). KMD WIF version: 0xBC
+  static bool wifToPrivKey(const std::string& wif,
+                           std::array<uint8_t, 32>& privKey);
+
+  // ScriptSig for claiming: <signature> <preimage> OP_TRUE <redeemScript>
+  static std::vector<uint8_t> createClaimScriptSig(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& preimage,
+      const std::vector<uint8_t>& redeemScript);
+
+  // ScriptSig for refund: <signature> OP_FALSE <redeemScript>
+  static std::vector<uint8_t> createRefundScriptSig(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& redeemScript);
+
+  // Build a raw KMD transaction (version 1, P2SH, one input, one output).
+  // For spending HTLC P2SH outputs.
+  static std::vector<uint8_t> buildRawTransaction(
+      const std::string& inputTxid,
+      uint32_t inputVout,
+      uint64_t inputAmount,
+      const std::vector<uint8_t>& scriptSig,
+      const std::string& outputAddress,
+      uint64_t outputAmount,
+      uint32_t nLockTime);
+
+  // Sign a KMD P2SH input using BIP143 sighash (sighashType=0x01).
+  // Returns DER-encoded signature with 0x01 sighash byte appended.
+  static std::vector<uint8_t> signInput(
+      const std::array<uint8_t, 32>& privKey,
+      uint32_t txVersion,
+      uint32_t nLocktime,
+      uint32_t nSequence,
+      const std::string& htlcTxid,
+      uint32_t htlcVout,
+      const std::vector<uint8_t>& redeemScript,
+      uint64_t htlcAmount,
+      const std::vector<uint8_t>& outputScript,
+      uint64_t outputAmount);
+
 private:
   static void pushData(std::vector<uint8_t>& script, const std::vector<uint8_t>& data);
   static void writeLE16(std::vector<uint8_t>& out, uint16_t v);
   static void writeLE32(std::vector<uint8_t>& out, uint32_t v);
   static void writeVarInt(std::vector<uint8_t>& out, uint64_t n);
+  static void writeLE64(std::vector<uint8_t>& out, uint64_t v);
+  // Decode a Base58Check address to extract hash (20 bytes) and version byte
+  static bool decodeAddress(const std::string& address, uint8_t& version,
+                            std::vector<uint8_t>& hash);
   static std::vector<uint8_t> serializeScriptNum(uint32_t n);
 };
 

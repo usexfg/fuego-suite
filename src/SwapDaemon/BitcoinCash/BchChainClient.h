@@ -14,7 +14,7 @@ public:
   BchChainClient(std::unique_ptr<BchRpcClient> rpc, const std::string& wif);
 
   // SPV mode (no RPC client required)
-  BchChainClient(std::shared_ptr<ISpvClient> spvClient);
+  BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "BCH"; }
   ChainClientResult lock(const SwapParams& params) override;

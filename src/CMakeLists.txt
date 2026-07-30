@@ -251,6 +251,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/PriceOracle.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/StatusServer.cpp
+    SwapDaemon/RpcServer.cpp
 
     SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
@@ -283,6 +284,9 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Litecoin/LtcChainClient.cpp
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Litecoin/LtcRpcClient.cpp
+    SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
@@ -585,6 +589,8 @@ add_executable(SwapDaemon
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/SwapSecretEncryption.cpp
+    SwapDaemon/StatusServer.cpp
+    SwapDaemon/RpcServer.cpp
     SwapDaemon/ChainRegistry.cpp
     SwapDaemon/Monero/MoneroRpcClient.cpp
     SwapDaemon/Monero/AdaptorSignature.cpp
@@ -616,6 +622,9 @@ add_executable(SwapDaemon
     SwapDaemon/Litecoin/LtcChainClient.cpp
     SwapDaemon/Komodo/KmdHtlcScript.cpp
     SwapDaemon/Komodo/KmdChainClient.cpp
+    SwapDaemon/Bitcoin/BtcRpcClient.cpp
+    SwapDaemon/Litecoin/LtcRpcClient.cpp
+    SwapDaemon/Komodo/KmdRpcClient.cpp
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp

@@ -2,12 +2,13 @@
 
 #include "../IChainClient.h"
 #include "../Spv/ISpvClient.h"
+#include "KmdRpcClient.h"
 #include <string>
 #include <memory>
 
 namespace XfgSwap {
 
-// Komodo (KMD) chain client — SPV-only mode.
+// Komodo (KMD) chain client — dual-mode (SPV + RPC full-node).
 //
 // KMD is a Zcash/Bitcoin fork with standard UTXO model. Uses the same
 // Electrum protocol as BCH for SPV verification. The HTLC script structure
@@ -16,11 +17,14 @@ namespace XfgSwap {
 // KMD-specific differences from BCH:
 //   - Address prefixes: P2PKH (0x3C), P2SH (0x55), WIF (0xBC)
 //   - Uses KmdHtlcScript instead of BchHtlcScript
-//   - SPV-only (no full-node RPC client)
+//   - P2SH (not P2WSH)
 class KmdChainClient : public IChainClient {
 public:
-  // SPV-only mode (no RPC client)
-  explicit KmdChainClient(std::shared_ptr<ISpvClient> spvClient);
+  // Full-node mode
+  KmdChainClient(std::unique_ptr<KmdRpcClient> rpc, const std::string& wif);
+
+  // SPV mode (no RPC client)
+  KmdChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "KMD"; }
   ChainClientResult lock(const SwapParams& params) override;
@@ -30,10 +34,15 @@ public:
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
   bool getCurrentHeight(uint64_t& height) override;
 
+  std::string tryExtractClaimedSecret(const SwapParams& params) override;
+
   // Extract the HTLC claim preimage from a spending transaction.
-  // Fetches the raw tx via the SPV client and parses the scriptSig.
+  // In SPV mode, fetches the raw tx via the SPV client.
+  // In full-node mode, uses the RPC client.
   // Returns empty string on failure.
   std::string extractSecret(const std::string& spendingTxid,
                             const std::string& htlcRedeemScriptHex);
@@ -46,7 +55,9 @@ private:
   std::string extractSecretSpv(const std::string& spendingTxid,
                                const std::vector<uint8_t>& htlcP2shScriptPubKey);
 
-  std::shared_ptr<ISpvClient> m_spvClient;
+  std::unique_ptr<KmdRpcClient> m_rpc;   // null in SPV mode
+  std::string m_wif;                      // empty in SPV mode
+  std::shared_ptr<ISpvClient> m_spvClient; // null in full-node mode
 };
 
 } // namespace XfgSwap

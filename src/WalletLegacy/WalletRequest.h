@@ -44,7 +44,7 @@ class WalletGetRandomOutsByAmountsRequest: public WalletRequest
 {
 public:
   WalletGetRandomOutsByAmountsRequest(const std::vector<uint64_t>& amounts, uint64_t outsCount, std::shared_ptr<SendTransactionContext> context, Callback cb) :
-    m_amounts(amounts), m_outsCount(outsCount), m_context(context), m_cb(cb) {};
+    m_amounts(amounts), m_outsCount(outsCount), m_context(std::move(context)), m_cb(std::move(cb)) {};
 
   virtual ~WalletGetRandomOutsByAmountsRequest() {};
 
@@ -65,7 +65,7 @@ class WalletGetRandomCommitmentOutsRequest: public WalletRequest
 public:
   WalletGetRandomCommitmentOutsRequest(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
       std::shared_ptr<SendTransactionContext> context, Callback cb)
-    : m_amount(amount), m_outsCount(outsCount), m_maxHeight(maxHeight), m_context(context), m_cb(cb) {}
+    : m_amount(amount), m_outsCount(outsCount), m_maxHeight(maxHeight), m_context(std::move(context)), m_cb(std::move(cb)) {}
 
   virtual ~WalletGetRandomCommitmentOutsRequest() {}
 
@@ -93,7 +93,7 @@ class WalletGetOutputsHeightsRequest: public WalletRequest
 {
 public:
   WalletGetOutputsHeightsRequest(std::shared_ptr<SendTransactionContext> context, Callback cb)
-    : m_context(context), m_cb(cb) {}
+    : m_context(std::move(context)), m_cb(std::move(cb)) {}
 
   virtual ~WalletGetOutputsHeightsRequest() {}
 

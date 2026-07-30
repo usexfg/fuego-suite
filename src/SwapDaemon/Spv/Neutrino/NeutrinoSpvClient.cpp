@@ -832,4 +832,13 @@ bool NeutrinoSpvClient::downloadBlockTxs(
   return true;
 }
 
+bool NeutrinoSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) {
+  // Neutrino/BIP-157 does not have a broadcast primitive.
+  // The caller must provide an alternative broadcast mechanism (e.g., Tor SOCKS proxy to an Electrum server).
+  // For now, return false — this is a known limitation.
+  (void)rawTx;
+  (void)txid;
+  return false;
+}
+
 } // namespace XfgSwap

@@ -40,6 +40,12 @@ public:
     return true;
   }
 
+  bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override {
+    (void)rawTx;
+    txid = "mock_broadcast_txid";
+    return true;
+  }
+
   // Test configuration
   uint64_t m_tipHeight = 500000;
   bool m_failVerify = false;

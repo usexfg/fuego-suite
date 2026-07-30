@@ -65,6 +65,7 @@ public:
   bool verifyTxInclusion(const std::string& txid, SpvTxInclusion& out) override;
   bool findSpend(const std::string& txid, uint32_t vout, SpvSpend& out) override;
   bool getRawTx(const std::string& txid, std::vector<uint8_t>& rawTx) override;
+  bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override;
 
   // Neutrino-specific: add a peer connection
   void addConnection(std::unique_ptr<NeutrinoConnection> conn);

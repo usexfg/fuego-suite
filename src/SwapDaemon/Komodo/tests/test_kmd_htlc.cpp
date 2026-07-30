@@ -39,7 +39,14 @@ public:
   }
 
   bool findSpend(const std::string& txid, uint32_t vout, SpvSpend& out) override {
-    (void)txid; (void)vout; (void)out;
+    if (txid == m_lastLockTxid && vout == 0 && !m_lastSpendTxid.empty()) {
+      out.spent = true;
+      out.spendingTxid = m_lastSpendTxid;
+      auto it = m_rawTxs.find(m_lastSpendTxid);
+      if (it != m_rawTxs.end())
+        out.rawSpendingTx = it->second;
+      return true;
+    }
     return false;
   }
 
@@ -50,7 +57,19 @@ public:
     return true;
   }
 
+  bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override {
+    txid = "mock_" + KmdHtlcScript::bytesToHex(KmdHtlcScript::sha256(rawTx));
+    txid = txid.substr(0, 64);
+    m_rawTxs[txid] = rawTx;
+    m_lastSpendTxid = txid;
+    return true;
+  }
+
+  void setLockTx(const std::string& txid) { m_lastLockTxid = txid; }
+
   uint64_t m_tipHeight = 1000;
+  std::string m_lastLockTxid;
+  std::string m_lastSpendTxid;
   std::unordered_map<std::string, SpvTxInclusion> m_inclusions;
   std::unordered_map<std::string, std::vector<uint8_t>> m_rawTxs;
 };
@@ -290,7 +309,7 @@ static void test_kmd_verifyLock_spv_mode() {
   mock->m_rawTxs[lockTxId] = rawTx;
   mock->m_inclusions[lockTxId] = {true, 498, 3, true};
 
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = lockTxId;
@@ -324,7 +343,7 @@ static void test_kmd_verifyLock_spv_wrong_amount() {
   mock->m_rawTxs[lockTxId] = rawTx;
   mock->m_inclusions[lockTxId] = {true, 498, 3, true};
 
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = lockTxId;
@@ -341,7 +360,7 @@ static void test_kmd_verifyLock_spv_not_found() {
   std::cout << "test_kmd_verifyLock_spv_not_found..." << std::endl;
 
   auto mock = std::make_shared<MockSpvClient>();
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = "nonexistent";
@@ -376,7 +395,7 @@ static void test_kmd_extractSecret_spv_mode() {
   std::string spendingTxid = "1122334455667788112233445566778811223344556677881122334455667788";
   mock->m_rawTxs[spendingTxid] = spendingTx;
 
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   auto result = client.extractSecret(spendingTxid, redeemScriptHex);
   assert(!result.empty());
@@ -389,7 +408,7 @@ static void test_kmd_extractSecret_spv_not_found() {
   std::cout << "test_kmd_extractSecret_spv_not_found..." << std::endl;
 
   auto mock = std::make_shared<MockSpvClient>();
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   std::vector<uint8_t> redeemScript(10, 0x55);
   auto result = client.extractSecret("nonexistent", KmdHtlcScript::bytesToHex(redeemScript));
@@ -404,7 +423,7 @@ static void test_kmd_getCurrentHeight_spv_mode() {
   auto mock = std::make_shared<MockSpvClient>();
   mock->m_tipHeight = 2700000;
 
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   uint64_t height = 0;
   bool ok = client.getCurrentHeight(height);
@@ -418,7 +437,7 @@ static void test_kmd_spv_mode_lock_claim_refund_fail() {
   std::cout << "test_kmd_spv_mode_lock_claim_refund_fail..." << std::endl;
 
   auto mock = std::make_shared<MockSpvClient>();
-  KmdChainClient client(mock);
+  KmdChainClient client(mock, "");
 
   SwapParams params;
   memset(&params.adaptorSecret, 0x42, sizeof(params.adaptorSecret));
@@ -429,15 +448,145 @@ static void test_kmd_spv_mode_lock_claim_refund_fail() {
 
   result = client.claim(params);
   assert(!result.success);
-  assert(result.error.find("SPV mode does not support claim") != std::string::npos);
+  assert(result.error.find("SPV mode needs WIF for local signing") != std::string::npos);
 
   result = client.refund(params);
   assert(!result.success);
-  assert(result.error.find("SPV mode does not support refund") != std::string::npos);
+  assert(result.error.find("SPV mode needs WIF for local signing") != std::string::npos);
 
   result = client.verifyReserveProof("", 0, "addr:sig:msg");
   assert(!result.success);
   assert(result.error.find("not implemented") != std::string::npos);
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+// =============================================================================
+// Tests: KmdChainClient SPV claim/refund success path
+// =============================================================================
+
+static void test_kmd_spv_claim_success() {
+  std::cout << "test_kmd_spv_claim_success..." << std::endl;
+
+  // Generate a valid KMD WIF (version 0xBC)
+  std::array<uint8_t, 32> privKey{};
+  for (size_t i = 0; i < 32; ++i)
+    privKey[i] = static_cast<uint8_t>(0x10 + i);
+  std::vector<uint8_t> privKeyVec(privKey.begin(), privKey.end());
+  std::string wif = KmdHtlcScript::base58CheckEncode(0xBC, privKeyVec);
+
+  // Generate a valid KMD P2PKH destination address (version 0x3C)
+  std::array<uint8_t, 33> pubKey{};
+  for (size_t i = 0; i < 33; ++i)
+    pubKey[i] = static_cast<uint8_t>(0x20 + i);
+  std::vector<uint8_t> pubKeyVec(pubKey.begin(), pubKey.end());
+  std::vector<uint8_t> pubKeyHashVec = KmdHtlcScript::hash160(pubKeyVec);
+  std::string destAddr = KmdHtlcScript::pubkeyHashToAddress(pubKeyHashVec);
+
+  // Create an HTLC redeemScript using a SHA256 hash lock
+  std::vector<uint8_t> preimageVec(32, 0x42);
+  std::vector<uint8_t> hashLock = KmdHtlcScript::sha256(preimageVec);
+  uint32_t lockTime = 1500000;
+  uint32_t timeoutBlock = 2000000;
+  auto redeemScript = KmdHtlcScript::createHashTimeLockScript(
+      hashLock, lockTime, pubKeyVec, pubKeyVec, timeoutBlock);
+  std::string chainStateHex = KmdHtlcScript::bytesToHex(redeemScript);
+
+  auto mock = std::make_shared<MockSpvClient>();
+  KmdChainClient client(mock, wif);
+
+  SwapParams params;
+  memset(&params.adaptorSecret, 0x42, sizeof(params.adaptorSecret));
+  params.ctrLockTxId = "aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344";
+  params.ctrAmount = 100000;
+  params.chainState = chainStateHex;
+  params.ctrAddress = destAddr;
+  params.ctrTimeoutBlock = timeoutBlock;
+
+  // SPV claim → should sign locally and broadcast via mock
+  auto result = client.claim(params);
+  assert(result.success);
+  assert(result.txId.size() == 64);
+
+  // SPV refund → same path with nLocktime and nSequence=0xFFFFFFFE
+  result = client.refund(params);
+  assert(result.success);
+  assert(result.txId.size() == 64);
+
+  std::cout << "  PASSED" << std::endl;
+}
+
+// =============================================================================
+// Tests: SPV claim → broadcast → extract preimage (full pipeline)
+// =============================================================================
+
+static void test_kmd_spv_claim_then_extract_secret() {
+  std::cout << "test_kmd_spv_claim_then_extract_secret..." << std::endl;
+
+  // Generate a valid KMD WIF (version 0xBC) and destination address
+  std::array<uint8_t, 32> privKey{};
+  for (size_t i = 0; i < 32; ++i)
+    privKey[i] = static_cast<uint8_t>(0x10 + i);
+  std::vector<uint8_t> privKeyVec(privKey.begin(), privKey.end());
+  std::string wif = KmdHtlcScript::base58CheckEncode(0xBC, privKeyVec);
+
+  std::array<uint8_t, 33> pubKey{};
+  for (size_t i = 0; i < 33; ++i)
+    pubKey[i] = static_cast<uint8_t>(0x20 + i);
+  std::vector<uint8_t> pubKeyVec(pubKey.begin(), pubKey.end());
+  std::vector<uint8_t> pubKeyHashVec = KmdHtlcScript::hash160(pubKeyVec);
+  std::string destAddr = KmdHtlcScript::pubkeyHashToAddress(pubKeyHashVec);
+
+  // Create an HTLC redeemScript whose hash lock matches the adaptorSecret
+  std::vector<uint8_t> preimageVec(32, 0x42);
+  std::vector<uint8_t> hashLock = KmdHtlcScript::sha256(preimageVec);
+  uint32_t lockTime = 1500000;
+  uint32_t timeoutBlock = 2000000;
+  auto redeemScript = KmdHtlcScript::createHashTimeLockScript(
+      hashLock, lockTime, pubKeyVec, pubKeyVec, timeoutBlock);
+  std::string chainStateHex = KmdHtlcScript::bytesToHex(redeemScript);
+
+  // Set the chainState to include the redeemScript
+  std::string lockTxId = "bbccddee11223344bbccddee11223344bbccddee11223344bbccddee11223344";
+
+  auto mock = std::make_shared<MockSpvClient>();
+  mock->setLockTx(lockTxId);
+
+  // Pre-seed a dummy inclusion for the lock tx (needed by verifyLock, not claim)
+  mock->m_inclusions[lockTxId] = {true, 500, 5, true};
+
+  KmdChainClient client(mock, wif);
+
+  SwapParams params;
+  memset(&params.adaptorSecret, 0x42, sizeof(params.adaptorSecret));
+  params.ctrLockTxId = lockTxId;
+  params.ctrAmount = 100000;
+  params.chainState = chainStateHex;
+  params.ctrAddress = destAddr;
+  params.ctrTimeoutBlock = timeoutBlock;
+
+  // Step 1: SPV claim → signs + broadcasts via mock
+  auto claimResult = client.claim(params);
+  assert(claimResult.success);
+  std::string claimTxId = claimResult.txId;
+  assert(!claimTxId.empty());
+
+  // Step 2: tryExtractClaimedSecret → findSpend → getRawTx → parseClaimPreimage
+  std::string secret = client.tryExtractClaimedSecret(params);
+  assert(!secret.empty());
+  // The extracted preimage should be the 32 bytes of 0x42 in hex
+  assert(secret == "4242424242424242424242424242424242424242424242424242424242424242");
+
+  // Also test the SPV refund → broadcast → extract cycle doesn't extract (refund has no preimage)
+  auto refundResult = client.refund(params);
+  assert(refundResult.success);
+  std::string refundTxId = refundResult.txId;
+  assert(!refundTxId.empty());
+
+  // Now the mock's findSpend returns the claim tx (first spend). Try extract again.
+  secret = client.tryExtractClaimedSecret(params);
+  assert(!secret.empty());
+  assert(secret == "4242424242424242424242424242424242424242424242424242424242424242");
 
   std::cout << "  PASSED" << std::endl;
 }
@@ -461,6 +610,8 @@ int main() {
   test_kmd_extractSecret_spv_not_found();
   test_kmd_getCurrentHeight_spv_mode();
   test_kmd_spv_mode_lock_claim_refund_fail();
+  test_kmd_spv_claim_success();
+  test_kmd_spv_claim_then_extract_secret();
 
   std::cout << "\nAll KMD tests passed." << std::endl;
   return 0;

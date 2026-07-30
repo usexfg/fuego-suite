@@ -31,7 +31,8 @@ namespace XfgSwap {
 
 SwapDatabase::SwapDatabase(const std::string& dataDir)
   : m_dataDir(dataDir)
-  , m_swapsDir(dataDir + "/swaps") {
+  , m_swapsDir(dataDir + "/swaps")
+  , m_archiveDir(dataDir + "/archive") {
   ensureDirectory();
 }
 
@@ -40,13 +41,12 @@ bool SwapDatabase::ensureDirectory() {
   std::error_code ec;
   fs::create_directories(m_dataDir, ec);
   fs::create_directories(m_swapsDir, ec);
+  fs::create_directories(m_archiveDir, ec);
   return true;
 #else
-  // Create data dir if it doesn't exist
   mkdir(m_dataDir.c_str(), 0700);
-  // Create swaps subdir
-  int ret = mkdir(m_swapsDir.c_str(), 0700);
-  // ret == 0 means created, EEXIST means already exists -- both are fine
+  mkdir(m_swapsDir.c_str(), 0700);
+  int ret = mkdir(m_archiveDir.c_str(), 0700);
   return (ret == 0 || errno == EEXIST);
 #endif
 }
@@ -55,12 +55,19 @@ std::string SwapDatabase::swapFilePath(const std::string& swapId) const {
   return m_swapsDir + "/" + swapId + ".json";
 }
 
+std::string SwapDatabase::archiveFilePath(const std::string& swapId) const {
+  return m_archiveDir + "/" + swapId + ".json";
+}
+
 bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
   try {
     auto& mutableSm = const_cast<SwapStateMachine&>(sm);
     if (!m_encKey.empty()) mutableSm.setEncryptionKey(m_encKey);
     std::string json = mutableSm.serialize();
-    std::string path = swapFilePath(sm.params().swapId);
+    // Archive terminal swaps so the tick loop never loads them again.
+    std::string path = sm.isTerminal()
+        ? archiveFilePath(sm.params().swapId)
+        : swapFilePath(sm.params().swapId);
 
     // Write to a temp file first, then rename for atomicity
     std::string tmpPath = path + ".tmp";
@@ -185,6 +192,45 @@ const std::string& SwapDatabase::dataDir() const {
 
 void SwapDatabase::setEncryptionKey(const std::string& key) {
   m_encKey = key;
+}
+
+void SwapDatabase::migrateTerminalSwaps() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+#ifdef _WIN32
+  if (!fs::exists(m_swapsDir)) return;
+  for (const auto& entry : fs::directory_iterator(m_swapsDir)) {
+    std::string name = entry.path().filename().string();
+    if (name.size() <= 5 || name.substr(name.size() - 5) != ".json") continue;
+    std::string swapId = name.substr(0, name.size() - 5);
+    SwapStateMachine sm;
+    if (loadSwapLocked(swapId, sm) && sm.isTerminal()) {
+      std::string src = swapFilePath(swapId);
+      std::string dst = archiveFilePath(swapId);
+      if (std::rename(src.c_str(), dst.c_str()) != 0) {
+        // Fallback: delete from active dir
+        std::remove(src.c_str());
+      }
+    }
+  }
+#else
+  DIR* dir = opendir(m_swapsDir.c_str());
+  if (!dir) return;
+  struct dirent* entry;
+  while ((entry = readdir(dir)) != nullptr) {
+    std::string name = entry->d_name;
+    if (name.size() <= 5 || name.substr(name.size() - 5) != ".json") continue;
+    std::string swapId = name.substr(0, name.size() - 5);
+    SwapStateMachine sm;
+    if (loadSwapLocked(swapId, sm) && sm.isTerminal()) {
+      std::string src = swapFilePath(swapId);
+      std::string dst = archiveFilePath(swapId);
+      if (std::rename(src.c_str(), dst.c_str()) != 0) {
+        std::remove(src.c_str());
+      }
+    }
+  }
+  closedir(dir);
+#endif
 }
 
 } // namespace XfgSwap

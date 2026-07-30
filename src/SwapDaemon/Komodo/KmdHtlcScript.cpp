@@ -19,6 +19,8 @@
 #include <openssl/sha.h>
 #include <openssl/ripemd.h>
 #include <openssl/evp.h>
+#include "Crypto/Secp256k1Signer.h"
+#include "Crypto/Bip143Sighash.h"
 
 namespace XfgSwap {
 
@@ -510,6 +512,256 @@ std::vector<uint8_t> KmdHtlcScript::parseClaimPreimage(
   }
 
   return {};
+}
+
+// =============================================================================
+// Base58Check decoding
+// =============================================================================
+
+bool KmdHtlcScript::base58CheckDecode(const std::string& encoded, uint8_t& version,
+                                       std::vector<uint8_t>& payload) {
+  if (encoded.empty()) return false;
+
+  int8_t b58map[256];
+  std::memset(b58map, -1, sizeof(b58map));
+  for (int i = 0; i < 58; ++i) {
+    b58map[static_cast<uint8_t>(kBase58Alphabet[i])] = static_cast<int8_t>(i);
+  }
+
+  size_t leadingZeros = 0;
+  for (size_t i = 0; i < encoded.size() && encoded[i] == '1'; ++i) {
+    ++leadingZeros;
+  }
+
+  size_t maxBytes = encoded.size() * 733 / 1000 + 1;
+  std::vector<uint8_t> b256(maxBytes, 0);
+
+  for (size_t i = 0; i < encoded.size(); ++i) {
+    int8_t carry = b58map[static_cast<uint8_t>(encoded[i])];
+    if (carry < 0) return false;
+
+    uint32_t c = static_cast<uint32_t>(carry);
+    for (auto it = b256.rbegin(); it != b256.rend(); ++it) {
+      c += 58u * static_cast<uint32_t>(*it);
+      *it = static_cast<uint8_t>(c & 0xFF);
+      c >>= 8;
+    }
+  }
+
+  auto it = std::find_if(b256.begin(), b256.end(), [](uint8_t b) { return b != 0; });
+
+  std::vector<uint8_t> result;
+  result.reserve(leadingZeros + static_cast<size_t>(std::distance(it, b256.end())));
+  for (size_t i = 0; i < leadingZeros; ++i) {
+    result.push_back(0x00);
+  }
+  result.insert(result.end(), it, b256.end());
+
+  if (result.size() < 5) return false;
+
+  size_t dataLen = result.size() - 4;
+  std::vector<uint8_t> dataForChecksum(result.begin(), result.begin() + static_cast<ptrdiff_t>(dataLen));
+  std::vector<uint8_t> expectedChecksum = doubleSha256(dataForChecksum);
+
+  if (result[dataLen] != expectedChecksum[0] ||
+      result[dataLen + 1] != expectedChecksum[1] ||
+      result[dataLen + 2] != expectedChecksum[2] ||
+      result[dataLen + 3] != expectedChecksum[3]) {
+    return false;
+  }
+
+  version = result[0];
+  payload.assign(result.begin() + 1, result.begin() + static_cast<ptrdiff_t>(dataLen));
+  return true;
+}
+
+// =============================================================================
+// WIF to private key
+// =============================================================================
+
+bool KmdHtlcScript::wifToPrivKey(const std::string& wif,
+                                  std::array<uint8_t, 32>& privKey) {
+  uint8_t version = 0;
+  std::vector<uint8_t> payload;
+  if (!base58CheckDecode(wif, version, payload)) return false;
+  if (version != 0xBC) return false;
+  if (payload.size() == 33 && payload.back() == 0x01) {
+    payload.pop_back();
+  }
+  if (payload.size() != 32) return false;
+  std::copy(payload.begin(), payload.end(), privKey.begin());
+  return true;
+}
+
+// =============================================================================
+// ScriptSig builders for HTLC spending
+// =============================================================================
+
+std::vector<uint8_t> KmdHtlcScript::createClaimScriptSig(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& preimage,
+    const std::vector<uint8_t>& redeemScript) {
+  std::vector<uint8_t> scriptSig;
+  scriptSig.reserve(signature.size() + preimage.size() + redeemScript.size() + 10);
+  pushData(scriptSig, signature);
+  pushData(scriptSig, preimage);
+  scriptSig.push_back(KmdOpCode::OP_TRUE);
+  pushData(scriptSig, redeemScript);
+  return scriptSig;
+}
+
+std::vector<uint8_t> KmdHtlcScript::createRefundScriptSig(
+    const std::vector<uint8_t>& signature,
+    const std::vector<uint8_t>& redeemScript) {
+  std::vector<uint8_t> scriptSig;
+  scriptSig.reserve(signature.size() + redeemScript.size() + 5);
+  pushData(scriptSig, signature);
+  scriptSig.push_back(KmdOpCode::OP_FALSE);
+  pushData(scriptSig, redeemScript);
+  return scriptSig;
+}
+
+// =============================================================================
+// Raw transaction builder
+// =============================================================================
+
+std::vector<uint8_t> KmdHtlcScript::buildRawTransaction(
+    const std::string& inputTxid,
+    uint32_t inputVout,
+    uint64_t inputAmount,
+    const std::vector<uint8_t>& scriptSig,
+    const std::string& outputAddress,
+    uint64_t outputAmount,
+    uint32_t nLockTime) {
+
+  (void)inputAmount;
+
+  uint8_t addrVersion = 0;
+  std::vector<uint8_t> addrHash;
+  if (!decodeAddress(outputAddress, addrVersion, addrHash)) {
+    throw std::runtime_error("buildRawTransaction: invalid output address");
+  }
+
+  std::vector<uint8_t> scriptPubKey;
+  if (addrVersion == 0x3C) {
+    scriptPubKey = buildP2pkhScriptPubKey(addrHash);
+  } else if (addrVersion == 0x55) {
+    scriptPubKey = buildP2shScriptPubKey(addrHash);
+  } else {
+    throw std::runtime_error("buildRawTransaction: unsupported address version");
+  }
+
+  std::vector<uint8_t> txidBytes = hexToBytes(inputTxid);
+  if (txidBytes.size() != 32) {
+    throw std::runtime_error("buildRawTransaction: txid must be 32 bytes (64 hex chars)");
+  }
+  std::reverse(txidBytes.begin(), txidBytes.end());
+
+  std::vector<uint8_t> tx;
+  tx.reserve(4 + 1 + 32 + 4 + scriptSig.size() + 4 + 1 + 8 + scriptPubKey.size() + 4 + 10);
+
+  writeLE32(tx, 1);
+  writeVarInt(tx, 1);
+  tx.insert(tx.end(), txidBytes.begin(), txidBytes.end());
+  writeLE32(tx, inputVout);
+  writeVarInt(tx, scriptSig.size());
+  tx.insert(tx.end(), scriptSig.begin(), scriptSig.end());
+  uint32_t nSequence = (nLockTime > 0) ? 0xFFFFFFFE : 0xFFFFFFFD;
+  writeLE32(tx, nSequence);
+  writeVarInt(tx, 1);
+  writeLE64(tx, outputAmount);
+  writeVarInt(tx, scriptPubKey.size());
+  tx.insert(tx.end(), scriptPubKey.begin(), scriptPubKey.end());
+  writeLE32(tx, nLockTime);
+
+  return tx;
+}
+
+// =============================================================================
+// BIP143 signing
+// =============================================================================
+
+std::vector<uint8_t> KmdHtlcScript::signInput(
+    const std::array<uint8_t, 32>& privKey,
+    uint32_t txVersion,
+    uint32_t nLocktime,
+    uint32_t nSequence,
+    const std::string& htlcTxid,
+    uint32_t htlcVout,
+    const std::vector<uint8_t>& redeemScript,
+    uint64_t htlcAmount,
+    const std::vector<uint8_t>& outputScript,
+    uint64_t outputAmount) {
+
+  auto txidBytes = hexToBytes(htlcTxid);
+  if (txidBytes.size() != 32) return {};
+  std::reverse(txidBytes.begin(), txidBytes.end());
+  std::array<uint8_t, 32> txidLE;
+  std::copy(txidBytes.begin(), txidBytes.end(), txidLE.begin());
+
+  CryptoNote::SwapDaemon::Crypto::Bip143Sighash bip143;
+  auto sighash = bip143.computeForP2sh(
+      txVersion, nLocktime, nSequence,
+      txidLE, htlcVout,
+      redeemScript,
+      htlcAmount,
+      outputScript,
+      outputAmount,
+      0x01);
+
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto sig = signer.signRecoverable(sighash, privKey);
+
+  auto& r = sig.r;
+  auto& s = sig.s;
+
+  size_t rStart = 0, sStart = 0;
+  while (rStart < 31 && r[rStart] == 0) ++rStart;
+  while (sStart < 31 && s[sStart] == 0) ++sStart;
+
+  bool rPad = (r[rStart] & 0x80) != 0;
+  bool sPad = (s[sStart] & 0x80) != 0;
+
+  size_t rLen = 32 - rStart + (rPad ? 1 : 0);
+  size_t sLen = 32 - sStart + (sPad ? 1 : 0);
+  size_t seqLen = 2 + rLen + 2 + sLen;
+
+  std::vector<uint8_t> der;
+  der.push_back(0x30);
+  der.push_back(static_cast<uint8_t>(seqLen));
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(rLen));
+  if (rPad) der.push_back(0x00);
+  der.insert(der.end(), r.begin() + rStart, r.end());
+  der.push_back(0x02);
+  der.push_back(static_cast<uint8_t>(sLen));
+  if (sPad) der.push_back(0x00);
+  der.insert(der.end(), s.begin() + sStart, s.end());
+  der.push_back(0x01);
+
+  return der;
+}
+
+// =============================================================================
+// Address decoding wrapper
+// =============================================================================
+
+bool KmdHtlcScript::decodeAddress(const std::string& address, uint8_t& version,
+                                   std::vector<uint8_t>& hash) {
+  if (!base58CheckDecode(address, version, hash)) {
+    return false;
+  }
+  return hash.size() == 20;
+}
+
+// =============================================================================
+// writeLE64
+// =============================================================================
+
+void KmdHtlcScript::writeLE64(std::vector<uint8_t>& out, uint64_t v) {
+  for (int i = 0; i < 8; ++i) {
+    out.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
+  }
 }
 
 } // namespace XfgSwap

@@ -13,8 +13,9 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
-#include <string>
+#include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace XfgSwap {
@@ -78,6 +79,46 @@ public:
   static std::string base58CheckEncode(uint8_t version, const std::vector<uint8_t>& payload);
   static bool base58CheckDecode(const std::string& encoded, uint8_t& version,
                                 std::vector<uint8_t>& payload);
+
+  // WIF to private key (32 bytes). LTC WIF version: 0xB0 (mainnet)
+  static bool wifToPrivKey(const std::string& wif,
+                           std::array<uint8_t, 32>& privKey);
+
+  // Sign a P2WSH SegWit input using BIP143 sighash (sighashType=0x01).
+  // Returns DER-encoded signature with 0x01 sighash byte appended.
+  static std::vector<uint8_t> signInput(
+      const std::array<uint8_t, 32>& privKey,
+      uint32_t txVersion,
+      uint32_t nLocktime,
+      uint32_t nSequence,
+      const std::string& htlcTxid,
+      uint32_t htlcVout,
+      const std::vector<uint8_t>& witnessScript,
+      uint64_t htlcAmount,
+      const std::vector<uint8_t>& outputScript,
+      uint64_t outputAmount);
+
+  // Build raw SegWit transaction spending from a P2WSH HTLC.
+  static std::vector<uint8_t> buildRawSegWitTx(
+      const std::string& inputTxid,
+      uint32_t inputVout,
+      uint64_t inputAmount,
+      const std::vector<uint8_t>& scriptSig,
+      const std::vector<std::vector<uint8_t>>& witnessStack,
+      const std::string& outputAddress,
+      uint64_t outputAmount,
+      uint32_t nLockTime);
+
+  // Create witness stack for CLAIMING: <sig> <preimage> OP_1 <witnessScript>
+  static std::vector<std::vector<uint8_t>> createClaimWitness(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& preimage,
+      const std::vector<uint8_t>& witnessScript);
+
+  // Create witness stack for REFUNDING: <sig> OP_0 <witnessScript>
+  static std::vector<std::vector<uint8_t>> createRefundWitness(
+      const std::vector<uint8_t>& signature,
+      const std::vector<uint8_t>& witnessScript);
 
 private:
   // Push data onto script with correct length prefix

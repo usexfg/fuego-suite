@@ -166,6 +166,14 @@ bool loadChainClientConfig(const std::string& path,
   out.baseChainId    = jsonGetUint(json, "base_chain_id", 8453);
   out.baseHtlcBinPath= jsonGetStr (json, "base_htlc_bin", out.ethHtlcBinPath);
 
+  // POLYGON (Polygon PoS — EVM, EIP-1559)
+  out.polyHost       = jsonGetStr (json, "poly_rpc_host", "");
+  out.polyPort       = static_cast<uint16_t>(jsonGetUint(json, "poly_rpc_port", 8545));
+  out.polyPrivKeyHex = jsonGetStr (json, "poly_priv_key");
+  out.polyAddress    = jsonGetStr (json, "poly_address");
+  out.polyChainId    = jsonGetUint(json, "poly_chain_id", 137);
+  out.polyHtlcBinPath= jsonGetStr (json, "poly_htlc_bin");
+
   out.xmrSpendKeyHex = jsonGetStr(json, "xmr_spend_key");
   out.xmrViewKeyHex  = jsonGetStr(json, "xmr_view_key");
 
@@ -202,10 +210,95 @@ bool loadChainClientConfig(const std::string& path,
     out.dcrSpvServers.push_back(server);
   }
 
+  // BTC
+  out.btcHost    = jsonGetStr(json, "btc_rpc_host", "");
+  out.btcPort    = static_cast<uint16_t>(jsonGetUint(json, "btc_rpc_port", 8332));
+  out.btcRpcUser = jsonGetStr(json, "btc_rpc_user");
+  out.btcRpcPass = jsonGetStr(json, "btc_rpc_pass");
+  out.btcWif     = jsonGetStr(json, "btc_wif");
+
+  // BTC SPV mode configuration
+  out.btcMode = jsonGetStr(json, "btc_mode", "");
+  out.btcSpvMinServers = static_cast<size_t>(jsonGetUint(json, "btc_spv_min_servers", 1));
+  out.btcSpvCheckpointHeight = jsonGetUint(json, "btc_spv_checkpoint_height", 0);
+  out.btcSpvCheckpointHash = jsonGetStr(json, "btc_spv_checkpoint_hash", "");
+
+  // Parse BTC SPV server list: btc_spv_server_0, btc_spv_server_1, ...
+  for (size_t i = 0; i < 16; ++i) {
+    std::string key = "btc_spv_server_" + std::to_string(i);
+    std::string server = jsonGetStr(json, key, "");
+    if (server.empty()) break;
+    out.btcSpvServers.push_back(server);
+  }
+
+  // LTC
+  out.ltcHost    = jsonGetStr(json, "ltc_rpc_host", "");
+  out.ltcPort    = static_cast<uint16_t>(jsonGetUint(json, "ltc_rpc_port", 9332));
+  out.ltcRpcUser = jsonGetStr(json, "ltc_rpc_user");
+  out.ltcRpcPass = jsonGetStr(json, "ltc_rpc_pass");
+  out.ltcWif     = jsonGetStr(json, "ltc_wif");
+
+  // LTC SPV mode configuration
+  out.ltcMode = jsonGetStr(json, "ltc_mode", "");
+  out.ltcSpvMinServers = static_cast<size_t>(jsonGetUint(json, "ltc_spv_min_servers", 1));
+  out.ltcSpvCheckpointHeight = jsonGetUint(json, "ltc_spv_checkpoint_height", 0);
+  out.ltcSpvCheckpointHash = jsonGetStr(json, "ltc_spv_checkpoint_hash", "");
+
+  // Parse LTC SPV server list: ltc_spv_server_0, ltc_spv_server_1, ...
+  for (size_t i = 0; i < 16; ++i) {
+    std::string key = "ltc_spv_server_" + std::to_string(i);
+    std::string server = jsonGetStr(json, key, "");
+    if (server.empty()) break;
+    out.ltcSpvServers.push_back(server);
+  }
+
+  // KMD
+  out.kmdHost    = jsonGetStr(json, "kmd_rpc_host", "");
+  out.kmdPort    = static_cast<uint16_t>(jsonGetUint(json, "kmd_rpc_port", 7771));
+  out.kmdRpcUser = jsonGetStr(json, "kmd_rpc_user");
+  out.kmdRpcPass = jsonGetStr(json, "kmd_rpc_pass");
+  out.kmdWif     = jsonGetStr(json, "kmd_wif");
+
+  // KMD SPV mode configuration
+  out.kmdMode = jsonGetStr(json, "kmd_mode", "");
+  out.kmdSpvMinServers = static_cast<size_t>(jsonGetUint(json, "kmd_spv_min_servers", 1));
+  out.kmdSpvCheckpointHeight = jsonGetUint(json, "kmd_spv_checkpoint_height", 0);
+  out.kmdSpvCheckpointHash = jsonGetStr(json, "kmd_spv_checkpoint_hash", "");
+
+  // Parse KMD SPV server list: kmd_spv_server_0, kmd_spv_server_1, ...
+  for (size_t i = 0; i < 16; ++i) {
+    std::string key = "kmd_spv_server_" + std::to_string(i);
+    std::string server = jsonGetStr(json, key, "");
+    if (server.empty()) break;
+    out.kmdSpvServers.push_back(server);
+  }
+
   out.xfgWalletRpcHost = jsonGetStr(json, "xfg_wallet_rpc_host", "");
   out.xfgWalletRpcPort = static_cast<uint16_t>(jsonGetUint(json, "xfg_wallet_rpc_port", 0));
   out.xfgWalletRpcUser = jsonGetStr(json, "xfg_wallet_rpc_user");
   out.xfgWalletRpcPass = jsonGetStr(json, "xfg_wallet_rpc_pass");
+
+  // ── SPV mode validation ──
+  auto spvCheck = [&](const std::string& mode, const std::string& wif,
+                       const std::vector<std::string>& servers,
+                       const std::string& prefix) -> bool {
+    if (mode == "spv") {
+      if (wif.empty()) {
+        errorMsg = prefix + "_wif is required when " + prefix + "_mode is spv";
+        return false;
+      }
+      if (servers.empty()) {
+        errorMsg = prefix + "_spv_server_0 is required when " + prefix + "_mode is spv";
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!spvCheck(out.btcMode, out.btcWif, out.btcSpvServers, "btc")) return false;
+  if (!spvCheck(out.ltcMode, out.ltcWif, out.ltcSpvServers, "ltc")) return false;
+  if (!spvCheck(out.kmdMode, out.kmdWif, out.kmdSpvServers, "kmd")) return false;
+  if (!spvCheck(out.bchMode, out.bchWif, out.bchSpvServers, "bch")) return false;
+  if (!spvCheck(out.dcrMode, out.dcrWif, out.dcrSpvServers, "dcr")) return false;
 
   // ── Validate ──
   if (!validateHex(out.ethPrivKeyHex, 32, "eth_priv_key", errorMsg)) return false;
@@ -229,6 +322,11 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.bscPrivKeyHex, 32, "bsc_priv_key", errorMsg)) return false;
   if (!out.bscAddress.empty() && (out.bscAddress.size() < 2 || out.bscAddress.substr(0, 2) != "0x")) {
     errorMsg = "bsc_address must start with 0x";
+    return false;
+  }
+  if (!validateHex(out.polyPrivKeyHex, 32, "poly_priv_key", errorMsg)) return false;
+  if (!out.polyAddress.empty() && (out.polyAddress.size() < 2 || out.polyAddress.substr(0, 2) != "0x")) {
+    errorMsg = "poly_address must start with 0x";
     return false;
   }
 

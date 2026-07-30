@@ -58,9 +58,17 @@ public:
   // Set the escrow-secret encryption key (held in memory, never persisted).
   void setEncryptionKey(const std::string& key);
 
+  // Move terminal swaps from active directory to archive on startup.
+  // Call once after construction to prevent stale terminal swaps from
+  // being loaded every tick.
+  void migrateTerminalSwaps();
+
 private:
   // Get the full path to a swap's JSON file.
   std::string swapFilePath(const std::string& swapId) const;
+
+  // Get the full path to a swap's archived JSON file.
+  std::string archiveFilePath(const std::string& swapId) const;
 
   // Ensure the swaps directory exists.
   bool ensureDirectory();
@@ -71,6 +79,7 @@ private:
 
   std::string m_dataDir;
   std::string m_swapsDir;
+  std::string m_archiveDir;
   std::string m_encKey;
   mutable std::mutex m_mutex;
 };

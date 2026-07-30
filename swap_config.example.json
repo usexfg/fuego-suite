@@ -1,0 +1,129 @@
+{
+  // ── Swap Daemon Chain Config ───────────────────────────────────────────────
+  //
+  // Each chain can run in one of several modes:
+  //   SPV mode (BTC/LTC/KMD/BCH): light client, no full node needed.
+  //   RPC mode (ETH/ARB/BASE/BSC/SOL): connect to any JSON-RPC endpoint.
+  //
+  // Generate a complete SPV config with fresh keys:
+  //   xfg-swapd --generate-spv-config
+  //
+  // ── SPV Setup Summary ──
+  // 1. Generate keys:    xfg-swapd --generate-spv-config > my-config.json
+  // 2. Edit servers:     Replace the placeholder Electrum server addresses
+  // 3. Fund addresses:   Send each chain's native token to the P2PKH address
+  //                      shown in comments. The daemon needs funds for fees.
+  // 4. Add XFG key:      Set xfg_secret_key from your Fuego wallet
+  //                      (get it with: cat ~/.fuego/wallet.keys | grep secret)
+  // 5. Run the daemon:   xfg-swapd --swap-config my-config.json --service
+  //
+  // ── EVM/Solana Light Client Setup ──
+  // 1. Get a free RPC URL: Use LlamaRPC, Infura, Alchemy, or any public endpoint.
+  // 2. Set your private key: 64-char hex (ETH/ARB/BASE/BSC) or base58 (SOL).
+  // 3. Set *_host to the RPC endpoint hostname (no http:// prefix).
+  // 4. No full node required — uses public infrastructure.
+
+  // ── BTC ──
+  // RPC mode (requires bitcoind with -txindex and a funded wallet):
+  //   "btc_host": "127.0.0.1",
+  //   "btc_port": 8332,
+  //   "btc_rpc_user": "your_rpc_user",
+  //   "btc_rpc_pass": "your_rpc_pass",
+  //
+  // SPV mode (light client, no full node needed):
+  "btc_mode": "spv",
+  "btc_spv_server_0": "electrum.blockstream.info:50002",
+  "btc_spv_min_servers": 1,
+  "btc_spv_checkpoint_height": 800000,
+  "btc_spv_checkpoint_hash": "00000000000000000002a7c4c1e8d3c5d5e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
+  "btc_wif": "replace_with_your_btc_wif",  // P2PKH address: 1... (send BTC here)
+
+  // ── LTC ──
+  // "ltc_host": "127.0.0.1",
+  // "ltc_port": 9332,
+  "ltc_mode": "spv",
+  "ltc_spv_server_0": "ltc.merkle.io:50002",
+  "ltc_spv_min_servers": 1,
+  "ltc_wif": "replace_with_your_ltc_wif",  // P2PKH address: L... (send LTC here)
+
+  // ── KMD ──
+  // "kmd_host": "127.0.0.1",
+  // "kmd_port": 7771,
+  "kmd_mode": "spv",
+  "kmd_spv_server_0": "electrum1.cipig.net:10001",
+  "kmd_spv_min_servers": 1,
+  "kmd_wif": "replace_with_your_kmd_wif",  // P2PKH address: R... (send KMD here)
+
+  // ── BCH ──
+  // "bch_host": "127.0.0.1",
+  // "bch_port": 8332,
+  "bch_mode": "spv",
+  "bch_spv_server_0": "electroncash.org:50002",
+  "bch_spv_min_servers": 1,
+  "bch_wif": "replace_with_your_bch_wif",  // P2PKH address: 1... (send BCH here)
+
+  // ── DCR ── (SPV is read-only; claim/refund needs RPC mode with dcrwallet)
+  // "dcr_host": "127.0.0.1",
+  // "dcr_port": 9108,
+  // "dcr_rpc_user": "your_rpc_user",
+  // "dcr_rpc_pass": "your_rpc_pass",
+  "dcr_mode": "spv",
+  "dcr_spv_server_0": "localhost:19100",
+  "dcr_spv_min_servers": 1,
+  "dcr_wif": "replace_with_your_dcr_wif",  // P2PKH address: D... (send DCR here)
+
+  // ── XFG (Fuego) ─────────────────────────────────────────────────────────────
+  // Your XFG wallet's secret key. Get it from your wallet file or generate a
+  // new one with `fuego-wallet generate-key`.
+  "xfg_secret_key": "<your_xfg_secret_key_64_hex_chars>",
+
+  // ── EVM Chains (Light Client — no full node required) ─────────────────────
+  // Connect to public RPC endpoints. No credentials needed for public endpoints.
+  // Point to your own node for higher throughput or private transactions.
+  //
+  // ETH — Ethereum Mainnet (chain ID 1)
+  "eth_mode": "rpc",
+  "eth_host": "eth.llamarpc.com",           // Free public RPC
+  "eth_port": 443,
+  "eth_wif": "<64_hex_private_key>",
+  //
+  // ARB — Arbitrum One (chain ID 42161)
+  "arb_mode": "rpc",
+  "arb_host": "arb1.arbitrum.io",
+  "arb_port": 443,
+  "arb_wif": "<64_hex_private_key>",
+  //
+  // BASE — Base L2 (chain ID 8453)
+  "base_mode": "rpc",
+  "base_host": "mainnet.base.org",
+  "base_port": 443,
+  "base_wif": "<64_hex_private_key>",
+  //
+  // BSC — BNB Smart Chain (chain ID 56)
+  "bsc_mode": "rpc",
+  "bsc_host": "bsc-dataseed.binance.org",
+  "bsc_port": 443,
+  "bsc_wif": "<64_hex_private_key>",
+
+  // POLYGON — Polygon PoS (chain ID 137)
+  "poly_mode": "rpc",
+  "poly_host": "polygon-rpc.com",
+  "poly_port": 443,
+  "poly_wif": "<64_hex_private_key>",
+
+  // ── SOL (Solana — Light Client) ───────────────────────────────────────────
+  // Connect to any Solana JSON-RPC endpoint. Public endpoints are free.
+  "sol_mode": "rpc",
+  "sol_host": "api.mainnet-beta.solana.com",
+  "sol_port": 443,
+  "sol_program_id": "65QnMn6ZM6GFpE7XkBPNqpFL2K4wKjJd1FpZvPzGqYJX",
+  "sol_keypair_path": "/path/to/your/solana-keypair.json",
+
+  // ── XMR (Monero RPC) ─────────────────────────────────────────────────────
+  "xmr_daemon_host": "",
+  "xmr_daemon_port": 18081,
+  "xmr_wallet_host": "",
+  "xmr_wallet_port": 18082,
+  "xmr_spend_key": "",  // 64 hex chars
+  "xmr_view_key": ""    // 64 hex chars
+}

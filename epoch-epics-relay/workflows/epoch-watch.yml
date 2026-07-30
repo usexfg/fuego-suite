@@ -1,0 +1,28 @@
+name: Epoch Watch
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: epoch-relay
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check epoch boundary
+        env:
+          FUEGO_RPC_URL: ${{ secrets.FUEGO_RPC_URL }}
+          MAINNET_WEBHOOK: ${{ secrets.MAINNET_WEBHOOK_URL }}
+          REPO_WEBHOOKS: ${{ secrets.REPO_WEBHOOKS }}
+          GEMINI_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          EPOCH_BLOCKS: '900'
+        run: |
+          bash scripts/check-epoch.sh

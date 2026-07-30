@@ -44,6 +44,7 @@ public:
   bool verifyTxInclusion(const std::string& txid, SpvTxInclusion& out) override;
   bool findSpend(const std::string& txid, uint32_t vout, SpvSpend& out) override;
   bool getRawTx(const std::string& txid, std::vector<uint8_t>& rawTx) override;
+  bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override;
 
   // Get the header store (for testing/inspection)
   const SpvHeaderStore& store() const { return m_store; }

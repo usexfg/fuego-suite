@@ -52,6 +52,12 @@ public:
     return true;
   }
 
+  bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override {
+    (void)rawTx;
+    txid = "mock_broadcast_txid";
+    return true;
+  }
+
   // Test helpers
   uint64_t m_tipHeight = 1000;
   std::unordered_map<std::string, SpvTxInclusion> m_inclusions;
@@ -292,7 +298,7 @@ static void test_checkSwapStatus_spv_mode() {
   mock->m_rawTxs[lockTxId] = rawTx;
   mock->m_inclusions[lockTxId] = {true, 498, 3, true};  // included, height 498, depth 3
 
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = lockTxId;
@@ -326,7 +332,7 @@ static void test_verifyLock_spv_wrong_amount() {
   mock->m_rawTxs[lockTxId] = rawTx;
   mock->m_inclusions[lockTxId] = {true, 498, 3, true};
 
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = lockTxId;
@@ -343,7 +349,7 @@ static void test_verifyLock_spv_not_found() {
   std::cout << "test_verifyLock_spv_not_found..." << std::endl;
 
   auto mock = std::make_shared<MockSpvClient>();
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = "nonexistent";
@@ -373,7 +379,7 @@ static void test_verifyLock_spv_not_confirmed() {
   mock->m_rawTxs[lockTxId] = rawTx;
   mock->m_inclusions[lockTxId] = {false, 0, 0, false};  // not included
 
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   SwapParams params;
   params.ctrLockTxId = lockTxId;
@@ -411,7 +417,7 @@ static void test_extractSecret_spv_mode() {
   std::string spendingTxid = "1122334455667788112233445566778811223344556677881122334455667788";
   mock->m_rawTxs[spendingTxid] = spendingTx;
 
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   auto result = client.extractSecret(spendingTxid, redeemScriptHex);
   assert(!result.empty());
@@ -424,7 +430,7 @@ static void test_extractSecret_spv_not_found() {
   std::cout << "test_extractSecret_spv_not_found..." << std::endl;
 
   auto mock = std::make_shared<MockSpvClient>();
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   std::vector<uint8_t> redeemScript(10, 0x55);
   auto result = client.extractSecret("nonexistent", BchHtlcScript::bytesToHex(redeemScript));
@@ -439,7 +445,7 @@ static void test_getCurrentHeight_spv_mode() {
   auto mock = std::make_shared<MockSpvClient>();
   mock->m_tipHeight = 777777;
 
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   uint64_t height = 0;
   bool ok = client.getCurrentHeight(height);
@@ -454,7 +460,7 @@ static void test_fullNode_mode_no_spv() {
 
   // SPV constructor — no RPC
   auto mock = std::make_shared<MockSpvClient>();
-  BchChainClient client(mock);
+  BchChainClient client(mock, "");
 
   // lock() should fail — no RPC
   SwapParams params;

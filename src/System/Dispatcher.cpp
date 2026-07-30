@@ -363,9 +363,13 @@ namespace System {
   NativeContext& Dispatcher::getReusableContext() {
     if (firstReusableContext == nullptr) {
       // Create a coroutine whose first action is to publish its NativeContext
+      // Use a larger stack (4 MB) to prevent SIGBUS from hitting the guard
+      // page during deep call chains such as sendTransaction → OSPEAD pipeline.
+      boost::coroutines::attributes attrs;
+      attrs.size = 4 * 1024 * 1024;
       auto* pCoro = new coro_t::call_type([this](coro_t::yield_type& y) {
         this->contextProcedure(y);
-        });
+        }, attrs);
 
       // Start it: it yields immediately after publishing NativeContext
       (*pCoro)();

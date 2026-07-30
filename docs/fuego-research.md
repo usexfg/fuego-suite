@@ -117,8 +117,9 @@ Three files per blockchain (defined in `CryptoNoteConfig.h:280-285`):
 - `arm.cmake` at root: cross-compilation toolchain for ARM
 - Static library targets: `Crypto`, `Common`, `System`, `CryptoNoteCore`, `P2P`, `Serialization`, `Logging`, `Wallet`, `Transfers`, `BlockchainExplorer`, `Rpc`, `Http`, `JsonRpcServer`, `NodeRpcProxy`
 - External dependencies:
-  - Boost (algorithm, math, lexical_cast, uUID, foreach)
-  - secp256k1 (external/secp256k1) — MuSig2, ECDH, ElligatorSwift
+  - Boost 1.86+ (algorithm, math, lexical_cast, uUID, foreach — uses `io_context`, `executor_work_guard`)
+  - OpenSSL 3.x/4.x (SwapDaemon TLS, RPC)
+  - secp256k1 (external/secp256k1 or system package) — MuSig2, ECDH, ElligatorSwift
   - parallel_hashmap (header-only, for key image lookup)
   - Google Test (external/gtest) — for tests
   - RapidJSON / JsonCpp (JSON parsing for RPC)

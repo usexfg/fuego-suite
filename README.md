@@ -54,18 +54,25 @@ _____________________________
 
 ### Build Requirements
 
-**Boost Version**: Fuego requires Boost 1.86 or below (for io_service compatibility)
+**Boost Version**: Fuego supports Boost 1.86+ (uses `io_context` — no legacy `io_service` dependency)
 
-- **macOS**: Builds Boost 1.86 from source automatically
+- **macOS**: `brew install boost` (1.90+)
 - **Linux**: Uses system packages (1.74+ on Ubuntu 22.04, 1.83+ on Ubuntu 24.04)
 - **Windows**: Uses vcpkg packages (1.84+)
+
+**OpenSSL**: Supports OpenSSL 3.x and 4.x
+
+**secp256k1**: External dependency — use system package or bundled submodule
+- macOS: `brew install secp256k1`
+- Linux: `apt install libsecp256k1-dev` or use the submodule at `external/secp256k1`
+- CMake flag: `-DUSE_VENDORED_SECP256K1=OFF` to link against system secp256k1
 
 ### Linux (Ubuntu/Debian)
 
 #### 1. Install Dependencies
 
 ```bash
-sudo apt install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev
+sudo apt install build-essential git cmake libboost-all-dev libjsoncpp-dev libssl-dev libsecp256k1-dev
 ```
 
 #### 2. Clone and Build
@@ -74,7 +81,7 @@ sudo apt install build-essential git cmake libboost-all-dev libjsoncpp-dev libss
 git clone --recursive https://github.com/usexfg/fuego-suite
 cd fuego-suite && git submodule init && git submodule update
 mkdir build && cd build
-cmake ..
+cmake .. -DUSE_VENDORED_SECP256K1=OFF
 make -j$(nproc)
 ```
 
@@ -94,7 +101,7 @@ Install [Xcode](https://developer.apple.com/xcode/) and [Homebrew](https://brew.
 
 ```bash
 xcode-select --install
-brew install git cmake boost
+brew install git cmake boost openssl secp256k1 jsoncpp
 ```
 
 #### 2. Build
@@ -103,7 +110,7 @@ brew install git cmake boost
 git clone https://github.com/usexfg/fuego-suite
 cd fuego-suite
 mkdir build && cd build
-cmake ..
+cmake .. -DUSE_VENDORED_SECP256K1=OFF
 make
 ```
 

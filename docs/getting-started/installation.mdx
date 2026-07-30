@@ -33,7 +33,7 @@ Fuego is supported across a variety of platforms including Linux, macOS, Windows
   <Step title="Prerequisites">
     ```bash
     sudo apt-get update
-    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev git
+    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libsecp256k1-dev libjsoncpp-dev git
     ```
   </Step>
   <Step title="Clone and Build">
@@ -53,7 +53,7 @@ Fuego is supported across a variety of platforms including Linux, macOS, Windows
     Install Xcode command line tools and Homebrew, then install dependencies:
     ```bash
     xcode-select --install
-    brew install cmake boost openssl git
+    brew install cmake boost openssl@4 secp256k1 jsoncpp git
     ```
   </Step>
   <Step title="Clone and Build">
@@ -75,7 +75,7 @@ Running Fuego on a Raspberry Pi is officially supported (Raspberry Pi 4B/4GB RAM
     Make sure you are running a 64-bit Raspberry Pi OS. Update your system and install the required build tools:
     ```bash
     sudo apt-get update && sudo apt-get upgrade -y
-    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev git
+    sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libsecp256k1-dev git
     ```
   </Step>
   <Step title="Configure and Build">

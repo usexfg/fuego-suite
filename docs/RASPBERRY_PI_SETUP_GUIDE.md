@@ -118,10 +118,10 @@ echo "127.0.1.1 fuego-node" | sudo tee -a /etc/hosts
 sudo apt install -y build-essential cmake git wget curl
 
 # Install additional development tools
-sudo apt install -y pkg-config libssl-dev libboost-all-dev
+sudo apt install -y pkg-config libssl-dev libboost-all-dev libsecp256k1-dev libjsoncpp-dev
 ```
 
-### 2. Install Boost 1.86 (if needed)
+### 2. Install Boost 1.86+ (if needed)
 ```bash
 # Check current Boost version
 dpkg -l | grep libboost
@@ -171,7 +171,7 @@ mkdir -p build
 cd build
 
 # Configure with CMake
-cmake -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local ..
+cmake -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DUSE_VENDORED_SECP256K1=OFF ..
 
 # Build (this may take 1-2 hours on Pi)
 make -j$(nproc)
@@ -406,7 +406,7 @@ make clean
 rm -rf CMakeCache.txt CMakeFiles/
 
 # Rebuild
-cmake -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local ..
+cmake -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=/usr/local -DUSE_VENDORED_SECP256K1=OFF ..
 make -j$(nproc)
 ```
 

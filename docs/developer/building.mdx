@@ -8,10 +8,11 @@ keywords: ["build", "cmake", "developer", "compile", "fuego", "xfg"]
 
 | Dependency | Minimum version | Notes |
 |------------|----------------|-------|
-| CMake | 3.10 | Build system |
+| CMake | 3.16 | Build system |
 | GCC / Clang | GCC 7 / Clang 6 | C++17 required |
-| Boost | 1.65 | All components |
-| OpenSSL | 1.1 | For SwapDaemon |
+| Boost | 1.86 | All components (uses `io_context`) |
+| OpenSSL | 3.0 | For SwapDaemon (supports 4.x) |
+| secp256k1 | — | Elliptic curve crypto (system pkg or submodule) |
 | Go | 1.24 | For swapxfg TUI only |
 
 <Tabs>
@@ -22,14 +23,16 @@ keywords: ["build", "cmake", "developer", "compile", "fuego", "xfg"]
       build-essential cmake \
       libboost-all-dev \
       libssl-dev \
+      libsecp256k1-dev \
+      libjsoncpp-dev \
       pkg-config
     ```
   </Tab>
   <Tab title="macOS">
     ```bash
-    brew install cmake boost openssl pkg-config
+    brew install cmake boost openssl@4 secp256k1 jsoncpp pkg-config
     # OpenSSL path for CMake:
-    export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+    export OPENSSL_ROOT_DIR=$(brew --prefix openssl@4)
     ```
   </Tab>
   <Tab title="Windows">
@@ -43,22 +46,24 @@ keywords: ["build", "cmake", "developer", "compile", "fuego", "xfg"]
 git clone https://github.com/usexfg/fuego-suite.git
 cd fuego-suite
 mkdir build && cd build
-cmake ..
+cmake .. -DUSE_VENDORED_SECP256K1=OFF
 make -j$(nproc)        # Linux
 make -j$(sysctl -n hw.ncpu)  # macOS
 ```
 
 Binaries are in `build/release/src/`:
 - `fuegod` — daemon
-- `simplewallet` — CLI wallet
+- `fire_wallet` — CLI wallet
 - `testnetd` — testnet daemon variant
 - `xfg-swapd` — swap daemon (all pairs)
+- `fuego-tui` — Go TUI (built separately)
+- `swapxfg` — Go swap CLI/TUI (built separately)
 
 ## Build targets
 
 ```bash
-make fuegod         # Daemon only
-make simplewallet   # Wallet only
+make fuegod          # Daemon only
+make fire_wallet     # Wallet only
 make xfg-swapd       # Swap daemon only
 ```
 

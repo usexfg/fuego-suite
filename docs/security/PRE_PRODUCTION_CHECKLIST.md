@@ -37,7 +37,7 @@ Green `make` is **necessary but not sufficient**. This checklist gates enabling 
   - [ ] macOS / Windows if those artifacts are published
   - [ ] Docker image build if you publish images
 - [ ] **Release** Submodule `external/secp256k1` pinned and matches CI
-- [ ] **Release** Boost ≤ 1.86 documented for builders; release notes mention dependency bounds
+- [ ] **Release** Boost 1.86+ documented for builders; release notes mention dependency bounds
 - [ ] **Release** Version / network magic / genesis match intended network (mainnet vs testnet)
 
 ---

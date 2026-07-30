@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y \
     cmake \
     git \
     libboost-all-dev \
+    libssl-dev \
+    libsecp256k1-dev \
+    libjsoncpp-dev \
     pkg-config \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -32,6 +35,7 @@ RUN mkdir -p build && cd build && \
         -DBUILD_PERFORMANCE_TOOLS=${ENABLE_OPTIMIZATIONS} \
         -DBUILD_TESTS=OFF \
         -DSTATIC=ON \
+        -DUSE_VENDORED_SECP256K1=OFF \
         .. && \
     make -j$(nproc) && \
     strip src/fuegod src/walletd || true

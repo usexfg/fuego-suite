@@ -33,7 +33,9 @@ v1.9.3
 * TUI Updates.
 * ZK prover for HEAT merkle.
 * Elderfier broadcast fix to keep merkle as source of truth not p2pmsg.
-* Update Boost dependency to 1.86.
+* Update Boost dependency to 1.86+ (migrated to `io_context`, `executor_work_guard`).
+* OpenSSL 4.x support.
+* secp256k1 external dependency support (system package or submodule).
 * RPC Server Modernization.
 * Implement CD banking fee burn and SwapDaemon CD support.
 

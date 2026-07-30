@@ -77,8 +77,10 @@ fuego-suite/
 ## Build Notes
 
 - C++17 required, C99 for C files
-- Boost 1.86 max (io_service compat), ARM64 uses `boost@1.85` via Homebrew
-- External dependency: `secp256k1` (submodule at `external/secp256k1`)
+- Boost 1.86+ (uses `io_context`, `executor_work_guard` — no legacy `io_service`)
+- OpenSSL 3.x/4.x
+- External dependency: `secp256k1` (submodule at `external/secp256k1` or system package)
+- CMake flag: `-DUSE_VENDORED_SECP256K1=OFF` to link against system secp256k1
 - No KDF/MM2/AtomicDEX integration (removed)
 - TUI disabled in CMake (`add_subdirectory(tui)` commented out), built separately via `make build-tui`
 

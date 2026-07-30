@@ -809,4 +809,7 @@ std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRp
 template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_ORDERBOOK_STATE::request, COMMAND_RPC_GET_ORDERBOOK_STATE::response>(
   const std::string& url, const COMMAND_RPC_GET_ORDERBOOK_STATE::request& req, COMMAND_RPC_GET_ORDERBOOK_STATE::response& res);
 
+template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_LIMIT_ORDERS::request, COMMAND_RPC_GET_LIMIT_ORDERS::response>(
+  const std::string& url, const COMMAND_RPC_GET_LIMIT_ORDERS::request& req, COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
+
 }

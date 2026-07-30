@@ -104,6 +104,18 @@ install_tui_deps() {
     echo "TUI built successfully. Run with: ./build/fuego-tui"
 }
 
+# Function to install release tooling (GoReleaser + git-cliff)
+install_release_tools() {
+    echo "Installing release tooling (GoReleaser + git-cliff)..."
+
+    go install github.com/goreleaser/goreleaser/v2@latest
+    go install github.com/git-cliff/git-cliff@latest
+
+    echo "Release tooling installed:"
+    echo "  - GoReleaser: $(goreleaser --version 2>/dev/null || echo 'install failed')"
+    echo "  - git-cliff:  $(git-cliff --version 2>/dev/null || echo 'install failed')"
+}
+
 # Main script
 main() {
     if ! check_go; then
@@ -123,6 +135,7 @@ main() {
     fi
 
     install_tui_deps
+    install_release_tools
 }
 
 main "$@"

@@ -1,0 +1,17 @@
+[changelog]
+header = """
+# Changelog\n
+"""
+body = """
+{% macro non_standard_changes(commit) -%}
+{%- if commit.breaking %}\nBREAKING CHANGES:\n{% for b in commit.breaking %}\n- {{ b }}{% endfor %}{%- endif %}\n
+{%- end_macro -%}
+{% for group, commits in body | split_in_groups %}
+### {{ group | upper }}
+{% for commit in commits %}\n- {{ commit.message | split_in_newlines | first | strip }}\n{% endfor %}\n
+{% endfor %}
+"""
+footer = """"""
+
+[git]
+conventional = true

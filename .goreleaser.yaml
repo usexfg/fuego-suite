@@ -1,0 +1,24 @@
+version: 2
+
+builds:
+  - skip: true
+
+archives:
+  - formats: [tar.gz]
+  - formats: [zip]
+
+brews:
+  - name: xfg
+    tap:
+      owner: usexfg
+      name: homebrew-xfg
+    description: Sovereign private blockchain banking node suite (fuegod, wallets, swap, TUI)
+    homepage: https://usexfg.org
+    dependencies: [boost@1.85, openssl@3, icu4c, jsoncpp]
+    conflicts: [fuego]
+    install: |
+      bin.install "fuegod", "fire_wallet", "walletd", "testnetd", "test_wallet", "xfg-swapd", "fuego-tui", "swapxfg", "optimizer", "FuegoI2P"
+
+changelog:
+  use: git-cliff
+  sort: asc

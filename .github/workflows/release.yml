@@ -1,0 +1,592 @@
+name: Release
+
+on:
+  push:
+    tags: ["*"]
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # ── macOS ──
+  build-macos:
+    name: macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            arch: intel
+            brew_prefix: /usr/local
+          - os: macos-14
+            arch: apple
+            brew_prefix: /opt/homebrew
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+
+      - name: Install dependencies
+        run: brew install boost@1.85 openssl@3 icu4c jsoncpp cmake ninja
+
+      - name: Build C++
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
+            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.85 \
+            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
+            -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c
+          cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      - name: Build Go
+        run: |
+          cd tui && go build -o ../fuego-tui && cd ..
+          cd swapxfg && go build -o ../swapxfg . && cd ..
+
+      - name: Package
+        id: pkg
+        run: |
+          ver=${GITHUB_REF_NAME}
+          name="xfg-macos-${{ matrix.arch }}-${ver}"
+          mkdir "$name"
+          for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
+          cp fuego-tui "$name/"
+          cp swapxfg "$name/"
+          zip -r "$name".zip "$name"
+          sha=$(shasum -a 256 "$name".zip | awk '{print toupper($1)}')
+          echo "asset=$name.zip" >> $GITHUB_OUTPUT
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: ${{ steps.pkg.outputs.asset }}
+
+  # ── Ubuntu 24.04 ──
+  build-ubuntu:
+    name: Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev
+
+      - name: Build C++
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          make -C build -j$(nproc)
+
+      - name: Build Go
+        run: |
+          cd tui && go build -o ../fuego-tui && cd ..
+          cd swapxfg && go build -o ../swapxfg . && cd ..
+
+      - name: Package
+        id: pkg
+        run: |
+          ver=${GITHUB_REF_NAME}
+          name="xfg-linux-amd64-${ver}"
+          mkdir "$name"
+          for f in build/src/*; do [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$name/"; done
+          cp fuego-tui "$name/"
+          cp swapxfg "$name/"
+          tar -czf "$name".tar.gz "$name"
+          sha=$(sha256sum "$name".tar.gz | awk '{print toupper($1)}')
+          echo "asset=$name.tar.gz" >> $GITHUB_OUTPUT
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-2404
+          path: ${{ steps.pkg.outputs.asset }}
+
+  # ── Windows ──
+  build-windows:
+    name: Windows
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.1
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files\OpenSSL-Win64",
+            "C:\Program Files\OpenSSL",
+            "C:\Program Files\FireDaemon OpenSSL 3"
+          )
+          $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+          if (-not $openssl) {
+            $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+          }
+          if (-not $openssl) {
+            choco install openssl -y --no-progress
+            $openssl = $candidates | Where-Object { Test-Path "$_\include\openssl\ssl.h" } | Select-Object -First 1
+            if (-not $openssl) {
+              $found = Get-ChildItem -Path "C:\Program Files" -Filter "ssl.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $openssl = (Get-Item $found.FullName).Directory.Parent.Parent.FullName }
+            }
+          }
+          if (-not $openssl) { throw "OpenSSL not found" }
+          $inc = Join-Path $openssl "include"
+          echo "OPENSSL_ROOT_DIR=$openssl" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+
+      - name: Install Boost 1.85
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe" -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
+          echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
+
+      - name: Install jsoncpp
+        shell: pwsh
+        run: vcpkg install jsoncpp:x64-windows openssl:x64-windows
+
+      - name: Build C++
+        shell: pwsh
+        run: |
+          $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
+          $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
+            -DBOOST_ROOT="C:\boost" `
+            -DBOOST_LIBRARYDIR="C:\boost\lib" `
+            -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
+            -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
+            -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
+          cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Build Go
+        shell: bash
+        run: |
+          cd tui && go build -o ../fuego-tui.exe && cd ..
+          cd swapxfg && go build -o ../swapxfg.exe . && cd ..
+
+      - name: Package
+        id: pkg
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}"
+          $name = "xfg-win64-$ver"
+          New-Item -ItemType Directory -Path $name -Force
+          Get-ChildItem "build/src/Release/*.exe" | ForEach-Object { Copy-Item $_.FullName "$name/" }
+          Copy-Item "fuego-tui.exe" "$name/"
+          Copy-Item "swapxfg.exe" "$name/"
+          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          $sha = (Get-FileHash "$name.zip").Hash
+          echo "asset=$name.zip" >> $env:GITHUB_OUTPUT
+          echo "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ steps.pkg.outputs.asset }}
+
+  # ── Raspberry Pi ARM64 ──
+  build-raspberry-pi:
+    name: Raspberry Pi ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Setup Go cross-compile
+        uses: actions/setup-go@v5
+        with: { go-version: stable }
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Create toolchain file
+        run: |
+          cat > arm64-toolchain.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
+          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          EOF
+
+      - name: Build Boost 1.85 for ARM64
+        run: |
+          BOOST_VER=1.85.0
+          BOOST_UNDER=${BOOST_VER//./_}
+          wget -q "https://archives.boost.io/release/${BOOST_VER}/source/boost_${BOOST_UNDER}.tar.bz2"
+          tar -xjf "boost_${BOOST_UNDER}.tar.bz2"
+          cd "boost_${BOOST_UNDER}"
+          echo "using gcc : arm : aarch64-linux-gnu-g++ ;" > user-config.jam
+          ./bootstrap.sh
+          ./b2 --user-config=user-config.jam toolset=gcc-arm target-os=linux \
+            architecture=arm address-model=64 --prefix=/tmp/boost-arm64 \
+            --with-filesystem --with-thread --with-date_time --with-chrono \
+            --with-regex --with-serialization --with-program-options \
+            --with-coroutine --with-context --with-atomic install -j$(nproc)
+
+      - name: Build C++
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=arm64-toolchain.cmake \
+            -DBOOST_ROOT=/tmp/boost-arm64 -DCMAKE_BUILD_TYPE=Release
+          make -C build -j$(nproc)
+
+      - name: Build Go
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: 0
+        run: |
+          cd tui && go build -o ../fuego-tui && cd ..
+          cd swapxfg && go build -o ../swapxfg . && cd ..
+
+      - name: Package
+        id: pkg
+        run: |
+          ver=${GITHUB_REF_NAME}
+          name="xfg-linux-arm64-${ver}"
+          mkdir "$name"
+          for f in build/src/*; do [[ -x $f && -f $f ]] && aarch64-linux-gnu-strip "$f" && cp "$f" "$name/"; done
+          cp fuego-tui "$name/"
+          cp swapxfg "$name/"
+          tar -czf "$name".tar.gz "$name"
+          sha=$(sha256sum "$name".tar.gz | awk '{print toupper($1)}')
+          echo "asset=$name.tar.gz" >> $GITHUB_OUTPUT
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raspberry-pi
+          path: ${{ steps.pkg.outputs.asset }}
+
+  # ── AppImage ──
+  build-appimage:
+    name: AppImage Linux
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev wget fuse
+
+      - name: Download AppImageTool
+        run: |
+          wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+      - name: Build
+        id: build
+        run: |
+          ver=${GITHUB_REF_NAME}
+          name="xfg-linux-appimage-${ver}"
+          appdir="Fuego.AppDir"
+
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          make -C build -j$(nproc)
+
+          mkdir -p "$appdir/usr/bin"
+          mkdir -p "$appdir/usr/share/applications"
+          mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
+
+          for f in build/src/*; do
+            [[ -x $f && -f $f ]] && strip "$f" && cp "$f" "$appdir/usr/bin/"
+          done
+
+          cat > "$appdir/fuego.desktop" << 'DESKTOP_EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Fuego
+          Exec=fuegod
+          Icon=fuego
+          Categories=Network;
+          DESKTOP_EOF
+
+          cat > "$appdir/AppRun" << 'APPRUN_EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="${HERE}/usr/bin:${PATH}"
+          exec "${HERE}/usr/bin/fuegod" "$@"
+          APPRUN_EOF
+          chmod +x "$appdir/AppRun"
+
+          ./appimagetool "$appdir" "$name.AppImage"
+
+          sha=$(sha256sum "$name.AppImage" | awk '{print toupper($1)}')
+          echo "asset=$name.AppImage" >> $GITHUB_OUTPUT
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: ${{ steps.build.outputs.asset }}
+
+  # ── Docker ──
+  build-docker:
+    name: Docker Multi-Arch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            fuego/fuego
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile << 'EOF'
+          FROM ubuntu:22.04 as builder
+
+          RUN apt-get update && apt-get install -y \
+              build-essential cmake libboost-all-dev \
+              libssl-dev libicu-dev libjsoncpp-dev git \
+              && rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /src
+          COPY . .
+
+          RUN cmake -B build -DCMAKE_BUILD_TYPE=Release && \
+              make -C build -j$(nproc)
+
+          FROM ubuntu:22.04
+
+          RUN apt-get update && apt-get install -y \
+              libboost-filesystem1.74.0 libboost-thread1.74.0 \
+              libboost-date-time1.74.0 libboost-chrono1.74.0 \
+              libboost-regex1.74.0 libboost-serialization1.74.0 \
+              libboost-program-options1.74.0 libboost-coroutine1.74.0 \
+              libboost-context1.74.0 libboost-atomic1.74.0 \
+              libssl3 libicu70 libjsoncpp25 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
+
+          COPY --from=builder /src/build/src/fuegod /usr/local/bin/
+          COPY --from=builder /src/build/src/fire_wallet /usr/local/bin/
+          COPY --from=builder /src/build/src/walletd /usr/local/bin/
+          COPY --from=builder /src/build/src/testnetd /usr/local/bin/
+          COPY --from=builder /src/build/src/test_wallet /usr/local/bin/
+
+          RUN useradd -m -u 1000 fuego
+          USER fuego
+          WORKDIR /home/fuego
+          RUN mkdir -p /home/fuego/.fuego
+          VOLUME ["/home/fuego/.fuego"]
+
+          EXPOSE 20808 28180
+          ENTRYPOINT ["fuegod"]
+          CMD ["--data-dir=/home/fuego/.fuego"]
+          EOF
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Release ──
+  release:
+    name: Create Release
+    needs: [build-macos, build-ubuntu, build-windows, build-raspberry-pi, build-appimage, build-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+
+      - name: Install git-cliff
+        run: go install github.com/git-cliff/git-cliff@latest
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Collect release assets
+        id: collect
+        run: |
+          ver=${GITHUB_REF_NAME}
+          mkdir -p release_assets
+
+          # Collect all built archives/images
+          find artifacts/ -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' \) \
+            -exec cp {} release_assets/ \;
+
+          # Generate SHA256 checksums
+          cd release_assets
+          sha256sum * | awk '{print toupper($1)"  "$2}' > SHA256SUMS
+
+          # Store checksums content for release body
+          echo "checksums<<CSUMEOF" >> $GITHUB_OUTPUT
+          cat SHA256SUMS >> $GITHUB_OUTPUT
+          echo "CSUMEOF" >> $GITHUB_OUTPUT
+          echo "asset_count=$(ls -1 *.{tar.gz,zip,AppImage} 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          prev=$(git tag --sort=-v:refname | head -2 | tail -1)
+          echo "previous_tag=$prev" >> $GITHUB_OUTPUT
+
+          # Generate changelog
+          git-cliff --tag "${GITHUB_REF_NAME}" --since "$prev" > CHANGELOG.md 2>/dev/null || \
+          git-cliff --tag "${GITHUB_REF_NAME}" > CHANGELOG.md
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Fuego Suite v${{ github.ref_name }}
+          body: |
+            ## Fuego Suite v${{ github.ref_name }}
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ---
+
+            **SHA256 Checksums:**
+            ```
+            ${{ steps.collect.outputs.checksums }}
+            ```
+
+            **Assets:** ${{ steps.collect.outputs.asset_count }} files
+            **Docker:** `docker pull fuego/fuego:${{ github.ref_name }}`
+            **Homebrew:** `brew tap usexfg/xfg && brew install xfg`
+          files: |
+            release_assets/*
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Homebrew formula
+        run: |
+          ver=${GITHUB_REF_NAME}
+
+          # Compute SHA256 hashes from downloaded artifacts
+          mac_arm_sha=$(shasum -a 256 artifacts/macos-apple/xfg-macos-apple-${ver}.zip 2>/dev/null | awk '{print $1}' || echo 'PENDING')
+          mac_intel_sha=$(shasum -a 256 artifacts/macos-intel/xfg-macos-intel-${ver}.zip 2>/dev/null | awk '{print $1}' || echo 'PENDING')
+          linux_arm_sha=$(sha256sum artifacts/raspberry-pi/xfg-linux-arm64-${ver}.tar.gz 2>/dev/null | awk '{print $1}' || echo 'PENDING')
+          linux_amd64_sha=$(sha256sum artifacts/ubuntu-2404/xfg-linux-amd64-${ver}.tar.gz 2>/dev/null | awk '{print $1}' || echo 'PENDING')
+
+          cat > xfg.rb << EOF
+          class Xfg < Formula
+            desc "Sovereign private blockchain banking node suite (fuegod, wallets, swap, TUI)"
+            homepage "https://usexfg.org"
+            license "GPL-3.0-or-later"
+            version "${ver}"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/usexfg/fuego-suite/releases/download/${ver}/xfg-macos-apple-${ver}.zip"
+                sha256 "${mac_arm_sha}"
+              else
+                url "https://github.com/usexfg/fuego-suite/releases/download/${ver}/xfg-macos-intel-${ver}.zip"
+                sha256 "${mac_intel_sha}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/usexfg/fuego-suite/releases/download/${ver}/xfg-linux-arm64-${ver}.tar.gz"
+                sha256 "${linux_arm_sha}"
+              else
+                url "https://github.com/usexfg/fuego-suite/releases/download/${ver}/xfg-linux-amd64-${ver}.tar.gz"
+                sha256 "${linux_amd64_sha}"
+              end
+            end
+
+            depends_on "boost@1.85"
+            depends_on "openssl@3"
+            depends_on "icu4c"
+            depends_on "jsoncpp"
+
+            conflicts_with "fuego"
+
+            def install
+              bin.install "fuegod", "fire_wallet", "walletd", "testnetd", "test_wallet", "xfg-swapd", "fuego-tui", "swapxfg", "optimizer", "FuegoI2P"
+            end
+
+            test do
+              system "#{bin}/fuegod", "--version"
+            end
+          end
+          EOF
+
+          echo "Generated xfg.rb:"
+          cat xfg.rb
+
+      - name: Push Homebrew formula to tap
+        run: |
+          ver=${GITHUB_REF_NAME}
+          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/usexfg/homebrew-xfg.git tap-repo
+          cp xfg.rb tap-repo/xfg.rb
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add xfg.rb
+          git diff --cached --quiet || git commit -m "xfg ${ver}"
+          git push

@@ -1,0 +1,49 @@
+---
+title: "Fuego (XFG)"
+description: "A privacy-first blockchain with commitment deposits, atomic swaps, and on-chain liquidity."
+keywords: ["fuego", "xfg", "privacy", "blockchain", "commitment deposits", "atomic swaps"]
+---
+
+Fuego is a privacy-first blockchain built on CryptoNote with ring signatures. It gives you financial tools that traditional systems can't offer: locked deposits that earn yield without revealing your balance, trustless cross-chain swaps, and on-chain liquidity with private LP positions.
+
+## What you can do with Fuego
+
+<Columns cols={2}>
+  <Card title="Commitment deposits" icon="vault" href="/features/commitment-deposits/how-cds-work">
+    Lock XFG for a term and earn variable interest funded by atomic swap fees.
+  </Card>
+  <Card title="Atomic swaps" icon="arrow-left-right" href="/features/atomic-swaps/how-swaps-work">
+    Swap XFG with XMR, ETH, SOL, and BCH — trustless, no custodian required.
+  </Card>
+  <Card title="LP swap pool" icon="chart-bar" href="/features/lp-pool/how-liquidity-works">
+    Provide liquidity and earn 0.3% on every trade through the pool.
+  </Card>
+  <Card title="HEAT burns" icon="flame" href="/features/heat-burns/what-are-burns">
+    Permanently burn XFG to earn HEAT tokens via zero-knowledge proofs.
+  </Card>
+</Columns>
+
+## Core properties
+
+**Privacy by default.** Ring signatures hide the sender in every transaction. Commitment deposits hide your balance and interest behind cryptographic commitments. No one can determine your deposit amount from on-chain data.
+
+**No counterparty risk.** Atomic swaps are enforced by cryptography, not escrow services. Commitment deposits are enforced by the consensus rules, not a bank. Your funds are controlled by your keys.
+
+**Transferable and compoundable.** Unlike traditional CDs, you can transfer a locked deposit to another party before maturity. You can also roll over a mature deposit to compound interest — the new deposit amount equals your principal plus accrued interest.
+
+## Fee structure
+
+Two separate fee pools fund different parts of the system:
+
+| Fee | Source | Goes to |
+|-----|--------|---------|
+| 1% | XFG side of every atomic swap | CD interest pool |
+| 0.3% | Every trade through the LP pool | Liquidity providers |
+
+These are completely independent. CD interest comes from swap activity, not LP trades.
+
+## Get started
+
+<Card title="Install and run Fuego" icon="rocket" href="/getting-started/installation">
+  Build from source or run with Docker. Five minutes to your first running node.
+</Card>

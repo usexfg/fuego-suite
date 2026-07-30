@@ -1,0 +1,113 @@
+---
+title: "Deposits API"
+description: "RPC endpoints for listing, creating, withdrawing, and rolling over CDs."
+keywords: ["deposits", "CD", "COLD", "rollover", "withdraw", "API", "RPC", "fuego"]
+---
+
+## GET /getdeposits
+
+Returns all deposits associated with the wallet.
+
+**Request:** `{}`
+
+**Response:**
+
+```json
+{
+  "deposits": [
+    {
+      "id": 0,
+      "amount": 10000000000,
+      "term": 90,
+      "unlock_height": 181000,
+      "creating_tx_hash": "abc123...",
+      "deposit_type": "COLD"
+    }
+  ],
+  "status": "OK"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | uint64 | Deposit ID (used in other endpoints) |
+| `amount` | uint64 | Locked amount in atomic units |
+| `term` | uint32 | Term length in epochs |
+| `unlock_height` | uint32 | Block height at which the deposit matures |
+| `deposit_type` | string | `"COLD"` for regular deposits, `"HEAT"` for burns |
+
+---
+
+## GET /get_maturing_deposits
+
+Returns deposits that are mature or maturing within a given number of blocks.
+
+**Request:**
+
+```json
+{
+  "current_height": 0,
+  "maturing_in": 0
+}
+```
+
+Set `current_height` to `0` to use the current block height. Set `maturing_in` to `0` to return only already-mature deposits. Set `maturing_in` to `N` to include deposits maturing within the next `N` blocks.
+
+**Response:**
+
+```json
+{
+  "deposits": [
+    {
+      "deposit_id": "0",
+      "amount": 10000000000,
+      "unlock_height": 180000,
+      "term_blocks": 81000,
+      "status": "mature"
+    }
+  ],
+  "status": "OK"
+}
+```
+
+---
+
+## POST /rollover_deposit
+
+Rolls over a mature deposit: claims accrued interest and creates a new CD for principal + interest.
+
+**Request:**
+
+```json
+{
+  "deposit_id": "0",
+  "new_term": 3
+}
+```
+
+Set `new_term` to `0` to use the same term as the original deposit. Term codes: `3` ≈ 3 months, `12` ≈ 12 months.
+
+**Response:**
+
+```json
+{
+  "tx_hash": "def456...",
+  "new_amount": 10500000000,
+  "claimed_interest": 500000000,
+  "status": "OK"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tx_hash` | string | Transaction hash of the rollover transaction |
+| `new_amount` | uint64 | New deposit amount = principal + interest (atomic units) |
+| `claimed_interest` | uint64 | Interest claimed in this rollover (atomic units) |
+
+The deposit must be at or past its `unlock_height`. Attempting to roll over an immature deposit returns an error.
+
+---
+
+## POST /estimate_cd_yield
+
+See [Fee pool API — estimate_cd_yield](/api-reference/fee-pool#post-estimate_cd_yield).

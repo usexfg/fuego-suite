@@ -1,0 +1,78 @@
+---
+title: "Compound interest via rollover"
+description: "Roll over a mature deposit to earn interest on your interest."
+keywords: ["compound interest", "rollover", "reinvest", "fuego", "xfg", "CD"]
+---
+
+## What rollover does
+
+When your deposit matures, you have two choices:
+
+1. **Withdraw** — take your principal plus accrued interest as spendable XFG
+2. **Rollover** — create a new deposit for `principal + interest`, starting a new term immediately
+
+Rollover is a single atomic transaction: it spends your old deposit (claiming the interest) and creates a new one for the combined amount. The new deposit earns interest on the larger amount from the first epoch forward.
+
+## Concrete example
+
+| | Value |
+|--|-------|
+| Initial deposit | 1,000 XFG |
+| Term | 10 epochs |
+| Interest earned | 50 XFG |
+| After rollover | New deposit of 1,050 XFG |
+| Next epoch interest (at same rate) | Calculated on 1,050, not 1,000 |
+
+Each rollover increases your principal, so each subsequent epoch produces slightly more interest — the compound effect.
+
+## How to rollover
+
+Use the `rollover_deposit` RPC endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:28080/rollover_deposit \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "deposit_id": "0",
+    "new_term": 3
+  }'
+```
+
+`new_term` is a term code (`3` for 3 months, `12` for 12 months). Set to `0` to use the same term as the original deposit.
+
+Response:
+
+```json
+{
+  "tx_hash": "abc123...",
+  "new_amount": 1050000000000,
+  "claimed_interest": 50000000000,
+  "status": "OK"
+}
+```
+
+## Privacy of rollover
+
+The rollover creates a brand-new commitment on-chain. The new deposit is cryptographically independent of the old one — an observer cannot link them. Your new balance and new interest amount remain hidden.
+
+## Deposit must be mature
+
+You can only roll over a deposit that has reached its maturity height. Attempting to roll over an immature deposit returns an error. To check if your deposits are ready:
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_maturing_deposits \
+  -H 'Content-Type: application/json' \
+  -d '{"current_height": 0, "maturing_in": 0}'
+```
+
+`maturing_in: 0` returns only deposits that are already mature.
+
+## Rollover vs withdraw comparison
+
+| | Withdraw | Rollover |
+|--|---------|---------|
+| Funds become spendable | Yes | No (locked again) |
+| Compound effect | No | Yes |
+| New deposit required | Yes (manual) | Automatic |
+| Privacy linkage | None | None (new commitment) |
+| Best for | Need liquidity | Long-term accumulation |

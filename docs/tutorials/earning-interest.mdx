@@ -1,0 +1,90 @@
+---
+title: "Tutorial: earning and compounding interest"
+description: "Track CD interest through multiple epochs and compound via rollover."
+keywords: ["interest", "compound", "rollover", "epoch", "yield", "fuego", "xfg"]
+---
+
+This tutorial shows how interest accrues across epochs and how to compound it by rolling over.
+
+## Create an initial deposit
+
+```
+deposit 10 3
+```
+
+Note the creation height printed by the wallet.
+
+## Watch interest accumulate across epochs
+
+After each epoch boundary (900 blocks mainnet / 10 blocks testnet), check the fee pool:
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_fee_pool_info \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+The `current_epoch_number` increments at each epoch boundary. Your deposit earns a share of `current_epoch_swap_fees` every epoch.
+
+Estimate your current accrued interest at any time:
+
+```bash
+curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "amount": 10000000000,
+    "creation_height": YOUR_CREATION_HEIGHT
+  }'
+```
+
+## Wait for maturity
+
+After your term expires, your deposit is ready to withdraw or rollover. Check maturity status:
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_maturing_deposits \
+  -H 'Content-Type: application/json' \
+  -d '{"current_height": 0, "maturing_in": 0}'
+```
+
+## Rollover instead of withdrawing
+
+Instead of withdrawing, roll the deposit into a new one:
+
+```bash
+curl -X POST http://127.0.0.1:28080/rollover_deposit \
+  -H 'Content-Type: application/json' \
+  -d '{"deposit_id": "0", "new_term": 3}'
+```
+
+Response:
+
+```json
+{
+  "tx_hash": "...",
+  "new_amount": 10500000000,
+  "claimed_interest": 500000000,
+  "status": "OK"
+}
+```
+
+Your new deposit is for `10.5 XFG` — principal plus accrued interest.
+
+## Verify the compound effect
+
+Next epoch, the interest is calculated on `10.5 XFG`, not `10 XFG`. Estimate yield on the new amount:
+
+```bash
+curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "amount": 10500000000,
+    "creation_height": NEW_CREATION_HEIGHT
+  }'
+```
+
+The `estimated_interest` is higher than your first deposit's estimate for the same period — that is the compound effect.
+
+## Repeat
+
+Roll over again at next maturity. Each cycle, your principal grows by the accrued interest, and the subsequent yield is calculated on the larger base.

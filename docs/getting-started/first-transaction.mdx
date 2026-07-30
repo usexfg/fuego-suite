@@ -1,0 +1,58 @@
+---
+title: "Your first transaction"
+description: "Send your first XFG transaction on testnet and verify it on-chain."
+keywords: ["transaction", "send", "testnet", "fuego", "xfg"]
+---
+
+This guide uses testnet. Make sure your daemon is running with `--testnet` and your wallet is connected to it.
+
+## Check your balance
+
+```
+balance
+```
+
+On a fresh testnet wallet, your balance is 0. You need testnet XFG to proceed — ask in the Fuego community channels for testnet funds.
+
+## Send XFG
+
+```
+transfer <address> <amount>
+```
+
+Example:
+
+```
+transfer fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp 1.5
+```
+
+Or use an alias if the recipient has registered one:
+
+```
+transfer @alice 1.5
+```
+
+The wallet outputs a transaction ID. Copy it — you can use it to verify the transaction.
+
+## Verify the transaction
+
+```bash
+curl -s http://127.0.0.1:28280/get_transaction_details_by_hash \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"hash":"YOUR_TX_HASH_HERE"}'
+```
+
+Look for `"in_pool": false` to confirm the transaction was included in a block.
+
+## Check incoming transactions
+
+```
+show_incoming_transfers
+```
+
+Ring signatures mean the sender is hidden from observers. From the recipient's perspective, incoming XFG appears as an output to their one-time key.
+
+<Note>
+  Transactions require a few block confirmations before the balance becomes spendable. On testnet this takes seconds; on mainnet, minutes.
+</Note>

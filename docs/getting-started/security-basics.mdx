@@ -1,0 +1,61 @@
+---
+title: "Security basics"
+description: "Protect your wallet, validate addresses, and understand Fuego's privacy model."
+keywords: ["security", "private key", "seed phrase", "address validation", "fuego"]
+---
+
+## Seed phrase
+
+Your 25-word seed phrase is the master key to your wallet. Anyone with it can restore your wallet and spend your funds.
+
+<Warning>
+  Never store your seed phrase digitally — no photos, no cloud notes, no password managers. Write it on paper and store it in a physically secure location. Make a second copy and store it separately.
+</Warning>
+
+If your wallet file is lost or corrupted, your seed phrase is the only recovery path.
+
+## Wallet file
+
+The wallet file (`*.keys`) is encrypted with your password. A strong password protects against an attacker who obtains the file. Back up the file to an external drive or encrypted storage.
+
+## Daemon RPC port
+
+The daemon exposes an RPC port (28080 mainnet, 28280 testnet) on `127.0.0.1` by default. Never expose this port to the internet — it has no authentication and anyone with access can query your node.
+
+```bash
+# Do NOT do this on a public server
+./fuegod --rpc-bind-ip 0.0.0.0  # ← dangerous
+```
+
+## Address validation
+
+Before sending any amount, verify the recipient address:
+- **Length:** exactly 98 characters
+- **Prefix:** starts with lowercase `f`
+
+```bash
+# Example valid address (98 chars, starts with f)
+fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp
+```
+
+There is no transaction reversal. An error here is permanent.
+
+## Alias security
+
+Aliases are stored on-chain as a hash of your address — observers cannot derive your address from the alias. However, when you *send* to an alias, your wallet resolves it to the full address via the daemon. Always confirm the resolved address before sending large amounts.
+
+```
+# Resolve an alias before sending
+get_alias alice
+# Verify the returned address matches what you expect
+```
+
+## Privacy model
+
+Ring signatures provide probabilistic privacy. Your transaction is hidden among a ring of decoys — the larger the ring, the stronger the privacy. Fuego uses a dynamic ring size.
+
+Commitment deposits hide amounts behind cryptographic commitments. The chain records that a deposit exists and when it matures, but not how much XFG it holds.
+
+<Note>
+  Privacy is strongest when you avoid patterns that reduce the anonymity set: splitting exact amounts repeatedly, depositing and withdrawing in the same block, or reusing addresses across contexts.
+</Note>

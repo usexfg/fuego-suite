@@ -1,0 +1,63 @@
+---
+title: "How atomic swaps work"
+description: "Trustless cross-chain swaps using adaptor signatures — no escrow, no custodian."
+keywords: ["atomic swap", "adaptor signature", "HTLC", "cross-chain", "fuego", "xfg"]
+---
+
+## The core guarantee
+
+An atomic swap is either:
+- **Complete**: both parties receive the funds they agreed to exchange, or
+- **Refunded**: both parties get their original funds back
+
+There is no partial outcome. No escrow service holds your funds. No custodian can steal or freeze them. The exchange is enforced by cryptography.
+
+## Adaptor signatures
+
+Fuego uses **adaptor signatures** rather than hash time-locked contracts (HTLCs). Adaptor signatures are more efficient and more private than HTLCs — they don't embed a hash on-chain, so the swap looks like a normal transaction to observers.
+
+The protocol works roughly as follows:
+
+1. Both parties exchange public adaptor keys
+2. Each party creates a transaction that requires the counterparty's adaptor secret to complete
+3. When one party broadcasts their transaction, the adaptor secret is revealed on-chain
+4. The other party uses that secret to claim their funds
+5. If neither party broadcasts within the timeout, both parties reclaim their funds
+
+## XFG-side fee
+
+Every completed swap deducts a **1% fee from the XFG amount** and credits it to the CD interest pool. This fee is not paid to the counterparty — it is a protocol fee that funds CD yield.
+
+The counterparty chain (XMR, ETH, SOL, BCH) does not charge a Fuego protocol fee — only their network transaction fees apply.
+
+## Timeout and refund
+
+If a swap stalls — counterparty goes offline, refuses to complete, or loses connectivity — the timelock expires and you reclaim your XFG via a cooperative refund transaction.
+
+The swap daemon monitors for stuck swaps:
+- Key exchange stalled for >10 minutes: warning logged
+- Escrow funded but swap not completing for >30 minutes: warning logged
+
+Neither warning triggers automatic action. You initiate the refund manually with `refund <swap_id>`.
+
+## State machine
+
+Swaps progress through these states:
+
+```
+ADAPTOR_KEYS_EXCHANGED (10)
+    ↓
+ADAPTOR_ESCROW_FUNDED (11)
+    ↓
+ADAPTOR_PRESIGS_READY (12)
+    ↓
+ADAPTOR_CTR_LOCKED (13)
+    ↓
+ADAPTOR_SECRET_REVEALED (14)
+    ↓
+ADAPTOR_XFG_SPENT (15)  ← success
+    OR
+ADAPTOR_REFUNDED (16)   ← refund
+```
+
+Each state transition is persisted to disk by the swap daemon, so a crash or restart does not lose your swap state.

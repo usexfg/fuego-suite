@@ -1,0 +1,83 @@
+---
+title: "Tutorial: swap XFG for XMR"
+description: "Complete a cross-chain atomic swap from start to finish."
+keywords: ["swap tutorial", "XMR", "atomic swap", "cross-chain", "fuego", "xfg"]
+---
+
+This tutorial walks through a complete XFG ↔ XMR swap. Both parties need to follow their respective steps.
+
+## Prerequisites
+
+**Both parties:**
+- Running and synced node for their chain
+
+**XFG side (you):**
+- `fuegod` synced
+- `xfg-xmr-swap` daemon running: `./xfg-xmr-swap --fuego-rpc http://127.0.0.1:28080`
+- XFG balance to swap
+
+**XMR side (counterparty):**
+- `monerod` synced
+- `xfg-xmr-swap` daemon running on their machine with XMR configured
+- XMR balance to swap
+
+## Agree on terms off-chain
+
+Before initiating, both parties agree on:
+- Amount of XFG and XMR to exchange
+- Counterparty Fuego address (or alias)
+
+## Initiate the swap (XFG side)
+
+```
+initiate <counterparty_fuego_address_or_alias> <xfg_amount> XMR
+```
+
+The daemon outputs a swap ID. Share this with the counterparty for tracking.
+
+## Monitor progress
+
+```bash
+curl -X POST http://127.0.0.1:28080/getswapstatus \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
+```
+
+Watch the `state` field progress through the states. Both daemons handle the cryptography automatically — no manual intervention needed unless a step stalls.
+
+## Expected timeline
+
+| State | Typical duration |
+|-------|-----------------|
+| Keys exchanged | Seconds |
+| Escrow funded | 1–5 minutes (block confirmation) |
+| Pre-sigs ready | Seconds |
+| CTR locked | 5–30 minutes (XMR confirmations) |
+| Complete | Seconds after secret reveal |
+
+XMR requires more confirmations than XFG, so the CTR locked step is typically the longest wait.
+
+## Successful completion
+
+State reaches `ADAPTOR_XFG_SPENT`. Your wallet receives XMR. The 1% XFG fee was deducted and credited to the CD interest pool.
+
+## If the counterparty goes offline
+
+Wait for the timelock to expire, then:
+
+```
+refund YOUR_SWAP_ID
+```
+
+Your XFG is returned. No partial exchange occurs.
+
+## Troubleshooting
+
+**Swap stuck at `ADAPTOR_KEYS_EXCHANGED` for >10 minutes**
+Counterparty daemon may be offline. Contact them. If no response, wait for timelock and refund.
+
+**Swap stuck at `ADAPTOR_ESCROW_FUNDED` for >30 minutes**
+Counterparty has not locked XMR. Check with them. Refund after timelock if needed.
+
+**Daemon can't find the swap after restart**
+All swap state is persisted. Run `listswaps` — the swap should appear with its last known state.

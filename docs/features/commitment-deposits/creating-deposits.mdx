@@ -1,0 +1,81 @@
+---
+title: "Creating a commitment deposit"
+description: "Lock XFG for a term using the simplewallet CLI or walletd RPC."
+keywords: ["create deposit", "COLD", "lock xfg", "commit", "fuego"]
+---
+
+## Prerequisites
+
+- A running `fuegod` daemon (synced)
+- `simplewallet` connected to the daemon
+- Sufficient XFG balance (check with `balance`)
+
+## Create a deposit — CLI
+
+```
+deposit <amount> <term>
+```
+
+The `term` parameter is a code for the available terms:
+
+| Term code | Duration (mainnet) | Duration (testnet) |
+|-----------|-------------------|-------------------|
+| `3` | ~3 months (90 epochs) | ~90 testnet epochs |
+| `12` | ~12 months (365 epochs) | ~365 testnet epochs |
+
+Example — lock 10 XFG for approximately 3 months:
+
+```
+deposit 10 3
+```
+
+The wallet prompts you to confirm, then broadcasts the transaction. On success it prints the deposit ID and the block height at which the deposit matures.
+
+You can also use the `cold` command, which is identical:
+
+```
+cold 10 3
+```
+
+## What happens on-chain
+
+The transaction creates a `TransactionOutputCommitment` output. This output:
+- Proves the deposit exists at a specific maturity height
+- Hides the XFG amount behind a Pedersen commitment
+- Records a commitment key derived from your wallet secret
+
+Your simplewallet stores the deposit secret locally. You need it to withdraw or transfer the deposit — keep your wallet file backed up.
+
+## Verify your deposit was created
+
+```
+list_cold
+```
+
+This lists all your COLD deposits with their ID, amount, maturity height, and current status.
+
+```
+cold_info 0
+```
+
+Shows detailed information about deposit ID 0.
+
+## Testnet note
+
+On testnet, epochs are 10 blocks instead of 900. A "3-month" deposit matures in a fraction of the time, which is useful for testing maturity and withdrawal without waiting.
+
+<Tip>
+  Use testnet to practice the full lifecycle — create, wait for maturity, withdraw — before committing real XFG on mainnet.
+</Tip>
+
+## Estimate your yield first
+
+Before locking, you can estimate how much interest the deposit would earn:
+
+```bash
+curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
+  -H 'Content-Type: application/json' \
+  -d '{"amount": 10000000000, "creation_height": 0}'
+```
+
+`amount` is in atomic units (1 XFG = 1,000,000,000 atomic units). The response includes `estimated_interest` based on recent fee pool history.

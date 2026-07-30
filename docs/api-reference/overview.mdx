@@ -1,0 +1,72 @@
+---
+title: "API overview"
+description: "Fuego daemon RPC API — base URLs, request format, and authentication."
+keywords: ["API", "RPC", "daemon", "HTTP", "fuego", "xfg"]
+---
+
+## Base URL
+
+The Fuego daemon exposes an HTTP JSON-RPC server on localhost:
+
+| Network | Default port | Base URL |
+|---------|-------------|----------|
+| Mainnet | 28080 | `http://127.0.0.1:28080` |
+| Testnet | 28280 | `http://127.0.0.1:28280` |
+
+<Warning>
+  Never expose the RPC port to the internet. The API has no authentication. Anyone with network access can query your node and read wallet data.
+</Warning>
+
+## Request format
+
+All endpoints accept HTTP POST with a JSON body:
+
+```bash
+curl -X POST http://127.0.0.1:28080/endpoint_name \
+  -H 'Content-Type: application/json' \
+  -d '{"key": "value"}'
+```
+
+Some read-only endpoints also accept GET with no body.
+
+## Response format
+
+All responses include a `status` field:
+
+```json
+{
+  "status": "OK",
+  ...
+}
+```
+
+On error, `status` contains an error message instead of `"OK"`.
+
+## Endpoint groups
+
+<Columns cols={2}>
+  <Card title="Fee pool" icon="chart-line" href="/api-reference/fee-pool">
+    Pool balance, epoch history, yield estimation, treasury.
+  </Card>
+  <Card title="Deposits" icon="vault" href="/api-reference/deposits">
+    List, create, withdraw, rollover, and estimate CD yield.
+  </Card>
+  <Card title="Swaps" icon="arrow-left-right" href="/api-reference/swaps">
+    List active swaps, get swap status.
+  </Card>
+  <Card title="Aliases" icon="at-sign" href="/api-reference/aliases">
+    Resolve aliases to addresses and reverse lookup.
+  </Card>
+</Columns>
+
+## Units
+
+Amounts are always in atomic units. 1 XFG = 1,000,000,000 atomic units.
+
+```python
+# Convert XFG to atomic units
+atomic = xfg * 1_000_000_000
+
+# Convert atomic units to XFG
+xfg = atomic / 1_000_000_000
+```

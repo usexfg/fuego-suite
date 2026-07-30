@@ -1,0 +1,65 @@
+---
+title: "How commitment deposits work"
+description: "Lock XFG for a term, earn variable interest from swap fees, and keep your balance private."
+keywords: ["commitment deposit", "CD", "COLD", "interest", "yield", "fuego", "xfg"]
+---
+
+A commitment deposit (CD) lets you lock XFG for a fixed term and earn interest from the network's swap activity. Unlike a bank CD, your balance is hidden on-chain, you can transfer the deposit before maturity, and you compound interest by rolling over at maturity.
+
+## What makes a CD different from staking
+
+| | Bank CD | Crypto staking | Fuego CD |
+|--|---------|---------------|----------|
+| Yield source | Bank interest | Block rewards | Swap fees (1%) |
+| Yield rate | Fixed | Fixed/schedule | Variable |
+| Term | Fixed once locked | Flexible | Fixed once locked |
+| Transferable | No | Usually no | Yes |
+| Balance visible | Yes | Yes | No |
+| Counterparty risk | Bank | Protocol | None |
+| Compound | Manual | Auto | Manual rollover |
+
+## How interest is funded
+
+Every atomic swap on Fuego charges a **1% fee on the XFG side** of the swap. That fee flows into the CD interest pool. At each epoch boundary (every 900 blocks on mainnet), the accumulated fees are distributed proportionally to all locked CDs based on their XFG amount.
+
+<Info>
+  This fee is completely separate from the LP pool's 0.3% trade fee. LP fees go directly to liquidity providers, not to CD holders.
+</Info>
+
+## On-chain representation
+
+When you create a CD, the blockchain records a `TransactionOutputCommitment` — a cryptographic commitment that proves the deposit exists and when it matures, but reveals nothing about the amount. The amount is hidden behind a Pedersen commitment with a zero-knowledge proof of validity.
+
+When you withdraw or roll over, you spend the commitment with a `TransactionInputCommitmentSpend`, which includes the `claimedInterest` field. The blockchain validates that this claimed interest matches the fee pool accounting.
+
+## Epoch and maturity
+
+An **epoch** is the unit of time for CD accounting:
+- Mainnet: 900 blocks ≈ 1 day
+- Testnet: 10 blocks ≈ 5 minutes
+
+You choose a term between 1 and 72 epochs when creating a deposit. Your maturity height is:
+
+```
+maturity_height = creation_height + (term_epochs × epoch_duration_blocks)
+```
+
+You cannot withdraw before maturity. You can [transfer](/features/commitment-deposits/transferring-deposits) the deposit to another party at any time.
+
+## Lifecycle
+
+```
+Create deposit
+    ↓
+[Epochs pass — swap fees accumulate]
+    ↓
+Maturity reached
+    ↓
+Withdraw (principal + interest)
+    OR
+Rollover (create new CD for principal + interest)
+```
+
+<Card title="Create your first deposit" icon="plus" href="/features/commitment-deposits/creating-deposits">
+  Step-by-step guide to locking XFG.
+</Card>

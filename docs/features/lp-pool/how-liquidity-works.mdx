@@ -1,0 +1,42 @@
+---
+title: "How the LP swap pool works"
+description: "On-chain AMM for XFG trades, earning 0.3% per trade for liquidity providers."
+keywords: ["LP pool", "liquidity", "AMM", "0.3%", "swap", "fuego", "xfg"]
+---
+
+## What the LP pool is
+
+The LP swap pool is an on-chain automated market maker (AMM) for XFG trades. Liquidity providers deposit XFG into the pool. Traders swap through the pool and pay a 0.3% fee per trade. That fee is distributed to LPs in proportion to their pool share.
+
+## Separate from CD interest
+
+<Info>
+  The LP pool fee (0.3% per trade) and the CD interest pool (1% per atomic swap) are completely independent. LP fees go to liquidity providers. Atomic swap fees go to CD holders. There is no overlap.
+</Info>
+
+| | CD interest pool | LP pool |
+|--|-----------------|---------|
+| Fee rate | 1% per atomic swap | 0.3% per pool trade |
+| Fee recipient | CD holders | LP providers |
+| Distribution | Per epoch | Per epoch |
+| Privacy | ZK commitment | ZK commitment |
+
+## ZK proofs for LP positions
+
+LP positions use zero-knowledge proofs for privacy. The pool tracks your share of liquidity without revealing your exact deposit amount. The prover code is shared with the HEAT burn system — same cryptographic primitive, different purpose.
+
+## Epoch-based fee distribution
+
+Like CD interest, LP fees accumulate throughout each epoch and are distributed at the epoch boundary. Your LP share determines how much you receive:
+
+```
+your_lp_fee = (your_lp_share / total_lp_shares) × epoch_trade_fees
+```
+
+## Price curve and slippage
+
+The AMM maintains a price curve (similar to constant-product or similar formula — see developer docs for the exact curve). Large trades move the price more than small ones. Check the pool depth before large trades to estimate slippage.
+
+<Card title="Provide liquidity" icon="plus" href="/features/lp-pool/providing-liquidity">
+  How to deposit into the pool and start earning.
+</Card>

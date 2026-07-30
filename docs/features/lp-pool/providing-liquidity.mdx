@@ -1,0 +1,57 @@
+---
+title: "Providing liquidity"
+description: "Deposit XFG into the swap pool and earn fees on every trade."
+keywords: ["provide liquidity", "LP", "deposit pool", "fuego", "xfg"]
+---
+
+## Deposit into the pool
+
+Use the walletd RPC to deposit liquidity:
+
+```bash
+curl -X POST http://127.0.0.1:28080/lp_deposit \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "amount": 100000000000,
+    "address": "fire..."
+  }'
+```
+
+`amount` is in atomic units (1 XFG = 1,000,000,000).
+
+The daemon returns a transaction hash confirming your deposit. Your LP share is tracked on-chain using a ZK commitment that hides your exact amount.
+
+## Check your LP share
+
+```bash
+curl -X POST http://127.0.0.1:28080/get_lp_position \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Returns your current LP share and estimated pending fees.
+
+## Withdraw liquidity
+
+```bash
+curl -X POST http://127.0.0.1:28080/lp_withdraw \
+  -H 'Content-Type: application/json' \
+  -d '{"amount": 100000000000}'
+```
+
+You receive your principal plus accumulated fees. If the pool price has moved since you deposited, your returned XFG amount may differ from your deposit (impermanent loss).
+
+## Impermanent loss
+
+<Warning>
+  If the XFG price relative to other assets moves significantly while you are an LP, you may receive less XFG than you deposited when you withdraw. This is impermanent loss — it is inherent to AMM design, not a bug. The 0.3% fee income may or may not offset it depending on trade volume and price movement.
+</Warning>
+
+Impermanent loss is minimized when prices are stable. High-volume, low-volatility periods are most favorable for LPs.
+
+## When to provide liquidity
+
+Providing liquidity is most profitable when:
+- Swap volume is high (more fees collected)
+- Price is stable (less impermanent loss)
+- The pool depth is low relative to demand (your share is larger)

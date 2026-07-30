@@ -1,0 +1,71 @@
+---
+title: "Wallet setup"
+description: "Create a Fuego wallet, back up your seed phrase, and connect to the daemon."
+keywords: ["wallet", "simplewallet", "seed phrase", "fuego", "xfg"]
+---
+
+## Create a new wallet
+
+```bash
+./simplewallet --generate-new-wallet my-wallet.keys
+```
+
+You will be prompted to set a password. Use a strong password — your wallet file is encrypted with it.
+
+<Warning>
+  The next step shows your seed phrase. Write it down on paper immediately. This is the only backup of your funds. If you lose your wallet file and seed phrase, your XFG is gone permanently.
+</Warning>
+
+After creation, the wallet displays a 25-word seed phrase. Store it offline in a secure location. Never photograph it or store it digitally.
+
+## Open an existing wallet
+
+```bash
+./simplewallet --wallet-file my-wallet.keys
+```
+
+Enter your password when prompted. The wallet connects to the daemon at `127.0.0.1:28080` by default.
+
+## Connect to testnet
+
+```bash
+./simplewallet --wallet-file my-wallet.keys --testnet --daemon-port 28280
+```
+
+## Restore from seed phrase
+
+```bash
+./simplewallet --restore-deterministic-wallet
+```
+
+You will be prompted for your 25-word seed phrase and a new password.
+
+## Fuego addresses
+
+Your wallet address is **98 characters** long and begins with a lowercase `f`:
+
+```
+fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp
+```
+
+Always verify the full address before sending. There is no transaction reversal.
+
+## Register an alias
+
+Instead of sharing a 98-character address, you can register a short alias on-chain:
+
+```
+register_alias myname
+```
+
+Others can then send to `@myname` instead of your full address. Aliases are stored as a hash — no one can determine your address from the alias alone.
+
+## Useful wallet commands
+
+| Command | Description |
+|---------|-------------|
+| `balance` | Show spendable and locked balances |
+| `address` | Display your wallet address |
+| `list_cold` | List all commitment deposits |
+| `list_burns` | List all HEAT burn transactions |
+| `help` | Show all available commands |

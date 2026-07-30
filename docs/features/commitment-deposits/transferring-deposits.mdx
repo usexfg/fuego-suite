@@ -1,0 +1,63 @@
+---
+title: "Transferring deposits"
+description: "Transfer a locked CD to another party before maturity using the secondary market."
+keywords: ["transfer", "secondary market", "COLD transfer", "before maturity", "fuego"]
+---
+
+## What CD transfer enables
+
+Unlike traditional certificates of deposit, a Fuego CD can be transferred to another address before it matures. The new owner receives the deposit with its original maturity height intact — they can withdraw or roll over it once it matures.
+
+This creates a secondary market: if you need liquidity before maturity, you can find a buyer and transfer at a negotiated price.
+
+## How it works on-chain
+
+Transfer uses `TransactionInputCommitmentTransfer`, a distinct transaction type that does not require the deposit to be mature. The original owner signs a transfer that reassigns the commitment to a new key controlled by the recipient's wallet.
+
+The transfer does not claim any interest — interest accrues to whoever holds the deposit at maturity.
+
+## Transfer process
+
+<Steps>
+  <Step title="Agree on a price off-chain">
+    There is no on-chain order book. Find a buyer through community channels and agree on an XFG price for the deposit. The buyer typically pays a discount to face value to compensate for waiting until maturity.
+  </Step>
+  <Step title="Buyer sends payment">
+    The buyer sends the agreed XFG amount to your wallet in a standard transaction. Confirm receipt before proceeding.
+  </Step>
+  <Step title="Transfer the deposit">
+    Use the walletd RPC to transfer the commitment to the buyer's address:
+
+    ```bash
+    curl -X POST http://127.0.0.1:28080/transfer_deposit \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "deposit_id": "0",
+        "recipient_address": "fire..."
+      }'
+    ```
+  </Step>
+  <Step title="Buyer verifies receipt">
+    The buyer checks their wallet with `list_cold` to confirm the deposit appears under their control.
+  </Step>
+</Steps>
+
+## Pricing a transfer
+
+There is no protocol-enforced pricing. Common approaches:
+
+- **Discount to face value**: `deposit_amount × (remaining_term / total_term)` — buyer pays less for more time remaining
+- **Yield-adjusted**: account for expected interest the buyer will receive at maturity
+- **Market rate**: whatever the two parties agree on
+
+## Privacy in transfers
+
+The transfer is recorded on-chain as a new commitment reassignment. Amounts remain hidden — an observer sees that a transfer occurred but not how much XFG it represents or what price was paid off-chain.
+
+## Risks for buyers
+
+<Warning>
+  When buying a transferred CD, you are trusting that the seller has not already used the deposit secret in another transaction. Verify the deposit appears in `list_cold` in your wallet before releasing payment.
+</Warning>
+
+The deposit amount and maturity height are fixed — they cannot be modified after creation. What you see in `cold_info` is exactly what you will receive at maturity.

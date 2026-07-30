@@ -73,13 +73,13 @@ void InProcessNode::init(const Callback& callback) {
     protocol.addObserver(this);
     core.addObserver(this);
 
-    work.reset(new boost::asio::io_context::work(ioService));
+    workGuard.emplace(boost::asio::make_work_guard(ioService));
     workerThread.reset(new std::thread(&InProcessNode::workerFunc, this));
 
     state = INITIALIZED;
   }
 
-  ioService.post(std::bind(callback, ec));
+  boost::asio::post(ioService, std::bind(callback, ec));
 }
 
 bool InProcessNode::shutdown() {
@@ -96,10 +96,10 @@ bool InProcessNode::doShutdown() {
   core.removeObserver(this);
   state = NOT_INITIALIZED;
 
-  work.reset();
+  workGuard.reset();
   ioService.stop();
   workerThread->join();
-  ioService.reset();
+  ioService.restart();
   return true;
 }
 
@@ -117,7 +117,7 @@ void InProcessNode::getNewBlocks(std::vector<Crypto::Hash>&& knownBlockIds, std:
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getNewBlocksAsync,
       this,
       std::move(knownBlockIds),
@@ -191,7 +191,7 @@ void InProcessNode::getTransactionOutsGlobalIndices(const Crypto::Hash& transact
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getTransactionOutsGlobalIndicesAsync,
       this,
       std::cref(transactionHash),
@@ -241,7 +241,7 @@ void InProcessNode::getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getRandomOutsByAmountsAsync,
       this,
       std::move(amounts),
@@ -298,7 +298,7 @@ void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t o
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, std::ref(result), callback)
   );
 }
@@ -343,7 +343,7 @@ void InProcessNode::relayTransaction(const CryptoNote::Transaction& transaction,
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(&InProcessNode::relayTransactionAsync,
       this,
       transaction,
@@ -512,7 +512,7 @@ void InProcessNode::queryBlocks(std::vector<Crypto::Hash>&& knownBlockIds, uint6
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
           std::bind(&InProcessNode::queryBlocksLiteAsync,
                   this,
                   std::move(knownBlockIds),
@@ -574,7 +574,7 @@ void InProcessNode::getPoolSymmetricDifference(std::vector<Crypto::Hash>&& known
     return;
   }
 
-  ioService.post([this, knownPoolTxIds, knownBlockId, &isBcActual, &newTxs, &deletedTxIds, callback] () mutable {
+  boost::asio::post(ioService, [this, knownPoolTxIds, knownBlockId, &isBcActual, &newTxs, &deletedTxIds, callback] () mutable {
     this->getPoolSymmetricDifferenceAsync(std::move(knownPoolTxIds), knownBlockId, isBcActual, newTxs, deletedTxIds, callback);
   });
 }
@@ -607,7 +607,7 @@ void InProcessNode::getMultisignatureOutputByGlobalIndex(uint64_t amount, uint32
     return;
   }
 
-  ioService.post([this, amount, gindex, &out, callback]() mutable {
+  boost::asio::post(ioService,[this, amount, gindex, &out, callback]() mutable {
     this->getOutByMSigGIndexAsync(amount, gindex, out, callback);
   });
 }
@@ -632,7 +632,7 @@ void InProcessNode::getBlocks(const std::vector<uint32_t>& blockHeights, std::ve
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -716,7 +716,7 @@ void InProcessNode::getBlocks(const std::vector<Crypto::Hash>& blockHashes, std:
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -779,7 +779,7 @@ void InProcessNode::getBlocks(uint64_t timestampBegin, uint64_t timestampEnd, ui
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -855,7 +855,7 @@ void InProcessNode::getTransactions(const std::vector<Crypto::Hash>& transaction
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       static_cast<
         void(InProcessNode::*)(
@@ -920,7 +920,7 @@ void InProcessNode::getPoolTransactions(uint64_t timestampBegin, uint64_t timest
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::getPoolTransactionsAsync,
       this,
@@ -979,7 +979,7 @@ void InProcessNode::getTransactionsByPaymentId(const Crypto::Hash& paymentId, st
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::getTransactionsByPaymentIdAsync,
       this,
@@ -1000,7 +1000,7 @@ void InProcessNode::getTransaction(const Crypto::Hash &transactionHash, CryptoNo
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
       std::bind(
           static_cast<
               void (InProcessNode::*)(
@@ -1095,7 +1095,7 @@ void InProcessNode::isSynchronized(bool& syncStatus, const Callback& callback) {
     return;
   }
 
-  ioService.post(
+  boost::asio::post(ioService,
     std::bind(
       &InProcessNode::isSynchronizedAsync,
       this,

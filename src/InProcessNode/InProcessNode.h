@@ -28,6 +28,7 @@
 
 #include <thread>
 #include <boost/asio.hpp>
+#include <boost/optional.hpp>
 
 namespace CryptoNote {
 
@@ -159,7 +160,8 @@ private:
 
   boost::asio::io_context ioService;
   std::unique_ptr<std::thread> workerThread;
-  std::unique_ptr<boost::asio::io_context::work> work;
+  using WorkGuard = boost::asio::executor_work_guard<boost::asio::io_context::executor_type>;
+  boost::optional<WorkGuard> workGuard;
 
   BlockchainExplorerDataBuilder blockchainExplorerDataBuilder;
 

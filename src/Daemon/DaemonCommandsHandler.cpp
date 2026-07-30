@@ -23,7 +23,7 @@
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
 #include "Serialization/SerializationTools.h"
-#include "../version.h.in"
+#include "version.h"
 #include <boost/format.hpp>
 #include "Common/MathUtils.h"
 #include "Common/ConsoleTools.h"

@@ -88,6 +88,9 @@ public:
   // Report atomic swap fee to daemon → blockchain fee pool
   bool addSwapFee(uint64_t amount);
 
+  // Query /getcurrencyid — returns genesis block hash (used to derive treasury vault key)
+  bool getCurrencyId(std::string& genesisHashHex);
+
   // Query /getinfo
   bool getInfo(NodeInfo& info);
 

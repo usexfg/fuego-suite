@@ -325,6 +325,22 @@ bool FuegoRpcClient::addSwapFee(uint64_t amount) {
   }
 }
 
+bool FuegoRpcClient::getCurrencyId(std::string& genesisHashHex) {
+  try {
+    std::string responseBody = daemonPost("/getcurrencyid", "{}");
+    Common::JsonValue json = Common::JsonValue::fromString(responseBody);
+
+    if (!json.isObject() || !json.contains("currency_id_blob")) {
+      return false;
+    }
+
+    genesisHashHex = json("currency_id_blob").getString();
+    return !genesisHashHex.empty();
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 bool FuegoRpcClient::getInfo(NodeInfo& info) {
   try {
     std::string responseBody = daemonPost("/getinfo", "{}");

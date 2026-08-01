@@ -749,6 +749,10 @@ target_link_libraries(PaymentGateService PRIVATE
     InProcessNode
     upnpc-static
     BlockchainExplorer
+    SwapDaemonLib
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    secp256k1
     ${Boost_LIBRARIES}
     Serialization
   )
@@ -857,7 +861,7 @@ add_dependencies(P2P version)
 # --------------------------
 set_property(TARGET SimpleWallet PROPERTY OUTPUT_NAME "fire_wallet")
 set_property(TARGET testnet-wallet-cli PROPERTY OUTPUT_NAME "test_wallet")
-set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "walletd")
+set_property(TARGET PaymentGateService PROPERTY OUTPUT_NAME "unified")
 set_property(TARGET Daemon PROPERTY OUTPUT_NAME "fuegod")
 set_property(TARGET TestnetDaemon PROPERTY OUTPUT_NAME "testnetd")
 set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")

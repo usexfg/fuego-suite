@@ -39,6 +39,7 @@ static const double SEED_BCH_USD = 469.0;
 static const double SEED_XMR_USD = 343.0;
 static const double SEED_BNB_USD = 590.0;
 static const double SEED_DCR_USD = 20.0;
+static const double SEED_POLY_USD = 0.55;
 
 // Minimum completed swaps before TWAP replaces seed rate
 static const size_t TWAP_MIN_TRADES = 5;
@@ -85,6 +86,7 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::BASE: return SEED_ETH_USD / xfgUsd;
     case SwapPair::BNB: return SEED_BNB_USD / xfgUsd;
     case SwapPair::DCR: return SEED_DCR_USD / xfgUsd;
+    case SwapPair::POLYGON: return SEED_POLY_USD / xfgUsd;
     default:            return 0.0;
   }
 }
@@ -100,6 +102,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::BASE: return SEED_ETH_USD / SEED_XFG_USD;
     case SwapPair::BNB: return SEED_BNB_USD / SEED_XFG_USD;
     case SwapPair::DCR: return SEED_DCR_USD / SEED_XFG_USD;
+    case SwapPair::POLYGON: return SEED_POLY_USD / SEED_XFG_USD;
     default:            return 0.0;
   }
 }
@@ -118,6 +121,7 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::BASE: return 1e18;
     case SwapPair::BNB: return 1e18;
     case SwapPair::DCR: return 1e8;
+    case SwapPair::POLYGON: return 1e18;  // wei
     default:            return 1e8;
   }
 }

@@ -149,6 +149,20 @@
 - **Cult-ish** — deliberately creates in-group language. Makes you earn belonging. You get it or you don't.
 - **Fatalistic** — "The long night is coming." Prepares for civilizational collapse, not quarterly earnings.
 
+## Visual Identity
+
+**Typography:**
+| Role | Font | Source | License |
+|------|------|--------|---------|
+| **UI/Body/Display** | Saira (variable weight 100–900) | [Google Fonts](https://fonts.google.com/specimen/Saira) / fontsource CDN | OFL-1.1 |
+| **Code/Monospace** | IBM Plex Mono (400, 500, 600) | [Google Fonts](https://fonts.google.com/specimen/IBM+Plex+Mono) / fontsource CDN | OFL-1.1 |
+
+**Why Saira:** Squarish, geometric, humanist proportions. Reads like a terminal typeface that learned how to be beautiful. Variable weight axis gives full typographic range from thin UI labels to bold display headlines. Clean at 11px. Striking at 32px. No frills. No serif. No nostalgia.
+
+**Why IBM Plex Mono:** IBM's corporate typeface — engineered for legibility on screen. Neutral, functional, distinctive. Pairs with Saira without competing. Handles hex strings, balances, and code blocks with equal clarity.
+
+**Color palette:** See `dashboard/static/css/style.css` — `--bg-primary: #0a0a0f`, `--accent: #ff6b35` (forge orange), `--green: #00d4aa` (positive/heat), `--red: #ff4757` (negative/sell).
+
 ## Proof Points
 
 **Metrics:**

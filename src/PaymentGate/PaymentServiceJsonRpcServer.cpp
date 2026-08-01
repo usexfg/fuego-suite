@@ -85,6 +85,7 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("getEternalFlame", jsonHandler<GetEthernalXFG::Request, GetEthernalXFG::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetEthernalXFG, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("estimateFusion", jsonHandler<EstimateFusion::Request, EstimateFusion::Response>(std::bind(&PaymentServiceJsonRpcServer::handleEstimateFusion, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("sendFusionTransaction", jsonHandler<SendFusionTransaction::Request, SendFusionTransaction::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendFusionTransaction, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("getHealth", jsonHandler<GetHealth::Request, GetHealth::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetHealth, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -395,6 +396,29 @@ std::error_code PaymentServiceJsonRpcServer::handleGetEthernalXFG(const GetEther
   uint64_t eternal;
   service.getEternalFlame(eternal);
   response.ethereal_xfg = eternal;
+  return std::error_code();
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleGetHealth(const GetHealth::Request& request, GetHealth::Response& response)
+{
+  // Daemon (fuegod) is always running when we're in --local mode
+  response.daemon = true;
+
+  // Wallet is always running if we can reach this handler
+  response.wallet = true;
+
+  // SwapDaemon is always running when we're in --local mode
+  response.swap = true;
+
+  // Get wallet status
+  std::error_code ec = service.getStatus(response.height, response.targetHeight, response.lastBlockHash, response.peerCount, response.depositCount, response.transactionCount, response.addressCount);
+  if (ec) {
+    // If we can't get status, report degraded
+    response.daemon = false;
+    response.wallet = false;
+    return ec;
+  }
+
   return std::error_code();
 }
 

@@ -15,6 +15,7 @@ uint64_t msPerBlock(SwapPair pair) {
     case SwapPair::KMD_SPV: return 60000; // ~60s/block
     case SwapPair::BNB: return 3000;     // ~3s/block
     case SwapPair::DCR: return 300000;   // ~5min/block
+    case SwapPair::POLYGON: return 2000; // ~2s/block
     default:             return 600000;  // conservative default
   }
 }

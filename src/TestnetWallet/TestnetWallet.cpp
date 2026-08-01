@@ -68,8 +68,9 @@ namespace CryptoNote
   bool CryptoNote::testnet_wallet::requireV11(const std::string& cmdName) {
     try {
       uint64_t height = m_node->getLastLocalBlockHeight();
-      if (height < CryptoNote::parameters::UPGRADE_HEIGHT_V11) {
-        fail_msg_writer() << cmdName << " requires v11+ (block " << CryptoNote::parameters::UPGRADE_HEIGHT_V11
+      uint32_t v11Height = m_currency.upgradeHeight(CryptoNote::BLOCK_MAJOR_VERSION_11);
+      if (height < v11Height) {
+        fail_msg_writer() << cmdName << " requires v11+ (block " << v11Height
                           << "), current height: " << height;
         return false;
       }

@@ -5,6 +5,363 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hearth Exchange — Fuego</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .hearth-wrap {
+      padding: 8px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: calc(100vh - 48px);
+    }
+
+    /* ═══ The Hearth (dominant) ═══ */
+    .hearth {
+      display: flex;
+      flex-direction: column;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #0a0a0f;
+      border: 2px solid #2a2a3a;
+      height: 520px;
+    }
+
+    /* ── Mantelpiece (wide, contains stats) ── */
+    .hearth-mantel {
+      background:
+        linear-gradient(180deg,
+          #5a4a3a 0%, #7a6a54 12%, #8a7a64 20%, #6a5a48 35%,
+          #5a4a3a 50%, #4a3a2a 70%, #3a2a1a 100%);
+      border-bottom: 3px solid #6a5a48;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      flex-shrink: 0;
+      box-shadow:
+        inset 0 2px 4px rgba(255,255,255,0.12),
+        inset 0 -2px 6px rgba(0,0,0,0.5),
+        0 4px 12px rgba(0,0,0,0.6);
+    }
+    .hearth-mantel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, #b89a6a, #d4b87a, #b89a6a, transparent);
+    }
+    .hearth-mantel::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, #8a7a5a, #a08a6a, #8a7a5a, transparent);
+    }
+    .mantel-title {
+      text-align: center;
+      padding: 4px 0 2px;
+    }
+    .mantel-label {
+      color: #d4b87a;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+      font-family: var(--font-sans);
+    }
+    .mantel-crown {
+      position: absolute;
+      top: -4px; left: 50%; transform: translateX(-50%);
+      width: 50px; height: 8px;
+      background: radial-gradient(ellipse at center, #d4b87a 0%, #b89a6a 40%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0.6;
+    }
+    .mantel-stats {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 2px 16px 5px;
+    }
+    .mantel-stat {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+    }
+    .mantel-stat-label {
+      font-size: 9px;
+      color: #a09080;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-family: var(--font-sans);
+    }
+    .mantel-stat-val {
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+    .mantel-stat-val.accent { color: #ffb870; }
+    .mantel-stat-val.green { color: #60e0b8; }
+    .mantel-stat-val.blue { color: #80b8ff; }
+    .mantel-stat-val.red { color: #ff8080; }
+
+    /* ── Hearth Body ── */
+    .hearth-body {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(110px, 1fr) minmax(260px, 5fr) minmax(110px, 1fr);
+      min-height: 0;
+    }
+
+    /* ── Stone Side Panels ── */
+    .hearth-side {
+      padding: 8px 6px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #4a3a2a #1a1a24;
+    }
+    .hearth-side::-webkit-scrollbar { width: 3px; }
+    .hearth-side::-webkit-scrollbar-track { background: #1a1a24; }
+    .hearth-side::-webkit-scrollbar-thumb { background: #4a3a2a; border-radius: 2px; }
+
+    .hearth-side-bids {
+      background:
+        linear-gradient(180deg, #1a2a1e 0%, #151f18 50%, #0f1a12 100%),
+        repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.008) 3px, rgba(255,255,255,0.008) 4px),
+        repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.008) 5px, rgba(255,255,255,0.008) 6px);
+      border-right: 2px solid #3a2a1a;
+    }
+    .hearth-side-asks {
+      background:
+        linear-gradient(180deg, #2a1a1e 0%, #1f1518 50%, #1a0f12 100%),
+        repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(255,255,255,0.008) 3px, rgba(255,255,255,0.008) 4px),
+        repeating-linear-gradient(90deg, transparent 0px, transparent 5px, rgba(255,255,255,0.008) 5px, rgba(255,255,255,0.008) 6px);
+      border-left: 2px solid #3a2a1a;
+    }
+
+    .hearth-side-label {
+      text-align: center;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 3px 0 5px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      margin-bottom: 4px;
+      font-family: var(--font-sans);
+    }
+    .hearth-side-bids .hearth-side-label { color: #e8734a; }
+    .hearth-side-asks .hearth-side-label { color: #5b8def; }
+
+    .hearth-order {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px 4px;
+      border-radius: 2px;
+      margin-bottom: 1px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      position: relative;
+    }
+    .hearth-order:hover { background: rgba(255,255,255,0.04); }
+    .hearth-order-bid .hearth-order-price { color: #e8734a; text-shadow: 0 0 4px rgba(232,115,74,0.25); }
+    .hearth-order-ask .hearth-order-price { color: #5b8def; text-shadow: 0 0 4px rgba(91,141,239,0.25); }
+    .hearth-order-amount { color: #8888a0; font-size: 10px; }
+    .hearth-order-bar { position: absolute; bottom: 0; left: 0; height: 2px; border-radius: 1px; opacity: 0.35; }
+    .hearth-order-bid .hearth-order-bar { background: #e8734a; }
+    .hearth-order-ask .hearth-order-bar { background: #5b8def; }
+    /* ── Center: Chart + Price + Orders ── */
+    .fireplace {
+      display: flex;
+      flex-direction: column;
+      background: #0a0a0f;
+      position: relative;
+      overflow: hidden;
+    }
+    .fireplace-chart {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    .fireplace-chart #hearth-chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Chart Crosshair Info ── */
+    .chart-crosshair {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      display: flex;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #8888a0;
+      z-index: 10;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .chart-crosshair.visible { opacity: 1; }
+    .chart-crosshair #ch-o { color: #888; }
+    .chart-crosshair #ch-h { color: #00d4aa; }
+    .chart-crosshair #ch-l { color: #ff4757; }
+    .chart-crosshair #ch-c { color: #e8e8f0; font-weight: 600; }
+    .chart-crosshair #ch-v { color: #4a9eff; }
+    .chart-crosshair #ch-time { color: #555570; margin-left: auto; }
+
+    /* ── Indicator Toggle Buttons ── */
+    .chart-indicators {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      display: flex;
+      gap: 4px;
+      z-index: 10;
+    }
+    .ind-btn {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 6px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 500;
+      color: #555570;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(42,42,58,0.5);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .ind-btn:hover { color: #8888a0; border-color: #3a3a50; }
+    .ind-btn.active { color: #e8e8f0; border-color: #555570; background: rgba(42,42,58,0.6); }
+    .ind-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Drawing Tools ── */
+    .chart-drawing-tools {
+      position: absolute;
+      top: 28px;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      z-index: 10;
+    }
+    .draw-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: #555570;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid rgba(42,42,58,0.5);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .draw-btn:hover { color: #e8e8f0; border-color: #ff6b35; background: rgba(255,107,53,0.1); }
+    .draw-btn.active { color: #ff6b35; border-color: #ff6b35; background: rgba(255,107,53,0.15); }
+    .draw-btn[data-tool="clear"] { color: #ff4757; font-size: 11px; }
+    .draw-btn[data-tool="clear"]:hover { background: rgba(255,71,87,0.15); }
+
+    /* ── Price Display (replaces spread) ── */
+    .price-display {
+      text-align: center;
+      padding: 8px 10px 6px;
+      background: rgba(0,0,0,0.5);
+      border-top: 1px solid rgba(255,170,0,0.15);
+      flex-shrink: 0;
+    }
+    .price-main {
+      font-size: 22px;
+      font-weight: 700;
+      font-family: var(--font-sans);
+      color: #ff6b35;
+      text-shadow: 0 0 12px rgba(255,107,53,0.3);
+    }
+    .price-usd {
+      font-size: 12px;
+      color: #888;
+      margin-top: 1px;
+    }
+
+    /* ── Order Form (inside fireplace) ── */
+    .fireplace-orders {
+      padding: 8px 12px 10px;
+      background: rgba(0,0,0,0.4);
+      flex-shrink: 0;
+    }
+    .fireplace-orders .order-row {
+      display: flex;
+      gap: 6px;
+      align-items: end;
+    }
+    .fireplace-orders .form-group { margin-bottom: 0; }
+    .fireplace-orders .form-label { font-size: 10px; margin-bottom: 1px; }
+    .fireplace-orders .form-input { padding: 5px 8px; font-size: 12px; }
+    .fireplace-orders .tabs .tab { padding: 4px 12px; font-size: 11px; }
+    .fireplace-orders .type-btn { padding: 4px 12px; font-size: 11px; }
+    .fireplace-orders .btn-execute {
+      padding: 5px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .hearth-floor {
+      height: 10px;
+      background: linear-gradient(180deg, #2a1a0a 0%, #3a2a1a 30%, #4a3a2a 60%, #3a2a1a 100%);
+      border-top: 2px solid #5a4a3a;
+      flex-shrink: 0;
+    }
+    .hearth-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #4a4a5a;
+      font-size: 11px;
+      font-style: italic;
+      font-family: var(--font-sans);
+    }
+
+    /* ═══ Type Selector ═══ */
+    .type-selector {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .type-btn {
+      flex: 1;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--border, #2a2a3a);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-secondary, #888);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .type-btn.active {
+      background: var(--accent, #ff6b35);
+      color: #fff;
+      border-color: var(--accent, #ff6b35);
+    }
+    .type-btn:hover:not(.active) {
+      border-color: var(--text-secondary, #888);
+    }
+  </style>
 </head>
 <body>
   <nav class="nav">
@@ -21,137 +378,98 @@
     </div>
   </nav>
 
-  <div style="padding: 16px; display: grid; grid-template-columns: 1fr 340px; gap: 16px; height: calc(100vh - 48px);">
-    <!-- Left: Charts + Orderbook -->
-    <div style="display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
-      <!-- Price Chart -->
-      <div class="card" style="flex: 1; min-height: 360px;">
-        <div class="card-header">
-          <span>XFG/HEAT — OHLCV</span>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-sm btn-secondary ohlcv-tf active" data-tf="1h">1H</button>
-            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="4h">4H</button>
-            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1d">1D</button>
-            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1w">1W</button>
-          </div>
+  <div class="hearth-wrap">
+    <!-- ═══ The Hearth ═══ -->
+    <div class="hearth">
+      <div class="hearth-mantel">
+        <div class="mantel-crown"></div>
+        <div class="mantel-title">
+          <span class="mantel-label">⚜ Hearth Exchange ⚜</span>
         </div>
-        <div class="card-body" style="padding:0;">
-          <div id="price-chart" class="chart-container tv"></div>
-        </div>
-      </div>
-
-      <!-- Depth Chart + Orderbook -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 280px;">
-        <!-- Depth Chart -->
-        <div class="card">
-          <div class="card-header"><span>Market Depth</span></div>
-          <div class="card-body" style="padding:0;">
-            <div id="depth-chart" class="chart-container" style="height:240px;"></div>
-          </div>
-        </div>
-
-        <!-- Orderbook Table -->
-        <div class="card">
-          <div class="card-header"><span>Orderbook</span></div>
-          <div class="card-body" style="padding:0; overflow-y:auto; max-height:240px;">
-            <table>
-              <thead><tr><th>Price</th><th style="text-align:right">Amount</th><th style="text-align:right">Total</th></tr></thead>
-              <tbody id="ob-asks"></tbody>
-            </table>
-            <div id="ob-spread" style="padding:6px 12px;text-align:center;font-size:13px;font-weight:600;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg-secondary);"></div>
-            <table>
-              <tbody id="ob-bids"></tbody>
-            </table>
-          </div>
+        <div class="mantel-stats">
+          <div class="mantel-stat"><span class="mantel-stat-label">XFG Burned</span><span class="mantel-stat-val red" id="heat-burned">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ Supply</span><span class="mantel-stat-val" id="heat-supply">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">XFG Reserve</span><span class="mantel-stat-val green" id="pool-xfg">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ Reserve</span><span class="mantel-stat-val blue" id="pool-heat">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">Mint Ratio</span><span class="mantel-stat-val green" id="heat-redemption">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ ≋ $1.58</span><span class="mantel-stat-val accent" id="heat-peg" style="font-size:10px;font-weight:400;">peg</span></div>
         </div>
       </div>
-    </div>
+      <div class="hearth-body">
+        <div class="hearth-side hearth-side-bids">
+          <div class="hearth-side-label">XFG Bids</div>
+          <div id="hearth-bids"><div class="hearth-empty">Awaiting orders…</div></div>
+        </div>
+        <div class="fireplace">
+          <div class="fireplace-chart">
+            <div id="hearth-chart" class="chart-container tv"></div>
+            <div class="chart-crosshair" id="chart-crosshair">
+              <span id="ch-o">O —</span>
+              <span id="ch-h">H —</span>
+              <span id="ch-l">L —</span>
+              <span id="ch-c">C —</span>
+              <span id="ch-v">V —</span>
+              <span id="ch-time"></span>
+            </div>
+            <div class="chart-indicators" id="chart-indicators">
+              <button class="ind-btn active" data-ind="sma20" title="MA (SMA 20)"><span class="ind-dot" style="background:#ffc107;"></span>MA</button>
+              <button class="ind-btn" data-ind="ema12" title="EMA 12"><span class="ind-dot" style="background:#a855f7;"></span>EMA</button>
+              <button class="ind-btn active" data-ind="vol" title="Volume"><span class="ind-dot" style="background:#4a9eff;"></span>VOL</button>
+            </div>
+            <div class="chart-drawing-tools" id="chart-drawing-tools">
+              <button class="draw-btn" data-tool="segment" title="Trend Line">⁄</button>
+              <button class="draw-btn" data-tool="horizontalRay" title="Horizontal Ray">―</button>
+              <button class="draw-btn" data-tool="fibonacci" title="Fibonacci Retracement">%</button>
+              <button class="draw-btn" data-tool="rectangle" title="Rectangle">▢</button>
+              <button class="draw-btn" data-tool="clear" title="Clear Drawings">✕</button>
+            </div>
+          </div>
+          <div class="price-display">
+            <div class="price-main" id="price-xfg-heat">—</div>
+            <div class="price-usd" id="price-xfg-usd"></div>
+            <div style="display:flex;justify-content:center;gap:12px;margin-top:4px;">
+              <button class="btn btn-sm btn-secondary ohlcv-tf active" data-tf="1h" style="padding:2px 8px;font-size:10px;">1H</button>
+              <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="4h" style="padding:2px 8px;font-size:10px;">4H</button>
+              <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1d" style="padding:2px 8px;font-size:10px;">1D</button>
+              <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1w" style="padding:2px 8px;font-size:10px;">1W</button>
+            </div>
+          </div>
 
-    <!-- Right: Metrics + Trade Form -->
-    <div style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
-      <!-- Pool Metrics -->
-      <div class="card">
-        <div class="card-header"><span>Hearth Pool</span></div>
-        <div class="card-body" style="padding:0;">
-          <div class="metrics-grid">
-            <div class="metric"><span class="metric-label">Spot Price</span><span class="metric-value accent" id="spot-price">—</span></div>
-            <div class="metric"><span class="metric-label">XFG Reserve</span><span class="metric-value" id="pool-xfg">—</span></div>
-            <div class="metric"><span class="metric-label">HEAT Reserve</span><span class="metric-value" id="pool-heat">—</span></div>
-            <div class="metric"><span class="metric-label">LP Shares</span><span class="metric-value blue" id="pool-shares">—</span></div>
-            <div class="metric"><span class="metric-label">LP Fees (XFG)</span><span class="metric-value green" id="pool-fees-xfg">—</span></div>
-            <div class="metric"><span class="metric-label">Epoch Swap Fees</span><span class="metric-value" id="pool-epoch-fees">—</span></div>
+          <!-- Order Form (inside fireplace) -->
+          <div class="fireplace-orders">
+            <div style="display:flex;gap:6px;margin-bottom:6px;">
+              <div class="tabs" style="margin:0;flex:0 0 auto;">
+                <div class="tab active" data-side="buy">Buy</div>
+                <div class="tab" data-side="sell">Sell</div>
+              </div>
+              <div class="type-selector" style="flex:1;">
+                <div class="type-btn active" data-type="limit">Limit</div>
+                <div class="type-btn" data-type="market">Market</div>
+              </div>
+            </div>
+            <div class="order-row">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label">Amount</label>
+                <input type="text" class="form-input" id="order-amount" placeholder="0.00" style="width:100%;">
+              </div>
+              <div class="form-group" id="price-group" style="flex:1;">
+                <label class="form-label">Price</label>
+                <input type="text" class="form-input" id="order-price" placeholder="0.00" style="width:100%;">
+              </div>
+              <div class="form-group" id="expiry-group" style="flex:0 0 80px;">
+                <label class="form-label">Expiry</label>
+                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320" style="width:100%;">
+              </div>
+              <button class="btn btn-primary btn-execute" id="order-preview-btn" style="flex:0 0 auto;">Buy XFG</button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <!-- HEAT Metrics -->
-      <div class="card">
-        <div class="card-header"><span>HEAT Metrics</span></div>
-        <div class="card-body" style="padding:0;">
-          <div class="metrics-grid">
-            <div class="metric"><span class="metric-label">HEAT Supply</span><span class="metric-value" id="heat-supply">—</span></div>
-            <div class="metric"><span class="metric-label">Redemption Price</span><span class="metric-value green" id="heat-redemption">—</span></div>
-            <div class="metric"><span class="metric-label">XFG Burned</span><span class="metric-value red" id="heat-burned">—</span></div>
-            <div class="metric"><span class="metric-label">Fee Pool</span><span class="metric-value" id="fee-pool">—</span></div>
-          </div>
+        <div class="hearth-side hearth-side-asks">
+          <div class="hearth-side-label">HΞ∆Ŧ Asks</div>
+          <div id="hearth-asks"><div class="hearth-empty">Awaiting orders…</div></div>
         </div>
       </div>
-
-      <!-- Order Form -->
-      <div class="card">
-        <div class="card-header"><span>Place Order</span></div>
-        <div class="card-body">
-          <div class="tabs" style="margin-bottom:12px;">
-            <div class="tab active" data-side="buy">Buy XFG</div>
-            <div class="tab" data-side="sell">Sell XFG</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Amount (HEAT for buys, XFG for sells)</label>
-            <input type="text" class="form-input" id="order-amount" placeholder="0.00">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Price (HEAT per XFG)</label>
-            <input type="text" class="form-input" id="order-price" placeholder="0.00">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Expiry (blocks, 0 = no expiry)</label>
-            <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320">
-          </div>
-          <button class="btn btn-block btn-primary" id="order-preview-btn">Preview Order</button>
-        </div>
-      </div>
-
-      <!-- AMM Quote -->
-      <div class="card">
-        <div class="card-header"><span>AMM Quote</span></div>
-        <div class="card-body">
-          <div class="form-group">
-            <label class="form-label">Direction</label>
-            <select class="form-input" id="amm-direction">
-              <option value="0">XFG → HEAT</option>
-              <option value="1">HEAT → XFG</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Amount</label>
-            <input type="text" class="form-input" id="amm-amount" placeholder="0.00">
-          </div>
-          <div id="amm-quote-result" style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;min-height:20px;"></div>
-          <button class="btn btn-block btn-primary" id="amm-swap-btn">Swap on AMM</button>
-        </div>
-      </div>
-
-      <!-- Recent Fills -->
-      <div class="card">
-        <div class="card-header"><span>Recent Fills</span></div>
-        <div class="card-body" style="padding:0; max-height:160px; overflow-y:auto;">
-          <table>
-            <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Amount</th></tr></thead>
-            <tbody id="recent-fills"></tbody>
-          </table>
-          <div id="fills-empty" class="empty-state"><span class="empty-state-text">No recent fills</span></div>
-        </div>
-      </div>
+      <div class="hearth-floor"></div>
     </div>
   </div>
 
@@ -173,7 +491,7 @@
     </div>
   </div>
 
-  <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="/vendor/klinecharts.min.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/hearth.js"></script>
 </body>

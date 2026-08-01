@@ -107,6 +107,7 @@ private:
   std::error_code handleCreateBurnDeposit(const CreateBurnDeposit::Request& request, CreateBurnDeposit::Response& response);
   std::error_code handleCreateBurnDepositLarge(const CreateBurnDepositLarge::Request& request, CreateBurnDepositLarge::Response& response);
   std::error_code handleGetEthernalXFG(const GetEthernalXFG::Request& request, GetEthernalXFG::Response& response);
+  std::error_code handleGetHealth(const GetHealth::Request& request, GetHealth::Response& response);
 
 };
 

@@ -97,13 +97,16 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
     FuegoRpcClient& rpc,
     const SwapParams& params,
     const Crypto::PublicKey& destinationKey,
+    uint64_t protocolFee,
+    const Crypto::PublicKey& treasuryKey,
     uint64_t fee,
     CryptoNote::Transaction& tx,
     Crypto::Hash& prefixHash,
     CollaborativeRingState& ringState) {
 
   if (fee < MIN_FEE) fee = MIN_FEE;
-  if (params.xfgAmount <= fee) return false;
+  if (protocolFee > 0 && params.xfgAmount <= protocolFee + fee) return false;
+  if (protocolFee == 0 && params.xfgAmount <= fee) return false;
 
   // Fetch decoy outputs (MIN_RING_SIZE - 1 decoys)
   std::vector<RandomOutputEntry> decoys;
@@ -181,13 +184,24 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
   std::memset(&input.keyImage, 0, sizeof(input.keyImage));
   tx.inputs.push_back(input);
 
-  // Output: send (amount - fee) to destination
+  // Output: send (amount - protocolFee - networkFee) to destination
   CryptoNote::KeyOutput keyOut;
   keyOut.key = destinationKey;
   CryptoNote::TransactionOutput output;
-  output.amount = params.xfgAmount - fee;
+  output.amount = params.xfgAmount - protocolFee;
   output.target = keyOut;
   tx.outputs.push_back(output);
+
+  // Treasury output: protocol fee minus network fee (protocol subsidizes Alice's network fee)
+  uint64_t treasuryAmount = protocolFee > fee ? protocolFee - fee : 0;
+  if (treasuryAmount > 0) {
+    CryptoNote::KeyOutput treasuryOut;
+    treasuryOut.key = treasuryKey;
+    CryptoNote::TransactionOutput treasuryOutput;
+    treasuryOutput.amount = treasuryAmount;
+    treasuryOutput.target = treasuryOut;
+    tx.outputs.push_back(treasuryOutput);
+  }
 
   // Empty signature slot (will be filled by ringRound2Finalize)
   tx.signatures.push_back(std::vector<Crypto::Signature>(ring.size()));

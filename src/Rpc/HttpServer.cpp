@@ -96,7 +96,9 @@ void HttpServer::acceptLoop() {
     for (;;) {
       HttpRequest req;
       HttpResponse resp;
-	  resp.addHeader("Access-Control-Allow-Origin", "http://127.0.0.1");
+	  resp.addHeader("Access-Control-Allow-Origin", "*");
+	  resp.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+	  resp.addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 	  resp.addHeader("content-type", "application/json");
 
       parser.receiveRequest(stream, req);

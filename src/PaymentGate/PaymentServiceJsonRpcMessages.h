@@ -853,4 +853,28 @@ struct SendFusionTransaction
   };
 };
 
+struct GetHealth
+{
+  struct Request
+  {
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    bool daemon;
+    bool wallet;
+    bool swap;
+    uint32_t height = 0;
+    uint32_t targetHeight = 0;
+    std::string lastBlockHash;
+    uint32_t peerCount = 0;
+    uint32_t depositCount = 0;
+    uint32_t transactionCount = 0;
+    uint32_t addressCount = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
 } //namespace PaymentService

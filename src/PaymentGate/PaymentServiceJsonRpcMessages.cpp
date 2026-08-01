@@ -599,4 +599,22 @@ void CreateBurnDepositLarge::Response::serialize(CryptoNote::ISerializer &serial
 
 
 
+void GetHealth::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+}
+
+void GetHealth::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(daemon, "daemon");
+  serializer(wallet, "wallet");
+  serializer(swap, "swap");
+  serializer(height, "height");
+  serializer(targetHeight, "targetHeight");
+  serializer(lastBlockHash, "lastBlockHash");
+  serializer(peerCount, "peerCount");
+  serializer(depositCount, "depositCount");
+  serializer(transactionCount, "transactionCount");
+  serializer(addressCount, "addressCount");
+}
+
 } // namespace PaymentService

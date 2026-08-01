@@ -151,6 +151,11 @@ struct SwapParams {
 
   std::string chainState;
 
+  // Protocol fee: initiation 1% + claim 1% = 2% total for claims, 1% initiation for refunds.
+  // Set by SwapDaemon before calling buildUnsignedEscrowSpend.
+  uint64_t protocolFee = 0;                // protocol fee in atomic units (0 = no fee)
+  Crypto::PublicKey treasuryPubKey;        // treasury output key (from vault derivation)
+
   // ── Collaborative ring signature peer state (persisted for restart resilience)
   // These are populated by handlePeerMessage() when the peer sends Ring Round 1/2
   // data.  They survive daemon restarts so the collaborative ring sig can

@@ -84,7 +84,9 @@ public:
       FuegoRpcClient& rpc,
       const SwapParams& params,
       const Crypto::PublicKey& destinationKey,  // one-time output key for recipient
-      uint64_t fee,
+      uint64_t protocolFee,                      // protocol fee sent to treasury (0 = no treasury output)
+      const Crypto::PublicKey& treasuryKey,      // treasury output key (ignored if protocolFee == 0)
+      uint64_t fee,                              // network fee
       CryptoNote::Transaction& tx,
       Crypto::Hash& prefixHash,
       CollaborativeRingState& ringState);

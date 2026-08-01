@@ -32,6 +32,13 @@
 #include <System/Context.h>
 #include "Wallet/WalletGreen.h"
 
+#include "SwapDaemon/SwapDaemon.h"
+#include "SwapDaemon/SwapDatabase.h"
+#include "SwapDaemon/StatusServer.h"
+#include "SwapDaemon/RpcServer.h"
+#include "CryptoNoteCore/SwapOfferRelay.h"
+#include <boost/filesystem.hpp>
+
 #ifdef ERROR
 #undef ERROR
 #endif
@@ -191,6 +198,24 @@ void PaymentGateService::runInProcess(Logging::LoggerRef& log) {
     << config.remoteNodeConfig.daemonHost << ":" << config.remoteNodeConfig.daemonPort;
   rpcServer.start(config.remoteNodeConfig.daemonHost, config.remoteNodeConfig.daemonPort);
   log(Logging::INFO) << "Core rpc server started ok";
+
+  // Initialize swap offer relay
+  auto swapRelay = std::make_unique<CryptoNote::SwapOfferRelay>(core, p2pNode, &p2pNode);
+  swapRelay->start();
+  rpcServer.setSwapRelay(swapRelay.get());
+  log(Logging::INFO) << "Swap offer relay started";
+
+  // Initialize SwapDaemon (embedded — replaces standalone xfg-swapd)
+  std::string swapDataDir = config.coreConfig.configFolder + "/swaps";
+  boost::filesystem::create_directories(swapDataDir);
+  auto swapDb = std::make_unique<XfgSwap::SwapDatabase>(swapDataDir);
+  auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
+    "127.0.0.1", config.remoteNodeConfig.daemonPort, swapDataDir, logger);
+  swapDaemon->setSwapRelay(swapRelay.get());
+  swapDaemon->start();
+  rpcServer.setSwapDb(swapDb.get());
+  rpcServer.setSwapDaemon(swapDaemon.get());
+  log(Logging::INFO) << "SwapDaemon started";
 
   log(Logging::INFO) << "Spawning p2p server";
 

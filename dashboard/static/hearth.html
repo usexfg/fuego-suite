@@ -147,8 +147,8 @@
       margin-bottom: 4px;
       font-family: var(--font-sans);
     }
-    .hearth-side-bids .hearth-side-label { color: #e8734a; }
-    .hearth-side-asks .hearth-side-label { color: #5b8def; }
+    .hearth-side-bids .hearth-side-label { color: #ff6b35; }
+    .hearth-side-asks .hearth-side-label { color: #00d4aa; }
 
     .hearth-order {
       display: flex;
@@ -162,12 +162,12 @@
       position: relative;
     }
     .hearth-order:hover { background: rgba(255,255,255,0.04); }
-    .hearth-order-bid .hearth-order-price { color: #e8734a; text-shadow: 0 0 4px rgba(232,115,74,0.25); }
-    .hearth-order-ask .hearth-order-price { color: #5b8def; text-shadow: 0 0 4px rgba(91,141,239,0.25); }
+    .hearth-order-bid .hearth-order-price { color: #ff6b35; text-shadow: 0 0 4px rgba(255,107,53,0.25); }
+    .hearth-order-ask .hearth-order-price { color: #00d4aa; text-shadow: 0 0 4px rgba(0,212,170,0.25); }
     .hearth-order-amount { color: #8888a0; font-size: 10px; }
     .hearth-order-bar { position: absolute; bottom: 0; left: 0; height: 2px; border-radius: 1px; opacity: 0.35; }
-    .hearth-order-bid .hearth-order-bar { background: #e8734a; }
-    .hearth-order-ask .hearth-order-bar { background: #5b8def; }
+    .hearth-order-bid .hearth-order-bar { background: #ff6b35; }
+    .hearth-order-ask .hearth-order-bar { background: #00d4aa; }
     /* ── Center: Chart + Price + Orders ── */
     .fireplace {
       display: flex;
@@ -365,7 +365,7 @@
 </head>
 <body>
   <nav class="nav">
-    <a href="/" class="nav-brand">🔥 Fuego</a>
+    <a href="/" class="nav-brand"><img src="/coin-icons/fuego.png" alt="Fuego" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:4px;"></a>
     <a href="/hearth.html" class="nav-link active">Hearth</a>
     <a href="/swapxfg.html" class="nav-link">SwapXFG</a>
     <div class="nav-status">
@@ -412,9 +412,9 @@
               <span id="ch-time"></span>
             </div>
             <div class="chart-indicators" id="chart-indicators">
-              <button class="ind-btn active" data-ind="sma20" title="MA (SMA 20)"><span class="ind-dot" style="background:#ffc107;"></span>MA</button>
-              <button class="ind-btn" data-ind="ema12" title="EMA 12"><span class="ind-dot" style="background:#a855f7;"></span>EMA</button>
-              <button class="ind-btn active" data-ind="vol" title="Volume"><span class="ind-dot" style="background:#4a9eff;"></span>VOL</button>
+              <button class="ind-btn active" data-ind="sma20" title="MA (SMA 20)"><span class="ind-dot" style="background:#dcb450;"></span>MA</button>
+              <button class="ind-btn" data-ind="ema12" title="EMA 12"><span class="ind-dot" style="background:#a064c8;"></span>EMA</button>
+              <button class="ind-btn active" data-ind="vol" title="Volume"><span class="ind-dot" style="background:#648cc8;"></span>VOL</button>
             </div>
             <div class="chart-drawing-tools" id="chart-drawing-tools">
               <button class="draw-btn" data-tool="segment" title="Trend Line">⁄</button>

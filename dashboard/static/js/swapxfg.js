@@ -6,18 +6,18 @@ const SwapXFG = (() => {
   let swapDirection = 0; // 0 = XFG→CTR, 1 = CTR→XFG
 
   const CHAIN_INFO = {
-    BTC:      { icon: '₿', color: '#f7931a', ticker: 'BTC', name: 'Bitcoin' },
-    ETH:      { icon: 'Ξ', color: '#627eea', ticker: 'ETH', name: 'Ethereum' },
-    SOL:      { icon: 'S', color: '#9945ff', ticker: 'SOL', name: 'Solana' },
-    XMR:      { icon: 'M', color: '#ff6600', ticker: 'XMR', name: 'Monero' },
-    LTC:      { icon: 'Ł', color: '#bfbbbb', ticker: 'LTC', name: 'Litecoin' },
-    BCH:      { icon: 'B', color: '#8dc351', ticker: 'BCH', name: 'Bitcoin Cash' },
-    ARB:      { icon: 'A', color: '#28a0f0', ticker: 'ARB', name: 'Arbitrum' },
-    BASE:     { icon: 'B', color: '#0052ff', ticker: 'BASE', name: 'Base' },
-    BNB:      { icon: 'N', color: '#f3ba2f', ticker: 'BNB', name: 'BNB Chain' },
-    DCR:      { icon: 'D', color: '#2970ff', ticker: 'DCR', name: 'Decred' },
-    KMD_SPV:  { icon: 'K', color: '#2b6def', ticker: 'KMD', name: 'Komodo' },
-    POLYGON:  { icon: 'P', color: '#8247e5', ticker: 'MATIC', name: 'Polygon' }
+    BTC:      { icon: '/coin-icons/btc.png', color: '#f7931a', ticker: 'BTC', name: 'Bitcoin' },
+    ETH:      { icon: '/coin-icons/eth.png', color: '#627eea', ticker: 'ETH', name: 'Ethereum' },
+    SOL:      { icon: '/coin-icons/sol.png', color: '#9945ff', ticker: 'SOL', name: 'Solana' },
+    XMR:      { icon: '/coin-icons/monero-xmr-logo.png', color: '#ff6600', ticker: 'XMR', name: 'Monero' },
+    LTC:      { icon: '/coin-icons/ltc.png', color: '#bfbbbb', ticker: 'LTC', name: 'Litecoin' },
+    BCH:      { icon: '/coin-icons/bch.png', color: '#8dc351', ticker: 'BCH', name: 'Bitcoin Cash' },
+    ARB:      { icon: '/coin-icons/arb.png', color: '#28a0f0', ticker: 'ARB', name: 'Arbitrum' },
+    BASE:     { icon: '/coin-icons/base.png', color: '#0052ff', ticker: 'BASE', name: 'Base' },
+    BNB:      { icon: '/coin-icons/bnb.png', color: '#f3ba2f', ticker: 'BNB', name: 'BNB Chain' },
+    DCR:      { icon: '/coin-icons/dcr.png', color: '#2970ff', ticker: 'DCR', name: 'Decred' },
+    KMD_SPV:  { icon: '/coin-icons/kmd.png', color: '#2b6def', ticker: 'KMD', name: 'Komodo' },
+    POLYGON:  { icon: '/coin-icons/matic.png', color: '#8247e5', ticker: 'MATIC', name: 'Polygon' }
   };
 
   // ── Init ──
@@ -86,8 +86,12 @@ const SwapXFG = (() => {
     select.addEventListener('change', () => {
       const chain = select.value;
       const info = CHAIN_INFO[chain];
-      document.getElementById('to-chain-icon').textContent = info.icon;
-      document.getElementById('to-chain-icon').style.color = info.color;
+      const iconImg = document.getElementById('to-chain-icon');
+      iconImg.src = info.icon;
+      iconImg.alt = info.ticker;
+      iconImg.style.borderRadius = '50%';
+      iconImg.style.width = '32px';
+      iconImg.style.height = '32px';
       document.getElementById('to-chain-name').textContent = info.name;
       document.getElementById('to-chain-ticker').textContent = info.ticker;
     });

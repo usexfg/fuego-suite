@@ -76,23 +76,33 @@ const Hearth = (() => {
         },
         candle: {
           type: 'candle_solid',
-          bar: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8888a0' },
+          bar: {
+            upColor: '#e8734a',
+            downColor: '#5b8def',
+            noChangeColor: '#8a8a9a',
+            upBorderColor: '#e8734a',
+            downBorderColor: '#5b8def',
+            noChangeBorderColor: '#8a8a9a',
+            upWickColor: '#e8734a',
+            downWickColor: '#5b8def',
+            noChangeWickColor: '#8a8a9a'
+          },
           areaLineSize: 1,
           priceMark: {
-            high: { color: '#e8734a', textOffset: 5, textSize: 10 },
-            low: { color: '#5b8def', textOffset: 5, textSize: 10 },
-            last: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8888a0' }
+            high: { color: '#c0603a', textOffset: 5, textSize: 10 },
+            low: { color: '#4a70b8', textOffset: 5, textSize: 10 },
+            last: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8a8a9a' }
           }
         },
         indicator: {
-          ohlc: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8888a0' },
+          ohlc: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8a8a9a' },
           bars: [
-            { color: '#4a9eff', borderColor: '#4a9eff' }
+            { color: 'rgba(100,140,200,0.5)', borderColor: 'rgba(100,140,200,0.7)' }
           ],
           lines: [
-            { color: '#ffc107', size: 1 },
-            { color: '#a855f7', size: 1 },
-            { color: '#4a9eff', size: 1 }
+            { color: 'rgba(220,180,80,0.7)', size: 1 },
+            { color: 'rgba(160,100,200,0.7)', size: 1 },
+            { color: 'rgba(100,140,200,0.7)', size: 1 }
           ]
         },
         xAxis: {
@@ -166,12 +176,10 @@ const Hearth = (() => {
 
   function rebuildIndicators() {
     if (!priceChart) return;
-    // Remove all existing indicators from both panes
-    const candleInds = priceChart.getIndicatorByPaneId('candle_pane') || [];
-    const volInds = priceChart.getIndicatorByPaneId('vol_pane') || [];
-    candleInds.forEach(i => priceChart.removeIndicator('candle_pane', i.name));
-    volInds.forEach(i => priceChart.removeIndicator('vol_pane', i.name));
-    // Re-add based on toggles
+    // Remove then re-add indicators
+    try { priceChart.removeIndicator('candle_pane', 'MA'); } catch(e) {}
+    try { priceChart.removeIndicator('candle_pane', 'EMA'); } catch(e) {}
+    try { priceChart.removeIndicator('vol_pane', 'VOL'); } catch(e) {}
     if (indicators.sma20) priceChart.createIndicator('MA', false, { id: 'candle_pane' });
     if (indicators.ema12) priceChart.createIndicator('EMA', false, { id: 'candle_pane' });
     if (indicators.vol) priceChart.createIndicator('VOL', false, { id: 'vol_pane' });
@@ -184,7 +192,7 @@ const Hearth = (() => {
       segment: { name: 'segment', styles: s },
       horizontalRay: { name: 'priceLine', styles: { ...s, line: { color: '#ff6b35', style: 2, size: 1 } } },
       fibonacci: { name: 'fibonacciLine', styles: { ...s, polyline: { color: '#ffc107', style: 2, size: 1 } } },
-      rectangle: { name: 'rectangle', styles: { ...s, polygon: { color: 'rgba(255,107,53,0.1)', borderColor: '#ff6b35' } } }
+      rectangle: { name: 'rect', styles: { ...s, polygon: { color: 'rgba(255,107,53,0.1)', borderColor: '#ff6b35' } } }
     };
     const config = configs[tool];
     if (config) {

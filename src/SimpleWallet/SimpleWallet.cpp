@@ -4169,8 +4169,8 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint8_t direction;
-  if (!Common::fromString(args[0], direction) || direction > 1) {
+  int directionInt;
+  if (!Common::fromString(args[0], directionInt) || directionInt < 0 || directionInt > 1) {
     fail_msg_writer() << "Invalid direction: use 0 (XFG->HEAT) or 1 (HEAT->XFG)";
     return false;
   }
@@ -4194,6 +4194,8 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
                       << ", needed: " << m_currency.formatAmount(amount + fee);
     return false;
   }
+
+  uint8_t direction = static_cast<uint8_t>(directionInt);
 
   success_msg_writer() << "Swap " << m_currency.formatAmount(amount)
                        << (direction == 0 ? " XFG -> HEAT" : " HEAT -> XFG")

@@ -212,7 +212,8 @@ void PaymentGateService::runInProcess(Logging::LoggerRef& log) {
   auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
     "127.0.0.1", config.remoteNodeConfig.daemonPort, swapDataDir, logger);
   swapDaemon->setSwapRelay(swapRelay.get());
-  swapDaemon->start();
+  // Disable P2P for embedded mode (fuegod already has its own P2P on different port)
+  swapDaemon->start(0, "");
   rpcServer.setSwapDb(swapDb.get());
   rpcServer.setSwapDaemon(swapDaemon.get());
   log(Logging::INFO) << "SwapDaemon started";

@@ -56,11 +56,18 @@ struct SendTransactionContext
   bool isV10HeatMint = false;
   uint64_t v10XfgBurned = 0;
   uint64_t v10HeatMinted = 0;
+  bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   bool isV10AmmSwap = false;
   uint8_t v10SwapDirection = 0;
   uint64_t v10SwapInput = 0;
   uint64_t v10SwapOutput = 0;
   uint64_t v10SwapMinOutput = 0;
+
+  // v10 LP remove
+  bool isV10LpRemove = false;
+  uint64_t v10LpSharesBurned = 0;
+  uint64_t v10LpMinXfg = 0;
+  uint64_t v10LpMinHeat = 0;
 
   // v10 HEAT transfer
   bool isV10HeatTransfer = false;

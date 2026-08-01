@@ -563,9 +563,12 @@ namespace CryptoNote
       nextRequest = doSendAmmSwapV10CommitmentTransaction(std::move(context), events,
         context->v10SwapDirection, context->v10SwapInput,
         context->v10SwapOutput, context->v10SwapMinOutput);
-    } else if (context->isV10HeatMint) {
+    } else if (context->isV10LpAdd) {
       nextRequest = doSendLpAddV10Transaction(std::move(context), events,
         context->v10XfgBurned, context->v10HeatMinted);
+    } else if (context->isV10LpRemove) {
+      nextRequest = doSendLpRemoveV10Transaction(std::move(context), events,
+        context->v10LpSharesBurned, context->v10LpMinXfg, context->v10LpMinHeat);
     } else if (context->isV10AmmSwap && context->depositTerm > 0 && context->depositTerm < parameters::DEPOSIT_TERM_LP) {
       // HEAT CD deposit: spend HEAT → CD commitment output
       nextRequest = doSendHeatDepositV10Transaction(std::move(context), events,
@@ -742,15 +745,15 @@ namespace CryptoNote
       }
     }
 
-    if (context->isV10HeatMint)
+    if (context->isV10LpAdd)
     {
-      // Check if this is actually an LP add (reuses HeatMint flag with depositTerm == v10HeatMinted)
-      if (context->v10HeatMinted > 0 && context->depositTerm == context->v10HeatMinted) {
-        uint64_t heatAmount = context->v10HeatMinted;
-        std::vector<DepositId> heatIds;
-        nextRequest = makeGetRandomCommitmentOutsRequest(std::move(context), heatAmount, heatIds);
-        return;
-      }
+      uint64_t heatAmount = context->v10HeatMinted;
+      std::vector<DepositId> heatIds;
+      nextRequest = makeGetRandomCommitmentOutsRequest(std::move(context), heatAmount, heatIds);
+      return;
+    }
+    else if (context->isV10HeatMint)
+    {
       nextRequest = doSendHeatMintV10Transaction(std::move(context), events,
         context->v10XfgBurned, context->v10HeatMinted);
     }
@@ -1960,13 +1963,65 @@ namespace CryptoNote
     transactionId = m_transactionsCache.addNewTransaction(neededXfg + amountHeat, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
     context->depositTerm = amountHeat;
-    context->isV10HeatMint = true;
+    context->isV10LpAdd = true;
     context->v10XfgBurned = amountXfg;
     context->v10HeatMinted = amountHeat;
     setSpendingTransactionToDeposits(transactionId, selectedHeatIds);
 
     Crypto::SecretKey transactionSK;
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeLpRemoveV10Request(
+      TransactionId &transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t lpShares,
+      uint64_t minXfg,
+      uint64_t minHeat,
+      uint64_t fee,
+      uint64_t mixIn)
+  {
+    throwIf(lpShares == 0, error::WRONG_AMOUNT);
+
+    // Find LP (DEPOSIT_TERM_LP) deposits
+    std::vector<DepositId> lpDepositIds;
+    size_t depositCount = m_transactionsCache.getDepositCount();
+    for (size_t i = 0; i < depositCount; ++i) {
+      Deposit d;
+      if (m_transactionsCache.getDeposit(i, d) && d.term == parameters::DEPOSIT_TERM_LP && !d.locked && d.spendingTransactionId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+        lpDepositIds.push_back(i);
+      }
+    }
+
+    // Select LP deposits to burn
+    uint64_t totalLp = 0;
+    std::vector<DepositId> selectedIds;
+    for (auto id : lpDepositIds) {
+      Deposit d;
+      m_transactionsCache.getDeposit(id, d);
+      totalLp += d.amount;
+      selectedIds.push_back(id);
+      if (totalLp >= lpShares) break;
+    }
+    throwIf(totalLp < lpShares, error::WRONG_AMOUNT);
+
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+    context->mixIn = mixIn;
+
+    context->foundMoney = selectDepositTransfers(selectedIds, context->selectedTransfers);
+    throwIf(context->foundMoney < lpShares, error::WRONG_AMOUNT);
+
+    transactionId = m_transactionsCache.addNewTransaction(lpShares, fee, std::string(), {}, 0, {});
+    context->transactionId = transactionId;
+    context->isV10LpRemove = true;
+    context->v10LpSharesBurned = lpShares;
+    context->v10LpMinXfg = minXfg;
+    context->v10LpMinHeat = minHeat;
+    setSpendingTransactionToDeposits(transactionId, selectedIds);
+
+    uint64_t depositAmount = context->selectedTransfers.empty() ? 0 : context->selectedTransfers[0].amount;
+    return makeGetRandomCommitmentOutsRequest(std::move(context), depositAmount, selectedIds);
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeAmmSwapV10Request(
@@ -2457,6 +2512,126 @@ namespace CryptoNote
 
       Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
       m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, amountXfg + amountHeat, context->selectedTransfers);
+      notifyBalanceChanged(events);
+
+      return std::unique_ptr<WalletRequest>(new WalletRelayTransactionRequest(lowlevelTransaction,
+        std::bind(&WalletTransactionSender::relayTransactionCallback, this, context,
+          std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+    } catch (std::exception &e) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
+      return {};
+    }
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendLpRemoveV10Transaction(
+      std::shared_ptr<SendTransactionContext> &&context,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t lpSharesBurned,
+      uint64_t minXfg,
+      uint64_t minHeat)
+  {
+    if (m_isStoping) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
+      return {};
+    }
+    try {
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      uint64_t fee = m_currency.minimumFee();
+
+      // Auth tag extra: TransactionExtraAmmRemoveLiquidity
+      std::vector<uint8_t> extra;
+      addAmmRemoveLiquidityToExtra(extra, lpSharesBurned, minXfg, minHeat);
+      CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+      transaction->appendExtra(extraData);
+
+      transaction->setUnlockTime(0);
+
+      // Build commitment spend inputs from selected LP deposits
+      const size_t ringSize = static_cast<size_t>(context->mixIn);
+      const auto& decoys = context->commitmentOuts;
+      size_t commitmentDepositIdx = 0;
+      for (size_t depIdx = 0; depIdx < context->selectedTransfers.size(); ++depIdx) {
+        const auto& transfer = context->selectedTransfers[depIdx];
+        if (transfer.type != TransactionTypes::OutputType::Commitment) continue;
+        if (transfer.term != parameters::DEPOSIT_TERM_LP) continue;
+
+        // Re-derive key scalar via ECDH
+        Crypto::KeyDerivation ecdh;
+        Crypto::generate_key_derivation(transfer.transactionPublicKey, m_keys.viewSecretKey, ecdh);
+        uint8_t preimage[36];
+        memcpy(preimage, &ecdh, 32);
+        const uint32_t outIdx = transfer.outputInTransaction;
+        preimage[32] = outIdx & 0xFF; preimage[33] = (outIdx >> 8) & 0xFF;
+        preimage[34] = (outIdx >> 16) & 0xFF; preimage[35] = (outIdx >> 24) & 0xFF;
+        Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+        std::array<uint8_t, 32> depositSecret;
+        memcpy(depositSecret.data(), h.data, 32);
+        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
+        KeyPair commitmentKeyPair = {ck.commitKey, ck.keyScalar};
+
+        // Filter decoys
+        std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
+        for (const auto& d : decoys)
+          if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex))
+            filteredDecoys.push_back(d);
+        const size_t numDecoys = std::min(filteredDecoys.size(), ringSize - 1);
+        const size_t actualRing = numDecoys + 1;
+        const size_t realPos = Crypto::rand<size_t>() % actualRing;
+
+        // Build ring
+        std::vector<uint32_t> absIndices;
+        std::vector<const Crypto::PublicKey*> ringKeys;
+        size_t decoyPos = 0;
+        for (size_t slot = 0; slot < actualRing; ++slot) {
+          if (slot == realPos) {
+            absIndices.push_back(transfer.globalOutputIndex);
+            ringKeys.push_back(&commitmentKeyPair.publicKey);
+          } else {
+            absIndices.push_back(filteredDecoys[decoyPos].global_amount_index);
+            ringKeys.push_back(&filteredDecoys[decoyPos].commit_key);
+            ++decoyPos;
+          }
+        }
+
+        // Sort by global index
+        std::vector<size_t> order(actualRing);
+        std::iota(order.begin(), order.end(), 0);
+        std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return absIndices[a] < absIndices[b]; });
+        size_t sortedRealPos = 0;
+        std::vector<uint32_t> sortedAbs(actualRing);
+        std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
+        for (size_t s = 0; s < actualRing; ++s) {
+          sortedAbs[s] = absIndices[order[s]];
+          sortedKeys[s] = ringKeys[order[s]];
+          if (order[s] == realPos) sortedRealPos = s;
+        }
+
+        // Convert to relative offsets
+        std::vector<uint32_t> relOffsets(actualRing);
+        relOffsets[0] = sortedAbs[0];
+        for (size_t s = 1; s < actualRing; ++s) relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
+
+        // Build and sign commitment input
+        TransactionInputCommitmentSpend csInput;
+        csInput.amount = transfer.amount;
+        csInput.outputIndexes = relOffsets;
+        csInput.keyImage = ck.keyImage;
+        transaction->addInput(csInput);
+        transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
+        commitmentDepositIdx++;
+      }
+
+      // Change: return fee remainder to self as KeyOutput
+      uint64_t totalLp = context->foundMoney;
+      if (totalLp > lpSharesBurned) {
+        uint64_t changeAmount = totalLp - lpSharesBurned;
+        std::vector<uint64_t> decomposedChange = splitAmount(changeAmount, context->dustPolicy.dustThreshold);
+        for (uint64_t changeOut : decomposedChange)
+          transaction->addOutput(changeOut, m_keys.address);
+      }
+
+      Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
+      m_transactionsCache.updateTransaction(context->transactionId, lowlevelTransaction, lpSharesBurned, context->selectedTransfers);
       notifyBalanceChanged(events);
 
       return std::unique_ptr<WalletRequest>(new WalletRelayTransactionRequest(lowlevelTransaction,

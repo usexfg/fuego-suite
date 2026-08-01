@@ -4056,7 +4056,7 @@ bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT algorithmic supply-rate coin (v10+):";
   success_msg_writer() << "  Initial redemption price: 0.2 XFG per HEAT";
   success_msg_writer() << "  Mint: burn XFG -> mint HEAT at current redemption price";
-  success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM (0.3% fee to LP providers)";
+  success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM (1.0% fee to CD yield pool)";
   success_msg_writer() << "  PI Controller: value-band target, KP=0.08 KI=0.015";
   success_msg_writer() << "  Query daemon for live metrics: /heat_metrics";
   return true;
@@ -4094,37 +4094,72 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
     return false;
   }
 
-  uint64_t heatAmount = xfgAmount * parameters::HEAT_LAUNCH_RATIO_DENOM
-                        / parameters::HEAT_LAUNCH_RATIO_NUM;
+  // Query live AMM pool rate from daemon — consensus validates against this, not hardcoded ratio
+  uint64_t poolReserveXfg = 0;
+  uint64_t poolReserveHeat = 0;
+  try {
+    COMMAND_RPC_AMM_POOL_INFO::request poolReq;
+    COMMAND_RPC_AMM_POOL_INFO::response poolRes;
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
+    poolReserveXfg = poolRes.reserve_xfg;
+    poolReserveHeat = poolRes.reserve_heat;
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Failed to query AMM pool: " << e.what();
+    return false;
+  }
+
+  if (poolReserveXfg == 0 || poolReserveHeat == 0) {
+    fail_msg_writer() << "AMM pool is empty — cannot mint HEAT yet";
+    return false;
+  }
+
+  // Calculate HEAT amount using live pool rate: heatAmount = xfgAmount * reserveHeat / reserveXfg
+  uint64_t heatAmount = xfgAmount * poolReserveHeat / poolReserveXfg;
+
+  // Enforce minimum HEAT mint (0.1 HEAT mainnet, 0.01 HEAT testnet)
+  uint64_t minHeat = m_currency.isTestnet()
+    ? CryptoNote::TESTNET_HEAT_MINT_MIN_HEAT
+    : parameters::HEAT_MINT_MIN_HEAT;
+  if (heatAmount < minHeat) {
+    fail_msg_writer() << "Minimum HEAT mint is " << m_currency.formatAmount(minHeat)
+                      << " HEAT. You need at least "
+                      << m_currency.formatAmount(minHeat * poolReserveXfg / poolReserveHeat + 1)
+                      << " XFG to mint that much.";
+    return false;
+  }
 
   success_msg_writer() << "HEAT Mint:";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
-  success_msg_writer() << "  Rate: " << parameters::HEAT_LAUNCH_RATIO_DENOM << "/"
-                       << parameters::HEAT_LAUNCH_RATIO_NUM << " HEAT per XFG";
+  success_msg_writer() << "  Rate: " << m_currency.formatAmount(poolReserveXfg)
+                       << " XFG / " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  CryptoNote::WalletLegacyTransfer selfTransfer;
-  selfTransfer.address = myAddress;
-  selfTransfer.amount = static_cast<int64_t>(xfgAmount - fee);
-  transfers.push_back(selfTransfer);
+  // Use mintHeatV10() — dedicated HEAT mint API that builds proper commitment tx
+  // Pass 0 for mixin on testnet (no peers = no decoys for ring signatures)
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
 
-  std::vector<uint8_t> extra;
-  addAmmSwapToExtra(extra, 0, xfgAmount - fee, 1);
-  std::string extraStr(extra.begin(), extra.end());
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::TransactionId txId = m_wallet->mintHeatV10(xfgAmount, heatAmount, fee, mixIn);
 
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Transaction submitted: " << tx;
-    return true;
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Mint HEAT transaction failed";
+    return false;
   }
-  fail_msg_writer() << "Transaction failed";
-  return false;
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send mint transaction: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Transaction submitted: " << txId;
+  return true;
 }
 
 bool simple_wallet::swap(const std::vector<std::string>& args) {
@@ -4160,30 +4195,36 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
     return false;
   }
 
-  std::vector<uint8_t> extra;
-  addAmmSwapToExtra(extra, direction, amount, minOutput);
-  std::string extraStr(extra.begin(), extra.end());
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  success_msg_writer() << "Swap " << m_currency.formatAmount(amount)
+                       << (direction == 0 ? " XFG -> HEAT" : " HEAT -> XFG")
+                       << " | min output: " << m_currency.formatAmount(minOutput);
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  CryptoNote::WalletLegacyTransfer selfTransfer;
-  selfTransfer.address = myAddress;
-  selfTransfer.amount = static_cast<int64_t>(amount);
-  transfers.push_back(selfTransfer);
+  // Use ammSwapV10() — dedicated AMM swap API that builds proper commitment tx
+  // For direction=0 (XFG->HEAT): outputAmount = estimated HEAT (use minOutput as estimate)
+  // For direction=1 (HEAT->XFG): outputAmount = estimated XFG (use minOutput as estimate)
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  uint64_t outputAmount = minOutput; // estimated output for auth tag
 
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Swap submitted: " << m_currency.formatAmount(amount)
-                         << (direction == 0 ? " XFG to HEAT" : " HEAT to XFG")
-                         << " | min output: " << m_currency.formatAmount(minOutput)
-                         << " | tx: " << tx;
-    return true;
+  CryptoNote::TransactionId txId = m_wallet->ammSwapV10(direction, amount, outputAmount, minOutput, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Swap transaction failed";
+    return false;
   }
-  fail_msg_writer() << "Transaction failed";
-  return false;
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send swap transaction: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Swap submitted: tx " << txId;
+  return true;
 }
 
 bool simple_wallet::add_liq(const std::vector<std::string>& args) {
@@ -4203,31 +4244,37 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   uint64_t fee = m_currency.minimumFee();
   uint64_t balance = m_wallet->actualBalance();
   if (balance < xfgAmount + fee) {
-    fail_msg_writer() << "Insufficient XFG balance";
+    fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(balance)
+                      << ", needed: " << m_currency.formatAmount(xfgAmount + fee);
     return false;
   }
 
-  std::vector<uint8_t> extra;
-  addAmmAddLiquidityToExtra(extra, xfgAmount, heatAmount);
-  std::string extraStr(extra.begin(), extra.end());
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  success_msg_writer() << "Add liquidity: " << m_currency.formatAmount(xfgAmount)
+                       << " XFG + " << m_currency.formatAmount(heatAmount) << " HEAT";
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  transfers.push_back({myAddress, static_cast<int64_t>(xfgAmount)});
-  transfers.push_back({myAddress, static_cast<int64_t>(heatAmount)});
+  // Use lpAddV10() — dedicated LP add API that builds proper commitment tx with LP term outputs
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
 
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Liquidity add submitted: " << m_currency.formatAmount(xfgAmount)
-                         << " XFG + " << m_currency.formatAmount(heatAmount) << " HEAT"
-                         << " | tx: " << tx;
-    return true;
+  CryptoNote::TransactionId txId = m_wallet->lpAddV10(xfgAmount, heatAmount, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Add liquidity transaction failed";
+    return false;
   }
-  fail_msg_writer() << "Transaction failed";
-  return false;
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send add liquidity transaction: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Liquidity add submitted: tx " << txId;
+  return true;
 }
 
 bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
@@ -4247,33 +4294,34 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   }
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t balance = m_wallet->actualBalance();
-  if (balance < fee) {
-    fail_msg_writer() << "Insufficient balance for fee";
+
+  success_msg_writer() << "Remove liquidity: " << m_currency.formatAmount(lpShares)
+                       << " LP shares | min " << m_currency.formatAmount(minXfg) << " XFG + "
+                       << m_currency.formatAmount(minHeat) << " HEAT";
+
+  // Use lpRemoveV10() — dedicated LP remove API that burns LP commitment inputs
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  CryptoNote::TransactionId txId = m_wallet->lpRemoveV10(lpShares, minXfg, minHeat, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Remove liquidity transaction failed";
     return false;
   }
 
-  std::vector<uint8_t> extra;
-  addAmmRemoveLiquidityToExtra(extra, lpShares, minXfg, minHeat);
-  std::string extraStr(extra.begin(), extra.end());
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  transfers.push_back({myAddress, static_cast<int64_t>(lpShares)});
-
-  Crypto::SecretKey transactionSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(transactionSK, transfers, fee, extraStr, mixIn, 0, {}, 0);
-
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "Liquidity remove submitted: " << m_currency.formatAmount(lpShares)
-                         << " LP shares | min " << m_currency.formatAmount(minXfg) << " XFG + "
-                         << m_currency.formatAmount(minHeat) << " HEAT"
-                         << " | tx: " << tx;
-    return true;
+  if (sendError) {
+    fail_msg_writer() << "Failed to send remove liquidity transaction: " << sendError.message();
+    return false;
   }
-  fail_msg_writer() << "Transaction failed";
-  return false;
+
+  success_msg_writer() << "Liquidity remove submitted: tx " << txId;
+  return true;
 }
 
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
@@ -4294,27 +4342,39 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   uint64_t fee = m_currency.minimumFee();
   uint64_t balance = m_wallet->actualBalance();
   if (balance < amount + bankingFee + fee) {
-    fail_msg_writer() << "Insufficient balance (includes 0.1% banking fee)";
+    fail_msg_writer() << "Insufficient balance. Available: " << m_currency.formatAmount(balance)
+                      << ", needed: " << m_currency.formatAmount(amount + bankingFee + fee)
+                      << " (includes 0.1% banking fee)";
     return false;
   }
 
-  std::string myAddress = m_wallet->getAddress();
-  std::vector<CryptoNote::WalletLegacyTransfer> transfers;
-  transfers.push_back({myAddress, static_cast<int64_t>(amount)});
-  transfers.push_back({CryptoNote::FUEGO_DEV_FUND_ADDRESS, static_cast<int64_t>(bankingFee)});
+  success_msg_writer() << "HEAT Deposit: " << m_currency.formatAmount(amount)
+                       << " HEAT for " << termEpochs << " epochs"
+                       << " | banking fee: " << m_currency.formatAmount(bankingFee);
 
-  uint64_t mixIn = CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  Crypto::SecretKey txSK;
-  CryptoNote::TransactionId tx = m_wallet->sendTransaction(txSK, transfers, fee, "", mixIn, 0, {}, 0);
-  if (tx != WALLET_INVALID_TRANSACTION_ID) {
-    success_msg_writer() << "HEAT CD | " << m_currency.formatAmount(amount)
-                         << " HEAT | " << termEpochs << " epochs | fee: "
-                         << m_currency.formatAmount(bankingFee)
-                         << " | tx: " << tx;
-    return true;
+  // Use heatDepositV10() — dedicated deposit API that builds proper commitment tx
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  CryptoNote::TransactionId txId = m_wallet->heatDepositV10(amount, termEpochs, bankingFee, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Deposit transaction failed";
+    return false;
   }
-  fail_msg_writer() << "Transaction failed";
-  return false;
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send deposit transaction: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Deposit submitted: tx " << txId;
+  return true;
 }
 
 bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {

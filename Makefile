@@ -27,7 +27,7 @@ build-static:
 test-release: build-release
 	cd build/release && $(MAKE) test
 
-all-release: build-release build-tui build-swapxfg
+all-release: build-release build-tui build-swapxfg build-dashboard
 
 # Build TUI separately if Go is available
 build-tui:
@@ -55,6 +55,20 @@ build-swapxfg:
 		echo "Go is not installed. Skipping swapxfg build."; \
 	fi
 
+# Build dashboard
+build-dashboard:
+	@if command -v go >/dev/null 2>&1; then \
+		echo "Building Fuego Dashboard"; \
+		cd dashboard && go mod tidy && go build -o fuego-dashboard . && \
+		mkdir -p ../build/release/bin && \
+		cp fuego-dashboard ../build/release/bin/ && \
+		cp -r static ../build/release/bin/static && \
+		chmod +x ../build/release/bin/fuego-dashboard && \
+		echo "Fuego Dashboard built successfully"; \
+	else \
+		echo "Go is not installed. Skipping dashboard build."; \
+	fi
+
 test-dynamic-supply:
 	g++ -std=c++17 -o simple_dynamic_supply_test simple_dynamic_supply_test.cpp
 	./simple_dynamic_supply_test
@@ -68,8 +82,9 @@ clean:
 	rm -rf build
 	rm -f simple_dynamic_supply_test
 	rm -f tui/build/fuego-tui
+	rm -f dashboard/fuego-dashboard
 
 tags:
 	ctags -R --sort=1 --c++-kinds=+p --fields=+iaS --extra=+q --language-force=C++ src contrib tests/gtest
 
-.PHONY: all cmake-debug build-debug test-debug all-debug cmake-release build-release test-release all-release build-tui build-swapxfg clean tags
+.PHONY: all cmake-debug build-debug test-debug all-debug cmake-release build-release test-release all-release build-tui build-swapxfg build-dashboard clean tags

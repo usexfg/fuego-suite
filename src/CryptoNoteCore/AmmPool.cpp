@@ -126,6 +126,7 @@ void AmmPoolState::serialize(ISerializer& s) {
   s(totalLpShares, "totalLpShares");
   s(accumulatedLpFeesHeat, "accumulatedLpFeesHeat");
   s(accumulatedLpFeesXfg, "accumulatedLpFeesXfg");
+  s(cdHearthFeeAccumulator, "cdHearthFeeAccumulator");
   s(pendingXfg, "pendingXfg");
   s(pendingHeat, "pendingHeat");
 

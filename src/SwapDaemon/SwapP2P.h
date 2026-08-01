@@ -68,6 +68,10 @@ public:
   // Register an asynchronous callback for every incoming message.
   void setMessageCallback(std::function<void(const SwapMessage&)> cb);
 
+  // Set a SOCKS5 proxy for outbound connections (e.g. Tor).
+  // Format: "host:port". Empty string = direct connection.
+  void setSocks5Proxy(const std::string& proxy) { m_socks5Proxy = proxy; }
+
 private:
   // Accept incoming connections in a dedicated thread.
   void acceptLoop();
@@ -88,6 +92,9 @@ private:
 
   // Read one complete framed message from a connected socket.
   bool readFramedMessage(int sock, SwapMessage& msg);
+
+  // Connect through a SOCKS5 proxy. Returns the connected socket or -1.
+  int connectViaSocks5(const std::string& host, uint16_t port);
 
   // Wire format:
   //   [4 bytes big-endian length of remaining data]
@@ -115,6 +122,8 @@ private:
   std::condition_variable m_workersDoneCv;
 
   std::function<void(const SwapMessage&)> m_callback;
+
+  std::string m_socks5Proxy; // SOCKS5 proxy "host:port" for outbound connections
 
   Logging::LoggerRef& m_logger;
 };

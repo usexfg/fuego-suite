@@ -29,7 +29,8 @@ namespace CryptoNote
 {
 	namespace parameters
 	{
-		const uint64_t DIFFICULTY_TARGET = 480;
+         const uint64_t DIFFICULTY_TARGET = 480;
+ 		const uint64_t DIFFICULTY_TARGET_TESTNET = 10;
 		const uint64_t CRYPTONOTE_MAX_BLOCK_NUMBER = 500000000;
 		const size_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE = 8000000;
 		const size_t CRYPTONOTE_MAX_TX_SIZE = 4000000;   // 4 MB hard cap on a single tx
@@ -169,7 +170,6 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
         // CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
         // No protocol cut — CD holders selling rewards back provides natural ratio recovery.
-        const uint64_t CD_YIELD_FLOOR_APY_PCT = 2;            // 2% APY floor funded by treasury LP reserve
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
@@ -244,7 +244,7 @@ namespace CryptoNote
           1000000,       //  〖𐅪.1〗
         };
 
-        const uint64_t HEARTH_FEE_BPS = 30;                         // 0.3% Hearth swap fee → LP providers
+        const uint64_t HEARTH_FEE_BPS = 100;                        // 1.0% Hearth swap fee → CD yield pool
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
         constexpr uint64_t HEARTH_POOL_SEED_XFG = 10000;        // 10,000 XFG at genesis (COIN units)
         constexpr uint64_t HEARTH_POOL_SEED_HEAT = 1000;        // 1,000 HEAT at genesis (10:1 ratio, 10 XFG = 1 HEAT @ $1.58 CPI-adj)

@@ -61,6 +61,9 @@ const (
 	mCreateCD     menuItem = "Create CD"
 	mViewDeposit  menuItem = "View Deposit"
 	mShowLogs     menuItem = "Show Logs"
+	mOrderbook    menuItem = "Hearth Orderbook"
+	mSwapAMM      menuItem = "Swap XFG/HEAT"
+	mActiveSwaps  menuItem = "Active Swaps"
 	mQuit         menuItem = "Quit"
 )
 
@@ -69,6 +72,7 @@ var menu = []menuItem{
 	mCreateWallet, mOpenWallet, mGetBalance, mSendTx,
 	mBurn2Mint, mHeatMetrics, mEternalFlame, mHearthPool,
 	mCreateCD, mViewDeposit,
+	mOrderbook, mSwapAMM, mActiveSwaps,
 	mShowLogs, mQuit,
 }
 
@@ -87,6 +91,11 @@ const (
 	viewWalletInfo
 	viewDaemonData
 	viewWalletFile
+	viewOrderbook
+	viewSwapSide
+	viewSwapAmount
+	viewSwapMinOutput
+	viewActiveSwaps
 )
 
 type logMsg struct{ line string }
@@ -155,6 +164,20 @@ type model struct {
 
 	daemonData map[string]interface{}
 	daemonPath string
+
+	// Orderbook state
+	obData     map[string]interface{}
+	obUpdating bool
+
+	// Swap state
+	swapSide       string // "buy" or "sell"
+	swapAmount     string
+	swapMinOutput  string
+	swapDirection  uint8  // 0=XFG->HEAT, 1=HEAT->XFG
+
+	// Active swaps state
+	activeSwaps    []map[string]interface{}
+	swapsUpdating  bool
 
 	nodeStdout   io.Reader
 	nodeStderr   io.Reader
@@ -378,6 +401,51 @@ func (m model) handleSubViewKey(k string) (tea.Model, tea.Cmd) {
 			}
 			return m.openWallet()
 		})
+	case viewOrderbook:
+		if k == "esc" || k == "enter" || k == "q" {
+			m.currentView = viewMenu
+			return m, nil
+		}
+		if k == "r" {
+			m.obUpdating = true
+			return m, daemonGetCmd("/json_rpc")
+		}
+	case viewSwapSide:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			if newVal == "0" {
+				m.swapDirection = 0
+			} else {
+				m.swapDirection = 1
+			}
+			m.inputBuf = ""
+			m.inputPrompt = "Amount (XFG): "
+			m.currentView = viewSwapAmount
+			return m, nil
+		})
+	case viewSwapAmount:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.swapAmount = newVal
+			m.inputBuf = ""
+			m.inputPrompt = "Min output: "
+			m.currentView = viewSwapMinOutput
+			return m, nil
+		})
+	case viewSwapMinOutput:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.swapMinOutput = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.executeAMMSwap()
+		})
+	case viewActiveSwaps:
+		if k == "esc" || k == "enter" || k == "q" {
+			m.currentView = viewMenu
+			return m, nil
+		}
+		if k == "r" {
+			m.swapsUpdating = true
+			return m, daemonGetCmd("/getswapprice")
+		}
 	}
 	return m, nil
 }
@@ -464,6 +532,19 @@ func (m model) executeMenuItem() (tea.Model, tea.Cmd) {
 		m.inputBuf = ""
 		m.inputPrompt = "Deposit ID: "
 		return m, nil
+	case mOrderbook:
+		m.obUpdating = true
+		m.currentView = viewOrderbook
+		return m, daemonGetCmd("/json_rpc")
+	case mSwapAMM:
+		m.currentView = viewSwapSide
+		m.inputBuf = ""
+		m.inputPrompt = "Direction: 0) XFG->HEAT  1) HEAT->XFG (enter 0 or 1): "
+		return m, nil
+	case mActiveSwaps:
+		m.swapsUpdating = true
+		m.currentView = viewActiveSwaps
+		return m, daemonGetCmd("/getswapprice")
 	case mShowLogs:
 		m.currentView = viewLogs
 		return m, nil
@@ -549,6 +630,16 @@ func (m model) handleRpcResult(msg rpcResultMsg) (tea.Model, tea.Cmd) {
 			float64(interest)/float64(CurrentConfig.CoinUnits), height, unlockH, locked))
 		m.statusMsg = "Deposit details loaded"
 
+	case "amm_swap":
+		if txh, ok := result["tx_hash"].(string); ok {
+			dirStr := "XFG→HEAT"
+			if m.swapDirection == 1 {
+				dirStr = "HEAT→XFG"
+			}
+			m.appendLog(fmt.Sprintf("AMM swap (%s) submitted: %s", dirStr, txh))
+			m.statusMsg = "Swap sent: " + truncate(txh, 12)
+		}
+
 	case "getAddresses":
 		if addrs, ok := result["addresses"].([]interface{}); ok && len(addrs) > 0 {
 			if addr, ok := addrs[0].(string); ok {
@@ -577,9 +668,29 @@ func (m model) handleDaemonResult(msg daemonResultMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.daemonData = msg.result
-	m.daemonPath = msg.path
-	m.currentView = viewDaemonData
+	// Route to the right view based on path
+	switch msg.path {
+	case "/json_rpc":
+		m.obData = msg.result
+		m.obUpdating = false
+		m.currentView = viewOrderbook
+	case "/getswapprice":
+		// Extract active swaps from the response
+		if swaps, ok := msg.result["active_swaps"].([]interface{}); ok {
+			m.activeSwaps = make([]map[string]interface{}, 0, len(swaps))
+			for _, s := range swaps {
+				if sm, ok := s.(map[string]interface{}); ok {
+					m.activeSwaps = append(m.activeSwaps, sm)
+				}
+			}
+		}
+		m.swapsUpdating = false
+		m.currentView = viewActiveSwaps
+	default:
+		m.daemonData = msg.result
+		m.daemonPath = msg.path
+		m.currentView = viewDaemonData
+	}
 	return m, nil
 }
 
@@ -647,6 +758,45 @@ func (m model) viewDeposit() (tea.Model, tea.Cmd) {
 
 	m.appendLog(fmt.Sprintf("Fetching deposit %d...", id))
 	return m, walletRpcCmd(m.walletPort, "getDeposit", map[string]interface{}{"depositId": id})
+}
+
+func (m model) executeAMMSwap() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+
+	amtFloat, err := strconv.ParseFloat(m.swapAmount, 64)
+	if err != nil || amtFloat <= 0 {
+		m.appendLog("Invalid swap amount: " + m.swapAmount)
+		m.statusMsg = "Invalid amount"
+		return m, nil
+	}
+
+	minFloat, err := strconv.ParseFloat(m.swapMinOutput, 64)
+	if err != nil || minFloat < 0 {
+		m.appendLog("Invalid min output: " + m.swapMinOutput)
+		m.statusMsg = "Invalid min output"
+		return m, nil
+	}
+
+	amtAtomic := int64(amtFloat * float64(CurrentConfig.CoinUnits))
+	minAtomic := int64(minFloat * float64(CurrentConfig.CoinUnits))
+
+	dirStr := "XFG→HEAT"
+	if m.swapDirection == 1 {
+		dirStr = "HEAT→XFG"
+	}
+	m.appendLog(fmt.Sprintf("Swapping %.2f %s (min: %.2f)...", amtFloat, dirStr, minFloat))
+	return m, walletRpcCmd(m.walletPort, "amm_swap", map[string]interface{}{
+		"direction":      m.swapDirection,
+		"input_amount":   amtAtomic,
+		"expected_output": 0,
+		"min_output":     minAtomic,
+		"fee":            0,
+		"mixin":          0,
+	})
 }
 
 func (m model) executeBurn(choice string) (tea.Model, tea.Cmd) {
@@ -718,6 +868,12 @@ func (m model) View() string {
 		return m.viewWalletDetails()
 	case viewDaemonData:
 		return m.viewDaemonDetails()
+	case viewOrderbook:
+		return m.viewOrderbook()
+	case viewSwapSide, viewSwapAmount, viewSwapMinOutput:
+		return m.viewInput()
+	case viewActiveSwaps:
+		return m.viewActiveSwaps()
 	default:
 		return m.viewMenu()
 	}
@@ -1048,7 +1204,143 @@ func (m model) viewDaemonDetails() string {
 	return lipgloss.NewStyle().MarginTop(2).Render(content)
 }
 
-// ── Binary & Process Management ─────────────────────────────────────────────
+func (m model) viewOrderbook() string {
+	titleText := "  HEARTH ORDERBOOK  "
+	title := lipgloss.NewStyle().
+		Foreground(bg).Background(accent).Bold(true).Padding(0, 2).
+		Render(titleText)
+
+	if m.obData == nil {
+		loading := lipgloss.NewStyle().Foreground(muted).Render("Loading...")
+		boxed := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderC).Padding(1, 2).Width(60).Render(loading)
+		hint := lipgloss.NewStyle().Foreground(muted).Render("R to refresh | Esc to return")
+		content := lipgloss.JoinVertical(lipgloss.Center, title, boxed, hint)
+		return lipgloss.NewStyle().MarginTop(2).Render(content)
+	}
+
+	mutedStyle := lipgloss.NewStyle().Foreground(muted)
+	goodStyle := lipgloss.NewStyle().Foreground(good)
+	badStyle := lipgloss.NewStyle().Foreground(bad)
+	accentStyle := lipgloss.NewStyle().Foreground(accent)
+
+	var sb strings.Builder
+
+	// Clearing price
+	if cp, ok := m.obData["clearing_price"]; ok {
+		sb.WriteString(fmt.Sprintf("  Clearing price: %s\n\n", accentStyle.Render(fmt.Sprintf("%d", cp))))
+	}
+
+	// Asks
+	sb.WriteString(badStyle.Render("  ASKS (sell orders)\n"))
+	asks, _ := m.obData["ask_prices"].([]interface{})
+	askDepths, _ := m.obData["ask_depths"].([]interface{})
+	if asks != nil {
+		for i := len(asks) - 1; i >= 0; i-- {
+			price := 0.0
+			if p, ok := asks[i].(float64); ok {
+				price = p / float64(CurrentConfig.CoinUnits)
+			}
+			depth := int64(0)
+			if askDepths != nil && i < len(askDepths) {
+				if d, ok := askDepths[i].(float64); ok {
+					depth = int64(d)
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  %s  %s\n",
+				badStyle.Render(fmt.Sprintf("%10.4f", price)),
+				mutedStyle.Render(fmt.Sprintf("xfg: %d", depth))))
+		}
+	}
+
+	sb.WriteString(mutedStyle.Render("  ────────────────\n"))
+
+	// Bids
+	sb.WriteString(goodStyle.Render("  BIDS (buy orders)\n"))
+	bids, _ := m.obData["bid_prices"].([]interface{})
+	bidDepths, _ := m.obData["bid_depths"].([]interface{})
+	if bids != nil {
+		for i := 0; i < len(bids); i++ {
+			price := 0.0
+			if p, ok := bids[i].(float64); ok {
+				price = p / float64(CurrentConfig.CoinUnits)
+			}
+			depth := int64(0)
+			if bidDepths != nil && i < len(bidDepths) {
+				if d, ok := bidDepths[i].(float64); ok {
+					depth = int64(d)
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  %s  %s\n",
+				goodStyle.Render(fmt.Sprintf("%10.4f", price)),
+				mutedStyle.Render(fmt.Sprintf("xfg: %d", depth))))
+		}
+	}
+
+	hint := lipgloss.NewStyle().Foreground(muted).Render("R to refresh | Esc to return")
+	boxed := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderC).Padding(1, 2).Width(60).Render(sb.String())
+	content := lipgloss.JoinVertical(lipgloss.Center, title, boxed, hint)
+	return lipgloss.NewStyle().MarginTop(2).Render(content)
+}
+
+func (m model) viewActiveSwaps() string {
+	titleText := "  ACTIVE SWAPS  "
+	title := lipgloss.NewStyle().
+		Foreground(bg).Background(accent).Bold(true).Padding(0, 2).
+		Render(titleText)
+
+	if m.activeSwaps == nil || len(m.activeSwaps) == 0 {
+		empty := lipgloss.NewStyle().Foreground(muted).Render("No active swaps")
+		boxed := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderC).Padding(1, 2).Width(60).Render(empty)
+		hint := lipgloss.NewStyle().Foreground(muted).Render("R to refresh | Esc to return")
+		content := lipgloss.JoinVertical(lipgloss.Center, title, boxed, hint)
+		return lipgloss.NewStyle().MarginTop(2).Render(content)
+	}
+
+	mutedStyle := lipgloss.NewStyle().Foreground(muted)
+	goodStyle := lipgloss.NewStyle().Foreground(good)
+	warnStyle := lipgloss.NewStyle().Foreground(warn)
+	badStyle := lipgloss.NewStyle().Foreground(bad)
+
+	var sb strings.Builder
+	for _, s := range m.activeSwaps {
+		swapId := "?"
+		if sid, ok := s["swap_id"].(string); ok && len(sid) > 12 {
+			swapId = sid[:12] + "..."
+		}
+		state := "?"
+		if st, ok := s["state"].(string); ok {
+			state = st
+		}
+		pair := "?"
+		if p, ok := s["pair"].(string); ok {
+			pair = p
+		}
+		amount := float64(0)
+		if a, ok := s["xfg_amount"].(float64); ok {
+			amount = a / float64(CurrentConfig.CoinUnits)
+		}
+
+		stateColor := mutedStyle
+		if strings.Contains(state, "COMPLETED") || strings.Contains(state, "CLAIMED") {
+			stateColor = goodStyle
+		} else if strings.Contains(state, "REFUND") || strings.Contains(state, "FAIL") {
+			stateColor = badStyle
+		} else if strings.Contains(state, "WAITING") || strings.Contains(state, "LOCKED") {
+			stateColor = warnStyle
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n",
+			mutedStyle.Render(swapId),
+			stateColor.Render(fmt.Sprintf("%-22s", state)),
+			mutedStyle.Render(fmt.Sprintf("%-4s", pair)),
+			goodStyle.Render(fmt.Sprintf("%.4f XFG", amount))))
+	}
+
+	hint := lipgloss.NewStyle().Foreground(muted).Render("R to refresh | Esc to return")
+	boxed := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderC).Padding(1, 2).Width(60).Render(sb.String())
+	content := lipgloss.JoinVertical(lipgloss.Center, title, boxed, hint)
+	return lipgloss.NewStyle().MarginTop(2).Render(content)
+}
 
 func binPath(name string) string {
 	cwd, _ := os.Getwd()

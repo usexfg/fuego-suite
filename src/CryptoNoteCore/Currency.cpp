@@ -94,6 +94,7 @@ namespace CryptoNote
 		m_upgradeHeightV11 = 30;
 		m_upgradeHeightV12 = 180;
 		m_bootstrapBlocks = TESTNET_BOOTSTRAP_BLOCKS;
+		m_difficultyTarget = 10;  // 10-second target for testnet (fast mining)
 
       m_blocksFileName = "testnet_" + m_blocksFileName;
       m_blocksCacheFileName = "testnet_" + m_blocksCacheFileName;
@@ -1153,11 +1154,11 @@ double Currency::getBurnPercentage() const {
 			// https://github.com/zawy12/difficulty-algorithms/issues/3
 			// See commented version for explanations & required config file changes. Fix FTL and MTP!
 
-			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET_DRGL;
+			   const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET_DRGL;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V3; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t Dracarys = CryptoNote::parameters::UPGRADE_HEIGHT_V4;
-	   		   uint64_t difficulty_plate = 10000;
+	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 10000;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
@@ -1220,11 +1221,11 @@ double Currency::getBurnPercentage() const {
 			// https://github.com/zawy12/difficulty-algorithms/issues/3
 			// See commented version for explanations & required config file changes. Fix FTL and MTP!
 
-			   const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET;
+			   const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET;
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V4; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
-	   		   uint64_t difficulty_plate = isTestnet() ? 10000 : 100000;
+	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 100000;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size());
@@ -1375,9 +1376,9 @@ double Currency::getBurnPercentage() const {
 		// Copyright (c) 2017-2018 Zawy, MIT License
 		// https://github.com/zawy12/difficulty-algorithms/issues/3
 
-		const uint64_t T = CryptoNote::parameters::DIFFICULTY_TARGET;
+		const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET;
 		const uint64_t N = 39;
-		const uint64_t minDifficulty = isTestnet() ? 10000 : 1000000;
+		const uint64_t minDifficulty = isTestnet() ? 1 : 1000000;
 
 		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() <= N) {
 			return minDifficulty;

@@ -230,6 +230,9 @@ public:
 
   void setSwapRelay(CryptoNote::SwapOfferRelay* relay) { m_swapRelay = relay; }
 
+  // Set SOCKS5 proxy for P2P transport (e.g. Tor).
+  void setSocks5Proxy(const std::string& proxy);
+
   void setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk);
   bool loadOfferConfig(const std::string& jsonPath);
 
@@ -375,6 +378,12 @@ public:
 
    // Prune stale taker history entries to free memory.
    void pruneTakerHistory();
+
+   // Derive the treasury vault public key from genesis block hash.
+   // Result is cached after first successful derivation.
+   bool getTreasuryPubKey(Crypto::PublicKey& key);
+   Crypto::PublicKey m_treasuryPubKey;
+   bool m_treasuryPubKeyCached = false;
 
    std::thread           m_tickThread;
    std::atomic<bool>     m_running{false};

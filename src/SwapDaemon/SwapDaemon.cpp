@@ -18,6 +18,7 @@
 #include "AdaptorSwap.h"
 #include "SwapTimelock.h"
 #include "SwapTxBuilder.h"
+#include "../Treasury/VaultKeys.h"
 #include "SwapPeerProtocol.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -1438,6 +1439,18 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
     return true;
   }
 
+  // Protocol fee: 1% initiation + 1% claim = 2% of escrow amount → treasury
+  Crypto::PublicKey treasuryKey;
+  if (!getTreasuryPubKey(treasuryKey)) {
+    m_logger(Logging::ERROR) << "  Cannot derive treasury key for protocol fee";
+    return false;
+  }
+  params.protocolFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                     / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;  // 1% initiation
+  params.protocolFee += (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                      / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;  // 1% claim
+  params.treasuryPubKey = treasuryKey;
+
   m_logger(Logging::INFO) << "  " << logContext << ". Building adapted escrow spend tx...";
 
   // If tx already broadcast, transition to terminal state.
@@ -1477,8 +1490,8 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
     Crypto::PublicKey alicePub = params.peerSwapPubKey;
 
     if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-            m_rpc, working, alicePub, SwapTxBuilder::MIN_FEE,
-            spendTx, spendPrefixHash, ringState)) {
+            m_rpc, working, alicePub, params.protocolFee, params.treasuryPubKey,
+            SwapTxBuilder::MIN_FEE, spendTx, spendPrefixHash, ringState)) {
       m_logger(Logging::ERROR) << "  Failed to build escrow spend tx for Round 2";
       return false;
     }
@@ -1536,8 +1549,8 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
     Crypto::PublicKey alicePub = params.peerSwapPubKey;
 
     if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-            m_rpc, working, alicePub, SwapTxBuilder::MIN_FEE,
-            spendTx, spendPrefixHash, spendRingState)) {
+            m_rpc, working, alicePub, params.protocolFee, params.treasuryPubKey,
+            SwapTxBuilder::MIN_FEE, spendTx, spendPrefixHash, spendRingState)) {
       m_logger(Logging::ERROR) << "  Failed to build escrow spend tx";
       return false;
     }
@@ -1950,9 +1963,18 @@ bool SwapDaemon::refund(const std::string& swapId) {
       Crypto::PublicKey destKey = (params.role == SwapRole::BOB)
           ? params.ourSwapPubKey : params.peerSwapPubKey;
 
+      // Protocol fee: 1% initiation → treasury
+      Crypto::PublicKey treasuryKey;
+      if (!getTreasuryPubKey(treasuryKey)) {
+        m_logger(Logging::ERROR) << "Cannot derive treasury key for refund";
+        return false;
+      }
+      uint64_t refundFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                         / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+
       if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-              m_rpc, working, destKey, SwapTxBuilder::MIN_FEE,
-              refundTx, prefixHash, ringState)) {
+              m_rpc, working, destKey, refundFee, treasuryKey,
+              SwapTxBuilder::MIN_FEE, refundTx, prefixHash, ringState)) {
         m_logger(Logging::ERROR) << "Failed to build refund tx for Round 2";
         return false;
       }
@@ -2003,9 +2025,18 @@ bool SwapDaemon::refund(const std::string& swapId) {
       Crypto::PublicKey destKey = (params.role == SwapRole::BOB)
           ? params.ourSwapPubKey : params.peerSwapPubKey;
 
+      // Protocol fee: 1% initiation → treasury
+      Crypto::PublicKey treasuryKey;
+      if (!getTreasuryPubKey(treasuryKey)) {
+        m_logger(Logging::ERROR) << "Cannot derive treasury key for refund";
+        return false;
+      }
+      uint64_t refundFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                         / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+
       if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-              m_rpc, working, destKey, SwapTxBuilder::MIN_FEE,
-              refundTx, prefixHash, ringState)) {
+              m_rpc, working, destKey, refundFee, treasuryKey,
+              SwapTxBuilder::MIN_FEE, refundTx, prefixHash, ringState)) {
         m_logger(Logging::ERROR) << "Failed to build refund tx (decoy fetch or params)";
         return false;
       }
@@ -2153,8 +2184,8 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
   CollaborativeRingState ringState;
 
   if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-          m_rpc, params, destinationKey, SwapTxBuilder::MIN_FEE,
-          tx, prefixHash, ringState)) {
+          m_rpc, params, destinationKey, params.protocolFee, params.treasuryPubKey,
+          SwapTxBuilder::MIN_FEE, tx, prefixHash, ringState)) {
     m_logger(Logging::ERROR) << "Failed to build " << txType << " tx";
     return false;
   }
@@ -2244,20 +2275,25 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
 
   m_logger(Logging::INFO) << "  " << txType << " tx broadcast successfully!";
 
-  // Phase 2: 1% claim fee — the ONLY protocol-level swap fee.
-  // The initiation surcharge (1%) goes to the claimant via the HTLC, not the protocol.
+  // Protocol fee accounting: 2% total (1% initiation + 1% claim) → treasury
+  // Both fees are routed to the treasury vault as counter XFG.
   if (params.xfgAmount > 0) {
     if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
       m_logger(Logging::ERROR) << "Claim fee multiplication overflow on swap";
       return false;
     }
     uint64_t claimFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
-                      / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
-    if (claimFee > 0) {
-      m_rpc.addSwapFee(claimFee);
-      m_logger(Logging::INFO) << "  Swap claim fee (1%): " << claimFee
-                               << " XFG reported to daemon fee pool (sole protocol fee)";
+                      / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;  // 1% claim
+    uint64_t totalProtocolFee = params.protocolFee + claimFee;  // 2% total
+    if (totalProtocolFee > 0) {
+      m_rpc.addSwapFee(totalProtocolFee);
+      m_logger(Logging::INFO) << "  Swap protocol fee (2%): " << totalProtocolFee
+          << " → treasury vault";
     }
+  }
+
+  if (txType == "spend") {
+    m_logger(Logging::INFO) << "  Fuego's Protocol-owned Treasury has covered your network transaction fee (0.0008 XFG / 8k fire) to say thank you for using SwapXFG.";
   }
 
   return true;
@@ -2571,6 +2607,13 @@ void SwapDaemon::pruneTakerHistory() {
   }
 }
 
+void SwapDaemon::setSocks5Proxy(const std::string& proxy) {
+  if (m_p2p) {
+    m_p2p->setSocks5Proxy(proxy);
+    m_logger(Logging::INFO) << "SOCKS5 proxy set: " << proxy;
+  }
+}
+
 void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk) {
   m_makerSecretKey = sk;
   m_makerPublicKey = pk;
@@ -2651,6 +2694,42 @@ bool SwapDaemon::startStatusServer(uint16_t port) {
     m_statusServer.reset();
     return false;
   }
+  return true;
+}
+
+bool SwapDaemon::getTreasuryPubKey(Crypto::PublicKey& key) {
+  if (m_treasuryPubKeyCached) {
+    key = m_treasuryPubKey;
+    return true;
+  }
+
+  std::string genesisHashHex;
+  if (!m_rpc.getCurrencyId(genesisHashHex)) {
+    m_logger(Logging::ERROR) << "Failed to get currency ID for treasury key derivation";
+    return false;
+  }
+
+  // Parse genesis hash bytes from hex
+  if (genesisHashHex.size() != 64) {
+    m_logger(Logging::ERROR) << "Invalid genesis hash length: " << genesisHashHex.size();
+    return false;
+  }
+
+  Crypto::Hash genesisHash;
+  std::vector<uint8_t> hashBytes = Common::fromHex(genesisHashHex);
+  if (hashBytes.size() != sizeof(Crypto::Hash)) {
+    m_logger(Logging::ERROR) << "Failed to parse genesis hash hex";
+    return false;
+  }
+  std::memcpy(&genesisHash, hashBytes.data(), sizeof(Crypto::Hash));
+
+  // Derive vault keys: spendKey = SHA256(genesisHash), viewKey = SHA256(spendKey)
+  auto vaultKeys = CryptoNote::deriveVaultKeys(genesisHash);
+  key = vaultKeys.spendPub;
+  m_treasuryPubKey = key;
+  m_treasuryPubKeyCached = true;
+
+  m_logger(Logging::INFO) << "Treasury vault key derived from genesis hash";
   return true;
 }
 

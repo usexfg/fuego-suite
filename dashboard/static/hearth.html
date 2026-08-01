@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hearth Exchange — Fuego</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="/" class="nav-brand">🔥 Fuego</a>
+    <a href="/hearth.html" class="nav-link active">Hearth</a>
+    <a href="/swapxfg.html" class="nav-link">SwapXFG</a>
+    <div class="nav-status">
+      <span class="status-dot offline" id="status-daemon"></span>
+      <span>Daemon</span>
+      <span class="status-dot offline" id="status-wallet"></span>
+      <span>Wallet</span>
+      <span class="status-dot offline" id="status-swapd"></span>
+      <span>Swap</span>
+    </div>
+  </nav>
+
+  <div style="padding: 16px; display: grid; grid-template-columns: 1fr 340px; gap: 16px; height: calc(100vh - 48px);">
+    <!-- Left: Charts + Orderbook -->
+    <div style="display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
+      <!-- Price Chart -->
+      <div class="card" style="flex: 1; min-height: 360px;">
+        <div class="card-header">
+          <span>XFG/HEAT — OHLCV</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm btn-secondary ohlcv-tf active" data-tf="1h">1H</button>
+            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="4h">4H</button>
+            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1d">1D</button>
+            <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="1w">1W</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div id="price-chart" class="chart-container tv"></div>
+        </div>
+      </div>
+
+      <!-- Depth Chart + Orderbook -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; min-height: 280px;">
+        <!-- Depth Chart -->
+        <div class="card">
+          <div class="card-header"><span>Market Depth</span></div>
+          <div class="card-body" style="padding:0;">
+            <div id="depth-chart" class="chart-container" style="height:240px;"></div>
+          </div>
+        </div>
+
+        <!-- Orderbook Table -->
+        <div class="card">
+          <div class="card-header"><span>Orderbook</span></div>
+          <div class="card-body" style="padding:0; overflow-y:auto; max-height:240px;">
+            <table>
+              <thead><tr><th>Price</th><th style="text-align:right">Amount</th><th style="text-align:right">Total</th></tr></thead>
+              <tbody id="ob-asks"></tbody>
+            </table>
+            <div id="ob-spread" style="padding:6px 12px;text-align:center;font-size:13px;font-weight:600;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg-secondary);"></div>
+            <table>
+              <tbody id="ob-bids"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Metrics + Trade Form -->
+    <div style="display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
+      <!-- Pool Metrics -->
+      <div class="card">
+        <div class="card-header"><span>Hearth Pool</span></div>
+        <div class="card-body" style="padding:0;">
+          <div class="metrics-grid">
+            <div class="metric"><span class="metric-label">Spot Price</span><span class="metric-value accent" id="spot-price">—</span></div>
+            <div class="metric"><span class="metric-label">XFG Reserve</span><span class="metric-value" id="pool-xfg">—</span></div>
+            <div class="metric"><span class="metric-label">HEAT Reserve</span><span class="metric-value" id="pool-heat">—</span></div>
+            <div class="metric"><span class="metric-label">LP Shares</span><span class="metric-value blue" id="pool-shares">—</span></div>
+            <div class="metric"><span class="metric-label">LP Fees (XFG)</span><span class="metric-value green" id="pool-fees-xfg">—</span></div>
+            <div class="metric"><span class="metric-label">Epoch Swap Fees</span><span class="metric-value" id="pool-epoch-fees">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HEAT Metrics -->
+      <div class="card">
+        <div class="card-header"><span>HEAT Metrics</span></div>
+        <div class="card-body" style="padding:0;">
+          <div class="metrics-grid">
+            <div class="metric"><span class="metric-label">HEAT Supply</span><span class="metric-value" id="heat-supply">—</span></div>
+            <div class="metric"><span class="metric-label">Redemption Price</span><span class="metric-value green" id="heat-redemption">—</span></div>
+            <div class="metric"><span class="metric-label">XFG Burned</span><span class="metric-value red" id="heat-burned">—</span></div>
+            <div class="metric"><span class="metric-label">Fee Pool</span><span class="metric-value" id="fee-pool">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Order Form -->
+      <div class="card">
+        <div class="card-header"><span>Place Order</span></div>
+        <div class="card-body">
+          <div class="tabs" style="margin-bottom:12px;">
+            <div class="tab active" data-side="buy">Buy XFG</div>
+            <div class="tab" data-side="sell">Sell XFG</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Amount (HEAT for buys, XFG for sells)</label>
+            <input type="text" class="form-input" id="order-amount" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price (HEAT per XFG)</label>
+            <input type="text" class="form-input" id="order-price" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expiry (blocks, 0 = no expiry)</label>
+            <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320">
+          </div>
+          <button class="btn btn-block btn-primary" id="order-preview-btn">Preview Order</button>
+        </div>
+      </div>
+
+      <!-- AMM Quote -->
+      <div class="card">
+        <div class="card-header"><span>AMM Quote</span></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Direction</label>
+            <select class="form-input" id="amm-direction">
+              <option value="0">XFG → HEAT</option>
+              <option value="1">HEAT → XFG</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Amount</label>
+            <input type="text" class="form-input" id="amm-amount" placeholder="0.00">
+          </div>
+          <div id="amm-quote-result" style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;min-height:20px;"></div>
+          <button class="btn btn-block btn-primary" id="amm-swap-btn">Swap on AMM</button>
+        </div>
+      </div>
+
+      <!-- Recent Fills -->
+      <div class="card">
+        <div class="card-header"><span>Recent Fills</span></div>
+        <div class="card-body" style="padding:0; max-height:160px; overflow-y:auto;">
+          <table>
+            <thead><tr><th>Time</th><th>Side</th><th>Price</th><th>Amount</th></tr></thead>
+            <tbody id="recent-fills"></tbody>
+          </table>
+          <div id="fills-empty" class="empty-state"><span class="empty-state-text">No recent fills</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Preview Modal -->
+  <div class="modal-overlay" id="order-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Confirm Order</span>
+        <button class="modal-close" id="order-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="order-modal-details" style="margin-bottom:16px;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn btn-secondary btn-sm" id="order-exec-btn" style="flex:1;">Execute via Wallet</button>
+          <button class="btn btn-secondary btn-sm" id="order-copy-btn" style="flex:1;">Copy CLI Command</button>
+        </div>
+        <div class="code-block" id="order-cli-cmd" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/hearth.js"></script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwapXFG — Bridge</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="/" class="nav-brand">🔥 Fuego</a>
+    <a href="/hearth.html" class="nav-link">Hearth</a>
+    <a href="/swapxfg.html" class="nav-link active">SwapXFG</a>
+    <div class="nav-status">
+      <span class="status-dot offline" id="status-daemon"></span>
+      <span>Daemon</span>
+      <span class="status-dot offline" id="status-wallet"></span>
+      <span>Wallet</span>
+      <span class="status-dot offline" id="status-swapd"></span>
+      <span>Swap</span>
+    </div>
+  </nav>
+
+  <div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+    <!-- Header -->
+    <div style="text-align:center;margin-bottom:24px;">
+      <h1 style="font-size:24px;font-weight:700;margin-bottom:4px;">Cross-Chain Bridge</h1>
+      <p style="color:var(--text-secondary);font-size:14px;">Private swaps via adaptor signatures — no custodian, no KYC</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:480px 1fr;gap:24px;align-items:start;">
+      <!-- Left: Bridge Form -->
+      <div>
+        <div class="bridge-card">
+          <!-- From Chain -->
+          <div class="bridge-input-group" id="from-group">
+            <div class="bridge-chain">
+              <div class="bridge-chain-icon" style="color:var(--accent);">X</div>
+              <div>
+                <div style="font-weight:600;font-size:14px;">Fuego</div>
+                <div style="font-size:11px;color:var(--text-muted);">XFG</div>
+              </div>
+              <div style="margin-left:auto;text-align:right;">
+                <div style="font-size:11px;color:var(--text-muted);">Balance</div>
+                <div style="font-family:var(--font-mono);font-size:13px;" id="xfg-balance">—</div>
+              </div>
+            </div>
+            <input type="text" class="bridge-amount-input" id="bridge-amount" placeholder="0.00">
+            <div class="bridge-balance">
+              <span id="bridge-available">Available: —</span>
+            </div>
+          </div>
+
+          <!-- Swap Direction -->
+          <div class="bridge-swap-icon">
+            <button class="bridge-swap-btn" id="bridge-swap-dir" title="Switch direction">↓</button>
+          </div>
+
+          <!-- To Chain -->
+          <div class="bridge-input-group" id="to-group">
+            <div class="bridge-chain">
+              <div class="bridge-chain-icon" id="to-chain-icon" style="color:var(--blue);">?</div>
+              <div>
+                <div style="font-weight:600;font-size:14px;" id="to-chain-name">Select chain</div>
+                <div style="font-size:11px;color:var(--text-muted);" id="to-chain-ticker">—</div>
+              </div>
+              <div style="margin-left:auto;">
+                <select class="form-input" id="to-chain-select" style="width:auto;padding:6px 28px 6px 8px;font-size:12px;">
+                  <option value="BTC">Bitcoin (BTC)</option>
+                  <option value="ETH">Ethereum (ETH)</option>
+                  <option value="SOL">Solana (SOL)</option>
+                  <option value="XMR">Monero (XMR)</option>
+                  <option value="LTC">Litecoin (LTC)</option>
+                  <option value="BCH">Bitcoin Cash (BCH)</option>
+                  <option value="ARB">Arbitrum (ARB)</option>
+                  <option value="BASE">Base</option>
+                  <option value="BNB">BNB Chain</option>
+                  <option value="DCR">Decred (DCR)</option>
+                  <option value="KMD_SPV">Komodo (KMD)</option>
+                  <option value="POLYGON">Polygon</option>
+                </select>
+              </div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;padding:8px 0;color:var(--text-secondary);" id="bridge-estimated">0.00</div>
+            <div class="bridge-balance">
+              Estimated output (after 2% fee)
+            </div>
+          </div>
+
+          <!-- Rate + Info -->
+          <div class="bridge-rate" id="bridge-rate">Select an amount to see the rate</div>
+          <div class="bridge-fee">Network fee: ~0.3% + 2% swap fee · Time: depends on counterparty chain</div>
+
+          <button class="btn btn-block btn-primary" id="bridge-init-btn" style="font-size:15px;padding:14px;">
+            Initiate Swap
+          </button>
+        </div>
+
+        <!-- Peer Info (for P2P connection) -->
+        <div class="card" style="margin-top:12px;">
+          <div class="card-header"><span>Swap Counterparty</span></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Counterparty Public Key (hex)</label>
+              <input type="text" class="form-input" id="peer-pubkey" placeholder="Ed25519 public key of your swap partner">
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);">
+              For AFK (maker) swaps, leave empty to accept taker offers.
+              For direct swaps, enter your counterparty's swap public key.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Active Swaps + History -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <!-- Active Swaps — Package Tracker UX -->
+        <div class="card">
+          <div class="card-header">
+            <span>Active Swaps</span>
+            <span class="badge badge-green" id="active-count">0</span>
+          </div>
+          <div class="card-body" style="padding:0; max-height:400px; overflow-y:auto;">
+            <div id="active-swaps-list"></div>
+            <div id="swaps-empty" class="empty-state">
+              <span class="empty-state-icon">↔</span>
+              <span class="empty-state-text">No active swaps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Price Oracle Chart -->
+        <div class="card">
+          <div class="card-header"><span>Price Oracle — TWAP</span></div>
+          <div class="card-body" style="padding:0;">
+            <div id="oracle-chart" class="chart-container" style="height:200px;"></div>
+          </div>
+        </div>
+
+        <!-- Per-Chain Rates -->
+        <div class="card">
+          <div class="card-header"><span>Implied Rates</span></div>
+          <div class="card-body" style="padding:0; max-height:200px; overflow-y:auto;">
+            <table>
+              <thead><tr><th>Chain</th><th style="text-align:right">Implied Price</th><th style="text-align:right">Spread</th></tr></thead>
+              <tbody id="chain-rates"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SPV Status -->
+        <div class="card">
+          <div class="card-header"><span>SPV Verification</span></div>
+          <div class="card-body" style="padding:0;">
+            <div class="metrics-grid">
+              <div class="metric"><span class="metric-label">SPV Headers</span><span class="metric-value" id="spv-height">—</span></div>
+              <div class="metric"><span class="metric-label">Verified Txs</span><span class="metric-value green" id="spv-verified">—</span></div>
+              <div class="metric"><span class="metric-label">SPV Peers</span><span class="metric-value blue" id="spv-peers">—</span></div>
+              <div class="metric"><span class="metric-label">Chain</span><span class="metric-value" id="spv-chain">—</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Initiate Swap Modal -->
+  <div class="modal-overlay" id="init-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Confirm Swap</span>
+        <button class="modal-close" id="init-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="init-modal-details" style="margin-bottom:16px;"></div>
+        <div class="progress-steps" id="init-progress" style="margin-bottom:16px;">
+          <div class="step active"><div class="step-dot">1</div><div class="step-label">Init</div></div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-dot">2</div><div class="step-label">Escrow</div></div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-dot">3</div><div class="step-label">Lock CTR</div></div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-dot">4</div><div class="step-label">Claim</div></div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-dot">5</div><div class="step-label">Done</div></div>
+        </div>
+        <div class="code-block" id="init-cli-cmd" style="display:none;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" id="init-exec-btn" style="flex:1;">Execute via Wallet</button>
+          <button class="btn btn-secondary" id="init-copy-btn" style="flex:1;">Copy CLI Command</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/swapxfg.js"></script>
+</body>
+</html>

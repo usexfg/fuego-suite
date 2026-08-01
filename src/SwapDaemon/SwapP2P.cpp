@@ -217,6 +217,97 @@ void SwapP2P::handleConnection(int clientSock) {
 }
 
 // ---------------------------------------------------------------------------
+// connectViaSocks5 — SOCKS5 CONNECT handshake through a proxy
+// ---------------------------------------------------------------------------
+
+int SwapP2P::connectViaSocks5(const std::string& host, uint16_t port) {
+  // Parse proxy "host:port"
+  size_t colonPos = m_socks5Proxy.rfind(':');
+  if (colonPos == std::string::npos || colonPos == 0) {
+    m_logger(Logging::ERROR) << "SwapP2P: invalid SOCKS5 proxy: " << m_socks5Proxy;
+    return -1;
+  }
+  std::string proxyHost = m_socks5Proxy.substr(0, colonPos);
+  std::string proxyPortStr = m_socks5Proxy.substr(colonPos + 1);
+
+  // Connect to proxy
+  struct addrinfo hints, *result;
+  std::memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  int gai = getaddrinfo(proxyHost.c_str(), proxyPortStr.c_str(), &hints, &result);
+  if (gai != 0) {
+    m_logger(Logging::ERROR) << "SwapP2P: cannot resolve SOCKS5 proxy " << proxyHost;
+    return -1;
+  }
+
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    freeaddrinfo(result);
+    return -1;
+  }
+
+  struct timeval tv;
+  tv.tv_sec = 15;
+  tv.tv_usec = 0;
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+  if (connect(sock, result->ai_addr, result->ai_addrlen) < 0) {
+    m_logger(Logging::ERROR) << "SwapP2P: cannot connect to SOCKS5 proxy " << m_socks5Proxy;
+    freeaddrinfo(result);
+    close(sock);
+    return -1;
+  }
+  freeaddrinfo(result);
+
+  // SOCKS5 greeting: [0x05][0x01][0x00] (version 5, 1 auth method, no auth)
+  uint8_t greeting[3] = {0x05, 0x01, 0x00};
+  if (send(sock, greeting, 3, 0) != 3) {
+    close(sock);
+    return -1;
+  }
+
+  // Read greeting response: [0x05][0x00]
+  uint8_t greetingResp[2];
+  if (!recvAll(sock, greetingResp, 2) || greetingResp[0] != 0x05 || greetingResp[1] != 0x00) {
+    m_logger(Logging::ERROR) << "SwapP2P: SOCKS5 proxy rejected auth";
+    close(sock);
+    return -1;
+  }
+
+  // SOCKS5 CONNECT request
+  // [0x05][0x01][0x00][0x03][len][hostname][port_be16]
+  std::vector<uint8_t> req;
+  req.push_back(0x05); // version
+  req.push_back(0x01); // CONNECT
+  req.push_back(0x00); // reserved
+  req.push_back(0x03); // domain name
+  req.push_back(static_cast<uint8_t>(host.size()));
+  req.insert(req.end(), host.begin(), host.end());
+  req.push_back(static_cast<uint8_t>((port >> 8) & 0xFF));
+  req.push_back(static_cast<uint8_t>(port & 0xFF));
+
+  if (send(sock, req.data(), req.size(), 0) != static_cast<ssize_t>(req.size())) {
+    close(sock);
+    return -1;
+  }
+
+  // Read CONNECT response: [0x05][status][0x00][0x01][addr(4)][port(2)] = 10 bytes minimum
+  uint8_t connectResp[10];
+  if (!recvAll(sock, connectResp, 10) || connectResp[0] != 0x05 || connectResp[1] != 0x00) {
+    m_logger(Logging::ERROR) << "SwapP2P: SOCKS5 CONNECT failed (status="
+      << static_cast<int>(connectResp[1]) << ")";
+    close(sock);
+    return -1;
+  }
+
+  m_logger(Logging::DEBUGGING) << "SwapP2P: connected via SOCKS5 to " << host << ":" << port;
+  return sock;
+}
+
+// ---------------------------------------------------------------------------
 // sendMessage — connect to peer, send one framed message, close
 // ---------------------------------------------------------------------------
 
@@ -230,47 +321,58 @@ bool SwapP2P::sendMessage(const std::string& peerEndpoint, const SwapMessage& ms
 
   std::string host = peerEndpoint.substr(0, colonPos);
   std::string portStr = peerEndpoint.substr(colonPos + 1);
+  uint16_t port = static_cast<uint16_t>(std::atoi(portStr.c_str()));
 
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0) {
-    m_logger(Logging::ERROR) << "SwapP2P: failed to create socket for send";
-    return false;
-  }
+  int sock = -1;
 
-  // Connect timeout via SO_SNDTIMEO
+  if (!m_socks5Proxy.empty()) {
+    // Route through SOCKS5 proxy (e.g. Tor)
+    sock = connectViaSocks5(host, port);
+    if (sock < 0) {
+      m_logger(Logging::ERROR) << "SwapP2P: SOCKS5 connect failed to " << peerEndpoint;
+      return false;
+    }
+  } else {
+    // Direct connection
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+      m_logger(Logging::ERROR) << "SwapP2P: failed to create socket for send";
+      return false;
+    }
+
 #ifdef _WIN32
-  DWORD timeout = 10000;
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
-    reinterpret_cast<const char*>(&timeout), sizeof(timeout));
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-    reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    DWORD timeout = 10000;
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+      reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+      reinterpret_cast<const char*>(&timeout), sizeof(timeout));
 #else
-  struct timeval tv;
-  tv.tv_sec = 10;
-  tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
 
-  // Resolve host
-  struct addrinfo hints, *result;
-  std::memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo hints, *result;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
-  int gai = getaddrinfo(host.c_str(), portStr.c_str(), &hints, &result);
-  if (gai != 0) {
-    m_logger(Logging::ERROR) << "SwapP2P: cannot resolve " << host;
-    close(sock);
-    return false;
-  }
+    int gai = getaddrinfo(host.c_str(), portStr.c_str(), &hints, &result);
+    if (gai != 0) {
+      m_logger(Logging::ERROR) << "SwapP2P: cannot resolve " << host;
+      close(sock);
+      return false;
+    }
 
-  int ret = connect(sock, result->ai_addr, result->ai_addrlen);
-  freeaddrinfo(result);
-  if (ret < 0) {
-    m_logger(Logging::ERROR) << "SwapP2P: connect failed to " << peerEndpoint;
-    close(sock);
-    return false;
+    int ret = connect(sock, result->ai_addr, result->ai_addrlen);
+    freeaddrinfo(result);
+    if (ret < 0) {
+      m_logger(Logging::ERROR) << "SwapP2P: connect failed to " << peerEndpoint;
+      close(sock);
+      return false;
+    }
   }
 
   std::vector<uint8_t> wire = serializeMessage(msg);

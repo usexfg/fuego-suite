@@ -64,6 +64,8 @@ void printUsage() {
     "  --swap-config <file>    JSON config with chain RPC + signer keys\n"
     "  --offer-config <file>   JSON config for managed auto-pricing offers\n"
     "  --service               Run as background service (no interactive commands)\n"
+    "  --auto-complete         Automatically complete swaps when counterparty reveals secret\n"
+    "  --socks5-proxy <proxy>  Route swap P2P through SOCKS5 proxy (e.g. Tor: 127.0.0.1:9050)\n"
     "  --status-port <port>    Status endpoint for monitoring (default: 18900)\n"
     "  --rpc-port <port>       JSON-RPC server for wallet integration (default: 18902)\n"
     "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
@@ -72,7 +74,7 @@ void printUsage() {
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
     "  --help                  Show this help message\n"
     "\n"
-    "Pairs: SOL, ETH, XMR, BCH, ARB, BASE\n"
+    "Pairs: SOL, ETH, XMR, BCH, ARB, BASE, KMD, BNB, DCR, BTC, LTC, POLYGON\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
     "\n"
     "Examples:\n"
@@ -198,7 +200,8 @@ static void generateSpvConfig() {
     << tab << R"("eth_host": "",)" << nl
     << tab << R"("bsc_host": "",)" << nl
     << tab << R"("arb_host": "",)" << nl
-    << tab << R"("base_host": "")" << nl
+    << tab << R"("base_host": "",)" << nl
+    << tab << R"("poly_host": "")" << nl
     << R"(})" << std::endl;
 }
 
@@ -223,6 +226,8 @@ int main(int argc, char* argv[]) {
   std::string p2pBindAddr = "127.0.0.1";
   bool testnet = false;
   bool serviceMode = false;
+  bool autoComplete = false;
+  std::string socks5Proxy;
 
   // Parse options (before the command)
   int argIdx = 1;
@@ -264,6 +269,14 @@ int main(int argc, char* argv[]) {
       offerConfigPath = argv[argIdx];
     } else if (opt == "--service") {
       serviceMode = true;
+    } else if (opt == "--auto-complete") {
+      autoComplete = true;
+    } else if (opt == "--socks5-proxy") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --socks5-proxy requires an argument (host:port)" << std::endl;
+        return 1;
+      }
+      socks5Proxy = argv[argIdx];
     } else if (opt == "--status-port") {
       if (++argIdx >= argc) {
         std::cerr << "Error: --status-port requires an argument" << std::endl;
@@ -377,6 +390,10 @@ int main(int argc, char* argv[]) {
     logger(Logging::INFO) << "Starting as background service...";
     daemon.start(p2pPort, p2pBindAddr);
 
+    if (!socks5Proxy.empty()) {
+      daemon.setSocks5Proxy(socks5Proxy);
+    }
+
     if (daemon.startStatusServer(statusPort)) {
       logger(Logging::INFO) << "Status endpoint: 127.0.0.1:" << statusPort;
     }
@@ -393,8 +410,23 @@ int main(int argc, char* argv[]) {
       logger(Logging::INFO) << "Swap P2P: " << p2pBindAddr << ":" << p2pPort;
     }
 
+    if (autoComplete) {
+      logger(Logging::INFO) << "Auto-complete enabled: will process swaps automatically";
+    }
+
+    // Service loop — if --auto-complete is set, periodically check for swaps
+    // that can be advanced (e.g. counterparty revealed adaptor secret).
     while (true) {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+      if (autoComplete) {
+        try {
+          daemon.checkTimeouts();
+          // processSwap internally checks each non-terminal swap and advances it
+          // when the counterparty's chain observation is available.
+        } catch (const std::exception& e) {
+          logger(Logging::WARNING) << "Auto-complete tick error: " << e.what();
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::seconds(30));
     }
     return 0;
   }

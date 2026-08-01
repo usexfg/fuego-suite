@@ -3204,7 +3204,8 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
         FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
           ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
           : FixedPoint64::fromUint64(1);
-        if (!m_heatMintEngine.validateMintAuth(transactions[i], fee, poolRate,
+        uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
+        if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, poolRate,
                                                 authXfgBurned, authHeatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
@@ -3640,7 +3641,7 @@ uint64_t CryptoNote::Blockchain::depositAmountAtHeight(size_t height) const {
 }
 
 void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {
-  if (height < parameters::UPGRADE_HEIGHT_V11)
+  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11))
     return;
 
   // Save pre-block orderbook snapshot for popBlock rollback
@@ -3745,10 +3746,10 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
             m_ammPool.reserveHeat += fillCost;
           }
 
-          // LP fee: 0.3% of fill value (HEAT), on top of spread
-          uint64_t lpFee = (fillCost * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
-          m_ammPool.accumulatedLpFeesHeat = (m_ammPool.accumulatedLpFeesHeat > UINT64_MAX - lpFee)
-            ? UINT64_MAX : m_ammPool.accumulatedLpFeesHeat + lpFee;
+          // Flat fee: 1% of fill value (HEAT) → CD yield pool (not LPs)
+          uint64_t cdFee = (fillCost * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+          m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
+            ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
 
           // LP spread reward: |fill.price - P_clear| × amount / COIN
           if (fill.price > result.P_clear) {
@@ -3841,9 +3842,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
 void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   g_orderbookMempool.clear();
-  g_orderbookIsInBootstrap = (height < parameters::UPGRADE_HEIGHT_V11 + m_currency.bootstrapBlocks());
+  g_orderbookIsInBootstrap = (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + m_currency.bootstrapBlocks());
   g_orderbookBootstrapBlocksRemaining = g_orderbookIsInBootstrap ?
-    (parameters::UPGRADE_HEIGHT_V11 + m_currency.bootstrapBlocks() - height) : 0;
+    (m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) + m_currency.bootstrapBlocks() - height) : 0;
 
   if (g_orderbookIsInBootstrap && g_orderbookBootstrapBlocksRemaining == 0) {
     g_orderbookIsInBootstrap = false;
@@ -4426,37 +4427,6 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
           (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
 
-    // CD yield floor: if organic rate < 2% APY, inject HⲶ∆T from treasury reserve.
-    // Annualized: 2% per year → divisor = 100 * epochsPerYear.
-    if (epochCdLocked > 0 && m_treasuryHeatReserve > 0) {
-      uint64_t floorRate = (CryptoNote::parameters::CD_YIELD_FLOOR_APY_PCT
-                           * CryptoNote::parameters::FEE_POOL_RATE_PRECISION)
-                           / (100 * CryptoNote::parameters::EPOCHS_PER_YEAR);
-      if (epochFeeRate < floorRate) {
-        uint64_t shortfallXfg = static_cast<uint64_t>(
-            (uint128_t)(floorRate - epochFeeRate) * epochCdLocked
-            / CryptoNote::parameters::FEE_POOL_RATE_PRECISION);
-        // Convert XFG shortfall to HⲶ∆T at pool rate.
-        uint64_t heatInjection = shortfallXfg;
-        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (!poolRate.isZero()) {
-            FixedPoint64 sf = FixedPoint64::fromUint64(shortfallXfg);
-            heatInjection = sf.div(poolRate).toUint64();
-          }
-        }
-        if (heatInjection > m_treasuryHeatReserve)
-          heatInjection = m_treasuryHeatReserve;
-        if (heatInjection > 0) {
-          m_treasuryHeatReserve -= heatInjection;
-          m_heatCdFeePool += heatInjection;
-          uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-          m_vault.addUtxo(vI, heatInjection, AssetType::HEAT,
-                          VaultPartition::CD_APY_POOL, blockHash,
-                          m_vaultKeys.viewPub);
-        }
-      }
-    }
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShare, epochCdLocked);
 
     // Legacy bond fee rate
@@ -4580,6 +4550,13 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
 
     // Route regular CD share: 100% to yield pool for HⲶ∆T minting.
     m_cdYieldPool += regularCdShare;
+
+    // Route Hearth flat fee (1% of HEAT fills) into CD yield pool.
+    if (m_ammPool.cdHearthFeeAccumulator > 0) {
+      m_cdYieldPool += m_ammPool.cdHearthFeeAccumulator;
+      logger(INFO) << "CD yield pool ← Hearth flat fee: " << m_ammPool.cdHearthFeeAccumulator;
+      m_ammPool.cdHearthFeeAccumulator = 0;
+    }
 
     // Route legacy bond share to legacy bond yield pool
     if (legacyBondShare > 0) {

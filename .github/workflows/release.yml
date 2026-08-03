@@ -29,14 +29,14 @@ jobs:
         with: { go-version: stable }
 
       - name: Install dependencies
-        run: brew install boost@1.85 openssl@3 icu4c jsoncpp cmake ninja
+        run: brew install boost@1.86 openssl@3 icu4c jsoncpp cmake ninja
 
       - name: Build C++
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.85 \
+            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.86 \
             -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
             -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c \
             -DUSE_VENDORED_SECP256K1=OFF
@@ -155,9 +155,10 @@ jobs:
         shell: pwsh
         run: |
           $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://archives.boost.io/release/1.85.0/binaries/boost_1_85_0-msvc-14.3-64.exe" -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
+          Invoke-WebRequest -Uri "https://archives.boost.io/release/1.86.0/binaries/boost_1_86_0-msvc-14.3-64.exe" -OutFile "$env:TEMP\boost.exe" -UseBasicParsing
           Start-Process -Wait "$env:TEMP\boost.exe" -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=C:\boost"
           echo "BOOST_ROOT=C:\boost" >> $env:GITHUB_ENV
+          echo "BOOST_INCLUDEDIR=C:\boost\include\boost-1_86" >> $env:GITHUB_ENV
 
       - name: Install jsoncpp
         shell: pwsh
@@ -173,7 +174,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
-            -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
+            -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_86" `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
             -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
           cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS

@@ -115,14 +115,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost@1.85 openssl@3 icu4c jsoncpp cmake ninja
+          brew install boost@1.86 openssl@3 icu4c jsoncpp cmake ninja
 
       - name: Build
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.85 \
+            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.86 \
             -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
             -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c \
             -DUSE_VENDORED_SECP256K1=OFF

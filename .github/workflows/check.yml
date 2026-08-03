@@ -69,7 +69,7 @@ jobs:
         run: |
           $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
           $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
-          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 18 2026" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
@@ -86,16 +86,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev
-
-      - name: Build
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          make -C build -j$(nproc)
-
+       - name: Install dependencies
+         run: |
+           sudo apt-get update
+           sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev
+        
+       - name: Build
+         run: |
+           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
+           make -C build -j$(nproc)
+        
   build-macos:
     name: macOS
     runs-on: ${{ matrix.os }}
@@ -124,5 +124,6 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
             -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.85 \
             -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
-            -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c
+            -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c \
+            -DUSE_VENDORED_SECP256K1=OFF
           cmake --build build -j$(sysctl -n hw.logicalcpu)

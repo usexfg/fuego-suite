@@ -86,15 +86,15 @@ jobs:
         with:
           submodules: recursive
 
-       - name: Install dependencies
-         run: |
-           sudo apt-get update
-           sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev
         
-       - name: Build
-         run: |
-           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
-           make -C build -j$(nproc)
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
+          make -C build -j$(nproc)
         
   build-macos:
     name: macOS

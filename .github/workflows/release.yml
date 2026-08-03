@@ -82,10 +82,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev
 
-       - name: Build C++
-         run: |
-           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
-           make -C build -j$(nproc)
+      - name: Build C++
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
+          make -C build -j$(nproc)
 
       - name: Build Go
         run: |
@@ -216,10 +216,10 @@ jobs:
         uses: actions/setup-go@v5
         with: { go-version: stable }
 
-       - name: Install cross-compilation tools
-         run: |
-           sudo apt-get update
-           sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libsecp256k1-dev
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libsecp256k1-dev
 
       - name: Create toolchain file
         run: |
@@ -290,10 +290,10 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-       - name: Install dependencies
-         run: |
-           sudo apt-get update
-           sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev wget fuse
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev wget fuse
         
       - name: Download AppImageTool
         run: |

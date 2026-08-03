@@ -1969,8 +1969,10 @@ namespace CryptoNote
     static const char SEED[] = "fuego.hearth.pool.commit.key.v1";
     Crypto::Hash h;
     Crypto::cn_fast_hash(SEED, sizeof(SEED) - 1, h);
+    Crypto::SecretKey scalar;
+    Crypto::hash_to_scalar(&h, sizeof(h), scalar);
     Crypto::PublicKey pub;
-    Crypto::secret_key_to_public_key(reinterpret_cast<const Crypto::SecretKey&>(h), pub);
+    Crypto::secret_key_to_public_key(scalar, pub);
     return pub;
   }
 

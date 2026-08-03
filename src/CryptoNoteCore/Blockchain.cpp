@@ -2953,6 +2953,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
     bool hasLegacyBondClaim = false;
     uint64_t legacyClaimedInterest = 0;
+    // v11+ AMM swap auth
+    bool hasAmmSwapAuth = false;
+    uint8_t ammSwapDirection = 0;
+    uint64_t ammSwapInput = 0, ammSwapOutput = 0, ammSwapMinOutput = 0;
+
     // v11+ orderbook auth tags
     bool hasMarketBuyAuth = false;
     uint64_t marketBuyXfgWanted = 0, marketBuyMaxHeat = 0;
@@ -3015,11 +3020,19 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             marketSellXfgAmount = auth.xfgToSell;
             marketSellMinHeat = auth.minHeatReceive;
           }
-          if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
-            hasHeatSendAuth = true;
-            heatSendAmount = boost::get<TransactionExtraHeatSendAuth>(field).heatAmount;
-          }
-          if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+           if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
+             hasHeatSendAuth = true;
+             heatSendAmount = boost::get<TransactionExtraHeatSendAuth>(field).heatAmount;
+           }
+           if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+             hasAmmSwapAuth = true;
+             const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
+             ammSwapDirection = auth.direction;
+             ammSwapInput = auth.inputAmount;
+             ammSwapOutput = auth.outputAmount;
+             ammSwapMinOutput = auth.minOutput;
+           }
+           if (field.type() == typeid(TransactionExtraLimitDeposit)) {
             hasLimitDeposit = true;
             const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
             limitDepositSide = dep.side;
@@ -3048,15 +3061,48 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth balance mismatch";
         }
-      } else if (hasHeatSendAuth) {
-        // HEAT send: conservation of both XFG and HEAT. heatSendAmount is the
-        // declared gross send amount; the actual transfer is in tx outputs.
-        if (inAssets.xfg < outAssets.xfg + xfgFee ||
-            inAssets.heat != outAssets.heat) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT send balance mismatch";
-        }
-      } else if (hasMarketBuyAuth) {
+       } else if (hasHeatSendAuth) {
+         // HEAT send: conservation of both XFG and HEAT. heatSendAmount is the
+         // declared gross send amount; the actual transfer is in tx outputs.
+         if (inAssets.xfg < outAssets.xfg + xfgFee ||
+             inAssets.heat != outAssets.heat) {
+           isTransactionValid = false;
+           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT send balance mismatch";
+         }
+       } else if (hasAmmSwapAuth) {
+         // AMM swap: validate pool rate consistency
+         // direction 0 = XFG->HEAT, 1 = HEAT->XFG
+         FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+           ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+           : FixedPoint64::fromUint64(1);
+
+         if (ammSwapDirection == 0) {
+           // XFG->HEAT: XFG inputs cover XFG outputs + fee + pool deposit
+           // HEAT outputs must be <= input XFG * poolRate
+           // Pool deposit is counted in outAssets.xfg, so we need to account for it
+           uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
+           FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
+           FixedPoint64 expectedHeatFp = xfgFp.div(poolRate);
+           uint64_t expectedHeat = expectedHeatFp.toUint64();
+
+           if (outAssets.heat > expectedHeat || inAssets.lp != outAssets.lp) {
+             isTransactionValid = false;
+             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT validation failed: expected HEAT=" << expectedHeat << " actual=" << outAssets.heat;
+           }
+         } else {
+           // HEAT->XFG: HEAT inputs cover HEAT outputs + pool deposit
+           // XFG outputs must be <= input HEAT * poolRate
+           uint64_t heatDeposited = inAssets.heat - outAssets.heat;
+           FixedPoint64 heatFp = FixedPoint64::fromUint64(heatDeposited);
+           FixedPoint64 expectedXfgFp = heatFp.mul(poolRate);
+           uint64_t expectedXfg = expectedXfgFp.toUint64();
+
+           if (outAssets.xfg > expectedXfg || inAssets.lp != outAssets.lp) {
+             isTransactionValid = false;
+             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
+           }
+         }
+       } else if (hasMarketBuyAuth) {
         // Market buy: user commits HEAT to buy XFG. At validation time,
         // XFG is conserved; settlement locks/spends HEAT at block finalization.
         if (inAssets.xfg < outAssets.xfg + xfgFee ||

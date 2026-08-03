@@ -210,7 +210,18 @@ namespace CryptoNote
 
     logger(DEBUGGING, WHITE) << "Processing tx " << id << " with inputs of " << inputs_amount << " and outputs of " << outputs_amount;
 
-    if (outputs_amount > inputs_amount)
+    // Check for AMM swap auth tag — allows HEAT minting (outputs > inputs)
+    bool hasAmmSwapAuth = false;
+    std::vector<TransactionExtraField> extraFieldsForAuth;
+    parseTransactionExtra(tx.extra, extraFieldsForAuth);
+    for (const auto& field : extraFieldsForAuth) {
+      if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+        hasAmmSwapAuth = true;
+        break;
+      }
+    }
+
+    if (outputs_amount > inputs_amount && !hasAmmSwapAuth)
     {
       logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << id << " uses more money then it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount);
       tvc.m_verification_failed = true;

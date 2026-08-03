@@ -409,7 +409,46 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   uint64_t amount_in = m_currency.getTransactionAllInputsAmount(tx, height);
   uint64_t amount_out = get_outs_money_amount(tx);
 
-  if (amount_in < amount_out) {
+  // Parse AMM swap auth tag for per-asset conservation check
+  bool hasAmmSwapAuth = false;
+  uint8_t ammSwapDirection = 0;
+  std::vector<TransactionExtraField> tx_extra_fields;
+  if (parseTransactionExtra(tx.extra, tx_extra_fields)) {
+    for (const auto& field : tx_extra_fields) {
+      if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+        hasAmmSwapAuth = true;
+        ammSwapDirection = boost::get<TransactionExtraAmmSwapAuth>(field).direction;
+        break;
+      }
+    }
+  }
+
+  if (hasAmmSwapAuth) {
+    // AMM swap: check per-asset conservation instead of aggregate.
+    // direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
+    // direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
+    AssetBalance inAssets = get_blockchain_storage().getTransactionInputAssetAmounts(tx, height);
+    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx);
+    uint64_t fee = amount_in < amount_out ? m_currency.minimumFee() : amount_in - amount_out;
+
+    if (ammSwapDirection == 0) {
+      // XFG→HEAT: XFG conservation (HEAT is minted, no HEAT inputs expected)
+      if (inAssets.xfg < outAssets.xfg + fee) {
+        logger(ERROR) << "tx XFG conservation violated for AMM swap: xfg_in=" << inAssets.xfg
+                      << " xfg_out=" << outAssets.xfg << " fee=" << fee
+                      << " rejected for tx id= " << getObjectHash(tx);
+        return false;
+      }
+    } else {
+      // HEAT→XFG: HEAT conservation (XFG is minted, no XFG inputs expected)
+      if (inAssets.heat < outAssets.heat) {
+        logger(ERROR) << "tx HEAT conservation violated for AMM swap: heat_in=" << inAssets.heat
+                      << " heat_out=" << outAssets.heat
+                      << " rejected for tx id= " << getObjectHash(tx);
+        return false;
+      }
+    }
+  } else if (amount_in < amount_out) {
     logger(ERROR) << "tx with wrong amounts: ins " << amount_in << ", outs " << amount_out << ", rejected for tx id= " << getObjectHash(tx);
     return false;
   }

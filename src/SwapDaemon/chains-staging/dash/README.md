@@ -2,9 +2,7 @@
 
 ## Overview
 
-Dash is a privacy-focused UTXO cryptocurrency (~$3B market cap).
-It features PrivateSend (coin-mixing) and InstantSend (instant transactions).
-Dash has a mature atomic swap ecosystem and is well-supported by swap infrastructure.
+Dash is a UTXO-based cryptocurrency (~$3B market cap) with a different consensus mechanism (X11 PoW, transitioning to PoS) than Litecoin. However, for atomic swap purposes, the UTXO model, address format (P2PKH/P2SH/WIF), and HTLC script semantics are identical to Litecoin — making the implementation effort comparable. The consensus mechanism does not affect HTLC lock/claim/refund logic.
 
 ## Technical Fit
 
@@ -35,6 +33,7 @@ Dash has a mature atomic swap ecosystem and is well-supported by swap infrastruc
 
 | Parameter | Litecoin | Dash |
 |-----------|----------|------|
+| Consensus | Scrypt PoW | X11 PoW (transitioning to PoS) |
 | P2PKH prefix | 0x30 | 0x4C |
 | P2SH prefix | 0x32 | 0x10 |
 | WIF prefix | 0xB0 | 0xCC |

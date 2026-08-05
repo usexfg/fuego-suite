@@ -1187,9 +1187,39 @@ namespace CryptoNote
       WalletLegacyTransaction& transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
       std::unique_ptr<ITransaction> transaction = createTransaction();
 
-      // Split withdrawal proceeds to wallet address.
+      // ── Calculate accrued CD interest for each deposit ──────────────────────
+      // The blockchain debits the fee pool and vault CD_APY_POOL when
+      // claimedInterest > 0 on a CommitmentSpend input.  We must compute
+      // the correct interest via getCdInterest (→ CommitmentIndex epoch
+      // accumulator) and include it in both the input and output.
+      uint32_t currentHeight = m_node.getLastLocalBlockHeight();
+      uint64_t totalInterest = 0;
+      std::vector<uint64_t> perDepositInterest;
+      perDepositInterest.reserve(depositIds.size());
+
+      for (size_t i = 0; i < depositIds.size(); ++i) {
+        Deposit dep;
+        if (m_transactionsCache.getDeposit(depositIds[i], dep) && dep.term != parameters::HEAT_TERM) {
+          // Non-HEAT commitment (COLD CD): claim accrued fee-pool interest.
+          uint64_t interest = 0;
+          std::error_code ec = m_node.getCdInterest(dep.amount,
+              static_cast<uint32_t>(dep.height), currentHeight, interest);
+          if (ec) {
+            // If node can't compute (e.g. remote daemon), fall back to zero.
+            // The blockchain will still accept the withdrawal at 0 interest.
+            interest = 0;
+          }
+          perDepositInterest.push_back(interest);
+          totalInterest += interest;
+        } else {
+          // HEAT_TERM burns: no interest accrues (permanent burn, no fee pool).
+          perDepositInterest.push_back(0);
+        }
+      }
+
+      // Output amount = principal + accrued interest − fee.
       std::vector<uint64_t> outputAmounts = splitAmount(
-          context->foundMoney - transactionInfo.fee, context->dustPolicy.dustThreshold);
+          context->foundMoney + totalInterest - transactionInfo.fee, context->dustPolicy.dustThreshold);
       for (auto amount : outputAmounts) {
         transaction->addOutput(amount, m_keys.address);
       }
@@ -1286,6 +1316,8 @@ namespace CryptoNote
         // Build the TransactionInputCommitmentSpend.
         TransactionInputCommitmentSpend csInput;
         csInput.amount        = transfer.amount;
+        csInput.claimedInterest = (depositIdx < perDepositInterest.size())
+            ? perDepositInterest[depositIdx] : 0;
         csInput.outputIndexes = relOffsets;
         csInput.keyImage      = commitKeys.keyImage;
         transaction->addInput(csInput);

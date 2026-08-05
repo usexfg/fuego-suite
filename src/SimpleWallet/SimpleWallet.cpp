@@ -457,10 +457,96 @@ std::string tryToOpenWalletOrLoadKeysOrThrow(LoggerRef& logger, std::unique_ptr<
 std::string simple_wallet::get_commands_str() {
   std::stringstream ss;
   ss << "Commands: " << ENDL;
-  std::string usage = m_consoleHandler.getUsage();
-  boost::replace_all(usage, "\n", "\n  ");
-  usage.insert(0, "  ");
-  ss << usage << ENDL;
+
+  auto add_cat = [&](const std::string& cat, const std::vector<std::pair<std::string, std::string>>& cmds) {
+    if (cmds.empty()) return;
+    ss << "\n\033[1;33m" << cat << "\n" << std::string(cat.size(), '_') << "\033[0m" << ENDL;
+
+    size_t maxCmdLen = 0;
+    for (const auto& cmd : cmds) {
+      maxCmdLen = std::max(maxCmdLen, cmd.first.size());
+    }
+    maxCmdLen += 3;
+
+    for (const auto& cmd : cmds) {
+      ss << "  " << std::setw(static_cast<int>(maxCmdLen)) << std::left << cmd.first
+         << " : " << cmd.second << ENDL;
+    }
+    ss << ENDL;
+  };
+
+  add_cat("Address", {
+    {"address", "Show current wallet public address"},
+    {"list_subs", "List all sub-addresses for this wallet"},
+    {"gen_new_sub", "Generate a sub-address at index (major, minor). Omit args for auto-increment (0, N)."}
+  });
+
+  add_cat("Aliases", {
+    {"register_alias", "Register an @ alias (8 chars [a-z0-9&], costs 1 XFG). Use a sub-address for privacy."},
+    {"lookup_alias", "Look up an @ alias by name or wallet address"},
+    {"list_aliases", "List all registered @ aliases on the network"}
+  });
+
+  add_cat("Balance / Outputs", {
+    {"balance", "Show current wallet balance"},
+    {"outputs", "Show the number of unlocked outputs available for a transaction"},
+    {"optimize", "Combine many available outputs into a few by sending a transaction to self"},
+    {"optimize_all", "Optimize your wallet several times so you can send large transactions"},
+    {"show_dust", "Show the number of unmixable dust outputs"}
+  });
+
+  add_cat("HEAT", {
+    {"heat_info", "Show HEAT stablecoin metrics"},
+    {"mint_heat", "Burn XFG to mint HEAT"},
+    {"send_heat", "Send HEAT to a recipient"},
+    {"heat_cd", "Create HEAT Certificate of Deposit"},
+    {"heat_withdraw", "Withdraw HEAT CD with interest"},
+    {"heat_list", "List all HEAT transactions"},
+    {"list_cds", "List all HEAT CDs (open/completed/withdrawn)"},
+    {"cd_info", "Show detailed info for a specific CD"}
+  });
+
+  add_cat("Hearth AMM", {
+    {"pool_info", "Show Hearth AMM pool state"},
+    {"sell_xfg", "Sell XFG for HEAT on Hearth AMM"},
+    {"buy_xfg", "Buy XFG with HEAT on Hearth AMM"},
+    {"add_liq", "Add liquidity to Hearth"},
+    {"remove_liq", "Remove liquidity from Hearth"},
+    {"place_order", "Place limit order on Hearth"},
+    {"cancel_order", "Cancel limit order by transaction hash"},
+    {"orderbook", "Show Hearth CLOB orderbook"},
+    {"show_orders", "Show your open limit orders on Hearth"}
+  });
+
+  add_cat("Transfer", {
+    {"transfer", "Transfer amount(s) to address(es), optional payment_id or message"},
+    {"list_transfers", "Show all known transfers, optionally from a certain block height"},
+    {"incoming_transfers", "Show incoming transfers"},
+    {"payments", "Show payments by payment_id(s)"},
+    {"show_txn", "Show detailed information for a specific transaction"}
+  });
+
+  add_cat("Sign / Keys / Proof", {
+    {"sign_message", "Sign a message with your wallet keys"},
+    {"verify_signature", "Verify a signed message"},
+    {"get_reserve_proof", "Generate a signature proving ownership of amount"},
+    {"get_tx_proof", "Generate a signature to prove payment"},
+    {"export_keys", "Show the secret keys of the current wallet"},
+    {"create_integrated", "Create an integrated address with a payment ID"},
+    {"payment_id", "Generate random Payment ID"}
+  });
+
+  add_cat("Blockchain", {
+    {"height", "Show blockchain height"},
+    {"start_mining", "Start mining to your wallet"},
+    {"stop_mining", "Stop mining"},
+    {"reset", "Discard cache data and start synchronizing from the start"},
+    {"set_log", "Change current log level (0-4)"},
+    {"save", "Save wallet synchronized data"},
+    {"help", "Show this help"},
+    {"exit", "Close wallet"}
+  });
+
   return ss.str();
 }
 
@@ -533,14 +619,19 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("heat_info", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
   m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
-  m_consoleHandler.setHandler("swap", boost::bind(&simple_wallet::swap, this, boost::arg<1>()), "swap <0|1> <amount> <min_output> - Swap on Hearth AMM (0=XFG→HEAT, 1=HEAT→XFG)");
+  m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address> <amount> - Send HEAT to a recipient");
+  m_consoleHandler.setHandler("sell_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 0; return swap(args); }, "sell_xfg <amount> <min_heat> - Sell XFG for HEAT on Hearth AMM");
+  m_consoleHandler.setHandler("buy_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 1; return swap(args); }, "buy_xfg <amount> <min_xfg> - Buy XFG with HEAT on Hearth AMM");
   m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq <xfg_amount> <heat_amount> - Add liquidity to Hearth");
   m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
 
   // HEAT CD commands (v11+)
-  m_consoleHandler.setHandler("heat_deposit", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_deposit <amount> <term_epochs> - Create HEAT CD");
+  m_consoleHandler.setHandler("heat_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_cd <amount> <term_epochs> - Create HEAT Certificate of Deposit");
   m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
-  m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List active HEAT CDs");
+  m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List all HEAT transactions");
+  m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all HEAT CDs");
+  m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Show detailed CD info");
+  m_consoleHandler.setHandler("legacy_withdraw", boost::bind(&simple_wallet::legacy_withdraw, this, boost::arg<1>()), "legacy_withdraw <deposit_id> - Withdraw old multisig XFG deposit");
 
   // Hearth orderbook commands (v11+)
   m_consoleHandler.setHandler("place_order", boost::bind(&simple_wallet::place_order, this, boost::arg<1>()), "place_order <buy|sell> <amount> <price> [exp_blocks] - Place limit order on Hearth");
@@ -622,6 +713,9 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
   }
 
   if (m_generate_new.empty() && m_wallet_file_arg.empty()) {
+    if (!m_currency.isTestnet()) {
+      Common::Console::setTextColor(Common::Console::Color::BrightYellow);
+    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "       ░░░░░░░ ░░    ░░ ░░░░░░░  ░░░░░░   ░░░░░░        " << "\n";
@@ -630,6 +724,9 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm) {
     std::cout << "       ▓▓      ▓▓    ▓▓ ▓▓      ▓▓    ▓▓ ▓▓    ▓▓       " << "\n";
     std::cout << "       ██       ██████  ███████  ██████   ██████        " << "\n";
     std::cout << "\n";
+    if (!m_currency.isTestnet()) {
+      Common::Console::setTextColor(Common::Console::Color::Default);
+    }
     std::cout << "\n";
     std::cout << "\n";
     std::cout << "Welcome to Fuego command-line wallet." << "\n";
@@ -1254,92 +1351,71 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
     return true;
   }
 
-   success_msg_writer() << "Deposits (" << deposit_count << "):";
-   success_msg_writer() << "ID    | Amount             | Term          | Unlock Height | Status | Key Image";
-   success_msg_writer() << "------|--------------------|---------------|---------------|--------|---------";
+  success_msg_writer() << "";
+  success_msg_writer() << "=== HEAT Certificates of Deposit ===";
+  success_msg_writer() << "ID    | Amount           | Term          | Status   | Unlock Height";
+  success_msg_writer() << "------+------------------+---------------+----------+--------------";
 
-   // go through deposits ids for the amount of deposits in wallet
-   for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
-   {
-     // get deposit info from id and store it to deposit
-     CryptoNote::Deposit deposit;
-     if (!m_wallet->getDeposit(id, deposit)) {
-       continue; // Skip invalid deposits
-     }
+  size_t shown = 0;
+  for (CryptoNote::DepositId id = 0; id < deposit_count; ++id)
+  {
+    CryptoNote::Deposit deposit;
+    if (!m_wallet->getDeposit(id, deposit)) {
+      continue;
+    }
 
-     // Skip burns / HEAT txns — those belong in list_burns only
-     if (deposit.term == CryptoNote::parameters::HEAT_TERM) {
-       continue;
-     }
+    // Only show CD deposits (not HEAT_TERM burns, not LP deposits)
+    if (deposit.term == CryptoNote::parameters::HEAT_TERM) continue;
+    if (deposit.term == CryptoNote::parameters::DEPOSIT_TERM_LP) continue;
+    if (deposit.term == 0) continue;
 
-     // Extract commitment (Key Image) from transaction extra
-     std::string key_image_str = "";
-     if (!deposit.extra.empty()) {
-       std::vector<TransactionExtraField> extraFields;
-       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-       if (parseTransactionExtra(extraBytes, extraFields)) {
-         for (const auto& field : extraFields) {
-           if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-             const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-             key_image_str = Common::podToHex(heatCommit.commitment);
-             break;
-           } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-             const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-             key_image_str = Common::podToHex(coldCommit.commitment);
-             break;
-           }
-         }
-       }
-     }
+    shown++;
 
-     // Format amount
-     std::string amount_str = m_currency.formatAmount(deposit.amount);
+    std::string amount_str = m_currency.formatAmount(deposit.amount);
 
-     // Format term (CD deposits)
-     uint32_t cdMin = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MIN_TERM
-                                                 : CryptoNote::parameters::DEPOSIT_MIN_TERM;
-     uint32_t cdMax = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_DEPOSIT_MAX_TERM
-                                                 : CryptoNote::parameters::DEPOSIT_MAX_TERM;
+    // Format term as epochs
+    uint32_t epochBlocks = m_currency.isTestnet() ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+                                                   : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    uint32_t epochs = deposit.term / epochBlocks;
+    uint32_t days_approx = epochs * 5;
+    std::string term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
 
-     std::string term_str;
-     // Convert blocks to epochs (1 epoch = 900 blocks ≈ 5 days)
-     if (deposit.term >= cdMin && deposit.term <= cdMax) {
-       uint32_t epochs = deposit.term / CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-       uint32_t days_approx = epochs * 5;
-       term_str = std::to_string(epochs) + " epoch(s) (~" + std::to_string(days_approx) + " days)";
-     } else {
-       term_str = std::to_string(deposit.term) + " blocks";
-     }
+    // Format status
+    std::string status_str;
+    if (deposit.locked) {
+      status_str = "Locked";
+    } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      status_str = "Unlocked";
+    } else {
+      status_str = "Withdrawn";
+    }
 
-     // Format unlock height
-     std::string unlock_str = "";
-     if (deposit.locked) {
-       unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
-     } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-       unlock_str = "Withdrawn";
-     } else {
-       unlock_str = "Unlocked";
-     }
+    // Format unlock height
+    std::string unlock_str;
+    if (deposit.locked) {
+      unlock_str = (deposit.unlockHeight == 0) ? "Pending" : std::to_string(deposit.unlockHeight);
+    } else if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      unlock_str = "Done";
+    } else {
+      unlock_str = "Ready";
+    }
 
-     // Format status
-     std::string status_str = "";
-     if (deposit.locked) {
-       status_str = "Locked";
-     } else if (deposit.spendingTransactionId == CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
-       status_str = "Unlocked";
-     } else {
-       status_str = "Withdrawn";
-     }
+    success_msg_writer() << std::left
+      << std::setw(5)  << std::to_string(id) << " | "
+      << std::setw(16) << amount_str << " | "
+      << std::setw(13) << term_str << " | "
+      << std::setw(8)  << status_str << " | "
+      << unlock_str;
+  }
 
-     success_msg_writer() << std::left <<
-       std::setw(5)  << std::to_string(id) << " | " <<
-       std::setw(18) << amount_str << " | " <<
-       std::setw(13) << term_str << " | " <<
-       std::setw(13) << unlock_str << " | " <<
-       std::setw(8) << status_str << " | " <<
-       key_image_str;
-   }
+  if (shown == 0) {
+    success_msg_writer() << "  (no HEAT CDs found)";
+  } else {
+    success_msg_writer() << "";
+    success_msg_writer() << "Use 'cd_info <id>' for detailed info on a specific CD.";
+  }
 
+  success_msg_writer() << "";
   return true;
 }
 
@@ -3032,6 +3108,12 @@ void simple_wallet::synchronizationProgressUpdated(uint32_t current, uint32_t to
 bool simple_wallet::show_balance(const std::vector<std::string>& args) {
   success_msg_writer() << "available balance: " << m_currency.formatAmount(m_wallet->actualBalance()) <<
     ", locked amount: " << m_currency.formatAmount(m_wallet->pendingBalance());
+  uint64_t heatActual = m_wallet->actualHeatBalance();
+  uint64_t heatPending = m_wallet->pendingHeatBalance();
+  if (heatActual > 0 || heatPending > 0) {
+    success_msg_writer() << "HEAT balance: " << m_currency.formatAmount(heatActual) <<
+      " (locked: " << m_currency.formatAmount(heatPending) << ")";
+  }
   return true;
 }
 
@@ -4163,49 +4245,57 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::swap(const std::vector<std::string>& args) {
-  if (args.size() < 3) {
-    fail_msg_writer() << "Usage: swap <direction> <amount> <min_output>";
-    fail_msg_writer() << "  direction: 0 = XFG->HEAT, 1 = HEAT->XFG";
+  // Determine direction from command name: sell_xfg = direction 0 (XFG→HEAT), buy_xfg = direction 1 (HEAT→XFG)
+  // The caller sets m_lastSwapDirection before calling this
+  uint8_t direction = m_lastSwapDirection;
+
+  if (direction == 0 && args.size() < 2) {
+    fail_msg_writer() << "Usage: sell_xfg <amount> <min_heat>";
     return false;
   }
-
-  int directionInt;
-  if (!Common::fromString(args[0], directionInt) || directionInt < 0 || directionInt > 1) {
-    fail_msg_writer() << "Invalid direction: use 0 (XFG->HEAT) or 1 (HEAT->XFG)";
+  if (direction == 1 && args.size() < 2) {
+    fail_msg_writer() << "Usage: buy_xfg <amount> <min_xfg>";
     return false;
   }
 
   uint64_t amount;
-  if (!m_currency.parseAmount(args[1], amount)) {
+  if (!m_currency.parseAmount(args[0], amount)) {
     fail_msg_writer() << "Invalid amount";
     return false;
   }
 
   uint64_t minOutput;
-  if (!m_currency.parseAmount(args[2], minOutput)) {
-    fail_msg_writer() << "Invalid min_output";
+  if (!m_currency.parseAmount(args[1], minOutput)) {
+    fail_msg_writer() << "Invalid min output";
     return false;
   }
 
   uint64_t fee = m_currency.minimumFee();
-  uint64_t balance = m_wallet->actualBalance();
-  if (balance < amount + fee) {
-    fail_msg_writer() << "Insufficient balance. Available: " << m_currency.formatAmount(balance)
-                      << ", needed: " << m_currency.formatAmount(amount + fee);
-    return false;
+  if (direction == 0) {
+    // Selling XFG for HEAT — check XFG balance
+    uint64_t balance = m_wallet->actualBalance();
+    if (balance < amount + fee) {
+      fail_msg_writer() << "Insufficient XFG balance. Available: " << m_currency.formatAmount(balance)
+                        << ", needed: " << m_currency.formatAmount(amount + fee);
+      return false;
+    }
+  } else {
+    // Buying XFG with HEAT — check HEAT balance
+    uint64_t heatBalance = m_wallet->actualHeatBalance();
+    if (heatBalance < amount) {
+      fail_msg_writer() << "Insufficient HEAT balance. Available: " << m_currency.formatAmount(heatBalance)
+                        << ", needed: " << m_currency.formatAmount(amount);
+      return false;
+    }
   }
 
-  uint8_t direction = static_cast<uint8_t>(directionInt);
-
-  success_msg_writer() << "Swap " << m_currency.formatAmount(amount)
-                       << (direction == 0 ? " XFG -> HEAT" : " HEAT -> XFG")
+  success_msg_writer() << (direction == 0 ? "Sell " : "Buy ")
+                       << m_currency.formatAmount(amount)
+                       << (direction == 0 ? " XFG for HEAT" : " HEAT for XFG")
                        << " | min output: " << m_currency.formatAmount(minOutput);
 
-  // Use ammSwapV10() — dedicated AMM swap API that builds proper commitment tx
-  // For direction=0 (XFG->HEAT): outputAmount = estimated HEAT (use minOutput as estimate)
-  // For direction=1 (HEAT->XFG): outputAmount = estimated XFG (use minOutput as estimate)
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  uint64_t outputAmount = minOutput; // estimated output for auth tag
+  uint64_t outputAmount = minOutput;
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
@@ -4384,12 +4474,204 @@ bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
     fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
     return false;
   }
-  success_msg_writer() << "HEAT CD withdrawal: " << args[0];
+
+  uint64_t deposit_id;
+  if (!Common::fromString(args[0], deposit_id)) {
+    fail_msg_writer() << "Invalid deposit ID";
+    return false;
+  }
+
+  if (deposit_id >= m_wallet->getDepositCount()) {
+    fail_msg_writer() << "Invalid deposit ID. Use heat_list to see available HEAT deposits.";
+    return false;
+  }
+
+  CryptoNote::Deposit deposit;
+  if (!m_wallet->getDeposit(deposit_id, deposit)) {
+    fail_msg_writer() << "Failed to retrieve deposit information.";
+    return false;
+  }
+
+  if (deposit.term != CryptoNote::parameters::HEAT_TERM) {
+    fail_msg_writer() << "Deposit [" << deposit_id << "] is not a HEAT deposit. Use legacy_withdraw for XFG deposits.";
+    return false;
+  }
+
+  if (deposit.locked) {
+    fail_msg_writer() << "Deposit is still locked. Unlock height: " << deposit.unlockHeight;
+    return false;
+  }
+
+  if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Deposit has already been withdrawn.";
+    return false;
+  }
+
+  success_msg_writer() << "Withdrawing HEAT deposit [" << deposit_id << "]: " << m_currency.formatAmount(deposit.amount) << " HEAT";
+
+  uint64_t fee = m_currency.minimumFee();
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  std::vector<CryptoNote::DepositId> depositIds = { static_cast<CryptoNote::DepositId>(deposit_id) };
+  CryptoNote::TransactionId txId = m_wallet->withdrawDeposits(depositIds, fee);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Withdraw transaction failed";
+    return false;
+  }
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send withdraw: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Withdraw submitted: tx " << txId;
+  return true;
+}
+
+bool simple_wallet::legacy_withdraw(const std::vector<std::string>& args) {
+  if (args.size() < 1) {
+    fail_msg_writer() << "Usage: legacy_withdraw <deposit_id>";
+    fail_msg_writer() << "Withdraw old multisig-based XFG deposit (pre-v3 format)";
+    return false;
+  }
+
+  uint64_t deposit_id;
+  if (!Common::fromString(args[0], deposit_id)) {
+    fail_msg_writer() << "Invalid deposit ID";
+    return false;
+  }
+
+  if (deposit_id >= m_wallet->getDepositCount()) {
+    fail_msg_writer() << "Invalid deposit ID. Use list_cds to see available deposits.";
+    return false;
+  }
+
+  CryptoNote::Deposit deposit;
+  if (!m_wallet->getDeposit(deposit_id, deposit)) {
+    fail_msg_writer() << "Failed to retrieve deposit information.";
+    return false;
+  }
+
+  if (deposit.locked) {
+    fail_msg_writer() << "Deposit is still locked. Unlock height: " << deposit.unlockHeight;
+    return false;
+  }
+
+  if (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Deposit has already been withdrawn.";
+    return false;
+  }
+
+  success_msg_writer() << "Withdrawing legacy deposit [" << deposit_id << "]: " << m_currency.formatAmount(deposit.amount) << " XFG";
+
+  uint64_t fee = m_currency.minimumFee();
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  std::vector<CryptoNote::DepositId> depositIds = { static_cast<CryptoNote::DepositId>(deposit_id) };
+  CryptoNote::TransactionId txId = m_wallet->withdrawDeposits(depositIds, fee);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Withdraw transaction failed";
+    return false;
+  }
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send withdraw: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "Withdraw submitted: tx " << txId;
   return true;
 }
 
 bool simple_wallet::heat_list(const std::vector<std::string>& args) {
-  success_msg_writer() << "HEAT CDs earn interest from epoch swap fees (distributed as HEAT)";
+  // Show HEAT transaction history (deposits with HEAT_TERM)
+  size_t depositCount = m_wallet->getDepositCount();
+  size_t shown = 0;
+
+  success_msg_writer() << "";
+  success_msg_writer() << "=== HEAT Transactions ===";
+
+  for (size_t i = 0; i < depositCount; ++i) {
+    CryptoNote::Deposit deposit;
+    if (!m_wallet->getDeposit(i, deposit)) continue;
+    if (deposit.term != CryptoNote::parameters::HEAT_TERM) continue;
+    shown++;
+
+    std::string status = deposit.locked ? "locked" :
+      (deposit.spendingTransactionId != CryptoNote::WALLET_LEGACY_INVALID_TRANSACTION_ID ? "spent" : "available");
+    success_msg_writer() << "  [" << i << "] " << m_currency.formatAmount(deposit.amount) << " HEAT"
+                         << " | " << status
+                         << " | tx " << Common::podToHex(deposit.transactionHash).substr(0, 16);
+  }
+
+  if (shown == 0)
+    success_msg_writer() << "  (no HEAT transactions found)";
+
+  success_msg_writer() << "";
+  return true;
+}
+
+bool simple_wallet::send_heat(const std::vector<std::string>& args) {
+  if (args.size() < 2) {
+    fail_msg_writer() << "Usage: send_heat <address> <amount>";
+    return false;
+  }
+
+  CryptoNote::AccountPublicAddress addr;
+  if (!m_currency.parseAccountAddressString(args[0], addr)) {
+    fail_msg_writer() << "Invalid address: " << args[0];
+    return false;
+  }
+
+  uint64_t amount;
+  if (!m_currency.parseAmount(args[1], amount) || amount == 0) {
+    fail_msg_writer() << "Invalid amount";
+    return false;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+  uint64_t heatBalance = m_wallet->actualHeatBalance();
+  if (heatBalance < amount) {
+    fail_msg_writer() << "Insufficient HEAT balance. Available: " << m_currency.formatAmount(heatBalance)
+                      << ", needed: " << m_currency.formatAmount(amount);
+    return false;
+  }
+
+  success_msg_writer() << "Send " << m_currency.formatAmount(amount) << " HEAT to " << args[0];
+
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  CryptoNote::TransactionId txId = m_wallet->sendHeatV10(addr, amount, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "Send HEAT transaction failed";
+    return false;
+  }
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send HEAT: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "HEAT sent: tx " << txId;
   return true;
 }
 

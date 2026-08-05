@@ -1020,10 +1020,21 @@ bool wallet_rpc_server::on_heat_mint(const wallet_rpc::COMMAND_RPC_HEAT_MINT::re
     if (req.heat_minted == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "heat_minted must be > 0");
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.mintHeatV10(req.xfg_burned, req.heat_minted, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT mint failed");
     }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT mint relay failed: " + sendError.message());
+    }
+
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet.getTransaction(txId, txInfo);
     res.tx_hash = Common::podToHex(txInfo.hash);
@@ -1046,10 +1057,21 @@ bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::re
     if (req.amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.sendHeatV10(addr, req.amount, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT failed");
     }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Send HEAT relay failed: " + sendError.message());
+    }
+
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet.getTransaction(txId, txInfo);
     res.tx_hash = Common::podToHex(txInfo.hash);
@@ -1072,11 +1094,22 @@ bool wallet_rpc_server::on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::requ
     }
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.ammSwapV10(req.direction, req.input_amount,
         req.expected_output, req.min_output, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap failed");
     }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap relay failed: " + sendError.message());
+    }
+
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet.getTransaction(txId, txInfo);
     res.tx_hash = Common::podToHex(txInfo.hash);
@@ -1097,10 +1130,21 @@ bool wallet_rpc_server::on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_A
     }
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.lpAddV10(req.amount_xfg, req.amount_heat, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add failed");
     }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add relay failed: " + sendError.message());
+    }
+
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet.getTransaction(txId, txInfo);
     res.tx_hash = Common::podToHex(txInfo.hash);
@@ -1120,11 +1164,22 @@ bool wallet_rpc_server::on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOS
     if (req.term_epochs == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term_epochs must be > 0");
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.heatDepositV10(req.amount, req.term_epochs,
         req.banking_fee, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT deposit failed");
     }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "HEAT deposit relay failed: " + sendError.message());
+    }
+
     CryptoNote::WalletLegacyTransaction txInfo;
     m_wallet.getTransaction(txId, txInfo);
     res.tx_hash = Common::podToHex(txInfo.hash);
@@ -1194,11 +1249,21 @@ bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE
     uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
     uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.placeOrderV13(
       req.side, req.amount, req.target_price, req.expiration, fee, mixin);
 
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to place limit order");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Limit order relay failed: " + sendError.message());
     }
 
     CryptoNote::WalletLegacyTransaction txInfo;
@@ -1225,10 +1290,20 @@ bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANC
     uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
     uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
 
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
     CryptoNote::TransactionId txId = m_wallet.cancelOrderV13(orderId, fee, mixin);
 
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to cancel limit order");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Cancel order relay failed: " + sendError.message());
     }
 
     CryptoNote::WalletLegacyTransaction txInfo;

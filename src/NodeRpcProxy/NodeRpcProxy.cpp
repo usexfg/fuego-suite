@@ -783,6 +783,28 @@ std::error_code NodeRpcProxy::jsonRpcCommand(const std::string& method, const Re
   return ec;
 }
 
+std::error_code NodeRpcProxy::getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                              uint32_t currentHeight, uint64_t& outInterest,
+                                              bool isLegacyBond) {
+  COMMAND_RPC_ESTIMATE_CD_YIELD::request req;
+  COMMAND_RPC_ESTIMATE_CD_YIELD::response res;
+  req.amount = amount;
+  req.creation_height = creationHeight;
+  req.current_height = currentHeight;
+  std::error_code ec = jsonCommand("/estimate_cd_yield", req, res);
+  if (ec) return ec;
+  outInterest = res.estimated_interest;
+  return {};
+}
+
+std::error_code NodeRpcProxy::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
+  // Remote daemon epoch fee rate query — not exposed via RPC yet.
+  // Falls back to zero; callers that need this (legacy bond validation)
+  // will get conservative estimates.
+  outFeeRate = 0;
+  return {};
+}
+
 std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRpcEntry>& deposits) {
   COMMAND_RPC_GET_LIMIT_ORDERS::request req;
   COMMAND_RPC_GET_LIMIT_ORDERS::response res;
@@ -811,5 +833,9 @@ template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_ORDERBOOK_STA
 
 template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_GET_LIMIT_ORDERS::request, COMMAND_RPC_GET_LIMIT_ORDERS::response>(
   const std::string& url, const COMMAND_RPC_GET_LIMIT_ORDERS::request& req, COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
+
+// Explicit template instantiation for CD interest query
+template std::error_code NodeRpcProxy::jsonCommand<COMMAND_RPC_ESTIMATE_CD_YIELD::request, COMMAND_RPC_ESTIMATE_CD_YIELD::response>(
+  const std::string& url, const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req, COMMAND_RPC_ESTIMATE_CD_YIELD::response& res);
 
 }

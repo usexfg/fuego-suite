@@ -89,6 +89,10 @@ public:
   virtual void getPoolTransactions(uint64_t timestampBegin, uint64_t timestampEnd, uint32_t transactionsNumberLimit, std::vector<TransactionDetails>& transactions, uint64_t& transactionsNumberWithinTimestamps, const Callback& callback) override;
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
 
+  virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
+                                        uint32_t currentHeight, uint64_t& outInterest,
+                                        bool isLegacyBond = false) override;
+  virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
   virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
 
   unsigned int rpcTimeout() const { return m_rpcTimeout; }

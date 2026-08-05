@@ -164,6 +164,7 @@ namespace CryptoNote
     bool heat_info(const std::vector<std::string> &args);
     bool pool_info(const std::vector<std::string> &args);
     bool mint_heat(const std::vector<std::string> &args);
+    bool send_heat(const std::vector<std::string> &args);
     bool swap(const std::vector<std::string> &args);
     bool add_liq(const std::vector<std::string> &args);
     bool remove_liq(const std::vector<std::string> &args);
@@ -172,6 +173,7 @@ namespace CryptoNote
     bool heat_deposit(const std::vector<std::string> &args);
     bool heat_withdraw(const std::vector<std::string> &args);
     bool heat_list(const std::vector<std::string> &args);
+    bool legacy_withdraw(const std::vector<std::string> &args);
 
     // Hearth orderbook commands (v11+)
     bool place_order(const std::vector<std::string> &args);
@@ -257,8 +259,10 @@ namespace CryptoNote
     // Optional wallet RPC port for swapxfg launcher (0 = not configured)
     uint16_t m_wallet_rpc_port = 0;
 
+    // Swap direction for sell_xfg/buy_xfg commands (0=XFG→HEAT, 1=HEAT→XFG)
+    uint8_t m_lastSwapDirection = 0;
+
     // Sub-address list: (major, minor, addressString)
-    // Generated deterministically from master keys; persisted in <wallet>.subaddresses
     std::vector<std::tuple<uint32_t, uint32_t, std::string>> m_subAddresses;
     void loadSubAddresses();
     void saveSubAddresses() const;

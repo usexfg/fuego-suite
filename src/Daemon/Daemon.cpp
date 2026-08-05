@@ -241,7 +241,10 @@ int main(int argc, char* argv[])
 
     // configure logging
 	    logManager.configure(buildLoggerConfiguration(cfgLogLevel, cfgLogFile));
-		logger(INFO, BRIGHT_YELLOW) <<
+
+    bool testnet_mode = command_line::get_arg(vm, arg_testnet_on);
+
+    logger(INFO, testnet_mode ? BRIGHT_WHITE : BRIGHT_YELLOW) <<
 #ifdef _WIN32
 " \n"
 "       8888888888 888     888 8888888888 .d8888b.   .d88888b.   \n"
@@ -270,7 +273,6 @@ int main(int argc, char* argv[])
 
     logger(INFO) << "Module folder: " << argv[0];
 
-    bool testnet_mode = command_line::get_arg(vm, arg_testnet_on);
     if (testnet_mode) {
       logger(INFO) << "Starting in testnet mode!";
     }

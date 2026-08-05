@@ -4624,6 +4624,9 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
       if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
         m_heatSupply += heatMinted;
         m_heatCdFeePool += heatMinted;
+        // Credit fee pool so F-001 cap allows CD interest claims
+        if (m_feePoolBalance <= UINT64_MAX - heatMinted)
+          m_feePoolBalance += heatMinted;
         uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
         m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
                         VaultPartition::CD_APY_POOL, blockHash,
@@ -5237,10 +5240,47 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
 
   m_paymentIdIndex.add(transaction.tx);
 
-  // AMM state mutation — LP operations only (swap removed, no swaps completed)
+  // AMM state mutation — swap settlement + LP operations
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
     std::vector<TransactionExtraField> tx_extra_fields;
     if (parseTransactionExtra(transaction.tx.extra, tx_extra_fields)) {
+      // AMM swap settlement: update pool reserves and collect flat fee
+      for (const auto& field : tx_extra_fields) {
+        if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+          const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
+          if (auth.direction == 0) {
+            // XFG→HEAT: pool gains XFG, loses HEAT
+            if (m_ammPool.reserveXfg <= UINT64_MAX - auth.inputAmount)
+              m_ammPool.reserveXfg += auth.inputAmount;
+            if (m_ammPool.reserveHeat >= auth.outputAmount)
+              m_ammPool.reserveHeat -= auth.outputAmount;
+            // Flat fee: 1% of HEAT output (fill value)
+            uint64_t cdFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+            m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
+              ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
+            logger(INFO) << "AMM swap XFG→HEAT settled: pool +"
+                         << m_currency.formatAmount(auth.inputAmount) << " XFG, -"
+                         << m_currency.formatAmount(auth.outputAmount) << " HEAT, cdFee="
+                         << m_currency.formatAmount(cdFee);
+          } else {
+            // HEAT→XFG: pool gains HEAT, loses XFG
+            if (m_ammPool.reserveHeat <= UINT64_MAX - auth.inputAmount)
+              m_ammPool.reserveHeat += auth.inputAmount;
+            if (m_ammPool.reserveXfg >= auth.outputAmount)
+              m_ammPool.reserveXfg -= auth.outputAmount;
+            // Flat fee: 1% of XFG output (fill value)
+            uint64_t cdFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+            m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
+              ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
+            logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
+                         << m_currency.formatAmount(auth.inputAmount) << " HEAT, -"
+                         << m_currency.formatAmount(auth.outputAmount) << " XFG, cdFee="
+                         << m_currency.formatAmount(cdFee);
+          }
+          break;  // one swap auth per tx
+        }
+      }
+
       uint64_t authLpAddXfg = 0, authLpAddHeat = 0;
       for (const auto& f : tx_extra_fields) {
         if (f.type() == typeid(TransactionExtraLpAddAuth)) {
@@ -5521,12 +5561,28 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       "Blockchain consistency broken - cannot find transaction by hash.";
   }
 
-  // Reverse AMM state mutations — LP only (swap removed, no swaps completed)
+  // Reverse AMM state mutations — swap settlement + LP operations
   std::vector<TransactionExtraField> tx_extra_fields;
   if (parseTransactionExtra(transaction.extra, tx_extra_fields)) {
     for (auto it = tx_extra_fields.rbegin(); it != tx_extra_fields.rend(); ++it) {
       const auto& field = *it;
-      if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
+      if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+        const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
+        // Reverse pool reserve changes
+        if (auth.direction == 0) {
+          // Forward was XFG→HEAT: pool gained XFG, lost HEAT
+          if (m_ammPool.reserveXfg >= auth.inputAmount) m_ammPool.reserveXfg -= auth.inputAmount;
+          if (m_ammPool.reserveHeat <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveHeat += auth.outputAmount;
+        } else {
+          // Forward was HEAT→XFG: pool gained HEAT, lost XFG
+          if (m_ammPool.reserveHeat >= auth.inputAmount) m_ammPool.reserveHeat -= auth.inputAmount;
+          if (m_ammPool.reserveXfg <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveXfg += auth.outputAmount;
+        }
+        // Reverse cdFee
+        uint64_t cdFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+        if (m_ammPool.cdHearthFeeAccumulator >= cdFee) m_ammPool.cdHearthFeeAccumulator -= cdFee;
+        break;
+      } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
         const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
         // Compute shares BEFORE decrementing reserves to match pushTransaction's pre-deposit calculation.
         // Mathematical proof: totalLpShares_new * amountXfg / reserveXfg_new = totalLpShares_original * amountXfg / reserveXfg_original

@@ -69,6 +69,12 @@ struct SendTransactionContext
   uint64_t v10LpMinXfg = 0;
   uint64_t v10LpMinHeat = 0;
 
+  // v10 LP fee claim
+  bool isV10LpClaim = false;
+  uint64_t v10LpClaimShares = 0;
+  uint64_t v10LpClaimMinXfg = 0;
+  uint64_t v10LpClaimMinHeat = 0;
+
   // v10 HEAT transfer
   bool isV10HeatTransfer = false;
   AccountPublicAddress v10HeatRecipient;

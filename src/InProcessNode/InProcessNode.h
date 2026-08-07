@@ -88,6 +88,7 @@ public:
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
   virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
   virtual uint64_t getHearthTwap() override;
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
 
 private:
   virtual void peerCountUpdated(size_t count) override;

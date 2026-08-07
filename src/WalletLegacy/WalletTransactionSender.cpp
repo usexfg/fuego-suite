@@ -569,6 +569,9 @@ namespace CryptoNote
     } else if (context->isV10LpRemove) {
       nextRequest = doSendLpRemoveV10Transaction(std::move(context), events,
         context->v10LpSharesBurned, context->v10LpMinXfg, context->v10LpMinHeat);
+    } else if (context->isV10LpClaim) {
+      nextRequest = doSendLpClaimFeesTransaction(std::move(context), events,
+        context->v10LpClaimShares, context->v10LpClaimMinXfg, context->v10LpClaimMinHeat);
     } else if (context->isV10AmmSwap && context->depositTerm > 0 && context->depositTerm < parameters::DEPOSIT_TERM_LP) {
       // HEAT CD deposit: spend HEAT → CD commitment output
       nextRequest = doSendHeatDepositV10Transaction(std::move(context), events,
@@ -2109,26 +2112,61 @@ namespace CryptoNote
       return makeGetRandomCommitmentOutsRequest(std::move(context), depositAmount, selectedIds);
     }
 
-    // Direction=0: standard XFG KeyInput selection
-    uint64_t neededMoney = getSumWithOverflowCheck(inputAmount, fee);
+    // direction == 0 (XFG→HEAT): standard KeyInput selection
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
     context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
     context->mixIn = mixIn;
 
+    uint64_t neededMoney = getSumWithOverflowCheck(inputAmount, fee);
     context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
     throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
     context->transactionId = transactionId;
-
-    context->depositTerm = direction;
     context->isV10AmmSwap = true;
     context->v10SwapDirection = direction;
     context->v10SwapInput = inputAmount;
     context->v10SwapOutput = outputAmount;
     context->v10SwapMinOutput = minOutput;
 
-    Crypto::SecretKey transactionSK;
+    uint64_t depositAmount = context->selectedTransfers.empty() ? 0 : context->selectedTransfers[0].amount;
+    return makeGetRandomCommitmentOutsRequest(std::move(context), depositAmount, std::vector<DepositId>());
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeLpClaimFeesRequest(
+      TransactionId &transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t lpShares,
+      uint64_t minXfg,
+      uint64_t minHeat,
+      uint64_t fee,
+      uint64_t mixIn)
+  {
+    throwIf(lpShares == 0, error::WRONG_AMOUNT);
+
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+    context->mixIn = mixIn;
+
+    // Fee claim: select a small XFG output to pay the network fee
+    // The actual claimed fees come from the pool, not from user inputs
+    context->foundMoney = selectTransfersToSend(fee, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
+    throwIf(context->foundMoney < fee, error::WRONG_AMOUNT);
+
+    transactionId = m_transactionsCache.addNewTransaction(0, fee, std::string(), {}, 0, {});
+    context->transactionId = transactionId;
+    context->isV10LpClaim = true;
+    context->v10LpClaimShares = lpShares;
+    context->v10LpClaimMinXfg = minXfg;
+    context->v10LpClaimMinHeat = minHeat;
+
+    // Append TransactionExtraAmmClaim to the cached transaction extra
+    WalletLegacyTransaction &txInfo = m_transactionsCache.getTransaction(transactionId);
+    std::vector<uint8_t> extra;
+    addAmmClaimToExtra(extra, lpShares, minXfg, minHeat);
+    txInfo.extra.insert(txInfo.extra.end(), extra.begin(), extra.end());
+
+    Crypto::SecretKey transactionSK = reinterpret_cast<const Crypto::SecretKey&>(txInfo.secretKey);
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
@@ -2664,6 +2702,29 @@ namespace CryptoNote
       return std::unique_ptr<WalletRequest>(new WalletRelayTransactionRequest(lowlevelTransaction,
         std::bind(&WalletTransactionSender::relayTransactionCallback, this, context,
           std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
+    } catch (std::exception &e) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
+      return {};
+    }
+  }
+
+  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendLpClaimFeesTransaction(
+      std::shared_ptr<SendTransactionContext> &&context,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t lpShares,
+      uint64_t minXfg,
+      uint64_t minHeat)
+  {
+    if (m_isStoping) {
+      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
+      return {};
+    }
+    try {
+      // Fee-only claim: extra already set in makeLpClaimFeesRequest.
+      // Use standard key-input signing path.
+      WalletLegacyTransaction &txInfo = m_transactionsCache.getTransaction(context->transactionId);
+      Crypto::SecretKey transactionSK = reinterpret_cast<const Crypto::SecretKey&>(txInfo.secretKey);
+      return doSendTransaction(std::move(context), events, transactionSK);
     } catch (std::exception &e) {
       events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
       return {};

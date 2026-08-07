@@ -159,6 +159,14 @@ public:
     return {};
   }
   virtual uint64_t getHearthTwap() { return 0; }
+  struct AmmPoolInfo {
+    uint64_t reserveXfg = 0;
+    uint64_t reserveHeat = 0;
+    uint64_t spotPrice = 0;
+  };
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
+    return std::make_error_code(std::errc::not_supported);
+  }
 };
 
 } //namespace CryptoNote

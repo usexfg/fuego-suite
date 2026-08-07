@@ -902,6 +902,64 @@ using CryptoNote::ISerializer;
     };
   };
 
+  // Remove LP liquidity
+  struct COMMAND_RPC_AMM_REMOVE_LIQUIDITY {
+    struct request {
+      uint64_t lp_shares;
+      uint64_t min_xfg;
+      uint64_t min_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lp_shares)
+        KV_MEMBER(min_xfg)
+        KV_MEMBER(min_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+  // Claim LP swap fee earnings (fee-only, LP position stays in pool)
+  struct COMMAND_RPC_AMM_CLAIM_LP_FEES {
+    struct request {
+      uint64_t lp_shares;
+      uint64_t min_xfg;
+      uint64_t min_heat;
+      uint64_t fee;
+      uint64_t mixin;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(lp_shares)
+        KV_MEMBER(min_xfg)
+        KV_MEMBER(min_heat)
+        KV_MEMBER(fee)
+        KV_MEMBER(mixin)
+      }
+    };
+
+    struct response {
+      std::string tx_hash;
+      std::string status;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(tx_hash)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
   // Create a HEAT CD deposit (locks HEAT for term epochs)
   struct COMMAND_RPC_HEAT_DEPOSIT {
     struct request {

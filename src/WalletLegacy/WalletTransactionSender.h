@@ -94,6 +94,14 @@ public:
                                                          uint64_t fee,
                                                           uint64_t mixIn);
 
+  std::unique_ptr<WalletRequest> makeLpClaimFeesRequest(TransactionId& transactionId,
+                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                         uint64_t lpShares,
+                                                         uint64_t minXfg,
+                                                         uint64_t minHeat,
+                                                         uint64_t fee,
+                                                         uint64_t mixIn);
+
   std::unique_ptr<WalletRequest> makeAmmSwapV10Request(TransactionId& transactionId,
                                                         std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                         uint8_t direction,
@@ -187,6 +195,11 @@ private:
                                                             uint64_t amountXfg,
                                                             uint64_t amountHeat);
   std::unique_ptr<WalletRequest> doSendLpRemoveV10Transaction(std::shared_ptr<SendTransactionContext>&& context,
+                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
+                                                               uint64_t lpShares,
+                                                               uint64_t minXfg,
+                                                               uint64_t minHeat);
+  std::unique_ptr<WalletRequest> doSendLpClaimFeesTransaction(std::shared_ptr<SendTransactionContext>&& context,
                                                                std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                                uint64_t lpShares,
                                                                uint64_t minXfg,

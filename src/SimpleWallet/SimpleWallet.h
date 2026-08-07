@@ -168,10 +168,11 @@ namespace CryptoNote
     bool swap(const std::vector<std::string> &args);
     bool add_liq(const std::vector<std::string> &args);
     bool remove_liq(const std::vector<std::string> &args);
+    bool claim_lp_fees(const std::vector<std::string> &args);
 
     // HEAT CD commands (v11+)
     bool heat_deposit(const std::vector<std::string> &args);
-    bool heat_withdraw(const std::vector<std::string> &args);
+    bool claim_cd(const std::vector<std::string> &args);
     bool heat_list(const std::vector<std::string> &args);
     bool legacy_withdraw(const std::vector<std::string> &args);
 

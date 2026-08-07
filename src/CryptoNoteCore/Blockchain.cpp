@@ -4648,8 +4648,12 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
       if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
         m_heatSupply += heatMinted;
         m_heatCdFeePool += heatMinted;
-        // Credit fee pool so F-001 cap allows CD interest claims
-        if (m_feePoolBalance <= UINT64_MAX - heatMinted)
+        // Credit fee pool so F-001 cap allows CD interest claims.
+        // Testnet only: mainnet fee pool is funded exclusively by swap fees
+        // (cdHearthFeeAccumulator → epoch boundary → cdYieldPool → HEAT mint).
+        // On testnet we also credit from mint to bootstrap CD interest testing
+        // when no swap activity exists yet.
+        if (m_currency.isTestnet() && m_feePoolBalance <= UINT64_MAX - heatMinted)
           m_feePoolBalance += heatMinted;
         uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
         m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,

@@ -204,20 +204,6 @@ namespace CryptoNote
   }
 
   //----------------------------------------------------------------------------------------------------
-  // bool CryptoNote::testnet_wallet::elderking_ceremony(const std::vector<std::string> &args)
-  // {
-  //   fail_msg_writer() << "The elderking_ceremony command is no longer available.";
-  //   return true;
-  // }
-
-  //----------------------------------------------------------------------------------------------------
-  // bool CryptoNote::testnet_wallet::unstake(const std::vector<std::string> &args)
-  // {
-  //   fail_msg_writer() << "The unstake command is no longer available.";
-  //   return true;
-  // }
-
-  //----------------------------------------------------------------------------------------------------
   bool CryptoNote::testnet_wallet::list_burns(const std::vector<std::string> &args)
   {
     // List all HEAT burn deposits

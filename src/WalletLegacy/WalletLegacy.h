@@ -122,6 +122,7 @@ public:
                                     uint64_t minOutput, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId lpAddV10(uint64_t amountXfg, uint64_t amountHeat, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId lpRemoveV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 4) override;
+  virtual TransactionId lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
   virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) override;

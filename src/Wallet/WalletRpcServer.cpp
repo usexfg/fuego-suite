@@ -181,6 +181,8 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "send_heat",          makeMemberMethod(&wallet_rpc_server::on_send_heat) },
       { "amm_swap",           makeMemberMethod(&wallet_rpc_server::on_amm_swap) },
       { "amm_add_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_add_liquidity) },
+      { "amm_remove_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_remove_liquidity) },
+      { "amm_claim_lp_fees",  makeMemberMethod(&wallet_rpc_server::on_amm_claim_lp_fees) },
       { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) },
       // v11+ Hearth limit order commands
       { "place_limit_order",  makeMemberMethod(&wallet_rpc_server::on_place_limit_order) },
@@ -1151,6 +1153,72 @@ bool wallet_rpc_server::on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_A
 
     if (sendError) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP add relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_remove_liquidity(const wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::response& res) {
+  try {
+    if (req.lp_shares == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "lp_shares must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.lpRemoveV10(req.lp_shares, req.min_xfg, req.min_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP remove failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP remove relay failed: " + sendError.message());
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(txId, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = WALLET_RPC_STATUS_OK;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+bool wallet_rpc_server::on_amm_claim_lp_fees(const wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::request& req, wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::response& res) {
+  try {
+    if (req.lp_shares == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "lp_shares must be > 0");
+    uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId txId = m_wallet.lpClaimFeesV10(req.lp_shares, req.min_xfg, req.min_heat, fee, req.mixin);
+    if (txId == WALLET_INVALID_TRANSACTION_ID) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP fee claim failed");
+    }
+
+    std::error_code sendError = sent.wait(txId);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "LP fee claim relay failed: " + sendError.message());
     }
 
     CryptoNote::WalletLegacyTransaction txInfo;

@@ -99,6 +99,8 @@ namespace Tools
     bool on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::request& req, wallet_rpc::COMMAND_RPC_SEND_HEAT::response& res);
     bool on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res);
     bool on_amm_add_liquidity(const wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_ADD_LIQUIDITY::response& res);
+    bool on_amm_remove_liquidity(const wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_AMM_REMOVE_LIQUIDITY::response& res);
+    bool on_amm_claim_lp_fees(const wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::request& req, wallet_rpc::COMMAND_RPC_AMM_CLAIM_LP_FEES::response& res);
     bool on_heat_deposit(const wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::request& req, wallet_rpc::COMMAND_RPC_HEAT_DEPOSIT::response& res);
 
     // v11+ Hearth limit order wallet RPC

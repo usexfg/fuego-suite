@@ -500,7 +500,7 @@ std::string simple_wallet::get_commands_str() {
     {"mint_heat", "Burn XFG to mint HEAT"},
     {"send_heat", "Send HEAT to a recipient"},
     {"heat_cd", "Create HEAT Certificate of Deposit"},
-    {"heat_withdraw", "Withdraw HEAT CD with interest"},
+    {"claim_cd", "Claim HEAT CD principal + interest"},
     {"heat_list", "List all HEAT transactions"},
     {"list_cds", "List all HEAT CDs (open/completed/withdrawn)"},
     {"cd_info", "Show detailed info for a specific CD"}
@@ -512,6 +512,7 @@ std::string simple_wallet::get_commands_str() {
     {"buy_xfg", "Buy XFG with HEAT on Hearth AMM"},
     {"add_liq", "Add liquidity to Hearth"},
     {"remove_liq", "Remove liquidity from Hearth"},
+    {"claim_lp_fees", "Claim LP swap fee earnings"},
     {"place_order", "Place limit order on Hearth"},
     {"cancel_order", "Cancel limit order by transaction hash"},
     {"orderbook", "Show Hearth CLOB orderbook"},
@@ -622,12 +623,13 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
   m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address> <amount> - Send HEAT to a recipient");
   m_consoleHandler.setHandler("sell_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 0; return swap(args); }, "sell_xfg <amount> <min_heat> - Sell XFG for HEAT on Hearth AMM");
   m_consoleHandler.setHandler("buy_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 1; return swap(args); }, "buy_xfg <amount> <min_xfg> - Buy XFG with HEAT on Hearth AMM");
-  m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq <xfg_amount> <heat_amount> - Add liquidity to Hearth");
+  m_consoleHandler.setHandler("add_liq", boost::bind(&simple_wallet::add_liq, this, boost::arg<1>()), "add_liq [xfg_amount] [heat_amount] - Add liquidity to Hearth (no args = show pool ratio)");
   m_consoleHandler.setHandler("remove_liq", boost::bind(&simple_wallet::remove_liq, this, boost::arg<1>()), "remove_liq <lp_shares> <min_xfg> <min_heat> - Remove liquidity from Hearth");
+  m_consoleHandler.setHandler("claim_lp_fees", boost::bind(&simple_wallet::claim_lp_fees, this, boost::arg<1>()), "claim_lp_fees <lp_shares> - Claim LP swap fee earnings");
 
   // HEAT CD commands (v11+)
   m_consoleHandler.setHandler("heat_cd", boost::bind(&simple_wallet::heat_deposit, this, boost::arg<1>()), "heat_cd <amount> <term_epochs> - Create HEAT Certificate of Deposit");
-  m_consoleHandler.setHandler("heat_withdraw", boost::bind(&simple_wallet::heat_withdraw, this, boost::arg<1>()), "heat_withdraw <deposit_id> - Withdraw HEAT CD with interest");
+  m_consoleHandler.setHandler("claim_cd", boost::bind(&simple_wallet::claim_cd, this, boost::arg<1>()), "claim_cd <deposit_id_or_txn_hash> - Claim HEAT CD principal + interest");
   m_consoleHandler.setHandler("heat_list", boost::bind(&simple_wallet::heat_list, this, boost::arg<1>()), "heat_list - List all HEAT transactions");
   m_consoleHandler.setHandler("list_cds", boost::bind(&simple_wallet::list_cds, this, boost::arg<1>()), "list_cds - List all HEAT CDs");
   m_consoleHandler.setHandler("cd_info", boost::bind(&simple_wallet::cd_info, this, boost::arg<1>()), "cd_info <id> - Show detailed CD info");
@@ -4259,6 +4261,15 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
                        << " XFG / " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
+  // Confirmation prompt — user must explicitly approve the mint
+  std::cout << "Proceed with mint? (yes/no): ";
+  std::string answer;
+  std::getline(std::cin, answer);
+  if (answer != "yes" && answer != "y") {
+    fail_msg_writer() << "Mint cancelled.";
+    return false;
+  }
+
   // Use mintHeatV10() — dedicated HEAT mint API that builds proper commitment tx
   // Pass 0 for mixin on testnet (no peers = no decoys for ring signatures)
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
@@ -4361,16 +4372,64 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
 }
 
 bool simple_wallet::add_liq(const std::vector<std::string>& args) {
-  if (args.size() < 2) {
-    fail_msg_writer() << "Usage: add_liq <xfg_amount> <heat_amount>";
+  // Query pool state
+  uint64_t poolReserveXfg = 0, poolReserveHeat = 0;
+  try {
+    COMMAND_RPC_AMM_POOL_INFO::request poolReq;
+    COMMAND_RPC_AMM_POOL_INFO::response poolRes;
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
+    poolReserveXfg = poolRes.reserve_xfg;
+    poolReserveHeat = poolRes.reserve_heat;
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Failed to query AMM pool: " << e.what();
     return false;
   }
 
+  // No args — show pool ratio info and LP withdrawal warning
+  if (args.empty()) {
+    if (poolReserveXfg == 0 || poolReserveHeat == 0) {
+      success_msg_writer() << "Hearth AMM pool is empty — no liquidity yet.";
+      return true;
+    }
+    success_msg_writer() << "Hearth AMM Pool Ratio:";
+    success_msg_writer() << "  " << m_currency.formatAmount(poolReserveXfg)
+                         << " XFG : " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
+    success_msg_writer() << "  Every " << m_currency.formatAmount(poolReserveXfg)
+                         << " XFG must be paired with " << m_currency.formatAmount(poolReserveHeat)
+                         << " HEAT";
+    success_msg_writer() << "";
+    success_msg_writer() << "  To add liquidity:";
+    success_msg_writer() << "    add_liq <xfg_amount>          — auto-calculates HEAT";
+    success_msg_writer() << "    add_liq <xfg> <heat>          — explicit amounts";
+    success_msg_writer() << "";
+    success_msg_writer() << "  ┌─────────────────────────────────────────────────────────┐";
+    success_msg_writer() << "  │  LP WITHDRAWAL NOTICE                                   │";
+    success_msg_writer() << "  │                                                         │";
+    success_msg_writer() << "  │  Price is derived from the pool ratio, which is fluid   │";
+    success_msg_writer() << "  │  and changes with every swap. Upon withdrawal, you may  │";
+    success_msg_writer() << "  │  receive a different ratio of assets than you deposited. │";
+    success_msg_writer() << "  │                                                         │";
+    success_msg_writer() << "  │  The total value of your position should remain similar │";
+    success_msg_writer() << "  │  to what you originally deposited:                      │";
+    success_msg_writer() << "  │    • XFG price DOWN → you receive MORE XFG, but each    │";
+    success_msg_writer() << "  │      unit is worth less at current market value.        │";
+    success_msg_writer() << "  │    • XFG price UP   → you receive LESS XFG, but each    │";
+    success_msg_writer() << "  │      unit is worth more at current market value.        │";
+    success_msg_writer() << "  │                                                         │";
+    success_msg_writer() << "  │  LPs earn a share of the spread on every swap. These   │";
+    success_msg_writer() << "  │  earnings compound over time and can be claimed via    │";
+    success_msg_writer() << "  │  remove_liq.                                           │";
+    success_msg_writer() << "  │                                                         │";
+    success_msg_writer() << "  │  HEAT remains stable — it is a flatcoin pegged to       │";
+    success_msg_writer() << "  │  purchasing power and does not fluctuate with XFG.      │";
+    success_msg_writer() << "  └─────────────────────────────────────────────────────────┘";
+    return true;
+  }
+
   uint64_t xfgAmount;
-  uint64_t heatAmount;
-  if (!m_currency.parseAmount(args[0], xfgAmount) ||
-      !m_currency.parseAmount(args[1], heatAmount)) {
-    fail_msg_writer() << "Invalid amount(s)";
+  if (!m_currency.parseAmount(args[0], xfgAmount)) {
+    fail_msg_writer() << "Invalid XFG amount: " << args[0];
     return false;
   }
 
@@ -4382,10 +4441,72 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
     return false;
   }
 
-  success_msg_writer() << "Add liquidity: " << m_currency.formatAmount(xfgAmount)
-                       << " XFG + " << m_currency.formatAmount(heatAmount) << " HEAT";
+  uint64_t heatAmount;
+  if (args.size() >= 2) {
+    // Explicit amounts — validate ratio against pool
+    if (!m_currency.parseAmount(args[1], heatAmount)) {
+      fail_msg_writer() << "Invalid HEAT amount: " << args[1];
+      return false;
+    }
+    if (poolReserveXfg > 0 && poolReserveHeat > 0) {
+      uint64_t expectedHeat = xfgAmount * poolReserveHeat / poolReserveXfg;
+      uint64_t tolerance = expectedHeat / 20; // 5% tolerance
+      if (std::abs(static_cast<int64_t>(heatAmount) - static_cast<int64_t>(expectedHeat)) > static_cast<int64_t>(tolerance)) {
+        success_msg_writer() << "Warning: provided ratio deviates from pool ratio.";
+        success_msg_writer() << "  Pool: 1 XFG = " << m_currency.formatAmount(poolReserveHeat) << " / "
+                             << m_currency.formatAmount(poolReserveXfg) << " HEAT";
+        success_msg_writer() << "  You:  1 XFG = " << m_currency.formatAmount(heatAmount) << " / "
+                             << m_currency.formatAmount(xfgAmount) << " HEAT";
+      }
+    }
+  } else {
+    // Auto-calculate from pool ratio
+    if (poolReserveXfg == 0 || poolReserveHeat == 0) {
+      fail_msg_writer() << "AMM pool is empty — provide both XFG and HEAT amounts explicitly.";
+      return false;
+    }
+    heatAmount = xfgAmount * poolReserveHeat / poolReserveXfg;
+    success_msg_writer() << "Auto-calculated from pool ratio:";
+    success_msg_writer() << "  " << m_currency.formatAmount(xfgAmount) << " XFG → "
+                         << m_currency.formatAmount(heatAmount) << " HEAT";
+  }
 
-  // Use lpAddV10() — dedicated LP add API that builds proper commitment tx with LP term outputs
+  success_msg_writer() << "Add liquidity:";
+  success_msg_writer() << "  XFG:  " << m_currency.formatAmount(xfgAmount);
+  success_msg_writer() << "  HEAT: " << m_currency.formatAmount(heatAmount);
+  success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
+  success_msg_writer() << "";
+  success_msg_writer() << "";
+  success_msg_writer() << "  ┌─────────────────────────────────────────────────────────┐";
+  success_msg_writer() << "  │  LP WITHDRAWAL NOTICE                                   │";
+  success_msg_writer() << "  │                                                         │";
+  success_msg_writer() << "  │  Price is derived from the pool ratio, which is fluid   │";
+  success_msg_writer() << "  │  and changes with every swap. Upon withdrawal, you may  │";
+  success_msg_writer() << "  │  receive a different ratio of assets than you deposited. │";
+  success_msg_writer() << "  │                                                         │";
+  success_msg_writer() << "  │  The total value of your position should remain similar │";
+  success_msg_writer() << "  │  to what you originally deposited:                      │";
+  success_msg_writer() << "  │    • XFG price DOWN → you receive MORE XFG, but each    │";
+  success_msg_writer() << "  │      unit is worth less at current market value.        │";
+  success_msg_writer() << "  │    • XFG price UP   → you receive LESS XFG, but each    │";
+  success_msg_writer() << "  │      unit is worth more at current market value.        │";
+  success_msg_writer() << "  │                                                         │";
+  success_msg_writer() << "  │  LPs earn a share of the spread on every swap. These   │";
+  success_msg_writer() << "  │  earnings compound over time and can be claimed via    │";
+  success_msg_writer() << "  │  remove_liq.                                           │";
+  success_msg_writer() << "  │                                                         │";
+  success_msg_writer() << "  │  HEAT remains stable — it is a flatcoin pegged to       │";
+  success_msg_writer() << "  │  purchasing power and does not fluctuate with XFG.      │";
+  success_msg_writer() << "  └─────────────────────────────────────────────────────────┘";
+
+  std::cout << "Proceed? (yes/no): ";
+  std::string answer;
+  std::getline(std::cin, answer);
+  if (answer != "yes" && answer != "y") {
+    fail_msg_writer() << "Cancelled.";
+    return false;
+  }
+
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
@@ -4457,6 +4578,57 @@ bool simple_wallet::remove_liq(const std::vector<std::string>& args) {
   return true;
 }
 
+bool simple_wallet::claim_lp_fees(const std::vector<std::string>& args) {
+  if (args.size() < 1) {
+    fail_msg_writer() << "Usage: claim_lp_fees <lp_shares>";
+    fail_msg_writer() << "  Claims accumulated swap fee earnings without removing your LP position.";
+    return false;
+  }
+
+  uint64_t lpShares;
+  if (!m_currency.parseAmount(args[0], lpShares) || lpShares == 0) {
+    fail_msg_writer() << "Invalid LP shares amount";
+    return false;
+  }
+
+  uint64_t fee = m_currency.minimumFee();
+
+  success_msg_writer() << "Claim LP fees for " << m_currency.formatAmount(lpShares) << " LP shares";
+  success_msg_writer() << "  Fee: " << m_currency.formatAmount(fee);
+  success_msg_writer() << "  NOTE: Your LP position stays in the pool. Only accumulated fees are claimed.";
+
+  std::cout << "Proceed? (yes/no): ";
+  std::string answer;
+  std::getline(std::cin, answer);
+  if (answer != "yes" && answer != "y") {
+    fail_msg_writer() << "Cancelled.";
+    return false;
+  }
+
+  uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
+
+  CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+  WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
+
+  CryptoNote::TransactionId txId = m_wallet->lpClaimFeesV10(lpShares, 0, 0, fee, mixIn);
+
+  if (txId == WALLET_INVALID_TRANSACTION_ID) {
+    fail_msg_writer() << "LP fee claim transaction failed";
+    return false;
+  }
+
+  std::error_code sendError = sent.wait(txId);
+  removeGuard.removeObserver();
+
+  if (sendError) {
+    fail_msg_writer() << "Failed to send LP fee claim: " << sendError.message();
+    return false;
+  }
+
+  success_msg_writer() << "LP fee claim submitted: tx " << txId;
+  return true;
+}
+
 bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   if (args.size() < 2) {
     fail_msg_writer() << "Usage: heat_deposit <amount> <term_epochs>";
@@ -4510,21 +4682,34 @@ bool simple_wallet::heat_deposit(const std::vector<std::string>& args) {
   return true;
 }
 
-bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
+bool simple_wallet::claim_cd(const std::vector<std::string>& args) {
   if (args.size() < 1) {
-    fail_msg_writer() << "Usage: heat_withdraw <deposit_id>";
+    fail_msg_writer() << "Usage: claim_cd <deposit_id_or_txn_hash>";
     return false;
   }
 
-  uint64_t deposit_id;
-  if (!Common::fromString(args[0], deposit_id)) {
-    fail_msg_writer() << "Invalid deposit ID";
-    return false;
-  }
+  CryptoNote::DepositId deposit_id = CryptoNote::WALLET_LEGACY_INVALID_DEPOSIT_ID;
 
-  if (deposit_id >= m_wallet->getDepositCount()) {
-    fail_msg_writer() << "Invalid deposit ID. Use heat_list to see available HEAT deposits.";
-    return false;
+  // Try as numeric deposit ID first
+  uint64_t numericId;
+  if (Common::fromString(args[0], numericId) && numericId < m_wallet->getDepositCount()) {
+    deposit_id = static_cast<CryptoNote::DepositId>(numericId);
+  } else {
+    // Try as transaction hash — scan deposits for matching creation tx
+    Crypto::Hash txHash;
+    if (Common::podFromHex(args[0], txHash)) {
+      for (CryptoNote::DepositId i = 0; i < m_wallet->getDepositCount(); ++i) {
+        CryptoNote::Deposit dep;
+        if (m_wallet->getDeposit(i, dep) && dep.transactionHash == txHash) {
+          deposit_id = i;
+          break;
+        }
+      }
+    }
+    if (deposit_id == CryptoNote::WALLET_LEGACY_INVALID_DEPOSIT_ID) {
+      fail_msg_writer() << "No deposit found for: " << args[0];
+      return false;
+    }
   }
 
   CryptoNote::Deposit deposit;
@@ -4548,18 +4733,29 @@ bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
     return false;
   }
 
-  success_msg_writer() << "Withdrawing HEAT deposit [" << deposit_id << "]: " << m_currency.formatAmount(deposit.amount) << " HEAT";
+  // Query interest estimate
+  uint64_t interest = 0;
+  uint32_t currentHeight = m_node->getKnownBlockCount();
+  std::error_code ec = m_node->getCdInterest(deposit.amount, deposit.height, currentHeight, interest);
+  if (ec) interest = 0;
+
+  success_msg_writer() << "Claim CD [" << deposit_id << "]:";
+  success_msg_writer() << "  Principal: " << m_currency.formatAmount(deposit.amount) << " HEAT";
+  if (interest > 0) {
+    success_msg_writer() << "  Interest:  " << m_currency.formatAmount(interest) << " HEAT";
+  }
+  success_msg_writer() << "  Total:     " << m_currency.formatAmount(deposit.amount + interest) << " HEAT";
 
   uint64_t fee = m_currency.minimumFee();
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
 
-  std::vector<CryptoNote::DepositId> depositIds = { static_cast<CryptoNote::DepositId>(deposit_id) };
+  std::vector<CryptoNote::DepositId> depositIds = { deposit_id };
   CryptoNote::TransactionId txId = m_wallet->withdrawDeposits(depositIds, fee);
 
   if (txId == WALLET_INVALID_TRANSACTION_ID) {
-    fail_msg_writer() << "Withdraw transaction failed";
+    fail_msg_writer() << "Claim transaction failed";
     return false;
   }
 
@@ -4567,11 +4763,11 @@ bool simple_wallet::heat_withdraw(const std::vector<std::string>& args) {
   removeGuard.removeObserver();
 
   if (sendError) {
-    fail_msg_writer() << "Failed to send withdraw: " << sendError.message();
+    fail_msg_writer() << "Failed to send claim: " << sendError.message();
     return false;
   }
 
-  success_msg_writer() << "Withdraw submitted: tx " << txId;
+  success_msg_writer() << "Claim submitted: tx " << txId;
   return true;
 }
 

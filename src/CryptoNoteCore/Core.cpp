@@ -1630,6 +1630,14 @@ uint64_t core::getPoolTwap() const {
   return m_blockchain.getPoolTwap();
 }
 
+std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
+  const auto& pool = m_blockchain.getAmmPool();
+  info.reserveXfg = pool.reserveXfg;
+  info.reserveHeat = pool.reserveHeat;
+  info.spotPrice = m_blockchain.getHearthSpotPrice();
+  return {};
+}
+
 bool core::executeDigmSwap(uint64_t heatIn, uint64_t expectedDigmOut) {
   LockedBlockchainStorage lock(m_blockchain);
   uint64_t digmOut = m_blockchain.digmPrimarySwap(heatIn, false);

@@ -1133,4 +1133,13 @@ uint64_t InProcessNode::getHearthTwap() {
   return core.getHearthTwap();
 }
 
+std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
+  ICore::AmmPoolInfo coreInfo;
+  auto ec = core.getAmmPoolInfo(coreInfo);
+  if (ec) return ec;
+  info.reserveXfg = coreInfo.reserveXfg;
+  info.reserveHeat = coreInfo.reserveHeat;
+  info.spotPrice = coreInfo.spotPrice;
+  return {};
+}
 } //namespace CryptoNote

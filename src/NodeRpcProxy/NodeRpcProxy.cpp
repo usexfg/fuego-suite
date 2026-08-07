@@ -805,6 +805,17 @@ std::error_code NodeRpcProxy::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRa
   return {};
 }
 
+std::error_code NodeRpcProxy::getAmmPoolInfo(INode::AmmPoolInfo& info) {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return ec;
+  info.reserveXfg = res.reserve_xfg;
+  info.reserveHeat = res.reserve_heat;
+  info.spotPrice = res.spot_price;
+  return {};
+}
+
 std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRpcEntry>& deposits) {
   COMMAND_RPC_GET_LIMIT_ORDERS::request req;
   COMMAND_RPC_GET_LIMIT_ORDERS::response res;

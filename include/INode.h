@@ -120,6 +120,16 @@ public:
     return {};
   }
 
+  // AMM pool info for HEAT mint calculation and liquidity operations.
+  struct AmmPoolInfo {
+    uint64_t reserveXfg = 0;
+    uint64_t reserveHeat = 0;
+    uint64_t spotPrice = 0; // FixedPoint64: reserveXfg / reserveHeat
+  };
+  virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
+    return std::make_error_code(std::errc::not_supported);
+  }
+
   // Limit order deposit info from the daemon (all orders, filtered by wallet).
   // Default returns empty so existing INode implementations compile.
   struct LimitDepositRpcEntry {

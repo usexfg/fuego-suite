@@ -1120,4 +1120,17 @@ std::error_code InProcessNode::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeR
   return core.getCommitmentEpochFeeRate(epoch, outFeeRate);
 }
 
+std::error_code InProcessNode::getAmmPoolReserves(AmmPoolReserves& out) {
+  ICore::AmmPoolReserves reserves;
+  auto ec = core.getAmmPoolReserves(reserves);
+  if (ec) return ec;
+  out.reserveXfg = reserves.reserveXfg;
+  out.reserveHeat = reserves.reserveHeat;
+  return {};
+}
+
+uint64_t InProcessNode::getHearthTwap() {
+  return core.getHearthTwap();
+}
+
 } //namespace CryptoNote

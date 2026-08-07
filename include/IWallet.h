@@ -67,7 +67,7 @@ struct Deposit
   // Deposit type enum
   enum class Type : uint8_t {
     HEAT = 0x08,        // HEAT burn deposit (0x08)
-    COLD = 0xCD,        // COLD yield deposit (0xCD)
+    // COLD = 0xCD,      // REMOVED: COLD yield deposit
     LEGACY_BOND = 0xCB, // Legacy bond (0xCB) — bug-era migration with 50% CD share
   };
 
@@ -83,7 +83,7 @@ struct Deposit
   Crypto::Hash transactionHash;
   std::string address;
   std::string extra;    // Transaction extra field (contains commitment info)
-  Type depositType = Type::COLD;  // Default to COLD (less scary than defaulting to HEAT/burn)
+  Type depositType = Type::HEAT;  // Default to HEAT
 };
 
 struct WalletTransactionUpdatedData
@@ -256,6 +256,9 @@ public:
   virtual std::vector<size_t> getDelayedTransactionIds() const = 0;
 
   virtual size_t transfer(const TransactionParameters &sendingTransaction, Crypto::SecretKey &transactionSK) = 0;
+
+  virtual void mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixin, std::string &transactionHash) = 0;
+  virtual void sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t fee, uint64_t mixin, std::string &transactionHash) = 0;
 
   virtual size_t makeTransaction(const TransactionParameters &sendingTransaction) = 0;
   virtual void commitTransaction(size_t transactionId) = 0;

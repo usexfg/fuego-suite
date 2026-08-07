@@ -1483,6 +1483,17 @@ std::error_code core::getCommitmentEpochFeeRate(uint32_t epoch, uint64_t& outFee
   return {};
 }
 
+std::error_code core::getAmmPoolReserves(AmmPoolReserves& out) {
+  const auto& pool = m_blockchain.getAmmPool();
+  out.reserveXfg = pool.reserveXfg;
+  out.reserveHeat = pool.reserveHeat;
+  return {};
+}
+
+uint64_t core::getHearthTwap() {
+  return m_blockchain.getRollingTwap();
+}
+
 size_t core::getCommitmentCount() const {
   return m_blockchain.getCommitmentCount();
 }

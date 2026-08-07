@@ -235,6 +235,44 @@ struct GiftDeposit
   };
 };
 
+struct HeatMint
+{
+  struct Request
+  {
+    uint64_t xfg_burned = 0;
+    uint64_t heat_minted = 0;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct SendHeat
+{
+  struct Request
+  {
+    std::string address;
+    uint64_t amount = 0;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
 struct GetMoneySupplyStats
 {
   struct Request

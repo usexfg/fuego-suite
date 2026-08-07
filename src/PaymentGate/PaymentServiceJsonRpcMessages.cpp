@@ -617,4 +617,28 @@ void GetHealth::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(addressCount, "addressCount");
 }
 
+void HeatMint::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(xfg_burned, "xfg_burned");
+  serializer(heat_minted, "heat_minted");
+  serializer(mixin, "mixin");
+}
+
+void HeatMint::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+}
+
+void SendHeat::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(address, "address");
+  serializer(amount, "amount");
+  serializer(mixin, "mixin");
+}
+
+void SendHeat::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+}
+
 } // namespace PaymentService

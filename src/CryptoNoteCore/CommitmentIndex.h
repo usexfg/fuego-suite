@@ -50,7 +50,7 @@ struct CommitmentEntry {
 
   enum class Type : uint8_t {
     HEAT = 0,
-    COLD = 1
+    // COLD = 1  // REMOVED: COLD deposit type
   };
 
   Type type = Type::HEAT;
@@ -119,7 +119,7 @@ public:
   bool hasCommitment(const Crypto::Hash& commitment) const;
   size_t size() const;
   size_t heatCount() const;
-  size_t coldCount() const;
+  // size_t coldCount() const;  // REMOVED: COLD deposit type
 
   // Generate an epoch report covering [startBlock, endBlock]
   // Called by Blockchain.cpp at each EPOCH_DURATION_BLOCKS boundary
@@ -181,7 +181,7 @@ private:
   };
   std::map<AutoRollKey, bool> m_autoRollFlags;
   size_t m_heat_count = 0;
-  size_t m_cold_count = 0;
+  // size_t m_cold_count = 0;  // REMOVED: COLD deposit type
 
   const CryptoNote::Currency& m_currency;
 

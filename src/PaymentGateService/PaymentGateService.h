@@ -23,6 +23,7 @@
 #include "Logging/ConsoleLogger.h"
 #include "Logging/LoggerGroup.h"
 #include "Logging/StreamLogger.h"
+#include <System/Context.h>
 
 #include "PaymentGate/NodeFactory.h"
 #include "PaymentGate/WalletService.h"

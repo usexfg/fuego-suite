@@ -939,18 +939,19 @@ namespace CryptoNote
 
       // ── Deposit type detection & commitment ──────────────────────────
       bool isHeatDeposit = false;
-      bool isColdDeposit = false;
-      Deposit::Type detectedType = Deposit::Type::COLD;
+      // bool isColdDeposit = false;
+      Deposit::Type detectedType = Deposit::Type::HEAT;
 
       if (!context->extra.empty()) {
         uint8_t tag = static_cast<uint8_t>(context->extra[0]);
         if (tag == TX_EXTRA_HEAT_COMMITMENT) {
           detectedType = Deposit::Type::HEAT;
           isHeatDeposit = true;
-        } else if (tag == TX_EXTRA_SIMPLE_CD) {
-          detectedType = Deposit::Type::COLD;
-          isColdDeposit = true;
         }
+        // } else if (tag == TX_EXTRA_SIMPLE_CD) {
+        //   detectedType = Deposit::Type::COLD;
+        //   isColdDeposit = true;
+        // }
       } else {
         std::vector<uint8_t> generatedExtra;
         if (context->depositTerm == parameters::HEAT_TERM) {
@@ -963,15 +964,9 @@ namespace CryptoNote
           isHeatDeposit = true;
           detectedType = Deposit::Type::HEAT;
         } else {
-          auto commitment = CryptoNote::DepositCommitmentGenerator::generateYieldCommitment(
-            context->depositTerm, depositAmount, std::vector<uint8_t>());
-          std::vector<uint8_t> emptyMetadata, emptyGiftSecret;
-          if (!CryptoNote::createTxExtraWithSimpleCDCommitment(commitment.commitment, depositAmount, context->depositTerm, generatedExtra)) {
-            throw std::runtime_error("Failed to generate SimpleCD commitment for term deposit");
-          }
-          transaction->appendExtra(generatedExtra);
-          detectedType = Deposit::Type::COLD;
-          isColdDeposit = true;
+          // REMOVED: COLD deposit creation (was for non-HEAT term deposits)
+          // COLD deposits are no longer supported. Only HEAT deposits (HEAT_TERM) are allowed.
+          throw std::runtime_error("COLD deposits are no longer supported. Use HEAT deposit with HEAT_TERM.");
         }
       }
 
@@ -998,12 +993,12 @@ namespace CryptoNote
           ? m_transactionsCache.insertDeposit(deposit, 0, transaction->getTransactionHash())
           : m_transactionsCache.insertDeposit(deposit, bankingIndex, transaction->getTransactionHash());
 
-      if (isHeatDeposit || isColdDeposit) {
+      if (isHeatDeposit) {
         std::string txHashStr = Common::podToHex(transactionInfo.hash);
         std::vector<uint8_t> secretMetadata;
-        if (isColdDeposit) {
-          secretMetadata.assign(context->extra.begin(), context->extra.end());
-        }
+        // if (isColdDeposit) {
+        //   secretMetadata.assign(context->extra.begin(), context->extra.end());
+        // }
         events.push_back(std::unique_ptr<WalletBurnDepositSecretCreatedEvent>(
           new WalletBurnDepositSecretCreatedEvent(txHashStr, commitKeys.keyScalar, depositAmount, secretMetadata)));
       }

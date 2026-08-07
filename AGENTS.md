@@ -45,6 +45,13 @@ fuego-suite/
 - Launch ratio: 1 HEAT = 10 XFG (10:1 XFG per HEAT)
 - Peg reference: $1.58 USD (HEAT_PEG_USD)  adjusted for inflation starting Q1|2009 1 USD 
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
+- **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
+  - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
+  - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)
+  - `convertXfgToHeat()` uses LEGACY 10M ratio (Embers_Heat) — DO NOT use for actual minting
+  - `mintHeatV10()` uses Hearth pool TWAP — this is ACTUAL mint pricing
+  - **DEPRECATED (DO NOT REINTRODUCE)**: COLD deposits (0xCD tag), Embers_Heat deposits, XFG deposits
+  - **GUARDRAILS**: APY from protocol fees (not inflation), deposit secret stored locally, different term lengths don't hurt privacy
 
 ### Hearth Exchange — Data Flow Per Block
 1. `OrderbookMempool::expireOrders()`
@@ -83,6 +90,7 @@ fuego-suite/
 - CMake flag: `-DUSE_VENDORED_SECP256K1=OFF` to link against system secp256k1
 - No KDF/MM2/AtomicDEX integration (removed)
 - TUI disabled in CMake (`add_subdirectory(tui)` commented out), built separately via `make build-tui`
+- **Deposit architecture**: See `DEPOSIT_ARCHITECTURE.md` for current vs deprecated deposit systems
 
 ## CI/CD
 

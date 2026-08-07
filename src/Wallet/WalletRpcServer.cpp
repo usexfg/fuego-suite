@@ -95,6 +95,13 @@ bool wallet_rpc_server::run() {
   return true;
 }
 
+void wallet_rpc_server::configure(const std::string& bindIp, uint16_t port, const std::string& rpcUser, const std::string& rpcPassword) {
+  m_bind_ip = bindIp;
+  m_port = port;
+  m_rpcUser = rpcUser;
+  m_rpcPassword = rpcPassword;
+}
+
 void wallet_rpc_server::send_stop_signal() {
   m_dispatcher.remoteSpawn([this] {
     std::cout << "wallet_rpc_server::send_stop_signal()" << std::endl;
@@ -877,7 +884,8 @@ bool wallet_rpc_server::on_list_cds(const wallet_rpc::COMMAND_RPC_LIST_CDS::requ
       case CryptoNote::Deposit::Type::HEAT:
         entry.deposit_type = "HEAT"; break;
       default:
-        entry.deposit_type = "COLD"; break;
+        // COLD deposit type (tag 0xCD) removed — should not reach here
+        entry.deposit_type = "UNKNOWN"; break;
     }
 
     res.deposits.push_back(std::move(entry));
@@ -899,22 +907,22 @@ bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::re
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term must be > 0");
     }
 
-    // Validate deposit_type: only HEAT=0x08, xCD=0xCD, YIELD=0x07 are permitted
-    static const std::initializer_list<uint32_t> validDepositTypes = {0x07, 0x08, 0xCD};
+    // Validate deposit_type: only HEAT=0x08, YIELD=0x07 are permitted (COLD=0xCD removed)
+    static const std::initializer_list<uint32_t> validDepositTypes = {0x07, 0x08};
     bool typeValid = false;
     for (uint32_t v : validDepositTypes) {
       if (req.deposit_type == v) { typeValid = true; break; }
     }
     if (!typeValid) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-          "deposit_type must be one of: 0x07 (YIELD), 0x08 (HEAT), 0xCD (xCD)");
+          "deposit_type must be one of: 0x07 (YIELD), 0x08 (HEAT)");
     }
 
-    // Map wire deposit_type to internal CommitmentType
+    // Map wire deposit_type to internal CommitmentType (COLD=0xCD removed)
     CryptoNote::CommitmentType commitType =
         (req.deposit_type == 0x08) ? CryptoNote::CommitmentType::HEAT :
         (req.deposit_type == 0x07) ? CryptoNote::CommitmentType::YIELD :
-                                     CryptoNote::CommitmentType::COLD;
+                                     CryptoNote::CommitmentType::HEAT; // fallback (validation ensures only 0x07/0x08)
     CryptoNote::DepositCommitment commitment(commitType, Crypto::Hash{});
 
     std::string txHash;

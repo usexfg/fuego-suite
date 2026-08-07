@@ -3,16 +3,19 @@
 // This file is part of Fuego.
 //
 // Fuego is free software distributed in the hope that it
-// will be useful, but WITHOUT ANY WARRANTY; without even the
-// implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-// PURPOSE. See file labeled LICENSE for more details.
+// will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+// of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See file labeled LICENSE for more details.
 
 #include "HeatMintEngine.h"
 #include "CryptoNoteConfig.h"
+#include <cstdio>
 
 namespace CryptoNote {
 
-HeatMintEngine::HeatMintEngine() = default;
+HeatMintEngine::HeatMintEngine() {
+  setbuf(stderr, NULL);
+}
 
 bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
   for (const auto& out : tx.outputs) {
@@ -33,12 +36,17 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   xfgBurned = 0;
   heatMinted = 0;
 
-  if (redemptionPrice.isZero())
+  if (redemptionPrice.isZero()) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: redemptionPrice is zero\n");
     return false;
+  }
 
   uint64_t xfgInputs  = 0;
   uint64_t xfgOutputs = 0;
   uint64_t heatOutputs = 0;
+  size_t inputCount = tx.inputs.size();
+  size_t outputCount = tx.outputs.size();
+  size_t heatOutputCount = 0;
 
   for (const auto& in : tx.inputs) {
     if (in.type() == typeid(KeyInput)) {
@@ -51,21 +59,32 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   for (const auto& out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
+      fprintf(stderr, "[HeatMint]   output[%zu] Commitment term=%u amount=%llu\n",
+        &out - &tx.outputs[0], commitment.term, (unsigned long long)out.amount);
       if (commitment.term == parameters::HEAT_TERM) {
         heatOutputs += out.amount;
+        ++heatOutputCount;
       } else {
         xfgOutputs += out.amount;
       }
     } else {
+      fprintf(stderr, "[HeatMint]   output[%zu] type=%s amount=%llu\n",
+        &out - &tx.outputs[0], out.target.type().name(), (unsigned long long)out.amount);
       xfgOutputs += out.amount;
     }
   }
 
-  if (heatOutputs == 0)
+  if (heatOutputs == 0) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: heatOutputs=0, inputs=%zu outputs=%zu xfgInputs=%llu xfgOutputs=%llu HEAT_TERM=0x%x\n",
+      inputCount, outputCount, (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, parameters::HEAT_TERM);
     return false;
+  }
 
-  if (xfgInputs < xfgOutputs + fee)
+  if (xfgInputs < xfgOutputs + fee) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: xfgInputs(%llu) < xfgOutputs(%llu) + fee(%llu)\n",
+      (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, (unsigned long long)fee);
     return false;
+  }
 
   xfgBurned = xfgInputs - xfgOutputs - fee;
 
@@ -73,11 +92,16 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
   FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
   uint64_t expectedHeat = heatFp.toUint64();
 
-  // FixedPoint64::toUint64 truncates, so expectedHeat = floor(xfgBurned / price).
-  // heatOutputs must not exceed expectedHeat. Values below expectedHeat are
-  // permitted — the user may burn more XFG than needed for the declared HEAT.
-  if (heatOutputs > expectedHeat)
+  fprintf(stderr, "[HeatMint] validateMint: xfgInputs=%llu xfgOutputs=%llu heatOutputs=%llu heatOutputCount=%zu fee=%llu xfgBurned=%llu expectedHeat=%llu price.raw=%lld\n",
+    (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, (unsigned long long)heatOutputs,
+    heatOutputCount, (unsigned long long)fee, (unsigned long long)xfgBurned,
+    (unsigned long long)expectedHeat, (long long)redemptionPrice.raw());
+
+  if (heatOutputs > expectedHeat) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: heatOutputs(%llu) > expectedHeat(%llu)\n",
+      (unsigned long long)heatOutputs, (unsigned long long)expectedHeat);
     return false;
+  }
 
   heatMinted = heatOutputs;
   return true;
@@ -88,34 +112,50 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
                                         FixedPoint64 redemptionPrice,
                                         uint64_t xfgBurned,
                                         uint64_t heatMinted) const {
-  if (redemptionPrice.isZero())
-    return false;
-  if (xfgBurned == 0 || heatMinted == 0)
-    return false;
+  fprintf(stderr, "[HeatMint] validateMintAuth called: fee=%llu xfgBurned=%llu heatMinted=%llu price.raw=%lld\n",
+    (unsigned long long)fee, (unsigned long long)xfgBurned, (unsigned long long)heatMinted, (long long)redemptionPrice.raw());
 
-  // Re-derive actual amounts from the raw transaction to prevent
-  // the wallet from declaring different amounts than what's on-chain.
+  if (redemptionPrice.isZero()) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: redemptionPrice is zero\n");
+    return false;
+  }
+  if (xfgBurned == 0 || heatMinted == 0) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: xfgBurned=%llu heatMinted=%llu\n",
+      (unsigned long long)xfgBurned, (unsigned long long)heatMinted);
+    return false;
+  }
+
   uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
-  if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted))
+  if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted)) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: validateMint returned false\n");
     return false;
+  }
 
-  // Wallet must not under-declare XFG burn — they can burn more than
-  // declared but not less (balance check in Blockchain.cpp enforces
-  // actual >= auth). Over-burning is wasteful but not inflationary.
-  if (actualXfgBurned < xfgBurned)
+  fprintf(stderr, "[HeatMint] validateMintAuth: declared xfgBurned=%llu heatMinted=%llu actual xfgBurned=%llu heatMinted=%llu\n",
+    (unsigned long long)xfgBurned, (unsigned long long)heatMinted,
+    (unsigned long long)actualXfgBurned, (unsigned long long)actualHeatMinted);
+
+  if (actualXfgBurned < xfgBurned) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: actualXfgBurned(%llu) < declared(%llu)\n",
+      (unsigned long long)actualXfgBurned, (unsigned long long)xfgBurned);
     return false;
+  }
 
-  // HEAT minted must match exactly what the wallet declared.
-  if (actualHeatMinted != heatMinted)
+  if (actualHeatMinted != heatMinted) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: actualHeatMinted(%llu) != declared(%llu)\n",
+      (unsigned long long)actualHeatMinted, (unsigned long long)heatMinted);
     return false;
+  }
 
-  // No inflation: heatMinted must not exceed the pool-rate equivalent
-  // of the actual XFG burned (not the declared amount).
   FixedPoint64 xfgFp = FixedPoint64::fromUint64(actualXfgBurned);
   uint64_t expectedHeat = xfgFp.div(redemptionPrice).toUint64();
-  if (heatMinted > expectedHeat)
+  if (heatMinted > expectedHeat) {
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: heatMinted(%llu) > expectedHeat(%llu) price.raw=%lld\n",
+      (unsigned long long)heatMinted, (unsigned long long)expectedHeat, (long long)redemptionPrice.raw());
     return false;
+  }
 
+  fprintf(stderr, "[HeatMint] validateMintAuth PASS\n");
   return true;
 }
 

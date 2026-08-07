@@ -876,18 +876,19 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
               entry.type          = CommitmentEntry::Type::HEAT;
               entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
               m_commitmentIndex.addCommitment(entry);
-            } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-              const auto& c = boost::get<TransactionExtraSimpleCD>(field);
-              CommitmentEntry entry;
-              entry.commitment    = c.commitment;
-              entry.txHash        = getObjectHash(transaction.tx);
-              entry.blockHeight   = b;
-              entry.amount        = c.amount;
-              entry.term          = c.term;
-              entry.type          = CommitmentEntry::Type::COLD;
-              entry.targetChainId = 1;
-              m_commitmentIndex.addCommitment(entry);
-            }
+            // REMOVED: COLD deposit type (0xCD) — TransactionExtraSimpleCD no longer issued
+            // } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
+            //   const auto& c = boost::get<TransactionExtraSimpleCD>(field);
+            //   CommitmentEntry entry;
+            //   entry.commitment    = c.commitment;
+            //   entry.txHash        = getObjectHash(transaction.tx);
+            //   entry.blockHeight   = b;
+            //   entry.amount        = c.amount;
+            //   entry.term          = c.term;
+            //   entry.type          = CommitmentEntry::Type::COLD;
+            //   entry.targetChainId = 1;
+            //   m_commitmentIndex.addCommitment(entry);
+            // }
           }
         }
         interest += m_currency.calculateTotalTransactionInterest(transaction.tx, b);
@@ -902,6 +903,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
 
     std::chrono::duration<double> duration = std::chrono::steady_clock::now() - timePoint;
     logger(INFO, BRIGHT_WHITE) << "Rebuilding internal structures took: " << duration.count();
+  }
   }
 
 bool CryptoNote::Blockchain::storeCache() {
@@ -2429,7 +2431,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
         // overflow guard
         if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
           logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
-                       << " is an immature COLD deposit (matures at block "
+                       << " is an immature deposit (matures at block "
                        << maturityHeight << ", current " << currentHeight
                        << (rolled ? ", auto-rolled" : "") << ")";
           return false;
@@ -3247,11 +3249,19 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
-        FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-          ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-          : FixedPoint64::fromUint64(1);
+        // Use rolling 8-block TWAP for mint price validation (anti-manipulation).
+        // Falls back to spot pool rate if fewer than 2 blocks in the window.
+        FixedPoint64 mintRate;
+        if (m_rollingPriceWindow.size() >= 2) {
+          uint64_t twap = getRollingTwap();
+          mintRate = FixedPoint64::fromRaw(static_cast<int128_t>(twap));
+        } else {
+          mintRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+            : FixedPoint64::fromUint64(1);
+        }
         uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
-        if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, poolRate,
+        if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintRate,
                                                 authXfgBurned, authHeatMinted)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
@@ -3537,6 +3547,12 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     m_twapAccumulator += q64;
     m_twapBlockCount++;
     m_blockTwapContributions.push_back(q64);
+
+    // Rolling 8-block TWAP for mint validation (anti-manipulation)
+    m_rollingPriceWindow.push_back(block.bl.hearthPoolRatio);
+    if (m_rollingPriceWindow.size() > 8) {
+      m_rollingPriceWindow.pop_front();
+    }
   }
 
   // Epoch boundary: reset TWAP accumulator (v11+)
@@ -3620,6 +3636,13 @@ uint64_t CryptoNote::Blockchain::getHearthSpotPrice() const {
 uint64_t CryptoNote::Blockchain::getPoolTwap() const {
   if (m_twapBlockCount == 0) return 0;
   return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
+}
+
+uint64_t CryptoNote::Blockchain::getRollingTwap() const {
+  if (m_rollingPriceWindow.empty()) return 0;
+  uint64_t sum = 0;
+  for (uint64_t p : m_rollingPriceWindow) sum += p;
+  return sum / m_rollingPriceWindow.size();
 }
 
 std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
@@ -3937,8 +3960,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   }
 
   size_t CryptoNote::Blockchain::getColdCommitmentCount() const {
-    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-    return m_commitmentIndex.coldCount();
+    return 0;  // COLD deposit type removed
   }
 
   Crypto::Hash CryptoNote::Blockchain::getCommitmentMerkleRoot() const {
@@ -3967,7 +3989,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   }
 
   uint64_t CryptoNote::Blockchain::computeBankingFeesFromTransactions(const std::vector<Transaction>& txs) {
-    // Banking fees go to miners. Fixed rate: 0.1% on HEAT/COLD commitments.
+    // Banking fees go to miners. Fixed rate: 0.1% on HEAT commitments.
     uint64_t totalBankingFees = 0;
     for (const auto& tx : txs) {
       std::vector<TransactionExtraField> extraFields;
@@ -3976,10 +3998,12 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
         if (field.type() == typeid(TransactionExtraHeatCommitment)) {
           const auto& heat = boost::get<TransactionExtraHeatCommitment>(field);
           totalBankingFees += heat.amount / 1000;
-        } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-          const auto& cd = boost::get<TransactionExtraSimpleCD>(field);
-          totalBankingFees += cd.amount / 1000;
         }
+        // REMOVED: COLD deposit type (0xCD) — TransactionExtraSimpleCD no longer issued
+        // else if (field.type() == typeid(TransactionExtraSimpleCD)) {
+        //   const auto& cd = boost::get<TransactionExtraSimpleCD>(field);
+        //   totalBankingFees += cd.amount / 1000;
+        // }
       }
     }
     return totalBankingFees;
@@ -4036,86 +4060,86 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             logger(DEBUGGING) << "HEAT commitment indexed: " << Common::podToHex(heatCommit.commitment)
                              << " amount=" << heatCommit.amount;
           }
-          // Check for CD commitment (0xCD) - term deposit
-          else if (field.type() == typeid(TransactionExtraSimpleCD)) {
-            const auto& coldCommit = boost::get<TransactionExtraSimpleCD>(field);
-
-            // Index the CD commitment for RPC queries
-            Crypto::Hash txHash = getObjectHash(tx.tx);
-            CommitmentEntry entry;
-            entry.commitment = coldCommit.commitment;
-            entry.txHash = txHash;
-            entry.blockHeight = block.height;
-            entry.amount = coldCommit.amount;
-            entry.term = coldCommit.term;
-            entry.type = CommitmentEntry::Type::COLD;
-            entry.targetChainId = 1; // Default to ETH
-            m_commitmentIndex.addCommitment(entry);
-
-            logger(DEBUGGING) << "CD commitment indexed: " << Common::podToHex(coldCommit.commitment)
-                              << " amount=" << coldCommit.amount << " term=" << coldCommit.term;
-          }
-          // 0xCE: COLD migration — register v3 commitment for a pre-v3 legacy deposit
-          else if (field.type() == typeid(TransactionExtraColdMigration)) {
-            const auto& migration = boost::get<TransactionExtraColdMigration>(field);
-
-            // Validate: the referenced original tx must exist and contain a legacy
-            // deposit output (MultisignatureOutput) with matching amount.
-            // Migration is ONLY for pre-v3 legacy deposits which use multisig outputs.
-            std::list<Crypto::Hash> txIds = {migration.originalTxHash};
-            std::list<Transaction> txs;
-            std::list<Crypto::Hash> missed;
-            getTransactions(txIds, txs, missed, false);
-            bool depositFound = false;
-            if (!txs.empty()) {
-              const auto& origTx = txs.front();
-              for (const auto& out : origTx.outputs) {
-                if (out.target.type() == typeid(MultisignatureOutput) &&
-                    out.amount == migration.amount) {
-                  depositFound = true;
-                  break;
-                }
-              }
-              if (!depositFound) {
-                logger(INFO, BRIGHT_WHITE) << "Cold migration: original tx " << Common::podToHex(migration.originalTxHash)
-                  << " has no matching legacy deposit output (amount=" << migration.amount << ")";
-              }
-            } else {
-              logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
-                              << " not found in blockchain";
-            }
-
-            // Also ensure this commitment hasn't already been registered
-            if (depositFound && !m_commitmentIndex.hasCommitment(migration.commitment)) {
-              // Look up original deposit's block height for legacy rate detection.
-              // The L2 contract needs the original deposit date (not migration date)
-              // to determine if legacy (pre-2026) interest rates apply.
-              uint32_t originalBlockHeight = block.height;  // fallback: migration block
-              auto origIt = m_indexManager.transactionMap().find(migration.originalTxHash);
-              if (origIt != m_indexManager.transactionMap().end()) {
-                originalBlockHeight = origIt->second.block;
-              }
-
-              CommitmentEntry entry;
-              entry.commitment = migration.commitment;
-              entry.txHash = migration.originalTxHash;  // Reference original deposit tx
-              entry.blockHeight = originalBlockHeight;  // Original deposit block, not migration block
-              entry.amount = migration.amount;
-              entry.term = migration.term;
-              entry.type = CommitmentEntry::Type::COLD;
-              entry.targetChainId = migration.targetChainId;
-              entry.isLegacyMigration = true;  // Confirmed: original tx has MultisignatureOutput
-              m_commitmentIndex.addCommitment(entry);
-
-              logger(DEBUGGING) << "COLD migration indexed: original=" << Common::podToHex(migration.originalTxHash)
-                                << " commitment=" << Common::podToHex(migration.commitment)
-                                << " amount=" << migration.amount
-                                << " originalBlock=" << originalBlockHeight;
-            } else if (!depositFound) {
-              logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
-                               << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
-            }
-          }
+          // REMOVED: COLD deposit type (0xCD) — TransactionExtraSimpleCD no longer issued
+          // else if (field.type() == typeid(TransactionExtraSimpleCD)) {
+          //   const auto& coldCommit = boost::get<TransactionExtraSimpleCD>(field);
+          //
+          //   // Index the CD commitment for RPC queries
+          //   Crypto::Hash txHash = getObjectHash(tx.tx);
+          //   CommitmentEntry entry;
+          //   entry.commitment = coldCommit.commitment;
+          //   entry.txHash = txHash;
+          //   entry.blockHeight = block.height;
+          //   entry.amount = coldCommit.amount;
+          //   entry.term = coldCommit.term;
+          //   entry.type = CommitmentEntry::Type::COLD;
+          //   entry.targetChainId = 1; // Default to ETH
+          //   m_commitmentIndex.addCommitment(entry);
+          //
+          //   logger(DEBUGGING) << "CD commitment indexed: " << Common::podToHex(coldCommit.commitment)
+          //                     << " amount=" << coldCommit.amount << " term=" << coldCommit.term;
+          // }
+          // REMOVED: COLD migration (0xCE) — TransactionExtraColdMigration no longer issued
+          // else if (field.type() == typeid(TransactionExtraColdMigration)) {
+          //   const auto& migration = boost::get<TransactionExtraColdMigration>(field);
+          //
+          //   // Validate: the referenced original tx must exist and contain a legacy
+          //   // deposit output (MultisignatureOutput) with matching amount.
+          //   // Migration is ONLY for pre-v3 legacy deposits which use multisig outputs.
+          //   std::list<Crypto::Hash> txIds = {migration.originalTxHash};
+          //   std::list<Transaction> txs;
+          //   std::list<Crypto::Hash> missed;
+          //   getTransactions(txIds, txs, missed, false);
+          //   bool depositFound = false;
+          //   if (!txs.empty()) {
+          //     const auto& origTx = txs.front();
+          //     for (const auto& out : origTx.outputs) {
+          //       if (out.target.type() == typeid(MultisignatureOutput) &&
+          //           out.amount == migration.amount) {
+          //         depositFound = true;
+          //         break;
+          //       }
+          //     }
+          //     if (!depositFound) {
+          //       logger(INFO, BRIGHT_WHITE) << "Cold migration: original tx " << Common::podToHex(migration.originalTxHash)
+          //         << " has no matching legacy deposit output (amount=" << migration.amount << ")";
+          //     }
+          //   } else {
+          //     logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
+          //                     << " not found in blockchain";
+          //   }
+          //
+          //   // Also ensure this commitment hasn't already been registered
+          //   if (depositFound && !m_commitmentIndex.hasCommitment(migration.commitment)) {
+          //     // Look up original deposit's block height for legacy rate detection.
+          //     // The L2 contract needs the original deposit date (not migration date)
+          //     // to determine if legacy (pre-2026) interest rates apply.
+          //     uint32_t originalBlockHeight = block.height;  // fallback: migration block
+          //     auto origIt = m_indexManager.transactionMap().find(migration.originalTxHash);
+          //     if (origIt != m_indexManager.transactionMap().end()) {
+          //       originalBlockHeight = origIt->second.block;
+          //     }
+          //
+          //     CommitmentEntry entry;
+          //     entry.commitment = migration.commitment;
+          //     entry.txHash = migration.originalTxHash;  // Reference original deposit tx
+          //     entry.blockHeight = originalBlockHeight;  // Original deposit block, not migration block
+          //     entry.amount = migration.amount;
+          //     entry.term = migration.term;
+          //     entry.type = CommitmentEntry::Type::COLD;
+          //     entry.targetChainId = migration.targetChainId;
+          //     entry.isLegacyMigration = true;  // Confirmed: original tx has MultisignatureOutput
+          //     m_commitmentIndex.addCommitment(entry);
+          //
+          //     logger(DEBUGGING) << "COLD migration indexed: original=" << Common::podToHex(migration.originalTxHash)
+          //                       << " commitment=" << Common::podToHex(migration.commitment)
+          //                       << " amount=" << migration.amount
+          //                       << " originalBlock=" << originalBlockHeight;
+          //   } else if (!depositFound) {
+          //     logger(WARNING) << "COLD migration rejected: original tx " << Common::podToHex(migration.originalTxHash)
+          //                      << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
+          //   }
+          // }
           // 0xCB: Legacy Bond migration (v1.10.00) — marks bug-era Multisig deposit for 50% CD share
           else if (field.type() == typeid(TransactionExtraLegacyBond)) {
             const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
@@ -4350,7 +4374,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             deposit -= multisign.amount;
           }
         }
-        // Commitment withdrawals (ring-sig COLD): reduce deposit balance
+        // Commitment withdrawals (ring-sig): reduce deposit balance
         else if (in.type() == typeid(TransactionInputCommitmentSpend))
         {
           deposit -= boost::get<TransactionInputCommitmentSpend>(in).amount;
@@ -4366,7 +4390,7 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             deposit += out.amount;
           }
         }
-        // COLD commitment outputs: add to deposit balance (HEAT/FOREVER burns tracked separately)
+        // Commitment outputs: add to deposit balance (HEAT/FOREVER burns tracked separately)
         else if (out.target.type() == typeid(TransactionOutputCommitment))
         {
           const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
@@ -5045,6 +5069,11 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       }
     }
     m_blockTwapContributions.pop_back();
+  }
+
+  // Reverse rolling 8-block TWAP window
+  if (!m_rollingPriceWindow.empty()) {
+    m_rollingPriceWindow.pop_back();
   }
 
   m_blocks.pop_back();

@@ -2539,4 +2539,54 @@ namespace PaymentService
     return ss.str();
   }
 
+  std::error_code WalletService::mintHeatV10(
+      uint64_t xfgBurned,
+      uint64_t heatMinted,
+      uint64_t mixin,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      uint64_t fee = currency.minimumFee();
+      wallet.mintHeatV10(xfgBurned, heatMinted, fee, mixin, transactionHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Failed to mint HEAT: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "Failed to mint HEAT: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::sendHeatV10(
+      const std::string &recipient,
+      uint64_t amount,
+      uint64_t mixin,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      uint64_t fee = currency.minimumFee();
+      wallet.sendHeatV10(recipient, amount, fee, mixin, transactionHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Failed to send HEAT: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "Failed to send HEAT: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
   } //namespace PaymentService

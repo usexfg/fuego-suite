@@ -67,9 +67,9 @@ void CommitmentIndex::addCommitment(const CommitmentEntry& entry) {
     case CommitmentEntry::Type::HEAT:
       m_heat_count++;
       break;
-    case CommitmentEntry::Type::COLD:
-      m_cold_count++;
-      break;
+    // case CommitmentEntry::Type::COLD:  // REMOVED: COLD deposit type
+    //   m_cold_count++;
+    //   break;
   }
 
   if (entry.blockHeight > m_current_block_height) {
@@ -215,7 +215,7 @@ size_t CommitmentIndex::rollbackToHeight(Height h) {
         m_autoRollFlags.erase(key);
         switch (it->second.type) {
           case CommitmentEntry::Type::HEAT: m_heat_count--; break;
-          case CommitmentEntry::Type::COLD: m_cold_count--; break;
+          // case CommitmentEntry::Type::COLD: m_cold_count--; break;  // REMOVED: COLD deposit type
         }
         m_commitments.erase(it);
         removed++;
@@ -250,7 +250,7 @@ void CommitmentIndex::clear() {
   m_merkle_leaves.clear();
   m_heightIndex.clear();
   m_heat_count = 0;
-  m_cold_count = 0;
+  // m_cold_count = 0;  // REMOVED: COLD deposit type
   m_blockBankingFees.clear();
   m_current_merkle_root = Crypto::Hash();
   m_merkleDirty = false;  // leaves are empty; root is already the zero hash
@@ -285,10 +285,7 @@ size_t CommitmentIndex::heatCount() const {
   return m_heat_count;
 }
 
-size_t CommitmentIndex::coldCount() const {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  return m_cold_count;
-}
+// COLD deposit type removed — coldCount() removed entirely
 
 // ============================================================================
 // EPOCH TRACKING
@@ -396,13 +393,16 @@ std::optional<EpochReport> CommitmentIndex::getLatestEpochReport() const {
   return m_epochReports.back();
 }
 
+// Auto-roll: mark matured CDs for one-time interest compounding.
+// Works with any term-locked commitment (HEAT CDs with non-zero term).
 size_t CommitmentIndex::processAutoRolls(uint32_t currentHeight) {
   std::lock_guard<std::mutex> lock(m_mutex);
   size_t count = 0;
   for (auto& kv : m_commitments) {
     CommitmentEntry& entry = kv.second;
-    if (entry.type != CommitmentEntry::Type::COLD) continue;
+    // Skip permanent burns (term == 0) and already auto-rolled entries
     if (entry.term == 0 || entry.autoRollApplied) continue;
+    // Skip entries that haven't matured yet
     if (entry.blockHeight + entry.term > currentHeight) continue;
     entry.autoRollApplied = true;
     AutoRollKey key{entry.blockHeight, entry.amount, entry.term};
@@ -436,7 +436,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
     m_heightIndex.clear();
     m_txHashToCommitHash.clear();
     m_heat_count = 0;
-    m_cold_count = 0;
+    // m_cold_count = 0;  // REMOVED: COLD deposit type
     m_current_block_height = 0;
 
     for (const auto& kv : m_commitments) {
@@ -446,7 +446,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
       m_txHashToCommitHash[Common::podToHex(entry.txHash)] = kv.first;
       switch (entry.type) {
         case CommitmentEntry::Type::HEAT: m_heat_count++; break;
-        case CommitmentEntry::Type::COLD: m_cold_count++; break;
+        // case CommitmentEntry::Type::COLD: m_cold_count++; break;  // REMOVED: COLD deposit type
       }
       if (entry.blockHeight > m_current_block_height)
         m_current_block_height = entry.blockHeight;

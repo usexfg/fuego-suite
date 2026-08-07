@@ -86,6 +86,8 @@ public:
                                         uint32_t currentHeight, uint64_t& outInterest,
                                         bool isLegacyBond = false) override;
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
+  virtual uint64_t getHearthTwap() override;
 
 private:
   virtual void peerCountUpdated(size_t count) override;

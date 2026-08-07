@@ -86,6 +86,8 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("estimateFusion", jsonHandler<EstimateFusion::Request, EstimateFusion::Response>(std::bind(&PaymentServiceJsonRpcServer::handleEstimateFusion, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("sendFusionTransaction", jsonHandler<SendFusionTransaction::Request, SendFusionTransaction::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendFusionTransaction, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getHealth", jsonHandler<GetHealth::Request, GetHealth::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetHealth, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("heat_mint", jsonHandler<HeatMint::Request, HeatMint::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatMint, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("send_heat", jsonHandler<SendHeat::Request, SendHeat::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendHeat, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -422,7 +424,15 @@ std::error_code PaymentServiceJsonRpcServer::handleGetHealth(const GetHealth::Re
   return std::error_code();
 }
 
+std::error_code PaymentServiceJsonRpcServer::handleHeatMint(const HeatMint::Request& request, HeatMint::Response& response)
+{
+  return service.mintHeatV10(request.xfg_burned, request.heat_minted, request.mixin, response.tx_hash);
+}
 
+std::error_code PaymentServiceJsonRpcServer::handleSendHeat(const SendHeat::Request& request, SendHeat::Response& response)
+{
+  return service.sendHeatV10(request.address, request.amount, request.mixin, response.tx_hash);
+}
 
 
 }

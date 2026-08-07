@@ -107,6 +107,8 @@ std::error_code getViewKey(std::string &viewSecretKey);
   std::error_code getBurnDepositSecret(const std::string& transactionHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   std::string getDefaultWalletPath();
 
+  std::error_code mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t mixin, std::string &transactionHash);
+  std::error_code sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t mixin, std::string &transactionHash);
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);
   std::error_code giftDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
   std::error_code getDeposit(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address);

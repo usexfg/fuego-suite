@@ -206,6 +206,8 @@ namespace CryptoNote {
                                                   bool autoRolled = false) override;
     virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
                                                        uint64_t& outFeeRate) override;
+    virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
+    virtual uint64_t getHearthTwap() override;
 
     // HEAT stablecoin / Hearth AMM metrics (v11+)
     struct HeatMetrics {

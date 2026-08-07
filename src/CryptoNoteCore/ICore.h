@@ -148,6 +148,17 @@ public:
     outFeeRate = 0;
     return {};
   }
+
+  // AMM pool reserves for HEAT mint rate computation.
+  struct AmmPoolReserves {
+    uint64_t reserveXfg = 1;
+    uint64_t reserveHeat = 1;
+  };
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) {
+    out = {1, 1};
+    return {};
+  }
+  virtual uint64_t getHearthTwap() { return 0; }
 };
 
 } //namespace CryptoNote

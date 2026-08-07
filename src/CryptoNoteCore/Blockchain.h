@@ -160,6 +160,10 @@ namespace CryptoNote {
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
 
+    // Rolling 8-block TWAP for HEAT mint price validation.
+    // Simple average of the last 8 blocks' hearthPoolRatio (10^18 precision).
+    uint64_t getRollingTwap() const;
+
     struct OrderbookLevel {
       uint64_t price;
       uint64_t depth;
@@ -251,7 +255,7 @@ namespace CryptoNote {
     std::vector<Crypto::Hash> getCommitmentLeaves() const;
     CommitmentIndex::Height getCommitmentHighestBlock() const;
 
-    // Banking fee computation (0.1% on HEAT/COLD commitments)
+    // Banking fee computation (0.1% on HEAT commitments)
     static uint64_t computeBankingFeesFromTransactions(const std::vector<Transaction>& txs);
 
     // Access CommitmentIndex for epoch boundary checks and fee tracking
@@ -457,6 +461,9 @@ namespace CryptoNote {
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
+
+    // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
+    std::deque<uint64_t> m_rollingPriceWindow;
 
     // DIGM pool state
     CryptoNote::DigmPrimaryPoolState m_digmPrimaryPool;

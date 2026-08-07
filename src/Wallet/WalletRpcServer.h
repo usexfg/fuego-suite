@@ -45,6 +45,7 @@ namespace Tools
       const std::string& walletFilename);
 
 
+    void configure(const std::string& bindIp, uint16_t port, const std::string& rpcUser, const std::string& rpcPassword);
     static void init_options(boost::program_options::options_description& desc);
     bool init(const boost::program_options::variables_map& vm);
 

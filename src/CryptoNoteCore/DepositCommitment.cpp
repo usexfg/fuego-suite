@@ -222,7 +222,7 @@ bool DepositCommitmentGenerator::validateCommitment(const DepositCommitment& com
     switch (commitment.type) {
         case CommitmentType::HEAT:
             return !commitment.metadata.empty();
-        case CommitmentType::COLD:
+        // case CommitmentType::COLD:  // REMOVED: COLD deposit type
         case CommitmentType::YIELD:
             return commitment.metadata.size() >= sizeof(uint64_t);
         default:

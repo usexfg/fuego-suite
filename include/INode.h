@@ -136,6 +136,21 @@ public:
     deposits.clear();
     return {};
   }
+
+  // AMM pool redemption price: returns (reserveXfg, reserveHeat) from the Hearth pool.
+  // Wallet uses this to compute correct heatMinted = xfgBurned * reserveHeat / reserveXfg.
+  // Default returns (1,1) so existing INode implementations compile.
+  struct AmmPoolReserves {
+    uint64_t reserveXfg = 1;
+    uint64_t reserveHeat = 1;
+  };
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) {
+    out = {1, 1};
+    return {};
+  }
+  // Rolling 8-block TWAP of Hearth spot price for HEAT mint validation.
+  // Returns 0 if unavailable (caller should fall back to spot pool rate).
+  virtual uint64_t getHearthTwap() { return 0; }
 };
 
 }

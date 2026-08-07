@@ -143,23 +143,24 @@ namespace CryptoNote
           transactionExtraFields.push_back(heatCommitment);
           break;
         }
-        case TX_EXTRA_COLD_MIGRATION:
-        {
-          TransactionExtraColdMigration migration;
-          read(iss, migration.originalTxHash.data, sizeof(migration.originalTxHash.data));
-          read(iss, migration.commitment.data, sizeof(migration.commitment.data));
-          migration.amount = 0;
-          for (int i = 0; i < 8; ++i) {
-            migration.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-          }
-          migration.term = 0;
-          for (int i = 0; i < 4; ++i) {
-            migration.term |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
-          }
-          migration.targetChainId = read<uint8_t>(iss);
-          transactionExtraFields.push_back(migration);
-          break;
-        }
+        // REMOVED: COLD migration parsing
+        // case TX_EXTRA_COLD_MIGRATION:
+        // {
+        //   TransactionExtraColdMigration migration;
+        //   read(iss, migration.originalTxHash.data, sizeof(migration.originalTxHash.data));
+        //   read(iss, migration.commitment.data, sizeof(migration.commitment.data));
+        //   migration.amount = 0;
+        //   for (int i = 0; i < 8; ++i) {
+        //     migration.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+        //   }
+        //   migration.term = 0;
+        //   for (int i = 0; i < 4; ++i) {
+        //     migration.term |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
+        //   }
+        //   migration.targetChainCode = read<uint8_t>(iss);
+        //   transactionExtraFields.push_back(migration);
+        //   break;
+        // }
 
         case TX_EXTRA_LEGACY_BOND:
         {
@@ -500,26 +501,29 @@ namespace CryptoNote
       return addBurnReceiptToExtra(extra, t);
     }
     
-    bool operator()(const TransactionExtraSimpleCD &t)
-    {
-      extra.push_back(TX_EXTRA_SIMPLE_CD);
-      extra.insert(extra.end(), t.commitment.data, t.commitment.data + sizeof(t.commitment.data));
-      uint64_t amount = t.amount;
-      for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
-      uint32_t term = t.term;
-      for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>(term & 0xFF)); term >>= 8; }
-      return true;
-    }
+    // REMOVED: COLD SimpleCD writer
+    // bool operator()(const TransactionExtraSimpleCD &t)
+    // {
+    //   extra.push_back(TX_EXTRA_SIMPLE_CD);
+    //   extra.insert(extra.end(), t.commitment.data, t.commitment.data + sizeof(t.commitment.data));
+    //   uint64_t amount = t.amount;
+    //   for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
+    //   uint32_t term = t.term;
+    //   for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>(term & 0xFF)); term >>= 8; }
+    //   return true;
+    // }
 
-    bool operator()(const TransactionExtraColdCommitment &t)
-    {
-      return addColdCommitmentToExtra(extra, t);
-    }
+    // REMOVED: COLD commitment writer
+    // bool operator()(const TransactionExtraColdCommitment &t)
+    // {
+    //   return addColdCommitmentToExtra(extra, t);
+    // }
 
-    bool operator()(const TransactionExtraDepositReceipt &t)
-    {
-      return addDepositReceiptToExtra(extra, t);
-    }
+    // REMOVED: COLD deposit receipt writer
+    // bool operator()(const TransactionExtraDepositReceipt &t)
+    // {
+    //   return addDepositReceiptToExtra(extra, t);
+    // }
 
     bool operator()(const TransactionExtraAliasRegistration &t)
     {
@@ -536,10 +540,11 @@ namespace CryptoNote
       return addAliasTransferToExtra(extra, t);
     }
 
-    bool operator()(const TransactionExtraColdMigration &t)
-    {
-      return addColdMigrationToExtra(extra, t);
-    }
+    // REMOVED: COLD migration writer
+    // bool operator()(const TransactionExtraColdMigration &t)
+    // {
+    //   return addColdMigrationToExtra(extra, t);
+    // }
 
     bool operator()(const TransactionExtraLegacyBond &t)
     {
@@ -927,26 +932,28 @@ namespace CryptoNote
     return true;
   }
 
-  bool TransactionExtraColdCommitment::serialize(ISerializer &s)
-  {
-    s(commitment, "commitment");
-    s(amount, "amount");
-    s(term, "term");
-    s(claimChainCode, "claimChainCode");
-    s(metadata, "metadata");
-    s(gift_secret, "gift_secret");
-    return true;
-  }
+  // REMOVED: COLD commitment serialize
+  // bool TransactionExtraColdCommitment::serialize(ISerializer &s)
+  // {
+  //   s(commitment, "commitment");
+  //   s(amount, "amount");
+  //   s(term, "term");
+  //   s(claimChainCode, "claimChainCode");
+  //   s(metadata, "metadata");
+  //   s(gift_secret, "gift_secret");
+  //   return true;
+  // }
 
-  bool TransactionExtraColdMigration::serialize(ISerializer &s)
-  {
-    s(originalTxHash, "originalTxHash");
-    s(commitment, "commitment");
-    s(amount, "amount");
-    s(term, "term");
-    s(targetChainId, "targetChainId");
-    return true;
-  }
+  // REMOVED: COLD migration serialize
+  // bool TransactionExtraColdMigration::serialize(ISerializer &s)
+  // {
+  //   s(originalTxHash, "originalTxHash");
+  //   s(commitment, "commitment");
+  //   s(amount, "amount");
+  //   s(term, "term");
+  //   s(targetChainId, "targetChainId");
+  //   return true;
+  // }
 
   bool TransactionExtraLegacyBond::serialize(ISerializer &s)
   {
@@ -1239,82 +1246,86 @@ namespace CryptoNote
     return CryptoNote::createTxExtraWithHeatCommitment(commitment, amount_atomic, metadata, extra);
   }
 
-  Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32> &secret,
-                                     uint64_t amount_atomic,
-                                     const Crypto::Hash &tx_prefix_hash,
-                                     uint32_t network_id,
-                                     uint32_t target_chain_id,
-                                     uint32_t commitment_version,
-                                     uint32_t term)
-  {
-    return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
-  }
+  // REMOVED: COLD commitment computation
+  // Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32> &secret,
+  //                                    uint64_t amount_atomic,
+  //                                    const Crypto::Hash &tx_prefix_hash,
+  //                                    uint32_t network_id,
+  //                                    uint32_t target_chain_id,
+  //                                    uint32_t commitment_version,
+  //                                    uint32_t term)
+  // {
+  //   return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
+  // }
 
-  bool buildColdExtra(const std::array<uint8_t, 32> &secret,
-                      uint64_t amount_atomic,
-                      const Crypto::Hash &tx_prefix_hash,
-                      uint32_t network_id,
-                      uint32_t target_chain_id,
-                      uint32_t commitment_version,
-                      uint32_t term,
-                      uint8_t claimChainCode,
-                      const std::vector<uint8_t> &metadata,
-                      const std::vector<uint8_t> &gift_secret,
-                      std::vector<uint8_t> &extra)
-  {
-    Crypto::Hash commitment = computeColdCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
-    const Crypto::Hash zero = {};
-    if (!memcmp(&commitment, &zero, sizeof(zero))) {
-      return false;
-    }
-    return CryptoNote::createTxExtraWithColdCommitment(commitment, amount_atomic, term, claimChainCode, metadata, gift_secret, extra);
-  }
+  // REMOVED: COLD extra builder
+  // bool buildColdExtra(const std::array<uint8_t, 32> &secret,
+  //                     uint64_t amount_atomic,
+  //                     const Crypto::Hash &tx_prefix_hash,
+  //                     uint32_t network_id,
+  //                     uint32_t target_chain_id,
+  //                     uint32_t commitment_version,
+  //                     uint32_t term,
+  //                     uint8_t claimChainCode,
+  //                     const std::vector<uint8_t> &metadata,
+  //                     const std::vector<uint8_t> &gift_secret,
+  //                     std::vector<uint8_t> &extra)
+  // {
+  //   Crypto::Hash commitment = computeColdCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, term);
+  //   const Crypto::Hash zero = {};
+  //   if (!memcmp(&commitment, &zero, sizeof(zero))) {
+  //     return false;
+  //   }
+  //   return CryptoNote::createTxExtraWithColdCommitment(commitment, amount_atomic, term, claimChainCode, metadata, gift_secret, extra);
+  // }
 
-  bool addColdCommitmentToExtra(std::vector<uint8_t> &tx_extra, const CryptoNote::TransactionExtraColdCommitment &commitment)
-  {
-    tx_extra.push_back(TX_EXTRA_COLD_COMMITMENT);
-    tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + 32);
-    uint64_t amount = commitment.amount;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
-      amount >>= 8;
-    }
-    uint32_t term = commitment.term;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
-      term >>= 8;
-    }
-    tx_extra.push_back(commitment.claimChainCode);
-    uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
-    tx_extra.push_back(metadataSize);
-    if (metadataSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
-    }
-    uint8_t giftSecretSize = static_cast<uint8_t>(commitment.gift_secret.size());
-    tx_extra.push_back(giftSecretSize);
-    if (giftSecretSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.gift_secret.begin(), commitment.gift_secret.end());
-    }
-    return true;
-  }
+  // REMOVED: COLD commitment serialization
+  // bool addColdCommitmentToExtra(std::vector<uint8_t> &tx_extra, const CryptoNote::TransactionExtraColdCommitment &commitment)
+  // {
+  //   tx_extra.push_back(TX_EXTRA_COLD_COMMITMENT);
+  //   tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + 32);
+  //   uint64_t amount = commitment.amount;
+  //   for (int i = 0; i < 8; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+  //     amount >>= 8;
+  //   }
+  //   uint32_t term = commitment.term;
+  //   for (int i = 0; i < 4; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
+  //     term >>= 8;
+  //   }
+  //   tx_extra.push_back(commitment.claimChainCode);
+  //   uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
+  //   tx_extra.push_back(metadataSize);
+  //   if (metadataSize > 0) {
+  //     tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
+  //   }
+  //   uint8_t giftSecretSize = static_cast<uint8_t>(commitment.gift_secret.size());
+  //   tx_extra.push_back(giftSecretSize);
+  //   if (giftSecretSize > 0) {
+  //     tx_extra.insert(tx_extra.end(), commitment.gift_secret.begin(), commitment.gift_secret.end());
+  //   }
+  //   return true;
+  // }
 
-  bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration) {
-    tx_extra.push_back(TX_EXTRA_COLD_MIGRATION);
-    tx_extra.insert(tx_extra.end(), migration.originalTxHash.data, migration.originalTxHash.data + 32);
-    tx_extra.insert(tx_extra.end(), migration.commitment.data, migration.commitment.data + 32);
-    uint64_t amount = migration.amount;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
-      amount >>= 8;
-    }
-    uint32_t term = migration.term;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
-      term >>= 8;
-    }
-    tx_extra.push_back(migration.targetChainId);
-    return true;
-  }
+  // REMOVED: COLD migration serialization
+  // bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration) {
+  //   tx_extra.push_back(TX_EXTRA_COLD_MIGRATION);
+  //   tx_extra.insert(tx_extra.end(), migration.originalTxHash.data, migration.originalTxHash.data + 32);
+  //   tx_extra.insert(tx_extra.end(), migration.commitment.data, migration.commitment.data + 32);
+  //   uint64_t amount = migration.amount;
+  //   for (int i = 0; i < 8; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
+  //     amount >>= 8;
+  //   }
+  //   uint32_t term = migration.term;
+  //   for (int i = 0; i < 4; ++i) {
+  //     tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
+  //     term >>= 8;
+  //   }
+  //   tx_extra.push_back(migration.targetChainId);
+  //   return true;
+  // }
 
   bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond) {
     tx_extra.push_back(TX_EXTRA_LEGACY_BOND);
@@ -1376,65 +1387,67 @@ namespace CryptoNote
     return true;
   }
 
-  bool createTxExtraWithColdCommitment(const Crypto::Hash &commitment, uint64_t amount, uint32_t term,
-                                        uint8_t claimChainCode, const std::vector<uint8_t> &metadata,
-                                        const std::vector<uint8_t> &gift_secret, std::vector<uint8_t> &extra)
-  {
-    TransactionExtraColdCommitment coldCommitment;
-    coldCommitment.commitment = commitment;
-    coldCommitment.amount = amount;
-    coldCommitment.term = term;
-    coldCommitment.claimChainCode = claimChainCode;
-    coldCommitment.metadata = metadata;
-    coldCommitment.gift_secret = gift_secret;
-    return addColdCommitmentToExtra(extra, coldCommitment);
-  }
+  // REMOVED: COLD commitment creation
+  // bool createTxExtraWithColdCommitment(const Crypto::Hash &commitment, uint64_t amount, uint32_t term,
+  //                                     uint8_t claimChainCode, const std::vector<uint8_t> &metadata,
+  //                                     const std::vector<uint8_t> &gift_secret, std::vector<uint8_t> &extra)
+  // {
+  //   TransactionExtraColdCommitment coldCommitment;
+  //   coldCommitment.commitment = commitment;
+  //   coldCommitment.amount = amount;
+  //   coldCommitment.term = term;
+  //   coldCommitment.claimChainCode = claimChainCode;
+  //   coldCommitment.metadata = metadata;
+  //   coldCommitment.gift_secret = gift_secret;
+  //   return addColdCommitmentToExtra(extra, coldCommitment);
+  // }
 
-  bool getColdCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraColdCommitment &commitment)
-  {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_COMMITMENT) {
-      return false;
-    }
-    size_t pos = 1;
-    if (pos + 32 > tx_extra.size()) return false;
-    std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
-    pos += 32;
-    if (pos + 8 > tx_extra.size()) return false;
-    commitment.amount = 0;
-    for (int i = 0; i < 8; ++i) {
-      commitment.amount |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 8;
-    if (pos + 4 > tx_extra.size()) return false;
-    commitment.term = 0;
-    for (int i = 0; i < 4; ++i) {
-      commitment.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 4;
-    if (pos >= tx_extra.size()) return false;
-    commitment.claimChainCode = tx_extra[pos];
-    pos++;
-    if (pos >= tx_extra.size()) return false;
-    uint8_t metadataSize = tx_extra[pos];
-    pos++;
-    if (pos + metadataSize > tx_extra.size()) return false;
-    if (metadataSize > 0) {
-      commitment.metadata.assign(&tx_extra[pos], &tx_extra[pos] + metadataSize);
-      pos += metadataSize;
-    } else {
-      commitment.metadata.clear();
-    }
-    if (pos >= tx_extra.size()) return false;
-    uint8_t giftSecretSize = tx_extra[pos];
-    pos++;
-    if (pos + giftSecretSize > tx_extra.size()) return false;
-    if (giftSecretSize > 0) {
-      commitment.gift_secret.assign(&tx_extra[pos], &tx_extra[pos] + giftSecretSize);
-    } else {
-      commitment.gift_secret.clear();
-    }
-    return true;
-  }
+  // REMOVED: COLD commitment reader
+  // bool getColdCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraColdCommitment &commitment)
+  // {
+  //   if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_COMMITMENT) {
+  //     return false;
+  //   }
+  //   size_t pos = 1;
+  //   if (pos + 32 > tx_extra.size()) return false;
+  //   std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
+  //   pos += 32;
+  //   if (pos + 8 > tx_extra.size()) return false;
+  //   commitment.amount = 0;
+  //   for (int i = 0; i < 8; ++i) {
+  //     commitment.amount |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
+  //   }
+  //   pos += 8;
+  //   if (pos + 4 > tx_extra.size()) return false;
+  //   commitment.term = 0;
+  //   for (int i = 0; i < 4; ++i) {
+  //     commitment.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
+  //   }
+  //   pos += 4;
+  //   if (pos >= tx_extra.size()) return false;
+  //   commitment.claimChainCode = tx_extra[pos];
+  //   pos++;
+  //   if (pos >= tx_extra.size()) return false;
+  //   uint8_t metadataSize = tx_extra[pos];
+  //   pos++;
+  //   if (pos + metadataSize > tx_extra.size()) return false;
+  //   if (metadataSize > 0) {
+  //     commitment.metadata.assign(&tx_extra[pos], &tx_extra[pos] + metadataSize);
+  //     pos += metadataSize;
+  //   } else {
+  //     commitment.metadata.clear();
+  //   }
+  //   if (pos >= tx_extra.size()) return false;
+  //   uint8_t giftSecretSize = tx_extra[pos];
+  //   pos++;
+  //   if (pos + giftSecretSize > tx_extra.size()) return false;
+  //   if (giftSecretSize > 0) {
+  //     commitment.gift_secret.assign(&tx_extra[pos], &tx_extra[pos] + giftSecretSize);
+  //   } else {
+  //     commitment.gift_secret.clear();
+  //   }
+  //   return true;
+  // }
 
   bool getBurnReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraBurnReceipt& burnReceipt) {
     if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_BURN_RECEIPT) {
@@ -1498,100 +1511,25 @@ namespace CryptoNote
     return addBurnReceiptToExtra(extra, burnReceipt);
   }
 
-  bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt) {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_RECEIPT) {
-      return false;
-    }
+  // REMOVED: COLD deposit receipt functions
+  // bool getDepositReceiptFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraDepositReceipt& depositReceipt) {
+  //   if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_COLD_RECEIPT) {
+  //     return false;
+  //   }
+  //   // ... (full implementation removed)
+  //   return true;
+  // }
 
-    size_t pos = 1;
+  // bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt) {
+  //   tx_extra.push_back(TX_EXTRA_COLD_RECEIPT);
+  //   // ... (full implementation removed)
+  //   return true;
+  // }
 
-    // Parse proof_pubkey (32 bytes)
-    if (pos + sizeof(Crypto::PublicKey) > tx_extra.size()) return false;
-    std::memcpy(&depositReceipt.proof_pubkey, &tx_extra[pos], sizeof(Crypto::PublicKey));
-    pos += sizeof(Crypto::PublicKey);
-
-    // Parse tx_hash (variable length)
-    if (pos >= tx_extra.size()) return false;
-    uint32_t hashLen = 0;
-    for (int i = 0; i < 4 && pos < tx_extra.size(); ++i, ++pos) {
-      hashLen |= static_cast<uint32_t>(tx_extra[pos]) << (i * 8);
-    }
-    if (pos + hashLen > tx_extra.size()) return false;
-    depositReceipt.tx_hash.assign(reinterpret_cast<const char*>(&tx_extra[pos]), hashLen);
-    pos += hashLen;
-
-    // Parse timestamp (8 bytes)
-    if (pos + 8 > tx_extra.size()) return false;
-    depositReceipt.timestamp = 0;
-    for (int i = 0; i < 8; ++i) {
-      depositReceipt.timestamp |= static_cast<uint64_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 8;
-
-    // Parse term (4 bytes)
-    if (pos + 4 > tx_extra.size()) return false;
-    depositReceipt.term = 0;
-    for (int i = 0; i < 4; ++i) {
-      depositReceipt.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 4;
-
-    // Parse deposit_type (variable length)
-    if (pos >= tx_extra.size()) return false;
-    uint32_t typeLen = 0;
-    for (int i = 0; i < 4 && pos < tx_extra.size(); ++i, ++pos) {
-      typeLen |= static_cast<uint32_t>(tx_extra[pos]) << (i * 8);
-    }
-    if (pos + typeLen > tx_extra.size()) return false;
-    depositReceipt.deposit_type.assign(reinterpret_cast<const char*>(&tx_extra[pos]), typeLen);
-
-    return true;
-  }
-
-  bool addDepositReceiptToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraDepositReceipt& depositReceipt) {
-    tx_extra.push_back(TX_EXTRA_COLD_RECEIPT);
-
-    // Add proof_pubkey
-    tx_extra.insert(tx_extra.end(), reinterpret_cast<const uint8_t*>(&depositReceipt.proof_pubkey),
-                    reinterpret_cast<const uint8_t*>(&depositReceipt.proof_pubkey) + sizeof(Crypto::PublicKey));
-
-    // Add tx_hash length and data
-    uint32_t hashLen = static_cast<uint32_t>(depositReceipt.tx_hash.length());
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(hashLen & 0xFF));
-      hashLen >>= 8;
-    }
-    tx_extra.insert(tx_extra.end(), depositReceipt.tx_hash.begin(), depositReceipt.tx_hash.end());
-
-    // Add timestamp
-    uint64_t timestamp = depositReceipt.timestamp;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(timestamp & 0xFF));
-      timestamp >>= 8;
-    }
-
-    // Add term
-    uint32_t termValue = depositReceipt.term;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(termValue & 0xFF));
-      termValue >>= 8;
-    }
-
-    // Add deposit_type length and data
-    uint32_t typeLen = static_cast<uint32_t>(depositReceipt.deposit_type.length());
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(typeLen & 0xFF));
-      typeLen >>= 8;
-    }
-    tx_extra.insert(tx_extra.end(), depositReceipt.deposit_type.begin(), depositReceipt.deposit_type.end());
-
-    return true;
-  }
-
-  bool createTxExtraWithDepositReceipt(const TransactionExtraDepositReceipt& depositReceipt, std::vector<uint8_t>& extra) {
-    extra.clear();
-    return addDepositReceiptToExtra(extra, depositReceipt);
-  }
+  // bool createTxExtraWithDepositReceipt(const TransactionExtraDepositReceipt& depositReceipt, std::vector<uint8_t>& extra) {
+  //   extra.clear();
+  //   return addDepositReceiptToExtra(extra, depositReceipt);
+  // }
 
   bool addAliasToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraAliasRegistration& alias) {
     if (!alias.isValid()) {
@@ -1698,17 +1636,18 @@ namespace CryptoNote
     return false;
   }
 
-  bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra) {
-    TransactionExtraSimpleCD cdCommitment;
-    cdCommitment.commitment = commitment;
-    cdCommitment.amount = amount;
-    cdCommitment.term = term;
-    extra.push_back(TX_EXTRA_SIMPLE_CD);
-    extra.insert(extra.end(), cdCommitment.commitment.data, cdCommitment.commitment.data + 32);
-    for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.amount >> (i*8)) & 0xFF)); }
-    for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.term >> (i*8)) & 0xFF)); }
-    return true;
-  }
+  // REMOVED: COLD SimpleCD commitment creation
+  // bool createTxExtraWithSimpleCDCommitment(const Crypto::Hash& commitment, uint64_t amount, uint32_t term, std::vector<uint8_t>& extra) {
+  //   TransactionExtraSimpleCD cdCommitment;
+  //   cdCommitment.commitment = commitment;
+  //   cdCommitment.amount = amount;
+  //   cdCommitment.term = term;
+  //   extra.push_back(TX_EXTRA_SIMPLE_CD);
+  //   extra.insert(extra.end(), cdCommitment.commitment.data, cdCommitment.commitment.data + 32);
+  //   for (int i = 0; i < 8; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.amount >> (i*8)) & 0xFF)); }
+  //   for (int i = 0; i < 4; ++i) { extra.push_back(static_cast<uint8_t>((cdCommitment.term >> (i*8)) & 0xFF)); }
+  //   return true;
+  // }
 
   bool addAmmSwapToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount, uint64_t minOutput) {
     tx_extra.push_back(TX_EXTRA_AMM_SWAP);

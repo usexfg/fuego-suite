@@ -85,7 +85,7 @@ public:
 
 enum class CommitmentType : uint8_t {
     HEAT  = 0,   // 0x08 — permanent burn (FOREVER term)
-    COLD  = 1,   // 0xCD — term-locked deposit (finite term, earns CD interest)
+    // COLD  = 1,  // REMOVED: 0xCD — term-locked deposit
     YIELD = 2    // 0x07 — interest-bearing (FuCIA custom interest assets)
 };
 

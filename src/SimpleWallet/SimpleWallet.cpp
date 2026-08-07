@@ -1214,6 +1214,11 @@ success_msg_writer(true) << "CD deposit transaction created successfully!";
 // DISABLED: Internal command - users should not create their own commitments
 
 bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
+ // COLD deposit type has been removed. Use 'heat' command for HEAT deposits.
+ fail_msg_writer() << "COLD deposits are no longer supported. Use 'heat' command for HEAT deposits.";
+ return true;
+
+ /*
  // ETH address recipient binding at STARK proof generation time for privacy
  if (args.size() != 3) {
    fail_msg_writer() << "usage: create_cold_secret <amount> <term_blocks> <chain_code>";
@@ -1306,6 +1311,7 @@ bool simple_wallet::create_cold_secret(const std::vector<std::string> &args) {
    fail_msg_writer() << "Failed to parse arguments: " << e.what();
    return true;
  }
+ */
 
  return true;
 }
@@ -1370,6 +1376,26 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
     if (deposit.term == 0) continue;
 
     shown++;
+    // Extract commitment (Key Image) from transaction extra
+    std::string key_image_str = "";
+    if (!deposit.extra.empty()) {
+      std::vector<TransactionExtraField> extraFields;
+      std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
+      if (parseTransactionExtra(extraBytes, extraFields)) {
+        for (const auto& field : extraFields) {
+          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+            const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
+            key_image_str = Common::podToHex(heatCommit.commitment);
+            break;
+           // COLD deposit type removed - TransactionExtraSimpleCD no longer used
+           // } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+           //   const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+           //   key_image_str = Common::podToHex(coldCommit.commitment);
+           //   break;
+          }
+        }
+      }
+    }
 
     std::string amount_str = m_currency.formatAmount(deposit.amount);
 
@@ -1580,6 +1606,11 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::cold(const std::vector<std::string> &args)
 {
+  // COLD deposit type has been removed. Use 'heat' command for HEAT deposits.
+  fail_msg_writer() << "COLD deposits are no longer supported. Use 'heat' command for HEAT deposits.";
+  return true;
+
+  /*
   // Simplified COLD deposit command - amount + term code (3 or 12)
   if (args.size() != 2)
   {
@@ -1754,6 +1785,7 @@ bool simple_wallet::cold(const std::vector<std::string> &args)
     fail_msg_writer() << "Error: " << e.what();
     return true;
   }
+  */
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -1991,29 +2023,29 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
 
            logger(INFO, BRIGHT_GREEN) << "Proof data generated for XFG burn (HEAT) transaction " << tx_hash;
            return true;
-         }
-          // Check for CD deposit commitment (0xCD = 205 tag in tx_extra)
-          else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-            const auto& coldDeposit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-
-            success_msg_writer() << "Found CD transaction: " << tx_hash;
-            success_msg_writer() << "Amount: " << m_currency.formatAmount(coldDeposit.amount);
-            success_msg_writer() << "Term: " << coldDeposit.term << " blocks";
-
-            std::cout << "\n=== XFG CERTIFICATE OF LEDGER DEPOSIT PROOF ===" << std::endl;
-            std::cout << "Transaction Hash: " << tx_hash << std::endl;
-            std::cout << "Commitment: " << Common::podToHex(coldDeposit.commitment) << std::endl;
-            std::cout << "Amount: " << coldDeposit.amount << " heat (atomic XFG)" << std::endl;
-            std::cout << "Term: " << coldDeposit.term << " blocks" << std::endl;
-            std::cout << "=================================" << std::endl;
-
-            logger(INFO, BRIGHT_GREEN) << "Proof data generated for CD transaction " << tx_hash;
-            return true;
           }
+          // COLD deposit type removed - TransactionExtraSimpleCD no longer used
+          // else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+          //   const auto& coldDeposit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+          //
+          //   success_msg_writer() << "Found CD transaction: " << tx_hash;
+          //   success_msg_writer() << "Amount: " << m_currency.formatAmount(coldDeposit.amount);
+          //   success_msg_writer() << "Term: " << coldDeposit.term << " blocks";
+          //
+          //   std::cout << "\n=== XFG CERTIFICATE OF LEDGER DEPOSIT PROOF ===" << std::endl;
+          //   std::cout << "Transaction Hash: " << tx_hash << std::endl;
+          //   std::cout << "Commitment: " << Common::podToHex(coldDeposit.commitment) << std::endl;
+          //   std::cout << "Amount: " << coldDeposit.amount << " heat (atomic XFG)" << std::endl;
+          //   std::cout << "Term: " << coldDeposit.term << " blocks" << std::endl;
+          //   std::cout << "=================================" << std::endl;
+          //
+          //   logger(INFO, BRIGHT_GREEN) << "Proof data generated for CD transaction " << tx_hash;
+          //   return true;
+          // }
        }
      }
 
-     fail_msg_writer() << "No HEAT (burn) or COLD commitment found in transaction: " << tx_hash;
+     fail_msg_writer() << "No HEAT (burn) commitment found in transaction: " << tx_hash;
      return true;
    } catch (const std::exception& e) {
      fail_msg_writer() << "Error processing transaction: " << e.what();
@@ -2061,10 +2093,11 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
         depositType = "XFG Burn (HEAT/0x08)";
         typeDescription = "Permanent 'forever' deposit - removed from circulation";
         break;
-      case CryptoNote::Deposit::Type::COLD:
-        depositType = "CD (Certificate of Deposit)";
-        typeDescription = "On-chain yield deposit - locked for your specified term, earns interest from fee pool";
-        break;
+      // COLD deposit type removed
+      // case CryptoNote::Deposit::Type::COLD:
+      //   depositType = "CD (Certificate of Deposit)";
+      //   typeDescription = "On-chain yield deposit - locked for your specified term, earns interest from fee pool";
+      //   break;
       default:
         depositType = "Unknown";
         typeDescription = "Unknown deposit type";
@@ -2117,10 +2150,12 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
              if (field.type() == typeid(TransactionExtraHeatCommitment)) {
                const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
                success_msg_writer() << "Key Image:     " << Common::podToHex(heatCommit.commitment);
-             } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-               const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-               success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
              }
+             // COLD deposit type removed - TransactionExtraSimpleCD no longer used
+             // else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
+             //   const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
+             //   success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
+             // }
         }
       }
 
@@ -2296,6 +2331,11 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
 
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args) {
+  // COLD deposit type has been removed. Legacy COLD migration is no longer needed.
+  fail_msg_writer() << "COLD deposits are no longer supported. Legacy COLD migration is no longer needed.";
+  return true;
+
+  /*
   if (args.size() != 1) {
     fail_msg_writer() << "Usage: migrate_legacy_deposit <deposit_id>";
     fail_msg_writer() << "Migrates a pre-v3 legacy deposit to v3 format, registering a commitment for L2 claims.";
@@ -2469,6 +2509,7 @@ bool simple_wallet::migrate_legacy_deposit(const std::vector<std::string> &args)
   } catch (const std::exception &e) {
     fail_msg_writer() << "Migration error: " << e.what();
   }
+  */
 
   return true;
 }

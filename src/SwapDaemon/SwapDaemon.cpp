@@ -42,6 +42,7 @@
 #include "BSC/BscChainClient.h"
 #include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
+#include "Gleec/GleecChainClient.h"
 #include "Spv/ElectrumSpvClient.h"
 #include "Spv/Neutrino/NeutrinoSpvClient.h"
 
@@ -311,6 +312,18 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "Polygon chain client registered: "
       << chainCfg.polyHost << ":" << chainCfg.polyPort
       << " (chainId=" << chainCfg.polyChainId << ")";
+  }
+
+  // GLEEC (Evmos fork) — EVM-compatible
+  if (!chainCfg.gleecHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
+        chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
+        chainCfg.gleecChainId);
+    m_chainRegistry.registerChain(SwapPair::GLEEC,
+        std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
+    m_logger(Logging::INFO) << "GLEEC chain client registered: "
+      << chainCfg.gleecHost << ":" << chainCfg.gleecPort
+      << " (chainId=" << chainCfg.gleecChainId << ")";
   }
   if (!chainCfg.dcrHost.empty() || chainCfg.dcrMode == "spv") {
     if (chainCfg.dcrMode == "spv" && !chainCfg.dcrSpvServers.empty()) {
@@ -2469,7 +2482,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::DCR); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(SwapPair::GLEEC); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {

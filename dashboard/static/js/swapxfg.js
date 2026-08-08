@@ -17,7 +17,8 @@ const SwapXFG = (() => {
     BNB:      { icon: '/coin-icons/bnb.png', color: '#f3ba2f', ticker: 'BNB', name: 'BNB Chain' },
     DCR:      { icon: '/coin-icons/dcr.png', color: '#2970ff', ticker: 'DCR', name: 'Decred' },
     KMD_SPV:  { icon: '/coin-icons/kmd.png', color: '#2b6def', ticker: 'KMD', name: 'Komodo' },
-    POLYGON:  { icon: '/coin-icons/matic.png', color: '#8247e5', ticker: 'MATIC', name: 'Polygon' }
+    POLYGON:  { icon: '/coin-icons/matic.png', color: '#8247e5', ticker: 'MATIC', name: 'Polygon' },
+    GLEEC:    { icon: '/coin-icons/gleec.png', color: '#4CAF50', ticker: 'GLEEC', name: 'Gleec' }
   };
 
   // ── Init ──

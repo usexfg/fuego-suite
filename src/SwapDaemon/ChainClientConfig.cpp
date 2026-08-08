@@ -174,6 +174,14 @@ bool loadChainClientConfig(const std::string& path,
   out.polyChainId    = jsonGetUint(json, "poly_chain_id", 137);
   out.polyHtlcBinPath= jsonGetStr (json, "poly_htlc_bin");
 
+  // GLEEC (Evmos fork — EVM)
+  out.gleecHost       = jsonGetStr (json, "gleec_rpc_host", "");
+  out.gleecPort       = static_cast<uint16_t>(jsonGetUint(json, "gleec_rpc_port", 8545));
+  out.gleecPrivKeyHex = jsonGetStr (json, "gleec_priv_key");
+  out.gleecAddress    = jsonGetStr (json, "gleec_address");
+  out.gleecChainId    = jsonGetUint(json, "gleec_chain_id", 11169);
+  out.gleecHtlcBinPath= jsonGetStr (json, "gleec_htlc_bin", out.ethHtlcBinPath);
+
   out.xmrSpendKeyHex = jsonGetStr(json, "xmr_spend_key");
   out.xmrViewKeyHex  = jsonGetStr(json, "xmr_view_key");
 

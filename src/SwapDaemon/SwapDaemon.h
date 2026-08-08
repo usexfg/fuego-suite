@@ -185,6 +185,14 @@ struct ChainClientConfig {
   uint64_t  kmdSpvCheckpointHeight = 0;        // checkpoint anchor height
   std::string kmdSpvCheckpointHash;            // checkpoint hash (display hex)
 
+  // GLEEC (Evmos fork)
+  std::string gleecHost;
+  uint16_t    gleecPort     = 8545;
+  std::string gleecPrivKeyHex;
+  std::string gleecAddress;
+  uint64_t    gleecChainId  = 11169;
+  std::string gleecHtlcBinPath;
+
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;
   std::string xfgViewKeyHex;

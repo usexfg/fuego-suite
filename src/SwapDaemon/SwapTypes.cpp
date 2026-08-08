@@ -44,6 +44,7 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (iequal(p, "LTC", n))  { out = SwapPair::LTC;  return true; }
   if (iequal(p, "POLY", n)) { out = SwapPair::POLYGON; return true; }
   if (iequal(p, "POLYGON", n)) { out = SwapPair::POLYGON; return true; }
+  if (iequal(p, "GLEEC", n))   { out = SwapPair::GLEEC;     return true; }
   return false;
 }
 
@@ -68,6 +69,7 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::BTC:     return "BTC";
     case SwapPair::LTC:     return "LTC";
     case SwapPair::POLYGON: return "POLYGON";
+    case SwapPair::GLEEC:   return "GLEEC";
   }
   return "???";
 }

@@ -248,8 +248,6 @@ namespace CryptoNote {
       uint64_t reserveHeat = 0;
       uint64_t totalLpShares = 0;
       uint64_t spotPrice = 0;
-      uint64_t accumulatedLpFeesHeat = 0;
-      uint64_t accumulatedLpFeesXfg = 0;
       uint64_t epochSwapFees = 0;
     };
     AmmPoolInfo getAmmPoolInfo() const;

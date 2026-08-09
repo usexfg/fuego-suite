@@ -116,6 +116,7 @@ namespace CryptoNote {
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
     uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
+    uint64_t getBonusVaultBalance() const { return m_bonusVaultBalance; }
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
@@ -197,7 +198,7 @@ namespace CryptoNote {
     uint64_t getTreasurySwapFeeXfg() const { return m_treasurySwapFeeXfg; }
     uint64_t getTreasuryCounterXFG() const { return m_treasuryCounterXFG; }
     uint64_t getSwfHeatBalance() const { return m_swfHeatBalance; }
-    uint64_t getTreasuryXfgReserve() const { return m_treasuryXfgReserve; }
+    // getTreasuryXfgReserve() removed — m_treasuryXfgReserve is dead code (never incremented, only restored from snapshots)
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
     bool withdrawTreasuryLp(uint64_t sharesToBurn);
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
@@ -424,8 +425,6 @@ namespace CryptoNote {
       uint64_t ammReserveXfg;
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
-      uint64_t ammAccumulatedLpFeesHeat;
-      uint64_t ammAccumulatedLpFeesXfg;
       uint64_t digmPrimaryReserveDigm;
       uint64_t digmPrimaryReserveHeat;
       uint64_t digmBancorReserveXfg;
@@ -546,12 +545,12 @@ namespace CryptoNote {
     uint64_t m_totalRolloverAccrued = 0;       // deprecated, kept for serialization compat
     uint64_t m_treasuryBalance = 0;
     uint64_t m_treasuryHeatReserve = 0;          // HEAT minted from swap fee share (CD yield floor backstop)
-    uint64_t m_treasuryXfgReserve = 0;           // permanent XFG accumulator (never spent)
+    uint64_t m_treasuryXfgReserve = 0;           // DEPRECATED: dead code, kept for serialization compat only
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
     uint64_t m_treasuryCounterXFG = 0;          // XFG burned + credited to Treasury (ready for HEAT conversion)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
-    uint64_t m_rolloverVaultBalance = 0;       // deprecated, kept for serialization compat
+    uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
     // Autonomous Treasury Vault
     VaultUtxoSet m_vault;
     VaultKeypair m_vaultKeys;

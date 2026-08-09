@@ -20,8 +20,9 @@ const char* vaultPartitionName(VaultPartition p) {
         case VaultPartition::LP_RESERVE:      return "LP_RESERVE";
         case VaultPartition::GENERAL_RESERVE: return "GENERAL_RESERVE";
         case VaultPartition::SWF:             return "SWF";
+        case VaultPartition::BONUS_VAULT:     return "BONUS_VAULT";
+        default: return "UNKNOWN";
     }
-    return "UNKNOWN";
 }
 
 const char* VaultUtxoSet::partitionName(VaultPartition p) {
@@ -79,6 +80,7 @@ VaultBalance VaultUtxoSet::allBalances() const {
                 case VaultPartition::CD_APY_POOL:     b.xfgCdFeePool += vo.amount; break;
                 case VaultPartition::LP_RESERVE:      b.xfgLpReserve += vo.amount; break;
                 case VaultPartition::GENERAL_RESERVE: b.xfgGeneral += vo.amount; break;
+                case VaultPartition::BONUS_VAULT:     b.xfgBonusVault += vo.amount; break;
                 default: break;
             }
         } else if (vo.asset == AssetType::HEAT) {
@@ -87,6 +89,7 @@ VaultBalance VaultUtxoSet::allBalances() const {
                 case VaultPartition::LP_RESERVE:      b.heatLpReserve += vo.amount; break;
                 case VaultPartition::GENERAL_RESERVE: b.heatGeneral += vo.amount; break;
                 case VaultPartition::SWF:             b.heatSwf += vo.amount; break;
+                case VaultPartition::BONUS_VAULT:     b.heatBonusVault += vo.amount; break;
                 default: break;
             }
         }

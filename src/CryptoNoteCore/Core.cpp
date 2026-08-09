@@ -409,9 +409,10 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   uint64_t amount_in = m_currency.getTransactionAllInputsAmount(tx, height);
   uint64_t amount_out = get_outs_money_amount(tx);
 
-  // Parse AMM swap auth tag for per-asset conservation check
+  // Parse extra tags for per-asset conservation check
   bool hasAmmSwapAuth = false;
   uint8_t ammSwapDirection = 0;
+  bool hasHeatMintAuth = false;
   std::vector<TransactionExtraField> tx_extra_fields;
   if (parseTransactionExtra(tx.extra, tx_extra_fields)) {
     for (const auto& field : tx_extra_fields) {
@@ -420,22 +421,27 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
         ammSwapDirection = boost::get<TransactionExtraAmmSwapAuth>(field).direction;
         break;
       }
+      if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
+        hasHeatMintAuth = true;
+        break;
+      }
     }
   }
 
-  if (hasAmmSwapAuth) {
-    // AMM swap: check per-asset conservation instead of aggregate.
-    // direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
-    // direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
+  if (hasAmmSwapAuth || hasHeatMintAuth) {
+    // AMM swap or HEAT mint: check per-asset conservation instead of aggregate.
+    // HEAT mint is equivalent to direction 0 (XFG→HEAT): XFG inputs cover XFG outputs + fee, HEAT is minted.
+    // AMM direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
+    // AMM direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
     AssetBalance inAssets = get_blockchain_storage().getTransactionInputAssetAmounts(tx, height);
     AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx);
     uint64_t fee = amount_in < amount_out ? m_currency.minimumFee() : amount_in - amount_out;
 
-    if (ammSwapDirection == 0) {
+    if (hasHeatMintAuth || ammSwapDirection == 0) {
       // XFG→HEAT: XFG conservation (HEAT is minted, no HEAT inputs expected)
       if (inAssets.xfg < outAssets.xfg + fee) {
-        logger(ERROR) << "tx XFG conservation violated for AMM swap: xfg_in=" << inAssets.xfg
-                      << " xfg_out=" << outAssets.xfg << " fee=" << fee
+        logger(ERROR) << "tx XFG conservation violated for " << (hasHeatMintAuth ? "HEAT mint" : "AMM swap")
+                      << ": xfg_in=" << inAssets.xfg << " xfg_out=" << outAssets.xfg << " fee=" << fee
                       << " rejected for tx id= " << getObjectHash(tx);
         return false;
       }
@@ -1619,8 +1625,6 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
   info.reserveXfg = pool.reserveXfg;
   info.reserveHeat = pool.reserveHeat;
   info.totalLpShares = pool.totalLpShares;
-  info.accumulatedLpFeesHeat = pool.accumulatedLpFeesHeat;
-  info.accumulatedLpFeesXfg = pool.accumulatedLpFeesXfg;
   info.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   info.spotPrice = m_blockchain.getHearthSpotPrice();
   return info;

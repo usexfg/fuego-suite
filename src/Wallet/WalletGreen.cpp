@@ -1100,7 +1100,7 @@ namespace CryptoNote
       // HEAT burn/mint is handled exclusively by mintHeatV10().
       // createDeposit() with HEAT_TERM is NOT a valid mint path.
       // The legacy 10M ratio (convertXfgToHeat) must NOT be used for minting.
-      throw std::system_error(make_error_code(CryptoNote::error::INVALID_DEPOSIT_TYPE),
+      throw std::system_error(make_error_code(CryptoNote::error::WRONG_PARAMETERS),
         "HEAT burn/mint must use mintHeatV10(), not createDeposit(HEAT_TERM). "
         "Use createDeposit() only for term-locked HEAT CDs (term != HEAT_TERM).");
     } else {

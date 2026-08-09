@@ -1798,8 +1798,9 @@ struct COMMAND_RPC_GET_FEE_POOL_INFO {
 
   struct response {
     uint64_t fee_pool_balance;          // 69% CD yield pool
-    uint64_t treasury_balance;          // 10% treasury reserve
-    uint64_t rollover_vault_balance;    // 21% rollover vault
+    uint64_t treasury_balance;          // 20% treasury reserve
+    uint64_t bonus_vault_balance;       // 11% bonus vault (loyalty + tier bonuses)
+    uint64_t rollover_vault_balance;    // deprecated, kept for compat
     uint64_t current_epoch_swap_fees;
     uint64_t total_cd_locked;
     uint64_t current_epoch_number;
@@ -1808,6 +1809,7 @@ struct COMMAND_RPC_GET_FEE_POOL_INFO {
     void serialize(ISerializer& s) {
       KV_MEMBER(fee_pool_balance)
       KV_MEMBER(treasury_balance)
+      KV_MEMBER(bonus_vault_balance)
       KV_MEMBER(rollover_vault_balance)
       KV_MEMBER(current_epoch_swap_fees)
       KV_MEMBER(total_cd_locked)
@@ -2348,7 +2350,6 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t reserve_heat;
     uint64_t total_lp_shares;
     uint64_t spot_price;
-    uint64_t accumulated_lp_fees;
     uint64_t epoch_swap_fees;
     std::string status;
     void serialize(ISerializer &s) {
@@ -2356,7 +2357,6 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(reserve_heat)
       KV_MEMBER(total_lp_shares)
       KV_MEMBER(spot_price)
-      KV_MEMBER(accumulated_lp_fees)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(status)
     }

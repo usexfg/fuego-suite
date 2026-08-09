@@ -19,8 +19,6 @@ struct AmmPoolState {
   uint64_t reserveXfg  = 0;
   uint64_t reserveHeat = 0;
   uint64_t totalLpShares = 0;
-  uint64_t accumulatedLpFeesHeat = 0;
-  uint64_t accumulatedLpFeesXfg  = 0;
   uint64_t cdHearthFeeAccumulator = 0;  // flat fee → CD yield pool (not LPs)
   uint64_t pendingXfg  = 0;
   uint64_t pendingHeat = 0;

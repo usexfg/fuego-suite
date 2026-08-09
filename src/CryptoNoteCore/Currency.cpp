@@ -346,10 +346,22 @@ double Currency::getBurnPercentage() const {
         ? (creationHeight + term) / epochDuration
         : endEpoch;
 
-    // Loyalty bonus: 2.5× on last 2.5 epochs for max-term (72-epoch) CDs
+    // Loyalty bonus: tier-based multipliers on last epochs
     // Only applies to the original term, not the auto-rolled extension
     bool loyaltyApplies = (!m_testnet && !isLegacyBond && !autoRolled &&
-                           term == parameters::DEPOSIT_MAX_TERM);
+                           term >= parameters::DEPOSIT_MIN_TERM);
+
+    // Determine loyalty bonus multiplier based on term
+    uint64_t loyaltyBonusPct = parameters::LOYALTY_BONUS_ROLLING_PCT;  // default: no bonus
+    if (term == parameters::DEPOSIT_MAX_TERM) {
+      loyaltyBonusPct = parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
+    } else if (term == 36 * epochDuration) {
+      loyaltyBonusPct = parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×
+    } else if (term == 18 * epochDuration) {
+      loyaltyBonusPct = parameters::LOYALTY_BONUS_18_EPOCHS_PCT;  // 18 epochs: 1.5×
+    } else if (term == 6 * epochDuration) {
+      loyaltyBonusPct = parameters::LOYALTY_BONUS_6_EPOCHS_PCT;  // 6 epochs: 1.25×
+    }
 
     uint64_t baseInterest = 0;
     uint64_t loyaltyBonus = 0;
@@ -372,9 +384,9 @@ double Currency::getBurnPercentage() const {
           uint64_t origEpochInterest = (uint64_t)(((uint128_t)amount * epochRate)
                                                   / parameters::FEE_POOL_RATE_PRECISION);
           if (epochsToMaturity < (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
-            loyaltyBonus += (origEpochInterest * parameters::LOYALTY_BONUS_PCT) / 100;
+            loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 100;
           } else if (epochsToMaturity == (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
-            loyaltyBonus += (origEpochInterest * parameters::LOYALTY_BONUS_PCT) / 200;
+            loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 200;
           }
         }
       }

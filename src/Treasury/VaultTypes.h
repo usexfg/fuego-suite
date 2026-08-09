@@ -21,6 +21,7 @@ enum class VaultPartition : uint8_t {
     LP_RESERVE      = 1,
     GENERAL_RESERVE = 2,
     SWF             = 3,
+    BONUS_VAULT     = 4,    // repurposed from deprecated rollover vault
 };
 
 const char* vaultPartitionName(VaultPartition p);
@@ -43,6 +44,8 @@ struct VaultBalance {
     uint64_t xfgGeneral      = 0;
     uint64_t heatGeneral     = 0;
     uint64_t heatSwf         = 0;
+    uint64_t xfgBonusVault   = 0;
+    uint64_t heatBonusVault  = 0;
 };
 
 } // namespace CryptoNote

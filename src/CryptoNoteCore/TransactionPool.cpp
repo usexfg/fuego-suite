@@ -210,8 +210,9 @@ namespace CryptoNote
 
     logger(DEBUGGING, WHITE) << "Processing tx " << id << " with inputs of " << inputs_amount << " and outputs of " << outputs_amount;
 
-    // Check for AMM swap auth tag — allows HEAT minting (outputs > inputs)
+    // Check for AMM swap or HEAT mint auth tag — allows HEAT minting (outputs > inputs)
     bool hasAmmSwapAuth = false;
+    bool hasHeatMintAuth = false;
     std::vector<TransactionExtraField> extraFieldsForAuth;
     parseTransactionExtra(tx.extra, extraFieldsForAuth);
     for (const auto& field : extraFieldsForAuth) {
@@ -219,9 +220,13 @@ namespace CryptoNote
         hasAmmSwapAuth = true;
         break;
       }
+      if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
+        hasHeatMintAuth = true;
+        break;
+      }
     }
 
-    if (outputs_amount > inputs_amount && !hasAmmSwapAuth)
+    if (outputs_amount > inputs_amount && !hasAmmSwapAuth && !hasHeatMintAuth)
     {
       logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << id << " uses more money then it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount);
       tvc.m_verification_failed = true;
@@ -579,7 +584,19 @@ namespace CryptoNote
       uint64_t inputs_amount = m_currency.getTransactionAllInputsAmount(txd.tx, height);
       uint64_t outputs_amount = get_outs_money_amount(txd.tx);
 
-      if (outputs_amount > inputs_amount)
+      // Allow outputs > inputs for AMM swaps and HEAT mints (HEAT is minted, not from inputs)
+      bool allowMint = false;
+      std::vector<TransactionExtraField> blockExtraFields;
+      parseTransactionExtra(txd.tx.extra, blockExtraFields);
+      for (const auto& field : blockExtraFields) {
+        if (field.type() == typeid(TransactionExtraAmmSwapAuth) ||
+            field.type() == typeid(TransactionExtraHeatMintAuth)) {
+          allowMint = true;
+          break;
+        }
+      }
+
+      if (outputs_amount > inputs_amount && !allowMint)
       {
         logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << txd.id << " uses more money than it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount)
                                        << " and will not be included in the block template";

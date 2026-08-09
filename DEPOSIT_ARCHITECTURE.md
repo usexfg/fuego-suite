@@ -427,6 +427,211 @@ CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(
 
 ---
 
+## BONUS VAULT & TIER-BASED BONUSES
+
+### Treasury Routing (69/11/20 Split)
+
+```
+Epoch Swap Fees Distribution:
+├── 69% → CD Yield Pool (CD_APY_POOL) — direct APY to CD holders
+├── 11% → Bonus Vault — loyalty + tier bonuses for longer locks
+└── 20% → Treasury Reserve — protocol operations, LP provision
+```
+
+### Bonus Vault
+
+The Bonus Vault (repurposed from deprecated rollover vault) accumulates 11% of epoch
+swap fees to fund tier-based loyalty bonuses:
+
+```cpp
+// CryptoNoteConfig.h
+const uint64_t SWAP_FEE_BONUS_VAULT_PCT = 11;  // 11% → Bonus Vault
+
+// Blockchain.h
+uint64_t m_bonusVaultBalance = 0;  // 11% bonus vault (loyalty + tier bonuses)
+```
+
+### Tier-Based Loyalty Bonuses
+
+Longer lock periods earn higher bonus multipliers on top of base APY:
+
+| Tier (Epochs) | Lock Period | Bonus Multiplier | Bonus Pct |
+|---------------|-------------|------------------|-----------|
+| 72 | ~1 year | 2.5× | 250% |
+| 36 | ~6 months | 2.0× | 200% |
+| 18 | ~3 months | 1.5× | 150% |
+| 6 | ~1 month | 1.25× | 125% |
+| Rolling | None | 1.0× | 100% (no bonus) |
+
+```cpp
+// CryptoNoteConfig.h
+const uint64_t LOYALTY_BONUS_72_EPOCHS_PCT = 250;  // 72 epochs: 2.5× bonus
+const uint64_t LOYALTY_BONUS_36_EPOCHS_PCT = 200;  // 36 epochs: 2.0× bonus
+const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150;  // 18 epochs: 1.5× bonus
+const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;   // 6 epochs: 1.25× bonus
+const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;    // Rolling: 1.0× (no bonus)
+```
+
+### Bonus Calculation Logic
+
+Bonuses are computed separately from base interest and never compound:
+
+```cpp
+// Currency.cpp calculateCdInterest()
+uint64_t loyaltyBonusPct = LOYALTY_BONUS_ROLLING_PCT;  // default: no bonus
+if (term == DEPOSIT_MAX_TERM) {
+  loyaltyBonusPct = LOYALTY_BONUS_72_EPOCHS_PCT;  // 2.5×
+} else if (term == 36 * epochDuration) {
+  loyaltyBonusPct = LOYALTY_BONUS_36_EPOCHS_PCT;  // 2.0×
+} else if (term == 18 * epochDuration) {
+  loyaltyBonusPct = LOYALTY_BONUS_18_EPOCHS_PCT;  // 1.5×
+} else if (term == 6 * epochDuration) {
+  loyaltyBonusPct = LOYALTY_BONUS_6_EPOCHS_PCT;  // 1.25×
+}
+
+// Bonus applied on last N epochs (never compounded)
+if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
+  loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 100;
+} else if (epochsToMaturity == LOYALTY_BONUS_FULL_EPOCHS) {
+  loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 200;
+}
+```
+
+### RPC Endpoint
+
+```json
+// GET /fee_pool_info
+{
+  "fee_pool_balance": 69,        // 69% CD yield pool
+  "treasury_balance": 20,        // 20% treasury reserve
+  "bonus_vault_balance": 11,     // 11% bonus vault
+  "rollover_vault_balance": 0,   // deprecated, kept for compat
+  "current_epoch_swap_fees": 1000,
+  "total_cd_locked": 50000,
+  "current_epoch_number": 100
+}
+```
+
+---
+
+## COMPLETE POOL ACCOUNTING AUDIT
+
+### All Tracking Variables (25 total)
+
+#### Active Pool/Vault Variables (23)
+| Variable | Purpose | Updated By |
+|----------|---------|------------|
+| `m_poolLockedXfg` | AMM pool XFG lock | Pool operations |
+| `m_poolLockedHeat` | AMM pool HEAT lock | Pool operations |
+| `m_cdYieldPool` | CD yield accumulator (reset each epoch) | Swap fees (69%) |
+| `m_cdReserve` | CD reserve | — |
+| `m_heatCdFeePool` | HEAT CD fee pool | CD yield minting |
+| `m_protocolLpShares` | Protocol LP shares | Treasury LP |
+| `m_treasuryLpYield` | Treasury LP yield | — |
+| `m_bootstrapXfgOwed` | Bootstrap XFG owed | — |
+| `m_bootstrapRepaymentVault` | Bootstrap repayment vault | — |
+| `m_swfBalance` | Sovereign Wealth Fund XFG | Mint burn (50%) |
+| `m_feePoolBalance` | 69% CD yield pool (swap fees) | CD yield minting |
+| `m_currentEpochSwapFees` | Current epoch swap fees | Swap fee collection |
+| `m_totalCdLocked` | Total XFG locked in CDs | Deposit/withdrawal |
+| `m_totalLegacyBondLocked` | Total XFG in legacy bonds | Bond operations |
+| `m_legacyBondYieldPool` | Legacy bond yield pool | Swap fees (legacy bond share) |
+| `m_totalSwapFeesCollected` | Lifetime swap fees | Swap fee collection |
+| `m_totalCdInterestPaid` | Lifetime CD interest paid | Interest claims |
+| `m_totalTreasuryAccrued` | Total treasury accrued | — |
+| `m_treasuryBalance` | Treasury balance | — |
+| `m_treasuryHeatReserve` | Treasury HEAT reserve | — |
+| `m_treasuryLpReserve` | Treasury LP reserve | Treasury LP |
+| `m_treasurySwapFeeXfg` | Treasury swap fee XFG | — |
+| `m_treasuryCounterXFG` | Treasury counter XFG | Swap fees (20%) |
+| `m_swfHeatBalance` | SWF HEAT balance (off-chain DIGM collateral) | SWF conversion |
+| `m_bonusVaultBalance` | 11% bonus vault | Swap fees (11%) |
+
+#### Deprecated Variables (2)
+| Variable | Status | Serialization |
+|----------|--------|---------------|
+| `m_totalRolloverAccrued` | Dead code | Kept for compat |
+| `m_treasuryXfgReserve` | Dead code (never incremented) | Kept for compat |
+
+### Percentage Routing (Verified)
+
+#### Swap Fees (69/11/20)
+```
+100% epochSwapFees
+├── 69% → cdShare
+│   ├── Split between regularCdShare and legacyBondShare (50/50 if legacy bonds exist)
+│   ├── regularCdShare → m_cdYieldPool → HEAT minting → m_heatCdFeePool + m_feePoolBalance
+│   └── legacyBondShare → m_legacyBondYieldPool
+├── 11% → bonusVaultShare → m_bonusVaultBalance
+└── 20% → treasuryShare → m_treasuryCounterXFG
+```
+
+#### Treasury Counter XFG Conversion
+```
+m_treasuryCounterXFG
+├── 80% → convertAmount → HEAT → CD_APY_POOL vault UTXOs
+│   ├── XFG burned: 50% → EF (m_bankingIndex), 50% → SWF (m_swfBalance)
+│   └── HEAT minted → m_heatSupply, CD_APY_POOL vault
+└── 20% remaining → LP_RESERVE → Hearth AMM pool
+    ├── XFG → m_ammPool.reserveXfg, m_treasuryLpReserve
+    ├── HEAT → m_ammPool.reserveHeat
+    └── LP shares → m_protocolLpShares, LP_RESERVE vault
+```
+
+#### SWF Collateral Conversion (every 8 epochs)
+```
+m_swfBalance
+├── 50% → xfgToConvert → HEAT (at pool rate)
+│   └── m_swfHeatBalance (off-chain DIGM collateral)
+└── 50% remains in m_swfBalance
+```
+
+#### Mint Burn (50/50)
+```
+XFG burned from treasury conversion
+├── 50% → Eternal Flame (permanent deflation)
+└── 50% → SWF (m_swfBalance)
+```
+
+### Security Verification
+
+#### Overflow Protection (All additions verified)
+| Variable | Overflow Check | Line |
+|----------|---------------|------|
+| `m_bonusVaultBalance` | ✓ | 4482 |
+| `m_treasuryCounterXFG` | ✓ | 4520 |
+| `m_cdYieldPool` | ✓ | 4626, 4630 |
+| `m_legacyBondYieldPool` | ✓ | 4637 |
+| `m_feePoolBalance` | ✓ | 4656, 5552 |
+| `m_swfBalance` | ✓ | 4036, 4553 |
+| `m_swfHeatBalance` | ✓ | 4616 |
+
+#### Underflow Protection
+- `m_treasuryCounterXFG -= convertAmount` — guarded by prior `convertAmount` calculation
+- `m_swfBalance -= xfgToConvert` — guarded by `xfgToConvert = m_swfBalance / 2`
+
+### Code Path Trace
+
+#### Epoch Boundary Processing
+1. **Auto-roll matured CDs** → `m_commitmentIndex.processAutoRolls()`
+2. **Split swap fees** → 69% CD / 11% Bonus / 20% Treasury
+3. **Route bonus vault** → `m_bonusVaultBalance += bonusVaultShare`
+4. **Split CD share** → regular CDs vs legacy bonds (50/50)
+5. **Record epoch fee rate** → `m_commitmentIndex.recordEpochFeeRate()`
+6. **Route treasury share** → `m_treasuryCounterXFG += treasuryShare`
+7. **Convert 80% treasury** → HEAT → CD_APY_POOL vault
+8. **Burn XFG** → 50% EF, 50% SWF
+9. **Route 20% to LP** → Hearth AMM pool
+10. **SWF collateral conversion** → every 8 epochs
+11. **Mint CD yield** → HEAT → m_heatCdFeePool + m_feePoolBalance
+
+### Documentation Updated
+- `DEPOSIT_ARCHITECTURE.md` — Complete pool accounting audit
+- `AGENTS.md` — Treasury routing (69/11/20)
+- `CryptoNoteConfig.h` — All percentage constants
+
+---
+
 ## ROLLOVER SYSTEM
 
 ### Current Implementation

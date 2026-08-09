@@ -993,8 +993,9 @@ bool TransfersContainer::isSpendTimeUnlocked(const TransactionOutputInformationE
     return current_time + m_currency.lockedTxAllowedDeltaSeconds_v2() >= info.unlockTime;
   }
 
-  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0) {
+  if (isOuputUnlocked && (info.type == TransactionTypes::OutputType::Multisignature || info.type == TransactionTypes::OutputType::Commitment) && info.term != 0 && info.term != parameters::HEAT_TERM) {
     // Deposit matures when currentHeight >= creationHeight + term.
+    // HEAT_TERM (0xFFFFFFFF) outputs are mints/burns, NOT time-locked CDs.
     // The +1 offset was removed to align with consensus (Blockchain.cpp:checkCommitmentSpendInput)
     // which also requires currentHeight >= maturityHeight (strict >=, no off-by-one).
     isOuputUnlocked = m_currentHeight >= info.blockHeight + info.term;
@@ -1023,7 +1024,7 @@ bool TransfersContainer::isIncluded(const TransactionOutputInformationEx& output
     ((flags & IncludeTypeKey) != 0            && output.type == TransactionTypes::OutputType::Key) ||
     ((flags & IncludeTypeMultisignature) != 0 && output.type == TransactionTypes::OutputType::Multisignature && output.term == 0) ||
     ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Multisignature && output.term > 0) ||
-    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0)
+    ((flags & IncludeTypeDeposit) != 0        && output.type == TransactionTypes::OutputType::Commitment && output.term > 0 && output.term != parameters::HEAT_TERM)
     )
     &&
     // filter by state

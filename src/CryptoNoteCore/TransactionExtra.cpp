@@ -519,11 +519,7 @@ namespace CryptoNote
     //   return addColdCommitmentToExtra(extra, t);
     // }
 
-    // REMOVED: COLD deposit receipt writer
-    // bool operator()(const TransactionExtraDepositReceipt &t)
-    // {
-    //   return addDepositReceiptToExtra(extra, t);
-    // }
+    // REMOVED: COLD deposit receipt — TransactionExtraDepositReceipt removed from variant
 
     bool operator()(const TransactionExtraAliasRegistration &t)
     {

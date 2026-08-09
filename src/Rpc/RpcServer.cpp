@@ -2388,6 +2388,7 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
   const uint64_t height = m_core.get_current_blockchain_height();
   res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
+  res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
   res.rollover_vault_balance = 0;
   res.current_epoch_swap_fees = m_core.get_blockchain_storage().getCurrentEpochSwapFees();
   res.total_cd_locked = m_core.get_blockchain_storage().getTotalCdLocked();
@@ -2585,7 +2586,6 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.reserve_heat = info.reserveHeat;
   res.total_lp_shares = info.totalLpShares;
   res.spot_price = info.spotPrice;
-  res.accumulated_lp_fees = info.accumulatedLpFeesXfg;
   res.epoch_swap_fees = info.epochSwapFees;
   res.status = CORE_RPC_STATUS_OK;
   return true;

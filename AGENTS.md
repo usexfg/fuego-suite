@@ -45,6 +45,8 @@ fuego-suite/
 - Launch ratio: 1 HEAT = 10 XFG (10:1 XFG per HEAT)
 - Peg reference: $1.58 USD (HEAT_PEG_USD)  adjusted for inflation starting Q1|2009 1 USD 
 - Certificates of Deposit (CD): V12 activation, epoch-term-locked HEAT earning protocol revenue yield
+- **TREASURY ROUTING (69/11/20)**: 69% CD Yield Pool / 11% Bonus Vault / 20% Treasury Reserve
+- **BONUS VAULT**: 11% of swap fees fund tier-based loyalty bonuses (2.5× for 72 epochs, 2× for 36, 1.5× for 18, 1.25× for 6)
 - **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
   - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
   - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)

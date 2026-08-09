@@ -167,9 +167,10 @@ namespace CryptoNote
 
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
         // Swap fee split: 80% CD Yield / 20% Treasury Reserve
-        const uint64_t SWAP_FEE_CD_SHARE_PCT = 80;           // 80% of epoch swap fees → CD Yield Pool
+        const uint64_t SWAP_FEE_CD_SHARE_PCT = 69;           // 69% of epoch swap fees → CD Yield Pool
         // CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
         // No protocol cut — CD holders selling rewards back provides natural ratio recovery.
+        const uint64_t SWAP_FEE_BONUS_VAULT_PCT = 11;           // 11% of epoch swap fees → Bonus Vault (loyalty + tier bonuses)
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
@@ -221,6 +222,13 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_POOL_HEAT = 0x504F4C48;  // 'POLH' — AMM pool receives HEAT (unspendable)
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
         const uint32_t DIGM_TERM = 0x44494D47;                       // 'DIMG' — DIGM colored coin marker
+
+        // CD loyalty bonus multipliers (multiplied by base APY)
+        const uint64_t LOYALTY_BONUS_72_EPOCHS_PCT = 250;       // 72 epochs: 2.5× bonus
+        const uint64_t LOYALTY_BONUS_36_EPOCHS_PCT = 200;       // 36 epochs: 2.0× bonus
+        const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150;       // 18 epochs: 1.5× bonus
+        const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;        // 6 epochs: 1.25× bonus
+        const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;         // Rolling: 1.0× (no bonus)
 
         // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
         const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000;              // 0.10 HEAT in atomic units

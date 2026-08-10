@@ -54,25 +54,33 @@ const (
 	mOpenWallet   menuItem = "Open Wallet"
 	mGetBalance   menuItem = "Get Balance"
 	mSendTx       menuItem = "Send Transaction"
-	mBurn2Mint    menuItem = "Burn2Mint"
-	mHeatMetrics  menuItem = "HEAT Metrics"
-	mEternalFlame menuItem = "Eternal Flame"
-	mHearthPool   menuItem = "Hearth Pool"
-	mCreateCD     menuItem = "Create CD"
-	mViewDeposit  menuItem = "View Deposit"
-	mShowLogs     menuItem = "Show Logs"
-	mOrderbook    menuItem = "Hearth Orderbook"
-	mSwapAMM      menuItem = "Swap XFG/HEAT"
-	mActiveSwaps  menuItem = "Active Swaps"
-	mQuit         menuItem = "Quit"
+	mBurn2Mint       menuItem = "Mint HEAT" // heat_mint (not legacy Burn2Mint-only)
+	mHeatMetrics     menuItem = "HEAT Metrics"
+	mEternalFlame    menuItem = "Eternal Flame"
+	mHearthPool      menuItem = "Hearth Pool"
+	mCreateCD        menuItem = "HEAT CD Deposit"
+	mViewDeposit     menuItem = "View Deposit"
+	mWithdrawDeposit menuItem = "Withdraw Deposit"
+	mShowLogs        menuItem = "Show Logs"
+	mOrderbook       menuItem = "Hearth Orderbook"
+	mSwapAMM         menuItem = "Swap XFG/HEAT"
+	mPlaceOrder      menuItem = "Place Limit Order"
+	mCancelOrder     menuItem = "Cancel Limit Order"
+	mSubaddresses    menuItem = "List Subaddresses"
+	mNewSubaddress   menuItem = "New Subaddress"
+	mLookupAlias     menuItem = "Lookup Alias"
+	mRegisterAlias   menuItem = "Register Alias"
+	mActiveSwaps     menuItem = "Active Swaps" // out of scope for feature work; kept for navigation
+	mQuit            menuItem = "Quit"
 )
 
 var menu = []menuItem{
 	mStartNode, mStopNode, mNodeStatus,
 	mCreateWallet, mOpenWallet, mGetBalance, mSendTx,
 	mBurn2Mint, mHeatMetrics, mEternalFlame, mHearthPool,
-	mCreateCD, mViewDeposit,
-	mOrderbook, mSwapAMM, mActiveSwaps,
+	mCreateCD, mViewDeposit, mWithdrawDeposit,
+	mOrderbook, mSwapAMM, mPlaceOrder, mCancelOrder,
+	mSubaddresses, mNewSubaddress, mLookupAlias, mRegisterAlias,
 	mShowLogs, mQuit,
 }
 
@@ -86,6 +94,7 @@ const (
 	viewCreateCDAmt
 	viewCreateCDTerm
 	viewViewDeposit
+	viewWithdrawDeposit
 	viewLogs
 	viewNodeInfo
 	viewWalletInfo
@@ -95,6 +104,12 @@ const (
 	viewSwapSide
 	viewSwapAmount
 	viewSwapMinOutput
+	viewPlaceOrderSide
+	viewPlaceOrderAmt
+	viewPlaceOrderPrice
+	viewCancelOrder
+	viewLookupAlias
+	viewRegisterAlias
 	viewActiveSwaps
 )
 
@@ -147,6 +162,11 @@ type model struct {
 	cdAmt        string
 	cdTerm       string
 	depositId    string
+	orderSide    uint8
+	orderAmt     string
+	orderPrice   string
+	orderIdIn    string
+	aliasIn      string
 
 	nodeHeight    int
 	nodePeers     int
@@ -347,7 +367,7 @@ func (m model) handleSubViewKey(k string) (tea.Model, tea.Cmd) {
 		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
 			m.cdAmt = newVal
 			m.inputBuf = ""
-			m.inputPrompt = "Term (epochs, 0xFFFFFFFF=HEAT): "
+			m.inputPrompt = "Term epochs (e.g. 12): "
 			m.currentView = viewCreateCDTerm
 			return m, nil
 		})
@@ -364,6 +384,64 @@ func (m model) handleSubViewKey(k string) (tea.Model, tea.Cmd) {
 			m.inputBuf = ""
 			m.currentView = viewMenu
 			return m.viewDeposit()
+		})
+	case viewWithdrawDeposit:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.depositId = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.withdrawDeposit()
+		})
+	case viewPlaceOrderSide:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			side, err := strconv.Atoi(strings.TrimSpace(newVal))
+			if err != nil || (side != 0 && side != 1) {
+				m.appendLog("Invalid side (0=BUY XFG, 1=SELL XFG)")
+				m.statusMsg = "Invalid side"
+				m.currentView = viewMenu
+				return m, nil
+			}
+			m.orderSide = uint8(side)
+			m.inputBuf = ""
+			m.inputPrompt = "Amount (atomic-ish whole coins, XFG sell / HEAT buy): "
+			m.currentView = viewPlaceOrderAmt
+			return m, nil
+		})
+	case viewPlaceOrderAmt:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.orderAmt = newVal
+			m.inputBuf = ""
+			m.inputPrompt = "Target price (HEAT per XFG, e.g. 10.0): "
+			m.currentView = viewPlaceOrderPrice
+			return m, nil
+		})
+	case viewPlaceOrderPrice:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.orderPrice = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.placeLimitOrder()
+		})
+	case viewCancelOrder:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.orderIdIn = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.cancelLimitOrder()
+		})
+	case viewLookupAlias:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.aliasIn = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.lookupAlias()
+		})
+	case viewRegisterAlias:
+		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {
+			m.aliasIn = newVal
+			m.inputBuf = ""
+			m.currentView = viewMenu
+			return m.registerAlias()
 		})
 	case viewLogs:
 		if k == "esc" || k == "enter" || k == "q" {
@@ -504,47 +582,80 @@ func (m model) executeMenuItem() (tea.Model, tea.Cmd) {
 	case mBurn2Mint:
 		m.currentView = viewBurn2MintChoose
 		m.inputBuf = ""
-		m.inputPrompt = fmt.Sprintf("Burn amount: 0) %.2f XFG  1) %.2f XFG  2) %.2f XFG  3) %.2f XFG (enter 0-3): ",
+		m.inputPrompt = fmt.Sprintf("Mint HEAT (burn XFG): 0) %.2f  1) %.2f  2) %.2f  3) %.2f (enter 0-3): ",
 			float64(CurrentConfig.BurnTiers[0])/float64(CurrentConfig.CoinUnits),
 			float64(CurrentConfig.BurnTiers[1])/float64(CurrentConfig.CoinUnits),
 			float64(CurrentConfig.BurnTiers[2])/float64(CurrentConfig.CoinUnits),
 			float64(CurrentConfig.BurnTiers[3])/float64(CurrentConfig.CoinUnits))
 		return m, nil
 	case mHeatMetrics:
-		m.daemonPath = "/heat_metrics"
+		call := BuildHeatMetrics()
+		m.daemonPath = call.Path
 		m.currentView = viewDaemonData
-		return m, daemonGetCmd("/heat_metrics")
+		return m, daemonGetCmd(call.Path)
 	case mEternalFlame:
 		m.daemonPath = "/getethereal"
 		m.currentView = viewDaemonData
 		return m, daemonGetCmd("/getethereal")
 	case mHearthPool:
-		m.daemonPath = "/amm_pool_info"
+		call := BuildAmmPoolInfo()
+		m.daemonPath = call.Path
 		m.currentView = viewDaemonData
-		return m, daemonGetCmd("/amm_pool_info")
+		return m, daemonGetCmd(call.Path)
 	case mCreateCD:
 		m.currentView = viewCreateCDAmt
 		m.inputBuf = ""
-		m.inputPrompt = "CD amount (XFG): "
+		m.inputPrompt = "HEAT CD amount (HEAT whole coins): "
 		return m, nil
 	case mViewDeposit:
 		m.currentView = viewViewDeposit
 		m.inputBuf = ""
 		m.inputPrompt = "Deposit ID: "
 		return m, nil
+	case mWithdrawDeposit:
+		m.currentView = viewWithdrawDeposit
+		m.inputBuf = ""
+		m.inputPrompt = "Deposit ID to withdraw: "
+		return m, nil
 	case mOrderbook:
 		m.obUpdating = true
 		m.currentView = viewOrderbook
-		return m, daemonGetCmd("/json_rpc")
+		call := BuildOrderbookState(20)
+		return m, daemonJsonRpcCmd(call.Method, call.Params)
 	case mSwapAMM:
 		m.currentView = viewSwapSide
 		m.inputBuf = ""
 		m.inputPrompt = "Direction: 0) XFG->HEAT  1) HEAT->XFG (enter 0 or 1): "
 		return m, nil
+	case mPlaceOrder:
+		m.currentView = viewPlaceOrderSide
+		m.inputBuf = ""
+		m.inputPrompt = "Side: 0) BUY XFG  1) SELL XFG: "
+		return m, nil
+	case mCancelOrder:
+		m.currentView = viewCancelOrder
+		m.inputBuf = ""
+		m.inputPrompt = "Order ID: "
+		return m, nil
+	case mSubaddresses:
+		return m.listSubaddresses()
+	case mNewSubaddress:
+		return m.newSubaddress()
+	case mLookupAlias:
+		m.currentView = viewLookupAlias
+		m.inputBuf = ""
+		m.inputPrompt = "Alias or fuego address: "
+		return m, nil
+	case mRegisterAlias:
+		m.currentView = viewRegisterAlias
+		m.inputBuf = ""
+		m.inputPrompt = "Alias (8 chars [a-z0-9&]): "
+		return m, nil
 	case mActiveSwaps:
-		m.swapsUpdating = true
-		m.currentView = viewActiveSwaps
-		return m, daemonGetCmd("/getswapprice")
+		// Atomic swaps are out of scope; surface a note and return to menu path.
+		m.appendLog("Active Swaps: atomic swap UI is out of scope for this TUI build")
+		m.statusMsg = "Swaps excluded"
+		return m, nil
 	case mShowLogs:
 		m.currentView = viewLogs
 		return m, nil
@@ -588,25 +699,39 @@ func (m model) handleRpcResult(msg rpcResultMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Tx sent: " + truncate(txh, 12)
 		}
 
+	case "heat_mint":
+		txh := firstString(result, "tx_hash", "transactionHash")
+		if txh != "" {
+			m.appendLog("HEAT mint tx: " + txh)
+			m.statusMsg = "HEAT minted: " + truncate(txh, 12)
+		}
+	case "heat_deposit":
+		txh := firstString(result, "tx_hash", "transactionHash")
+		if txh != "" {
+			m.appendLog("HEAT CD deposit tx: " + txh)
+			m.statusMsg = "HEAT CD deposited: " + truncate(txh, 12)
+		}
+	case "place_limit_order":
+		m.appendLog(fmt.Sprintf("Limit order placed: %v", result))
+		m.statusMsg = "Limit order placed"
+	case "cancel_limit_order":
+		m.appendLog(fmt.Sprintf("Limit order cancelled: %v", result))
+		m.statusMsg = "Limit order cancelled"
+	case "register_alias":
+		txh := firstString(result, "tx_hash", "transactionHash")
+		m.appendLog("Alias registered: " + txh)
+		m.statusMsg = "Alias registered"
 	case "createBurnDeposit":
 		if txh, ok := result["transactionHash"].(string); ok {
 			heatAmt := valueInt(result, "heatAmount")
-			m.appendLog(fmt.Sprintf("Burn tx: %s | HEAT minted: %d", txh, heatAmt))
-			m.statusMsg = "Burn successful: " + truncate(txh, 12)
+			m.appendLog(fmt.Sprintf("Legacy burn deposit: %s | HEAT: %d", txh, heatAmt))
+			m.statusMsg = "Legacy burn: " + truncate(txh, 12)
 		}
 
 	case "createDeposit":
 		if txh, ok := result["transactionHash"].(string); ok {
-			isBurn := false
-			if v, ok := result["isBurnDeposit"].(bool); ok {
-				isBurn = v
-			}
-			depType := "YIELD CD"
-			if isBurn {
-				depType = "HEAT CD"
-			}
-			m.appendLog(fmt.Sprintf("%s created: %s", depType, txh))
-			m.statusMsg = depType + " created"
+			m.appendLog(fmt.Sprintf("createDeposit tx: %s", txh))
+			m.statusMsg = "Deposit created"
 		}
 
 	case "withdrawDeposit":
@@ -642,14 +767,20 @@ func (m model) handleRpcResult(msg rpcResultMsg) (tea.Model, tea.Cmd) {
 
 	case "getAddresses":
 		if addrs, ok := result["addresses"].([]interface{}); ok && len(addrs) > 0 {
-			if addr, ok := addrs[0].(string); ok {
-				m.walletAddress = addr
-				m.appendLog("Wallet address: " + addr)
+			m.appendLog(fmt.Sprintf("Subaddresses (%d):", len(addrs)))
+			for i, a := range addrs {
+				if addr, ok := a.(string); ok {
+					m.appendLog(fmt.Sprintf("  [%d] %s", i, addr))
+					if i == 0 || m.walletAddress == "" {
+						m.walletAddress = addr
+					}
+				}
 			}
 		}
 		if m.walletAddress == "" {
 			m.appendLog("No addresses found, creating one...")
-			return m, walletRpcCmd(m.walletPort, "createAddress", map[string]interface{}{})
+			call := BuildCreateAddress()
+			return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 		}
 		m.statusMsg = "Wallet open"
 
@@ -670,6 +801,11 @@ func (m model) handleDaemonResult(msg daemonResultMsg) (tea.Model, tea.Cmd) {
 
 	// Route to the right view based on path
 	switch msg.path {
+	case "/get_alias", "/get_alias_by_address":
+		m.appendLog(fmt.Sprintf("Alias result (%s): %v", msg.path, msg.result))
+		m.statusMsg = "Alias lookup done"
+		m.currentView = viewMenu
+		return m, nil
 	case "/json_rpc":
 		m.obData = msg.result
 		m.obUpdating = false
@@ -700,46 +836,44 @@ func (m model) createCD() (tea.Model, tea.Cmd) {
 		m.statusMsg = "Wallet offline"
 		return m, nil
 	}
-	if m.walletAddress == "" {
-		m.appendLog("No wallet address — create wallet first")
-		m.statusMsg = "No wallet"
-		return m, nil
-	}
 
 	amtFloat, err := strconv.ParseFloat(m.cdAmt, 64)
 	if err != nil || amtFloat <= 0 {
-		m.appendLog("Invalid CD amount: " + m.cdAmt)
+		m.appendLog("Invalid HEAT CD amount: " + m.cdAmt)
 		m.statusMsg = "Invalid amount"
 		return m, nil
 	}
-	amountAtomic := int64(amtFloat * float64(CurrentConfig.CoinUnits))
+	amountAtomic := uint64(amtFloat * float64(CurrentConfig.CoinUnits))
 
 	termStr := strings.TrimSpace(m.cdTerm)
-	var term uint64
-	if strings.Contains(strings.ToUpper(termStr), "HEAT") || termStr == "0xFFFFFFFF" || termStr == "4294967295" {
-		term = 0xFFFFFFFF
-	} else {
-		t, err := strconv.ParseUint(termStr, 10, 64)
-		if err != nil {
-			m.appendLog("Invalid term: " + termStr)
-			m.statusMsg = "Invalid term"
-			return m, nil
-		}
-		term = t
+	// HEAT CDs use epoch terms via heat_deposit — never HEAT_TERM burn mint
+	t, err := strconv.ParseUint(termStr, 10, 32)
+	if err != nil || t == 0 {
+		m.appendLog("Invalid term epochs (must be > 0): " + termStr)
+		m.statusMsg = "Invalid term"
+		return m, nil
 	}
 
-	depType := "YIELD CD"
-	if term == 0xFFFFFFFF {
-		depType = "HEAT CD"
-	}
+	call := BuildHeatDeposit(amountAtomic, uint32(t), DefaultMixin())
+	m.appendLog(fmt.Sprintf("HEAT CD deposit: %.2f HEAT, term=%d epochs via %s...", amtFloat, t, call.Method))
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
 
-	m.appendLog(fmt.Sprintf("Creating %s: %.2f XFG, term=%d...", depType, amtFloat, term))
-	params := map[string]interface{}{
-		"amount":        amountAtomic,
-		"term":          term,
-		"sourceAddress": m.walletAddress,
+func (m model) withdrawDeposit() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
 	}
-	return m, walletRpcCmd(m.walletPort, "createDeposit", params)
+	id, err := strconv.ParseUint(strings.TrimSpace(m.depositId), 10, 64)
+	if err != nil {
+		m.appendLog("Invalid deposit ID: " + m.depositId)
+		m.statusMsg = "Invalid ID"
+		return m, nil
+	}
+	call := BuildWithdrawDeposit(id)
+	m.appendLog(fmt.Sprintf("Withdrawing deposit %d...", id))
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
 func (m model) viewDeposit() (tea.Model, tea.Cmd) {
@@ -756,8 +890,9 @@ func (m model) viewDeposit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	call := BuildGetDeposit(uint64(id))
 	m.appendLog(fmt.Sprintf("Fetching deposit %d...", id))
-	return m, walletRpcCmd(m.walletPort, "getDeposit", map[string]interface{}{"depositId": id})
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
 func (m model) executeAMMSwap() (tea.Model, tea.Cmd) {
@@ -788,15 +923,117 @@ func (m model) executeAMMSwap() (tea.Model, tea.Cmd) {
 	if m.swapDirection == 1 {
 		dirStr = "HEAT→XFG"
 	}
-	m.appendLog(fmt.Sprintf("Swapping %.2f %s (min: %.2f)...", amtFloat, dirStr, minFloat))
-	return m, walletRpcCmd(m.walletPort, "amm_swap", map[string]interface{}{
-		"direction":      m.swapDirection,
-		"input_amount":   amtAtomic,
-		"expected_output": 0,
-		"min_output":     minAtomic,
-		"fee":            0,
-		"mixin":          0,
-	})
+	m.appendLog(fmt.Sprintf("Swapping %.2f %s (min: %.2f) via amm_swap (mixin=dynamax)...", amtFloat, dirStr, minFloat))
+	call := BuildAmmSwap(m.swapDirection, uint64(amtAtomic), uint64(minAtomic), DefaultMixin())
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
+
+func (m model) placeLimitOrder() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+	amtFloat, err := strconv.ParseFloat(m.orderAmt, 64)
+	if err != nil || amtFloat <= 0 {
+		m.appendLog("Invalid order amount")
+		m.statusMsg = "Invalid amount"
+		return m, nil
+	}
+	priceFloat, err := strconv.ParseFloat(m.orderPrice, 64)
+	if err != nil || priceFloat <= 0 {
+		m.appendLog("Invalid target price")
+		m.statusMsg = "Invalid price"
+		return m, nil
+	}
+	amountAtomic := uint64(amtFloat * float64(CurrentConfig.CoinUnits))
+	// target_price is HEAT/XFG ratio × COIN
+	targetPrice := uint64(priceFloat * float64(CurrentConfig.CoinUnits))
+	call := BuildPlaceLimitOrder(m.orderSide, amountAtomic, targetPrice, 0, DefaultMixin())
+	m.appendLog(fmt.Sprintf("Placing limit order side=%d amt=%.4f price=%.4f via %s...",
+		m.orderSide, amtFloat, priceFloat, call.Method))
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
+
+func (m model) cancelLimitOrder() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+	id := strings.TrimSpace(m.orderIdIn)
+	if id == "" {
+		m.appendLog("Empty order id")
+		m.statusMsg = "Invalid id"
+		return m, nil
+	}
+	call := BuildCancelLimitOrder(id, DefaultMixin())
+	m.appendLog("Cancelling order " + id)
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
+
+func (m model) listSubaddresses() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+	call := BuildGetAddresses()
+	m.appendLog("Listing subaddresses via getAddresses...")
+	m.currentView = viewWalletInfo
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
+
+func (m model) newSubaddress() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+	call := BuildCreateAddress()
+	m.appendLog("Creating new subaddress via createAddress...")
+	m.currentView = viewWalletInfo
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
+}
+
+func (m model) lookupAlias() (tea.Model, tea.Cmd) {
+	q := strings.TrimSpace(m.aliasIn)
+	if q == "" {
+		m.appendLog("Empty alias/address")
+		m.statusMsg = "Empty query"
+		return m, nil
+	}
+	// Heuristic: addresses are long; short strings are aliases
+	var call RpcCall
+	if len(q) >= 90 {
+		call = BuildGetAliasByAddress(q)
+	} else {
+		call = BuildGetAlias(q)
+	}
+	m.appendLog(fmt.Sprintf("Looking up %s via %s...", q, call.Path))
+	return m, daemonPostJSONCmd(call.Path, call.Params)
+}
+
+func (m model) registerAlias() (tea.Model, tea.Cmd) {
+	if !m.runningW {
+		m.appendLog("Wallet RPC not running")
+		m.statusMsg = "Wallet offline"
+		return m, nil
+	}
+	if m.walletAddress == "" {
+		m.appendLog("No wallet address — create/open wallet first")
+		m.statusMsg = "No wallet"
+		return m, nil
+	}
+	alias := strings.TrimSpace(m.aliasIn)
+	if len(alias) != 8 {
+		m.appendLog("Alias must be 8 characters [a-z0-9&]")
+		m.statusMsg = "Invalid alias"
+		return m, nil
+	}
+	call := BuildRegisterAlias(alias, m.walletAddress, DefaultMixin())
+	m.appendLog(fmt.Sprintf("Registering @%s via %s...", alias, call.Method))
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
 func (m model) executeBurn(choice string) (tea.Model, tea.Cmd) {
@@ -805,27 +1042,32 @@ func (m model) executeBurn(choice string) (tea.Model, tea.Cmd) {
 		m.statusMsg = "Wallet offline"
 		return m, nil
 	}
-	if m.walletAddress == "" {
-		m.appendLog("No wallet address")
-		m.statusMsg = "No wallet"
-		return m, nil
-	}
 
 	idx, err := strconv.Atoi(choice)
 	if err != nil || idx < 0 || idx >= len(CurrentConfig.BurnTiers) {
-		m.appendLog("Invalid burn tier: " + choice)
+		m.appendLog("Invalid mint tier: " + choice)
 		m.statusMsg = "Invalid tier"
 		return m, nil
 	}
 
-	amount := CurrentConfig.BurnTiers[idx]
-	m.appendLog(fmt.Sprintf("Burning %.2f XFG → HEAT via createBurnDeposit...",
-		float64(amount)/float64(CurrentConfig.CoinUnits)))
-	params := map[string]interface{}{
-		"amount":        amount,
-		"sourceAddress": m.walletAddress,
+	xfgBurned := uint64(CurrentConfig.BurnTiers[idx])
+	// Prefer live pool rate; fall back to launch 10:1 inside EstimateHeatMinted
+	var reserveXfg, reserveHeat uint64
+	if pool, err := doDaemonGet("/amm_pool_info"); err == nil {
+		reserveXfg = uint64(valueInt(pool, "reserve_xfg"))
+		reserveHeat = uint64(valueInt(pool, "reserve_heat"))
 	}
-	return m, walletRpcCmd(m.walletPort, "createBurnDeposit", params)
+	heatMinted := EstimateHeatMinted(xfgBurned, reserveXfg, reserveHeat)
+	if heatMinted == 0 {
+		m.appendLog("Estimated HEAT mint is 0 — check pool or amount")
+		m.statusMsg = "Mint amount 0"
+		return m, nil
+	}
+
+	call := BuildHeatMint(xfgBurned, heatMinted, DefaultMixin())
+	m.appendLog(fmt.Sprintf("Minting HEAT: burn %.2f XFG → ~%d HEAT atomic via %s (mixin=dynamax)...",
+		float64(xfgBurned)/float64(CurrentConfig.CoinUnits), heatMinted, call.Method))
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
 func passFile(containerFile string) string { return containerFile + ".pass" }
@@ -1492,11 +1734,11 @@ func (m model) createWallet() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	path := binPath("walletd")
+	path := resolveWalletBinary()
 	if path == "walletd" {
 		if _, err := exec.LookPath("walletd"); err != nil {
-			m.appendLog("walletd not found — build it first")
-			m.statusMsg = "walletd not found"
+			m.appendLog("wallet binary not found (tried " + strings.Join(WalletBinaryCandidates(CurrentConfig.WalletBinary), ", ") + ")")
+			m.statusMsg = "wallet binary not found"
 			return m, nil
 		}
 	}
@@ -1522,7 +1764,7 @@ func (m model) createWallet() (tea.Model, tea.Cmd) {
 	cmd := exec.Command(path, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		m.appendLog("walletd create failed: " + err.Error() + "\n" + string(out))
+		m.appendLog("wallet create failed: " + err.Error() + "\n" + string(out))
 		m.statusMsg = "Create wallet failed"
 		m.containerPass = ""
 		return m, nil
@@ -1547,23 +1789,24 @@ func (m model) createWallet() (tea.Model, tea.Cmd) {
 	wStdout, _ := walletCmd.StdoutPipe()
 	wStderr, _ := walletCmd.StderrPipe()
 	if err := walletCmd.Start(); err != nil {
-		m.appendLog("Failed to start walletd: " + err.Error())
-		m.statusMsg = "walletd start failed"
+		m.appendLog("Failed to start wallet RPC: " + err.Error())
+		m.statusMsg = "wallet start failed"
 		return m, nil
 	}
 	m.walletCmd = walletCmd
 	m.runningW = true
 	m.walletStdout = wStdout
 	m.walletStderr = wStderr
-	m.appendLog(fmt.Sprintf("walletd started on port %d", m.walletPort))
+	m.appendLog(fmt.Sprintf("%s started on port %d", filepath.Base(path), m.walletPort))
 	m.statusMsg = "Wallet RPC starting..."
 	m.currentView = viewWalletInfo
 
 	time.Sleep(2 * time.Second)
+	call := BuildCreateAddress()
 	return m, tea.Batch(
 		streamPipe(wStdout, "WALLET"),
 		streamPipe(wStderr, "WALLET-ERR"),
-		walletRpcCmd(m.walletPort, "createAddress", map[string]interface{}{}),
+		walletRpcCmd(m.walletPort, call.Method, call.Params),
 	)
 }
 
@@ -1580,11 +1823,11 @@ func (m model) openWallet() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	path := binPath("walletd")
+	path := resolveWalletBinary()
 	if path == "walletd" {
 		if _, err := exec.LookPath("walletd"); err != nil {
-			m.appendLog("walletd not found")
-			m.statusMsg = "walletd not found"
+			m.appendLog("wallet binary not found")
+			m.statusMsg = "wallet not found"
 			return m, nil
 		}
 	}
@@ -1618,23 +1861,24 @@ func (m model) openWallet() (tea.Model, tea.Cmd) {
 	wStdout, _ := walletCmd.StdoutPipe()
 	wStderr, _ := walletCmd.StderrPipe()
 	if err := walletCmd.Start(); err != nil {
-		m.appendLog("Failed to start walletd: " + err.Error())
-		m.statusMsg = "walletd start failed"
+		m.appendLog("Failed to start wallet RPC: " + err.Error())
+		m.statusMsg = "wallet start failed"
 		return m, nil
 	}
 	m.walletCmd = walletCmd
 	m.runningW = true
 	m.walletStdout = wStdout
 	m.walletStderr = wStderr
-	m.appendLog(fmt.Sprintf("walletd started on port %d", m.walletPort))
+	m.appendLog(fmt.Sprintf("%s started on port %d", filepath.Base(path), m.walletPort))
 	m.statusMsg = "Wallet RPC starting..."
 	m.currentView = viewWalletInfo
 
 	time.Sleep(2 * time.Second)
+	call := BuildGetAddresses()
 	return m, tea.Batch(
 		streamPipe(wStdout, "WALLET"),
 		streamPipe(wStderr, "WALLET-ERR"),
-		walletRpcCmd(m.walletPort, "getAddresses", map[string]interface{}{}),
+		walletRpcCmd(m.walletPort, call.Method, call.Params),
 	)
 }
 
@@ -1668,16 +1912,9 @@ func (m model) sendTx() (tea.Model, tea.Cmd) {
 	}
 	amountAtomic := int64(amtFloat * float64(CurrentConfig.CoinUnits))
 
-	m.appendLog(fmt.Sprintf("Sending %.6f XFG to %s...", amtFloat, m.txAddr))
-	params := map[string]interface{}{
-		"sourceAddresses": []string{m.walletAddress},
-		"transfers": []map[string]interface{}{
-			{"address": m.txAddr, "amount": amountAtomic},
-		},
-		"changeAddress": m.walletAddress,
-		"anonymity":     4,
-	}
-	return m, walletRpcCmd(m.walletPort, "sendTransaction", params)
+	m.appendLog(fmt.Sprintf("Sending %.6f XFG to %s (mixin=dynamax)...", amtFloat, m.txAddr))
+	call := BuildSendTransaction(m.walletAddress, m.txAddr, uint64(amountAtomic), DefaultMixin())
+	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
 // ── Tea.Cmd Helpers ─────────────────────────────────────────────────────────
@@ -1729,6 +1966,15 @@ func pollNodeCmd() tea.Cmd {
 	}
 }
 
+func firstString(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func walletRpcCmd(port int, method string, params map[string]interface{}) tea.Cmd {
 	return func() tea.Msg {
 		result, err := doWalletRpc(port, method, params)
@@ -1738,20 +1984,96 @@ func walletRpcCmd(port int, method string, params map[string]interface{}) tea.Cm
 
 func daemonGetCmd(path string) tea.Cmd {
 	return func() tea.Msg {
-		url := fmt.Sprintf("http://127.0.0.1:%d%s", CurrentConfig.NodeRPCPort, path)
-		client := http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(url)
+		out, err := doDaemonGet(path)
+		return daemonResultMsg{path: path, result: out, err: err}
+	}
+}
+
+func doDaemonGet(path string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", CurrentConfig.NodeRPCPort, path)
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var out map[string]interface{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	return out, nil
+}
+
+func daemonPostJSONCmd(path string, body map[string]interface{}) tea.Cmd {
+	return func() tea.Msg {
+		out, err := doDaemonPostJSON(path, body)
+		return daemonResultMsg{path: path, result: out, err: err}
+	}
+}
+
+func doDaemonPostJSON(path string, payload map[string]interface{}) (map[string]interface{}, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", CurrentConfig.NodeRPCPort, path)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	client := http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var out map[string]interface{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("json: %w body=%s", err, truncate(string(raw), 120))
+	}
+	return out, nil
+}
+
+func daemonJsonRpcCmd(method string, params map[string]interface{}) tea.Cmd {
+	return func() tea.Msg {
+		url := fmt.Sprintf("http://127.0.0.1:%d/json_rpc", CurrentConfig.NodeRPCPort)
+		payload := map[string]interface{}{
+			"jsonrpc": "2.0", "id": "tui", "method": method, "params": params,
+		}
+		b, err := json.Marshal(payload)
 		if err != nil {
-			return daemonResultMsg{path: path, err: fmt.Errorf("connect: %w", err)}
+			return daemonResultMsg{path: "/json_rpc", err: err}
+		}
+		client := http.Client{Timeout: 8 * time.Second}
+		resp, err := client.Post(url, "application/json", bytes.NewReader(b))
+		if err != nil {
+			return daemonResultMsg{path: "/json_rpc", err: fmt.Errorf("connect: %w", err)}
 		}
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+		raw, _ := io.ReadAll(resp.Body)
 		var out map[string]interface{}
-		if err := json.Unmarshal(body, &out); err != nil {
-			return daemonResultMsg{path: path, err: fmt.Errorf("json: %w", err)}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return daemonResultMsg{path: "/json_rpc", err: fmt.Errorf("json: %w", err)}
 		}
-		return daemonResultMsg{path: path, result: out}
+		if errObj, ok := out["error"].(map[string]interface{}); ok {
+			return daemonResultMsg{path: "/json_rpc", err: fmt.Errorf("rpc: %v", errObj)}
+		}
+		if res, ok := out["result"].(map[string]interface{}); ok {
+			return daemonResultMsg{path: "/json_rpc", result: res}
+		}
+		return daemonResultMsg{path: "/json_rpc", result: out}
 	}
+}
+
+// resolveWalletBinary finds a PaymentGate-style wallet RPC binary on PATH or next to cwd.
+func resolveWalletBinary() string {
+	for _, name := range WalletBinaryCandidates(CurrentConfig.WalletBinary) {
+		if p := binPath(name); p != name {
+			return p
+		}
+		if _, err := exec.LookPath(name); err == nil {
+			return name
+		}
+	}
+	return "walletd"
 }
 
 func doWalletRpc(port int, method string, params map[string]interface{}) (map[string]interface{}, error) {
@@ -1876,6 +2198,8 @@ func truncate(s string, n int) string {
 func main() {
 	isTestnet := flag.Bool("testnet", false, "Run TUI in Testnet mode")
 	nodePort := flag.Int("node-port", 0, "Override daemon RPC port (default: 18180 mainnet, 28280 testnet)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
+	showHelp := flag.Bool("help", false, "Print help and exit")
 	flag.Parse()
 
 	if *isTestnet {
@@ -1887,9 +2211,23 @@ func main() {
 		CurrentConfig.NodeRPCPort = *nodePort
 	}
 
+	if *showVersion {
+		fmt.Printf("%s TUI %s\n", CurrentConfig.NetworkName, verInfo.projectVersion)
+		fmt.Printf("wallet binaries: %s\n", strings.Join(WalletBinaryCandidates(CurrentConfig.WalletBinary), ", "))
+		return
+	}
+	if *showHelp {
+		fmt.Printf("Usage: fuego-tui [flags]\n")
+		fmt.Printf("  Features: mint HEAT, HEAT CDs, Hearth AMM/orders, aliases, subaddresses, dynamax mixin sends.\n")
+		fmt.Printf("  Atomic swaps are not managed from this TUI.\n\n")
+		flag.PrintDefaults()
+		return
+	}
+
 	fmt.Printf("=== %s TUI ===\n", CurrentConfig.NetworkName)
 	fmt.Printf("Coin: %s | Prefix: %s | Mode: %s\n", CurrentConfig.CoinName, CurrentConfig.AddressPrefix, CurrentConfig.NetworkName)
 	fmt.Printf("Daemon: %s (RPC %d, P2P %d)\n", CurrentConfig.NodeBinary, CurrentConfig.NodeRPCPort, CurrentConfig.NodeP2PPort)
+	fmt.Printf("Wallet binary candidates: %s\n", strings.Join(WalletBinaryCandidates(CurrentConfig.WalletBinary), ", "))
 
 	p := tea.NewProgram(initialModel())
 	if _, err := p.Run(); err != nil {

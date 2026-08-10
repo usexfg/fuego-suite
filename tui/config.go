@@ -21,7 +21,7 @@ var MainnetConfig = Config{
 	CoinName:      "XFG",
 	AddressPrefix: "1753191",
 	NodeBinary:    "fuegod",
-	WalletBinary:  "fire_wallet",
+	WalletBinary:  "walletd", // PaymentGateService JSON-RPC (OUTPUT_NAME may be "unified")
 	IsTestnet:     false,
 	NodeRPCPort:   18180,
 	NodeP2PPort:   10808,

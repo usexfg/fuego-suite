@@ -123,9 +123,12 @@ struct uint128_t {
         if (shift == 0) return *this;
         if (shift >= 128) return uint128_t(0, 0);
         if (shift >= 64)  return uint128_t(lo << (shift - 64), 0);
-        if (shift == 0)   return *this;
         return uint128_t((hi << shift) | (lo >> (64 - shift)), lo << shift);
     }
+
+    // Unsigned shift overloads: avoid MSVC C2666 vs built-in after conversion
+    uint128_t operator<<(unsigned shift) const { return *this << static_cast<int>(shift); }
+    uint128_t operator<<(uint8_t shift) const { return *this << static_cast<int>(shift); }
 
     uint128_t operator>>(int shift) const {
         if (shift == 0) return *this;
@@ -133,6 +136,20 @@ struct uint128_t {
         if (shift >= 64)  return uint128_t(0, hi >> (shift - 64));
         return uint128_t(hi >> shift, (hi << (64 - shift)) | (lo >> shift));
     }
+
+    uint128_t operator>>(unsigned shift) const { return *this >> static_cast<int>(shift); }
+    uint128_t operator>>(uint8_t shift) const { return *this >> static_cast<int>(shift); }
+
+    uint128_t& operator<<=(int shift) { *this = *this << shift; return *this; }
+    uint128_t& operator>>=(int shift) { *this = *this >> shift; return *this; }
+    uint128_t& operator<<=(unsigned shift) { *this = *this << shift; return *this; }
+    uint128_t& operator>>=(unsigned shift) { *this = *this >> shift; return *this; }
+
+    // Scalar arithmetic overloads: prefer these over converting *this to uint64_t
+    uint128_t operator+(uint64_t v) const { return *this + uint128_t(v); }
+    uint128_t operator-(uint64_t v) const { return *this - uint128_t(v); }
+    uint128_t operator+(uint32_t v) const { return *this + uint128_t(static_cast<uint64_t>(v)); }
+    uint128_t operator-(uint32_t v) const { return *this - uint128_t(static_cast<uint64_t>(v)); }
 
     uint128_t operator~() const { return uint128_t(~hi, ~lo); }
     uint128_t operator-() const { return ~(*this) + uint128_t(1); }
@@ -160,8 +177,14 @@ struct uint128_t {
     bool operator<=(int v) const { return *this <= uint128_t((uint64_t)v); }
     bool operator>=(int v) const { return *this >= uint128_t((uint64_t)v); }
 
+    bool operator<(uint64_t v) const  { return *this < uint128_t(v); }
+    bool operator>(uint64_t v) const  { return *this > uint128_t(v); }
+    bool operator<=(uint64_t v) const { return *this <= uint128_t(v); }
+    bool operator>=(uint64_t v) const { return *this >= uint128_t(v); }
+
     explicit operator bool() const { return lo != 0 || hi != 0; }
-    operator uint64_t() const { return lo; }
+    // explicit: implicit conversion competes with overloads on MSVC (C2666)
+    explicit operator uint64_t() const { return lo; }
 };
 
 inline uint128_t operator*(uint64_t a, const uint128_t& b) { return b * a; }

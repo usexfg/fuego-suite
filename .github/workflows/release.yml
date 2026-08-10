@@ -13,14 +13,13 @@ jobs:
     name: macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: macos-13
-            arch: intel
-            brew_prefix: /usr/local
           - os: macos-14
             arch: apple
-            brew_prefix: /opt/homebrew
+          - os: macos-15
+            arch: apple
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -29,16 +28,16 @@ jobs:
         with: { go-version: stable }
 
       - name: Install dependencies
-        run: brew install boost@1.86 openssl@3 icu4c jsoncpp cmake ninja
+        run: brew install boost openssl@3 icu4c jsoncpp cmake ninja
 
       - name: Build C++
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch == 'intel' && 'x86_64' || 'arm64' }} \
-            -DBOOST_ROOT=${{ matrix.brew_prefix }}/opt/boost@1.86 \
-            -DOPENSSL_ROOT_DIR=${{ matrix.brew_prefix }}/opt/openssl@3 \
-            -DICU_ROOT=${{ matrix.brew_prefix }}/opt/icu4c \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DBOOST_ROOT="$(brew --prefix boost)" \
+            -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DICU_ROOT="$(brew --prefix icu4c)" \
             -DUSE_VENDORED_SECP256K1=OFF
           cmake --build build -j$(sysctl -n hw.logicalcpu)
 

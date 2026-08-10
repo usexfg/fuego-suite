@@ -76,3 +76,31 @@ __pycache__/
 *.pyc
 build-test/
 .worktrees/
+
+# Built binaries / local compile outputs (rebuild from source)
+dashboard/fuego-dashboard
+dashboard/fuego-dashboard.exe
+swapxfg/swapxfg
+swapxfg/swapxfg.exe
+swapxfg/build/
+tui/fuego-tui
+tui/fuego-tui.exe
+tui-testnet/fuego-tui
+tui-testnet/fuego-tui.exe
+**/fuego-dashboard
+**/fuego-dashboard.exe
+# Common CMake/Make install bins at repo root
+/fuego
+/fuegod
+/fire_wallet
+/simplewallet
+/xfg-swapd
+/connectivity_tool
+/miner
+*.o
+*.a
+*.dylib
+*.so
+*.dll
+# Local agent / brainstorm noise
+.superpowers/

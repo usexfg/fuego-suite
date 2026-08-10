@@ -487,7 +487,8 @@ func (m model) handleSubViewKey(k string) (tea.Model, tea.Cmd) {
 		}
 		if k == "r" {
 			m.obUpdating = true
-			return m, daemonGetCmd("/json_rpc")
+			call := BuildOrderbookState(20)
+			return m, daemonPostJSONCmd(call.Path, call.Params)
 		}
 	case viewSwapSide:
 		return m.editField(k, func(newVal string) (tea.Model, tea.Cmd) {

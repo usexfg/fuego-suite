@@ -144,16 +144,38 @@ func BuildAmmPoolInfo() RpcCall {
 	return RpcCall{Kind: RpcDaemonGET, Path: "/amm_pool_info"}
 }
 
-// BuildOrderbookState requests orderbook via daemon JSON-RPC.
+// BuildOrderbookState requests the Hearth order book via daemon HTTP
+// POST /getorderbook (RpcServer::on_get_order_book). Not JSON-RPC.
 func BuildOrderbookState(depth int) RpcCall {
 	if depth <= 0 {
 		depth = 20
 	}
 	return RpcCall{
-		Kind:   RpcDaemonJSONRPC,
-		Method: "get_orderbook_state",
-		Path:   "/json_rpc",
-		Params: map[string]interface{}{"depth": depth},
+		Kind: RpcDaemonPOSTJSON,
+		Path: "/getorderbook",
+		Params: map[string]interface{}{
+			"pair":  uint8(0),
+			"depth": depth,
+		},
+	}
+}
+
+// BuildGetLimitOrders lists limit orders via daemon HTTP POST /get_limit_orders
+// (or wallet get_limit_orders when using fire_wallet). Prefer daemon for book-wide view.
+func BuildGetLimitOrders() RpcCall {
+	return RpcCall{
+		Kind:   RpcDaemonPOSTJSON,
+		Path:   "/get_limit_orders",
+		Params: map[string]interface{}{},
+	}
+}
+
+// BuildWalletGetLimitOrders lists this wallet's open limit orders (PaymentGate/fire_wallet).
+func BuildWalletGetLimitOrders() RpcCall {
+	return RpcCall{
+		Kind:   RpcWallet,
+		Method: "get_limit_orders",
+		Params: map[string]interface{}{},
 	}
 }
 

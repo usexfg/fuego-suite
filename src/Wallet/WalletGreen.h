@@ -54,6 +54,12 @@ public:
   /* HEAT v10 operations */
   virtual void mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixin, std::string &transactionHash);
   virtual void sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  /* Hearth / CD bridges used by PaymentGate (TUI surface) */
+  void ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t expectedOutput, uint64_t minOutput,
+                  uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  void placeLimitOrderV13(uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration,
+                          uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  void cancelLimitOrderV13(const Crypto::Hash &orderId, uint64_t fee, uint64_t mixin, std::string &transactionHash);
   std::vector<MultisignatureInput> prepareMultisignatureInputs(const std::vector<TransactionOutputInformation> &selectedTransfers);
 
   // Phase 5: Wallet Auto-Rollover + Compound Interest

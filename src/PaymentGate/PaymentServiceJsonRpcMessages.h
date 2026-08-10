@@ -19,6 +19,7 @@
 
 #include <exception>
 #include <limits>
+#include <string>
 #include <vector>
 #include "IWallet.h"
 #include "Serialization/ISerializer.h"
@@ -268,6 +269,144 @@ struct SendHeat
   struct Response
   {
     std::string tx_hash;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+// HEAT CD deposit (term-locked HEAT) — matches fire_wallet heat_deposit params
+struct HeatDeposit
+{
+  struct Request
+  {
+    uint64_t amount = 0;
+    uint32_t term_epochs = 0;
+    uint64_t banking_fee = 0;
+    uint64_t fee = 0;
+    uint64_t mixin = 0;
+    std::string sourceAddress;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct AmmSwap
+{
+  struct Request
+  {
+    uint8_t direction = 0;
+    uint64_t input_amount = 0;
+    uint64_t expected_output = 0;
+    uint64_t min_output = 0;
+    uint64_t fee = 0;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct PlaceLimitOrder
+{
+  struct Request
+  {
+    uint8_t side = 0;
+    uint64_t amount = 0;
+    uint64_t target_price = 0;
+    uint32_t expiration = 0;
+    uint64_t fee = 0;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct CancelLimitOrder
+{
+  struct Request
+  {
+    std::string order_id;
+    uint64_t fee = 0;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct GetLimitOrders
+{
+  struct Request
+  {
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct LimitOrderInfo
+  {
+    std::string order_id;
+    uint8_t side = 0;
+    uint64_t amount = 0;
+    uint64_t target_price = 0;
+    uint32_t expiration = 0;
+    bool withdrawn = false;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::vector<LimitOrderInfo> orders;
+    std::string status;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+};
+
+struct RegisterAlias
+{
+  struct Request
+  {
+    std::string alias;
+    std::string address;
+    uint64_t mixin = 0;
+
+    void serialize(CryptoNote::ISerializer &serializer);
+  };
+
+  struct Response
+  {
+    std::string tx_hash;
+    std::string status;
 
     void serialize(CryptoNote::ISerializer &serializer);
   };

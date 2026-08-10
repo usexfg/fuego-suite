@@ -110,6 +110,12 @@ private:
   std::error_code handleGetHealth(const GetHealth::Request& request, GetHealth::Response& response);
   std::error_code handleHeatMint(const HeatMint::Request& request, HeatMint::Response& response);
   std::error_code handleSendHeat(const SendHeat::Request& request, SendHeat::Response& response);
+  std::error_code handleHeatDeposit(const HeatDeposit::Request& request, HeatDeposit::Response& response);
+  std::error_code handleAmmSwap(const AmmSwap::Request& request, AmmSwap::Response& response);
+  std::error_code handlePlaceLimitOrder(const PlaceLimitOrder::Request& request, PlaceLimitOrder::Response& response);
+  std::error_code handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response);
+  std::error_code handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response);
+  std::error_code handleRegisterAlias(const RegisterAlias::Request& request, RegisterAlias::Response& response);
 
 };
 

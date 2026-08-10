@@ -88,6 +88,13 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("getHealth", jsonHandler<GetHealth::Request, GetHealth::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetHealth, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("heat_mint", jsonHandler<HeatMint::Request, HeatMint::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatMint, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("send_heat", jsonHandler<SendHeat::Request, SendHeat::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSendHeat, this, std::placeholders::_1, std::placeholders::_2)));
+  // Unified TUI surface: same method names as fire_wallet WalletRpcServer where possible
+  handlers.emplace("heat_deposit", jsonHandler<HeatDeposit::Request, HeatDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatDeposit, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("amm_swap", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleAmmSwap, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("place_limit_order", jsonHandler<PlaceLimitOrder::Request, PlaceLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handlePlaceLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("cancel_limit_order", jsonHandler<CancelLimitOrder::Request, CancelLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCancelLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("get_limit_orders", jsonHandler<GetLimitOrders::Request, GetLimitOrders::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetLimitOrders, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("register_alias", jsonHandler<RegisterAlias::Request, RegisterAlias::Response>(std::bind(&PaymentServiceJsonRpcServer::handleRegisterAlias, this, std::placeholders::_1, std::placeholders::_2)));
 }
 
 void PaymentServiceJsonRpcServer::processJsonRpcRequest(const Common::JsonValue& req, Common::JsonValue& resp) {
@@ -434,5 +441,61 @@ std::error_code PaymentServiceJsonRpcServer::handleSendHeat(const SendHeat::Requ
   return service.sendHeatV10(request.address, request.amount, request.mixin, response.tx_hash);
 }
 
+std::error_code PaymentServiceJsonRpcServer::handleHeatDeposit(const HeatDeposit::Request& request, HeatDeposit::Response& response)
+{
+  auto ec = service.heatDeposit(request.amount, request.term_epochs, request.banking_fee, request.mixin,
+                                request.sourceAddress, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleAmmSwap(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  auto ec = service.ammSwap(request.direction, request.input_amount, request.expected_output,
+                            request.min_output, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handlePlaceLimitOrder(const PlaceLimitOrder::Request& request, PlaceLimitOrder::Response& response)
+{
+  auto ec = service.placeLimitOrder(request.side, request.amount, request.target_price,
+                                    request.expiration, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response)
+{
+  auto ec = service.cancelLimitOrder(request.order_id, request.mixin, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response)
+{
+  auto ec = service.getLimitOrders(response.orders);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleRegisterAlias(const RegisterAlias::Request& request, RegisterAlias::Response& response)
+{
+  auto ec = service.registerAlias(request.alias, request.address, response.tx_hash);
+  if (!ec) {
+    response.status = "OK";
+  }
+  return ec;
+}
 
 }

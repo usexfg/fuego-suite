@@ -641,4 +641,96 @@ void SendHeat::Response::serialize(CryptoNote::ISerializer &serializer)
   serializer(tx_hash, "tx_hash");
 }
 
+void HeatDeposit::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(amount, "amount");
+  serializer(term_epochs, "term_epochs");
+  serializer(banking_fee, "banking_fee");
+  serializer(fee, "fee");
+  serializer(mixin, "mixin");
+  serializer(sourceAddress, "sourceAddress");
+}
+
+void HeatDeposit::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
+void AmmSwap::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(direction, "direction");
+  serializer(input_amount, "input_amount");
+  serializer(expected_output, "expected_output");
+  serializer(min_output, "min_output");
+  serializer(fee, "fee");
+  serializer(mixin, "mixin");
+}
+
+void AmmSwap::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
+void PlaceLimitOrder::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(side, "side");
+  serializer(amount, "amount");
+  serializer(target_price, "target_price");
+  serializer(expiration, "expiration");
+  serializer(fee, "fee");
+  serializer(mixin, "mixin");
+}
+
+void PlaceLimitOrder::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
+void CancelLimitOrder::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(order_id, "order_id");
+  serializer(fee, "fee");
+  serializer(mixin, "mixin");
+}
+
+void CancelLimitOrder::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
+void GetLimitOrders::Request::serialize(CryptoNote::ISerializer &) {}
+
+void GetLimitOrders::LimitOrderInfo::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(order_id, "order_id");
+  serializer(side, "side");
+  serializer(amount, "amount");
+  serializer(target_price, "target_price");
+  serializer(expiration, "expiration");
+  serializer(withdrawn, "withdrawn");
+}
+
+void GetLimitOrders::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(orders, "orders");
+  serializer(status, "status");
+}
+
+void RegisterAlias::Request::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(alias, "alias");
+  serializer(address, "address");
+  serializer(mixin, "mixin");
+}
+
+void RegisterAlias::Response::serialize(CryptoNote::ISerializer &serializer)
+{
+  serializer(tx_hash, "tx_hash");
+  serializer(status, "status");
+}
+
 } // namespace PaymentService

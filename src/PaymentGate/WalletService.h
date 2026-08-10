@@ -109,6 +109,16 @@ std::error_code getViewKey(std::string &viewSecretKey);
 
   std::error_code mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t mixin, std::string &transactionHash);
   std::error_code sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t mixin, std::string &transactionHash);
+  // Unified TUI / fire_wallet-compatible methods (PaymentGate surface)
+  std::error_code heatDeposit(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t mixin,
+                              const std::string &sourceAddress, std::string &transactionHash);
+  std::error_code ammSwap(uint8_t direction, uint64_t inputAmount, uint64_t expectedOutput, uint64_t minOutput,
+                          uint64_t mixin, std::string &transactionHash);
+  std::error_code placeLimitOrder(uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration,
+                                  uint64_t mixin, std::string &transactionHash);
+  std::error_code cancelLimitOrder(const std::string &orderIdHex, uint64_t mixin, std::string &transactionHash);
+  std::error_code getLimitOrders(std::vector<GetLimitOrders::LimitOrderInfo> &orders);
+  std::error_code registerAlias(const std::string &alias, const std::string &ownerAddress, std::string &transactionHash);
   std::error_code withdrawDeposit(uint64_t depositId, std::string &transactionHash);
   std::error_code giftDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash);
   std::error_code getDeposit(uint64_t depositId, uint64_t &amount, uint64_t &term, uint64_t &interest, std::string &creatingTransactionHash, std::string &spendingTransactionHash, bool &locked, uint64_t &height, uint64_t &unlockHeight, std::string &address);

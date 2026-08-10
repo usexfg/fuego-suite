@@ -40,7 +40,12 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/Currency.h"
 #include "Wallet/WalletErrors.h"
+#include "Wallet/WalletGreen.h"
+#include "Common/StringTools.h"
+#include "CryptoNoteCore/CryptoNoteBasic.h"
+#include "CryptoNoteConfig.h"
 #include <System/EventLock.h>
+#include <cstring>
 
 #include "PaymentServiceJsonRpcMessages.h"
 #include "NodeFactory.h"
@@ -2584,6 +2589,207 @@ namespace PaymentService
     catch (std::exception &x)
     {
       logger(Logging::WARNING) << "Failed to send HEAT: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::heatDeposit(
+      uint64_t amount,
+      uint32_t termEpochs,
+      uint64_t /*bankingFee*/,
+      uint64_t /*mixin*/,
+      const std::string &sourceAddress,
+      std::string &transactionHash)
+  {
+    // PaymentGate / WalletGreen path: term-locked HEAT CD via createDeposit
+    // (term != HEAT_TERM). Matches TUI heat_deposit payload.
+    if (amount == 0 || termEpochs == 0) {
+      return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
+    }
+    if (termEpochs == CryptoNote::parameters::HEAT_TERM) {
+      return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
+    }
+    return createDeposit(amount, termEpochs, sourceAddress, transactionHash);
+  }
+
+  std::error_code WalletService::ammSwap(
+      uint8_t direction,
+      uint64_t inputAmount,
+      uint64_t expectedOutput,
+      uint64_t minOutput,
+      uint64_t mixin,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      uint64_t fee = currency.minimumFee();
+      green->ammSwapV10(direction, inputAmount, expectedOutput, minOutput, fee, mixin, transactionHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Failed amm_swap: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "Failed amm_swap: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::placeLimitOrder(
+      uint8_t side,
+      uint64_t amount,
+      uint64_t targetPrice,
+      uint32_t expiration,
+      uint64_t mixin,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      uint64_t fee = currency.minimumFee();
+      green->placeLimitOrderV13(side, amount, targetPrice, expiration, fee, mixin, transactionHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Failed place_limit_order: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "Failed place_limit_order: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::cancelLimitOrder(
+      const std::string &orderIdHex,
+      uint64_t mixin,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      Crypto::Hash orderId{};
+      if (!Common::podFromHex(orderIdHex, orderId)) {
+        return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
+      }
+      uint64_t fee = currency.minimumFee();
+      green->cancelLimitOrderV13(orderId, fee, mixin, transactionHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "Failed cancel_limit_order: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "Failed cancel_limit_order: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::getLimitOrders(std::vector<GetLimitOrders::LimitOrderInfo> &orders)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      std::vector<CryptoNote::INode::LimitDepositRpcEntry> all;
+      std::error_code ec = node.getLimitDeposits(all);
+      if (ec) {
+        // Soft-fail empty book if daemon lacks endpoint
+        logger(Logging::WARNING) << "getLimitDeposits failed: " << ec.message();
+        orders.clear();
+        return std::error_code();
+      }
+      // Filter to this wallet's address hash when possible
+      std::string myHash;
+      try {
+        if (wallet.getAddressCount() > 0) {
+          std::string addr = wallet.getAddress(0);
+          CryptoNote::AccountPublicAddress acc{};
+          if (currency.parseAccountAddressString(addr, acc)) {
+            uint8_t preimage[64];
+            memcpy(preimage, &acc.spendPublicKey, 32);
+            memcpy(preimage + 32, &acc.viewPublicKey, 32);
+            Crypto::Hash h = Crypto::cn_fast_hash(preimage, 64);
+            myHash = Common::podToHex(h);
+          }
+        }
+      } catch (...) {
+      }
+      orders.clear();
+      for (const auto &dep : all) {
+        if (!myHash.empty() && dep.address_hash != myHash) {
+          continue;
+        }
+        GetLimitOrders::LimitOrderInfo info;
+        info.order_id = dep.order_id;
+        info.side = dep.side;
+        info.amount = dep.amount;
+        info.target_price = dep.target_price;
+        info.expiration = dep.expiration;
+        info.withdrawn = dep.withdrawn || dep.expired;
+        orders.push_back(info);
+      }
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "getLimitOrders: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
+  }
+
+  std::error_code WalletService::registerAlias(
+      const std::string &alias,
+      const std::string &ownerAddress,
+      std::string &transactionHash)
+  {
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      std::string addr = ownerAddress;
+      if (addr.empty() && wallet.getAddressCount() > 0) {
+        addr = wallet.getAddress(0);
+      }
+      Crypto::Hash txHash{};
+      std::error_code ec = green->registerAlias(alias, addr, txHash);
+      if (ec) {
+        return ec;
+      }
+      transactionHash = Common::podToHex(txHash);
+    }
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "register_alias: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "register_alias: " << x.what();
       return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
     }
     return std::error_code();

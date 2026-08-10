@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -111,12 +112,25 @@ func TestBuildHearthDaemon(t *testing.T) {
 		t.Fatalf("pool=%+v", pool)
 	}
 	ob := BuildOrderbookState(20)
-	if ob.Kind != RpcDaemonJSONRPC || ob.Method != "get_orderbook_state" {
-		t.Fatalf("orderbook=%+v", ob)
+	if ob.Kind != RpcDaemonPOSTJSON || ob.Path != "/getorderbook" {
+		t.Fatalf("orderbook must use daemon POST /getorderbook, got %+v", ob)
+	}
+	if ob.Method != "" {
+		t.Fatalf("orderbook must not use JSON-RPC method name, got %q", ob.Method)
 	}
 	if ob.Params["depth"].(int) != 20 {
 		t.Fatal("depth")
 	}
+	// Guard: never use the broken get_orderbook_state JSON-RPC path
+	if ob.Path == "/json_rpc" || ob.Method == "get_orderbook_state" {
+		t.Fatal("broken orderbook transport")
+	}
+	list := BuildGetLimitOrders()
+	if list.Path != "/get_limit_orders" || list.Kind != RpcDaemonPOSTJSON {
+		t.Fatalf("list orders=%+v", list)
+	}
+	wlist := BuildWalletGetLimitOrders()
+	mustWallet(t, wlist, "get_limit_orders")
 	hm := BuildHeatMetrics()
 	if hm.Path != "/heat_metrics" {
 		t.Fatal("heat_metrics path")
@@ -198,6 +212,48 @@ func TestDefaultMixin_IsDynamax(t *testing.T) {
 	}
 }
 
+// Structural: PaymentGate registers the TUI method names (source of truth for unified wallet).
+func TestPaymentGateRegistersTuiMethods(t *testing.T) {
+	path := "../src/PaymentGate/PaymentServiceJsonRpcServer.cpp"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("PaymentGate source not found:", err)
+	}
+	src := string(b)
+	need := []string{
+		`"heat_mint"`,
+		`"heat_deposit"`,
+		`"amm_swap"`,
+		`"place_limit_order"`,
+		`"cancel_limit_order"`,
+		`"get_limit_orders"`,
+		`"register_alias"`,
+		`"createAddress"`,
+		`"getAddresses"`,
+		`"sendTransaction"`,
+		`"getDeposit"`,
+		`"withdrawDeposit"`,
+	}
+	for _, n := range need {
+		if !strings.Contains(src, n) {
+			t.Errorf("PaymentGate missing handler registration for %s", n)
+		}
+	}
+	// Daemon orderbook path (not JSON-RPC get_orderbook_state)
+	rpcPath := "../src/Rpc/RpcServer.cpp"
+	rb, err := os.ReadFile(rpcPath)
+	if err != nil {
+		t.Skip("RpcServer source not found:", err)
+	}
+	rs := string(rb)
+	if !strings.Contains(rs, `"/getorderbook"`) {
+		t.Error("daemon missing /getorderbook")
+	}
+	if !strings.Contains(rs, `"/get_limit_orders"`) {
+		t.Error("daemon missing /get_limit_orders")
+	}
+}
+
 // Structural: menu exposes every in-scope feature (atomic swaps excluded).
 func TestMenuCoversInScopeFeatures(t *testing.T) {
 	needles := []string{
@@ -210,6 +266,7 @@ func TestMenuCoversInScopeFeatures(t *testing.T) {
 		"Swap XFG/HEAT",
 		"Place Limit Order",
 		"Cancel Limit Order",
+		"List Limit Orders",
 		"List Subaddresses",
 		"New Subaddress",
 		"Lookup Alias",

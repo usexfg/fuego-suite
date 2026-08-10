@@ -66,6 +66,7 @@ const (
 	mSwapAMM         menuItem = "Swap XFG/HEAT"
 	mPlaceOrder      menuItem = "Place Limit Order"
 	mCancelOrder     menuItem = "Cancel Limit Order"
+	mListOrders      menuItem = "List Limit Orders"
 	mSubaddresses    menuItem = "List Subaddresses"
 	mNewSubaddress   menuItem = "New Subaddress"
 	mLookupAlias     menuItem = "Lookup Alias"
@@ -79,7 +80,7 @@ var menu = []menuItem{
 	mCreateWallet, mOpenWallet, mGetBalance, mSendTx,
 	mBurn2Mint, mHeatMetrics, mEternalFlame, mHearthPool,
 	mCreateCD, mViewDeposit, mWithdrawDeposit,
-	mOrderbook, mSwapAMM, mPlaceOrder, mCancelOrder,
+	mOrderbook, mSwapAMM, mPlaceOrder, mCancelOrder, mListOrders,
 	mSubaddresses, mNewSubaddress, mLookupAlias, mRegisterAlias,
 	mShowLogs, mQuit,
 }
@@ -621,7 +622,13 @@ func (m model) executeMenuItem() (tea.Model, tea.Cmd) {
 		m.obUpdating = true
 		m.currentView = viewOrderbook
 		call := BuildOrderbookState(20)
-		return m, daemonJsonRpcCmd(call.Method, call.Params)
+		return m, daemonPostJSONCmd(call.Path, call.Params)
+	case mListOrders:
+		// Prefer daemon book; also try wallet-scoped list when wallet is up
+		call := BuildGetLimitOrders()
+		m.daemonPath = call.Path
+		m.currentView = viewDaemonData
+		return m, daemonPostJSONCmd(call.Path, call.Params)
 	case mSwapAMM:
 		m.currentView = viewSwapSide
 		m.inputBuf = ""
@@ -806,7 +813,21 @@ func (m model) handleDaemonResult(msg daemonResultMsg) (tea.Model, tea.Cmd) {
 		m.statusMsg = "Alias lookup done"
 		m.currentView = viewMenu
 		return m, nil
+	case "/getorderbook":
+		m.obData = msg.result
+		m.obUpdating = false
+		m.currentView = viewOrderbook
+		m.statusMsg = "Orderbook loaded"
+		return m, nil
+	case "/get_limit_orders":
+		m.daemonData = msg.result
+		m.daemonPath = msg.path
+		m.currentView = viewDaemonData
+		m.appendLog(fmt.Sprintf("Limit orders: %v", msg.result))
+		m.statusMsg = "Limit orders loaded"
+		return m, nil
 	case "/json_rpc":
+		// legacy path — prefer /getorderbook
 		m.obData = msg.result
 		m.obUpdating = false
 		m.currentView = viewOrderbook

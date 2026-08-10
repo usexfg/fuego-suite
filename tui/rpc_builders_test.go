@@ -254,6 +254,115 @@ func TestPaymentGateRegistersTuiMethods(t *testing.T) {
 	}
 }
 
+// Structural: PaymentGate heatDeposit must call heatDepositV10, never createDeposit.
+func TestPaymentGateHeatDepositIsNotCreateDeposit(t *testing.T) {
+	path := "../src/PaymentGate/WalletService.cpp"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("WalletService source not found:", err)
+	}
+	src := string(b)
+	// Isolate the heatDeposit function body between its signature and the next method
+	start := strings.Index(src, "WalletService::heatDeposit(")
+	if start < 0 {
+		t.Fatal("WalletService::heatDeposit not found")
+	}
+	// next method after heatDeposit
+	rest := src[start:]
+	// find end: next "std::error_code WalletService::" after start of body
+	bodyStart := strings.Index(rest, "{")
+	if bodyStart < 0 {
+		t.Fatal("heatDeposit body start not found")
+	}
+	// crude: take until next WalletService:: after body start
+	after := rest[bodyStart:]
+	nextFn := strings.Index(after[1:], "WalletService::")
+	var body string
+	if nextFn > 0 {
+		body = after[:nextFn+1]
+	} else {
+		body = after
+	}
+	if strings.Contains(body, "createDeposit(") {
+		t.Fatal("heatDeposit must not call createDeposit (XFG path / DEPOSIT_MIN_TERM)")
+	}
+	if !strings.Contains(body, "heatDepositV10") {
+		t.Fatal("heatDeposit must call WalletGreen::heatDepositV10")
+	}
+}
+
+// Structural: WalletGreen heatDepositV10 exists and selects HEAT_TERM deposits.
+func TestWalletGreenHeatDepositSpendsHeatTerm(t *testing.T) {
+	path := "../src/Wallet/WalletGreen.cpp"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("WalletGreen source not found:", err)
+	}
+	src := string(b)
+	start := strings.Index(src, "WalletGreen::heatDepositV10(")
+	if start < 0 {
+		t.Fatal("WalletGreen::heatDepositV10 not found")
+	}
+	rest := src[start:]
+	end := strings.Index(rest, "WalletGreen::ammSwapV10(")
+	if end < 0 {
+		end = len(rest)
+	}
+	window := rest[:end]
+	if !strings.Contains(window, "HEAT_TERM") {
+		t.Fatal("heatDepositV10 must select HEAT_TERM deposits")
+	}
+	if !strings.Contains(window, "termEpochs") {
+		t.Fatal("heatDepositV10 must take epoch terms")
+	}
+	if !strings.Contains(window, "signInputCommitmentSpend") {
+		t.Fatal("heatDepositV10 must spend HEAT via commitment inputs")
+	}
+	// must not be a thin createDeposit wrapper
+	if strings.Contains(window, "createDeposit(") {
+		t.Fatal("heatDepositV10 must not call createDeposit")
+	}
+}
+
+// Structural: ammSwapV10 direction 1 spends HEAT commitment deposits.
+func TestWalletGreenAmmSwapDir1SpendsHeat(t *testing.T) {
+	path := "../src/Wallet/WalletGreen.cpp"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("WalletGreen source not found:", err)
+	}
+	src := string(b)
+	start := strings.Index(src, "WalletGreen::ammSwapV10(")
+	if start < 0 {
+		t.Fatal("ammSwapV10 not found")
+	}
+	// take function window until sendHeatV10
+	rest := src[start:]
+	end := strings.Index(rest, "WalletGreen::sendHeatV10(")
+	if end < 0 {
+		end = len(rest)
+		if end > 12000 {
+			end = 12000
+		}
+	}
+	body := rest[:end]
+	if !strings.Contains(body, "direction == 1") && !strings.Contains(body, "direction ==1") {
+		// HEAT→XFG branch present after direction==0 early return
+		if !strings.Contains(body, "HEAT→XFG") && !strings.Contains(body, "Insufficient unlocked HEAT for AMM swap") {
+			t.Fatal("ammSwapV10 missing HEAT→XFG branch")
+		}
+	}
+	if !strings.Contains(body, "signInputCommitmentSpend") {
+		t.Fatal("ammSwapV10 HEAT→XFG must use commitment spends")
+	}
+	if !strings.Contains(body, "DEPOSIT_TERM_POOL_HEAT") {
+		t.Fatal("ammSwapV10 HEAT→XFG must deposit HEAT to pool")
+	}
+	if !strings.Contains(body, "addAmmSwapAuthToExtra") {
+		t.Fatal("ammSwapV10 must attach AMM auth extra")
+	}
+}
+
 // Structural: menu exposes every in-scope feature (atomic swaps excluded).
 func TestMenuCoversInScopeFeatures(t *testing.T) {
 	needles := []string{

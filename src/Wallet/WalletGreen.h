@@ -54,6 +54,9 @@ public:
   /* HEAT v10 operations */
   virtual void mintHeatV10(uint64_t xfgBurned, uint64_t heatMinted, uint64_t fee, uint64_t mixin, std::string &transactionHash);
   virtual void sendHeatV10(const std::string &recipient, uint64_t amount, uint64_t fee, uint64_t mixin, std::string &transactionHash);
+  /* HEAT CD: spend unlocked HEAT_TERM deposits → finite-term CD commitment (not createDeposit/XFG) */
+  void heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixin,
+                      std::string &transactionHash);
   /* Hearth / CD bridges used by PaymentGate (TUI surface) */
   void ammSwapV10(uint8_t direction, uint64_t inputAmount, uint64_t expectedOutput, uint64_t minOutput,
                   uint64_t fee, uint64_t mixin, std::string &transactionHash);

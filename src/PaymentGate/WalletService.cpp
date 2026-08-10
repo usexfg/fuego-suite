@@ -2597,20 +2597,37 @@ namespace PaymentService
   std::error_code WalletService::heatDeposit(
       uint64_t amount,
       uint32_t termEpochs,
-      uint64_t /*bankingFee*/,
-      uint64_t /*mixin*/,
-      const std::string &sourceAddress,
+      uint64_t bankingFee,
+      uint64_t mixin,
+      const std::string &/*sourceAddress*/,
       std::string &transactionHash)
   {
-    // PaymentGate / WalletGreen path: term-locked HEAT CD via createDeposit
-    // (term != HEAT_TERM). Matches TUI heat_deposit payload.
+    // Spend unlocked HEAT (HEAT_TERM) → finite-term HEAT CD. Must NOT use createDeposit
+    // (createDeposit spends XFG and enforces DEPOSIT_MIN_TERM block terms).
     if (amount == 0 || termEpochs == 0) {
       return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
     }
-    if (termEpochs == CryptoNote::parameters::HEAT_TERM) {
-      return make_error_code(CryptoNote::error::WRONG_PARAMETERS);
+    try
+    {
+      System::EventLock lk(readyEvent);
+      auto *green = dynamic_cast<CryptoNote::WalletGreen *>(&wallet);
+      if (!green) {
+        return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+      }
+      uint64_t fee = currency.minimumFee();
+      green->heatDepositV10(amount, termEpochs, bankingFee, fee, mixin, transactionHash);
     }
-    return createDeposit(amount, termEpochs, sourceAddress, transactionHash);
+    catch (std::system_error &x)
+    {
+      logger(Logging::WARNING) << "heat_deposit failed: " << x.what();
+      return x.code();
+    }
+    catch (std::exception &x)
+    {
+      logger(Logging::WARNING) << "heat_deposit failed: " << x.what();
+      return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+    }
+    return std::error_code();
   }
 
   std::error_code WalletService::ammSwap(

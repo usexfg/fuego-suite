@@ -353,6 +353,318 @@ select.form-input {
 }
 .chart-container.tv { height: 360px; }
 
+/* ── DeXFG page ── */
+.dexfg-page {
+  padding: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.dexfg-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.dexfg-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.dexfg-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.dexfg-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: stretch;
+}
+.bridge-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+.selected-offer-summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* ── Ordergraph ── */
+.ordergraph-card { margin-bottom: 16px; }
+.ordergraph-body {
+  position: relative;
+  padding: 12px 12px 16px !important;
+  overflow-x: auto;
+}
+.ordergraph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: auto;
+  margin-right: 12px;
+}
+.og-leg { display: inline-flex; align-items: center; gap: 6px; }
+.og-leg.muted { color: var(--text-muted); }
+.og-disc {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+.og-disc.sell-xfg {
+  box-shadow: 0 0 0 1.5px rgba(255, 107, 53, 0.9);
+}
+.og-disc img {
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.ordergraph-wrap {
+  display: flex;
+  gap: 6px;
+  min-width: 720px;
+}
+.ordergraph-y {
+  width: 52px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 4px 4px 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1.2;
+  height: 280px;
+}
+.ordergraph-y .fair-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ordergraph-plot {
+  flex: 1;
+  position: relative;
+  height: 280px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, transparent 49.5%, rgba(255,107,53,0.04) 49.5%, rgba(255,107,53,0.04) 50.5%, transparent 50.5%);
+}
+.ordergraph-fair-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px dashed rgba(255, 107, 53, 0.5);
+  pointer-events: none;
+  z-index: 1;
+}
+.ordergraph-cols {
+  display: grid;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+}
+.ordergraph-col {
+  position: relative;
+  border-right: 1px solid rgba(42, 42, 58, 0.45);
+  min-width: 0;
+}
+.ordergraph-col:last-child { border-right: none; }
+.ordergraph-col.dim { opacity: 0.35; }
+.ordergraph-marker {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  z-index: 2;
+}
+.ordergraph-marker:hover,
+.ordergraph-marker.selected {
+  transform: translate(-50%, 50%) scale(1.14);
+  z-index: 5;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.25), 0 4px 12px rgba(0,0,0,0.45);
+}
+.ordergraph-marker.sell-xfg {
+  box-shadow: 0 0 0 1.5px rgba(255, 107, 53, 0.9), 0 2px 8px rgba(255, 107, 53, 0.25);
+}
+.ordergraph-marker.selected.sell-xfg {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(255, 107, 53, 0.4);
+}
+.ordergraph-marker img {
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+  border-radius: 50%;
+  pointer-events: none;
+  background: rgba(0,0,0,0.12);
+}
+.ordergraph-axis {
+  display: grid;
+  margin-top: 10px;
+  margin-left: 58px;
+  min-width: 720px;
+}
+.ordergraph-axis-cell {
+  text-align: center;
+  padding: 0 2px;
+  min-width: 0;
+}
+.ordergraph-axis-cell.empty .chain-name,
+.ordergraph-axis-cell.empty .chain-ticker {
+  opacity: 0.35;
+}
+.ordergraph-depth {
+  height: 3px;
+  background: var(--bg-primary);
+  border-radius: 2px;
+  margin: 0 6px 5px;
+  overflow: hidden;
+}
+.ordergraph-depth > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.ordergraph-axis-cell .chain-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ordergraph-axis-cell .chain-ticker {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.ordergraph-axis-cell .chain-count {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.ordergraph-tooltip {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  max-width: 240px;
+  font-family: var(--font-mono);
+}
+.ordergraph-tooltip strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ── Orderbook list ── */
+.ob-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.ob-row:hover { background: rgba(255,255,255,0.02); }
+.ob-row.selected {
+  background: rgba(255, 107, 53, 0.08);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.ob-main { min-width: 0; }
+.ob-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ob-marker {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+.ob-marker.sell-xfg {
+  box-shadow: 0 0 0 1.5px rgba(255, 107, 53, 0.9);
+}
+.ob-marker img {
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.ob-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.ob-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.ob-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px 12px;
+  font-size: 12px;
+}
+.ob-grid .k {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+.ob-grid .v {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+.ob-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 120px;
+}
+.ob-actions .btn {
+  font-size: 12px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
 /* ── Swap Bridge Card ── */
 .bridge-card {
   background: var(--bg-card);

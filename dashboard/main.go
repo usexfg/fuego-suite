@@ -564,6 +564,20 @@ func main() {
 	// Wallet proxy (direct)
 	mux.HandleFunc("/wallet_rpc", proxyHandler(walletProxy))
 
+	// Swap daemon status (offers + active swaps JSON from xfg-swapd HTTP root)
+	if cfg.SwapdPort > 0 {
+		swapdTarget := fmt.Sprintf("http://127.0.0.1:%d", cfg.SwapdPort)
+		swapdProxy := newReverseProxy(swapdTarget)
+		mux.HandleFunc("/api/swapd", func(w http.ResponseWriter, r *http.Request) {
+			r.URL.Path = "/"
+			swapdProxy.ServeHTTP(w, r)
+		})
+		mux.HandleFunc("/api/swapd/", func(w http.ResponseWriter, r *http.Request) {
+			r.URL.Path = "/"
+			swapdProxy.ServeHTTP(w, r)
+		})
+	}
+
 	// Static files
 	staticDir := "static"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {

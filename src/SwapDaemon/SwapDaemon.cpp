@@ -16,6 +16,7 @@
 #include "Common/Int128.h"
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
+#include "SwapHashLock.h"
 #include "SwapTimelock.h"
 #include "SwapTxBuilder.h"
 #include "../Treasury/VaultKeys.h"
@@ -43,6 +44,22 @@
 #include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
 #include "Gleec/GleecChainClient.h"
+#include "RobinhoodChain/RobinhoodChainClient.h"
+#include "Plasma/PlasmaChainClient.h"
+#include "Avalanche/AvalancheChainClient.h"
+#include "Cronos/CronosChainClient.h"
+#include "Bob/BobChainClient.h"
+#include "Unichain/UnichainChainClient.h"
+#include "Sia/SiaChainClient.h"
+#include "Sia/SiaHtlcScript.h"
+#include "Doge/DogeChainClient.h"
+#include "Dash/DashChainClient.h"
+#include "Zec/ZecChainClient.h"
+#include "PulseX/PulseXChainClient.h"
+#include "Zano/ZanoChainClient.h"
+#include "Monad/MonadChainClient.h"
+#include "Optimism/OptimismChainClient.h"
+#include "Ton/TonChainClient.h"
 #include "Spv/ElectrumSpvClient.h"
 #include "Spv/Neutrino/NeutrinoSpvClient.h"
 
@@ -319,11 +336,188 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
         chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
         chainCfg.gleecChainId);
+    // Prefer gleec-specific registry; fall back to eth registry only if unset.
+    const std::string gleecRegistry = !chainCfg.gleecHtlcRegistry.empty()
+        ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry;
+    applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, gleecRegistry, m_logger, "GLEEC");
     m_chainRegistry.registerChain(SwapPair::GLEEC,
         std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
     m_logger(Logging::INFO) << "GLEEC chain client registered: "
       << chainCfg.gleecHost << ":" << chainCfg.gleecPort
       << " (chainId=" << chainCfg.gleecChainId << ")";
+  }
+  // ROBINHOOD (Robinhood Chain — EVM L1)
+  if (!chainCfg.rhHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,
+        chainCfg.rhPrivKeyHex, chainCfg.rhAddress,
+        chainCfg.rhChainId);
+    applyHtlcConfig(*rpc, chainCfg.rhHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ROBINHOOD");
+    m_chainRegistry.registerChain(SwapPair::ROBINHOOD,
+        std::make_unique<RobinhoodChainClient>(std::move(rpc), chainCfg.rhAddress));
+    m_logger(Logging::INFO) << "ROBINHOOD chain client registered: "
+      << chainCfg.rhHost << ":" << chainCfg.rhPort
+      << " (chainId=" << chainCfg.rhChainId << ")";
+  }
+  // AVAX (Avalanche C-Chain — EVM, EIP-1559)
+  if (!chainCfg.avaxHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.avaxHost, chainCfg.avaxPort,
+        chainCfg.avaxPrivKeyHex, chainCfg.avaxAddress,
+        chainCfg.avaxChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.avaxHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "AVAX");
+    m_chainRegistry.registerChain(SwapPair::AVAX,
+        std::make_unique<AvalancheChainClient>(std::move(rpc), chainCfg.avaxAddress));
+    m_logger(Logging::INFO) << "AVAX chain client registered: "
+      << chainCfg.avaxHost << ":" << chainCfg.avaxPort
+      << " (chainId=" << chainCfg.avaxChainId << ")";
+  }
+  // CRO (Cronos — EVM)
+  if (!chainCfg.croHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.croHost, chainCfg.croPort,
+        chainCfg.croPrivKeyHex, chainCfg.croAddress,
+        chainCfg.croChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.croHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "CRO");
+    m_chainRegistry.registerChain(SwapPair::CRO,
+        std::make_unique<CronosChainClient>(std::move(rpc), chainCfg.croAddress));
+    m_logger(Logging::INFO) << "CRO chain client registered: "
+      << chainCfg.croHost << ":" << chainCfg.croPort
+      << " (chainId=" << chainCfg.croChainId << ")";
+  }
+  // BOB (Bob — OP Stack BTC rollup, EVM)
+  if (!chainCfg.bobHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.bobHost, chainCfg.bobPort,
+        chainCfg.bobPrivKeyHex, chainCfg.bobAddress,
+        chainCfg.bobChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.bobHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "BOB");
+    m_chainRegistry.registerChain(SwapPair::BOB,
+        std::make_unique<BobChainClient>(std::move(rpc), chainCfg.bobAddress));
+    m_logger(Logging::INFO) << "BOB chain client registered: "
+      << chainCfg.bobHost << ":" << chainCfg.bobPort
+      << " (chainId=" << chainCfg.bobChainId << ")";
+  }
+  // Sia (SC) — siad/walletd HTTP API, Blake2b-256 hashlock
+  if (!chainCfg.siaHost.empty()) {
+    auto rpc = std::make_unique<SiaRpcClient>(
+        chainCfg.siaHost, chainCfg.siaPort, chainCfg.siaApiPassword);
+    m_chainRegistry.registerChain(SwapPair::SIA,
+        std::make_unique<SiaChainClient>(std::move(rpc)));
+    m_logger(Logging::INFO) << "SIA chain client registered: "
+      << chainCfg.siaHost << ":" << chainCfg.siaPort;
+  }
+  // UNICHAIN (Unichain — OP Stack EVM)
+  if (!chainCfg.uniHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.uniHost, chainCfg.uniPort,
+        chainCfg.uniPrivKeyHex, chainCfg.uniAddress,
+        chainCfg.uniChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.uniHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "UNICHAIN");
+    m_chainRegistry.registerChain(SwapPair::UNICHAIN,
+        std::make_unique<UnichainChainClient>(std::move(rpc), chainCfg.uniAddress));
+    m_logger(Logging::INFO) << "UNICHAIN chain client registered: "
+      << chainCfg.uniHost << ":" << chainCfg.uniPort
+      << " (chainId=" << chainCfg.uniChainId << ")";
+  }
+  // PLASMA (Plasma — EVM)
+  if (!chainCfg.plasmaHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.plasmaHost, chainCfg.plasmaPort,
+        chainCfg.plasmaPrivKeyHex, chainCfg.plasmaAddress,
+        chainCfg.plasmaChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.plasmaHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PLASMA");
+    m_chainRegistry.registerChain(SwapPair::PLASMA,
+        std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
+    m_logger(Logging::INFO) << "PLASMA chain client registered: "
+      << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort
+      << " (chainId=" << chainCfg.plasmaChainId << ")";
+  }
+  // DOGE (Dogecoin — pre-SegWit UTXO, P2SH + legacy sighash)
+  if (!chainCfg.dogeHost.empty()) {
+    auto rpc = std::make_unique<DogeRpcClient>(
+        chainCfg.dogeHost, chainCfg.dogePort,
+        chainCfg.dogeRpcUser, chainCfg.dogeRpcPass);
+    m_chainRegistry.registerChain(SwapPair::DOGE,
+        std::make_unique<DogeChainClient>(std::move(rpc), chainCfg.dogeWif));
+    m_logger(Logging::INFO) << "DOGE chain client registered: "
+      << chainCfg.dogeHost << ":" << chainCfg.dogePort;
+  }
+  // DASH (Dash — pre-SegWit UTXO, P2SH + legacy sighash)
+  if (!chainCfg.dashHost.empty()) {
+    auto rpc = std::make_unique<DashRpcClient>(
+        chainCfg.dashHost, chainCfg.dashPort,
+        chainCfg.dashRpcUser, chainCfg.dashRpcPass,
+        chainCfg.dashTestnet);
+    m_chainRegistry.registerChain(SwapPair::DASH,
+        std::make_unique<DashChainClient>(std::move(rpc), chainCfg.dashWif));
+    m_logger(Logging::INFO) << "DASH chain client registered: "
+      << chainCfg.dashHost << ":" << chainCfg.dashPort;
+  }
+  // ZEC (Zcash — transparent-only, v4 tx serialization + legacy sighash)
+  if (!chainCfg.zecHost.empty()) {
+    auto rpc = std::make_unique<ZecRpcClient>(
+        chainCfg.zecHost, chainCfg.zecPort,
+        chainCfg.zecRpcUser, chainCfg.zecRpcPass,
+        chainCfg.zecTestnet);
+    m_chainRegistry.registerChain(SwapPair::ZEC,
+        std::make_unique<ZecChainClient>(std::move(rpc), chainCfg.zecWif));
+    m_logger(Logging::INFO) << "ZEC chain client registered: "
+      << chainCfg.zecHost << ":" << chainCfg.zecPort;
+  }
+  // PULSEX (PulseChain — EVM, chain id 369)
+  if (!chainCfg.pulsexHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsexHost, chainCfg.pulsexPort,
+        chainCfg.pulsexPrivKeyHex, chainCfg.pulsexAddress,
+        chainCfg.pulsexChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.pulsexHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSEX");
+    m_chainRegistry.registerChain(SwapPair::PULSEX,
+        std::make_unique<PulseXChainClient>(std::move(rpc), chainCfg.pulsexAddress));
+    m_logger(Logging::INFO) << "PULSEX chain client registered: "
+      << chainCfg.pulsexHost << ":" << chainCfg.pulsexPort
+      << " (chainId=" << chainCfg.pulsexChainId << ")";
+  }
+  // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
+  if (!chainCfg.zanoDaemonHost.empty()) {
+    auto rpc = std::make_unique<ZanoRpcClient>(
+        chainCfg.zanoDaemonHost, chainCfg.zanoDaemonPort,
+        chainCfg.zanoWalletHost, chainCfg.zanoWalletPort);
+    m_chainRegistry.registerChain(SwapPair::ZANO,
+        std::make_unique<ZanoChainClient>(std::move(rpc),
+            chainCfg.zanoSpendKeyHex, chainCfg.zanoViewKeyHex));
+    m_logger(Logging::INFO) << "ZANO chain client registered: daemon "
+      << chainCfg.zanoDaemonHost << ":" << chainCfg.zanoDaemonPort
+      << " wallet " << chainCfg.zanoWalletHost << ":" << chainCfg.zanoWalletPort;
+  }
+  // MONAD (EVM L1, OP Stack — chain id 185, ~0.5s blocks)
+  if (!chainCfg.monadHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.monadHost, chainCfg.monadPort,
+        chainCfg.monadPrivKeyHex, chainCfg.monadAddress,
+        chainCfg.monadChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.monadHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "MONAD");
+    m_chainRegistry.registerChain(SwapPair::MONAD,
+        std::make_unique<MonadChainClient>(std::move(rpc), chainCfg.monadAddress));
+    m_logger(Logging::INFO) << "MONAD chain client registered: "
+      << chainCfg.monadHost << ":" << chainCfg.monadPort
+      << " (chainId=" << chainCfg.monadChainId << ")";
+  }
+  // OPTIMISM (EVM L2, OP Stack — chain id 10, ~2s blocks)
+  if (!chainCfg.opHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.opHost, chainCfg.opPort,
+        chainCfg.opPrivKeyHex, chainCfg.opAddress,
+        chainCfg.opChainId, EthTxType::Eip1559);
+    applyHtlcConfig(*rpc, chainCfg.opHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "OPTIMISM");
+    m_chainRegistry.registerChain(SwapPair::OPTIMISM,
+        std::make_unique<OptimismChainClient>(std::move(rpc), chainCfg.opAddress));
+    m_logger(Logging::INFO) << "OPTIMISM chain client registered: "
+      << chainCfg.opHost << ":" << chainCfg.opPort
+      << " (chainId=" << chainCfg.opChainId << ")";
+  }
+  // TON (The Open Network — TVM, account-based, FunC contracts)
+  if (!chainCfg.tonHost.empty()) {
+    auto rpc = std::make_unique<TonRpcClient>(
+        chainCfg.tonHost, chainCfg.tonPort,
+        chainCfg.tonRpcPass.empty() ? chainCfg.tonRpcUser : chainCfg.tonRpcPass,
+        chainCfg.tonHtlcAddress, chainCfg.tonWorkchain);
+    m_chainRegistry.registerChain(SwapPair::TON,
+        std::make_unique<TonChainClient>(std::move(rpc), chainCfg.tonWalletKey));
+    m_logger(Logging::INFO) << "TON chain client registered: "
+      << chainCfg.tonHost << ":" << chainCfg.tonPort
+      << (chainCfg.tonHtlcAddress.empty() ? "" : " htlc=" + chainCfg.tonHtlcAddress);
   }
   if (!chainCfg.dcrHost.empty() || chainCfg.dcrMode == "spv") {
     if (chainCfg.dcrMode == "spv" && !chainCfg.dcrSpvServers.empty()) {
@@ -793,11 +987,44 @@ bool SwapDaemon::initiate(SwapParams& params) {
   m_logger(Logging::DEBUGGING) << "Generated swap keypair: "
     << Common::podToHex(params.ourSwapPubKey);
 
+  // expectedPeerSwapPubKey: if caller pre-set it, KEY_EXCHANGE must match.
+  // If peerSwapPubKey was already known (offer), promote it to expected.
+  {
+    static const Crypto::PublicKey ZERO{};
+    if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) == 0 &&
+        std::memcmp(&params.peerSwapPubKey, &ZERO, sizeof(ZERO)) != 0) {
+      params.expectedPeerSwapPubKey = params.peerSwapPubKey;
+    }
+    if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) == 0) {
+      m_logger(Logging::WARNING)
+        << "No expectedPeerSwapPubKey set — first KEY_EXCHANGE will bind any valid signer "
+           "(set expected_peer_pubkey on initiate for anti-griefing)";
+    } else {
+      m_logger(Logging::INFO) << "  Expected peer pubkey bound: "
+        << Common::podToHex(params.expectedPeerSwapPubKey);
+    }
+  }
+
   SwapStateMachine sm(params);
 
   if (!m_db.saveSwap(sm)) {
     m_logger(Logging::ERROR) << "Failed to save swap to database";
     return false;
+  }
+
+  // Deliver our KEY_EXCHANGE so peer can bind us (they should set us as expected).
+  if (!params.peerEndpoint.empty()) {
+    PeerMessage kx;
+    kx.type = PeerMessageType::KEY_EXCHANGE;
+    kx.swapId = params.swapId;
+    kx.keyExchange.swapPubKey = params.ourSwapPubKey;
+    if (signPeerMessage(kx, params.ourSwapPubKey, params.ourSwapSecKey)) {
+      if (deliverPeerMessage(kx)) {
+        m_logger(Logging::INFO) << "Delivered KEY_EXCHANGE to peer";
+      } else {
+        m_logger(Logging::WARNING) << "KEY_EXCHANGE delivery failed — peer may connect later";
+      }
+    }
   }
 
   m_logger(Logging::INFO) << "Swap initiated: " << params.swapId;
@@ -806,7 +1033,8 @@ bool SwapDaemon::initiate(SwapParams& params) {
   m_logger(Logging::DEBUGGING) << "  XFG amount: " << params.xfgAmount << " atomic";
   m_logger(Logging::DEBUGGING) << "  CTR amount: " << params.ctrAmount << " atomic";
   m_logger(Logging::INFO) << "  Timeout height: " << params.xfgTimeoutHeight;
-  m_logger(Logging::DEBUGGING) << "  Our swap pubkey: " << Common::podToHex(params.ourSwapPubKey);
+  m_logger(Logging::INFO) << "  Our swap pubkey (give to peer as expected_peer_pubkey): "
+    << Common::podToHex(params.ourSwapPubKey);
   m_logger(Logging::INFO) << "  Share this swap ID with your counterparty: " << params.swapId;
 
   return true;
@@ -830,6 +1058,24 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
   
   auto& params = sm.params();
   std::string warning = "";
+
+  // Peer identity: if already bound, lock expected to that key.
+  // If expected is set and peer is set, they must match.
+  {
+    static const Crypto::PublicKey ZERO{};
+    const bool hasPeer = std::memcmp(&params.peerSwapPubKey, &ZERO, sizeof(ZERO)) != 0;
+    const bool hasExpected = std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) != 0;
+    if (hasPeer && !hasExpected) {
+      params.expectedPeerSwapPubKey = params.peerSwapPubKey;
+      m_logger(Logging::INFO) << "  Locked expectedPeerSwapPubKey from bound peer";
+    } else if (hasPeer && hasExpected &&
+               std::memcmp(&params.peerSwapPubKey, &params.expectedPeerSwapPubKey,
+                           sizeof(Crypto::PublicKey)) != 0) {
+      const std::string msg = "peerSwapPubKey does not match expectedPeerSwapPubKey — refusing accept";
+      m_logger(Logging::ERROR) << msg;
+      return {false, msg};
+    }
+  }
 
   uint32_t currentHeight = 0;
   m_rpc.getHeight(currentHeight);
@@ -1300,6 +1546,18 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
     m_logger(Logging::INFO) << "  Pre-sigs ready. Alice locking counterparty ("
       << swapPairToString(params.pair) << ") with H(t)...";
 
+    // Hard-gate: must have verified adaptor point + H(t) before locking value.
+    {
+      static const Crypto::PublicKey ZERO_PK{};
+      static const Crypto::Hash ZERO_H{};
+      if (std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) == 0 ||
+          std::memcmp(&params.hashLock, &ZERO_H, sizeof(ZERO_H)) == 0) {
+        m_logger(Logging::ERROR)
+          << "  Refusing CTR lock: adaptor point / hashLock not set (DLEQ exchange incomplete)";
+        return false;
+      }
+    }
+
     auto* client = m_chainRegistry.getClient(params.pair);
     if (!client) {
       m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
@@ -1386,6 +1644,23 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       m_logger(Logging::INFO) << "  " << client->chainName()
         << " claimed, txid: " << result.txId;
       params.adaptorSecretRevealedToPeer = true;  // on-chain reveal
+      params.ctrClaimTxId = result.txId;
+      // Append claim txid to chainState so peers that share state can extract.
+      if (!params.chainState.empty() && params.chainState.find(':') == std::string::npos
+          && !result.txId.empty()) {
+        params.chainState = params.chainState + ":" + result.txId;
+      }
+      // Push SECRET_REVEAL so Alice learns t even without chain indexer.
+      {
+        PeerMessage rev;
+        rev.type = PeerMessageType::SECRET_REVEAL;
+        rev.swapId = params.swapId;
+        rev.secretReveal.adaptorSecret = params.adaptorSecret;
+        rev.secretReveal.claimTxId = result.txId;
+        if (signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey)) {
+          deliverPeerMessage(rev);
+        }
+      }
       sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
       m_db.saveSwap(sm);
       return true;
@@ -1414,6 +1689,12 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
     return true;
   }
 
+  // Prefer known claim txid (from SECRET_REVEAL) for extract paths that need it.
+  if (!params.ctrClaimTxId.empty() && !params.chainState.empty()
+      && params.chainState.find(':') == std::string::npos) {
+    params.chainState = params.chainState + ":" + params.ctrClaimTxId;
+  }
+
   std::string claimedHex = client->tryExtractClaimedSecret(params);
   if (claimedHex.empty() || claimedHex.size() != 64) {
     m_logger(Logging::INFO) << "  " << swapPairToString(params.pair)
@@ -1426,10 +1707,52 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
     m_logger(Logging::ERROR) << "  Invalid extracted preimage hex";
     return false;
   }
-  // Optionally check H(claimed) matches our hashLock when set
+
+  // Bind extracted preimage to adaptor point T and published hashLock.
+  Crypto::PublicKey derivedT;
+  if (!Crypto::secret_key_to_public_key(claimed, derivedT) ||
+      std::memcmp(&derivedT, &params.adaptorPoint, sizeof(derivedT)) != 0) {
+    m_logger(Logging::ERROR) << "  Extracted preimage does not match adaptorPoint T — rejecting";
+    return false;
+  }
+  {
+    Crypto::Hash expectedH = params.hashLock;
+    bool hashSet = false;
+    for (size_t i = 0; i < sizeof(expectedH); ++i)
+      if (reinterpret_cast<const uint8_t*>(&expectedH)[i]) { hashSet = true; break; }
+    if (hashSet) {
+      Crypto::Hash computed{};
+      switch (params.pair) {
+        case SwapPair::BCH: case SwapPair::BTC: case SwapPair::LTC:
+        case SwapPair::DCR: case SwapPair::KMD_SPV:
+        case SwapPair::DOGE: case SwapPair::DASH: case SwapPair::ZEC:
+        case SwapPair::TON: {
+          std::string hex = bchHashLockHex(claimed);
+          Common::podFromHex(hex, computed);
+          break;
+        }
+        case SwapPair::SIA: {
+          auto md = SiaHtlcScript::blake2b256(
+              reinterpret_cast<const uint8_t*>(&claimed), 32);
+          std::memcpy(&computed, md.data(), 32);
+          break;
+        }
+        default: {
+          std::string hex = solHashLockHex(claimed);
+          Common::podFromHex(hex, computed);
+          break;
+        }
+      }
+      if (std::memcmp(&computed, &expectedH, sizeof(expectedH)) != 0) {
+        m_logger(Logging::ERROR) << "  Extracted preimage H(t) does not match hashLock — rejecting";
+        return false;
+      }
+    }
+  }
+
   params.adaptorSecret = claimed;
   params.adaptorSecretReceived = true;
-  m_logger(Logging::INFO) << "  Extracted adaptor secret from Bob's CTR claim";
+  m_logger(Logging::INFO) << "  Extracted adaptor secret from Bob's CTR claim (bound to T and H(t))";
   sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
   m_db.saveSwap(sm);
   return true;
@@ -2337,13 +2660,27 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "KEY_EXCHANGE with zero pubkey rejected";
           return false;
         }
+        // When an expected peer key is pre-bound (offer/handshake), require match.
+        if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO_KEY, sizeof(ZERO_KEY)) != 0) {
+          if (std::memcmp(&msg.keyExchange.swapPubKey, &params.expectedPeerSwapPubKey,
+                          sizeof(Crypto::PublicKey)) != 0) {
+            m_logger(Logging::WARNING)
+              << "KEY_EXCHANGE rejected: pubkey does not match expectedPeerSwapPubKey for "
+              << msg.swapId;
+            return false;
+          }
+        }
         if (!verifyPeerMessage(msg, msg.keyExchange.swapPubKey)) {
           m_logger(Logging::WARNING) << "KEY_EXCHANGE signature invalid for swap " << msg.swapId;
           return false;
         }
         params.peerSwapPubKey = msg.keyExchange.swapPubKey;
+        // Once bound, freeze expected so later identity changes are impossible.
+        params.expectedPeerSwapPubKey = msg.keyExchange.swapPubKey;
         if (!adaptor_key_aggregate(params)) return false;
         sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+        m_logger(Logging::INFO) << "KEY_EXCHANGE bound peer "
+          << Common::podToHex(params.peerSwapPubKey);
         return true;
 
       default:
@@ -2402,7 +2739,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         return true;
 
       case PeerMessageType::SECRET_REVEAL: {
-        // Alice receives adaptor preimage t from Bob (Bob-locks HTLC model).
+        // Alice receives adaptor preimage t from Bob.
         // Verify T = t*G matches the negotiated adaptorPoint before accepting.
         if (params.role != SwapRole::ALICE) {
           m_logger(Logging::WARNING) << "SECRET_REVEAL ignored (not Alice)";
@@ -2419,7 +2756,16 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         }
         params.adaptorSecret = msg.secretReveal.adaptorSecret;
         params.adaptorSecretReceived = true;
+        if (!msg.secretReveal.claimTxId.empty()) {
+          params.ctrClaimTxId = msg.secretReveal.claimTxId;
+          if (!params.chainState.empty() && params.chainState.find(':') == std::string::npos) {
+            params.chainState = params.chainState + ":" + msg.secretReveal.claimTxId;
+          }
+        }
         m_logger(Logging::INFO) << "  Received adaptor secret from peer (verified against T)";
+        if (sm.currentState() == SwapState::ADAPTOR_CTR_LOCKED) {
+          sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+        }
         return true;
       }
 
@@ -2482,7 +2828,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::GLEEC); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(SwapPair::ZANO); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {
@@ -2557,6 +2903,13 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     return false;
   }
 
+  // Bind expected taker swap pubkey for later KEY_EXCHANGE (anti first-wins).
+  Crypto::PublicKey expectedTaker{};
+  if (!takerPubKey.empty() && !Common::podFromHex(takerPubKey, expectedTaker)) {
+    m_logger(Logging::WARNING) << "takerPubKey is not valid 32-byte hex — KEY_EXCHANGE will be open";
+    std::memset(&expectedTaker, 0, sizeof(expectedTaker));
+  }
+
   std::string lockId;
   std::string adaptorPoint;
   std::string preSig;
@@ -2564,6 +2917,28 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   if (!m_rpc.createAfkLock(fillAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig)) {
     m_logger(Logging::ERROR) << "Failed to create AFK lock for offer " << offerId;
     return false;
+  }
+
+  // Persist AFK swap record with expected peer identity when possible.
+  {
+    static const Crypto::PublicKey ZERO{};
+    if (std::memcmp(&expectedTaker, &ZERO, sizeof(ZERO)) != 0) {
+      SwapParams afkParams;
+      afkParams.swapId = lockId;
+      afkParams.pair = pair;
+      afkParams.role = SwapRole::BOB;
+      afkParams.xfgAmount = fillAmount;
+      afkParams.ctrAmount = requiredCtrAmount;
+      afkParams.expectedPeerSwapPubKey = expectedTaker;
+      afkParams.peerSwapPubKey = expectedTaker; // pre-bind offer identity
+      SwapStateMachine afkSm(afkParams);
+      afkSm.transition(SwapState::AFK_OFFER_LOCKED);
+      if (m_db.saveSwap(afkSm)) {
+        m_logger(Logging::INFO) << "AFK swap " << lockId
+          << " saved with expectedPeerSwapPubKey="
+          << Common::podToHex(expectedTaker);
+      }
+    }
   }
 
   m_logger(Logging::INFO) << "AFK lock " << lockId << " created for " << fillAmount
@@ -2631,6 +3006,14 @@ void SwapDaemon::setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicK
   m_makerSecretKey = sk;
   m_makerPublicKey = pk;
   m_makerKeysSet = true;
+  // Wire escrow secret encryption immediately so CLI paths (initiate without
+  // start()) can persist adaptorSecret / ourSwapSecKey safely.
+  std::string keyInput(Common::podToHex(m_makerSecretKey));
+  keyInput += "::swap-escrow-enc-key";
+  Crypto::cn_context ctx;
+  Crypto::Hash derived;
+  Crypto::cn_slow_hash(ctx, keyInput.data(), keyInput.size(), derived, 0, 0, 0);
+  m_db.setEncryptionKey(std::string(reinterpret_cast<const char*>(derived.data), sizeof(derived.data)));
 }
 
 bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
@@ -2672,6 +3055,10 @@ std::string SwapDaemon::buildStatusJson() {
            << ",\"filledAmount\":" << offers[i].filledAmount
            << ",\"rateNum\":" << offers[i].rateNum
            << ",\"postedHeight\":" << offers[i].postedHeight
+           << ",\"ttlBlocks\":" << offers[i].ttlBlocks
+           << ",\"timestamp\":" << offers[i].timestamp
+           << ",\"isSell\":" << (offers[i].isSell ? "true" : "false")
+           << ",\"isSoftOrder\":" << (offers[i].isSoftOrder ? "true" : "false")
            << "}";
     }
   }

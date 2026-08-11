@@ -34,6 +34,9 @@ func RunHeadless(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("wallet address: %w", err)
 	}
+	if len(addr) < 16 {
+		return fmt.Errorf("wallet address too short: %q", addr)
+	}
 	log.Printf("wallet connected: %s...%s", addr[:12], addr[len(addr)-8:])
 
 	info, err := client.GetInfo()
@@ -45,7 +48,7 @@ func RunHeadless(cfg Config) error {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	writeStatus := func(w http.ResponseWriter) {
 		bal, _ := wallet.GetBalance()
 		var totalOffers int
 		for _, p := range ActivePairs {
@@ -53,16 +56,29 @@ func RunHeadless(cfg Config) error {
 			totalOffers += len(offers)
 		}
 		resp := map[string]interface{}{
+			"status":    "ok",
 			"wallet":    addr[:12] + "...",
-			"connected": wallet.IsConnected(),
+			"connected": true,
 			"offers":    totalOffers,
 		}
 		if bal != nil {
 			resp["available"] = FormatBalance(bal.Available)
 			resp["locked"] = FormatBalance(bal.Locked)
 		}
+		if info != nil {
+			resp["height"] = info.Height
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+	}
+
+	// /status — control API (headless)
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		writeStatus(w)
+	})
+	// /health — compatibility with wallet DaemonManager probes
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		writeStatus(w)
 	})
 
 	mux.HandleFunc("/offer", func(w http.ResponseWriter, r *http.Request) {

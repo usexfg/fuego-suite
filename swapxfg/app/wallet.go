@@ -1,7 +1,12 @@
 // swapxfg/app/wallet.go
 package app
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+)
 
 // WalletClient talks to the local fire_wallet JSON-RPC.
 // Reuses FuegoClient's HTTP machinery pointed at the wallet endpoint.
@@ -102,20 +107,44 @@ func (w *WalletClient) CreateAfkLock(amount uint64, timeoutHrs uint32, pair uint
 }
 
 func (w *WalletClient) GetAddress() (string, error) {
-	var outer struct {
-		Result struct {
-			Address string `json:"address"`
-		} `json:"result"`
+	// fuego_walletd / walletd expose different method names across versions.
+	for _, method := range []string{"getAddresses", "getAddress", "get_address"} {
+		var outer struct {
+			Result struct {
+				Address   string   `json:"address"`
+				Addresses []string `json:"addresses"`
+			} `json:"result"`
+		}
+		if err := w.fc.post("/json_rpc", map[string]interface{}{
+			"jsonrpc": "2.0",
+			"method":  method,
+			"params":  map[string]interface{}{},
+			"id":      1,
+		}, &outer); err != nil {
+			continue
+		}
+		if outer.Result.Address != "" {
+			return outer.Result.Address, nil
+		}
+		if len(outer.Result.Addresses) > 0 && outer.Result.Addresses[0] != "" {
+			return outer.Result.Addresses[0], nil
+		}
 	}
-	if err := w.fc.post("/json_rpc", map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "get_address",
-		"params":  map[string]interface{}{},
-		"id":      1,
-	}, &outer); err != nil {
-		return "", err
+	// Last resort: parse GET /health wallet.address (fuego_walletd)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(w.fc.endpoint + "/health")
+	if err == nil {
+		defer resp.Body.Close()
+		var health struct {
+			Wallet struct {
+				Address string `json:"address"`
+			} `json:"wallet"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&health) == nil && health.Wallet.Address != "" {
+			return health.Wallet.Address, nil
+		}
 	}
-	return outer.Result.Address, nil
+	return "", fmt.Errorf("wallet address unavailable")
 }
 
 func (w *WalletClient) SignOffer(xfgAmount, rateNum uint64, pair uint8, ttlBlocks uint32, isSell bool) (*SignedOffer, error) {

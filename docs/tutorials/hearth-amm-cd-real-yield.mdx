@@ -1,199 +1,48 @@
 ---
-title: "How to Earn Sustainable Real Yield with Crypto Certificates of Deposit"
-description: "A definitive technical guide to Fuego's decentralized constant-product real yield engine. Discover how on-chain swap volume across the Hearth AMM automatically populates the HEAT Certificate of Deposit fee pool without dilutive token printing."
-keywords: [crypto certificate of deposit, decentralized AMM real yield, HEAT CD staking rates, Fuego real yield, fixed income DeFi, algorithmic stablecoin staking]
-author: "Fuego Core Implementation Guild"
-date: "2026-05-14"
+title: "Hearth, fees, and HEAT CD yield"
+description: "How Hearth and swapXFG fees fund HEAT CD yield under live constants."
+keywords: ["Hearth", "real yield", "HEAT CD", "fees", "fuego"]
 ---
 
-# How to Earn Sustainable Real Yield with Crypto Certificates of Deposit
+## Real yield, not emissions
 
-The vast majority of decentralized finance (DeFi) yield protocols operate as zero-sum ponzi schemes. They issue highly inflationary, governance-farmed tokens to bootstrap temporary liquidity, resulting in massive supply dilution, capital flight, and eventual token devaluation.
+HEAT CD yield is paid from **fees**, not token printing.
 
-**Fuego v1.10.00 "AzorAhai"** introduces a fundamentally sovereign alternative: **Crypto Certificates of Deposit (CDs)** backed by pure, unadulterated **Real Yield**. Rather than printing new units out of thin air, Fuego CDs capture programmatic transaction fees directly from native base-layer economic activity.
+## Two fee engines
 
-This manual outlines the architectural pipeline of the **Hearth AMM fee accumulator**, details the deterministic math behind the **80/20 allocation loop**, provides an illustrative APY projection matrix, and demonstrates how to deploy and manage compounding CD strategies via direct terminal RPC access.
+### 1) swapXFG (cross-chain)
 
----
+- Rate: **1%** of XFG side (`SWAP_FEE_RATE_BPS = 100`)
+- Split: **69% CD · 11% Bonus Vault · 20% Treasury**
 
-## 1. The Real Yield Infrastructure: Hearth AMM
+### 2) Hearth (XFG/HEAT on-chain)
 
-Fuego operates a native constant-product Automated Market Maker directly inside its consensus execution rules: the **Hearth AMM** ($R_{\text{xfg}} \times R_{\text{heat}} = K$). 
+- Rate: **1%** (`HEARTH_FEE_BPS = 100`)
+- Split: **50% CD · 50% LP** (`cdFee = total/2`)
 
-Every exchange executed across this embedded pool incurs a non-negotiable **1% (100 bps) swap fee**. Because the AMM is built directly into the L1 block verification layer (`AmmPool.cpp`), these fees cannot be intercepted, re-routed, or captured by centralized third-party aggregators.
+## User path
 
-### The Automated 80/20 Accumulation Cycle
-
-```mermaid
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#111111',
-    'primaryTextColor': '#FF4500',
-    'primaryBorderColor': '#7F7F7F',
-    'lineColor': '#FF4500',
-    'secondaryColor': '#050505',
-    'tertiaryColor': '#1A1A1A',
-    'background': '#050505'
-  }
-}}%%
-graph TD
-    subgraph "L1 Base Economy [Hearth AMM]"
-        Swaps["On-Chain XFG ↔ HEAT Swaps<br>(1% Flat Fee Harvested)"]
-    end
-    
-    subgraph "Epoch Boundary (Every 900 Blocks)"
-        Harvest["Auto-Harvest Protocol Reserves"]
-    end
-    
-    subgraph "Deterministic Fee Routing"
-        Treasury["20% Infrastructure Treasury<br>(Open Source Maintenance)"]
-        CDPool["80% HEAT CD Fee Pool<br>(Auto-Converted to Stable Cash)"]
-    end
-    
-    subgraph "Pro-Rata Settlement"
-        Stakers["HEAT Certificate of Deposit Holders<br>(Continuous Epoch Yield Distributions)"]
-    end
-    
-    Swaps -->|Accumulates Reserves| Harvest
-    Harvest -->|Immutable Split| Treasury
-    Harvest -->|Direct Allocation| CDPool
-    CDPool -->|Pro-Rata APY| Stakers
+```
+Mint HEAT from XFG (Hearth TWAP)
+  → Lock HEAT CD (6–72 epochs mainnet)
+  → Fees from swaps + Hearth accrue to CD pool
+  → Withdraw or rollover at maturity
 ```
 
-At the completion of every **Epoch Boundary** (precisely **900 blocks** on Mainnet, or **10 blocks** on Testnet), the block producer executes an automated, trustless settlement transaction:
-1. **80% of all accumulated fees** are injected directly into the **HEAT CD Fee Pool**. If swap fees were captured in base-layer XFG collateral, the protocol automatically swaps them against the Hearth AMM to settle yields purely in non-volatile algorithmic **HEAT**.
-2. **20% of accumulated fees** are directed to the **Fuego Treasury** to ensure absolute long-term financial self-sufficiency for core contributors and audit groups.
+## Epochs
 
----
+Mainnet epoch = **900 blocks** (~5 days at ~480s). Distribution and accounting are epoch-scoped.
 
-## 2. Yield Distribution & Epoch Math
+## Superseded claims (do not use)
 
-Unlike standard staking mechanics that require daily claiming gas costs, Fuego CDs calculate reward entitlements continuously over distinct epoch buckets.
+The following are **incorrect** for current code and must not be treated as product facts:
 
-### Individual Reward Entitlement Formula
+- Hearth protocol trade fee of 0.3% (live: **1%** `HEARTH_FEE_BPS`, 50/50 CD/LP)
+- Atomic swap fees “80% to CDs only” (live: **69% CD / 11% Bonus / 20% Treasury**)
+- Opening a CD by locking **XFG** (live: lock **HEAT** after mint)
 
-During any given epoch $E$, your CD deposit's pro-rata claim is determined by its asset weight relative to the global active CD tree:
+## Further reading
 
-$$\text{UserClaim}_E = \text{TotalPoolFees}_E \times \left( \frac{\text{Principal}_{\text{user}}}{\sum \text{Principal}_{\text{active}}} \right)$$
-
-Because fee distribution is settled entirely in algorithmic **HEAT Cash**, stakers are completely immunized against the base asset fiat volatility swings that typically erode yield valuations in standard crypto pools.
-
----
-
-## 3. Illustrative APY Projections Matrix
-
-To assist capital allocators and node operators in mapping expected returns, the following matrix models annualized percentage yields (APYs) under highly conservative, moderate, and hyper-active daily trading volumes.
-
-> [!NOTE]
-> **Deterministic Parameters**
-> * Base CD Pool TVL: **1,000,000 HEAT**
-> * Mainnet Block Target: **60 seconds** (900 blocks $\approx$ 15 hours per Epoch)
-> * Native Swap Fee: **1.0%** (80% routed to stakers $\rightarrow$ **0.8% net capture**)
-
-| Market Condition | Daily Swap Volume | Daily Fee Capture (Net) | Epoch Fee Pool Inflow | Projected Annualized APY |
-| :--- | :--- | :--- | :--- | :--- |
-| **Dormant / Bootstrapping** | 50,000 HEAT | 400 HEAT | 250 HEAT | **14.60%** |
-| **Moderate Baseline** | 250,000 HEAT | 2,000 HEAT | 1,250 HEAT | **73.00%** |
-| **High Arbitrage Activity** | 1,000,000 HEAT | 8,000 HEAT | 5,000 HEAT | **292.00%** |
-
-*Disclaimer: Projections represent deterministic calculations derived from fixed mathematical parameters. Actual returns scale linearly with active global network utility and trade volume.*
-
----
-
-## 4. Deploying & Compounding via Terminal CLI
-
-Operating natively without vulnerable web frontends, users can lock capital, query yields, and execute autocompounding rollovers directly via local node RPC execution.
-
-### Step 1: Querying Active Fee Pool Metrics
-Verify the current financial state of the epoch pool before allocating capital:
-
-```bash
-curl -s -X POST http://127.0.0.1:18183/json_rpc \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "0",
-    "method": "get_fee_pool_info",
-    "params": {}
-  }' | jq .
-```
-
-*Expected JSON output highlighting active reserves:*
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "current_epoch_number": 936,
-    "current_epoch_swap_fees": 4250000000,
-    "current_epoch_blocks_remaining": 142
-  }
-}
-```
-
-### Step 2: Creating a Real-Yield Certificate of Deposit
-Lock **HEAT Cash** into a time-bound cryptographic commitment. The second argument dictates term duration measured in epochs (e.g., locking for `6` epochs $\approx$ 3.75 days):
-
-```bash
-# Using Fuego suite local daemon integration
-./fuego_suite --testnet
-# Navigate workspace -> Select 'Create CD Commitment'
-```
-
-Alternatively, push the raw structure via wallet rpc calls:
-```bash
-curl -s -X POST http://127.0.0.1:18183/json_rpc \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "0",
-    "method": "create_cd_deposit",
-    "params": {
-      "amount": 50000000000,
-      "term_epochs": 6
-    }
-  }'
-```
-
-### Step 3: Compounding via Rollover Commitments
-To maximize capital growth, Fuego implements an internal **Rollover Engine** (`rollover_deposit`). Instead of withdrawing principal to a standard address and paying re-deposit transaction fees, stakers can seamlessly roll maturing principal plus accumulated real-yield interest directly into a new commitment:
-
-```bash
-curl -s -X POST http://127.0.0.1:18183/json_rpc \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "0",
-    "method": "rollover_deposit",
-    "params": {
-      "deposit_id": "cd_8f2b1a9c",
-      "new_term_epochs": 12
-    }
-  }'
-```
-
-Because your initial **HEAT** principal expands directly by the captured swap fee outputs, the next epoch calculation processes against the compounded sum, triggering exponential interest accumulation over multi-month staking parameters.
-
----
-
-## Summary: A Zero-Slippage Sovereign Income Asset
-
-By routing core base-layer liquidity demand through an integrated AMM and directly piping harvested swap transaction fees to time-locked savers, Fuego provides an exceptionally secure financial instrument. Users gain stable principal preservation, complete privacy isolation, and a continuous stream of yield derived from tangible real-world platform utility.
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "TechArticle",
-  "headline": "How to Earn Sustainable Real Yield with Crypto Certificates of Deposit",
-  "description": "Comprehensive tutorial detailing Fuego's native Hearth AMM 1% swap fee routing, 80/20 fee distribution parameters, epoch math, and terminal RPC command pipelines.",
-  "author": {
-    "@type": "Organization",
-    "name": "Fuego Core Implementation Guild"
-  },
-  "publisher": {
-    "@type": "Organization",
-    "name": "Fuego Foundation"
-  },
-  "datePublished": "2026-05-14"
-}
-</script>
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [Interest and yield](/features/commitment-deposits/interest-and-yield)
+- [Fee pool API](/api-reference/fee-pool)

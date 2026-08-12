@@ -1,0 +1,54 @@
+name: Docs check
+
+on:
+  push:
+    paths:
+      - "docs/**"
+      - "tests/docs/**"
+      - "src/CryptoNoteConfig.h"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "tests/docs/**"
+      - "src/CryptoNoteConfig.h"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  docs-alignment:
+    name: Fee + product docs alignment
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run docs fee/routing alignment tests
+        run: python3 tests/docs/test_docs_fee_routing_alignment.py
+
+  mintlify-validate:
+    name: Mintlify validate + broken links
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Mintlify validate
+        run: npx --yes mint@latest validate
+
+      - name: Mintlify broken-links
+        run: npx --yes mint@latest broken-links

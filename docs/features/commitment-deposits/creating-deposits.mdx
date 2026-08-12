@@ -1,81 +1,66 @@
 ---
-title: "Creating a commitment deposit"
-description: "Lock XFG for a term using the simplewallet CLI or walletd RPC."
-keywords: ["create deposit", "COLD", "lock xfg", "commit", "fuego"]
+title: "Creating a HEAT CD"
+description: "Lock HEAT for a term after minting — not XFG, not COLD."
+keywords: ["create deposit", "HEAT CD", "commitment deposit", "fuego"]
 ---
 
 ## Prerequisites
 
-- A running `fuegod` daemon (synced)
-- `simplewallet` connected to the daemon
-- Sufficient XFG balance (check with `balance`)
+- Synced daemon
+- Wallet with **HEAT** balance (mint first — [Mint HEAT](/features/heat/mint-heat))
+- Enough balance for the CD amount + network fee
 
-## Create a deposit — CLI
+## Critical rule
 
-```
-deposit <amount> <term>
-```
+| Action | Asset | Term |
+|--------|-------|------|
+| Mint HEAT | Burn **XFG** | `HEAT_TERM` / `mintHeatV10` |
+| Open CD | Lock **HEAT** | Real term (6–72 epochs on mainnet) |
 
-The `term` parameter is a code for the available terms:
+`createDeposit` with a normal term is for **HEAT CDs**. Do not use legacy `cold` / COLD commands as the product path.
 
-| Term code | Duration (mainnet) | Duration (testnet) |
-|-----------|-------------------|-------------------|
-| `3` | ~3 months (90 epochs) | ~90 testnet epochs |
-| `12` | ~12 months (365 epochs) | ~365 testnet epochs |
+## Create a CD
 
-Example — lock 10 XFG for approximately 3 months:
+Exact CLI names depend on wallet build. Conceptual:
 
 ```
-deposit 10 3
+# After HEAT is in the wallet:
+deposit <heat_amount> <term_epochs>
 ```
 
-The wallet prompts you to confirm, then broadcasts the transaction. On success it prints the deposit ID and the block height at which the deposit matures.
+Term bounds (mainnet): **6–72 epochs** (`CD_MIN_EPOCHS` … `CD_MAX_EPOCHS`). Testnet allows shorter minimums for testing.
 
-You can also use the `cold` command, which is identical:
+Example pattern — lock HEAT for the minimum term:
 
 ```
-cold 10 3
+deposit 10 6
 ```
+
+Confirm the wallet reports a **HEAT** CD (not a burn/mint and not COLD).
 
 ## What happens on-chain
 
-The transaction creates a `TransactionOutputCommitment` output. This output:
-- Proves the deposit exists at a specific maturity height
-- Hides the XFG amount behind a Pedersen commitment
-- Records a commitment key derived from your wallet secret
+- Output: `TransactionOutputCommitment` for HEAT
+- Amount hidden under commitment
+- Maturity height = creation height + term blocks
+- Deposit secret stored in **your wallet file** — back it up
 
-Your simplewallet stores the deposit secret locally. You need it to withdraw or transfer the deposit — keep your wallet file backed up.
+## Verify
 
-## Verify your deposit was created
+Use wallet list/info commands for deposits (avoid relying on deprecated `list_cold` / `cold_info` naming in older docs — if still present in a binary, they may be legacy aliases).
 
-```
-list_cold
-```
+RPC: see [Deposits API](/api-reference/deposits).
 
-This lists all your COLD deposits with their ID, amount, maturity height, and current status.
-
-```
-cold_info 0
-```
-
-Shows detailed information about deposit ID 0.
-
-## Testnet note
-
-On testnet, epochs are 10 blocks instead of 900. A "3-month" deposit matures in a fraction of the time, which is useful for testing maturity and withdrawal without waiting.
-
-<Tip>
-  Use testnet to practice the full lifecycle — create, wait for maturity, withdraw — before committing real XFG on mainnet.
-</Tip>
-
-## Estimate your yield first
-
-Before locking, you can estimate how much interest the deposit would earn:
+## Estimate yield
 
 ```bash
 curl -X POST http://127.0.0.1:28080/estimate_cd_yield \
   -H 'Content-Type: application/json' \
-  -d '{"amount": 10000000000, "creation_height": 0}'
+  -d '{"amount": 100000000, "creation_height": 0}'
 ```
 
-`amount` is in atomic units (1 XFG = 1,000,000,000 atomic units). The response includes `estimated_interest` based on recent fee pool history.
+Amounts are in **atomic units** where **1 coin = 10,000,000** atomic (`COIN = 1e7`), not 1e9.
+
+## Testnet
+
+Testnet epochs are **10 blocks**. Use testnet to practice mint → CD → maturity → withdraw before mainnet.

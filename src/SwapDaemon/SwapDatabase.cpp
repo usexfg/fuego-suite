@@ -64,6 +64,10 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
     auto& mutableSm = const_cast<SwapStateMachine&>(sm);
     if (!m_encKey.empty()) mutableSm.setEncryptionKey(m_encKey);
     std::string json = mutableSm.serialize();
+    // Refuse empty serialize (encryption key missing with live secrets, etc.)
+    if (json.empty()) {
+      return false;
+    }
     // Archive terminal swaps so the tick loop never loads them again.
     std::string path = sm.isTerminal()
         ? archiveFilePath(sm.params().swapId)

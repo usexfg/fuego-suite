@@ -1,0 +1,46 @@
+---
+title: "What is HEAT"
+description: "HEAT is Fuego’s flatcoin — mint by burning XFG, hold or lock as a CD."
+keywords: ["HEAT", "flatcoin", "mint", "XFG", "fuego"]
+---
+
+**HEAT** is Fuego’s native flatcoin: a colored / commitment-style asset intended to preserve purchasing power (peg reference **`HEAT_PEG_USD = 1.58`**, with CPI-adjustment design path). It is **not** a freezable USD stablecoin issuer product, and it is **not** minted by locking XFG into a “CD.”
+
+## How HEAT is created (current)
+
+1. You hold **XFG**.
+2. You call **`mintHeatV10()`** (wallet) — XFG is **burned**.
+3. HEAT is minted using **Hearth pool TWAP** pricing (spot pool rate if TWAP unavailable).
+
+```
+heatMinted ≈ xfgBurned × 10^18 / twap
+```
+
+Do **not** use legacy `convertXfgToHeat()` (fixed 10M:1 Embers_Heat ratio) for real minting.
+
+## What HEAT is for
+
+| Use | Description |
+|-----|-------------|
+| **Hold / transfer** | Private medium of exchange within Fuego |
+| **Certificate of Deposit** | Lock HEAT for a term; earn yield from protocol fees |
+| **Hearth trading** | Swap XFG ↔ HEAT on the on-chain market |
+
+## What HEAT is not
+
+| Myth | Reality |
+|------|---------|
+| “Lock XFG to get a CD” | CDs lock **HEAT** after mint |
+| “HEAT only via STARK burn2mint on Ethereum” | Primary path is **on-chain mint** (`mintHeatV10`). Historical STARK burn docs are deprecated |
+| “Embers_Heat = HEAT” | Embers_Heat is legacy / removed product language |
+| “Stablecoin with freeze” | No issuer freeze; CryptoNote privacy model |
+
+## Stylized mark
+
+Marketing may show **ΗΞΔŦ**. Product, RPC, and docs body use **HEAT**.
+
+## Next
+
+- [Mint HEAT](/features/heat/mint-heat)
+- [How CDs work](/features/commitment-deposits/how-cds-work)
+- [How Hearth works](/features/hearth/how-hearth-works)

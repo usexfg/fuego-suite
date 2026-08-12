@@ -22,7 +22,7 @@
 #include "../Logging/LoggerRef.h"
 
 // Forward-declare httplib to avoid pulling in the massive header.
-namespace httplib { class Server; }
+namespace httplib { class Server; class Request; }
 
 namespace XfgSwap {
 
@@ -32,14 +32,18 @@ class SwapDaemon;
 // Binds to 127.0.0.1 and exposes swap management methods.
 //
 // Methods:
-//   initiate_swap  {pair, xfg_amount, ctr_amount, peer} → {swap_id}
+//   initiate_swap  {pair, xfg_amount, ctr_amount, peer, expected_peer_pubkey}
+//                  → {swap_id, our_swap_pubkey}
 //   list_swaps     {}                                     → {swaps: [...]}
 //   swap_status    {swap_id}                              → {swap: {...}}
 //   refund         {swap_id}                              → {success}
 //   check_timeouts {}                                     → {refunded: [...]}
 class RpcServer {
 public:
-  RpcServer(SwapDaemon& daemon, Logging::ILogger& logger);
+  // controlToken: when non-empty, every mutating RPC requires header
+  // X-Swap-Token: <token> (or Authorization: Bearer <token>).
+  RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
+            const std::string& controlToken = {});
   ~RpcServer();
 
   // Start listening on the given port (127.0.0.1 only).
@@ -53,6 +57,7 @@ public:
 
 private:
   void registerRoutes();
+  bool authorize(const httplib::Request& req) const;
 
   // JSON-RPC dispatcher: parses body, routes to handler, returns JSON response.
   std::string dispatch(const std::string& body);
@@ -70,6 +75,7 @@ private:
 
   SwapDaemon& m_daemon;
   Logging::LoggerRef m_logger;
+  std::string m_controlToken;
   std::unique_ptr<httplib::Server> m_server;
   std::thread m_thread;
   std::atomic<bool> m_running{false};

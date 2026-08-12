@@ -1,0 +1,31 @@
+---
+title: "Providing Hearth liquidity"
+description: "Supply XFG/HEAT liquidity on Hearth and earn the LP share of the 1% fee."
+keywords: ["Hearth", "LP", "liquidity", "XFG", "HEAT"]
+---
+
+Liquidity providers supply inventory to Hearth so traders can swap XFG↔HEAT with depth.
+
+## What you earn
+
+Hearth charges **1%** (`HEARTH_FEE_BPS = 100`) on trades. Consensus splits that fee:
+
+- **50%** → CD yield accumulator  
+- **50%** → LPs (pro-rata to pool share)
+
+You do **not** earn the atomic-swap 1% stream unless you also hold HEAT CDs or Bonus Vault rights — that is a separate fee.
+
+## Practical notes
+
+- Prefer dual-sided XFG + HEAT inventory when the pool design requires both sides.
+- Price moves create **impermanent loss** relative to holding outside the pool; fee income may or may not offset it.
+- Use wallet / daemon RPC for your build (`lp_deposit` / pool methods if exposed). Exact CLI names vary by version — check `--help` and [API overview](/api-reference/overview).
+
+## Withdraw
+
+Withdrawing returns your share of reserves (subject to pool state) plus accrued LP fee credit for your position. Confirm maturity / unlock rules if your position is commitment-tagged (`DEPOSIT_TERM_LP` in protocol terms).
+
+## See also
+
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [Fee earning](/features/hearth/fee-earning)

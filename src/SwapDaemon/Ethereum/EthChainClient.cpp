@@ -62,10 +62,19 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
   // ctrLockTxId holds the HashedTimelock contractId (not a tx hash).
   // Verify amount + recipient + hashlock + not claimed/refunded via getContract.
+  // Prefer H(t) from adaptorSecret; Alice has only published hashLock — use that.
   std::string expectedHash;
   if (!isZeroSecret(params.adaptorSecret)) {
     expectedHash = ethHashLockHex(params.adaptorSecret);
+  } else {
+    bool nonzero = false;
+    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
+      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
+    if (nonzero)
+      expectedHash = Common::podToHex(params.hashLock);
   }
+  if (expectedHash.empty())
+    return ChainClientResult::fail(m_chainName + " verifyLock: no hashLock or adaptorSecret");
   bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount,
                               params.ctrAddress, expectedHash);
   if (!ok) return ChainClientResult::fail(m_chainName + " lock not verified");

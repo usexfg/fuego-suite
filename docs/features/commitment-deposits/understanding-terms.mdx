@@ -1,59 +1,55 @@
 ---
 title: "Understanding terms and epochs"
-description: "How CD terms, epochs, and maturity heights are calculated."
-keywords: ["term", "epoch", "maturity", "blocks", "fuego", "CD"]
+description: "CD terms, epochs, and maturity heights for HEAT deposits."
+keywords: ["term", "epoch", "maturity", "HEAT", "CD"]
 ---
 
-## What is an epoch
+## Epoch
 
-An epoch is the fundamental time unit for CD accounting. At each epoch boundary, the fee pool distributes accumulated swap fees to all locked CDs.
+An **epoch** is the CD accounting period. Fee accumulation and distribution are epoch-scoped.
 
-| Network | Blocks per epoch | Approximate real time |
-|---------|-----------------|----------------------|
-| Mainnet | 900 | ~1 day |
-| Testnet | 10 | ~5 minutes |
+| Network | `EPOCH_DURATION_BLOCKS` | Approx. wall time |
+|---------|-------------------------|-------------------|
+| Mainnet | **900** | ~**5 days** (~480s blocks) |
+| Testnet | **10** | Minutes-scale testing |
 
-Fuego targets approximately 96-second block times. Epoch boundaries trigger fee distribution and interest accrual automatically — no action required from you.
+Older docs that said “900 blocks ≈ 1 day” are wrong for current config comments and block-time assumptions.
 
 ## Available terms
 
-When creating a deposit, you choose a term in epochs. Current supported values are:
+| Bound | Constant | Mainnet meaning |
+|-------|----------|-----------------|
+| Minimum | `CD_MIN_EPOCHS = 6` | ~1 month |
+| Maximum | `CD_MAX_EPOCHS = 72` | ~1 year |
 
-| Term code | Epochs | Mainnet duration |
-|-----------|--------|-----------------|
-| `3` | ~90 | ~3 months |
-| `12` | ~365 | ~12 months |
-
-<Info>
-  Terms run from 1 to 72 epochs at the protocol level. The simplewallet CLI exposes the two most practical options. Use the walletd RPC to specify exact epoch counts.
-</Info>
+Wallet UIs may offer presets; protocol allows the full 6–72 range (testnet min can be 1).
 
 ## Maturity height
-
-Your deposit unlocks at a specific block height, not a specific date:
 
 ```
 maturity_height = creation_height + (term_epochs × blocks_per_epoch)
 ```
 
-Example on mainnet:
-- Created at block 100,000
-- Term: 90 epochs × 900 blocks = 81,000 blocks
-- Maturity at block 181,000
+Example (mainnet, 6 epochs):
 
-Block height is deterministic — no uncertainty about when maturity occurs.
+- Created at height 100,000  
+- Term blocks = 6 × 900 = 5,400  
+- Maturity = 105,400  
 
 ## Locked until maturity
 
-You cannot withdraw a deposit before its maturity height. Attempting to do so produces an error. If you need liquidity before maturity, your options are:
+You cannot withdraw early. Liquidity options:
 
-1. **Transfer the deposit** to another party who pays you for it. See [transferring deposits](/features/commitment-deposits/transferring-deposits).
-2. Accept the wait.
+1. [Transfer the CD](/features/commitment-deposits/transferring-deposits) off-chain negotiated price  
+2. Wait  
 
-There is no early-withdrawal penalty in the protocol sense — early withdrawal simply isn't possible.
+## HEAT_TERM vs CD term
+
+| Term value | Meaning |
+|------------|---------|
+| `HEAT_TERM` (0xFFFFFFFF) | Mint/burn marker — **not** a yield CD |
+| 6–72 epochs (in blocks) | Yield-bearing **HEAT CD** |
 
 ## Choosing a term
 
-Longer terms accumulate interest across more epochs, which generally produces more total yield assuming consistent swap volume. Shorter terms give you flexibility to react to changing conditions.
-
-A common strategy is to start with a shorter term, evaluate the yield rate, then roll over into a longer term if conditions are favorable. [Rollover](/features/commitment-deposits/compound-interest) lets you do this atomically while compounding your earned interest.
+Longer terms participate in more epochs of fee distribution and may receive loyalty-style bonus parameters where implemented. Shorter terms free capital sooner. [Rollover](/features/commitment-deposits/compound-interest) compounds at maturity.

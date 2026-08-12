@@ -1,0 +1,48 @@
+---
+title: "How Hearth works"
+description: "On-chain XFG/HEAT market: AMM, orderbook hybrid, 1% fee split CD/LP."
+keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
+---
+
+**Hearth** is Fuego’s native **XFG/HEAT** exchange: a constant-product AMM with orderbook / depth-band machinery (pool orders, adaptive spread). It is the price surface for minting HEAT and for on-chain XFG↔HEAT swaps.
+
+## What Hearth is not
+
+- Not a centralized order book hosted by a company
+- Not the same as **swapXFG** (cross-chain atomic swaps)
+- Not DIGM
+
+## Fee (live code)
+
+| Constant | Value |
+|----------|-------|
+| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional |
+| Split in consensus | **50%** → CD Hearth fee accumulator · **50%** → LP |
+
+```
+totalFee = amount × HEARTH_FEE_BPS / 10000
+cdFee    = totalFee / 2
+lpFee    = totalFee - cdFee
+```
+
+There is **no** separate “0.3% Hearth LP fee” in `CryptoNoteConfig.h`. (Adaptive **spread** for pool orders uses other BPS constants, e.g. base spread 30 bps — that is market-making width, not the protocol trade fee.)
+
+## Roles
+
+| Role | Action |
+|------|--------|
+| Trader | Swap XFG↔HEAT; pays 1% fee |
+| LP | Provides XFG/HEAT liquidity; receives LP half of Hearth fees |
+| Minter | Uses Hearth TWAP when burning XFG to mint HEAT |
+| CD holder | Receives CD half of Hearth fees via yield plumbing |
+
+## Privacy
+
+LP and commitment-style positions use the chain’s commitment / privacy primitives. Exact share sizes are not meant to be public account balances like a CEX.
+
+## Related
+
+- [Provide liquidity](/features/hearth/providing-liquidity)
+- [Fee earning](/features/hearth/fee-earning)
+- [Mint HEAT](/features/heat/mint-heat)
+- [swapXFG](/features/atomic-swaps/how-swaps-work)

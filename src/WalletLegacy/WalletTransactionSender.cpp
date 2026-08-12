@@ -2129,8 +2129,8 @@ namespace CryptoNote
     context->v10SwapOutput = outputAmount;
     context->v10SwapMinOutput = minOutput;
 
-    uint64_t depositAmount = context->selectedTransfers.empty() ? 0 : context->selectedTransfers[0].amount;
-    return makeGetRandomCommitmentOutsRequest(std::move(context), depositAmount, std::vector<DepositId>());
+    Crypto::SecretKey transactionSK;
+    return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeLpClaimFeesRequest(

@@ -30,21 +30,18 @@ Fuego extends CryptoNote with custom transaction inputs and outputs:
 
 See `include/CryptoNote.h` for full struct definitions.
 
-## Fee pool mechanics
+## Fee pool mechanics (live constants)
 
-1. Every XFG-side atomic swap adds 1% to `m_currentEpochSwapFees`
-2. At each epoch boundary (block height % `epochDuration == 0`), fees distribute to all locked CDs
-3. Treasury receives its share at the same boundary
-4. `CommitmentIndex` stores per-epoch reports for auditing
+1. XFG-side atomic swaps charge **1%** (`SWAP_FEE_RATE_BPS`); epoch split **69% CD / 11% Bonus Vault / 20% Treasury**
+2. Hearth trades charge **1%** (`HEARTH_FEE_BPS`); consensus split **50% CD / 50% LP**
+3. At epoch boundaries (`EPOCH_DURATION_BLOCKS = 900` mainnet), fee accounting advances for HEAT CDs
+4. Product path: burn XFG → mint HEAT (`mintHeatV10`) → lock HEAT as CD — see [dual-asset architecture](/fuego-dual-asset-architecture)
 
-## Detailed technical documentation
+## Related public docs
 
-The following developer design documents are in `/docs/`:
+- [How CDs work](/features/commitment-deposits/how-cds-work)
+- [How Hearth works](/features/hearth/how-hearth-works)
+- [swapXFG](/features/atomic-swaps/how-swaps-work)
+- [Fee pool API](/api-reference/fee-pool)
 
-- [`commitment-types.md`](/commitment-types) — CD type system and on-chain representation
-- [`lp-pool-proof-system-design.md`](/lp-pool-proof-system-design) — LP pool AMM and ZK proof architecture
-- [`heat-vs-lp-proofs.md`](/heat-vs-lp-proofs) — Differences between HEAT and LP proof circuits
-- [`private-lp-pool-zk.md`](/private-lp-pool-zk) — Privacy model for LP positions
-- [`decentralized-lp-organizer.md`](/decentralized-lp-organizer) — Decentralized prover coordination
-- [`ATOMIC_SWAP_PLAN.md`](/ATOMIC_SWAP_PLAN) — Adaptor signature protocol design
-- [`FUEGO_CHAIN_ALIAS_SYSTEM.md`](/FUEGO_CHAIN_ALIAS_SYSTEM) — Alias system specification
+Internal design notes also exist under the monorepo `docs/` tree (implementation plans, zkLP research) but are not published as Mintlify pages.

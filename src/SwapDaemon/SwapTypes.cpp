@@ -27,7 +27,7 @@ static bool iequal(const char* a, const char* b, int n) {
 }
 
 bool swapPairFromString(const std::string& s, SwapPair& out) {
-  if (s.size() < 3 || s.size() > 7) return false;
+  if (s.size() < 3 || s.size() > 12) return false;
   const char* p = s.c_str();
   int n = static_cast<int>(s.size());
   if (iequal(p, "SOL", n))  { out = SwapPair::SOL;  return true; }
@@ -45,6 +45,24 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (iequal(p, "POLY", n)) { out = SwapPair::POLYGON; return true; }
   if (iequal(p, "POLYGON", n)) { out = SwapPair::POLYGON; return true; }
   if (iequal(p, "GLEEC", n))   { out = SwapPair::GLEEC;     return true; }
+  if (iequal(p, "ROBINHOOD", n)) { out = SwapPair::ROBINHOOD; return true; }
+  if (iequal(p, "AVAX", n))    { out = SwapPair::AVAX;      return true; }
+  if (iequal(p, "CRO", n))     { out = SwapPair::CRO;       return true; }
+  if (iequal(p, "BOB", n))     { out = SwapPair::BOB;       return true; }
+  if (iequal(p, "SIA", n))     { out = SwapPair::SIA;       return true; }
+  if (iequal(p, "SC", n))      { out = SwapPair::SIA;       return true; }
+  if (iequal(p, "UNICHAIN", n)) { out = SwapPair::UNICHAIN; return true; }
+  if (iequal(p, "PLASMA", n))  { out = SwapPair::PLASMA;    return true; }
+  if (iequal(p, "DOGE", n))    { out = SwapPair::DOGE;      return true; }
+  if (iequal(p, "DASH", n))    { out = SwapPair::DASH;      return true; }
+  if (iequal(p, "ZEC", n))     { out = SwapPair::ZEC;       return true; }
+  if (iequal(p, "PULSEX", n))  { out = SwapPair::PULSEX;    return true; }
+  if (iequal(p, "PULS", n))    { out = SwapPair::PULSEX;    return true; }
+  if (iequal(p, "ZANO", n))    { out = SwapPair::ZANO;      return true; }
+  if (iequal(p, "TON", n))     { out = SwapPair::TON;       return true; }
+  if (iequal(p, "MONAD", n))   { out = SwapPair::MONAD;     return true; }
+  if (iequal(p, "OPTIMISM", n)) { out = SwapPair::OPTIMISM;  return true; }
+  if (iequal(p, "OP", n))      { out = SwapPair::OPTIMISM;  return true; }
   return false;
 }
 
@@ -70,6 +88,21 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::LTC:     return "LTC";
     case SwapPair::POLYGON: return "POLYGON";
     case SwapPair::GLEEC:   return "GLEEC";
+    case SwapPair::ROBINHOOD: return "ROBINHOOD";
+    case SwapPair::AVAX:    return "AVAX";
+    case SwapPair::CRO:     return "CRO";
+    case SwapPair::BOB:     return "BOB";
+    case SwapPair::SIA:     return "SIA";
+    case SwapPair::UNICHAIN: return "UNICHAIN";
+    case SwapPair::PLASMA:  return "PLASMA";
+    case SwapPair::DOGE:    return "DOGE";
+    case SwapPair::DASH:    return "DASH";
+    case SwapPair::ZEC:     return "ZEC";
+    case SwapPair::PULSEX:  return "PULSEX";
+    case SwapPair::ZANO:    return "ZANO";
+    case SwapPair::TON:     return "TON";
+    case SwapPair::MONAD:   return "MONAD";
+    case SwapPair::OPTIMISM: return "OPTIMISM";
   }
   return "???";
 }

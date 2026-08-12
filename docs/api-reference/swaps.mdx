@@ -1,96 +1,30 @@
 ---
 title: "Swaps API"
-description: "RPC endpoints for listing and monitoring atomic swaps."
-keywords: ["swaps", "atomic swap", "listswaps", "swap status", "API", "fuego"]
+description: "swapXFG / SwapDaemon RPC patterns for atomic swaps."
+keywords: ["swaps", "swapXFG", "atomic", "API", "fuego"]
 ---
 
-## GET /listswaps
+## Fee reminder
 
-Returns all swaps tracked by the swap daemon.
+Completed XFG-side swaps: **1%**, split **69% CD / 11% Bonus Vault / 20% Treasury**.
 
-**Request:** `{}`
+## Common endpoints (shapes)
 
-**Response:**
+Exact paths depend on whether you hit wallet RPC, node, or SwapDaemon. Typical operations:
 
-```json
-{
-  "swaps": [
-    {
-      "swap_id": "swap_abc123",
-      "state": "ADAPTOR_ESCROW_FUNDED",
-      "pair": "XFG/XMR",
-      "role": "initiator",
-      "xfg_amount": 25000000000,
-      "created_at": 1735000000,
-      "updated_at": 1735001200,
-      "is_terminal": false
-    }
-  ],
-  "status": "OK"
-}
+| Operation | Purpose |
+|-----------|---------|
+| `listswaps` | Active / recent swaps |
+| `getswapstatus` | One swap by id |
+| `refund_swap` | Refund after timelock |
+| initiate / offer APIs | Start a swap (daemon-specific) |
+
+Example status:
+
+```bash
+curl -X POST http://127.0.0.1:28080/getswapstatus \
+  -H 'Content-Type: application/json' \
+  -d '{"swap_id": "YOUR_SWAP_ID"}'
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `swap_id` | string | Unique swap identifier |
-| `state` | string | Current swap state (see state machine) |
-| `pair` | string | Trading pair, e.g. `"XFG/XMR"` |
-| `role` | string | `"initiator"` or `"responder"` |
-| `xfg_amount` | uint64 | XFG amount in atomic units |
-| `created_at` | int64 | Unix timestamp of creation |
-| `updated_at` | int64 | Unix timestamp of last state change |
-| `is_terminal` | bool | `true` if the swap is complete or refunded |
-
----
-
-## POST /getswapstatus
-
-Returns full details for a specific swap.
-
-**Request:**
-
-```json
-{
-  "swap_id": "swap_abc123"
-}
-```
-
-**Response:**
-
-```json
-{
-  "swap_id": "swap_abc123",
-  "state": "ADAPTOR_ESCROW_FUNDED",
-  "pair": "XFG/XMR",
-  "role": "initiator",
-  "xfg_amount": 25000000000,
-  "ctr_address": "44abc...",
-  "peer_endpoint": "127.0.0.1:9876",
-  "created_at": 1735000000,
-  "updated_at": 1735001200,
-  "is_terminal": false,
-  "found": true,
-  "status": "OK"
-}
-```
-   
-|     Field      |  Type  |       Description          |
-|----------------|--------|----------------------------|
-| `ctr_address`  | string | Counterparty chain address |
-| `peer_endpoint`| string | Counterparty's swap daemon endpoint |
-| `found`        |  bool  | `false` if no swap with this ID exists |
-
----
-
-## Swap states
- 
-|          State           | Value |      Description                |
-|--------------------------|-------|---------------------------------|
-| `ADAPTOR_KEYS_EXCHANGED` |   10  | Initial key exchange complete   |
-| `ADAPTOR_ESCROW_FUNDED`  |   11  | XFG locked in escrow            |
-| `ADAPTOR_PRESIGS_READY`  |   12  | Pre-signatures exchanged        |
-| `ADAPTOR_CTR_LOCKED`     |   13  | Counterparty locked their funds |
-| `ADAPTOR_SECRET_REVEALED`|   14  | Adaptor secret revealed on-chain|
-| `ADAPTOR_XFG_SPENT`      |   15  | Swap complete — terminal        |
-| `ADAPTOR_REFUNDED`       |   16  | Swap refunded — terminal        |
-======================================================================
+See [How swaps work](/features/atomic-swaps/how-swaps-work) for state machine context.

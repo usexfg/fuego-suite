@@ -41,6 +41,16 @@ static const double SEED_BNB_USD = 590.0;
 static const double SEED_DCR_USD = 20.0;
 static const double SEED_POLY_USD = 0.55;
 static const double SEED_GLEEC_USD = 0.05;
+static const double SEED_AVAX_USD = 32.0;
+static const double SEED_CRO_USD = 0.15;
+static const double SEED_SIA_USD = 0.008;
+static const double SEED_PLASMA_USD = 0.60;
+static const double SEED_TON_USD = 5.50;
+static const double SEED_DOGE_USD = 0.22;
+static const double SEED_DASH_USD = 30.0;
+static const double SEED_ZEC_USD = 45.0;
+static const double SEED_PULSEX_USD = 0.0007;  // native PLS on PulseChain
+static const double SEED_ZANO_USD = 3.20;
 
 // Minimum completed swaps before TWAP replaces seed rate
 static const size_t TWAP_MIN_TRADES = 5;
@@ -89,6 +99,19 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::DCR: return SEED_DCR_USD / xfgUsd;
     case SwapPair::POLYGON: return SEED_POLY_USD / xfgUsd;
     case SwapPair::GLEEC: return SEED_GLEEC_USD / xfgUsd;
+    case SwapPair::ROBINHOOD: return SEED_ETH_USD / xfgUsd;  // ETH gas
+    case SwapPair::AVAX: return SEED_AVAX_USD / xfgUsd;
+    case SwapPair::CRO: return SEED_CRO_USD / xfgUsd;
+    case SwapPair::BOB: return SEED_ETH_USD / xfgUsd;        // ETH gas
+    case SwapPair::SIA: return SEED_SIA_USD / xfgUsd;
+    case SwapPair::TON: return SEED_TON_USD / xfgUsd;
+    case SwapPair::UNICHAIN: return SEED_ETH_USD / xfgUsd;   // ETH gas
+    case SwapPair::PLASMA: return SEED_PLASMA_USD / xfgUsd;
+    case SwapPair::DOGE: return SEED_DOGE_USD / xfgUsd;
+    case SwapPair::DASH: return SEED_DASH_USD / xfgUsd;
+    case SwapPair::ZEC: return SEED_ZEC_USD / xfgUsd;
+    case SwapPair::PULSEX: return SEED_PULSEX_USD / xfgUsd;
+    case SwapPair::ZANO: return SEED_ZANO_USD / xfgUsd;
     default:            return 0.0;
   }
 }
@@ -106,6 +129,19 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::DCR: return SEED_DCR_USD / SEED_XFG_USD;
     case SwapPair::POLYGON: return SEED_POLY_USD / SEED_XFG_USD;
     case SwapPair::GLEEC: return SEED_GLEEC_USD / SEED_XFG_USD;
+    case SwapPair::ROBINHOOD: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::AVAX: return SEED_AVAX_USD / SEED_XFG_USD;
+    case SwapPair::CRO: return SEED_CRO_USD / SEED_XFG_USD;
+    case SwapPair::BOB: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::SIA: return SEED_SIA_USD / SEED_XFG_USD;
+    case SwapPair::TON: return SEED_TON_USD / SEED_XFG_USD;
+    case SwapPair::UNICHAIN: return SEED_ETH_USD / SEED_XFG_USD;
+    case SwapPair::PLASMA: return SEED_PLASMA_USD / SEED_XFG_USD;
+    case SwapPair::DOGE: return SEED_DOGE_USD / SEED_XFG_USD;
+    case SwapPair::DASH: return SEED_DASH_USD / SEED_XFG_USD;
+    case SwapPair::ZEC: return SEED_ZEC_USD / SEED_XFG_USD;
+    case SwapPair::PULSEX: return SEED_PULSEX_USD / SEED_XFG_USD;
+    case SwapPair::ZANO: return SEED_ZANO_USD / SEED_XFG_USD;
     default:            return 0.0;
   }
 }
@@ -126,6 +162,19 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::DCR: return 1e8;
     case SwapPair::POLYGON: return 1e18;  // wei
     case SwapPair::GLEEC: return 1e18;    // EVM (18 decimals)
+    case SwapPair::ROBINHOOD: return 1e18;
+    case SwapPair::AVAX: return 1e18;     // wei (18 decimals)
+    case SwapPair::CRO: return 1e18;      // wei (18 decimals)
+    case SwapPair::BOB: return 1e18;
+    case SwapPair::SIA: return 1e24;     // hastings (1 SC = 10^24)
+    case SwapPair::TON: return 1e9;      // nanotons
+    case SwapPair::UNICHAIN: return 1e18;
+    case SwapPair::PLASMA: return 1e18;   // XPL (18 decimals)
+    case SwapPair::DOGE: return 1e8;      // koinu (1 DOGE = 1e8 koinu)
+    case SwapPair::DASH: return 1e8;      // duffs (1 DASH = 1e8 duffs)
+    case SwapPair::ZEC: return 1e8;       // zatoshis (1 ZEC = 1e8 zats)
+    case SwapPair::PULSEX: return 1e18;   // PLS (18 decimals)
+    case SwapPair::ZANO: return 1e12;     // atoms (1 ZANO = 1e12 atoms)
     default:            return 1e8;
   }
 }

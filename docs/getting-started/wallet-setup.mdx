@@ -64,8 +64,10 @@ Others can then send to `@myname` instead of your full address. Aliases are stor
 
 | Command | Description |
 |---------|-------------|
-| `balance` | Show spendable and locked balances |
+| `balance` | Show spendable and locked balances (XFG / HEAT where supported) |
 | `address` | Display your wallet address |
-| `list_cold` | List all commitment deposits |
-| `list_burns` | List all HEAT burn transactions |
+| Deposit / CD list | List **HEAT** commitment deposits (CLI names vary by build — not COLD) |
+| HEAT mint / Burn2Mint | Burn XFG → mint HEAT (`mintHeatV10`) |
 | `help` | Show all available commands |
+
+**Product path:** mint HEAT first, then open a HEAT CD. There is no XFG CD / COLD deposit path.

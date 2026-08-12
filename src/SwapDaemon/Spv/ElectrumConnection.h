@@ -20,7 +20,9 @@ public:
   ElectrumConnection& operator=(const ElectrumConnection&) = delete;
 
   // Connect to an Electrum server. Returns true on success.
-  bool connect(const std::string& host, uint16_t port);
+  // useTls: when true, wrap the socket in OpenSSL TLS (Electrum SSL ports, e.g. 50002).
+  // Default false preserves historical plaintext Electrum (roadmap TLS deferred → optional now).
+  bool connect(const std::string& host, uint16_t port, bool useTls = false);
 
   // Disconnect.
   void disconnect();
@@ -40,9 +42,16 @@ public:
 
 private:
   int m_fd = -1;
+  void* m_ssl = nullptr;      // SSL* when TLS enabled
+  void* m_sslCtx = nullptr;   // SSL_CTX*
+  bool m_useTls = false;
   uint32_t m_connectTimeout = 10;
   uint32_t m_readTimeout = 30;
   uint64_t m_callId = 0;
+
+  bool sslHandshake();
+  ssize_t sslWrite(const void* buf, size_t len);
+  ssize_t sslRead(void* buf, size_t len);
 };
 
 } // namespace XfgSwap

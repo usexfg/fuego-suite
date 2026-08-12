@@ -1,65 +1,78 @@
 ---
 title: "How commitment deposits work"
-description: "Lock XFG for a term, earn variable interest from swap fees, and keep your balance private."
-keywords: ["commitment deposit", "CD", "COLD", "interest", "yield", "fuego", "xfg"]
+description: "Lock HEAT for a term, earn variable yield from protocol fees, keep balance private."
+keywords: ["commitment deposit", "CD", "HEAT", "yield", "fuego"]
 ---
 
-A commitment deposit (CD) lets you lock XFG for a fixed term and earn interest from the network's swap activity. Unlike a bank CD, your balance is hidden on-chain, you can transfer the deposit before maturity, and you compound interest by rolling over at maturity.
+A **commitment deposit (CD)** locks **HEAT** for a fixed term and earns interest funded by **protocol fees** (atomic swaps + Hearth CD share) — not by printing tokens.
 
-## What makes a CD different from staking
+## Prerequisite: mint HEAT first
 
-| | Bank CD | Crypto staking | Fuego CD |
-|--|---------|---------------|----------|
-| Yield source | Bank interest | Block rewards | Swap fees (1%) |
-| Yield rate | Fixed | Fixed/schedule | Variable |
-| Term | Fixed once locked | Flexible | Fixed once locked |
-| Transferable | No | Usually no | Yes |
-| Balance visible | Yes | Yes | No |
-| Counterparty risk | Bank | Protocol | None |
-| Compound | Manual | Auto | Manual rollover |
+```
+XFG → mint HEAT → lock HEAT as CD
+```
+
+There is **no** XFG CD path. COLD / Ember_Heat / “lock XFG” flows are **deprecated and removed**.
+
+See [Mint HEAT](/features/heat/mint-heat).
+
+## CD vs staking vs bank CD
+
+| | Bank CD | Staking | Fuego HEAT CD |
+|--|---------|---------|----------------|
+| Asset locked | Fiat | Protocol token | **HEAT** |
+| Yield source | Bank | Emissions / rewards | **Swap + Hearth fee revenue** |
+| Rate | Fixed | Schedule | Variable |
+| Transferable | Rarely | Rarely | Yes (commitment transfer) |
+| Balance public | Yes | Often | Hidden (commitment) |
+
+Do not call this “staking.”
 
 ## How interest is funded
 
-Every atomic swap on Fuego charges a **1% fee on the XFG side** of the swap. That fee flows into the CD interest pool. At each epoch boundary (every 900 blocks on mainnet), the accumulated fees are distributed proportionally to all locked CDs based on their XFG amount.
+Two independent protocol fee sources feed yield plumbing:
 
-<Info>
-  This fee is completely separate from the LP pool's 0.3% trade fee. LP fees go directly to liquidity providers, not to CD holders.
-</Info>
+| Source | Rate | CD-related share |
+|--------|------|------------------|
+| Atomic swap (XFG side) | **1%** | **69%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT`) |
+| Hearth trade | **1%** | **50%** of that fee → CD accumulator |
+
+Also from atomic swaps: **11%** Bonus Vault, **20%** Treasury — not paid as base CD pro-rata yield.
 
 ## On-chain representation
 
-When you create a CD, the blockchain records a `TransactionOutputCommitment` — a cryptographic commitment that proves the deposit exists and when it matures, but reveals nothing about the amount. The amount is hidden behind a Pedersen commitment with a zero-knowledge proof of validity.
+Creating a CD produces a `TransactionOutputCommitment` with a **real term** (block/epoch length), **not** `HEAT_TERM` (mint marker).
 
-When you withdraw or roll over, you spend the commitment with a `TransactionInputCommitmentSpend`, which includes the `claimedInterest` field. The blockchain validates that this claimed interest matches the fee pool accounting.
+At maturity you spend with a commitment spend that can claim interest validated against fee-pool accounting.
 
-## Epoch and maturity
+## Epochs and terms
 
-An **epoch** is the unit of time for CD accounting:
-- Mainnet: 900 blocks ≈ 1 day
-- Testnet: 10 blocks ≈ 5 minutes
+| Network | Blocks per epoch | Approx. time |
+|---------|------------------|--------------|
+| Mainnet | **900** (`EPOCH_DURATION_BLOCKS`) | ~**5 days** (at ~480s blocks) |
+| Testnet | **10** | Fast epochs for testing |
 
-You choose a term between 1 and 72 epochs when creating a deposit. Your maturity height is:
+Protocol CD term bounds:
 
-```
-maturity_height = creation_height + (term_epochs × epoch_duration_blocks)
-```
-
-You cannot withdraw before maturity. You can [transfer](/features/commitment-deposits/transferring-deposits) the deposit to another party at any time.
+| Bound | Epochs | Approx. mainnet |
+|-------|--------|-----------------|
+| Min | **6** | ~1 month |
+| Max | **72** | ~1 year |
 
 ## Lifecycle
 
 ```
-Create deposit
+Mint HEAT
     ↓
-[Epochs pass — swap fees accumulate]
+Create HEAT CD (term in epochs / blocks)
     ↓
-Maturity reached
+Epochs pass — fees accumulate
     ↓
-Withdraw (principal + interest)
-    OR
-Rollover (create new CD for principal + interest)
+Maturity
+    ↓
+Withdraw HEAT (+ interest)  OR  Rollover (new CD = principal + interest)
 ```
 
-<Card title="Create your first deposit" icon="plus" href="/features/commitment-deposits/creating-deposits">
-  Step-by-step guide to locking XFG.
+<Card title="Create a HEAT CD" icon="plus" href="/features/commitment-deposits/creating-deposits">
+  Step-by-step after you have HEAT.
 </Card>

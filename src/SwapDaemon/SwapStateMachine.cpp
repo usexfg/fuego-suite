@@ -203,6 +203,7 @@ std::string SwapStateMachine::serialize() const {
   // Adaptor sig fields
   root.insert("ourSwapPubKey", Common::podToHex(m_params.ourSwapPubKey));
   root.insert("peerSwapPubKey", Common::podToHex(m_params.peerSwapPubKey));
+  root.insert("expectedPeerSwapPubKey", Common::podToHex(m_params.expectedPeerSwapPubKey));
   root.insert("escrowPubKey", Common::podToHex(m_params.escrowPubKey));
   root.insert("adaptorPoint", Common::podToHex(m_params.adaptorPoint));
   root.insert("adaptorDleqQ", Common::podToHex(m_params.adaptorDleqQ));
@@ -262,6 +263,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ctrTimeoutBlock", static_cast<int64_t>(m_params.ctrTimeoutBlock));
 
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
+  root.insert("ctrClaimTxId", m_params.ctrClaimTxId);
   root.insert("ctrAddress", m_params.ctrAddress);
   root.insert("peerEndpoint", m_params.peerEndpoint);
   root.insert("chainState", m_params.chainState);
@@ -315,6 +317,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     Common::podFromHex(root("ourSwapPubKey").getString(), params.ourSwapPubKey);
   if (root.contains("peerSwapPubKey"))
     Common::podFromHex(root("peerSwapPubKey").getString(), params.peerSwapPubKey);
+  if (root.contains("expectedPeerSwapPubKey"))
+    Common::podFromHex(root("expectedPeerSwapPubKey").getString(), params.expectedPeerSwapPubKey);
   if (root.contains("escrowPubKey"))
     Common::podFromHex(root("escrowPubKey").getString(), params.escrowPubKey);
   if (root.contains("adaptorPoint"))
@@ -368,6 +372,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrTimeoutBlock = static_cast<uint64_t>(root("ctrTimeoutBlock").getInteger());
 
   params.ctrLockTxId = root("ctrLockTxId").getString();
+  if (root.contains("ctrClaimTxId"))
+    params.ctrClaimTxId = root("ctrClaimTxId").getString();
   params.ctrAddress = root("ctrAddress").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
   params.chainState = root("chainState").getString();

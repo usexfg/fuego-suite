@@ -1,7 +1,7 @@
 ---
 title: "Wallet safety"
 description: "Protect your seed phrase, wallet file, and RPC access."
-keywords: ["security", "wallet", "seed phrase", "private key", "fuego", "xfg"]
+keywords: ["security", "wallet", "seed phrase", "private key", "fuego", "xfg", "heat"]
 ---
 
 ## Seed phrase
@@ -12,7 +12,7 @@ Your 25-word seed phrase is the only way to recover your wallet if you lose your
   Write your seed phrase on paper. Store it in a physically secure location. Make a second copy and store it separately from the first. Never photograph it. Never type it into any device connected to the internet.
 </Warning>
 
-There is no "forgot my seed phrase" recovery. If you lose both your wallet file and your seed phrase, your XFG is permanently inaccessible.
+There is no "forgot my seed phrase" recovery. If you lose both your wallet file and your seed phrase, your funds are permanently inaccessible.
 
 ## Wallet file
 
@@ -22,7 +22,7 @@ Back up your wallet file to:
 - An encrypted external drive
 - Offline cold storage
 
-Re-backup after every significant transaction or deposit creation, as wallet files contain deposit secrets required for CD withdrawal.
+Re-backup after every significant transaction, **HEAT mint**, or **HEAT CD** creation — the wallet file holds keys and deposit secrets required to spend or mature CDs.
 
 ## RPC port
 
@@ -54,11 +54,13 @@ Fuego transactions are irreversible. Before sending any amount:
 
 If sending to an alias, resolve it first with `/get_alias` and verify the returned address matches your expectation.
 
-## Deposit secrets
+## Deposit secrets (HEAT CDs)
 
-When you create a commitment deposit, your wallet stores a deposit secret. This secret is required to:
-- Withdraw the deposit at maturity
-- Transfer the deposit before maturity
-- Generate STARK proofs for HEAT burns
+When you create a **HEAT** commitment deposit, your wallet stores a deposit secret. That secret is required to:
 
-Your wallet file contains these secrets. If you lose your wallet file and cannot restore from seed phrase, those deposits become inaccessible. **Back up your wallet file** after every deposit creation.
+- Withdraw the CD at maturity (principal + interest)
+- Transfer the CD before maturity
+
+Historical off-chain STARK-claim workflows for burns are **deprecated**. HEAT minting uses the on-chain **`mintHeatV10`** path.
+
+Your wallet file contains these secrets. If you lose the wallet file and cannot restore from seed, those CDs can become inaccessible. **Back up your wallet file** after every HEAT mint and CD creation.

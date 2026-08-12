@@ -192,6 +192,124 @@ struct ChainClientConfig {
   std::string gleecAddress;
   uint64_t    gleecChainId  = 11169;
   std::string gleecHtlcBinPath;
+  std::string gleecHtlcRegistry;  // pre-deployed HTLC registry on Gleec
+
+  // ROBINHOOD (Robinhood Chain — EVM L1)
+  std::string rhHost;
+  uint16_t    rhPort     = 8545;
+  std::string rhPrivKeyHex;
+  std::string rhAddress;
+  uint64_t    rhChainId  = 4663;
+  std::string rhHtlcBinPath;
+
+  // AVAX (Avalanche C-Chain — EVM, EIP-1559)
+  std::string avaxHost;
+  uint16_t    avaxPort     = 8545;
+  std::string avaxPrivKeyHex;
+  std::string avaxAddress;
+  uint64_t    avaxChainId  = 43114;
+  std::string avaxHtlcBinPath;
+
+  // CRO (Cronos — EVM)
+  std::string croHost;
+  uint16_t    croPort     = 8545;
+  std::string croPrivKeyHex;
+  std::string croAddress;
+  uint64_t    croChainId  = 25;
+  std::string croHtlcBinPath;
+
+  // BOB (Bob — OP Stack BTC rollup, EVM)
+  std::string bobHost;
+  uint16_t    bobPort     = 8545;
+  std::string bobPrivKeyHex;
+  std::string bobAddress;
+  uint64_t    bobChainId  = 60808;
+  std::string bobHtlcBinPath;
+
+  // Sia (SC) — siad / walletd
+  std::string siaHost;
+  uint16_t    siaPort = 9980;
+  std::string siaApiPassword;
+
+  // UNICHAIN (Unichain — OP Stack EVM)
+  std::string uniHost;
+  uint16_t    uniPort     = 8545;
+  std::string uniPrivKeyHex;
+  std::string uniAddress;
+  uint64_t    uniChainId  = 130;
+  std::string uniHtlcBinPath;
+
+  // PLASMA (Plasma — EVM)
+  std::string plasmaHost;
+  uint16_t    plasmaPort     = 8545;
+  std::string plasmaPrivKeyHex;
+  std::string plasmaAddress;
+  uint64_t    plasmaChainId  = 9745;
+  std::string plasmaHtlcBinPath;
+
+  // DOGE (Dogecoin — pre-SegWit UTXO, P2SH + legacy sighash)
+  std::string dogeHost;
+  uint16_t    dogePort     = 22556;
+  std::string dogeRpcUser;
+  std::string dogeRpcPass;
+  std::string dogeWif;         // WIF-encoded private key (mainnet prefix 0x9E)
+
+  // DASH (Dash — pre-SegWit UTXO, P2SH + legacy sighash)
+  std::string dashHost;
+  uint16_t    dashPort     = 9998;
+  std::string dashRpcUser;
+  std::string dashRpcPass;
+  std::string dashWif;         // WIF-encoded private key (mainnet prefix 0xCC)
+  bool        dashTestnet = false;
+
+  // ZEC (Zcash — transparent-only, v4 tx serialization + legacy sighash)
+  std::string zecHost;
+  uint16_t    zecPort      = 8232;
+  std::string zecRpcUser;
+  std::string zecRpcPass;
+  std::string zecWif;          // WIF-encoded private key (mainnet prefix 0x80)
+  bool        zecTestnet = false;
+
+  // PULSEX (PulseChain — EVM, chain id 369, native PLS 18 decimals)
+  std::string pulsexHost;
+  uint16_t    pulsexPort   = 8545;
+  std::string pulsexPrivKeyHex;
+  std::string pulsexAddress;
+  uint64_t    pulsexChainId = 369;
+  std::string pulsexHtlcBinPath;
+
+  // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
+  std::string zanoDaemonHost;
+  uint16_t    zanoDaemonPort = 11211;
+  std::string zanoWalletHost;
+  uint16_t    zanoWalletPort = 0;   // operator passes --rpc-bind-port
+  std::string zanoSpendKeyHex;
+  std::string zanoViewKeyHex;
+
+  // TON (The Open Network — TVM, account-based, FunC contracts)
+  std::string tonHost;
+  uint16_t    tonPort       = 2990;
+  std::string tonRpcUser;
+  std::string tonRpcPass;
+  std::string tonWalletKey;           // hex-encoded Ed25519 seed
+  std::string tonHtlcAddress;         // deployed HTLC contract address
+  int         tonWorkchain   = 0;
+
+  // Monad (EVM L1, OP Stack, chain id 185)
+  std::string monadHost;
+  uint16_t    monadPort       = 8545;
+  std::string monadPrivKeyHex;
+  std::string monadAddress;
+  uint64_t    monadChainId    = 185;
+  std::string monadHtlcBinPath;
+
+  // Optimism (EVM L2, OP Stack, chain id 10)
+  std::string opHost;
+  uint16_t    opPort       = 8545;
+  std::string opPrivKeyHex;
+  std::string opAddress;
+  uint64_t    opChainId    = 10;
+  std::string opHtlcBinPath;
 
   // XFG wallet key for signing managed offers (hex-encoded 64-char Ed25519 secret key)
   std::string xfgSecretKeyHex;

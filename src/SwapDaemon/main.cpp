@@ -224,6 +224,7 @@ int main(int argc, char* argv[]) {
   uint16_t rpcPort = 18902;
   uint16_t p2pPort = 18901;
   std::string p2pBindAddr = "127.0.0.1";
+  std::string rpcToken;  // --rpc-token for fund-affecting JSON-RPC methods
   bool testnet = false;
   bool serviceMode = false;
   bool autoComplete = false;
@@ -289,6 +290,12 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       rpcPort = static_cast<uint16_t>(std::atoi(argv[argIdx]));
+    } else if (opt == "--rpc-token") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --rpc-token requires an argument" << std::endl;
+        return 1;
+      }
+      rpcToken = argv[argIdx];
     } else if (opt == "--swap-p2p-port") {
       if (++argIdx >= argc) {
         std::cerr << "Error: --swap-p2p-port requires an argument" << std::endl;
@@ -398,10 +405,16 @@ int main(int argc, char* argv[]) {
       logger(Logging::INFO) << "Status endpoint: 127.0.0.1:" << statusPort;
     }
 
-    // Start JSON-RPC server for wallet integration
-    XfgSwap::RpcServer rpcServer(daemon, consoleLogger);
+    // Start JSON-RPC server for wallet integration.
+    // Fund methods require --rpc-token + X-Swap-Token header.
+    if (rpcToken.empty()) {
+      logger(Logging::WARNING)
+        << "No --rpc-token set: initiate_swap/refund/check_timeouts will reject until configured";
+    }
+    XfgSwap::RpcServer rpcServer(daemon, consoleLogger, rpcToken);
     if (rpcServer.start(rpcPort)) {
-      logger(Logging::INFO) << "JSON-RPC server: 127.0.0.1:" << rpcPort;
+      logger(Logging::INFO) << "JSON-RPC server: 127.0.0.1:" << rpcPort
+        << (rpcToken.empty() ? " (token REQUIRED for mutators)" : " (token auth enabled)");
     } else {
       logger(Logging::WARNING) << "Failed to start JSON-RPC server on port " << rpcPort;
     }
@@ -440,8 +453,9 @@ int main(int argc, char* argv[]) {
 
   // Dispatch command
     if (command == "initiate") {
-      if (argIdx + 3 >= argc) {
-        std::cerr << "Usage: xfg-swapd initiate <pair> <xfg_amount> <ctr_amount> <peer>" << std::endl;
+      if (argIdx + 4 >= argc) {
+        std::cerr << "Usage: xfg-swapd initiate <pair> <xfg_amount> <ctr_amount> <peer> <expected_peer_pubkey_hex>" << std::endl;
+        std::cerr << "  expected_peer_pubkey_hex: 64-char hex Ed25519 swap pubkey of counterparty" << std::endl;
         return 1;
       }
 
@@ -449,6 +463,7 @@ int main(int argc, char* argv[]) {
       std::string xfgAmountStr = argv[argIdx++];
       std::string ctrAmountStr = argv[argIdx++];
       std::string peer = argv[argIdx++];
+      std::string expectedPeerHex = argv[argIdx++];
 
       XfgSwap::SwapParams params;
       try {
@@ -489,6 +504,7 @@ int main(int argc, char* argv[]) {
       std::memset(&params.ourSwapSecKey, 0, sizeof(params.ourSwapSecKey));
       std::memset(&params.ourSwapPubKey, 0, sizeof(params.ourSwapPubKey));
       std::memset(&params.peerSwapPubKey, 0, sizeof(params.peerSwapPubKey));
+      std::memset(&params.expectedPeerSwapPubKey, 0, sizeof(params.expectedPeerSwapPubKey));
       std::memset(&params.escrowPubKey, 0, sizeof(params.escrowPubKey));
       std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
       std::memset(&params.adaptorSecret, 0, sizeof(params.adaptorSecret));
@@ -500,9 +516,15 @@ int main(int argc, char* argv[]) {
       params.escrowOutputIndex = 0;
       params.htlcOutputIndex = 0;
 
+      if (!Common::podFromHex(expectedPeerHex, params.expectedPeerSwapPubKey)) {
+        std::cerr << "Error: expected_peer_pubkey must be 64-char hex" << std::endl;
+        return 1;
+      }
+
       if (!daemon.initiate(params)) {
         return 1;
       }
+      std::cout << "our_swap_pubkey=" << Common::podToHex(params.ourSwapPubKey) << std::endl;
 
     } else if (command == "accept") {
       if (argIdx >= argc) {

@@ -1,0 +1,72 @@
+---
+title: "Dual-asset architecture"
+description: "XFG and HEAT roles, mint path, CDs, Hearth, and fee routing."
+keywords: ["xfg", "heat", "hearth", "architecture", "fuego"]
+---
+
+Fuego’s financial layer is built on two native assets and shared fee plumbing.
+
+## Assets
+
+| Asset | What it is | How you get it |
+|-------|------------|----------------|
+| **XFG** | Base-layer CryptoNote privacy coin | Mine, receive, atomic swap in |
+| **HEAT** | Flatcoin / colored commitment outputs | **Mint** by burning XFG (`mintHeatV10`) priced by Hearth TWAP |
+
+Legacy names that are **not** the current model:
+
+- **Embers_Heat** / fixed 10M:1 conversion — deprecated; do not use `convertXfgToHeat()` for minting
+- **COLD** deposits — removed
+- **XFG term deposits as CDs** — removed; CDs lock **HEAT**
+
+## Two-step deposit model
+
+```
+1) Mint HEAT     burn XFG → HEAT   (term == HEAT_TERM / mintHeatV10)
+2) Open a CD     lock HEAT → yield (term is a real block/epoch length, ≠ HEAT_TERM)
+```
+
+Step 2 is the only “deposit” that earns APY. You cannot deposit a deposit, and you cannot skip minting and lock XFG as a CD.
+
+Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/master/DEPOSIT_ARCHITECTURE.md) (repo) and [How CDs work](/features/commitment-deposits/how-cds-work).
+
+## Hearth
+
+**Hearth** is the on-chain **XFG/HEAT** market (constant-product AMM plus orderbook / depth-band machinery). It:
+
+- Sets the **TWAP / spot rate** used when minting HEAT
+- Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade, split **50% CD / 50% LP** in consensus code
+
+## swapXFG
+
+**swapXFG** (SwapDaemon) is peer-to-peer **cross-chain** atomic swap infrastructure (adaptor signatures / chain clients). Completed XFG-side swaps charge **1%**, split **69% CD yield / 11% Bonus Vault / 20% Treasury**.
+
+## Fee map (code)
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `SWAP_FEE_RATE_BPS` | 100 | 1% on XFG atomic-swap side |
+| `SWAP_FEE_CD_SHARE_PCT` | 69 | → CD yield pool |
+| `SWAP_FEE_BONUS_VAULT_PCT` | 11 | → Bonus Vault |
+| `SWAP_FEE_TREASURY_SHARE_PCT` | 20 | → Treasury |
+| `HEARTH_FEE_BPS` | 100 | 1% Hearth trade fee |
+| Hearth split | 50/50 | `cdFee = total/2`, `lpFee = remainder` |
+| `EPOCH_DURATION_BLOCKS` | 900 | Mainnet epoch (~5 days at ~480s blocks) |
+| `CD_MIN_EPOCHS` / `CD_MAX_EPOCHS` | 6 / 72 | ~1 month … ~1 year HEAT CD terms |
+
+## Mental model
+
+```
+          ┌─────────────┐
+   mine / │     XFG     │── burn ──► HEAT mint (TWAP)
+   swap   └──────┬──────┘              │
+                 │                     ▼
+                 │              ┌─────────────┐
+                 └──── Hearth ──┤    HEAT     │── lock ──► CD yield
+                        ▲       └─────────────┘
+                        │
+              swap fees + Hearth fees
+                        │
+                        ▼
+              CD pool / Bonus / Treasury / LP
+```

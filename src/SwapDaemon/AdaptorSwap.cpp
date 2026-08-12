@@ -15,6 +15,7 @@
 
 #include "AdaptorSwap.h"
 #include "BitcoinCash/HtlcScript.h"
+#include "Sia/SiaHtlcScript.h"
 #include <cstring>
 #include <vector>
 
@@ -69,17 +70,35 @@ bool adaptor_generate_adaptor(SwapParams& params,
 
   // HTLC hashlock H(t) so Alice can lock without learning t (Alice-locks model).
   // Match the counterparty program's hash: SHA-256 for UTXO, keccak for EVM/SOL.
+  // Hashlock MUST match the counterparty HTLC program (not T = t*G).
+  // SHA-256: Bitcoin-family UTXO scripts (OP_SHA256).
+  // Keccak-256: EVM HashedTimelock + Solana xfg_htlc.
+  // TON: SHA-256 (cell hash / preimage convention for our HTLC).
   switch (params.pair) {
     case SwapPair::BCH:
+    case SwapPair::BTC:
+    case SwapPair::LTC:
     case SwapPair::DCR:
-    case SwapPair::KMD_SPV: {
+    case SwapPair::KMD_SPV:
+    case SwapPair::DOGE:
+    case SwapPair::DASH:
+    case SwapPair::ZEC:
+    case SwapPair::TON: {
       std::vector<uint8_t> in(reinterpret_cast<const uint8_t*>(&params.adaptorSecret),
                               reinterpret_cast<const uint8_t*>(&params.adaptorSecret) + 32);
       auto md = BchHtlcScript::sha256(in);
       std::memcpy(&params.hashLock, md.data(), 32);
       break;
     }
+    case SwapPair::SIA: {
+      // Sia HTLC uses Blake2b-256(preimage), not SHA-256 / keccak.
+      auto md = SiaHtlcScript::blake2b256(
+          reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32);
+      std::memcpy(&params.hashLock, md.data(), 32);
+      break;
+    }
     default:
+      // ETH, ARB, BASE, BNB, POLYGON, SOL, AVAX, CRO, … → keccak256
       keccak(reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32,
              reinterpret_cast<uint8_t*>(&params.hashLock), 32);
       break;

@@ -140,28 +140,3 @@ sequenceDiagram
 * **Symptom**: High slippage warnings during AMM liquidity provisioning.
   * **Resolution**: If the global TWAP spot price diverges sharply from your local node's cache, run `5. Node Diagnostics -> Rebuild Sync Cache` to purge stale mempool states.
 
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "How to Operate the Fuego Dual-Asset Terminal User Interface (TUI)",
-  "description": "Step-by-step instructions for compiling the Go TUI binary, managing multi-asset outputs, adding Hearth AMM liquidity, and executing trustless atomic swaps.",
-  "step": [
-    {
-      "@type": "HowToStep",
-      "name": "Clone and Compile",
-      "text": "Clone the source repository and run ./build.sh inside the tui directory to compile the dynamic terminal executable."
-    },
-    {
-      "@type": "HowToStep",
-      "name": "Launch Terminal Client",
-      "text": "Execute ./fuego_suite for Mainnet or ./fuego_suite --testnet to load the tailored multi-network workspace."
-    },
-    {
-      "@type": "HowToStep",
-      "name": "Execute Protocol Operations",
-      "text": "Navigate menus using Vim bindings to mint HEAT stable assets, provide constant-product liquidity, or run atomic swaps."
-    }
-  ]
-}
-</script>

@@ -50,8 +50,44 @@ ChainClientResult SolChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
-  bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount);
-  if (!ok) return ChainClientResult::fail("SOL lock not verified");
+  SolHtlcInfo info;
+  if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
+    return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
+  if (info.claimed || info.refunded)
+    return ChainClientResult::fail("SOL verifyLock: HTLC already claimed/refunded");
+  if (info.amount < params.ctrAmount)
+    return ChainClientResult::fail("SOL verifyLock: amount too low");
+
+  // Expected hashlock: H(t) from secret or published hashLock.
+  std::string expectedHash;
+  if (!isZeroSecret(params.adaptorSecret)) {
+    expectedHash = solHashLockHex(params.adaptorSecret);
+  } else {
+    bool nz = false;
+    for (size_t i = 0; i < sizeof(params.hashLock); ++i)
+      if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nz = true; break; }
+    if (!nz)
+      return ChainClientResult::fail("SOL verifyLock: no hashLock or adaptorSecret");
+    expectedHash = Common::podToHex(params.hashLock);
+  }
+  // Normalize hex case for compare
+  auto lower = [](std::string s) {
+    for (char& c : s) if (c >= 'A' && c <= 'F') c = static_cast<char>(c - 'A' + 'a');
+    return s;
+  };
+  if (lower(info.hashLock) != lower(expectedHash))
+    return ChainClientResult::fail("SOL verifyLock: hash_lock mismatch");
+
+  if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != 0 &&
+      info.timeoutSlot != params.ctrTimeoutBlock) {
+    return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
+  }
+  if (!params.ctrAddress.empty() && !info.recipient.empty() &&
+      lower(info.recipient) != lower(params.ctrAddress)) {
+    // Recipient may be base58; case-sensitive compare preferred for base58
+    if (info.recipient != params.ctrAddress)
+      return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
+  }
   return ChainClientResult::ok(params.ctrLockTxId);
 }
 

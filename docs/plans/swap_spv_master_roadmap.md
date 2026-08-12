@@ -20,12 +20,14 @@
 | BCH SPV proving slice | **DONE** | 15/15 tasks complete, all tests passing |
 | BTC/LTC/DCR/KMD chain clients | **PARTIAL** | BTC, LTC, KMD done (SPV-only). DCR not started. |
 | BNB chain client | **NOT STARTED** | Binance Smart Chain, EVM clone (ARB/BASE pattern) |
-| TON chain client | **NOT STARTED** | TVM smart contracts, Ed25519, async message passing |
-| Neutrino/BIP-157-158 | **NOT STARTED** | Privacy upgrade, seam left in ISpvClient |
-| EVM light client (Helios) | **NOT STARTED** | Separate interface, not ISpvClient |
-| libp2p peer discovery | **NOT STARTED** | Phase 3 of SPV architecture |
-| Polygon chain client | **NOT STARTED** | EVM RPC path (same as ARB/BASE pattern) |
-| Sia storage (DIGM) | **NOT STARTED** | Decentralized storage for audio albums and content |
+| TON chain client | **PARTIAL** | TonRpcClient + FunC htlc.fc + BOC send; deploy+testnet still ops |
+| Neutrino/BIP-157-158 | **PARTIAL** | `NeutrinoSpvClient` present under Spv/Neutrino |
+| EVM light client (Helios) | **SEAM ONLY** | `src/Storage/Evm/IEvmLightClient.h` + NullEvmLightClient (no Helios FFI yet) |
+| libp2p peer discovery | **NOT STARTED** | Phase 6 — large dependency; not started |
+| Polygon chain client | **DONE** | Eth thin client + registry config |
+| Sia **swap** client | **PARTIAL** | `SwapDaemon/Sia/*` HTLC/memo path via siad |
+| Sia **renterd storage** (DIGM infra) | **PARTIAL (7A+put/get)** | `src/Storage/Sia/*` renterd worker objects + CID + AES option; no full DIGM album flow |
+| Electrum TLS | **OPTIONAL** | `ElectrumConnection::connect(host,port,useTls=true)` OpenSSL wrap |
 
 ---
 
@@ -236,8 +238,9 @@ PHASE 7 ─── Sia Decentralized Storage (DIGM Audio + Content)
 
 | Item | Detail | Status |
 |------|--------|--------|
-| `IEvmLightClient` interface | Separate from `ISpvClient`. Sync-committee based. | **TODO** (interface only) |
-| Helios integration | Rust lib compiled to C-bindings. Verifies Ethereum sync-committee signatures. | **TODO** (research spike) |
+| `IEvmLightClient` interface | Separate from `ISpvClient`. Sync-committee based. | **DONE** (`src/Storage/Evm/IEvmLightClient.h`) |
+| `NullEvmLightClient` | Fail-closed placeholder | **DONE** |
+| Helios integration | Rust lib compiled to C-bindings. Verifies Ethereum sync-committee signatures. | **TODO** (research spike / FFI) |
 
 **Scope:** Interface definition + research spike only. Full implementation deferred.
 
@@ -340,9 +343,13 @@ contract TonHtlc {
 
 **Goal:** Replace config-supplied Electrum servers with dynamic peer discovery.
 
+**Full plan + developer guide:** [`docs/plans/libp2p-swap-network-rewrite.md`](libp2p-swap-network-rewrite.md)
+(phased L0–L6: `ISwapTransport` → dual TCP/libp2p → mDNS/DHT → Electrum hints → CBF relay).
+
 | Item | Detail | Status |
 |------|--------|--------|
-| libp2p integration | Peer discovery, DHT for Electrum servers + swap peers | **TODO** |
+| Implementation plan / dev guide | `docs/plans/libp2p-swap-network-rewrite.md` | **DONE (plan)** |
+| libp2p integration | Peer discovery, DHT for Electrum servers + swap peers | **TODO** (code) |
 | Compact block filter relay | Relay BIP-158 filters over libp2p | **TODO** |
 | Cross-chain swap coordination | P2P orderbook/discovery without centralized matchmaker | **TODO** |
 
@@ -417,10 +424,11 @@ Phase 7 (Sia Storage) ──────── independent of all swap phases (c
 
 | Item | Detail | Status |
 |------|--------|--------|
-| `SiaStorageClient` | S3-compatible client talking to local/remote renterd | **TODO** |
-| Auth | Web3 identity auth or renterd API key | **TODO** |
-| Config | `sia_renterd_url`, `sia_api_key`, `sia_renter_contracts` | **TODO** |
-| Encryption | Client-side AES-256 before upload (Sia encrypts at rest too) | **TODO** |
+| `SiaStorageClient` | renterd worker objects API (`/api/worker/objects/...`) | **DONE** (infra) |
+| Auth | renterd API password (Basic) | **DONE** |
+| Config | `SiaConfig` JSON: `sia_renterd_url`, `sia_renterd_password`, `sia_bucket`, AES key | **DONE** |
+| Encryption | Optional client-side AES-256-CTR when key set | **DONE** |
+| Full AWS S3 SigV4 gateway | Optional alternate path | **TODO** |
 
 **Implementation notes:**
 - Use renterd's S3-compatible endpoint (`s3.daemon.sia.tech` or self-hosted)
@@ -431,10 +439,10 @@ Phase 7 (Sia Storage) ──────── independent of all swap phases (c
 
 | Item | Detail | Status |
 |------|--------|--------|
-| Upload | Audio files → renterd S3 API → 30-shard erasure coding → hosts | **TODO** |
-| Retrieve | CID/content hash → renterd → reassemble from shards | **TODO** |
-| Metadata | Album art, track listings, DIGM metadata stored alongside audio | **TODO** |
-| Verification | Content hash check on retrieve (SHA-256 of file) | **TODO** |
+| Upload | `putObject` → renterd worker (renterd handles shards/hosts) | **DONE** (infra API) |
+| Retrieve | `getObject` + optional CID check | **DONE** (infra API) |
+| Metadata | Album art, track listings, DIGM product flow | **TODO** (out of scope here) |
+| Verification | SHA-256 CID on put/get | **DONE** |
 
 **Data flow:**
 ```

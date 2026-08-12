@@ -44,4 +44,21 @@ inline std::string ethHashLockHex(const Crypto::SecretKey& adaptorSecret) {
 // sha256(adaptorSecret) — BCH HTLC hashlock.
 std::string bchHashLockHex(const Crypto::SecretKey& adaptorSecret);
 
+// sha256(adaptorSecret) — Doge HTLC hashlock.
+// Dogecoin is a pre-SegWit Bitcoin fork whose P2SH HTLC uses the same
+// OP_SHA256 hashlock construction as BCH, so the digest is identical.
+inline std::string dogeHashLockHex(const Crypto::SecretKey& adaptorSecret) {
+  return bchHashLockHex(adaptorSecret);
+}
+
+// sha256(adaptorSecret) — Dash HTLC hashlock (pre-SegWit Bitcoin fork).
+inline std::string dashHashLockHex(const Crypto::SecretKey& adaptorSecret) {
+  return bchHashLockHex(adaptorSecret);
+}
+
+// sha256(adaptorSecret) — Zcash transparent HTLC hashlock.
+inline std::string zecHashLockHex(const Crypto::SecretKey& adaptorSecret) {
+  return bchHashLockHex(adaptorSecret);
+}
+
 } // namespace XfgSwap

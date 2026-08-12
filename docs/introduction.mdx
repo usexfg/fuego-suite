@@ -1,49 +1,70 @@
 ---
 title: "Fuego (XFG)"
-description: "A privacy-first blockchain with commitment deposits, atomic swaps, and on-chain liquidity."
-keywords: ["fuego", "xfg", "privacy", "blockchain", "commitment deposits", "atomic swaps"]
+description: "Sovereign private money: CryptoNote privacy, HEAT flatcoin, HEAT CDs, Hearth, and swapXFG atomic swaps."
+keywords: ["fuego", "xfg", "heat", "hearth", "swapxfg", "commitment deposits", "atomic swaps"]
 ---
 
-Fuego is a privacy-first blockchain built on CryptoNote with ring signatures. It gives you financial tools that traditional systems can't offer: locked deposits that earn yield without revealing your balance, trustless cross-chain swaps, and on-chain liquidity with private LP positions.
+Fuego is a privacy-first CryptoNote chain (ring signatures, stealth addresses) with a native financial layer: **burn XFG to mint HEAT**, lock **HEAT** in Certificates of Deposit for real yield, trade **XFG/HEAT** on **Hearth**, and move value across chains with **swapXFG** atomic swaps.
 
-## What you can do with Fuego
+## Product path (current)
+
+```
+XFG  →  mint HEAT (burn via mintHeatV10 / Hearth TWAP)
+     →  lock HEAT as a CD (term ≠ HEAT_TERM)
+     →  earn yield from protocol fees (not inflation)
+```
+
+You **cannot** lock raw XFG as a CD. COLD deposits, Ember_Heat, and “XFG deposits” are **removed**. See [How CDs work](/features/commitment-deposits/how-cds-work) and [Mint HEAT](/features/heat/mint-heat).
+
+## What you can do
 
 <Columns cols={2}>
-  <Card title="Commitment deposits" icon="vault" href="/features/commitment-deposits/how-cds-work">
-    Lock XFG for a term and earn variable interest funded by atomic swap fees.
+  <Card title="Mint HEAT" icon="flame" href="/features/heat/mint-heat">
+    Burn XFG to mint HEAT at Hearth pool TWAP pricing (`mintHeatV10`).
   </Card>
-  <Card title="Atomic swaps" icon="arrow-left-right" href="/features/atomic-swaps/how-swaps-work">
-    Swap XFG with XMR, ETH, SOL, and BCH — trustless, no custodian required.
+  <Card title="HEAT CDs" icon="vault" href="/features/commitment-deposits/how-cds-work">
+    Term-lock HEAT and earn yield funded by protocol fees.
   </Card>
-  <Card title="LP swap pool" icon="chart-bar" href="/features/lp-pool/how-liquidity-works">
-    Provide liquidity and earn 0.3% on every trade through the pool.
+  <Card title="Hearth" icon="chart-bar" href="/features/hearth/how-hearth-works">
+    On-chain XFG/HEAT market (AMM + orderbook hybrid).
   </Card>
-  <Card title="HEAT burns" icon="flame" href="/features/heat-burns/what-are-burns">
-    Permanently burn XFG to earn HEAT tokens via zero-knowledge proofs.
+  <Card title="swapXFG" icon="arrow-left-right" href="/features/atomic-swaps/how-swaps-work">
+    Cross-chain atomic swaps — no custodian, no CEX.
   </Card>
 </Columns>
 
 ## Core properties
 
-**Privacy by default.** Ring signatures hide the sender in every transaction. Commitment deposits hide your balance and interest behind cryptographic commitments. No one can determine your deposit amount from on-chain data.
+**Privacy by default.** Ring signatures hide senders. Commitment deposits hide principal and interest. No one can read your CD size from the chain alone.
 
-**No counterparty risk.** Atomic swaps are enforced by cryptography, not escrow services. Commitment deposits are enforced by the consensus rules, not a bank. Your funds are controlled by your keys.
+**Two assets, one bank.** **XFG** is base-layer private money. **HEAT** is the flatcoin (purchasing-power oriented; peg reference `HEAT_PEG_USD = 1.58`). CDs are always **HEAT**.
 
-**Transferable and compoundable.** Unlike traditional CDs, you can transfer a locked deposit to another party before maturity. You can also roll over a mature deposit to compound interest — the new deposit amount equals your principal plus accrued interest.
+**No counterparty for CDs and swaps.** CD rules and swap atomicity are consensus / cryptography, not a custodian.
 
-## Fee structure
+**Transferable and compoundable.** Mature or transferred CDs can roll over so principal + interest re-locks as a new HEAT CD.
 
-Two separate fee pools fund different parts of the system:
+## Fee structure (from live constants)
 
-| Fee | Source | Goes to |
-|-----|--------|---------|
-| 1% | XFG side of every atomic swap | CD interest pool |
-| 0.3% | Every trade through the LP pool | Liquidity providers |
+Source: `src/CryptoNoteConfig.h`.
 
-These are completely independent. CD interest comes from swap activity, not LP trades.
+| Fee | Rate | Routing |
+|-----|------|---------|
+| **Atomic swap (XFG side)** | **1%** (`SWAP_FEE_RATE_BPS = 100`) | **69%** CD yield · **11%** Bonus Vault · **20%** Treasury |
+| **Hearth trade** | **1%** (`HEARTH_FEE_BPS = 100`) | **50%** CD yield accumulator · **50%** LP |
+
+These are separate mechanisms. Atomic-swap fees are not the same stream as Hearth LP fees. DIGM (if enabled elsewhere) uses its own fee constants and is **not** core Fuego onboarding.
+
+## Dual-asset model
+
+| Asset | Role |
+|-------|------|
+| **XFG** | Private base coin; burned to mint HEAT; used in Hearth and swapXFG |
+| **HEAT** | Flatcoin; unit for CDs; traded against XFG on Hearth |
+
+Full architecture: [Dual-asset architecture](/fuego-dual-asset-architecture).
 
 ## Get started
 
 <Card title="Install and run Fuego" icon="rocket" href="/getting-started/installation">
-  Build from source or run with Docker. Five minutes to your first running node.
+  Build from source or run with Docker.
 </Card>

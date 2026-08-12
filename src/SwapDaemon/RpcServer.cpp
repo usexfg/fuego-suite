@@ -23,9 +23,11 @@
 
 namespace XfgSwap {
 
-RpcServer::RpcServer(SwapDaemon& daemon, Logging::ILogger& logger)
+RpcServer::RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
+                     const std::string& controlToken)
   : m_daemon(daemon)
-  , m_logger(logger, "RpcServer") {
+  , m_logger(logger, "RpcServer")
+  , m_controlToken(controlToken) {
 }
 
 RpcServer::~RpcServer() {
@@ -64,8 +66,34 @@ void RpcServer::stop() {
   m_running = false;
 }
 
+bool RpcServer::authorize(const httplib::Request& req) const {
+  if (m_controlToken.empty()) {
+    // Fail closed for fund-affecting methods is enforced in dispatch;
+    // empty token rejects mutators there.
+    return true;
+  }
+  auto it = req.headers.find("X-Swap-Token");
+  if (it != req.headers.end() && it->second == m_controlToken) return true;
+  auto auth = req.headers.find("Authorization");
+  if (auth != req.headers.end()) {
+    const std::string& v = auth->second;
+    const std::string bearer = "Bearer ";
+    if (v.size() > bearer.size() && v.compare(0, bearer.size(), bearer) == 0 &&
+        v.substr(bearer.size()) == m_controlToken) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void RpcServer::registerRoutes() {
   m_server->Post("/", [this](const httplib::Request& req, httplib::Response& res) {
+    if (!authorize(req)) {
+      res.status = 401;
+      res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32001,"message":"Unauthorized"},"id":null})",
+                      "application/json");
+      return;
+    }
     std::string response = dispatch(req.body);
     res.set_content(response, "application/json");
     res.set_header("Access-Control-Allow-Origin", "*");
@@ -74,11 +102,11 @@ void RpcServer::registerRoutes() {
   m_server->Options(".*", [](const httplib::Request&, httplib::Response& res) {
     res.set_header("Access-Control-Allow-Origin", "*");
     res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.set_header("Access-Control-Allow-Headers", "Content-Type");
+    res.set_header("Access-Control-Allow-Headers", "Content-Type, X-Swap-Token, Authorization");
     res.status = 204;
   });
 
-  // Health check
+  // Health check (no auth)
   m_server->Get("/health", [](const httplib::Request&, httplib::Response& res) {
     res.set_content(R"({"status":"ok"})", "application/json");
     res.set_header("Access-Control-Allow-Origin", "*");
@@ -115,6 +143,14 @@ std::string RpcServer::dispatch(const std::string& body) {
   }
 
   m_logger(Logging::INFO) << "RPC method: " << method;
+
+  // Mutating methods require a non-empty control token (set via --rpc-token).
+  const bool mutating = (method == "initiate_swap" || method == "refund" ||
+                         method == "check_timeouts");
+  if (mutating && m_controlToken.empty()) {
+    return rpcError(-32001,
+      "Unauthorized: set --rpc-token (X-Swap-Token header required for fund methods)", id);
+  }
 
   std::string result;
   if (method == "initiate_swap") {
@@ -166,6 +202,10 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     if (root.contains("peer")) {
       peer = root("peer").getString();
     }
+    std::string expectedPeerHex;
+    if (root.contains("expected_peer_pubkey")) {
+      expectedPeerHex = root("expected_peer_pubkey").getString();
+    }
 
     if (xfgAmount == 0) {
       return rpcError(-32602, "xfg_amount must be > 0");
@@ -175,6 +215,11 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     }
     if (peer.empty()) {
       return rpcError(-32602, "peer endpoint is required");
+    }
+    // Require expected peer identity so KEY_EXCHANGE cannot be first-wins griefed.
+    if (expectedPeerHex.empty()) {
+      return rpcError(-32602,
+        "expected_peer_pubkey is required (64-char hex Ed25519 pubkey of counterparty swap key)");
     }
 
     SwapParams swapParams;
@@ -190,6 +235,7 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     std::memset(&swapParams.ourSwapSecKey, 0, sizeof(swapParams.ourSwapSecKey));
     std::memset(&swapParams.ourSwapPubKey, 0, sizeof(swapParams.ourSwapPubKey));
     std::memset(&swapParams.peerSwapPubKey, 0, sizeof(swapParams.peerSwapPubKey));
+    std::memset(&swapParams.expectedPeerSwapPubKey, 0, sizeof(swapParams.expectedPeerSwapPubKey));
     std::memset(&swapParams.escrowPubKey, 0, sizeof(swapParams.escrowPubKey));
     std::memset(&swapParams.adaptorPoint, 0, sizeof(swapParams.adaptorPoint));
     std::memset(&swapParams.adaptorSecret, 0, sizeof(swapParams.adaptorSecret));
@@ -202,12 +248,18 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     swapParams.escrowOutputIndex = 0;
     swapParams.htlcOutputIndex = 0;
 
+    if (!Common::podFromHex(expectedPeerHex, swapParams.expectedPeerSwapPubKey)) {
+      return rpcError(-32602, "expected_peer_pubkey must be 64-char hex");
+    }
+
     if (!m_daemon.initiate(swapParams)) {
       return rpcError(-32000, "Failed to initiate swap");
     }
 
     std::ostringstream oss;
-    oss << R"({"swap_id": ")" << swapParams.swapId << R"("})";
+    oss << R"({"swap_id": ")" << swapParams.swapId
+        << R"(", "our_swap_pubkey": ")" << Common::podToHex(swapParams.ourSwapPubKey)
+        << R"("})";
     return oss.str();
   } catch (const std::exception& e) {
     return rpcError(-32602, std::string("Parameter error: ") + e.what());

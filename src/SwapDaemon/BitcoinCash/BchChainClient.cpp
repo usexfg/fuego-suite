@@ -241,12 +241,14 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
                                    std::to_string(params.ctrAmount));
   }
 
-  // Verify that the P2SH script hash matches the expected HTLC contract.
-  if (haveExpectedHash && !expectedScriptHash.empty()) {
-    if (onChainScriptHash != expectedScriptHash) {
-      return ChainClientResult::fail(
-          "BCH verifyLock SPV: P2SH script hash does not match expected HTLC contract");
-    }
+  // Fail closed: must bind to expected redeem script (no amount-only P2SH).
+  if (!haveExpectedHash || expectedScriptHash.empty()) {
+    return ChainClientResult::fail(
+        "BCH verifyLock SPV: chainState redeem script required to verify P2SH script hash");
+  }
+  if (onChainScriptHash != expectedScriptHash) {
+    return ChainClientResult::fail(
+        "BCH verifyLock SPV: P2SH script hash does not match expected HTLC contract");
   }
 
   // Verify inclusion via SPV

@@ -118,6 +118,10 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       break;
     case PeerMessageType::SECRET_REVEAL:
       appendPod(buf, msg.secretReveal.adaptorSecret);
+      if (!msg.secretReveal.claimTxId.empty()) {
+        buf.insert(buf.end(), msg.secretReveal.claimTxId.begin(),
+                   msg.secretReveal.claimTxId.end());
+      }
       break;
     case PeerMessageType::ABORT:
       break;
@@ -182,6 +186,8 @@ std::string serializePeerMessage(const PeerMessage& msg) {
 
     case PeerMessageType::SECRET_REVEAL:
       payload.insert("adaptorSecret", podHex(msg.secretReveal.adaptorSecret));
+      if (!msg.secretReveal.claimTxId.empty())
+        payload.insert("claimTxId", msg.secretReveal.claimTxId);
       break;
 
     case PeerMessageType::ABORT:
@@ -253,6 +259,8 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
       case PeerMessageType::SECRET_REVEAL:
         if (!hexPod(p("adaptorSecret").getString(), msg.secretReveal.adaptorSecret))
           return false;
+        if (p.contains("claimTxId") && p("claimTxId").isString())
+          msg.secretReveal.claimTxId = p("claimTxId").getString();
         break;
 
       case PeerMessageType::ABORT:

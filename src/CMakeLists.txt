@@ -264,11 +264,24 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/BitcoinCash/BchRpcClient.cpp
     SwapDaemon/BitcoinCash/HtlcScript.cpp
     SwapDaemon/BitcoinCash/BchChainClient.cpp
+    SwapDaemon/Doge/DogeRpcClient.cpp
+    SwapDaemon/Doge/DogeHtlcScript.cpp
+    SwapDaemon/Doge/DogeChainClient.cpp
+    SwapDaemon/Dash/DashRpcClient.cpp
+    SwapDaemon/Dash/DashHtlcScript.cpp
+    SwapDaemon/Dash/DashChainClient.cpp
+    SwapDaemon/Zec/ZecRpcClient.cpp
+    SwapDaemon/Zec/ZecHtlcScript.cpp
+    SwapDaemon/Zec/ZecChainClient.cpp
+    SwapDaemon/Zano/ZanoRpcClient.cpp
+    SwapDaemon/Zano/ZanoAddress.cpp
+    SwapDaemon/Zano/ZanoChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/Crypto/LegacySighash.cpp
     SwapDaemon/Crypto/Base58Std.cpp
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
@@ -290,12 +303,23 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
+    SwapDaemon/Ton/TonRpcClient.cpp
+    SwapDaemon/Ton/TonChainClient.cpp
+    SwapDaemon/Ton/TonCell.cpp
+    SwapDaemon/Sia/SiaRpcClient.cpp
+    SwapDaemon/Sia/SiaHtlcScript.cpp
+    SwapDaemon/Sia/SiaChainClient.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
+    # Phase 7: Sia renterd storage infrastructure (DIGM upload pipe, not full product flow)
+    Storage/Sia/SiaConfig.cpp
+    Storage/Sia/SiaStorageClient.cpp
+    Storage/Sia/SiaRenterSetup.cpp
 )
 target_include_directories(SwapDaemonLib PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/SwapDaemon
+    ${CMAKE_SOURCE_DIR}/src/Storage
 )
 target_link_libraries(SwapDaemonLib PUBLIC Common Crypto Serialization CryptoNoteCore OpenSSL::SSL OpenSSL::Crypto secp256k1)
 target_include_directories(SwapDaemonLib SYSTEM PUBLIC ${JSONCPP_INCLUDE_DIRS})
@@ -602,11 +626,24 @@ add_executable(SwapDaemon
     SwapDaemon/BitcoinCash/BchRpcClient.cpp
     SwapDaemon/BitcoinCash/HtlcScript.cpp
     SwapDaemon/BitcoinCash/BchChainClient.cpp
+    SwapDaemon/Doge/DogeRpcClient.cpp
+    SwapDaemon/Doge/DogeHtlcScript.cpp
+    SwapDaemon/Doge/DogeChainClient.cpp
+    SwapDaemon/Dash/DashRpcClient.cpp
+    SwapDaemon/Dash/DashHtlcScript.cpp
+    SwapDaemon/Dash/DashChainClient.cpp
+    SwapDaemon/Zec/ZecRpcClient.cpp
+    SwapDaemon/Zec/ZecHtlcScript.cpp
+    SwapDaemon/Zec/ZecChainClient.cpp
+    SwapDaemon/Zano/ZanoRpcClient.cpp
+    SwapDaemon/Zano/ZanoAddress.cpp
+    SwapDaemon/Zano/ZanoChainClient.cpp
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
+    SwapDaemon/Crypto/LegacySighash.cpp
     SwapDaemon/Crypto/Base58Std.cpp
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
@@ -628,7 +665,16 @@ add_executable(SwapDaemon
     SwapDaemon/Decred/DcrRpcClient.cpp
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
+    SwapDaemon/Ton/TonRpcClient.cpp
+    SwapDaemon/Ton/TonChainClient.cpp
+    SwapDaemon/Ton/TonCell.cpp
+    SwapDaemon/Sia/SiaRpcClient.cpp
+    SwapDaemon/Sia/SiaHtlcScript.cpp
+    SwapDaemon/Sia/SiaChainClient.cpp
     SwapDaemon/Spv/Neutrino/NeutrinoSpvClient.cpp
+    Storage/Sia/SiaConfig.cpp
+    Storage/Sia/SiaStorageClient.cpp
+    Storage/Sia/SiaRenterSetup.cpp
 )
 
 # Add TestnetWallet executable (extends simple_wallet with testnet-specific commands)
@@ -868,8 +914,48 @@ set_property(TARGET Optimizer PROPERTY OUTPUT_NAME "optimizer")
 set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 
 # --------------------------
-# Install targets
+# Test daemons → build/test_daemons/ (kept out of production src/)
 # --------------------------
+set(_TEST_DAEMON_TARGETS
+    test_adaptor_roundtrip
+    test_price_oracle_arb
+    test_swap_hashlock
+    test_sol_htlc_address
+    test_sol_e2e
+    test_monero_address
+    test_xmr_keys
+    test_xmr_sweep_sequence
+    test_spv_merkle
+    test_spv_headers
+    test_spv_electrum
+    test_spv_config_wiring
+    test_swap_state_machine_spv
+    test_bch_htlc
+    test_bch_chain_client
+    test_btc_htlc
+    test_ltc_htlc
+    test_kmd_htlc
+    test_neutrino
+    test_bsc_chain_client
+    test_polygon_chain_client
+    test_dcr_chain_client
+    test_production_gates
+    test_eth_protocol
+    test_ring_collab
+    test_bch_secret_reveal
+    test_xfg_spend_states
+    test_xfg_dual_protocol
+    test_xmr_live_e2e
+    XmrClaimAdaptorTests
+    test_orderbook
+    test_orderbook_phase3
+    test_orderbook_phase5
+    test_p2p_orderbook
+)
+foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
+  set_target_properties(${_tgt} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
+endforeach()
 include(GNUInstallDirs)
 
 install(TARGETS Daemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

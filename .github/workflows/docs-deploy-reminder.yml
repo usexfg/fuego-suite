@@ -1,0 +1,49 @@
+# Mintlify deploys via the Mintlify GitHub App (not a CLI push from this workflow).
+# After docs merge to the branch connected in https://app.mintlify.com/settings/deployment/git-settings
+# for the docs.usexfg.org project, Mintlify rebuilds automatically.
+#
+# This workflow only records deploy readiness (validate already runs in docs.yml).
+# Manual steps if the site is stale:
+#   1. mint login   (local, browser OAuth)
+#   2. Confirm GitHub App is installed on usexfg/fuego-suite with docs/ path
+#   3. Push/merge to the connected branch (often main/master)
+#   4. Optional: mintlify dashboard → Trigger deployment
+
+name: Docs deploy notes
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-deploy-reminder.yml"
+
+jobs:
+  mintlify-ship-checklist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Print Mintlify ship checklist
+        run: |
+          cat <<'EOF'
+          === docs.usexfg.org ship path ===
+          Mintlify production deploy is GitHub-App driven, not mint CLI deploy.
+          Checklist:
+            [ ] docs.yml green (alignment tests + mint validate + broken-links)
+            [ ] Mintlify GitHub App installed on this repo (dashboard Git settings)
+            [ ] docs/ is the content root (or monorepo path configured in Mintlify)
+            [ ] This branch is the deployment branch
+            [ ] Custom domain docs.usexfg.org points at Mintlify
+          After push, open https://app.mintlify.com/ → deployments for status.
+          Local auth (optional preview tooling): cd docs && npx mint@latest login
+          EOF
+
+      - name: Validate docs tree (ship gate)
+        working-directory: docs
+        run: |
+          npx --yes mint@latest validate
+          npx --yes mint@latest broken-links

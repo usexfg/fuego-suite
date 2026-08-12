@@ -1,61 +1,69 @@
 ---
 title: "Risk warnings"
-description: "Understand the risks of commitment deposits, atomic swaps, LP positions, and HEAT burns."
-keywords: ["risk", "warning", "CD risk", "swap risk", "impermanent loss", "burn risk", "fuego"]
+description: "Risks of HEAT CDs, swapXFG, Hearth LP, and HEAT minting."
+keywords: ["risk", "warning", "HEAT CD", "swap risk", "impermanent loss", "mint risk", "fuego"]
 ---
 
-## Commitment deposits (CDs)
+## HEAT Certificates of Deposit (CDs)
+
+CDs lock **HEAT**, not XFG. You must [mint HEAT](/features/heat/mint-heat) first (`mintHeatV10`), then open a term-locked HEAT CD.
 
 <Warning>
-  CD yield is variable and not guaranteed. Interest depends entirely on atomic swap volume on the Fuego network. During periods of low swap activity, yield may be very low or zero.
+  CD yield is variable and not guaranteed. Interest depends on protocol fee volume (swapXFG atomic swaps and Hearth trades). Low activity periods can mean very low or zero yield.
 </Warning>
 
-**Lock-up risk.** Your XFG is inaccessible until the maturity height. You cannot withdraw early. If you need the funds before maturity, your only option is to transfer the deposit to another party, typically at a discount.
+**Lock-up risk.** Your **HEAT** is inaccessible until the maturity height. You cannot withdraw early. Liquidity before maturity requires [transferring the CD](/features/commitment-deposits/transferring-deposits), typically at a negotiated discount.
 
-**Interest rate risk.** You lock in a term but not a rate. If swap volume decreases significantly after you lock, you earn less than expected.
+**Interest rate risk.** You lock a term, not a fixed APY. If fee volume falls after you lock, you earn less than expected.
 
-**Smart contract risk.** Commitment deposit logic is enforced by the Fuego consensus rules. A consensus bug could theoretically affect your deposit. Fuego's consensus rules are open source — review them if you are locking significant amounts.
+**Consensus risk.** CD rules are enforced by Fuego consensus. A consensus bug could affect deposits. Rules are open source — review them before locking significant amounts.
 
----
-
-## Atomic swaps
-
-**Counterparty risk.** If your counterparty goes offline before completing the swap, you must wait for the timelock to expire before reclaiming your XFG. During this window, your funds are locked. This is not a loss — it is a delay.
-
-**Timelock duration.** The timelock duration depends on the counterparty chain. ETH-side timelocks are longer than XMR-side due to confirmation requirements. Check the swap daemon documentation for your pair.
-
-**No price guarantee.** There is no slippage protection in atomic swaps. You and the counterparty agree on a price off-chain. If the market moves between agreement and completion, the agreed price is still what executes.
+**Wrong model.** There is no current product path that locks **XFG** as a CD. COLD / Ember_Heat / “XFG deposit” models are removed.
 
 ---
 
-## LP swap pool
+## swapXFG (atomic swaps)
+
+**Counterparty stall.** If the counterparty goes offline mid-swap, wait for the timelock, then refund. Funds are delayed, not forfeited, if you follow the refund path.
+
+**Timelock duration.** Depends on the counterparty chain and daemon config. Check your pair’s docs before large swaps.
+
+**No on-protocol price protection.** You and the counterparty agree amount/rate off-chain (or via offers). Market moves between agreement and completion do not auto-adjust the deal.
+
+**Fee.** Completed XFG-side swaps charge **1%**, routed **69% CD yield / 11% Bonus Vault / 20% Treasury** (`CryptoNoteConfig.h`).
+
+---
+
+## Hearth liquidity
+
+Hearth is the on-chain **XFG/HEAT** market. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), split **50% CD / 50% LP** in consensus code.
 
 <Warning>
-  Providing liquidity to the LP pool carries impermanent loss risk. If the XFG price moves significantly while you are an LP, you may withdraw less XFG than you deposited, even after accounting for fee income.
+  Providing Hearth liquidity carries impermanent loss risk. If the XFG/HEAT pool price moves sharply while you are an LP, you may withdraw less value than you deposited, even after LP fee income.
 </Warning>
 
-**Impermanent loss.** This is inherent to AMM design. Large price movements against your position reduce your effective return. The 0.3% fee income may not offset significant price moves.
+**Impermanent loss.** Inherent to AMM-style inventory. Large adverse moves can dominate fee income. Do not treat the old “0.3% LP fee” figure as Hearth’s protocol trade fee — that number is **not** `HEARTH_FEE_BPS`.
 
-**Smart contract risk.** LP pool logic is enforced on-chain. Review the pool mechanics in developer documentation before committing large amounts.
+**Consensus risk.** Pool mechanics are on-chain. Review [How Hearth works](/features/hearth/how-hearth-works) before large LP deposits.
 
 ---
 
-## HEAT burns
+## HEAT mint (burn XFG)
 
 <Danger>
-  HEAT burns are permanent and irrevocable. XFG locked in a burn deposit cannot be withdrawn under any circumstances. There is no recovery path. No future protocol upgrade will unlock burn deposits.
+  Minting HEAT **burns XFG permanently**. Burned XFG is not withdrawable as XFG. There is no recovery of the burned principal.
 </Danger>
 
-**Permanent loss of principal.** You are permanently reducing your XFG balance. The only return is HEAT tokens via off-chain claiming — this is not guaranteed to offset the burned XFG value.
+**Permanent reduction of XFG.** You exchange XFG for HEAT at Hearth TWAP pricing via **`mintHeatV10`**. HEAT value and future CD yield are not a guaranteed recovery of burned XFG market value.
 
-**COLDAO dependency.** HEAT token value depends on COLDAO adoption. COLDAO is an off-chain system — its mechanics and value are external to the Fuego protocol.
+**Wallet backup.** Keep seed + wallet file backups before minting and before opening CDs. Deposit secrets and keys live in the wallet.
 
-**Proof generation required.** To claim HEAT, you must generate a STARK proof using your wallet's deposit secret. If you lose your wallet file after burning, your HEAT claim is lost. Back up your wallet file before burning.
+**Historical note (not the primary path).** Older STARK / off-chain claim flows and COLDAO-era language are **deprecated product narrative**. Do not treat “generate a STARK proof to claim HEAT elsewhere” as the current default mint path.
 
 ---
 
 ## General
 
-**No reversals.** All Fuego transactions — sends, deposits, withdrawals, swaps, burns — are irreversible once confirmed. Double-check everything before broadcasting.
+**No reversals.** Confirmed sends, mints, CD ops, Hearth trades, and swaps are irreversible.
 
-**Privacy is probabilistic.** Ring signatures hide your transaction in a set of decoys. This provides strong probabilistic privacy but is not absolute. Behavioral patterns (timing, amounts, on-chain interaction patterns) can reduce effective privacy.
+**Privacy is probabilistic.** Ring signatures and commitments provide strong privacy, not absolute anonymity under all behavioral analysis.

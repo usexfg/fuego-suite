@@ -1,7 +1,9 @@
 # Product Marketing Context
 
-*Last updated: 2026-06-04*
+*Last updated: 2026-08-11*
 
+
+> **Fee source of truth:** `src/CryptoNoteConfig.h` and public Mintlify docs (`docs/introduction.mdx`). Strategy prose below is marketing voice — fee %s must match live constants (swap 1% → 69/11/20; Hearth 1% → 50/50 CD/LP).
 ## Product Overview
 **One-liner:** Fuego is a sovereign private bank that pays you to disappear.
 
@@ -11,7 +13,7 @@
 
 **Product type:** Open-source blockchain protocol + native financial applications (AMM, CDs, atomic swaps, stablecoin/flatcoin)
 
-**Business model:** Extractively-aligned fee economy. 0.1% CD creation fee funds development. 0.3% swap fees feed LP providers and CD holders. No VC tokens, no premine extraction. Protocol revenue flows to users and builders, not investors.
+**Business model:** Extractively-aligned fee economy. Protocol fees (not emissions) fund yield and treasury. Atomic swaps charge **1%** on the XFG side, split **69% CD yield / 11% Bonus Vault / 20% Treasury**. Hearth charges **1%**, split **50% CD / 50% LP** (`CryptoNoteConfig.h`). No VC tokens, no premine extraction. Protocol revenue flows to users and builders, not investors.
 
 ## Target Audience
 
@@ -76,7 +78,7 @@
 - **Proof of Work.** Fuego is PoW. Entry requires energy and hardware, not a bag of tokens. Anyone with a CPU can mine. PoS is a shareholder program — the rich validate the rich. PoW is a job — anyone who does the work gets paid.
 - **Only privacy-preserving yield in crypto.** No other privacy chain has CDs, AMM, or a flatcoin.
 - **One-way burn to mint.** HEAT cannot death-spiral into XFG inflation. Burning HEAT unlocks XFG from collateral reserves, not from new emission. No Terra/Luna feedback loop possible.
-- **Real yield, not inflationary rewards.** CD yields come from 80% of protocol swap fees. No token printing. No dilution of existing holders.
+- **Real yield, not inflationary rewards.** CD yields come from the CD share of protocol fees (atomic swap **69%** of 1% + Hearth **50%** of 1%). No token printing. No dilution of existing holders.
 - **CPI-pegged flatcoin.** HEAT preserves purchasing power. It's a TIPS-equivalent with native privacy. No other flatcoin has this.
 - **Anti-delisting atomic swaps.** No exchange can de-platform Fuego. Users swap directly peer-to-peer across chains.
 - **CLI-first philosophical filter.** This is not a bug. It's a signal. People who won't open a terminal won't understand financial sovereignty. That's fine.
@@ -166,7 +168,7 @@
 ## Proof Points
 
 **Metrics:**
-- CD yields paid from 80% of real protocol swap fees (not token printing)
+- CD yields paid from protocol fee shares: swap 69% of 1% + Hearth 50% of 1% (not token printing)
 - Flatcoin CPI tracking via 4 independent oracle sources with median selection
 - One-way burn-to-mint prevents Terra/Luna-style death spirals
 - No ICO. No premine. No VC tokens. Code from day one.
@@ -179,7 +181,7 @@
 **Value themes:**
 | Theme | Proof |
 |-------|-------|
-| Real yield, not token printing | 80% swap fees → CD pool. Verifiable on-chain. |
+| Real yield, not token printing | Swap 69% of 1% + Hearth 50% of 1% → CD yield plumbing. Verifiable on-chain. |
 | No death spiral possible | One-way burn. HEAT→XFG redemption draws from collateral reserve, not new minting. |
 | Anti-delisting by design | Atomic swaps. No exchange required. |
 | Private by default | CryptoNote ring signatures. Stealth addresses. TOR/I2P at network layer. |

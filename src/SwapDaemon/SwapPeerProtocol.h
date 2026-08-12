@@ -90,8 +90,10 @@ struct MsgRingRound2 {
 };
 
 // Phase 6: Bob reveals adaptor secret t to Alice for CTR HTLC claim.
+// claimTxId (optional hex) helps Alice extract/verify the on-chain claim.
 struct MsgSecretReveal {
   Crypto::SecretKey adaptorSecret;
+  std::string claimTxId;  // empty if unknown; not required when secret verifies against T
 };
 
 // ── Wire envelope ────────────────────────────────────────────────────

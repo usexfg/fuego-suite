@@ -87,7 +87,22 @@ enum class SwapPair : uint8_t {
   BTC = 9,
   LTC = 10,
   POLYGON = 11,
-  GLEEC = 12
+  GLEEC = 12,
+  ROBINHOOD = 13,
+  AVAX = 14,
+  CRO = 15,
+  BOB = 16,
+  SIA = 17,
+  UNICHAIN = 18,
+  PLASMA = 19,
+  DOGE = 20,
+  DASH = 21,
+  ZEC = 22,
+  PULSEX = 23,
+  ZANO = 24,
+  MONAD = 25,
+  OPTIMISM = 26,
+  TON = 27
 };
 
 // Musig2 session state persisted across swap steps.

@@ -31,8 +31,11 @@ func TestBuildHeatMint_NotLegacyBurnDeposit(t *testing.T) {
 	if c.Params["heat_minted"].(uint64) != 1_000_000 {
 		t.Fatalf("heat_minted=%v", c.Params["heat_minted"])
 	}
-	if c.Params["mixin"].(uint64) != DynamaxMixin {
-		t.Fatalf("mixin=%v want dynamax 0", c.Params["mixin"])
+	if c.Params["mixin"].(uint64) != MaxTxMixin {
+		t.Fatalf("mixin=%v want dynamax max %d (not 0)", c.Params["mixin"], MaxTxMixin)
+	}
+	if c.Params["mixin"].(uint64) < MinTxMixin {
+		t.Fatal("dynamax floor is min mixin 8")
 	}
 }
 
@@ -140,12 +143,20 @@ func TestBuildHearthDaemon(t *testing.T) {
 func TestBuildSendTransaction_DynamaxAnonymity(t *testing.T) {
 	c := BuildSendTransaction("SRC", "DST", 1_000_000, DefaultMixin())
 	mustWallet(t, c, "sendTransaction")
-	if c.Params["anonymity"].(uint64) != DynamaxMixin {
-		t.Fatalf("anonymity=%v want dynamax 0 (not fixed 4)", c.Params["anonymity"])
+	if c.Params["anonymity"].(uint64) != MaxTxMixin {
+		t.Fatalf("anonymity=%v want max mixin %d (dynamax probe)", c.Params["anonymity"], MaxTxMixin)
 	}
-	// fixed wrong ring size regression guard
+	// fixed wrong ring size regression guards
 	if anon, ok := c.Params["anonymity"].(uint64); ok && anon == 4 {
 		t.Fatal("must not hardcode anonymity=4")
+	}
+	if anon, ok := c.Params["anonymity"].(uint64); ok && anon == 0 {
+		t.Fatal("mixin 0 is not dynamax — pass max 32 so wallet can settle 8/16/32")
+	}
+	// zero input coerced to dynamax max
+	c0 := BuildSendTransaction("SRC", "DST", 1_000_000, 0)
+	if c0.Params["anonymity"].(uint64) != MaxTxMixin {
+		t.Fatalf("mixin 0 must coerce to MaxTxMixin, got %v", c0.Params["anonymity"])
 	}
 }
 
@@ -207,8 +218,14 @@ func TestWalletBinaryCandidates_IncludesConfigured(t *testing.T) {
 }
 
 func TestDefaultMixin_IsDynamax(t *testing.T) {
-	if DefaultMixin() != 0 {
-		t.Fatal("DefaultMixin must be 0 for dynamax")
+	if DefaultMixin() != MaxTxMixin {
+		t.Fatalf("DefaultMixin=%d want MaxTxMixin=%d (probe ceiling for dynamax 8/16/32)", DefaultMixin(), MaxTxMixin)
+	}
+	if MinTxMixin != 8 || MaxTxMixin != 32 {
+		t.Fatalf("dynamax range is 8..32, got min=%d max=%d", MinTxMixin, MaxTxMixin)
+	}
+	if DynamaxMixin == 0 {
+		t.Fatal("DynamaxMixin must not be 0")
 	}
 }
 

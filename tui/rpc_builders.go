@@ -1,11 +1,21 @@
 package main
 
 // RPC builders map UI intents to PaymentGate / fire_wallet / daemon calls.
-// DynamaxMixin (0) lets the wallet apply DynamicRingSizeCalculator / protocol min mixin.
+//
+// Dynamax (dynamic max mixin): protocol allows uniform ring sizes {32, 16, 8}
+// (see DynamicRingSizeCalculator / MIN_TX_MIXIN_SIZE_V10=8, MAX_TX_MIXIN_SIZE=32).
+// Clients probe with maxMixin (32); the wallet/daemon then pick the largest
+// approved size achievable with the current decoy pool. This is NOT mixin=0.
 
-// DynamaxMixin is the default ring-size hint for outbound spends.
-// Zero means "wallet chooses" (dynamax / protocol minimum), not a fixed ring of zero decoys only.
-const DynamaxMixin uint64 = 0
+const (
+	// MinTxMixin is the mainnet dynamax floor (V10+).
+	MinTxMixin uint64 = 8
+	// MaxTxMixin is the dynamax ceiling; default outbound probe value.
+	MaxTxMixin uint64 = 32
+	// DynamaxMixin is the default client-supplied mixin: request the maximum so
+	// DynamicRingSizeCalculator can settle on 32, 16, or 8 from available outs.
+	DynamaxMixin uint64 = MaxTxMixin
+)
 
 // RpcKind classifies where a call is sent.
 type RpcKind int
@@ -25,14 +35,17 @@ type RpcCall struct {
 	Params map[string]interface{} // wallet params or JSON body
 }
 
-// DefaultMixin returns DynamaxMixin for all spend paths.
+// DefaultMixin returns MaxTxMixin (32) so wallets probe at dynamax ceiling.
 func DefaultMixin() uint64 { return DynamaxMixin }
 
 // ── HEAT mint (current path: heat_mint / mintHeatV10) ────────────────────────
 
 // BuildHeatMint builds wallet heat_mint params (not createBurnDeposit).
-// xfgBurned and heatMinted are atomic units; mixin 0 = dynamax.
+// xfgBurned and heatMinted are atomic units; mixin should be MaxTxMixin (32).
 func BuildHeatMint(xfgBurned, heatMinted, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "heat_mint",
@@ -61,6 +74,9 @@ func EstimateHeatMinted(xfgBurned, reserveXfg, reserveHeat uint64) uint64 {
 
 // BuildHeatDeposit locks HEAT for term_epochs (current CD path).
 func BuildHeatDeposit(amountAtomic uint64, termEpochs uint32, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "heat_deposit",
@@ -96,6 +112,9 @@ func BuildWithdrawDeposit(depositID uint64) RpcCall {
 
 // BuildAmmSwap builds amm_swap (direction 0=XFG→HEAT, 1=HEAT→XFG).
 func BuildAmmSwap(direction uint8, inputAmount, minOutput, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "amm_swap",
@@ -112,6 +131,9 @@ func BuildAmmSwap(direction uint8, inputAmount, minOutput, mixin uint64) RpcCall
 
 // BuildPlaceLimitOrder builds place_limit_order (side 0=BUY_XFG, 1=SELL_XFG).
 func BuildPlaceLimitOrder(side uint8, amount, targetPrice uint64, expiration uint32, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "place_limit_order",
@@ -128,6 +150,9 @@ func BuildPlaceLimitOrder(side uint8, amount, targetPrice uint64, expiration uin
 
 // BuildCancelLimitOrder cancels an open limit order by id/hash string.
 func BuildCancelLimitOrder(orderID string, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "cancel_limit_order",
@@ -184,10 +209,14 @@ func BuildHeatMetrics() RpcCall {
 	return RpcCall{Kind: RpcDaemonGET, Path: "/heat_metrics"}
 }
 
-// ── Transfer / send (dynamax mixin) ──────────────────────────────────────────
+// ── Transfer / send (dynamax mixin probe = max 32) ───────────────────────────
 
-// BuildSendTransaction builds PaymentGate-style sendTransaction with dynamax anonymity.
+// BuildSendTransaction builds PaymentGate-style sendTransaction.
+// anonymity/mixin is the probe ceiling (default 32); wallet dynamax settles 8/16/32.
 func BuildSendTransaction(sourceAddr, destAddr string, amountAtomic uint64, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "sendTransaction",
@@ -204,6 +233,9 @@ func BuildSendTransaction(sourceAddr, destAddr string, amountAtomic uint64, mixi
 
 // BuildSendHeat builds send_heat (PaymentGate / fire_wallet).
 func BuildSendHeat(address string, amountAtomic, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "send_heat",
@@ -258,6 +290,9 @@ func BuildGetAliasByAddress(address string) RpcCall {
 // BuildRegisterAlias registers an @alias via wallet RPC (WalletGreen path when exposed).
 // Method name matches SimpleWallet register_alias command surface.
 func BuildRegisterAlias(alias, ownerAddress string, mixin uint64) RpcCall {
+	if mixin == 0 {
+		mixin = DynamaxMixin
+	}
 	return RpcCall{
 		Kind:   RpcWallet,
 		Method: "register_alias",

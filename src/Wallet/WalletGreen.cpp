@@ -59,6 +59,7 @@
 #include "WalletSerializationV2.h"
 #include "WalletErrors.h"
 #include "WalletUtils.h"
+#include "DynamicRingSize.h"
 
 using namespace Common;
 using namespace Crypto;
@@ -67,6 +68,38 @@ using namespace Logging;
 
 namespace
 {
+  // Dynamax for commitment/HEAT rings: probe at maxMixin, settle on largest of
+  // {32,16,8} achievable from available same-amount outs (including the real).
+  // When the HEAT decoy pool is empty at launch, allow ring size 1 (real only)
+  // so txs can still clear — pool grows as mints/deposits land.
+  size_t pickDynamaxCommitmentRingSize(size_t availableSameAmount, size_t maxRing, size_t minRingMainnet) {
+    if (availableSameAmount == 0) {
+      return 1; // should not happen (at least the real exists when building)
+    }
+    std::vector<CryptoNote::OutputInfo> infos;
+    infos.emplace_back(0, availableSameAmount);
+    // minRing=0 allows bootstrap below 8 when pool is thin (HEAT launch)
+    size_t opt = CryptoNote::DynamicRingSizeCalculator::calculateOptimalRingSize(
+      0, infos, CryptoNote::BLOCK_MAJOR_VERSION_10, /*minRing*/0, maxRing);
+    if (opt == 0) {
+      // No approved 8/16/32 fit — use whatever we have (bootstrap), at least 1
+      return std::min(availableSameAmount, maxRing);
+    }
+    // Prefer not to go below mainnet min when pool can support it
+    if (opt < minRingMainnet && availableSameAmount >= minRingMainnet) {
+      return minRingMainnet;
+    }
+    return opt;
+  }
+
+  uint64_t normalizeMixinProbe(uint64_t mixin, size_t maxMixin) {
+    // Clients may pass 0 meaning "default"; treat as max probe for dynamax.
+    if (mixin == 0) {
+      return static_cast<uint64_t>(maxMixin);
+    }
+    return mixin;
+  }
+
   #pragma pack(push, 1)
   struct LegacyEncryptedWalletRecord {
     Crypto::chacha8_iv iv;
@@ -1200,6 +1233,8 @@ namespace CryptoNote
     }
 
     fee = m_currency.minimumFee();
+    // Dynamax: probe at maxMixin (32); wallet ring construction uses available outs
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
 
     // Auto-compute heatMinted using the rolling 8-block TWAP of Hearth spot price.
     // twap = hearthPoolRatio averaged over last 8 blocks (10^18 precision, XFG per HEAT).
@@ -1280,7 +1315,7 @@ namespace CryptoNote
     CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
     transaction->appendExtra(extraData);
 
-    // XFG inputs with KeyInput ring signatures
+    // XFG inputs with KeyInput ring signatures (dynamax probe mixin)
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
     requestMixinOuts(selectedTransfers, mixin, mixinResult);
@@ -1317,10 +1352,11 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS));
     }
     fee = m_currency.minimumFee();
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
     std::vector<WalletOuts> wallets = pickWalletsWithMoney();
     std::vector<OutputToTransfer> selectedTransfers;
     uint64_t neededMoney = amount + fee;
-    uint64_t foundMoney = selectTransfers(neededMoney, mixin == 0, m_currency.defaultDustThreshold(), std::move(wallets), selectedTransfers);
+    uint64_t foundMoney = selectTransfers(neededMoney, false, m_currency.defaultDustThreshold(), std::move(wallets), selectedTransfers);
     if (foundMoney < neededMoney) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient funds for limit order");
     }
@@ -1382,9 +1418,10 @@ namespace CryptoNote
     throwIfTrackingMode();
     throwIfStopped();
     fee = m_currency.minimumFee();
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
     std::vector<WalletOuts> wallets = pickWalletsWithMoney();
     std::vector<OutputToTransfer> selectedTransfers;
-    uint64_t foundMoney = selectTransfers(fee, mixin == 0, m_currency.defaultDustThreshold(), std::move(wallets), selectedTransfers);
+    uint64_t foundMoney = selectTransfers(fee, false, m_currency.defaultDustThreshold(), std::move(wallets), selectedTransfers);
     if (foundMoney < fee) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient funds for cancel fee");
     }
@@ -1523,21 +1560,23 @@ namespace CryptoNote
 
     transaction->setUnlockTime(0);
 
-    // Spend selected HEAT deposits (same commitment-spend path as sendHeatV10)
-    const size_t ringSize = mixin == 0 ? 1 : static_cast<size_t>(mixin);
+    // Dynamax: probe at maxMixin (32); shrink to 16/8 or bootstrap ring when HEAT pool is thin
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    const size_t probeCount = static_cast<size_t>(mixin);
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
     {
       Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
       System::Event requestFinished(m_dispatcher);
       std::error_code nodeError;
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, ringSize, firstDep.height, allDecoys,
+      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
         });
       requestFinished.wait();
       if (nodeError) {
-        throw std::system_error(nodeError);
+        // Empty/unknown commitment pool at launch — continue with real-only rings
+        allDecoys.clear();
       }
     }
 
@@ -1573,7 +1612,12 @@ namespace CryptoNote
           filteredDecoys.push_back(d);
         }
       }
-      const size_t numDecoys = std::min(filteredDecoys.size(), ringSize > 0 ? ringSize - 1 : 0);
+      // available same-amount outs = decoys + real
+      const size_t availablePool = filteredDecoys.size() + 1;
+      const size_t targetRing = pickDynamaxCommitmentRingSize(
+        availablePool, m_currency.maxMixin(),
+        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
+      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
       const size_t actualRing = numDecoys + 1;
       if (actualRing == 0) continue;
       const size_t realPos = Crypto::rand<size_t>() % actualRing;
@@ -1747,21 +1791,22 @@ namespace CryptoNote
     addAmmSwapAuthToExtra(extra, direction, inputAmount, outputAmount, minOutput);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
 
-    // Commitment spends for HEAT deposits (same ring construction as sendHeatV10)
-    const size_t ringSize = mixin == 0 ? 1 : static_cast<size_t>(mixin);
+    // Dynamax commitment rings: probe maxMixin, settle 32/16/8 or bootstrap if HEAT pool empty
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    const size_t probeCount = static_cast<size_t>(mixin);
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
     {
       Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
       System::Event requestFinished(m_dispatcher);
       std::error_code nodeError;
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, ringSize, firstDep.height, allDecoys,
+      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
         });
       requestFinished.wait();
       if (nodeError) {
-        throw std::system_error(nodeError);
+        allDecoys.clear(); // empty HEAT decoy pool at launch
       }
     }
 
@@ -1795,7 +1840,11 @@ namespace CryptoNote
           filteredDecoys.push_back(d);
         }
       }
-      const size_t numDecoys = std::min(filteredDecoys.size(), ringSize > 0 ? ringSize - 1 : 0);
+      const size_t availablePool = filteredDecoys.size() + 1;
+      const size_t targetRing = pickDynamaxCommitmentRingSize(
+        availablePool, m_currency.maxMixin(),
+        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
+      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
       const size_t actualRing = numDecoys + 1;
       if (actualRing == 0) continue;
       const size_t realPos = Crypto::rand<size_t>() % actualRing;
@@ -1952,10 +2001,10 @@ namespace CryptoNote
     CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
     transaction->appendExtra(extraData);
 
-    // HEAT commitment spend inputs
-    const size_t ringSize = static_cast<size_t>(mixin);
+    // Dynamax HEAT rings: probe maxMixin (32), settle 32/16/8 or bootstrap if pool empty
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    const size_t probeCount = static_cast<size_t>(mixin);
 
-    // Fetch ring decoys for the first deposit's amount
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
     {
       Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
@@ -1963,7 +2012,7 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, ringSize, firstDep.height, allDecoys,
+      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1971,7 +2020,8 @@ namespace CryptoNote
       requestFinished.wait();
 
       if (nodeError) {
-        throw std::system_error(nodeError);
+        // Empty commitment decoy pool at HEAT launch — proceed real-only
+        allDecoys.clear();
       }
     }
 
@@ -2016,7 +2066,11 @@ namespace CryptoNote
           filteredDecoys.push_back(d);
         }
       }
-      const size_t numDecoys = std::min(filteredDecoys.size(), ringSize - 1);
+      const size_t availablePool = filteredDecoys.size() + 1;
+      const size_t targetRing = pickDynamaxCommitmentRingSize(
+        availablePool, m_currency.maxMixin(),
+        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
+      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
       const size_t actualRing = numDecoys + 1;
       if (actualRing == 0) continue;
       const size_t realPos = Crypto::rand<size_t>() % actualRing;

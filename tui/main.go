@@ -945,7 +945,7 @@ func (m model) executeAMMSwap() (tea.Model, tea.Cmd) {
 	if m.swapDirection == 1 {
 		dirStr = "HEAT→XFG"
 	}
-	m.appendLog(fmt.Sprintf("Swapping %.2f %s (min: %.2f) via amm_swap (mixin=dynamax)...", amtFloat, dirStr, minFloat))
+	m.appendLog(fmt.Sprintf("Swapping %.2f %s (min: %.2f) via amm_swap (mixin≤%d dynamax)...", amtFloat, dirStr, minFloat, MaxTxMixin))
 	call := BuildAmmSwap(m.swapDirection, uint64(amtAtomic), uint64(minAtomic), DefaultMixin())
 	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
@@ -1087,8 +1087,8 @@ func (m model) executeBurn(choice string) (tea.Model, tea.Cmd) {
 	}
 
 	call := BuildHeatMint(xfgBurned, heatMinted, DefaultMixin())
-	m.appendLog(fmt.Sprintf("Minting HEAT: burn %.2f XFG → ~%d HEAT atomic via %s (mixin=dynamax)...",
-		float64(xfgBurned)/float64(CurrentConfig.CoinUnits), heatMinted, call.Method))
+	m.appendLog(fmt.Sprintf("Minting HEAT: burn %.2f XFG → ~%d HEAT atomic via %s (mixin≤%d dynamax)...",
+		float64(xfgBurned)/float64(CurrentConfig.CoinUnits), heatMinted, call.Method, MaxTxMixin))
 	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
 
@@ -1934,7 +1934,7 @@ func (m model) sendTx() (tea.Model, tea.Cmd) {
 	}
 	amountAtomic := int64(amtFloat * float64(CurrentConfig.CoinUnits))
 
-	m.appendLog(fmt.Sprintf("Sending %.6f XFG to %s (mixin=dynamax)...", amtFloat, m.txAddr))
+	m.appendLog(fmt.Sprintf("Sending %.6f XFG to %s (mixin≤%d dynamax)...", amtFloat, m.txAddr, MaxTxMixin))
 	call := BuildSendTransaction(m.walletAddress, m.txAddr, uint64(amountAtomic), DefaultMixin())
 	return m, walletRpcCmd(m.walletPort, call.Method, call.Params)
 }
@@ -2240,7 +2240,7 @@ func main() {
 	}
 	if *showHelp {
 		fmt.Printf("Usage: fuego-tui [flags]\n")
-		fmt.Printf("  Features: mint HEAT, HEAT CDs, Hearth AMM/orders, aliases, subaddresses, dynamax mixin sends.\n")
+		fmt.Printf("  Features: mint HEAT, HEAT CDs, Hearth AMM/orders, aliases, subaddresses, dynamax mixin (8–32).\n")
 		fmt.Printf("  Atomic swaps are not managed from this TUI.\n\n")
 		flag.PrintDefaults()
 		return

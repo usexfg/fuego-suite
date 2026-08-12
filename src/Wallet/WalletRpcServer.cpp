@@ -1323,7 +1323,8 @@ bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE
     }
 
     uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
-    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
+    // Dynamax: 0 or omitted → probe MAX_TX_MIXIN_SIZE (32), not min-only 8
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
@@ -1364,7 +1365,7 @@ bool wallet_rpc_server::on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANC
     }
 
     uint64_t fee = (req.fee == 0) ? m_currency.minimumFee() : req.fee;
-    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MIN_TX_MIXIN_SIZE : req.mixin;
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);

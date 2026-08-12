@@ -81,7 +81,7 @@ bool PoolOrderOrchestrator::shouldRegenerate(
 
   // 3. Band consumption exceeded threshold (pool orders being eaten)
   if (totalBandPlaced > 0) {
-    uint64_t consumptionPct = (static_cast<uint128_t>(bandFilledThisBlock) * 100) / totalBandPlaced;
+    uint64_t consumptionPct = static_cast<uint64_t>((static_cast<uint128_t>(bandFilledThisBlock) * 100) / totalBandPlaced);
     if (consumptionPct >= BAND_CONSUMPTION_THRESHOLD_PCT)
       return true;
   }
@@ -126,7 +126,7 @@ uint32_t PoolOrderOrchestrator::computeSpreadBps(
 
   // Consumption multiplier: wider spread if pool orders are being eaten fast
   if (totalBandPlaced > 0) {
-    uint64_t consumptionPct = (static_cast<uint128_t>(bandFilledThisBlock) * 100) / totalBandPlaced;
+    uint64_t consumptionPct = static_cast<uint64_t>((static_cast<uint128_t>(bandFilledThisBlock) * 100) / totalBandPlaced);
     // Linear: 0% consumed → 1x, 100% consumed → 2x
     uint32_t consumptionMultiplier = 100 + static_cast<uint32_t>(consumptionPct);
     spread = std::max(spread, (BASE_SPREAD_BPS * consumptionMultiplier) / 100);

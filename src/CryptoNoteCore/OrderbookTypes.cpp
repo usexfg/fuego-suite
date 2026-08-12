@@ -40,11 +40,11 @@ std::vector<Order> generatePoolOrders(const PoolOrderParams& params) {
   if (params.reserveXfg == 0 || params.reserveHeat == 0 || params.P_clear == 0)
     return orders;
 
-  uint64_t sellDepth = (static_cast<uint128_t>(params.reserveXfg) * params.bandPct) / 100;
-  uint64_t buyDepth  = (static_cast<uint128_t>(params.reserveHeat) * params.bandPct) / 100;
-  uint64_t buyDepthXfg = (static_cast<uint128_t>(buyDepth) * parameters::COIN) / params.P_clear;
+  uint64_t sellDepth = static_cast<uint64_t>((static_cast<uint128_t>(params.reserveXfg) * params.bandPct) / 100);
+  uint64_t buyDepth  = static_cast<uint64_t>((static_cast<uint128_t>(params.reserveHeat) * params.bandPct) / 100);
+  uint64_t buyDepthXfg = static_cast<uint64_t>((static_cast<uint128_t>(buyDepth) * parameters::COIN) / params.P_clear);
 
-  uint64_t spread = (static_cast<uint128_t>(params.P_clear) * params.spreadBps) / 10000;
+  uint64_t spread = static_cast<uint64_t>((static_cast<uint128_t>(params.P_clear) * params.spreadBps) / 10000);
   if (spread == 0) spread = 1;
 
   auto makePoolId = [&](int tier, uint8_t side, uint64_t price) -> Crypto::Hash {

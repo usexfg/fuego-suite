@@ -114,7 +114,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install boost openssl@3 icu4c jsoncpp cmake ninja
+          brew install boost openssl@3 icu4c jsoncpp secp256k1 cmake ninja
 
       - name: Build
         run: |

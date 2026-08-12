@@ -44,6 +44,7 @@
 #include "Polygon/PolygonChainClient.h"
 #include "Decred/DcrChainClient.h"
 #include "Gleec/GleecChainClient.h"
+#include "Sia/SiaHtlcScript.h"
 // Extra EVM/UTXO chain clients (Robinhood, Plasma, Bob, etc.) are staged
 // under SwapDaemon/*/ and chains-staging/; they are not registered until
 // ChainClientConfig fields and SwapDaemonLib sources are complete.

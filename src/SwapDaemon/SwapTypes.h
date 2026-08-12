@@ -134,6 +134,7 @@ struct SwapParams {
   Crypto::SecretKey ourSwapSecKey;     // our secret key for this swap
   Crypto::PublicKey ourSwapPubKey;     // our public key
   Crypto::PublicKey peerSwapPubKey;    // counterparty's public key
+  Crypto::PublicKey expectedPeerSwapPubKey; // anti-griefing: expected peer key, bound on first KEY_EXCHANGE
   Crypto::PublicKey escrowPubKey;      // Musig2 aggregated key (joint address)
 
   // Adaptor point: T = t*G (Bob generates, Alice verifies)
@@ -158,6 +159,7 @@ struct SwapParams {
   // Chain state
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
+  std::string ctrClaimTxId;     // counterparty claim tx hash (Bob's on-chain claim of CTR)
   uint32_t requiredConfirmations = 6;  // SPV confirmations required (default 6 for BCH)
 
   // Counterparty-specific

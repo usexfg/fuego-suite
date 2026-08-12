@@ -1243,11 +1243,13 @@ namespace CryptoNote
     {
       uint64_t twap = m_node.getHearthTwap();
       if (twap > 0) {
-        heatMinted = (static_cast<uint128_t>(xfgBurned) * 1000000000000000000ULL) / twap;
+        heatMinted = static_cast<uint64_t>(
+            (static_cast<uint128_t>(xfgBurned) * 1000000000000000000ULL) / twap);
       } else {
         INode::AmmPoolReserves reserves;
         if (!m_node.getAmmPoolReserves(reserves) && reserves.reserveXfg > 0 && reserves.reserveHeat > 0) {
-          heatMinted = (static_cast<uint128_t>(xfgBurned) * reserves.reserveHeat) / reserves.reserveXfg;
+          heatMinted = static_cast<uint64_t>(
+              (static_cast<uint128_t>(xfgBurned) * reserves.reserveHeat) / reserves.reserveXfg);
         } else {
           heatMinted = xfgBurned;
         }

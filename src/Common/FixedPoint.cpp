@@ -47,7 +47,7 @@ FixedPoint64 FixedPoint64::mul(FixedPoint64 o) const {
   int128_t result = ((int128_t)a_hi * b_hi) << 64;
   result += (int128_t)a_hi * b_lo;
   result += (int128_t)a_lo * b_hi;
-  result += (int128_t)(((uint128_t)a_lo * b_lo) >> 64);
+  result += int128_t((uint64_t)(((uint128_t)a_lo * b_lo) >> 64));
 
   return FixedPoint64(result, Raw{});
 }

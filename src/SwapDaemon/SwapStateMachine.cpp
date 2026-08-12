@@ -33,6 +33,7 @@ SwapStateMachine::SwapStateMachine()
   std::memset(&m_params.ourSwapSecKey, 0, sizeof(m_params.ourSwapSecKey));
   std::memset(&m_params.ourSwapPubKey, 0, sizeof(m_params.ourSwapPubKey));
   std::memset(&m_params.peerSwapPubKey, 0, sizeof(m_params.peerSwapPubKey));
+  std::memset(&m_params.expectedPeerSwapPubKey, 0, sizeof(m_params.expectedPeerSwapPubKey));
   std::memset(&m_params.escrowPubKey, 0, sizeof(m_params.escrowPubKey));
   std::memset(&m_params.adaptorPoint, 0, sizeof(m_params.adaptorPoint));
   std::memset(&m_params.adaptorSecret, 0, sizeof(m_params.adaptorSecret));

@@ -13,7 +13,9 @@ Hearth charges **1%** (`HEARTH_FEE_BPS = 100`) on trades. Consensus splits that 
 - **50%** → CD yield accumulator  
 - **50%** → LPs (pro-rata to pool share)
 
-You do **not** earn the atomic-swap 1% stream unless you also hold HEAT CDs or Bonus Vault rights — that is a separate fee.
+Plus an **LP spread reward**: pool orders quote at a spread around the clearing price (`P_clear`), and each fill earns `|fill.price − P_clear| × amount` straight into LP reserves. Both LP streams auto-compound into the pool and are realized on withdrawal via share redemption.
+
+You do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you also hold HEAT CDs or Bonus Vault rights — that is a separate fee. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. Mint premium is 0 bps (goes nowhere); the 0.1% CD creation fee is a donation to @fuegoxfg, not protocol revenue.
 
 ## Practical notes
 

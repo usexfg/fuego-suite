@@ -6,16 +6,23 @@ keywords: ["interest", "yield", "fee pool", "HEAT", "CD", "fuego"]
 
 ## Source of yield
 
-HEAT CD interest comes from **protocol revenue**, not inflation:
+HEAT CD interest comes from **protocol revenue**, not inflation.
+
+**There are exactly two protocol earnings streams:**
 
 | Stream | Rate | CD-relevant share |
 |--------|------|-------------------|
-| Atomic swap (XFG side) | 1% (`SWAP_FEE_RATE_BPS`) | **69%** → CD yield (`SWAP_FEE_CD_SHARE_PCT`) |
-| Hearth trades | 1% (`HEARTH_FEE_BPS`) | **50%** → CD accumulator |
+| **Atomic swap fee** (SwapXFG TUI / DeXFG tab) | **1% initiation + 1% claim = 2%** per swap (`SWAP_FEE_RATE_BPS`) | **69%** → CD yield (`SWAP_FEE_CD_SHARE_PCT`) |
+| **Hearth swap fee** (on-chain Hearth DEX) | **1%** per trade (`HEARTH_FEE_BPS`) | Hearth routing → CD yield accumulator |
 
 Atomic swap remainder: **11%** Bonus Vault, **20%** Treasury.
 
 More swap + Hearth volume → more yield. Quiet periods → lower yield. No fixed APY guarantee.
+
+## Not protocol earnings
+
+- **Mint premium** — none. `HEAT_MINT_PREMIUM_BPS = 0`; goes nowhere.
+- **CD creation fee** — 0.1% of CD amount, donated to **@fuegoxfg** (Fuego Development Fund). Not CD yield, not treasury.
 
 ## Epoch distribution (conceptual)
 

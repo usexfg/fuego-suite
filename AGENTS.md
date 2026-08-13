@@ -55,6 +55,14 @@ fuego-suite/
   - **DEPRECATED (DO NOT REINTRODUCE)**: COLD deposits (0xCD tag), Embers_Heat deposits, XFG deposits
   - **GUARDRAILS**: APY from protocol fees (not inflation), deposit secret stored locally, different term lengths don't hurt privacy
 
+### Protocol Earnings (ONLY TWO — DO NOT ADD MORE)
+1. **Hearth swap fee — 1% per trade** (`HEARTH_FEE_BPS = 100`), on-chain Hearth DEX fills.
+2. **Atomic swap fee — 1% + 1% = 2% per cross-chain swap** (`SWAP_FEE_RATE_BPS = 100` initiation + claim), via SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI. Split **69% CD Yield / 11% Bonus Vault / 20% Treasury**.
+
+NOT protocol earnings:
+- **Mint premium**: none — `HEAT_MINT_PREMIUM_BPS = 0`, goes nowhere. Do not document as revenue.
+- **CD creation fee**: 0.1% of CD amount → **@fuegoxfg** (Fuego Development Fund) as a development donation. NOT protocol revenue, NOT CD yield, NOT treasury.
+
 ### Hearth Exchange — Data Flow Per Block
 1. `OrderbookMempool::expireOrders()`
 2. `PoolOrderOrchestrator`: record price, decide regeneration, compute adaptive spread

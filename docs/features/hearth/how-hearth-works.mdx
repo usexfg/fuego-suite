@@ -16,25 +16,23 @@ keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
 
 | Constant | Value |
 |----------|-------|
-| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional |
-| Split in consensus | **50%** → CD Hearth fee accumulator · **50%** → LP |
+| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional → **CD yield pool** |
 
 ```
-totalFee = amount × HEARTH_FEE_BPS / 10000
-cdFee    = totalFee / 2
-lpFee    = totalFee - cdFee
+totalFee = amount × HEARTH_FEE_BPS / 10000   // → CD yield pool
+spreadReward = |fill.price − P_clear| × amount  // → LP reserves (LP income)
 ```
 
-There is **no** separate “0.3% Hearth LP fee” in `CryptoNoteConfig.h`. (Adaptive **spread** for pool orders uses other BPS constants, e.g. base spread 30 bps — that is market-making width, not the protocol trade fee.)
+There is **no** separate “0.3% Hearth LP fee” in `CryptoNoteConfig.h`. LPs earn the **swap spread**, not the flat fee. (Adaptive **spread** for pool orders uses other BPS constants, e.g. base spread 30 bps — that market-making width is the LP's income source.)
 
 ## Roles
 
 | Role | Action |
 |------|--------|
-| Trader | Swap XFG↔HEAT; pays 1% fee |
-| LP | Provides XFG/HEAT liquidity; receives LP half of Hearth fees |
+| Trader | Swap XFG↔HEAT; pays 1% flat fee |
+| LP | Provides XFG/HEAT liquidity; earns the **swap spread** (`|fill.price − P_clear| × amount`), auto-compounded into reserves — not the flat fee |
 | Minter | Uses Hearth TWAP when burning XFG to mint HEAT |
-| CD holder | Receives CD half of Hearth fees via yield plumbing |
+| CD holder | Receives the 1% Hearth flat fee via yield plumbing |
 
 ## Privacy
 

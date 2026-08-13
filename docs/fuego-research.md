@@ -160,11 +160,14 @@ Minimum fees (per-byte penalty system):
 - V8-V9: `MINIMUM_FEE_V2 = 0.008 XFG` (80,000 ħ)
 - V10+: `MINIMUM_FEE_8KH = 0.0008 XFG` (8,000 ħ)
 
-Swap fees: 1% of atomic swap claim/refund
-- Split: 69% CD yield pool / 21% Treasury / 10% Rollover vault
+Swap fees: 2% per atomic swap (1% initiation + 1% claim on claim/refund)
+- Split: 69% CD yield pool / 11% Bonus Vault / 20% Treasury
 - Epoch duration: 900 blocks (~5 days mainnet)
+- Hearth DEX swap fee: 1% per trade (`HEARTH_FEE_BPS = 100`)
+- Protocol earnings are ONLY these two streams. Mint premium is 0 bps (goes nowhere).
 
 Banking fees (tiered): 0.1% per tier (0.8/8/80/800 XFG burns → fee 8K/80K/800K/8M ħ)
+- The CD creation fee (0.1%) is donated to @fuegoxfg (Fuego Development Fund), NOT protocol revenue.
 
 ## 10. Governance for Protocol Upgrades
 

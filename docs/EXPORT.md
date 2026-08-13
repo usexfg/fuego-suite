@@ -30,15 +30,20 @@ print(f"""
   Block time:           480 seconds (8 min)
   Blocks per epoch:     900 (~5 days)
 
-  Atomic swap fee:      2% (on swapxfg cross-chain swaps)
-    → 80% buys HEAT from Hearth AMM → distributed to CD holders
-    → 20% held as XFG in treasury reserve
+  Atomic swap fee:      2% (1% initiation + 1% claim on swapxfg cross-chain swaps)
+    → 69% → CD yield (HEAT distributed to CD holders)
+    → 11% → Bonus Vault (loyalty tiers)
+    → 20% → Treasury reserve (XFG)
 
-  Hearth AMM fee:       1% (from actual code: SWAP_FEE_RATE_BPS = 100)
+  Hearth AMM fee:       1% (from actual code: HEARTH_FEE_BPS = 100)
     LP rewards:         IMPLICIT (NO direct yield payment)
                         LP shares appreciate as pool grows from fees + protocol buys.
                         No fee accumulator, no claim mechanism, no APY.
                         Realized on withdrawal via pool share redemption.
+
+  Mint premium:         0 bps (HEAT_MINT_PREMIUM_BPS = 0) — goes nowhere, no revenue.
+  CD creation fee:      0.1% of CD amount → @fuegoxfg (Fuego Development donation),
+                        NOT protocol revenue, NOT CD yield, NOT treasury.
 
   CD locks:             In HEAT (not XFG)
   Treasury:             Holds XFG (not HEAT)

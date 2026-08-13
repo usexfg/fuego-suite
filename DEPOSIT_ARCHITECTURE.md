@@ -156,7 +156,7 @@ mintHeatV10(xfgBurned, heatMinted, fee, mixin, txHash)
     • Checks heatMinted matches output amounts
     • Checks TWAP rate is within bounds
     • Tracks permanent burns → 50% EF, 50% Treasury
-    • 80% of swap fees → HEAT → CD_APY_POOL at epoch
+    • Treasury counter XFG conversion at epoch → 80% → HEAT → CD_APY_POOL, 20% → LP
 ```
 
 **EF/Treasury 50/50 Split** (from `Blockchain.cpp`):
@@ -231,13 +231,27 @@ User calls withdrawDeposit(depositId) or rolloverDeposit(depositId, newTerm)
 
 ### APY Model (Current)
 
-APY is funded by protocol revenue, not inflation:
+APY is funded by protocol revenue, not inflation.
+
+**There are exactly TWO protocol earnings streams. Nothing else:**
 
 ```
-Protocol Revenue Sources:
-├── Swap fees (Hearth AMM)
-├── Mint premiums (HEAT mint)
-└── Banking fees (CD creation)
+Protocol Earnings (ONLY TWO):
+├── ① Hearth swap fee:     1% per trade      (HEARTH_FEE_BPS = 100)
+│       on-chain Hearth DEX fills (XFG↔HEAT and any Hearth pair)
+├── ② Atomic swap fee:     1% + 1% = 2% per cross-chain atomic swap
+│       (SWAP_FEE_RATE_BPS = 100 on initiation + 100 on claim)
+│       via SwapXFG TUI  OR  the DeXFG tab in the Fuego-Wallet GUI
+│       Split 69% CD Yield / 11% Bonus Vault / 20% Treasury
+└── (nothing else is protocol earnings)
+
+NOT protocol earnings:
+├── Mint premium:    0 bps — there is NO premium today (HEAT_MINT_PREMIUM_BPS = 0).
+│                    Goes nowhere. Do not document it as a revenue source.
+└── CD creation fee: 0.1% of CD amount — sent to @fuegoxfg (Fuego Development Fund),
+                     a donation to support development. NOT protocol revenue,
+                     NOT CD yield, NOT treasury. Bank fee charged at CD creation
+                     (no fee at claim), donated to Fuego Development.
 
         │
         ▼

@@ -25,8 +25,10 @@ Exact production-ready set changes with releases — do not treat a four-row tab
 
 | Venue | Assets | Fee model |
 |-------|--------|-----------|
-| **Hearth** | XFG ↔ HEAT | 1% Hearth fee |
-| **swapXFG** | XFG ↔ external chains | 1% XFG-side atomic fee |
+| **Hearth** | XFG ↔ HEAT | 1% Hearth fee (`HEARTH_FEE_BPS`) |
+| **swapXFG** | XFG ↔ external chains | 2% atomic fee (1% initiation + 1% claim, `SWAP_FEE_RATE_BPS`) → 69/11/20 |
+
+These are the **only two protocol earnings streams**. Mint premium is 0 bps; the 0.1% CD creation fee is a donation to @fuegoxfg, not protocol revenue.
 
 ## Running SwapDaemon
 

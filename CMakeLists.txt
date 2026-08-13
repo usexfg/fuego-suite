@@ -120,9 +120,6 @@ if(APPLE OR FREEBSD)
     # Add macOS specific definitions for Boost.Asio
     add_definitions(-D_DARWIN_C_SOURCE -D__BSD_VISIBLE=1)
 
-    # Disable libc++ availability checks — fixes _LIBCPP_USING_IF_EXISTS on Xcode 16+
-    add_definitions(-D_LIBCPP_DISABLE_AVAILABILITY)
-
     # Fix header search paths for macOS
     if(APPLE)
         # Ensure proper C++ standard library is used

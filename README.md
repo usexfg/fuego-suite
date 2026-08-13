@@ -188,10 +188,23 @@ HΞ∆⟙ is Fuego's algorithmic flatcoin — a stable asset pegged to purchasin
 
 **Key Properties**:
 - Launch ratio 10:1 (1 HΞ∆T = 10 XFG) at genesis
-- Peg target $1.58 USD; mint at +3.33% premium (hardcoded, PI controller removed)
+- Peg target $1.58 USD; mint premium hardcoded to **0 bps** (`HEAT_MINT_PREMIUM_BPS = 0`) — no premium, PI controller removed
 - Protocol buys or mints HΞ∆T for CD yield payments (structural demand, protocol pays 0% fee)
 - On-chain exchange replaces constant-product AMM; MM pool orders regenerate each block ±10% depth
 - Pool reserves tracked (as a whole) on-chain with unspendable pool keys
+
+### Protocol Earnings (ONLY TWO)
+
+There are exactly **two** protocol earnings streams. Nothing else:
+
+| # | Stream | Rate | Split |
+|---|--------|------|-------|
+| 1 | **Hearth swap fee** — on-chain Hearth DEX fills | **1%** per trade (`HEARTH_FEE_BPS = 100`) | → CD yield / LP per Hearth routing |
+| 2 | **Atomic swap fee** — cross-chain swaps (SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI) | **1% + 1% = 2%** per swap (`SWAP_FEE_RATE_BPS = 100` initiation + claim) | **69% CD Yield / 11% Bonus Vault / 20% Treasury** |
+
+NOT protocol earnings:
+- **Mint premium** — none (0 bps, `HEAT_MINT_PREMIUM_BPS = 0`), goes nowhere.
+- **CD creation fee** — 0.1% of CD amount, donated to **@fuegoxfg** (Fuego Development Fund). Not protocol revenue, not CD yield, not treasury.
 
 ### Certificates of Deposit (CD) — V12 activation
 

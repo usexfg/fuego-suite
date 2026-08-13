@@ -30,14 +30,16 @@ Do not call this “staking.”
 
 ## How interest is funded
 
-Two independent protocol fee sources feed yield plumbing:
+Yield plumbing is fed by the **only two protocol fee streams**:
 
 | Source | Rate | CD-related share |
 |--------|------|------------------|
-| Atomic swap (XFG side) | **1%** | **69%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT`) |
-| Hearth trade | **1%** | **50%** of that fee → CD accumulator |
+| Atomic swap (SwapXFG / DeXFG) | **2%** per swap (1% initiation + 1% claim) | **69%** of that fee → CD yield pool (`SWAP_FEE_CD_SHARE_PCT`) |
+| Hearth trade | **1%** (`HEARTH_FEE_BPS`) | Hearth routing → CD accumulator |
 
 Also from atomic swaps: **11%** Bonus Vault, **20%** Treasury — not paid as base CD pro-rata yield.
+
+Mint premium is **0 bps** (goes nowhere) and the **0.1%** CD creation fee is a donation to @fuegoxfg — neither is protocol revenue.
 
 ## On-chain representation
 

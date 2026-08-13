@@ -24,11 +24,13 @@ Fuego uses **adaptor signatures** (and chain-specific clients) rather than only 
 
 State is persisted by the swap daemon so restarts resume non-terminal swaps.
 
-## XFG-side protocol fee (live)
+## Protocol swap fee (live)
 
 | Constant | Value |
 |----------|-------|
-| `SWAP_FEE_RATE_BPS` | **100** = **1%** of XFG swap amount |
+| `SWAP_FEE_RATE_BPS` | **100** = **1%** of XFG swap amount per side |
+
+Charged **twice** per completed swap: **1% on initiation + 1% on claim = 2% total** (Alice and Bob each pay 1%). Initiated from the SwapXFG TUI or the DeXFG tab in the Fuego-Wallet GUI.
 
 ### Fee split (not 100% to CDs)
 
@@ -38,14 +40,16 @@ State is persisted by the swap daemon so restarts resume non-terminal swaps.
 | Bonus Vault | **11** | `SWAP_FEE_BONUS_VAULT_PCT` |
 | Treasury | **20** | `SWAP_FEE_TREASURY_SHARE_PCT` |
 
-Counterparty chains charge only their own network fees.
+Counterparty chains charge only their own network/miner fees on top.
 
 ## vs Hearth
 
 | | Hearth | swapXFG |
 |--|--------|---------|
 | Domain | On-chain XFG↔HEAT | Cross-chain XFG↔BTC/ETH/… |
-| Fee | 1% Hearth (50/50 CD/LP) | 1% XFG-side (69/11/20) |
+| Fee | 1% Hearth (50/50 CD/LP) | **2%** atomic swap (1% + 1%, 69/11/20) |
+
+These are the **only two protocol earnings streams**. Mint premium is 0 bps (goes nowhere); the 0.1% CD creation fee is a donation to @fuegoxfg, not protocol revenue.
 
 ## Timeouts
 

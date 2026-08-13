@@ -4,9 +4,9 @@ description: "swapXFG 1% fee split 69/11/20, timelocks, refunds."
 keywords: ["swap fees", "timeout", "refund", "swapXFG", "fuego"]
 ---
 
-## XFG-side fee
+## Protocol swap fee (1% + 1% = 2% per swap)
 
-Every completed swap charges **1%** of the XFG amount (`SWAP_FEE_RATE_BPS = 100`).
+Every completed atomic swap charges the protocol fee **twice**: **1% on initiation** and **1% on claim** (`SWAP_FEE_RATE_BPS = 100` each side) — a total of **2%** per cross-chain swap. Initiated from the SwapXFG TUI or the DeXFG tab in the Fuego-Wallet GUI.
 
 | Destination | Share |
 |-------------|-------|
@@ -14,9 +14,11 @@ Every completed swap charges **1%** of the XFG amount (`SWAP_FEE_RATE_BPS = 100`
 | Bonus Vault | **11%** |
 | Treasury | **20%** |
 
-Example: swap **100 XFG** → **1 XFG** protocol fee → **0.69** CD / **0.11** Bonus / **0.20** Treasury (plus normal miner/tx fees).
+Example: swap **100 XFG** → **2 XFG** protocol fee (1 + 1) → **1.38** CD / **0.22** Bonus / **0.40** Treasury (plus normal miner/tx fees).
 
-Not paid to the counterparty. Not the Hearth 1% fee.
+Not paid to the counterparty. Not the Hearth 1% fee (that is a separate protocol stream).
+
+> **Protocol earnings are exactly two streams:** Hearth swap fees (1% per trade) and atomic swap fees (2% per swap). Mint premium is 0 bps (goes nowhere), and the 0.1% CD creation fee is a donation to @fuegoxfg — not protocol revenue.
 
 ## Counterparty fees
 

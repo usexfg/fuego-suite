@@ -196,6 +196,8 @@ Phase 1         Phase 2          Phase 3          Phase 4          Phase 5
 
 ### 3.4 Treasury / Mint Premium Integration
 
+> **STATUS: FUTURE PROPOSAL — NOT ACTIVE.** `HEAT_MINT_PREMIUM_BPS = 0` today; mint premium goes nowhere and is NOT a protocol earnings stream. The only two protocol earnings streams are Hearth swap fees (1%) and atomic swap fees (2% = 1% + 1%). Re-enabling a premium would require a governance decision; do not assume it exists.
+
 - [ ] Mint premium (2-3%) diverted to treasury rebalance fund
 - [ ] Modify `HeatMintEngine::validateMint()`:
   - Calculate premium: `xfg_amount * MINT_PREMIUM_BPS / 10000`
@@ -376,7 +378,7 @@ constexpr uint32_t MIN_ORDER_AMOUNT            = DUST_THRESHOLD;  // reuse exist
 // HEARTH Depth Band
 constexpr uint32_t HEARTH_DEPTH_BAND_PCT       = 10;
 
-// Mint (replacing PI)
+// Mint (replacing PI) — FUTURE PROPOSAL, NOT ACTIVE (current: HEAT_MINT_PREMIUM_BPS = 0)
 constexpr uint32_t MINT_PREMIUM_BPS            = 200;  // 2%, configurable to 300
 constexpr uint64_t MAX_MINT_HEAT_PER_BLOCK     = TBD;  // atomic units
 

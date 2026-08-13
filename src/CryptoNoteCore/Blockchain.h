@@ -36,7 +36,6 @@
 #include "DigmMintEngine.h"
 #include "AmmPool.h"
 #include "OrderbookTypes.h"
-#include "BancorCurve.h"
 #include "../Common/FixedPoint.h"
 #include "Treasury/VaultTypes.h"
 #include "Treasury/VaultKeys.h"
@@ -126,27 +125,6 @@ namespace CryptoNote {
     const HeatMintEngine& getHeatMintEngine() const { return m_heatMintEngine; }
     const DigmMintEngine& getDigmMintEngine() const { return m_digmMintEngine; }
     const AmmPoolState& getAmmPool() const { return m_ammPool; }
-    const DigmPrimaryPoolState& getDigmPrimaryPool() const { return m_digmPrimaryPool; }
-    const DigmBancorPoolState& getDigmBancorPool() const { return m_digmBancorPool; }
-    bool bootstrapDigmPools();
-    // HEAT/DIGM fixed-rate swap (1 DIGM = 0.1 HEAT at peg)
-    uint64_t digmPrimarySwap(uint64_t heatIn, bool dryRun);   // HEAT → DIGM
-    uint64_t digmPrimarySell(uint64_t digmIn, bool dryRun);   // DIGM → HEAT
-    uint64_t getDigmPegHeat() const { return parameters::DIGM_PEG_HEAT; }
-    uint64_t getDigmFeeBps() const { return parameters::DIGM_FEE_BPS; }
-
-    struct DigmPoolInfo {
-      uint64_t reserveDigm = 0;
-      uint64_t reserveHeat = 0;
-      uint64_t totalLpShares = 0;
-      uint64_t accumulatedLpFees = 0;
-      uint64_t pegHeat = 0;
-    };
-    DigmPoolInfo getDigmPoolInfo() const;
-    // XFG/DIGM Bancor buy (XFG → DIGM, minting)
-    uint64_t digmBancorBuy(uint64_t xfgIn, bool dryRun);
-    // XFG/DIGM Bancor sell (DIGM → XFG, burning)
-    uint64_t digmBancorSell(uint64_t digmIn, bool dryRun);
     uint64_t getPoolLockedXfg() const { return m_poolLockedXfg; }
     uint64_t getPoolLockedHeat() const { return m_poolLockedHeat; }
 
@@ -162,7 +140,8 @@ namespace CryptoNote {
     uint64_t getPoolTwap() const;
 
     // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio (10^18 precision).
+    // Simple average of the last 8 blocks' hearthPoolRatio.
+    // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
 
     struct OrderbookLevel {
@@ -425,15 +404,13 @@ namespace CryptoNote {
       uint64_t ammReserveXfg;
       uint64_t ammReserveHeat;
       uint64_t ammTotalLpShares;
-      uint64_t digmPrimaryReserveDigm;
-      uint64_t digmPrimaryReserveHeat;
-      uint64_t digmBancorReserveXfg;
-      uint64_t digmBancorSupplyDigm;
       uint64_t vaultUtxoCount;
       uint64_t vaultSpentCount;
       uint64_t treasurySwapFeeXfg;
       uint64_t treasuryCounterXFG;
       uint64_t swfHeatBalance;
+      uint64_t feePoolBalance;
+      uint64_t cdHearthFeeAccumulator;
     };
 
     friend class BlockCacheSerializer;
@@ -463,10 +440,6 @@ namespace CryptoNote {
 
     // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
     std::deque<uint64_t> m_rollingPriceWindow;
-
-    // DIGM pool state
-    CryptoNote::DigmPrimaryPoolState m_digmPrimaryPool;
-    CryptoNote::DigmBancorPoolState  m_digmBancorPool;
 
     // CD yield state
     uint64_t m_cdYieldPool = 0;
@@ -617,7 +590,8 @@ namespace CryptoNote {
     void processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height);
     void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
-    void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash);
+    void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
+                        uint32_t height, uint8_t majorVersion);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);

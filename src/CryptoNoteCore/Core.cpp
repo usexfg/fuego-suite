@@ -1638,35 +1638,8 @@ std::error_code core::getAmmPoolInfo(ICore::AmmPoolInfo& info) {
   const auto& pool = m_blockchain.getAmmPool();
   info.reserveXfg = pool.reserveXfg;
   info.reserveHeat = pool.reserveHeat;
-  info.spotPrice = m_blockchain.getHearthSpotPrice();
-  return {};
-}
-
-bool core::executeDigmSwap(uint64_t heatIn, uint64_t expectedDigmOut) {
-  LockedBlockchainStorage lock(m_blockchain);
-  uint64_t digmOut = m_blockchain.digmPrimarySwap(heatIn, false);
-  if (digmOut == 0 || digmOut < expectedDigmOut)
-    return false;
-  return true;
-}
-
-bool core::executeDigmSell(uint64_t digmIn, uint64_t expectedHeatOut) {
-  LockedBlockchainStorage lock(m_blockchain);
-  uint64_t heatOut = m_blockchain.digmPrimarySell(digmIn, false);
-  if (heatOut == 0 || heatOut < expectedHeatOut)
-    return false;
-  return true;
-}
-
-core::DigmPoolInfo core::getDigmPoolInfo() const {
-  auto poolInfo = m_blockchain.getDigmPoolInfo();
-  DigmPoolInfo info;
-  info.reserveDigm = poolInfo.reserveDigm;
-  info.reserveHeat = poolInfo.reserveHeat;
-  info.totalLpShares = poolInfo.totalLpShares;
-  info.accumulatedLpFees = poolInfo.accumulatedLpFees;
-  info.pegHeat = poolInfo.pegHeat;
-  return info;
+   info.spotPrice = m_blockchain.getHearthSpotPrice();
+   return {};
 }
 
 core::OrderbookInfo core::getOrderbookInfo() const {

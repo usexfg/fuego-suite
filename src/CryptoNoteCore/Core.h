@@ -253,25 +253,13 @@ namespace CryptoNote {
     AmmPoolInfo getAmmPoolInfo() const;
     uint64_t getPoolTwap() const;
 
-    // DIGM pool info
-    struct DigmPoolInfo {
-      uint64_t reserveDigm = 0;
-      uint64_t reserveHeat = 0;
-      uint64_t totalLpShares = 0;
-      uint64_t accumulatedLpFees = 0;
-      uint64_t pegHeat = 0;
-    };
-    DigmPoolInfo getDigmPoolInfo() const;
-    bool executeDigmSwap(uint64_t heatIn, uint64_t expectedDigmOut);
-    bool executeDigmSell(uint64_t digmIn, uint64_t expectedHeatOut);
-
     // Orderbook (v11+)
     struct OrderbookInfo {
       uint64_t clearingPrice = 0;     // P_clear, XFG/HEAT ratio × 10^8
       uint32_t numMatches = 0;
       uint64_t depthBidXfg = 0;      // total bid depth in atomic XFG
       uint64_t depthAskXfg = 0;      // total ask depth in atomic XFG
-      uint64_t hearthPoolRatio = 0;  // P_clear 33-block avg (pool ratio fallback) × 10^8
+      uint64_t hearthPoolRatio = 0;  // P_clear avg (pool ratio fallback), HEAT atomics per XFG atomic × COIN
       bool inBootstrap = true;
     };
     OrderbookInfo getOrderbookInfo() const;

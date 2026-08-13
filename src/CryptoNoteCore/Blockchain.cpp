@@ -242,8 +242,6 @@ public:
       s(m_bs.m_heatOnDeposit, "heat_on_deposit");
       s(m_bs.m_digmSupply, "digm_supply");
       s(m_bs.m_ammPool, "amm_pool");
-      s(m_bs.m_digmPrimaryPool, "digm_primary_pool");
-      s(m_bs.m_digmBancorPool, "digm_bancor_pool");
       s(m_bs.m_poolLockedXfg, "pool_locked_xfg");
       s(m_bs.m_poolLockedHeat, "pool_locked_heat");
       s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
@@ -411,8 +409,6 @@ private:
   if (!m_bootstrapRepaid) {
     m_bootstrapXfgOwed = m_ammPool.reserveXfg;
   }
-  // Init DIGM Bancor pool virtual reserves (zero-start, pump.fun style)
-  bootstrapDigmPools();
 } // upgradekit
 
 namespace {
@@ -4456,10 +4452,6 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
     preEpoch.ammReserveXfg = m_ammPool.reserveXfg;
     preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
     preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
-    preEpoch.digmPrimaryReserveDigm = m_digmPrimaryPool.reserveDigm;
-    preEpoch.digmPrimaryReserveHeat = m_digmPrimaryPool.reserveHeat;
-    preEpoch.digmBancorReserveXfg = m_digmBancorPool.reserveXfg;
-    preEpoch.digmBancorSupplyDigm = m_digmBancorPool.supplyDigm;
 
     // Auto-roll matured CDs (one-time interest compounding at first maturity)
     size_t autoRolled = m_commitmentIndex.processAutoRolls(newHeight);
@@ -4765,141 +4757,6 @@ bool CryptoNote::Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heat
   return true;
 }
 
-bool CryptoNote::Blockchain::bootstrapDigmPools() {
-  // Only bootstrap once
-  if (!m_digmBancorPool.isEmpty() || !m_digmPrimaryPool.isEmpty())
-    return false;
-
-  // HEAT/DIGM primary pool: 5,000 DIGM + 500 HEAT (0.1 HEAT per DIGM fixed-rate peg)
-  uint64_t seedDigm = parameters::DIGM_PRIMARY_POOL_SEED_DIGM * parameters::COIN;
-  uint64_t seedHeat = parameters::DIGM_PRIMARY_POOL_SEED_HEAT;
-  m_digmPrimaryPool.reserveDigm = seedDigm;
-  m_digmPrimaryPool.reserveHeat = seedHeat;
-
-  // XFG/DIGM Bancor pool: zero-start with virtual reserves
-  uint64_t vs = parameters::COIN;  // 1 whole DIGM virtual supply
-  uint64_t cwNum = parameters::DIGM_BANCOR_CW_NUM;
-  uint64_t cwDenom = parameters::DIGM_BANCOR_CW_DENOM;
-
-  // DIGM price in XFG: $0.10 / $1.58 = 10/158
-  uint64_t vr = bancorComputeVirtualReserve(vs, cwNum, cwDenom, 10, 158);
-
-  m_digmBancorPool.virtualSupply  = vs;
-  m_digmBancorPool.virtualReserve = vr;
-  m_digmBancorPool.cwNum   = cwNum;
-  m_digmBancorPool.cwDenom = cwDenom;
-  m_digmBancorPool.reserveXfg = 0;
-  m_digmBancorPool.supplyDigm = 0;
-
-  logger(INFO, BRIGHT_YELLOW) << "DIGM pools bootstrapped:"
-    << " primary=" << parameters::DIGM_PRIMARY_POOL_SEED_DIGM << " DIGM + "
-    << m_currency.formatAmount(seedHeat) << " HEAT"
-    << " | bancor V_r=" << vr << " V_s=" << vs
-    << " (zero-start, pump.fun style)";
-  return true;
-}
-
-uint64_t CryptoNote::Blockchain::digmPrimarySwap(uint64_t heatIn, bool dryRun) {
-  if (heatIn == 0 || m_digmPrimaryPool.isEmpty())
-    return 0;
-
-  // HEAT → DIGM fixed-rate swap: 1 DIGM = 0.1 HEAT (DIGM_PEG_HEAT atomic units)
-  uint64_t feeBps = parameters::DIGM_FEE_BPS;
-  uint64_t feeDiv = parameters::DIGM_FEE_DIVISOR;
-  uint128_t tmp = (uint128_t)heatIn * (feeDiv - feeBps) / feeDiv * parameters::COIN;
-  uint64_t digmOut = (uint64_t)(tmp / parameters::DIGM_PEG_HEAT);
-
-  if (digmOut == 0 || digmOut > m_digmPrimaryPool.reserveDigm)
-    return 0;
-
-  if (!dryRun) {
-    m_digmPrimaryPool.reserveHeat += heatIn;
-    m_digmPrimaryPool.reserveDigm -= digmOut;
-    uint64_t feeHeat = (heatIn * feeBps) / feeDiv;
-    m_digmPrimaryPool.accumulatedLpFees += feeHeat;
-  }
-
-  return digmOut;
-}
-
-uint64_t CryptoNote::Blockchain::digmPrimarySell(uint64_t digmIn, bool dryRun) {
-  if (digmIn == 0 || m_digmPrimaryPool.isEmpty() || m_digmPrimaryPool.reserveHeat == 0)
-    return 0;
-
-  // DIGM → HEAT fixed-rate swap: 1 DIGM = 0.1 HEAT (DIGM_PEG_HEAT atomic units)
-  uint64_t feeBps = parameters::DIGM_FEE_BPS;
-  uint64_t feeDiv = parameters::DIGM_FEE_DIVISOR;
-  uint128_t tmp = (uint128_t)digmIn * (feeDiv - feeBps) / feeDiv * parameters::DIGM_PEG_HEAT;
-  uint64_t heatOut = (uint64_t)(tmp / parameters::COIN);
-
-  if (heatOut == 0 || heatOut > m_digmPrimaryPool.reserveHeat)
-    return 0;
-
-  if (!dryRun) {
-    m_digmPrimaryPool.reserveDigm += digmIn;
-    m_digmPrimaryPool.reserveHeat -= heatOut;
-    uint64_t feeDigm = (digmIn * feeBps) / feeDiv;
-    m_digmPrimaryPool.accumulatedLpFees += feeDigm;
-  }
-
-  return heatOut;
-}
-
-CryptoNote::Blockchain::DigmPoolInfo CryptoNote::Blockchain::getDigmPoolInfo() const {
-  DigmPoolInfo info;
-  info.reserveDigm = m_digmPrimaryPool.reserveDigm;
-  info.reserveHeat = m_digmPrimaryPool.reserveHeat;
-  info.totalLpShares = m_digmPrimaryPool.totalLpShares;
-  info.accumulatedLpFees = m_digmPrimaryPool.accumulatedLpFees;
-  info.pegHeat = parameters::DIGM_PEG_HEAT;
-  return info;
-}
-
-uint64_t CryptoNote::Blockchain::digmBancorBuy(uint64_t xfgIn, bool dryRun) {
-  if (xfgIn == 0 || m_digmBancorPool.isEmpty())
-    return 0;
-
-  uint64_t maxSupply = parameters::DIGM_BANCOR_MAX_SUPPLY * parameters::COIN;
-  uint64_t remaining = (maxSupply > m_digmBancorPool.supplyDigm)
-                     ? maxSupply - m_digmBancorPool.supplyDigm : 0;
-  if (remaining == 0) return 0;
-
-  uint64_t minted = bancorBuyOutput(
-      xfgIn, m_digmBancorPool.reserveXfg, m_digmBancorPool.supplyDigm,
-      m_digmBancorPool.virtualReserve, m_digmBancorPool.virtualSupply,
-      m_digmBancorPool.cwNum, m_digmBancorPool.cwDenom);
-
-  if (minted == 0 || minted > remaining) return 0;
-
-  if (!dryRun) {
-    m_digmBancorPool.reserveXfg += xfgIn;
-    m_digmBancorPool.supplyDigm += minted;
-  }
-
-  return minted;
-}
-
-uint64_t CryptoNote::Blockchain::digmBancorSell(uint64_t digmIn, bool dryRun) {
-  if (digmIn == 0 || m_digmBancorPool.isEmpty() || m_digmBancorPool.supplyDigm == 0)
-    return 0;
-
-  if (digmIn > m_digmBancorPool.supplyDigm) return 0;
-
-  uint64_t xfgOut = bancorSellOutput(
-      digmIn, m_digmBancorPool.reserveXfg, m_digmBancorPool.supplyDigm,
-      m_digmBancorPool.virtualReserve, m_digmBancorPool.virtualSupply,
-      m_digmBancorPool.cwNum, m_digmBancorPool.cwDenom);
-
-  if (xfgOut == 0 || xfgOut > m_digmBancorPool.reserveXfg) return 0;
-
-  if (!dryRun) {
-    m_digmBancorPool.reserveXfg -= xfgOut;
-    m_digmBancorPool.supplyDigm -= digmIn;
-  }
-
-  return xfgOut;
-}
-
 bool CryptoNote::Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
   if (sharesToBurn == 0 || sharesToBurn > m_protocolLpShares)
     return false;
@@ -5030,10 +4887,6 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.reserveXfg = snap.ammReserveXfg;
     m_ammPool.reserveHeat = snap.ammReserveHeat;
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
-    m_digmPrimaryPool.reserveDigm = snap.digmPrimaryReserveDigm;
-    m_digmPrimaryPool.reserveHeat = snap.digmPrimaryReserveHeat;
-    m_digmBancorPool.reserveXfg = snap.digmBancorReserveXfg;
-    m_digmBancorPool.supplyDigm = snap.digmBancorSupplyDigm;
     m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
     m_epochSnapshots.pop_back();
   }

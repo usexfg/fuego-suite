@@ -109,6 +109,7 @@ private:
   bool on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& req, COMMAND_RPC_GET_SWAP_TRADES::response& res);
   bool on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::request& req, COMMAND_RPC_SUBMIT_SWAP_OFFER::response& res);
   bool on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::request& req, COMMAND_RPC_CANCEL_SWAP_OFFER::response& res);
+  bool on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res);
 
   // v2 Orderbook RPC endpoints
   bool on_get_order_book(const COMMAND_RPC_GET_ORDER_BOOK::request& req, COMMAND_RPC_GET_ORDER_BOOK::response& res);

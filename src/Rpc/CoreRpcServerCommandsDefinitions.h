@@ -1792,6 +1792,42 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
   };
 };
 
+/** @brief Take (fill) a soft order. Queues a PendingSwapRequest for the
+ * local maker's SwapDaemon, which verifies the reserve proof and creates
+ * the AFK lock. proofOfFunds format per chain (see chain client
+ * verifyReserveProof): EVM "0xaddr:130hexSig:offerId" (EIP-191),
+ * SOL "b58pub:b58sig:offerId" (Ed25519), Bitcoin-family
+ * "address:signature:offerId" (signmessage). */
+struct COMMAND_RPC_REQUEST_SWAP {
+  struct request {
+    std::string offerId;
+    uint64_t amount = 0;      // XFG atomic amount to fill (0 = full remaining)
+    std::string takerPubKey;   // 64-char hex Ed25519 pubkey — taker's swap identity
+    std::string proofOfFunds;  // chain reserve proof bound to this offerId
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(offerId)
+      KV_MEMBER(amount)
+      KV_MEMBER(takerPubKey)
+      KV_MEMBER(proofOfFunds)
+    }
+  };
+
+  struct response {
+    std::string status;      // "pending" on success
+    std::string offerId;
+    uint8_t pair = 0;
+    uint64_t xfgAmount = 0;  // offer amount being locked (echo)
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(status)
+      KV_MEMBER(offerId)
+      KV_MEMBER(pair)
+      KV_MEMBER(xfgAmount)
+    }
+  };
+};
+
 /** @brief Current fee pool state snapshot */
 struct COMMAND_RPC_GET_FEE_POOL_INFO {
   typedef EMPTY_STRUCT request;

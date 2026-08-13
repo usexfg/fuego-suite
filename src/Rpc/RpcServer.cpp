@@ -19,6 +19,7 @@
 
 #include <future>
 #include <unordered_map>
+#include <cctype>
 
 // CryptoNote
 #include "BlockchainExplorerData.h"
@@ -35,6 +36,7 @@
 
 #include "P2p/NetNode.h"
 #include "CryptoNoteCore/SwapOfferRelay.h"
+#include "SwapDaemon/SwapTypes.h"
 
 #include "CoreRpcServerErrorCodes.h"
 #include "JsonRpc.h"
@@ -150,6 +152,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getswaptrades", { jsonMethod<COMMAND_RPC_GET_SWAP_TRADES>(&RpcServer::on_get_swap_trades), true } },
   { "/submitswap", { jsonMethodSwapAuth<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
   { "/cancelswap", { jsonMethodSwapAuth<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
+  { "/requestswap", { jsonMethodSwapAuth<COMMAND_RPC_REQUEST_SWAP>(&RpcServer::on_request_swap), false } },
 
   // v2 orderbook endpoints
   { "/getorderbook", { jsonMethod<COMMAND_RPC_GET_ORDER_BOOK>(&RpcServer::on_get_order_book), true } },
@@ -1197,6 +1200,56 @@ bool RpcServer::on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::reques
 
   m_swapRelay->cancelOffer(req.offerId, pubkey, sig);
   res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, COMMAND_RPC_REQUEST_SWAP::response& res) {
+  if (!m_swapRelay) {
+    res.status = "Swap relay not running";
+    return true;
+  }
+  if (req.offerId.empty()) {
+    res.status = "offerId is required";
+    return true;
+  }
+  // Taker identity: 64-char hex Ed25519 public key. The maker's SwapDaemon
+  // binds this as expectedPeerSwapPubKey for the resulting AFK swap.
+  if (req.takerPubKey.size() != 64) {
+    res.status = "takerPubKey must be 64 hex chars (Ed25519 public key)";
+    return true;
+  }
+  for (char c : req.takerPubKey) {
+    if (!std::isxdigit(static_cast<unsigned char>(c))) {
+      res.status = "takerPubKey must be hex";
+      return true;
+    }
+  }
+  // Reserve proof is mandatory — the maker verifies it against the chain
+  // before locking funds. Empty proofs are rejected here (fail fast).
+  if (req.proofOfFunds.empty()) {
+    res.status = "proofOfFunds is required (chain reserve proof bound to offerId)";
+    return true;
+  }
+
+  // Echo the offer's pair + amount so the taker can drive its local swap
+  // daemon after the maker locks (informational only).
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::ZANO); ++pair) {
+    auto offers = m_swapRelay->getOffers(static_cast<uint8_t>(pair));
+    for (const auto& offer : offers) {
+      if (offer.offerId == req.offerId) {
+        res.pair = pair;
+        res.xfgAmount = offer.xfgAmount;
+        break;
+      }
+    }
+  }
+
+  // Queue for the local maker's SwapDaemon tick: it verifies the reserve
+  // proof on-chain and creates the AFK lock for this taker.
+  m_swapRelay->handleSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
+
+  res.status = "pending";
+  res.offerId = req.offerId;
   return true;
 }
 

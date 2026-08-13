@@ -621,12 +621,14 @@ using CryptoNote::ISerializer;
       std::string lockId;
       std::string adaptorPoint;
       std::string preSig;
+      std::string hashLock;   // H(t) — lets the taker lock the counterparty HTLC
       std::string status;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(lockId)
         KV_MEMBER(adaptorPoint)
         KV_MEMBER(preSig)
+        KV_MEMBER(hashLock)
         KV_MEMBER(status)
       }
     };

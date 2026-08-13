@@ -12,6 +12,8 @@ public:
   SolChainClient(std::unique_ptr<SolRpcClient> rpc, const std::string& keypairBase58);
 
   std::string chainName() const override { return "SOL"; }
+
+  std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

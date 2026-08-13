@@ -1993,10 +1993,105 @@ bool SwapDaemon::handleAfkAccepted(SwapStateMachine& sm) {
   const std::string& swapId = params.swapId;
 
   if (params.role != SwapRole::BOB) {
-    // Taker side: completion is maker-driven. The maker's daemon sends
-    // AFK_CLAIM_ACK after the wallet payout is broadcast; that handler
-    // transitions this record to AFK_CLAIMED.
-    m_logger(Logging::INFO) << "  AFK: awaiting maker payout (AFK_CLAIM_ACK)...";
+    // ── Taker side: lock CTR with H(t), extract t from the maker's claim,
+    // complete the pre-sig, and send AFK_CLAIM. ──
+    static const Crypto::PublicKey ZERO_PK{};
+    static const Crypto::Hash ZERO_H{};
+
+    // Pre-lock material must arrive via the fill result (initiate_swap RPC).
+    if (std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) == 0 ||
+        std::memcmp(&params.hashLock, &ZERO_H, sizeof(ZERO_H)) == 0 ||
+        params.afkPreSigHex.empty()) {
+      m_logger(Logging::INFO) << "  AFK: awaiting pre-lock material (fill result not applied yet)";
+      return true;
+    }
+    if (params.ctrAddress.empty()) {
+      m_logger(Logging::INFO) << "  AFK: awaiting maker CTR receive address";
+      return true;
+    }
+
+    auto* client = m_chainRegistry.getClient(params.pair);
+    if (!client) {
+      m_logger(Logging::ERROR) << "  AFK: " << swapPairToString(params.pair)
+        << " client not configured — cannot lock CTR";
+      return false;
+    }
+
+    // 1. Lock the counterparty HTLC (once).
+    if (params.ctrLockTxId.empty()) {
+      auto lockResult = client->lock(params);
+      if (!lockResult.success) {
+        m_logger(Logging::INFO) << "  AFK: CTR lock pending — " << lockResult.error;
+        return true;  // retry next tick
+      }
+      params.ctrLockTxId = lockResult.txId;
+      if (!lockResult.chainState.empty()) {
+        params.chainState = lockResult.chainState;
+      }
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  AFK: CTR locked (tx " << params.ctrLockTxId
+        << "). Waiting for maker claim...";
+      return true;
+    }
+
+    // 2. Wait for the maker's on-chain claim → extract t.
+    std::string claimedHex = client->tryExtractClaimedSecret(params);
+    if (claimedHex.empty() || claimedHex.size() != 64) {
+      m_logger(Logging::INFO) << "  AFK: CTR locked — waiting for maker claim (preimage)";
+      return true;
+    }
+    Crypto::SecretKey t;
+    if (!Common::podFromHex(claimedHex, t)) {
+      m_logger(Logging::ERROR) << "  AFK: invalid extracted preimage hex";
+      return false;
+    }
+
+    // 3. Bind t to the published adaptor point (fail closed).
+    Crypto::PublicKey derivedT;
+    if (!Crypto::secret_key_to_public_key(t, derivedT) ||
+        std::memcmp(&derivedT, &params.adaptorPoint, sizeof(derivedT)) != 0) {
+      m_logger(Logging::ERROR) << "  AFK: extracted t does not match published T — rejecting";
+      return false;
+    }
+
+    // 4. Complete the maker's pre-signature with t.
+    Crypto::AdaptorSignature preSig;
+    if (params.afkPreSigHex.size() != 128 ||
+        !Common::podFromHex(params.afkPreSigHex, preSig)) {
+      m_logger(Logging::ERROR) << "  AFK: invalid pre-sig hex (expected 128 chars)";
+      return false;
+    }
+    Crypto::EllipticCurveScalar tScalar;
+    std::memcpy(&tScalar, &t, sizeof(tScalar));
+    Crypto::Signature finalSig;
+    Crypto::complete_afk_signature(preSig, tScalar, finalSig);
+
+    // 5. Resolve our payout address from the wallet RPC.
+    std::string payoutAddress;
+    try {
+      if (!m_rpc.getWalletAddress(payoutAddress) || payoutAddress.empty()) {
+        m_logger(Logging::INFO) << "  AFK: wallet RPC not answering for payout address — will retry";
+        return true;
+      }
+    } catch (const std::exception&) {
+      return true;
+    }
+
+    // 6. Send AFK_CLAIM to the maker (re-sent each tick until the ACK).
+    PeerMessage claim;
+    claim.type = PeerMessageType::AFK_CLAIM;
+    claim.swapId = swapId;
+    claim.afkClaim.ctrLockTxId = params.ctrLockTxId;
+    claim.afkClaim.payoutAddress = payoutAddress;
+    claim.afkClaim.finalSigHex = Common::podToHex(finalSig);
+    if (signPeerMessage(claim, params.ourSwapPubKey, params.ourSwapSecKey)) {
+      deliverPeerMessage(claim);
+    }
+    params.afkClaimCtrLockTxId = params.ctrLockTxId;
+    params.afkClaimPayoutAddress = payoutAddress;
+    params.afkClaimFinalSigHex = Common::podToHex(finalSig);
+    m_db.saveSwap(sm);
+    m_logger(Logging::INFO) << "  AFK: claim request sent to maker (awaiting payout + AFK_CLAIM_ACK)";
     return true;
   }
 
@@ -3184,11 +3279,15 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   std::string lockId;
   std::string adaptorPoint;
   std::string preSig;
+  std::string hashLock;
 
-  if (!m_rpc.createAfkLock(fillAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig)) {
+  if (!m_rpc.createAfkLock(fillAmount, 1, targetOffer.pair, lockId, adaptorPoint, preSig, hashLock)) {
     m_logger(Logging::ERROR) << "Failed to create AFK lock for offer " << offerId;
     return false;
   }
+
+  // Maker's counterparty receive address (where the taker's HTLC must pay).
+  std::string ctrAddress = client->getReceiveAddress();
 
   // Persist AFK swap record with expected peer identity when possible.
   {
@@ -3200,6 +3299,10 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
       afkParams.role = SwapRole::BOB;
       afkParams.xfgAmount = fillAmount;
       afkParams.ctrAmount = requiredCtrAmount;
+      Common::podFromHex(adaptorPoint, afkParams.adaptorPoint);
+      Common::podFromHex(hashLock, afkParams.hashLock);
+      afkParams.afkPreSigHex = preSig;
+      afkParams.ctrAddress = ctrAddress;
       afkParams.expectedPeerSwapPubKey = expectedTaker;
       afkParams.peerSwapPubKey = expectedTaker; // pre-bind offer identity
       SwapStateMachine afkSm(afkParams);
@@ -3208,13 +3311,18 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
         m_logger(Logging::INFO) << "AFK swap " << lockId
           << " saved with expectedPeerSwapPubKey="
           << Common::podToHex(expectedTaker);
-        // Publish the fill result so the taker can learn the lockId and this
-        // maker's P2P endpoint (polled via /getswaprequests on fuegod).
+        // Publish the fill result so the taker can learn the lockId, this
+        // maker's P2P endpoint, and the pre-lock material needed to lock the
+        // counterparty HTLC (polled via /getswaprequests on fuegod).
         if (m_swapRelay) {
           CryptoNote::SwapRequestResult result;
           result.offerId = offerId;
           result.lockId = lockId;
           result.makerEndpoint = m_publicEndpoint;
+          result.adaptorPoint = adaptorPoint;
+          result.hashLock = hashLock;
+          result.preSig = preSig;
+          result.ctrAddress = ctrAddress;
           result.createdAt = std::time(nullptr);
           m_swapRelay->recordSwapRequestResult(takerPubKey, result);
           m_logger(Logging::INFO) << "AFK fill result published for taker "

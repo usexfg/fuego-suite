@@ -326,6 +326,7 @@ std::string SwapStateMachine::serialize() const {
   root.insert("afkClaimCtrLockTxId", m_params.afkClaimCtrLockTxId);
   root.insert("afkClaimPayoutAddress", m_params.afkClaimPayoutAddress);
   root.insert("afkClaimFinalSigHex", m_params.afkClaimFinalSigHex);
+  root.insert("afkPreSigHex", m_params.afkPreSigHex);
 
   // ── Musig2 pre-sig round state ──
   // Public nonces / partial sigs are not secret. The secret nonce is
@@ -472,6 +473,8 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.afkClaimPayoutAddress = root("afkClaimPayoutAddress").getString();
   if (root.contains("afkClaimFinalSigHex"))
     params.afkClaimFinalSigHex = root("afkClaimFinalSigHex").getString();
+  if (root.contains("afkPreSigHex"))
+    params.afkPreSigHex = root("afkPreSigHex").getString();
 
   // ── Musig2 pre-sig round state ──
   if (root.contains("musig2OurPubNonce") && !root("musig2OurPubNonce").getString().empty())

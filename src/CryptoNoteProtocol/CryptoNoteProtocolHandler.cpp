@@ -1247,7 +1247,9 @@ int CryptoNoteProtocolHandler::handle_swap_request(int command, COMMAND_SWAP_REQ
 
 int CryptoNoteProtocolHandler::handle_swap_request_result(int command, COMMAND_SWAP_REQUEST_RESULT::request& arg, CryptoNoteConnectionContext& context) {
   m_core.getSwapRelay().handleSwapRequestResult(arg.takerPubKey, arg.offerId, arg.lockId,
-                                                arg.makerEndpoint, arg.createdAt);
+                                                arg.makerEndpoint, arg.adaptorPoint,
+                                                arg.hashLock, arg.preSig, arg.ctrAddress,
+                                                arg.createdAt);
   return 1;
 }
 

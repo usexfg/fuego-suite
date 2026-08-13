@@ -427,14 +427,15 @@ bool wallet_rpc_server::on_refund_swap(const wallet_rpc::COMMAND_RPC_REFUND_SWAP
 }
 //------------------------------------------------------------------------------------------------------------------------------
 bool wallet_rpc_server::on_create_afk_lock(const wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::request& req, wallet_rpc::COMMAND_RPC_CREATE_AFK_LOCK::response& res) {
-  std::string lockId, adaptorPoint, preSig;
-  std::error_code ec = m_wallet.create_afk_lock(req.amount, req.timeout_hours, req.pair, lockId, adaptorPoint, preSig);
+  std::string lockId, adaptorPoint, preSig, hashLock;
+  std::error_code ec = m_wallet.create_afk_lock(req.amount, req.timeout_hours, req.pair, lockId, adaptorPoint, preSig, hashLock);
   if (ec) {
     throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, ec.message());
   }
   res.lockId = lockId;
   res.adaptorPoint = adaptorPoint;
   res.preSig = preSig;
+  res.hashLock = hashLock;
   res.status = WALLET_RPC_STATUS_OK;
   return true;
 }

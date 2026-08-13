@@ -188,7 +188,7 @@ public:
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
 
   // AFK Adaptor Swaps
-  virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) = 0;
+  virtual std::error_code create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) = 0;
   virtual std::error_code claim_afk_swap(const std::string& swapId, const std::string& secret_s, const std::string& target_chain, const std::string& fee_address, const std::string& payout_address, std::string& txHash) = 0;
 
   // Sub-address support: subscribe the wallet scanner to this (major, minor) index.

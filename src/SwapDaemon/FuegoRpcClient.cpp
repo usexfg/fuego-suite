@@ -584,7 +584,7 @@ bool FuegoRpcClient::optimizeWallet(uint64_t threshold, TransferResult& result) 
   } catch (const std::exception&) { return false; }
 }
 
-bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) {
+bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) {
   if (m_walletHost.empty() || m_walletPort == 0) {
     throw std::runtime_error("Wallet RPC not configured (call setWalletRpc first)");
   }
@@ -628,6 +628,15 @@ bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint
       return false;
   }
 
+  size_t hlPos = respBody.find("\"hashLock\":\"");
+  if (hlPos != std::string::npos) {
+    hlPos += 13;
+    size_t hlEnd = respBody.find("\"", hlPos);
+    hashLock = respBody.substr(hlPos, hlEnd - hlPos);
+  } else {
+      return false;
+  }
+
   return true;
 }
 
@@ -667,6 +676,27 @@ bool FuegoRpcClient::claimAfkSwap(const std::string& lockId,
   if (txHashEnd == std::string::npos) return false;
   txHash = respBody.substr(txHashPos, txHashEnd - txHashPos);
   return !txHash.empty();
+}
+
+bool FuegoRpcClient::getWalletAddress(std::string& address) {
+  if (m_walletHost.empty() || m_walletPort == 0) {
+    return false;
+  }
+  std::string respBody = walletJsonRpc("getAddress", "{}");
+  if (respBody.empty()) {
+    return false;
+  }
+  size_t pos = respBody.find("\"address\":\"");
+  if (pos == std::string::npos) {
+    return false;
+  }
+  pos += 11;
+  size_t end = respBody.find("\"", pos);
+  if (end == std::string::npos) {
+    return false;
+  }
+  address = respBody.substr(pos, end - pos);
+  return !address.empty();
 }
 
 bool FuegoRpcClient::checkReserveProof(const std::string& address, const std::string& message,

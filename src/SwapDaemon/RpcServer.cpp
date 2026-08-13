@@ -303,6 +303,26 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
       afkMode = root("afk").getBool();
     }
 
+    // AFK pre-lock material (from the maker's fill result): adaptor point T,
+    // hashlock H(t), the maker's pre-signature, and the maker's CTR receive
+    // address. Required for the taker to lock the counterparty HTLC.
+    if (root.contains("adaptor_point")) {
+      if (!Common::podFromHex(root("adaptor_point").getString(), swapParams.adaptorPoint)) {
+        return rpcError(-32602, "adaptor_point must be 64-char hex");
+      }
+    }
+    if (root.contains("hash_lock")) {
+      if (!Common::podFromHex(root("hash_lock").getString(), swapParams.hashLock)) {
+        return rpcError(-32602, "hash_lock must be 64-char hex");
+      }
+    }
+    if (root.contains("pre_sig")) {
+      swapParams.afkPreSigHex = root("pre_sig").getString();
+    }
+    if (root.contains("ctr_address")) {
+      swapParams.ctrAddress = root("ctr_address").getString();
+    }
+
     if (!m_daemon.initiate(swapParams)) {
       return rpcError(-32000, "Failed to initiate swap");
     }

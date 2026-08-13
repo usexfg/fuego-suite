@@ -16,6 +16,12 @@ public:
   virtual ChainClientResult claim(const SwapParams& params) = 0;
   virtual ChainClientResult refund(const SwapParams& params) = 0;
 
+  // The local counterparty-chain receive address for this client (the
+  // address HTLC claims/refunds pay into). Advertised in AFK fill results
+  // so the taker locks CTR to the maker's address. Empty when not
+  // configured or not derivable.
+  virtual std::string getReceiveAddress() const { return ""; }
+
   // Verify a counterparty reserve proof.
   // expectedMessage: the proof's signed message must equal this (binds the proof
   //   to a specific swap/offer — pass the offerId). Empty disables the binding check.
@@ -27,8 +33,7 @@ public:
   // Get transaction details including SPV confirmation status.
   // Populates ChainClientResult with confirmed/spvVerified/confirmations fields.
   virtual ChainClientResult getTransactionDetails(const std::string& txId,
-                                                  ChainClientResult& result) {
-    (void)txId;
+                                                  ChainClientResult& result) {    (void)txId;
     result = ChainClientResult::fail("getTransactionDetails not implemented");
     return result;
   }

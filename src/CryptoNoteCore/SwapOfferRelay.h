@@ -156,12 +156,18 @@ struct PendingSwapRequest {
 
 // Result of a soft-order fill request, published by the maker's SwapDaemon
 // after it creates the AFK lock. The taker polls for it (keyed by the
-// takerPubKey it sent in /requestswap) to learn the lockId and the maker's
-// P2P endpoint for the AFK completion messages.
+// takerPubKey it sent in /requestswap) to learn the lockId, the maker's
+// P2P endpoint, and the pre-lock material it needs to lock the counterparty
+// HTLC (adaptor point T, hashlock H(t), the maker's pre-sig, and the
+// maker's counterparty receive address).
 struct SwapRequestResult {
   std::string offerId;
   std::string lockId;
   std::string makerEndpoint;
+  std::string adaptorPoint;   // hex, T = t*G
+  std::string hashLock;       // hex, H(t) — counterparty-family hash
+  std::string preSig;         // hex, maker's adaptor pre-signature
+  std::string ctrAddress;     // maker's counterparty-chain receive address
   time_t      createdAt = 0;
 };
 
@@ -197,6 +203,10 @@ public:
                                const std::string& offerId,
                                const std::string& lockId,
                                const std::string& makerEndpoint,
+                               const std::string& adaptorPoint,
+                               const std::string& hashLock,
+                               const std::string& preSig,
+                               const std::string& ctrAddress,
                                uint64_t createdAt);
 
   // Called by the maker's SwapDaemon once the AFK lock is created.

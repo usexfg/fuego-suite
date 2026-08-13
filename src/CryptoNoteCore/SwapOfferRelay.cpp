@@ -230,6 +230,10 @@ void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey,
                                              const std::string& offerId,
                                              const std::string& lockId,
                                              const std::string& makerEndpoint,
+                                             const std::string& adaptorPoint,
+                                             const std::string& hashLock,
+                                             const std::string& preSig,
+                                             const std::string& ctrAddress,
                                              uint64_t createdAt) {
   std::lock_guard<std::mutex> lock(m_mutex);
   auto& vec = m_requestResults[takerPubKey];
@@ -244,6 +248,10 @@ void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey,
   r.offerId = offerId;
   r.lockId = lockId;
   r.makerEndpoint = makerEndpoint;
+  r.adaptorPoint = adaptorPoint;
+  r.hashLock = hashLock;
+  r.preSig = preSig;
+  r.ctrAddress = ctrAddress;
   r.createdAt = static_cast<time_t>(createdAt);
   vec.push_back(r);
 }
@@ -251,7 +259,8 @@ void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey,
 void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
                                              const SwapRequestResult& result) {
   handleSwapRequestResult(takerPubKey, result.offerId, result.lockId,
-                          result.makerEndpoint,
+                          result.makerEndpoint, result.adaptorPoint,
+                          result.hashLock, result.preSig, result.ctrAddress,
                           static_cast<uint64_t>(result.createdAt));
 
   if (m_p2pEndpoint) {
@@ -260,6 +269,10 @@ void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
     msg.offerId = result.offerId;
     msg.lockId = result.lockId;
     msg.makerEndpoint = result.makerEndpoint;
+    msg.adaptorPoint = result.adaptorPoint;
+    msg.hashLock = result.hashLock;
+    msg.preSig = result.preSig;
+    msg.ctrAddress = result.ctrAddress;
     msg.createdAt = static_cast<uint64_t>(result.createdAt);
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_REQUEST_RESULT::ID, buf, nullptr);

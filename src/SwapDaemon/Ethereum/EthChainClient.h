@@ -17,6 +17,8 @@ public:
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
+
+  std::string getReceiveAddress() const override { return m_address; }
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;

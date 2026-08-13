@@ -15,6 +15,19 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
 SolChainClient::SolChainClient(std::unique_ptr<SolRpcClient> rpc, const std::string& keypairBase58)
   : m_rpc(std::move(rpc)), m_keypairBase58(keypairBase58) {}
 
+std::string SolChainClient::getReceiveAddress() const {
+  // The keypair (64 bytes base58) holds the secret key first, then the
+  // public key. Return the public key as a base58 address.
+  try {
+    std::vector<uint8_t> raw = Base58Std::decode(m_keypairBase58);
+    if (raw.size() < 64) return "";
+    std::vector<uint8_t> pub(raw.begin() + 32, raw.begin() + 64);
+    return Base58Std::encode(pub);
+  } catch (const std::exception&) {
+    return "";
+  }
+}
+
 ChainClientResult SolChainClient::lock(const SwapParams& params) {
   // The Solana xfg_htlc program verifies keccak256(preimage) == hash_lock, and
   // claim() reveals the adaptor secret t as the preimage. So the hashlock MUST

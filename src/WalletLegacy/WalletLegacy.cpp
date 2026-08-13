@@ -29,8 +29,9 @@
 #include <numeric>
 #include <string.h>
 #include <time.h>
-
+#include <openssl/sha.h>
 #include "crypto/crypto.h"
+#include "crypto/keccak.h"
 #include "Common/Base58.h"
 #include "Common/ShuffleGenerator.h"
 #include "Logging/ConsoleLogger.h"
@@ -2012,7 +2013,7 @@ void WalletBurnDepositSecretCreatedEvent::process(CryptoNote::WalletLegacy* wall
   wallet->storeBurnDepositSecret(getTxHash(), getSecret(), getAmount(), getMetadata());
 }
 
-std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig) {
+std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock) {
   std::unique_lock<std::mutex> lock(m_cacheMutex);
   throwIfNotInitialised();
 
@@ -2024,6 +2025,23 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   Crypto::Hash zeroHash = {{0}};
   if (!Crypto::generate_afk_lock_data(zeroHash, m_account.getAccountKeys().address.spendPublicKey, m_account.getAccountKeys().spendSecretKey, lockData)) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  // Hashlock H(t) so the taker can lock the counterparty HTLC without
+  // learning t. Family must match the counterparty program (same rule as
+  // SwapDaemon::adaptor_generate_adaptor): SHA-256 for UTXO scripts,
+  // keccak-256 for EVM/Solana.
+  {
+    const uint8_t* secretBytes = reinterpret_cast<const uint8_t*>(&lockData.secret);
+    uint8_t digest[32];
+    bool utxoFamily = (pair == 3 /*BCH*/ || pair == 6 /*KMD_SPV*/ || pair == 8 /*DCR*/ ||
+                       pair == 9 /*BTC*/ || pair == 10 /*LTC*/);
+    if (utxoFamily) {
+      SHA256(secretBytes, 32, digest);
+    } else {
+      keccak(secretBytes, 32, digest, 32);
+    }
+    hashLock = Common::toHex(digest, 32);
   }
 
   // 2. Calculate Total Lock Amount (Base + 1% Bob's fee)

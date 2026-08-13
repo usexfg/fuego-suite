@@ -410,6 +410,10 @@ namespace CryptoNote
       std::string offerId;
       std::string lockId;
       std::string makerEndpoint;
+      std::string adaptorPoint;  // hex, T = t*G
+      std::string hashLock;      // hex, H(t) — counterparty-family hash
+      std::string preSig;        // hex, maker's adaptor pre-signature
+      std::string ctrAddress;    // maker's counterparty-chain receive address
       uint64_t    createdAt;
 
       void serialize(ISerializer& s) {
@@ -417,6 +421,10 @@ namespace CryptoNote
         KV_MEMBER(offerId)
         KV_MEMBER(lockId)
         KV_MEMBER(makerEndpoint)
+        KV_MEMBER(adaptorPoint)
+        KV_MEMBER(hashLock)
+        KV_MEMBER(preSig)
+        KV_MEMBER(ctrAddress)
         KV_MEMBER(createdAt)
       }
     };

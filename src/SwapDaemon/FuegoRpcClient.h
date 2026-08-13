@@ -112,7 +112,7 @@ public:
                     uint64_t mixin, TransferResult& result);
 
   // Call create_afk_lock on the wallet RPC
-  bool createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig);
+  bool createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig, std::string& hashLock);
 
   // Pay out an AFK swap: wallet verifies the taker's proof-of-claim
   // (final signature over the maker's pre-sig), extracts the secret, and
@@ -123,6 +123,9 @@ public:
                     const std::string& feeAddress,
                     const std::string& payoutAddress,
                     std::string& txHash);
+
+  // The local wallet's primary XFG address (taker's AFK payout address).
+  bool getWalletAddress(std::string& address);
 
   // ── Daemon RPC for tx inspection ──
 

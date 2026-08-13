@@ -220,6 +220,10 @@ struct SwapParams {
   std::string afkClaimPayoutAddress; // taker's XFG payout address
   std::string afkClaimFinalSigHex;   // final-signature proof of claim (hex)
 
+  // ── AFK pre-lock material (maker generates; taker receives via the fill
+  // result and the initiate_swap RPC) ──
+  std::string afkPreSigHex;   // maker's adaptor pre-signature (hex)
+
   // Bob→Alice: adaptor preimage revealed out-of-band so Alice can claim CTR HTLC.
   bool adaptorSecretRevealedToPeer = false;  // Bob: we already sent SECRET_REVEAL
   bool adaptorSecretReceived = false;        // Alice: we received t from Bob

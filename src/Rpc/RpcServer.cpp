@@ -1277,6 +1277,10 @@ bool RpcServer::on_get_swap_requests(const COMMAND_RPC_GET_SWAP_REQUESTS::reques
     e.offerId = r.offerId;
     e.lockId = r.lockId;
     e.makerEndpoint = r.makerEndpoint;
+    e.adaptorPoint = r.adaptorPoint;
+    e.hashLock = r.hashLock;
+    e.preSig = r.preSig;
+    e.ctrAddress = r.ctrAddress;
     e.createdAt = static_cast<uint64_t>(r.createdAt);
     res.requests.push_back(std::move(e));
   }

@@ -210,14 +210,60 @@ void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amou
   m_pendingRequests.push_back({offerId, amount, takerPubKey, proofOfFunds});
 }
 
-void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
-                                             const SwapRequestResult& result) {
+void SwapOfferRelay::submitSwapRequest(const std::string& offerId, uint64_t amount,
+                                       const std::string& takerPubKey,
+                                       const std::string& proofOfFunds) {
+  handleSwapRequest(offerId, amount, takerPubKey, proofOfFunds);
+
+  if (m_p2pEndpoint) {
+    COMMAND_SWAP_REQUEST::request msg;
+    msg.offerId = offerId;
+    msg.amount = amount;
+    msg.takerPubKey = takerPubKey;
+    msg.proofOfFunds = proofOfFunds;
+    auto buf = LevinProtocol::encode(msg);
+    m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_REQUEST::ID, buf, nullptr);
+  }
+}
+
+void SwapOfferRelay::handleSwapRequestResult(const std::string& takerPubKey,
+                                             const std::string& offerId,
+                                             const std::string& lockId,
+                                             const std::string& makerEndpoint,
+                                             uint64_t createdAt) {
   std::lock_guard<std::mutex> lock(m_mutex);
   auto& vec = m_requestResults[takerPubKey];
+  // Dedupe by lockId (single-hop gossip may deliver duplicates).
+  for (const auto& r : vec) {
+    if (r.lockId == lockId) return;
+  }
   if (vec.size() >= MAX_REQUEST_RESULTS_PER_TAKER) {
     vec.erase(vec.begin());  // drop oldest
   }
-  vec.push_back(result);
+  SwapRequestResult r;
+  r.offerId = offerId;
+  r.lockId = lockId;
+  r.makerEndpoint = makerEndpoint;
+  r.createdAt = static_cast<time_t>(createdAt);
+  vec.push_back(r);
+}
+
+void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
+                                             const SwapRequestResult& result) {
+  handleSwapRequestResult(takerPubKey, result.offerId, result.lockId,
+                          result.makerEndpoint,
+                          static_cast<uint64_t>(result.createdAt));
+
+  if (m_p2pEndpoint) {
+    COMMAND_SWAP_REQUEST_RESULT::request msg;
+    msg.takerPubKey = takerPubKey;
+    msg.offerId = result.offerId;
+    msg.lockId = result.lockId;
+    msg.makerEndpoint = result.makerEndpoint;
+    msg.createdAt = static_cast<uint64_t>(result.createdAt);
+    auto buf = LevinProtocol::encode(msg);
+    m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_REQUEST_RESULT::ID, buf, nullptr);
+  }
 }
 
 std::vector<SwapRequestResult> SwapOfferRelay::getSwapRequestResults(const std::string& takerPubKey) {

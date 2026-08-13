@@ -275,6 +275,7 @@ int CryptoNoteProtocolHandler::handleCommand(bool is_notify, int command, const 
     HANDLE_NOTIFY(COMMAND_SWAP_OFFER, &CryptoNoteProtocolHandler::handle_swap_offer)
     HANDLE_NOTIFY(COMMAND_SWAP_CANCEL, &CryptoNoteProtocolHandler::handle_swap_cancel)
     HANDLE_NOTIFY(COMMAND_SWAP_REQUEST, &CryptoNoteProtocolHandler::handle_swap_request)
+    HANDLE_NOTIFY(COMMAND_SWAP_REQUEST_RESULT, &CryptoNoteProtocolHandler::handle_swap_request_result)
     HANDLE_NOTIFY(COMMAND_SWAP_TRADE, &CryptoNoteProtocolHandler::handle_swap_trade)
 
     HANDLE_NOTIFY(COMMAND_ORDER_OPEN, &CryptoNoteProtocolHandler::handle_order_open)
@@ -1241,6 +1242,12 @@ int CryptoNoteProtocolHandler::handle_swap_cancel(int command, COMMAND_SWAP_CANC
 
 int CryptoNoteProtocolHandler::handle_swap_request(int command, COMMAND_SWAP_REQUEST::request& arg, CryptoNoteConnectionContext& context) {
   m_core.getSwapRelay().handleSwapRequest(arg.offerId, arg.amount, arg.takerPubKey, arg.proofOfFunds);
+  return 1;
+}
+
+int CryptoNoteProtocolHandler::handle_swap_request_result(int command, COMMAND_SWAP_REQUEST_RESULT::request& arg, CryptoNoteConnectionContext& context) {
+  m_core.getSwapRelay().handleSwapRequestResult(arg.takerPubKey, arg.offerId, arg.lockId,
+                                                arg.makerEndpoint, arg.createdAt);
   return 1;
 }
 

@@ -186,7 +186,21 @@ public:
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
 
+  // RPC-originated request: store locally AND gossip to all peers so the
+  // maker's node (wherever it is) queues it for its SwapDaemon.
+  void submitSwapRequest(const std::string& offerId, uint64_t amount,
+                         const std::string& takerPubKey, const std::string& proofOfFunds);
+
+  // P2P-received fill result (gossiped by the maker's node). Stored locally,
+  // keyed by takerPubKey, so the taker can poll its own fuegod.
+  void handleSwapRequestResult(const std::string& takerPubKey,
+                               const std::string& offerId,
+                               const std::string& lockId,
+                               const std::string& makerEndpoint,
+                               uint64_t createdAt);
+
   // Called by the maker's SwapDaemon once the AFK lock is created.
+  // Stores locally AND gossips the result to all peers.
   void recordSwapRequestResult(const std::string& takerPubKey,
                                const SwapRequestResult& result);
 

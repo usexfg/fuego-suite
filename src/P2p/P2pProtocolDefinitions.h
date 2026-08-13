@@ -397,6 +397,32 @@ namespace CryptoNote
     typedef EMPTY_STRUCT response;
   };
 
+  // Fill-result gossip (maker → all peers): after the maker's SwapDaemon
+  // creates the AFK lock, it publishes the result; every relay stores it
+  // keyed by takerPubKey so the taker can poll its LOCAL fuegod.
+  struct COMMAND_SWAP_REQUEST_RESULT
+  {
+    enum { ID = P2P_COMMANDS_POOL_BASE + 19 };
+
+    struct request
+    {
+      std::string takerPubKey;
+      std::string offerId;
+      std::string lockId;
+      std::string makerEndpoint;
+      uint64_t    createdAt;
+
+      void serialize(ISerializer& s) {
+        KV_MEMBER(takerPubKey)
+        KV_MEMBER(offerId)
+        KV_MEMBER(lockId)
+        KV_MEMBER(makerEndpoint)
+        KV_MEMBER(createdAt)
+      }
+    };
+    typedef EMPTY_STRUCT response;
+  };
+
   struct COMMAND_SWAP_TRADE
   {
     enum { ID = P2P_COMMANDS_POOL_BASE + 16 };

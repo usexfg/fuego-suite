@@ -1245,9 +1245,10 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
     }
   }
 
-  // Queue for the local maker's SwapDaemon tick: it verifies the reserve
-  // proof on-chain and creates the AFK lock for this taker.
-  m_swapRelay->handleSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
+  // Queue for the local maker's SwapDaemon tick AND gossip to all peers so
+  // the request reaches the maker's node wherever it is. The maker verifies
+  // the reserve proof on-chain and creates the AFK lock for this taker.
+  m_swapRelay->submitSwapRequest(req.offerId, req.amount, req.takerPubKey, req.proofOfFunds);
 
   res.status = "pending";
   res.offerId = req.offerId;

@@ -82,7 +82,7 @@ uint128_t fixedExp(uint128_t val) {
 
   // Multiply by 2^n (n is small in practice, < 10)
   if (n >= 64) return ~(uint128_t)0;
-  return sum << (uint8_t)n;
+  return sum << static_cast<uint128_t>(n);
 }
 
 // Power: compute base^(num/denom) * SCALE
@@ -170,7 +170,7 @@ uint64_t bancorSellOutput(uint64_t burnDigm,
   uint128_t newEffReserve = ((uint128_t)effReserve * pow_res) / SCALE;
 
   if (newEffReserve >= effReserve || newEffReserve < virtualReserve) return 0;
-  return (uint64_t)(effReserve - newEffReserve);
+  return (uint64_t)(effReserve > newEffReserve ? effReserve - newEffReserve : 0);
 }
 
 } // namespace CryptoNote

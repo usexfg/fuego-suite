@@ -23,9 +23,9 @@ MarketOrderExecutor::MarketOrderExecutor(uint32_t maxPriceDeviationPct)
 
 uint64_t MarketOrderExecutor::computeMaxPrice(uint64_t P_clear, bool buying) const {
   if (buying) {
-    return P_clear + (static_cast<uint128_t>(P_clear) * m_maxPriceDeviationPct) / 100;
+    return P_clear + static_cast<uint64_t>((static_cast<uint128_t>(P_clear) * m_maxPriceDeviationPct) / 100);
   } else {
-    uint64_t reduction = (static_cast<uint128_t>(P_clear) * m_maxPriceDeviationPct) / 100;
+    uint64_t reduction = static_cast<uint64_t>((static_cast<uint128_t>(P_clear) * m_maxPriceDeviationPct) / 100);
     if (reduction >= P_clear) return 1;
     return P_clear - reduction;
   }
@@ -57,7 +57,7 @@ MarketOrderExecutor::CascadeState MarketOrderExecutor::cascadeIntoOrderbook(
       }
 
       uint64_t takeAmount = std::min(remaining, levelDepth);
-      uint64_t cost = (static_cast<uint128_t>(takeAmount) * askPrice) / 100000000ULL;
+      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * askPrice) / 100000000ULL);
       state.filled += takeAmount;
       state.cost += cost;
       state.peakPrice = std::max(state.peakPrice, askPrice);
@@ -79,7 +79,7 @@ MarketOrderExecutor::CascadeState MarketOrderExecutor::cascadeIntoOrderbook(
       }
 
       uint64_t takeAmount = std::min(remaining, levelDepth);
-      uint64_t cost = (static_cast<uint128_t>(takeAmount) * bidPrice) / 100000000ULL;
+      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * bidPrice) / 100000000ULL);
       state.filled += takeAmount;
       state.cost += cost;
       state.peakPrice = std::max(state.peakPrice, bidPrice);

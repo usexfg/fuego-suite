@@ -3729,7 +3729,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     if (g_orderbookBootstrapBlocksRemaining > 0) {
       g_orderbookBootstrapBlocksRemaining--;
       if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-        uint64_t spotPrice = (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat;
+        uint64_t spotPrice = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat);
         g_orderbookLastClearingPrice = static_cast<uint64_t>(spotPrice);
       }
     } else {
@@ -3747,7 +3747,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
     uint64_t bandFilled = g_poolBandFilledLastBlock;
     g_poolBandFilledLastBlock = 0; // reset for this block
-    uint64_t bandPlaced = (static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100;
+    uint64_t bandPlaced = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100);
 
     g_poolOrchestrator.recordPrice(g_orderbookLastClearingPrice);
 
@@ -3795,7 +3795,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
           if (!bidIsPool && !askIsPool) continue;
 
           g_poolBandFilledLastBlock += fill.amount;
-          uint64_t fillCost = (static_cast<uint128_t>(fill.amount) * fill.price) / parameters::COIN;
+          uint64_t fillCost = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) * fill.price) / parameters::COIN);
 
           if (bidIsPool) {
             m_ammPool.reserveXfg += fill.amount;
@@ -3817,13 +3817,13 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
           // LP spread reward: |fill.price - P_clear| × amount / COIN → auto-compound into reserves
           if (fill.price > result.P_clear) {
-            uint64_t fee = (static_cast<uint128_t>(fill.amount) *
-                           (fill.price - result.P_clear)) / parameters::COIN;
+            uint64_t fee = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) *
+                           (fill.price - result.P_clear)) / parameters::COIN);
             m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - fee)
               ? UINT64_MAX : m_ammPool.reserveHeat + fee;
           } else if (result.P_clear > fill.price) {
-            uint64_t fee = (static_cast<uint128_t>(fill.amount) *
-                           (result.P_clear - fill.price)) / parameters::COIN;
+            uint64_t fee = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) *
+                           (result.P_clear - fill.price)) / parameters::COIN);
             m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - fee)
               ? UINT64_MAX : m_ammPool.reserveHeat + fee;
           }
@@ -3852,16 +3852,16 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
             if (m_ammPool.pendingXfg < amountToFill) continue;
 
             fillAmountXfg = amountToFill;
-            fillAmountHeat = (static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN;
+            fillAmountHeat = static_cast<uint64_t>((static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN);
 
             m_ammPool.pendingXfg -= fillAmountXfg;
             m_ammPool.reserveXfg += fillAmountXfg;
             m_ammPool.reserveHeat -= fillAmountHeat;
           } else { // BUY_XFG
             uint64_t maxFillByXfg = m_ammPool.reserveXfg;
-            uint64_t desiredXfg = (static_cast<uint128_t>(oob.amount) * parameters::COIN) / oob.targetPrice;
+            uint64_t desiredXfg = static_cast<uint64_t>((static_cast<uint128_t>(oob.amount) * parameters::COIN) / oob.targetPrice);
             uint64_t amountToFill = std::min(desiredXfg, maxFillByXfg);
-            uint64_t heatCost = (static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN;
+            uint64_t heatCost = static_cast<uint64_t>((static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN);
             if (m_ammPool.pendingHeat < heatCost) continue;
 
             fillAmountXfg = amountToFill;

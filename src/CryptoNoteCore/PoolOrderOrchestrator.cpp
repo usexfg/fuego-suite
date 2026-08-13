@@ -58,7 +58,7 @@ bool PoolOrderOrchestrator::shouldRegenerate(
     uint64_t delta = (currentPclear > priorPclear)
       ? currentPclear - priorPclear
       : priorPclear - currentPclear;
-    uint64_t threshold = (static_cast<uint128_t>(priorPclear) * PRICE_CHANGE_THRESHOLD_BPS) / 10000;
+    uint64_t threshold = static_cast<uint64_t>((static_cast<uint128_t>(priorPclear) * PRICE_CHANGE_THRESHOLD_BPS) / 10000);
     if (delta > threshold)
       return true;
   }
@@ -68,12 +68,12 @@ bool PoolOrderOrchestrator::shouldRegenerate(
     uint64_t xfgDelta = (poolXfgReserve > priorPoolXfgReserve)
       ? poolXfgReserve - priorPoolXfgReserve
       : priorPoolXfgReserve - poolXfgReserve;
-    uint64_t xfgThreshold = (static_cast<uint128_t>(priorPoolXfgReserve) * RESERVE_CHANGE_THRESHOLD_BPS) / 10000;
+    uint64_t xfgThreshold = static_cast<uint64_t>((static_cast<uint128_t>(priorPoolXfgReserve) * RESERVE_CHANGE_THRESHOLD_BPS) / 10000);
 
     uint64_t heatDelta = (poolHeatReserve > priorPoolHeatReserve)
       ? poolHeatReserve - priorPoolHeatReserve
       : priorPoolHeatReserve - poolHeatReserve;
-    uint64_t heatThreshold = (static_cast<uint128_t>(priorPoolHeatReserve) * RESERVE_CHANGE_THRESHOLD_BPS) / 10000;
+    uint64_t heatThreshold = static_cast<uint64_t>((static_cast<uint128_t>(priorPoolHeatReserve) * RESERVE_CHANGE_THRESHOLD_BPS) / 10000);
 
     if (xfgDelta > xfgThreshold || heatDelta > heatThreshold)
       return true;
@@ -119,7 +119,7 @@ uint32_t PoolOrderOrchestrator::computeSpreadBps(
     uint64_t stddev = isqrt(variance);
 
     // volatility = stddev / P_clear as basis points (×10000)
-    uint64_t volBps = (static_cast<uint128_t>(stddev) * 10000) / P_clear;
+    uint64_t volBps = static_cast<uint64_t>((static_cast<uint128_t>(stddev) * 10000) / P_clear);
     uint32_t volMultiplier = 1 + static_cast<uint32_t>(volBps / 100);
     spread = std::max(spread, BASE_SPREAD_BPS * volMultiplier);
   }

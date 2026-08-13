@@ -492,6 +492,12 @@ add_executable(test_xfg_dual_protocol
 target_link_libraries(test_xfg_dual_protocol PRIVATE
     SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
 
+# Pre-sig round wiring: ESCROW_FUNDED codec, Musig2 persistence, session determinism
+add_executable(test_presig_round
+    SwapDaemon/tests/test_presig_round.cpp)
+target_link_libraries(test_presig_round PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon MANUAL live XMR e2e (not CI; needs a funded testnet monerod+wallet)
 add_executable(test_xmr_live_e2e
     SwapDaemon/tests/test_xmr_live_e2e.cpp)
@@ -945,6 +951,7 @@ set(_TEST_DAEMON_TARGETS
     test_bch_secret_reveal
     test_xfg_spend_states
     test_xfg_dual_protocol
+    test_presig_round
     test_xmr_live_e2e
     XmrClaimAdaptorTests
     test_orderbook

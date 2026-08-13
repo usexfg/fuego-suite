@@ -433,6 +433,7 @@ public:
   bool handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight);
   bool handleWaitingSpv(SwapStateMachine& sm);
   bool handleSecretConfirmedSpv(SwapStateMachine& sm);
+  bool handleAfkAccepted(SwapStateMachine& sm);
 
   // Shared ring-sig finalization logic for ADAPTOR_SECRET_REVEALED and
   // ADAPTOR_SECRET_CONFIRMED_SPV (both perform the same spend flow).

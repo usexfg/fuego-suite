@@ -30,6 +30,13 @@
 
 namespace XfgSwap {
 
+// Deterministic pre-sig session message: domain-separated hash of the escrow
+// tx hash. Both parties hold escrowTxHash after the ESCROW_FUNDED handshake,
+// so both derive the SAME session. Binding the pre-sig to the funded escrow
+// means a nonce can never be re-used to sign a different swap (nonce reuse
+// on two different messages leaks the private key).
+Crypto::Hash presigSessionHash(const Crypto::Hash& escrowTxHash);
+
 // ─── Step 1: Key generation ──────────────────────────────────────────
 //
 // Generate a fresh Ed25519 keypair for this swap.

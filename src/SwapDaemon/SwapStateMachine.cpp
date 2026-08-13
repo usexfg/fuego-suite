@@ -192,7 +192,7 @@ std::string SwapStateMachine::serialize() const {
   Common::JsonValue root(Common::JsonValue::OBJECT);
 
   // Serialization version — bump when adding new fields.
-  root.insert("serVersion", static_cast<int64_t>(3));
+  root.insert("serVersion", static_cast<int64_t>(4));
 
   root.insert("swapId", m_params.swapId);
   root.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(m_params.pair)));
@@ -219,8 +219,15 @@ std::string SwapStateMachine::serialize() const {
     for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return true;
     return false;
   };
+  auto isNonZeroBytes = [](const uint8_t* p, size_t n) {
+    for (size_t i = 0; i < n; ++i) if (p[i]) return true;
+    return false;
+  };
+  const bool musig2NonceLive = isNonZeroBytes(
+      reinterpret_cast<const uint8_t*>(&m_params.musig2.ourSecNonce),
+      sizeof(Crypto::Musig2SecNonce));
   const bool needEnc = isNonZero(m_params.adaptorSecret) || isNonZero(m_params.ourSwapSecKey)
-      || m_params.ringOurRound1MaterialValid;
+      || m_params.ringOurRound1MaterialValid || musig2NonceLive;
   if (needEnc && !hasEncryptionKey()) {
     // Refuse to write a record that would permanently drop live secrets.
     return "";
@@ -239,21 +246,41 @@ std::string SwapStateMachine::serialize() const {
     return true;
   };
 
+  auto packEncryptedBytes = [&](const uint8_t* data, size_t len, std::string& hexOut) -> bool {
+    SwapSecretEncryption::EncryptedSecret encrypted;
+    if (!SwapSecretEncryption::encrypt(data, len, m_encryptionKey, encrypted)) return false;
+    std::string encData;
+    encData.reserve(CHACHA8_NONCE_SIZE + SALT_SIZE + encrypted.ciphertext.size() + TAG_SIZE);
+    encData.insert(encData.end(), encrypted.nonce.begin(), encrypted.nonce.end());
+    encData.insert(encData.end(), encrypted.salt.begin(), encrypted.salt.end());
+    encData.insert(encData.end(), encrypted.ciphertext.begin(), encrypted.ciphertext.end());
+    encData.insert(encData.end(), encrypted.tag.begin(), encrypted.tag.end());
+    hexOut = Common::toHex(encData.data(), encData.size());
+    return true;
+  };
+
   if (hasEncryptionKey()) {
-    std::string adaptorHex, secKeyHex, ringNonceHex;
+    std::string adaptorHex, secKeyHex, ringNonceHex, musig2NonceHex;
     if (!packEncrypted(m_params.adaptorSecret, adaptorHex)) return "";
     if (!packEncrypted(m_params.ourSwapSecKey, secKeyHex)) return "";
     // ring nonce secret is an EllipticCurveScalar (32 bytes) — same size as SecretKey
     Crypto::SecretKey ringNonceAsKey;
     std::memcpy(&ringNonceAsKey, &m_params.ringOurRingNonceSec, 32);
     if (!packEncrypted(ringNonceAsKey, ringNonceHex)) return "";
+    if (musig2NonceLive) {
+      if (!packEncryptedBytes(
+              reinterpret_cast<const uint8_t*>(&m_params.musig2.ourSecNonce),
+              sizeof(Crypto::Musig2SecNonce), musig2NonceHex)) return "";
+    }
     root.insert("adaptorSecretEnc", adaptorHex);
     root.insert("ourSwapSecKeyEnc", secKeyHex);
     root.insert("ringOurRingNonceSecEnc", ringNonceHex);
+    root.insert("musig2OurSecNonceEnc", musig2NonceHex);
   } else {
     root.insert("adaptorSecretEnc", "");
     root.insert("ourSwapSecKeyEnc", "");
     root.insert("ringOurRingNonceSecEnc", "");
+    root.insert("musig2OurSecNonceEnc", "");
   }
 
   // Legacy fields (kept for backward compat in DB)
@@ -290,6 +317,33 @@ std::string SwapStateMachine::serialize() const {
               static_cast<int64_t>(m_params.adaptorSecretRevealedToPeer ? 1 : 0));
   root.insert("adaptorSecretReceived",
               static_cast<int64_t>(m_params.adaptorSecretReceived ? 1 : 0));
+  root.insert("escrowFundedSent",
+              static_cast<int64_t>(m_params.escrowFundedSent ? 1 : 0));
+
+  // AFK completion state (maker side)
+  root.insert("afkClaimReceived",
+              static_cast<int64_t>(m_params.afkClaimReceived ? 1 : 0));
+  root.insert("afkClaimCtrLockTxId", m_params.afkClaimCtrLockTxId);
+  root.insert("afkClaimPayoutAddress", m_params.afkClaimPayoutAddress);
+  root.insert("afkClaimFinalSigHex", m_params.afkClaimFinalSigHex);
+
+  // ── Musig2 pre-sig round state ──
+  // Public nonces / partial sigs are not secret. The secret nonce is
+  // persisted encrypted above (musig2OurSecNonceEnc). Persisting these makes
+  // the ESCROW_FUNDED → PRESIGS_READY round restart-safe: a reloaded daemon
+  // must never regenerate a nonce it may already have sent.
+  root.insert("musig2OurPubNonce", Common::podToHex(m_params.musig2.ourPubNonce));
+  root.insert("musig2PeerPubNonce", Common::podToHex(m_params.musig2.peerPubNonce));
+  root.insert("musig2OurPartialSig", Common::podToHex(m_params.musig2.ourPartialSig));
+  root.insert("musig2PeerPartialSig", Common::podToHex(m_params.musig2.peerPartialSig));
+  root.insert("musig2NonceGenerated", static_cast<int64_t>(m_params.musig2.nonceGenerated ? 1 : 0));
+  root.insert("musig2NonceSent", static_cast<int64_t>(m_params.musig2.nonceSent ? 1 : 0));
+  root.insert("musig2PartialSigGenerated",
+              static_cast<int64_t>(m_params.musig2.partialSigGenerated ? 1 : 0));
+  root.insert("musig2PartialSigSent",
+              static_cast<int64_t>(m_params.musig2.partialSigSent ? 1 : 0));
+  root.insert("musig2PeerPartialSigVerified",
+              static_cast<int64_t>(m_params.musig2.peerPartialSigVerified ? 1 : 0));
 
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
@@ -362,6 +416,9 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   if (root.contains("ringOurRingNonceSecEnc") && !root("ringOurRingNonceSecEnc").getString().empty()) {
     decodeEncBlob(root("ringOurRingNonceSecEnc").getString(), params.encRingNonceBlob);
   }
+  if (root.contains("musig2OurSecNonceEnc") && !root("musig2OurSecNonceEnc").getString().empty()) {
+    decodeEncBlob(root("musig2OurSecNonceEnc").getString(), params.encMusig2NonceBlob);
+  }
 
   // Legacy fields
   if (root.contains("aliceXfgPubKey"))
@@ -404,6 +461,36 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     params.adaptorSecretRevealedToPeer = root("adaptorSecretRevealedToPeer").getInteger() != 0;
   if (root.contains("adaptorSecretReceived"))
     params.adaptorSecretReceived = root("adaptorSecretReceived").getInteger() != 0;
+  if (root.contains("escrowFundedSent"))
+    params.escrowFundedSent = root("escrowFundedSent").getInteger() != 0;
+  if (root.contains("afkClaimReceived"))
+    params.afkClaimReceived = root("afkClaimReceived").getInteger() != 0;
+  if (root.contains("afkClaimCtrLockTxId"))
+    params.afkClaimCtrLockTxId = root("afkClaimCtrLockTxId").getString();
+  if (root.contains("afkClaimPayoutAddress"))
+    params.afkClaimPayoutAddress = root("afkClaimPayoutAddress").getString();
+  if (root.contains("afkClaimFinalSigHex"))
+    params.afkClaimFinalSigHex = root("afkClaimFinalSigHex").getString();
+
+  // ── Musig2 pre-sig round state ──
+  if (root.contains("musig2OurPubNonce") && !root("musig2OurPubNonce").getString().empty())
+    Common::podFromHex(root("musig2OurPubNonce").getString(), params.musig2.ourPubNonce);
+  if (root.contains("musig2PeerPubNonce") && !root("musig2PeerPubNonce").getString().empty())
+    Common::podFromHex(root("musig2PeerPubNonce").getString(), params.musig2.peerPubNonce);
+  if (root.contains("musig2OurPartialSig") && !root("musig2OurPartialSig").getString().empty())
+    Common::podFromHex(root("musig2OurPartialSig").getString(), params.musig2.ourPartialSig);
+  if (root.contains("musig2PeerPartialSig") && !root("musig2PeerPartialSig").getString().empty())
+    Common::podFromHex(root("musig2PeerPartialSig").getString(), params.musig2.peerPartialSig);
+  if (root.contains("musig2NonceGenerated"))
+    params.musig2.nonceGenerated = root("musig2NonceGenerated").getInteger() != 0;
+  if (root.contains("musig2NonceSent"))
+    params.musig2.nonceSent = root("musig2NonceSent").getInteger() != 0;
+  if (root.contains("musig2PartialSigGenerated"))
+    params.musig2.partialSigGenerated = root("musig2PartialSigGenerated").getInteger() != 0;
+  if (root.contains("musig2PartialSigSent"))
+    params.musig2.partialSigSent = root("musig2PartialSigSent").getInteger() != 0;
+  if (root.contains("musig2PeerPartialSigVerified"))
+    params.musig2.peerPartialSigVerified = root("musig2PeerPartialSigVerified").getInteger() != 0;
 
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));
@@ -450,6 +537,46 @@ void SwapStateMachine::decryptStoredSecret() {
     if (unpack(m_params.encRingNonceBlob, ringNonceAsKey)) {
       std::memcpy(&m_params.ringOurRingNonceSec, &ringNonceAsKey, 32);
       m_params.encRingNonceBlob.clear();
+    }
+  }
+  if (!m_params.encMusig2NonceBlob.empty()) {
+    constexpr size_t MUSIG2_SEC_NONCE_SIZE = sizeof(Crypto::Musig2SecNonce);
+    bool decrypted = false;
+    if (m_params.encMusig2NonceBlob.size() >=
+        CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE + TAG_SIZE) {
+      SwapSecretEncryption::EncryptedSecret encrypted;
+      std::memcpy(encrypted.nonce.data(), m_params.encMusig2NonceBlob.data(), CHACHA8_NONCE_SIZE);
+      std::memcpy(encrypted.salt.data(),
+                  m_params.encMusig2NonceBlob.data() + CHACHA8_NONCE_SIZE, SALT_SIZE);
+      encrypted.ciphertext.assign(
+          m_params.encMusig2NonceBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE,
+          m_params.encMusig2NonceBlob.begin() + CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE);
+      std::memcpy(encrypted.tag.data(),
+                  m_params.encMusig2NonceBlob.data() + CHACHA8_NONCE_SIZE + SALT_SIZE + MUSIG2_SEC_NONCE_SIZE,
+                  TAG_SIZE);
+      decrypted = SwapSecretEncryption::decrypt(
+          encrypted, m_encryptionKey,
+          reinterpret_cast<uint8_t*>(&m_params.musig2.ourSecNonce),
+          MUSIG2_SEC_NONCE_SIZE);
+    }
+    if (decrypted) {
+      m_params.encMusig2NonceBlob.clear();
+    } else {
+      // Fail closed: the pre-sig round's secret nonce is unrecoverable.
+      // Reset ALL pre-sig progress so the round restarts with a fresh nonce
+      // rather than proceeding with a zeroed one (signing with a zero nonce
+      // leaks the swap key). The peer will reject any conflicting nonce
+      // value, so worst case the swap is stuck until the timelock refund.
+      m_params.encMusig2NonceBlob.clear();
+      std::memset(&m_params.musig2.ourSecNonce, 0, sizeof(Crypto::Musig2SecNonce));
+      std::memset(&m_params.musig2.ourPubNonce, 0, sizeof(Crypto::Musig2PubNonce));
+      std::memset(&m_params.musig2.ourPartialSig, 0, sizeof(Crypto::Musig2PartialSig));
+      m_params.musig2.nonceGenerated = false;
+      m_params.musig2.sessionInitialized = false;
+      m_params.musig2.nonceSent = false;
+      m_params.musig2.partialSigGenerated = false;
+      m_params.musig2.partialSigSent = false;
+      m_params.musig2.peerPartialSigVerified = false;
     }
   }
 }

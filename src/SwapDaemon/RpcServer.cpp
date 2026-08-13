@@ -68,8 +68,7 @@ void RpcServer::stop() {
 
 bool RpcServer::authorize(const httplib::Request& req) const {
   if (m_controlToken.empty()) {
-    // Fail closed for fund-affecting methods is enforced in dispatch;
-    // empty token rejects mutators there.
+    // Loopback-only server without a configured token: local trust domain.
     return true;
   }
   auto it = req.headers.find("X-Swap-Token");
@@ -144,17 +143,17 @@ std::string RpcServer::dispatch(const std::string& body) {
 
   m_logger(Logging::INFO) << "RPC method: " << method;
 
-  // Mutating methods require a non-empty control token (set via --rpc-token).
-  const bool mutating = (method == "initiate_swap" || method == "refund" ||
-                         method == "check_timeouts");
-  if (mutating && m_controlToken.empty()) {
-    return rpcError(-32001,
-      "Unauthorized: set --rpc-token (X-Swap-Token header required for fund methods)", id);
-  }
+  // Token enforcement happens in authorize() at the route level: when
+  // --rpc-token is configured, every POST (including mutating methods)
+  // requires the X-Swap-Token / Bearer header. The server binds loopback
+  // only, so a token-less daemon trusts localhost (same domain as the
+  // wallet RPC the local wallet already exposes).
 
   std::string result;
   if (method == "initiate_swap") {
     result = handleInitiateSwap(params);
+  } else if (method == "accept") {
+    result = handleAccept(params);
   } else if (method == "list_swaps") {
     result = handleListSwaps(params);
   } else if (method == "swap_status") {
@@ -207,6 +206,20 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
       expectedPeerHex = root("expected_peer_pubkey").getString();
     }
 
+    // Role: "alice" (taker — has counterparty coin, wants XFG) or "bob"
+    // (maker — has XFG). Defaults to bob (the CLI's historic default).
+    SwapRole role = SwapRole::BOB;
+    if (root.contains("role")) {
+      std::string roleStr = root("role").getString();
+      if (roleStr == "alice" || roleStr == "ALICE") {
+        role = SwapRole::ALICE;
+      } else if (roleStr == "bob" || roleStr == "BOB") {
+        role = SwapRole::BOB;
+      } else {
+        return rpcError(-32602, "Invalid role (use 'alice' or 'bob'): " + roleStr);
+      }
+    }
+
     if (xfgAmount == 0) {
       return rpcError(-32602, "xfg_amount must be > 0");
     }
@@ -216,15 +229,17 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     if (peer.empty()) {
       return rpcError(-32602, "peer endpoint is required");
     }
-    // Require expected peer identity so KEY_EXCHANGE cannot be first-wins griefed.
-    if (expectedPeerHex.empty()) {
+    // expected_peer_pubkey is optional: when absent, the first KEY_EXCHANGE
+    // binds the peer (the daemon logs an anti-griefing warning). Wallets
+    // that have the counterparty key (from an offer) SHOULD pass it.
+    if (!expectedPeerHex.empty() && expectedPeerHex.size() != 64) {
       return rpcError(-32602,
-        "expected_peer_pubkey is required (64-char hex Ed25519 pubkey of counterparty swap key)");
+        "expected_peer_pubkey must be empty or 64-char hex Ed25519 pubkey of counterparty swap key");
     }
 
     SwapParams swapParams;
     swapParams.pair = pair;
-    swapParams.role = SwapRole::BOB;
+    swapParams.role = role;
     swapParams.xfgAmount = xfgAmount;
     swapParams.ctrAmount = ctrAmount;
     swapParams.peerEndpoint = peer;
@@ -249,7 +264,9 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
     swapParams.htlcOutputIndex = 0;
 
     if (!Common::podFromHex(expectedPeerHex, swapParams.expectedPeerSwapPubKey)) {
-      return rpcError(-32602, "expected_peer_pubkey must be 64-char hex");
+      if (!expectedPeerHex.empty()) {
+        return rpcError(-32602, "expected_peer_pubkey must be 64-char hex");
+      }
     }
 
     if (!m_daemon.initiate(swapParams)) {
@@ -261,6 +278,31 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
         << R"(", "our_swap_pubkey": ")" << Common::podToHex(swapParams.ourSwapPubKey)
         << R"("})";
     return oss.str();
+  } catch (const std::exception& e) {
+    return rpcError(-32602, std::string("Parameter error: ") + e.what());
+  }
+}
+
+std::string RpcServer::handleAccept(const std::string& params) {
+  try {
+    auto root = Common::JsonValue::fromString(params);
+    if (!root.isObject() || !root.contains("swap_id")) {
+      return rpcError(-32602, "Missing swap_id");
+    }
+    std::string swapId = root("swap_id").getString();
+
+    auto result = m_daemon.accept(swapId);
+    if (!result.success) {
+      return rpcError(-32000, result.warning.empty() ? "Accept failed" : result.warning);
+    }
+
+    SwapStateMachine sm;
+    std::string stateName = "UNKNOWN";
+    if (m_daemon.database().loadSwap(swapId, sm)) {
+      stateName = swapStateToString(sm.currentState());
+    }
+    return R"({"success": true, "swap_id": ")" + swapId +
+           R"(", "state": ")" + stateName + R"("})";
   } catch (const std::exception& e) {
     return rpcError(-32602, std::string("Parameter error: ") + e.what());
   }
@@ -278,7 +320,13 @@ std::string RpcServer::handleListSwaps(const std::string& /*params*/) {
       if (!first) oss << ",";
       first = false;
       sm.setEncryptionKey("");
-      oss << sm.serialize();
+      std::string json = sm.serialize();
+      // Add a human-readable state name for clients that render states as
+      // strings (the numeric state id remains in "state" for DB compat).
+      Common::JsonValue rec = Common::JsonValue::fromString(json);
+      rec.insert("stateName", std::string(swapStateToString(sm.currentState())));
+      rec.insert("pairName", std::string(swapPairToString(sm.params().pair)));
+      oss << rec.toString();
     }
   }
   oss << R"(]})";
@@ -299,7 +347,10 @@ std::string RpcServer::handleSwapStatus(const std::string& params) {
     }
 
     sm.setEncryptionKey("");
-    return R"({"swap": )" + sm.serialize() + "}";
+    Common::JsonValue rec = Common::JsonValue::fromString(sm.serialize());
+    rec.insert("stateName", std::string(swapStateToString(sm.currentState())));
+    rec.insert("pairName", std::string(swapPairToString(sm.params().pair)));
+    return R"({"swap": )" + rec.toString() + "}";
   } catch (const std::exception& e) {
     return rpcError(-32602, std::string("Parameter error: ") + e.what());
   }

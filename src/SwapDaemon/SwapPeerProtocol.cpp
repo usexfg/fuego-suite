@@ -108,6 +108,9 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
     case PeerMessageType::PARTIAL_SIG:
       appendPod(buf, msg.partialSig.partialSig);
       break;
+    case PeerMessageType::ESCROW_FUNDED:
+      appendPod(buf, msg.escrowFunded.escrowTxHash);
+      break;
     case PeerMessageType::RING_ROUND1:
       appendPod(buf, msg.ringRound1.partialKeyImage);
       appendPod(buf, msg.ringRound1.ringNoncePub);
@@ -122,6 +125,17 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
         buf.insert(buf.end(), msg.secretReveal.claimTxId.begin(),
                    msg.secretReveal.claimTxId.end());
       }
+      break;
+    case PeerMessageType::AFK_CLAIM:
+      // Length-prefixed strings: prevents cross-field concatenation ambiguity.
+      appendU32LE(buf, static_cast<uint32_t>(msg.afkClaim.ctrLockTxId.size()));
+      buf.insert(buf.end(), msg.afkClaim.ctrLockTxId.begin(), msg.afkClaim.ctrLockTxId.end());
+      appendU32LE(buf, static_cast<uint32_t>(msg.afkClaim.payoutAddress.size()));
+      buf.insert(buf.end(), msg.afkClaim.payoutAddress.begin(), msg.afkClaim.payoutAddress.end());
+      appendU32LE(buf, static_cast<uint32_t>(msg.afkClaim.finalSigHex.size()));
+      buf.insert(buf.end(), msg.afkClaim.finalSigHex.begin(), msg.afkClaim.finalSigHex.end());
+      break;
+    case PeerMessageType::AFK_CLAIM_ACK:
       break;
     case PeerMessageType::ABORT:
       break;
@@ -174,6 +188,10 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("partialSig", partialSigToHex(msg.partialSig.partialSig));
       break;
 
+    case PeerMessageType::ESCROW_FUNDED:
+      payload.insert("escrowTxHash", podHex(msg.escrowFunded.escrowTxHash));
+      break;
+
     case PeerMessageType::RING_ROUND1:
       payload.insert("partialKeyImage", podHex(msg.ringRound1.partialKeyImage));
       payload.insert("ringNoncePub", podHex(msg.ringRound1.ringNoncePub));
@@ -188,6 +206,15 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("adaptorSecret", podHex(msg.secretReveal.adaptorSecret));
       if (!msg.secretReveal.claimTxId.empty())
         payload.insert("claimTxId", msg.secretReveal.claimTxId);
+      break;
+
+    case PeerMessageType::AFK_CLAIM:
+      payload.insert("ctrLockTxId", msg.afkClaim.ctrLockTxId);
+      payload.insert("payoutAddress", msg.afkClaim.payoutAddress);
+      payload.insert("finalSigHex", msg.afkClaim.finalSigHex);
+      break;
+
+    case PeerMessageType::AFK_CLAIM_ACK:
       break;
 
     case PeerMessageType::ABORT:
@@ -242,6 +269,11 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
           return false;
         break;
 
+      case PeerMessageType::ESCROW_FUNDED:
+        if (!hexPod(p("escrowTxHash").getString(), msg.escrowFunded.escrowTxHash))
+          return false;
+        break;
+
       case PeerMessageType::RING_ROUND1:
         if (!hexPod(p("partialKeyImage").getString(), msg.ringRound1.partialKeyImage))
           return false;
@@ -261,6 +293,18 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
           return false;
         if (p.contains("claimTxId") && p("claimTxId").isString())
           msg.secretReveal.claimTxId = p("claimTxId").getString();
+        break;
+
+      case PeerMessageType::AFK_CLAIM:
+        if (p.contains("ctrLockTxId") && p("ctrLockTxId").isString())
+          msg.afkClaim.ctrLockTxId = p("ctrLockTxId").getString();
+        if (p.contains("payoutAddress") && p("payoutAddress").isString())
+          msg.afkClaim.payoutAddress = p("payoutAddress").getString();
+        if (p.contains("finalSigHex") && p("finalSigHex").isString())
+          msg.afkClaim.finalSigHex = p("finalSigHex").getString();
+        break;
+
+      case PeerMessageType::AFK_CLAIM_ACK:
         break;
 
       case PeerMessageType::ABORT:

@@ -117,6 +117,17 @@ struct Musig2State {
   Crypto::Musig2PartialSig peerPartialSig;
   bool nonceGenerated = false;
   bool sessionInitialized = false;
+
+  // ── Presig-round progress flags (persisted) ──
+  // These make the ESCROW_FUNDED → PRESIGS_READY round idempotent across
+  // daemon restarts. NEVER regenerate a nonce once nonceGenerated is true —
+  // the peer may already hold our pub nonce (regenerating = nonce-reuse class
+  // key leak). partial_sign zeroes ourSecNonce after use; partialSigGenerated
+  // records that so a reloaded swap does not try to sign again.
+  bool nonceSent            = false;  // our pub nonce sent to peer
+  bool partialSigGenerated  = false;  // our partial sig created (nonce consumed)
+  bool partialSigSent       = false;  // our partial sig sent to peer
+  bool peerPartialSigVerified = false;  // stored peer partial sig passed verification
 };
 
 struct SwapParams {
@@ -199,6 +210,16 @@ struct SwapParams {
 
   bool useSpvVerification = false;     // use SPV path for counterparty lock verification
 
+  // Bob→Alice escrow funding notification (ESCROW_FUNDED peer message sent).
+  bool escrowFundedSent = false;
+
+  // ── AFK completion state (maker side) ──
+  // Populated by the AFK_CLAIM peer message (taker → maker).
+  bool afkClaimReceived = false;
+  std::string afkClaimCtrLockTxId;   // taker's CTR lock tx id
+  std::string afkClaimPayoutAddress; // taker's XFG payout address
+  std::string afkClaimFinalSigHex;   // final-signature proof of claim (hex)
+
   // Bob→Alice: adaptor preimage revealed out-of-band so Alice can claim CTR HTLC.
   bool adaptorSecretRevealedToPeer = false;  // Bob: we already sent SECRET_REVEAL
   bool adaptorSecretReceived = false;        // Alice: we received t from Bob
@@ -206,6 +227,7 @@ struct SwapParams {
   std::vector<uint8_t> encBlob;        // encrypted adaptorSecret blob (from disk)
   std::vector<uint8_t> encSecKeyBlob;  // encrypted ourSwapSecKey blob (from disk)
   std::vector<uint8_t> encRingNonceBlob; // encrypted ringOurRingNonceSec blob
+  std::vector<uint8_t> encMusig2NonceBlob; // encrypted musig2.ourSecNonce blob (64 bytes)
 };
 
 const char* swapStateToString(SwapState s);

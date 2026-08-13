@@ -85,6 +85,9 @@ std::string FuegoRpcClient::httpPost(const std::string& host, uint16_t port,
   req << "POST " << path << " HTTP/1.1\r\n";
   req << "Host: " << host << ":" << port << "\r\n";
   req << "Content-Type: application/json\r\n";
+  if (!m_swapToken.empty()) {
+    req << "X-Swap-Token: " << m_swapToken << "\r\n";
+  }
   req << "Content-Length: " << body.size() << "\r\n";
   req << "Connection: close\r\n";
   req << "\r\n";
@@ -626,6 +629,44 @@ bool FuegoRpcClient::createAfkLock(uint64_t amount, uint32_t timeout_hours, uint
   }
 
   return true;
+}
+
+bool FuegoRpcClient::claimAfkSwap(const std::string& lockId,
+                                  const std::string& finalSigHex,
+                                  const std::string& targetChain,
+                                  const std::string& feeAddress,
+                                  const std::string& payoutAddress,
+                                  std::string& txHash) {
+  if (m_walletHost.empty() || m_walletPort == 0) {
+    throw std::runtime_error("Wallet RPC not configured (call setWalletRpc first)");
+  }
+
+  std::stringstream params;
+  params << "{"
+         << "\"swapId\": \"" << lockId << "\","
+         << "\"secret_s\": \"" << finalSigHex << "\","
+         << "\"target_chain\": \"" << targetChain << "\","
+         << "\"fee_address\": \"" << feeAddress << "\","
+         << "\"payout_address\": \"" << payoutAddress << "\""
+         << "}";
+
+  std::string respBody = walletJsonRpc("claim_afk_swap", params.str());
+  if (respBody.empty()) {
+    return false;
+  }
+
+  size_t txHashPos = respBody.find("\"txHash\":\"");
+  if (txHashPos == std::string::npos) {
+    txHashPos = respBody.find("\"tx_hash\":\"");
+    if (txHashPos == std::string::npos) return false;
+    txHashPos += 11;
+  } else {
+    txHashPos += 10;
+  }
+  size_t txHashEnd = respBody.find("\"", txHashPos);
+  if (txHashEnd == std::string::npos) return false;
+  txHash = respBody.substr(txHashPos, txHashEnd - txHashPos);
+  return !txHash.empty();
 }
 
 bool FuegoRpcClient::checkReserveProof(const std::string& address, const std::string& message,

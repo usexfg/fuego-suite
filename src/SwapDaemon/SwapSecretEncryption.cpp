@@ -31,6 +31,19 @@ bool SwapSecretEncryption::encrypt(
     const std::string& encryptionKey,
     EncryptedSecret& out
 ) {
+  return encrypt(plaintext.data, SECRET_PLAINTEXT, encryptionKey, out);
+}
+
+bool SwapSecretEncryption::encrypt(
+    const uint8_t* plaintext,
+    size_t plaintextLen,
+    const std::string& encryptionKey,
+    EncryptedSecret& out
+) {
+  if (!plaintext || plaintextLen == 0 || encryptionKey.empty()) {
+    return false;
+  }
+
   // Generate random salt
   Randomize::randomBytes(SALT_SIZE, out.salt.data());
 
@@ -52,9 +65,9 @@ bool SwapSecretEncryption::encrypt(
   std::memcpy(out.nonce.data(), iv.data, CHACHA8_NONCE_SIZE);
 
   // Encrypt
-  out.ciphertext.resize(SECRET_PLAINTEXT);
+  out.ciphertext.resize(plaintextLen);
   Crypto::chacha8(
-    plaintext.data, SECRET_PLAINTEXT,
+    plaintext, plaintextLen,
     cipherKey, iv,
     reinterpret_cast<char*>(out.ciphertext.data())
   );
@@ -84,7 +97,16 @@ bool SwapSecretEncryption::decrypt(
     const std::string& encryptionKey,
     Crypto::SecretKey& out
 ) {
-  if (encrypted.ciphertext.size() != SECRET_PLAINTEXT) {
+  return decrypt(encrypted, encryptionKey, out.data, SECRET_PLAINTEXT);
+}
+
+bool SwapSecretEncryption::decrypt(
+    const EncryptedSecret& encrypted,
+    const std::string& encryptionKey,
+    uint8_t* out,
+    size_t outLen
+) {
+  if (!out || outLen == 0 || encrypted.ciphertext.size() != outLen) {
     return false;
   }
 
@@ -130,9 +152,9 @@ bool SwapSecretEncryption::decrypt(
   std::memcpy(iv.data, encrypted.nonce.data(), CHACHA8_NONCE_SIZE);
 
   Crypto::chacha8(
-    encrypted.ciphertext.data(), SECRET_PLAINTEXT,
+    encrypted.ciphertext.data(), outLen,
     cipherKey, iv,
-    reinterpret_cast<char*>(out.data)
+    reinterpret_cast<char*>(out)
   );
 
   secureZero(cipherKey.data, sizeof(cipherKey));

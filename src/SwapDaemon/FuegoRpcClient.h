@@ -72,6 +72,9 @@ public:
     m_walletUser = user; m_walletPass = pass;
   }
 
+  // Token required by fuegod swap-control RPC (X-Swap-Token / Bearer) when configured.
+  void setSwapControlToken(const std::string& token) { m_swapToken = token; }
+
   // Run wallet optimize/fusion to consolidate dust outputs.
   // Returns tx_hash + tx_secret_key in TransferResult.
   bool optimizeWallet(uint64_t threshold, TransferResult& result);
@@ -111,6 +114,16 @@ public:
   // Call create_afk_lock on the wallet RPC
   bool createAfkLock(uint64_t amount, uint32_t timeout_hours, uint8_t pair, std::string& lockId, std::string& adaptorPoint, std::string& preSig);
 
+  // Pay out an AFK swap: wallet verifies the taker's proof-of-claim
+  // (final signature over the maker's pre-sig), extracts the secret, and
+  // sends XFG to the payout address. lockId == the AFK swap record id.
+  bool claimAfkSwap(const std::string& lockId,
+                    const std::string& finalSigHex,
+                    const std::string& targetChain,
+                    const std::string& feeAddress,
+                    const std::string& payoutAddress,
+                    std::string& txHash);
+
   // ── Daemon RPC for tx inspection ──
 
   // Fetch a transaction by hash and extract its outputs.
@@ -145,6 +158,7 @@ private:
   uint16_t m_walletPort = 0;
   std::string m_walletUser;
   std::string m_walletPass;
+  std::string m_swapToken;
 };
 
 } // namespace XfgSwap

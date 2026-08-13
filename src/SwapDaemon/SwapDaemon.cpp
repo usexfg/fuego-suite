@@ -1336,6 +1336,22 @@ bool SwapDaemon::resolveEscrowGlobalIndex(SwapParams& params) {
 
 // ── Per-state handlers (extracted from processSwap in commit b6d82cad's refactor) ──
 
+namespace {
+
+bool isZeroPubNonce(const Crypto::Musig2PubNonce& n) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&n);
+  for (size_t i = 0; i < sizeof(Crypto::Musig2PubNonce); ++i) if (p[i]) return false;
+  return true;
+}
+
+bool isZeroPartialSig(const Crypto::Musig2PartialSig& s) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
+  for (size_t i = 0; i < sizeof(Crypto::Musig2PartialSig); ++i) if (p[i]) return false;
+  return true;
+}
+
+} // anonymous namespace
+
 bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight) {
   (void)currentHeight;
   SwapParams& params = sm.params();
@@ -1344,7 +1360,155 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
   // Do NOT mutate xfgAmount after funding. The on-chain escrow output amount is fixed
   // at fund time; post-hoc surcharge broke amount matching for decoy selection and
   // verifyEscrowFunding. Apply any protocol fees before fundEscrow if needed.
-  m_logger(Logging::INFO) << "  Next: exchange Musig2 nonces and create adaptor pre-sigs.";
+
+  static const Crypto::Hash ZERO_HASH{};
+  if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) == 0) {
+    m_logger(Logging::WARNING)
+      << "  Escrow funded state reached with unknown escrow tx hash — waiting for ESCROW_FUNDED";
+    return true;
+  }
+
+  // Bob: notify Alice of the escrow tx hash (she cannot derive it otherwise).
+  if (params.role == SwapRole::BOB && !params.escrowFundedSent) {
+    PeerMessage ef;
+    ef.type = PeerMessageType::ESCROW_FUNDED;
+    ef.swapId = params.swapId;
+    ef.escrowFunded.escrowTxHash = params.escrowTxHash;
+    if (signPeerMessage(ef, params.ourSwapPubKey, params.ourSwapSecKey) &&
+        deliverPeerMessage(ef)) {
+      m_logger(Logging::INFO) << "  Delivered ESCROW_FUNDED to peer";
+    } else {
+      m_logger(Logging::WARNING) << "  ESCROW_FUNDED delivery failed — will retry next tick";
+      return true;
+    }
+    params.escrowFundedSent = true;
+    m_db.saveSwap(sm);
+    return true;
+  }
+
+  // ── Step 4a: generate our Musig2 nonce exactly once ──
+  // Persist BEFORE sending. If the daemon crashes after the send, the reloaded
+  // swap re-sends the SAME nonce (idempotent) instead of generating a new one
+  // (regeneration after send = nonce-reuse class private-key leak).
+  if (!params.musig2.nonceGenerated) {
+    adaptor_nonce_generate(params);
+    if (!m_db.saveSwap(sm)) {
+      m_logger(Logging::ERROR) << "  Failed to persist generated nonce — not sending";
+      return false;
+    }
+    m_logger(Logging::INFO) << "  Generated Musig2 nonce (persisted before send)";
+  }
+
+  // ── Step 4b: (re)send our public nonce until the peer's nonce arrives ──
+  // No one-shot gate: delivery is fire-and-forget, so re-send every tick.
+  // Re-sending the SAME nonce is idempotent for the peer.
+  if (isZeroPubNonce(params.musig2.peerPubNonce)) {
+    PeerMessage ne;
+    ne.type = PeerMessageType::NONCE_EXCHANGE;
+    ne.swapId = params.swapId;
+    ne.nonceExchange.pubNonce = params.musig2.ourPubNonce;
+    if (!signPeerMessage(ne, params.ourSwapPubKey, params.ourSwapSecKey) ||
+        !deliverPeerMessage(ne)) {
+      m_logger(Logging::WARNING) << "  NONCE_EXCHANGE delivery failed — will retry next tick";
+    } else if (!params.musig2.nonceSent) {
+      params.musig2.nonceSent = true;
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Sent NONCE_EXCHANGE to peer";
+    }
+    m_logger(Logging::INFO) << "  Waiting for peer Musig2 nonce...";
+    return true;
+  }
+
+  // ── Step 4c: initialize the session (deterministic — same on both sides) ──
+  // Use the adaptor-enabled session (R_combined includes T): Bob's partial sig
+  // is offset by T, so Alice can complete it only after t is revealed — the
+  // adaptor-signature atomicity guarantee behind the pre-sig round.
+  if (!params.musig2.sessionInitialized) {
+    Crypto::Hash sessionMsg = presigSessionHash(params.escrowTxHash);
+    if (!adaptor_session_init(params, sessionMsg, /*use_adaptor=*/true)) {
+      m_logger(Logging::ERROR) << "  Musig2 session init failed (invalid nonce/key)";
+      return false;
+    }
+    params.musig2.sessionInitialized = true;
+    m_db.saveSwap(sm);
+  }
+
+  // ── Step 4d: create our partial sig exactly once (consumes + zeroes nonce) ──
+  if (!params.musig2.partialSigGenerated) {
+    if (!adaptor_partial_sign(params)) {
+      // Zero-nonce guard or nonce-already-consumed: fail closed. Never sign
+      // with a lost/zeroed nonce — that leaks our swap key. The swap will be
+      // stuck here until the operator refunds at timelock.
+      m_logger(Logging::ERROR)
+        << "  Musig2 partial sign failed (nonce missing or already consumed) — failing closed";
+      return false;
+    }
+    // Set the flag BEFORE persisting: if the save fails, the in-memory truth
+    // (sig created, nonce consumed) must still prevent a re-sign attempt.
+    params.musig2.partialSigGenerated = true;
+    // Save immediately: serialize() now writes the consumed (zeroed) nonce, so
+    // a crash between sign and send cannot resurrect the nonce for re-signing.
+    if (!m_db.saveSwap(sm)) {
+      m_logger(Logging::ERROR) << "  Failed to persist partial sig — not sending";
+      return false;
+    }
+    m_logger(Logging::INFO) << "  Created Musig2 partial sig";
+  }
+
+  // ── Step 4e: (re)send our partial sig until the state advances ──
+  // No one-shot gate: if the frame was dropped, the peer's tick keeps
+  // re-sending its own messages too; ours must keep flowing as well.
+  // Re-sending the SAME partial sig is idempotent for the peer.
+  if (sm.currentState() < SwapState::ADAPTOR_PRESIGS_READY) {
+    PeerMessage ps;
+    ps.type = PeerMessageType::PARTIAL_SIG;
+    ps.swapId = params.swapId;
+    ps.partialSig.partialSig = params.musig2.ourPartialSig;
+    if (!signPeerMessage(ps, params.ourSwapPubKey, params.ourSwapSecKey) ||
+        !deliverPeerMessage(ps)) {
+      m_logger(Logging::WARNING) << "  PARTIAL_SIG delivery failed — will retry next tick";
+    } else if (!params.musig2.partialSigSent) {
+      params.musig2.partialSigSent = true;
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Sent PARTIAL_SIG to peer";
+    }
+  }
+
+  // ── Step 4f: peer partial sig arrived early (while we were still in
+  // ADAPTOR_KEYS_EXCHANGED, its transition was rejected but the sig was
+  // persisted). Verify now and advance. ──
+  if (!isZeroPartialSig(params.musig2.peerPartialSig) &&
+      !params.musig2.peerPartialSigVerified) {
+    if (!params.musig2.sessionInitialized) {
+      Crypto::Hash sessionMsg = presigSessionHash(params.escrowTxHash);
+      if (!adaptor_session_init(params, sessionMsg, /*use_adaptor=*/true)) {
+        m_logger(Logging::ERROR) << "  Session init failed while catching up peer partial sig";
+        return false;
+      }
+      params.musig2.sessionInitialized = true;
+    }
+    if (adaptor_partial_verify(params)) {
+      params.musig2.peerPartialSigVerified = true;
+      if (!sm.transition(SwapState::ADAPTOR_PRESIGS_READY)) {
+        m_logger(Logging::ERROR) << "  PRESIGS_READY transition rejected — state anomaly";
+        return false;
+      }
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO)
+        << "  Peer partial sig verified (arrived early). -> ADAPTOR_PRESIGS_READY";
+      return true;
+    }
+    // Invalid pending sig: clear it so the peer's retry (it re-sends every
+    // tick) is not blocked by the conflicting-duplicate guard.
+    m_logger(Logging::ERROR) << "  Stored peer partial sig failed verification — clearing for retry";
+    std::memset(&params.musig2.peerPartialSig, 0, sizeof(params.musig2.peerPartialSig));
+    m_db.saveSwap(sm);
+    return true;
+  }
+
+  // State advance to ADAPTOR_PRESIGS_READY happens in handlePeerMessage on
+  // receipt of the peer's verified partial sig.
+  m_logger(Logging::INFO) << "  Pre-sigs exchanged — waiting for peer partial sig verification.";
   return true;
 }
 
@@ -1805,6 +1969,66 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   return false;
 }
 
+bool SwapDaemon::handleAfkAccepted(SwapStateMachine& sm) {
+  SwapParams& params = sm.params();
+  const std::string& swapId = params.swapId;
+
+  if (params.role != SwapRole::BOB) {
+    // Taker side: completion is maker-driven. The maker's daemon sends
+    // AFK_CLAIM_ACK after the wallet payout is broadcast; that handler
+    // transitions this record to AFK_CLAIMED.
+    m_logger(Logging::INFO) << "  AFK: awaiting maker payout (AFK_CLAIM_ACK)...";
+    return true;
+  }
+
+  // Maker side: wait for the taker's AFK_CLAIM request.
+  if (!params.afkClaimReceived) {
+    m_logger(Logging::INFO) << "  AFK: awaiting taker AFK_CLAIM request...";
+    return true;
+  }
+
+  // Fail closed: the proof-of-claim final signature is mandatory. The wallet
+  // cryptographically verifies it (extract_afk_secret against the maker's
+  // pre-sig) before paying out. Paying without it would break atomicity.
+  if (params.afkClaimFinalSigHex.empty() || params.afkClaimPayoutAddress.empty()) {
+    m_logger(Logging::ERROR)
+      << "  AFK: claim request missing proof-of-claim or payout address — rejecting";
+    return false;
+  }
+
+  // The wallet performs the authoritative verification and the payout.
+  std::string txHash;
+  try {
+    if (!m_rpc.claimAfkSwap(swapId, params.afkClaimFinalSigHex,
+                            swapPairToString(params.pair),
+                            "" /*fee_address*/, params.afkClaimPayoutAddress, txHash)) {
+      m_logger(Logging::ERROR) << "  AFK: wallet claim_afk_swap failed — will retry next tick";
+      return true;
+    }
+  } catch (const std::exception& e) {
+    m_logger(Logging::ERROR) << "  AFK: claim_afk_swap error: " << e.what()
+      << " — will retry next tick";
+    return true;
+  }
+
+  if (!sm.transition(SwapState::AFK_CLAIMED)) {
+    m_logger(Logging::ERROR) << "  AFK: AFK_CLAIMED transition rejected";
+    return false;
+  }
+  m_db.saveSwap(sm);
+  recordCompletedTrade(sm);
+  m_logger(Logging::INFO) << "  AFK swap " << swapId << " claimed. Payout tx: " << txHash;
+
+  // Notify the taker so its record also reaches AFK_CLAIMED.
+  PeerMessage ack;
+  ack.type = PeerMessageType::AFK_CLAIM_ACK;
+  ack.swapId = swapId;
+  if (signPeerMessage(ack, params.ourSwapPubKey, params.ourSwapSecKey)) {
+    deliverPeerMessage(ack);
+  }
+  return true;
+}
+
 bool SwapDaemon::processSwap(SwapStateMachine& sm) {
   const std::string& swapId = sm.params().swapId;
 
@@ -1897,6 +2121,17 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
       if (!handleSecretConfirmedSpv(sm)) {
         m_logger(Logging::INFO) << "  handleSecretConfirmedSpv not yet complete";
       }
+      break;
+
+    case SwapState::AFK_OFFER_ACCEPTED:
+      if (!handleAfkAccepted(sm)) {
+        m_logger(Logging::INFO) << "  handleAfkAccepted not yet complete";
+      }
+      break;
+
+    case SwapState::AFK_OFFER_LOCKED:
+      // Maker-side record waits for the taker to accept (via the soft-order
+      // request path, which transitions to AFK_OFFER_ACCEPTED).
       break;
 
     default:
@@ -2512,29 +2747,144 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
     }
 
     switch (msg.type) {
-      case PeerMessageType::ADAPTOR_EXCHANGE:
+      case PeerMessageType::ADAPTOR_EXCHANGE: {
+        // Only Bob legitimately sends the adaptor bundle. First-wins: once
+        // the adaptor point is bound, a conflicting replacement is rejected.
+        // Accepting a second T after pre-sigs exist would mutate the session
+        // challenge — re-signing with the same nonce under a different
+        // challenge leaks our swap key (nonce-reuse class).
+        if (params.role != SwapRole::ALICE) {
+          m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
+          return true;
+        }
+        static const Crypto::PublicKey ZERO_PK{};
+        const bool alreadyBound =
+            std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) != 0;
+        if (alreadyBound) {
+          if (std::memcmp(&params.adaptorPoint, &msg.adaptorExchange.adaptorPoint,
+                          sizeof(ZERO_PK)) != 0 ||
+              std::memcmp(&params.adaptorDleqQ, &msg.adaptorExchange.adaptorDleqQ,
+                          sizeof(ZERO_PK)) != 0 ||
+              std::memcmp(&params.hashLock, &msg.adaptorExchange.htlcHashLock,
+                          sizeof(Crypto::Hash)) != 0) {
+            m_logger(Logging::ERROR) << "Conflicting duplicate ADAPTOR_EXCHANGE rejected";
+            return false;
+          }
+          return true;  // identical duplicate
+        }
         params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
         params.hashLock = msg.adaptorExchange.htlcHashLock;
         if (!adaptor_verify_adaptor(params, params.escrowPubKey, params.adaptorDleqQ)) {
           m_logger(Logging::ERROR) << "DLEQ proof verification failed!";
+          // Reject cleanly: do not leave a half-bound adaptor state.
+          std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
+          std::memset(&params.adaptorDleqQ, 0, sizeof(params.adaptorDleqQ));
+          std::memset(&params.adaptorDleqProof, 0, sizeof(params.adaptorDleqProof));
+          std::memset(&params.hashLock, 0, sizeof(params.hashLock));
           return false;
         }
         return true;
+      }
 
-      case PeerMessageType::NONCE_EXCHANGE:
+      case PeerMessageType::ESCROW_FUNDED: {
+        // Bob announces the escrow tx hash so Alice can verify funding and
+        // derive the pre-sig session message. On-chain verification happens
+        // in processSwap (ADAPTOR_KEYS_EXCHANGED → ESCROW_FUNDED transition).
+        if (params.role != SwapRole::ALICE) {
+          m_logger(Logging::WARNING) << "ESCROW_FUNDED ignored (not Alice)";
+          return true;
+        }
+        static const Crypto::Hash ZERO_HASH{};
+        if (std::memcmp(&msg.escrowFunded.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) == 0) {
+          m_logger(Logging::ERROR) << "ESCROW_FUNDED with zero tx hash rejected";
+          return false;
+        }
+        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+          if (std::memcmp(&params.escrowTxHash, &msg.escrowFunded.escrowTxHash,
+                          sizeof(ZERO_HASH)) != 0) {
+            m_logger(Logging::ERROR) << "ESCROW_FUNDED conflicts with known escrow tx hash — rejected";
+            return false;
+          }
+          return true;  // duplicate, same value
+        }
+        params.escrowTxHash = msg.escrowFunded.escrowTxHash;
+        m_logger(Logging::INFO) << "  Received ESCROW_FUNDED: escrow tx "
+          << Common::podToHex(params.escrowTxHash);
+        return true;
+      }
+
+      case PeerMessageType::NONCE_EXCHANGE: {
+        // Reject an all-zero nonce (would poison session init forever).
+        if (isZeroPubNonce(msg.nonceExchange.pubNonce)) {
+          m_logger(Logging::ERROR) << "NONCE_EXCHANGE with zero pub nonce rejected";
+          return false;
+        }
+        // Reject conflicting duplicates (anti-confusion). Same-value
+        // duplicates are idempotent no-ops.
+        if (!isZeroPubNonce(params.musig2.peerPubNonce)) {
+          if (std::memcmp(&params.musig2.peerPubNonce, &msg.nonceExchange.pubNonce,
+                          sizeof(Crypto::Musig2PubNonce)) != 0) {
+            m_logger(Logging::ERROR) << "Conflicting duplicate NONCE_EXCHANGE rejected";
+            return false;
+          }
+          m_logger(Logging::INFO) << "  Duplicate NONCE_EXCHANGE (same value) — ignoring";
+          return true;
+        }
         params.musig2.peerPubNonce = msg.nonceExchange.pubNonce;
+        m_logger(Logging::INFO) << "  Received peer Musig2 nonce";
         return true;
+      }
 
-      case PeerMessageType::PARTIAL_SIG:
-        params.musig2.peerPartialSig = msg.partialSig.partialSig;
-        if (!adaptor_partial_verify(params)) {
-          m_logger(Logging::ERROR) << "Peer partial sig verification failed!";
+      case PeerMessageType::PARTIAL_SIG: {
+        // Idempotent: once past PRESIGS_READY (or terminal), ignore replays.
+        if (sm.isTerminal() || sm.currentState() >= SwapState::ADAPTOR_PRESIGS_READY) {
+          m_logger(Logging::INFO) << "  Duplicate PARTIAL_SIG (state "
+            << swapStateToString(sm.currentState()) << ") — ignoring";
+          return true;
+        }
+        // A VERIFIED stored sig is authoritative: conflicting values rejected.
+        if (params.musig2.peerPartialSigVerified && !isZeroPartialSig(params.musig2.peerPartialSig) &&
+            std::memcmp(&params.musig2.peerPartialSig, &msg.partialSig.partialSig,
+                        sizeof(Crypto::Musig2PartialSig)) != 0) {
+          m_logger(Logging::ERROR) << "Conflicting PARTIAL_SIG after verified sig rejected";
           return false;
         }
-        sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+        params.musig2.peerPartialSig = msg.partialSig.partialSig;
+
+        // Session prerequisites missing? Store the sig (persisted by updateSwap)
+        // and verify later in handleEscrowFunded's catch-up step. The peer
+        // re-sends every tick, so discarding would also self-heal — but
+        // storing avoids a full tick of latency.
+        static const Crypto::Hash ZERO_HASH{};
+        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) == 0 ||
+            isZeroPubNonce(params.musig2.peerPubNonce) ||
+            isZeroPubNonce(params.musig2.ourPubNonce)) {
+          m_logger(Logging::INFO)
+            << "  PARTIAL_SIG stored pending (session prerequisites not ready yet)";
+          return true;
+        }
+        if (!params.musig2.sessionInitialized) {
+          if (!adaptor_session_init(params, presigSessionHash(params.escrowTxHash),
+                                    /*use_adaptor=*/true)) {
+            m_logger(Logging::ERROR) << "Session init (on-demand) failed";
+            return false;
+          }
+          params.musig2.sessionInitialized = true;
+        }
+        if (!adaptor_partial_verify(params)) {
+          m_logger(Logging::ERROR) << "Peer partial sig verification failed! (frame discarded; peer re-sends)";
+          return false;
+        }
+        params.musig2.peerPartialSigVerified = true;
+        if (!sm.transition(SwapState::ADAPTOR_PRESIGS_READY)) {
+          m_logger(Logging::ERROR) << "PRESIGS_READY transition rejected — state anomaly";
+          return false;
+        }
+        m_logger(Logging::INFO) << "  Peer partial sig verified. -> ADAPTOR_PRESIGS_READY";
         return true;
+      }
 
       case PeerMessageType::RING_ROUND1:
         params.ringPeerPartialKeyImage = msg.ringRound1.partialKeyImage;
@@ -2578,6 +2928,55 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         if (sm.currentState() == SwapState::ADAPTOR_CTR_LOCKED) {
           sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
         }
+        return true;
+      }
+
+      case PeerMessageType::AFK_CLAIM: {
+        // Taker → maker. The maker's daemon pays out via wallet claim_afk_swap.
+        if (params.role != SwapRole::BOB) {
+          m_logger(Logging::WARNING) << "AFK_CLAIM ignored (not maker)";
+          return true;
+        }
+        if (params.afkClaimReceived) {
+          // Idempotent duplicates only; conflicting values rejected.
+          if (params.afkClaimCtrLockTxId != msg.afkClaim.ctrLockTxId ||
+              params.afkClaimPayoutAddress != msg.afkClaim.payoutAddress ||
+              params.afkClaimFinalSigHex != msg.afkClaim.finalSigHex) {
+            m_logger(Logging::ERROR) << "Conflicting duplicate AFK_CLAIM rejected";
+            return false;
+          }
+          return true;
+        }
+        if (msg.afkClaim.finalSigHex.empty() || msg.afkClaim.payoutAddress.empty()) {
+          m_logger(Logging::ERROR)
+            << "AFK_CLAIM missing proof-of-claim or payout address — rejected";
+          return false;
+        }
+        params.afkClaimReceived = true;
+        params.afkClaimCtrLockTxId = msg.afkClaim.ctrLockTxId;
+        params.afkClaimPayoutAddress = msg.afkClaim.payoutAddress;
+        params.afkClaimFinalSigHex = msg.afkClaim.finalSigHex;
+        m_logger(Logging::INFO) << "  Received AFK_CLAIM request from taker";
+        return true;
+      }
+
+      case PeerMessageType::AFK_CLAIM_ACK: {
+        // Maker → taker: payout broadcast, both sides may mark AFK_CLAIMED.
+        if (params.role != SwapRole::ALICE) {
+          m_logger(Logging::WARNING) << "AFK_CLAIM_ACK ignored (not taker)";
+          return true;
+        }
+        if (sm.isTerminal()) return true;
+        if (sm.currentState() != SwapState::AFK_OFFER_ACCEPTED) {
+          m_logger(Logging::WARNING) << "AFK_CLAIM_ACK in unexpected state "
+            << swapStateToString(sm.currentState()) << " — ignored";
+          return true;
+        }
+        if (!sm.transition(SwapState::AFK_CLAIMED)) {
+          m_logger(Logging::ERROR) << "AFK_CLAIMED transition rejected";
+          return false;
+        }
+        m_logger(Logging::INFO) << "  Maker confirmed AFK payout. -> AFK_CLAIMED";
         return true;
       }
 

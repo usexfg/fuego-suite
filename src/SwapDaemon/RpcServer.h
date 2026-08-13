@@ -32,15 +32,16 @@ class SwapDaemon;
 // Binds to 127.0.0.1 and exposes swap management methods.
 //
 // Methods:
-//   initiate_swap  {pair, xfg_amount, ctr_amount, peer, expected_peer_pubkey}
+//   initiate_swap  {pair, xfg_amount, ctr_amount, peer, [role], [expected_peer_pubkey]}
 //                  → {swap_id, our_swap_pubkey}
-//   list_swaps     {}                                     → {swaps: [...]}
-//   swap_status    {swap_id}                              → {swap: {...}}
+//   accept         {swap_id}                              → {success, state}
+//   list_swaps     {}                                     → {swaps: [...]} (each with stateName/pairName)
+//   swap_status    {swap_id}                              → {swap: {...}} (with stateName/pairName)
 //   refund         {swap_id}                              → {success}
-//   check_timeouts {}                                     → {refunded: [...]}
+//   check_timeouts {}                                     → {processed, refunded: [...]}
 class RpcServer {
 public:
-  // controlToken: when non-empty, every mutating RPC requires header
+  // controlToken: when non-empty, every POST requires header
   // X-Swap-Token: <token> (or Authorization: Bearer <token>).
   RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
             const std::string& controlToken = {});
@@ -64,6 +65,7 @@ private:
 
   // Individual method handlers — return the "result" portion as a JSON string.
   std::string handleInitiateSwap(const std::string& params);
+  std::string handleAccept(const std::string& params);
   std::string handleListSwaps(const std::string& params);
   std::string handleSwapStatus(const std::string& params);
   std::string handleRefund(const std::string& params);

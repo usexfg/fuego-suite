@@ -48,6 +48,22 @@ public:
     Crypto::SecretKey& out
   );
 
+  // Generic byte-buffer variants (for secrets wider than SecretKey, e.g.
+  // the 64-byte Musig2 secret nonce). Format identical to the 32-byte API.
+  static bool encrypt(
+    const uint8_t* plaintext,
+    size_t plaintextLen,
+    const std::string& encryptionKey,
+    EncryptedSecret& out
+  );
+
+  static bool decrypt(
+    const EncryptedSecret& encrypted,
+    const std::string& encryptionKey,
+    uint8_t* out,
+    size_t outLen
+  );
+
 private:
   static void secureZero(void* buf, size_t len);
 };

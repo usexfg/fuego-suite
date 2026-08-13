@@ -26,6 +26,16 @@ extern "C" {
 
 namespace XfgSwap {
 
+Crypto::Hash presigSessionHash(const Crypto::Hash& escrowTxHash) {
+  std::vector<uint8_t> buf;
+  const char domainSep[] = "fuego-swap-presig-v1";
+  buf.insert(buf.end(), domainSep, domainSep + sizeof(domainSep) - 1);
+  buf.insert(buf.end(), escrowTxHash.data, escrowTxHash.data + sizeof(escrowTxHash.data));
+  Crypto::Hash out;
+  Crypto::cn_fast_hash(buf.data(), buf.size(), out);
+  return out;
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────
 
 // Signer index: Alice = 0, Bob = 1.
@@ -176,6 +186,19 @@ bool adaptor_session_init(SwapParams& params,
 }
 
 bool adaptor_partial_sign(SwapParams& params) {
+  // Zero-nonce guard: signing with an all-zero secret nonce produces
+  // s = -c * a_i * x_i, from which anyone who knows the challenge and the
+  // key-agg coefficients can solve for our private key. This can only
+  // happen if the persisted nonce was lost (e.g. encryption key unavailable
+  // after restart) — fail closed instead of signing.
+  {
+    const uint8_t* n = reinterpret_cast<const uint8_t*>(&params.musig2.ourSecNonce);
+    bool allZero = true;
+    for (size_t i = 0; i < sizeof(Crypto::Musig2SecNonce); ++i) {
+      if (n[i]) { allZero = false; break; }
+    }
+    if (allZero) return false;
+  }
   if (params.musig2.session.nonceSigned) {
     // Nonce has already been consumed for this session. Signing again would
     // reuse the same nonce, which leaks the private key in MuSig2.

@@ -39,6 +39,11 @@ enum class PeerMessageType : uint8_t {
   // Phase 4: Partial sig exchange (for escrow pre-sig)
   PARTIAL_SIG         = 4,    // Musig2 partial sig
 
+  // Phase 4b: Escrow funding notification (Bob → Alice).
+  // Alice has no other way to learn the escrow tx hash, which she needs to
+  // verify on-chain funding and to derive the pre-sig session message.
+  ESCROW_FUNDED       = 5,    // escrow tx hash (post-funding)
+
   // Phase 5: Ring signature collaboration (spend or refund)
   RING_ROUND1         = 10,   // Partial key image + ring nonce pub + ring nonce Hp
   RING_ROUND2         = 11,   // Partial response scalar
@@ -46,6 +51,16 @@ enum class PeerMessageType : uint8_t {
   // Phase 6: Bob reveals adaptor preimage t so Alice can claim the CTR HTLC.
   // Only sent after XFG escrow is funded and CTR is locked (Bob-locks model).
   SECRET_REVEAL       = 12,   // adaptorSecret (32 bytes)
+
+  // AFK completion: taker → maker. Carries the taker's CTR lock tx id, the
+  // payout address, and the final-signature proof of claim (derived from the
+  // maker's pre-sig + extracted secret). The maker's daemon verifies the CTR
+  // lock on-chain, then pays the taker via wallet claim_afk_swap.
+  AFK_CLAIM           = 13,
+
+  // AFK completion ack: maker → taker. Empty payload; the signed message is
+  // proof the maker marked the swap AFK_CLAIMED (payout broadcast).
+  AFK_CLAIM_ACK       = 14,
 
   // Control
   ABORT               = 99,   // Abort the swap
@@ -77,6 +92,11 @@ struct MsgPartialSig {
   Crypto::Musig2PartialSig partialSig;
 };
 
+// Phase 4b: Bob notifies Alice that the XFG escrow is funded on-chain.
+struct MsgEscrowFunded {
+  Crypto::Hash escrowTxHash;
+};
+
 // Phase 5a (Round 1): Partial key image + ring nonce for collaborative ring sig.
 struct MsgRingRound1 {
   Crypto::KeyImage partialKeyImage;
@@ -94,6 +114,13 @@ struct MsgRingRound2 {
 struct MsgSecretReveal {
   Crypto::SecretKey adaptorSecret;
   std::string claimTxId;  // empty if unknown; not required when secret verifies against T
+};
+
+// AFK completion: taker → maker.
+struct MsgAfkClaim {
+  std::string ctrLockTxId;     // taker's HTLC lock tx on the counterparty chain
+  std::string payoutAddress;   // taker's XFG payout address (must be a real address)
+  std::string finalSigHex;     // final-signature proof of claim (hex); required
 };
 
 // ── Wire envelope ────────────────────────────────────────────────────
@@ -114,9 +141,11 @@ struct PeerMessage {
   MsgAdaptorExchange adaptorExchange;
   MsgNonceExchange nonceExchange;
   MsgPartialSig partialSig;
+  MsgEscrowFunded escrowFunded;
   MsgRingRound1 ringRound1;
   MsgRingRound2 ringRound2;
   MsgSecretReveal secretReveal;
+  MsgAfkClaim afkClaim;
 
   // Ed25519 signature over peerMessageDigest(msg) by the sender's swap pubkey.
   // For KEY_EXCHANGE: signed by the keyExchange.swapPubKey carried in the body

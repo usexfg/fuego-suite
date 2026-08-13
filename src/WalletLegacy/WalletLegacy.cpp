@@ -291,7 +291,7 @@ void WalletLegacy::doLoad(std::istream& source) {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
 
     std::string cache;
-    WalletLegacySerializer serializer(m_account, m_transactionsCache);
+    WalletLegacySerializer serializer(m_account, m_transactionsCache, m_afkLockSecrets);
     serializer.deserialize(source, m_password, cache);
 
     initSync();
@@ -434,7 +434,7 @@ void WalletLegacy::doSave(std::ostream& destination, bool saveDetailed, bool sav
     m_blockchainSync.stop();
     std::unique_lock<std::mutex> lock(m_cacheMutex);
 
-    WalletLegacySerializer serializer(m_account, m_transactionsCache);
+    WalletLegacySerializer serializer(m_account, m_transactionsCache, m_afkLockSecrets);
     std::string cache;
 
     if (saveCache) {
@@ -1969,7 +1969,7 @@ std::string WalletLegacy::getReserveProof(const uint64_t &reserve, const std::st
 
 bool WalletLegacy::checkWalletPassword(std::istream& source, const std::string& password) {
   std::unique_lock<std::mutex> lock(m_cacheMutex);
-  WalletLegacySerializer serializer(m_account, m_transactionsCache);
+  WalletLegacySerializer serializer(m_account, m_transactionsCache, m_afkLockSecrets);
   return serializer.deserialize(source, password);
 }
 
@@ -2062,7 +2062,7 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   // 3. Store secret and pre-signature
   Crypto::Signature ps;
   std::memcpy(&ps, &lockData.pre_sig, sizeof(ps));
-  m_afkLockSecrets[lockIdStr] = AFKLockSecret(reinterpret_cast<const Crypto::SecretKey&>(lockData.secret), ps, amount, timeout_hours, pair);
+  m_afkLockSecrets[lockIdStr] = AfkLockSecret(reinterpret_cast<const Crypto::SecretKey&>(lockData.secret), ps, amount, timeout_hours, pair);
 
   return std::error_code();
 }

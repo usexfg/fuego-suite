@@ -347,6 +347,7 @@ std::string SwapStateMachine::serialize() const {
 
   root.insert("createdAt", static_cast<int64_t>(m_createdAt));
   root.insert("updatedAt", static_cast<int64_t>(m_updatedAt));
+  root.insert("recordVersion", static_cast<int64_t>(m_recordVersion));
 
   return root.toString();
 }
@@ -496,6 +497,9 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));
   sm.m_createdAt = static_cast<time_t>(root("createdAt").getInteger());
   sm.m_updatedAt = static_cast<time_t>(root("updatedAt").getInteger());
+  if (root.contains("recordVersion")) {
+    sm.m_recordVersion = static_cast<uint64_t>(root("recordVersion").getInteger());
+  }
 
   // NOTE: encryption key is NEVER persisted. It is injected at runtime by
   // SwapDatabase::setEncryptionKey() before decryptStoredSecret() is called.

@@ -32,6 +32,7 @@
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/Currency.h"
 #include "WalletLegacy/WalletUserTransactionsCache.h"
+#include "WalletLegacy/WalletLegacySerializer.h"
 #include "WalletLegacy/WalletUnconfirmedTransactions.h"
 
 #include "WalletLegacy/WalletTransactionSender.h"
@@ -140,6 +141,13 @@ public:
   bool getBurnDepositSecret(const std::string& txHash, Crypto::SecretKey& secret, uint64_t& amount, std::vector<uint8_t>& metadata);
   bool hasBurnDepositSecret(const std::string& txHash);
   virtual std::string registerSubAddress(uint32_t major, uint32_t minor) override;
+
+  // ── AFK lock secrets (maker-side pre-lock material) ──
+  // Persisted (encrypted with the wallet password) so a wallet restart does
+  // not orphan in-flight AFK offers. Type defined in WalletLegacySerializer.h.
+  const std::map<std::string, AfkLockSecret>& afkLockSecrets() const { return m_afkLockSecrets; }
+  std::map<std::string, AfkLockSecret>& afkLockSecrets() { return m_afkLockSecrets; }
+
   private:
   virtual void synchronizationProgressUpdated(uint32_t current, uint32_t total) override;
   virtual void synchronizationCompleted(std::error_code result) override;
@@ -228,21 +236,8 @@ public:
       : secret(s), amount(a), metadata(m), timestamp(std::time(nullptr)) {}
   };
 
-  struct AFKLockSecret {
-    Crypto::SecretKey secret;
-    Crypto::Signature preSig;
-    uint64_t amount;
-    uint32_t timeout_hours;
-    uint8_t pair;
-    time_t timestamp;
-
-    AFKLockSecret() : amount(0), timeout_hours(0), pair(0), timestamp(0) {}
-    AFKLockSecret(const Crypto::SecretKey& s, const Crypto::Signature& ps, uint64_t a, uint32_t t, uint8_t p)
-      : secret(s), preSig(ps), amount(a), timeout_hours(t), pair(p), timestamp(std::time(nullptr)) {}
-  };
-
   std::map<std::string, BurnDepositSecret> m_burnDepositSecrets;
-  std::map<std::string, AFKLockSecret> m_afkLockSecrets;
+  std::map<std::string, AfkLockSecret> m_afkLockSecrets;
 
   // Pending burn deposit secrets (before transaction hash is known)
   Crypto::SecretKey m_pendingBurnSecret;

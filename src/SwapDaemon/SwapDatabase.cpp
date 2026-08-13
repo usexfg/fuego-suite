@@ -61,7 +61,42 @@ std::string SwapDatabase::archiveFilePath(const std::string& swapId) const {
 
 bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
   try {
+    // ── Optimistic concurrency: reject a stale write. ──
+    // The tick thread loads a record, mutates it in memory, then saves. The
+    // peer-message thread may persist a newer version of the same record in
+    // between (updateSwap). Without this check the tick's save silently
+    // clobbers the peer's update (lost update). Compare the in-memory record
+    // version against the current on-disk record (active or archive).
+    {
+      auto currentOnDiskVersion = [&](const std::string& path) -> bool {
+        std::ifstream ifs(path, std::ios::binary);
+        if (!ifs.is_open()) return true;  // no file: caller must have version 0
+        std::ostringstream ss;
+        ss << ifs.rdbuf();
+        std::string json = ss.str();
+        if (json.empty()) return false;
+        SwapStateMachine disk = SwapStateMachine::deserialize(json);
+        return disk.recordVersion() == sm.recordVersion();
+      };
+      const std::string activePath = swapFilePath(sm.params().swapId);
+      const std::string archivedPath = archiveFilePath(sm.params().swapId);
+      std::ifstream probe(activePath, std::ios::binary);
+      if (probe.is_open()) {
+        probe.close();
+        if (!currentOnDiskVersion(activePath)) return false;  // conflict
+      } else {
+        std::ifstream probe2(archivedPath, std::ios::binary);
+        if (probe2.is_open()) {
+          probe2.close();
+          if (!currentOnDiskVersion(archivedPath)) return false;  // conflict
+        } else if (sm.recordVersion() != 0) {
+          return false;  // record vanished underneath us
+        }
+      }
+    }
+
     auto& mutableSm = const_cast<SwapStateMachine&>(sm);
+    mutableSm.bumpRecordVersion();
     if (!m_encKey.empty()) mutableSm.setEncryptionKey(m_encKey);
     std::string json = mutableSm.serialize();
     // Refuse empty serialize (encryption key missing with live secrets, etc.)

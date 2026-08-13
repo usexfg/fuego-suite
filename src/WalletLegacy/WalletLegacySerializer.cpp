@@ -52,9 +52,19 @@ void throwIfKeysMissmatch(const Crypto::SecretKey& sec, const Crypto::PublicKey&
 
 namespace CryptoNote {
 
+WalletLegacySerializer::WalletLegacySerializer(CryptoNote::AccountBase& account, WalletUserTransactionsCache& transactionsCache,
+                                               std::map<std::string, AfkLockSecret>& afkLocks) :
+  account(account),
+  transactionsCache(transactionsCache),
+  afkLocks(&afkLocks),
+  walletSerializationVersion(WALLET_SERIALIZATION_VERSION)
+{
+}
+
 WalletLegacySerializer::WalletLegacySerializer(CryptoNote::AccountBase& account, WalletUserTransactionsCache& transactionsCache) :
   account(account),
   transactionsCache(transactionsCache),
+  afkLocks(nullptr),
   walletSerializationVersion(WALLET_SERIALIZATION_VERSION)
 {
 }
@@ -72,6 +82,13 @@ void WalletLegacySerializer::serialize(std::ostream& stream, const std::string& 
   }
 
   serializer.binary(const_cast<std::string&>(cache), "cache");
+
+  // Optional trailing AFK-lock section (inside the encrypted payload).
+  std::string afkBlob;
+  saveAfkLocks(afkBlob);
+  if (!afkBlob.empty()) {
+    serializer.binary(afkBlob, "afk");
+  }
 
   std::string plain = plainArchive.str();
   std::string cipher;
@@ -164,6 +181,100 @@ void WalletLegacySerializer::deserialize(std::istream& stream, const std::string
   }
 
   serializer.binary(cache, "cache");
+
+  // Optional trailing AFK-lock section: absent in wallets saved by older
+  // binaries (read throws at end-of-stream → caught → empty blob).
+  std::string afkBlob;
+  try {
+    serializer.binary(afkBlob, "afk");
+  } catch (const std::exception&) {
+    afkBlob.clear();
+  }
+  loadAfkLocks(afkBlob);
+}
+
+void WalletLegacySerializer::saveAfkLocks(std::string& blob) {
+  blob.clear();
+  if (!afkLocks) return;
+  // Prune expired locks (maker can refund the timelock output; the secret is
+  // only needed while the lock window is live).
+  const time_t now = std::time(nullptr);
+  for (auto it = afkLocks->begin(); it != afkLocks->end(); ) {
+    const time_t expiry = it->second.timestamp + static_cast<time_t>(it->second.timeout_hours) * 3600;
+    if (expiry < now) {
+      it = afkLocks->erase(it);
+    } else {
+      ++it;
+    }
+  }
+  if (afkLocks->empty()) return;
+
+  // Format: u32 count, then per entry:
+  //   u32 keyLen | key bytes | 32B secret | 64B preSig | u64 amount
+  //   | u32 timeout_hours | u8 pair | i64 timestamp
+  auto appendU32 = [](std::string& s, uint32_t v) {
+    for (int i = 0; i < 4; ++i) s.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+  };
+  auto appendU64 = [](std::string& s, uint64_t v) {
+    for (int i = 0; i < 8; ++i) s.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+  };
+
+  appendU32(blob, static_cast<uint32_t>(afkLocks->size()));
+  for (const auto& kv : *afkLocks) {
+    const auto& rec = kv.second;
+    appendU32(blob, static_cast<uint32_t>(kv.first.size()));
+    blob.append(kv.first);
+    blob.append(reinterpret_cast<const char*>(&rec.secret), sizeof(Crypto::SecretKey));
+    blob.append(reinterpret_cast<const char*>(&rec.preSig), sizeof(Crypto::Signature));
+    appendU64(blob, rec.amount);
+    appendU32(blob, rec.timeout_hours);
+    blob.push_back(static_cast<char>(rec.pair));
+    uint64_t ts = static_cast<uint64_t>(rec.timestamp);
+    appendU64(blob, ts);
+  }
+}
+
+void WalletLegacySerializer::loadAfkLocks(const std::string& blob) {
+  if (!afkLocks) return;
+  afkLocks->clear();
+  if (blob.size() < 4) return;
+
+  auto readU32 = [&](size_t& off) -> uint32_t {
+    uint32_t v = 0;
+    for (int i = 0; i < 4; ++i) v |= static_cast<uint32_t>(static_cast<uint8_t>(blob[off + i])) << (8 * i);
+    off += 4;
+    return v;
+  };
+  auto readU64 = [&](size_t& off) -> uint64_t {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; ++i) v |= static_cast<uint64_t>(static_cast<uint8_t>(blob[off + i])) << (8 * i);
+    off += 8;
+    return v;
+  };
+
+  try {
+    size_t off = 0;
+    uint32_t count = readU32(off);
+    for (uint32_t i = 0; i < count; ++i) {
+      if (off + 4 > blob.size()) return;
+      uint32_t keyLen = readU32(off);
+      if (off + keyLen + sizeof(Crypto::SecretKey) + sizeof(Crypto::Signature) + 21 > blob.size()) return;
+      std::string key = blob.substr(off, keyLen);
+      off += keyLen;
+      AfkLockSecret rec;
+      std::memcpy(&rec.secret, blob.data() + off, sizeof(Crypto::SecretKey));
+      off += sizeof(Crypto::SecretKey);
+      std::memcpy(&rec.preSig, blob.data() + off, sizeof(Crypto::Signature));
+      off += sizeof(Crypto::Signature);
+      rec.amount = readU64(off);
+      rec.timeout_hours = readU32(off);
+      rec.pair = static_cast<uint8_t>(blob[off++]);
+      rec.timestamp = static_cast<time_t>(readU64(off));
+      (*afkLocks)[key] = rec;
+    }
+  } catch (const std::exception&) {
+    afkLocks->clear();
+  }
 }
 
 bool WalletLegacySerializer::deserialize(std::istream& stream, const std::string& password) {

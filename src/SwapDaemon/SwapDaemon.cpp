@@ -1778,9 +1778,15 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   if (params.ringPeerRound1Received && params.ringPeerRound2Received) {
     Crypto::PublicKey alicePub = params.peerSwapPubKey;
     if (buildAndBroadcastEscrowTx(params, alicePub, "spend")) {
-      params.ringTxBroadcast = true;
-      sm.transition(SwapState::ADAPTOR_XFG_SPENT);
-      m_db.saveSwap(sm);
+      // The spend tx is already broadcast (irreversible). Persist with
+      // conflict-retry so a lost update cannot trigger a re-broadcast.
+      if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+            latest.params().ringTxBroadcast = true;
+            latest.transition(SwapState::ADAPTOR_XFG_SPENT);
+          })) {
+        m_logger(Logging::ERROR) << "  Failed to persist broadcast spend state";
+        return false;
+      }
       m_logger(Logging::INFO) << "  Escrow spend broadcast. Swap " << swapId << " completed.";
       recordCompletedTrade(sm);
       return true;
@@ -2073,7 +2079,18 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
               m_logger(Logging::ERROR) << "Failed to fund escrow for swap " << swapId;
               return false;
             }
-            m_db.saveSwap(sm);
+            // The funding tx is already broadcast (irreversible). Persist with
+            // conflict-retry: a lost update here would make the next tick fund
+            // the escrow a SECOND time.
+            const Crypto::Hash fundTxHash = params.escrowTxHash;
+            const uint32_t fundGi = params.escrowOutputIndex;
+            if (!saveSwapMerged(sm, [fundTxHash, fundGi](SwapStateMachine& latest) {
+                  latest.params().escrowTxHash = fundTxHash;
+                  latest.params().escrowOutputIndex = fundGi;
+                })) {
+              m_logger(Logging::ERROR) << "Failed to persist escrow funding for swap " << swapId;
+              return false;
+            }
           } else if (verifyEscrowFunding(params)) {
             sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
             m_db.saveSwap(sm);
@@ -2154,15 +2171,26 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
     std::string txType = isSpendPath ? "spend" : "refund";
 
     if (buildAndBroadcastEscrowTx(params, destKey, txType)) {
-      params.ringTxBroadcast = true;
+      // Tx already broadcast — persist with conflict-retry so a lost update
+      // cannot trigger a second (invalid) broadcast attempt next tick.
       if (isSpendPath) {
-        sm.transition(SwapState::ADAPTOR_XFG_SPENT);
-        m_db.saveSwap(sm);
+        if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+              latest.params().ringTxBroadcast = true;
+              latest.transition(SwapState::ADAPTOR_XFG_SPENT);
+            })) {
+          m_logger(Logging::ERROR) << "  Failed to persist " << txType << " broadcast state";
+          return false;
+        }
         m_logger(Logging::INFO) << "  Escrow " << txType << " tx broadcast. Swap " << swapId << " completed.";
         recordCompletedTrade(sm);
       } else {
-        sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
-        m_db.saveSwap(sm);
+        if (!saveSwapMerged(sm, [currentHeight](SwapStateMachine& latest) {
+              latest.params().ringTxBroadcast = true;
+              latest.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
+            })) {
+          m_logger(Logging::ERROR) << "  Failed to persist " << txType << " broadcast state";
+          return false;
+        }
         m_logger(Logging::INFO) << "  Escrow " << txType << " tx broadcast. Swap " << swapId << " completed.";
       }
     }
@@ -2323,9 +2351,14 @@ bool SwapDaemon::refund(const std::string& swapId) {
       Crypto::PublicKey destKey = (params.role == SwapRole::BOB)
           ? params.ourSwapPubKey : params.peerSwapPubKey;
       if (buildAndBroadcastEscrowTx(params, destKey, "refund")) {
-        params.ringTxBroadcast = true;
-        sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
-        m_db.saveSwap(sm);
+        // Tx already broadcast — persist with conflict-retry.
+        if (!saveSwapMerged(sm, [currentHeight](SwapStateMachine& latest) {
+              latest.params().ringTxBroadcast = true;
+              latest.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
+            })) {
+          m_logger(Logging::ERROR) << "  Failed to persist refund broadcast state";
+          return false;
+        }
         m_logger(Logging::INFO) << "  Cooperative refund tx broadcast. Swap marked ADAPTOR_REFUNDED.";
         return true;
       }
@@ -2566,8 +2599,17 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
   Crypto::Hash prefixHash;
   CollaborativeRingState ringState;
 
+  // Fee physically routed to the treasury key in this tx:
+  // claim ("spend") = 1% initiation + 1% claim (params.protocolFee),
+  // refund = 1% initiation only.
+  uint64_t embeddedFee = params.protocolFee;
+  if (txType == "refund") {
+    embeddedFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
+                / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+  }
+
   if (!SwapTxBuilder::buildUnsignedEscrowSpend(
-          m_rpc, params, destinationKey, params.protocolFee, params.treasuryPubKey,
+          m_rpc, params, destinationKey, embeddedFee, params.treasuryPubKey,
           SwapTxBuilder::MIN_FEE, tx, prefixHash, ringState)) {
     m_logger(Logging::ERROR) << "Failed to build " << txType << " tx";
     return false;
@@ -2658,19 +2700,24 @@ bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
 
   m_logger(Logging::INFO) << "  " << txType << " tx broadcast successfully!";
 
-  // Protocol fee accounting: 2% total (1% initiation + 1% claim) → treasury
-  // Both fees are routed to the treasury vault as counter XFG.
-  if (params.xfgAmount > 0) {
-    if (params.xfgAmount > UINT64_MAX / CryptoNote::parameters::SWAP_FEE_RATE_BPS) {
-      m_logger(Logging::ERROR) << "Claim fee multiplication overflow on swap";
-      return false;
+  // Protocol fee accounting: exactly the amount this tx physically routed to
+  // the treasury key (1% initiation on refunds, 2% on claims).
+  // The tx is already broadcast at this point — accounting failure loses
+  // protocol yield (never user funds), so log loudly and proceed.
+  if (embeddedFee > 0) {
+    bool accounted = false;
+    for (int attempt = 0; attempt < 3 && !accounted; ++attempt) {
+      accounted = m_rpc.addSwapFee(embeddedFee);
+      if (!accounted) {
+        m_logger(Logging::WARNING) << "  addSwapFee attempt " << (attempt + 1)
+            << " failed for " << txType << " (fee=" << embeddedFee << ")";
+      }
     }
-    uint64_t claimFee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS)
-                      / CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;  // 1% claim
-    uint64_t totalProtocolFee = params.protocolFee + claimFee;  // 2% total
-    if (totalProtocolFee > 0) {
-      m_rpc.addSwapFee(totalProtocolFee);
-      m_logger(Logging::INFO) << "  Swap protocol fee (2%): " << totalProtocolFee
+    if (!accounted) {
+      m_logger(Logging::ERROR) << "  addSwapFee failed after retries for " << txType
+          << " — fee deducted on-chain but not accounted";
+    } else {
+      m_logger(Logging::INFO) << "  Swap protocol fee (" << txType << "): " << embeddedFee
           << " → treasury vault";
     }
   }

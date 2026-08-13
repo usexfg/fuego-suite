@@ -19,10 +19,13 @@
 #include <iostream>
 
 #include "SwapDaemon/AdaptorSwap.h"
+#include "SwapDaemon/SwapDatabase.h"
 #include "SwapDaemon/SwapPeerProtocol.h"
 #include "SwapDaemon/SwapStateMachine.h"
 #include "SwapDaemon/SwapTypes.h"
 #include "crypto/crypto.h"
+
+#include <unistd.h>
 
 using namespace XfgSwap;
 
@@ -338,6 +341,58 @@ static bool testAfkStateTransitions() {
   return true;
 }
 
+static bool testVersionConflictDetection() {
+  // Optimistic concurrency: a stale in-memory record must NOT clobber a
+  // newer on-disk record (the P2P/tick lost-update race).
+  std::string tmpDir = "/tmp/fuego_swapdb_test_" + std::to_string(static_cast<long>(::getpid()));
+  {
+    SwapDatabase db(tmpDir);
+    SwapParams p{};
+    p.swapId = "version-conflict-1";
+    p.role = SwapRole::BOB;
+    p.pair = SwapPair::ETH;
+    p.xfgAmount = 10000000;
+    p.ctrAmount = 5000000;
+    SwapStateMachine sm(p);
+    sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+    // First save: no file yet → succeeds, version becomes 1.
+    if (!db.saveSwap(sm)) return false;
+    if (sm.recordVersion() != 1) return false;
+
+    // Two concurrent readers, both at version 1.
+    SwapStateMachine a, b;
+    if (!db.loadSwap("version-conflict-1", a)) return false;
+    if (!db.loadSwap("version-conflict-1", b)) return false;
+
+    // a saves first (wins) → version 2.
+    a.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    if (!db.saveSwap(a)) return false;
+
+    // b's stale write must be rejected.
+    b.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+    if (db.saveSwap(b)) return false;
+
+    // Reload: a's state + version 2 survived.
+    SwapStateMachine c;
+    if (!db.loadSwap("version-conflict-1", c)) return false;
+    if (c.recordVersion() != 2) return false;
+    if (c.currentState() != SwapState::ADAPTOR_ESCROW_FUNDED) return false;
+
+    // A fresh load saves fine → version 3.
+    c.transition(SwapState::ADAPTOR_PRESIGS_READY);
+    if (!db.saveSwap(c)) return false;
+    SwapStateMachine d;
+    if (!db.loadSwap("version-conflict-1", d)) return false;
+    if (d.recordVersion() != 3) return false;
+  }
+  // Best-effort cleanup
+  std::remove((tmpDir + "/swaps/version-conflict-1.json").c_str());
+  std::remove((tmpDir + "/swaps").c_str());
+  std::remove((tmpDir + "/archive").c_str());
+  std::remove(tmpDir.c_str());
+  return true;
+}
+
 int main() {
   std::cout << "=== Pre-sig round wiring test ===\n";
   CHECK(testEscrowFundedCodec(), "ESCROW_FUNDED message codec + signature");
@@ -348,6 +403,7 @@ int main() {
   CHECK(testDecryptFailureClearsProgress(), "failed nonce decrypt clears progress (fail closed)");
   CHECK(testAfkClaimCodec(), "AFK_CLAIM + AFK_CLAIM_ACK codec + signature");
   CHECK(testAfkStateTransitions(), "AFK states reach AFK_CLAIMED + persist");
+  CHECK(testVersionConflictDetection(), "stale record save rejected (lost-update guard)");
 
   std::cout << "\nResults: " << g_pass << " passed, " << g_fail << " failed\n";
   return g_fail == 0 ? 0 : 1;

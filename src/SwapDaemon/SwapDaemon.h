@@ -356,6 +356,9 @@ public:
 
   void setSwapRelay(CryptoNote::SwapOfferRelay* relay) { m_swapRelay = relay; }
 
+  // Forward fuegod swap-control token to the RPC client (X-Swap-Token header).
+  void setSwapControlToken(const std::string& token) { m_rpc.setSwapControlToken(token); }
+
   // Set SOCKS5 proxy for P2P transport (e.g. Tor).
   void setSocks5Proxy(const std::string& proxy);
 
@@ -444,6 +447,26 @@ public:
   // Returns true if the escrow is confirmed on chain.
   bool verifyEscrowFunding(const SwapParams& params);
   bool resolveEscrowGlobalIndex(SwapParams& params);
+
+  // Save with conflict-retry. saveSwap() now fails when the on-disk record
+  // advanced concurrently (P2P writeback between our load and save). For
+  // steps with IRREVERSIBLE external side effects (escrow funding already
+  // broadcast, spend/refund tx already broadcast), losing the update would
+  // cause a double-fund or a re-broadcast. On conflict this reloads the
+  // latest record, re-applies our fields via `apply`, and saves again.
+  // apply must be idempotent and must capture its inputs BY VALUE (the
+  // caller's SwapParams reference may be invalidated by the reload).
+  template <typename F>
+  bool saveSwapMerged(SwapStateMachine& sm, F&& apply) {
+    for (int attempt = 0; attempt < 5; ++attempt) {
+      if (m_db.saveSwap(sm)) return true;
+      SwapStateMachine latest;
+      if (!m_db.loadSwap(sm.params().swapId, latest)) return false;
+      apply(latest);
+      sm = std::move(latest);
+    }
+    return false;
+  }
 
   // Returns the resolved XFG address. If input is an alias (@name or short name),
   // resolves via RPC. If already an address, returns as-is. Returns "" on failure.

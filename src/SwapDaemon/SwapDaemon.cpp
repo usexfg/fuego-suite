@@ -794,7 +794,20 @@ bool SwapDaemon::initiate(SwapParams& params) {
   }
 
   // ── Adaptor sig step 1: generate swap keypair ──
-  adaptor_generate_keys(params);
+  // If the caller pre-set a keypair (e.g. an AFK taker injecting the
+  // identity it published in /requestswap so the maker's expected-key
+  // binding matches), use it instead of generating a fresh one.
+  static const Crypto::PublicKey ZERO_PK{};
+  if (std::memcmp(&params.ourSwapPubKey, &ZERO_PK, sizeof(ZERO_PK)) == 0) {
+    adaptor_generate_keys(params);
+  } else {
+    Crypto::PublicKey derived;
+    if (!Crypto::secret_key_to_public_key(params.ourSwapSecKey, derived) ||
+        std::memcmp(&derived, &params.ourSwapPubKey, sizeof(derived)) != 0) {
+      m_logger(Logging::ERROR) << "Pre-set swap keypair mismatch — refusing initiate";
+      return false;
+    }
+  }
 
   m_logger(Logging::DEBUGGING) << "Generated swap keypair: "
     << Common::podToHex(params.ourSwapPubKey);
@@ -3195,6 +3208,18 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
         m_logger(Logging::INFO) << "AFK swap " << lockId
           << " saved with expectedPeerSwapPubKey="
           << Common::podToHex(expectedTaker);
+        // Publish the fill result so the taker can learn the lockId and this
+        // maker's P2P endpoint (polled via /getswaprequests on fuegod).
+        if (m_swapRelay) {
+          CryptoNote::SwapRequestResult result;
+          result.offerId = offerId;
+          result.lockId = lockId;
+          result.makerEndpoint = m_publicEndpoint;
+          result.createdAt = std::time(nullptr);
+          m_swapRelay->recordSwapRequestResult(takerPubKey, result);
+          m_logger(Logging::INFO) << "AFK fill result published for taker "
+            << takerPubKey.substr(0, 16) << "...";
+        }
       }
     }
   }

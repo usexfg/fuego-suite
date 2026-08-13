@@ -362,6 +362,10 @@ public:
   // Set SOCKS5 proxy for P2P transport (e.g. Tor).
   void setSocks5Proxy(const std::string& proxy);
 
+  // Publicly reachable swap P2P endpoint (host:port) advertised to takers in
+  // fill results so they can reach this maker for AFK completion messages.
+  void setPublicEndpoint(const std::string& endpoint) { m_publicEndpoint = endpoint; }
+
   void setMakerKeys(const Crypto::SecretKey& sk, const Crypto::PublicKey& pk);
   bool loadOfferConfig(const std::string& jsonPath);
 
@@ -508,6 +512,9 @@ public:
     Crypto::PublicKey m_makerPublicKey;
     Crypto::SecretKey m_makerViewSecretKey;
     bool m_makerKeysSet = false;
+
+    // Publicly reachable swap P2P endpoint advertised in AFK fill results.
+    std::string m_publicEndpoint;
 
     std::string m_xfgWalletRpcHost;
     uint16_t m_xfgWalletRpcPort = 0;

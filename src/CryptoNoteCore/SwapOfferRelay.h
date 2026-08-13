@@ -154,6 +154,17 @@ struct PendingSwapRequest {
   std::string proofOfFunds;
 };
 
+// Result of a soft-order fill request, published by the maker's SwapDaemon
+// after it creates the AFK lock. The taker polls for it (keyed by the
+// takerPubKey it sent in /requestswap) to learn the lockId and the maker's
+// P2P endpoint for the AFK completion messages.
+struct SwapRequestResult {
+  std::string offerId;
+  std::string lockId;
+  std::string makerEndpoint;
+  time_t      createdAt = 0;
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SwapOfferRelay — unified relay for legacy v1 + v2 orderbook
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -174,6 +185,14 @@ public:
                            const Crypto::Signature& sig);
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
+
+  // Called by the maker's SwapDaemon once the AFK lock is created.
+  void recordSwapRequestResult(const std::string& takerPubKey,
+                               const SwapRequestResult& result);
+
+  // Results pending pickup by a taker (oldest first, bounded).
+  std::vector<SwapRequestResult> getSwapRequestResults(const std::string& takerPubKey);
+
   // P2P gossip path: intentionally ignored (unsigned, manipulable). Use
   // recordLocalTrade() when a swap is observed completing on this node.
   void handleTradeCompleted(const SwapTradeRecord& trade);
@@ -274,6 +293,9 @@ private:
   std::map<std::string, SwapOfferMsg> m_offers;
   std::vector<SwapTradeRecord> m_trades;
   std::vector<PendingSwapRequest> m_pendingRequests;
+  static constexpr size_t MAX_PENDING_REQUESTS = 256;
+  static constexpr size_t MAX_REQUEST_RESULTS_PER_TAKER = 64;
+  std::map<std::string, std::vector<SwapRequestResult>> m_requestResults;  // takerPubKey → results
 
   // TWAP state per pair
   struct TwapState {

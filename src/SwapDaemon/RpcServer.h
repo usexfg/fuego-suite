@@ -32,7 +32,8 @@ class SwapDaemon;
 // Binds to 127.0.0.1 and exposes swap management methods.
 //
 // Methods:
-//   initiate_swap  {pair, xfg_amount, ctr_amount, peer, [role], [expected_peer_pubkey]}
+//   initiate_swap  {pair, xfg_amount, ctr_amount, peer, [role], [expected_peer_pubkey],
+//                   [our_swap_secret_key], [swap_id], [afk]}
 //                  → {swap_id, our_swap_pubkey}
 //   accept         {swap_id}                              → {success, state}
 //   list_swaps     {}                                     → {swaps: [...]} (each with stateName/pairName)

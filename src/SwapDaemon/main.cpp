@@ -71,6 +71,7 @@ void printUsage() {
     "  --rpc-token <token>     Require X-Swap-Token header on all JSON-RPC calls\n"
     "  --swap-p2p-port <port>  Swap peer protocol listen port (default: 18901, 0=off)\n"
     "  --swap-p2p-bind <addr>  P2P bind address (default: 127.0.0.1)\n"
+    "  --public-endpoint <h:p> Publicly reachable swap endpoint advertised to takers\n"
     "  --testnet               Use testnet ports (fuegod: 28280)\n"
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
     "  --help                  Show this help message\n"
@@ -226,6 +227,7 @@ int main(int argc, char* argv[]) {
   uint16_t p2pPort = 18901;
   std::string p2pBindAddr = "127.0.0.1";
   std::string rpcToken;
+  std::string publicEndpoint;
   bool testnet = false;
   bool serviceMode = false;
   bool autoComplete = false;
@@ -309,6 +311,12 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       p2pBindAddr = argv[argIdx];
+    } else if (opt == "--public-endpoint") {
+      if (++argIdx >= argc) {
+        std::cerr << "Error: --public-endpoint requires an argument (host:port)" << std::endl;
+        return 1;
+      }
+      publicEndpoint = argv[argIdx];
     } else if (opt == "--testnet") {
       testnet = true;
       port = DEFAULT_TESTNET_PORT;
@@ -393,10 +401,16 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // Service mode: run tick loop continuously
+    // Service mode: run tick loop continuously
   if (serviceMode) {
     logger(Logging::INFO) << "Starting as background service...";
     daemon.start(p2pPort, p2pBindAddr);
+
+    if (!publicEndpoint.empty()) {
+      daemon.setPublicEndpoint(publicEndpoint);
+      logger(Logging::INFO) << "Public swap endpoint: " << publicEndpoint
+        << " (advertised in AFK fill results)";
+    }
 
     if (!socks5Proxy.empty()) {
       daemon.setSocks5Proxy(socks5Proxy);

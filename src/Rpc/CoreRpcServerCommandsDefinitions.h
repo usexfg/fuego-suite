@@ -1627,6 +1627,42 @@ struct COMMAND_RPC_GET_SWAP_OFFERS {
   };
 };
 
+// One soft-order fill result published by the maker's SwapDaemon.
+struct swap_request_result_entry {
+  std::string offerId;
+  std::string lockId;         // maker's AFK lock id (= the AFK swap id)
+  std::string makerEndpoint;  // maker's swap P2P endpoint (host:port)
+  uint64_t    createdAt;
+
+  void serialize(ISerializer& s) {
+    KV_MEMBER(offerId)
+    KV_MEMBER(lockId)
+    KV_MEMBER(makerEndpoint)
+    KV_MEMBER(createdAt)
+  }
+};
+
+/** @brief Query fill-request results for a taker (keyed by takerPubKey). */
+struct COMMAND_RPC_GET_SWAP_REQUESTS {
+  struct request {
+    std::string takerPubKey;  // 64-char hex Ed25519 identity sent in /requestswap
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(takerPubKey)
+    }
+  };
+
+  struct response {
+    std::vector<swap_request_result_entry> requests;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(requests)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 // Individual price source in composite breakdown
 struct price_source_rpc_entry {
   std::string name;

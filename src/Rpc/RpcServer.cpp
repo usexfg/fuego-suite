@@ -153,6 +153,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/submitswap", { jsonMethodSwapAuth<COMMAND_RPC_SUBMIT_SWAP_OFFER>(&RpcServer::on_submit_swap_offer), false } },
   { "/cancelswap", { jsonMethodSwapAuth<COMMAND_RPC_CANCEL_SWAP_OFFER>(&RpcServer::on_cancel_swap_offer), false } },
   { "/requestswap", { jsonMethodSwapAuth<COMMAND_RPC_REQUEST_SWAP>(&RpcServer::on_request_swap), false } },
+  { "/getswaprequests", { jsonMethod<COMMAND_RPC_GET_SWAP_REQUESTS>(&RpcServer::on_get_swap_requests), true } },
 
   // v2 orderbook endpoints
   { "/getorderbook", { jsonMethod<COMMAND_RPC_GET_ORDER_BOOK>(&RpcServer::on_get_order_book), true } },
@@ -164,7 +165,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/start_mining", { jsonMethod<COMMAND_RPC_START_MINING>(&RpcServer::on_start_mining), false } },
   { "/stop_mining", { jsonMethod<COMMAND_RPC_STOP_MINING>(&RpcServer::on_stop_mining), false } },
   { "/stop_daemon", { jsonMethod<COMMAND_RPC_STOP_DAEMON>(&RpcServer::on_stop_daemon), true } },
-  { "/addswapfee",  { jsonMethod<COMMAND_RPC_ADD_SWAP_FEE>(&RpcServer::on_add_swap_fee), false } },
+  { "/addswapfee",  { jsonMethodSwapAuth<COMMAND_RPC_ADD_SWAP_FEE>(&RpcServer::on_add_swap_fee), false } },
 
   // HEAT / Hearth AMM endpoints (v11+)
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
@@ -1250,6 +1251,35 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
 
   res.status = "pending";
   res.offerId = req.offerId;
+  return true;
+}
+
+bool RpcServer::on_get_swap_requests(const COMMAND_RPC_GET_SWAP_REQUESTS::request& req, COMMAND_RPC_GET_SWAP_REQUESTS::response& res) {
+  if (!m_swapRelay) {
+    res.status = "Swap relay not running";
+    return true;
+  }
+  if (req.takerPubKey.size() != 64) {
+    res.status = "takerPubKey must be 64 hex chars";
+    return true;
+  }
+  for (char c : req.takerPubKey) {
+    if (!std::isxdigit(static_cast<unsigned char>(c))) {
+      res.status = "takerPubKey must be hex";
+      return true;
+    }
+  }
+
+  auto results = m_swapRelay->getSwapRequestResults(req.takerPubKey);
+  for (const auto& r : results) {
+    swap_request_result_entry e;
+    e.offerId = r.offerId;
+    e.lockId = r.lockId;
+    e.makerEndpoint = r.makerEndpoint;
+    e.createdAt = static_cast<uint64_t>(r.createdAt);
+    res.requests.push_back(std::move(e));
+  }
+  res.status = CORE_RPC_STATUS_OK;
   return true;
 }
 

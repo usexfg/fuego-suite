@@ -204,11 +204,29 @@ void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amou
                                        const std::string& proofOfFunds) {
   std::lock_guard<std::mutex> lock(m_mutex);
   // Bound queue to prevent memory-exhaustion DoS from gossip floods.
-  static constexpr size_t MAX_PENDING_REQUESTS = 256;
   if (m_pendingRequests.size() >= MAX_PENDING_REQUESTS) {
     m_pendingRequests.erase(m_pendingRequests.begin());  // drop oldest
   }
   m_pendingRequests.push_back({offerId, amount, takerPubKey, proofOfFunds});
+}
+
+void SwapOfferRelay::recordSwapRequestResult(const std::string& takerPubKey,
+                                             const SwapRequestResult& result) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto& vec = m_requestResults[takerPubKey];
+  if (vec.size() >= MAX_REQUEST_RESULTS_PER_TAKER) {
+    vec.erase(vec.begin());  // drop oldest
+  }
+  vec.push_back(result);
+}
+
+std::vector<SwapRequestResult> SwapOfferRelay::getSwapRequestResults(const std::string& takerPubKey) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto it = m_requestResults.find(takerPubKey);
+  if (it == m_requestResults.end()) {
+    return {};
+  }
+  return it->second;
 }
 
 void SwapOfferRelay::handleTradeCompleted(const SwapTradeRecord& /*trade*/) {

@@ -269,8 +269,55 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
       }
     }
 
+    // Optional taker identity injection: an AFK taker publishes an Ed25519
+    // identity in /requestswap; the maker binds it as the expected peer key.
+    // Inject the same secret here so this daemon's messages sign under the
+    // exact key the maker expects.
+    std::string ourSwapSecHex;
+    if (root.contains("our_swap_secret_key")) {
+      ourSwapSecHex = root("our_swap_secret_key").getString();
+    }
+    if (!ourSwapSecHex.empty()) {
+      if (ourSwapSecHex.size() != 64) {
+        return rpcError(-32602, "our_swap_secret_key must be 64-char hex");
+      }
+      if (!Common::podFromHex(ourSwapSecHex, swapParams.ourSwapSecKey) ||
+          !Crypto::secret_key_to_public_key(swapParams.ourSwapSecKey, swapParams.ourSwapPubKey)) {
+        return rpcError(-32602, "our_swap_secret_key is not a valid Ed25519 secret key");
+      }
+    }
+
+    // Optional swap id (AFK takers pass the maker's lockId so both daemons
+    // track the same swap).
+    if (root.contains("swap_id") && !root("swap_id").getString().empty()) {
+      swapParams.swapId = root("swap_id").getString();
+      if (swapParams.swapId.size() > 64) {
+        return rpcError(-32602, "swap_id too long (max 64 chars)");
+      }
+    }
+
+    // AFK mode: after initiate, park the record at AFK_OFFER_LOCKED so
+    // accept() drives it to AFK_OFFER_ACCEPTED (non-interactive flow).
+    bool afkMode = false;
+    if (root.contains("afk")) {
+      afkMode = root("afk").getBool();
+    }
+
     if (!m_daemon.initiate(swapParams)) {
       return rpcError(-32000, "Failed to initiate swap");
+    }
+
+    // AFK mode: park at AFK_OFFER_LOCKED so accept() drives the record to
+    // AFK_OFFER_ACCEPTED (the non-interactive flow's taker-side entry).
+    if (afkMode) {
+      SwapStateMachine sm;
+      if (!m_daemon.database().loadSwap(swapParams.swapId, sm)) {
+        return rpcError(-32000, "AFK initiate failed: record not found");
+      }
+      if (!sm.transition(SwapState::AFK_OFFER_LOCKED) ||
+          !m_daemon.database().saveSwap(sm)) {
+        return rpcError(-32000, "AFK initiate failed: transition to AFK_OFFER_LOCKED rejected");
+      }
     }
 
     std::ostringstream oss;

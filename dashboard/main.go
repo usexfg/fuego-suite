@@ -581,16 +581,24 @@ func main() {
 	// Static files
 	staticDir := "static"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
-		// Try relative to binary
 		staticDir = "./static"
 	}
 	fileServer := http.FileServer(http.Dir(staticDir))
+
+	// HTML pages live at the dashboard root (next to the binary)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/hearth.html", http.StatusTemporaryRedirect)
 			return
 		}
-		fileServer.ServeHTTP(w, r)
+		// Serve top-level HTML pages from the dashboard root
+		if r.URL.Path == "/hearth.html" {
+			http.ServeFile(w, r, "hearth.html")
+			return
+		}
+		fileSystemRoot := http.Dir(".")
+		http.ServeFile(w, r, r.URL.Path)
+		return
 	})
 
 	// Apply middleware chain

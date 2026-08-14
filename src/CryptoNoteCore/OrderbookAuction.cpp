@@ -13,14 +13,6 @@
 
 namespace CryptoNote {
 
-void splitAuctionFee(uint64_t heat, uint64_t& cdFeeHeat, uint64_t& rebateHeat) {
-  uint64_t totalFee = static_cast<uint64_t>(
-      ((uint128_t)heat * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR);
-  cdFeeHeat = static_cast<uint64_t>(
-      ((uint128_t)totalFee * parameters::HEARTH_CD_SHARE_BPS) / 100);
-  rebateHeat = totalFee - cdFeeHeat;
-}
-
 namespace {
 
 bool lessByHash(const Crypto::Hash& a, const Crypto::Hash& b) {
@@ -216,19 +208,40 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
     }
   }
 
-  // Fee assignment: the taker side pays the 1% (70% → CD yield, 30% → maker
-  // rebate); the maker side receives the rebate on its fills.
+  // Fee assignment: the taker side pays the full 1% (70% → CD yield, 30% into
+  // the rebate pool); the maker side receives the pool pro-rata by fill value.
+  // Conservation: Σ fee = Σ cd + Σ reb (cumulative floors per side).
   if (result.hasTaker) {
     uint8_t takerSide = result.takerIsBid ? 0 : 1;
+    auto feeCum = [&](uint64_t cumHeat) {
+      return static_cast<uint64_t>(
+          ((uint128_t)cumHeat * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR);
+    };
+    uint64_t rebPool = 0;
+    uint64_t takerCum = 0;
     for (auto& f : result.fills) {
-      if (f.side == takerSide) {
-        uint64_t cd = 0, reb = 0;
-        splitAuctionFee(f.heat, cd, reb);
-        f.cdFeeHeat = cd;
-      } else {
-        uint64_t cd = 0, reb = 0;
-        splitAuctionFee(f.heat, cd, reb);
-        f.rebateHeat = reb;
+      if (f.side != takerSide) continue;
+      uint64_t prev = takerCum;
+      takerCum += f.heat;
+      uint64_t fee = feeCum(takerCum) - feeCum(prev);
+      f.cdFeeHeat = static_cast<uint64_t>(
+          ((uint128_t)fee * parameters::HEARTH_CD_SHARE_BPS) / 100);
+      uint64_t reb = fee - f.cdFeeHeat;
+      f.rebateHeat = reb;   // taker pays the rebate into the pool
+      rebPool += reb;
+    }
+    uint64_t makerTotal = 0;
+    for (const auto& f : result.fills) if (f.side != takerSide) makerTotal += f.heat;
+    if (makerTotal > 0 && rebPool > 0) {
+      uint64_t makerCum = 0;
+      for (auto& f : result.fills) {
+        if (f.side == takerSide) continue;
+        uint64_t prev = makerCum;
+        makerCum += f.heat;
+        auto share = [&](uint64_t x) {
+          return static_cast<uint64_t>(((uint128_t)rebPool * x) / makerTotal);
+        };
+        f.rebateHeat = share(makerCum) - share(prev);
       }
     }
   }

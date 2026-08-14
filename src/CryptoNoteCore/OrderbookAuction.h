@@ -41,9 +41,6 @@ struct AuctionResult {
   std::vector<AuctionFill> fills;
 };
 
-// Fee split: total fee = 1% of the fill's price value; 70% → CD yield,
-// 30% → maker rebate. Integer, floored, cumulative-consistent per side.
-void splitAuctionFee(uint64_t heat, uint64_t& cdFeeHeat, uint64_t& rebateHeat);
 
 // Bids (BUY_XFG) sorted price-desc; asks (SELL_XFG) sorted price-asc.
 // prevPclear: last block's clearing price, used only for tie-breaks.

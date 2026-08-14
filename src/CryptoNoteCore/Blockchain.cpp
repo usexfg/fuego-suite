@@ -3372,9 +3372,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit zero amount";
         }
-        // Min price tick: limit prices must be positive multiples of the tick.
-        if (limitDepositTargetPrice == 0 ||
-            limitDepositTargetPrice % parameters::ORDER_PRICE_TICK != 0) {
+        // Min price tick (v11+): limit prices must be positive multiples of
+        // the tick. Pre-v11 deposits re-validate under their original rules.
+        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
+            (limitDepositTargetPrice == 0 ||
+             limitDepositTargetPrice % parameters::ORDER_PRICE_TICK != 0)) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit price violates tick";
         }
@@ -4204,8 +4206,11 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         o.volumeXfg = dep.amount;
         auctionAsks.push_back(o);
       } else {             // BUY_XFG → bid (HEAT budget → XFG volume at limit)
+        // Fee-reserved volume: the taker side pays the full 1% on top of the
+        // price, so the bid's XFG volume must leave budget headroom for the fee.
         o.volumeXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * parameters::COIN) / dep.targetPrice);
+            ((uint128_t)dep.amount * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS) * parameters::COIN)
+              / (parameters::HEARTH_FEE_DIVISOR * dep.targetPrice));
         auctionBids.push_back(o);
       }
     }
@@ -5582,9 +5587,9 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
         continue;
       }
       if (rec.side == 1) {
-        uint64_t heatPaid = rec.heat - rec.feeHeat;
         m_ammPool.pendingXfg += rec.xfg;
         if (!rec.isAuction) {
+          uint64_t heatPaid = rec.heat - rec.feeHeat;
           m_ammPool.reserveXfg -= rec.xfg;
           m_ammPool.reserveHeat += rec.heat;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
@@ -5601,6 +5606,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
                 : (rec.priceHeat + rec.rebateHeat);
             depIt->second.proceedsHeat -= credit;
           } else {
+            uint64_t heatPaid = rec.heat - rec.feeHeat;
             depIt->second.proceedsHeat -= heatPaid;
           }
         }
@@ -6452,8 +6458,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           uint64_t cdFeeXfg = static_cast<uint64_t>(
               ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
           m_ammPool.reserveXfg += (xfgPaid + cdFeeXfg);
-          if (m_ammPool.cdHearthFeeAccumulator >= feeHeatEq)
-            m_ammPool.cdHearthFeeAccumulator -= feeHeatEq;
+          uint64_t cdFeeHeatEq = 0;
+          if (m_ammPool.reserveXfg > 0) {
+            uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (postRate > 0) {
+              cdFeeHeatEq = static_cast<uint64_t>(
+                  ((uint128_t)cdFeeXfg * postRate) / parameters::COIN);
+            }
+          }
+          if (m_ammPool.cdHearthFeeAccumulator >= cdFeeHeatEq)
+            m_ammPool.cdHearthFeeAccumulator -= cdFeeHeatEq;
         }
         break;
       } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {

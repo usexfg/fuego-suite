@@ -168,6 +168,43 @@ void testSelfTradeExclusion() {
   TEST(!r2.crossed);
 }
 
+void testFeeConservation() {
+  // Taker side pays the full 1%: Σ fee = Σ cd (accumulator) + Σ reb (rebate
+  // pool); the maker side receives exactly the pool. Conservation across sides.
+  std::vector<AuctionOrder> bids = {
+    bid(1, 2 * P, 100, 10, 1),
+    bid(2, 2 * P, 200, 11, 2),   // bids aggregate 300
+  };
+  std::vector<AuctionOrder> asks = {
+    ask(3, 2 * P, 100, 20, 3),   // asks aggregate 100 → asks are the maker side
+  };
+  AuctionResult r = runAuction(bids, asks, P);
+  TEST(r.crossed);
+  TEST(r.matchedVolume == 100);
+  TEST(r.hasTaker);
+  TEST(r.takerIsBid == true);
+
+  uint64_t cdSum = 0, rebTakerSum = 0, rebMakerSum = 0;
+  for (const auto& f : r.fills) {
+    cdSum += f.cdFeeHeat;
+    if (f.side == 0) rebTakerSum += f.rebateHeat;   // taker bids pay the rebate
+    else rebMakerSum += f.rebateHeat;               // maker asks receive it
+  }
+  // Conservation: taker paid rebates == maker received rebates.
+  TEST(rebTakerSum == rebMakerSum);
+  // Total fee charged ≈ 1% of matched notional (floor tolerance ± #fills).
+  uint64_t expectedFee = static_cast<uint64_t>(
+      ((uint128_t)r.matchedVolume * 2 * P * parameters::HEARTH_FEE_BPS)
+        / (parameters::HEARTH_FEE_DIVISOR * parameters::COIN));
+  uint64_t totalFee = cdSum + rebTakerSum;
+  TEST(totalFee <= expectedFee);
+  TEST(expectedFee - totalFee < 4);
+  // 70/30 split of the collected fee.
+  uint64_t expectCd = static_cast<uint64_t>(
+      ((uint128_t)expectedFee * parameters::HEARTH_CD_SHARE_BPS) / 100);
+  TEST(cdSum <= expectCd);
+}
+
 void testHeatBalanceAcrossSides() {
   // Σ bid heat == Σ ask heat == floor(matchedVolume × p*/COIN) regardless of
   // how fills split into chunks (regression for cumulative-floor rounding).
@@ -233,6 +270,7 @@ int main() {
   testSelfTradeExclusion();
   testHeatConversionExact();
   testHeatBalanceAcrossSides();
+  testFeeConservation();
   testPrevPclearTieBreak();
   fprintf(stderr, "=== Auction Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

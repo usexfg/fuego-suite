@@ -1330,8 +1330,23 @@ bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
+    uint64_t roundedPrice = req.target_price;
+    {
+      const uint64_t tick = CryptoNote::parameters::ORDER_PRICE_TICK;
+      roundedPrice = ((req.target_price + tick / 2) / tick) * tick;
+      if (roundedPrice == 0) roundedPrice = tick;
+      if (roundedPrice != req.target_price) {
+        uint64_t drift = (roundedPrice > req.target_price)
+            ? (roundedPrice - req.target_price) : (req.target_price - roundedPrice);
+        if (drift > tick / 20) {
+          throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
+              "target_price must be a multiple of the order tick (0.01)");
+        }
+      }
+    }
+
     CryptoNote::TransactionId txId = m_wallet.placeOrderV13(
-      req.side, req.amount, req.target_price, req.expiration, fee, mixin);
+      req.side, req.amount, roundedPrice, req.expiration, fee, mixin);
 
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Failed to place limit order");

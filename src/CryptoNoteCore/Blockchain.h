@@ -508,6 +508,9 @@ namespace CryptoNote {
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
+    // Per-block dir-1 swap CD-fee HEAT equivalents (recorded at settle for
+    // exact popBlock reversal — the pop-time pool rate differs from push-time).
+    std::deque<std::pair<uint32_t, std::vector<uint64_t>>> m_blockSwapCdFeeHeatEq;
 
   public:
     const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }

@@ -4781,6 +4781,20 @@ bool simple_wallet::place_order(const std::vector<std::string>& args) {
     return false;
   }
 
+  // Min price tick: round to the nearest multiple and reject gross deviations
+  // so the order can never be silently rejected at block inclusion.
+  {
+    const uint64_t tick = CryptoNote::parameters::ORDER_PRICE_TICK;
+    uint64_t rounded = ((price + tick / 2) / tick) * tick;
+    if (rounded == 0) rounded = tick;
+    uint64_t drift = (rounded > price) ? (rounded - price) : (price - rounded);
+    if (drift > tick / 20) {
+      fail_msg_writer() << "Invalid price: must be a multiple of the order tick (0.01)";
+      return false;
+    }
+    price = rounded;
+  }
+
   Crypto::SecretKey txSK;
   TransactionId tx = m_wallet->placeOrderV13(side, amount, price, expiration, fee, CryptoNote::parameters::MIN_TX_MIXIN_SIZE);
   if (tx != WALLET_INVALID_TRANSACTION_ID) {

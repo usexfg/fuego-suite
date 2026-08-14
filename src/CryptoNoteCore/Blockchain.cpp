@@ -5575,6 +5575,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
   // Restore epoch-level state if the popped block was an epoch boundary
   // Reverse OOB limit-order fills executed for this block (v11+).
+  if (!m_blockSwapCdFeeHeatEq.empty() && m_blockSwapCdFeeHeatEq.back().first == poppedHeight) {
+    m_blockSwapCdFeeHeatEq.pop_back();
+  }
+
   if (!m_blockOrderFills.empty() && m_blockOrderFills.back().first == poppedHeight) {
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
     const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
@@ -6034,6 +6038,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
               return false;
             }
             m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
+            // Record for exact popBlock reversal (pop-time rate differs).
+            if (m_blockSwapCdFeeHeatEq.empty() ||
+                m_blockSwapCdFeeHeatEq.back().first != block.height) {
+              m_blockSwapCdFeeHeatEq.push_back({block.height, {}});
+            }
+            m_blockSwapCdFeeHeatEq.back().second.push_back(feeHeatEq);
             logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
                          << m_currency.formatAmount(heatDeposited) << " HEAT, -"
                          << m_currency.formatAmount(xfgPaid + feeXfg) << " XFG, cdFee="
@@ -6458,8 +6468,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           uint64_t cdFeeXfg = static_cast<uint64_t>(
               ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
           m_ammPool.reserveXfg += (xfgPaid + cdFeeXfg);
+          // Reversal uses the recorded HEAT equivalent (exact). Fallback to a
+          // deterministic recompute when the record is absent (disk-loaded
+          // pops) — identical on all nodes.
           uint64_t cdFeeHeatEq = 0;
-          if (m_ammPool.reserveXfg > 0) {
+          if (!m_blockSwapCdFeeHeatEq.empty() &&
+              m_blockSwapCdFeeHeatEq.back().first == height &&
+              !m_blockSwapCdFeeHeatEq.back().second.empty()) {
+            cdFeeHeatEq = m_blockSwapCdFeeHeatEq.back().second.back();
+            m_blockSwapCdFeeHeatEq.back().second.pop_back();
+          } else if (m_ammPool.reserveXfg > 0) {
             uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
             if (postRate > 0) {
               cdFeeHeatEq = static_cast<uint64_t>(

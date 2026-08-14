@@ -29,6 +29,12 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
   return true;
 }
 
+std::string KmdChainClient::getReceiveAddress() const {
+  if (m_wif.empty()) return "";
+  std::vector<uint8_t> h;
+  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
+  return KmdHtlcScript::base58CheckEncode(0x3C, h);
+}
 KmdChainClient::KmdChainClient(std::unique_ptr<KmdRpcClient> rpc, const std::string& wif)
   : m_rpc(std::move(rpc)), m_wif(wif) {}
 

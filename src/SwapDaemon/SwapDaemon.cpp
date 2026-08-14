@@ -3155,6 +3155,17 @@ PriceOracle& SwapDaemon::priceOracle() {
    return m_oracle;
  }
 
+bool SwapDaemon::getXmrReserveProof(const std::string& address, const std::string& message,
+                                    std::string& signature) {
+  IChainClient* client = m_chainRegistry.getClient(SwapPair::XMR);
+  auto* xmr = dynamic_cast<XmrChainClient*>(client);
+  if (!xmr) {
+    m_logger(Logging::ERROR) << "XMR chain client not configured — cannot produce reserve proof";
+    return false;
+  }
+  return xmr->getReserveProof(address, message, signature);
+}
+
   std::vector<SwapStateMachine> SwapDaemon::getActiveAfkOffers() {
     std::vector<SwapStateMachine> activeOffers;
     uint32_t currentHeight = 0;

@@ -412,6 +412,11 @@ public:
   // Access the price oracle for configuration.
   PriceOracle& priceOracle();
 
+  // Produce an XMR reserve proof via the configured monero-wallet-rpc
+  // (taker side; the maker verifies with check_reserve_proof).
+  bool getXmrReserveProof(const std::string& address, const std::string& message,
+                          std::string& signature);
+
   // Access the swap database (for RPC server).
   SwapDatabase& database() { return m_db; }
   const SwapDatabase& database() const { return m_db; }

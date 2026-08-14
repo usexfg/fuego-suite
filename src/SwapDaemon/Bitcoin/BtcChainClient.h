@@ -17,6 +17,8 @@ public:
   BtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "BTC"; }
+
+  std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

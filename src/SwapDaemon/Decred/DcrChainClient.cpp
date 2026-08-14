@@ -6,6 +6,7 @@
 #include "Common/StringTools.h"
 #include <cstring>
 #include <algorithm>
+#include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
 
@@ -14,6 +15,12 @@ DcrChainClient::DcrChainClient(std::unique_ptr<DcrRpcClient> rpc,
   : m_rpc(std::move(rpc))
   , m_wif(wif) {}
 
+std::string DcrChainClient::getReceiveAddress() const {
+  if (m_wif.empty()) return "";
+  std::vector<uint8_t> h;
+  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
+  return DcrHtlcScript::pubkeyHashToAddress(h);
+}
 DcrChainClient::DcrChainClient(std::shared_ptr<ISpvClient> spvClient,
                                  std::unique_ptr<DcrRpcClient> rpc,
                                  const std::string& wif)

@@ -30,6 +30,8 @@ public:
                  const std::string& wif = "");
 
   std::string chainName() const override { return "DCR"; }
+
+  std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

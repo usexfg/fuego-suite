@@ -67,6 +67,7 @@ private:
   // Individual method handlers — return the "result" portion as a JSON string.
   std::string handleInitiateSwap(const std::string& params);
   std::string handleAccept(const std::string& params);
+  std::string handleGetReserveProof(const std::string& params);
   std::string handleListSwaps(const std::string& params);
   std::string handleSwapStatus(const std::string& params);
   std::string handleRefund(const std::string& params);

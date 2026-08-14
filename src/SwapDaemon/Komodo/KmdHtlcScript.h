@@ -77,6 +77,11 @@ public:
   static std::vector<uint8_t> ripemd160(const std::vector<uint8_t>& data);
   static std::vector<uint8_t> hash160(const std::vector<uint8_t>& data);
 
+  // Derive the P2PKH pubkey-hash (hash160 of the compressed pubkey) from a
+  // WIF (any version byte). Used by chain clients to advertise their
+  // receive address.
+  static bool wifToPubkeyHash(const std::string& wif, std::vector<uint8_t>& pubkeyHash);
+
   // Base58Check encode (version byte + payload + 4-byte checksum)
   static std::string base58CheckEncode(uint8_t version, const std::vector<uint8_t>& payload);
 

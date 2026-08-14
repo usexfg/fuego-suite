@@ -108,6 +108,10 @@ public:
   bool checkReserveProof(const std::string& address, const std::string& message,
                          const std::string& signature, bool& good, uint64_t& total);
 
+  // Produce a reserve proof for the local wallet (taker side).
+  bool getReserveProof(const std::string& address, const std::string& message,
+                       std::string& signature);
+
   bool claimAdaptor(const std::string& aliceSpendKeyHex,
                     const std::string& bobSpendKeyHex,
                     const std::string& adaptorSecretHex,

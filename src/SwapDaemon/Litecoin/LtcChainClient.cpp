@@ -21,6 +21,7 @@
 #include <array>
 #include <cstring>
 #include <algorithm>
+#include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
 
@@ -53,6 +54,12 @@ static bool readVarInt(const uint8_t*& p, const uint8_t* end, uint64_t& out) {
   }
 }
 
+std::string LtcChainClient::getReceiveAddress() const {
+  if (m_wif.empty()) return "";
+  std::vector<uint8_t> h;
+  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
+  return KmdHtlcScript::base58CheckEncode(0x30, h);
+}
 static bool isZeroSecret(const Crypto::SecretKey& s) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);
   for (size_t i = 0; i < sizeof(Crypto::SecretKey); ++i) if (p[i]) return false;

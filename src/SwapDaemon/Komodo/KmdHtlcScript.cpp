@@ -579,6 +579,24 @@ bool KmdHtlcScript::base58CheckDecode(const std::string& encoded, uint8_t& versi
 // WIF to private key
 // =============================================================================
 
+bool KmdHtlcScript::wifToPubkeyHash(const std::string& wif,
+                                    std::vector<uint8_t>& pubkeyHash) {
+  uint8_t version = 0;
+  std::vector<uint8_t> payload;
+  if (!base58CheckDecode(wif, version, payload)) return false;
+  if (payload.size() == 33 && payload.back() == 0x01) {
+    payload.pop_back();
+  }
+  if (payload.size() != 32) return false;
+
+  std::array<uint8_t, 32> privKey{};
+  std::copy(payload.begin(), payload.end(), privKey.begin());
+  CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+  auto pubKey = signer.derivePublicKeyCompressed(privKey);
+  pubkeyHash = hash160(std::vector<uint8_t>(pubKey.begin(), pubKey.end()));
+  return true;
+}
+
 bool KmdHtlcScript::wifToPrivKey(const std::string& wif,
                                   std::array<uint8_t, 32>& privKey) {
   uint8_t version = 0;

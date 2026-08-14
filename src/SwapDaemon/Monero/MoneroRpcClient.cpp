@@ -684,4 +684,21 @@ bool MoneroRpcClient::checkReserveProof(const std::string& address, const std::s
   return true;
 }
 
+bool MoneroRpcClient::getReserveProof(const std::string& address, const std::string& message,
+                                      std::string& signature) {
+  // get_reserve_proof proves the whole wallet's balance; the message binds
+  // the proof to the offer being filled.
+  std::ostringstream params;
+  params << "{\"all\":false,\"account_index\":0,\"addr_indices\":[],"
+         << "\"message\":\"" << message << "\"}";
+
+  std::string raw = jsonRpc(m_walletHost, m_walletPort, "get_reserve_proof", params.str());
+
+  Common::JsonValue res(Common::JsonValue::NIL);
+  if (!parseJsonRpcResult(raw, res)) return false;
+  if (!res.isObject() || !res.contains("signature")) return false;
+  signature = res("signature").getString();
+  return !signature.empty();
+}
+
 } // namespace XfgSwap

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <algorithm>
+#include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
 
@@ -15,6 +16,12 @@ static bool isZeroSecret(const Crypto::SecretKey& s) {
   return true;
 }
 
+std::string BtcChainClient::getReceiveAddress() const {
+  if (m_wif.empty()) return "";
+  std::vector<uint8_t> h;
+  if (!KmdHtlcScript::wifToPubkeyHash(m_wif, h)) return "";
+  return KmdHtlcScript::base58CheckEncode(0x00, h);
+}
 BtcChainClient::BtcChainClient(std::unique_ptr<BtcRpcClient> rpc, const std::string& wif)
   : m_rpc(std::move(rpc)), m_wif(wif) {}
 

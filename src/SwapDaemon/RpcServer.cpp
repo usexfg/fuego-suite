@@ -154,6 +154,8 @@ std::string RpcServer::dispatch(const std::string& body) {
     result = handleInitiateSwap(params);
   } else if (method == "accept") {
     result = handleAccept(params);
+  } else if (method == "get_reserve_proof") {
+    result = handleGetReserveProof(params);
   } else if (method == "list_swaps") {
     result = handleListSwaps(params);
   } else if (method == "swap_status") {
@@ -350,8 +352,30 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
   }
 }
 
-std::string RpcServer::handleAccept(const std::string& params) {
+std::string RpcServer::handleGetReserveProof(const std::string& params) {
   try {
+    auto root = Common::JsonValue::fromString(params);
+    if (!root.isObject() || !root.contains("address") || !root.contains("message")) {
+      return rpcError(-32602, "Missing address or message");
+    }
+    std::string address = root("address").getString();
+    std::string message = root("message").getString();
+    if (address.empty() || message.empty()) {
+      return rpcError(-32602, "address and message must be non-empty");
+    }
+
+    std::string signature;
+    if (!m_daemon.getXmrReserveProof(address, message, signature)) {
+      return rpcError(-32000,
+        "XMR reserve proof unavailable — is monero-wallet-rpc configured in the swap config?");
+    }
+    return R"({"signature": ")" + signature + R"("})";
+  } catch (const std::exception& e) {
+    return rpcError(-32602, std::string("Parameter error: ") + e.what());
+  }
+}
+
+std::string RpcServer::handleAccept(const std::string& params) {  try {
     auto root = Common::JsonValue::fromString(params);
     if (!root.isObject() || !root.contains("swap_id")) {
       return rpcError(-32602, "Missing swap_id");

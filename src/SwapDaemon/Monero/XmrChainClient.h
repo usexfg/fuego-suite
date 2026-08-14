@@ -23,6 +23,12 @@ public:
                                        const std::string& proof) override;
   bool getCurrentHeight(uint64_t& height) override;
 
+  // Produce a reserve proof for the local wallet (taker side).
+  bool getReserveProof(const std::string& address, const std::string& message,
+                       std::string& signature) {
+    return m_rpc->getReserveProof(address, message, signature);
+  }
+
 private:
   std::unique_ptr<MoneroRpcClient> m_rpc;
   std::string m_spendKeyHex;

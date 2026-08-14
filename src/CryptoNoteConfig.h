@@ -252,8 +252,11 @@ namespace CryptoNote
           1000000,       //  〖𐅪.1〗
         };
 
-        const uint64_t HEARTH_FEE_BPS = 100;                        // 1.0% Hearth swap fee → CD yield pool
+        const uint64_t HEARTH_FEE_BPS = 100;                        // 1.0% Hearth taker fee (total)
+        const uint64_t HEARTH_CD_SHARE_BPS = 70;                    // of the 1%: 70% → CD yield pool
+        const uint64_t HEARTH_MAKER_REBATE_BPS = 30;                // of the 1%: 30% → maker rebate
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
+        const uint64_t ORDER_PRICE_TICK = COIN / 100;               // min price granularity (1%)
         constexpr uint64_t HEARTH_POOL_SEED_XFG = 10000;        // 10,000 XFG at genesis (COIN units)
         constexpr uint64_t HEARTH_POOL_SEED_HEAT = 1000;        // 1,000 HEAT at genesis (10:1 ratio, 10 XFG = 1 HEAT @ $1.58 CPI-adj)
         const uint64_t HEARTH_MIN_XFG_DEPTH = 5000;                // 5,000 XFG minimum (aspirational depth target)

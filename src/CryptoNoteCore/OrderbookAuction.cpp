@@ -13,6 +13,14 @@
 
 namespace CryptoNote {
 
+void splitAuctionFee(uint64_t heat, uint64_t& cdFeeHeat, uint64_t& rebateHeat) {
+  uint64_t totalFee = static_cast<uint64_t>(
+      ((uint128_t)heat * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR);
+  cdFeeHeat = static_cast<uint64_t>(
+      ((uint128_t)totalFee * parameters::HEARTH_CD_SHARE_BPS) / 100);
+  rebateHeat = totalFee - cdFeeHeat;
+}
+
 namespace {
 
 bool lessByHash(const Crypto::Hash& a, const Crypto::Hash& b) {
@@ -157,6 +165,15 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
   result.clearingPrice = bestP;
   result.matchedVolume = bestVol;
 
+  // Taker = the rationed side (aggregate eligible volume exceeded matched
+  // volume). Exact tie → no taker, no fee, no rebate (pure exchange).
+  {
+    uint64_t bidVol = bidVolAt(bestP);
+    uint64_t askVol = askVolAt(bestP);
+    if (bidVol > bestVol) { result.takerIsBid = true; result.hasTaker = true; }
+    else if (askVol > bestVol) { result.takerIsBid = false; result.hasTaker = true; }
+  }
+
   // Settlement: both sides ration in price-time priority up to matchedVolume.
   // A side whose aggregate eligible volume exceeds matchedVolume rations at
   // EVERY eligible level (never "fill fully" shortcuts — that over-fills when
@@ -180,7 +197,7 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
       uint64_t prevCum = cumXfg;
       cumXfg += fill;
       uint64_t heat = heatCum(cumXfg) - heatCum(prevCum);
-      result.fills.push_back({o.orderId, 0, fill, heat});
+      result.fills.push_back({o.orderId, 0, fill, heat, 0, 0});
     }
   }
   // Ask fills: eligible = price <= p*; priority = price asc, time asc.
@@ -195,7 +212,24 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
       uint64_t prevCum = cumXfg;
       cumXfg += fill;
       uint64_t heat = heatCum(cumXfg) - heatCum(prevCum);
-      result.fills.push_back({o.orderId, 1, fill, heat});
+      result.fills.push_back({o.orderId, 1, fill, heat, 0, 0});
+    }
+  }
+
+  // Fee assignment: the taker side pays the 1% (70% → CD yield, 30% → maker
+  // rebate); the maker side receives the rebate on its fills.
+  if (result.hasTaker) {
+    uint8_t takerSide = result.takerIsBid ? 0 : 1;
+    for (auto& f : result.fills) {
+      if (f.side == takerSide) {
+        uint64_t cd = 0, reb = 0;
+        splitAuctionFee(f.heat, cd, reb);
+        f.cdFeeHeat = cd;
+      } else {
+        uint64_t cd = 0, reb = 0;
+        splitAuctionFee(f.heat, cd, reb);
+        f.rebateHeat = reb;
+      }
     }
   }
 

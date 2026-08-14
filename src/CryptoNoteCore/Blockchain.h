@@ -503,6 +503,9 @@ namespace CryptoNote {
       uint64_t netXfg = 0; // BUY only: net XFG credited to proceeds
       bool newlyExpired = false;
       bool isAuction = false;  // call-auction fill (no pool/accumulator involvement)
+      bool isTaker = false;    // auction: this fill is on the fee-paying side
+      uint64_t rebateHeat = 0; // auction maker fills: rebate credited to proceedsHeat
+      uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
 

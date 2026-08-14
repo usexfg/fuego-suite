@@ -3372,6 +3372,12 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit zero amount";
         }
+        // Min price tick: limit prices must be positive multiples of the tick.
+        if (limitDepositTargetPrice == 0 ||
+            limitDepositTargetPrice % parameters::ORDER_PRICE_TICK != 0) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit price violates tick";
+        }
       } else if (hasLimitWithdraw) {
         // Limit withdraw: reclaim pending one-sided deposit.
         // CRITICAL: deposit must exist, not already withdrawn, and net extra
@@ -4213,35 +4219,55 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         if (it == m_limitDeposits.end()) continue;
         LimitDepositInfo& d = it->second;
         if (d.withdrawn || d.expired || d.amount == 0) continue;
+        bool isTaker = auction.hasTaker &&
+            (fill.side == (auction.takerIsBid ? 0 : 1));
         uint64_t xfgMoved = 0;
-        uint64_t heatMoved = 0;
+        uint64_t heatDebit = 0;
         if (fill.side == 1) {
-          // Seller: XFG leaves escrow, HEAT credited to proceeds.
+          // Seller: XFG leaves escrow. Proceeds: net after fee if taker,
+          // price + rebate if maker.
           xfgMoved = std::min(fill.fillXfg, d.amount);
           if (xfgMoved == 0) continue;
           if (m_ammPool.pendingXfg < xfgMoved) continue;  // invariant guard
           m_ammPool.pendingXfg -= xfgMoved;
           d.amount -= xfgMoved;
-          heatMoved = fill.heat;
-          d.proceedsHeat += heatMoved;
+          uint64_t credit = isTaker
+              ? (fill.heat - fill.cdFeeHeat - fill.rebateHeat)
+              : (fill.heat + fill.rebateHeat);
+          d.proceedsHeat += credit;
         } else {
-          // Buyer: HEAT leaves escrow, XFG credited to proceeds.
-          heatMoved = std::min(fill.heat, d.amount);
-          if (heatMoved == 0) continue;
-          if (m_ammPool.pendingHeat < heatMoved) continue;  // invariant guard
-          m_ammPool.pendingHeat -= heatMoved;
-          d.amount -= heatMoved;
+          // Buyer: HEAT leaves escrow (gross incl. 1% fee if taker). Maker
+          // buyers receive the rebate back in HEAT proceeds.
+          uint64_t heatCost = isTaker
+              ? fill.heat + fill.cdFeeHeat + fill.rebateHeat
+              : fill.heat;
+          heatDebit = std::min(heatCost, d.amount);
+          if (heatDebit == 0) continue;
+          if (m_ammPool.pendingHeat < heatDebit) continue;  // invariant guard
+          m_ammPool.pendingHeat -= heatDebit;
+          d.amount -= heatDebit;
           xfgMoved = fill.fillXfg;
           d.proceedsXfg += xfgMoved;
+          if (!isTaker) d.proceedsHeat += fill.rebateHeat;
+        }
+        if (fill.cdFeeHeat > 0) {
+          if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - fill.cdFeeHeat) {
+            logger(ERROR, BRIGHT_RED) << "Auction CD fee accumulator overflow";
+            return;
+          }
+          m_ammPool.cdHearthFeeAccumulator += fill.cdFeeHeat;
         }
         OrderFillRecord rec;
         rec.orderId = fill.orderId;
         rec.side = fill.side;
         rec.xfg = xfgMoved;
-        rec.heat = heatMoved;
-        rec.feeHeat = 0;
+        rec.heat = heatDebit;
+        rec.feeHeat = fill.cdFeeHeat;
         rec.netXfg = (fill.side == 0) ? xfgMoved : 0;
         rec.isAuction = true;
+        rec.isTaker = isTaker;
+        rec.rebateHeat = fill.rebateHeat;
+        rec.priceHeat = fill.heat;
         fillsThisBlock.push_back(rec);
         block.orderbookNumMatches++;
       }
@@ -4290,10 +4316,12 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
           return;
         }
 
+        uint64_t cdFeeHeat = static_cast<uint64_t>(
+            ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_BPS) / 100);
         m_ammPool.pendingXfg -= fillXfg;
         m_ammPool.reserveXfg += fillXfg;
-        m_ammPool.reserveHeat -= grossHeat;
-        m_ammPool.cdHearthFeeAccumulator += feeHeat;
+        m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);  // 30% stays with LPs
+        m_ammPool.cdHearthFeeAccumulator += cdFeeHeat;
         dep.amount -= fillXfg;
         dep.proceedsHeat += heatPaid;
 
@@ -4302,7 +4330,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         rec.side = 1;
         rec.xfg = fillXfg;
         rec.heat = grossHeat;
-        rec.feeHeat = feeHeat;
+        rec.feeHeat = cdFeeHeat;
         fillsThisBlock.push_back(rec);
         block.orderbookNumMatches++;
       } else {
@@ -4327,16 +4355,18 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         if (m_ammPool.reserveXfg < grossXfg) continue;
 
         uint64_t feeXfg = grossXfg - fillXfg;
-        // Convert the XFG fee to HEAT at the PRE-fill spot rate (deterministic).
+        uint64_t cdFeeXfg = static_cast<uint64_t>(
+            ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
+        // Convert the XFG CD share to HEAT at the PRE-fill spot rate.
         uint64_t feeHeatEq = static_cast<uint64_t>(
-            ((uint128_t)feeXfg * price) / parameters::COIN);
+            ((uint128_t)cdFeeXfg * price) / parameters::COIN);
         if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq) {
           logger(ERROR, BRIGHT_RED) << "OOB BUY_XFG fill: accumulator overflow";
           return;
         }
 
         m_ammPool.pendingHeat -= heatCost;
-        m_ammPool.reserveXfg -= grossXfg;
+        m_ammPool.reserveXfg -= (fillXfg + cdFeeXfg);  // 30% of the fee stays with LPs
         m_ammPool.reserveHeat += heatCost;
         m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
         dep.amount -= heatCost;
@@ -4345,7 +4375,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         OrderFillRecord rec;
         rec.orderId = kv.first;
         rec.side = 0;
-        rec.xfg = grossXfg;
+        rec.xfg = fillXfg + cdFeeXfg;
         rec.heat = heatCost;
         rec.feeHeat = feeHeatEq;
         rec.netXfg = fillXfg;
@@ -5559,10 +5589,20 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
           m_ammPool.reserveHeat += rec.heat;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        } else if (rec.feeHeat > 0) {
+          if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
         }
         if (depIt != m_limitDeposits.end()) {
           depIt->second.amount += rec.xfg;
-          depIt->second.proceedsHeat -= heatPaid;
+          if (rec.isAuction) {
+            uint64_t credit = rec.isTaker
+                ? (rec.priceHeat - rec.feeHeat - rec.rebateHeat)
+                : (rec.priceHeat + rec.rebateHeat);
+            depIt->second.proceedsHeat -= credit;
+          } else {
+            depIt->second.proceedsHeat -= heatPaid;
+          }
         }
       } else {
         m_ammPool.pendingHeat += rec.heat;
@@ -5571,10 +5611,16 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
           m_ammPool.reserveXfg += rec.xfg;
           if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
             m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        } else if (rec.feeHeat > 0) {
+          if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
         }
         if (depIt != m_limitDeposits.end()) {
           depIt->second.amount += rec.heat;
           depIt->second.proceedsXfg -= rec.netXfg;
+          if (rec.isAuction && !rec.isTaker && rec.rebateHeat > 0) {
+            depIt->second.proceedsHeat -= rec.rebateHeat;
+          }
         }
       }
     }
@@ -5934,14 +5980,16 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
               return false;
             }
             m_ammPool.reserveXfg += xfgDeposited;
-            m_ammPool.reserveHeat -= (heatPaid + feeHeat);
-            // Fee value leaves LP reserves and is credited to the CD yield pool.
-            // Accumulator is HEAT-denominated.
-            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeat) {
+            // Fee split 70/30: 70% → CD yield (debited from reserves), 30% stays
+            // with LPs (maker role — the pool is the counterparty).
+            uint64_t cdFeeHeat = static_cast<uint64_t>(
+                ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_BPS) / 100);
+            m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);
+            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFeeHeat) {
               logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
               return false;
             }
-            m_ammPool.cdHearthFeeAccumulator += feeHeat;
+            m_ammPool.cdHearthFeeAccumulator += cdFeeHeat;
             logger(INFO) << "AMM swap XFG→HEAT settled: pool +"
                          << m_currency.formatAmount(xfgDeposited) << " XFG, -"
                          << m_currency.formatAmount(heatPaid + feeHeat) << " HEAT, cdFee="
@@ -5961,14 +6009,18 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
               return false;
             }
             m_ammPool.reserveHeat += heatDeposited;
-            m_ammPool.reserveXfg -= (xfgPaid + feeXfg);
-            // Convert XFG fee to HEAT at the post-swap rate for the accumulator.
+            // 70/30: 70% of the XFG fee leaves reserves for CD yield; 30% stays
+            // with LPs (maker role).
+            uint64_t cdFeeXfg = static_cast<uint64_t>(
+                ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
+            m_ammPool.reserveXfg -= (xfgPaid + cdFeeXfg);
+            // Convert the XFG CD share to HEAT at the post-swap rate.
             uint64_t feeHeatEq = 0;
             if (m_ammPool.reserveXfg > 0) {
               uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
               if (postRate > 0) {
                 feeHeatEq = static_cast<uint64_t>(
-                    ((uint128_t)feeXfg * postRate) / parameters::COIN);
+                    ((uint128_t)cdFeeXfg * postRate) / parameters::COIN);
               }
             }
             if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq) {
@@ -6375,9 +6427,11 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
               ((uint128_t)heatPaid * feeDiv) / (feeDiv - feeBps));
           uint64_t feeHeat = (grossHeat > heatPaid) ? grossHeat - heatPaid : 0;
           if (m_ammPool.reserveXfg >= xfgDeposited) m_ammPool.reserveXfg -= xfgDeposited;
-          m_ammPool.reserveHeat += (heatPaid + feeHeat);
-          if (m_ammPool.cdHearthFeeAccumulator >= feeHeat)
-            m_ammPool.cdHearthFeeAccumulator -= feeHeat;
+          uint64_t cdFeeHeat = static_cast<uint64_t>(
+              ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_BPS) / 100);
+          m_ammPool.reserveHeat += (heatPaid + cdFeeHeat);
+          if (m_ammPool.cdHearthFeeAccumulator >= cdFeeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= cdFeeHeat;
         } else {
           uint64_t heatDeposited = (inAssets.heat > outAssets.heat)
             ? inAssets.heat - outAssets.heat : 0;
@@ -6395,7 +6449,9 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             }
           }
           if (m_ammPool.reserveHeat >= heatDeposited) m_ammPool.reserveHeat -= heatDeposited;
-          m_ammPool.reserveXfg += (xfgPaid + feeXfg);
+          uint64_t cdFeeXfg = static_cast<uint64_t>(
+              ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
+          m_ammPool.reserveXfg += (xfgPaid + cdFeeXfg);
           if (m_ammPool.cdHearthFeeAccumulator >= feeHeatEq)
             m_ammPool.cdHearthFeeAccumulator -= feeHeatEq;
         }

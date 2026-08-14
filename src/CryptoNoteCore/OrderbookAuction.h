@@ -27,15 +27,23 @@ struct AuctionFill {
   Crypto::Hash orderId;
   uint8_t side;      // 0 = bid (BUY_XFG), 1 = ask (SELL_XFG)
   uint64_t fillXfg;  // XFG atomics exchanged
-  uint64_t heat;     // fillXfg × clearingPrice / COIN (buyer pays, seller receives)
+  uint64_t heat;     // fillXfg × clearingPrice / COIN (price value of the fill)
+  uint64_t cdFeeHeat = 0;   // taker fills: 70% of the 1% fee → CD yield (HEAT)
+  uint64_t rebateHeat = 0;  // maker fills: 30% of the 1% fee → maker rebate (HEAT)
 };
 
 struct AuctionResult {
   bool crossed = false;
   uint64_t clearingPrice = 0;
   uint64_t matchedVolume = 0;
+  bool takerIsBid = false;   // which side was rationed (paid the fee); false on exact tie
+  bool hasTaker = false;
   std::vector<AuctionFill> fills;
 };
+
+// Fee split: total fee = 1% of the fill's price value; 70% → CD yield,
+// 30% → maker rebate. Integer, floored, cumulative-consistent per side.
+void splitAuctionFee(uint64_t heat, uint64_t& cdFeeHeat, uint64_t& rebateHeat);
 
 // Bids (BUY_XFG) sorted price-desc; asks (SELL_XFG) sorted price-asc.
 // prevPclear: last block's clearing price, used only for tie-breaks.

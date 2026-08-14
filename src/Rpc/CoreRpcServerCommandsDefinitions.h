@@ -101,6 +101,27 @@ struct COMMAND_RPC_GET_TRANSACTIONS {
     }
   };
 };
+
+//-----------------------------------------------
+struct COMMAND_RPC_IS_KEY_IMAGE_SPENT {
+  struct request {
+    std::string key_image; // 64 hex chars
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(key_image)
+    }
+  };
+
+  struct response {
+    bool spent;
+    std::string status;
+
+    void serialize(ISerializer &s) {
+      KV_MEMBER(spent)
+      KV_MEMBER(status)
+    }
+  };
+};
 struct DepositRpcInfo {
   uint64_t id;
   uint64_t amount;
@@ -1972,11 +1993,21 @@ struct COMMAND_RPC_GET_TREASURY_INFO {
   typedef EMPTY_STRUCT request;
 
   struct response {
-    uint64_t treasury_balance;
+    uint64_t treasury_balance;      // legacy counter (deprecated, ~0)
+    uint64_t treasury_counter_xfg;  // unconverted treasury fee share (LP pairing source)
+    uint64_t treasury_heat_reserve; // HEAT leg for Treasury LP Manager
+    uint64_t bonus_vault_balance;   // HEAT-denominated CD loyalty vault (v12+)
+    uint64_t fee_pool_balance;      // HEAT backing CD interest claims
+    uint64_t total_burned_xfg;      // overall burn tally
     std::string status;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(treasury_balance)
+      KV_MEMBER(treasury_counter_xfg)
+      KV_MEMBER(treasury_heat_reserve)
+      KV_MEMBER(bonus_vault_balance)
+      KV_MEMBER(fee_pool_balance)
+      KV_MEMBER(total_burned_xfg)
       KV_MEMBER(status)
     }
   };
@@ -2355,12 +2386,12 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
     uint64_t heat_supply;
     uint64_t heat_on_deposit;
     uint64_t burned_xfg;
+    uint64_t total_burned_xfg;
     uint64_t redemption_price_num;
     uint64_t redemption_price_denom;
     uint64_t redemption_rate_num;
     uint64_t redemption_rate_denom;
     uint64_t treasury_balance;
-    uint64_t treasury_swap_fee_xfg;
     uint64_t treasury_counter_xfg;
     uint64_t swf_heat_balance;
     uint64_t epoch_swap_fees;
@@ -2377,12 +2408,12 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
       KV_MEMBER(heat_supply)
       KV_MEMBER(heat_on_deposit)
       KV_MEMBER(burned_xfg)
+      KV_MEMBER(total_burned_xfg)
       KV_MEMBER(redemption_price_num)
       KV_MEMBER(redemption_price_denom)
       KV_MEMBER(redemption_rate_num)
       KV_MEMBER(redemption_rate_denom)
       KV_MEMBER(treasury_balance)
-      KV_MEMBER(treasury_swap_fee_xfg)
       KV_MEMBER(treasury_counter_xfg)
       KV_MEMBER(swf_heat_balance)
       KV_MEMBER(epoch_swap_fees)

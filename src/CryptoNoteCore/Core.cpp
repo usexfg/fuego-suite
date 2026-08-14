@@ -1572,6 +1572,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.heatOnDeposit = m_blockchain.getHeatOnDeposit();
   m.digmSupply = m_blockchain.getDigmSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
+  m.totalBurnedXfg = m_blockchain.getTotalBurnedXfg();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   m.swfBalance = m_blockchain.getSwfBalance();
   const auto& pool = m_blockchain.getAmmPool();
@@ -1585,7 +1586,6 @@ core::HeatMetrics core::getHeatMetrics() const {
   }
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
   m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
-  m.treasurySwapFeeXfg = m_blockchain.getTreasurySwapFeeXfg();
   m.treasuryCounterXFG = m_blockchain.getTreasuryCounterXFG();
   m.swfHeatBalance = m_blockchain.getSwfHeatBalance();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();

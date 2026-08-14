@@ -511,6 +511,14 @@ add_executable(XmrClaimAdaptorTests
 target_link_libraries(XmrClaimAdaptorTests PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Treasury/core consensus unit tests (F0-F3 invariants)
+add_executable(core_tests
+    ../tests/CoreTests/TreasuryCoreTests.cpp)
+target_link_libraries(core_tests PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(core_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
 # Orderbook unit tests (Phase 1: matching engine + data structures)
 add_executable(test_orderbook
     ../tests/CoreTests/OrderbookTest.cpp)
@@ -955,6 +963,7 @@ set(_TEST_DAEMON_TARGETS
     test_xmr_live_e2e
     XmrClaimAdaptorTests
     test_orderbook
+    core_tests
     test_orderbook_phase3
     test_orderbook_phase5
     test_p2p_orderbook

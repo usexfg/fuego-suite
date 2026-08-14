@@ -128,6 +128,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getinfo", { jsonMethod<COMMAND_RPC_GET_INFO>(&RpcServer::on_get_info), true } },
   { "/peers", { jsonMethod<COMMAND_RPC_GET_PEER_LIST>(&RpcServer::on_get_peer_list), true } },
   { "/getdeposits", { jsonMethod<COMMAND_RPC_GET_DEPOSITS>(&RpcServer::on_get_deposits), true } },
+  { "/is_key_image_spent", { jsonMethod<COMMAND_RPC_IS_KEY_IMAGE_SPENT>(&RpcServer::on_is_key_image_spent), true } },
   { "/getheight", { jsonMethod<COMMAND_RPC_GET_HEIGHT>(&RpcServer::on_get_height), true } },
   { "/gettransactions", { jsonMethod<COMMAND_RPC_GET_TRANSACTIONS>(&RpcServer::on_get_transactions), false } },
   { "/sendrawtransaction", { jsonMethod<COMMAND_RPC_SEND_RAW_TX>(&RpcServer::on_send_raw_tx), false } },
@@ -604,6 +605,22 @@ bool RpcServer::k_on_check_reserve_proof(const K_COMMAND_RPC_CHECK_RESERVE_PROOF
 	return true;
 }
 bool RpcServer::on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res) {
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_is_key_image_spent(const COMMAND_RPC_IS_KEY_IMAGE_SPENT::request& req, COMMAND_RPC_IS_KEY_IMAGE_SPENT::response& res) {
+  if (req.key_image.size() != 64) {
+    res.status = "Failed";
+    return true;
+  }
+  Crypto::KeyImage image;
+  size_t size;
+  if (!Common::fromHex(req.key_image, &image, sizeof(image), size) || size != sizeof(image)) {
+    res.status = "Failed";
+    return true;
+  }
+  res.spent = m_core.is_key_image_spent(image);
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -2477,7 +2494,7 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
   res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
   res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
-  res.rollover_vault_balance = 0;
+  res.rollover_vault_balance = m_core.get_blockchain_storage().getTreasuryCounterXFG();
   res.current_epoch_swap_fees = m_core.get_blockchain_storage().getCurrentEpochSwapFees();
   res.total_cd_locked = m_core.get_blockchain_storage().getTotalCdLocked();
   res.current_epoch_number = (epochDuration > 0) ? (height / epochDuration) : 0;
@@ -2547,6 +2564,11 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
 bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req,
                                       COMMAND_RPC_GET_TREASURY_INFO::response& res) {
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
+  res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryCounterXFG();
+  res.treasury_heat_reserve = m_core.get_blockchain_storage().getTreasuryHeatReserve();
+  res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
+  res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
+  res.total_burned_xfg = m_core.get_blockchain_storage().getTotalBurnedXfg();
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -2639,10 +2661,10 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   res.heat_supply = metrics.heatSupply;
   res.heat_on_deposit = metrics.heatOnDeposit;
   res.burned_xfg = metrics.burnedXfg;
+  res.total_burned_xfg = metrics.totalBurnedXfg;
   res.redemption_price_num = metrics.redemptionPriceNum;
   res.redemption_price_denom = metrics.redemptionPriceDenom;
   res.treasury_balance = metrics.treasuryBalance;
-  res.treasury_swap_fee_xfg = metrics.treasurySwapFeeXfg;
   res.treasury_counter_xfg = metrics.treasuryCounterXFG;
   res.swf_heat_balance = metrics.swfHeatBalance;
   res.epoch_swap_fees = metrics.epochSwapFees;

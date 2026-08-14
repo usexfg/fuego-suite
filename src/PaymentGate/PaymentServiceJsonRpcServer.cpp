@@ -76,8 +76,6 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   handlers.emplace("getStatus", jsonHandler<GetStatus::Request, GetStatus::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetStatus, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getAddresses", jsonHandler<GetAddresses::Request, GetAddresses::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetAddresses, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("createDeposit", jsonHandler<CreateDeposit::Request, CreateDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateDeposit, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("createBurnDeposit", jsonHandler<CreateBurnDeposit::Request, CreateBurnDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDeposit, this, std::placeholders::_1, std::placeholders::_2)));
-  handlers.emplace("createBurnDepositLarge", jsonHandler<CreateBurnDepositLarge::Request, CreateBurnDepositLarge::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("giftDeposit", jsonHandler<GiftDeposit::Request, GiftDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGiftDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("withdrawDeposit", jsonHandler<WithdrawDeposit::Request, WithdrawDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleWithdrawDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("getMessagesFromExtra", jsonHandler<GetMessagesFromExtra::Request, GetMessagesFromExtra::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetMessagesFromExtra, this, std::placeholders::_1, std::placeholders::_2)));
@@ -279,7 +277,6 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDep
   // Check if this is a burn deposit (FOREVER term)
   bool isBurnDeposit = (request.term == CryptoNote::parameters::HEAT_TERM);
   response.isBurnDeposit = isBurnDeposit;
-  response.useStagedUnlock = request.useStagedUnlock;
 
   // Generate commitment based on deposit type
   if (isBurnDeposit) {
@@ -293,70 +290,9 @@ std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDep
   // Calculate transaction fees
   uint64_t baseFee = 800000; // 0.008 XFG base transaction fee
   response.transactionFee = baseFee;
-  response.totalFees = request.useStagedUnlock ? (baseFee * 5) : baseFee; // 5 transactions for staged unlock
+  response.totalFees = baseFee;
 
-  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash, commitment, request.useStagedUnlock);
-}
-
-std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDeposit(const CreateBurnDeposit::Request& request, CreateBurnDeposit::Response& response) {
-  // Create burn deposit with FOREVER term
-  uint64_t term = CryptoNote::parameters::HEAT_TERM;  // 4294967295 (FOREVER)
-
-  // Use default amount if none provided
-  uint64_t amount = (request.amount == 0) ? CryptoNote::parameters::AMOUNT_TIER_0 : request.amount;
-
-  // Enforce valid burn amount tiers
-  std::vector<uint64_t> valid_amounts = {
-    CryptoNote::parameters::AMOUNT_TIER_0,  // 0.8 XFG
-    CryptoNote::parameters::AMOUNT_TIER_1,  // 8 XFG
-    CryptoNote::parameters::AMOUNT_TIER_2,  // 80 XFG
-    CryptoNote::parameters::AMOUNT_TIER_3   // 800 XFG
-  };
-
-  auto it = std::find(valid_amounts.begin(), valid_amounts.end(), amount);
-  if (it == valid_amounts.end()) {
-    logger(Logging::WARNING) << "Invalid burn amount: " << amount << ". Valid amounts are: 0.8, 8, 80, 800 XFG";
-    return make_error_code(CryptoNote::error::WRONG_AMOUNT);
-  }
-
-  // Generate HEAT commitment with secret for local storage
-  auto [commitment, secret] = CryptoNote::DepositCommitmentGenerator::generateHeatCommitmentWithSecret(
-    amount, std::vector<uint8_t>(request.metadata.begin(), request.metadata.end()));
-
-  std::error_code result = service.createDeposit(amount, term, request.sourceAddress, response.transactionHash, commitment);
-
-  if (!result) {
-    response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
-
-    // Store secret locally
-    service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(request.metadata.begin(), request.metadata.end()));
-
-  }
-
-  return result;
-}
-
-std::error_code PaymentServiceJsonRpcServer::handleCreateBurnDepositLarge(const CreateBurnDepositLarge::Request& request, CreateBurnDepositLarge::Response& response) {
-  // Create burn deposit with FOREVER term and fixed 800 XFG amount
-  uint64_t term = CryptoNote::parameters::HEAT_TERM;  // 4294967295 (FOREVER)
-  uint64_t amount = CryptoNote::parameters::AMOUNT_TIER_3;  // 800 XFG
-
-  // Generate HEAT commitment with secret for local storage
-  auto [commitment, secret] = CryptoNote::DepositCommitmentGenerator::generateHeatCommitmentWithSecret(
-    amount, std::vector<uint8_t>(request.metadata.begin(), request.metadata.end()));
-
-  std::error_code result = service.createDeposit(amount, term, request.sourceAddress, response.transactionHash, commitment);
-
-  if (!result) {
-    response.term = term;  // Always 4294967295
-    response.heatAmount = CryptoNote::DepositCommitmentGenerator::convertXfgToHeat(amount);
-
-    // Store secret locally (never on blockchain)
-    service.storeBurnDepositSecret(response.transactionHash, secret, amount, std::vector<uint8_t>(request.metadata.begin(), request.metadata.end()));
-  }
-
-  return result;
+  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash, commitment);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleWithdrawDeposit(const WithdrawDeposit::Request &request, WithdrawDeposit::Response &response)
@@ -375,7 +311,7 @@ std::error_code PaymentServiceJsonRpcServer::handleGetDeposit(const GetDeposit::
     // Calculate transaction fees
     uint64_t baseFee = CryptoNote::parameters::MINIMUM_FEE_8KH; // 0.0008 XFG base transaction fee
     response.transactionFee = baseFee;
-    // response.totalFees = response.useStagedUnlock ? (baseFee * 4) : baseFee;
+    // (staged unlock removed)
   }
 
   return result;

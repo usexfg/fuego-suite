@@ -413,6 +413,17 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_TREASURY_FUND:
+            {
+              TransactionExtraTreasuryFund fund;
+              fund.asset = read<uint8_t>(iss);
+              fund.amount = 0;
+              for (int i = 0; i < 8; ++i)
+                fund.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+              transactionExtraFields.push_back(fund);
+              break;
+            }
+
             case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;
@@ -631,6 +642,11 @@ namespace CryptoNote
     bool operator()(const TransactionExtraLimitWithdraw &t)
     {
       return addLimitWithdrawToExtra(extra, t.orderId);
+    }
+
+    bool operator()(const TransactionExtraTreasuryFund &t)
+    {
+      return addTreasuryFundToExtra(extra, t.asset, t.amount);
     }
 
   };
@@ -1776,6 +1792,13 @@ namespace CryptoNote
   bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
     tx_extra.push_back(TX_EXTRA_LIMIT_WITHDRAW);
     for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
+    return true;
+  }
+
+  bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount) {
+    tx_extra.push_back(TX_EXTRA_TREASURY_FUND);
+    tx_extra.push_back(asset);
+    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
     return true;
   }
 

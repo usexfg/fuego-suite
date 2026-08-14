@@ -96,6 +96,34 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
           make -C build -j$(nproc)
         
+  sanitizers-ubuntu:
+    name: Sanitizers (ASan+UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev
+
+      - name: Build with sanitizers
+        run: |
+          cmake -B build-san -DCMAKE_BUILD_TYPE=Debug -DUSE_VENDORED_SECP256K1=OFF \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          make -C build-san -j$(nproc) CryptoNoteCore core_tests test_orderbook
+
+      - name: Run core tests under sanitizers
+        run: |
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            ./build-san/src/test_daemons/core_tests
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            ./build-san/src/test_daemons/test_orderbook
+
   build-macos:
     name: macOS
     runs-on: ${{ matrix.os }}

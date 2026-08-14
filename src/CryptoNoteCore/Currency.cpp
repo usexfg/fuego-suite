@@ -1773,18 +1773,6 @@ double Currency::getBurnPercentage() const {
 		return isValidBurnDepositTerm(term);
 	}
 
-	uint64_t Currency::convertXfgToHeat(uint64_t xfgAmount) const {
-    // Convert XFG to HEAT: 1 XFG = 10M HEAT
-    // Formula: xfgAmount * 10000000
-    return xfgAmount * 10000000;
-    }
-
-    uint64_t Currency::convertHeatToXfg(uint64_t heatAmount) const {
-    // Convert HEAT to XFG: 10M HEAT = 1 XFG
-    // Formula: heatAmount / 10000000
-    return heatAmount / 10000000;
-    }
-
 	bool Currency::validateNetworkId(uint64_t networkId) const {
 		// Validate against hashed Fuego network ID
 		return (networkId == m_fuegoNetworkId);

@@ -268,8 +268,6 @@ public:
   uint32_t getDepositTermBurn() const { return m_depositTermForever; }  // Alias for compatibility
 
   // HEAT token conversion methods
-  uint64_t convertXfgToHeat(uint64_t xfgAmount) const;
-  uint64_t convertHeatToXfg(uint64_t heatAmount) const;
   uint64_t getHeatConversionRate() const { return m_heatConversionRate; }
 
   // Money supply methods

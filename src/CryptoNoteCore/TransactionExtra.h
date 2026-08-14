@@ -78,6 +78,7 @@
 #define TX_EXTRA_MARKET_BUY_AUTH            0xFC
 #define TX_EXTRA_MARKET_SELL_AUTH           0xFD
 #define TX_EXTRA_LIMIT_WITHDRAW             0xFE
+#define TX_EXTRA_TREASURY_FUND              0xFF
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 
 namespace CryptoNote {
@@ -312,6 +313,15 @@ struct TransactionExtraLimitWithdraw {
   bool serialize(ISerializer& serializer);
 };
 
+// v12+: burns `amount` of `asset` (0 = XFG, 1 = HEAT) as a contribution to the
+// Treasury LP Manager (counter-funded LP provisioning). No output is created —
+// the amount is destroyed and credited to the treasury counter.
+struct TransactionExtraTreasuryFund {
+  uint8_t  asset;
+  uint64_t amount;
+  bool serialize(ISerializer& serializer);
+};
+
 struct DepositCommitmentKeys {
   Crypto::PublicKey           commitKey;
   Crypto::SecretKey           keyScalar;
@@ -356,7 +366,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -404,6 +414,7 @@ bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted,
 bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
 bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
+bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);

@@ -122,8 +122,6 @@ public:
         const std::vector<uint8_t>& metadata = {});
 
     static bool validateCommitment(const DepositCommitment& commitment);
-    static uint64_t convertXfgToHeat(uint64_t xfgAmount);
-    static uint64_t convertHeatToXfg(uint64_t heatAmount);
 };
 
 } // namespace CryptoNote

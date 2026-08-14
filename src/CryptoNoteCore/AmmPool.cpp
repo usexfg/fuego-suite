@@ -65,19 +65,16 @@ uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {
+  // No single-sided mints: an imbalanced deposit must first be paired at the
+  // pool ratio (validation enforces this); single-sided calls mint nothing.
+  if (amountA == 0 || amountB == 0) return 0;
+
   if (totalShares == 0) {
-    if (amountA == 0 && amountB > 0) return amountB;
-    if (amountB == 0 && amountA > 0) return amountA;
     uint128_t product = (uint128_t)amountA * amountB;
     uint64_t shares = isqrt128(product);
     const uint64_t MIN_LIQUIDITY = 1000;
     return shares > MIN_LIQUIDITY ? shares - MIN_LIQUIDITY : 0;
   }
-
-  if (amountA == 0 && amountB > 0 && reserveB > 0)
-    return (uint64_t)((uint128_t)amountB * totalShares / reserveB);
-  if (amountB == 0 && amountA > 0 && reserveA > 0)
-    return (uint64_t)((uint128_t)amountA * totalShares / reserveA);
 
   // Invariant guard: a live share supply with an empty reserve is invalid state;
   // refuse to mint rather than divide by zero.

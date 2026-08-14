@@ -1007,8 +1007,7 @@ namespace CryptoNote
       std::string sourceAddress,
       std::string destinationAddress,
       std::string &transactionHash,
-      const DepositCommitment& commitment,
-      bool useStagedUnlock)
+      const DepositCommitment& commitment)
   {
 
     throwIfNotInitialized();
@@ -1188,12 +1187,6 @@ namespace CryptoNote
 
     /* Store deposit secret under the final (post-signing) transaction hash */
     addBurnDepositSecret(transactionHash, commitKeys.keyScalar, neededMoney - fee, std::vector<uint8_t>());
-
-    /* Store staged unlock preference if requested */
-    if (useStagedUnlock) {
-      m_stagedUnlocks[transactionHash] = true;
-      m_logger(DEBUGGING, BRIGHT_GREEN) << "Deposit created with staged unlock preference: " << transactionHash;
-    }
 
     size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
   }
@@ -1537,11 +1530,20 @@ namespace CryptoNote
       transaction->addOutput(amount, cdOut);
     }
 
-    // Banking fee → dev fund (KeyOutput)
+    // Banking fee → Treasury LP Manager (v12+): burned HEAT credited via the
+    // TreasuryFund tag (no output — the burn is implicit). Pre-v12: dev-fund output.
     if (bankingFee > 0) {
-      AccountPublicAddress devAddr{};
-      if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
-        transaction->addOutput(bankingFee, devAddr);
+      uint32_t v12Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12);
+      if (currentHeight >= v12Height) {
+        std::vector<uint8_t> extra;
+        CryptoNote::addTreasuryFundToExtra(extra, 1, bankingFee);
+        CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+        transaction->appendExtra(extraData);
+      } else {
+        AccountPublicAddress devAddr{};
+        if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
+          transaction->addOutput(bankingFee, devAddr);
+        }
       }
     }
 

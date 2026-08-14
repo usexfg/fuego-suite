@@ -166,8 +166,17 @@ namespace CryptoNote {
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
     bool isBootstrapRepaid() const { return m_bootstrapRepaid; }
+
+    // Treasury LP Manager: the protocol's own Hearth LP position, provisioned
+    // from the treasury fee share, compounding inside the reserves.
+    // Returns the Treasury-owned reserve value in BOTH legs (pro-rata by
+    // protocol LP shares) — XFG atomics and HEAT atomics, not converted.
+    struct TreasuryLpValue {
+      uint64_t xfg = 0;
+      uint64_t heat = 0;
+    };
+    TreasuryLpValue getTreasuryLpValue() const;
     void setBootstrapAmount(uint64_t xfg, uint64_t heat);
-    bool withdrawBootstrapRepaymentVault(uint64_t amount);
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
@@ -217,6 +226,7 @@ namespace CryptoNote {
     uint64_t depositAmountAtHeight(size_t height) const;
     uint64_t depositInterestAtHeight(size_t height) const;
     uint64_t getBurnedXfgAmount() const { return m_bankingIndex.getBurnedXfgAmount(); }
+    uint64_t getTotalBurnedXfg() const { return m_bankingIndex.getTotalBurnedXfg(); }
     uint64_t getBurnedXfgAtHeight(size_t height) const;
 
     uint64_t coinsEmittedAtHeight(uint64_t height);
@@ -411,6 +421,9 @@ namespace CryptoNote {
       uint64_t swfHeatBalance;
       uint64_t feePoolBalance;
       uint64_t cdHearthFeeAccumulator;
+      bool bootstrapRepaid;
+      uint64_t bonusVaultBalance;
+      uint64_t bonusVaultPendingXfg;
     };
 
     friend class BlockCacheSerializer;
@@ -449,6 +462,8 @@ namespace CryptoNote {
     uint64_t m_protocolLpShares = 0;
     uint64_t m_treasuryLpYield = 0;
     bool     m_bootstrapRepaid = false;
+    uint64_t m_bootstrapHeatOwed = 0;
+    uint64_t m_bonusVaultPendingXfg = 0;  // XFG awaiting conversion (no pool rate at epoch)
     uint64_t m_bootstrapXfgOwed = 0;
     uint64_t m_bootstrapRepaymentVault = 0;
     uint64_t m_swfBalance = 0;              // Sovereign Wealth Fund — mint premiums for cross-chain liquidity
@@ -493,7 +508,6 @@ namespace CryptoNote {
     const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }
   private:
     // Track auto-returned deposits for block rollback
-    std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> m_autoReturnedThisBlock;
 
     // Fee pool: accumulates swap fees, distributed as interest to CD holders.
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
@@ -523,7 +537,6 @@ namespace CryptoNote {
       uint64_t priorPoolXfgReserve = 0;
       uint64_t priorPoolHeatReserve = 0;
       uint64_t poolBandFilledLastBlock = 0;
-      std::vector<std::pair<Crypto::Hash, LimitDepositInfo>> autoReturnedThisBlock;
     };
     std::deque<std::pair<uint32_t, OrderbookRollbackSnapshot>> m_orderbookSnapshots;
 

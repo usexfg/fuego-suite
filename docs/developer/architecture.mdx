@@ -33,7 +33,7 @@ See `include/CryptoNote.h` for full struct definitions.
 ## Fee pool mechanics (live constants)
 
 1. XFG-side atomic swaps charge **1%** (`SWAP_FEE_RATE_BPS`); epoch split **69% CD / 11% Bonus Vault / 20% Treasury**
-2. Hearth trades charge **1%** (`HEARTH_FEE_BPS`); consensus split **50% CD / 50% LP**
+2. Hearth trades charge **1%** (`HEARTH_FEE_BPS`); **100% → CD yield** (LPs earn the swap spread)
 3. At epoch boundaries (`EPOCH_DURATION_BLOCKS = 900` mainnet), fee accounting advances for HEAT CDs
 4. Product path: burn XFG → mint HEAT (`mintHeatV10`) → lock HEAT as CD — see [dual-asset architecture](/fuego-dual-asset-architecture)
 

@@ -119,6 +119,7 @@ private:
   bool on_get_open_orders(const COMMAND_RPC_GET_OPEN_ORDERS::request& req, COMMAND_RPC_GET_OPEN_ORDERS::response& res);
 
   bool on_get_deposits(const COMMAND_RPC_GET_DEPOSITS::request& req, COMMAND_RPC_GET_DEPOSITS::response& res);
+  bool on_is_key_image_spent(const COMMAND_RPC_IS_KEY_IMAGE_SPENT::request& req, COMMAND_RPC_IS_KEY_IMAGE_SPENT::response& res);
   bool on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request& req, COMMAND_RPC_GET_TRANSACTIONS::response& res);
   // ZK prover data endpoints
   bool on_get_block_range(const COMMAND_RPC_GET_BLOCK_RANGE::request& req, COMMAND_RPC_GET_BLOCK_RANGE::response& res);

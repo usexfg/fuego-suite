@@ -5,9 +5,20 @@ description: "Fuego Suite Updates & Features"
 
 <CodeGroup>
 ```text Changelog
+v1.11.00 (Consensus v12 — Hearth orderbook rework, treasury, CD economics)
+* **Hearth orderbook**: in-band CLOB matcher + gossiped orders retired. Limit orders are now tx-extra-backed (`TransactionExtraLimitDeposit`) deposits executed at block time against the pool at the live spot price; height-based expiry; partial fills with claimable proceeds (`TransactionExtraLimitWithdraw`).
+* **Canonical price scale**: HEAT/XFG × COIN (1e7) everywhere — mint, swaps, quotes, TWAP; Q64.64/1e8/1e18 purged from price paths (legacy preserved for pre-v12 re-validation).
+* **LP**: balanced deposits only (single-sided mints nothing); fair pro-rata shares; LP income = pool trading P&L, not the flat fee.
+* **Fees**: taker pays the 1% Hearth fee via fee-adjusted output; fee debited from LP reserves → HEAT-denominated `cdHearthFeeAccumulator` → `CD_APY_POOL` at epoch; consumed XFG burned 50/50 (EF/SWF). `/addswapfee` authenticated; swap fees accounted exactly (2% claim / 1% refund).
+* **Treasury**: Treasury LP Manager provisions the protocol's ratio-paired LP position (20% treasury share + mint premiums + HEAT CD fees + donations via the `TreasuryFund` tag); bonus vault (11%) converts to HEAT; bootstrap repayment = two-leg owned-reserves check; overall burn tally (`total_burned_xfg`).
+* **CD economics**: HEAT-denominated epoch rates, CD-only APY denominator, block-level interest cap, youngest-ring interest cap, consensus term whitelist, legacy XFG deposits withdraw-only at v12.
+* Security fixes: AMM swap settlement from actual balance deltas, coinbase settlement-tag rejection, orderbook UAF, mainnet fee-pool funding, epoch snapshot at block start.
+
+v1.10.04 (Docs + consensus)
+* Hearth flat fee routing corrected: 1% → **100% CD yield** (`cdHearthFeeAccumulator`); LPs earn the swap spread, not the fee. Removed 50/50 CD/LP split from consensus code + docs.
 v1.10.03 (Docs)
 * Public Mintlify docs rewritten for current product: HEAT mint → HEAT CDs,
-  Hearth (1% fee 50/50 CD/LP), swapXFG (1% fee 69/11/20), dual-asset architecture.
+  Hearth (1% fee 100% CD yield; LPs earn the spread), swapXFG (1% fee 69/11/20), dual-asset architecture.
 * Removed primary nav for STARK-only heat-burns and core DIGM onboarding weight.
 * Docs CI: `.github/workflows/docs.yml` (alignment tests + mint validate/broken-links).
 * Single changelog source: `docs/changelog.mdx` only.

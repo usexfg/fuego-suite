@@ -1,10 +1,10 @@
 ---
 title: "How Hearth works"
-description: "On-chain XFG/HEAT market: AMM, orderbook hybrid, 1% fee split CD/LP."
+description: "On-chain XFG/HEAT market: constant-product AMM + tx-extra-backed limit orders, 1% taker fee → CD yield; LP income is pool P&L."
 keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
 ---
 
-**Hearth** is Fuego’s native **XFG/HEAT** exchange: a constant-product AMM with orderbook / depth-band machinery (pool orders, adaptive spread). It is the price surface for minting HEAT and for on-chain XFG↔HEAT swaps.
+**Hearth** is Fuego’s native **XFG/HEAT** exchange: a constant-product AMM with a limit-order overlay. It is the price surface for minting HEAT and for on-chain XFG↔HEAT swaps.
 
 ## What Hearth is not
 
@@ -12,27 +12,44 @@ keywords: ["Hearth", "AMM", "orderbook", "XFG", "HEAT", "fuego"]
 - Not the same as **swapXFG** (cross-chain atomic swaps)
 - Not DIGM
 
+## Orderbook model (v12+)
+
+The original in-band CLOB matcher (gossiped, unbacked orders matched once per block at a VWAP clearing price) is **retired**. The live model:
+
+1. **Orders are transactions.** A limit order is created by a `TransactionExtraLimitDeposit` (SELL_XFG deposits XFG, BUY_XFG deposits HEAT into the pending buckets). Nothing exists in a gossip mempool — every resting order is backed by committed funds.
+2. **Execution at block time, against the pool, at the live spot price.** Each block the protocol fills resting orders whose limit is crossed by the current pool spot price (`ammGetSpotPrice` = HEAT/XFG × COIN):
+   - SELL_XFG fills if `target ≤ spot`; the pool buys the XFG and credits HEAT proceeds.
+   - BUY_XFG fills if `target ≥ spot`; the pool sells XFG and debits the HEAT budget.
+3. **Partial fills and proceeds.** Fills consume part of the deposit; the proceeds (`proceedsXfg` / `proceedsHeat`) are claimable later with the remaining deposit via a `TransactionExtraLimitWithdraw` (also the auto-return path for expired orders).
+4. **Expiry is height-based** (`expiration` blocks). Expired orders keep their deposit + proceeds claimable.
+5. **Taker pays the 1% fee** by receiving the fee-adjusted output; the fee value leaves LP reserves into the HEAT-denominated CD accumulator.
+6. **No unbacked orders, no gossip, no user-vs-user matching.** The pool is the sole counterparty — this removes the wash-trade / unbacked-order manipulation classes entirely.
+
+`P_clear` remains the header metric (clearing-price statistic), seeded from the pool ratio in bootstrap; at v12 the volatility feed used for the adaptive spread is the **pool spot price** itself.
+
 ## Fee (live code)
 
 | Constant | Value |
 |----------|-------|
-| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional → **CD yield pool** |
+| `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional, paid by the taker |
 
 ```
-totalFee = amount × HEARTH_FEE_BPS / 10000   // → CD yield pool
-spreadReward = |fill.price − P_clear| × amount  // → LP reserves (LP income)
+gross = user_notional
+paid  = gross × (10000 − 100) / 10000      // taker receives fee-adjusted output
+fee   = gross − paid                        // debited from LP reserves → CD accumulator
 ```
 
-There is **no** separate “0.3% Hearth LP fee” in `CryptoNoteConfig.h`. LPs earn the **swap spread**, not the flat fee. (Adaptive **spread** for pool orders uses other BPS constants, e.g. base spread 30 bps — that market-making width is the LP's income source.)
+The fee accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF). There is **no** separate “0.3% Hearth LP fee”.
 
 ## Roles
 
 | Role | Action |
 |------|--------|
-| Trader | Swap XFG↔HEAT; pays 1% flat fee |
-| LP | Provides XFG/HEAT liquidity; earns the **swap spread** (`|fill.price − P_clear| × amount`), auto-compounded into reserves — not the flat fee |
-| Minter | Uses Hearth TWAP when burning XFG to mint HEAT |
-| CD holder | Receives the 1% Hearth flat fee via yield plumbing |
+| Trader | Swaps XFG↔HEAT (AMM) or places a limit order; pays the 1% flat fee |
+| LP | Provides a **balanced** XFG+HEAT deposit (single-sided deposits are rejected); earns the pool’s trading P&L and appreciation, realized on withdrawal via share redemption — not the flat fee |
+| Minter | Uses Hearth TWAP when burning XFG to mint HEAT (canonical price = HEAT/XFG × COIN) |
+| CD holder | Receives the 1% Hearth flat fee via the CD yield vault |
+| Protocol / Treasury | The **Treasury LP Manager** maintains the protocol’s own ratio-paired LP position (from the 20% treasury fee share + mint premiums + donations) which compounds and drives bootstrap repayment |
 
 ## Privacy
 

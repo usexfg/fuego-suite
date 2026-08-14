@@ -64,15 +64,17 @@ TEST_F(CurrencyTest, calculateInterestZero) {
 }
 
 TEST_F(CurrencyTest, calculateInterestReal) {
+  // Legacy calculateInterest is retired (always 0 — off-chain interest model
+  // removed). CD interest is computed via calculateCdInterest instead.
   for (auto h : heights){
-	ASSERT_EQ(fixedCurrency.calculateInterest(fixed_amount, fixed_term, h), 99*multiplier(h));
+	ASSERT_EQ(fixedCurrency.calculateInterest(fixed_amount, fixed_term, h), 0u);
   }
 }
 
 TEST_F(CurrencyTest, calculateInterestNoOverflow) {
   auto currency = builder.depositMaxTotalRate(100).depositMinTotalRateFactor(0).depositMaxTerm(100000).currency();  
   for (auto h : heights){
-	ASSERT_EQ(currency.calculateInterest(0xffffffffffff, 100000, h), 0xffffffffffff*multiplier(h));
+	ASSERT_EQ(currency.calculateInterest(0xffffffffffff, 100000, h), 0u);
   }
 }
 

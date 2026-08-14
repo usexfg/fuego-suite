@@ -35,7 +35,7 @@ Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/ma
 **Hearth** is the on-chain **XFG/HEAT** market (constant-product AMM plus orderbook / depth-band machinery). It:
 
 - Sets the **TWAP / spot rate** used when minting HEAT
-- Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade, split **50% CD / 50% LP** in consensus code
+- Charges **`HEARTH_FEE_BPS = 100` (1%)** per trade → **100% CD yield accumulator** in consensus code (LPs earn the swap spread, not the fee)
 
 ## swapXFG
 
@@ -50,7 +50,7 @@ Details: [DEPOSIT_ARCHITECTURE.md](https://github.com/usexfg/fuego-suite/blob/ma
 | `SWAP_FEE_BONUS_VAULT_PCT` | 11 | → Bonus Vault |
 | `SWAP_FEE_TREASURY_SHARE_PCT` | 20 | → Treasury |
 | `HEARTH_FEE_BPS` | 100 | 1% Hearth trade fee |
-| Hearth split | 50/50 | `cdFee = total/2`, `lpFee = remainder` |
+| Hearth split | 100/0 | `cdHearthFeeAccumulator += totalFee` (100% CD; LP income = spread) |
 | `EPOCH_DURATION_BLOCKS` | 900 | Mainnet epoch (~5 days at ~480s blocks) |
 | `CD_MIN_EPOCHS` / `CD_MAX_EPOCHS` | 6 / 72 | ~1 month … ~1 year HEAT CD terms |
 

@@ -48,7 +48,7 @@ public:
   virtual ~WalletGreen();
 
   /* Deposit related functions */
-  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash, const DepositCommitment& commitment = DepositCommitment(), bool useStagedUnlock = false) override;
+  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash, const DepositCommitment& commitment = DepositCommitment()) override;
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) override;
 
   /* HEAT v10 operations */
@@ -472,7 +472,6 @@ protected:
   WalletTransfers m_transfers;                               //sorted
   mutable std::unordered_map<size_t, bool> m_fusionTxsCache; // txIndex -> isFusion
   UncommitedTransactions m_uncommitedTransactions;
-  std::unordered_map<std::string, bool> m_stagedUnlocks;     // transactionHash -> stagedUnlock
 
   bool m_blockchainSynchronizerStarted;
   BlockchainSynchronizer m_blockchainSynchronizer;

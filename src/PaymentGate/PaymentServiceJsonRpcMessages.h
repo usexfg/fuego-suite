@@ -139,8 +139,6 @@ struct CreateDeposit
     std::string sourceAddress;
     std::string heatCommitment;  // Hex string of HEAT commitment (optional)
     std::string metadata;        // Hex string of metadata (optional)
-    bool useStagedUnlock;        // Optional staged unlock (default: false)
-
     void serialize(CryptoNote::ISerializer &serializer);
   };
 
@@ -148,7 +146,6 @@ struct CreateDeposit
   {
     std::string transactionHash;
     bool isBurnDeposit;          // Indicates if this is a burn deposit
-    bool useStagedUnlock;        // Indicates if staged unlock was used
     uint64_t transactionFee;     // Transaction fee for this deposit
     uint64_t totalFees;          // Total fees (1x for traditional, 4x for staged)
 
@@ -575,7 +572,6 @@ struct GetDeposit
     std::string spendingTransactionHash;
     bool locked;
     std::string address;
-    bool useStagedUnlock;        // Indicates if this deposit uses staged unlock
     uint64_t transactionFee;     // Transaction fee for this deposit
     uint64_t totalFees;          // Total fees (1x for traditional, 4x for staged)
 

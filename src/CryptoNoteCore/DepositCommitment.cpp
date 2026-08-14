@@ -230,16 +230,6 @@ bool DepositCommitmentGenerator::validateCommitment(const DepositCommitment& com
     }
 }
 
-uint64_t DepositCommitmentGenerator::convertXfgToHeat(uint64_t xfgAmount) {
-    // 1:1 atomic unit conversion — XFG and HEAT use same atomic units
-    return xfgAmount;
-}
-
-uint64_t DepositCommitmentGenerator::convertHeatToXfg(uint64_t heatAmount) {
-    // 1:1 atomic unit conversion — XFG and HEAT use same atomic units
-    return heatAmount;
-}
-
 #pragma GCC diagnostic pop
 
 } // namespace CryptoNote

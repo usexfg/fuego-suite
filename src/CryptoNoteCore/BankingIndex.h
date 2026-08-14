@@ -46,9 +46,16 @@ public:
   void serialize(ISerializer& s);
 
   // integrated burned XFG tracking
+  // m_ethereal_xfg: Eternal Flame bucket — the 50% routing share of burns.
   BurnedAmount getBurnedXfgAmount() const;
   BurnedAmount getBurnedXfgAtHeight(DepositHeight height) const;
   void addForeverDeposit(BurnedAmount amount, DepositHeight height);
+
+  // Overall burn tally: EVERY XFG atom destroyed (mint burns, fee conversions),
+  // any route, all-time. Additive only; reversed by popBlock via height entries.
+  BurnedAmount getTotalBurnedXfg() const;
+  BurnedAmount getTotalBurnedXfgAtHeight(DepositHeight height) const;
+  void addTotalBurn(BurnedAmount amount, DepositHeight height);
 
   // Combined statistics
   struct DepositStats {
@@ -85,5 +92,7 @@ private:
   // Integrated burned XFG tracking
   std::vector<BurnedXfgEntry> m_burnedXfgEntries;
   BurnedAmount m_ethereal_xfg;
+  std::vector<BurnedXfgEntry> m_totalBurnedEntries;
+  BurnedAmount m_total_burned_xfg;
 };
 }

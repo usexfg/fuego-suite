@@ -36,13 +36,13 @@ CDs lock **HEAT**, not XFG. You must [mint HEAT](/features/heat/mint-heat) first
 
 ## Hearth liquidity
 
-Hearth is the on-chain **XFG/HEAT** market. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), split **50% CD / 50% LP** in consensus code.
+Hearth is the on-chain **XFG/HEAT** market. Protocol trade fee is **1%** (`HEARTH_FEE_BPS = 100`), **100% → CD yield accumulator** in consensus code. LPs earn the swap spread, not the fee.
 
 <Warning>
   Providing Hearth liquidity carries impermanent loss risk. If the XFG/HEAT pool price moves sharply while you are an LP, you may withdraw less value than you deposited, even after LP fee income.
 </Warning>
 
-**Impermanent loss.** Inherent to AMM-style inventory. Large adverse moves can dominate fee income. Do not treat the old “0.3% LP fee” figure as Hearth’s protocol trade fee — that number is **not** `HEARTH_FEE_BPS`.
+**Impermanent loss.** Inherent to AMM-style inventory. Large adverse moves can dominate spread income. Do not treat the old “0.3% LP fee” figure as Hearth’s protocol trade fee — that number is **not** `HEARTH_FEE_BPS`.
 
 **Consensus risk.** Pool mechanics are on-chain. Review [How Hearth works](/features/hearth/how-hearth-works) before large LP deposits.
 

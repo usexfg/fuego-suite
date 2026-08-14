@@ -29,15 +29,16 @@ fuego-suite/
 
 ## Key Subsystems
 
-### Hearth Exchange (block-discrete on-chain CLOB/AMM hybrid)
-- Batch-clearing once per block at volume-weighted average price (VWAP)
-- Two-phase: match → settle (Phase 1 fully implemented)
-- Adaptive-spread pool liquidity band: HEARTH AMM reserves injected as limit orders on both sides, regenerated each block
-- Spread: base 30 bps, adapts to volatility and band consumption, capped at 300 bps
-- `PoolOrderOrchestrator` decides regeneration timing (price delta, reserve delta, consumption rate)
-- User orders take priority over pool orders at same price level (last-in-time for pool)
-- `MIN_DISTINCT_PARTIES = 2` anti-manipulation floor
+### Hearth Exchange (on-chain AMM + limit-order overlay, v12+)
+- Constant-product AMM (XFG/HEAT) with a **limit-order overlay**: orders are tx-extra-backed `TransactionExtraLimitDeposit` commitments (no gossip, no unbacked orders)
+- Orders execute **at block time against the pool at the live spot price** (`ammGetSpotPrice`, HEAT/XFG × COIN); partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`
+- Expiry is height-based; expired orders keep deposit + proceeds claimable (auto-return)
+- **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
+- Taker pays the 1% fee via a fee-adjusted output; the fee is debited from LP reserves into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; consumed XFG burned 50/50 (EF/SWF)
+- `PoolOrderOrchestrator` still generates the displayed depth band (adaptive spread 30–300 bps, volatility fed by the pool spot price at v12) — informational depth, not in-band matched
+- The in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and gossiped orders are **retired**
 - Bootstrap window: 144 blocks of AMM-only operation after upgrade
+- **Treasury LP Manager**: the protocol's own ratio-paired LP position from the 20% treasury share + mint premiums + donations (both legs, no cross-conversion); compounds and drives bootstrap repayment (two-leg owned-reserves check)
 
 ### HEAT Flatcoin (colored coin)
 - Not fiat based, peg targets purchasing power only; adjusts for inflation/CPI
@@ -50,8 +51,8 @@ fuego-suite/
 - **DEPOSIT MODEL**: See `DEPOSIT_ARCHITECTURE.md` for full details. Key points:
   - "HEAT" has TWO meanings in code: current flatcoin (dynamic TWAP pricing) vs legacy Embers_Heat (fixed 10M:1 ratio)
   - **Two-step process**: burn XFG → mint HEAT → deposit HEAT as CD (you CANNOT deposit a deposit)
-  - `convertXfgToHeat()` uses LEGACY 10M ratio (Embers_Heat) — DO NOT use for actual minting
-  - `mintHeatV10()` uses Hearth pool TWAP — this is ACTUAL mint pricing
+  - Legacy 10M:1 `convertXfgToHeat()`/`convertHeatToXfg()` removed from the codebase — do not reintroduce
+  - `mintHeatV10()` uses Hearth pool TWAP — this is ACTUAL mint pricing (canonical scale HEAT/XFG × COIN)
   - **DEPRECATED (DO NOT REINTRODUCE)**: COLD deposits (0xCD tag), Embers_Heat deposits, XFG deposits
   - **GUARDRAILS**: APY from protocol fees (not inflation), deposit secret stored locally, different term lengths don't hurt privacy
 
@@ -61,15 +62,14 @@ fuego-suite/
 
 NOT protocol earnings:
 - **Mint premium**: none — `HEAT_MINT_PREMIUM_BPS = 0`, goes nowhere. Do not document as revenue.
-- **CD creation fee**: 0.1% of CD amount → **@fuegoxfg** (Fuego Development Fund) as a development donation. NOT protocol revenue, NOT CD yield, NOT treasury.
+- **CD creation fee**: 0.1% of CD amount → burned and credited (HEAT) to the **Treasury LP Manager** via the `TreasuryFund` tag (v12+). NOT protocol revenue, NOT CD yield. Pre-v12 it was a donation to @fuegoxfg (development fund).
 
-### Hearth Exchange — Data Flow Per Block
-1. `OrderbookMempool::expireOrders()`
-2. `PoolOrderOrchestrator`: record price, decide regeneration, compute adaptive spread
-3. `generatePoolOrders()` — new band from AMM reserves, replace pool orders
-4. Clone mempool → `OrderbookIndex` (snapshot)
-5. `OrderbookMatcher::match()` — batch match, compute VWAP P_clear, filter, enforce parties minimum
-6. Write P_clear + depth stats to block header
+### Hearth Exchange — Data Flow Per Block (v12+)
+1. `PoolOrderOrchestrator`: record pool spot price (volatility feed), decide regeneration, compute adaptive spread
+2. `generatePoolOrders()` — displayed depth band from AMM reserves (informational)
+3. OOB executor: fill resting `m_limitDeposits` whose limit is crossed by the live spot price (1% taker fee, proceeds credited, height-based expiry)
+4. Treasury LP Manager epoch work (fee share routing, conversions, ratio-paired LP provisioning, burns, bootstrap check)
+5. Write P_clear + depth stats to block header
 
 ### Cryptographic Primitives
 - Ring signatures: MLSAG with OSPEAD decoy selection

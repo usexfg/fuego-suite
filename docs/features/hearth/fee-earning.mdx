@@ -1,40 +1,41 @@
 ---
 title: "Hearth fee earning"
-description: "The 1% Hearth flat fee goes to CD yield; LPs earn the swap spread."
-keywords: ["Hearth fees", "LP", "CD", "1%", "spread"]
+description: "The 1% Hearth taker fee goes to CD yield; LP income is pool trading P&L."
+keywords: ["Hearth fees", "LP", "CD", "1%", "taker"]
 ---
 
 ## Protocol flat fee
 
-Every Hearth fill applies a **1% flat fee** (`HEARTH_FEE_BPS = 100`) on trade notional. This fee goes to the **CD yield pool**:
+Every Hearth fill applies a **1% flat fee** (`HEARTH_FEE_BPS = 100`) on trade notional, paid by the **taker**:
 
 ```
-totalFee = notional × 100 / 10000   // HEARTH_FEE_BPS → CD yield pool
+gross = user_notional
+paid  = gross × (10000 − 100) / 10000   // taker receives the fee-adjusted output
+fee   = gross − paid                     // debited from LP reserves
 ```
 
-Implemented in `Blockchain.cpp` when processing Hearth/auth pool outputs.
+The fee is debited from the pool reserves into the HEAT-denominated `cdHearthFeeAccumulator` and minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary. The consumed XFG side of conversions is burned 50/50 (Eternal Flame / SWF).
 
 ## What LPs should expect
 
 | Item | Reality |
 |------|---------|
-| Income source | **LP spread reward** = `|fill.price − P_clear| × amount` per fill — pool orders quote at a spread around P_clear, so fills away from the clearing price accrue directly to LP reserves |
-| Flat fee | LPs do **not** earn the 1% flat fee — that goes to the CD yield pool |
-| Share | Proportional to your LP share of the pool |
+| Income source | The pool’s trading P&L: the taker’s fee-adjusted pricing leaves the fee-adjusted spread in reserves, plus reserve appreciation. No separate spread-reward formula. |
+| Flat fee | LPs do **not** earn the 1% flat fee — it goes to the CD yield pool |
+| Share | Proportional to your LP share of the pool, realized on withdrawal |
 | Independence | Separate from **atomic swap** fee routing (69/11/20) |
-
-The spread reward auto-compounds into pool reserves — realized on withdrawal via share redemption, not paid as a fee accumulator.
 
 ## What CD holders get from Hearth
 
-The Hearth flat fee accrues toward **CD yield** plumbing (`cdHearthFeeAccumulator` → CD fee pool path). Holding HEAT CDs participates in that stream together with the CD share of **atomic swap** fees. The **LP spread reward** is LP-only; CD holders do not share it.
+The Hearth flat fee accrues toward **CD yield** plumbing (`cdHearthFeeAccumulator` → epoch mint → `CD_APY_POOL`). Holding HEAT CDs participates in that stream together with the CD share of **atomic swap** fees. The LP income is LP-only; CD holders do not share it.
 
 ## Wrong numbers to ignore
 
 Older docs and strategy notes sometimes say:
 
 - “0.3% to LPs” as the Hearth fee — **incorrect for live `HEARTH_FEE_BPS`**
-- “LPs earn the Hearth flat fee” — **incorrect**; LPs earn the swap spread, the 1% flat fee goes to CD yield
+- “LPs earn the Hearth flat fee” — **incorrect**; the 1% flat fee goes to CD yield, LPs earn pool P&L
+- “LPs earn a spread reward `|fill.price − P_clear| × amount`” — **outdated**; that belonged to the retired in-band matcher
 - “80% of swap fees to CDs” — **outdated**; atomic swap split is **69/11/20**
 
 Always prefer `src/CryptoNoteConfig.h` and the consensus fee split code.

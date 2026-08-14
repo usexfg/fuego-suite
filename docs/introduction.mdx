@@ -50,7 +50,7 @@ Source: `src/CryptoNoteConfig.h`.
 | Fee | Rate | Routing |
 |-----|------|---------|
 | **Atomic swap (XFG side)** | **1%** (`SWAP_FEE_RATE_BPS = 100`) | **69%** CD yield · **11%** Bonus Vault · **20%** Treasury |
-| **Hearth trade** | **1%** (`HEARTH_FEE_BPS = 100`) | **50%** CD yield accumulator · **50%** LP |
+| **Hearth trade** | **1%** (`HEARTH_FEE_BPS = 100`) | **100%** CD yield accumulator (LPs earn the swap spread, not the fee) |
 
 These are separate mechanisms. Atomic-swap fees are not the same stream as Hearth LP fees. DIGM (if enabled elsewhere) uses its own fee constants and is **not** core Fuego onboarding.
 

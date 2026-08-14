@@ -3,7 +3,7 @@
 *Last updated: 2026-08-11*
 
 
-> **Fee source of truth:** `src/CryptoNoteConfig.h` and public Mintlify docs (`docs/introduction.mdx`). Strategy prose below is marketing voice — fee %s must match live constants (swap 1% → 69/11/20; Hearth 1% → 50/50 CD/LP).
+> **Fee source of truth:** `src/CryptoNoteConfig.h` and public Mintlify docs (`docs/introduction.mdx`). Strategy prose below is marketing voice — fee %s must match live constants (swap 1% → 69/11/20; Hearth 1% → 100% CD yield).
 ## Product Overview
 **One-liner:** Fuego is a sovereign private bank that pays you to disappear.
 
@@ -13,7 +13,7 @@
 
 **Product type:** Open-source blockchain protocol + native financial applications (AMM, CDs, atomic swaps, stablecoin/flatcoin)
 
-**Business model:** Extractively-aligned fee economy. Protocol fees (not emissions) fund yield and treasury. Atomic swaps charge **1%** on the XFG side, split **69% CD yield / 11% Bonus Vault / 20% Treasury**. Hearth charges **1%**, split **50% CD / 50% LP** (`CryptoNoteConfig.h`). No VC tokens, no premine extraction. Protocol revenue flows to users and builders, not investors.
+**Business model:** Extractively-aligned fee economy. Protocol fees (not emissions) fund yield and treasury. Atomic swaps charge **1%** on the XFG side, split **69% CD yield / 11% Bonus Vault / 20% Treasury**. Hearth charges **1%**, **100% → CD yield** (`CryptoNoteConfig.h`). No VC tokens, no premine extraction. Protocol revenue flows to users and builders, not investors.
 
 ## Target Audience
 
@@ -131,7 +131,7 @@
 | XFG | Base-layer privacy coin. Max supply ~8M. Destroyed to mint HEAT. |
 | HEAT | Algorithmic flatcoin. CPI-pegged. Purchasing power preservation. Elastic supply. |
 | CD | Certificate of Deposit. Time-locked HEAT earning yield from protocol fees. |
-| Hearth | On-chain XFG/HEAT automated market maker. LP fees fund CD yield. |
+| Hearth | On-chain XFG/HEAT automated market maker. Hearth fees fund CD yield. |
 | Eternal Flame | Accounting system for destroyed base-layer coins. Authorizes future emission. |
 | Epoch | ~5-day protocol accounting period. CD terms and fees settle per-epoch. |
 | Fire Alias | 8-character on-chain identity. Private, verifiable. @fuegoxfg. |
@@ -183,7 +183,7 @@
 **Value themes:**
 | Theme | Proof |
 |-------|-------|
-| Real yield, not token printing | Swap fees: 69% → CD pool (of 1% XFG-side). Hearth: 50% CD / 50% LP (of 1%). Verifiable on-chain. |
+| Real yield, not token printing | Swap fees: 69% → CD pool (of 1% XFG-side). Hearth: 100% → CD yield (of 1%). Verifiable on-chain. |
 | No death spiral possible | One-way burn. HEAT→XFG redemption draws from collateral reserve, not new minting. |
 | Anti-delisting by design | Atomic swaps. No exchange required. |
 | Private by default | CryptoNote ring signatures. Stealth addresses. TOR/I2P at network layer. |

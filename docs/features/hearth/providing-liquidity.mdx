@@ -1,6 +1,6 @@
 ---
 title: "Providing Hearth liquidity"
-description: "Supply XFG/HEAT liquidity on Hearth and earn the LP share of the 1% fee."
+description: "Supply XFG/HEAT liquidity on Hearth with balanced deposits and earn the pool's trading P&L."
 keywords: ["Hearth", "LP", "liquidity", "XFG", "HEAT"]
 ---
 
@@ -8,24 +8,31 @@ Liquidity providers supply inventory to Hearth so traders can swap XFG↔HEAT wi
 
 ## What you earn
 
-Hearth charges **1%** (`HEARTH_FEE_BPS = 100`) on trades. Consensus splits that fee:
+Hearth charges **1%** (`HEARTH_FEE_BPS = 100`) on trades — paid by the **taker** (fee-adjusted output), debited from pool reserves into the **CD yield accumulator**. LPs do **not** earn the flat fee.
 
-- **50%** → CD yield accumulator  
-- **50%** → LPs (pro-rata to pool share)
+LP income is the **pool’s own trading P&L**:
 
-Plus an **LP spread reward**: pool orders quote at a spread around the clearing price (`P_clear`), and each fill earns `|fill.price − P_clear| × amount` straight into LP reserves. Both LP streams auto-compound into the pool and are realized on withdrawal via share redemption.
+- The taker pays the fee-adjusted amount, so the pool retains the fee-adjusted spread on every fill.
+- Reserve appreciation from limit-order execution at the spot price.
+- No separate “spread reward” formula exists anymore (the old `|fill.price − P_clear| × amount` reward belonged to the retired in-band matcher). Your share is realized on withdrawal via proportional share redemption.
 
-You do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you also hold HEAT CDs or Bonus Vault rights — that is a separate fee. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. Mint premium is 0 bps (goes nowhere); the 0.1% CD creation fee is a donation to @fuegoxfg, not protocol revenue.
+You also do **not** earn the atomic-swap fee stream (2% = 1% + 1% per swap) unless you hold HEAT CDs or Bonus Vault rights — those are separate. Protocol earnings are exactly two streams: this 1% Hearth fee and the 2% atomic swap fee. Mint premium is 0 bps (goes nowhere); the 0.1% CD creation fee is burned to the Treasury LP Manager, not protocol revenue.
+
+## Deposits
+
+- **Balanced only.** A single-sided deposit (XFG alone or HEAT alone) mints no shares — the pool requires ratio-paired deposits at the current pool ratio. No dilution.
+- Shares are minted pro-rata (`min(amountA×T/reserveA, amountB×T/reserveB)`) — fair shares at the pool ratio.
+- The **Treasury LP Manager** follows the same rule: it pairs its XFG leg (treasury fee share + donations) with its HEAT leg (mint premiums + HEAT donations) at the pool ratio and deposits only when both legs can be paired; the excess carries to the next epoch.
 
 ## Practical notes
 
-- Prefer dual-sided XFG + HEAT inventory when the pool design requires both sides.
-- Price moves create **impermanent loss** relative to holding outside the pool; fee income may or may not offset it.
+- Prefer dual-sided XFG + HEAT inventory at the current pool ratio.
+- Price moves create **impermanent loss** relative to holding outside the pool; trading P&L may or may not offset it.
 - Use wallet / daemon RPC for your build (`lp_deposit` / pool methods if exposed). Exact CLI names vary by version — check `--help` and [API overview](/api-reference/overview).
 
 ## Withdraw
 
-Withdrawing returns your share of reserves (subject to pool state) plus accrued LP fee credit for your position. Confirm maturity / unlock rules if your position is commitment-tagged (`DEPOSIT_TERM_LP` in protocol terms).
+Withdrawing burns your LP shares and returns your proportional share of both reserves. Confirm maturity / unlock rules if your position is commitment-tagged (`DEPOSIT_TERM_LP` in protocol terms).
 
 ## See also
 

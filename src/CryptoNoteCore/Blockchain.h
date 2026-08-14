@@ -440,6 +440,7 @@ namespace CryptoNote {
 
     // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
     std::deque<uint64_t> m_rollingPriceWindow;
+    uint8_t m_lastTwapVersion = 0;
 
     // CD yield state
     uint64_t m_cdYieldPool = 0;
@@ -464,14 +465,29 @@ namespace CryptoNote {
     // Persists after order expires from mempool so user can reclaim pending deposit
     struct LimitDepositInfo {
       uint8_t  side;      // 0 = BUY_XFG, 1 = SELL_XFG
-      uint64_t amount;    // XFG for sells, HEAT for buys
+      uint64_t amount;    // remaining deposit: XFG for sells, HEAT for buys
       uint64_t targetPrice;
       uint32_t expiration;
       Crypto::Hash addressHash; // cn_fast_hash(spendKey||viewKey) — privacy-preserving
+      uint64_t proceedsXfg = 0;  // XFG earned from fills (claimable on withdraw)
+      uint64_t proceedsHeat = 0; // HEAT earned from fills (claimable on withdraw)
+      uint64_t depositedAmount = 0; // original deposit amount (immutable; pop reversal)
       bool withdrawn = false;
-      bool expired = false; // auto-returned on expiry
+      bool expired = false; // auto-returned on expiry (remaining claimable)
     };
     std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+
+    // Per-block OOB fill records for popBlock reversal.
+    struct OrderFillRecord {
+      Crypto::Hash orderId;
+      uint8_t side;
+      uint64_t xfg;      // SELL: XFG filled; BUY: grossXfg pool paid out
+      uint64_t heat;     // SELL: grossHeat pool paid; BUY: heatCost user paid
+      uint64_t feeHeat;  // HEAT-denominated fee credited to accumulator
+      uint64_t netXfg = 0; // BUY only: net XFG credited to proceeds
+      bool newlyExpired = false;
+    };
+    std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
 
   public:
     const std::map<Crypto::Hash, LimitDepositInfo, HashLess>& getLimitDeposits() const { return m_limitDeposits; }

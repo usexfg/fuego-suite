@@ -1237,21 +1237,27 @@ namespace CryptoNote
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
 
     // Auto-compute heatMinted using the rolling 8-block TWAP of Hearth spot price.
-    // twap = hearthPoolRatio averaged over last 8 blocks (10^18 precision, XFG per HEAT).
-    // expectedHeat = xfgBurned * 10^18 / twap.
-    // Falls back to spot pool rate if TWAP unavailable.
+    // Canonical scale: price = HEAT atomics per XFG atomic × COIN.
+    // expectedHeat = xfgBurned × price / COIN.
+    // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
     {
       uint64_t twap = m_node.getHearthTwap();
       if (twap > 0) {
         heatMinted = static_cast<uint64_t>(
-            (static_cast<uint128_t>(xfgBurned) * 1000000000000000000ULL) / twap);
+            (static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN);
       } else {
         INode::AmmPoolReserves reserves;
         if (!m_node.getAmmPoolReserves(reserves) && reserves.reserveXfg > 0 && reserves.reserveHeat > 0) {
+          // Match the consensus spot fallback exactly: price = floor(rH × COIN / rX),
+          // expectedHeat = floor(xfgBurned × price / COIN). Two-step floor avoids the
+          // wallet over-quoting (and the mint being rejected).
+          uint64_t spotPrice = static_cast<uint64_t>(
+              (static_cast<uint128_t>(reserves.reserveHeat) * parameters::COIN) / reserves.reserveXfg);
           heatMinted = static_cast<uint64_t>(
-              (static_cast<uint128_t>(xfgBurned) * reserves.reserveHeat) / reserves.reserveXfg);
+              (static_cast<uint128_t>(xfgBurned) * spotPrice) / parameters::COIN);
         } else {
-          heatMinted = xfgBurned;
+          throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                  "No pool price available for HEAT mint");
         }
       }
     }

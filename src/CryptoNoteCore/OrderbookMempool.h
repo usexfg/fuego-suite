@@ -93,6 +93,9 @@ private:
   void insertBid(const Order& order, bool isPool);
   void insertAsk(const Order& order, bool isPool);
   void removeFromIndex(const Order& order);
+
+  std::vector<AggregatedLevel> getBidCurveLocked(uint32_t maxLevels) const;
+  std::vector<AggregatedLevel> getAskCurveLocked(uint32_t maxLevels) const;
 };
 
 } // namespace CryptoNote

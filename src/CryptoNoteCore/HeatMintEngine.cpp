@@ -9,9 +9,56 @@
 
 #include "HeatMintEngine.h"
 #include "CryptoNoteConfig.h"
+#include "Common/Int128.h"
 #include <cstdio>
 
 namespace CryptoNote {
+
+namespace {
+
+// expectedHeat = xfgBurned × price / COIN, price = HEAT atomics per XFG atomic × COIN.
+uint64_t expectedHeatFor(uint64_t xfgBurned, uint64_t price) {
+  return static_cast<uint64_t>(((uint128_t)xfgBurned * price) / parameters::COIN);
+}
+
+// Scan a mint tx: sum XFG inputs, XFG outputs, HEAT outputs; verify conservation.
+// Returns false on structural failure. Shared by legacy and v12 validation paths.
+bool scanMintTx(const Transaction& tx, uint64_t fee,
+                uint64_t& xfgInputs, uint64_t& xfgOutputs,
+                uint64_t& heatOutputs, uint64_t& xfgBurned) {
+  xfgInputs = 0;
+  xfgOutputs = 0;
+  heatOutputs = 0;
+
+  for (const auto& in : tx.inputs) {
+    if (in.type() == typeid(KeyInput)) {
+      xfgInputs += boost::get<KeyInput>(in).amount;
+    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
+      xfgInputs += boost::get<TransactionInputCommitmentSpend>(in).amount;
+    }
+  }
+
+  for (const auto& out : tx.outputs) {
+    if (out.target.type() == typeid(TransactionOutputCommitment)) {
+      const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
+      if (commitment.term == parameters::HEAT_TERM) {
+        heatOutputs += out.amount;
+      } else {
+        xfgOutputs += out.amount;
+      }
+    } else {
+      xfgOutputs += out.amount;
+    }
+  }
+
+  if (heatOutputs == 0) return false;
+  if (xfgInputs < xfgOutputs + fee) return false;
+
+  xfgBurned = xfgInputs - xfgOutputs - fee;
+  return true;
+}
+
+} // anonymous namespace
 
 HeatMintEngine::HeatMintEngine() {
   setbuf(stderr, NULL);
@@ -30,6 +77,61 @@ bool HeatMintEngine::isHeatMint(const Transaction& tx) const {
 
 bool HeatMintEngine::validateMint(const Transaction& tx,
                                     uint64_t fee,
+                                    uint64_t price,
+                                    uint64_t& xfgBurned,
+                                    uint64_t& heatMinted) const {
+  xfgBurned = 0;
+  heatMinted = 0;
+
+  if (price == 0) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: price is zero\n");
+    return false;
+  }
+
+  uint64_t xfgInputs = 0, xfgOutputs = 0, heatOutputs = 0;
+  if (!scanMintTx(tx, fee, xfgInputs, xfgOutputs, heatOutputs, xfgBurned)) {
+    fprintf(stderr, "[HeatMint] validateMint FAIL: structural (inputs=%llu outputs=%llu heat=%llu fee=%llu)\n",
+      (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs,
+      (unsigned long long)heatOutputs, (unsigned long long)fee);
+    return false;
+  }
+
+  uint64_t expectedHeat = expectedHeatFor(xfgBurned, price);
+
+  fprintf(stderr, "[HeatMint] validateMint: xfgBurned=%llu expectedHeat=%llu price=%llu heatOutputs=%llu\n",
+    (unsigned long long)xfgBurned, (unsigned long long)expectedHeat,
+    (unsigned long long)price, (unsigned long long)heatOutputs);
+
+  if (heatOutputs > expectedHeat) return false;
+
+  heatMinted = heatOutputs;
+  return true;
+}
+
+bool HeatMintEngine::validateMintAuth(const Transaction& tx,
+                                        uint64_t fee,
+                                        uint64_t price,
+                                        uint64_t xfgBurned,
+                                        uint64_t heatMinted) const {
+  if (price == 0) return false;
+  if (xfgBurned == 0 || heatMinted == 0) return false;
+
+  uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
+  if (!validateMint(tx, fee, price, actualXfgBurned, actualHeatMinted)) return false;
+
+  if (actualXfgBurned < xfgBurned) return false;
+  if (actualHeatMinted != heatMinted) return false;
+
+  uint64_t expectedHeat = expectedHeatFor(actualXfgBurned, price);
+  if (heatMinted > expectedHeat) return false;
+
+  return true;
+}
+
+// ── Legacy pre-v12 paths (Q64.64 XFG-per-HEAT) — bit-identical to original ──
+
+bool HeatMintEngine::validateMint(const Transaction& tx,
+                                    uint64_t fee,
                                     FixedPoint64 redemptionPrice,
                                     uint64_t& xfgBurned,
                                     uint64_t& heatMinted) const {
@@ -41,67 +143,16 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
     return false;
   }
 
-  uint64_t xfgInputs  = 0;
-  uint64_t xfgOutputs = 0;
-  uint64_t heatOutputs = 0;
-  size_t inputCount = tx.inputs.size();
-  size_t outputCount = tx.outputs.size();
-  size_t heatOutputCount = 0;
-
-  for (const auto& in : tx.inputs) {
-    if (in.type() == typeid(KeyInput)) {
-      xfgInputs += boost::get<KeyInput>(in).amount;
-    } else if (in.type() == typeid(TransactionInputCommitmentSpend)) {
-      xfgInputs += boost::get<TransactionInputCommitmentSpend>(in).amount;
-    }
-  }
-
-  for (const auto& out : tx.outputs) {
-    if (out.target.type() == typeid(TransactionOutputCommitment)) {
-      const auto& commitment = boost::get<TransactionOutputCommitment>(out.target);
-      fprintf(stderr, "[HeatMint]   output[%zu] Commitment term=%u amount=%llu\n",
-        &out - &tx.outputs[0], commitment.term, (unsigned long long)out.amount);
-      if (commitment.term == parameters::HEAT_TERM) {
-        heatOutputs += out.amount;
-        ++heatOutputCount;
-      } else {
-        xfgOutputs += out.amount;
-      }
-    } else {
-      fprintf(stderr, "[HeatMint]   output[%zu] type=%s amount=%llu\n",
-        &out - &tx.outputs[0], out.target.type().name(), (unsigned long long)out.amount);
-      xfgOutputs += out.amount;
-    }
-  }
-
-  if (heatOutputs == 0) {
-    fprintf(stderr, "[HeatMint] validateMint FAIL: heatOutputs=0, inputs=%zu outputs=%zu xfgInputs=%llu xfgOutputs=%llu HEAT_TERM=0x%x\n",
-      inputCount, outputCount, (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, parameters::HEAT_TERM);
+  uint64_t xfgInputs = 0, xfgOutputs = 0, heatOutputs = 0;
+  if (!scanMintTx(tx, fee, xfgInputs, xfgOutputs, heatOutputs, xfgBurned)) {
     return false;
   }
-
-  if (xfgInputs < xfgOutputs + fee) {
-    fprintf(stderr, "[HeatMint] validateMint FAIL: xfgInputs(%llu) < xfgOutputs(%llu) + fee(%llu)\n",
-      (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, (unsigned long long)fee);
-    return false;
-  }
-
-  xfgBurned = xfgInputs - xfgOutputs - fee;
 
   FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
   FixedPoint64 heatFp = xfgFp.div(redemptionPrice);
   uint64_t expectedHeat = heatFp.toUint64();
 
-  fprintf(stderr, "[HeatMint] validateMint: xfgInputs=%llu xfgOutputs=%llu heatOutputs=%llu heatOutputCount=%zu fee=%llu xfgBurned=%llu expectedHeat=%llu price.raw=%lld\n",
-    (unsigned long long)xfgInputs, (unsigned long long)xfgOutputs, (unsigned long long)heatOutputs,
-    heatOutputCount, (unsigned long long)fee, (unsigned long long)xfgBurned,
-    (unsigned long long)expectedHeat, (long long)redemptionPrice.raw());
-
-  if (heatOutputs > expectedHeat) {
-    fprintf(stderr, "[HeatMint] validateMint FAIL: heatOutputs(%llu) > expectedHeat(%llu)\n",
-      (unsigned long long)heatOutputs, (unsigned long long)expectedHeat);
-    return false;
-  }
+  if (heatOutputs > expectedHeat) return false;
 
   heatMinted = heatOutputs;
   return true;
@@ -112,50 +163,19 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
                                         FixedPoint64 redemptionPrice,
                                         uint64_t xfgBurned,
                                         uint64_t heatMinted) const {
-  fprintf(stderr, "[HeatMint] validateMintAuth called: fee=%llu xfgBurned=%llu heatMinted=%llu price.raw=%lld\n",
-    (unsigned long long)fee, (unsigned long long)xfgBurned, (unsigned long long)heatMinted, (long long)redemptionPrice.raw());
-
-  if (redemptionPrice.isZero()) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: redemptionPrice is zero\n");
-    return false;
-  }
-  if (xfgBurned == 0 || heatMinted == 0) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: xfgBurned=%llu heatMinted=%llu\n",
-      (unsigned long long)xfgBurned, (unsigned long long)heatMinted);
-    return false;
-  }
+  if (redemptionPrice.isZero()) return false;
+  if (xfgBurned == 0 || heatMinted == 0) return false;
 
   uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
-  if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted)) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: validateMint returned false\n");
-    return false;
-  }
+  if (!validateMint(tx, fee, redemptionPrice, actualXfgBurned, actualHeatMinted)) return false;
 
-  fprintf(stderr, "[HeatMint] validateMintAuth: declared xfgBurned=%llu heatMinted=%llu actual xfgBurned=%llu heatMinted=%llu\n",
-    (unsigned long long)xfgBurned, (unsigned long long)heatMinted,
-    (unsigned long long)actualXfgBurned, (unsigned long long)actualHeatMinted);
-
-  if (actualXfgBurned < xfgBurned) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: actualXfgBurned(%llu) < declared(%llu)\n",
-      (unsigned long long)actualXfgBurned, (unsigned long long)xfgBurned);
-    return false;
-  }
-
-  if (actualHeatMinted != heatMinted) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: actualHeatMinted(%llu) != declared(%llu)\n",
-      (unsigned long long)actualHeatMinted, (unsigned long long)heatMinted);
-    return false;
-  }
+  if (actualXfgBurned < xfgBurned) return false;
+  if (actualHeatMinted != heatMinted) return false;
 
   FixedPoint64 xfgFp = FixedPoint64::fromUint64(actualXfgBurned);
   uint64_t expectedHeat = xfgFp.div(redemptionPrice).toUint64();
-  if (heatMinted > expectedHeat) {
-    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: heatMinted(%llu) > expectedHeat(%llu) price.raw=%lld\n",
-      (unsigned long long)heatMinted, (unsigned long long)expectedHeat, (long long)redemptionPrice.raw());
-    return false;
-  }
+  if (heatMinted > expectedHeat) return false;
 
-  fprintf(stderr, "[HeatMint] validateMintAuth PASS\n");
   return true;
 }
 

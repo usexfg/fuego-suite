@@ -38,7 +38,6 @@
 #include "CommitmentIndex.h"
 #include "CryptoNoteConfig.h"
 #include "OrderbookIndex.h"
-#include "OrderbookMatcher.h"
 #include "OrderbookMempool.h"
 #include "OrderbookTypes.h"
 #include "MarketOrderExecutor.h"
@@ -718,25 +717,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         }
       }
 
-      // Auto-return expired limit deposits — mark as expired so user can claim
-      // via cancel_order. Deposit stays in pending until claimed; cannot be
-      // stolen because it's keyed to user's spendKey/viewKey.
-      {
-        m_autoReturnedThisBlock.clear();
-        for (auto& kv : m_limitDeposits) {
-          if (kv.second.withdrawn || kv.second.expired) continue;
-          if (g_orderbookMempool.hasOrder(kv.first)) continue;
-          // Order gone from mempool (expired or orphaned) → mark as claimable
-          m_autoReturnedThisBlock.push_back(kv);
-        }
-        for (auto& entry : m_autoReturnedThisBlock) {
-          auto it = m_limitDeposits.find(entry.first);
-          if (it != m_limitDeposits.end()) {
-            it->second.expired = true;
-            logger(Logging::DEBUGGING) << "Orderbook: marked expired deposit " << entry.first << " for auto-return";
-          }
-        }
-      }
+      // Limit-deposit expiry is handled deterministically per block in
+      // processOrderbookForBlock (height-based); no mempool-based auto-return.
     }
   }
     if (totalRescannedBurns > 0) {
@@ -2924,10 +2906,52 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   TxIndex transactionIndex = { block.height, static_cast<uint16_t>(0) };
   pushTransaction(block, minerTransactionHash, transactionIndex);
 
+  // Epoch-boundary snapshot: captured BEFORE this block's transactions, orderbook
+  // fills, and epoch processing, so popBlock can restore exact pre-block state
+  // (per-tx/fill fee reversals run against it correctly).
+  {
+    uint64_t epochDuration = m_currency.isTestnet()
+        ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    if (height > 0 && height % epochDuration == 0) {
+      EpochStateSnapshot preEpoch;
+      preEpoch.heatSupply = m_heatSupply;
+      preEpoch.heatOnDeposit = m_heatOnDeposit;
+      preEpoch.heatCdFeePool = m_heatCdFeePool;
+      preEpoch.cdYieldPool = m_cdYieldPool;
+      preEpoch.cdReserve = m_cdReserve;
+      preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
+      preEpoch.treasuryBalance = m_treasuryBalance;
+      preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
+      preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
+      preEpoch.treasuryLpReserve = m_treasuryLpReserve;
+      preEpoch.treasurySwapFeeXfg = m_treasurySwapFeeXfg;
+      preEpoch.treasuryCounterXFG = m_treasuryCounterXFG;
+      preEpoch.swfHeatBalance = m_swfHeatBalance;
+      preEpoch.protocolLpShares = m_protocolLpShares;
+      preEpoch.treasuryLpYield = m_treasuryLpYield;
+      preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
+      preEpoch.swfBalance = m_swfBalance;
+      preEpoch.twapAccumulatorLo = (uint64_t)(m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
+      preEpoch.twapAccumulatorHi = (uint64_t)(m_twapAccumulator >> 64);
+      preEpoch.twapBlockCount = m_twapBlockCount;
+      preEpoch.ammReserveXfg = m_ammPool.reserveXfg;
+      preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
+      preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
+      preEpoch.feePoolBalance = m_feePoolBalance;
+      preEpoch.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator;
+      m_epochSnapshots.push_back({height, preEpoch});
+    }
+  }
+
   size_t coinbase_blob_size = getObjectBinarySize(blockData.baseTransaction);
   size_t cumulative_block_size = coinbase_blob_size;
   uint64_t fee_summary = 0;
     uint64_t interestSummary = 0;
+
+    // Block-level aggregate CD-interest cap: all claims in a block share the
+    // pre-block fee pool and vault balances; the sum must fit, not each tx alone.
+    uint64_t blockClaimedInterest = 0;
 
     for (size_t i = 0; i < transactions.size(); ++i)
     {
@@ -3052,6 +3076,30 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     // v10 per-asset balance check — skip coinbase (block reward creates coins from nothing)
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 && i > 0) {
+      // Reject txs carrying more than one settlement-tag class (unvalidated-settlement
+      // guard): validation only exercises the first matching branch while settlement
+      // executes every present tag.
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+        int settlementClasses = 0;
+        if (hasHeatMintAuth) ++settlementClasses;
+        if (hasAmmSwapAuth) ++settlementClasses;
+        if (hasMarketBuyAuth) ++settlementClasses;
+        if (hasMarketSellAuth) ++settlementClasses;
+        if (hasHeatSendAuth) ++settlementClasses;
+        if (hasLimitDeposit) ++settlementClasses;
+        if (hasLimitWithdraw) ++settlementClasses;
+        if (hasLpAddAuth || hasLpRemoveAuth) ++settlementClasses;
+        if (hasLpAddAuth && hasLpRemoveAuth) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: LP add and remove in one tx";
+        }
+        if (hasLegacyBondClaim) ++settlementClasses;
+        if (settlementClasses > 1) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: multiple settlement tags ("
+                                     << settlementClasses << " classes)";
+        }
+      }
       // For mint/send txs, fee must be computed from XFG-only amounts (HEAT commitments inflate out_amount)
       uint64_t xfgFee = fee;
       if (hasHeatMintAuth) {
@@ -3082,34 +3130,79 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
        } else if (hasAmmSwapAuth) {
          // AMM swap: validate pool rate consistency
          // direction 0 = XFG->HEAT, 1 = HEAT->XFG
-         FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-           ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-           : FixedPoint64::fromUint64(1);
+         if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+           // V12+: canonical price (HEAT atomics per XFG atomic × COIN), fail closed.
+           uint64_t poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0)
+             ? ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+             : 0;
 
-         if (ammSwapDirection == 0) {
-           // XFG->HEAT: XFG inputs cover XFG outputs + fee + pool deposit
-           // HEAT outputs must be <= input XFG * poolRate
-           // Pool deposit is counted in outAssets.xfg, so we need to account for it
-           uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
-           FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
-           FixedPoint64 expectedHeatFp = xfgFp.div(poolRate);
-           uint64_t expectedHeat = expectedHeatFp.toUint64();
-
-           if (outAssets.heat > expectedHeat || inAssets.lp != outAssets.lp) {
+           if (poolRate == 0) {
              isTransactionValid = false;
-             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT validation failed: expected HEAT=" << expectedHeat << " actual=" << outAssets.heat;
+             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap rejected: no pool rate available";
+           } else if (ammSwapDirection == 0) {
+             // XFG->HEAT: XFG inputs cover XFG outputs + fee + pool deposit.
+             // Taker pays the 1% Hearth fee by receiving (div - bps)/div of gross.
+             if (inAssets.xfg < outAssets.xfg + xfgFee) {
+               isTransactionValid = false;
+               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT balance mismatch";
+             } else {
+               uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
+               uint64_t grossHeat = static_cast<uint64_t>(
+                   ((uint128_t)xfgBurned * poolRate) / parameters::COIN);
+               uint64_t expectedHeat = static_cast<uint64_t>(
+                   ((uint128_t)grossHeat * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
+                     / parameters::HEARTH_FEE_DIVISOR);
+
+               if (outAssets.heat > expectedHeat || inAssets.lp != outAssets.lp) {
+                 isTransactionValid = false;
+                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT validation failed: expected HEAT=" << expectedHeat << " actual=" << outAssets.heat;
+               }
+             }
+           } else {
+             // HEAT->XFG: HEAT inputs cover HEAT outputs + pool deposit, fee-adjusted.
+             if (inAssets.heat < outAssets.heat) {
+               isTransactionValid = false;
+               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG balance mismatch";
+             } else {
+               uint64_t heatDeposited = inAssets.heat - outAssets.heat;
+               uint64_t grossXfg = static_cast<uint64_t>(
+                   ((uint128_t)heatDeposited * parameters::COIN) / poolRate);
+               uint64_t expectedXfg = static_cast<uint64_t>(
+                   ((uint128_t)grossXfg * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
+                     / parameters::HEARTH_FEE_DIVISOR);
+
+               if (outAssets.xfg > expectedXfg || inAssets.lp != outAssets.lp) {
+                 isTransactionValid = false;
+                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
+               }
+             }
            }
          } else {
-           // HEAT->XFG: HEAT inputs cover HEAT outputs + pool deposit
-           // XFG outputs must be <= input HEAT * poolRate
-           uint64_t heatDeposited = inAssets.heat - outAssets.heat;
-           FixedPoint64 heatFp = FixedPoint64::fromUint64(heatDeposited);
-           FixedPoint64 expectedXfgFp = heatFp.mul(poolRate);
-           uint64_t expectedXfg = expectedXfgFp.toUint64();
+           // Legacy pre-v12 validation (Q64.64 XFG per HEAT) — bit-identical to original.
+           FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+             ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+             : FixedPoint64::fromUint64(1);
 
-           if (outAssets.xfg > expectedXfg || inAssets.lp != outAssets.lp) {
-             isTransactionValid = false;
-             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
+           if (ammSwapDirection == 0) {
+             uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
+             FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgBurned);
+             FixedPoint64 expectedHeatFp = xfgFp.div(poolRate);
+             uint64_t expectedHeat = expectedHeatFp.toUint64();
+
+             if (outAssets.heat > expectedHeat || inAssets.lp != outAssets.lp) {
+               isTransactionValid = false;
+               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT validation failed: expected HEAT=" << expectedHeat << " actual=" << outAssets.heat;
+             }
+           } else {
+             uint64_t heatDeposited = inAssets.heat - outAssets.heat;
+             FixedPoint64 heatFp = FixedPoint64::fromUint64(heatDeposited);
+             FixedPoint64 expectedXfgFp = heatFp.mul(poolRate);
+             uint64_t expectedXfg = expectedXfgFp.toUint64();
+
+             if (outAssets.xfg > expectedXfg || inAssets.lp != outAssets.lp) {
+               isTransactionValid = false;
+               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
+             }
            }
          }
        } else if (hasMarketBuyAuth) {
@@ -3162,28 +3255,76 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             isTransactionValid = false;
             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
               << " limit withdraw: unknown or already-withdrawn orderId";
-          } else if (depIt->second.expired) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-              << " limit withdraw: deposit already auto-returned/expired";
           } else {
             const auto& dep = depIt->second;
+            // Expired deposits remain claimable: remaining deposit + fill proceeds.
             // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
             if (dep.side == 1) {
-              // XFG may increase by at most deposit amount; HEAT conserved
+              // Remaining XFG deposit + HEAT fill proceeds claimable.
               if (outAssets.xfg + xfgFee > inAssets.xfg + dep.amount ||
-                  inAssets.heat != outAssets.heat) {
+                  outAssets.heat > inAssets.heat + dep.proceedsHeat) {
                 isTransactionValid = false;
                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                   << " limit withdraw SELL_XFG balance mismatch";
               }
             } else {
               if (outAssets.heat > inAssets.heat + dep.amount ||
-                  outAssets.xfg + xfgFee > inAssets.xfg) {
+                  outAssets.xfg + xfgFee > inAssets.xfg + dep.proceedsXfg) {
                 isTransactionValid = false;
                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                   << " limit withdraw BUY_XFG balance mismatch";
               }
+            }
+          }
+        }
+      } else if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12 && hasLpAddAuth) {
+        // v12+ LP add: pool math + conservation with LP share outputs.
+        if (lpAddAmountXfg == 0 && lpAddAmountHeat == 0) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: zero amounts";
+        } else {
+          uint64_t computedShares = ammMintLpShares(lpAddAmountXfg, lpAddAmountHeat,
+            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (computedShares != lpAddShares || computedShares == 0) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: share mismatch (computed="
+                                       << computedShares << " declared=" << lpAddShares << ")";
+          }
+          if (isTransactionValid && !ammValidateDepositRatio(lpAddAmountXfg, lpAddAmountHeat,
+                m_ammPool.reserveXfg, m_ammPool.reserveHeat, 100)) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: deposit ratio out of tolerance";
+          }
+          if (isTransactionValid) {
+            // Conservation: user XFG/HEAT inputs cover outputs + fee + pool deposit;
+            // LP share commitment outputs mint exactly the declared shares.
+            if (inAssets.xfg < outAssets.xfg + xfgFee + lpAddAmountXfg ||
+                inAssets.heat < outAssets.heat + lpAddAmountHeat ||
+                inAssets.lp + lpAddShares != outAssets.lp) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: per-asset conservation violation";
+            }
+          }
+        }
+      } else if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12 && hasLpRemoveAuth) {
+        // v12+ LP remove: burn shares, release proportional reserves.
+        if (lpRemoveShares == 0 || lpRemoveShares > m_ammPool.totalLpShares) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: invalid shares";
+        } else {
+          uint64_t amountXfg = 0, amountHeat = 0;
+          ammGetWithdrawalAmounts(lpRemoveShares, m_ammPool.totalLpShares,
+            m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
+          if (amountXfg < lpRemoveMinXfg || amountHeat < lpRemoveMinHeat) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: below minimum";
+          }
+          if (isTransactionValid) {
+            if (inAssets.lp != outAssets.lp + lpRemoveShares ||
+                outAssets.xfg > inAssets.xfg + amountXfg ||
+                outAssets.heat > inAssets.heat + amountHeat) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: per-asset conservation violation";
             }
           }
         }
@@ -3239,60 +3380,111 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       if (!m_currency.sumCommitmentClaimedInterest(transactions[i], txClaimedInterest)) {
         isTransactionValid = false;
         logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " CD interest sum overflow";
-      } else if (txClaimedInterest > m_feePoolBalance) {
-        isTransactionValid = false;
-        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-            << " aggregate CD interest " << txClaimedInterest
-            << " exceeds fee pool " << m_feePoolBalance;
       } else if (txClaimedInterest > 0) {
+        // Per-tx and block-level caps against the PRE-block pool and vault:
+        // claimedInterest is minted into outputs at connect time, so the sum
+        // across the whole block must fit the backing available before the
+        // first connect draws it down.
         uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
-        if (txClaimedInterest > vaultAvailable) {
+        if (txClaimedInterest > m_feePoolBalance ||
+            txClaimedInterest > vaultAvailable) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
               << " aggregate CD interest " << txClaimedInterest
-              << " exceeds vault CD_APY_POOL " << vaultAvailable;
+              << " exceeds fee pool " << m_feePoolBalance
+              << " or vault " << vaultAvailable;
+        } else if (blockClaimedInterest > m_feePoolBalance - txClaimedInterest) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " block CD interest " << (blockClaimedInterest + txClaimedInterest)
+              << " exceeds fee pool " << m_feePoolBalance;
+        } else if (blockClaimedInterest > vaultAvailable - txClaimedInterest) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " block CD interest " << (blockClaimedInterest + txClaimedInterest)
+              << " exceeds vault " << vaultAvailable;
+        } else {
+          blockClaimedInterest += txClaimedInterest;
         }
       }
     }
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (hasHeatMintAuth) {
-        // Use rolling 8-block TWAP for mint price validation (anti-manipulation).
-        // Falls back to spot pool rate if fewer than 2 blocks in the window.
-        FixedPoint64 mintRate;
-        if (m_rollingPriceWindow.size() >= 2) {
-          uint64_t twap = getRollingTwap();
-          mintRate = FixedPoint64::fromRaw(static_cast<int128_t>(twap));
-        } else {
-          mintRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-            : FixedPoint64::fromUint64(1);
-        }
-        uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
-        if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintRate,
-                                                authXfgBurned, authHeatMinted)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HⲶ∆T mint auth validation failed";
-        } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-          // Premium = excess XFG burned beyond what's required to mint the HEAT.
-          // Convert HEAT → XFG equivalent using pool rate to avoid unit mismatch.
-          FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-            : FixedPoint64::fromUint64(1);
-          FixedPoint64 heatFp = FixedPoint64::fromUint64(authHeatMinted);
-          uint64_t xfgEquivalent = heatFp.mul(poolRate).toUint64();
-          uint64_t premium = (authXfgBurned > xfgEquivalent)
-            ? authXfgBurned - xfgEquivalent
-            : 0;
-          // Route mint premium to treasury HEAT reserve (convert XFG → HEAT at pool rate)
-          if (premium > 0 && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-            FixedPoint64 premiumFp = FixedPoint64::fromUint64(premium);
-            uint64_t heatPremium = premiumFp.div(poolRate).toUint64();
-            if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
-              logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
-              return false;
+        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+          // V12+: canonical price scale (HEAT atomics per XFG atomic × COIN).
+          // Rolling 8-block TWAP, spot fallback, fail closed on no price.
+          uint64_t mintPrice = 0;
+          if (m_rollingPriceWindow.size() >= 2) {
+            mintPrice = getRollingTwap();
+          } else if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
+            mintPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          }
+          if (mintPrice == 0) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
+          } else {
+            uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
+            if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintPrice,
+                                                    authXfgBurned, authHeatMinted)) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
+            } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
+              // Premium = excess XFG actually burned beyond what's required to mint
+              // the HEAT (recompute actual burn; declared value may understate).
+              uint64_t actualBurned = (inAssets.xfg > outAssets.xfg + fee)
+                ? inAssets.xfg - outAssets.xfg - fee : authXfgBurned;
+              uint64_t xfgEquivalent = static_cast<uint64_t>(
+                  ((uint128_t)authHeatMinted * parameters::COIN) / mintPrice);
+              uint64_t premium = (actualBurned > xfgEquivalent)
+                ? actualBurned - xfgEquivalent
+                : 0;
+              if (premium > 0) {
+                uint64_t heatPremium = static_cast<uint64_t>(
+                    ((uint128_t)premium * mintPrice) / parameters::COIN);
+                if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
+                  logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
+                  return false;
+                }
+                m_treasuryHeatReserve += heatPremium;
+              }
             }
-            m_treasuryHeatReserve += heatPremium;
+          }
+        } else {
+          // Legacy pre-v12 mint validation (Q64.64, XFG per HEAT) — retained for
+          // historical block re-validation. Must remain bit-identical.
+          FixedPoint64 mintRate;
+          if (m_rollingPriceWindow.size() >= 2) {
+            uint64_t twap = getRollingTwap();
+            mintRate = FixedPoint64::fromRaw(static_cast<int128_t>(twap));
+          } else {
+            mintRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+              ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+              : FixedPoint64::fromUint64(1);
+          }
+          uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
+          if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintRate,
+                                                  authXfgBurned, authHeatMinted)) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
+          } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
+            FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+              ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+              : FixedPoint64::fromUint64(1);
+            FixedPoint64 heatFp = FixedPoint64::fromUint64(authHeatMinted);
+            uint64_t xfgEquivalent = heatFp.mul(poolRate).toUint64();
+            uint64_t premium = (authXfgBurned > xfgEquivalent)
+              ? authXfgBurned - xfgEquivalent
+              : 0;
+            if (premium > 0 && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
+              FixedPoint64 premiumFp = FixedPoint64::fromUint64(premium);
+              uint64_t heatPremium = premiumFp.div(poolRate).toUint64();
+              if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
+                logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
+                return false;
+              }
+              m_treasuryHeatReserve += heatPremium;
+            }
           }
         }
       }
@@ -3303,13 +3495,29 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     // use the auth-tag path above. Retained for historical tx validation.
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       if (!hasHeatMintAuth && m_heatMintEngine.isHeatMint(transactions[i])) {
-        FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-          ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-          : FixedPoint64::fromUint64(1);
-        uint64_t xfgBurned = 0, heatMinted = 0;
-        if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
+        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+          uint64_t poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0)
+            ? ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+            : 0;
+          if (poolRate == 0) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
+          } else {
+            uint64_t xfgBurned = 0, heatMinted = 0;
+            if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
+              isTransactionValid = false;
+              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
+            }
+          }
+        } else {
+          FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
+            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+            : FixedPoint64::fromUint64(1);
+          uint64_t xfgBurned = 0, heatMinted = 0;
+          if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
+            isTransactionValid = false;
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
+          }
         }
       }
     }
@@ -3527,16 +3735,34 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
   pushBlock(block);
     pushToBankingIndex(block, interestSummary);
 
-  // TWAP accumulation per block (v11+) — spot price stored in Q64.64
+  // TWAP accumulation per block (v11+)
   if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty()) {
-    uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-    uint128_t q64 = ((uint128_t)spotPrice << 64) / 1000000000000000000ULL;
-    m_twapAccumulator += q64;
-    m_twapBlockCount++;
-    m_blockTwapContributions.push_back(q64);
+    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+      // V12+: canonical price scale (HEAT/XFG × COIN), stored raw.
+      if (m_rollingPriceWindow.empty() || m_lastTwapVersion < BLOCK_MAJOR_VERSION_12) {
+        // Activation boundary: discard pre-v12 entries (different scale) so the
+        // mint price cannot mix XFG/HEAT-era values with canonical ones.
+        m_rollingPriceWindow.clear();
+      }
+      uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+      m_twapAccumulator += (uint128_t)spotPrice;
+      m_twapBlockCount++;
+      m_blockTwapContributions.push_back((uint128_t)spotPrice);
+    } else {
+      // Legacy pre-v12: XFG/HEAT × 1e18 stored as Q64.64 (bit-identical to original).
+      uint64_t spotPrice = (m_ammPool.reserveHeat > 0)
+        ? static_cast<uint64_t>(
+            ((uint128_t)m_ammPool.reserveXfg * 1000000000000000000ULL) / m_ammPool.reserveHeat)
+        : 0;
+      uint128_t q64 = ((uint128_t)spotPrice << 64) / 1000000000000000000ULL;
+      m_twapAccumulator += q64;
+      m_twapBlockCount++;
+      m_blockTwapContributions.push_back(q64);
+    }
 
     // Rolling 8-block TWAP for mint validation (anti-manipulation)
     m_rollingPriceWindow.push_back(block.bl.hearthPoolRatio);
+    m_lastTwapVersion = block.bl.majorVersion;
     if (m_rollingPriceWindow.size() > 8) {
       m_rollingPriceWindow.pop_front();
     }
@@ -3725,8 +3951,16 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     if (g_orderbookBootstrapBlocksRemaining > 0) {
       g_orderbookBootstrapBlocksRemaining--;
       if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-        uint64_t spotPrice = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat);
-        g_orderbookLastClearingPrice = static_cast<uint64_t>(spotPrice);
+        uint64_t spotPrice;
+        if (block.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+          // V12+: canonical order price scale (HEAT/XFG × COIN).
+          spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        } else {
+          // Legacy pre-v12: XFG/HEAT × COIN (bit-identical to original).
+          spotPrice = static_cast<uint64_t>(
+              (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat);
+        }
+        g_orderbookLastClearingPrice = spotPrice;
       }
     } else {
       g_orderbookIsInBootstrap = false;
@@ -3745,7 +3979,13 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     g_poolBandFilledLastBlock = 0; // reset for this block
     uint64_t bandPlaced = static_cast<uint64_t>((static_cast<uint128_t>(m_ammPool.reserveXfg) * HEARTH_DEPTH_BAND_PCT) / 100);
 
-    g_poolOrchestrator.recordPrice(g_orderbookLastClearingPrice);
+    // V12+: the pool spot price (which moves with every swap/fill) drives the
+    // volatility signal; pre-v12 keeps the legacy P_clear feed.
+    uint64_t volatilityPrice = g_orderbookLastClearingPrice;
+    if (block.majorVersion >= BLOCK_MAJOR_VERSION_12 && !m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
+      volatilityPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+    }
+    g_poolOrchestrator.recordPrice(volatilityPrice);
 
     uint32_t spreadBps = g_poolOrchestrator.computeSpreadBps(
       g_orderbookLastClearingPrice, bandFilled, bandPlaced);
@@ -3773,112 +4013,128 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     }
   }
 
-  if (!g_orderbookIsInBootstrap && g_orderbookMempool.totalOrders() > 0) {
-    OrderbookIndex matchIndex(MAX_ORDERS_PER_BLOCK, 100);
-    g_orderbookMempool.copyToIndex(matchIndex);
+  // V12+: execute resting out-of-band limit orders against the pool at the
+  // clearing price. Orders are tx-extra-backed (funds committed via
+  // TransactionExtraLimitDeposit), so no gossip, no unbacked orders.
+  // Pre-v12: in-band matching was never wired to a submission path; no
+  // historical blocks contain in-band fills, so nothing to preserve.
+  if (block.majorVersion >= BLOCK_MAJOR_VERSION_12 && !m_ammPool.isEmpty() &&
+      !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0) {
+    std::vector<OrderFillRecord> fillsThisBlock;
+    // Fills execute at the LIVE pool spot price — never the (frozen) bootstrap
+    // clearing price — so limit orders track the AMM and cannot arbitrage it.
+    const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+    const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
+    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
 
-    OrderbookMatcher matcher(MIN_DISTINCT_PARTIES, MAX_ORDERS_PER_BLOCK);
-    MatchResult result = matcher.match(matchIndex, g_orderbookLastClearingPrice, height);
+    for (auto& kv : m_limitDeposits) {
+      LimitDepositInfo& dep = kv.second;
+      if (dep.withdrawn) continue;
 
-    if (result.clearingValid) {
-      g_orderbookLastClearingPrice = result.P_clear;
-
-      // Settle pool order fills: update reserves, accumulate LP fees
-      if (!m_ammPool.isEmpty()) {
-        for (const auto& fill : result.fills) {
-          bool bidIsPool = (fill.bidOrderId.data[0] == 0xF0);
-          bool askIsPool = (fill.askOrderId.data[0] == 0xF0);
-          if (!bidIsPool && !askIsPool) continue;
-
-          g_poolBandFilledLastBlock += fill.amount;
-          uint64_t fillCost = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) * fill.price) / parameters::COIN);
-
-          if (bidIsPool) {
-            m_ammPool.reserveXfg += fill.amount;
-            if (m_ammPool.reserveHeat >= fillCost) m_ammPool.reserveHeat -= fillCost;
-          }
-          if (askIsPool) {
-            if (m_ammPool.reserveXfg >= fill.amount) m_ammPool.reserveXfg -= fill.amount;
-            m_ammPool.reserveHeat += fillCost;
-          }
-
-          // Flat fee: 1% of fill value (HEAT) → 50% CD yield pool, 50% auto-compound into LP reserves
-          uint64_t totalFee = (fillCost * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
-          uint64_t cdFee = totalFee / 2;
-          uint64_t lpFee = totalFee - cdFee;
-          m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
-            ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
-          m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - lpFee)
-            ? UINT64_MAX : m_ammPool.reserveHeat + lpFee;
-
-          // LP spread reward: |fill.price - P_clear| × amount / COIN → auto-compound into reserves
-          if (fill.price > result.P_clear) {
-            uint64_t fee = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) *
-                           (fill.price - result.P_clear)) / parameters::COIN);
-            m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - fee)
-              ? UINT64_MAX : m_ammPool.reserveHeat + fee;
-          } else if (result.P_clear > fill.price) {
-            uint64_t fee = static_cast<uint64_t>((static_cast<uint128_t>(fill.amount) *
-                           (result.P_clear - fill.price)) / parameters::COIN);
-            m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - fee)
-              ? UINT64_MAX : m_ammPool.reserveHeat + fee;
-          }
-        }
+      // Expiry: remaining deposit becomes claimable via withdraw.
+      if (!dep.expired && dep.expiration > 0 && height >= dep.expiration) {
+        dep.expired = true;
+        OrderFillRecord rec;
+        rec.orderId = kv.first;
+        rec.side = dep.side;
+        rec.xfg = 0; rec.heat = 0; rec.feeHeat = 0;
+        rec.newlyExpired = true;
+        fillsThisBlock.push_back(rec);
+        continue;
       }
-      block.orderbookNumMatches = result.numMatches;
-      g_orderbookLastNumMatches = result.numMatches;
+      if (dep.expired) continue;
 
-      // Settle out-of-band limit orders
-      if (!m_ammPool.isEmpty()) {
-        auto oobOrders = g_orderbookMempool.getOutOfBandOrders();
-        for (const auto& oob : oobOrders) {
-          bool shouldFill = (oob.side == 1 && result.P_clear >= oob.targetPrice)
-                         || (oob.side == 0 && result.P_clear <= oob.targetPrice);
-          if (!shouldFill) continue;
+      if (price == 0) continue;
+      if (dep.targetPrice == 0) continue;
 
-          auto depIt = m_limitDeposits.find(oob.orderId);
-          if (depIt == m_limitDeposits.end() || depIt->second.withdrawn || depIt->second.expired) continue;
+      if (dep.side == 1) {
+        // SELL_XFG: user demands at least targetPrice HEAT per XFG.
+        if (dep.targetPrice > price) continue;  // pool won't pay that much
+        uint64_t maxByHeat = static_cast<uint64_t>(
+            ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / price);
+        uint64_t fillXfg = std::min(dep.amount, maxByHeat);
+        if (fillXfg == 0 || m_ammPool.pendingXfg < fillXfg) continue;
 
-          uint64_t fillAmountXfg = 0;
-          uint64_t fillAmountHeat = 0;
-
-          if (oob.side == 1) { // SELL_XFG
-            uint64_t maxFillByHeat = (m_ammPool.reserveHeat * parameters::COIN) / oob.targetPrice;
-            uint64_t amountToFill = std::min(oob.amount, maxFillByHeat);
-            if (m_ammPool.pendingXfg < amountToFill) continue;
-
-            fillAmountXfg = amountToFill;
-            fillAmountHeat = static_cast<uint64_t>((static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN);
-
-            m_ammPool.pendingXfg -= fillAmountXfg;
-            m_ammPool.reserveXfg += fillAmountXfg;
-            m_ammPool.reserveHeat -= fillAmountHeat;
-          } else { // BUY_XFG
-            uint64_t maxFillByXfg = m_ammPool.reserveXfg;
-            uint64_t desiredXfg = static_cast<uint64_t>((static_cast<uint128_t>(oob.amount) * parameters::COIN) / oob.targetPrice);
-            uint64_t amountToFill = std::min(desiredXfg, maxFillByXfg);
-            uint64_t heatCost = static_cast<uint64_t>((static_cast<uint128_t>(amountToFill) * oob.targetPrice) / parameters::COIN);
-            if (m_ammPool.pendingHeat < heatCost) continue;
-
-            fillAmountXfg = amountToFill;
-            fillAmountHeat = heatCost;
-
-            m_ammPool.pendingHeat -= fillAmountHeat;
-            m_ammPool.reserveHeat += fillAmountHeat;
-            m_ammPool.reserveXfg -= fillAmountXfg;
-          }
-
-          if (fillAmountXfg > 0 || fillAmountHeat > 0) {
-            uint64_t filledAmount = (oob.side == 1) ? fillAmountXfg : fillAmountHeat;
-            g_orderbookMempool.fillOrder(oob.orderId, filledAmount);
-            depIt->second.amount -= filledAmount;
-            if (depIt->second.amount == 0) {
-              m_limitDeposits.erase(depIt);
-            }
-            block.orderbookNumMatches++;
-            g_orderbookLastNumMatches = block.orderbookNumMatches;
-          }
+        // Taker pays the 1% fee by receiving (div-bps)/div of gross.
+        uint64_t grossHeat = static_cast<uint64_t>(
+            ((uint128_t)fillXfg * price) / parameters::COIN);
+        uint64_t heatPaid = static_cast<uint64_t>(
+            ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
+        uint64_t feeHeat = grossHeat - heatPaid;
+        if (grossHeat == 0 || m_ammPool.reserveHeat < grossHeat) continue;
+        if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeat) {
+          logger(ERROR, BRIGHT_RED) << "OOB SELL_XFG fill: accumulator overflow";
+          return;
         }
+
+        m_ammPool.pendingXfg -= fillXfg;
+        m_ammPool.reserveXfg += fillXfg;
+        m_ammPool.reserveHeat -= grossHeat;
+        m_ammPool.cdHearthFeeAccumulator += feeHeat;
+        dep.amount -= fillXfg;
+        dep.proceedsHeat += heatPaid;
+
+        OrderFillRecord rec;
+        rec.orderId = kv.first;
+        rec.side = 1;
+        rec.xfg = fillXfg;
+        rec.heat = grossHeat;
+        rec.feeHeat = feeHeat;
+        fillsThisBlock.push_back(rec);
+        block.orderbookNumMatches++;
+      } else {
+        // BUY_XFG: user pays at most targetPrice HEAT per XFG.
+        if (dep.targetPrice < price) continue;  // pool asks more than that
+        uint64_t desiredXfg = static_cast<uint64_t>(
+            ((uint128_t)dep.amount * parameters::COIN) / price);
+        // Budget cap: fee-inclusive cost must never exceed the deposit budget.
+        uint64_t maxBudgetXfg = static_cast<uint64_t>(
+            ((uint128_t)dep.amount * (feeDiv - feeBps) * parameters::COIN)
+              / (feeDiv * price));
+        uint64_t fillXfg = std::min(desiredXfg, maxBudgetXfg);
+        fillXfg = std::min(fillXfg, m_ammPool.reserveXfg);
+        if (fillXfg == 0) continue;
+        // Net XFG the user receives; fee deducted from gross like dir-1 swaps.
+        uint64_t grossXfg = static_cast<uint64_t>(
+            ((uint128_t)fillXfg * feeDiv) / (feeDiv - feeBps));
+        uint64_t heatCost = static_cast<uint64_t>(
+            ((uint128_t)grossXfg * price) / parameters::COIN);
+        if (heatCost == 0 || heatCost > dep.amount) continue;
+        if (m_ammPool.pendingHeat < heatCost) continue;
+        if (m_ammPool.reserveXfg < grossXfg) continue;
+
+        uint64_t feeXfg = grossXfg - fillXfg;
+        // Convert the XFG fee to HEAT at the PRE-fill spot rate (deterministic).
+        uint64_t feeHeatEq = static_cast<uint64_t>(
+            ((uint128_t)feeXfg * price) / parameters::COIN);
+        if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq) {
+          logger(ERROR, BRIGHT_RED) << "OOB BUY_XFG fill: accumulator overflow";
+          return;
+        }
+
+        m_ammPool.pendingHeat -= heatCost;
+        m_ammPool.reserveXfg -= grossXfg;
+        m_ammPool.reserveHeat += heatCost;
+        m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
+        dep.amount -= heatCost;
+        dep.proceedsXfg += fillXfg;
+
+        OrderFillRecord rec;
+        rec.orderId = kv.first;
+        rec.side = 0;
+        rec.xfg = grossXfg;
+        rec.heat = heatCost;
+        rec.feeHeat = feeHeatEq;
+        rec.netXfg = fillXfg;
+        fillsThisBlock.push_back(rec);
+        block.orderbookNumMatches++;
+      }
+    }
+
+    if (!fillsThisBlock.empty()) {
+      m_blockOrderFills.push_back({height, std::move(fillsThisBlock)});
+      while (m_blockOrderFills.size() > 100) {
+        m_blockOrderFills.pop_front();
       }
     }
   }
@@ -3896,7 +4152,14 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   }
 
   if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-    block.hearthPoolRatio = getHearthSpotPrice();
+    if (block.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+      // V12+: canonical scale (HEAT/XFG × COIN).
+      block.hearthPoolRatio = getHearthSpotPrice();
+    } else {
+      // Legacy pre-v12: XFG/HEAT × 1e18 (matches the pre-v12 P_clear seed).
+      block.hearthPoolRatio = static_cast<uint64_t>(
+          ((uint128_t)m_ammPool.reserveXfg * 1000000000000000000ULL) / m_ammPool.reserveHeat);
+    }
   }
 }
 
@@ -4427,32 +4690,6 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
       ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
       : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
   if (newHeight > 0 && newHeight % epochDuration == 0) {
-    // Save pre-epoch snapshot for popBlock reversal
-    EpochStateSnapshot preEpoch;
-    preEpoch.heatSupply = m_heatSupply;
-    preEpoch.heatOnDeposit = m_heatOnDeposit;
-    preEpoch.heatCdFeePool = m_heatCdFeePool;
-    preEpoch.cdYieldPool = m_cdYieldPool;
-    preEpoch.cdReserve = m_cdReserve;
-    preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
-    preEpoch.treasuryBalance = m_treasuryBalance;
-    preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
-    preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
-    preEpoch.treasuryLpReserve = m_treasuryLpReserve;
-    preEpoch.treasurySwapFeeXfg = m_treasurySwapFeeXfg;
-    preEpoch.treasuryCounterXFG = m_treasuryCounterXFG;
-    preEpoch.swfHeatBalance = m_swfHeatBalance;
-    preEpoch.protocolLpShares = m_protocolLpShares;
-    preEpoch.treasuryLpYield = m_treasuryLpYield;
-    preEpoch.bootstrapRepaymentVault = m_bootstrapRepaymentVault;
-    preEpoch.swfBalance = m_swfBalance;
-    preEpoch.twapAccumulatorLo = (uint64_t)(m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
-    preEpoch.twapAccumulatorHi = (uint64_t)(m_twapAccumulator >> 64);
-    preEpoch.twapBlockCount = m_twapBlockCount;
-    preEpoch.ammReserveXfg = m_ammPool.reserveXfg;
-    preEpoch.ammReserveHeat = m_ammPool.reserveHeat;
-    preEpoch.ammTotalLpShares = m_ammPool.totalLpShares;
-
     // Auto-roll matured CDs (one-time interest compounding at first maturity)
     size_t autoRolled = m_commitmentIndex.processAutoRolls(newHeight);
     if (autoRolled > 0) {
@@ -4464,7 +4701,10 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
     uint64_t epochEnd = epochStart + epochDuration - 1;
     // Split swap fees: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
     uint64_t epochSwapFees = m_currentEpochSwapFees;
-    uint64_t epochCdLocked = m_totalCdLocked;
+    // v12+: CD APY denominator is CD-only HEAT (m_heatOnDeposit), not the total
+    // commitment-output pool (which includes mints, LP and pool markers).
+    uint64_t epochCdLocked = (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12)
+        ? m_heatOnDeposit : m_totalCdLocked;
     uint64_t cdShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_CD_SHARE_PCT) / 100;
     uint64_t bonusVaultShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_BONUS_VAULT_PCT) / 100;
     uint64_t treasuryShare = (epochSwapFees * CryptoNote::parameters::SWAP_FEE_TREASURY_SHARE_PCT) / 100;
@@ -4487,13 +4727,28 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
       legacyBondShare = (cdShare * CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT) / 100;
       regularCdShare = cdShare - legacyBondShare;
     }
+    // v12+: claims are denominated in HEAT atomics, so the recorded rate must be
+    // HEAT-denominated too — convert the XFG fee share at the pool rate once,
+    // here. If no rate is available the share defers (rate 0 for this epoch;
+    // the XFG value stays in m_cdYieldPool until a later epoch prices it).
+    uint64_t regularCdShareHeat = regularCdShare;
+    if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+      regularCdShareHeat = 0;
+      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+        uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (poolRate > 0) {
+          regularCdShareHeat = static_cast<uint64_t>(
+              ((uint128_t)regularCdShare * poolRate) / parameters::COIN);
+        }
+      }
+    }
     uint64_t epochFeeRate = 0;
-    if (epochCdLocked > 0 && regularCdShare > 0) {
+    if (epochCdLocked > 0 && regularCdShareHeat > 0) {
       epochFeeRate = static_cast<uint64_t>(
-          (uint128_t)regularCdShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
+          (uint128_t)regularCdShareHeat * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
 
-    m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShare, epochCdLocked);
+    m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShareHeat, epochCdLocked);
 
     // Legacy bond fee rate
     uint64_t legacyEpochFeeRate = 0;
@@ -4524,11 +4779,19 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
       if (convertAmount > 0) {
         uint64_t heatConverted = convertAmount;
         if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (!poolRate.isZero()) {
-            FixedPoint64 xfgFp = FixedPoint64::fromUint64(convertAmount);
-            FixedPoint64 heatFp = xfgFp.div(poolRate);
-            heatConverted = heatFp.toUint64();
+          if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+            uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (poolRate > 0) {
+              heatConverted = static_cast<uint64_t>(
+                  ((uint128_t)convertAmount * poolRate) / parameters::COIN);
+            }
+          } else {
+            FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (!poolRate.isZero()) {
+              FixedPoint64 xfgFp = FixedPoint64::fromUint64(convertAmount);
+              FixedPoint64 heatFp = xfgFp.div(poolRate);
+              heatConverted = heatFp.toUint64();
+            }
           }
         }
         if (heatConverted > 0 && m_heatSupply <= UINT64_MAX - heatConverted) {
@@ -4561,10 +4824,18 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
         uint64_t lpXfg = m_treasuryCounterXFG;
         // Convert half to HEAT at pool rate for balanced LP deposit
         uint64_t lpHeat = lpXfg;
-        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (!poolRate.isZero()) {
-          FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
-          lpHeat = halfFp.div(poolRate).toUint64();
+        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+          uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (poolRate > 0) {
+            lpHeat = static_cast<uint64_t>(
+                ((uint128_t)(lpXfg / 2) * poolRate) / parameters::COIN);
+          }
+        } else {
+          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (!poolRate.isZero()) {
+            FixedPoint64 halfFp = FixedPoint64::fromUint64(lpXfg / 2);
+            lpHeat = halfFp.div(poolRate).toUint64();
+          }
         }
         uint64_t lpShares = ammMintLpShares(lpXfg / 2, lpHeat,
             m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
@@ -4585,8 +4856,10 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
                        << m_currency.formatAmount(lpHeat) << " HEAT → "
                        << lpShares << " LP shares"
                        << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
+          m_treasuryCounterXFG = 0;
         }
-        m_treasuryCounterXFG = 0;
+        // lpShares == 0: conversion produced no shareable amount — keep the
+        // remaining XFG in the counter for the next epoch (never silently drop).
       }
     }
 
@@ -4597,11 +4870,19 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
         uint64_t xfgToConvert = m_swfBalance / 2;
         uint64_t heatConverted = xfgToConvert;
         if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (!poolRate.isZero()) {
-            FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToConvert);
-            FixedPoint64 heatFp = xfgFp.div(poolRate);
-            heatConverted = heatFp.toUint64();
+          if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12) {
+            uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (poolRate > 0) {
+              heatConverted = static_cast<uint64_t>(
+                  ((uint128_t)xfgToConvert * poolRate) / parameters::COIN);
+            }
+          } else {
+            FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (!poolRate.isZero()) {
+              FixedPoint64 xfgFp = FixedPoint64::fromUint64(xfgToConvert);
+              FixedPoint64 heatFp = xfgFp.div(poolRate);
+              heatConverted = heatFp.toUint64();
+            }
           }
         }
         if (heatConverted > 0) {
@@ -4625,17 +4906,6 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
     }
     m_cdYieldPool += regularCdShare;
 
-    // Route Hearth flat fee (1% of HEAT fills) into CD yield pool.
-    if (m_ammPool.cdHearthFeeAccumulator > 0) {
-      if (m_cdYieldPool > UINT64_MAX - m_ammPool.cdHearthFeeAccumulator) {
-        logger(ERROR, BRIGHT_RED) << "CD yield pool overflow on Hearth fee";
-        return false;
-      }
-      m_cdYieldPool += m_ammPool.cdHearthFeeAccumulator;
-      logger(INFO) << "CD yield pool ← Hearth flat fee: " << m_ammPool.cdHearthFeeAccumulator;
-      m_ammPool.cdHearthFeeAccumulator = 0;
-    }
-
     // Route legacy bond share to legacy bond yield pool
     if (legacyBondShare > 0) {
       if (m_legacyBondYieldPool > UINT64_MAX - legacyBondShare) {
@@ -4647,32 +4917,78 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
 
     // CD yield: mint HⲶ∆T from swap-fee aggregate demand for CD-holder payout.
     // 100% mint, 0% pool buyback. No phantom XFG ever enters the AMM pool.
-    if (m_cdYieldPool > 0) {
-      uint64_t heatMinted = m_cdYieldPool;
-      if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-        FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (!poolRate.isZero()) {
-          FixedPoint64 xfgFp = FixedPoint64::fromUint64(m_cdYieldPool);
-          FixedPoint64 heatFp = xfgFp.div(poolRate);
-          heatMinted = heatFp.toUint64();
+    if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_12) {
+      // Legacy pre-v12: Hearth fee accumulator drains into m_cdYieldPool (XFG units).
+      if (m_ammPool.cdHearthFeeAccumulator > 0) {
+        if (m_cdYieldPool > UINT64_MAX - m_ammPool.cdHearthFeeAccumulator) {
+          logger(ERROR, BRIGHT_RED) << "CD yield pool overflow on Hearth fee";
+          return false;
+        }
+        m_cdYieldPool += m_ammPool.cdHearthFeeAccumulator;
+        logger(INFO) << "CD yield pool ← Hearth flat fee: " << m_ammPool.cdHearthFeeAccumulator;
+        m_ammPool.cdHearthFeeAccumulator = 0;
+      }
+      if (m_cdYieldPool > 0) {
+        uint64_t heatMinted = m_cdYieldPool;
+        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+          FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (!poolRate.isZero()) {
+            FixedPoint64 xfgFp = FixedPoint64::fromUint64(m_cdYieldPool);
+            FixedPoint64 heatFp = xfgFp.div(poolRate);
+            heatMinted = heatFp.toUint64();
+          }
+        }
+        if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
+          m_heatSupply += heatMinted;
+          m_heatCdFeePool += heatMinted;
+          if (m_currency.isTestnet() && m_feePoolBalance <= UINT64_MAX - heatMinted)
+            m_feePoolBalance += heatMinted;
+          uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
+                          VaultPartition::CD_APY_POOL, blockHash,
+                          m_vaultKeys.viewPub);
+        }
+        m_cdYieldPool = 0;
+      }
+    } else {
+      // V12+: m_cdYieldPool is XFG-denominated (swap fees); cdHearthFeeAccumulator is
+      // HEAT-denominated (value already debited from LP reserves at settlement).
+      uint64_t heatMinted = 0;
+      if (m_cdYieldPool > 0) {
+        // Convert XFG-denominated fees at the pool rate. If no rate is available,
+        // defer to the next epoch — never mint 1:1 across units.
+        if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
+          uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (poolRate > 0) {
+            heatMinted = static_cast<uint64_t>(
+                ((uint128_t)m_cdYieldPool * poolRate) / parameters::COIN);
+            m_cdYieldPool = 0;
+          }
         }
       }
-      if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
-        m_heatSupply += heatMinted;
-        m_heatCdFeePool += heatMinted;
-        // Credit fee pool so F-001 cap allows CD interest claims.
-        // Testnet only: mainnet fee pool is funded exclusively by swap fees
-        // (cdHearthFeeAccumulator → epoch boundary → cdYieldPool → HEAT mint).
-        // On testnet we also credit from mint to bootstrap CD interest testing
-        // when no swap activity exists yet.
-        if (m_currency.isTestnet() && m_feePoolBalance <= UINT64_MAX - heatMinted)
+      if (heatMinted > 0 || m_ammPool.cdHearthFeeAccumulator > 0) {
+        if (heatMinted > UINT64_MAX - m_ammPool.cdHearthFeeAccumulator) {
+          logger(ERROR, BRIGHT_RED) << "CD yield mint overflow";
+          return false;
+        }
+        heatMinted += m_ammPool.cdHearthFeeAccumulator;
+        if (heatMinted > 0 && m_heatSupply <= UINT64_MAX - heatMinted) {
+          m_heatSupply += heatMinted;
+          m_heatCdFeePool += heatMinted;
+          // Credit fee pool so the F-001 caps allow CD interest claims.
+          // Pool and claims are denominated in the same units (HEAT atomics).
+          if (m_feePoolBalance > UINT64_MAX - heatMinted) {
+            logger(ERROR, BRIGHT_RED) << "Fee pool overflow detected";
+            return false;
+          }
           m_feePoolBalance += heatMinted;
-        uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
-        m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
-                        VaultPartition::CD_APY_POOL, blockHash,
-                        m_vaultKeys.viewPub);
+          uint64_t vI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(vI, heatMinted, AssetType::HEAT,
+                          VaultPartition::CD_APY_POOL, blockHash,
+                          m_vaultKeys.viewPub);
+        }
+        m_ammPool.cdHearthFeeAccumulator = 0;
       }
-      m_cdYieldPool = 0;
     }
 
     // Treasury LP yield: no longer needed — fees auto-compound into reserves.
@@ -4698,7 +5014,6 @@ bool CryptoNote::Blockchain::pushBlock(BlockEntry &block) {
     // popBlock will subtract this value and pop the matching m_epochFeeRates entry.
     m_blockSwapFeeContributions.push_back(epochSwapFees);
     m_blockEpochDistributions.push_back({treasuryShare, 0});
-    m_epochSnapshots.push_back({newHeight, preEpoch});
     while (m_epochSnapshots.size() > 100)
       m_epochSnapshots.pop_front();
 
@@ -4847,13 +5162,14 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_commitmentIndex.popEpochFeeRate();
       m_commitmentIndex.popLegacyEpochFeeRate();
       
-      // Reverse treasury distribution
+      // Reverse treasury distribution. treasuryShare is routed to
+      // m_treasuryCounterXFG, not m_treasuryBalance — reverse the right counter.
+      // m_totalTreasuryAccrued is never incremented anywhere; do not decrement it.
       if (!m_blockEpochDistributions.empty()) {
         auto dist = m_blockEpochDistributions.back();
         m_blockEpochDistributions.pop_back();
-        if (dist.first > 0 && m_treasuryBalance >= dist.first) {
-          m_treasuryBalance -= dist.first;
-          m_totalTreasuryAccrued -= dist.first;
+        if (dist.first > 0 && m_treasuryCounterXFG >= dist.first) {
+          m_treasuryCounterXFG -= dist.first;
         }
       }
     } else {
@@ -4863,6 +5179,44 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   }
 
   // Restore epoch-level state if the popped block was an epoch boundary
+  // Reverse OOB limit-order fills executed for this block (v12+).
+  if (!m_blockOrderFills.empty() && m_blockOrderFills.back().first == poppedHeight) {
+    const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
+    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
+    const auto& fills = m_blockOrderFills.back().second;
+    for (auto it = fills.rbegin(); it != fills.rend(); ++it) {
+      const auto& rec = *it;
+      auto depIt = m_limitDeposits.find(rec.orderId);
+      if (rec.newlyExpired) {
+        if (depIt != m_limitDeposits.end()) depIt->second.expired = false;
+        continue;
+      }
+      if (rec.side == 1) {
+        uint64_t heatPaid = rec.heat - rec.feeHeat;
+        m_ammPool.pendingXfg += rec.xfg;
+        m_ammPool.reserveXfg -= rec.xfg;
+        m_ammPool.reserveHeat += rec.heat;
+        if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+          m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.amount += rec.xfg;
+          depIt->second.proceedsHeat -= heatPaid;
+        }
+      } else {
+        m_ammPool.pendingHeat += rec.heat;
+        m_ammPool.reserveHeat -= rec.heat;
+        m_ammPool.reserveXfg += rec.xfg;
+        if (m_ammPool.cdHearthFeeAccumulator >= rec.feeHeat)
+          m_ammPool.cdHearthFeeAccumulator -= rec.feeHeat;
+        if (depIt != m_limitDeposits.end()) {
+          depIt->second.amount += rec.heat;
+          depIt->second.proceedsXfg -= rec.netXfg;
+        }
+      }
+    }
+    m_blockOrderFills.pop_back();
+  }
+
   if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight) {
     const auto& snap = m_epochSnapshots.back().second;
     m_heatSupply = snap.heatSupply;
@@ -4887,6 +5241,8 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_ammPool.reserveXfg = snap.ammReserveXfg;
     m_ammPool.reserveHeat = snap.ammReserveHeat;
     m_ammPool.totalLpShares = snap.ammTotalLpShares;
+    m_feePoolBalance = snap.feePoolBalance;
+    m_ammPool.cdHearthFeeAccumulator = snap.cdHearthFeeAccumulator;
     m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
     m_epochSnapshots.pop_back();
   }
@@ -4924,7 +5280,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   // Epoch-boundary blocks: snapshot already restored correct accumulator — just pop the deque.
   // Non-boundary blocks: subtract the contribution from accumulator.
   if (!m_blockTwapContributions.empty()) {
-    bool isEpochBoundary = !m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight;
+    uint64_t epochDuration = m_currency.isTestnet()
+        ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+    bool isEpochBoundary = (poppedHeight > 0 && poppedHeight % epochDuration == 0);
     if (!isEpochBoundary) {
       uint128_t q64 = m_blockTwapContributions.back();
       if (m_twapAccumulator >= q64 && m_twapBlockCount > 0) {
@@ -5141,56 +5500,141 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       for (const auto& field : tx_extra_fields) {
         if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
           const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
+          if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_12) {
+            // Legacy pre-v12 settlement from declared amounts — bit-identical to baseline.
+            if (auth.direction == 0) {
+              // XFG→HEAT: pool gains XFG, loses HEAT
+              if (m_ammPool.reserveXfg <= UINT64_MAX - auth.inputAmount)
+                m_ammPool.reserveXfg += auth.inputAmount;
+              if (m_ammPool.reserveHeat >= auth.outputAmount)
+                m_ammPool.reserveHeat -= auth.outputAmount;
+              // Flat fee: 1% of HEAT output → 50% CD yield pool, 50% auto-compound into LP reserves
+              uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+              uint64_t cdFee = totalFee / 2;
+              uint64_t lpFee = totalFee - cdFee;
+              m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
+                ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
+              m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - lpFee)
+                ? UINT64_MAX : m_ammPool.reserveHeat + lpFee;
+              logger(INFO) << "AMM swap XFG→HEAT settled: pool +"
+                           << m_currency.formatAmount(auth.inputAmount) << " XFG, -"
+                           << m_currency.formatAmount(auth.outputAmount) << " HEAT, cdFee="
+                           << m_currency.formatAmount(cdFee) << ", lpFee="
+                           << m_currency.formatAmount(lpFee);
+            } else {
+              // HEAT→XFG: pool gains HEAT, loses XFG
+              if (m_ammPool.reserveHeat <= UINT64_MAX - auth.inputAmount)
+                m_ammPool.reserveHeat += auth.inputAmount;
+              if (m_ammPool.reserveXfg >= auth.outputAmount)
+                m_ammPool.reserveXfg -= auth.outputAmount;
+              // Flat fee: 1% of XFG output → 50% CD yield pool, 50% auto-compound into LP reserves
+              uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+              uint64_t cdFee = totalFee / 2;
+              uint64_t lpFee = totalFee - cdFee;
+              m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
+                ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
+              m_ammPool.reserveXfg = (m_ammPool.reserveXfg > UINT64_MAX - lpFee)
+                ? UINT64_MAX : m_ammPool.reserveXfg + lpFee;
+              logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
+                           << m_currency.formatAmount(auth.inputAmount) << " HEAT, -"
+                           << m_currency.formatAmount(auth.outputAmount) << " XFG, cdFee="
+                           << m_currency.formatAmount(cdFee) << ", lpFee="
+                           << m_currency.formatAmount(lpFee);
+            }
+            break;  // one swap auth per tx
+          }
+          // V12+: settle from ACTUAL balance deltas. Declared auth.inputAmount/outputAmount
+          // are untrusted hints (bounds-checked at validation); the tx's real
+          // inputs/outputs are the source of truth.
+          AssetBalance inAssets = getTransactionInputAssetAmounts(transaction.tx, block.height);
+          AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction.tx);
+          uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction.tx, block.height);
+          uint64_t out_amount = getOutputAmount(transaction.tx);
+          uint64_t txFee = (in_amount < out_amount)
+            ? m_currency.minimumFee(block.bl.majorVersion)
+            : in_amount - out_amount;
+          const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
+          const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
           if (auth.direction == 0) {
-            // XFG→HEAT: pool gains XFG, loses HEAT
-            if (m_ammPool.reserveXfg <= UINT64_MAX - auth.inputAmount)
-              m_ammPool.reserveXfg += auth.inputAmount;
-            if (m_ammPool.reserveHeat >= auth.outputAmount)
-              m_ammPool.reserveHeat -= auth.outputAmount;
-            // Flat fee: 1% of HEAT output → 50% CD yield pool, 50% auto-compound into LP reserves
-            uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
-            uint64_t cdFee = totalFee / 2;
-            uint64_t lpFee = totalFee - cdFee;
-            m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
-              ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
-            m_ammPool.reserveHeat = (m_ammPool.reserveHeat > UINT64_MAX - lpFee)
-              ? UINT64_MAX : m_ammPool.reserveHeat + lpFee;
+            // XFG→HEAT: pool gains (in.xfg − out.xfg − fee) XFG, pays out (out.heat − in.heat) HEAT.
+            uint64_t xfgDeposited = (inAssets.xfg > outAssets.xfg + txFee)
+              ? inAssets.xfg - outAssets.xfg - txFee : 0;
+            uint64_t heatPaid = (outAssets.heat > inAssets.heat)
+              ? outAssets.heat - inAssets.heat : 0;
+            // Taker received fee-adjusted output; gross reconstructs the pre-fee amount.
+            uint64_t grossHeat = static_cast<uint64_t>(
+                ((uint128_t)heatPaid * feeDiv) / (feeDiv - feeBps));
+            uint64_t feeHeat = (grossHeat > heatPaid) ? grossHeat - heatPaid : 0;
+            if (heatPaid == 0 || m_ammPool.reserveHeat < heatPaid + feeHeat) {
+              logger(ERROR, BRIGHT_RED) << "AMM swap XFG→HEAT settlement invariant violation: reserveHeat="
+                << m_ammPool.reserveHeat << " need=" << (heatPaid + feeHeat);
+              return false;
+            }
+            m_ammPool.reserveXfg += xfgDeposited;
+            m_ammPool.reserveHeat -= (heatPaid + feeHeat);
+            // Fee value leaves LP reserves and is credited to the CD yield pool.
+            // Accumulator is HEAT-denominated.
+            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeat) {
+              logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
+              return false;
+            }
+            m_ammPool.cdHearthFeeAccumulator += feeHeat;
             logger(INFO) << "AMM swap XFG→HEAT settled: pool +"
-                         << m_currency.formatAmount(auth.inputAmount) << " XFG, -"
-                         << m_currency.formatAmount(auth.outputAmount) << " HEAT, cdFee="
-                         << m_currency.formatAmount(cdFee) << ", lpFee="
-                         << m_currency.formatAmount(lpFee);
+                         << m_currency.formatAmount(xfgDeposited) << " XFG, -"
+                         << m_currency.formatAmount(heatPaid + feeHeat) << " HEAT, cdFee="
+                         << m_currency.formatAmount(feeHeat);
           } else {
-            // HEAT→XFG: pool gains HEAT, loses XFG
-            if (m_ammPool.reserveHeat <= UINT64_MAX - auth.inputAmount)
-              m_ammPool.reserveHeat += auth.inputAmount;
-            if (m_ammPool.reserveXfg >= auth.outputAmount)
-              m_ammPool.reserveXfg -= auth.outputAmount;
-            // Flat fee: 1% of XFG output → 50% CD yield pool, 50% auto-compound into LP reserves
-            uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
-            uint64_t cdFee = totalFee / 2;
-            uint64_t lpFee = totalFee - cdFee;
-            m_ammPool.cdHearthFeeAccumulator = (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFee)
-              ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + cdFee;
-            m_ammPool.reserveXfg = (m_ammPool.reserveXfg > UINT64_MAX - lpFee)
-              ? UINT64_MAX : m_ammPool.reserveXfg + lpFee;
+            // HEAT→XFG: pool gains (in.heat − out.heat) HEAT, pays out (out.xfg − in.xfg) XFG.
+            uint64_t heatDeposited = (inAssets.heat > outAssets.heat)
+              ? inAssets.heat - outAssets.heat : 0;
+            uint64_t xfgPaid = (outAssets.xfg > inAssets.xfg)
+              ? outAssets.xfg - inAssets.xfg : 0;
+            uint64_t grossXfg = static_cast<uint64_t>(
+                ((uint128_t)xfgPaid * feeDiv) / (feeDiv - feeBps));
+            uint64_t feeXfg = (grossXfg > xfgPaid) ? grossXfg - xfgPaid : 0;
+            if (xfgPaid == 0 || m_ammPool.reserveXfg < xfgPaid + feeXfg) {
+              logger(ERROR, BRIGHT_RED) << "AMM swap HEAT→XFG settlement invariant violation: reserveXfg="
+                << m_ammPool.reserveXfg << " need=" << (xfgPaid + feeXfg);
+              return false;
+            }
+            m_ammPool.reserveHeat += heatDeposited;
+            m_ammPool.reserveXfg -= (xfgPaid + feeXfg);
+            // Convert XFG fee to HEAT at the post-swap rate for the accumulator.
+            uint64_t feeHeatEq = 0;
+            if (m_ammPool.reserveXfg > 0) {
+              uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+              if (postRate > 0) {
+                feeHeatEq = static_cast<uint64_t>(
+                    ((uint128_t)feeXfg * postRate) / parameters::COIN);
+              }
+            }
+            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq) {
+              logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
+              return false;
+            }
+            m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
             logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
-                         << m_currency.formatAmount(auth.inputAmount) << " HEAT, -"
-                         << m_currency.formatAmount(auth.outputAmount) << " XFG, cdFee="
-                         << m_currency.formatAmount(cdFee) << ", lpFee="
-                         << m_currency.formatAmount(lpFee);
+                         << m_currency.formatAmount(heatDeposited) << " HEAT, -"
+                         << m_currency.formatAmount(xfgPaid + feeXfg) << " XFG, cdFee="
+                         << m_currency.formatAmount(feeHeatEq);
           }
           break;  // one swap auth per tx
         }
       }
 
       uint64_t authLpAddXfg = 0, authLpAddHeat = 0;
+      uint64_t authLpRemoveShares = 0;
+      bool processedLegacyLpAdd = false;
+      bool processedLegacyLpRemove = false;
       for (const auto& f : tx_extra_fields) {
         if (f.type() == typeid(TransactionExtraLpAddAuth)) {
           const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
           if (a.amountXfg > 0 || a.amountHeat > 0) {
             authLpAddXfg = a.amountXfg; authLpAddHeat = a.amountHeat;
           }
+        }
+        if (f.type() == typeid(TransactionExtraLpRemoveAuth)) {
+          authLpRemoveShares = boost::get<TransactionExtraLpRemoveAuth>(f).lpSharesBurned;
         }
       }
       for (const auto& field : tx_extra_fields) {
@@ -5205,6 +5649,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           m_ammPool.reserveXfg += addXfg;
           m_ammPool.reserveHeat += addHeat;
           m_ammPool.totalLpShares += shares;
+          processedLegacyLpAdd = true;
           // Track LP shares by global commitment output index for per-user fee claims
           for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
             if (transaction.tx.outputs[o].target.type() == typeid(TransactionOutputCommitment)) {
@@ -5225,7 +5670,56 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           if (m_ammPool.reserveXfg >= amountXfg) m_ammPool.reserveXfg -= amountXfg;
           if (m_ammPool.reserveHeat >= amountHeat) m_ammPool.reserveHeat -= amountHeat;
           if (m_ammPool.totalLpShares >= rem.lpSharesBurned) m_ammPool.totalLpShares -= rem.lpSharesBurned;
+          processedLegacyLpRemove = true;
         }
+      }
+
+      // v12+ auth-only LP add (no legacy AmmAddLiquidity tag present)
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12 &&
+          !processedLegacyLpAdd && (authLpAddXfg > 0 || authLpAddHeat > 0)) {
+        uint64_t shares = ammMintLpShares(authLpAddXfg, authLpAddHeat,
+          m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+        if (shares == 0) {
+          logger(ERROR, BRIGHT_RED) << "LP add settlement: zero shares computed";
+          return false;
+        }
+        m_ammPool.reserveXfg += authLpAddXfg;
+        m_ammPool.reserveHeat += authLpAddHeat;
+        m_ammPool.totalLpShares += shares;
+        for (uint16_t o = 0; o < transaction.tx.outputs.size(); ++o) {
+          if (transaction.tx.outputs[o].target.type() == typeid(TransactionOutputCommitment)) {
+            const auto& co = boost::get<TransactionOutputCommitment>(transaction.tx.outputs[o].target);
+            if (co.term == parameters::DEPOSIT_TERM_LP) {
+              uint64_t gidx = transaction.m_global_output_indexes[o];
+              m_lpCommitmentShares[gidx] = shares;
+              m_lpCommitTxGidx[transactionHash] = gidx;
+              break;
+            }
+          }
+        }
+        logger(INFO) << "LP add settled (auth): +" << m_currency.formatAmount(authLpAddXfg)
+                     << " XFG, +" << m_currency.formatAmount(authLpAddHeat)
+                     << " HEAT → " << shares << " LP shares";
+      }
+
+      // v12+ auth-only LP remove (no legacy AmmRemoveLiquidity tag present)
+      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_12 &&
+          !processedLegacyLpRemove && authLpRemoveShares > 0) {
+        uint64_t amountXfg = 0, amountHeat = 0;
+        ammGetWithdrawalAmounts(authLpRemoveShares, m_ammPool.totalLpShares,
+          m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
+        if (amountXfg == 0 || amountHeat == 0 ||
+            m_ammPool.reserveXfg < amountXfg || m_ammPool.reserveHeat < amountHeat ||
+            m_ammPool.totalLpShares < authLpRemoveShares) {
+          logger(ERROR, BRIGHT_RED) << "LP remove settlement: invariant violation";
+          return false;
+        }
+        m_ammPool.reserveXfg -= amountXfg;
+        m_ammPool.reserveHeat -= amountHeat;
+        m_ammPool.totalLpShares -= authLpRemoveShares;
+        logger(INFO) << "LP remove settled (auth): -" << m_currency.formatAmount(amountXfg)
+                     << " XFG, -" << m_currency.formatAmount(amountHeat)
+                     << " HEAT, burned " << authLpRemoveShares << " LP shares";
       }
 
       // Limit order deposit/withdraw state mutations (v11+)
@@ -5244,11 +5738,13 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           m_limitDeposits[dep.orderId] = LimitDepositInfo{
             dep.side, dep.amount, dep.targetPrice, dep.expiration,
             dep.addressHash, false};
+          m_limitDeposits[dep.orderId].depositedAmount = dep.amount;
         } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
           const auto& wd = boost::get<TransactionExtraLimitWithdraw>(field);
           auto depIt = m_limitDeposits.find(wd.orderId);
-          // Apply only after validation already enforced conservation; double-check
-          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn && !depIt->second.expired) {
+          // Apply only after validation already enforced conservation; double-check.
+          // Expired deposits are claimable (remaining deposit + fill proceeds).
+          if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
             if (depIt->second.side == 1) {
               if (m_ammPool.pendingXfg >= depIt->second.amount)
                 m_ammPool.pendingXfg -= depIt->second.amount;
@@ -5267,7 +5763,8 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
   return true;
 }
 
-void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash) {
+void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash,
+                                            uint32_t height, uint8_t majorVersion) {
   TxIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
@@ -5458,26 +5955,68 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       const auto& field = *it;
       if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
         const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
-        // Reverse pool reserve changes
-        if (auth.direction == 0) {
-          // Forward was XFG→HEAT: pool gained XFG, lost HEAT
-          if (m_ammPool.reserveXfg >= auth.inputAmount) m_ammPool.reserveXfg -= auth.inputAmount;
-          if (m_ammPool.reserveHeat <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveHeat += auth.outputAmount;
-        } else {
-          // Forward was HEAT→XFG: pool gained HEAT, lost XFG
-          if (m_ammPool.reserveHeat >= auth.inputAmount) m_ammPool.reserveHeat -= auth.inputAmount;
-          if (m_ammPool.reserveXfg <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveXfg += auth.outputAmount;
+        if (majorVersion < BLOCK_MAJOR_VERSION_12) {
+          // Legacy pre-v12 reversal from declared amounts — bit-identical to baseline.
+          if (auth.direction == 0) {
+            if (m_ammPool.reserveXfg >= auth.inputAmount) m_ammPool.reserveXfg -= auth.inputAmount;
+            if (m_ammPool.reserveHeat <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveHeat += auth.outputAmount;
+          } else {
+            if (m_ammPool.reserveHeat >= auth.inputAmount) m_ammPool.reserveHeat -= auth.inputAmount;
+            if (m_ammPool.reserveXfg <= UINT64_MAX - auth.outputAmount) m_ammPool.reserveXfg += auth.outputAmount;
+          }
+          uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
+          uint64_t cdFee = totalFee / 2;
+          uint64_t lpFee = totalFee - cdFee;
+          if (m_ammPool.cdHearthFeeAccumulator >= cdFee) m_ammPool.cdHearthFeeAccumulator -= cdFee;
+          if (auth.direction == 0) {
+            if (m_ammPool.reserveHeat >= lpFee) m_ammPool.reserveHeat -= lpFee;
+          } else {
+            if (m_ammPool.reserveXfg >= lpFee) m_ammPool.reserveXfg -= lpFee;
+          }
+          break;
         }
-        // Reverse cdFee and lpFee (50/50 split)
-        uint64_t totalFee = (auth.outputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR;
-        uint64_t cdFee = totalFee / 2;
-        uint64_t lpFee = totalFee - cdFee;
-        if (m_ammPool.cdHearthFeeAccumulator >= cdFee) m_ammPool.cdHearthFeeAccumulator -= cdFee;
-        // Reverse LP fee: deduct from the reserve that was credited
+        // V12+: reverse actual-delta settlement (mirror of pushTransaction).
+        AssetBalance inAssets = getTransactionInputAssetAmounts(transaction, height);
+        AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction);
+        uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction, height);
+        uint64_t out_amount = getOutputAmount(transaction);
+        uint64_t txFee = (in_amount < out_amount)
+          ? m_currency.minimumFee(majorVersion)
+          : in_amount - out_amount;
+        const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
+        const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
         if (auth.direction == 0) {
-          if (m_ammPool.reserveHeat >= lpFee) m_ammPool.reserveHeat -= lpFee;
+          uint64_t xfgDeposited = (inAssets.xfg > outAssets.xfg + txFee)
+            ? inAssets.xfg - outAssets.xfg - txFee : 0;
+          uint64_t heatPaid = (outAssets.heat > inAssets.heat)
+            ? outAssets.heat - inAssets.heat : 0;
+          uint64_t grossHeat = static_cast<uint64_t>(
+              ((uint128_t)heatPaid * feeDiv) / (feeDiv - feeBps));
+          uint64_t feeHeat = (grossHeat > heatPaid) ? grossHeat - heatPaid : 0;
+          if (m_ammPool.reserveXfg >= xfgDeposited) m_ammPool.reserveXfg -= xfgDeposited;
+          m_ammPool.reserveHeat += (heatPaid + feeHeat);
+          if (m_ammPool.cdHearthFeeAccumulator >= feeHeat)
+            m_ammPool.cdHearthFeeAccumulator -= feeHeat;
         } else {
-          if (m_ammPool.reserveXfg >= lpFee) m_ammPool.reserveXfg -= lpFee;
+          uint64_t heatDeposited = (inAssets.heat > outAssets.heat)
+            ? inAssets.heat - outAssets.heat : 0;
+          uint64_t xfgPaid = (outAssets.xfg > inAssets.xfg)
+            ? outAssets.xfg - inAssets.xfg : 0;
+          uint64_t grossXfg = static_cast<uint64_t>(
+              ((uint128_t)xfgPaid * feeDiv) / (feeDiv - feeBps));
+          uint64_t feeXfg = (grossXfg > xfgPaid) ? grossXfg - xfgPaid : 0;
+          uint64_t feeHeatEq = 0;
+          if (m_ammPool.reserveXfg > 0) {
+            uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            if (postRate > 0) {
+              feeHeatEq = static_cast<uint64_t>(
+                  ((uint128_t)feeXfg * postRate) / parameters::COIN);
+            }
+          }
+          if (m_ammPool.reserveHeat >= heatDeposited) m_ammPool.reserveHeat -= heatDeposited;
+          m_ammPool.reserveXfg += (xfgPaid + feeXfg);
+          if (m_ammPool.cdHearthFeeAccumulator >= feeHeatEq)
+            m_ammPool.cdHearthFeeAccumulator -= feeHeatEq;
         }
         break;
       } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
@@ -5496,12 +6035,45 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         }
       } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
         const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
+        // Deterministic recompute from post-burn state (guarded against zero totals).
         uint64_t amountXfg = 0, amountHeat = 0;
         ammGetWithdrawalAmounts(rem.lpSharesBurned, m_ammPool.totalLpShares,
           m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
         m_ammPool.totalLpShares += rem.lpSharesBurned;
         m_ammPool.reserveHeat += amountHeat;
         m_ammPool.reserveXfg += amountXfg;
+      } else if (field.type() == typeid(TransactionExtraLpAddAuth)) {
+        // Auth-only LP add reversal (legacy-tag txs are reversed above).
+        const auto& a = boost::get<TransactionExtraLpAddAuth>(field);
+        bool hasLegacy = false;
+        for (const auto& f2 : tx_extra_fields)
+          if (f2.type() == typeid(TransactionExtraAmmAddLiquidity)) { hasLegacy = true; break; }
+        if (!hasLegacy && majorVersion >= BLOCK_MAJOR_VERSION_12 && (a.amountXfg > 0 || a.amountHeat > 0)) {
+          uint64_t shares = ammMintLpShares(a.amountXfg, a.amountHeat,
+            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          if (m_ammPool.reserveHeat >= a.amountHeat) m_ammPool.reserveHeat -= a.amountHeat;
+          if (m_ammPool.reserveXfg >= a.amountXfg) m_ammPool.reserveXfg -= a.amountXfg;
+          if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
+          auto lpIt = m_lpCommitTxGidx.find(transactionHash);
+          if (lpIt != m_lpCommitTxGidx.end()) {
+            m_lpCommitmentShares.erase(lpIt->second);
+            m_lpCommitTxGidx.erase(lpIt);
+          }
+        }
+      } else if (field.type() == typeid(TransactionExtraLpRemoveAuth)) {
+        // Auth-only LP remove reversal (legacy-tag txs are reversed above).
+        const auto& a = boost::get<TransactionExtraLpRemoveAuth>(field);
+        bool hasLegacy = false;
+        for (const auto& f2 : tx_extra_fields)
+          if (f2.type() == typeid(TransactionExtraAmmRemoveLiquidity)) { hasLegacy = true; break; }
+        if (!hasLegacy && a.lpSharesBurned > 0 && majorVersion >= BLOCK_MAJOR_VERSION_12) {
+          uint64_t amountXfg = 0, amountHeat = 0;
+          ammGetWithdrawalAmounts(a.lpSharesBurned, m_ammPool.totalLpShares,
+            m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
+          m_ammPool.totalLpShares += a.lpSharesBurned;
+          m_ammPool.reserveHeat += amountHeat;
+          m_ammPool.reserveXfg += amountXfg;
+        }
       } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
         const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
         if (m_totalLegacyBondLocked >= bond.amount) {
@@ -5512,13 +6084,18 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         m_legacyBondYieldPool += claim.claimedInterest;
       } else if (field.type() == typeid(TransactionExtraLimitDeposit)) {
         const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
-        // Rollback: undo the pending deposit addition
+        // Rollback: undo the pending deposit addition. Use the ORIGINAL deposit
+        // amount (fills may have already consumed part of it this block; their
+        // reversal runs separately and the two are commutative).
+        uint64_t deposited = dep.amount;
+        auto depIt = m_limitDeposits.find(dep.orderId);
+        if (depIt != m_limitDeposits.end()) deposited = depIt->second.depositedAmount;
         if (dep.side == 1) {
-          if (m_ammPool.pendingXfg >= dep.amount)
-            m_ammPool.pendingXfg -= dep.amount;
+          if (m_ammPool.pendingXfg >= deposited)
+            m_ammPool.pendingXfg -= deposited;
         } else {
-          if (m_ammPool.pendingHeat >= dep.amount)
-            m_ammPool.pendingHeat -= dep.amount;
+          if (m_ammPool.pendingHeat >= deposited)
+            m_ammPool.pendingHeat -= deposited;
         }
         m_limitDeposits.erase(dep.orderId);
       } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
@@ -5541,10 +6118,10 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
 
 void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Crypto::Hash& minerTransactionHash) {
   for (size_t i = 0; i < block.transactions.size() - 1; ++i) {
-    popTransaction(block.transactions[block.transactions.size() - 1 - i].tx, block.bl.transactionHashes[block.transactions.size() - 2 - i]);
+    popTransaction(block.transactions[block.transactions.size() - 1 - i].tx, block.bl.transactionHashes[block.transactions.size() - 2 - i], block.height, block.bl.majorVersion);
   }
 
-  popTransaction(block.bl.baseTransaction, minerTransactionHash);
+  popTransaction(block.bl.baseTransaction, minerTransactionHash, block.height, block.bl.majorVersion);
 
   // Restore auto-returned limit deposits (reversed on chain rollback)
   for (const auto& entry : m_autoReturnedThisBlock) {

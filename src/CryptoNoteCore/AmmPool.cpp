@@ -9,6 +9,7 @@
 
 #include "AmmPool.h"
 #include "Common/Int128.h"
+#include "CryptoNoteConfig.h"
 #include "../Serialization/SerializationOverloads.h"
 
 namespace CryptoNote {
@@ -55,9 +56,10 @@ uint64_t ammGetInputAmount(uint64_t outputAmount,
 }
 
 uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
-  if (reserveB == 0) return 0;
-  uint128_t scaled = (uint128_t)reserveA * 1000000000000000000ULL;
-  return (uint64_t)(scaled / reserveB);
+  if (reserveA == 0) return 0;
+  // Canonical price scale: HEAT atomics per XFG atomic × COIN.
+  uint128_t scaled = (uint128_t)reserveB * parameters::COIN;
+  return (uint64_t)(scaled / reserveA);
 }
 
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
@@ -76,6 +78,10 @@ uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
     return (uint64_t)((uint128_t)amountB * totalShares / reserveB);
   if (amountB == 0 && amountA > 0 && reserveA > 0)
     return (uint64_t)((uint128_t)amountA * totalShares / reserveA);
+
+  // Invariant guard: a live share supply with an empty reserve is invalid state;
+  // refuse to mint rather than divide by zero.
+  if (reserveA == 0 || reserveB == 0) return 0;
 
   uint128_t sharesA = (uint128_t)amountA * totalShares / reserveA;
   uint128_t sharesB = (uint128_t)amountB * totalShares / reserveB;

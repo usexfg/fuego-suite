@@ -404,6 +404,7 @@ int main(int argc, char* argv[])
       std::string tok = command_line::get_arg(vm, arg_swap_control_token);
       if (!tok.empty()) {
         rpcServer.setSwapControlToken(tok);
+        swapDaemon->setSwapControlToken(tok);
         logger(INFO) << "Swap control RPC token configured (X-Swap-Token / Bearer)";
       }
     }

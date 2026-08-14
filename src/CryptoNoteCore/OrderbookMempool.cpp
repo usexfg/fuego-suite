@@ -36,11 +36,12 @@ bool OrderbookMempool::addOrder(const Order& order) {
   if (it != m_senderCounts.end() && it->second >= m_maxOrdersPerSender)
     return false;
 
-  m_orders[order.orderId] = order;
+  Order& stored = m_orders[order.orderId];
+  stored = order;
   m_senderCounts[sk]++;
 
-  if (order.side == 0) insertBid(order, false);
-  else insertAsk(order, false);
+  if (stored.side == 0) insertBid(stored, false);
+  else insertAsk(stored, false);
 
   return true;
 }
@@ -82,9 +83,10 @@ void OrderbookMempool::setPoolOrders(const std::vector<Order>& orders) {
   m_poolOrders.clear();
 
   for (const auto& o : orders) {
-    m_poolOrders[o.orderId] = o;
-    if (o.side == 0) insertBid(o, true);
-    else insertAsk(o, true);
+    Order& stored = m_poolOrders[o.orderId];
+    stored = o;
+    if (stored.side == 0) insertBid(stored, true);
+    else insertAsk(stored, true);
   }
 }
 
@@ -97,6 +99,15 @@ void OrderbookMempool::clearPoolOrders() {
 
 std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getBidCurve(uint32_t maxLevels) const {
   std::lock_guard<std::mutex> lock(m_mutex);
+  return getBidCurveLocked(maxLevels);
+}
+
+std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getAskCurve(uint32_t maxLevels) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return getAskCurveLocked(maxLevels);
+}
+
+std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getBidCurveLocked(uint32_t maxLevels) const {
   std::vector<AggregatedLevel> result;
   uint32_t count = 0;
   for (const auto& [price, entries] : m_bids) {
@@ -109,8 +120,7 @@ std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getBidCurve(uin
   return result;
 }
 
-std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getAskCurve(uint32_t maxLevels) const {
-  std::lock_guard<std::mutex> lock(m_mutex);
+std::vector<OrderbookMempool::AggregatedLevel> OrderbookMempool::getAskCurveLocked(uint32_t maxLevels) const {
   std::vector<AggregatedLevel> result;
   uint32_t count = 0;
   for (const auto& [price, entries] : m_asks) {
@@ -149,8 +159,8 @@ OrderbookReceipt OrderbookMempool::generateReceipt() const {
   std::lock_guard<std::mutex> lock(m_mutex);
   OrderbookReceipt r;
   r.clearingPrice = m_lastClearingPrice;
-  auto bids = getBidCurve(50);
-  auto asks = getAskCurve(50);
+  auto bids = getBidCurveLocked(50);
+  auto asks = getAskCurveLocked(50);
 
   r.numBidLevels = static_cast<uint32_t>(bids.size());
   r.numAskLevels = static_cast<uint32_t>(asks.size());

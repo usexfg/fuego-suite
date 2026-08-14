@@ -13,6 +13,7 @@
 
 #include "MarketOrderExecutor.h"
 #include "../Common/Int128.h"
+#include "CryptoNoteConfig.h"
 
 #include <algorithm>
 
@@ -57,7 +58,7 @@ MarketOrderExecutor::CascadeState MarketOrderExecutor::cascadeIntoOrderbook(
       }
 
       uint64_t takeAmount = std::min(remaining, levelDepth);
-      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * askPrice) / 100000000ULL);
+      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * askPrice) / parameters::COIN);
       state.filled += takeAmount;
       state.cost += cost;
       state.peakPrice = std::max(state.peakPrice, askPrice);
@@ -79,7 +80,7 @@ MarketOrderExecutor::CascadeState MarketOrderExecutor::cascadeIntoOrderbook(
       }
 
       uint64_t takeAmount = std::min(remaining, levelDepth);
-      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * bidPrice) / 100000000ULL);
+      uint64_t cost = static_cast<uint64_t>((static_cast<uint128_t>(takeAmount) * bidPrice) / parameters::COIN);
       state.filled += takeAmount;
       state.cost += cost;
       state.peakPrice = std::max(state.peakPrice, bidPrice);

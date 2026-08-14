@@ -487,6 +487,7 @@ namespace CryptoNote {
       uint64_t proceedsXfg = 0;  // XFG earned from fills (claimable on withdraw)
       uint64_t proceedsHeat = 0; // HEAT earned from fills (claimable on withdraw)
       uint64_t depositedAmount = 0; // original deposit amount (immutable; pop reversal)
+      uint32_t createdHeight = 0;   // block height of the deposit (auction time priority)
       bool withdrawn = false;
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
@@ -501,6 +502,7 @@ namespace CryptoNote {
       uint64_t feeHeat;  // HEAT-denominated fee credited to accumulator
       uint64_t netXfg = 0; // BUY only: net XFG credited to proceeds
       bool newlyExpired = false;
+      bool isAuction = false;  // call-auction fill (no pool/accumulator involvement)
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
 

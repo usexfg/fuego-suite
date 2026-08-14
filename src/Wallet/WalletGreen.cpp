@@ -1530,11 +1530,11 @@ namespace CryptoNote
       transaction->addOutput(amount, cdOut);
     }
 
-    // Banking fee → Treasury LP Manager (v12+): burned HEAT credited via the
+    // Banking fee → Treasury LP Manager (v11+): burned HEAT credited via the
     // TreasuryFund tag (no output — the burn is implicit). Pre-v12: dev-fund output.
     if (bankingFee > 0) {
-      uint32_t v12Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12);
-      if (currentHeight >= v12Height) {
+      uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+      if (currentHeight >= v11Height) {
         std::vector<uint8_t> extra;
         CryptoNote::addTreasuryFundToExtra(extra, 1, bankingFee);
         CryptoNote::BinaryArray extraData(extra.begin(), extra.end());

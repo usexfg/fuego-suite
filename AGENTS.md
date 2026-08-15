@@ -34,7 +34,7 @@ fuego-suite/
 - Orders execute **at block time against the pool at the live spot price** (`ammGetSpotPrice`, HEAT/XFG × COIN); partial fills credit `proceedsXfg/proceedsHeat`, claimable via `TransactionExtraLimitWithdraw`
 - Expiry is height-based; expired orders keep deposit + proceeds claimable (auto-return)
 - **Balanced LP deposits only** — single-sided deposits mint no shares (no dilution); shares are fair pro-rata at the pool ratio
-- Taker pays the 1% fee via a fee-adjusted output; the fee is debited from LP reserves into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary; consumed XFG burned 50/50 (EF/SWF)
+- Taker pays the 1% fee; **70%** is debited into the HEAT-denominated `cdHearthFeeAccumulator` → minted into `CD_APY_POOL` at the epoch boundary, **30%** is the maker rebate (auction makers, or LPs on pool fills); consumed XFG burned 50/50 (EF/SWF)
 - `PoolOrderOrchestrator` still generates the displayed depth band (adaptive spread 30–300 bps, volatility fed by the pool spot price at v12) — informational depth, not in-band matched
 - The in-band CLOB matcher, `MIN_DISTINCT_PARTIES`, and gossiped orders are **retired**
 - Bootstrap window: 144 blocks of AMM-only operation after upgrade
@@ -57,7 +57,7 @@ fuego-suite/
   - **GUARDRAILS**: APY from protocol fees (not inflation), deposit secret stored locally, different term lengths don't hurt privacy
 
 ### Protocol Earnings (ONLY TWO — DO NOT ADD MORE)
-1. **Hearth swap fee — 1% per trade** (`HEARTH_FEE_BPS = 100`), on-chain Hearth DEX fills.
+1. **Hearth swap fee — 1% taker fee** (`HEARTH_FEE_BPS = 100`), on-chain Hearth fills. Split **70% → CD yield / 30% → maker rebate** (auction makers; the pool/LPs when it is the counterparty).
 2. **Atomic swap fee — 1% + 1% = 2% per cross-chain swap** (`SWAP_FEE_RATE_BPS = 100` initiation + claim), via SwapXFG TUI or DeXFG tab in Fuego-Wallet GUI. Split **69% CD Yield / 11% Bonus Vault / 20% Treasury**.
 
 NOT protocol earnings:

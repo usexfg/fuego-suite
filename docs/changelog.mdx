@@ -5,6 +5,11 @@ description: "Fuego Suite Updates & Features"
 
 <CodeGroup>
 ```text Changelog
+v1.11.01 (Hearth call-auction orderbook — v11)
+* Per-block call auction: user-vs-user crossing at a max-volume clearing price (price discovery); tx-extra-backed deposits; AMM is a volume-capped backstop (`HEARTH_BACKSTOP_MAX_BPS`).
+* Fee model: 1% taker fee split 70% CD yield / 30% maker rebate (auction makers; LPs on pool fills). Min price tick (`ORDER_PRICE_TICK`).
+* All v12-gated consensus work re-gated to v11 (chain height at decision: 1,015,027 < 1,111,111).
+
 v1.11.00 (Consensus v12 — Hearth orderbook rework, treasury, CD economics)
 * **Hearth orderbook**: in-band CLOB matcher + gossiped orders retired. Limit orders are now tx-extra-backed (`TransactionExtraLimitDeposit`) deposits executed at block time against the pool at the live spot price; height-based expiry; partial fills with claimable proceeds (`TransactionExtraLimitWithdraw`).
 * **Canonical price scale**: HEAT/XFG × COIN (1e7) everywhere — mint, swaps, quotes, TWAP; Q64.64/1e8/1e18 purged from price paths (legacy preserved for pre-v12 re-validation).

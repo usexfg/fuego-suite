@@ -32,14 +32,17 @@ The original in-band CLOB matcher (gossiped, unbacked orders matched once per bl
 | Constant | Value |
 |----------|-------|
 | `HEARTH_FEE_BPS` | **100** = **1.0%** of trade notional, paid by the taker |
+| `HEARTH_CD_SHARE_BPS` | **70** — 70% of the fee → CD yield |
+| `HEARTH_MAKER_REBATE_BPS` | **30** — 30% of the fee → maker rebate |
+| `HEARTH_BACKSTOP_MAX_BPS` | **500** — backstop fills ≤ 5× the block's auction volume |
 
 ```
 gross = user_notional
 paid  = gross × (10000 − 100) / 10000      // taker receives fee-adjusted output
-fee   = gross − paid                        // debited from LP reserves → CD accumulator
+fee   = gross − paid                        // 70% → CD accumulator, 30% → maker rebate
 ```
 
-The fee accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF). There is **no** separate “0.3% Hearth LP fee”.
+On auction fills the taker is the rationed side; the maker side receives the rebate pool pro-rata. On pool-intermediated fills (backstop/AMM) the pool is the maker, so 30% stays in LP reserves. The 70% accrues in a HEAT-denominated accumulator (`cdHearthFeeAccumulator`) and is minted into the CD yield vault (`CD_APY_POOL`) at each epoch boundary; the consumed XFG side is burned 50/50 (Eternal Flame / SWF).
 
 ## Roles
 

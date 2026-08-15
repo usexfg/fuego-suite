@@ -6,15 +6,15 @@ keywords: ["Hearth fees", "LP", "CD", "1%", "taker"]
 
 ## Protocol flat fee
 
-Every Hearth fill applies a **1% flat fee** (`HEARTH_FEE_BPS = 100`) on trade notional, paid by the **taker**:
+Every Hearth fill applies a **1% flat fee** (`HEARTH_FEE_BPS = 100`) on trade notional, paid by the **taker**, split **70/30**:
 
 ```
 gross = user_notional
 paid  = gross × (10000 − 100) / 10000   // taker receives the fee-adjusted output
-fee   = gross − paid                     // debited from LP reserves
+fee   = gross − paid                     // 70% → CD yield, 30% → maker rebate
 ```
 
-The fee is debited from the pool reserves into the HEAT-denominated `cdHearthFeeAccumulator` and minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary. The consumed XFG side of conversions is burned 50/50 (Eternal Flame / SWF).
+The 70% share is debited from the pool reserves into the HEAT-denominated `cdHearthFeeAccumulator` and minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary. The 30% maker rebate goes to the auction maker (or stays with LPs when the pool is the counterparty). The consumed XFG side of conversions is burned 50/50 (Eternal Flame / SWF).
 
 ## What LPs should expect
 

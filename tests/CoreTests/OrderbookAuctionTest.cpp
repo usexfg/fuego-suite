@@ -205,6 +205,37 @@ void testFeeConservation() {
   TEST(cdSum <= expectCd);
 }
 
+void testFeeAskTakerAndTie() {
+  // Ask-taker case: asks aggregate exceeds bids → asks pay the fee, bids
+  // (makers) receive the rebate pool.
+  {
+    std::vector<AuctionOrder> bids = { bid(1, 2 * P, 50, 10, 1) };
+    std::vector<AuctionOrder> asks = { ask(2, 2 * P, 100, 20, 2), ask(3, 2 * P, 100, 21, 3) };
+    AuctionResult r = runAuction(bids, asks, P);
+    TEST(r.crossed);
+    TEST(r.hasTaker);
+    TEST(r.takerIsBid == false);
+    uint64_t rebTaker = 0, rebMaker = 0;
+    for (const auto& f : r.fills) {
+      if (f.side == 1) rebTaker += f.rebateHeat;   // taker asks pay
+      else rebMaker += f.rebateHeat;               // maker bids receive
+    }
+    TEST(rebTaker == rebMaker);
+  }
+  // Exact tie: no taker → no fee, no rebate.
+  {
+    std::vector<AuctionOrder> bids = { bid(4, 2 * P, 100, 10, 4) };
+    std::vector<AuctionOrder> asks = { ask(5, 2 * P, 100, 20, 5) };
+    AuctionResult r = runAuction(bids, asks, P);
+    TEST(r.crossed);
+    TEST(!r.hasTaker);
+    for (const auto& f : r.fills) {
+      TEST(f.cdFeeHeat == 0);
+      TEST(f.rebateHeat == 0);
+    }
+  }
+}
+
 void testHeatBalanceAcrossSides() {
   // Σ bid heat == Σ ask heat == floor(matchedVolume × p*/COIN) regardless of
   // how fills split into chunks (regression for cumulative-floor rounding).
@@ -271,6 +302,7 @@ int main() {
   testHeatConversionExact();
   testHeatBalanceAcrossSides();
   testFeeConservation();
+  testFeeAskTakerAndTie();
   testPrevPclearTieBreak();
   fprintf(stderr, "=== Auction Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;

@@ -4186,6 +4186,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     }
   }
 
+  // Auction volume captured for the backstop cap below (shared scope).
+  uint64_t auctionMatchedVolume = 0;
+
   // V11+: per-block CALL AUCTION — user-vs-user price discovery. Orders are
   // tx-extra-backed deposits; crossing is matched at a single clearing price
   // that maximizes executed volume. Auction fills move committed funds between
@@ -4217,6 +4220,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     CryptoNote::AuctionResult auction =
         runAuction(auctionBids, auctionAsks, g_orderbookLastClearingPrice);
     if (auction.crossed && auction.matchedVolume > 0) {
+      auctionMatchedVolume = auction.matchedVolume;
       // P_clear = the discovered price (last-price semantics, bootstrap-seeded).
       g_orderbookLastClearingPrice = auction.clearingPrice;
       for (const auto& fill : auction.fills) {
@@ -4291,6 +4295,12 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
     const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
+    // Backstop volume cap: pool-intermediated fills are bounded at
+    // HEARTH_BACKSTOP_MAX_BPS of the block's auction volume; with no auction
+    // volume the backstop serves alone (bootstrap behavior).
+    uint64_t backstopRemaining = (auctionMatchedVolume > 0)
+        ? (auctionMatchedVolume * parameters::HEARTH_BACKSTOP_MAX_BPS) / 100
+        : UINT64_MAX;
 
     for (auto& kv : m_limitDeposits) {
       LimitDepositInfo& dep = kv.second;
@@ -4307,7 +4317,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         uint64_t maxByHeat = static_cast<uint64_t>(
             ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / price);
         uint64_t fillXfg = std::min(dep.amount, maxByHeat);
+        fillXfg = std::min(fillXfg, backstopRemaining);
         if (fillXfg == 0 || m_ammPool.pendingXfg < fillXfg) continue;
+        backstopRemaining -= fillXfg;
 
         // Taker pays the 1% fee by receiving (div-bps)/div of gross.
         uint64_t grossHeat = static_cast<uint64_t>(
@@ -4349,7 +4361,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
               / (feeDiv * price));
         uint64_t fillXfg = std::min(desiredXfg, maxBudgetXfg);
         fillXfg = std::min(fillXfg, m_ammPool.reserveXfg);
+        fillXfg = std::min(fillXfg, backstopRemaining);
         if (fillXfg == 0) continue;
+        backstopRemaining -= fillXfg;
         // Net XFG the user receives; fee deducted from gross like dir-1 swaps.
         uint64_t grossXfg = static_cast<uint64_t>(
             ((uint128_t)fillXfg * feeDiv) / (feeDiv - feeBps));
@@ -5575,6 +5589,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
   // Restore epoch-level state if the popped block was an epoch boundary
   // Reverse OOB limit-order fills executed for this block (v11+).
+  if (!m_blockSwapCdFeeHeatEq.empty() && m_blockSwapCdFeeHeatEq.back().first == poppedHeight) {
+    m_blockSwapCdFeeHeatEq.pop_back();
+  }
+
   if (!m_blockOrderFills.empty() && m_blockOrderFills.back().first == poppedHeight) {
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
     const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
@@ -6034,6 +6052,12 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
               return false;
             }
             m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
+            // Record for exact popBlock reversal (pop-time rate differs).
+            if (m_blockSwapCdFeeHeatEq.empty() ||
+                m_blockSwapCdFeeHeatEq.back().first != block.height) {
+              m_blockSwapCdFeeHeatEq.push_back({block.height, {}});
+            }
+            m_blockSwapCdFeeHeatEq.back().second.push_back(feeHeatEq);
             logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
                          << m_currency.formatAmount(heatDeposited) << " HEAT, -"
                          << m_currency.formatAmount(xfgPaid + feeXfg) << " XFG, cdFee="
@@ -6458,8 +6482,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           uint64_t cdFeeXfg = static_cast<uint64_t>(
               ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_BPS) / 100);
           m_ammPool.reserveXfg += (xfgPaid + cdFeeXfg);
+          // Reversal uses the recorded HEAT equivalent (exact). Fallback to a
+          // deterministic recompute when the record is absent (disk-loaded
+          // pops) — identical on all nodes.
           uint64_t cdFeeHeatEq = 0;
-          if (m_ammPool.reserveXfg > 0) {
+          if (!m_blockSwapCdFeeHeatEq.empty() &&
+              m_blockSwapCdFeeHeatEq.back().first == height &&
+              !m_blockSwapCdFeeHeatEq.back().second.empty()) {
+            cdFeeHeatEq = m_blockSwapCdFeeHeatEq.back().second.back();
+            m_blockSwapCdFeeHeatEq.back().second.pop_back();
+          } else if (m_ammPool.reserveXfg > 0) {
             uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
             if (postRate > 0) {
               cdFeeHeatEq = static_cast<uint64_t>(

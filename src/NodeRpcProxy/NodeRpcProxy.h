@@ -94,6 +94,8 @@ public:
                                         bool isLegacyBond = false) override;
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) override;
+  virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
+  virtual uint64_t getHearthTwap() override;
   virtual std::error_code getLimitDeposits(std::vector<LimitDepositRpcEntry>& deposits) override;
 
   unsigned int rpcTimeout() const { return m_rpcTimeout; }

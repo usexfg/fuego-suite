@@ -2697,6 +2697,7 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.total_lp_shares = info.totalLpShares;
   res.spot_price = info.spotPrice;
   res.epoch_swap_fees = info.epochSwapFees;
+  res.hearth_twap = m_core.getHearthTwap();
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

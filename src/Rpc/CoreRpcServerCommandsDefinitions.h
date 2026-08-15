@@ -2462,6 +2462,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t total_lp_shares;
     uint64_t spot_price;
     uint64_t epoch_swap_fees;
+    uint64_t hearth_twap;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(reserve_xfg)
@@ -2469,6 +2470,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(total_lp_shares)
       KV_MEMBER(spot_price)
       KV_MEMBER(epoch_swap_fees)
+      KV_MEMBER(hearth_twap)
       KV_MEMBER(status)
     }
   };

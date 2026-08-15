@@ -117,6 +117,10 @@ NOT protocol earnings:
 | `/amm_pool_info` | open | Pool reserves, spot price |
 | `/addswapfee` | restricted | Fee configuration |
 
+## Known Issues
+
+- **Block-serving RPC hang (pre-existing, not DIGM-related).** Every binary tested — including the month-old Jul-10 daemon on 18180 while idle and fully synced — hangs on `queryblockslite.bin` / `queryblocks.bin` / `getblocks.bin`. This blocks live sync/send e2e testing only; verification is done against the C++ production code directly (unit/integration harnesses), not live RPC.
+
 ## Graphify
 
 - Graph: `graphify-out/` — 21,757 nodes, 35,228 edges, 2,183 communities

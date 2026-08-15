@@ -1,0 +1,129 @@
+# Hearth — Technical README
+
+Hearth is Fuego's native XFG/HEAT market. This document explains the v11 architecture: what was built, why it is novel, and how it works end to end.
+
+## 1. What Hearth is
+
+Hearth is a **per-block call auction with a constant-product AMM backstop**, implemented as a consensus rule on a privacy (CryptoNote/RingCT) chain. Two-sided price discovery happens on-chain, at block time, from tx-extra-backed limit orders — the pool is a liquidity backstop, not the price source.
+
+Three properties define it:
+
+1. **Price discovery, not price smoothing.** The clearing price is the crossing point of committed bids and asks that maximizes executed volume (exchange opening-auction rules). The AMM does not set the price — users do, by committing funds to competing quotes.
+2. **Orders are transactions.** A limit order is a `TransactionExtraLimitDeposit` (XFG or HEAT committed to escrow buckets). There is no gossip, no message signatures, no mempool of unsigned orders. Everything resting in the book is backed by funds that already settled on-chain.
+3. **One price, once per block, for everyone.** The auction is batch-cleared: no ordering races, no MEV by transaction ordering, no front-running a queue.
+
+## 2. Why this is more than "an AMM on a UTXO chain"
+
+| Dimension | Typical UTXO-chain DEX | Hearth (v11) |
+|---|---|---|
+| Price source | AMM curve (reserve ratio) | Two-sided auction of committed orders |
+| User orders | Often swaps-only, or off-chain signed orders | On-chain tx-extra deposits — backed, signed, deterministic |
+| Execution | Continuous per-tx | Batch, once per block, one clearing price |
+| Maker compensation | Often none | 30% of the 1% taker fee rebated to makers |
+| Protocol revenue | Fee to treasury/liquidity | 70% of the 1% taker fee → HEAT CD yield pool |
+| LP mechanics | Single-sided often allowed | Balanced-only (no dilution), fair pro-rata shares |
+| Manipulation surface | Sandwich attacks on mempool ordering | Batch VWAP-free clearing; self-trade exclusion; min price tick; fee-gated sybil |
+| Backing | Reserves only | Orders backed by escrowed deposits; the AMM is a capped backstop |
+
+The unusual parts worth calling out:
+
+- **Price-time priority on a privacy chain.** The auction orders fills by price, then by deposit block height, then by order hash — a fair queue without revealing the owner (the owner is only an `addressHash`, a hash of spend+view keys).
+- **Self-trade exclusion by construction.** A key may participate on only one side of the auction per block (its latest order's side wins), closing the trivial wash-trade path without KYC.
+- **The mint price reads discovered prices.** The HEAT mint TWAP is fed from `P_clear` (the auction's last price), falling back to the pool ratio only during bootstrap. Money creation is priced by what people actually paid, not by an inventory curve.
+- **A treasury that is a market maker.** The Treasury LP Manager takes protocol fee income in both assets, pairs them at the pool ratio, and deposits as the protocol's own LP position — compounding, and driving bootstrap repayment by an owned-reserves check in both legs.
+
+## 3. Architecture
+
+```
+                      ┌──────────────────────────────────┐
+   Limit deposit txs  │  escrow buckets (pendingXfg/     │
+   (tx-extra backed)  │  pendingHeat) + LimitDepositInfo │
+                      └───────────────┬──────────────────┘
+                                      ▼
+                        Per-block processOrderbookForBlock
+                                      │
+                   ┌──────────────────┼───────────────────┐
+                   ▼                  ▼                   ▼
+            height expiry      CALL AUCTION          AMM backstop
+            (claimable)    (user-vs-user crossing)  (pool as maker,
+                                │                    volume-capped)
+                                ▼
+              P_clear = max-volume clearing price
+                                │
+                                ▼
+                    mint TWAP ← P_clear (rolling 8-block)
+```
+
+### 3.1 Call auction
+
+- Books are built from resting deposits: `BUY_XFG` (HEAT budget) → bids; `SELL_XFG` (XFG) → asks. Prices are in canonical scale: HEAT atomics per XFG atomic × COIN (1e7).
+- Clearing price `p*` maximizes executed volume; ties break by imbalance, then proximity to the previous block's `P_clear`, then lower price.
+- Fills settle in price-time priority, rationing the larger side at `p*`.
+- Value moves between the two parties' escrow buckets — **the AMM reserves are untouched by auction fills**.
+
+### 3.2 Fee model (1% taker, 70/30 split)
+
+- The taker side (the rationed side) pays 1% of its fills' price value.
+- 70% (`HEARTH_CD_SHARE_BPS`) accrues to `cdHearthFeeAccumulator` (HEAT-denominated) and is minted into the CD yield vault (`CD_APY_POOL`) at the epoch boundary; the consumed XFG is burned 50/50 (Eternal Flame / SWF).
+- 30% (`HEARTH_MAKER_REBATE_BPS`) is the maker rebate: distributed to the maker side pro-rata by fill value, with cumulative floors so conservation is exact.
+- Exact volume ties have no taker: no fee, no rebate (pure exchange).
+- On backstop/AMM fills the pool is the maker: 30% stays in LP reserves, 70% goes to CD yield.
+
+### 3.3 AMM backstop
+
+- Constant-product (`xfg × heat = k`), used only for the unfilled remainder.
+- Volume-capped per block at `HEARTH_BACKSTOP_MAX_BPS` (500) of the block's auction volume; uncapped when no auction volume exists (bootstrap).
+- LP deposits are balanced-only; shares mint pro-rata (`min(amountA·T/reserveA, amountB·T/reserveB)`), never single-sided (single-sided mints nothing — no dilution).
+
+### 3.4 Determinism and rollback
+
+- Every fill (auction and backstop) is recorded in `m_blockOrderFills` with exact moved amounts, fees, and rebates; `popBlock` reverses them in reverse order.
+- The epoch snapshot is captured at block start; dir-1 swap CD-fee HEAT equivalents are recorded per block for exact reversal (pop-time pool rates differ from push-time).
+- No RNG, no float, no wall clock: the entire exchange is a pure function of chain state.
+
+## 4. Economic flows
+
+| Flow | Route |
+|---|---|
+| Taker fee (auction) | 1% of taker notional → 70% CD yield accumulator / 30% maker rebate pool |
+| Taker fee (backstop/AMM) | 70% debited from LP reserves → CD yield / 30% stays with LPs |
+| Swap fees (cross-chain) | 69% CD yield / 11% bonus vault / 20% treasury counter |
+| Treasury LP Manager | treasury counter XFG + HEAT reserve (mint premiums, CD fees, donations) → ratio-paired LP position; compounds; repays bootstrap |
+| Burns | Every XFG→HEAT conversion burns consumed XFG 50% EF / 50% SWF; all burns tally in `total_burned_xfg` |
+
+## 5. Key constants (v11)
+
+| Constant | Value |
+|---|---|
+| `HEARTH_FEE_BPS` | 100 (1% taker) |
+| `HEARTH_CD_SHARE_BPS` | 70 |
+| `HEARTH_MAKER_REBATE_BPS` | 30 |
+| `HEARTH_BACKSTOP_MAX_BPS` | 500 |
+| `ORDER_PRICE_TICK` | COIN/100 |
+| `BOOTSTRAP_BLOCKS` | 144 |
+| `HEARTH_POOL_SEED_XFG/HEAT` | 10,000 XFG / 1,000 HEAT (10:1) |
+| Price scale | HEAT/XFG × COIN (1e7), integer-only |
+
+## 6. Key files
+
+| File | Purpose |
+|---|---|
+| `src/CryptoNoteCore/OrderbookAuction.{h,cpp}` | Call-auction matcher (clearing price, priority, self-trade, fees) |
+| `src/CryptoNoteCore/Blockchain.cpp` | `processOrderbookForBlock`, settlement, rollback, treasury epoch work |
+| `src/CryptoNoteCore/AmmPool.{h,cpp}` | Constant-product math, LP shares, spot price |
+| `src/CryptoNoteCore/OrderbookMempool.*` | Pool-order display band |
+| `src/CryptoNoteCore/PoolOrderOrchestrator.*` | Regeneration timing + adaptive spread (volatility from pool spot) |
+| `src/CryptoNoteCore/HeatMintEngine.*` | Mint validation at the canonical price |
+| `src/CryptoNoteConfig.h` | All constants |
+| `src/Wallet/WalletRpcServer.cpp`, `src/SimpleWallet/SimpleWallet.cpp` | User-facing commands |
+
+## 7. What was retired (v11)
+
+- The in-band CLOB matcher (`OrderbookMatcher`), `MIN_DISTINCT_PARTIES`, and gossiped orders — replaced by the backed auction.
+- Single-sided LP mints — balanced deposits only.
+- The old 50/50 fee-split and LP "spread reward" formula — replaced by the 70/30 taker/maker model and pool P&L.
+- Pre-v11 price scales (Q64.64, 1e8, 1e18) — canonical 1e7 everywhere.
+
+## 8. Status
+
+Phases A–C shipped and verified (guardian-verified, 57/57 auction tests + full suite). Post-only orders and maker-rebate fee credits (for fee-less makers) are backlog items — see `docs/plans/backlog.md`.

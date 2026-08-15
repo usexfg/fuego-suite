@@ -65,6 +65,8 @@
       {
         "group": "Hearth",
         "pages": [
+          "features/hearth/README",
+          "features/hearth/user-guide",
           "features/hearth/how-hearth-works",
           "features/hearth/providing-liquidity",
           "features/hearth/fee-earning"

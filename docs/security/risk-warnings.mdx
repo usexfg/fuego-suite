@@ -67,3 +67,8 @@ Hearth is the on-chain **XFG/HEAT** market. Protocol trade fee is **1%** (`HEART
 **No reversals.** Confirmed sends, mints, CD ops, Hearth trades, and swaps are irreversible.
 
 **Privacy is probabilistic.** Ring signatures and commitments provide strong privacy, not absolute anonymity under all behavioral analysis.
+
+
+## Known issue — block-serving RPC hang
+
+Every daemon binary tested — including the month-old Jul-10 daemon on port 18180, while idle and fully synced — hangs on `queryblockslite.bin`, `queryblocks.bin`, and `getblocks.bin`. This blocks live sync/send end-to-end testing only. All protocol verification is performed against the C++ production code directly (unit and integration harnesses), not live RPC.

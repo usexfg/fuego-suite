@@ -147,6 +147,12 @@ public:
                                                              std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                              const std::vector<DepositId>& depositIds,
                                                              uint64_t fee);
+  std::unique_ptr<WalletRequest> makeDonateToTreasuryRequest(
+      TransactionId &transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t amount,
+      uint64_t fee);
+
   std::unique_ptr<WalletRequest> makeWithdrawLegacyBondRequest(TransactionId& transactionId,
                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,
                                                               DepositId depositId,

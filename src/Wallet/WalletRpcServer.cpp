@@ -186,6 +186,7 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "heat_deposit",       makeMemberMethod(&wallet_rpc_server::on_heat_deposit) },
       // v11+ Hearth limit order commands
       { "place_limit_order",  makeMemberMethod(&wallet_rpc_server::on_place_limit_order) },
+      { "donate",             makeMemberMethod(&wallet_rpc_server::on_donate) },
       { "cancel_limit_order", makeMemberMethod(&wallet_rpc_server::on_cancel_limit_order) },
       { "get_limit_orders",   makeMemberMethod(&wallet_rpc_server::on_get_limit_orders) }
     };
@@ -1310,6 +1311,41 @@ bool wallet_rpc_server::on_estimate_cd_yield(const wallet_rpc::COMMAND_RPC_ESTIM
 }
 
 // v11+ Hearth limit order wallet RPC handlers
+bool wallet_rpc_server::on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request& req,
+                                   wallet_rpc::COMMAND_RPC_DONATE::response& res) {
+  try {
+    if (req.amount == 0) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
+    }
+    uint64_t fee = m_currency.minimumFee();
+
+    CryptoNote::WalletHelper::SendCompleteResultObserver sent;
+    WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
+
+    CryptoNote::TransactionId tx = m_wallet.donateToTreasury(req.amount, fee);
+    if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
+      throw std::runtime_error("Couldn't send donation transaction");
+    }
+
+    std::error_code sendError = sent.wait(tx);
+    removeGuard.removeObserver();
+
+    if (sendError) {
+      throw std::system_error(sendError);
+    }
+
+    CryptoNote::WalletLegacyTransaction txInfo;
+    m_wallet.getTransaction(tx, txInfo);
+    res.tx_hash = Common::podToHex(txInfo.hash);
+    res.status = CORE_RPC_STATUS_OK;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC donate error: " << e.what();
+    res.status = e.what();
+    return false;
+  }
+  return true;
+}
+
 bool wallet_rpc_server::on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::request& req,
                                               wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::response& res) {
   try {

@@ -105,6 +105,7 @@ namespace Tools
 
     // v11+ Hearth limit order wallet RPC
     bool on_place_limit_order(const wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::request& req, wallet_rpc::COMMAND_RPC_PLACE_LIMIT_ORDER::response& res);
+    bool on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request& req, wallet_rpc::COMMAND_RPC_DONATE::response& res);
     bool on_cancel_limit_order(const wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::request& req, wallet_rpc::COMMAND_RPC_CANCEL_LIMIT_ORDER::response& res);
     bool on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::request& req, wallet_rpc::COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
 

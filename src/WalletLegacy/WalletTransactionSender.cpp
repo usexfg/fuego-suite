@@ -412,6 +412,33 @@ namespace CryptoNote
     return doSendDepositWithdrawTransaction(std::move(context), events, depositIds);
   }
 
+  std::unique_ptr<WalletRequest> WalletTransactionSender::makeDonateToTreasuryRequest(
+      TransactionId &transactionId,
+      std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
+      uint64_t amount,
+      uint64_t fee)
+  {
+    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
+    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
+
+    uint64_t neededMoney = amount + fee;
+    context->foundMoney = selectTransfersToSend(neededMoney, false, context->dustPolicy.dustThreshold, context->selectedTransfers);
+    throwIf(context->foundMoney < neededMoney, error::WRONG_AMOUNT);
+
+    // TreasuryFund tag: asset 0 (XFG) — the burned amount credits the
+    // treasury counter → Treasury LP Manager. No outputs besides change.
+    std::vector<uint8_t> extraVec;
+    CryptoNote::addTreasuryFundToExtra(extraVec, 0, amount);
+    std::string extra(extraVec.begin(), extraVec.end());
+
+    transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, extra, {}, 0, {});
+    context->transactionId = transactionId;
+    context->mixIn = 0;
+
+    Crypto::SecretKey transactionSK;
+    return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
+  }
+
   std::unique_ptr<WalletRequest> WalletTransactionSender::makeWithdrawLegacyBondRequest(TransactionId &transactionId,
                                                                                        std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
                                                                                        DepositId depositId,
@@ -1198,14 +1225,19 @@ namespace CryptoNote
       for (size_t i = 0; i < depositIds.size(); ++i) {
         Deposit dep;
         if (m_transactionsCache.getDeposit(depositIds[i], dep) && dep.term != parameters::HEAT_TERM) {
-          // Non-HEAT commitment (COLD CD): claim accrued fee-pool interest.
+          // Finite-term HEAT CDs claim accrued fee-pool interest — but only
+          // deposits created at/after v11: pre-v11 deposits are withdraw-only
+          // (consensus rejects claimedInterest > 0 on them).
           uint64_t interest = 0;
-          std::error_code ec = m_node.getCdInterest(dep.amount,
-              static_cast<uint32_t>(dep.height), currentHeight, interest);
-          if (ec) {
-            // If node can't compute (e.g. remote daemon), fall back to zero.
-            // The blockchain will still accept the withdrawal at 0 interest.
-            interest = 0;
+          uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+          if (static_cast<uint32_t>(dep.height) >= v11Height) {
+            std::error_code ec = m_node.getCdInterest(dep.amount,
+                static_cast<uint32_t>(dep.height), currentHeight, interest);
+            if (ec) {
+              // If the node can't compute (e.g. remote daemon), fall back to
+              // zero. The blockchain accepts the withdrawal at 0 interest.
+              interest = 0;
+            }
           }
           perDepositInterest.push_back(interest);
           totalInterest += interest;

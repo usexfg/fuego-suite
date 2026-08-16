@@ -658,12 +658,18 @@ namespace CryptoNote
       return false;
     }
 
-    // Calculate accumulated interest
+    // Calculate accumulated interest.
+    // v11 zero-claim consensus rule: deposits created before v11 activation
+    // cannot claim CD yield (Blockchain.cpp youngest-ring pre-v11 gate), so
+    // zero the claim here to avoid building a tx the consensus rejects.
     uint64_t interest = m_currency.calculateCdInterest(
         deposit.amount,
         deposit.height,
         currentHeight,
         commitmentIndex);
+    if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      interest = 0;
+    }
 
     m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover deposit id=" << depositId
       << " amount=" << deposit.amount
@@ -857,8 +863,13 @@ namespace CryptoNote
       return false;
     }
 
-    // Use the pre-computed interest supplied by the caller
+    // Use the pre-computed interest supplied by the caller.
+    // v11 zero-claim consensus rule: pre-v11 deposits cannot claim CD yield,
+    // so zero the claim to match the consensus gate (see rolloverCd).
     uint64_t interest = precomputedInterest;
+    if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      interest = 0;
+    }
 
     m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover(precomputed) deposit id=" << depositId
       << " amount=" << deposit.amount

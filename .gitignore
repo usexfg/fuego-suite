@@ -104,3 +104,7 @@ tui-testnet/fuego-tui.exe
 *.dll
 # Local agent / brainstorm noise
 .superpowers/
+
+# Local build dirs
+/build_check/
+/build_presig/

@@ -18,6 +18,9 @@ Additionally, `getTransactionAllInputsAmount` (line 462) sums ALL asset types in
 
 **Core idea**: When `inAssets.xfg == 0 && inAssets.heat > 0`, allow the user to pay the XFG fee in HEAT at the Hearth pool exchange rate. The HEAT fee output goes to treasury instead of an XFG fee output.
 
+
+
+.....ehhh how bout if for each miner we just add option for "Accept HΞΔŦ" toggled yes or no, if yes we use smallest amount of ΗΞΔŦ (0.1𐅪) else 0.1♨︎ < 8 𝙺𝚒𝚕𝚘-𝚏𝚒𝚛𝚎 then however much ΗΞΔŦ >= 8K␌𝟋ƴ℟℮??    ✺𝔥Ͳ𐅋ⲿ ✝︎ѹᶻ  ᵗᵉᵃ  ⩰⩎⊚-㎩㏌ Ⲡ㉧-≶Ӊ⎮ʈ𝞣㏌ ㎲㏇㍴ ㏒㏌ ㍴ғ㏌㍲ ㎩иΤ⳽ 𐅔 
 ---
 
 ## Changes

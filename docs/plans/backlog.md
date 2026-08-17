@@ -5,7 +5,6 @@ Everything below is **deliberately deferred**. Foundations (F0–F4, Phases A–
 ## Protocol / consensus
 
 - [ ] **Post-only orders** — a deposit flag that never crosses (adds depth without taking). Needs a new tx-extra tag or a v11.1 field (current `TransactionExtraLimitDeposit` format is full).
-- [ ] **Maker-rebate fee credits** — for fee-less maker rebates (rebates currently only flow when a taker pays in the same block). A fee-credit accumulator per maker would let makers earn on blocks with no taker.
 - [ ] **Bonus vault payout** — the 11% HEAT accrues (`m_bonusVaultBalance`) with no payout path; loyalty tiers currently multiply from the general CD pool. Wire tier payouts from the vault.
 - [ ] **Quarterly CPI mechanism** — `HEAT_PEG_USD` is a launch constant; see `docs/plans/heat-cpi-peg-quarterly.md` (PEG-Q: BLS + Truflation zkTLS, governance-free, V13).
 - [ ] **Wallet donation command** — consensus supports the `TreasuryFund` burn tag; expose `donate <xfg|heat> <amount>` in wallet/RPC.

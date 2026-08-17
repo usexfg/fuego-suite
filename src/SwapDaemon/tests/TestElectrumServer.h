@@ -8,19 +8,23 @@
 #pragma once
 
 #include "Common/JsonValue.h"
+#include "Common/WinCompat.h"
 
-#include <arpa/inet.h>
 #include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <functional>
 #include <map>
 #include <mutex>
+#ifndef _WIN32
 #include <poll.h>
+#endif
 #include <string>
 #include <thread>
-#include <unistd.h>
-#include <sys/socket.h>
+
+#ifdef _WIN32
+#define poll WSAPoll
+#endif
 
 namespace XfgSwap {
 
@@ -50,7 +54,7 @@ public:
     }
 
     int opt = 1;
-    setsockopt(m_listenFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(m_listenFd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
 
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
@@ -133,7 +137,7 @@ private:
 
     while (m_running.load()) {
       char buf[4096];
-      ssize_t n = recv(clientFd, buf, sizeof(buf) - 1, 0);
+      ssize_t n = recv(clientFd, buf, static_cast<int>(sizeof(buf) - 1), 0);
       if (n <= 0) {
         break;
       }
@@ -204,7 +208,7 @@ private:
       // Send response
       size_t sent = 0;
       while (sent < response.size()) {
-        ssize_t n = ::send(clientFd, response.data() + sent, response.size() - sent, MSG_NOSIGNAL);
+        ssize_t n = ::send(clientFd, response.data() + sent, static_cast<int>(response.size() - sent), MSG_NOSIGNAL);
         if (n < 0) {
           return;
         }

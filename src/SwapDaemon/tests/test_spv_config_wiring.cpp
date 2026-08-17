@@ -20,6 +20,17 @@ using namespace XfgSwap;
 // =============================================================================
 
 static std::string writeTempConfig(const std::string& jsonContent) {
+#ifdef _WIN32
+  char name[L_tmpnam] = {};
+  if (std::tmpnam(name) == nullptr) {
+    return "";
+  }
+  std::string path(name);
+  std::ofstream f(path, std::ios::out);
+  f << jsonContent;
+  f.close();
+  return path;
+#else
   char tmpl[] = "/tmp/spv_config_test_XXXXXX";
   int fd = mkstemp(tmpl);
   assert(fd >= 0);
@@ -29,6 +40,7 @@ static std::string writeTempConfig(const std::string& jsonContent) {
   f.close();
   close(fd);
   return std::string(tmpl);
+#endif
 }
 
 // =============================================================================

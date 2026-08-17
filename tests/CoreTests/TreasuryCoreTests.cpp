@@ -240,6 +240,64 @@ void testTreasuryFundTagRoundtrip() {
   TEST(fund2.amount == 42);
 }
 
+void testLimitWithdrawOwnershipProofRoundtrip() {
+  Crypto::PublicKey spendPublicKey{};
+  Crypto::SecretKey spendSecretKey{};
+  Crypto::PublicKey viewPublicKey{};
+  Crypto::SecretKey viewSecretKey{};
+  Crypto::generate_keys(spendPublicKey, spendSecretKey);
+  Crypto::generate_keys(viewPublicKey, viewSecretKey);
+  (void)viewSecretKey;
+
+  Crypto::Hash orderId{};
+  Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+  uint8_t addressData[sizeof(spendPublicKey.data) + sizeof(viewPublicKey.data)];
+  memcpy(addressData, spendPublicKey.data, sizeof(spendPublicKey.data));
+  memcpy(addressData + sizeof(spendPublicKey.data), viewPublicKey.data, sizeof(viewPublicKey.data));
+  Crypto::Hash addressHash{};
+  Crypto::cn_fast_hash(addressData, sizeof(addressData), addressHash);
+
+  std::vector<TransactionOutput> outputs;
+  TransactionOutput output;
+  output.amount = 123;
+  KeyOutput keyOutput;
+  keyOutput.key = spendPublicKey;
+  output.target = keyOutput;
+  outputs.push_back(output);
+  Crypto::Hash outputsHash = getLimitWithdrawOutputHash(outputs);
+  Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, addressHash, outputsHash);
+  Crypto::Signature proof{};
+  Crypto::generate_signature(authHash, spendPublicKey, spendSecretKey, proof);
+
+  std::vector<uint8_t> extra;
+  TEST(addLimitWithdrawToExtra(extra, orderId, spendPublicKey, viewPublicKey, outputsHash, proof));
+  std::vector<TransactionExtraField> fields;
+  TEST(parseTransactionExtra(extra, fields));
+  TEST(fields.size() == 1);
+  TEST(fields[0].type() == typeid(TransactionExtraLimitWithdraw));
+  const auto& withdraw = boost::get<TransactionExtraLimitWithdraw>(fields[0]);
+  TEST(memcmp(withdraw.orderId.data, orderId.data, sizeof(orderId.data)) == 0);
+  TEST(memcmp(withdraw.spendPublicKey.data, spendPublicKey.data, sizeof(spendPublicKey.data)) == 0);
+  TEST(memcmp(withdraw.viewPublicKey.data, viewPublicKey.data, sizeof(viewPublicKey.data)) == 0);
+  TEST(memcmp(withdraw.outputsHash.data, outputsHash.data, sizeof(outputsHash.data)) == 0);
+  TEST(Crypto::check_signature(authHash, withdraw.spendPublicKey, withdraw.proof));
+
+  Crypto::Hash wrongOrder = orderId;
+  wrongOrder.data[0] ^= 1;
+  TEST(!Crypto::check_signature(getLimitWithdrawAuthHash(wrongOrder, addressHash, outputsHash),
+                                withdraw.spendPublicKey, withdraw.proof));
+  outputs[0].amount++;
+  TEST(!Crypto::check_signature(getLimitWithdrawAuthHash(
+                                  orderId, addressHash, getLimitWithdrawOutputHash(outputs)),
+                                withdraw.spendPublicKey, withdraw.proof));
+
+  std::vector<uint8_t> legacyExtra;
+  legacyExtra.push_back(TX_EXTRA_LIMIT_WITHDRAW);
+  legacyExtra.insert(legacyExtra.end(), orderId.data, orderId.data + sizeof(orderId.data));
+  std::vector<TransactionExtraField> legacyFields;
+  TEST(!parseTransactionExtra(legacyExtra, legacyFields));
+}
+
 } // anonymous namespace
 
 int main() {
@@ -249,6 +307,7 @@ int main() {
   testNoSingleSidedLpMints();
   testCanonicalSpotPriceScale();
   testTreasuryFundTagRoundtrip();
+  testLimitWithdrawOwnershipProofRoundtrip();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

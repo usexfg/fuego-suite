@@ -149,6 +149,8 @@ namespace CryptoNote {
     bool get_stat_info(core_stat_info &st_inf) override;
 
     virtual bool get_tx_outputs_gindexs(const Crypto::Hash &tx_id, std::vector<uint32_t> &indexs) override;
+    virtual bool get_outs_for_amount(uint64_t amount, const std::vector<uint64_t>& indexes,
+                                     std::vector<Crypto::PublicKey>& keys) override;
     Crypto::Hash get_tail_id();
     virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request &req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response &res) override;
     virtual bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) override;
@@ -218,12 +220,12 @@ namespace CryptoNote {
       uint64_t burnedXfg = 0;
       uint64_t totalBurnedXfg = 0;   // overall burn tally (100% of every XFG destroyed)
       uint64_t heatCdFeePool = 0;     // HⲶ∆T in CD fee pool (accrued, not yet distributed)
-      uint64_t swfBalance = 0;        // SWF balance from mint premiums
+      uint64_t swfBurnedXfgPendingHeat = 0; // already-burned XFG awaiting SWF HEAT conversion
       uint64_t redemptionPriceNum = 1;  // pool XFG/HⲶ∆T ratio × 10^6
       uint64_t redemptionPriceDenom = 1000000;
       uint64_t treasuryBalance = 0;
       uint64_t treasuryHeatReserve = 0;  // HⲶ∆T minted from 20% swap fee share (for APY floor)
-      uint64_t treasuryCounterXFG = 0;    // XFG burned + credited to Treasury (ready for HEAT conversion)
+      uint64_t treasuryCounterXFG = 0;    // unburned treasury XFG reserve / LP source
       uint64_t swfHeatBalance = 0;        // SWF counter HEAT (off-chain DIGM collateral)
       uint64_t epochSwapFees = 0;
       uint64_t vaultHeatCdFeePool = 0;

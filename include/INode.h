@@ -137,6 +137,8 @@ public:
     std::string address_hash; // cn_fast_hash(spendKey||viewKey) — wallet filters by this
     uint8_t side;
     uint64_t amount;
+    uint64_t proceeds_xfg;
+    uint64_t proceeds_heat;
     uint64_t target_price;
     uint32_t expiration;
     bool withdrawn;

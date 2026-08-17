@@ -126,7 +126,10 @@ public:
   virtual TransactionId lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, uint64_t minHeat, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) override;
-  virtual TransactionId donateToTreasury(uint64_t amount, uint64_t fee) override;
+  virtual TransactionId donateToTreasury(Crypto::SecretKey& transactionSK,
+                                         uint64_t amount,
+                                         uint64_t fee,
+                                         uint64_t mixIn) override;
   virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) override;
 
   // v11 Orderbook

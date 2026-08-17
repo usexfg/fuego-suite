@@ -1431,6 +1431,61 @@ namespace CryptoNote
     throwIfStopped();
     fee = m_currency.minimumFee();
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+
+    // Resolve the order owner before building the cancellation transaction.
+    // The order id is public, so it is not an authorization factor by itself.
+    // The owner address hash from the daemon lets us select the corresponding
+    // spend key and produce the consensus-checked withdrawal proof.
+    const std::string orderIdHex = Common::podToHex(orderId);
+    std::vector<INode::LimitDepositRpcEntry> deposits;
+    std::error_code ownerLookupError = m_node.getLimitDeposits(deposits);
+    if (ownerLookupError) {
+      throw std::system_error(ownerLookupError, "Unable to resolve limit order owner");
+    }
+
+    Crypto::Hash ownerAddressHash{};
+    bool orderFound = false;
+    uint8_t orderSide = 0;
+    uint64_t orderAmount = 0;
+    uint64_t orderProceedsXfg = 0;
+    uint64_t orderProceedsHeat = 0;
+    for (const auto& deposit : deposits) {
+      if (deposit.order_id == orderIdHex) {
+        if (!Common::podFromHex(deposit.address_hash, ownerAddressHash)) {
+          throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+                                  "Limit order has an invalid owner hash");
+        }
+        orderSide = deposit.side;
+        orderAmount = deposit.amount;
+        orderProceedsXfg = deposit.proceeds_xfg;
+        orderProceedsHeat = deposit.proceeds_heat;
+        orderFound = true;
+        break;
+      }
+    }
+    if (!orderFound) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+                              "Limit order does not exist");
+    }
+
+    const WalletRecord* ownerWallet = nullptr;
+    for (const auto& wallet : m_walletsContainer.get<RandomAccessIndex>()) {
+      uint8_t keyData[sizeof(wallet.spendPublicKey.data) + sizeof(m_viewPublicKey.data)];
+      memcpy(keyData, wallet.spendPublicKey.data, sizeof(wallet.spendPublicKey.data));
+      memcpy(keyData + sizeof(wallet.spendPublicKey.data),
+             m_viewPublicKey.data, sizeof(m_viewPublicKey.data));
+      Crypto::Hash candidateHash{};
+      Crypto::cn_fast_hash(keyData, sizeof(keyData), candidateHash);
+      if (memcmp(candidateHash.data, ownerAddressHash.data, sizeof(candidateHash.data)) == 0) {
+        ownerWallet = &wallet;
+        break;
+      }
+    }
+    if (ownerWallet == nullptr) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+                              "Limit order belongs to another wallet");
+    }
+
     std::vector<WalletOuts> wallets = pickWalletsWithMoney();
     std::vector<OutputToTransfer> selectedTransfers;
     uint64_t foundMoney = selectTransfers(fee, false, m_currency.defaultDustThreshold(), std::move(wallets), selectedTransfers);
@@ -1439,15 +1494,61 @@ namespace CryptoNote
     }
     std::unique_ptr<ITransaction> transaction = createTransaction();
     transaction->setUnlockTime(0);
-    std::vector<uint8_t> extra;
-    addLimitWithdrawToExtra(extra, orderId);
-    transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     uint64_t changeAmount = foundMoney - fee;
     if (changeAmount > 0) {
       for (uint64_t chunk : split(changeAmount, m_currency.defaultDustThreshold())) {
         transaction->addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
       }
     }
+
+    // Exact payout: return the remaining deposit and any fill proceeds so the
+    // consensus equality check verifies the full claim.
+    auto addHeatCommitmentOutput = [&](uint64_t heatAmount) {
+      const uint32_t outIdx = static_cast<uint32_t>(transaction->getOutputCount());
+      Crypto::SecretKey txSecretKey;
+      transaction->getTransactionSecretKey(txSecretKey);
+      Crypto::KeyDerivation ecdh;
+      Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh);
+      uint8_t preimage[36];
+      memcpy(preimage, &ecdh, 32);
+      preimage[32] = outIdx & 0xFF; preimage[33] = (outIdx >> 8) & 0xFF;
+      preimage[34] = (outIdx >> 16) & 0xFF; preimage[35] = (outIdx >> 24) & 0xFF;
+      Crypto::Hash h;
+      Crypto::cn_fast_hash(preimage, sizeof(preimage), h);
+      std::array<uint8_t, 32> secret;
+      memcpy(secret.data(), h.data, 32);
+      CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(secret);
+      CryptoNote::TransactionOutputCommitment heatOut;
+      heatOut.commitKey = ck.commitKey;
+      heatOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(heatAmount, heatOut);
+    };
+
+    if (orderSide == 1) {
+      if (orderAmount > 0) {
+        transaction->addOutput(orderAmount, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
+      }
+      if (orderProceedsHeat > 0) {
+        addHeatCommitmentOutput(orderProceedsHeat);
+      }
+    } else {
+      if (orderProceedsXfg > 0) {
+        transaction->addOutput(orderProceedsXfg, AccountPublicAddress{ownerWallet->spendPublicKey, m_viewPublicKey});
+      }
+      if (orderAmount > 0) {
+        addHeatCommitmentOutput(orderAmount);
+      }
+    }
+
+    Crypto::Hash outputsHash = getLimitWithdrawOutputHash(transaction->getTransactionPrefix().outputs);
+    Crypto::Hash authHash = getLimitWithdrawAuthHash(orderId, ownerAddressHash, outputsHash);
+    Crypto::Signature proof;
+    Crypto::generate_signature(authHash, ownerWallet->spendPublicKey,
+                               ownerWallet->spendSecretKey, proof);
+    std::vector<uint8_t> extra;
+    addLimitWithdrawToExtra(extra, orderId, ownerWallet->spendPublicKey,
+                            m_viewPublicKey, outputsHash, proof);
+    transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
     typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
     std::vector<outs_for_amount> mixinResult;
     requestMixinOuts(selectedTransfers, mixin, mixinResult);

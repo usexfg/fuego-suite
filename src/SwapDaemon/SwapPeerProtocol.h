@@ -97,11 +97,16 @@ struct MsgEscrowFunded {
   Crypto::Hash escrowTxHash;
 };
 
-// Phase 5a (Round 1): Partial key image + ring nonce for collaborative ring sig.
+// Phase 5a (Round 1): Partial key image + ring nonce + the agreed decoy ring
+// for collaborative ring sig. The sender selected the decoys from the shared
+// amount bucket; the receiver verifies each entry on-chain and signs the exact
+// same ring.
 struct MsgRingRound1 {
   Crypto::KeyImage partialKeyImage;
   Crypto::PublicKey ringNoncePub;             // k*G
   Crypto::EllipticCurvePoint ringNonceHp;     // k*Hp(escrowPub)
+  std::vector<uint32_t> ringGlobalIndices;    // sorted, incl. real escrow entry
+  std::vector<Crypto::PublicKey> ringPubKeys; // parallel to ringGlobalIndices
 };
 
 // Phase 5b (Round 2): Partial response for the real ring position.

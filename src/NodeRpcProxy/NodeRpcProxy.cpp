@@ -847,6 +847,8 @@ std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRp
     entry.address_hash = o.address_hash;
     entry.side = o.side;
     entry.amount = o.amount;
+    entry.proceeds_xfg = o.proceeds_xfg;
+    entry.proceeds_heat = o.proceeds_heat;
     entry.target_price = o.target_price;
     entry.expiration = o.expiration;
     entry.withdrawn = o.withdrawn;

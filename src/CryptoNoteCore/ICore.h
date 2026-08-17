@@ -88,6 +88,9 @@ public:
   virtual bool get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
                                   std::vector<uint32_t>& heights) = 0;
   virtual bool get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs) = 0;
+  // Lookup output keys at explicit per-amount global indexes.
+  virtual bool get_outs_for_amount(uint64_t amount, const std::vector<uint64_t>& indexes,
+                                   std::vector<Crypto::PublicKey>& keys) = 0;
   virtual bool getOutByMSigGIndex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) = 0;
   virtual i_cryptonote_protocol* get_protocol() = 0;
   virtual SwapOfferRelay& getSwapRelay() = 0;

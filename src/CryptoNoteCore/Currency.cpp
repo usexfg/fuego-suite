@@ -383,7 +383,8 @@ double Currency::getBurnPercentage() const {
           // Bonus is computed on the ORIGINAL amount, not currentBase
           uint64_t origEpochInterest = (uint64_t)(((uint128_t)amount * epochRate)
                                                   / parameters::FEE_POOL_RATE_PRECISION);
-          if (epochsToMaturity < (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
+          if (epochsToMaturity > 0 &&
+              epochsToMaturity < (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
             loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 100;
           } else if (epochsToMaturity == (int64_t)parameters::LOYALTY_BONUS_FULL_EPOCHS) {
             loyaltyBonus += (origEpochInterest * loyaltyBonusPct) / 200;

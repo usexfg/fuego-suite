@@ -121,6 +121,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/getrandom_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS>(&RpcServer::on_get_random_outs), false } },
   { "/getrandom_commitment_outs.bin", { binMethod<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS>(&RpcServer::on_get_random_commitment_outs), false } },
   { "/getrandom_outs_json", { jsonMethod<COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON>(&RpcServer::on_get_random_outs_json), true } },
+  { "/get_outs_json", { jsonMethod<COMMAND_RPC_GET_OUTPUTS_JSON>(&RpcServer::on_get_outputs_json), true } },
   { "/get_pool_changes.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES>(&RpcServer::onGetPoolChanges), false } },
   { "/get_pool_changes_lite.bin", { binMethod<COMMAND_RPC_GET_POOL_CHANGES_LITE>(&RpcServer::onGetPoolChangesLite), false } },
 
@@ -762,6 +763,31 @@ bool RpcServer::on_get_random_outs_json(const COMMAND_RPC_GET_RANDOM_OUTPUTS_JSO
       je.out_key = Common::podToHex(entry.out_key);
       res.outs.push_back(std::move(je));
     }
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool RpcServer::on_get_outputs_json(const COMMAND_RPC_GET_OUTPUTS_JSON::request& req,
+                                    COMMAND_RPC_GET_OUTPUTS_JSON::response& res) {
+  res.status = "Failed";
+  if (req.indexes.size() > 64) {
+    res.status = "Too many indexes";
+    return true;
+  }
+
+  std::vector<Crypto::PublicKey> keys;
+  if (!m_core.get_outs_for_amount(req.amount, req.indexes, keys)) {
+    return true;
+  }
+
+  res.outs.reserve(keys.size());
+  for (size_t i = 0; i < keys.size(); ++i) {
+    COMMAND_RPC_GET_OUTPUTS_JSON::out_entry entry;
+    entry.global_index = req.indexes[i];
+    entry.out_key = Common::podToHex(keys[i]);
+    res.outs.push_back(std::move(entry));
   }
 
   res.status = CORE_RPC_STATUS_OK;
@@ -2566,6 +2592,7 @@ bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::reques
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
   res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryCounterXFG();
   res.treasury_heat_reserve = m_core.get_blockchain_storage().getTreasuryHeatReserve();
+  res.swf_burned_xfg_pending_heat = m_core.get_blockchain_storage().getSwfBurnedXfgPendingHeat();
   res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
   res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
   res.total_burned_xfg = m_core.get_blockchain_storage().getTotalBurnedXfg();
@@ -2666,6 +2693,7 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   res.redemption_price_denom = metrics.redemptionPriceDenom;
   res.treasury_balance = metrics.treasuryBalance;
   res.treasury_counter_xfg = metrics.treasuryCounterXFG;
+  res.swf_burned_xfg_pending_heat = metrics.swfBurnedXfgPendingHeat;
   res.swf_heat_balance = metrics.swfHeatBalance;
   res.epoch_swap_fees = metrics.epochSwapFees;
   res.vault_heat_cd_fee_pool = metrics.vaultHeatCdFeePool;
@@ -2711,6 +2739,8 @@ bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request&
     info.address_hash = Common::podToHex(kv.second.addressHash);
     info.side = kv.second.side;
     info.amount = kv.second.amount;
+    info.proceeds_xfg = kv.second.proceedsXfg;
+    info.proceeds_heat = kv.second.proceedsHeat;
     info.target_price = kv.second.targetPrice;
     info.expiration = kv.second.expiration;
     info.withdrawn = kv.second.withdrawn;

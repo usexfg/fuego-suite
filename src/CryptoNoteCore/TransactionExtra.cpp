@@ -409,6 +409,10 @@ namespace CryptoNote
             {
               TransactionExtraLimitWithdraw withdraw;
               read(iss, withdraw.orderId.data, sizeof(withdraw.orderId.data));
+              read(iss, withdraw.spendPublicKey.data, sizeof(withdraw.spendPublicKey.data));
+              read(iss, withdraw.viewPublicKey.data, sizeof(withdraw.viewPublicKey.data));
+              read(iss, withdraw.outputsHash.data, sizeof(withdraw.outputsHash.data));
+              read(iss, withdraw.proof.data, sizeof(withdraw.proof.data));
               transactionExtraFields.push_back(withdraw);
               break;
             }
@@ -641,7 +645,8 @@ namespace CryptoNote
 
     bool operator()(const TransactionExtraLimitWithdraw &t)
     {
-      return addLimitWithdrawToExtra(extra, t.orderId);
+      return addLimitWithdrawToExtra(extra, t.orderId, t.spendPublicKey, t.viewPublicKey,
+                                     t.outputsHash, t.proof);
     }
 
     bool operator()(const TransactionExtraTreasuryFund &t)
@@ -1789,9 +1794,46 @@ namespace CryptoNote
     return true;
   }
   
-  bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId) {
+  Crypto::Hash getLimitWithdrawOutputHash(const std::vector<CryptoNote::TransactionOutput>& outputs) {
+    // Reuse the canonical transaction-prefix serializer while isolating the
+    // output vector. Version, inputs, unlock time, and extra remain fixed so
+    // the same digest is reproducible by wallets and consensus.
+    CryptoNote::TransactionPrefix prefix{};
+    prefix.outputs = outputs;
+    const CryptoNote::BinaryArray serializedOutputs = CryptoNote::toBinaryArray(prefix);
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(serializedOutputs.data(), serializedOutputs.size(), result);
+    return result;
+  }
+
+  Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
+                                        const Crypto::Hash& addressHash,
+                                        const Crypto::Hash& outputsHash) {
+    static constexpr char domain[] = "FuegoLimitWithdrawV1";
+    std::vector<uint8_t> authData;
+    authData.reserve(sizeof(domain) - 1 + sizeof(orderId.data) + sizeof(addressHash.data) + sizeof(outputsHash.data));
+    authData.insert(authData.end(), domain, domain + sizeof(domain) - 1);
+    authData.insert(authData.end(), orderId.data, orderId.data + sizeof(orderId.data));
+    authData.insert(authData.end(), addressHash.data, addressHash.data + sizeof(addressHash.data));
+    authData.insert(authData.end(), outputsHash.data, outputsHash.data + sizeof(outputsHash.data));
+
+    Crypto::Hash result{};
+    Crypto::cn_fast_hash(authData.data(), authData.size(), result);
+    return result;
+  }
+
+  bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra,
+                               const Crypto::Hash& orderId,
+                               const Crypto::PublicKey& spendPublicKey,
+                               const Crypto::PublicKey& viewPublicKey,
+                               const Crypto::Hash& outputsHash,
+                               const Crypto::Signature& proof) {
     tx_extra.push_back(TX_EXTRA_LIMIT_WITHDRAW);
     for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
+    for (size_t i = 0; i < sizeof(spendPublicKey.data); ++i) tx_extra.push_back(spendPublicKey.data[i]);
+    for (size_t i = 0; i < sizeof(viewPublicKey.data); ++i) tx_extra.push_back(viewPublicKey.data[i]);
+    for (size_t i = 0; i < sizeof(outputsHash.data); ++i) tx_extra.push_back(outputsHash.data[i]);
+    for (size_t i = 0; i < sizeof(proof.data); ++i) tx_extra.push_back(proof.data[i]);
     return true;
   }
 

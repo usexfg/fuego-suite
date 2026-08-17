@@ -61,6 +61,45 @@ static bool hexToDleq(const std::string& hex, Crypto::DLEQProof& p) {
   return Common::podFromHex(hex, p);
 }
 
+// Ring descriptor wire encoding: indices as concatenated 8-hex LE values,
+// public keys as concatenated 64-hex values. Fixed widths keep the format
+// unambiguous for both the binary digest and JSON payloads.
+static std::string encodeIndices(const std::vector<uint32_t>& indices) {
+  std::string out;
+  out.reserve(indices.size() * 8);
+  for (uint32_t v : indices) out += Common::toHex(&v, sizeof(v));
+  return out;
+}
+
+static bool decodeIndices(const std::string& hex, std::vector<uint32_t>& indices) {
+  indices.clear();
+  if (hex.size() % 8 != 0) return false;
+  for (size_t off = 0; off < hex.size(); off += 8) {
+    uint32_t v = 0;
+    if (!Common::podFromHex(hex.substr(off, 8), v)) return false;
+    indices.push_back(v);
+  }
+  return true;
+}
+
+static std::string encodePubKeys(const std::vector<Crypto::PublicKey>& keys) {
+  std::string out;
+  out.reserve(keys.size() * 64);
+  for (const auto& k : keys) out += Common::toHex(&k, sizeof(k));
+  return out;
+}
+
+static bool decodePubKeys(const std::string& hex, std::vector<Crypto::PublicKey>& keys) {
+  keys.clear();
+  if (hex.size() % 64 != 0) return false;
+  for (size_t off = 0; off < hex.size(); off += 64) {
+    Crypto::PublicKey k{};
+    if (!Common::podFromHex(hex.substr(off, 64), k)) return false;
+    keys.push_back(k);
+  }
+  return true;
+}
+
 // ── digest / sign / verify ───────────────────────────────────────────
 //
 // Canonical layout (length-prefix-free; types are fixed-size or have a
@@ -115,6 +154,9 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       appendPod(buf, msg.ringRound1.partialKeyImage);
       appendPod(buf, msg.ringRound1.ringNoncePub);
       appendPod(buf, msg.ringRound1.ringNonceHp);
+      appendU32LE(buf, static_cast<uint32_t>(msg.ringRound1.ringGlobalIndices.size()));
+      for (uint32_t idx : msg.ringRound1.ringGlobalIndices) appendU32LE(buf, idx);
+      for (const auto& key : msg.ringRound1.ringPubKeys) appendPod(buf, key);
       break;
     case PeerMessageType::RING_ROUND2:
       appendPod(buf, msg.ringRound2.partialResponse);
@@ -196,6 +238,8 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("partialKeyImage", podHex(msg.ringRound1.partialKeyImage));
       payload.insert("ringNoncePub", podHex(msg.ringRound1.ringNoncePub));
       payload.insert("ringNonceHp", podHex(msg.ringRound1.ringNonceHp));
+      payload.insert("ringGlobalIndices", encodeIndices(msg.ringRound1.ringGlobalIndices));
+      payload.insert("ringPubKeys", encodePubKeys(msg.ringRound1.ringPubKeys));
       break;
 
     case PeerMessageType::RING_ROUND2:
@@ -280,6 +324,14 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         if (!hexPod(p("ringNoncePub").getString(), msg.ringRound1.ringNoncePub))
           return false;
         if (!hexPod(p("ringNonceHp").getString(), msg.ringRound1.ringNonceHp))
+          return false;
+        if (!p.contains("ringGlobalIndices") || !p.contains("ringPubKeys"))
+          return false;
+        if (!decodeIndices(p("ringGlobalIndices").getString(), msg.ringRound1.ringGlobalIndices))
+          return false;
+        if (!decodePubKeys(p("ringPubKeys").getString(), msg.ringRound1.ringPubKeys))
+          return false;
+        if (msg.ringRound1.ringGlobalIndices.size() != msg.ringRound1.ringPubKeys.size())
           return false;
         break;
 

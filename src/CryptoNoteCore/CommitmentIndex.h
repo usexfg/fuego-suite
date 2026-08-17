@@ -79,7 +79,7 @@ struct EpochReport {
   uint64_t rolloverVaultBalance = 0;
   uint64_t totalBurnedXfg = 0;       // cumulative XFG burned for HⲶ∆T minting
   uint64_t totalEternalFlame = 0;    // cumulative XFG in Eternal Flame (50% of burn)
-  uint64_t swfBalance = 0;           // SWF balance (mint premiums)
+  uint64_t swfBurnedXfgPendingHeat = 0; // already-burned XFG awaiting SWF HEAT conversion
 
   void serialize(ISerializer& s) {
     s(epochNumber, "epoch_number");
@@ -94,7 +94,7 @@ struct EpochReport {
     s(rolloverVaultBalance, "rollover_vault_balance");
     s(totalBurnedXfg, "total_burned_xfg");
     s(totalEternalFlame, "total_eternal_flame");
-    s(swfBalance, "swf_balance");
+    s(swfBurnedXfgPendingHeat, "swf_balance");
   }
 };
 

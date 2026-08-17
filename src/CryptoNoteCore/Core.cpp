@@ -818,6 +818,11 @@ bool core::get_tx_outputs_gindexs(const Crypto::Hash& tx_id, std::vector<uint32_
   return m_blockchain.getTransactionOutputGlobalIndexes(tx_id, indexs);
 }
 
+bool core::get_outs_for_amount(uint64_t amount, const std::vector<uint64_t>& indexes,
+                               std::vector<Crypto::PublicKey>& keys) {
+  return m_blockchain.getOutsByAmountAndIndexes(amount, indexes, keys);
+}
+
 bool core::getOutByMSigGIndex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out) {
   return m_blockchain.get_out_by_msig_gindex(amount, gindex, out);
 }
@@ -1574,7 +1579,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
   m.totalBurnedXfg = m_blockchain.getTotalBurnedXfg();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
-  m.swfBalance = m_blockchain.getSwfBalance();
+  m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
   const auto& pool = m_blockchain.getAmmPool();
   if (!pool.isEmpty() && pool.reserveHeat > 0) {
     // Pool ratio × 10^6 for precision

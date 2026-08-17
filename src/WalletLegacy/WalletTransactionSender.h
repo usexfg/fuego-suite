@@ -151,7 +151,9 @@ public:
       TransactionId &transactionId,
       std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
       uint64_t amount,
-      uint64_t fee);
+      uint64_t fee,
+      uint64_t mixIn,
+      Crypto::SecretKey &transactionSK);
 
   std::unique_ptr<WalletRequest> makeWithdrawLegacyBondRequest(TransactionId& transactionId,
                                                               std::deque<std::unique_ptr<WalletLegacyEvent>>& events,

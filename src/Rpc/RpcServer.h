@@ -83,6 +83,7 @@ private:
   bool on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::response& res);
   bool on_get_random_commitment_outs(const COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request& req, COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response& res);
   bool on_get_random_outs_json(const COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON::request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON::response& res);
+  bool on_get_outputs_json(const COMMAND_RPC_GET_OUTPUTS_JSON::request& req, COMMAND_RPC_GET_OUTPUTS_JSON::response& res);
 
   bool onGetPoolChanges(const COMMAND_RPC_GET_POOL_CHANGES::request& req, COMMAND_RPC_GET_POOL_CHANGES::response& rsp);
   bool onGetPoolChangesLite(const COMMAND_RPC_GET_POOL_CHANGES_LITE::request& req, COMMAND_RPC_GET_POOL_CHANGES_LITE::response& rsp);

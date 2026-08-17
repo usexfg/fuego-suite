@@ -336,7 +336,7 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
   uint64_t heatLockedInCDs = heatMetrics.heatCdFeePool;
   uint64_t circulatingHeat = (totalHeatSupply > heatLockedInCDs) ? (totalHeatSupply - heatLockedInCDs) : 0;
   uint64_t totalEternalFlame = totalCoinsEthereal * CryptoNote::parameters::MINT_BURN_EF_PCT / 100;
-  uint64_t swfBalance = heatMetrics.swfBalance;
+  uint64_t swfBalance = heatMetrics.swfBurnedXfgPendingHeat;
   uint64_t actualTotalSupply = (totalCoinsInNetwork > totalCoinsEthereal) ? (totalCoinsInNetwork - totalCoinsEthereal) : 0;
   uint64_t actualCircSupply = (actualTotalSupply > totalCoinsOnDeposits) ? (actualTotalSupply - totalCoinsOnDeposits) : 0;
 

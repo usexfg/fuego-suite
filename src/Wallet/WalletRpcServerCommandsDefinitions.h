@@ -1077,6 +1077,8 @@ using CryptoNote::ISerializer;
       std::string order_id;
       uint8_t side;
       uint64_t amount;
+      uint64_t proceeds_xfg;
+      uint64_t proceeds_heat;
       uint64_t target_price;
       uint32_t expiration;
       bool withdrawn;
@@ -1085,6 +1087,8 @@ using CryptoNote::ISerializer;
         KV_MEMBER(order_id)
         KV_MEMBER(side)
         KV_MEMBER(amount)
+        KV_MEMBER(proceeds_xfg)
+        KV_MEMBER(proceeds_heat)
         KV_MEMBER(target_price)
         KV_MEMBER(expiration)
         KV_MEMBER(withdrawn)

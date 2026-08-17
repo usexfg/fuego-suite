@@ -138,6 +138,11 @@ public:
   // Returns `count` random {global_index, public_key} pairs via the JSON endpoint.
   bool getRandomOutputs(uint64_t amount, uint64_t count,
                         std::vector<RandomOutputEntry>& entries);
+  // Lookup output keys at explicit per-amount global indexes (descriptor
+  // verification for the shared swap ring). Returns false on RPC failure;
+  // entries missing on-chain keep their globalIndex with a zeroed key.
+  bool getOutputsAt(uint64_t amount, const std::vector<uint64_t>& indexes,
+                    std::vector<RandomOutputEntry>& entries);
 
   // Resolve an alias name to an XFG address. Returns false if not found.
   bool resolveAlias(const std::string& alias, std::string& addressOut);

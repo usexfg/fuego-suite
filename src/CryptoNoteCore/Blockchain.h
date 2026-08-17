@@ -181,7 +181,8 @@ namespace CryptoNote {
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     const VaultUtxoSet& getVault() const { return m_vault; }
-    uint64_t getSwfBalance() const { return m_swfBalance; }
+    uint64_t getSwfBalance() const { return m_swfBurnedXfgPendingHeat; }
+    uint64_t getSwfBurnedXfgPendingHeat() const { return m_swfBurnedXfgPendingHeat; }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
     uint64_t getTreasurySwapFeeXfg() const { return m_treasurySwapFeeXfg; }
     uint64_t getTreasuryCounterXFG() const { return m_treasuryCounterXFG; }
@@ -207,6 +208,10 @@ namespace CryptoNote {
     // heights is sized to queries.size(); 0 for unknown/invalid.
     bool getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
                           std::vector<uint32_t>& heights);
+    // Lookup output keys at explicit per-amount global indexes. keys is sized
+    // to indexes.size(); entries with an invalid index are zeroed.
+    bool getOutsByAmountAndIndexes(uint64_t amount, const std::vector<uint64_t>& indexes,
+                                   std::vector<Crypto::PublicKey>& keys);
     bool getBackwardBlocksSize(size_t from_height, std::vector<size_t>& sz, size_t count);
     bool getTransactionOutputGlobalIndexes(const Crypto::Hash& tx_id, std::vector<uint32_t>& indexs);
     bool get_out_by_msig_gindex(uint64_t amount, uint64_t gindex, MultisignatureOutput& out);
@@ -407,7 +412,7 @@ namespace CryptoNote {
       uint64_t protocolLpShares;
       uint64_t treasuryLpYield;
       uint64_t bootstrapRepaymentVault;
-      uint64_t swfBalance;
+      uint64_t swfBurnedXfgPendingHeat;
       uint64_t twapAccumulatorLo;
       uint64_t twapAccumulatorHi;
       uint64_t twapBlockCount;
@@ -466,7 +471,7 @@ namespace CryptoNote {
     uint64_t m_bonusVaultPendingXfg = 0;  // XFG awaiting conversion (no pool rate at epoch)
     uint64_t m_bootstrapXfgOwed = 0;
     uint64_t m_bootstrapRepaymentVault = 0;
-    uint64_t m_swfBalance = 0;              // Sovereign Wealth Fund — mint premiums for cross-chain liquidity
+    uint64_t m_swfBurnedXfgPendingHeat = 0; // SWF-owned XFG already burned, pending HEAT conversion
     IndexManager m_indexManager;
     // LP share tracking: maps global commitment output index → LP shares held
     parallel_flat_hash_map<uint64_t, uint64_t> m_lpCommitmentShares;
@@ -558,7 +563,7 @@ namespace CryptoNote {
     uint64_t m_treasuryXfgReserve = 0;           // DEPRECATED: dead code, kept for serialization compat only
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
-    uint64_t m_treasuryCounterXFG = 0;          // XFG burned + credited to Treasury (ready for HEAT conversion)
+    uint64_t m_treasuryCounterXFG = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
     uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
     // Autonomous Treasury Vault

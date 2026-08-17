@@ -23,6 +23,46 @@
 
 namespace XfgSwap {
 
+namespace {
+
+std::string encodeRingIndices(const std::vector<uint32_t>& indices) {
+  std::string out;
+  out.reserve(indices.size() * 8);
+  for (uint32_t v : indices) out += Common::toHex(&v, sizeof(v));
+  return out;
+}
+
+bool decodeRingIndices(const std::string& hex, std::vector<uint32_t>& indices) {
+  indices.clear();
+  if (hex.size() % 8 != 0) return false;
+  for (size_t off = 0; off < hex.size(); off += 8) {
+    uint32_t v = 0;
+    if (!Common::podFromHex(hex.substr(off, 8), v)) return false;
+    indices.push_back(v);
+  }
+  return true;
+}
+
+std::string encodeRingPubKeys(const std::vector<Crypto::PublicKey>& keys) {
+  std::string out;
+  out.reserve(keys.size() * 64);
+  for (const auto& k : keys) out += Common::toHex(&k, sizeof(k));
+  return out;
+}
+
+bool decodeRingPubKeys(const std::string& hex, std::vector<Crypto::PublicKey>& keys) {
+  keys.clear();
+  if (hex.size() % 64 != 0) return false;
+  for (size_t off = 0; off < hex.size(); off += 64) {
+    Crypto::PublicKey k{};
+    if (!Common::podFromHex(hex.substr(off, 64), k)) return false;
+    keys.push_back(k);
+  }
+  return true;
+}
+
+} // anonymous namespace
+
 SwapStateMachine::SwapStateMachine()
   : m_params()
   , m_state(SwapState::INITIATED)
@@ -50,6 +90,10 @@ SwapStateMachine::SwapStateMachine()
   m_params.ringOurRound1Sent = false;
   m_params.ringOurRound2Sent = false;
   m_params.ringTxBroadcast = false;
+  m_params.ringGlobalIndices.clear();
+  m_params.ringPubKeys.clear();
+  m_params.ringRealIndex = 0;
+  m_params.ringDescriptorValid = false;
   m_params.pair = SwapPair::SOL;
   m_params.role = SwapRole::BOB;
   m_params.xfgAmount = 0;
@@ -95,6 +139,7 @@ bool SwapStateMachine::isValidTransition(SwapState newState) const {
 
     case SwapState::ADAPTOR_CTR_LOCKED:
       return newState == SwapState::ADAPTOR_SECRET_REVEALED ||
+             newState == SwapState::ADAPTOR_WAITING_SPV ||
              newState == SwapState::ADAPTOR_REFUNDED;
 
     case SwapState::ADAPTOR_SECRET_REVEALED:
@@ -313,6 +358,10 @@ std::string SwapStateMachine::serialize() const {
   root.insert("ringOurPartialResponse", Common::podToHex(m_params.ringOurPartialResponse));
   root.insert("ringOurRound1MaterialValid",
               static_cast<int64_t>(m_params.ringOurRound1MaterialValid ? 1 : 0));
+  root.insert("ringGlobalIndices", encodeRingIndices(m_params.ringGlobalIndices));
+  root.insert("ringPubKeys", encodeRingPubKeys(m_params.ringPubKeys));
+  root.insert("ringRealIndex", static_cast<int64_t>(m_params.ringRealIndex));
+  root.insert("ringDescriptorValid", static_cast<int64_t>(m_params.ringDescriptorValid ? 1 : 0));
   root.insert("adaptorSecretRevealedToPeer",
               static_cast<int64_t>(m_params.adaptorSecretRevealedToPeer ? 1 : 0));
   root.insert("adaptorSecretReceived",
@@ -459,6 +508,14 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     Common::podFromHex(root("ringOurPartialResponse").getString(), params.ringOurPartialResponse);
   if (root.contains("ringOurRound1MaterialValid"))
     params.ringOurRound1MaterialValid = root("ringOurRound1MaterialValid").getInteger() != 0;
+  if (root.contains("ringGlobalIndices") && !root("ringGlobalIndices").getString().empty())
+    decodeRingIndices(root("ringGlobalIndices").getString(), params.ringGlobalIndices);
+  if (root.contains("ringPubKeys") && !root("ringPubKeys").getString().empty())
+    decodeRingPubKeys(root("ringPubKeys").getString(), params.ringPubKeys);
+  if (root.contains("ringRealIndex"))
+    params.ringRealIndex = static_cast<size_t>(root("ringRealIndex").getInteger());
+  if (root.contains("ringDescriptorValid"))
+    params.ringDescriptorValid = root("ringDescriptorValid").getInteger() != 0;
   if (root.contains("adaptorSecretRevealedToPeer"))
     params.adaptorSecretRevealedToPeer = root("adaptorSecretRevealedToPeer").getInteger() != 0;
   if (root.contains("adaptorSecretReceived"))

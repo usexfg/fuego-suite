@@ -184,7 +184,10 @@ public:
   virtual TransactionId marketSellV13(uint64_t xfgToSell, uint64_t minHeatReceive, uint64_t fee, uint64_t mixIn = 0) = 0;
 
   virtual TransactionId withdrawDeposits(const std::vector<DepositId>& depositIds, uint64_t fee) = 0;
-  virtual TransactionId donateToTreasury(uint64_t amount, uint64_t fee) = 0;
+  virtual TransactionId donateToTreasury(Crypto::SecretKey& transactionSK,
+                                         uint64_t amount,
+                                         uint64_t fee,
+                                         uint64_t mixIn) = 0;
   virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
 

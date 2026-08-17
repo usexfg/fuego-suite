@@ -199,6 +199,14 @@ struct SwapParams {
   bool ringOurRound2Sent = false;      // we already generated & sent Round 2
   bool ringTxBroadcast = false;        // escrow spend/refund tx was broadcast
 
+  // Agreed decoy ring: the exact sorted ring (global indexes + public keys,
+  // including the escrow entry) both parties sign. Set by whoever builds
+  // Ring Round 1, persisted for restart resilience, verified on receipt.
+  std::vector<uint32_t> ringGlobalIndices;
+  std::vector<Crypto::PublicKey> ringPubKeys;
+  size_t ringRealIndex = 0;
+  bool ringDescriptorValid = false;
+
   // Our Round 1 contributions (must be restored across ticks — never regenerate
   // after ringOurRound1Sent, or the peer's copy of our nonce becomes invalid).
   Crypto::KeyImage             ringOurPartialKeyImage;

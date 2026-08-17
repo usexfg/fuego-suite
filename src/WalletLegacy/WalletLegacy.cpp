@@ -1118,7 +1118,10 @@ TransactionId WalletLegacy::heatDepositV10(uint64_t amount, uint32_t termEpochs,
   return txId;
 }
 
-TransactionId WalletLegacy::donateToTreasury(uint64_t amount, uint64_t fee) {
+TransactionId WalletLegacy::donateToTreasury(Crypto::SecretKey& transactionSK,
+                                             uint64_t amount,
+                                             uint64_t fee,
+                                             uint64_t mixIn) {
   throwIfNotInitialised();
 
   TransactionId txId = 0;
@@ -1129,7 +1132,7 @@ TransactionId WalletLegacy::donateToTreasury(uint64_t amount, uint64_t fee) {
 
   {
     std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeDonateToTreasuryRequest(txId, events, amount, fee);
+    request = m_sender->makeDonateToTreasuryRequest(txId, events, amount, fee, mixIn, transactionSK);
 
     if (request != nullptr) {
       pushBalanceUpdatedEvents(events);

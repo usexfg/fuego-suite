@@ -1318,11 +1318,13 @@ bool wallet_rpc_server::on_donate(const wallet_rpc::COMMAND_RPC_DONATE::request&
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "amount must be > 0");
     }
     uint64_t fee = m_currency.minimumFee();
+    uint64_t mixin = (req.mixin == 0) ? CryptoNote::parameters::MAX_TX_MIXIN_SIZE : req.mixin;
 
     CryptoNote::WalletHelper::SendCompleteResultObserver sent;
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
-    CryptoNote::TransactionId tx = m_wallet.donateToTreasury(req.amount, fee);
+    Crypto::SecretKey transactionSK;
+    CryptoNote::TransactionId tx = m_wallet.donateToTreasury(transactionSK, req.amount, fee, mixin);
     if (tx == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
       throw std::runtime_error("Couldn't send donation transaction");
     }
@@ -1477,6 +1479,8 @@ bool wallet_rpc_server::on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LI
       info.order_id = dep.order_id;
       info.side = dep.side;
       info.amount = dep.amount;
+      info.proceeds_xfg = dep.proceeds_xfg;
+      info.proceeds_heat = dep.proceeds_heat;
       info.target_price = dep.target_price;
       info.expiration = dep.expiration;
       info.withdrawn = dep.withdrawn || dep.expired;

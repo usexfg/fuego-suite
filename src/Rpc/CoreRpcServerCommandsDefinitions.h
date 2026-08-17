@@ -1261,6 +1261,8 @@ struct COMMAND_RPC_GET_LIMIT_ORDERS {
     std::string address_hash; // cn_fast_hash(spendKey||viewKey) — wallet filters by this
     uint8_t side;
     uint64_t amount;
+    uint64_t proceeds_xfg;
+    uint64_t proceeds_heat;
     uint64_t target_price;
     uint32_t expiration;
     bool withdrawn;
@@ -1269,6 +1271,8 @@ struct COMMAND_RPC_GET_LIMIT_ORDERS {
       KV_MEMBER(address_hash)
       KV_MEMBER(side)
       KV_MEMBER(amount)
+      KV_MEMBER(proceeds_xfg)
+      KV_MEMBER(proceeds_heat)
       KV_MEMBER(target_price)
       KV_MEMBER(expiration)
       KV_MEMBER(withdrawn)
@@ -1996,6 +2000,7 @@ struct COMMAND_RPC_GET_TREASURY_INFO {
     uint64_t treasury_balance;      // legacy counter (deprecated, ~0)
     uint64_t treasury_counter_xfg;  // unconverted treasury fee share (LP pairing source)
     uint64_t treasury_heat_reserve; // HEAT leg for Treasury LP Manager
+    uint64_t swf_burned_xfg_pending_heat; // already-burned XFG held only by SWF
     uint64_t bonus_vault_balance;   // HEAT-denominated CD loyalty vault (v12+)
     uint64_t fee_pool_balance;      // HEAT backing CD interest claims
     uint64_t total_burned_xfg;      // overall burn tally
@@ -2005,6 +2010,7 @@ struct COMMAND_RPC_GET_TREASURY_INFO {
       KV_MEMBER(treasury_balance)
       KV_MEMBER(treasury_counter_xfg)
       KV_MEMBER(treasury_heat_reserve)
+      KV_MEMBER(swf_burned_xfg_pending_heat)
       KV_MEMBER(bonus_vault_balance)
       KV_MEMBER(fee_pool_balance)
       KV_MEMBER(total_burned_xfg)
@@ -2378,6 +2384,40 @@ struct COMMAND_RPC_GET_RANDOM_OUTPUTS_JSON {
   };
 };
 
+// Lookup output keys at explicit per-amount global indexes. Used by
+// SwapDaemon to verify a peer's agreed ring descriptor entry-by-entry.
+struct COMMAND_RPC_GET_OUTPUTS_JSON {
+  struct request {
+    uint64_t amount;
+    std::vector<uint64_t> indexes;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(amount)
+      KV_MEMBER(indexes)
+    }
+  };
+
+  struct out_entry {
+    uint64_t global_index;
+    std::string out_key;  // hex-encoded PublicKey; zeroed for unknown indexes
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(global_index)
+      KV_MEMBER(out_key)
+    }
+  };
+
+  struct response {
+    std::vector<out_entry> outs;
+    std::string status;
+
+    void serialize(ISerializer& s) {
+      KV_MEMBER(outs)
+      KV_MEMBER(status)
+    }
+  };
+};
+
 // HEAT metrics
 struct COMMAND_RPC_GET_HEAT_METRICS {
   typedef EMPTY_STRUCT request;
@@ -2393,6 +2433,7 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
     uint64_t redemption_rate_denom;
     uint64_t treasury_balance;
     uint64_t treasury_counter_xfg;
+    uint64_t swf_burned_xfg_pending_heat;
     uint64_t swf_heat_balance;
     uint64_t epoch_swap_fees;
     uint64_t vault_heat_cd_fee_pool;
@@ -2415,6 +2456,7 @@ struct COMMAND_RPC_GET_HEAT_METRICS {
       KV_MEMBER(redemption_rate_denom)
       KV_MEMBER(treasury_balance)
       KV_MEMBER(treasury_counter_xfg)
+      KV_MEMBER(swf_burned_xfg_pending_heat)
       KV_MEMBER(swf_heat_balance)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(vault_heat_cd_fee_pool)

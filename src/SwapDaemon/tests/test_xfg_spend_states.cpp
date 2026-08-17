@@ -81,7 +81,6 @@ int main() {
     CHECK(sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED), "spv escrow");
     CHECK(sm.transition(SwapState::ADAPTOR_PRESIGS_READY), "spv presigs");
     CHECK(sm.transition(SwapState::ADAPTOR_CTR_LOCKED), "spv ctr");
-    CHECK(sm.transition(SwapState::ADAPTOR_SECRET_REVEALED), "spv secret");
     CHECK(sm.transition(SwapState::ADAPTOR_WAITING_SPV), "spv wait");
     CHECK(sm.transition(SwapState::ADAPTOR_SECRET_CONFIRMED_SPV), "spv confirmed");
     CHECK(sm.transition(SwapState::ADAPTOR_XFG_SPENT), "CONFIRMED_SPV → XFG_SPENT");

@@ -26,9 +26,11 @@
 namespace XfgSwap {
 
 // State for collaborative ring signature between Alice and Bob.
-// The 2-of-2 Musig2 escrow requires a ring of MIN_RING_SIZE outputs
-// (real + decoys). Neither party holds the aggregate secret, so the
-// ring signature is constructed collaboratively in 2 rounds.
+// The 2-of-2 Musig2 escrow requires a shared ring of MIN_RING_SIZE outputs
+// (real + decoys). Neither party holds the aggregate secret, so the ring
+// signature is constructed collaboratively in 2 rounds. The decoy set is
+// agreed through RING_ROUND1 (descriptor exchange) so both parties sign the
+// exact same ring.
 struct CollaborativeRingState {
   // Agreed decoy set (sorted absolute global indices, including real)
   std::vector<uint32_t> ringGlobalIndices;
@@ -67,7 +69,9 @@ struct CollaborativeRingState {
 //   - Ring signature via collaborative 2-party protocol
 class SwapTxBuilder {
 public:
-  // Minimum ring size for v10 (8 decoys + 1 real = 9 entries)
+  // Minimum ring size: 8 decoys + 1 real = 9 entries, sampled from regular
+  // transaction outputs of the escrow amount. The full ring is exchanged in
+  // RING_ROUND1 so both parties sign identical prefixes.
   static constexpr size_t MIN_RING_SIZE = 9;
   // Minimum fee in atomic units (0.001 XFG)
   static constexpr uint64_t MIN_FEE = 10000;
@@ -75,8 +79,14 @@ public:
   // ── Step 1: Build unsigned transaction skeleton ──────────────────────
 
   // Construct the unsigned transaction spending the escrow output.
-  // Fetches decoys from the daemon, builds inputs/outputs, and computes
-  // the tx prefix hash. The transaction's signature slot is left empty.
+  // Either fetches decoys from the daemon (descriptor initiator) or adopts
+  // the peer-agreed ring descriptor (all subsequent builds), then builds
+  // inputs/outputs and computes the tx prefix hash. The signature slot is
+  // left empty.
+  //
+  // ringGlobalIndices/ringPubKeys: optional peer-agreed ring. When provided,
+  // the real escrow entry must be present exactly once; decoy fetch is
+  // skipped so both parties build identical prefixes.
   //
   // Returns false if decoy fetch fails or params are invalid.
   // On success: tx, prefixHash, and ringState are populated.
@@ -89,7 +99,9 @@ public:
       uint64_t fee,                              // network fee
       CryptoNote::Transaction& tx,
       Crypto::Hash& prefixHash,
-      CollaborativeRingState& ringState);
+      CollaborativeRingState& ringState,
+      const std::vector<uint32_t>* ringGlobalIndices = nullptr,
+      const std::vector<Crypto::PublicKey>* ringPubKeys = nullptr);
 
   // ── Step 2: Collaborative key image ──────────────────────────────────
 

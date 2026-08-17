@@ -102,31 +102,13 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
     uint64_t fee,
     CryptoNote::Transaction& tx,
     Crypto::Hash& prefixHash,
-    CollaborativeRingState& ringState) {
+    CollaborativeRingState& ringState,
+    const std::vector<uint32_t>* ringGlobalIndices,
+    const std::vector<Crypto::PublicKey>* ringPubKeys) {
 
   if (fee < MIN_FEE) fee = MIN_FEE;
   if (protocolFee > 0 && params.xfgAmount <= protocolFee + fee) return false;
   if (protocolFee == 0 && params.xfgAmount <= fee) return false;
-
-  // Fetch decoy outputs (MIN_RING_SIZE - 1 decoys)
-  std::vector<RandomOutputEntry> decoys;
-  if (!rpc.getRandomOutputs(params.xfgAmount, MIN_RING_SIZE, decoys)) {
-    return false;
-  }
-
-  // Remove any decoy that matches the real escrow output index
-  decoys.erase(
-      std::remove_if(decoys.begin(), decoys.end(),
-                     [&](const RandomOutputEntry& e) {
-                       return e.globalIndex == params.escrowOutputIndex;
-                     }),
-      decoys.end());
-
-  // Ensure we have enough decoys
-  if (decoys.size() < MIN_RING_SIZE - 1) {
-    return false;
-  }
-  decoys.resize(MIN_RING_SIZE - 1);
 
   // Build sorted ring: insert real escrow output among decoys
   struct RingMember {
@@ -134,11 +116,59 @@ bool SwapTxBuilder::buildUnsignedEscrowSpend(
     Crypto::PublicKey pubKey;
   };
   std::vector<RingMember> ring;
-  ring.reserve(MIN_RING_SIZE);
-  for (const auto& d : decoys) {
-    ring.push_back({static_cast<uint32_t>(d.globalIndex), d.outKey});
+
+  if (ringGlobalIndices != nullptr && ringPubKeys != nullptr) {
+    // Adopt the peer-agreed descriptor: validate the entries and locate the
+    // real escrow output. Both parties must derive this identical ring.
+    if (ringGlobalIndices->size() != ringPubKeys->size() ||
+        ringGlobalIndices->empty()) {
+      return false;
+    }
+    ring.reserve(ringGlobalIndices->size());
+    size_t realHits = 0;
+    for (size_t i = 0; i < ringGlobalIndices->size(); ++i) {
+      const uint32_t gindex = (*ringGlobalIndices)[i];
+      const Crypto::PublicKey& key = (*ringPubKeys)[i];
+      if (gindex == params.escrowOutputIndex) {
+        if (std::memcmp(&key, &params.escrowPubKey, sizeof(Crypto::PublicKey)) != 0) {
+          return false;  // descriptor's real entry does not match our escrow
+        }
+        ++realHits;
+      }
+      ring.push_back({gindex, key});
+    }
+    if (realHits != 1) return false;
+    // Descriptor must arrive sorted (consensus relative offsets expect it).
+    for (size_t i = 1; i < ring.size(); ++i) {
+      if (ring[i].globalIndex <= ring[i - 1].globalIndex) return false;
+    }
+  } else {
+    // Descriptor initiator: fetch decoy outputs (MIN_RING_SIZE - 1 decoys)
+    std::vector<RandomOutputEntry> decoys;
+    if (!rpc.getRandomOutputs(params.xfgAmount, MIN_RING_SIZE, decoys)) {
+      return false;
+    }
+
+    // Remove any decoy that matches the real escrow output index
+    decoys.erase(
+        std::remove_if(decoys.begin(), decoys.end(),
+                       [&](const RandomOutputEntry& e) {
+                          return e.globalIndex == params.escrowOutputIndex;
+                        }),
+        decoys.end());
+
+    // Ensure we have enough decoys
+    if (decoys.size() < MIN_RING_SIZE - 1) {
+      return false;
+    }
+    decoys.resize(MIN_RING_SIZE - 1);
+
+    ring.reserve(MIN_RING_SIZE);
+    for (const auto& d : decoys) {
+      ring.push_back({static_cast<uint32_t>(d.globalIndex), d.outKey});
+    }
+    ring.push_back({params.escrowOutputIndex, params.escrowPubKey});
   }
-  ring.push_back({params.escrowOutputIndex, params.escrowPubKey});
 
   // Sort by global index (consensus expects relative offsets from sorted order)
   std::sort(ring.begin(), ring.end(),

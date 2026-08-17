@@ -90,6 +90,10 @@ struct SendTransactionContext
   Crypto::Hash  v11DepositAddressHash;
   bool isV11LimitWithdraw = false;
   Crypto::Hash v11WithdrawOrderId;
+  uint8_t v11WithdrawSide = 0;
+  uint64_t v11WithdrawAmount = 0;
+  uint64_t v11WithdrawProceedsXfg = 0;
+  uint64_t v11WithdrawProceedsHeat = 0;
   bool isV11MarketBuy = false;
   uint64_t v11XfgWanted = 0;
   uint64_t v11MaxHeatCost = 0;

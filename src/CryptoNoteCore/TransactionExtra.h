@@ -310,6 +310,13 @@ struct TransactionExtraLimitDeposit {
 
 struct TransactionExtraLimitWithdraw {
   Crypto::Hash orderId;
+  // v11+ ownership proof: addressHash = H(spendPublicKey || viewPublicKey),
+  // proof signs the domain-separated (orderId, addressHash, outputsHash)
+  // tuple, preventing proof replay with attacker-chosen destinations.
+  Crypto::PublicKey spendPublicKey;
+  Crypto::PublicKey viewPublicKey;
+  Crypto::Hash outputsHash;
+  Crypto::Signature proof;
   bool serialize(ISerializer& serializer);
 };
 
@@ -413,7 +420,16 @@ bool addOrderCancelToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& o
 bool addMarketBuyAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgWanted, uint64_t maxHeatCost);
 bool addMarketSellAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgToSell, uint64_t minHeatReceive);
 bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash);
-bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra, const Crypto::Hash& orderId);
+Crypto::Hash getLimitWithdrawOutputHash(const std::vector<CryptoNote::TransactionOutput>& outputs);
+Crypto::Hash getLimitWithdrawAuthHash(const Crypto::Hash& orderId,
+                                      const Crypto::Hash& addressHash,
+                                      const Crypto::Hash& outputsHash);
+bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra,
+                             const Crypto::Hash& orderId,
+                             const Crypto::PublicKey& spendPublicKey,
+                             const Crypto::PublicKey& viewPublicKey,
+                             const Crypto::Hash& outputsHash,
+                             const Crypto::Signature& proof);
 bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);

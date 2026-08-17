@@ -1786,9 +1786,18 @@ namespace CryptoNote
   bool addLimitDepositToExtra(std::vector<uint8_t>& tx_extra, uint8_t side, uint64_t amount, uint64_t targetPrice, uint32_t expiration, const Crypto::Hash& orderId, const Crypto::Hash& addressHash) {
     tx_extra.push_back(TX_EXTRA_LIMIT_DEPOSIT);
     tx_extra.push_back(side);
-    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
-    for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(targetPrice & 0xFF)); targetPrice >>= 8; }
-    for (int i = 0; i < 4; ++i) { tx_extra.push_back(static_cast<uint8_t>(expiration & 0xFF)); expiration >>= 8; }
+    // Consensus parser (parseTransactionExtra, TX_EXTRA_LIMIT_DEPOSIT) reads
+    // these fields as base-128 varints — mirror Common::writeVarint exactly.
+    auto pushVarint = [&tx_extra](uint64_t v) {
+      while (v >= 0x80) {
+        tx_extra.push_back(static_cast<uint8_t>(v | 0x80));
+        v >>= 7;
+      }
+      tx_extra.push_back(static_cast<uint8_t>(v));
+    };
+    pushVarint(amount);
+    pushVarint(targetPrice);
+    pushVarint(expiration);
     for (size_t i = 0; i < sizeof(orderId.data); ++i) tx_extra.push_back(orderId.data[i]);
     for (size_t i = 0; i < sizeof(addressHash.data); ++i) tx_extra.push_back(addressHash.data[i]);
     return true;

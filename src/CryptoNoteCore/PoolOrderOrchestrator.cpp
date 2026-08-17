@@ -110,9 +110,10 @@ uint32_t PoolOrderOrchestrator::computeSpreadBps(
 
     uint128_t varSum = 0;
     for (auto p : m_priceHistory) {
-      int64_t diff = static_cast<int64_t>(p) - static_cast<int64_t>(mean);
-      uint128_t diffSq = static_cast<uint128_t>(diff > 0 ? diff : -diff);
-      diffSq = diffSq * diffSq;
+      // Unsigned distance: spot prices are full-width uint64 (HEAT/XFG × COIN);
+      // signed casts are implementation-defined and INT64_MIN negation is UB.
+      uint64_t adiff = p > mean ? p - mean : mean - p;
+      uint128_t diffSq = (uint128_t)adiff * adiff;
       varSum += diffSq;
     }
     uint64_t variance = static_cast<uint64_t>(varSum / static_cast<uint64_t>(m_priceHistory.size()));

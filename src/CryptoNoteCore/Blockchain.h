@@ -433,6 +433,8 @@ namespace CryptoNote {
 
     friend class BlockCacheSerializer;
     friend class BlockchainIndicesSerializer;
+    struct LimitDepositInfo;
+    friend void serialize(LimitDepositInfo& value, ISerializer& s);
 
     Blocks m_blocks;
     CryptoNote::BlockIndex m_blockIndex;
@@ -492,11 +494,17 @@ namespace CryptoNote {
       uint64_t proceedsXfg = 0;  // XFG earned from fills (claimable on withdraw)
       uint64_t proceedsHeat = 0; // HEAT earned from fills (claimable on withdraw)
       uint64_t depositedAmount = 0; // original deposit amount (immutable; pop reversal)
+      uint64_t withdrawnAmount = 0; // escrow amount returned by the withdraw (exact pop reversal)
       uint32_t createdHeight = 0;   // block height of the deposit (auction time priority)
       bool withdrawn = false;
       bool expired = false; // auto-returned on expiry (remaining claimable)
     };
     std::map<Crypto::Hash, LimitDepositInfo, HashLess> m_limitDeposits;
+
+    // Rollback-history depth for per-block fill/epoch/orderbook records.
+    // Testnet has no checkpoints, so reorg depth is unbounded there; keep the
+    // window generous and rely on the loud eviction log in popBlock.
+    static constexpr size_t MAX_ROLLBACK_HISTORY = 1000;
 
     // Per-block OOB fill records for popBlock reversal.
     struct OrderFillRecord {
@@ -632,6 +640,8 @@ namespace CryptoNote {
     void processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height);
     void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
+    bool processBlockEpochWork(const Block& block, uint32_t height, const Crypto::Hash& blockHash);
+    void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);

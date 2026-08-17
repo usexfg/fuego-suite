@@ -305,7 +305,6 @@ struct TransactionExtraLimitDeposit {
   uint32_t expiration;
   Crypto::Hash orderId;
   Crypto::Hash addressHash;  // cn_fast_hash(spendKey||viewKey)
-  bool serialize(ISerializer& serializer);
 };
 
 struct TransactionExtraLimitWithdraw {
@@ -317,7 +316,6 @@ struct TransactionExtraLimitWithdraw {
   Crypto::PublicKey viewPublicKey;
   Crypto::Hash outputsHash;
   Crypto::Signature proof;
-  bool serialize(ISerializer& serializer);
 };
 
 // v12+: burns `amount` of `asset` (0 = XFG, 1 = HEAT) as a contribution to the
@@ -326,7 +324,6 @@ struct TransactionExtraLimitWithdraw {
 struct TransactionExtraTreasuryFund {
   uint8_t  asset;
   uint64_t amount;
-  bool serialize(ISerializer& serializer);
 };
 
 struct DepositCommitmentKeys {

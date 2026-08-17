@@ -128,7 +128,7 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
   };
 
   uint64_t bestP = 0, bestVol = 0, bestImbalance = UINT64_MAX;
-  int64_t bestDist = INT64_MAX;
+  uint64_t bestDist = UINT64_MAX;
   std::vector<uint64_t> candidates = bidPrices;
   candidates.insert(candidates.end(), askPrices.begin(), askPrices.end());
   std::sort(candidates.begin(), candidates.end());
@@ -140,8 +140,9 @@ AuctionResult runAuction(const std::vector<AuctionOrder>& bidsIn,
     if (bv == 0 || av == 0) continue;
     uint64_t vol = bv < av ? bv : av;
     uint64_t imb = bv > av ? bv - av : av - bv;
-    int64_t dist = (int64_t)p - (int64_t)prevPclear;
-    if (dist < 0) dist = -dist;
+    // Unsigned distance: prices are full-width uint64, so signed casts are
+    // implementation-defined and INT64_MIN negation is UB.
+    uint64_t dist = p > prevPclear ? p - prevPclear : prevPclear - p;
     bool better = (vol > bestVol) ||
                   (vol == bestVol && imb < bestImbalance) ||
                   (vol == bestVol && imb == bestImbalance && dist < bestDist) ||

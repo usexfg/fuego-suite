@@ -9,15 +9,12 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#ifndef _WIN32
 #include <fcntl.h>
-#include <netdb.h>
 #include <poll.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+#endif
 
 #include <sstream>
 
@@ -86,6 +83,41 @@ bool ElectrumConnection::connect(const std::string& host, uint16_t port, bool us
     return false;
   }
 
+#ifdef _WIN32
+  u_long nonBlocking = 1;
+  ioctlsocket(m_fd, FIONBIO, &nonBlocking);
+  rc = ::connect(m_fd, res->ai_addr, static_cast<int>(res->ai_addrlen));
+  freeaddrinfo(res);
+  if (rc < 0 && WSAGetLastError() != WSAEWOULDBLOCK) {
+    ::close(m_fd);
+    m_fd = -1;
+    return false;
+  }
+  if (rc < 0) {
+    fd_set writeSet;
+    FD_ZERO(&writeSet);
+    FD_SET(m_fd, &writeSet);
+    struct timeval tv {};
+    tv.tv_sec = m_connectTimeout;
+    tv.tv_usec = 0;
+    int selectRc = select(0, nullptr, &writeSet, nullptr, &tv);
+    if (selectRc <= 0) {
+      ::close(m_fd);
+      m_fd = -1;
+      return false;
+    }
+    int sockErr = 0;
+    int errLen = sizeof(sockErr);
+    getsockopt(m_fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&sockErr), &errLen);
+    if (sockErr != 0) {
+      ::close(m_fd);
+      m_fd = -1;
+      return false;
+    }
+  }
+  nonBlocking = 0;
+  ioctlsocket(m_fd, FIONBIO, &nonBlocking);
+#else
   int flags = fcntl(m_fd, F_GETFL, 0);
   fcntl(m_fd, F_SETFL, flags | O_NONBLOCK);
 
@@ -119,11 +151,12 @@ bool ElectrumConnection::connect(const std::string& host, uint16_t port, bool us
   }
 
   fcntl(m_fd, F_SETFL, flags);
+#endif
 
   struct timeval tv {};
   tv.tv_sec = m_readTimeout;
-  setsockopt(m_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(m_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  setsockopt(m_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
+  setsockopt(m_fd, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
 
   if (m_useTls) {
     if (!sslHandshake()) {
@@ -175,7 +208,7 @@ std::string ElectrumConnection::call(const std::string& method, const std::strin
   while (sent < request.size()) {
     ssize_t n = m_useTls
         ? sslWrite(request.data() + sent, request.size() - sent)
-        : ::send(m_fd, request.data() + sent, request.size() - sent, MSG_NOSIGNAL);
+        : ::send(m_fd, request.data() + sent, static_cast<int>(request.size() - sent), MSG_NOSIGNAL);
     if (n < 0) {
       return "";
     }
@@ -188,7 +221,7 @@ std::string ElectrumConnection::call(const std::string& method, const std::strin
     char buf[4096];
     ssize_t n = m_useTls
         ? sslRead(buf, sizeof(buf) - 1)
-        : ::recv(m_fd, buf, sizeof(buf) - 1, 0);
+        : ::recv(m_fd, buf, static_cast<int>(sizeof(buf) - 1), 0);
     if (n < 0) {
       return "";
     }

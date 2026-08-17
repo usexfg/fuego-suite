@@ -201,8 +201,8 @@ void testNoSingleSidedLpMints() {
   TEST(ammMintLpShares(10000, 5000, 0, 0, 0) > 0);
   // Balanced proportional: min ratio.
   uint64_t shares = ammMintLpShares(100, 500, 1000, 1000, 5000);
-  uint64_t expectA = ((uint128_t)100 * 1000) / 1000;
-  uint64_t expectB = ((uint128_t)500 * 1000) / 5000;
+  uint64_t expectA = static_cast<uint64_t>(((uint128_t)100 * 1000) / 1000);
+  uint64_t expectB = static_cast<uint64_t>(((uint128_t)500 * 1000) / 5000);
   TEST(shares == (expectA < expectB ? expectA : expectB));
   // Zero reserve with live shares mints nothing (no div-by-zero).
   TEST(ammMintLpShares(10, 10, 1000, 0, 5000) == 0);

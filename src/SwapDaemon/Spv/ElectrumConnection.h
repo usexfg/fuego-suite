@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "Common/WinCompat.h"
+
 #include <cstdint>
 #include <string>
 

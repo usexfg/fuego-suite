@@ -297,11 +297,11 @@ std::string DcrRpcClient::httpPost(const std::string& body) {
   req << body;
 
   std::string request = req.str();
-  ssize_t sent = send(sock.fd, request.c_str(), request.size(),
+  int sent = send(sock.fd, request.c_str(), static_cast<int>(request.size()),
 #ifndef _WIN32
-                      MSG_NOSIGNAL
+                       MSG_NOSIGNAL
 #else
-                      0
+                       0
 #endif
                       );
   if (sent < 0 || static_cast<size_t>(sent) != request.size()) {
@@ -311,7 +311,7 @@ std::string DcrRpcClient::httpPost(const std::string& body) {
   std::string response;
   char buf[4096];
   while (true) {
-    ssize_t n = recv(sock.fd, buf, sizeof(buf), 0);
+    int n = recv(sock.fd, buf, sizeof(buf), 0);
     if (n <= 0) break;
     response.append(buf, static_cast<size_t>(n));
   }

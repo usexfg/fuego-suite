@@ -251,8 +251,8 @@ int SwapP2P::connectViaSocks5(const std::string& host, uint16_t port) {
   struct timeval tv;
   tv.tv_sec = 15;
   tv.tv_usec = 0;
-  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
 
   if (connect(sock, result->ai_addr, result->ai_addrlen) < 0) {
     m_logger(Logging::ERROR) << "SwapP2P: cannot connect to SOCKS5 proxy " << m_socks5Proxy;
@@ -264,7 +264,7 @@ int SwapP2P::connectViaSocks5(const std::string& host, uint16_t port) {
 
   // SOCKS5 greeting: [0x05][0x01][0x00] (version 5, 1 auth method, no auth)
   uint8_t greeting[3] = {0x05, 0x01, 0x00};
-  if (send(sock, greeting, 3, 0) != 3) {
+  if (send(sock, reinterpret_cast<const char*>(greeting), 3, 0) != 3) {
     close(sock);
     return -1;
   }
@@ -289,7 +289,7 @@ int SwapP2P::connectViaSocks5(const std::string& host, uint16_t port) {
   req.push_back(static_cast<uint8_t>((port >> 8) & 0xFF));
   req.push_back(static_cast<uint8_t>(port & 0xFF));
 
-  if (send(sock, req.data(), req.size(), 0) != static_cast<ssize_t>(req.size())) {
+  if (send(sock, reinterpret_cast<const char*>(req.data()), static_cast<int>(req.size()), 0) != static_cast<int>(req.size())) {
     close(sock);
     return -1;
   }

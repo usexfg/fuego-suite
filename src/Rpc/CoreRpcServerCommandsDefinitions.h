@@ -1134,12 +1134,14 @@ struct COMMAND_RPC_CANCEL_ORDER {
   struct request {
     std::string orderId;
     std::string makerPubKey; // hex
-    std::string signature;   // hex, signs "cancel:"+orderId
+    std::string signature;   // hex, signs "cancel:"+orderId+":"+timestamp
+    uint64_t    timestamp;   // anti-replay
 
     void serialize(ISerializer &s) {
       KV_MEMBER(orderId);
       KV_MEMBER(makerPubKey);
       KV_MEMBER(signature);
+      KV_MEMBER(timestamp);
     }
   };
 
@@ -1817,6 +1819,11 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
 
     // Optional fields for soft orders
     bool isSoftOrder = false;
+    // Client-side signing timestamp. The offer signature covers the
+    // timestamp (offerCanonicalHash), so the submitter MUST be able to
+    // predict it: honor a nonzero client timestamp; fall back to server
+    // time only when absent (legacy callers that predate canonical hashing).
+    uint64_t timestamp = 0;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(offerId)
@@ -1827,6 +1834,7 @@ struct COMMAND_RPC_SUBMIT_SWAP_OFFER {
       KV_MEMBER(signature)
       KV_MEMBER(ttlBlocks)
       KV_MEMBER(isSoftOrder)
+      KV_MEMBER(timestamp)
     }
   };
 
@@ -1843,12 +1851,14 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
   struct request {
     std::string offerId;
     std::string makerPubKey;  // hex
-    std::string signature;    // hex
+    std::string signature;    // hex, signs "cancel:"+offerId+":"+timestamp
+    uint64_t    timestamp;    // anti-replay
 
     void serialize(ISerializer& s) {
       KV_MEMBER(offerId)
       KV_MEMBER(makerPubKey)
       KV_MEMBER(signature)
+      KV_MEMBER(timestamp)
     }
   };
 
@@ -1971,22 +1981,42 @@ struct COMMAND_RPC_ESTIMATE_CD_YIELD {
     uint64_t amount;
     uint32_t creation_height;
     uint32_t current_height = 0;
+    uint32_t term = 0;  // v11+: CD term (blocks) — applies the tier weight to the bonus estimate
 
     void serialize(ISerializer& s) {
       KV_MEMBER(amount)
       KV_MEMBER(creation_height)
       KV_MEMBER(current_height)
+      KV_MEMBER(term)
     }
   };
 
   struct response {
     uint64_t estimated_interest;
     uint64_t effective_epochs;
+    uint64_t fee_pool_balance = 0;       // HEAT backing available for CD interest claims
+    uint64_t cd_apy_vault_balance = 0;   // CD_APY_POOL vault partition, HEAT
+    uint64_t claimable_interest = 0;     // min(estimated, pool, vault) — what consensus accepts
+    uint64_t base_interest = 0;          // v13+: pool-backed base portion (no loyalty)
+    uint64_t bonus_interest = 0;         // v13+: BV-backed tier bonus (realized inflows)
+    uint64_t bonus_vault_balance = 0;    // v13+: BONUS_VAULT counter, HEAT
+    uint64_t claimable_bonus = 0;        // v13+: min(bonus_interest, bonus vault)
+    bool pool_info_present = false;      // false when the daemon predates pool-aware estimates
+    std::string note;                    // estimate disclaimer (real yield, no printed interest)
     std::string status;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(estimated_interest)
       KV_MEMBER(effective_epochs)
+      KV_MEMBER(fee_pool_balance)
+      KV_MEMBER(cd_apy_vault_balance)
+      KV_MEMBER(claimable_interest)
+      KV_MEMBER(base_interest)
+      KV_MEMBER(bonus_interest)
+      KV_MEMBER(bonus_vault_balance)
+      KV_MEMBER(claimable_bonus)
+      KV_MEMBER(pool_info_present)
+      KV_MEMBER(note)
       KV_MEMBER(status)
     }
   };
@@ -2513,6 +2543,38 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(spot_price)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(hearth_twap)
+      KV_MEMBER(status)
+    }
+  };
+};
+
+// Combined XFG/HEAT price snapshot for the wallet and xfg-swapd.
+// spot_price is the canonical hearth price (HEAT atomics per XFG atomic * COIN);
+// xfg_heat_ratio / heat_peg_usd / xfg_spot_usd are human-readable doubles.
+struct COMMAND_RPC_GET_FUEGO_PRICE {
+  typedef EMPTY_STRUCT request;
+
+  struct response {
+    uint64_t reserve_xfg;
+    uint64_t reserve_heat;
+    uint64_t spot_price;
+    uint64_t redemption_price_num;
+    uint64_t redemption_price_denom;
+    std::string xfg_heat_ratio;
+    std::string heat_peg_usd;
+    std::string xfg_spot_usd;
+    uint64_t height;
+    std::string status;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(reserve_xfg)
+      KV_MEMBER(reserve_heat)
+      KV_MEMBER(spot_price)
+      KV_MEMBER(redemption_price_num)
+      KV_MEMBER(redemption_price_denom)
+      KV_MEMBER(xfg_heat_ratio)
+      KV_MEMBER(heat_peg_usd)
+      KV_MEMBER(xfg_spot_usd)
+      KV_MEMBER(height)
       KV_MEMBER(status)
     }
   };

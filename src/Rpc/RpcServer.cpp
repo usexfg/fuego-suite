@@ -20,6 +20,7 @@
 #include <future>
 #include <unordered_map>
 #include <cctype>
+#include <ctime>
 
 // CryptoNote
 #include "BlockchainExplorerData.h"
@@ -111,6 +112,38 @@ RpcServer::HandlerFunction jsonMethodSwapAuth(bool (RpcServer::*handler)(typenam
 
 }
 
+// ── Rate limiting helper ───────────────────────────────────────────────────
+// Fixed 1-second window token bucket. `windowStart` is the Unix time of the
+// current window; `count` is the number of requests accepted in it. When the
+// window rolls over, both are reset. Not per-IP (that would require client
+// address plumbing through HttpRequest); this bounds the total per-node rate,
+// which defeats the flood vector the findings describe.
+bool RpcServer::rateLimit(std::atomic<uint64_t>& windowStart,
+                          std::atomic<uint32_t>& count,
+                          uint32_t maxPerWindow) {
+  const uint64_t now = static_cast<uint64_t>(std::time(nullptr));
+  uint64_t start = windowStart.load(std::memory_order_relaxed);
+
+  if (now != start) {
+    // New window (or first request). CAS so concurrent requests don't clobber.
+    uint64_t expected = start;
+    if (windowStart.compare_exchange_strong(expected, now, std::memory_order_relaxed)) {
+      count.store(1, std::memory_order_relaxed);
+      return true;
+    }
+    // Lost the race: another thread opened the window; fall through to count.
+  }
+
+  uint32_t c = count.load(std::memory_order_relaxed);
+  while (c < maxPerWindow) {
+    if (count.compare_exchange_weak(c, c + 1, std::memory_order_relaxed)) {
+      return true;
+    }
+    // c was reloaded by compare_exchange_weak on failure; retry.
+  }
+  return false;
+}
+
 std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction>> RpcServer::s_handlers = {
 
   // binary handlers
@@ -173,6 +206,7 @@ std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction
   { "/heat_metrics", { jsonMethod<COMMAND_RPC_GET_HEAT_METRICS>(&RpcServer::on_get_heat_metrics), true } },
   { "/amm_quote",    { jsonMethod<COMMAND_RPC_AMM_QUOTE>(&RpcServer::on_amm_quote), true } },
   { "/amm_pool_info", { jsonMethod<COMMAND_RPC_AMM_POOL_INFO>(&RpcServer::on_amm_pool_info), true } },
+  { "/get_fuego_price", { jsonMethod<COMMAND_RPC_GET_FUEGO_PRICE>(&RpcServer::on_get_fuego_price), true } },
 
   // Limit order endpoints
   { "/get_limit_orders", { jsonMethod<COMMAND_RPC_GET_LIMIT_ORDERS>(&RpcServer::on_get_limit_orders), true } },
@@ -225,6 +259,14 @@ void RpcServer::stop() {
 void RpcServer::processRequest(const HttpRequest& request, HttpResponse& response) {
   auto url = request.getUrl();
 
+  // Configurable CORS (opt-in). Never emit a wildcard allow-origin; browsers
+  // could otherwise reach the daemon RPC cross-site (CSRF wallet/order actions).
+  if (!m_cors_domain.empty()) {
+    response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
+    response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Swap-Token");
+  }
+
   auto it = s_handlers.find(url);
   if (it == s_handlers.end()) {
     response.setStatus(HttpResponse::STATUS_404);
@@ -246,7 +288,9 @@ bool RpcServer::processJsonRpcRequest(const HttpRequest& request, HttpResponse& 
 
   response.addHeader("Content-Type", "application/json");
   if (!m_cors_domain.empty()) {
-        response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
+    response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
+    response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    response.addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Swap-Token");
   }
 
   JsonRpcRequest jsonRequest;
@@ -302,7 +346,11 @@ bool RpcServer::restrictRPC(const bool is_restricted) {
 }
 
 bool RpcServer::checkSwapControlAuth(const HttpRequest& request) const {
-  if (m_swapControlToken.empty()) return true;
+  // Fail-closed: if no swap-control token is configured, deny all swap-control
+  // access. Operators must explicitly opt in via --swap-control-token.
+  // This prevents unauthenticated placement of swap offers / orders / fee
+  // changes on a daemon exposed to the network (or via CSRF).
+  if (m_swapControlToken.empty()) return false;
   const auto& headers = request.getHeaders();
   auto it = headers.find("x-swap-token");
   if (it != headers.end() && it->second == m_swapControlToken) return true;
@@ -336,6 +384,14 @@ bool RpcServer::isCoreReady() {
 bool RpcServer::on_get_blocks(const COMMAND_RPC_GET_BLOCKS_FAST::request& req, COMMAND_RPC_GET_BLOCKS_FAST::response& res) {
   // TODO code duplication see InProcessNode::doGetNewBlocks()
   if (req.block_ids.empty()) {
+    res.status = "Failed";
+    return false;
+  }
+
+  // DoS guard: cap the number of block IDs accepted per request. Each ID is
+  // looked up and the response can embed a full block per supplied ID.
+  static const size_t MAX_BLOCK_IDS = 1000;
+  if (req.block_ids.size() > MAX_BLOCK_IDS) {
     res.status = "Failed";
     return false;
   }
@@ -826,6 +882,13 @@ bool RpcServer::onGetPoolChangesLite(const COMMAND_RPC_GET_POOL_CHANGES_LITE::re
 bool RpcServer::on_get_peer_list(
     const COMMAND_RPC_GET_PEER_LIST::request& req,
     COMMAND_RPC_GET_PEER_LIST::response& res) {
+  // Peer IPs are sensitive: exposes node topology for targeted DDoS/Eclipse.
+  // Only expose when the daemon is not in restricted mode.
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return false;
+  }
+
 	std::list<PeerlistEntry> pl_wite;
 	std::list<PeerlistEntry> pl_gray;
 	m_p2p.getPeerlistManager().get_peerlist_full(pl_gray, pl_wite);
@@ -1206,8 +1269,13 @@ bool RpcServer::on_submit_swap_offer(const COMMAND_RPC_SUBMIT_SWAP_OFFER::reques
   offer.pair        = req.pair;
   offer.makerPubKey = pubkey;
   offer.signature   = sig;
-  offer.timestamp   = static_cast<uint64_t>(std::time(nullptr));
+  // The canonical signature covers the timestamp — honor the client's
+  // signed value; fall back to server time for legacy callers.
+  offer.timestamp   = (req.timestamp != 0) ? req.timestamp
+                                           : static_cast<uint64_t>(std::time(nullptr));
   offer.ttlBlocks   = req.ttlBlocks;
+  offer.isSoftOrder = req.isSoftOrder;
+  offer.allowedSlippagePct = 0;
 
   // Set postedHeight to current height
   uint32_t height = 0;
@@ -1242,7 +1310,7 @@ bool RpcServer::on_cancel_swap_offer(const COMMAND_RPC_CANCEL_SWAP_OFFER::reques
     return true;
   }
 
-  m_swapRelay->cancelOffer(req.offerId, pubkey, sig);
+  m_swapRelay->cancelOffer(req.offerId, pubkey, sig, req.timestamp);
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -1374,6 +1442,14 @@ bool RpcServer::on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMM
     return true;
   }
 
+  // DoS guard: bound the order-placement rate so a single client cannot fill
+  // the orderbook with valid-but-useless orders (spam / griefing).
+  static const uint32_t MAX_ORDER_SUBMITS_PER_SEC = 20;
+  if (!rateLimit(m_lastOrderSubmitWindow, m_orderSubmitCount, MAX_ORDER_SUBMITS_PER_SEC)) {
+    res.status = "Order rate limit exceeded";
+    return true;
+  }
+
   if (req.pair > 7 || req.side > 1) {
     res.status = "Invalid pair or side";
     return true;
@@ -1441,7 +1517,7 @@ bool RpcServer::on_cancel_order(const COMMAND_RPC_CANCEL_ORDER::request& req, CO
     return true;
   }
 
-  bool ok = m_swapRelay->cancelOrderByClient(req.orderId, pubkey, sig);
+  bool ok = m_swapRelay->cancelOrderByClient(req.orderId, pubkey, sig, req.timestamp);
   res.status = ok ? CORE_RPC_STATUS_OK : "Cancel rejected (bad sig or not found)";
   return true;
 }
@@ -1477,6 +1553,14 @@ bool RpcServer::on_get_ethereal_flame(const COMMAND_RPC_GET_ETHERNAL_FLAME::requ
 }
 
 bool RpcServer::on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request& req, COMMAND_RPC_GET_TRANSACTIONS::response& res) {
+  // DoS guard: cap the number of tx hashes per request; each matching tx is
+  // fully serialized to hex in the response.
+  static const size_t MAX_TX_HASHES = 100;
+  if (req.txs_hashes.size() > MAX_TX_HASHES) {
+    res.status = "Failed";
+    return true;
+  }
+
   std::vector<Hash> vh;
   for (const auto& tx_hex_str : req.txs_hashes) {
     BinaryArray b;
@@ -1509,6 +1593,16 @@ bool RpcServer::on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request&
 }
 
 bool RpcServer::on_send_raw_tx(const COMMAND_RPC_SEND_RAW_TX::request& req, COMMAND_RPC_SEND_RAW_TX::response& res) {
+  // DoS guard: bound the rate of raw-tx submissions per second. Transaction
+  // validation and pool insertion are CPU-heavy; an unthrottled client can
+  // flood the node.
+  static const uint32_t MAX_TX_SUBMITS_PER_SEC = 20;
+  if (!rateLimit(m_lastTxSubmitWindow, m_txSubmitCount, MAX_TX_SUBMITS_PER_SEC)) {
+    logger(WARNING) << "on_send_raw_tx: rate limit exceeded, rejecting";
+    res.status = "Failed";
+    return true;
+  }
+
   BinaryArray tx_blob;
   if (!fromHex(req.tx_as_hex, tx_blob))
   {
@@ -2583,6 +2677,47 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
     ? ((currentHeight - req.creation_height) / epochDuration)
     : 0;
 
+  // Pool-aware cap: consensus only accepts claims backed by the fee pool AND
+  // the CD_APY_POOL vault partition (see checkCommitmentSpendInput + F-001).
+  res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
+  res.cd_apy_vault_balance = m_core.get_blockchain_storage().getCdApyVaultBalance();
+  res.claimable_interest = std::min(res.estimated_interest,
+      std::min(res.fee_pool_balance, res.cd_apy_vault_balance));
+  res.pool_info_present = true;
+
+  // v11+: split the estimate into pool-backed base and BV-backed bonus using
+  // the same consensus formulas (no loyalty in the base; bonus from realized
+  // BV inflows, capped by the vault). Pre-v11 chains keep the legacy
+  // loyalty-inclusive estimate.
+  {
+    uint8_t chainVersion = m_core.currency().blockMajorVersionAtHeight(currentHeight);
+    if (chainVersion >= BLOCK_MAJOR_VERSION_11) {
+      const auto& ci = m_core.getCommitmentIndex();
+      uint64_t base = m_core.currency().calculateCdInterest(
+          req.amount, req.creation_height, currentHeight, ci,
+          false, req.term, false, /*includeLoyaltyBonus=*/false);
+      uint64_t bonus = m_core.currency().calculateCdBonus(
+          req.amount, req.creation_height, currentHeight, ci, req.term);
+      uint64_t bv = m_core.get_blockchain_storage().getBonusVaultBalance();
+      uint64_t bvUtxo = m_core.get_blockchain_storage().getBonusVaultUtxoBalance();
+      uint64_t bvBacking = std::min(bv, bvUtxo);
+      res.base_interest = base;
+      res.bonus_interest = bonus;
+      res.bonus_vault_balance = bvBacking;
+      res.claimable_bonus = std::min(bonus, bvBacking);
+      uint64_t totalFormula = (base > UINT64_MAX - bonus) ? UINT64_MAX : (base + bonus);
+      res.estimated_interest = totalFormula;
+      res.claimable_interest = (base > UINT64_MAX - res.claimable_bonus)
+          ? UINT64_MAX : (base + res.claimable_bonus);
+    }
+  }
+
+  res.note = "Estimate only: the protocol distributes realized fee revenue "
+             "(real yield — no interest is printed), so this is based on accrued "
+             "epoch fee rates, not a promise; the amount actually claimable is "
+             "capped by the CD yield pool (and Bonus Vault for the tier bonus) "
+             "at claim time.";
+
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -2728,6 +2863,41 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.hearth_twap = m_core.getHearthTwap();
   res.status = CORE_RPC_STATUS_OK;
   return true;
+}
+
+bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& /*req*/,
+                                   COMMAND_RPC_GET_FUEGO_PRICE::response& res) {
+  try {
+    auto info = m_core.getAmmPoolInfo();
+    auto metrics = m_core.getHeatMetrics();
+
+    res.reserve_xfg = info.reserveXfg;
+    res.reserve_heat = info.reserveHeat;
+    res.spot_price = info.spotPrice;
+    res.redemption_price_num = metrics.redemptionPriceNum;
+    res.redemption_price_denom = metrics.redemptionPriceDenom;
+
+    // Human-readable ratio: HEAT per XFG = spot_price / COIN.
+    const double ratio = (info.spotPrice > 0)
+      ? static_cast<double>(info.spotPrice) / static_cast<double>(parameters::COIN) : 0.0;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.8f", ratio);
+    res.xfg_heat_ratio = buf;
+
+    const double heatPegUsd = parameters::HEAT_PEG_USD;
+    snprintf(buf, sizeof(buf), "%.4f", heatPegUsd);
+    res.heat_peg_usd = buf;
+
+    snprintf(buf, sizeof(buf), "%.4f", ratio * heatPegUsd);
+    res.xfg_spot_usd = buf;
+
+    res.height = m_core.get_current_blockchain_height();
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  } catch (const std::exception& e) {
+    res.status = "Error: " + std::string(e.what());
+    return false;
+  }
 }
 
 bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req,

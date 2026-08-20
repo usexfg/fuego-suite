@@ -143,7 +143,8 @@ public:
                                                 uint32_t currentHeight, uint64_t& outInterest,
                                                 bool isLegacyBond = false,
                                                 uint32_t term = 0,
-                                                bool autoRolled = false) {
+                                                bool autoRolled = false,
+                                                bool includeLoyaltyBonus = true) {
     outInterest = 0;
     return {};
   }
@@ -170,6 +171,21 @@ public:
   virtual std::error_code getAmmPoolInfo(AmmPoolInfo& info) {
     return std::make_error_code(std::errc::not_supported);
   }
+
+  // HEAT backing available for CD interest claims and the CD_APY_POOL vault
+  // partition balance. Non-pure so stubs compile; real core overrides.
+  virtual uint64_t getFeePoolBalance() { return 0; }
+  virtual uint64_t getCdApyVaultBalance() { return 0; }
+  // v11+: BV-backed tier bonus (realized Bonus Vault inflows) and the
+  // BONUS_VAULT counter. Non-pure so stubs compile.
+  virtual std::error_code calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                                           uint32_t currentHeight, uint64_t& outBonus,
+                                           uint32_t term = 0) {
+    outBonus = 0;
+    return {};
+  }
+  virtual uint64_t getBonusVaultBalance() { return 0; }
+  virtual uint64_t getBonusVaultUtxoBalance() { return 0; }
 };
 
 } //namespace CryptoNote

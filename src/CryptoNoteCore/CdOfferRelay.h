@@ -27,7 +27,7 @@ public:
 
   std::vector<COMMAND_CD_OFFER::request> getOffers(uint64_t amount) const;
   bool submitOffer(const COMMAND_CD_OFFER::request& offer);
-  bool cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey, const Crypto::Signature& sig);
+  bool cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey, const Crypto::Signature& sig, uint64_t timestamp);
 
 private:
   core& m_core;

@@ -86,7 +86,7 @@ void SwapOfferRelay::cleanupExpiredOrders() {
   m_core.get_blockchain_top(currentHeight, topId);
 
   std::lock_guard<std::mutex> lock(m_mutex);
-  for (int pair = 0; pair < 8; ++pair) {
+  for (int pair = 0; pair <= SwapOfferRelay::MAX_PAIR_INDEX; ++pair) {
     auto& book = m_orderBooks[pair];
     auto cleanLadder = [&](std::map<uint64_t, PriceLevel>& ladder) {
       for (auto priceIt = ladder.begin(); priceIt != ladder.end(); ) {
@@ -156,8 +156,8 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
-  // pair must index a valid order book slot (0..7)
-  if (offer.pair >= 8) return false;
+  // pair must index a valid order book slot (0..11)
+  if (!isValidPair(offer.pair)) return false;
   Crypto::Hash offerHash = offerCanonicalHash(offer);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
 }
@@ -186,8 +186,12 @@ void SwapOfferRelay::handleOfferMessage(const COMMAND_SWAP_OFFER::request& msg) 
 
 void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
                                          const Crypto::PublicKey& pubkey,
-                                         const Crypto::Signature& sig) {
-  std::string cancelData = "cancel:" + offerId;
+                                         const Crypto::Signature& sig,
+                                         uint64_t timestamp) {
+  // Cancel signature is bound to the offerId AND the cancellation timestamp.
+  // This prevents an old captured cancel signature from being replayed
+  // against a re-announced offer with the same offerId.
+  std::string cancelData = "cancel:" + offerId + ":" + std::to_string(timestamp);
   Crypto::Hash cancelHash;
   cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
   if (!Crypto::check_signature(cancelHash, pubkey, sig)) return;
@@ -358,14 +362,16 @@ bool SwapOfferRelay::submitOffer(const SwapOfferMsg& offer) {
 
 bool SwapOfferRelay::cancelOffer(const std::string& offerId,
                                  const Crypto::PublicKey& pubkey,
-                                 const Crypto::Signature& sig) {
-  handleCancelMessage(offerId, pubkey, sig);
+                                 const Crypto::Signature& sig,
+                                 uint64_t timestamp) {
+  handleCancelMessage(offerId, pubkey, sig, timestamp);
 
   if (m_p2pEndpoint) {
     COMMAND_SWAP_CANCEL::request msg;
     msg.offerId    = offerId;
     msg.makerPubKey = pubkey;
     msg.signature   = sig;
+    msg.timestamp   = timestamp;
     auto buf = LevinProtocol::encode(msg);
     m_p2pEndpoint->externalRelayNotifyToAll(COMMAND_SWAP_CANCEL::ID, buf, nullptr);
   }
@@ -484,9 +490,11 @@ bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
 
 bool SwapOfferRelay::validateCancelSignature(const std::string& orderId,
                                              const Crypto::PublicKey& makerPubKey,
-                                             const Crypto::Signature& signature) const {
+                                             const Crypto::Signature& signature,
+                                             uint64_t timestamp) const {
   if (orderId.empty()) return false;
-  std::string cancelData = "cancel:" + orderId;
+  // Cancel signature bound to orderId AND timestamp (anti-replay).
+  std::string cancelData = "cancel:" + orderId + ":" + std::to_string(timestamp);
   Crypto::Hash cancelHash;
   cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
   return Crypto::check_signature(cancelHash, makerPubKey, signature);
@@ -521,7 +529,7 @@ std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request&
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
   if (!isValidPair(order.pair)) return;
   uint8_t pair = order.pair;
-  if (pair >= 8) return;  // bounds: m_orderBooks has 8 slots
+  if (!isValidPair(pair)) return;  // bounds: m_orderBooks has 12 slots
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
 
@@ -626,7 +634,7 @@ void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
 
 void SwapOfferRelay::handleOrderCancel(const COMMAND_ORDER_CANCEL::request& msg) {
   // HIGH: require cancel signature (same scheme as legacy v1 cancel)
-  if (!validateCancelSignature(msg.orderId, msg.makerPubKey, msg.signature)) return;
+  if (!validateCancelSignature(msg.orderId, msg.makerPubKey, msg.signature, msg.timestamp)) return;
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -806,6 +814,11 @@ OrderBookSnapshot SwapOfferRelay::getOrderBookSnapshot(uint8_t pair, int depth) 
   snap.height = m_core.get_current_blockchain_height();
   if (!isValidPair(pair) || depth <= 0) return snap;
 
+  // Cap the depth to bound the response size (an unbounded depth would let a
+  // caller serialize the entire book — memory/bandwidth DoS).
+  static const int MAX_DEPTH = 500;
+  if (depth > MAX_DEPTH) depth = MAX_DEPTH;
+
   const auto& book = m_orderBooks[pair];
 
   // Bids: highest first
@@ -900,8 +913,9 @@ bool SwapOfferRelay::placeSignedOrder(const SwapOrder& inOrder, uint64_t* outFil
 
 bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId,
                                          const Crypto::PublicKey& makerPubKey,
-                                         const Crypto::Signature& signature) {
-  if (!validateCancelSignature(orderId, makerPubKey, signature)) return false;
+                                         const Crypto::Signature& signature,
+                                         uint64_t timestamp) {
+  if (!validateCancelSignature(orderId, makerPubKey, signature, timestamp)) return false;
 
   std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -938,7 +952,9 @@ bool SwapOfferRelay::cancelOrderByClient(const std::string& orderId,
   cancelMsg.orderId = orderId;
   cancelMsg.makerPubKey = makerPubKey;
   cancelMsg.signature = signature;
-  cancelMsg.timestamp = static_cast<uint64_t>(std::time(nullptr));
+  // Broadcast the SAME verified timestamp the cancel was signed with, so
+  // remote peers reconstruct the identical cancel digest and accept it.
+  cancelMsg.timestamp = timestamp;
   broadcastOrderCancel(cancelMsg);
   return true;
 }

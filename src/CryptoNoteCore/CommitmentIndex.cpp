@@ -342,10 +342,44 @@ uint64_t CommitmentIndex::getEpochCount() const {
   return m_epochFeeRates.size();
 }
 
+uint64_t CommitmentIndex::getBonusEpochCount() const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return m_bonusEpochRates.size();
+}
+
 void CommitmentIndex::popEpochFeeRate() {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (!m_epochFeeRates.empty()) {
     m_epochFeeRates.pop_back();
+  }
+}
+
+void CommitmentIndex::recordBonusEpochRate(uint64_t epochNumber, uint64_t bonusHeat, uint64_t weightedBase) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_bonusEpochRates.size()) {
+    m_bonusEpochRates.resize(epochNumber + 1);
+  }
+  BonusEpochRateEntry& entry = m_bonusEpochRates[epochNumber];
+  // Accumulate: direct and deferred conversions at the same epoch boundary
+  // both count toward the epoch's realized BV inflow.
+  if (entry.bonusHeat > UINT64_MAX - bonusHeat) {
+    entry.bonusHeat = UINT64_MAX;
+  } else {
+    entry.bonusHeat += bonusHeat;
+  }
+  entry.weightedBase = weightedBase;
+}
+
+BonusEpochRateEntry CommitmentIndex::getBonusEpochRateEntry(uint64_t epochNumber) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (epochNumber >= m_bonusEpochRates.size()) return {};
+  return m_bonusEpochRates[epochNumber];
+}
+
+void CommitmentIndex::popBonusEpochRate() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  if (!m_bonusEpochRates.empty()) {
+    m_bonusEpochRates.pop_back();
   }
 }
 
@@ -430,6 +464,7 @@ void CommitmentIndex::serialize(ISerializer& s) {
 
   s(m_epochFeeRates, "epoch_fee_rates");
   s(m_legacyEpochFeeRates, "legacy_epoch_fee_rates");
+  s(m_bonusEpochRates, "bonus_epoch_rates");
 
   if (s.type() == ISerializer::INPUT) {
     m_merkle_leaves.clear();

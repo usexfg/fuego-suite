@@ -115,6 +115,29 @@ public:
     outInterest = 0;
     return {};
   }
+  // Pool-aware CD claim info. formulaInterest is the accrued epoch-rate sum;
+  // claimableInterest is what consensus accepts today (capped by the fee pool
+  // and CD_APY_POOL vault backing). poolInfoPresent=false when the daemon
+  // predates pool-aware estimates — callers fall back to formula-only behavior.
+  // v11+: baseInterest/bonusInterest are the consensus split (pool-backed base
+  // vs BV-backed tier bonus); claimableBonus is bonus capped by the vault.
+  struct CdClaimInfo {
+    uint64_t formulaInterest = 0;
+    uint64_t claimableInterest = 0;
+    uint64_t feePoolBalance = 0;
+    uint64_t vaultBalance = 0; // CD_APY_POOL partition, HEAT
+    bool poolInfoPresent = false;
+    uint64_t baseInterest = 0;
+    uint64_t bonusInterest = 0;
+    uint64_t bonusVaultBalance = 0;
+    uint64_t claimableBonus = 0;
+  };
+  virtual std::error_code getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                         uint32_t currentHeight, CdClaimInfo& out,
+                                         uint32_t term = 0) {
+    out = CdClaimInfo{};
+    return getCdInterest(amount, creationHeight, currentHeight, out.formulaInterest);
+  }
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
     outFeeRate = 0;
     return {};

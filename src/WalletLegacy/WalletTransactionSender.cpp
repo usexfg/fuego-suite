@@ -30,11 +30,13 @@
 #include "WalletLegacy/WalletUtils.h"
 #include "CryptoNoteCore/DepositCommitment.h"
 #include "Common/FileSystem.h"
+#include "Common/Int128.h"
 #include "Common/PathTools.h"
 #include "WalletLegacy/WalletRequest.h"  // for WalletGetOutputsHeightsRequest
 #include "INode.h"
 
 #include <Logging/LoggerGroup.h>
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <numeric>
@@ -1216,36 +1218,111 @@ namespace CryptoNote
       // ── Calculate accrued CD interest for each deposit ──────────────────────
       // The blockchain debits the fee pool and vault CD_APY_POOL when
       // claimedInterest > 0 on a CommitmentSpend input.  We must compute
-      // the correct interest via getCdInterest (→ CommitmentIndex epoch
-      // accumulator) and include it in both the input and output.
+      // the correct interest via getCdClaimInfo (→ CommitmentIndex epoch
+      // accumulator, capped by the pool backing consensus accepts) and include
+      // it in both the input and output. Pool-aware daemons report the cap;
+      // the aggregate across all inputs in this tx is scaled down so the
+      // F-001 per-tx cap cannot reject the whole withdrawal.
+      // v11+: the claim splits into pool-backed base + BV-backed bonus; the
+      // bonus is declared per input via TransactionExtraCdBonusClaim extras.
       uint32_t currentHeight = m_node.getLastLocalBlockHeight();
       uint64_t totalInterest = 0;
+      uint64_t totalBase = 0;
+      uint64_t totalBonus = 0;
+      uint64_t poolAvailable = UINT64_MAX;
+      uint64_t bvAvailable = UINT64_MAX;
+      bool poolInfoPresent = false;
       std::vector<uint64_t> perDepositInterest;
+      std::vector<uint64_t> perDepositBase;
+      std::vector<uint64_t> perDepositBonus;
       perDepositInterest.reserve(depositIds.size());
+      perDepositBase.reserve(depositIds.size());
+      perDepositBonus.reserve(depositIds.size());
 
       for (size_t i = 0; i < depositIds.size(); ++i) {
         Deposit dep;
-        if (m_transactionsCache.getDeposit(depositIds[i], dep) && dep.term != parameters::HEAT_TERM) {
-          // Finite-term HEAT CDs claim accrued fee-pool interest — but only
-          // deposits created at/after v11: pre-v11 deposits are withdraw-only
-          // (consensus rejects claimedInterest > 0 on them).
-          uint64_t interest = 0;
-          uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
-          if (static_cast<uint32_t>(dep.height) >= v11Height) {
-            std::error_code ec = m_node.getCdInterest(dep.amount,
-                static_cast<uint32_t>(dep.height), currentHeight, interest);
-            if (ec) {
-              // If the node can't compute (e.g. remote daemon), fall back to
-              // zero. The blockchain accepts the withdrawal at 0 interest.
-              interest = 0;
+        if (!m_transactionsCache.getDeposit(depositIds[i], dep) ||
+            dep.term == parameters::HEAT_TERM) {
+          // HEAT_TERM (0xFFFFFFFF) outputs are HEAT mint/burn outputs — they
+          // earn no APY per the deposit architecture. Only finite-term CDs
+          // claim fee-pool interest.
+          perDepositInterest.push_back(0);
+          perDepositBase.push_back(0);
+          perDepositBonus.push_back(0);
+          continue;
+        }
+        // Finite-term HEAT CDs claim accrued fee-pool interest — but only
+        // deposits created at/after v11: pre-v11 deposits are withdraw-only
+        // (consensus rejects claimedInterest > 0 on them).
+        uint64_t interest = 0;
+        uint64_t base = 0;
+        uint64_t bonus = 0;
+        uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+        if (static_cast<uint32_t>(dep.height) >= v11Height) {
+          INode::CdClaimInfo claimInfo;
+          std::error_code ec = m_node.getCdClaimInfo(dep.amount,
+              static_cast<uint32_t>(dep.height), currentHeight, claimInfo, dep.term);
+          if (!ec && claimInfo.formulaInterest > 0) {
+            interest = claimInfo.formulaInterest;
+            if (claimInfo.poolInfoPresent) {
+              poolInfoPresent = true;
+              uint64_t backing = std::min(claimInfo.feePoolBalance, claimInfo.vaultBalance);
+              if (backing < poolAvailable) poolAvailable = backing;
+              if (claimInfo.bonusVaultBalance < bvAvailable) bvAvailable = claimInfo.bonusVaultBalance;
+              // v11+: explicit split — the daemon reports the consensus
+              // base/bonus; fall back to single-number legacy behavior when
+              // the daemon predates the split (baseInterest == 0).
+              if (claimInfo.baseInterest > 0 || claimInfo.bonusInterest > 0) {
+                base = claimInfo.baseInterest;
+                bonus = claimInfo.claimableBonus;
+              } else {
+                base = interest;
+                bonus = 0;
+              }
             }
           }
-          perDepositInterest.push_back(interest);
-          totalInterest += interest;
-        } else {
-          // HEAT_TERM burns: no interest accrues (permanent burn, no fee pool).
-          perDepositInterest.push_back(0);
         }
+        perDepositInterest.push_back(interest);
+        perDepositBase.push_back(base);
+        perDepositBonus.push_back(bonus);
+        totalInterest += interest;
+        totalBase += base;
+        totalBonus += bonus;
+      }
+
+      // F-001 aggregate cap: the per-tx base sum must fit the pool backing or
+      // the daemon rejects the whole tx. Scale each base claim proportionally.
+      // (Rare event — the wallet UI surfaces a warning via getCdClaimInfo.)
+      if (poolInfoPresent && poolAvailable < totalBase && totalBase > 0) {
+        for (size_t i = 0; i < perDepositBase.size(); ++i) {
+          perDepositBase[i] = static_cast<uint64_t>(
+              ((uint128_t)perDepositBase[i] * poolAvailable) / totalBase);
+        }
+        uint64_t scaledTotal = 0;
+        for (size_t i = 0; i < perDepositBase.size(); ++i) {
+          scaledTotal += perDepositBase[i];
+        }
+        totalBase = scaledTotal;
+      }
+      // v11+ bonus aggregate: the per-tx bonus sum must fit the BV backing.
+      if (poolInfoPresent && bvAvailable < totalBonus && totalBonus > 0) {
+        for (size_t i = 0; i < perDepositBonus.size(); ++i) {
+          perDepositBonus[i] = static_cast<uint64_t>(
+              ((uint128_t)perDepositBonus[i] * bvAvailable) / totalBonus);
+        }
+        uint64_t scaledTotal = 0;
+        for (size_t i = 0; i < perDepositBonus.size(); ++i) {
+          scaledTotal += perDepositBonus[i];
+        }
+        totalBonus = scaledTotal;
+      }
+      // Rebuild the per-input totals after scaling.
+      totalInterest = 0;
+      for (size_t i = 0; i < perDepositInterest.size(); ++i) {
+        uint64_t combined = (perDepositBase[i] > UINT64_MAX - perDepositBonus[i])
+            ? UINT64_MAX : (perDepositBase[i] + perDepositBonus[i]);
+        perDepositInterest[i] = combined;
+        totalInterest += combined;
       }
 
       // Output amount = principal + accrued interest − fee.
@@ -1355,6 +1432,20 @@ namespace CryptoNote
 
         // Sign the input.
         transaction->signInputCommitmentSpend(depositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
+      }
+
+      // v11+: declare the BV-backed bonus per input. The daemon draws the
+      // bonus from BONUS_VAULT and the remainder from the CD yield pool.
+      for (size_t depositIdx = 0; depositIdx < perDepositBonus.size(); ++depositIdx) {
+        if (depositIdx < perDepositBonus.size() && perDepositBonus[depositIdx] > 0 &&
+            depositIdx < 255) {
+          TransactionExtraCdBonusClaim bc;
+          bc.inputIndex = static_cast<uint8_t>(depositIdx);
+          bc.claimedBonus = perDepositBonus[depositIdx];
+          std::vector<uint8_t> extra;
+          addCdBonusClaimToExtra(extra, bc);
+          transaction->appendExtra(extra);
+        }
       }
 
       transactionInfo.hash = transaction->getTransactionHash();

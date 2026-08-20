@@ -188,7 +188,8 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "place_limit_order",  makeMemberMethod(&wallet_rpc_server::on_place_limit_order) },
       { "donate",             makeMemberMethod(&wallet_rpc_server::on_donate) },
       { "cancel_limit_order", makeMemberMethod(&wallet_rpc_server::on_cancel_limit_order) },
-      { "get_limit_orders",   makeMemberMethod(&wallet_rpc_server::on_get_limit_orders) }
+      { "get_limit_orders",   makeMemberMethod(&wallet_rpc_server::on_get_limit_orders) },
+      { "get_cd_claim_preview", makeMemberMethod(&wallet_rpc_server::on_get_cd_claim_preview) }
     };
 
     auto it = s_methods.find(jsonRequest.getMethod());
@@ -284,7 +285,12 @@ bool wallet_rpc_server::on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL
   CryptoNote::AccountKeys keys;
   m_wallet.getAccountKeys(keys);
 
-  std::string cancelData = "cancel:" + req.offerId;
+  // Bind the cancel signature to the offerId AND a timestamp so an old
+  // captured cancel signature cannot be replayed (anti-replay). Honor the
+  // client-supplied timestamp; fall back to server time when absent.
+  uint64_t ts = (req.timestamp != 0) ? req.timestamp
+                                     : static_cast<uint64_t>(std::time(nullptr));
+  std::string cancelData = "cancel:" + req.offerId + ":" + std::to_string(ts);
   Crypto::Hash cancelHash;
   Crypto::cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
 
@@ -294,6 +300,7 @@ bool wallet_rpc_server::on_sign_cancel(const wallet_rpc::COMMAND_RPC_SIGN_CANCEL
   res.offerId     = req.offerId;
   res.makerPubKey = Common::podToHex(keys.address.spendPublicKey);
   res.signature   = Common::podToHex(sig);
+  res.timestamp   = ts;
   res.status      = WALLET_RPC_STATUS_OK;
   return true;
 }
@@ -1492,6 +1499,78 @@ bool wallet_rpc_server::on_get_limit_orders(const wallet_rpc::COMMAND_RPC_GET_LI
   } catch (const std::exception& e) {
     logger(WARNING) << "Wallet RPC get_limit_orders error: " << e.what();
     throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Internal wallet error");
+  }
+  return true;
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+bool wallet_rpc_server::on_get_cd_claim_preview(const wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::request& req, wallet_rpc::COMMAND_RPC_GET_CD_CLAIM_PREVIEW::response& res) {
+  try {
+    CryptoNote::DepositId depId = static_cast<CryptoNote::DepositId>(req.deposit_id);
+    CryptoNote::Deposit dep;
+    if (!m_wallet.getDeposit(depId, dep)) {
+      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Deposit not found");
+    }
+
+    // HEAT_TERM mints and LP markers earn no interest
+    const bool earnsInterest =
+        dep.term != CryptoNote::parameters::HEAT_TERM &&
+        dep.term != CryptoNote::parameters::DEPOSIT_TERM_LP &&
+        dep.term > 0;
+
+    // Query pool-aware claim info
+    CryptoNote::INode::CdClaimInfo claimInfo;
+    uint32_t currentHeight = m_node.getKnownBlockCount();
+    std::error_code ec = m_node.getCdClaimInfo(dep.amount, dep.height, currentHeight, claimInfo, dep.term);
+    if (ec) {
+      // Daemon predates pool-aware estimates — fallback to legacy formula (no caps)
+      res.earns_interest = earnsInterest;
+      if (earnsInterest) {
+        uint64_t interest = 0;
+        std::error_code fallbackEc = m_node.getCdInterest(dep.amount, dep.height, currentHeight, interest);
+        if (!fallbackEc) {
+          res.base_interest = interest;
+          res.bonus_interest = 0;
+          res.claimable_interest = interest;
+          res.claimable_bonus = 0;
+          res.fee_pool_balance = 0;
+          res.bonus_vault_balance = 0;
+          res.capped = false;
+        }
+      }
+    } else {
+      res.earns_interest = earnsInterest;
+      res.base_interest = claimInfo.baseInterest;
+      res.bonus_interest = claimInfo.bonusInterest;
+      res.claimable_interest = claimInfo.claimableInterest;
+      res.claimable_bonus = claimInfo.claimableBonus;
+      res.fee_pool_balance = claimInfo.feePoolBalance;
+      res.bonus_vault_balance = claimInfo.bonusVaultBalance;
+      res.capped = earnsInterest && (claimInfo.claimableInterest < claimInfo.baseInterest ||
+                                     claimInfo.claimableBonus < claimInfo.bonusInterest);
+    }
+
+    res.principal = dep.amount;
+    if (earnsInterest && res.base_interest > 0) {
+      res.note = "Estimate only — the protocol distributes realized fee revenue "
+                 "(real yield, no printed interest); based on accrued epoch fee rates, "
+                 "not a promise.";
+    }
+    if (res.capped) {
+      res.warning = "The CD yield pool or Bonus Vault cannot currently back your full accrued interest — "
+                    "a rare event (pool drained by claims or an epoch with no fee revenue). "
+                    "Withdrawing now would forfeit part of your accrued interest. "
+                    "If you wait for the pools to replenish from incoming swap fees, "
+                    "your CD will continue accruing and the remaining interest will become claimable. "
+                    "Principal is never at risk.";
+    }
+    res.status = WALLET_RPC_STATUS_OK;
+    return true;
+  } catch (const JsonRpc::JsonRpcError&) {
+    throw;
+  } catch (const std::exception& e) {
+    logger(WARNING) << "Wallet RPC handler error: " << e.what();
+    throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "Internal wallet error");
   }
   return true;
 }

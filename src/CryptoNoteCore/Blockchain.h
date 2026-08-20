@@ -115,7 +115,20 @@ namespace CryptoNote {
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
     uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
+
+    // W-3: mints the vault-spend surplus back to the source partition as a
+    // change UTXO (indexed above the current block height, so popBlock's
+    // removeAboveIndex rolls it back with the block).
+    void mintVaultChangeUtxo(const VaultUtxoSet::SpendResult& spendResult,
+                             VaultPartition partition, AssetType asset,
+                             uint32_t height, const Crypto::Hash& txHash);
+    uint64_t getCdApyVaultBalance() const {
+      return m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+    }
     uint64_t getBonusVaultBalance() const { return m_bonusVaultBalance; }
+    uint64_t getBonusVaultUtxoBalance() const {
+      return m_vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT);
+    }
     uint64_t getCurrentEpochSwapFees() const { return m_currentEpochSwapFees; }
     uint64_t getTotalCdLocked() const { return m_totalCdLocked; }
     uint64_t getHeatSupply() const { return m_heatSupply; }
@@ -429,6 +442,7 @@ namespace CryptoNote {
       bool bootstrapRepaid;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
+      uint64_t bonusWeightedBase;
     };
 
     friend class BlockCacheSerializer;
@@ -481,7 +495,13 @@ namespace CryptoNote {
     std::map<Crypto::Hash, uint64_t, HashLess> m_lpCommitTxGidx;
 
     // Vault UTXO spending: maps tx hash → spent vault UTXO indices (for popBlock reversal)
-    std::map<Crypto::Hash, std::vector<uint64_t>, HashLess> m_vaultSpentByTx;
+    // Vault UTXOs spent by a tx, keyed by tx hash, per partition. Restored on
+    // popBlock. cdPool = CD_APY_POOL, bonusVault = BONUS_VAULT (v11+).
+    struct VaultSpendRecord {
+      std::vector<uint64_t> cdPoolIndices;
+      std::vector<uint64_t> bonusVaultIndices;
+    };
+    std::map<Crypto::Hash, VaultSpendRecord, HashLess> m_vaultSpentByTx;
 
     // Limit order deposit tracking: orderId → (side, amount, addressHash) for withdrawal
     // Persists after order expires from mempool so user can reclaim pending deposit
@@ -574,6 +594,12 @@ namespace CryptoNote {
     uint64_t m_treasuryCounterXFG = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
     uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
+    // v11+: tier-weighted CD principal created per epoch. The BV bonus share
+    // denominator at an epoch boundary is the rolling sum over the last
+    // BONUS_WEIGHTED_WINDOW_EPOCHS entries — deterministic, spend-agnostic
+    // (ring privacy hides a spent CD's term), and strictly bounded so total
+    // bonus payouts can never exceed realized BV inflows.
+    std::vector<uint64_t> m_bonusWeightedByEpoch;
     // Autonomous Treasury Vault
     VaultUtxoSet m_vault;
     VaultKeypair m_vaultKeys;
@@ -646,6 +672,7 @@ namespace CryptoNote {
                         uint32_t height, uint8_t majorVersion);
     void popTransactions(const BlockEntry &block, const Crypto::Hash &minerTransactionHash);
     bool validateInput(const MultisignatureInput &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
+    bool validateSwapEscrowInput(const TransactionInputSwapEscrow &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures);
     bool checkCommitmentSpendInput(const TransactionInputCommitmentSpend& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
     bool checkCommitmentTransferInput(const TransactionInputCommitmentTransfer& txin, const Crypto::Hash& tx_prefix_hash, const std::vector<Crypto::Signature>& sig, uint32_t* pmax_related_block_height = nullptr);
     bool removeLastBlock();

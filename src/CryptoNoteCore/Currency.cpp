@@ -327,11 +327,59 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  uint64_t Currency::loyaltyTierWeightPct(uint32_t term) const {
+    const uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    if (term == parameters::DEPOSIT_MAX_TERM) {
+      return parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
+    } else if (term == 36 * epochDuration) {
+      return parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×
+    } else if (term == 18 * epochDuration) {
+      return parameters::LOYALTY_BONUS_18_EPOCHS_PCT;  // 18 epochs: 1.5×
+    } else if (term == 6 * epochDuration) {
+      return parameters::LOYALTY_BONUS_6_EPOCHS_PCT;   // 6 epochs: 1.25×
+    }
+    return 100;  // rolling / no tier bonus
+  }
+
+  uint64_t Currency::calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                                       uint32_t currentHeight,
+                                       const CommitmentIndex& commitmentIndex,
+                                       uint32_t term) const {
+    if (currentHeight <= creationHeight) return 0;
+
+    uint64_t epochDuration = m_testnet
+        ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
+        : parameters::EPOCH_DURATION_BLOCKS;
+    uint64_t startEpoch = creationHeight / epochDuration;
+    uint64_t endEpoch = currentHeight / epochDuration;
+    uint64_t epochCount = commitmentIndex.getEpochCount();
+
+    uint64_t weight = loyaltyTierWeightPct(term);
+    uint64_t bonus = 0;
+    for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
+      BonusEpochRateEntry entry = commitmentIndex.getBonusEpochRateEntry(e);
+      if (entry.bonusHeat == 0 || entry.weightedBase == 0) continue;
+      // share = bonusHeat × (principal × weight/100) / weightedBase, where
+      // weightedBase = Σ (principal_j × weight_j/100) over the rolling window —
+      // realized BV inflow distributed pro-rata by tier weight (no overpromise).
+      uint64_t share = static_cast<uint64_t>(
+          (((uint128_t)amount * weight) / 100 * entry.bonusHeat) / entry.weightedBase);
+      if (bonus > UINT64_MAX - share) return UINT64_MAX;
+      bonus += share;
+    }
+    return bonus;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                           uint32_t currentHeight,
                                           const CommitmentIndex& commitmentIndex,
                                           bool isLegacyBond, uint32_t term,
-                                          bool autoRolled) const {
+                                          bool autoRolled,
+                                          bool includeLoyaltyBonus) const {
     if (currentHeight <= creationHeight) return 0;
 
     uint64_t epochDuration = m_testnet
@@ -349,19 +397,11 @@ double Currency::getBurnPercentage() const {
     // Loyalty bonus: tier-based multipliers on last epochs
     // Only applies to the original term, not the auto-rolled extension
     bool loyaltyApplies = (!m_testnet && !isLegacyBond && !autoRolled &&
-                           term >= parameters::DEPOSIT_MIN_TERM);
+                           term >= parameters::DEPOSIT_MIN_TERM &&
+                           includeLoyaltyBonus);
 
     // Determine loyalty bonus multiplier based on term
-    uint64_t loyaltyBonusPct = parameters::LOYALTY_BONUS_ROLLING_PCT;  // default: no bonus
-    if (term == parameters::DEPOSIT_MAX_TERM) {
-      loyaltyBonusPct = parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
-    } else if (term == 36 * epochDuration) {
-      loyaltyBonusPct = parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×
-    } else if (term == 18 * epochDuration) {
-      loyaltyBonusPct = parameters::LOYALTY_BONUS_18_EPOCHS_PCT;  // 18 epochs: 1.5×
-    } else if (term == 6 * epochDuration) {
-      loyaltyBonusPct = parameters::LOYALTY_BONUS_6_EPOCHS_PCT;  // 6 epochs: 1.25×
-    }
+    uint64_t loyaltyBonusPct = loyaltyTierWeightPct(term);
 
     uint64_t baseInterest = 0;
     uint64_t loyaltyBonus = 0;

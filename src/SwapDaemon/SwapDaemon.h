@@ -457,6 +457,31 @@ public:
   bool verifyEscrowFunding(const SwapParams& params);
   bool resolveEscrowGlobalIndex(SwapParams& params);
 
+  // v11+ direct escrow spends (TransactionInputSwapEscrow). The claim is
+  // the completed MuSig2 adaptor aggregate over the deterministic claim tx
+  // prefix; the refund is the maker's plain Schnorr signature. Neither
+  // requires peer cooperation after funding.
+  bool broadcastEscrowClaimDirect(SwapParams& params);
+  bool broadcastEscrowRefundDirect(SwapParams& params);
+
+  // The deterministic claim tx prefix hash — the presig session message
+  // for v11+ escrow swaps (identical on both sides).
+  Crypto::Hash claimSessionMessage(SwapParams& params);
+
+  // The deterministic claim transaction's hash — used by Alice to watch
+  // the fuego chain for Bob's XFG claim (XMR pairs reveal their share only
+  // after the claim confirms).
+  Crypto::Hash deterministicClaimTxHash(SwapParams& params);
+
+  // XMR leg: generate the per-swap XMR keypair once and exchange key
+  // material with the peer (XMR_KEYS). Runs from ADAPTOR_KEYS_EXCHANGED.
+  bool handleXmrKeyExchange(SwapStateMachine& sm);
+
+  // XMR leg: reveal our spend share to the peer. Alice reveals after the
+  // XFG claim is on-chain; Bob reveals after the timeout. Returns true
+  // once sent.
+  bool revealXmrShare(SwapStateMachine& sm);
+
   // Save with conflict-retry. saveSwap() now fails when the on-disk record
   // advanced concurrently (P2P writeback between our load and save). For
   // steps with IRREVERSIBLE external side effects (escrow funding already

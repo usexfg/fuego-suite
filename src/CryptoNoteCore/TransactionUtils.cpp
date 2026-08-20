@@ -40,6 +40,9 @@ bool checkInputsKeyimagesDiff(const CryptoNote::TransactionPrefix& tx) {
     } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
       if (!ki.insert(boost::get<TransactionInputCommitmentTransfer>(in).keyImage).second)
         return false;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      if (!ki.insert(boost::get<TransactionInputSwapEscrow>(in).keyImage).second)
+        return false;
     }
   }
   return true;
@@ -60,6 +63,9 @@ size_t getRequiredSignaturesCount(const TransactionInput& in) {
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
     return boost::get<TransactionInputCommitmentTransfer>(in).outputIndexes.size();
   }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return 1;
+  }
   return 0;
 }
 
@@ -76,6 +82,9 @@ uint64_t getTransactionInputAmount(const TransactionInput& in) {
   }
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
     return boost::get<TransactionInputCommitmentTransfer>(in).amount;
+  }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return boost::get<TransactionInputSwapEscrow>(in).amount;
   }
   return 0;
 }
@@ -95,6 +104,9 @@ TransactionTypes::InputType getTransactionInputType(const TransactionInput& in) 
   }
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
     return TransactionTypes::InputType::CommitmentTransfer;
+  }
+  if (in.type() == typeid(TransactionInputSwapEscrow)) {
+    return TransactionTypes::InputType::SwapEscrow;
   }
   return TransactionTypes::InputType::Invalid;
 }
@@ -128,6 +140,9 @@ TransactionTypes::OutputType getTransactionOutputType(const TransactionOutputTar
   }
   if (out.type() == typeid(TransactionOutputOrder)) {
     return TransactionTypes::OutputType::Order;
+  }
+  if (out.type() == typeid(TransactionOutputSwapEscrow)) {
+    return TransactionTypes::OutputType::SwapEscrow;
   }
   return TransactionTypes::OutputType::Invalid;
 }
@@ -171,7 +186,8 @@ bool findOutputsToAccount(const CryptoNote::TransactionPrefix& transaction, cons
 
   for (const TransactionOutput& o : transaction.outputs) {
     assert(o.target.type() == typeid(KeyOutput) || o.target.type() == typeid(MultisignatureOutput) ||
-           o.target.type() == typeid(TransactionOutputCommitment));
+           o.target.type() == typeid(TransactionOutputCommitment) ||
+           o.target.type() == typeid(TransactionOutputSwapEscrow));
     if (o.target.type() == typeid(KeyOutput)) {
       if (is_out_to_acc(keys, boost::get<KeyOutput>(o.target), derivation, keyIndex)) {
         out.push_back(outputIndex);

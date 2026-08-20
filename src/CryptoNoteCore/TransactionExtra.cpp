@@ -189,6 +189,18 @@ namespace CryptoNote
           break;
         }
 
+        case TX_EXTRA_CD_BONUS_CLAIM:
+        {
+          TransactionExtraCdBonusClaim claim;
+          claim.inputIndex = read<uint8_t>(iss);
+          claim.claimedBonus = 0;
+          for (int i = 0; i < 8; ++i) {
+            claim.claimedBonus |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+          }
+          transactionExtraFields.push_back(claim);
+          break;
+        }
+
         case TX_EXTRA_BURN_RECEIPT:
         {
           TransactionExtraBurnReceipt burnReceipt;
@@ -565,6 +577,11 @@ namespace CryptoNote
     bool operator()(const TransactionExtraLegacyBondClaim &t)
     {
       return addLegacyBondClaimToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraCdBonusClaim &t)
+    {
+      return addCdBonusClaimToExtra(extra, t);
     }
 
     bool operator()(const TransactionExtraAmmSwap &t)
@@ -1400,6 +1417,54 @@ namespace CryptoNote
     claim.claimedInterest = 0;
     for (int i = 0; i < 8; ++i, ++pos) {
       claim.claimedInterest |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
+    }
+    return true;
+  }
+
+  bool addCdBonusClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCdBonusClaim& claim) {
+    tx_extra.push_back(TX_EXTRA_CD_BONUS_CLAIM);
+    tx_extra.push_back(claim.inputIndex);
+    uint64_t v = claim.claimedBonus;
+    for (int i = 0; i < 8; ++i) {
+      tx_extra.push_back(static_cast<uint8_t>(v & 0xFF));
+      v >>= 8;
+    }
+    return true;
+  }
+
+  bool getCdBonusClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraCdBonusClaim& claim) {
+    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_CD_BONUS_CLAIM) {
+      return false;
+    }
+    size_t pos = 1;
+    if (pos + 9 > tx_extra.size()) return false;
+    claim.inputIndex = tx_extra[pos++];
+    claim.claimedBonus = 0;
+    for (int i = 0; i < 8; ++i, ++pos) {
+      claim.claimedBonus |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
+    }
+    return true;
+  }
+
+  bool getCdBonusClaims(const Transaction& tx,
+                        std::map<uint32_t, uint64_t>& bonusByInput,
+                        uint64_t& totalBonus) {
+    bonusByInput.clear();
+    totalBonus = 0;
+    std::vector<TransactionExtraField> txExtraFields;
+    if (!parseTransactionExtra(tx.extra, txExtraFields)) {
+      return false;
+    }
+    for (const auto& field : txExtraFields) {
+      if (field.type() != typeid(TransactionExtraCdBonusClaim)) continue;
+      const auto& bc = boost::get<TransactionExtraCdBonusClaim>(field);
+      if (bc.inputIndex >= tx.inputs.size()) return false;
+      if (tx.inputs[bc.inputIndex].type() != typeid(TransactionInputCommitmentSpend)) return false;
+      if (bonusByInput.count(bc.inputIndex)) return false;
+      if (bc.claimedBonus == 0) continue;
+      if (bc.claimedBonus > UINT64_MAX - totalBonus) return false;
+      bonusByInput[bc.inputIndex] = bc.claimedBonus;
+      totalBonus += bc.claimedBonus;
     }
     return true;
   }

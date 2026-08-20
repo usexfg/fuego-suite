@@ -74,7 +74,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 10  // v10: treasury splits, 1:1 pool seed
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 11  // v11: per-epoch bonus weighted sums (v11 pre-state)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -302,6 +302,19 @@ public:
       } catch (std::exception&) {
         if (s.type() == ISerializer::INPUT) {
           m_bs.m_limitDeposits.clear();
+        } else {
+          throw;
+        }
+      }
+
+      // v11+: per-epoch tier-weighted CD creation sums (BV bonus denominator).
+      // Appended at the end so pre-v11 caches rebuild (cache version bumped);
+      // the replay recomputes these deterministically.
+      try {
+        s(m_bs.m_bonusWeightedByEpoch, "bonus_weighted_by_epoch");
+      } catch (std::exception&) {
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_bonusWeightedByEpoch.clear();
         } else {
           throw;
         }
@@ -857,6 +870,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_bootstrapRepaymentVault = 0;
     m_bonusVaultBalance = 0;
     m_bonusVaultPendingXfg = 0;
+    m_bonusWeightedByEpoch.clear();
     m_swfBurnedXfgPendingHeat = 0;
     m_swfHeatBalance = 0;
     m_treasuryHeatReserve = 0;
@@ -2381,6 +2395,16 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
 
         ++inputIndex;
       }
+      else if (txin.type() == typeid(TransactionInputSwapEscrow))
+      {
+        if (!validateSwapEscrowInput(::boost::get<TransactionInputSwapEscrow>(txin), transactionHash, tx_prefix_hash, tx.signatures[inputIndex]))
+        {
+          logger(DEBUGGING, BRIGHT_WHITE) << "Failed to check swap escrow input for tx " << transactionHash;
+          return false;
+        }
+
+        ++inputIndex;
+      }
       else if (txin.type() == typeid(TransactionInputCommitmentSpend))
       {
         const TransactionInputCommitmentSpend& cin = boost::get<TransactionInputCommitmentSpend>(txin);
@@ -2706,15 +2730,30 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // Pre-v12 blocks keep the ORIGINAL max-across-ring cap (resync safety —
     // the tightened cap must not re-reject historical claims).
     uint64_t maxInterest = 0;
+    uint64_t maxBase = 0;  // v11+: pool-backed base portion
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11) {
-      // Youngest member's accrual bounds the claim. A term-0 / HEAT_TERM
-      // youngest member has NO CD entitlement (plain HEAT or a mint output) —
-      // term-0 spends cannot claim CD yield.
+      // v11+: base interest and BV-backed bonus are validated separately.
+      // Base accrues from the CD yield pool (no loyalty multiplier — the
+      // bonus moved to the Bonus Vault); the bonus is the pro-rata share of
+      // realized BV inflows, capped by the vault balance.
       if (youngestRingMemberTerm > 0 && currentHeight > youngestRingMemberHeight) {
-        // isLegacyBond=false keeps the CD rate track and the loyalty bonus.
-        maxInterest = m_currency.calculateCdInterest(
+        maxBase = m_currency.calculateCdInterest(
             txin.amount, youngestRingMemberHeight, currentHeight,
-            m_commitmentIndex, false, youngestRingMemberTerm, youngestRingMemberRolled);
+            m_commitmentIndex, false, youngestRingMemberTerm,
+            youngestRingMemberRolled, /*includeLoyaltyBonus=*/false);
+        uint64_t maxBonus = m_currency.calculateCdBonus(
+            txin.amount, youngestRingMemberHeight, currentHeight,
+            m_commitmentIndex, youngestRingMemberTerm);
+        // Effective BV backing = min(counter, vault UTXOs). Pre-V11 counter
+        // entries were never minted as UTXOs, so the vault partition is the
+        // binding constraint at (and shortly after) V11 activation.
+        uint64_t bvBacking = std::min(m_bonusVaultBalance,
+            m_vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT));
+        if (maxBonus > bvBacking) {
+          maxBonus = bvBacking;
+        }
+        maxInterest = (maxBase > UINT64_MAX - maxBonus)
+            ? UINT64_MAX : (maxBase + maxBonus);
       } else {
         maxInterest = 0;
       }
@@ -2737,15 +2776,35 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
             txin.amount, youngestRingMemberHeight, currentHeight, m_commitmentIndex);
       }
     }
-    // Also capped by available fee pool balance
-    if (maxInterest > m_feePoolBalance) {
-      maxInterest = m_feePoolBalance;
-    }
-    if (txin.claimedInterest > maxInterest) {
-      logger(INFO) << "CommitmentSpend: claimedInterest " << txin.claimedInterest
-                   << " exceeds max " << maxInterest
-                   << " (youngest ring member at height " << youngestRingMemberHeight << ")";
-      return false;
+    // Fee pool cap. Pre-v11: the whole claim is pool-backed. v11+: only the
+    // base portion (maxBase) is pool-backed — the bonus portion is already
+    // BV-capped inside maxBonus — so the pool cap applies to the derived
+    // base claim. The block-level F-001 loop additionally aggregates bonus
+    // claims against the BV balance.
+    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11) {
+      uint64_t baseClaimed = (txin.claimedInterest <= maxBase)
+          ? txin.claimedInterest : maxBase;
+      if (baseClaimed > m_feePoolBalance) {
+        logger(INFO) << "CommitmentSpend: base claim " << baseClaimed
+                     << " exceeds fee pool " << m_feePoolBalance;
+        return false;
+      }
+      if (txin.claimedInterest > maxInterest) {
+        logger(INFO) << "CommitmentSpend: claimedInterest " << txin.claimedInterest
+                     << " exceeds max " << maxInterest
+                     << " (youngest ring member at height " << youngestRingMemberHeight << ")";
+        return false;
+      }
+    } else {
+      if (maxInterest > m_feePoolBalance) {
+        maxInterest = m_feePoolBalance;
+      }
+      if (txin.claimedInterest > maxInterest) {
+        logger(INFO) << "CommitmentSpend: claimedInterest " << txin.claimedInterest
+                     << " exceeds max " << maxInterest
+                     << " (youngest ring member at height " << youngestRingMemberHeight << ")";
+        return false;
+      }
     }
   }
 
@@ -2852,8 +2911,20 @@ uint64_t CryptoNote::Blockchain::get_adjusted_time() {
   return time(NULL);
 }
 
-bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {
-  for (TransactionOutput out : tx.outputs) {
+void CryptoNote::Blockchain::mintVaultChangeUtxo(const VaultUtxoSet::SpendResult& spendResult,
+                                                 VaultPartition partition, AssetType asset,
+                                                 uint32_t height, const Crypto::Hash& txHash) {
+  if (spendResult.changeAmount == 0) return;
+  uint64_t changeIdx = (uint64_t(height) << 32) | (++m_vaultUtxoCounter);
+  m_vault.addUtxo(changeIdx, spendResult.changeAmount, asset, partition,
+                  txHash, m_vaultKeys.viewPub);
+  logger(DEBUGGING) << "Vault change: +" << spendResult.changeAmount
+                    << (asset == AssetType::HEAT ? " HEAT" : " XFG") << " → "
+                    << vaultPartitionName(partition)
+                    << " (surplus of spent UTXO " << spendResult.changeSourceIndex << ")";
+}
+
+bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {  for (TransactionOutput out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       // v11+: commitment-output terms must be one of the recognized classes —
       // zero (plain HEAT), a CD term within [min, max], HEAT_TERM (mint), or a
@@ -2876,6 +2947,19 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
         if (!validTerm) {
           logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
               << " commitment output has invalid term: " << term;
+          return false;
+        }
+        // v11+ deposit gate: no new finite-term HEAT CDs while the CD yield
+        // pool has no backing (fee pool empty). Guarantees claims are payable
+        // at deposit time and gives the pool a head start of fee revenue
+        // before the first CD exists — the empty-pool claim scenario cannot
+        // arise at cold start. Fee-pool state is pre-block here, so validation
+        // is deterministic across nodes.
+        if (term >= m_currency.depositMinTerm() && term <= m_currency.depositMaxTerm() &&
+            m_feePoolBalance == 0) {
+          logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
+              << " CD deposit rejected (v11 gate): CD yield pool has no backing yet — "
+              << "wait for epoch fee revenue to replenish it";
           return false;
         }
       }
@@ -3246,6 +3330,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     // Block-level aggregate CD-interest cap: all claims in a block share the
     // pre-block fee pool and vault balances; the sum must fit, not each tx alone.
     uint64_t blockClaimedInterest = 0;
+    uint64_t blockClaimedBonus = 0;  // v11+: BV-backed bonus aggregate
     struct BlockHashLess {
       bool operator()(const Crypto::Hash& left, const Crypto::Hash& right) const {
         return memcmp(left.data, right.data, sizeof(left.data)) < 0;
@@ -3860,6 +3945,37 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
               << " exceeds vault " << vaultAvailable;
         } else {
           blockClaimedInterest += txClaimedInterest;
+        }
+      }
+    }
+
+    // v11+: BV-backed bonus aggregate cap. The bonus portion of a claim is
+    // declared explicitly via CdBonusClaim extras and drawn from the
+    // BONUS_VAULT partition; the per-tx and per-block sums must fit the
+    // PRE-block effective BV backing — min(counter, vault UTXOs) — since
+    // pre-V11 counter entries were never minted as vault UTXOs.
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      uint64_t bvBacking = std::min(m_bonusVaultBalance,
+          m_vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT));
+      std::map<uint32_t, uint64_t> bonusByInput;
+      uint64_t txClaimedBonus = 0;
+      if (!getCdBonusClaims(transactions[i], bonusByInput, txClaimedBonus)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+            << " malformed CD bonus claim extra";
+      } else if (txClaimedBonus > 0) {
+        if (txClaimedBonus > bvBacking) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " aggregate CD bonus " << txClaimedBonus
+              << " exceeds bonus vault backing " << bvBacking;
+        } else if (blockClaimedBonus > bvBacking - txClaimedBonus) {
+          isTransactionValid = false;
+          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " block CD bonus " << (blockClaimedBonus + txClaimedBonus)
+              << " exceeds bonus vault backing " << bvBacking;
+        } else {
+          blockClaimedBonus += txClaimedBonus;
         }
       }
     }
@@ -5263,6 +5379,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     // Pre-v12: raw XFG counter (legacy behavior).
     if (bonusVaultShare > 0) {
       if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+        uint64_t epochBonusHeatTotal = 0;
         uint64_t bonusHeat = 0;
         if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
           uint64_t poolRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
@@ -5277,6 +5394,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
             return false;
           }
           m_bonusVaultBalance += bonusHeat;
+          epochBonusHeatTotal += bonusHeat;
           uint64_t efShare = (bonusVaultShare * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
           uint64_t swfShare = (bonusVaultShare * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
           m_bankingIndex.addForeverDeposit(efShare, newHeight);
@@ -5310,6 +5428,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                 return false;
               }
               m_bonusVaultBalance += deferredHeat;
+              epochBonusHeatTotal += deferredHeat;
               uint64_t efShare = (m_bonusVaultPendingXfg * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
               uint64_t swfShare = (m_bonusVaultPendingXfg * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
               m_bankingIndex.addForeverDeposit(efShare, newHeight);
@@ -5325,6 +5444,29 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                            << " HEAT from " << (efShare + swfShare) << " XFG burned";
             }
           }
+        }
+        // v11+: BV-backed bonuses — mint the epoch's realized BV inflow as a
+        // real BONUS_VAULT UTXO and record the bonus epoch rate with the
+        // rolling tier-weighted denominator. Claims draw the bonus from the
+        // vault partition; total payouts can never exceed inflows.
+        if (epochBonusHeatTotal > 0) {
+          uint64_t weightedBase = 0;
+          size_t windowEpochs = static_cast<size_t>(CryptoNote::parameters::BONUS_WEIGHTED_WINDOW_EPOCHS);
+          size_t windowStart = (m_bonusWeightedByEpoch.size() > windowEpochs)
+              ? (m_bonusWeightedByEpoch.size() - windowEpochs) : 0;
+          for (size_t e = windowStart; e < m_bonusWeightedByEpoch.size(); ++e) {
+            uint64_t v = m_bonusWeightedByEpoch[e];
+            if (weightedBase > UINT64_MAX - v) { weightedBase = UINT64_MAX; break; }
+            weightedBase += v;
+          }
+          m_commitmentIndex.recordBonusEpochRate(epochNumber, epochBonusHeatTotal, weightedBase);
+          uint64_t bvI = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
+          m_vault.addUtxo(bvI, epochBonusHeatTotal, AssetType::HEAT,
+                          VaultPartition::BONUS_VAULT, blockHash,
+                          m_vaultKeys.viewPub);
+          logger(INFO) << "BV-backed bonus (epoch " << epochNumber << "): +"
+                       << epochBonusHeatTotal << " HEAT UTXO, weightedBase="
+                       << weightedBase;
         }
       } else {
         if (m_bonusVaultBalance > UINT64_MAX - bonusVaultShare) {
@@ -5379,7 +5521,8 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     m_totalSwapFeesCollected += epochSwapFees;
 
     // Route atomic swap fee treasury share to GENERAL_RESERVE (counter XFG).
-    // At epoch: 80% burned → HEAT → CD_APY_POOL, 20% stays as reserve.
+    // Pre-V11: at each epoch 80% of the counter was converted to HEAT and
+    // minted into CD_APY_POOL (XFG burned 50/50), leaving 20% as reserve.
     if (treasuryShare > 0) {
       if (m_treasuryCounterXFG > UINT64_MAX - treasuryShare) {
         logger(ERROR, BRIGHT_RED) << "Treasury counter XFG overflow detected";
@@ -5388,10 +5531,13 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       m_treasuryCounterXFG += treasuryShare;
     }
 
-    // At every epoch: convert 80% of GENERAL_RESERVE counter XFG → HEAT → CD_APY_POOL UTXOs.
-    // The consumed XFG is burned: 50% → Eternal Flame, 50% → SWF burn credits.
-    // 20% → LP_RESERVE → Hearth AMM pool.
-    if (m_treasuryCounterXFG > 0) {
+    // Pre-V11 legacy conversion: 80% of GENERAL_RESERVE counter XFG → HEAT →
+    // CD_APY_POOL UTXOs, XFG burned 50/50 (EF/SWF).
+    // V11+: RETIRED — the full 20% treasury share stays as XFG for the
+    // Treasury LP Manager's ratio-paired LP position (paired with the HEAT
+    // leg from mint premiums + donations). The CD pool keeps only its direct
+    // sources (69% swap share conversion + Hearth 70% flat fees).
+    if (block.majorVersion < BLOCK_MAJOR_VERSION_11 && m_treasuryCounterXFG > 0) {
       uint64_t convertAmount = (m_treasuryCounterXFG * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
       if (convertAmount > 0) {
         uint64_t heatConverted = convertAmount;
@@ -5823,6 +5969,8 @@ bool CryptoNote::Blockchain::withdrawTreasuryLp(uint64_t sharesToBurn) {
     return false;
   }
   auto spendResult = m_vault.spendUtxos(VaultPartition::LP_RESERVE, AssetType::XFG, xfgOut);
+  mintVaultChangeUtxo(spendResult, VaultPartition::LP_RESERVE, AssetType::XFG,
+                      getCurrentBlockchainHeight(), Crypto::Hash{});
 
   m_ammPool.totalLpShares -= sharesToBurn;
   m_ammPool.reserveXfg    -= xfgOut;
@@ -5957,6 +6105,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_totalSwapFeesCollected -= contribution;
       m_commitmentIndex.popEpochFeeRate();
       m_commitmentIndex.popLegacyEpochFeeRate();
+      m_commitmentIndex.popBonusEpochRate();
       
       // Reverse treasury distribution. treasuryShare is routed to
       // m_treasuryCounterXFG, not m_treasuryBalance — reverse the right counter.
@@ -6016,6 +6165,10 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       << "popBlock: epoch snapshot records evicted before height "
       << poppedHeight << " — consensus state may diverge (reorg deeper than rollback history)";
   }
+
+  // Remove vault UTXOs created by the popped block at ANY height (epoch-boundary
+  // mints and W-3 claim change UTXOs both index above the popped height).
+  m_vault.removeAboveIndex(uint64_t(poppedHeight) << 32);
 
   // Restore orderbook state if the popped block was v11+
   {
@@ -6120,6 +6273,16 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         return false;
       }
     }
+      else if (transaction.tx.inputs[i].type() == typeid(TransactionInputSwapEscrow))
+      {
+        auto result = m_indexManager.spentKeys().insert(std::make_pair(::boost::get<TransactionInputSwapEscrow>(transaction.tx.inputs[i]).keyImage, block.height));
+        if (!result.second)
+        {
+          logger(ERROR, BRIGHT_RED) << "Double spending swap escrow transaction was pushed to blockchain.";
+          m_indexManager.transactionMap().erase(transactionHash);
+          return false;
+        }
+      }
   }
 
   // Vault consensus gate: reject unauthorized vault spends
@@ -6151,11 +6314,63 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     }
   }
 
-  for (const auto& inv : transaction.tx.inputs) {
+  // v11+: explicit BV-backed bonus attribution per CommitmentSpend input.
+  // Validation already enforced structure and aggregate caps; re-derive here
+  // for the partition draws (defense-in-depth).
+  std::map<uint32_t, uint64_t> bonusByInput;
+  if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    uint64_t txClaimedBonus = 0;
+    if (!getCdBonusClaims(transaction.tx, bonusByInput, txClaimedBonus)) {
+      logger(ERROR, BRIGHT_RED) << "Malformed CD bonus claims at connect";
+      m_indexManager.transactionMap().erase(transactionHash);
+      return false;
+    }
+  }
+
+  VaultSpendRecord vaultSpendRecord;
+  for (size_t inputIndex = 0; inputIndex < transaction.tx.inputs.size(); ++inputIndex) {
+    const auto& inv = transaction.tx.inputs[inputIndex];
     if (inv.type() == typeid(MultisignatureInput)) {
       const MultisignatureInput& in = ::boost::get<MultisignatureInput>(inv);
       auto& amountOutputs = m_indexManager.multisigOutputs()[in.amount];
       amountOutputs[in.outputIndex].isUsed = true;
+    } else if (inv.type() == typeid(TransactionInputSwapEscrow)) {
+      const TransactionInputSwapEscrow& in = ::boost::get<TransactionInputSwapEscrow>(inv);
+      // Mark the escrow output used via its funding-tx reference. Both
+      // claim and refund paths land here, so either spend invalidates the
+      // other regardless of key-image differences.
+      auto txIt = m_indexManager.transactionMap().find(in.escrowTxId);
+      if (txIt == m_indexManager.transactionMap().end()) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow spend references unknown funding tx on connect";
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+      auto amountIt = m_indexManager.swapEscrowOutputs().find(in.amount);
+      if (amountIt == m_indexManager.swapEscrowOutputs().end()) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow spend amount not indexed on connect";
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+      bool marked = false;
+      for (auto& usage : amountIt->second) {
+        if (usage.transactionIndex.block == txIt->second.block &&
+            usage.transactionIndex.transaction == txIt->second.transaction &&
+            usage.outputIndex == in.escrowOutputIndex) {
+          if (usage.isUsed) {
+            logger(ERROR, BRIGHT_RED) << "Swap escrow output double-spent on connect";
+            m_indexManager.transactionMap().erase(transactionHash);
+            return false;
+          }
+          usage.isUsed = true;
+          marked = true;
+          break;
+        }
+      }
+      if (!marked) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow output usage entry missing on connect";
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
     } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(inv);
       auto result = m_indexManager.spentKeys().insert(std::make_pair(cin.keyImage, block.height));
@@ -6172,28 +6387,63 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         m_heatOnDeposit -= cin.amount;
       }
       if (cin.claimedInterest > 0) {
-        uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
-        uint64_t effectiveCap = std::min(m_feePoolBalance, vaultAvailable);
-        if (cin.claimedInterest <= effectiveCap) {
-          auto spendResult = m_vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, cin.claimedInterest);
-          if (spendResult.amountSpent == cin.claimedInterest) {
-            m_vaultSpentByTx[transactionHash] = std::move(spendResult.spentIndices);
+        // v11+: split the claim — the explicit bonus portion draws from
+        // BONUS_VAULT, the remainder (base) from CD_APY_POOL.
+        uint64_t bonusForInput = 0;
+        auto bIt = bonusByInput.find(static_cast<uint32_t>(inputIndex));
+        if (bIt != bonusByInput.end()) bonusForInput = bIt->second;
+        uint64_t baseClaim = (cin.claimedInterest > bonusForInput)
+            ? (cin.claimedInterest - bonusForInput) : 0;
+
+        if (baseClaim > 0) {
+          uint64_t vaultAvailable = m_vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT);
+          uint64_t effectiveCap = std::min(m_feePoolBalance, vaultAvailable);
+          if (baseClaim <= effectiveCap) {
+            auto spendResult = m_vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, baseClaim);
+            if (spendResult.amountSpent == baseClaim) {
+              vaultSpendRecord.cdPoolIndices = std::move(spendResult.spentIndices);
+            } else {
+              logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
+                  << baseClaim << " but could only spend " << spendResult.amountSpent;
+            }
+            // W-3: return the overshoot surplus to the partition as change.
+            mintVaultChangeUtxo(spendResult, VaultPartition::CD_APY_POOL, AssetType::HEAT,
+                                block.height, transactionHash);
+            m_feePoolBalance -= baseClaim;
           } else {
-            logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
-                << cin.claimedInterest << " but could only spend " << spendResult.amountSpent;
+            // Defense-in-depth: the per-transaction aggregate fee-pool cap in the
+            // block-validation loop (F-001 fix) guarantees this branch is
+            // unreachable for accepted blocks. If it is ever hit the pool
+            // accounting is inconsistent — log loudly instead of silently leaving
+            // unbacked interest minted into the outputs.
+            logger(ERROR, BRIGHT_RED) << "Fee-pool invariant violated: CD claimedInterest "
+                << cin.claimedInterest << " exceeds pool " << m_feePoolBalance
+                << " at connect for tx " << transactionHash;
           }
-          m_feePoolBalance -= cin.claimedInterest;
-          m_totalCdInterestPaid += cin.claimedInterest;
-        } else {
-          // Defense-in-depth: the per-transaction aggregate fee-pool cap in the
-          // block-validation loop (F-001 fix) guarantees this branch is
-          // unreachable for accepted blocks. If it is ever hit the pool
-          // accounting is inconsistent — log loudly instead of silently leaving
-          // unbacked interest minted into the outputs.
-          logger(ERROR, BRIGHT_RED) << "Fee-pool invariant violated: CD claimedInterest "
-              << cin.claimedInterest << " exceeds pool " << m_feePoolBalance
-              << " at connect for tx " << transactionHash;
         }
+
+        if (bonusForInput > 0) {
+          uint64_t bvAvailable = m_vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT);
+          if (bonusForInput <= bvAvailable && bonusForInput <= m_bonusVaultBalance) {
+            auto bonusSpend = m_vault.spendUtxos(VaultPartition::BONUS_VAULT, AssetType::HEAT, bonusForInput);
+            if (bonusSpend.amountSpent == bonusForInput) {
+              vaultSpendRecord.bonusVaultIndices = std::move(bonusSpend.spentIndices);
+            } else {
+              logger(ERROR, BRIGHT_RED) << "Vault BONUS_VAULT spend shortfall: needed "
+                  << bonusForInput << " but could only spend " << bonusSpend.amountSpent;
+            }
+            // W-3: return the overshoot surplus to the partition as change.
+            mintVaultChangeUtxo(bonusSpend, VaultPartition::BONUS_VAULT, AssetType::HEAT,
+                                block.height, transactionHash);
+            m_bonusVaultBalance -= bonusForInput;
+          } else {
+            logger(ERROR, BRIGHT_RED) << "Bonus-vault invariant violated: CD bonus "
+                << bonusForInput << " exceeds vault " << bvAvailable
+                << " or counter " << m_bonusVaultBalance
+                << " at connect for tx " << transactionHash;
+          }
+        }
+        m_totalCdInterestPaid += cin.claimedInterest;
       }
     } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(inv);
@@ -6207,6 +6457,10 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     }
   }
 
+  if (!vaultSpendRecord.cdPoolIndices.empty() || !vaultSpendRecord.bonusVaultIndices.empty()) {
+    m_vaultSpentByTx[transactionHash] = std::move(vaultSpendRecord);
+  }
+
   transaction.m_global_output_indexes.resize(transaction.tx.outputs.size());
   for (uint16_t output = 0; output < transaction.tx.outputs.size(); ++output) {
     if (transaction.tx.outputs[output].target.type() == typeid(KeyOutput)) {
@@ -6217,6 +6471,11 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       auto& amountOutputs = m_indexManager.multisigOutputs()[transaction.tx.outputs[output].amount];
       transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
       MultisignatureOutputUsage outputUsage = { transactionIndex, output, false };
+      amountOutputs.push_back(outputUsage);
+    } else if (transaction.tx.outputs[output].target.type() == typeid(TransactionOutputSwapEscrow)) {
+      auto& amountOutputs = m_indexManager.swapEscrowOutputs()[transaction.tx.outputs[output].amount];
+      transaction.m_global_output_indexes[output] = static_cast<uint32_t>(amountOutputs.size());
+      SwapEscrowOutputUsage outputUsage = { transactionIndex, output, false };
       amountOutputs.push_back(outputUsage);
     } else if (transaction.tx.outputs[output].target.type() == typeid(TransactionOutputCommitment)) {
       const auto& commitOut = ::boost::get<TransactionOutputCommitment>(transaction.tx.outputs[output].target);
@@ -6252,6 +6511,22 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
         if (m_heatOnDeposit <= UINT64_MAX - transaction.tx.outputs[output].amount)
           m_heatOnDeposit += transaction.tx.outputs[output].amount;
+        // v11+: tier-weighted creation sum for the BV bonus denominator.
+        uint64_t weight = m_currency.loyaltyTierWeightPct(commitOut.term);
+        uint64_t weighted = static_cast<uint64_t>(
+            ((uint128_t)transaction.tx.outputs[output].amount * weight) / 100);
+        uint64_t epochDuration = m_currency.isTestnet()
+            ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+            : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+        uint64_t epoch = (block.height > 0) ? (block.height / epochDuration) : 0;
+        if (m_bonusWeightedByEpoch.size() <= epoch) {
+          m_bonusWeightedByEpoch.resize(epoch + 1, 0);
+        }
+        if (m_bonusWeightedByEpoch[epoch] <= UINT64_MAX - weighted) {
+          m_bonusWeightedByEpoch[epoch] += weighted;
+        } else {
+          m_bonusWeightedByEpoch[epoch] = UINT64_MAX;
+        }
       }
     }
   }
@@ -6571,6 +6846,16 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
 void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, const Crypto::Hash& transactionHash,
                                             uint32_t height, uint8_t majorVersion) {
   TxIndex transactionIndex = m_indexManager.transactionMap().at(transactionHash);
+
+  // v11+: re-derive the explicit bonus attribution for split reversal.
+  std::map<uint32_t, uint64_t> bonusByInput;
+  if (majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    uint64_t txClaimedBonus = 0;
+    if (!getCdBonusClaims(transaction, bonusByInput, txClaimedBonus)) {
+      logger(ERROR, BRIGHT_RED) << "Blockchain consistency broken - cannot parse CD bonus claims on pop for tx " << transactionHash;
+    }
+  }
+
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
     if (output.target.type() == typeid(KeyOutput)) {
@@ -6639,6 +6924,42 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       if (amountOutputs->second.empty()) {
         m_indexManager.multisigOutputs().erase(amountOutputs);
       }
+    } else if (output.target.type() == typeid(TransactionOutputSwapEscrow)) {
+      auto amountOutputs = m_indexManager.swapEscrowOutputs().find(output.amount);
+      if (amountOutputs == m_indexManager.swapEscrowOutputs().end()) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - cannot find specific amount in swap escrow outputs map.";
+        continue;
+      }
+
+      if (amountOutputs->second.empty()) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - swap escrow output array for specific amount is empty.";
+        continue;
+      }
+
+      if (amountOutputs->second.back().isUsed) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - attempting to remove used swap escrow output.";
+        continue;
+      }
+
+      if (amountOutputs->second.back().transactionIndex.block != transactionIndex.block || amountOutputs->second.back().transactionIndex.transaction != transactionIndex.transaction) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - invalid swap escrow transaction index.";
+        continue;
+      }
+
+      if (amountOutputs->second.back().outputIndex != transaction.outputs.size() - 1 - outputIndex) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - invalid swap escrow output index.";
+        continue;
+      }
+
+      amountOutputs->second.pop_back();
+      if (amountOutputs->second.empty()) {
+        m_indexManager.swapEscrowOutputs().erase(amountOutputs);
+      }
     } else if (output.target.type() == typeid(TransactionOutputCommitment)) {
       auto amountOutputs = m_indexManager.commitmentOutputs().find(output.amount);
       if (amountOutputs == m_indexManager.commitmentOutputs().end()) {
@@ -6691,12 +7012,26 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
             commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
             commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
           if (m_heatOnDeposit >= output.amount) m_heatOnDeposit -= output.amount;
+          // Reverse the v11+ tier-weighted creation sum for the BV denominator.
+          uint64_t weight = m_currency.loyaltyTierWeightPct(commitOut.term);
+          uint64_t weighted = static_cast<uint64_t>(
+              ((uint128_t)output.amount * weight) / 100);
+          uint64_t epochDuration = m_currency.isTestnet()
+              ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+              : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+          uint64_t epoch = (transactionIndex.block > 0)
+              ? (transactionIndex.block / epochDuration) : 0;
+          if (epoch < m_bonusWeightedByEpoch.size()) {
+            m_bonusWeightedByEpoch[epoch] = (m_bonusWeightedByEpoch[epoch] >= weighted)
+                ? (m_bonusWeightedByEpoch[epoch] - weighted) : 0;
+          }
         }
       }
     }
   }
 
-  for (auto& input : transaction.inputs) {
+  for (size_t inputIndex = 0; inputIndex < transaction.inputs.size(); ++inputIndex) {
+    const auto& input = transaction.inputs[inputIndex];
     if (input.type() == typeid(KeyInput)) {
       size_t count = m_indexManager.spentKeys().erase(::boost::get<KeyInput>(input).keyImage);
       if (count != 1) {
@@ -6712,6 +7047,28 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       }
 
       amountOutputs[in.outputIndex].isUsed = false;
+    } else if (input.type() == typeid(TransactionInputSwapEscrow)) {
+      const TransactionInputSwapEscrow& in = ::boost::get<TransactionInputSwapEscrow>(input);
+      size_t count = m_indexManager.spentKeys().erase(in.keyImage);
+      if (count != 1) {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - cannot find spent swap escrow key.";
+      }
+      auto txIt = m_indexManager.transactionMap().find(in.escrowTxId);
+      auto amountIt = m_indexManager.swapEscrowOutputs().find(in.amount);
+      if (txIt != m_indexManager.transactionMap().end() && amountIt != m_indexManager.swapEscrowOutputs().end()) {
+        for (auto& usage : amountIt->second) {
+          if (usage.transactionIndex.block == txIt->second.block &&
+              usage.transactionIndex.transaction == txIt->second.transaction &&
+              usage.outputIndex == in.escrowOutputIndex) {
+            usage.isUsed = false;
+            break;
+          }
+        }
+      } else {
+        logger(ERROR, BRIGHT_RED) <<
+          "Blockchain consistency broken - cannot unmark swap escrow output usage.";
+      }
     } else if (input.type() == typeid(TransactionInputCommitmentSpend)) {
       const auto& cin = ::boost::get<TransactionInputCommitmentSpend>(input);
       size_t count = m_indexManager.spentKeys().erase(cin.keyImage);
@@ -6724,14 +7081,24 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       if (m_heatOnDeposit <= UINT64_MAX - cin.amount)
         m_heatOnDeposit += cin.amount;
       if (cin.claimedInterest > 0) {
-        if (m_feePoolBalance <= UINT64_MAX - cin.claimedInterest)
-          m_feePoolBalance += cin.claimedInterest;
+        // v11+: reverse the base/bonus split using the same explicit
+        // attribution as connect.
+        uint64_t bonusForInput = 0;
+        auto bIt = bonusByInput.find(static_cast<uint32_t>(inputIndex));
+        if (bIt != bonusByInput.end()) bonusForInput = bIt->second;
+        uint64_t baseClaim = (cin.claimedInterest > bonusForInput)
+            ? (cin.claimedInterest - bonusForInput) : 0;
+        if (m_feePoolBalance <= UINT64_MAX - baseClaim)
+          m_feePoolBalance += baseClaim;
+        if (m_bonusVaultBalance <= UINT64_MAX - bonusForInput)
+          m_bonusVaultBalance += bonusForInput;
         if (m_totalCdInterestPaid >= cin.claimedInterest) {
           m_totalCdInterestPaid -= cin.claimedInterest;
         }
         auto vaultIt = m_vaultSpentByTx.find(transactionHash);
         if (vaultIt != m_vaultSpentByTx.end()) {
-          m_vault.unSpendUtxos(vaultIt->second);
+          m_vault.unSpendUtxos(vaultIt->second.cdPoolIndices);
+          m_vault.unSpendUtxos(vaultIt->second.bonusVaultIndices);
           m_vaultSpentByTx.erase(vaultIt);
         }
       }
@@ -6968,7 +7335,102 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
 
 }
 
-bool CryptoNote::Blockchain::validateInput(const MultisignatureInput& input, const Crypto::Hash& transactionHash, const Crypto::Hash& transactionPrefixHash, const std::vector<Crypto::Signature>& transactionSignatures) {
+  bool CryptoNote::Blockchain::validateSwapEscrowInput(const TransactionInputSwapEscrow &input, const Crypto::Hash &transactionHash, const Crypto::Hash &transactionPrefixHash, const std::vector<Crypto::Signature> &transactionSignatures) {
+    (void)transactionHash;
+    if (input.mode > 1) {
+      logger(DEBUGGING) << "Swap escrow input with invalid mode";
+      return false;
+    }
+    if (transactionSignatures.size() != 1) {
+      logger(DEBUGGING) << "Swap escrow input must carry exactly one signature";
+      return false;
+    }
+
+    std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+
+    // Resolve the funding transaction and its output.
+    auto txIt = m_indexManager.transactionMap().find(input.escrowTxId);
+    if (txIt == m_indexManager.transactionMap().end()) {
+      logger(DEBUGGING) << "Swap escrow input references unknown funding tx";
+      return false;
+    }
+    const TransactionEntry& entry = transactionByIndex(txIt->second);
+    if (input.escrowOutputIndex >= entry.tx.outputs.size()) {
+      logger(DEBUGGING) << "Swap escrow input output index out of range";
+      return false;
+    }
+    const TransactionOutput& out = entry.tx.outputs[input.escrowOutputIndex];
+    if (out.target.type() != typeid(TransactionOutputSwapEscrow)) {
+      logger(DEBUGGING) << "Swap escrow input references a non-escrow output";
+      return false;
+    }
+    if (out.amount != input.amount) {
+      logger(DEBUGGING) << "Swap escrow input amount mismatch";
+      return false;
+    }
+    const TransactionOutputSwapEscrow& escrow = ::boost::get<TransactionOutputSwapEscrow>(out.target);
+
+    // The funding transaction must be mature (all its outputs unlockable).
+    if (!is_tx_spendtime_unlocked(entry.tx.unlockTime)) {
+      logger(DEBUGGING) << "Swap escrow funding tx is still locked";
+      return false;
+    }
+
+    // Double-spend: both claim and refund mark the same usage entry.
+    auto amountIt = m_indexManager.swapEscrowOutputs().find(input.amount);
+    if (amountIt == m_indexManager.swapEscrowOutputs().end()) {
+      logger(DEBUGGING) << "Swap escrow output not indexed";
+      return false;
+    }
+    bool foundUsage = false;
+    for (auto& usage : amountIt->second) {
+      if (usage.transactionIndex.block == txIt->second.block &&
+          usage.transactionIndex.transaction == txIt->second.transaction &&
+          usage.outputIndex == input.escrowOutputIndex) {
+        if (usage.isUsed) {
+          logger(DEBUGGING) << "Swap escrow output already spent";
+          return false;
+        }
+        foundUsage = true;
+        break;
+      }
+    }
+    if (!foundUsage) {
+      logger(DEBUGGING) << "Swap escrow output usage entry missing";
+      return false;
+    }
+
+    // Timeout gating: claim before, refund after.
+    const uint32_t currentHeight = getCurrentBlockchainHeight();
+    if (input.mode == 0) {
+      if (currentHeight >= escrow.refundTimeout) {
+        logger(DEBUGGING) << "Swap escrow claim after refund timeout";
+        return false;
+      }
+      // The claim signature is the completed MuSig2 adaptor aggregate over
+      // the deterministic claim tx prefix. The session challenge commits to
+      // R_agg + T and the partials use s_i = k_eff - c*a_i*x_i — the same
+      // convention as generate_signature — so the adapted aggregate is a
+      // standard Schnorr signature under the joint claim key.
+      if (!Crypto::check_signature(transactionPrefixHash, escrow.claimKey, transactionSignatures[0])) {
+        logger(DEBUGGING) << "Swap escrow claim signature invalid";
+        return false;
+      }
+    } else {
+      if (currentHeight < escrow.refundTimeout) {
+        logger(DEBUGGING) << "Swap escrow refund before refund timeout";
+        return false;
+      }
+      if (!Crypto::check_signature(transactionPrefixHash, escrow.refundKey, transactionSignatures[0])) {
+        logger(DEBUGGING) << "Swap escrow refund signature invalid";
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool CryptoNote::Blockchain::validateInput(const MultisignatureInput& input, const Crypto::Hash& transactionHash, const Crypto::Hash& transactionPrefixHash, const std::vector<Crypto::Signature>& transactionSignatures) {
   assert(input.signatureCount == transactionSignatures.size());
   MultisignatureOutputsContainer::const_iterator amountOutputs = m_indexManager.multisigOutputs().find(input.amount);
   if (amountOutputs == m_indexManager.multisigOutputs().end()) {

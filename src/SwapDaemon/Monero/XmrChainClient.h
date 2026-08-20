@@ -29,7 +29,20 @@ public:
     return m_rpc->getReserveProof(address, message, signature);
   }
 
+  // Compute the shared address from the two parties' per-swap XMR pubkeys.
+  bool computeSharedAddress(const SwapParams& params, std::string& out);
+
+  // The operator wallet's own primary XMR address (sweep destination).
+  std::string ownAddress() const;
+
 private:
+  // combined spend = own + peer share (verified against the published pubs)
+  // and combined view = own + peer view secrets.
+  bool combinedKeys(const SwapParams& params,
+                    std::vector<uint8_t>& combinedSpend,
+                    std::vector<uint8_t>& combinedView,
+                    std::string& error) const;
+
   std::unique_ptr<MoneroRpcClient> m_rpc;
   std::string m_spendKeyHex;
   std::string m_viewKeyHex;

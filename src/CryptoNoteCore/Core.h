@@ -159,6 +159,17 @@ namespace CryptoNote {
     void pause_mining() override;
     void update_block_template_and_resume_mining() override;
     Blockchain& get_blockchain_storage(){return m_blockchain;}
+    uint64_t getFeePoolBalance() override { return m_blockchain.getFeePoolBalance(); }
+    uint64_t getCdApyVaultBalance() override { return m_blockchain.getCdApyVaultBalance(); }
+    uint64_t getBonusVaultBalance() override { return m_blockchain.getBonusVaultBalance(); }
+    uint64_t getBonusVaultUtxoBalance() override { return m_blockchain.getBonusVaultUtxoBalance(); }
+    std::error_code calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                                     uint32_t currentHeight, uint64_t& outBonus,
+                                     uint32_t term = 0) override {
+      outBonus = m_currency.calculateCdBonus(amount, creationHeight, currentHeight,
+                                             m_blockchain.getCommitmentIndex(), term);
+      return {};
+    }
     //debug functions
     void print_blockchain(uint32_t start_index, uint32_t end_index);
     void print_blockchain_index();
@@ -205,7 +216,8 @@ namespace CryptoNote {
                                                   uint64_t& outInterest,
                                                   bool isLegacyBond = false,
                                                   uint32_t term = 0,
-                                                  bool autoRolled = false) override;
+                                                  bool autoRolled = false,
+                                                  bool includeLoyaltyBonus = true) override;
     virtual std::error_code getCommitmentEpochFeeRate(uint32_t epoch,
                                                        uint64_t& outFeeRate) override;
     virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;

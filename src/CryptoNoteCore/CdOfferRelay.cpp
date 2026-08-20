@@ -1,6 +1,7 @@
 #include "CdOfferRelay.h"
 #include "Core.h"
 #include "P2p/LevinProtocol.h"
+#include <cstdio>
 
 namespace CryptoNote {
 
@@ -40,7 +41,18 @@ void CdOfferRelay::cleanupThread() {
           }
         }
       }
-    } catch (...) {}
+      } catch (const std::exception& e) {
+        // Do not silently swallow: a persistent failure here (e.g. corrupted
+        // offer store) would otherwise be invisible. Log and continue; the
+        // next sweep retries.
+        static std::mutex logMutex;
+        std::lock_guard<std::mutex> lg(logMutex);
+        std::fprintf(stderr, "[CdOfferRelay] cleanup sweep error: %s\n", e.what());
+      } catch (...) {
+        static std::mutex logMutex;
+        std::lock_guard<std::mutex> lg(logMutex);
+        std::fprintf(stderr, "[CdOfferRelay] cleanup sweep unknown error\n");
+      }
 
     for (int i = 0; i < 30 && m_running; ++i) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -66,8 +78,9 @@ void CdOfferRelay::handleOfferMessage(const COMMAND_CD_OFFER::request& offer) {
 }
 
 void CdOfferRelay::handleCancelMessage(const COMMAND_CD_CANCEL::request& msg) {
+  // Cancel signature bound to offerId AND timestamp (anti-replay).
   Crypto::Hash cancelHash;
-  std::string cancelData = "cancel:" + msg.offerId;
+  std::string cancelData = "cancel:" + msg.offerId + ":" + std::to_string(msg.timestamp);
   cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
   if (!Crypto::check_signature(cancelHash, msg.makerPubKey, msg.signature)) return;
 
@@ -99,11 +112,12 @@ bool CdOfferRelay::submitOffer(const COMMAND_CD_OFFER::request& offer) {
   return true;
 }
 
-bool CdOfferRelay::cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey, const Crypto::Signature& sig) {
+bool CdOfferRelay::cancelOffer(const std::string& offerId, const Crypto::PublicKey& pubkey, const Crypto::Signature& sig, uint64_t timestamp) {
   COMMAND_CD_CANCEL::request msg;
   msg.offerId = offerId;
   msg.makerPubKey = pubkey;
   msg.signature = sig;
+  msg.timestamp = timestamp;
   handleCancelMessage(msg);
   if (m_p2pEndpoint) {
     auto buf = LevinProtocol::encode(msg);

@@ -272,7 +272,9 @@ std::string SwapStateMachine::serialize() const {
       reinterpret_cast<const uint8_t*>(&m_params.musig2.ourSecNonce),
       sizeof(Crypto::Musig2SecNonce));
   const bool needEnc = isNonZero(m_params.adaptorSecret) || isNonZero(m_params.ourSwapSecKey)
-      || m_params.ringOurRound1MaterialValid || musig2NonceLive;
+      || m_params.ringOurRound1MaterialValid || musig2NonceLive
+      || isNonZero(m_params.xmrSpendSec) || isNonZero(m_params.xmrViewSec)
+      || isNonZero(m_params.peerXmrSpendShare);
   if (needEnc && !hasEncryptionKey()) {
     // Refuse to write a record that would permanently drop live secrets.
     return "";
@@ -306,6 +308,7 @@ std::string SwapStateMachine::serialize() const {
 
   if (hasEncryptionKey()) {
     std::string adaptorHex, secKeyHex, ringNonceHex, musig2NonceHex;
+    std::string xmrSpendHex, xmrViewHex, xmrPeerShareHex;
     if (!packEncrypted(m_params.adaptorSecret, adaptorHex)) return "";
     if (!packEncrypted(m_params.ourSwapSecKey, secKeyHex)) return "";
     // ring nonce secret is an EllipticCurveScalar (32 bytes) — same size as SecretKey
@@ -317,15 +320,24 @@ std::string SwapStateMachine::serialize() const {
               reinterpret_cast<const uint8_t*>(&m_params.musig2.ourSecNonce),
               sizeof(Crypto::Musig2SecNonce), musig2NonceHex)) return "";
     }
+    if (!packEncrypted(m_params.xmrSpendSec, xmrSpendHex)) return "";
+    if (!packEncrypted(m_params.xmrViewSec, xmrViewHex)) return "";
+    if (!packEncrypted(m_params.peerXmrSpendShare, xmrPeerShareHex)) return "";
     root.insert("adaptorSecretEnc", adaptorHex);
     root.insert("ourSwapSecKeyEnc", secKeyHex);
     root.insert("ringOurRingNonceSecEnc", ringNonceHex);
     root.insert("musig2OurSecNonceEnc", musig2NonceHex);
+    root.insert("xmrSpendSecEnc", xmrSpendHex);
+    root.insert("xmrViewSecEnc", xmrViewHex);
+    root.insert("peerXmrSpendShareEnc", xmrPeerShareHex);
   } else {
     root.insert("adaptorSecretEnc", "");
     root.insert("ourSwapSecKeyEnc", "");
     root.insert("ringOurRingNonceSecEnc", "");
     root.insert("musig2OurSecNonceEnc", "");
+    root.insert("xmrSpendSecEnc", "");
+    root.insert("xmrViewSecEnc", "");
+    root.insert("peerXmrSpendShareEnc", "");
   }
 
   // Legacy fields (kept for backward compat in DB)
@@ -333,6 +345,17 @@ std::string SwapStateMachine::serialize() const {
   root.insert("bobXfgPubKey", Common::podToHex(m_params.bobXfgPubKey));
 
   root.insert("xfgTimeoutHeight", static_cast<int64_t>(m_params.xfgTimeoutHeight));
+  root.insert("escrowClaimSigHex", m_params.escrowClaimSigHex);
+  root.insert("xmrSpendPub", Common::podToHex(m_params.xmrSpendPub));
+  root.insert("xmrViewPub", Common::podToHex(m_params.xmrViewPub));
+  root.insert("peerXmrSpendPub", Common::podToHex(m_params.peerXmrSpendPub));
+  root.insert("peerXmrViewPub", Common::podToHex(m_params.peerXmrViewPub));
+  root.insert("peerXmrViewSec", Common::podToHex(m_params.peerXmrViewSec));
+  root.insert("xmrKeysGenerated", static_cast<int64_t>(m_params.xmrKeysGenerated ? 1 : 0));
+  root.insert("xmrKeysSent", static_cast<int64_t>(m_params.xmrKeysSent ? 1 : 0));
+  root.insert("peerXmrKeysReceived", static_cast<int64_t>(m_params.peerXmrKeysReceived ? 1 : 0));
+  root.insert("peerXmrShareReceived", static_cast<int64_t>(m_params.peerXmrShareReceived ? 1 : 0));
+  root.insert("xmrShareSent", static_cast<int64_t>(m_params.xmrShareSent ? 1 : 0));
   root.insert("ctrTimeoutBlock", static_cast<int64_t>(m_params.ctrTimeoutBlock));
 
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
@@ -464,6 +487,15 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   if (root.contains("ourSwapSecKeyEnc") && !root("ourSwapSecKeyEnc").getString().empty()) {
     decodeEncBlob(root("ourSwapSecKeyEnc").getString(), params.encSecKeyBlob);
   }
+  if (root.contains("xmrSpendSecEnc") && !root("xmrSpendSecEnc").getString().empty()) {
+    decodeEncBlob(root("xmrSpendSecEnc").getString(), params.encXmrSpendBlob);
+  }
+  if (root.contains("xmrViewSecEnc") && !root("xmrViewSecEnc").getString().empty()) {
+    decodeEncBlob(root("xmrViewSecEnc").getString(), params.encXmrViewBlob);
+  }
+  if (root.contains("peerXmrSpendShareEnc") && !root("peerXmrSpendShareEnc").getString().empty()) {
+    decodeEncBlob(root("peerXmrSpendShareEnc").getString(), params.encPeerXmrShareBlob);
+  }
   if (root.contains("ringOurRingNonceSecEnc") && !root("ringOurRingNonceSecEnc").getString().empty()) {
     decodeEncBlob(root("ringOurRingNonceSecEnc").getString(), params.encRingNonceBlob);
   }
@@ -478,6 +510,28 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     Common::podFromHex(root("bobXfgPubKey").getString(), params.bobXfgPubKey);
 
   params.xfgTimeoutHeight = static_cast<uint32_t>(root("xfgTimeoutHeight").getInteger());
+  if (root.contains("escrowClaimSigHex") && root("escrowClaimSigHex").isString())
+    params.escrowClaimSigHex = root("escrowClaimSigHex").getString();
+  if (root.contains("xmrSpendPub"))
+    Common::podFromHex(root("xmrSpendPub").getString(), params.xmrSpendPub);
+  if (root.contains("xmrViewPub"))
+    Common::podFromHex(root("xmrViewPub").getString(), params.xmrViewPub);
+  if (root.contains("peerXmrSpendPub"))
+    Common::podFromHex(root("peerXmrSpendPub").getString(), params.peerXmrSpendPub);
+  if (root.contains("peerXmrViewPub"))
+    Common::podFromHex(root("peerXmrViewPub").getString(), params.peerXmrViewPub);
+  if (root.contains("peerXmrViewSec"))
+    Common::podFromHex(root("peerXmrViewSec").getString(), params.peerXmrViewSec);
+  if (root.contains("xmrKeysGenerated"))
+    params.xmrKeysGenerated = root("xmrKeysGenerated").getInteger() != 0;
+  if (root.contains("xmrKeysSent"))
+    params.xmrKeysSent = root("xmrKeysSent").getInteger() != 0;
+  if (root.contains("peerXmrKeysReceived"))
+    params.peerXmrKeysReceived = root("peerXmrKeysReceived").getInteger() != 0;
+  if (root.contains("peerXmrShareReceived"))
+    params.peerXmrShareReceived = root("peerXmrShareReceived").getInteger() != 0;
+  if (root.contains("xmrShareSent"))
+    params.xmrShareSent = root("xmrShareSent").getInteger() != 0;
   params.ctrTimeoutBlock = static_cast<uint64_t>(root("ctrTimeoutBlock").getInteger());
 
   params.ctrLockTxId = root("ctrLockTxId").getString();
@@ -595,6 +649,15 @@ void SwapStateMachine::decryptStoredSecret() {
   }
   if (!m_params.encSecKeyBlob.empty() && unpack(m_params.encSecKeyBlob, m_params.ourSwapSecKey)) {
     m_params.encSecKeyBlob.clear();
+  }
+  if (!m_params.encXmrSpendBlob.empty() && unpack(m_params.encXmrSpendBlob, m_params.xmrSpendSec)) {
+    m_params.encXmrSpendBlob.clear();
+  }
+  if (!m_params.encXmrViewBlob.empty() && unpack(m_params.encXmrViewBlob, m_params.xmrViewSec)) {
+    m_params.encXmrViewBlob.clear();
+  }
+  if (!m_params.encPeerXmrShareBlob.empty() && unpack(m_params.encPeerXmrShareBlob, m_params.peerXmrSpendShare)) {
+    m_params.encPeerXmrShareBlob.clear();
   }
   if (!m_params.encRingNonceBlob.empty()) {
     Crypto::SecretKey ringNonceAsKey;

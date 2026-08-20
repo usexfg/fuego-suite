@@ -227,11 +227,25 @@ public:
     // isLegacyBond=true uses legacy bond fee rate track (50% CD share for bug-era deposits)
     // term=0 skips loyalty bonus check (conservative cap); pass actual term for payout
     // autoRolled=true compounds interest at the auto-roll boundary (doubled earning period)
+    // includeLoyaltyBonus=false (v11+) returns BASE interest only; the loyalty
+    // bonus is paid separately from the Bonus Vault via calculateCdBonus().
     uint64_t calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                   uint32_t currentHeight,
                                   const CommitmentIndex& commitmentIndex,
                                   bool isLegacyBond = false, uint32_t term = 0,
-                                  bool autoRolled = false) const;
+                                  bool autoRolled = false,
+                                  bool includeLoyaltyBonus = true) const;
+    // v11+: BV-backed loyalty bonus. Σ over locked epochs of
+    // bonusHeat_e × amount × tierWeight(term) / weightedBase_e — realized BV
+    // inflows only, so total payouts can never exceed the vault (no
+    // overpromising). Returns 0 pre-V11 (no bonus epoch rates recorded).
+    uint64_t calculateCdBonus(uint64_t amount, uint32_t creationHeight,
+                               uint32_t currentHeight,
+                               const CommitmentIndex& commitmentIndex,
+                               uint32_t term) const;
+    // Tier weight in percent for a CD term: 250/200/150/125 for the 72/36/18/6
+    // epoch tiers, 100 otherwise. Mirrors the loyalty multiplier mapping.
+    uint64_t loyaltyTierWeightPct(uint32_t term) const;
     uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;

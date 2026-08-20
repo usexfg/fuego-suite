@@ -4539,10 +4539,12 @@ bool simple_wallet::claim_cd(const std::vector<std::string>& args) {
     return false;
   }
 
-  if (deposit.term != CryptoNote::parameters::HEAT_TERM) {
-    fail_msg_writer() << "Deposit [" << deposit_id << "] is not a HEAT deposit. Use legacy_withdraw for XFG deposits.";
-    return false;
-  }
+  // Finite-term HEAT CDs earn fee-pool interest; HEAT_TERM (0xFFFFFFFF)
+  // outputs are mint/burn outputs with no APY (deposit architecture).
+  const bool earnsInterest =
+      deposit.term != CryptoNote::parameters::HEAT_TERM &&
+      deposit.term != CryptoNote::parameters::DEPOSIT_TERM_LP &&
+      deposit.term > 0;
 
   if (deposit.locked) {
     fail_msg_writer() << "Deposit is still locked. Unlock height: " << deposit.unlockHeight;
@@ -4554,16 +4556,49 @@ bool simple_wallet::claim_cd(const std::vector<std::string>& args) {
     return false;
   }
 
-  // Query interest estimate
+  // Query interest: pool-aware claim info (accrued vs what the pool can pay now)
   uint64_t interest = 0;
+  CryptoNote::INode::CdClaimInfo claimInfo;
   uint32_t currentHeight = m_node->getKnownBlockCount();
-  std::error_code ec = m_node->getCdInterest(deposit.amount, deposit.height, currentHeight, interest);
-  if (ec) interest = 0;
+  if (earnsInterest) {
+    std::error_code ec = m_node->getCdClaimInfo(deposit.amount, deposit.height, currentHeight,
+                                                claimInfo, deposit.term);
+    if (ec) {
+      std::error_code fallbackEc = m_node->getCdInterest(deposit.amount, deposit.height, currentHeight, interest);
+      if (fallbackEc) interest = 0;
+      claimInfo.formulaInterest = interest;
+      claimInfo.claimableInterest = interest;
+      claimInfo.poolInfoPresent = false;
+    } else {
+      interest = claimInfo.formulaInterest;
+    }
+  }
 
   success_msg_writer() << "Claim CD [" << deposit_id << "]:";
   success_msg_writer() << "  Principal: " << m_currency.formatAmount(deposit.amount) << " HEAT";
-  if (interest > 0) {
+  if (earnsInterest && interest > 0) {
     success_msg_writer() << "  Interest:  " << m_currency.formatAmount(interest) << " HEAT";
+    success_msg_writer() << "    *Estimate only — the protocol distributes realized fee revenue"
+                         << " (real yield, no printed interest); based on accrued epoch fee rates,"
+                         << " not a promise.";
+    if (claimInfo.poolInfoPresent && claimInfo.baseInterest > 0) {
+      success_msg_writer() << "    Base (CD yield pool): " << m_currency.formatAmount(claimInfo.baseInterest) << " HEAT";
+    }
+    if (claimInfo.poolInfoPresent && claimInfo.bonusInterest > 0) {
+      success_msg_writer() << "    Bonus (Bonus Vault, tier): " << m_currency.formatAmount(claimInfo.bonusInterest)
+                           << " HEAT (vault: " << m_currency.formatAmount(claimInfo.bonusVaultBalance) << ")";
+    }
+  }
+  if (earnsInterest && claimInfo.poolInfoPresent &&
+      claimInfo.claimableInterest < claimInfo.formulaInterest) {
+    warning_msg_writer() << "the CD yield pool cannot currently back your full accrued interest —"
+                         << " a rare event (pool drained by claims or an epoch with no fee revenue).";
+    warning_msg_writer() << "Withdrawing now would forfeit "
+                         << m_currency.formatAmount(claimInfo.formulaInterest - claimInfo.claimableInterest)
+                         << " HEAT of accrued interest. If you wait for the pool to replenish from"
+                         << " incoming swap fees, your CD will continue accruing and the remaining"
+                         << " interest will become claimable. Principal is never at risk.";
+    success_msg_writer() << "  Claimable now: " << m_currency.formatAmount(claimInfo.claimableInterest) << " HEAT";
   }
   success_msg_writer() << "  Total:     " << m_currency.formatAmount(deposit.amount + interest) << " HEAT";
 

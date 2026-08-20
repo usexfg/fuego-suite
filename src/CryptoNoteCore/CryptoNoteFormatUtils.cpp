@@ -282,6 +282,8 @@ bool get_inputs_money_amount(const Transaction& tx, uint64_t& money) {
       amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
     } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
       amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      amount = boost::get<TransactionInputSwapEscrow>(in).amount;
     }
 
     money += amount;
@@ -312,6 +314,10 @@ bool check_inputs_types_supported(const TransactionPrefix& tx) {
         return false;
       }
     } else if (inputType == typeid(TransactionInputUnified)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        return false;
+      }
+    } else if (inputType == typeid(TransactionInputSwapEscrow)) {
       if (tx.version < TRANSACTION_VERSION_2) {
         return false;
       }
@@ -392,6 +398,36 @@ bool check_outs_valid(const TransactionPrefix& tx, std::string* error) {
         }
         return false;
       }
+    } else if (out.target.type() == typeid(TransactionOutputSwapEscrow)) {
+      if (tx.version < TRANSACTION_VERSION_2) {
+        *error = "Swap escrow output in a version-1 transaction";
+        return false;
+      }
+      const TransactionOutputSwapEscrow& escrow = ::boost::get<TransactionOutputSwapEscrow>(out.target);
+      if (!check_key(escrow.claimKey)) {
+        if (error) *error = "Swap escrow output with invalid claim key";
+        return false;
+      }
+      if (!check_key(escrow.refundKey)) {
+        if (error) *error = "Swap escrow output with invalid refund key";
+        return false;
+      }
+      if (!check_key(escrow.adaptorPoint)) {
+        if (error) *error = "Swap escrow output with invalid adaptor point";
+        return false;
+      }
+      if (std::memcmp(&escrow.claimKey, &escrow.refundKey, sizeof(Crypto::PublicKey)) == 0) {
+        if (error) *error = "Swap escrow output: claim and refund keys must differ";
+        return false;
+      }
+      if (escrow.refundTimeout == 0) {
+        if (error) *error = "Swap escrow output with zero refund timeout";
+        return false;
+      }
+      if (out.amount == 0) {
+        if (error) *error = "Swap escrow output with zero amount";
+        return false;
+      }
     } else {
       if (error) {
         *error = "Output with invalid type";
@@ -409,6 +445,22 @@ bool checkMultisignatureInputsDiff(const TransactionPrefix& tx) {
     if (inv.type() == typeid(MultisignatureInput)) {
       const MultisignatureInput& in = ::boost::get<MultisignatureInput>(inv);
       if (!inputsUsage.insert(std::make_pair(in.amount, in.outputIndex)).second) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx) {
+  std::set<std::string> inputsUsage;
+  for (const auto& inv : tx.inputs) {
+    if (inv.type() == typeid(TransactionInputSwapEscrow)) {
+      const TransactionInputSwapEscrow& in = ::boost::get<TransactionInputSwapEscrow>(inv);
+      std::string key = Common::podToHex(in.escrowTxId);
+      key += ':';
+      key += std::to_string(in.escrowOutputIndex);
+      if (!inputsUsage.insert(key).second) {
         return false;
       }
     }
@@ -434,6 +486,8 @@ bool check_inputs_overflow(const TransactionPrefix &tx) {
       amount = boost::get<TransactionInputCommitmentSpend>(in).amount;
     } else if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
       amount = boost::get<TransactionInputCommitmentTransfer>(in).amount;
+    } else if (in.type() == typeid(TransactionInputSwapEscrow)) {
+      amount = boost::get<TransactionInputSwapEscrow>(in).amount;
     }
 
     if (money > amount + money)

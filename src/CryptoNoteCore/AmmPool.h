@@ -54,6 +54,14 @@ bool ammValidateSwap(uint64_t input, uint64_t output,
                      uint64_t reserveIn, uint64_t reserveOut,
                      uint32_t feeBps);
 
+// Constant-product invariant check: the product of the two reserves must not
+// decrease as a result of a swap (the fee ensures it strictly increases).
+// Uses 128-bit math to avoid overflow. Returns false if the invariant would
+// be violated (indicates a logic/rounding regression that could drain the
+// pool). feeBps must be < 10000 for swaps.
+bool ammValidateInvariant(uint64_t reserveAIn, uint64_t reserveBIn,
+                          uint64_t reserveAOut, uint64_t reserveBOut);
+
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
                               uint64_t reserveA, uint64_t reserveB,
                               uint32_t toleranceBps);

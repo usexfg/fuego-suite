@@ -100,6 +100,7 @@ uint64_t get_outs_money_amount(const Transaction& tx);
 bool check_inputs_types_supported(const TransactionPrefix& tx);
 bool check_outs_valid(const TransactionPrefix& tx, std::string* error = 0);
 bool checkMultisignatureInputsDiff(const TransactionPrefix& tx);
+bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx);
 
 bool check_money_overflow(const TransactionPrefix& tx);
 bool check_outs_overflow(const TransactionPrefix& tx);

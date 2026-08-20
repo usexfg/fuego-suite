@@ -18,6 +18,7 @@
 #pragma once
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 #include <boost/variant.hpp>
@@ -59,6 +60,7 @@
 #define TX_EXTRA_LEGACY_BOND               0xCB
 #define TX_EXTRA_LEGACY_BOND_CLAIM         0xCC
 #define TX_EXTRA_DEPOSIT_SECRET             0xD5
+#define TX_EXTRA_CD_BONUS_CLAIM             0xD6  // v11+: per-input BV-backed bonus claim
 // 0xF_ tags: Hearth AMM (v11+)
 #define TX_EXTRA_AMM_SWAP                   0xF0
 #define TX_EXTRA_AMM_ADD_LIQ                0xF1
@@ -208,6 +210,14 @@ struct TransactionExtraLegacyBond {
 struct TransactionExtraLegacyBondClaim {
   uint64_t claimedInterest;
   bool serialize(ISerializer& serializer);
+};
+
+// v11+: per-input BV-backed CD bonus claim. The input at `inputIndex` must be a
+// TransactionInputCommitmentSpend; `claimedBonus` is drawn from the BONUS_VAULT
+// partition instead of the CD yield pool. Base interest stays in claimedInterest.
+struct TransactionExtraCdBonusClaim {
+  uint8_t  inputIndex;
+  uint64_t claimedBonus;
 };
 
 struct TransactionExtraAmmSwap {
@@ -370,7 +380,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, CryptoNote::TransactionExtraLegacyBond, CryptoNote::TransactionExtraLegacyBondClaim, CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -399,6 +409,15 @@ bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtra
 bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond);
 bool addLegacyBondClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBondClaim& claim);
 bool getLegacyBondClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBondClaim& claim);
+bool addCdBonusClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCdBonusClaim& claim);
+bool getCdBonusClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraCdBonusClaim& claim);
+
+// v11+: extracts CdBonusClaim extras into bonusByInput (inputIndex → claimedBonus)
+// and sums totalBonus. Returns false on malformed fields: parse failure, bad
+// input index, non-CommitmentSpend target, duplicate entries, or overflow.
+bool getCdBonusClaims(const Transaction& tx,
+                      std::map<uint32_t, uint64_t>& bonusByInput,
+                      uint64_t& totalBonus);
 bool addAmmSwapToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount, uint64_t minOutput);
 bool addAmmAddLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXfg, uint64_t amountHeat);
 bool addAmmRemoveLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned, uint64_t minXfg, uint64_t minHeat);

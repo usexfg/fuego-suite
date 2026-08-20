@@ -85,6 +85,9 @@ public:
   virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
                                         uint32_t currentHeight, uint64_t& outInterest,
                                         bool isLegacyBond = false) override;
+  virtual std::error_code getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                         uint32_t currentHeight, CdClaimInfo& out,
+                                         uint32_t term = 0) override;
   virtual std::error_code getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) override;
   virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
   virtual uint64_t getHearthTwap() override;

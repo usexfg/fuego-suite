@@ -188,7 +188,8 @@ public:
   void handleOfferMessage(const COMMAND_SWAP_OFFER::request& msg);
   void handleCancelMessage(const std::string& offerId,
                            const Crypto::PublicKey& pubkey,
-                           const Crypto::Signature& sig);
+                           const Crypto::Signature& sig,
+                           uint64_t timestamp);
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
 
@@ -228,7 +229,8 @@ public:
   bool submitOffer(const SwapOfferMsg& offer);
   bool cancelOffer(const std::string& offerId,
                    const Crypto::PublicKey& pubkey,
-                   const Crypto::Signature& sig);
+                   const Crypto::Signature& sig,
+                   uint64_t timestamp);
   bool updateOfferAmount(const std::string& offerId, uint64_t newRemaining);
 
   double getTwap(uint8_t pair) const;
@@ -258,10 +260,11 @@ public:
   // Place a fully signed order (orderId, makerPubKey, signature, nonce must be set).
   // Returns false on invalid pair/sig/replay/limits. outOrderId set to order.orderId on success.
   bool placeSignedOrder(const SwapOrder& order, uint64_t* outFilled = nullptr);
-  // Cancel with maker signature over "cancel:"+orderId
+  // Cancel with maker signature over "cancel:"+orderId+":"+timestamp
   bool cancelOrderByClient(const std::string& orderId,
                            const Crypto::PublicKey& makerPubKey,
-                           const Crypto::Signature& signature);
+                           const Crypto::Signature& signature,
+                           uint64_t timestamp);
 
   // Match an incoming taker order against the book
   // Returns fills: vector of (makerOrderId, fillPrice, fillAmount)
@@ -279,13 +282,14 @@ private:
   void cleanupLegacyOffers();
 
   // ── v2 Orderbook internals ──
-  static constexpr uint8_t MAX_PAIR_INDEX = 7; // m_orderBooks[8] valid indices 0..7
+  static constexpr uint8_t MAX_PAIR_INDEX = 11; // m_orderBooks[12] valid indices 0..11 (SwapPair core set)
   bool isValidPair(uint8_t pair) const { return pair <= MAX_PAIR_INDEX; }
   std::string generateOrderId(const SwapOrder& o) const;
   bool validateOrderSignature(const SwapOrder& o) const;
   bool validateCancelSignature(const std::string& orderId,
                                const Crypto::PublicKey& makerPubKey,
-                               const Crypto::Signature& signature) const;
+                               const Crypto::Signature& signature,
+                               uint64_t timestamp) const;
   bool isTombstoned(const std::string& orderId) const;
   void tombstoneOrder(const std::string& orderId);
   std::string makeFillReplayKey(const COMMAND_ORDER_FILL::request& msg) const;
@@ -341,7 +345,7 @@ private:
   NativeXfgPriceRange m_nativeXfgPrice;
 
   // ── v2 Orderbook state ──
-  PairOrderBook m_orderBooks[8];  // indexed by pair (0..7) — ALWAYS bounds-check pair first
+  PairOrderBook m_orderBooks[12];  // indexed by pair (0..11) — ALWAYS bounds-check pair first
   std::map<std::string, SwapOrder> m_allOrders;  // orderId → order (all orders across all pairs)
   // Fill replay keys: hash(taker|maker|amount|price|height) — not maker-only
   std::map<std::string, uint64_t> m_fillReplay; // key → insert time (unix)

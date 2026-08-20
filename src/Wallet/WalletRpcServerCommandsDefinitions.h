@@ -153,7 +153,7 @@ using CryptoNote::ISerializer;
         std::string payment_id;
         std::string address;      
 
-        void serialize(ISerializer& s) {
+void serialize(CryptoNote::ISerializer& s) {
           KV_MEMBER(payment_id)
           KV_MEMBER(address)         
         }
@@ -547,9 +547,11 @@ using CryptoNote::ISerializer;
   struct COMMAND_RPC_SIGN_CANCEL {
     struct request {
       std::string offerId;
+      uint64_t    timestamp;   // anti-replay: bound the cancel signature lifetime
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
+        KV_MEMBER(timestamp)
       }
     };
 
@@ -557,12 +559,14 @@ using CryptoNote::ISerializer;
       std::string offerId;
       std::string makerPubKey;
       std::string signature;
+      uint64_t    timestamp;
       std::string status;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
         KV_MEMBER(makerPubKey)
         KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
         KV_MEMBER(status)
       }
     };
@@ -726,8 +730,7 @@ using CryptoNote::ISerializer;
     struct request {
       uint64_t deposit_id;
 
-      void serialize(ISerializer& s) {
-        KV_MEMBER(deposit_id)
+      void serialize(ISerializer& s) {        KV_MEMBER(deposit_id)
       }
     };
 
@@ -1106,5 +1109,46 @@ using CryptoNote::ISerializer;
     };
   };
 
-}
-}
+  // v11+: claim preview for a CD deposit (principal + base/bonus split, claimable, warnings)
+  struct COMMAND_RPC_GET_CD_CLAIM_PREVIEW {
+    struct request {
+      uint64_t deposit_id;
+
+      void serialize(CryptoNote::ISerializer& s) {
+        KV_MEMBER(deposit_id)
+      }
+    };
+
+    struct response {
+      uint64_t principal;
+      uint64_t base_interest;
+      uint64_t bonus_interest;
+      uint64_t claimable_interest;
+      uint64_t claimable_bonus;
+      uint64_t fee_pool_balance;
+      uint64_t bonus_vault_balance;
+      bool earns_interest;
+      bool capped;
+      std::string warning;
+      std::string note;
+      std::string status;
+
+      void serialize(CryptoNote::ISerializer& s) {
+        KV_MEMBER(principal)
+        KV_MEMBER(base_interest)
+        KV_MEMBER(bonus_interest)
+        KV_MEMBER(claimable_interest)
+        KV_MEMBER(claimable_bonus)
+        KV_MEMBER(fee_pool_balance)
+        KV_MEMBER(bonus_vault_balance)
+        KV_MEMBER(earns_interest)
+        KV_MEMBER(capped)
+        KV_MEMBER(warning)
+        KV_MEMBER(note)
+        KV_MEMBER(status)
+      }
+    };
+  };
+
+} // namespace wallet_rpc
+} // namespace Tools

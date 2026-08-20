@@ -1233,7 +1233,7 @@ int CryptoNoteProtocolHandler::handle_swap_cancel(int command, COMMAND_SWAP_CANC
   pubkey = arg.makerPubKey;
   sig = arg.signature;
 
-  m_core.getSwapRelay().handleCancelMessage(arg.offerId, pubkey, sig);
+  m_core.getSwapRelay().handleCancelMessage(arg.offerId, pubkey, sig, arg.timestamp);
 
   auto buf = LevinProtocol::encode(arg);
   m_p2p->relay_notify_to_all(COMMAND_SWAP_CANCEL::ID, buf, &context.m_connection_id);

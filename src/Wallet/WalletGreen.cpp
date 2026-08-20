@@ -380,6 +380,51 @@ namespace CryptoNote
     m_logger(DEBUGGING, BRIGHT_WHITE) << "New container initialized, public view key " << Common::podToHex(viewPublicKey);
   }
 
+  uint64_t WalletGreen::capInterestByPool(DepositId depositId, uint64_t formulaInterest,
+                                          uint64_t& bonusOut, uint32_t term) {
+    bonusOut = 0;
+    if (formulaInterest == 0) return 0;
+    Deposit deposit = getDeposit(depositId);
+    INode::CdClaimInfo claimInfo;
+    std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
+        static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo, term);
+    if (ec || !claimInfo.poolInfoPresent) {
+      // Daemon predates pool-aware estimates: keep formula (legacy behavior).
+      return formulaInterest;
+    }
+    uint64_t backing = std::min(claimInfo.feePoolBalance, claimInfo.vaultBalance);
+    if (claimInfo.baseInterest > 0 || claimInfo.bonusInterest > 0) {
+      // v11+: consensus split — pool-backed base + BV-backed bonus.
+      uint64_t baseClaim = std::min(claimInfo.baseInterest, backing);
+      uint64_t bonusClaim = std::min(claimInfo.claimableBonus, claimInfo.bonusVaultBalance);
+      if (backing < claimInfo.baseInterest) {
+        m_logger(WARNING, BRIGHT_YELLOW)
+            << "CD yield pool cannot back full base interest for deposit "
+            << depositId << " (" << claimInfo.baseInterest << " accrued, "
+            << backing << " HEAT backing) — rare event. The remainder stays "
+            << "accrued and becomes claimable when the pool replenishes from "
+            << "epoch fees.";
+      }
+      if (claimInfo.bonusVaultBalance < claimInfo.claimableBonus) {
+        m_logger(WARNING, BRIGHT_YELLOW)
+            << "Bonus vault cannot back the full tier bonus for deposit "
+            << depositId << " (" << claimInfo.claimableBonus << " bonus, "
+            << claimInfo.bonusVaultBalance << " HEAT BV backing) — rare event.";
+      }
+      bonusOut = bonusClaim;
+      return (baseClaim > UINT64_MAX - bonusClaim) ? UINT64_MAX : (baseClaim + bonusClaim);
+    }
+    if (backing < formulaInterest) {
+      m_logger(WARNING, BRIGHT_YELLOW)
+          << "CD yield pool cannot back full accrued interest for deposit "
+          << depositId << " (" << formulaInterest << " accrued, " << backing
+          << " HEAT backing) — rare event. The remainder stays accrued and "
+          << "becomes claimable when the pool replenishes from epoch fees.";
+      return backing;
+    }
+    return formulaInterest;
+  }
+
   void WalletGreen::withdrawDeposit(
       DepositId depositId,
       std::string &transactionHash)
@@ -417,11 +462,37 @@ namespace CryptoNote
       << " globalOutputIndex=" << transfer.globalOutputIndex
       << " type=" << static_cast<int>(transfer.type);
 
+    // Accrued CD interest (pool-aware): claim what consensus accepts today.
+    // Only finite-term HEAT CDs earn — HEAT_TERM (0xFFFFFFFF) outputs are
+    // mint/burn outputs with no APY, and DEPOSIT_TERM_LP markers are pool
+    // reserve tags. Pre-v11 deposits cannot claim (consensus rejects); an
+    // empty yield pool is a rare event — capInterestByPool warns so the user
+    // knows the remainder is forfeited now but becomes claimable once the
+    // pool replenishes from epoch fees.
+    uint64_t claimedInterest = 0;
+    uint64_t claimedBonus = 0;
+    if (deposit.term > 0 &&
+        deposit.term != parameters::HEAT_TERM &&
+        deposit.term != parameters::DEPOSIT_TERM_LP &&
+        static_cast<uint32_t>(deposit.height) >=
+            m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      INode::CdClaimInfo claimInfo;
+      std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
+          static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo);
+      if (!ec && claimInfo.formulaInterest > 0) {
+        claimedInterest = claimInfo.poolInfoPresent
+            ? capInterestByPool(depositId, claimInfo.formulaInterest, claimedBonus, deposit.term)
+            : claimInfo.formulaInterest;
+      }
+    }
+
     std::unique_ptr<ITransaction> transaction = createTransaction();
 
-    // Outputs: deposit amount minus fee, split back to spendable key outputs.
+    // Outputs: deposit amount + claimable interest minus fee, split back to
+    // spendable key outputs. claimedInterest is added to the input side of the
+    // conservation check by getTransactionInputAmount.
     const uint64_t fee = m_currency.minimumFee();
-    std::vector<uint64_t> outputAmounts = split(deposit.amount - fee, m_currency.defaultDustThreshold());
+    std::vector<uint64_t> outputAmounts = split(deposit.amount + claimedInterest - fee, m_currency.defaultDustThreshold());
     for (auto amount : outputAmounts) {
       transaction->addOutput(amount, account.address);
     }
@@ -518,12 +589,23 @@ namespace CryptoNote
 
       TransactionInputCommitmentSpend csInput;
       csInput.amount        = deposit.amount;
+      csInput.claimedInterest = claimedInterest;
       csInput.outputIndexes = relOffsets;
       csInput.keyImage      = keyImage;
       transaction->addInput(csInput);
 
       KeyPair commitmentKeyPair{ commitKey, keyScalar };
       transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+
+      // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
+      if (claimedBonus > 0) {
+        TransactionExtraCdBonusClaim bc;
+        bc.inputIndex = 0;
+        bc.claimedBonus = claimedBonus;
+        std::vector<uint8_t> extra;
+        addCdBonusClaimToExtra(extra, bc);
+        transaction->appendExtra(extra);
+      }
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Commitment withdrawal ring size=" << actualRing
         << " realPos=" << sortedRealPos;
@@ -662,14 +744,25 @@ namespace CryptoNote
     // v11 zero-claim consensus rule: deposits created before v11 activation
     // cannot claim CD yield (Blockchain.cpp youngest-ring pre-v11 gate), so
     // zero the claim here to avoid building a tx the consensus rejects.
-    uint64_t interest = m_currency.calculateCdInterest(
-        deposit.amount,
-        deposit.height,
-        currentHeight,
-        commitmentIndex);
-    if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
-      interest = 0;
+    // Only finite-term HEAT CDs earn: HEAT_TERM mint/burn outputs and
+    // DEPOSIT_TERM_LP markers have no APY.
+    uint64_t interest = 0;
+    if (deposit.term > 0 &&
+        deposit.term != parameters::HEAT_TERM &&
+        deposit.term != parameters::DEPOSIT_TERM_LP) {
+      interest = m_currency.calculateCdInterest(
+          deposit.amount,
+          deposit.height,
+          currentHeight,
+          commitmentIndex);
+      if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+        interest = 0;
+      }
     }
+    // Pool-aware cap: consensus only accepts claims backed by the fee pool and
+    // CD_APY_POOL vault. Capping here keeps the rollover tx from being rejected.
+    uint64_t rolloverBonus = 0;
+    interest = capInterestByPool(depositId, interest, rolloverBonus, deposit.term);
 
     m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover deposit id=" << depositId
       << " amount=" << deposit.amount
@@ -796,6 +889,16 @@ namespace CryptoNote
       KeyPair commitmentKeyPair{ commitKey, keyScalar };
       transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
 
+      // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
+      if (rolloverBonus > 0) {
+        TransactionExtraCdBonusClaim bc;
+        bc.inputIndex = 0;
+        bc.claimedBonus = rolloverBonus;
+        std::vector<uint8_t> extra;
+        addCdBonusClaimToExtra(extra, bc);
+        transaction->appendExtra(extra);
+      }
+
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover commitment spend ring size=" << actualRing
         << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
 
@@ -866,10 +969,21 @@ namespace CryptoNote
     // Use the pre-computed interest supplied by the caller.
     // v11 zero-claim consensus rule: pre-v11 deposits cannot claim CD yield,
     // so zero the claim to match the consensus gate (see rolloverCd).
+    // Only finite-term HEAT CDs earn: HEAT_TERM mint/burn outputs and
+    // DEPOSIT_TERM_LP markers have no APY.
     uint64_t interest = precomputedInterest;
+    if (deposit.term == parameters::HEAT_TERM ||
+        deposit.term == parameters::DEPOSIT_TERM_LP ||
+        deposit.term == 0) {
+      interest = 0;
+    }
     if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       interest = 0;
     }
+    // Pool-aware cap: consensus only accepts claims backed by the fee pool and
+    // CD_APY_POOL vault. Capping here keeps the rollover tx from being rejected.
+    uint64_t rolloverBonus = 0;
+    interest = capInterestByPool(depositId, interest, rolloverBonus, deposit.term);
 
     m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover(precomputed) deposit id=" << depositId
       << " amount=" << deposit.amount
@@ -986,6 +1100,16 @@ namespace CryptoNote
 
       KeyPair commitmentKeyPair{ commitKey, keyScalar };
       transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+
+      // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
+      if (rolloverBonus > 0) {
+        TransactionExtraCdBonusClaim bc;
+        bc.inputIndex = 0;
+        bc.claimedBonus = rolloverBonus;
+        std::vector<uint8_t> extra;
+        addCdBonusClaimToExtra(extra, bc);
+        transaction->appendExtra(extra);
+      }
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover(precomputed) commitment spend ring size=" << actualRing
         << " realPos=" << sortedRealPos << " claimedInterest=" << interest;

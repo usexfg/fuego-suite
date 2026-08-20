@@ -228,12 +228,17 @@ bool adaptor_partial_verify(const SwapParams& params) {
 }
 
 Crypto::Signature adaptor_aggregate(SwapParams& params, bool adapted) {
-  // Only Bob holds the adaptor secret t and may call this with adapted=true.
-  // If Alice is ever invoked this way she would silently produce a malformed
-  // aggregate because params.adaptorSecret is zero on her side — so reject.
-  if (adapted && params.role != SwapRole::BOB) {
-    Crypto::Signature zero{};
-    return zero;
+  // Adaptation requires the adaptor secret t. Bob always holds it; Alice
+  // holds it only after extracting it from Bob's counterparty claim. A zero
+  // t would produce a malformed aggregate, so reject in that case.
+  if (adapted) {
+    const uint8_t* t = reinterpret_cast<const uint8_t*>(&params.adaptorSecret);
+    bool zero = true;
+    for (size_t i = 0; i < sizeof(params.adaptorSecret); ++i) if (t[i]) { zero = false; break; }
+    if (zero) {
+      Crypto::Signature empty{};
+      return empty;
+    }
   }
 
   Crypto::Musig2PartialSig sig0, sig1;

@@ -13,6 +13,7 @@
 
 #include "OrderbookP2pHandler.h"
 #include "OrderbookMempool.h"
+#include <cstring>
 
 namespace CryptoNote {
 
@@ -22,6 +23,16 @@ OrderbookP2pHandler::OrderbookP2pHandler(OrderbookMempool& mempool)
 bool OrderbookP2pHandler::handleOrderPlace(const Order& order) {
   if (order.amount == 0 || order.price == 0) return false;
   if (order.expiration > 0 && order.expiration < 1000) return false; // too short
+
+  // Signature / identity validation (legacy multi-party order model):
+  // - a valid order must carry a non-zero sender identity hash
+  // - must include at least one partial signature as proof of intent
+  // - partial sig count is bounded to prevent memory exhaustion
+  static const size_t MAX_PARTIAL_SIGS = 8;
+  static const Crypto::Hash kZeroHash{};
+  if (memcmp(order.addressHash.data, kZeroHash.data, sizeof(order.addressHash.data)) == 0) return false;
+  if (order.partialSigs.empty()) return false;
+  if (order.partialSigs.size() > MAX_PARTIAL_SIGS) return false;
 
   return m_mempool.addOrder(order);
 }

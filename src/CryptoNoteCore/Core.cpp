@@ -470,6 +470,11 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
+  if (!checkSwapEscrowInputsDiff(tx)) {
+    logger(ERROR) << "tx has duplicate swap escrow inputs";
+    return false;
+  }
+
   // Determine block major version from the given height
   uint8_t blockMajorVersion = BLOCK_MAJOR_VERSION_1;
   uint8_t versionsToCheck[] = {
@@ -488,6 +493,24 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
   if (!check_tx_mixin(tx, blockMajorVersion, keeped_by_block)) {
     logger(ERROR) << "tx with invalid mixin, rejected for tx id= " << getObjectHash(tx);
     return false;
+  }
+
+  // Swap-escrow inputs/outputs are a v11 (HEATWAVE) consensus feature.
+  // Reject them on pre-v11 blocks so old nodes and new nodes stay in sync
+  // during the upgrade window.
+  if (blockMajorVersion < BLOCK_MAJOR_VERSION_11) {
+    for (const auto& in : tx.inputs) {
+      if (in.type() == typeid(TransactionInputSwapEscrow)) {
+        logger(ERROR) << "Swap escrow input before v11 rejected";
+        return false;
+      }
+    }
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputSwapEscrow)) {
+        logger(ERROR) << "Swap escrow output before v11 rejected";
+        return false;
+      }
+    }
   }
 
   return true;
@@ -546,6 +569,21 @@ bool core::check_tx_inputs_keyimages_diff(const Transaction& tx) {
       }
       if (xfer.outputIndexes.empty()) {
         logger(ERROR) << "Transaction's commitment transfer input uses empty output";
+        return false;
+      }
+    } else if (input.type() == typeid(TransactionInputSwapEscrow)) {
+      const auto& escrow = boost::get<TransactionInputSwapEscrow>(input);
+      if (!ki.insert(escrow.keyImage).second) {
+        logger(ERROR) << "Transaction has identical swap escrow key images";
+        return false;
+      }
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&escrow.escrowTxId, &ZERO_HASH, sizeof(Crypto::Hash)) == 0) {
+        logger(ERROR) << "Swap escrow input with zero escrow tx id";
+        return false;
+      }
+      if (escrow.mode > 1) {
+        logger(ERROR) << "Swap escrow input with invalid mode";
         return false;
       }
     }
@@ -1482,10 +1520,11 @@ const CommitmentIndex& core::getCommitmentIndex() const {
 std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                            uint32_t currentHeight, uint64_t& outInterest,
                                            bool isLegacyBond, uint32_t term,
-                                           bool autoRolled) {
+                                           bool autoRolled, bool includeLoyaltyBonus) {
   outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
                                                m_blockchain.getCommitmentIndex(),
-                                               isLegacyBond, term, autoRolled);
+                                               isLegacyBond, term, autoRolled,
+                                               includeLoyaltyBonus);
   return {};
 }
 

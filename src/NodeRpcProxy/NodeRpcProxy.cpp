@@ -797,6 +797,32 @@ std::error_code NodeRpcProxy::getCdInterest(uint64_t amount, uint32_t creationHe
   return {};
 }
 
+std::error_code NodeRpcProxy::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                             uint32_t currentHeight, CdClaimInfo& out,
+                                             uint32_t term) {
+  out = CdClaimInfo{};
+  COMMAND_RPC_ESTIMATE_CD_YIELD::request req;
+  COMMAND_RPC_ESTIMATE_CD_YIELD::response res;
+  req.amount = amount;
+  req.creation_height = creationHeight;
+  req.current_height = currentHeight;
+  req.term = term;
+  std::error_code ec = jsonCommand("/estimate_cd_yield", req, res);
+  if (ec) return ec;
+  out.formulaInterest = res.estimated_interest;
+  out.claimableInterest = res.pool_info_present
+      ? res.claimable_interest
+      : out.formulaInterest;
+  out.feePoolBalance = res.fee_pool_balance;
+  out.vaultBalance = res.cd_apy_vault_balance;
+  out.poolInfoPresent = res.pool_info_present;
+  out.baseInterest = res.base_interest;
+  out.bonusInterest = res.bonus_interest;
+  out.bonusVaultBalance = res.bonus_vault_balance;
+  out.claimableBonus = res.pool_info_present ? res.claimable_bonus : 0;
+  return {};
+}
+
 std::error_code NodeRpcProxy::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
   // Remote daemon epoch fee rate query — not exposed via RPC yet.
   // Falls back to zero; callers that need this (legacy bond validation)

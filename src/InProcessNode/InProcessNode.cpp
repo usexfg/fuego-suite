@@ -1116,6 +1116,34 @@ std::error_code InProcessNode::getCdInterest(uint64_t amount, uint32_t creationH
   return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, isLegacyBond);
 }
 
+std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
+                                              uint32_t currentHeight, CdClaimInfo& out,
+                                              uint32_t term) {
+  out = CdClaimInfo{};
+  std::error_code ec = core.calculateCdInterest(amount, creationHeight, currentHeight,
+                                                out.formulaInterest);
+  if (ec) return ec;
+  out.feePoolBalance = core.getFeePoolBalance();
+  out.vaultBalance = core.getCdApyVaultBalance();
+  out.poolInfoPresent = true;
+  uint64_t backing = std::min(out.feePoolBalance, out.vaultBalance);
+  out.claimableInterest = std::min(out.formulaInterest, backing);
+
+  // v11+: consensus split (base without loyalty + BV-backed bonus).
+  uint64_t base = 0, bonus = 0;
+  ec = core.calculateCdInterest(amount, creationHeight, currentHeight, base,
+                                false, term, false, /*includeLoyaltyBonus=*/false);
+  if (ec) return ec;
+  out.baseInterest = base;
+  ec = core.calculateCdBonus(amount, creationHeight, currentHeight, bonus, term);
+  if (ec) return ec;
+  out.bonusInterest = bonus;
+  uint64_t bvBacking = std::min(core.getBonusVaultBalance(), core.getBonusVaultUtxoBalance());
+  out.bonusVaultBalance = bvBacking;
+  out.claimableBonus = std::min(out.bonusInterest, bvBacking);
+  return {};
+}
+
 std::error_code InProcessNode::getEpochFeeRate(uint32_t epoch, uint64_t& outFeeRate) {
   return core.getCommitmentEpochFeeRate(epoch, outFeeRate);
 }

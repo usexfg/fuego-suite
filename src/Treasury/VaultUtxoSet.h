@@ -83,6 +83,12 @@ public:
     struct SpendResult {
         uint64_t amountSpent = 0;
         std::vector<uint64_t> spentIndices;
+        // W-3 fix: when the last selected UTXO overshoots neededAmount, the
+        // surplus is NOT destroyed — the caller mints it back to the same
+        // partition as a change UTXO. changeAmount is the surplus to return;
+        // changeSourceIndex is the overshooting UTXO's global index (0 = none).
+        uint64_t changeAmount = 0;
+        uint64_t changeSourceIndex = 0;
     };
 
     SpendResult spendUtxos(VaultPartition partition, AssetType asset, uint64_t neededAmount);

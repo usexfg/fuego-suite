@@ -62,6 +62,18 @@ enum class PeerMessageType : uint8_t {
   // proof the maker marked the swap AFK_CLAIMED (payout broadcast).
   AFK_CLAIM_ACK       = 14,
 
+  // XMR (CryptoNote adaptor) leg. Each party generates a per-swap XMR
+  // keypair (spend + view) and shares the spend pubkey, view pubkey, and
+  // the VIEW SECRET (read-only — both parties need it to scan the shared
+  // address). Spend secrets stay private until the reveal steps below.
+  XMR_KEYS            = 17,
+
+  // Reveal one party's spend share: Alice reveals hers after the XFG claim
+  // is confirmed on-chain (Bob then claims the XMR); Bob reveals his after
+  // the timeout (Alice then refunds the XMR). The receiver verifies
+  // revealed*G == the peer's published spend pubkey.
+  XMR_SHARE_REVEAL    = 18,
+
   // Control
   ABORT               = 99,   // Abort the swap
 };
@@ -128,6 +140,21 @@ struct MsgAfkClaim {
   std::string finalSigHex;     // final-signature proof of claim (hex); required
 };
 
+// XMR leg key material: spend pubkey, view pubkey, and the view secret
+// (read-only — required to scan the shared address). Spend secret is never
+// sent in this message.
+struct MsgXmrKeys {
+  Crypto::PublicKey spendPub;
+  Crypto::PublicKey viewPub;
+  Crypto::SecretKey viewSec;
+};
+
+// XMR spend-share reveal (32-byte secret scalar). Verified by the receiver
+// against the peer's published spend pubkey.
+struct MsgXmrShareReveal {
+  Crypto::SecretKey spendShare;
+};
+
 // ── Wire envelope ────────────────────────────────────────────────────
 
 // All messages are wrapped in a JSON envelope:
@@ -151,6 +178,8 @@ struct PeerMessage {
   MsgRingRound2 ringRound2;
   MsgSecretReveal secretReveal;
   MsgAfkClaim afkClaim;
+  MsgXmrKeys xmrKeys;
+  MsgXmrShareReveal xmrShareReveal;
 
   // Ed25519 signature over peerMessageDigest(msg) by the sender's swap pubkey.
   // For KEY_EXCHANGE: signed by the keyExchange.swapPubKey carried in the body

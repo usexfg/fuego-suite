@@ -406,6 +406,14 @@ int main(int argc, char* argv[])
         rpcServer.setSwapControlToken(tok);
         swapDaemon->setSwapControlToken(tok);
         logger(INFO) << "Swap control RPC token configured (X-Swap-Token / Bearer)";
+      } else {
+        // Fail-closed security: swap-control RPC now DENIES all requests when
+        // no token is configured. If the swap daemon is enabled, operators MUST
+        // set --swap-control-token or swap fee accounting / offer management
+        // will silently stop working (RPC returns 401).
+        logger(WARNING, BRIGHT_YELLOW)
+          << "No --swap-control-token configured: swap-control RPC endpoints "
+             "are DENIED. Set --swap-control-token to enable swap operations.";
       }
     }
     rpcServer.enableCors(command_line::get_arg(vm, arg_enable_cors));

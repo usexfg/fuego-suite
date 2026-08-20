@@ -67,6 +67,23 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       mo.slippagePct  = static_cast<uint8_t>(entry("slippagePct").getInteger());
       if (mo.slippagePct == 0) mo.slippagePct = 5;
 
+      // Validate economic fields: pair must index a valid order-book slot and
+      // the offer amount must be positive. A zero amount can never be filled
+      // and would spam the relay with useless offers.
+      // Bound mirrors SwapOfferRelay::MAX_PAIR_INDEX (valid indices 0..11).
+      if (mo.pair > 11) {
+        m_logger(Logging::ERROR) << "Managed offer skipped: invalid pair " << (int)mo.pair;
+        continue;
+      }
+      if (mo.xfgAmount == 0) {
+        m_logger(Logging::ERROR) << "Managed offer skipped: zero xfgAmount";
+        continue;
+      }
+      if (mo.slippagePct > 100) {
+        m_logger(Logging::ERROR) << "Managed offer skipped: invalid slippage " << (int)mo.slippagePct;
+        continue;
+      }
+
       m_logger(Logging::INFO) << "Loaded managed offer: pair=" << (int)mo.pair
                               << " amount=" << mo.xfgAmount
                               << " slippage=" << (int)mo.slippagePct << "%";
@@ -113,6 +130,10 @@ void OfferManager::submitManagedOffer(OfferState& state, uint32_t currentHeight,
   offer.allowedSlippagePct = state.config.slippagePct;
 
   // Sign canonical economic fields (must match SwapOfferRelay::validateOffer).
+  // NOTE: isSell is intentionally NOT signed — it is never transmitted on the
+  // wire (COMMAND_SWAP_OFFER carries no isSell field) and both the relay and
+  // this manager always set it to true for legacy soft orders. Including it
+  // would change the signature digest and break in-flight atomic-swap offers.
   std::string sigData;
   sigData.reserve(offer.offerId.size() + 64);
   sigData.append(offer.offerId);
@@ -142,13 +163,16 @@ void OfferManager::submitManagedOffer(OfferState& state, uint32_t currentHeight,
 
 void OfferManager::cancelManagedOffer(OfferState& state) {
   if (state.offerId.empty()) return;
+  // Bind the cancel signature to a fresh timestamp so an old captured cancel
+  // signature cannot be replayed against a re-announced offer (anti-replay).
+  uint64_t cancelTs = static_cast<uint64_t>(time(nullptr));
   Crypto::Hash cancelHash;
-  std::string cancelData = "cancel:" + state.offerId;
+  std::string cancelData = "cancel:" + state.offerId + ":" + std::to_string(cancelTs);
   cn_fast_hash(cancelData.data(), cancelData.size(), cancelHash);
   Crypto::Signature sig;
   Crypto::generate_signature(cancelHash, m_makerPublicKey, m_makerSecretKey, sig);
 
-  if (m_relay.cancelOffer(state.offerId, m_makerPublicKey, sig)) {
+  if (m_relay.cancelOffer(state.offerId, m_makerPublicKey, sig, cancelTs)) {
     m_logger(Logging::INFO) << "Cancelled managed offer " << state.offerId;
     state.offerId.clear();
   }

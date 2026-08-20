@@ -180,6 +180,13 @@ VaultUtxoSet::SpendResult VaultUtxoSet::spendUtxos(
         result.amountSpent += vo.amount;
         result.spentIndices.push_back(vo.globalOutputIndex);
     }
+    // W-3: no surplus destruction. If the final selected UTXO overshoots,
+    // report the surplus so the caller can mint a change UTXO back to the
+    // same partition (keeping the partition balance equal to actual claims).
+    if (result.amountSpent > neededAmount && !candidates.empty()) {
+        result.changeAmount = result.amountSpent - neededAmount;
+        result.changeSourceIndex = candidates.back().globalOutputIndex;
+    }
     return result;
 }
 

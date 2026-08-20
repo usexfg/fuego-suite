@@ -2092,7 +2092,7 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   transfer.amount = static_cast<int64_t>(totalAmount);
   transfers.push_back(transfer);
 
-  TransactionId txId = sendTransaction(txSK, transfers, 1000, "", 0, unlockTimestamp);
+  TransactionId txId = sendTransaction(txSK, transfers, m_currency.minimumFee(), "", 0, unlockTimestamp);
   if (txId == WALLET_LEGACY_INVALID_TRANSACTION_ID) {
     return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
   }

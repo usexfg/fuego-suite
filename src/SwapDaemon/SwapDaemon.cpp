@@ -1046,11 +1046,26 @@ bool SwapDaemon::checkTimeouts() {
     if (params.xfgTimeoutHeight > 0 && currentHeight >= params.xfgTimeoutHeight) {
       SwapState current = sm.currentState();
 
-      // Cooperative refund possible from escrow-funded or pre-sigs-ready states.
-      // Do NOT transition to REFUNDED here — a real cooperative refund requires
-      // exchanging a Musig2 partial with the peer and broadcasting the refund
-      // tx. checkTimeouts() only flags the opportunity; the user (or a future
-      // peer-protocol layer) must call refund() to actually execute it.
+      // v11+ escrow swaps refund unilaterally: the maker's signed refund
+      // needs no peer cooperation, so execute it automatically at timeout.
+      if (params.role == SwapRole::BOB &&
+          (current == SwapState::ADAPTOR_ESCROW_FUNDED ||
+           current == SwapState::ADAPTOR_PRESIGS_READY ||
+           current == SwapState::ADAPTOR_CTR_LOCKED ||
+           current == SwapState::ADAPTOR_WAITING_SPV ||
+           current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV)) {
+        static const Crypto::Hash ZERO_HASH{};
+        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+          m_logger(Logging::WARNING) << "Swap " << swapId
+            << " XFG timeout reached at height " << currentHeight
+            << " — executing unilateral escrow refund.";
+          refund(swapId);
+          anyExpired = true;
+          continue;
+        }
+      }
+
+      // Legacy cooperative-only escrows: log the manual refund opportunity.
       if ((current == SwapState::ADAPTOR_ESCROW_FUNDED ||
            current == SwapState::ADAPTOR_PRESIGS_READY) &&
           params.role == SwapRole::BOB) {
@@ -1235,12 +1250,44 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   input.keyImage = keyImage;
   tx.inputs.push_back(input);
 
-  CryptoNote::KeyOutput ko;
-  ko.key = params.escrowPubKey;
-  CryptoNote::TransactionOutput escrowOut;
-  escrowOut.amount = params.xfgAmount;
-  escrowOut.target = ko;
-  tx.outputs.push_back(escrowOut);
+  // v11+ conditional escrow output: claim before the timeout via the
+  // MuSig2 aggregate, refund after the timeout via the maker's key alone.
+  // The legacy 2-of-2 KeyOutput escrow had no unilateral refund (C2) —
+  // refuse to fund it now that the consensus branch exists.
+  {
+    static const Crypto::PublicKey ZERO_PK{};
+    if (std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) == 0) {
+      m_logger(Logging::ERROR) << "  Refusing escrow funding: adaptor point not set";
+      return false;
+    }
+    if (params.xfgTimeoutHeight == 0) {
+      m_logger(Logging::ERROR) << "  Refusing escrow funding: xfgTimeoutHeight not set";
+      return false;
+    }
+    // The escrow output type is rejected by consensus before v11 — fail
+    // fast instead of broadcasting a funding tx the chain will reject.
+    NodeInfo info;
+    if (!m_rpc.getInfo(info)) {
+      m_logger(Logging::ERROR) << "  Refusing escrow funding: cannot query node info";
+      return false;
+    }
+    if (info.blockMajorVersion != 0 && info.blockMajorVersion < CryptoNote::BLOCK_MAJOR_VERSION_11) {
+      m_logger(Logging::ERROR) << "  Refusing escrow funding: network is v"
+        << static_cast<int>(info.blockMajorVersion)
+        << " — escrow outputs activate at v11";
+      return false;
+    }
+    CryptoNote::TransactionOutputSwapEscrow escrowOut;
+    escrowOut.claimKey = params.escrowPubKey;
+    escrowOut.refundKey = (params.role == SwapRole::BOB)
+        ? params.ourSwapPubKey : params.peerSwapPubKey;
+    escrowOut.adaptorPoint = params.adaptorPoint;
+    escrowOut.refundTimeout = params.xfgTimeoutHeight;
+    CryptoNote::TransactionOutput escrowOutput;
+    escrowOutput.amount = params.xfgAmount;
+    escrowOutput.target = escrowOut;
+    tx.outputs.push_back(escrowOutput);
+  }
   tx.signatures.push_back(std::vector<Crypto::Signature>(ring.size()));
 
   Crypto::Hash prefixHash;
@@ -1271,38 +1318,34 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   params.escrowTxHash = txHash;
   m_logger(Logging::INFO) << "  Escrow funded: " << Common::podToHex(txHash);
 
-  // Resolve the escrow output's *global* index (required for spend ring).
-  // Poll getTransactionOutputs + getRandomOutputs until the escrow key appears.
-  uint32_t escrowGi = 0;
-  bool giFound = false;
-  for (int retry = 0; retry < 200 && !giFound; ++retry) {
+  // The escrow output is a TransactionOutputSwapEscrow referenced directly
+  // by (tx hash, output index 0). The legacy key-output global index
+  // resolution does not apply; the direct claim/refund paths use the
+  // funding-tx reference instead of a decoy ring.
+  params.escrowOutputIndex = 0;
+
+  // Verify the escrow output is visible on-chain.
+  bool escrowVisible = false;
+  for (int retry = 0; retry < 200 && !escrowVisible; ++retry) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
     std::vector<TxOutputInfo> outs;
     if (!m_rpc.getTransactionOutputs(Common::podToHex(txHash), outs)) continue;
     for (const auto& o : outs) {
-      if (o.amount != params.xfgAmount) continue;
-      if (std::memcmp(&o.targetKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) != 0)
-        continue;
-      std::vector<RandomOutputEntry> candidates;
-      if (!m_rpc.getRandomOutputs(params.xfgAmount, 200, candidates)) continue;
-      for (const auto& c : candidates) {
-        if (std::memcmp(&c.outKey, &params.escrowPubKey, sizeof(Crypto::PublicKey)) == 0) {
-          escrowGi = static_cast<uint32_t>(c.globalIndex);
-          giFound = true;
-          break;
-        }
+      if (o.isSwapEscrow && o.amount == params.xfgAmount &&
+          std::memcmp(&o.escrowClaimKey, &params.escrowPubKey,
+                      sizeof(Crypto::PublicKey)) == 0) {
+        escrowVisible = true;
+        break;
       }
-      break;
     }
-    if (!giFound && retry % 10 == 0)
-      m_logger(Logging::INFO) << "  Waiting for escrow output global index... (" << retry << ")";
+    if (!escrowVisible && retry % 10 == 0)
+      m_logger(Logging::INFO) << "  Waiting for escrow output visibility... (" << retry << ")";
   }
-  if (!giFound) {
-    m_logger(Logging::ERROR) << "  Escrow output global index not found after funding";
+  if (!escrowVisible) {
+    m_logger(Logging::ERROR) << "  Escrow output not visible after funding";
     return false;
   }
-  params.escrowOutputIndex = escrowGi;
-  m_logger(Logging::INFO) << "  Escrow output global index=" << escrowGi;
+  m_logger(Logging::INFO) << "  Escrow output confirmed on-chain (direct-reference spend enabled)";
   return true;
 }
 
@@ -1311,13 +1354,9 @@ bool SwapDaemon::verifyEscrowFunding(const SwapParams& params) {
   if (!m_rpc.getTransactionOutputs(Common::podToHex(params.escrowTxHash), outputs))
     return false;
   for (size_t i = 0; i < outputs.size(); ++i) {
-    if (outputs[i].amount == params.xfgAmount &&
-        std::memcmp(&outputs[i].targetKey, &params.escrowPubKey,
+    if (outputs[i].isSwapEscrow && outputs[i].amount == params.xfgAmount &&
+        std::memcmp(&outputs[i].escrowClaimKey, &params.escrowPubKey,
                     sizeof(Crypto::PublicKey)) == 0) {
-      // Best-effort: if escrowOutputIndex is still unset (Alice side), resolve GI.
-      // Callers that need a durable GI must pass a non-const path — fundEscrow
-      // already sets it for Bob. Alice resolves on first successful spend/refund
-      // attempt via resolveEscrowGlobalIndex if still zero.
       return true;
     }
   }
@@ -1437,7 +1476,12 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
   // is offset by T, so Alice can complete it only after t is revealed — the
   // adaptor-signature atomicity guarantee behind the pre-sig round.
   if (!params.musig2.sessionInitialized) {
-    Crypto::Hash sessionMsg = presigSessionHash(params.escrowTxHash);
+    Crypto::Hash sessionMsg = claimSessionMessage(params);
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&sessionMsg, &ZERO_HASH, sizeof(sessionMsg)) == 0) {
+      m_logger(Logging::ERROR) << "  Claim session message derivation failed";
+      return false;
+    }
     if (!adaptor_session_init(params, sessionMsg, /*use_adaptor=*/true)) {
       m_logger(Logging::ERROR) << "  Musig2 session init failed (invalid nonce/key)";
       return false;
@@ -1493,7 +1537,12 @@ bool SwapDaemon::handleEscrowFunded(SwapStateMachine& sm, uint32_t currentHeight
   if (!isZeroPartialSig(params.musig2.peerPartialSig) &&
       !params.musig2.peerPartialSigVerified) {
     if (!params.musig2.sessionInitialized) {
-      Crypto::Hash sessionMsg = presigSessionHash(params.escrowTxHash);
+      Crypto::Hash sessionMsg = claimSessionMessage(params);
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&sessionMsg, &ZERO_HASH, sizeof(sessionMsg)) == 0) {
+        m_logger(Logging::ERROR) << "  Claim session message derivation failed";
+        return false;
+      }
       if (!adaptor_session_init(params, sessionMsg, /*use_adaptor=*/true)) {
         m_logger(Logging::ERROR) << "  Session init failed while catching up peer partial sig";
         return false;
@@ -1536,13 +1585,20 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
       << swapPairToString(params.pair) << ") with H(t)...";
 
     // Hard-gate: must have verified adaptor point + H(t) before locking value.
+    // XMR is adaptor-only (shared-address escrow): no on-chain hashlock, so
+    // only the adaptor point gate applies.
     {
       static const Crypto::PublicKey ZERO_PK{};
       static const Crypto::Hash ZERO_H{};
-      if (std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) == 0 ||
+      if (std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) == 0) {
+        m_logger(Logging::ERROR)
+          << "  Refusing CTR lock: adaptor point not set (DLEQ exchange incomplete)";
+        return false;
+      }
+      if (params.pair != SwapPair::XMR &&
           std::memcmp(&params.hashLock, &ZERO_H, sizeof(ZERO_H)) == 0) {
         m_logger(Logging::ERROR)
-          << "  Refusing CTR lock: adaptor point / hashLock not set (DLEQ exchange incomplete)";
+          << "  Refusing CTR lock: hashLock not set (DLEQ exchange incomplete)";
         return false;
       }
     }
@@ -1552,6 +1608,18 @@ bool SwapDaemon::handlePreSigsReady(SwapStateMachine& sm) {
       m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
         << " client not configured — cannot lock";
       return false;
+    }
+
+    // XMR: derive the shared address from both parties' per-swap XMR
+    // pubkeys (no HTLC script — the shared address is the escrow).
+    if (params.pair == SwapPair::XMR && params.ctrAddress.empty()) {
+      auto* xmr = dynamic_cast<XmrChainClient*>(client);
+      if (!xmr || !xmr->computeSharedAddress(params, params.ctrAddress)) {
+        m_logger(Logging::ERROR) << "  Cannot compute shared XMR address (keys exchanged?)";
+        return false;
+      }
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Shared XMR address: " << params.ctrAddress;
     }
     auto result = client->lock(params);
     if (result.success) {
@@ -1603,6 +1671,90 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
     for (size_t i = 0; i < sizeof(s); ++i) if (p[i]) return false;
     return true;
   };
+
+  // XMR has no on-chain HTLC: the shared address IS the escrow. The flow is
+  //   Bob: broadcast the XFG claim (reveals t on-chain) → wait for Alice's
+  //        share reveal → sweep the shared address.
+  //   Alice: watch the fuego chain for the claim → reveal her share (her XFG
+  //        payout is already secured by the claim tx).
+  if (params.pair == SwapPair::XMR) {
+    auto* client = m_chainRegistry.getClient(params.pair);
+    if (!client) {
+      m_logger(Logging::ERROR) << "  XMR client not configured";
+      return false;
+    }
+
+    if (params.role == SwapRole::BOB) {
+      if (isZeroSecret(params.adaptorSecret)) {
+        m_logger(Logging::ERROR) << "  Bob missing adaptor secret — cannot complete XFG claim";
+        return false;
+      }
+      // 1. Broadcast the deterministic XFG claim (pays Alice, reveals t).
+      if (!params.ringTxBroadcast) {
+        if (broadcastEscrowClaimDirect(params)) {
+          const std::string sigHex = params.escrowClaimSigHex;
+          if (!saveSwapMerged(sm, [sigHex](SwapStateMachine& latest) {
+                latest.params().ringTxBroadcast = true;
+                latest.params().escrowClaimSigHex = sigHex;
+              })) {
+            m_logger(Logging::ERROR) << "  Failed to persist XFG claim broadcast";
+            return false;
+          }
+          m_logger(Logging::INFO) << "  XMR flow: XFG claim broadcast (t revealed on-chain)";
+        } else {
+          m_logger(Logging::INFO) << "  XMR flow: XFG claim not ready — will retry";
+          return true;
+        }
+      }
+      // 2. Wait for Alice's share reveal, then sweep the shared address.
+      if (!params.peerXmrShareReceived) {
+        m_logger(Logging::INFO) << "  XMR flow: waiting for Alice's spend-share reveal";
+        return true;
+      }
+      auto result = client->claim(params);
+      if (!result.success) {
+        m_logger(Logging::ERROR) << "  XMR claim sweep failed: " << result.error;
+        if (result.fatal) { sm.transition(SwapState::FAILED); m_db.saveSwap(sm); }
+        return false;
+      }
+      m_logger(Logging::INFO) << "  XMR claimed, txid: " << result.txId;
+      params.ctrClaimTxId = result.txId;
+      if (!sm.transition(SwapState::ADAPTOR_SECRET_REVEALED) || !m_db.saveSwap(sm)) {
+        m_logger(Logging::ERROR) << "  Failed to advance after XMR claim";
+        return false;
+      }
+      return true;
+    }
+
+    // Alice: watch for the deterministic XFG claim on-chain, then reveal
+    // our spend share so Bob can sweep the XMR.
+    const Crypto::Hash claimHash = deterministicClaimTxHash(params);
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&claimHash, &ZERO_HASH, sizeof(claimHash)) == 0) {
+      m_logger(Logging::ERROR) << "  Cannot derive claim tx hash for XMR flow";
+      return false;
+    }
+    std::vector<TxOutputInfo> outs;
+    if (m_rpc.getTransactionOutputs(Common::podToHex(claimHash), outs)) {
+      if (!params.xmrShareSent) {
+        if (!revealXmrShare(sm)) {
+          m_logger(Logging::WARNING) << "  Share reveal pending — will retry";
+          return true;
+        }
+      }
+      if (!params.ringTxBroadcast) {
+        // The escrow is spent by the claim we just observed.
+        params.ringTxBroadcast = true;
+        if (!sm.transition(SwapState::ADAPTOR_SECRET_REVEALED) || !m_db.saveSwap(sm)) {
+          m_logger(Logging::ERROR) << "  Failed to advance after observing XFG claim";
+          return false;
+        }
+      }
+      return true;
+    }
+    m_logger(Logging::INFO) << "  XMR flow: waiting for Bob's XFG claim on-chain";
+    return true;
+  }
 
   // Alice-locks model: Bob claims CTR with t (reveals preimage on-chain).
   if (params.role == SwapRole::BOB) {
@@ -1787,6 +1939,30 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
     m_logger(Logging::INFO) << "  Escrow spend confirmed. Swap " << swapId << " completed.";
     recordCompletedTrade(sm);
     return true;
+  }
+
+  // v11+ direct claim: spend the escrow output with the completed MuSig2
+  // adaptor aggregate — no peer ring rounds required.
+  {
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+      if (broadcastEscrowClaimDirect(params)) {
+        const std::string sigHex = params.escrowClaimSigHex;
+        if (!saveSwapMerged(sm, [sigHex](SwapStateMachine& latest) {
+              latest.params().ringTxBroadcast = true;
+              latest.params().escrowClaimSigHex = sigHex;
+              latest.transition(SwapState::ADAPTOR_XFG_SPENT);
+            })) {
+          m_logger(Logging::ERROR) << "  Failed to persist broadcast claim state";
+          return false;
+        }
+        m_logger(Logging::INFO) << "  Escrow claim broadcast. Swap " << swapId << " completed.";
+        recordCompletedTrade(sm);
+        return true;
+      }
+      m_logger(Logging::INFO) << "  Direct escrow claim not ready — will retry next tick.";
+      return true;
+    }
   }
 
   // If peer has sent both Round 1 and Round 2 data, finalize and broadcast.
@@ -2182,6 +2358,14 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
       break;
 
     case SwapState::ADAPTOR_KEYS_EXCHANGED:
+      if (params.pair == SwapPair::XMR) {
+        // Exchange per-swap XMR key material before escrow funding so the
+        // shared address can be derived by both sides.
+        if (!handleXmrKeyExchange(sm)) {
+          m_logger(Logging::INFO) << "  handleXmrKeyExchange not yet complete";
+          return true;
+        }
+      }
       m_logger(Logging::INFO) << "  Keys aggregated. Escrow key: "
         << Common::podToHex(params.escrowPubKey);
       {
@@ -2450,6 +2634,67 @@ bool SwapDaemon::refund(const std::string& swapId) {
     return true;
   }
 
+  // XMR leg: no on-chain HTLC — the shared address IS the escrow. Refund =
+  // Bob reveals his spend share so Alice can sweep her XMR back; Bob's XFG
+  // returns via the direct (C2) escrow refund.
+  if (params.pair == SwapPair::XMR &&
+      (current == SwapState::ADAPTOR_ESCROW_FUNDED ||
+       current == SwapState::ADAPTOR_PRESIGS_READY ||
+       current == SwapState::ADAPTOR_CTR_LOCKED ||
+       current == SwapState::ADAPTOR_WAITING_SPV ||
+       current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV)) {
+    if (currentHeight < params.xfgTimeoutHeight) {
+      m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
+        << ", timeout: " << params.xfgTimeoutHeight;
+      return false;
+    }
+    if (params.role == SwapRole::BOB) {
+      // Bob: reveal our share so Alice can sweep her XMR back, then return
+      // our XFG via the unilateral escrow refund.
+      if (!params.xmrShareSent && !revealXmrShare(sm)) {
+        m_logger(Logging::WARNING) << "  XMR share reveal pending — will retry";
+        return false;
+      }
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        if (!broadcastEscrowRefundDirect(params)) {
+          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry";
+          return false;
+        }
+      }
+      if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
+          !m_db.saveSwap(sm)) {
+        m_logger(Logging::ERROR) << "  Failed to persist XMR refund state";
+        return false;
+      }
+      m_logger(Logging::INFO) << "  XMR refund: share revealed + escrow refunded. ADAPTOR_REFUNDED.";
+      return true;
+    }
+
+    // Alice: sweep the shared address back once Bob's share arrives.
+    if (!params.peerXmrShareReceived) {
+      m_logger(Logging::INFO) << "  XMR refund waiting for Bob's share reveal";
+      return false;
+    }
+    auto* client = m_chainRegistry.getClient(params.pair);
+    if (!client) {
+      m_logger(Logging::ERROR) << "  XMR client not configured — cannot refund";
+      return false;
+    }
+    auto result = client->refund(params);
+    if (!result.success) {
+      m_logger(Logging::ERROR) << "  XMR refund sweep failed: " << result.error;
+      return false;
+    }
+    if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
+        !m_db.saveSwap(sm)) {
+      m_logger(Logging::ERROR) << "  Failed to persist XMR refund state";
+      return false;
+    }
+    m_logger(Logging::INFO) << "  XMR refunded. Swap marked ADAPTOR_REFUNDED.";
+    return true;
+  }
+
   // Cooperative refund: both parties sign a non-adaptor Musig2 sig
   // spending escrow back to Bob. Available from ESCROW_FUNDED or PRESIGS_READY.
   if (current == SwapState::ADAPTOR_ESCROW_FUNDED ||
@@ -2459,6 +2704,25 @@ bool SwapDaemon::refund(const std::string& swapId) {
         << ", timeout: " << params.xfgTimeoutHeight
         << " (" << (params.xfgTimeoutHeight - currentHeight) << " blocks remaining)";
       return false;
+    }
+
+    // v11+ direct refund: the maker alone signs and broadcasts the escrow
+    // refund. No peer cooperation — this closes C2.
+    {
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        if (broadcastEscrowRefundDirect(params)) {
+          if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
+              !m_db.saveSwap(sm)) {
+            m_logger(Logging::ERROR) << "  Direct refund broadcast but persistence failed";
+            return false;
+          }
+          m_logger(Logging::INFO) << "  Direct escrow refund broadcast. Swap marked ADAPTOR_REFUNDED.";
+          return true;
+        }
+        m_logger(Logging::ERROR) << "  Direct escrow refund failed";
+        return false;
+      }
     }
 
     m_logger(Logging::INFO) << "Timeout elapsed. Building cooperative refund tx...";
@@ -2648,6 +2912,16 @@ bool SwapDaemon::refund(const std::string& swapId) {
     if (result.success) {
       m_logger(Logging::INFO) << "  " << client->chainName()
         << " refunded, txid: " << result.txId;
+      // v11+: also return the XFG escrow to the maker unilaterally.
+      {
+        static const Crypto::Hash ZERO_HASH{};
+        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+          if (!broadcastEscrowRefundDirect(params)) {
+            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
+            return false;
+          }
+        }
+      }
       sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
       m_db.saveSwap(sm);
       m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
@@ -2699,6 +2973,16 @@ bool SwapDaemon::refund(const std::string& swapId) {
     }
 
     if (ctrRefundOk) {
+      // v11+: also return the XFG escrow to the maker unilaterally.
+      {
+        static const Crypto::Hash ZERO_HASH{};
+        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+          if (!broadcastEscrowRefundDirect(params)) {
+            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
+            return false;
+          }
+        }
+      }
       sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
       m_db.saveSwap(sm);
       m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
@@ -2713,10 +2997,223 @@ bool SwapDaemon::refund(const std::string& swapId) {
   return false;
 }
 
+// ── v11+ direct escrow spends (unilateral; no peer cooperation) ────────────
+
+namespace {
+bool isZeroSignature(const Crypto::Signature& sig) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&sig);
+  for (size_t i = 0; i < sizeof(sig); ++i) if (p[i]) return false;
+  return true;
+}
+} // anonymous namespace
+
+Crypto::Hash SwapDaemon::claimSessionMessage(SwapParams& params) {
+  const Crypto::PublicKey destinationKey = (params.role == SwapRole::BOB)
+      ? params.peerSwapPubKey : params.ourSwapPubKey;
+  // 1% initiation + 1% claim (mirrors finalizeEscrowSpend).
+  const uint64_t protocolFee =
+      2 * (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+          CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+  Crypto::PublicKey treasuryKey;
+  if (!getTreasuryPubKey(treasuryKey)) {
+    return Crypto::Hash{};
+  }
+  CryptoNote::Transaction tx;
+  Crypto::Hash prefix;
+  if (!SwapTxBuilder::buildDeterministicClaimTx(params, destinationKey,
+                                                protocolFee, treasuryKey,
+                                                tx, prefix)) {
+    return Crypto::Hash{};
+  }
+  return prefix;
+}
+
+Crypto::Hash SwapDaemon::deterministicClaimTxHash(SwapParams& params) {
+  const Crypto::PublicKey destinationKey = (params.role == SwapRole::BOB)
+      ? params.peerSwapPubKey : params.ourSwapPubKey;
+  const uint64_t protocolFee =
+      2 * (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+          CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+  Crypto::PublicKey treasuryKey;
+  if (!getTreasuryPubKey(treasuryKey)) {
+    return Crypto::Hash{};
+  }
+  CryptoNote::Transaction tx;
+  Crypto::Hash prefix;
+  if (!SwapTxBuilder::buildDeterministicClaimTx(params, destinationKey,
+                                                protocolFee, treasuryKey,
+                                                tx, prefix)) {
+    return Crypto::Hash{};
+  }
+  return prefix;
+}
+
+bool SwapDaemon::handleXmrKeyExchange(SwapStateMachine& sm) {
+  SwapParams& params = sm.params();
+  if (params.pair != SwapPair::XMR) return true;
+
+  // Generate our per-swap XMR keypair exactly once.
+  if (!params.xmrKeysGenerated) {
+    Crypto::generate_keys(params.xmrSpendPub, params.xmrSpendSec);
+    Crypto::generate_keys(params.xmrViewPub, params.xmrViewSec);
+    params.xmrKeysGenerated = true;
+    if (!m_db.saveSwap(sm)) return false;
+    m_logger(Logging::INFO) << "  Generated per-swap XMR keys";
+  }
+
+  if (params.peerXmrKeysReceived) return true;
+
+  // (Re)send our key material until the peer's arrives.
+  PeerMessage xk;
+  xk.type = PeerMessageType::XMR_KEYS;
+  xk.swapId = params.swapId;
+  xk.xmrKeys.spendPub = params.xmrSpendPub;
+  xk.xmrKeys.viewPub = params.xmrViewPub;
+  xk.xmrKeys.viewSec = params.xmrViewSec;
+  if (!signPeerMessage(xk, params.ourSwapPubKey, params.ourSwapSecKey) ||
+      !deliverPeerMessage(xk)) {
+    m_logger(Logging::WARNING) << "  XMR_KEYS delivery failed — will retry";
+    return true;
+  }
+  if (!params.xmrKeysSent) {
+    params.xmrKeysSent = true;
+    m_db.saveSwap(sm);
+  }
+  return true;
+}
+
+bool SwapDaemon::revealXmrShare(SwapStateMachine& sm) {
+  SwapParams& params = sm.params();
+  if (params.xmrShareSent) return true;
+  PeerMessage rev;
+  rev.type = PeerMessageType::XMR_SHARE_REVEAL;
+  rev.swapId = params.swapId;
+  rev.xmrShareReveal.spendShare = params.xmrSpendSec;
+  if (!signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey) ||
+      !deliverPeerMessage(rev)) {
+    m_logger(Logging::WARNING) << "  XMR_SHARE_REVEAL delivery failed — will retry";
+    return false;
+  }
+  params.xmrShareSent = true;
+  m_db.saveSwap(sm);
+  m_logger(Logging::INFO) << "  Revealed our XMR spend share to peer";
+  return true;
+}
+
+bool SwapDaemon::broadcastEscrowClaimDirect(SwapParams& params) {
+  // Claim: spend the escrow output before the refund timeout using the
+  // completed MuSig2 adaptor aggregate over the deterministic claim tx.
+  Crypto::Signature claimSig{};
+  if (!params.escrowClaimSigHex.empty()) {
+    if (!Common::podFromHex(params.escrowClaimSigHex, claimSig)) {
+      m_logger(Logging::ERROR) << "  Persisted claim signature is malformed";
+      return false;
+    }
+  } else {
+    claimSig = adaptor_aggregate(params, /*adapted=*/true);
+    if (isZeroSignature(claimSig)) {
+      m_logger(Logging::WARNING) << "  Cannot aggregate claim sig yet (adaptor secret missing)";
+      return false;
+    }
+    params.escrowClaimSigHex = Common::podToHex(claimSig);
+  }
+
+  const Crypto::PublicKey destinationKey = (params.role == SwapRole::BOB)
+      ? params.peerSwapPubKey : params.ourSwapPubKey;
+
+  CryptoNote::Transaction tx;
+  Crypto::Hash prefixHash;
+  if (!SwapTxBuilder::buildDeterministicClaimTx(params, destinationKey,
+                                                params.protocolFee,
+                                                params.treasuryPubKey,
+                                                tx, prefixHash)) {
+    m_logger(Logging::ERROR) << "  Failed to build deterministic claim tx";
+    return false;
+  }
+  tx.signatures.push_back(std::vector<Crypto::Signature>{claimSig});
+
+  const std::string txHex = SwapTxBuilder::serializeToHex(tx);
+  if (!m_rpc.sendRawTransaction(txHex)) {
+    m_logger(Logging::ERROR) << "  Escrow claim broadcast failed — will retry";
+    return false;
+  }
+  if (params.protocolFee > 0) {
+    m_rpc.addSwapFee(params.protocolFee);
+  }
+  m_logger(Logging::INFO) << "  Escrow claim broadcast (direct escrow spend).";
+  return true;
+}
+
+bool SwapDaemon::broadcastEscrowRefundDirect(SwapParams& params) {
+  // Refund: Bob alone spends the escrow output after the refund timeout
+  // with a plain Schnorr signature under his refund key.
+  if (params.role != SwapRole::BOB) {
+    m_logger(Logging::ERROR) << "  Escrow refund is maker-only";
+    return false;
+  }
+
+  const uint64_t refundFee =
+      (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+      CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+
+  CryptoNote::Transaction tx;
+  tx.version = CryptoNote::TRANSACTION_VERSION_2;
+  tx.unlockTime = 0;
+  CryptoNote::KeyPair txKey;
+  Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
+  CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+
+  CryptoNote::TransactionInputSwapEscrow in;
+  in.amount = params.xfgAmount;
+  in.escrowTxId = params.escrowTxHash;
+  in.escrowOutputIndex = 0;
+  in.mode = 1; // refund
+  in.keyImage = SwapTxBuilder::swapEscrowKeyImage(params.escrowTxHash, 0, 1);
+  tx.inputs.push_back(in);
+
+  CryptoNote::KeyOutput ko;
+  ko.key = params.ourSwapPubKey;
+  CryptoNote::TransactionOutput out;
+  out.amount = params.xfgAmount - refundFee;
+  out.target = ko;
+  tx.outputs.push_back(out);
+
+  const uint64_t treasuryAmount =
+      refundFee > SwapTxBuilder::MIN_FEE ? refundFee - SwapTxBuilder::MIN_FEE : 0;
+  if (treasuryAmount > 0) {
+    CryptoNote::KeyOutput treasuryOut;
+    treasuryOut.key = params.treasuryPubKey;
+    CryptoNote::TransactionOutput treasuryOutput;
+    treasuryOutput.amount = treasuryAmount;
+    treasuryOutput.target = treasuryOut;
+    tx.outputs.push_back(treasuryOutput);
+  }
+
+  Crypto::Hash prefixHash;
+  if (!CryptoNote::getObjectHash(
+          static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash)) {
+    return false;
+  }
+  Crypto::Signature refundSig;
+  Crypto::generate_signature(prefixHash, params.ourSwapPubKey,
+                             params.ourSwapSecKey, refundSig);
+  tx.signatures.push_back(std::vector<Crypto::Signature>{refundSig});
+
+  const std::string txHex = SwapTxBuilder::serializeToHex(tx);
+  if (!m_rpc.sendRawTransaction(txHex)) {
+    m_logger(Logging::ERROR) << "  Escrow refund broadcast failed — will retry";
+    return false;
+  }
+  if (refundFee > 0) {
+    m_rpc.addSwapFee(refundFee);
+  }
+  m_logger(Logging::INFO) << "  Escrow refund broadcast (direct escrow spend).";
+  return true;
+}
+
 bool SwapDaemon::buildAndBroadcastEscrowTx(SwapParams& params,
                                            const Crypto::PublicKey& destinationKey,
-                                           const std::string& txType) {
-  // Full pipeline: build unsigned tx → collaborative ring sig → broadcast.
+                                           const std::string& txType) {  // Full pipeline: build unsigned tx → collaborative ring sig → broadcast.
   // This is the synchronous version that assumes peer Round 1 + Round 2
   // data has already been populated in the ring state.
 
@@ -3054,7 +3551,13 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           return true;
         }
         if (!params.musig2.sessionInitialized) {
-          if (!adaptor_session_init(params, presigSessionHash(params.escrowTxHash),
+          Crypto::Hash sessionMsg = claimSessionMessage(params);
+          static const Crypto::Hash ZERO_HASH{};
+          if (std::memcmp(&sessionMsg, &ZERO_HASH, sizeof(sessionMsg)) == 0) {
+            m_logger(Logging::ERROR) << "Claim session message derivation failed";
+            return false;
+          }
+          if (!adaptor_session_init(params, sessionMsg,
                                     /*use_adaptor=*/true)) {
             m_logger(Logging::ERROR) << "Session init (on-demand) failed";
             return false;
@@ -3134,6 +3637,71 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         params.ringPeerRound2Received  = true;
         m_logger(Logging::INFO) << "  Received peer Ring Round 2 data (persisted)";
         return true;
+
+      case PeerMessageType::XMR_KEYS: {
+        if (params.pair != SwapPair::XMR) {
+          m_logger(Logging::WARNING) << "XMR_KEYS on a non-XMR swap rejected";
+          return false;
+        }
+        static const Crypto::PublicKey ZERO_PK{};
+        if (std::memcmp(&msg.xmrKeys.spendPub, &ZERO_PK, sizeof(ZERO_PK)) == 0 ||
+            std::memcmp(&msg.xmrKeys.viewPub, &ZERO_PK, sizeof(ZERO_PK)) == 0 ||
+            !Crypto::check_key(msg.xmrKeys.spendPub) ||
+            !Crypto::check_key(msg.xmrKeys.viewPub)) {
+          m_logger(Logging::ERROR) << "XMR_KEYS with invalid pubkeys";
+          return false;
+        }
+        // The view secret must match the published view pubkey.
+        Crypto::PublicKey derivedView;
+        if (!Crypto::secret_key_to_public_key(msg.xmrKeys.viewSec, derivedView) ||
+            std::memcmp(&derivedView, &msg.xmrKeys.viewPub, sizeof(derivedView)) != 0) {
+          m_logger(Logging::ERROR) << "XMR_KEYS view secret does not match view pubkey";
+          return false;
+        }
+        if (params.peerXmrKeysReceived) {
+          if (std::memcmp(&params.peerXmrSpendPub, &msg.xmrKeys.spendPub, sizeof(ZERO_PK)) != 0 ||
+              std::memcmp(&params.peerXmrViewPub, &msg.xmrKeys.viewPub, sizeof(ZERO_PK)) != 0) {
+            m_logger(Logging::ERROR) << "Conflicting duplicate XMR_KEYS rejected";
+            return false;
+          }
+          return true;
+        }
+        params.peerXmrSpendPub = msg.xmrKeys.spendPub;
+        params.peerXmrViewPub = msg.xmrKeys.viewPub;
+        params.peerXmrViewSec = msg.xmrKeys.viewSec;
+        params.peerXmrKeysReceived = true;
+        m_logger(Logging::INFO) << "Received peer XMR keys";
+        return true;
+      }
+
+      case PeerMessageType::XMR_SHARE_REVEAL: {
+        if (params.pair != SwapPair::XMR) {
+          m_logger(Logging::WARNING) << "XMR_SHARE_REVEAL on a non-XMR swap rejected";
+          return false;
+        }
+        if (!params.peerXmrKeysReceived) {
+          m_logger(Logging::WARNING) << "XMR_SHARE_REVEAL before XMR_KEYS rejected";
+          return false;
+        }
+        // The revealed share must be the discrete log of the peer's
+        // published spend pubkey.
+        Crypto::PublicKey derived;
+        if (!Crypto::secret_key_to_public_key(msg.xmrShareReveal.spendShare, derived) ||
+            std::memcmp(&derived, &params.peerXmrSpendPub, sizeof(derived)) != 0) {
+          m_logger(Logging::ERROR) << "XMR_SHARE_REVEAL does not match peer spend pubkey";
+          return false;
+        }
+        if (params.peerXmrShareReceived &&
+            std::memcmp(&params.peerXmrSpendShare, &msg.xmrShareReveal.spendShare,
+                        sizeof(Crypto::SecretKey)) != 0) {
+          m_logger(Logging::ERROR) << "Conflicting XMR_SHARE_REVEAL rejected";
+          return false;
+        }
+        params.peerXmrSpendShare = msg.xmrShareReveal.spendShare;
+        params.peerXmrShareReceived = true;
+        m_logger(Logging::INFO) << "Received peer XMR spend share";
+        return true;
+      }
 
       case PeerMessageType::SECRET_REVEAL: {
         // Alice receives adaptor preimage t from Bob.

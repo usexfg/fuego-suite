@@ -26,6 +26,7 @@ struct NodeInfo {
   uint32_t height;
   uint64_t difficulty;
   uint64_t txCount;
+  uint8_t blockMajorVersion;
   std::string status;
 };
 
@@ -51,6 +52,11 @@ struct TransferResult {
 struct TxOutputInfo {
   uint64_t amount;
   Crypto::PublicKey targetKey;  // KeyOutput target public key
+  bool isSwapEscrow = false;    // TransactionOutputSwapEscrow
+  Crypto::PublicKey escrowClaimKey;
+  Crypto::PublicKey escrowRefundKey;
+  Crypto::PublicKey escrowAdaptorPoint;
+  uint32_t escrowRefundTimeout = 0;
 };
 
 // Decoy output for ring signature construction.

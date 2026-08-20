@@ -75,6 +75,12 @@ namespace CryptoNote
       return msg;
     }
 
+    Logging::LoggerMessage warning_msg_writer() const {
+      auto msg = logger(Logging::WARNING, Logging::BRIGHT_YELLOW);
+      msg << "Warning: ";
+      return msg;
+    }
+
     // @ Alias system commands
     bool register_alias(const std::vector<std::string> &args);
     bool lookup_alias(const std::vector<std::string> &args);

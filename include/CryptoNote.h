@@ -124,9 +124,40 @@ struct TransactionInputUnified {
   Crypto::EllipticCurveScalar sigC0;                 // MLSAG initial challenge scalar
 };
 
-typedef boost::variant<BaseInput, KeyInput, MultisignatureInput, TransactionInputCommitmentSpend, TransactionInputCommitmentTransfer, TransactionInputUnified> TransactionInput;
+// v11+ (HEATWAVE) atomic-swap escrow output.
+//
+// Fixes the legacy cooperative-only escrow (C2: no unilateral refund).
+// Spending is split into two time-gated paths:
+//   claim  — valid only BEFORE refundTimeout: signature under claimKey
+//            (the MuSig2 aggregate of both swap parties; the completed
+//            adaptor aggregate verifies as a plain Schnorr sig).
+//   refund — valid only AT/AFTER refundTimeout: signature under refundKey
+//            (the maker's key alone; no peer cooperation required).
+// Both paths spend the same output; the chain marks the output used on
+// either spend, so claim-then-refund and refund-then-claim double spends
+// are impossible regardless of key-image differences.
+struct TransactionOutputSwapEscrow {
+  Crypto::PublicKey claimKey;      // MuSig2 aggregate pubkey (joint key)
+  Crypto::PublicKey refundKey;     // maker's refund pubkey
+  Crypto::PublicKey adaptorPoint;  // T = t*G — the claim challenge commits R_agg + T
+  uint32_t refundTimeout;          // absolute block height; refund valid after
+};
 
-typedef boost::variant<KeyOutput, MultisignatureOutput, TransactionOutputCommitment, TransactionOutputUnified, TransactionOutputOrder> TransactionOutputTarget;
+// v11+ (HEATWAVE) atomic-swap escrow spend input.
+// References the funding transaction and output index directly (no decoy
+// ring — the escrow key is a one-time joint key, so mixing adds nothing).
+struct TransactionInputSwapEscrow {
+  uint64_t amount;             // must equal the referenced output amount
+  Crypto::Hash escrowTxId;     // funding transaction hash
+  uint16_t escrowOutputIndex;  // output index within the funding transaction
+  uint8_t mode;                // 0 = claim, 1 = refund
+  Crypto::KeyImage keyImage;   // deterministic per (escrowTxId, index, mode):
+                               // pool-level double-spend marker
+};
+
+typedef boost::variant<BaseInput, KeyInput, MultisignatureInput, TransactionInputCommitmentSpend, TransactionInputCommitmentTransfer, TransactionInputUnified, TransactionInputSwapEscrow> TransactionInput;
+
+typedef boost::variant<KeyOutput, MultisignatureOutput, TransactionOutputCommitment, TransactionOutputUnified, TransactionOutputOrder, TransactionOutputSwapEscrow> TransactionOutputTarget;
 
 struct TransactionOutput {
   uint64_t amount;

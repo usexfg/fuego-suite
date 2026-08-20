@@ -96,10 +96,10 @@ void HttpServer::acceptLoop() {
     for (;;) {
       HttpRequest req;
       HttpResponse resp;
-	  resp.addHeader("Access-Control-Allow-Origin", "*");
-	  resp.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-	  resp.addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-	  resp.addHeader("content-type", "application/json");
+      // No default CORS: a wildcard Access-Control-Allow-Origin would let any
+      // website issue RPC calls to the daemon (CSRF). CORS is opt-in via
+      // RpcServer::enableCors, which sets a configurable allow-origin domain.
+      resp.addHeader("content-type", "application/json");
 
       parser.receiveRequest(stream, req);
 				if (authenticate(req)) {

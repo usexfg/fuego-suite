@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <thread>
 #include <memory>
+#include <atomic>
+#include <cstdint>
 
 #include "HttpServer.h"
 #include <Logging/LoggerRef.h>
@@ -138,6 +140,7 @@ private:
   bool on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request& req, COMMAND_RPC_GET_HEAT_METRICS::response& res);
   bool on_amm_quote(const COMMAND_RPC_AMM_QUOTE::request& req, COMMAND_RPC_AMM_QUOTE::response& res);
   bool on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req, COMMAND_RPC_AMM_POOL_INFO::response& res);
+  bool on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& req, COMMAND_RPC_GET_FUEGO_PRICE::response& res);
   bool on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req, COMMAND_RPC_GET_LIMIT_ORDERS::response& res);
   bool on_add_swap_fee(const COMMAND_RPC_ADD_SWAP_FEE::request& req, COMMAND_RPC_ADD_SWAP_FEE::response& res);
   bool on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req, COMMAND_RPC_GET_EPOCH_HISTORY::response& res);
@@ -198,6 +201,21 @@ private:
   SwapOfferRelay* m_swapRelay = nullptr;
   XfgSwap::SwapDatabase* m_swapDb = nullptr;
   XfgSwap::SwapDaemon* m_swapDaemon = nullptr;
+
+  // ── Request rate limiting (DoS hardening) ────────────────────────────────
+  // Lightweight global rolling-window throttle for resource-intensive and
+  // state-changing endpoints (sendrawtransaction, place_order). Prevents a
+  // single client from flooding the node's CPU/mempool/orderbook.
+  std::atomic<uint64_t> m_lastTxSubmitWindow{0};
+  std::atomic<uint32_t> m_txSubmitCount{0};
+  std::atomic<uint64_t> m_lastOrderSubmitWindow{0};
+  std::atomic<uint32_t> m_orderSubmitCount{0};
+
+  // Returns true if the request is allowed, false if throttled. windowStart /
+  // count track the current 1s window; maxPerWindow is the burst cap.
+  static bool rateLimit(std::atomic<uint64_t>& windowStart,
+                        std::atomic<uint32_t>& count,
+                        uint32_t maxPerWindow);
 
 };
 

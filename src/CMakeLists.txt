@@ -330,6 +330,18 @@ add_executable(test_adaptor_roundtrip
 target_link_libraries(test_adaptor_roundtrip PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon unit test: v11 escrow consensus primitives (C2 claim/refund)
+add_executable(test_swap_escrow_claim
+    SwapDaemon/tests/test_swap_escrow_claim.cpp)
+target_link_libraries(test_swap_escrow_claim PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: v11 XMR share-exchange primitives (C6)
+add_executable(test_xmr_share_reveal
+    SwapDaemon/tests/test_xmr_share_reveal.cpp)
+target_link_libraries(test_xmr_share_reveal PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: PriceOracle ARB/BASE pricing and units
 add_executable(test_price_oracle_arb
     SwapDaemon/tests/test_price_oracle_arb.cpp)

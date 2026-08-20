@@ -166,7 +166,7 @@ namespace CryptoNote
          // The 0.5 epoch (3rd-to-last) gets half bonus: +75%
 
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
-        // Swap fee split: 80% CD Yield / 20% Treasury Reserve
+        // Swap fee split: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 69;           // 69% of epoch swap fees → CD Yield Pool
         // CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
         // No protocol cut — CD holders selling rewards back provides natural ratio recovery.
@@ -229,6 +229,9 @@ namespace CryptoNote
         const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150;       // 18 epochs: 1.5× bonus
         const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;        // 6 epochs: 1.25× bonus
         const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;         // Rolling: 1.0× (no bonus)
+       // v11+: rolling window (epochs) for the BV bonus-share denominator —
+       // matches the max CD term so expired CDs age out of the denominator.
+       const uint64_t BONUS_WEIGHTED_WINDOW_EPOCHS = 72;
 
         // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
         const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000;              // 0.10 HEAT in atomic units

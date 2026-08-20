@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 extern "C" {
 #include "crypto/crypto-ops.h"
@@ -504,6 +505,92 @@ Crypto::Hash SwapTxBuilder::sharedSeed(const SwapParams& params) {
   Crypto::cn_fast_hash(params.escrowTxHash.data,
                        sizeof(params.escrowTxHash.data), seed);
   return seed;
+}
+
+Crypto::KeyImage SwapTxBuilder::swapEscrowKeyImage(const Crypto::Hash& escrowTxId,
+                                                   uint16_t outputIndex,
+                                                   uint8_t mode) {
+  // The mode byte is part of the key-image seed and is consensus-validated
+  // (mode > 1 is rejected in Blockchain::validateSwapEscrowInput). Enforce
+  // the same bound here so an internal misuse can never seed an invalid
+  // key image (defense in depth).
+  if (mode > 1) {
+    throw std::invalid_argument("swapEscrowKeyImage: mode must be 0 (claim) or 1 (refund)");
+  }
+  unsigned char buf[32 + 2 + 1];
+  std::memcpy(buf, escrowTxId.data, 32);
+  buf[32] = static_cast<unsigned char>(outputIndex & 0xFF);
+  buf[33] = static_cast<unsigned char>((outputIndex >> 8) & 0xFF);
+  buf[34] = mode;
+  Crypto::Hash seed;
+  Crypto::cn_fast_hash(buf, sizeof(buf), seed);
+  Crypto::PublicKey seedKey;
+  std::memcpy(&seedKey, &seed, sizeof(Crypto::PublicKey));
+  ge_p3 p;
+  hashToEc(seedKey, p);
+  Crypto::KeyImage ki;
+  ge_p3_tobytes(reinterpret_cast<unsigned char*>(&ki), &p);
+  return ki;
+}
+
+bool SwapTxBuilder::buildDeterministicClaimTx(const SwapParams& params,
+                                              const Crypto::PublicKey& destinationKey,
+                                              uint64_t protocolFee,
+                                              const Crypto::PublicKey& treasuryKey,
+                                              CryptoNote::Transaction& tx,
+                                              Crypto::Hash& prefixHash) {
+  tx = CryptoNote::Transaction{};
+  tx.version = CryptoNote::TRANSACTION_VERSION_2;
+  tx.unlockTime = 0;
+
+  // Deterministic tx-extra key: derived from the escrow tx hash, so both
+  // parties construct identical claim transactions.
+  {
+    std::vector<uint8_t> seedBuf;
+    const char domainSep[] = "fuego-swap-claim-txkey";
+    seedBuf.insert(seedBuf.end(), domainSep, domainSep + sizeof(domainSep) - 1);
+    seedBuf.insert(seedBuf.end(), params.escrowTxHash.data,
+                   params.escrowTxHash.data + sizeof(params.escrowTxHash.data));
+    Crypto::Hash seedHash;
+    Crypto::cn_fast_hash(seedBuf.data(), seedBuf.size(), seedHash);
+    Crypto::SecretKey seed;
+    std::memcpy(&seed, &seedHash, sizeof(Crypto::SecretKey));
+    CryptoNote::KeyPair txKey;
+    Crypto::generate_keys_from_seed(txKey.publicKey, txKey.secretKey, seed);
+    CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+  }
+
+  CryptoNote::TransactionInputSwapEscrow in;
+  in.amount = params.xfgAmount;
+  in.escrowTxId = params.escrowTxHash;
+  in.escrowOutputIndex = 0;
+  in.mode = 0; // claim
+  in.keyImage = swapEscrowKeyImage(params.escrowTxHash, 0, 0);
+  tx.inputs.push_back(in);
+
+  CryptoNote::KeyOutput ko;
+  ko.key = destinationKey;
+  CryptoNote::TransactionOutput out;
+  out.amount = params.xfgAmount - protocolFee;
+  out.target = ko;
+  tx.outputs.push_back(out);
+
+  const uint64_t treasuryAmount =
+      protocolFee > MIN_FEE ? protocolFee - MIN_FEE : 0;
+  if (treasuryAmount > 0) {
+    CryptoNote::KeyOutput treasuryOut;
+    treasuryOut.key = treasuryKey;
+    CryptoNote::TransactionOutput treasuryOutput;
+    treasuryOutput.amount = treasuryAmount;
+    treasuryOutput.target = treasuryOut;
+    tx.outputs.push_back(treasuryOutput);
+  }
+
+  if (!CryptoNote::getObjectHash(
+          static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash)) {
+    return false;
+  }
+  return true;
 }
 
 } // namespace XfgSwap

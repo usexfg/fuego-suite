@@ -362,12 +362,14 @@ namespace CryptoNote
     {
       std::string offerId;
       Crypto::PublicKey makerPubKey;
-      Crypto::Signature signature;        // Signs "cancel:<offerId>" with maker's key
+      Crypto::Signature signature;        // Signs "cancel:<offerId>:<timestamp>" with maker's key
+      uint64_t          timestamp;        // Anti-replay: bounds the cancel signature lifetime
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
         KV_MEMBER(makerPubKey)
         KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
       }
     };
     typedef EMPTY_STRUCT response;
@@ -662,11 +664,13 @@ namespace CryptoNote
       std::string offerId;
       Crypto::PublicKey makerPubKey;
       Crypto::Signature signature;
+      uint64_t          timestamp;        // Anti-replay: bounds the cancel signature lifetime
 
       void serialize(ISerializer& s) {
         KV_MEMBER(offerId)
         KV_MEMBER(makerPubKey)
         KV_MEMBER(signature)
+        KV_MEMBER(timestamp)
       }
     };
     typedef EMPTY_STRUCT response;

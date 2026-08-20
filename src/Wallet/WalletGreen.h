@@ -81,6 +81,15 @@ public:
                        uint64_t precomputedInterest,
                        std::string &txHashOut);
 
+  // Caps a formula interest amount by the CD yield pool backing (fee pool +
+  // CD_APY_POOL vault) so the built tx matches what consensus accepts.
+  // v11+: returns the total claimable (pool-backed base + BV-backed bonus)
+  // and reports the bonus portion via bonusOut (declared on-chain with a
+  // TransactionExtraCdBonusClaim). Logs a warning when a cap bites (rare
+  // event).
+  uint64_t capInterestByPool(DepositId depositId, uint64_t formulaInterest,
+                             uint64_t& bonusOut, uint32_t term);
+
   // Burn deposit information for local secret storage
   struct BurnDepositInfo {
     std::string transactionHash;

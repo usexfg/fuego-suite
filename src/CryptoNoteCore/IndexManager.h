@@ -59,6 +59,21 @@ struct MultisignatureOutputUsage {
     }
 };
 
+// Swap-escrow output usage (v11+). Both claim and refund spends mark the
+// same entry used, so a claim-then-refund or refund-then-claim double spend
+// is impossible even though the two paths use different key images.
+struct SwapEscrowOutputUsage {
+    TxIndex transactionIndex;
+    uint16_t outputIndex;
+    bool isUsed;
+
+    void serialize(ISerializer& s) {
+        s(transactionIndex, "txindex");
+        s(outputIndex, "outindex");
+        s(isUsed, "used");
+    }
+};
+
 struct CommitmentOutputRef {
     TxIndex           transactionIndex;
     uint16_t                   outputInTransaction;
@@ -81,6 +96,7 @@ struct CommitmentOutputRef {
 using key_images_container       = parallel_flat_hash_map<Crypto::KeyImage, uint32_t>;
 using outputs_container          = parallel_flat_hash_map<uint64_t, std::vector<std::pair<TxIndex, uint16_t>>>;
 using MultisignatureOutputsContainer = parallel_flat_hash_map<uint64_t, std::vector<MultisignatureOutputUsage>>;
+using SwapEscrowOutputsContainer = parallel_flat_hash_map<uint64_t, std::vector<SwapEscrowOutputUsage>>;
 using CommitmentOutputsContainer     = parallel_flat_hash_map<uint64_t, std::vector<CommitmentOutputRef>>;
 using TransactionMap                 = parallel_flat_hash_map<Crypto::Hash, TxIndex>;
 
@@ -199,6 +215,30 @@ private:
     CommitmentOutputsContainer m_data;
 };
 
+// ─── SwapEscrowOutputIndex ────────────────────────────────────────────────
+
+class SwapEscrowOutputIndex : public IIndex {
+public:
+    SwapEscrowOutputIndex() = default;
+
+    void clear() override { m_data.clear(); }
+
+    SwapEscrowOutputsContainer& data() { return m_data; }
+    const SwapEscrowOutputsContainer& data() const { return m_data; }
+
+    auto find(uint64_t amount) { return m_data.find(amount); }
+    auto find(uint64_t amount) const { return m_data.find(amount); }
+    auto end() { return m_data.end(); }
+    auto end() const { return m_data.end(); }
+    auto& operator[](uint64_t amount) { return m_data[amount]; }
+    void erase(SwapEscrowOutputsContainer::iterator it) { m_data.erase(it); }
+
+    template<class S> void serialize(S& s, const std::string& name) { s(m_data, name); }
+
+private:
+    SwapEscrowOutputsContainer m_data;
+};
+
 // ─── TransactionMapIndex ──────────────────────────────────────────────────
 
 class TransactionMapIndex : public IIndex {
@@ -261,6 +301,9 @@ public:
     MultisigOutputIndex& multisigOutputs() { return m_multisigOutputs; }
     const MultisigOutputIndex& multisigOutputs() const { return m_multisigOutputs; }
 
+    SwapEscrowOutputIndex& swapEscrowOutputs() { return m_swapEscrowOutputs; }
+    const SwapEscrowOutputIndex& swapEscrowOutputs() const { return m_swapEscrowOutputs; }
+
     CommitmentOutputIndex& commitmentOutputs() { return m_commitmentOutputs; }
     const CommitmentOutputIndex& commitmentOutputs() const { return m_commitmentOutputs; }
 
@@ -272,6 +315,7 @@ private:
     SpentKeyIndex         m_spentKeys;
     OutputIndex           m_outputs;
     MultisigOutputIndex   m_multisigOutputs;
+    SwapEscrowOutputIndex m_swapEscrowOutputs;
     CommitmentOutputIndex m_commitmentOutputs;
     TransactionMapIndex   m_transactionMap;
     std::atomic<bool>     m_ready{false};

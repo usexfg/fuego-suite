@@ -168,6 +168,24 @@ public:
   // Serialize a transaction to hex for sendRawTransaction.
   static std::string serializeToHex(const CryptoNote::Transaction& tx);
 
+  // Deterministic per-(escrow, mode) key image for pool double-spend
+  // tracking: H(H(escrowTxId || outputIndex || mode)) mapped to the curve.
+  // Both parties compute the same value without any shared secret.
+  static Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId,
+                                             uint16_t outputIndex,
+                                             uint8_t mode);
+
+  // Build the deterministic claim transaction for a v11+ escrow. Every
+  // field (including the tx-extra public key) is derived from the escrow
+  // tx hash, so both parties construct byte-identical transactions and the
+  // MuSig2 presig session can commit to this exact prefix at presig time.
+  static bool buildDeterministicClaimTx(const SwapParams& params,
+                                        const Crypto::PublicKey& destinationKey,
+                                        uint64_t protocolFee,
+                                        const Crypto::PublicKey& treasuryKey,
+                                        CryptoNote::Transaction& tx,
+                                        Crypto::Hash& prefixHash);
+
   // Generate a deterministic shared seed from the escrow tx hash.
   // Both parties derive identical decoy ring sig values from this.
   static Crypto::Hash sharedSeed(const SwapParams& params);

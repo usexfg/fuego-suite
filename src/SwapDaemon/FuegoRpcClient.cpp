@@ -358,6 +358,8 @@ bool FuegoRpcClient::getInfo(NodeInfo& info) {
       ? static_cast<uint64_t>(json("difficulty").getInteger()) : 0;
     info.txCount = json.contains("tx_count")
       ? static_cast<uint64_t>(json("tx_count").getInteger()) : 0;
+    info.blockMajorVersion = json.contains("block_major_version")
+      ? static_cast<uint8_t>(json("block_major_version").getInteger()) : 0;
     info.status = json.contains("status")
       ? json("status").getString() : "UNKNOWN";
 
@@ -512,6 +514,16 @@ bool FuegoRpcClient::getTransactionOutputs(const std::string& txHashHex,
         TxOutputInfo info;
         info.amount = out.amount;
         info.targetKey = boost::get<CryptoNote::KeyOutput>(out.target).key;
+        outputs.push_back(info);
+      } else if (out.target.type() == typeid(CryptoNote::TransactionOutputSwapEscrow)) {
+        const auto& escrow = boost::get<CryptoNote::TransactionOutputSwapEscrow>(out.target);
+        TxOutputInfo info;
+        info.amount = out.amount;
+        info.isSwapEscrow = true;
+        info.escrowClaimKey = escrow.claimKey;
+        info.escrowRefundKey = escrow.refundKey;
+        info.escrowAdaptorPoint = escrow.adaptorPoint;
+        info.escrowRefundTimeout = escrow.refundTimeout;
         outputs.push_back(info);
       }
     }

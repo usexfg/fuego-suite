@@ -107,6 +107,18 @@ bool ammValidateSwap(uint64_t input, uint64_t output,
   return output > 0 && output <= expected;
 }
 
+bool ammValidateInvariant(uint64_t reserveAIn, uint64_t reserveBIn,
+                          uint64_t reserveAOut, uint64_t reserveBOut) {
+  uint128_t before = (uint128_t)reserveAIn * reserveBIn;
+  uint128_t after  = (uint128_t)reserveAOut * reserveBOut;
+  // The fee means the post-swap product must never be below the pre-swap
+  // product. Rounding may reduce the product by at most the rounding loss of
+  // the two reserve updates; allow a 1-permille tolerance to avoid false
+  // negatives on tiny amounts while still catching pool-draining regressions.
+  const uint128_t tolerance = before / 1000 + 1;
+  return after + tolerance >= before;
+}
+
 bool ammValidateDepositRatio(uint64_t amountA, uint64_t amountB,
                               uint64_t reserveA, uint64_t reserveB,
                               uint32_t toleranceBps) {

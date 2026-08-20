@@ -159,7 +159,9 @@ struct SwapParams {
 
   // Escrow tx on XFG chain
   Crypto::Hash escrowTxHash;
-  uint32_t escrowOutputIndex = 0;      // global output index of escrow
+  uint32_t escrowOutputIndex = 0;      // global output index of escrow (legacy ring path)
+  std::string escrowClaimSigHex;       // completed adaptor aggregate (persisted:
+                                       // adaptor_aggregate zeroes adaptorSecret)
 
   // ── Legacy HTLC fields (kept for backward compat) ──
   Crypto::Hash hashLock;
@@ -236,10 +238,33 @@ struct SwapParams {
   bool adaptorSecretRevealedToPeer = false;  // Bob: we already sent SECRET_REVEAL
   bool adaptorSecretReceived = false;        // Alice: we received t from Bob
 
+  // ── XMR (CryptoNote adaptor) leg ──
+  // Per-swap XMR keypairs. The shared address's spend key is
+  // xmrSpendPub + peerXmrSpendPub; both parties hold their own spend secret
+  // and receive the peer's only via XMR_SHARE_REVEAL (Alice reveals after
+  // the XFG claim confirms; Bob reveals after the timeout). The VIEW secret
+  // is shared in XMR_KEYS — read-only, required for scanning.
+  Crypto::SecretKey xmrSpendSec;
+  Crypto::PublicKey xmrSpendPub;
+  Crypto::SecretKey xmrViewSec;
+  Crypto::PublicKey xmrViewPub;
+  Crypto::PublicKey peerXmrSpendPub;
+  Crypto::PublicKey peerXmrViewPub;
+  Crypto::SecretKey peerXmrViewSec;
+  Crypto::SecretKey peerXmrSpendShare;   // revealed by the peer (spend secret)
+  bool xmrKeysGenerated = false;
+  bool xmrKeysSent = false;
+  bool peerXmrKeysReceived = false;
+  bool peerXmrShareReceived = false;
+  bool xmrShareSent = false;
+
   std::vector<uint8_t> encBlob;        // encrypted adaptorSecret blob (from disk)
   std::vector<uint8_t> encSecKeyBlob;  // encrypted ourSwapSecKey blob (from disk)
   std::vector<uint8_t> encRingNonceBlob; // encrypted ringOurRingNonceSec blob
   std::vector<uint8_t> encMusig2NonceBlob; // encrypted musig2.ourSecNonce blob (64 bytes)
+  std::vector<uint8_t> encXmrSpendBlob;  // encrypted xmrSpendSec blob (from disk)
+  std::vector<uint8_t> encXmrViewBlob;   // encrypted xmrViewSec blob (from disk)
+  std::vector<uint8_t> encPeerXmrShareBlob; // encrypted peerXmrSpendShare blob (from disk)
 };
 
 const char* swapStateToString(SwapState s);

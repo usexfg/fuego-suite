@@ -648,6 +648,12 @@ std::vector<uint8_t> BchHtlcScript::parseClaimPreimage(
     const std::vector<uint8_t>& rawTx,
     const std::vector<uint8_t>& htlcP2shScriptPubKey) {
 
+  // P2SH claim scriptSigs are small (sig + 32-byte preimage + OP_TRUE +
+  // redeemScript ≈ 300 bytes). Cap the accepted scriptSig length to bound
+  // memory and CPU: reject pathological compact-size lengths without
+  // allocating or scanning them (OOM / CPU-exhaustion guard).
+  static const uint64_t MAX_SCRIPT_SIG_LEN = 10000;
+
   // P2SH scriptPubKey format: OP_HASH160 (0xA9) PUSH20 (0x14) <20-byte-hash> OP_EQUAL (0x87)
   // Total length: 23 bytes. The hash is at bytes [2..22).
   if (htlcP2shScriptPubKey.size() != 23) return {};
@@ -668,6 +674,10 @@ std::vector<uint8_t> BchHtlcScript::parseClaimPreimage(
   uint64_t vinCount = 0;
   if (!readVarInt(p, end, vinCount)) return {};
 
+  // Bound the input count against the remaining buffer to prevent a huge
+  // loop from a tiny/truncated payload.
+  if (vinCount > static_cast<uint64_t>(end - p) / 36 + 1) return {};
+
   // Parse each input
   for (uint64_t i = 0; i < vinCount; ++i) {
     // Skip prev txid (32 bytes) + prev vout (4 bytes) + sequence (4 bytes) = 40 bytes
@@ -678,6 +688,7 @@ std::vector<uint8_t> BchHtlcScript::parseClaimPreimage(
     // Read scriptSig
     uint64_t scriptSigLen = 0;
     if (!readVarInt(p, end, scriptSigLen)) return {};
+    if (scriptSigLen > MAX_SCRIPT_SIG_LEN) return {};
     if (p + scriptSigLen > end) return {};
     const uint8_t* scriptSigStart = p;
     const uint8_t* scriptSigEnd = p + scriptSigLen;

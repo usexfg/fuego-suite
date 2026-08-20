@@ -179,6 +179,14 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       break;
     case PeerMessageType::AFK_CLAIM_ACK:
       break;
+    case PeerMessageType::XMR_KEYS:
+      appendPod(buf, msg.xmrKeys.spendPub);
+      appendPod(buf, msg.xmrKeys.viewPub);
+      appendPod(buf, msg.xmrKeys.viewSec);
+      break;
+    case PeerMessageType::XMR_SHARE_REVEAL:
+      appendPod(buf, msg.xmrShareReveal.spendShare);
+      break;
     case PeerMessageType::ABORT:
       break;
   }
@@ -259,6 +267,16 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       break;
 
     case PeerMessageType::AFK_CLAIM_ACK:
+      break;
+
+    case PeerMessageType::XMR_KEYS:
+      payload.insert("spendPub", podHex(msg.xmrKeys.spendPub));
+      payload.insert("viewPub", podHex(msg.xmrKeys.viewPub));
+      payload.insert("viewSec", podHex(msg.xmrKeys.viewSec));
+      break;
+
+    case PeerMessageType::XMR_SHARE_REVEAL:
+      payload.insert("spendShare", podHex(msg.xmrShareReveal.spendShare));
       break;
 
     case PeerMessageType::ABORT:
@@ -357,6 +375,16 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         break;
 
       case PeerMessageType::AFK_CLAIM_ACK:
+        break;
+
+      case PeerMessageType::XMR_KEYS:
+        if (!hexPod(p("spendPub").getString(), msg.xmrKeys.spendPub)) return false;
+        if (!hexPod(p("viewPub").getString(), msg.xmrKeys.viewPub)) return false;
+        if (!hexPod(p("viewSec").getString(), msg.xmrKeys.viewSec)) return false;
+        break;
+
+      case PeerMessageType::XMR_SHARE_REVEAL:
+        if (!hexPod(p("spendShare").getString(), msg.xmrShareReveal.spendShare)) return false;
         break;
 
       case PeerMessageType::ABORT:

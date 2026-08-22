@@ -331,7 +331,10 @@ double Currency::getBurnPercentage() const {
     const uint64_t epochDuration = m_testnet
         ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
         : parameters::EPOCH_DURATION_BLOCKS;
-    if (term == parameters::DEPOSIT_MAX_TERM) {
+    const uint32_t maxTerm = m_testnet
+        ? parameters::TESTNET_DEPOSIT_MAX_TERM
+        : parameters::DEPOSIT_MAX_TERM;
+    if (term == maxTerm) {
       return parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
     } else if (term == 36 * epochDuration) {
       return parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×

@@ -27,6 +27,7 @@ LoggerMessage LoggerRef::operator()(Level level, const std::string& color) const
 }
 
 ILogger& LoggerRef::getLogger() const {
+  if (!logger) throw std::runtime_error("LoggerRef: logger is null");
   return *logger;
 }
 

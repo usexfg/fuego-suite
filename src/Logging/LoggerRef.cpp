@@ -23,6 +23,7 @@ LoggerRef::LoggerRef(ILogger& logger, const std::string& category) : logger(&log
 }
 
 LoggerMessage LoggerRef::operator()(Level level, const std::string& color) const {
+  if (!logger) throw std::runtime_error("LoggerRef: logger is null");
   return LoggerMessage(*logger, category, level, color);
 }
 

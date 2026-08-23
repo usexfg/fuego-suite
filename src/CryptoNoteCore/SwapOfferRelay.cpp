@@ -18,6 +18,7 @@
 #include "Logging/LoggerRef.h"
 #include "Common/Util.h"
 #include "Common/StringTools.h"
+#include <iostream>
 
 namespace CryptoNote {
 
@@ -57,7 +58,11 @@ void SwapOfferRelay::cleanupThread() {
       cleanupLegacyOffers();
       cleanupExpiredOrders();
       cleanupExpiredReservations();
-    } catch (...) {}
+    } catch (const std::exception& e) {
+      try { std::cerr << "SwapOfferRelay::cleanupThread: " << e.what() << std::endl; } catch (...) {}
+    } catch (...) {
+      try { std::cerr << "SwapOfferRelay::cleanupThread: unknown exception" << std::endl; } catch (...) {}
+    }
 
     for (int i = 0; i < 30 && m_running; ++i) {
       std::this_thread::sleep_for(std::chrono::seconds(1));

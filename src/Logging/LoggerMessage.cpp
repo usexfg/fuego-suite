@@ -94,6 +94,7 @@ LoggerMessage::LoggerMessage(LoggerMessage&& other)
     std::swap(_M_tie, other._M_tie);
   }
   _M_streambuf = this;
+  this->set_rdbuf(this);
 }
 #endif
 

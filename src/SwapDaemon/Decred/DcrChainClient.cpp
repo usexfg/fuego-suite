@@ -6,6 +6,7 @@
 #include "Common/StringTools.h"
 #include <cstring>
 #include <algorithm>
+#include <stdexcept>
 #include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
@@ -44,7 +45,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
       auto bytes = DcrHtlcScript::hexToBytes(params.ctrAddress);
       if (bytes.size() == 33 && (bytes[0] == 0x02 || bytes[0] == 0x03))
         recipientKey = params.ctrAddress;
-    } catch (...) {}
+    } catch (const std::exception&) {}
   }
   if (recipientKey.size() != 66)
     return ChainClientResult::fail(
@@ -87,7 +88,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
         std::memcpy(privKey.data(), raw.data(), 32);
         haveLocalKey = true;
       }
-    } catch (...) {}
+    } catch (const std::exception&) {}
   }
 
   std::vector<uint8_t> senderPubKey(33, 0x02);
@@ -95,7 +96,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
     try {
       CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
       senderPubKey = signer.derivePublicKeyCompressed(privKey);
-    } catch (...) {
+    } catch (const std::exception&) {
       return ChainClientResult::fail("DCR lock: failed to derive sender pubkey");
     }
   }
@@ -155,7 +156,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
 
     (void)fundAmount;
     return ChainClientResult::okWithState(txid, redeemScriptHex);
-  } catch (...) {
+  } catch (const std::exception&) {
     return ChainClientResult::fail("DCR lock: RPC exception");
   }
 }

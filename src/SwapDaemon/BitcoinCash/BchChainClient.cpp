@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <algorithm>
+#include <stdexcept>
 #include "Komodo/KmdHtlcScript.h"
 
 namespace XfgSwap {
@@ -52,7 +53,7 @@ ChainClientResult BchChainClient::lock(const SwapParams& params) {
       auto bytes = BchHtlcScript::hexToBytes(params.ctrAddress);
       if (bytes.size() == 33 && (bytes[0] == 0x02 || bytes[0] == 0x03))
         recipientKey = params.ctrAddress;
-    } catch (...) {}
+    } catch (const std::exception&) {}
   }
   if (recipientKey.size() != 66 && !params.ctrAddress.empty()) {
     std::string resolved;

@@ -229,7 +229,7 @@ bool parseTonAddress(const std::string& addr, int8_t& wc, uint8_t hash[32]) {
   if (colon != std::string::npos) {
     try {
       wc = static_cast<int8_t>(std::stoi(addr.substr(0, colon)));
-    } catch (...) { return false; }
+    } catch (const std::exception&) { return false; }
     std::string hex = addr.substr(colon + 1);
     if (hex.size() != 64) return false;
     for (size_t i = 0; i < 32; ++i) {

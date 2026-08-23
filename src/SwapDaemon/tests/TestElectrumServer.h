@@ -21,6 +21,7 @@
 #endif
 #include <string>
 #include <thread>
+#include <stdexcept>
 
 #ifdef _WIN32
 #define poll WSAPoll
@@ -214,7 +215,7 @@ private:
         }
         sent += static_cast<size_t>(n);
       }
-    } catch (...) {
+    } catch (const std::exception&) {
       // Ignore malformed JSON
     }
   }

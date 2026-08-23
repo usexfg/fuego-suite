@@ -20,6 +20,7 @@
 #include <HTTP/httplib.h>
 #include <sstream>
 #include <mutex>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -137,7 +138,7 @@ std::string RpcServer::dispatch(const std::string& body) {
     } else {
       params = "{}";
     }
-  } catch (...) {
+  } catch (const std::exception&) {
     return rpcError(-32700, "Parse error", id);
   }
 

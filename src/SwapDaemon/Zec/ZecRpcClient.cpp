@@ -300,7 +300,7 @@ bool ZecRpcClient::getAddressPubkey(const std::string& address, std::string& pub
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -319,7 +319,7 @@ bool ZecRpcClient::estimateFeeZats(uint64_t& feeZats, int confTarget) {
     double zecPerKb = 0.0;
     try {
       zecPerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (zecPerKb <= 0.0) return true;
@@ -330,7 +330,7 @@ bool ZecRpcClient::estimateFeeZats(uint64_t& feeZats, int confTarget) {
     // Cap at 0.001 ZEC to avoid runaway estimates
     if (feeZats > 100000) feeZats = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -353,7 +353,7 @@ bool ZecRpcClient::getRawTransaction(const std::string& txid, std::string& rawTx
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

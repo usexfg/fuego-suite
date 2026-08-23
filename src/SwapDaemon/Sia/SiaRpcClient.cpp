@@ -5,6 +5,7 @@
 
 #include <HTTP/httplib.h>
 #include <sstream>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -44,7 +45,7 @@ std::string SiaRpcClient::http(const std::string& method, const std::string& pat
       if (!res || res->status < 200 || res->status >= 300) return {};
     }
     return res->body;
-  } catch (...) {
+  } catch (const std::exception&) {
     return {};
   }
 }
@@ -58,7 +59,7 @@ bool SiaRpcClient::getBlockHeight(uint64_t& height) {
       height = static_cast<uint64_t>(root("height").getInteger());
       return true;
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   // walletd: /api/consensus/tip
   body = http("GET", "/api/consensus/tip");
   if (body.empty()) return false;
@@ -68,7 +69,7 @@ bool SiaRpcClient::getBlockHeight(uint64_t& height) {
       height = static_cast<uint64_t>(root("height").getInteger());
       return true;
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   return false;
 }
 
@@ -85,7 +86,7 @@ bool SiaRpcClient::getBalance(uint64_t& hastings) {
         hastings = static_cast<uint64_t>(root("confirmedsiacoinbalance").getInteger());
       return true;
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   return false;
 }
 
@@ -98,7 +99,7 @@ bool SiaRpcClient::getAddress(std::string& address) {
       address = root("address").getString();
       return !address.empty();
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   return false;
 }
 
@@ -124,7 +125,7 @@ bool SiaRpcClient::sendSiacoins(const std::string& destAddress,
       txid = root("transactionids")[0].getString();
       return !txid.empty();
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   // Some versions return empty 204-ish — treat non-empty body without error as ok
   if (body.find("transaction") != std::string::npos || body == "{}" ) {
     txid = memo.empty() ? "sia-send-ok" : memo; // fallback id

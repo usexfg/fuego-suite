@@ -300,7 +300,7 @@ bool DashRpcClient::getAddressPubkey(const std::string& address, std::string& pu
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -319,7 +319,7 @@ bool DashRpcClient::estimateFeeDuffs(uint64_t& feeDuffs, int confTarget) {
     double dashPerKb = 0.0;
     try {
       dashPerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (dashPerKb <= 0.0) return true;
@@ -330,7 +330,7 @@ bool DashRpcClient::estimateFeeDuffs(uint64_t& feeDuffs, int confTarget) {
     // Cap at 0.001 DASH to avoid runaway estimates
     if (feeDuffs > 100000) feeDuffs = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -353,7 +353,7 @@ bool DashRpcClient::getRawTransaction(const std::string& txid, std::string& rawT
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

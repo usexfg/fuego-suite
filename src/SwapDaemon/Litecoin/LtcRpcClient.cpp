@@ -292,7 +292,7 @@ bool LtcRpcClient::getAddressPubkey(const std::string& address, std::string& pub
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -309,7 +309,7 @@ bool LtcRpcClient::estimateFeeLitoshis(uint64_t& feeLitoshi, int confTarget) {
     double ltcPerKb = 0.0;
     try {
       ltcPerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (ltcPerKb <= 0.0) return true;
@@ -319,7 +319,7 @@ bool LtcRpcClient::estimateFeeLitoshis(uint64_t& feeLitoshi, int confTarget) {
     if (est > feeLitoshi) feeLitoshi = est;
     if (feeLitoshi > 100000) feeLitoshi = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -341,7 +341,7 @@ bool LtcRpcClient::getRawTransaction(const std::string& txid, std::string& rawTx
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

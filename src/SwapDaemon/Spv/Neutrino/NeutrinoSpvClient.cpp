@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -329,7 +330,7 @@ bool NeutrinoSpvClient::syncHeaders() {
   Common::JsonValue tipJson;
   try {
     tipJson = Common::JsonValue::fromString(tipResponse);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -369,7 +370,7 @@ bool NeutrinoSpvClient::syncHeaders() {
     Common::JsonValue json;
     try {
       json = Common::JsonValue::fromString(result);
-    } catch (...) {
+    } catch (const std::exception&) {
       return false;
     }
 
@@ -433,7 +434,7 @@ bool NeutrinoSpvClient::verifyTxInclusion(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -715,7 +716,7 @@ bool NeutrinoSpvClient::getRawTx(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -786,7 +787,7 @@ bool NeutrinoSpvClient::downloadFilter(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -816,7 +817,7 @@ bool NeutrinoSpvClient::downloadBlockTxs(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 

@@ -26,6 +26,7 @@ namespace fs = std::filesystem;
 #endif
 #include <cstring>
 #include <algorithm>
+#include <stdexcept>
 
 namespace XfgSwap {
 

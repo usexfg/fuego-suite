@@ -17,6 +17,7 @@
 #endif
 
 #include <sstream>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -254,7 +255,7 @@ std::string ElectrumConnection::call(const std::string& method, const std::strin
     }
 
     return result.toString();
-  } catch (...) {
+  } catch (const std::exception&) {
     return "";
   }
 }

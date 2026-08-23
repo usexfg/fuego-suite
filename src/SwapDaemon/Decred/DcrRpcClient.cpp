@@ -343,7 +343,7 @@ bool DcrRpcClient::getBlockCount(uint64_t& height) {
     if (!result.isInteger()) return false;
     height = static_cast<uint64_t>(result.getInteger());
     return true;
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::getRawTransaction(const std::string& txid, std::string& rawTxHex) {
@@ -356,7 +356,7 @@ bool DcrRpcClient::getRawTransaction(const std::string& txid, std::string& rawTx
     if (!result.isString()) return false;
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::getRawTransactionBytes(const std::string& txid, std::vector<uint8_t>& rawTx) {
@@ -399,7 +399,7 @@ bool DcrRpcClient::getTxOut(const std::string& txid, uint32_t vout, uint64_t& am
       return true;
     }
     return false;
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::sendRawTransaction(const std::string& rawTxHex, std::string& txid) {
@@ -412,7 +412,7 @@ bool DcrRpcClient::sendRawTransaction(const std::string& rawTxHex, std::string& 
     if (!result.isString()) return false;
     txid = result.getString();
     return !txid.empty();
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::createRawTransaction(const std::string& inputsJson,
@@ -429,7 +429,7 @@ bool DcrRpcClient::createRawTransaction(const std::string& inputsJson,
     if (!result.isString()) return false;
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::signRawTransaction(const std::string& rawTxHex, std::string& signedTxHex) {
@@ -445,7 +445,7 @@ bool DcrRpcClient::signRawTransaction(const std::string& rawTxHex, std::string& 
       return !signedTxHex.empty();
     }
     return false;
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::importAddress(const std::string& address,
@@ -456,7 +456,7 @@ bool DcrRpcClient::importAddress(const std::string& address,
     std::string resp = rpcCall("importaddress", params);
     Common::JsonValue json = Common::JsonValue::fromString(resp);
     return json.isObject() && json.contains("result");
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::listUnspent(const std::string& address,
@@ -489,7 +489,7 @@ bool DcrRpcClient::listUnspent(const std::string& address,
       }
     }
     return true;
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 // ---- HTLC operations --------------------------------------------------------
@@ -555,7 +555,7 @@ bool DcrRpcClient::claim(const std::string& claimerWif,
 
     std::string txHex = DcrHtlcScript::bytesToHex(rawTx);
     return sendRawTransaction(txHex, claimTxId);
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 bool DcrRpcClient::refundHtlc(const std::string& senderWif,
@@ -618,7 +618,7 @@ bool DcrRpcClient::refundHtlc(const std::string& senderWif,
 
     std::string txHex = DcrHtlcScript::bytesToHex(rawTx);
     return sendRawTransaction(txHex, refundTxId);
-  } catch (...) { return false; }
+  } catch (const std::exception&) { return false; }
 }
 
 } // namespace XfgSwap

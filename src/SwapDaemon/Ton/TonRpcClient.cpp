@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstring>
 #include <vector>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -50,7 +51,7 @@ std::string TonRpcClient::httpPost(const std::string& body) {
     auto res = cli.Post(path.c_str(), headers, body, "application/json");
     if (!res || res->status != 200) return {};
     return res->body;
-  } catch (...) {
+  } catch (const std::exception&) {
     return {};
   }
 }
@@ -96,7 +97,7 @@ bool TonRpcClient::getMasterchainSeqno(uint64_t& seqno) {
       seqno = static_cast<uint64_t>(r("seqno").getInteger());
       return true;
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   return false;
 }
 
@@ -116,7 +117,7 @@ bool TonRpcClient::getBalance(const std::string& address, uint64_t& nanoTons) {
       nanoTons = static_cast<uint64_t>(root("result").getInteger());
       return true;
     }
-  } catch (...) {}
+  } catch (const std::exception&) {}
   return false;
 }
 
@@ -162,7 +163,7 @@ bool TonRpcClient::getHtlcState(const std::string& address, TonHtlcState& out) {
           if (item.isArray() && item.size() >= 2) {
             if (item[1].isString()) return item[1].getString();
           }
-        } catch (...) {}
+        } catch (const std::exception&) {}
         return {};
       };
       // We don't rely on JsonValue operator[] — use string find fallback via body.
@@ -187,7 +188,7 @@ bool TonRpcClient::getHtlcState(const std::string& address, TonHtlcState& out) {
     out.refunded = body.find("\"refunded\":true") != std::string::npos ||
                    body.find("\"refunded\":1") != std::string::npos;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     uint64_t bal = 0;
     if (!getBalance(address, bal)) return false;
     out.amountNano = bal;
@@ -210,7 +211,7 @@ bool TonRpcClient::sendBoc(const std::string& bocBase64, std::string& messageHas
     }
     messageHashHex = "ok";
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

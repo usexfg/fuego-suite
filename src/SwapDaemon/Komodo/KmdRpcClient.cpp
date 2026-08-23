@@ -292,7 +292,7 @@ bool KmdRpcClient::getAddressPubkey(const std::string& address, std::string& pub
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -309,7 +309,7 @@ bool KmdRpcClient::estimateFeeSatoshis(uint64_t& feeSats, int confTarget) {
     double kmdPerKb = 0.0;
     try {
       kmdPerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (kmdPerKb <= 0.0) return true;
@@ -318,7 +318,7 @@ bool KmdRpcClient::estimateFeeSatoshis(uint64_t& feeSats, int confTarget) {
     if (est > feeSats) feeSats = est;
     if (feeSats > 100000) feeSats = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -340,7 +340,7 @@ bool KmdRpcClient::getRawTransaction(const std::string& txid, std::string& rawTx
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

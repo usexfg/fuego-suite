@@ -155,7 +155,7 @@ static bool parseJsonRpcResult(const std::string& raw, Common::JsonValue& result
     if (!root.contains("result")) return false;
     result = root("result");
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -238,7 +238,7 @@ bool ZanoRpcClient::getTransaction(const std::string& txHash, ZanoTxInfo& info) 
     info.amount = 0;
 
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -314,7 +314,7 @@ bool ZanoRpcClient::transferToShared(const std::string& address, uint64_t amount
             result.error = err("message").getString();
           }
         }
-      } catch (...) {}
+      } catch (const std::exception&) {}
     }
     return false;
   }
@@ -455,7 +455,7 @@ bool ZanoRpcClient::sweepSharedAddress(const std::string& spendKeyHex,
             result.error = err("message").getString();
           }
         }
-      } catch (...) {}
+      } catch (const std::exception&) {}
     }
     return false;
   }

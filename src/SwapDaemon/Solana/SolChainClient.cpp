@@ -1,4 +1,5 @@
 #include "SolChainClient.h"
+#include <stdexcept>
 #include "Common/StringTools.h"
 #include "../Crypto/Base58Std.h"
 #include "../Crypto/Ed25519Verify.h"

@@ -300,7 +300,7 @@ bool BchRpcClient::getAddressPubkey(const std::string& address, std::string& pub
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -319,7 +319,7 @@ bool BchRpcClient::estimateFeeSatoshis(uint64_t& feeSats, int confTarget) {
     double bchPerKb = 0.0;
     try {
       bchPerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (bchPerKb <= 0.0) return true;
@@ -330,7 +330,7 @@ bool BchRpcClient::estimateFeeSatoshis(uint64_t& feeSats, int confTarget) {
     // Cap at 0.001 BCH to avoid runaway estimates
     if (feeSats > 100000) feeSats = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -353,7 +353,7 @@ bool BchRpcClient::getRawTransaction(const std::string& txid, std::string& rawTx
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

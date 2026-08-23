@@ -10,6 +10,7 @@
 #include "Common/JsonValue.h"
 
 #include <algorithm>
+#include <stdexcept>
 
 namespace XfgSwap {
 
@@ -64,7 +65,7 @@ bool ElectrumSpvClient::syncHeaders() {
   Common::JsonValue subJson;
   try {
     subJson = Common::JsonValue::fromString(subResult);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -113,7 +114,7 @@ bool ElectrumSpvClient::syncHeaders() {
     Common::JsonValue json;
     try {
       json = Common::JsonValue::fromString(result);
-    } catch (...) {
+    } catch (const std::exception&) {
       return false;
     }
 
@@ -178,7 +179,7 @@ bool ElectrumSpvClient::crossCheckHeader(
     Common::JsonValue json;
     try {
       json = Common::JsonValue::fromString(result);
-    } catch (...) {
+    } catch (const std::exception&) {
       continue;
     }
 
@@ -229,7 +230,7 @@ SpvTxInclusion ElectrumSpvClient::crossCheckTxVerify(
       Common::JsonValue json;
       try {
         json = Common::JsonValue::fromString(result);
-      } catch (...) {
+      } catch (const std::exception&) {
         continue;
       }
 
@@ -260,7 +261,7 @@ SpvTxInclusion ElectrumSpvClient::crossCheckTxVerify(
       if (computedRoot == storedRootDisplay) {
         agreeCount++;
       }
-    } catch (...) {
+    } catch (const std::exception&) {
       continue;
     }
   }
@@ -299,7 +300,7 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
     Common::JsonValue json;
     try {
       json = Common::JsonValue::fromString(result);
-    } catch (...) {
+    } catch (const std::exception&) {
       uint64_t h;
       std::string hash;
       if (!m_store.bestTip(h, hash)) {
@@ -332,7 +333,7 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
     Common::JsonValue json;
     try {
       json = Common::JsonValue::fromString(result);
-    } catch (...) {
+    } catch (const std::exception&) {
       continue;
     }
     if (!json.contains("height")) {
@@ -385,7 +386,7 @@ bool ElectrumSpvClient::verifyTxInclusion(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -614,7 +615,7 @@ bool ElectrumSpvClient::getRawTx(
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -670,7 +671,7 @@ bool ElectrumSpvClient::findSpend(
   Common::JsonValue historyJson;
   try {
     historyJson = Common::JsonValue::fromString(historyResult);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -751,7 +752,7 @@ bool ElectrumSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::stri
   Common::JsonValue json;
   try {
     json = Common::JsonValue::fromString(result);
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 
@@ -783,7 +784,7 @@ bool ElectrumSpvClient::connectToServers() {
     uint16_t port = 0;
     try {
       port = static_cast<uint16_t>(std::stoi(addr.substr(colon + 1)));
-    } catch (...) {
+    } catch (const std::exception&) {
       continue;
     }
 

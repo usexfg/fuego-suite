@@ -19,6 +19,7 @@
 
 #include <cstring>
 #include <vector>
+#include <stdexcept>
 
 namespace XfgSwap {
 

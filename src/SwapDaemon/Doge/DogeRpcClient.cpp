@@ -298,7 +298,7 @@ bool DogeRpcClient::getAddressPubkey(const std::string& address, std::string& pu
         (pubkeyHex[1] == 'x' || pubkeyHex[1] == 'X'))
       pubkeyHex = pubkeyHex.substr(2);
     return pubkeyHex.size() == 66;
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }
@@ -317,7 +317,7 @@ bool DogeRpcClient::estimateFeeKoinu(uint64_t& feeKoinu, int confTarget) {
     double dogePerKb = 0.0;
     try {
       dogePerKb = result("feerate").getReal();
-    } catch (...) {
+    } catch (const std::exception&) {
       return true;
     }
     if (dogePerKb <= 0.0) return true;
@@ -328,7 +328,7 @@ bool DogeRpcClient::estimateFeeKoinu(uint64_t& feeKoinu, int confTarget) {
     // Cap at 0.001 DOGE to avoid runaway estimates
     if (feeKoinu > 100000) feeKoinu = 100000;
     return true;
-  } catch (...) {
+  } catch (const std::exception&) {
     return true;
   }
 }
@@ -351,7 +351,7 @@ bool DogeRpcClient::getRawTransaction(const std::string& txid, std::string& rawT
 
     rawTxHex = result.getString();
     return !rawTxHex.empty();
-  } catch (...) {
+  } catch (const std::exception&) {
     return false;
   }
 }

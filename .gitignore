@@ -31,7 +31,7 @@ Cargo.lock
 /monerotestnet
 /testnet-data
 /testnet-data2
-
+.cache
 # OS files
 .DS_Store
 Thumbs.db

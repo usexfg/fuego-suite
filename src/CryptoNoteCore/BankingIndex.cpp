@@ -29,10 +29,10 @@
 
 namespace CryptoNote {
 
-BankingIndex::BankingIndex() : blockCount(0), m_ethereal_xfg(0), m_total_burned_xfg(0) {
+BankingIndex::BankingIndex() : blockCount(0), m_ethereal_xfg(0), m_total_burned_xfg(0), m_permanently_burned_xfg(0) {
 }
 
-BankingIndex::BankingIndex(DepositHeight expectedHeight) : blockCount(0), m_ethereal_xfg(0), m_total_burned_xfg(0) {
+BankingIndex::BankingIndex(DepositHeight expectedHeight) : blockCount(0), m_ethereal_xfg(0), m_total_burned_xfg(0), m_permanently_burned_xfg(0) {
   index.reserve(expectedHeight + 1);
 }
 
@@ -115,6 +115,16 @@ void BankingIndex::popBlock() {
     m_total_burned_xfg -= totalInBlock;
   }
 
+  if (!m_permanentBurnedEntries.empty() && m_permanentBurnedEntries.back().height == blockCount) {
+    uint64_t currentTotal = m_permanently_burned_xfg;
+    uint64_t previousTotal = (m_permanentBurnedEntries.size() > 1) ?
+      (m_permanentBurnedEntries.end() - 2)->cumulative_burned : 0;
+    uint64_t permInBlock = currentTotal - previousTotal;
+
+    m_permanentBurnedEntries.pop_back();
+    m_permanently_burned_xfg -= permInBlock;
+  }
+
   if (!index.empty() && index.back().height == blockCount) {
     index.pop_back();
   }
@@ -169,6 +179,17 @@ size_t BankingIndex::popBlocks(DepositHeight from) {
     m_total_burned_xfg = 0;
   }
   m_totalBurnedEntries.erase(totalIt, m_totalBurnedEntries.end());
+
+  auto permIt = m_permanentBurnedEntries.begin();
+  while (permIt != m_permanentBurnedEntries.end() && permIt->height < from) {
+    ++permIt;
+  }
+  if (!m_permanentBurnedEntries.empty() && permIt != m_permanentBurnedEntries.begin()) {
+    m_permanently_burned_xfg = (permIt - 1)->cumulative_burned;
+  } else if (permIt == m_permanentBurnedEntries.begin()) {
+    m_permanently_burned_xfg = 0;
+  }
+  m_permanentBurnedEntries.erase(permIt, m_permanentBurnedEntries.end());
 
   auto diff = blockCount - from;
   blockCount -= diff;
@@ -237,6 +258,33 @@ void BankingIndex::addTotalBurn(BurnedAmount amount, DepositHeight height) {
   }
 }
 
+BankingIndex::BurnedAmount BankingIndex::getPermanentlyBurnedXfg() const {
+  return m_permanently_burned_xfg;
+}
+
+BankingIndex::BurnedAmount BankingIndex::getPermanentlyBurnedXfgAtHeight(DepositHeight height) const {
+  if (m_permanentBurnedEntries.empty()) return 0;
+  auto it = std::upper_bound(
+    m_permanentBurnedEntries.cbegin(), m_permanentBurnedEntries.cend(), height,
+    [] (DepositHeight height, const BurnedXfgEntry& entry) { return height < entry.height; });
+  return it == m_permanentBurnedEntries.cbegin() ? 0 : (--it)->cumulative_burned;
+}
+
+void BankingIndex::addPermanentBurn(BurnedAmount amount, DepositHeight height) {
+  if (amount == 0) return;
+  const uint64_t MAX_BURNED = std::numeric_limits<uint64_t>::max();
+  assert(amount <= MAX_BURNED - m_permanently_burned_xfg && "addPermanentBurn: Overflow in cumulative permanent burned!");
+  m_permanently_burned_xfg += amount;
+
+  if (!m_permanentBurnedEntries.empty() && m_permanentBurnedEntries.back().height == height) {
+    assert(amount <= MAX_BURNED - m_permanentBurnedEntries.back().amount && "addPermanentBurn: Overflow in entry amount!");
+    m_permanentBurnedEntries.back().amount += amount;
+    m_permanentBurnedEntries.back().cumulative_burned = m_permanently_burned_xfg;
+  } else {
+    m_permanentBurnedEntries.push_back({ height, amount, m_permanently_burned_xfg });
+  }
+}
+
 void BankingIndex::addForeverDeposit(BurnedAmount amount, DepositHeight height) {
   if (amount == 0) return;
 
@@ -294,11 +342,20 @@ void BankingIndex::serialize(ISerializer& s) {
       m_total_burned_xfg = 0;
       m_totalBurnedEntries.clear();
     }
+    try {
+      s(m_permanently_burned_xfg, "permanentlyBurnedXFG");
+      readSequence<BurnedXfgEntry>(std::back_inserter(m_permanentBurnedEntries), "permanentBurnedEntries", s);
+    } catch (...) {
+      m_permanently_burned_xfg = 0;
+      m_permanentBurnedEntries.clear();
+    }
   } else {
     writeSequence<BankingIndexEntry>(index.begin(), index.end(), "index", s);
     writeSequence<BurnedXfgEntry>(m_burnedXfgEntries.begin(), m_burnedXfgEntries.end(), "burnedXfgEntries", s);
     s(m_total_burned_xfg, "totalBurnedXFG");
     writeSequence<BurnedXfgEntry>(m_totalBurnedEntries.begin(), m_totalBurnedEntries.end(), "totalBurnedEntries", s);
+    s(m_permanently_burned_xfg, "permanentlyBurnedXFG");
+    writeSequence<BurnedXfgEntry>(m_permanentBurnedEntries.begin(), m_permanentBurnedEntries.end(), "permanentBurnedEntries", s);
   }
 }
 

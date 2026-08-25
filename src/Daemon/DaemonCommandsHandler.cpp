@@ -337,7 +337,11 @@ bool DaemonCommandsHandler::status(const std::vector<std::string>& args) {
   uint64_t circulatingHeat = (totalHeatSupply > heatLockedInCDs) ? (totalHeatSupply - heatLockedInCDs) : 0;
   uint64_t totalEternalFlame = totalCoinsEthereal * CryptoNote::parameters::MINT_BURN_EF_PCT / 100;
   uint64_t swfBalance = heatMetrics.swfBurnedXfgPendingHeat;
+  uint64_t permanentlyBurned = heatMetrics.permanentlyBurnedXfg;
+  // circulating: total emitted minus all burned (EF + SWF pending + permanent) — SWF pending removed from circulating but not total supply
+  // effective max / total supply: moneySupply - permanent (permanent = SWF converted to HEAT)
   uint64_t actualTotalSupply = (totalCoinsInNetwork > totalCoinsEthereal) ? (totalCoinsInNetwork - totalCoinsEthereal) : 0;
+  uint64_t effectiveMaxSupply = (m_core.currency().moneySupply() > permanentlyBurned) ? (m_core.currency().moneySupply() - permanentlyBurned) : 0;
   uint64_t actualCircSupply = (actualTotalSupply > totalCoinsOnDeposits) ? (actualTotalSupply - totalCoinsOnDeposits) : 0;
 
 
@@ -356,10 +360,11 @@ std::cout << "Circulating HΞ∆T : " << currency.formatAmount(circulatingHeat) 
 std::cout << "Total HΞ∆T Minted to date : " << currency.formatAmount(totalHeatSupply) << " HΞ∆T" << std::endl;
 std::cout << "Total DIGM Minted to date : " << currency.formatAmount(heatMetrics.digmSupply) << " DIGM" << std::endl;
 std::cout << "DIGM Peg : 1 DIGM = 0.10 HΞ∆T" << std::endl;
-std::cout << "Total XFG Burned to date : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << (totalCoinsEthereal > 0 ? currency.formatAmount(calculatePercent(currency, totalEternalFlame, totalCoinsEthereal)) : "0.0") << "% E-Flame)" << std::endl;
-std::cout << "Treasury HΞ∆T Reserve : " << (heatMetrics.treasuryHeatReserve >= 1000000 ? currency.formatAmount(heatMetrics.treasuryHeatReserve) : "0.0") << " HΞ∆T" << std::endl;
-std::cout << "SWF Balance (cross-chain) : " << currency.formatAmount(swfBalance) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
-std::cout << "Total XFG Supply: " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+  std::cout << "Total XFG Burned to date : " << (totalCoinsEthereal >= 1000000 ? currency.formatAmount(totalCoinsEthereal) : "0.0") << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (" << (totalCoinsEthereal > 0 ? currency.formatAmount(calculatePercent(currency, totalEternalFlame, totalCoinsEthereal)) : "0.0") << "% E-Flame)" << std::endl;
+  std::cout << "Treasury HΞ∆T Reserve : " << (heatMetrics.treasuryHeatReserve >= 1000000 ? currency.formatAmount(heatMetrics.treasuryHeatReserve) : "0.0") << " HΞ∆T" << std::endl;
+  std::cout << "SWF Pending (circulating removed, not total): " << currency.formatAmount(swfBalance) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+  std::cout << "SWF Permanent (total supply removed): " << currency.formatAmount(permanentlyBurned) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << std::endl;
+  std::cout << "Total XFG Supply: " << currency.formatAmount(actualTotalSupply) << " " << (m_core.currency().isTestnet() ? "TEST" : "XFG") << " (effective max: " << currency.formatAmount(effectiveMaxSupply) << ")" << std::endl;
 std::cout << "**************************************************"<< std::endl;
   return true;
 }

@@ -1617,6 +1617,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.digmSupply = m_blockchain.getDigmSupply();
   m.burnedXfg = m_blockchain.getBurnedXfgAmount();
   m.totalBurnedXfg = m_blockchain.getTotalBurnedXfg();
+  m.permanentlyBurnedXfg = m_blockchain.getPermanentlyBurnedXfg();
   m.heatCdFeePool = m_blockchain.getHeatCdFeePool();
   m.swfBurnedXfgPendingHeat = m_blockchain.getSwfBurnedXfgPendingHeat();
   const auto& pool = m_blockchain.getAmmPool();

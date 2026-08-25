@@ -51,11 +51,19 @@ public:
   BurnedAmount getBurnedXfgAtHeight(DepositHeight height) const;
   void addForeverDeposit(BurnedAmount amount, DepositHeight height);
 
-  // Overall burn tally: EVERY XFG atom destroyed (mint burns, fee conversions),
+   // Overall burn tally: EVERY XFG atom destroyed (mint burns, fee conversions),
   // any route, all-time. Additive only; reversed by popBlock via height entries.
   BurnedAmount getTotalBurnedXfg() const;
   BurnedAmount getTotalBurnedXfgAtHeight(DepositHeight height) const;
   void addTotalBurn(BurnedAmount amount, DepositHeight height);
+
+  // Permanent burn: SWF XFG permanently retired from total supply when
+  // converted to HEAT (SWF->HEAT on demand). Removed from circulating
+  // immediately at burn, but removed from total supply only at conversion.
+  // Not used in baseReward — baseReward uses ethereal only.
+  BurnedAmount getPermanentlyBurnedXfg() const;
+  BurnedAmount getPermanentlyBurnedXfgAtHeight(DepositHeight height) const;
+  void addPermanentBurn(BurnedAmount amount, DepositHeight height);
 
   // Combined statistics
   struct DepositStats {
@@ -94,5 +102,7 @@ private:
   BurnedAmount m_ethereal_xfg;
   std::vector<BurnedXfgEntry> m_totalBurnedEntries;
   BurnedAmount m_total_burned_xfg;
+  std::vector<BurnedXfgEntry> m_permanentBurnedEntries;
+  BurnedAmount m_permanently_burned_xfg;
 };
 }

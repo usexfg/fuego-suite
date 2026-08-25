@@ -196,6 +196,7 @@ namespace CryptoNote {
     const VaultUtxoSet& getVault() const { return m_vault; }
     uint64_t getSwfBalance() const { return m_swfBurnedXfgPendingHeat; }
     uint64_t getSwfBurnedXfgPendingHeat() const { return m_swfBurnedXfgPendingHeat; }
+    uint64_t getPermanentlyBurnedXfg() const { return m_bankingIndex.getPermanentlyBurnedXfg(); }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
     uint64_t getTreasurySwapFeeXfg() const { return m_treasurySwapFeeXfg; }
     uint64_t getTreasuryCounterXFG() const { return m_treasuryCounterXFG; }

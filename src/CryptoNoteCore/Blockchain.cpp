@@ -5671,7 +5671,9 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
 
     // SWF collateral conversion: every 8 epochs, convert 50% of XFG → HEAT (counter only, no burn).
     // Converted HEAT stays in SWF as off-chain DIGM collateral.
-    if (epochNumber > 0 && epochNumber % CryptoNote::parameters::TREASURY_COUNTER_XFG_MINT_EPOCH_INTERVAL == 0) {
+    // TODO(Phase 2): re-enable when DIGM volume justifies collateralization — keep SWF in XFG until then.
+    // When re-enabled, converted XFG is permanently retired from total supply (m_permanentlyBurned).
+    if (false && epochNumber > 0 && epochNumber % CryptoNote::parameters::TREASURY_COUNTER_XFG_MINT_EPOCH_INTERVAL == 0) {
       if (m_swfBurnedXfgPendingHeat > 0) {
         uint64_t xfgToConvert = m_swfBurnedXfgPendingHeat / 2;
         uint64_t heatConverted = xfgToConvert;
@@ -5698,9 +5700,12 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
           }
           m_swfHeatBalance += heatConverted;
           m_swfBurnedXfgPendingHeat -= xfgToConvert;
+          // Permanent retirement: SWF XFG removed from total supply when converted to HEAT.
+          // Not used in baseReward (ethereal only) — display/cap only.
+          m_bankingIndex.addPermanentBurn(xfgToConvert, newHeight);
           logger(INFO) << "SWF collateral conversion (epoch " << epochNumber << "): "
                        << m_currency.formatAmount(xfgToConvert) << " XFG → "
-                       << m_currency.formatAmount(heatConverted) << " HEAT (counter)";
+                       << m_currency.formatAmount(heatConverted) << " HEAT (counter, permanently retired)";
         }
       }
     }

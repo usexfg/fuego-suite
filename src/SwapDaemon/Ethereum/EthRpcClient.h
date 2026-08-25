@@ -111,6 +111,28 @@ public:
   // If claimed, returns 64-char hex preimage; empty if not claimed / error.
   std::string getClaimedPreimage(const std::string& contractIdHex);
 
+  // PointTimelock methods
+  static std::string computePointContractId(const std::string& sender,
+                                            const std::string& recipient,
+                                            uint64_t valueWei,
+                                            const std::string& pointAddress,
+                                            uint64_t timeoutBlock);
+
+  bool lockPoint(const std::string& fromAddress,
+                 const std::string& recipientAddress,
+                 const std::string& pointAddress,
+                 uint64_t timeoutBlock,
+                 uint64_t valueWei,
+                 std::string& contractIdHex);
+
+  bool verifyPointLock(const std::string& contractIdHex,
+                       uint64_t expectedWei,
+                       const std::string& expectedRecipient = "",
+                       const std::string& expectedPointAddress = "");
+
+  std::string getClaimedPointSecret(const std::string& contractIdHex);
+
+
   // Claim ETH: claim(contractId, preimage) on the registry.
   bool claimHtlc(const std::string& fromAddress,
                  const std::string& contractIdHex,

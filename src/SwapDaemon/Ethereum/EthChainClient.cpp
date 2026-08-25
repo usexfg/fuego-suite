@@ -1,6 +1,7 @@
 #include "EthChainClient.h"
+#include "ContractAbi.h"
 #include "Common/StringTools.h"
-#include "crypto/keccak.h"
+#include "crypto/crypto.h"
 #include "../Crypto/Secp256k1Signer.h"
 #include "../SwapHashLock.h"
 #include <stdexcept>
@@ -8,6 +9,10 @@
 #include <cstring>
 #include <sstream>
 #include <iomanip>
+
+extern "C" {
+#include "crypto/keccak.h"
+}
 
 namespace XfgSwap {
 
@@ -27,18 +32,41 @@ EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::str
 
 ChainClientResult EthChainClient::lock(const SwapParams& params) {
   try {
-    // Hashlock MUST be keccak256(adaptorSecret) / params.hashLock from Bob.
-    // Alice-locks model: Alice has hashLock (H(t)) but not t; Bob has t for claim.
+    // 1. Try PTLC (PointTimelock) if adaptorPoint or adaptorSecret is present
+    std::string pointAddress;
+    bool hasPoint = false;
+    for (size_t i = 0; i < sizeof(params.adaptorPoint); ++i) {
+      if (reinterpret_cast<const uint8_t*>(&params.adaptorPoint)[i]) { hasPoint = true; break; }
+    }
+    if (hasPoint) {
+      pointAddress = EthAbi::derivePointAddressFromPoint(params.adaptorPoint);
+    } else if (!isZeroSecret(params.adaptorSecret)) {
+      pointAddress = EthAbi::derivePointAddressFromSecret(params.adaptorSecret);
+    }
+
+    if (!pointAddress.empty()) {
+      std::string contractId;
+      bool ok = m_rpc->lockPoint(
+          m_address,
+          params.ctrAddress,
+          pointAddress,
+          params.ctrTimeoutBlock,
+          params.ctrAmount,
+          contractId);
+      if (!ok) return ChainClientResult::fail(m_chainName + " lockPoint failed");
+      return ChainClientResult::ok(contractId);
+    }
+
+    // 2. Fallback to HTLC if hashLock is provided (legacy UTXO pair swaps)
     std::string hashHex;
     if (!isZeroSecret(params.adaptorSecret)) {
       hashHex = ethHashLockHex(params.adaptorSecret);
     } else {
-      // Use Bob's published H(t)
       bool nonzero = false;
       for (size_t i = 0; i < sizeof(params.hashLock); ++i)
         if (reinterpret_cast<const uint8_t*>(&params.hashLock)[i]) { nonzero = true; break; }
       if (!nonzero)
-        return ChainClientResult::fail(m_chainName + " lock: no adaptor secret or hashLock");
+        return ChainClientResult::fail(m_chainName + " lock: no adaptor point/secret or hashLock");
       hashHex = Common::podToHex(params.hashLock);
     }
 
@@ -60,9 +88,26 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
-  // ctrLockTxId holds the HashedTimelock contractId (not a tx hash).
-  // Verify amount + recipient + hashlock + not claimed/refunded via getContract.
-  // Prefer H(t) from adaptorSecret; Alice has only published hashLock — use that.
+  // 1. Try PointTimelock verification if adaptorPoint / adaptorSecret is set
+  std::string expectedPointAddress;
+  bool hasPoint = false;
+  for (size_t i = 0; i < sizeof(params.adaptorPoint); ++i) {
+    if (reinterpret_cast<const uint8_t*>(&params.adaptorPoint)[i]) { hasPoint = true; break; }
+  }
+  if (hasPoint) {
+    expectedPointAddress = EthAbi::derivePointAddressFromPoint(params.adaptorPoint);
+  } else if (!isZeroSecret(params.adaptorSecret)) {
+    expectedPointAddress = EthAbi::derivePointAddressFromSecret(params.adaptorSecret);
+  }
+
+  if (!expectedPointAddress.empty()) {
+    bool ok = m_rpc->verifyPointLock(params.ctrLockTxId, params.ctrAmount,
+                                     params.ctrAddress, expectedPointAddress);
+    if (!ok) return ChainClientResult::fail(m_chainName + " point lock not verified");
+    return ChainClientResult::ok(params.ctrLockTxId);
+  }
+
+  // 2. Fallback to HTLC verification
   std::string expectedHash;
   if (!isZeroSecret(params.adaptorSecret)) {
     expectedHash = ethHashLockHex(params.adaptorSecret);
@@ -74,7 +119,7 @@ ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
       expectedHash = Common::podToHex(params.hashLock);
   }
   if (expectedHash.empty())
-    return ChainClientResult::fail(m_chainName + " verifyLock: no hashLock or adaptorSecret");
+    return ChainClientResult::fail(m_chainName + " verifyLock: no point or hashLock");
   bool ok = m_rpc->verifyLock(params.ctrLockTxId, params.ctrAmount,
                               params.ctrAddress, expectedHash);
   if (!ok) return ChainClientResult::fail(m_chainName + " lock not verified");
@@ -89,7 +134,7 @@ ChainClientResult EthChainClient::claim(const SwapParams& params) {
         params.ctrLockTxId,
         Common::podToHex(params.adaptorSecret),
         claimTxHash);
-    if (!ok) return ChainClientResult::fail(m_chainName + " claimHtlc failed");
+    if (!ok) return ChainClientResult::fail(m_chainName + " claim failed");
     return ChainClientResult::ok(claimTxHash);
   } catch (const std::runtime_error& e) {
     auto r = ChainClientResult::fail(m_chainName + " claim error: " + e.what());
@@ -105,7 +150,7 @@ ChainClientResult EthChainClient::refund(const SwapParams& params) {
         m_address,
         params.ctrLockTxId,
         refundTxHash);
-    if (!ok) return ChainClientResult::fail(m_chainName + " refundHtlc failed");
+    if (!ok) return ChainClientResult::fail(m_chainName + " refund failed");
     return ChainClientResult::ok(refundTxHash);
   } catch (const std::runtime_error& e) {
     auto r = ChainClientResult::fail(m_chainName + " refund error: " + e.what());
@@ -125,7 +170,6 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   std::string sigHex    = proof.substr(c1 + 1, c2 - c1 - 1);
   std::string message   = proof.substr(c2 + 1);
 
-  // Parse 65-byte recoverable signature: r(32) + s(32) + v(1)
   if (sigHex.size() != 130)
     return ChainClientResult::fail(m_chainName + " reserve proof: signature must be 65 bytes hex (130 chars)");
 
@@ -149,7 +193,6 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   sig.s = sBytes;
   sig.recid = (v >= 27) ? static_cast<uint8_t>(v - 27) : v;
 
-  // Compute EIP-191 personal_sign digest: keccak256("\x19Ethereum Signed Message:\n" + len + message)
   std::string prefix = "\x19" "Ethereum Signed Message:\n" + std::to_string(message.size());
   std::vector<uint8_t> eip191(prefix.size() + message.size());
   std::memcpy(eip191.data(), prefix.data(), prefix.size());
@@ -166,7 +209,6 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
     return ChainClientResult::fail(m_chainName + " reserve proof: ecrecover failed");
   }
 
-  // Derive ETH address: last 20 bytes of keccak256(pubkey[1..64])
   uint8_t addrHash[32];
   keccak(pubkey.data() + 1, 64, addrHash, 32);
 
@@ -176,7 +218,6 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
     derived << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(addrHash[i]);
   }
 
-  // Case-insensitive compare
   std::string derivedAddr = derived.str();
   if (address.size() != derivedAddr.size())
     return ChainClientResult::fail(m_chainName + " reserve proof: invalid signature (address mismatch)");
@@ -203,7 +244,8 @@ bool EthChainClient::getCurrentHeight(uint64_t& height) {
 }
 
 std::string EthChainClient::tryExtractClaimedSecret(const SwapParams& params) {
-  // ctrLockTxId is the HashedTimelock contractId; after claim, preimage is stored on-chain.
+  std::string secret = m_rpc->getClaimedPointSecret(params.ctrLockTxId);
+  if (!secret.empty()) return secret;
   return m_rpc->getClaimedPreimage(params.ctrLockTxId);
 }
 

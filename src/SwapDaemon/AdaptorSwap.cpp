@@ -78,40 +78,21 @@ bool adaptor_generate_adaptor(SwapParams& params,
   // Generate adaptor secret t, point T = t*G
   Crypto::generate_keys(params.adaptorPoint, params.adaptorSecret);
 
-  // HTLC hashlock H(t) so Alice can lock without learning t (Alice-locks model).
-  // Match the counterparty program's hash: SHA-256 for UTXO, keccak for EVM/SOL.
-  // Hashlock MUST match the counterparty HTLC program (not T = t*G).
-  // SHA-256: Bitcoin-family UTXO scripts (OP_SHA256).
-  // Keccak-256: EVM HashedTimelock + Solana xfg_htlc.
-  // TON: SHA-256 (cell hash / preimage convention for our HTLC).
-  switch (params.pair) {
-    case SwapPair::BCH:
-    case SwapPair::BTC:
-    case SwapPair::LTC:
-    case SwapPair::DCR:
-    case SwapPair::KMD_SPV:
-    case SwapPair::DOGE:
-    case SwapPair::DASH:
-    case SwapPair::ZEC:
-    case SwapPair::TON: {
+  // HTLC hashlock H(t) is ONLY generated for legacy UTXO counterparty chains
+  // that lack native scriptless point lock support (BCH, LTC, DOGE, DASH, ZEC, DCR, etc.).
+  // PTLC-native chains (XMR, BTC Taproot, EVM, SOL, TON) use point lock T = t*G directly.
+  std::memset(&params.hashLock, 0, sizeof(params.hashLock));
+  if (isLegacyUtxoPair(params.pair)) {
+    if (params.pair == SwapPair::SIA) {
+      auto md = SiaHtlcScript::blake2b256(
+          reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32);
+      std::memcpy(&params.hashLock, md.data(), 32);
+    } else {
       std::vector<uint8_t> in(reinterpret_cast<const uint8_t*>(&params.adaptorSecret),
                               reinterpret_cast<const uint8_t*>(&params.adaptorSecret) + 32);
       auto md = BchHtlcScript::sha256(in);
       std::memcpy(&params.hashLock, md.data(), 32);
-      break;
     }
-    case SwapPair::SIA: {
-      // Sia HTLC uses Blake2b-256(preimage), not SHA-256 / keccak.
-      auto md = SiaHtlcScript::blake2b256(
-          reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32);
-      std::memcpy(&params.hashLock, md.data(), 32);
-      break;
-    }
-    default:
-      // ETH, ARB, BASE, BNB, POLYGON, SOL, AVAX, CRO, … → keccak256
-      keccak(reinterpret_cast<const uint8_t*>(&params.adaptorSecret), 32,
-             reinterpret_cast<uint8_t*>(&params.hashLock), 32);
-      break;
   }
 
   // Compute Q = t * base_point (for DLEQ proof)

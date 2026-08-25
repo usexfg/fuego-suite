@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -14,6 +15,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,6 +32,8 @@ type Config struct {
 	DaemonPort    int
 	WalletPort    int
 	SwapdPort     int
+	Host          string
+	PublicMode    bool
 }
 
 func parseFlags() Config {
@@ -37,11 +42,15 @@ func parseFlags() Config {
 		DaemonPort:    18180,
 		WalletPort:    18183,
 		SwapdPort:     18900,
+		Host:          "127.0.0.1",
+		PublicMode:    false,
 	}
 	flag.IntVar(&cfg.DashboardPort, "port", cfg.DashboardPort, "Dashboard HTTP port")
 	flag.IntVar(&cfg.DaemonPort, "daemon-port", cfg.DaemonPort, "Fuegod RPC port")
 	flag.IntVar(&cfg.WalletPort, "wallet-port", cfg.WalletPort, "Walletd RPC port")
 	flag.IntVar(&cfg.SwapdPort, "swapd-port", cfg.SwapdPort, "Swap daemon status port")
+	flag.StringVar(&cfg.Host, "host", cfg.Host, "HTTP listen host address")
+	flag.BoolVar(&cfg.PublicMode, "public", cfg.PublicMode, "Enable public web explorer mode (disable local wallet proxy, allow iframe framing)")
 	flag.Parse()
 	return cfg
 }
@@ -177,6 +186,273 @@ func fetchRaw(url string, timeout time.Duration) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 }
 
+// ── Live Data Stores ────────────────────────────────────────────────────────────
+
+type SpotTick struct {
+	Timestamp int64   `json:"t"`
+	Price     float64 `json:"p"`
+	Volume    float64 `json:"v"`
+}
+
+type PriceHistoryStore struct {
+	mu    sync.RWMutex
+	ticks []SpotTick
+}
+
+var globalPriceHistory = &PriceHistoryStore{}
+
+func (p *PriceHistoryStore) AddTick(priceAtomic, volumeAtomic uint64) {
+	if priceAtomic == 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now().Unix()
+	if len(p.ticks) > 0 && (now-p.ticks[len(p.ticks)-1].Timestamp) < 2 {
+		return
+	}
+	price := float64(priceAtomic)
+	volume := float64(volumeAtomic)
+	p.ticks = append(p.ticks, SpotTick{Timestamp: now, Price: price, Volume: volume})
+	if len(p.ticks) > 10000 {
+		p.ticks = p.ticks[len(p.ticks)-5000:]
+	}
+}
+
+func (p *PriceHistoryStore) GetOHLCV(timeframe string, count int) []map[string]interface{} {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if len(p.ticks) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	interval := int64(3600)
+	switch timeframe {
+	case "1m":
+		interval = 60
+	case "5m":
+		interval = 300
+	case "15m":
+		interval = 900
+	case "1h":
+		interval = 3600
+	case "4h":
+		interval = 14400
+	case "1d":
+		interval = 86400
+	}
+
+	type candleData struct {
+		t          int64
+		o, h, l, c float64
+		v          float64
+	}
+	candlesMap := make(map[int64]*candleData)
+	var bucketKeys []int64
+
+	for _, tick := range p.ticks {
+		bKey := (tick.Timestamp / interval) * interval
+		if c, exists := candlesMap[bKey]; exists {
+			if tick.Price > c.h {
+				c.h = tick.Price
+			}
+			if tick.Price < c.l {
+				c.l = tick.Price
+			}
+			c.c = tick.Price
+			c.v += tick.Volume
+		} else {
+			candlesMap[bKey] = &candleData{
+				t: bKey, o: tick.Price, h: tick.Price, l: tick.Price, c: tick.Price, v: tick.Volume,
+			}
+			bucketKeys = append(bucketKeys, bKey)
+		}
+	}
+
+	res := make([]map[string]interface{}, 0, len(bucketKeys))
+	for _, k := range bucketKeys {
+		c := candlesMap[k]
+		res = append(res, map[string]interface{}{
+			"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v,
+		})
+	}
+	if count > 0 && len(res) > count {
+		res = res[len(res)-count:]
+	}
+	return res
+}
+
+// priceLevel groups resting orders at the same price into a depth level.
+// order_ids allows MMs to cancel specific orders at that level.
+type priceLevel struct {
+	Price    uint64   `json:"price"`
+	Amount   uint64   `json:"amount"`
+	Depth    uint64   `json:"depth"` // cumulative from best
+	OrderIDs []string `json:"order_ids"`
+}
+
+func fetchOrderbookState(daemonPort int) map[string]interface{} {
+	emptyBook := map[string]interface{}{
+		"bids": []priceLevel{}, "asks": []priceLevel{},
+		// Legacy flat arrays for hearth.js backwards compat
+		"bid_prices": []uint64{}, "bid_amounts": []uint64{}, "bid_depths": []uint64{},
+		"ask_prices": []uint64{}, "ask_amounts": []uint64{}, "ask_depths": []uint64{},
+	}
+	data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/get_limit_orders", daemonPort), 3*time.Second)
+	if err != nil {
+		return emptyBook
+	}
+	rawOrders, ok := data["orders"].([]interface{})
+	if !ok || len(rawOrders) == 0 {
+		return emptyBook
+	}
+
+	// Group by (side, target_price) → accumulated amount + order_ids
+	type levelKey struct {
+		side  uint8
+		price uint64
+	}
+	type levelAcc struct {
+		amount   uint64
+		orderIDs []string
+	}
+	levels := make(map[levelKey]*levelAcc)
+	var bidKeys, askKeys []levelKey
+
+	for _, item := range rawOrders {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		withdrawn, _ := m["withdrawn"].(bool)
+		if withdrawn {
+			continue
+		}
+		amt, _ := m["amount"].(float64)
+		if amt <= 0 {
+			continue
+		}
+		price, _ := m["target_price"].(float64)
+		side, _ := m["side"].(float64)
+		orderID, _ := m["order_id"].(string)
+
+		key := levelKey{side: uint8(side), price: uint64(price)}
+		if acc, exists := levels[key]; exists {
+			acc.amount += uint64(amt)
+			if orderID != "" {
+				acc.orderIDs = append(acc.orderIDs, orderID)
+			}
+		} else {
+			ids := []string{}
+			if orderID != "" {
+				ids = append(ids, orderID)
+			}
+			levels[key] = &levelAcc{amount: uint64(amt), orderIDs: ids}
+			if key.side == 0 {
+				bidKeys = append(bidKeys, key)
+			} else {
+				askKeys = append(askKeys, key)
+			}
+		}
+	}
+
+	// Sort bids desc, asks asc
+	sort.Slice(bidKeys, func(i, j int) bool { return bidKeys[i].price > bidKeys[j].price })
+	sort.Slice(askKeys, func(i, j int) bool { return askKeys[i].price < askKeys[j].price })
+
+	// Build structured depth levels
+	bidLevels := make([]priceLevel, 0, len(bidKeys))
+	var cumBid uint64
+	for _, k := range bidKeys {
+		acc := levels[k]
+		cumBid += acc.amount
+		bidLevels = append(bidLevels, priceLevel{Price: k.price, Amount: acc.amount, Depth: cumBid, OrderIDs: acc.orderIDs})
+	}
+	askLevels := make([]priceLevel, 0, len(askKeys))
+	var cumAsk uint64
+	for _, k := range askKeys {
+		acc := levels[k]
+		cumAsk += acc.amount
+		askLevels = append(askLevels, priceLevel{Price: k.price, Amount: acc.amount, Depth: cumAsk, OrderIDs: acc.orderIDs})
+	}
+
+	// Flat arrays for hearth.js chart backwards compatibility
+	bidPrices := make([]uint64, len(bidLevels))
+	bidAmounts := make([]uint64, len(bidLevels))
+	bidDepths := make([]uint64, len(bidLevels))
+	for i, l := range bidLevels {
+		bidPrices[i], bidAmounts[i], bidDepths[i] = l.Price, l.Amount, l.Depth
+	}
+	askPrices := make([]uint64, len(askLevels))
+	askAmounts := make([]uint64, len(askLevels))
+	askDepths := make([]uint64, len(askLevels))
+	for i, l := range askLevels {
+		askPrices[i], askAmounts[i], askDepths[i] = l.Price, l.Amount, l.Depth
+	}
+
+	return map[string]interface{}{
+		"bids": bidLevels, "asks": askLevels,
+		"bid_prices": bidPrices, "bid_amounts": bidAmounts, "bid_depths": bidDepths,
+		"ask_prices": askPrices, "ask_amounts": askAmounts, "ask_depths": askDepths,
+	}
+}
+
+// ── Market Maker REST Endpoints ────────────────────────────────────────────────
+
+func apiPoolHandler(daemonPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second)
+		if err != nil {
+			http.Error(w, `{"error":"failed to fetch pool info"}`, http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(data)
+	}
+}
+
+func apiOrderbookHandler(daemonPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		ob := fetchOrderbookState(daemonPort)
+		json.NewEncoder(w).Encode(ob)
+	}
+}
+
+func apiQuoteHandler(daemonPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		amtStr := r.URL.Query().Get("amount")
+		dirStr := r.URL.Query().Get("direction")
+		if amtStr == "" {
+			amtStr = "10000000" // 1 XFG default
+		}
+		if dirStr == "" {
+			dirStr = "0"
+		}
+		reqBody, _ := json.Marshal(map[string]interface{}{
+			"input_amount": parseUint64Default(amtStr, 10000000),
+			"direction":    parseUint64Default(dirStr, 0),
+		})
+		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/amm_quote", daemonPort), "application/json", bytes.NewReader(reqBody))
+		if err != nil {
+			http.Error(w, `{"error":"failed to fetch quote"}`, http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		io.Copy(w, resp.Body)
+	}
+}
+
+func parseUint64Default(s string, def uint64) uint64 {
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
 // ── Event Pollers ──────────────────────────────────────────────────────────────
 
 func pollDaemon(bus *EventBus, daemonPort int) {
@@ -196,14 +472,18 @@ func pollDaemon(bus *EventBus, daemonPort int) {
 			bus.Broadcast(Event{Type: EventHeat, Payload: data, Time: time.Now().Unix()})
 		}
 
-		// Pool info
+		// Pool info + Spot price history tick
 		if data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second); err == nil {
+			if sp, ok := data["spot_price"].(float64); ok && sp > 0 {
+				rx, _ := data["reserve_xfg"].(float64)
+				globalPriceHistory.AddTick(uint64(sp), uint64(rx))
+			}
 			bus.Broadcast(Event{Type: EventPool, Payload: data, Time: time.Now().Unix()})
 		}
 
 		// Orderbook
-		if body, err := fetchRaw(fmt.Sprintf("http://127.0.0.1:%d/json_rpc", daemonPort), 3*time.Second); err == nil {
-			_ = body // orderbook fetched via RPC proxy
+		if data := fetchOrderbookState(daemonPort); data != nil {
+			bus.Broadcast(Event{Type: EventOrderbook, Payload: data, Time: time.Now().Unix()})
 		}
 
 		// Health status
@@ -315,19 +595,35 @@ func handleWebSocket(bus *EventBus, w http.ResponseWriter, r *http.Request) {
 
 // ── Security Middleware ────────────────────────────────────────────────────────
 
-func securityHeaders(next http.Handler) http.Handler {
+// ── Security Middleware ────────────────────────────────────────────────────────
+
+func securityHeaders(next http.Handler, publicMode bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; "+
-				"script-src 'self'; "+
-				"style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data:; "+
-				"connect-src 'self' ws://127.0.0.1:*; "+
-				"frame-src 'none'; "+
-				"object-src 'none'; "+
-				"base-uri 'self'; "+
-				"form-action 'self'")
-		w.Header().Set("X-Frame-Options", "DENY")
+		if publicMode {
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; "+
+					"script-src 'self' 'unsafe-inline'; "+
+					"style-src 'self' 'unsafe-inline'; "+
+					"img-src 'self' data:; "+
+					"connect-src 'self' ws: wss: http: https:; "+
+					"frame-ancestors 'self' https: http:; "+
+					"object-src 'none'; "+
+					"base-uri 'self'; "+
+					"form-action 'self'")
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		} else {
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; "+
+					"script-src 'self'; "+
+					"style-src 'self' 'unsafe-inline'; "+
+					"img-src 'self' data:; "+
+					"connect-src 'self' ws://127.0.0.1:*; "+
+					"frame-src 'none'; "+
+					"object-src 'none'; "+
+					"base-uri 'self'; "+
+					"form-action 'self'")
+			w.Header().Set("X-Frame-Options", "DENY")
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
@@ -335,22 +631,27 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func corsMiddleware(next http.Handler, publicMode bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
-			ou, err := url.Parse(origin)
-			if err != nil {
-				http.Error(w, "bad origin", http.StatusForbidden)
-				return
+			if publicMode {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+			} else {
+				ou, err := url.Parse(origin)
+				if err != nil {
+					http.Error(w, "bad origin", http.StatusForbidden)
+					return
+				}
+				oh := ou.Hostname()
+				if oh != "127.0.0.1" && oh != "localhost" && oh != "::1" {
+					http.Error(w, "forbidden origin", http.StatusForbidden)
+					return
+				}
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
 			}
-			oh := ou.Hostname()
-			if oh != "127.0.0.1" && oh != "localhost" && oh != "::1" {
-				http.Error(w, "forbidden origin", http.StatusForbidden)
-				return
-			}
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -371,19 +672,31 @@ func corsMiddleware(next http.Handler) http.Handler {
 var walletAllowedMethods = map[string]bool{
 	// Read-only
 	"getbalance":            true,
-	"getaddress":            true,
-	"getaddresses":          true,
+	"get_address":           true,
+	"get_transfers":         true,
+	"get_height":            true,
 	"getstatus":             true,
-	"getheight":             true,
-	"gettransfers":          true,
-	"gettransferbytxid":     true,
-	"getunconfirmedbalance": true,
-	"getvalidateaddress":    true,
-	// Write (trading)
-	"place_limit_order":  true,
-	"cancel_limit_order": true,
-	"amm_swap":           true,
-	"initiate_swap":      true,
+	"get_limit_orders":      true,
+	"list_cds":              true,
+	"estimate_cd_yield":     true,
+	"get_cd_claim_preview":  true,
+	// Write — Hearth limit orders
+	"place_limit_order":     true,
+	"cancel_limit_order":    true,
+	// Write — AMM swaps & LP
+	"amm_swap":              true,
+	"amm_add_liquidity":     true,
+	"amm_remove_liquidity":  true,
+	"amm_claim_lp_fees":     true,
+	// Write — HEAT
+	"heat_mint":             true,
+	"send_heat":             true,
+	// Write — CDs
+	"create_cd":             true,
+	"withdraw_cd":           true,
+	"rollover_cd":           true,
+	// Write — atomic swap initiation
+	"initiate_swap":         true,
 }
 
 // Simple token-bucket rate limiter per IP.
@@ -413,8 +726,12 @@ func (rl *rateLimiter) allow(key string) bool {
 
 var walletRateLimiter = newRateLimiter(200 * time.Millisecond)
 
-func walletProxyHandler(walletPort int) http.HandlerFunc {
+func walletProxyHandler(walletPort int, publicMode bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if publicMode {
+			http.Error(w, "wallet RPC proxy disabled in public mode", http.StatusForbidden)
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST required", http.StatusMethodNotAllowed)
 			return
@@ -517,6 +834,86 @@ func openBrowser(url string) {
 	}
 }
 
+func jsonRpcHandler(daemonProxy *httputil.ReverseProxy, daemonPort int) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			daemonProxy.ServeHTTP(w, r)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewBuffer(body))
+
+		var req struct {
+			JsonRpc string                 `json:"jsonrpc"`
+			ID      interface{}            `json:"id"`
+			Method  string                 `json:"method"`
+			Params  map[string]interface{} `json:"params"`
+		}
+		if err := json.Unmarshal(body, &req); err == nil {
+			if req.Method == "get_ohlcv" || req.Method == "get_ohlvc" {
+				tf := "1h"
+				cnt := 200
+				if req.Params != nil {
+					if t, ok := req.Params["timeframe"].(string); ok && t != "" {
+						tf = t
+					}
+					if c, ok := req.Params["count"].(float64); ok && c > 0 {
+						cnt = int(c)
+					}
+				}
+				candles := globalPriceHistory.GetOHLCV(tf, cnt)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  map[string]interface{}{"candles": candles},
+				})
+				return
+			}
+			if req.Method == "get_orderbook_state" {
+				obData := fetchOrderbookState(daemonPort)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result":  obData,
+				})
+				return
+			}
+			if req.Method == "getswapoffers" {
+				offers, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/getswapoffers", daemonPort), 3*time.Second)
+				if err == nil {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result":  offers,
+					})
+					return
+				}
+			}
+			if req.Method == "getactiveswaps" {
+				swaps, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/getactiveswaps", daemonPort), 3*time.Second)
+				if err == nil {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result":  swaps,
+					})
+					return
+				}
+			}
+		}
+
+		daemonProxy.ServeHTTP(w, r)
+	}
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 func main() {
@@ -549,20 +946,33 @@ func main() {
 	mux.HandleFunc("/api/health", healthHandler(cfg.DaemonPort, cfg.WalletPort, cfg.SwapdPort))
 
 	// Wallet RPC proxy (browser-initiated execution — keys never touch browser)
-	mux.HandleFunc("/api/wallet", walletProxyHandler(cfg.WalletPort))
+	mux.HandleFunc("/api/wallet", walletProxyHandler(cfg.WalletPort, cfg.PublicMode))
 
 	// Daemon proxy (read-only)
 	mux.HandleFunc("/api/daemon/", proxyHandler(daemonProxy))
 
 	// Direct daemon RPC proxy
-	mux.HandleFunc("/json_rpc", proxyHandler(daemonProxy))
+	mux.HandleFunc("/json_rpc", jsonRpcHandler(daemonProxy, cfg.DaemonPort))
 	mux.HandleFunc("/heat_metrics", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_pool_info", proxyHandler(daemonProxy))
+	mux.HandleFunc("/hearth_pool_info", proxyHandler(daemonProxy))
+	mux.HandleFunc("/hearth_info", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_quote", proxyHandler(daemonProxy))
+	mux.HandleFunc("/hearth_quote", proxyHandler(daemonProxy))
 	mux.HandleFunc("/getswapprice", proxyHandler(daemonProxy))
 
+	// Hearth & MM REST endpoints
+	mux.HandleFunc("/api/pool", apiPoolHandler(cfg.DaemonPort))
+	mux.HandleFunc("/api/hearth/pool", apiPoolHandler(cfg.DaemonPort))
+	mux.HandleFunc("/api/orderbook", apiOrderbookHandler(cfg.DaemonPort))
+	mux.HandleFunc("/api/hearth/orderbook", apiOrderbookHandler(cfg.DaemonPort))
+	mux.HandleFunc("/api/quote", apiQuoteHandler(cfg.DaemonPort))
+	mux.HandleFunc("/api/hearth/quote", apiQuoteHandler(cfg.DaemonPort))
+
 	// Wallet proxy (direct)
-	mux.HandleFunc("/wallet_rpc", proxyHandler(walletProxy))
+	if !cfg.PublicMode {
+		mux.HandleFunc("/wallet_rpc", proxyHandler(walletProxy))
+	}
 
 	// Swap daemon status (offers + active swaps JSON from xfg-swapd HTTP root)
 	if cfg.SwapdPort > 0 {
@@ -600,9 +1010,9 @@ func main() {
 	})
 
 	// Apply middleware chain
-	handler := corsMiddleware(securityHeaders(mux))
+	handler := corsMiddleware(securityHeaders(mux, cfg.PublicMode), cfg.PublicMode)
 
-	addr := fmt.Sprintf("127.0.0.1:%d", cfg.DashboardPort)
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.DashboardPort)
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      handler,
@@ -624,8 +1034,12 @@ func main() {
 	}()
 
 	browserURL := fmt.Sprintf("http://%s", addr)
-	log.Printf("fuego-dashboard listening on %s", browserURL)
-	go openBrowser(browserURL)
+	if cfg.PublicMode {
+		log.Printf("fuego-dashboard listening on %s (PUBLIC EXPLORER MODE - wallet proxy disabled)", browserURL)
+	} else {
+		log.Printf("fuego-dashboard listening on %s (LOCAL DESKTOP MODE)", browserURL)
+		go openBrowser(browserURL)
+	}
 
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("server error: %v", err)

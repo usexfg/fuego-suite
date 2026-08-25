@@ -105,6 +105,23 @@ enum class SwapPair : uint8_t {
   TON = 27
 };
 
+inline bool isLegacyUtxoPair(SwapPair p) {
+  switch (p) {
+    case SwapPair::BCH:
+    case SwapPair::LTC:
+    case SwapPair::DOGE:
+    case SwapPair::DASH:
+    case SwapPair::ZEC:
+    case SwapPair::DCR:
+    case SwapPair::KMD_SPV:
+    case SwapPair::GLEEC:
+    case SwapPair::SIA:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Musig2 session state persisted across swap steps.
 struct Musig2State {
   Crypto::Musig2KeyAgg keyAgg;

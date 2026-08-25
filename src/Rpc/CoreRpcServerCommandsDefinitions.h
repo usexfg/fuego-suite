@@ -1257,7 +1257,16 @@ struct COMMAND_RPC_CANCEL_LIMIT_ORDER {
   };
 };
 struct COMMAND_RPC_GET_LIMIT_ORDERS {
-  typedef EMPTY_STRUCT request;
+  struct request {
+    bool active_only;
+    uint32_t limit;
+    uint32_t offset;
+    void serialize(ISerializer &s) {
+      KV_MEMBER(active_only)
+      KV_MEMBER(limit)
+      KV_MEMBER(offset)
+    }
+  };
   struct LimitOrderInfo {
     std::string order_id;
     std::string address_hash; // cn_fast_hash(spendKey||viewKey) — wallet filters by this
@@ -2535,6 +2544,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t spot_price;
     uint64_t epoch_swap_fees;
     uint64_t hearth_twap;
+    uint64_t height;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(reserve_xfg)
@@ -2543,6 +2553,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(spot_price)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(hearth_twap)
+      KV_MEMBER(height)
       KV_MEMBER(status)
     }
   };

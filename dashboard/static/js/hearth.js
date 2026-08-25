@@ -9,59 +9,7 @@ const Hearth = (() => {
   let indicators = { sma20: true, ema12: false, vol: true };
   let activeDrawTool = null;
 
-  // ── Mock Data ──
-
-  function mockCandles(count) {
-    const now = Math.floor(Date.now() / 1000);
-    const candles = [];
-    let price = 1580000;
-    for (let i = count; i > 0; i--) {
-      const t = now - i * 3600;
-      const change = (Math.random() - 0.48) * 40000;
-      const open = price;
-      const close = price + change;
-      const high = Math.max(open, close) + Math.random() * 20000;
-      const low = Math.min(open, close) - Math.random() * 20000;
-      const vol = Math.floor(Math.random() * 5000 * 10000000) + 500000000;
-      candles.push({ t, o: Math.floor(open), h: Math.floor(high), l: Math.floor(low), c: Math.floor(close), v: vol });
-      price = close;
-    }
-    return { candles };
-  }
-
-  function mockOrderbook() {
-    const bestBid = 1575000;
-    const bestAsk = 1585000;
-    const bids = [], bidAmts = [], bidDepths = [];
-    const asks = [], askAmts = [], askDepths = [];
-    let cumBid = 0, cumAsk = 0;
-    for (let i = 0; i < 18; i++) {
-      bids.push(bestBid - i * 15000);
-      const amt = Math.floor(Math.random() * 800 + 200) * 10000000;
-      bidAmts.push(amt);
-      cumBid += amt;
-      bidDepths.push(cumBid);
-      asks.push(bestAsk + i * 12000);
-      const aamt = Math.floor(Math.random() * 600 + 150) * 10000000;
-      askAmts.push(aamt);
-      cumAsk += aamt;
-      askDepths.push(cumAsk);
-    }
-    return {
-      bid_prices: bids, bid_amounts: bidAmts, bid_depths: bidDepths,
-      ask_prices: asks, ask_amounts: askAmts, ask_depths: askDepths
-    };
-  }
-
-  const MOCK_POOL = {
-    spot_price: 1580000, reserve_xfg: 125000 * 10000000, reserve_heat: 19750000 * 10000000,
-    total_lp_shares: 42000, accumulated_lp_fees: 3200 * 10000000, epoch_swap_fees: 180 * 10000000
-  };
-
-  const MOCK_HEAT = {
-    heat_supply: 8500000 * 10000000, redemption_price: 1580000,
-    xfg_burned: 1200000 * 10000000, fee_pool: 45000 * 10000000
-  };
+  // ── Live Data Handlers ──
 
   // ── Charts ──
 
@@ -212,7 +160,7 @@ const Hearth = (() => {
     currentTf = timeframe;
     let data = [];
     try {
-      const candles = await App.rpc('get_ohlvc', { timeframe, count: 200 });
+      const candles = await App.rpc('get_ohlcv', { timeframe, count: 200 });
       if (candles && candles.candles) {
         data = candles.candles.map(c => ({
           timestamp: c.t * 1000,
@@ -223,22 +171,14 @@ const Hearth = (() => {
           volume: c.v / App.COIN
         }));
       }
-    } catch (e) { console.warn('OHLCV load failed, using mock data'); }
-
-    if (data.length === 0) {
-      const mock = mockCandles(120);
-      data = mock.candles.map(c => ({
-        timestamp: c.t * 1000,
-        open: c.o / App.COIN,
-        high: c.h / App.COIN,
-        low: c.l / App.COIN,
-        close: c.c / App.COIN,
-        volume: c.v / App.COIN
-      }));
+    } catch (e) {
+      console.warn('OHLCV load failed:', e.message || e);
     }
 
     rawCandles = data;
-    priceChart.applyNewData(data);
+    if (priceChart) {
+      priceChart.applyNewData(data);
+    }
   }
 
   // ── Hearth Orderbook ──
@@ -246,26 +186,27 @@ const Hearth = (() => {
   async function loadOrderbook() {
     try {
       const data = await App.rpc('get_orderbook_state', { depth: 20 });
-      renderHearthOrderbook(data);
-      return;
-    } catch (e) { console.warn('Orderbook load failed, using mock data'); }
-    renderHearthOrderbook(mockOrderbook());
+      renderHearthOrderbook(data || {});
+    } catch (e) {
+      console.warn('Orderbook load failed:', e.message || e);
+      renderHearthOrderbook({});
+    }
   }
 
   function renderHearthOrderbook(data) {
     const bidsContainer = document.getElementById('hearth-bids');
     const asksContainer = document.getElementById('hearth-asks');
 
-    const bids = data.bid_prices || [];
-    const asks = data.ask_prices || [];
-    const bidAmounts = data.bid_amounts || data.bid_depths || [];
-    const bidDepths = data.bid_depths || [];
-    const askAmounts = data.ask_amounts || data.ask_depths || [];
-    const askDepths = data.ask_depths || [];
+    const bids = (data && data.bid_prices) || [];
+    const asks = (data && data.ask_prices) || [];
+    const bidAmounts = (data && (data.bid_amounts || data.bid_depths)) || [];
+    const bidDepths = (data && data.bid_depths) || [];
+    const askAmounts = (data && (data.ask_amounts || data.ask_depths)) || [];
+    const askDepths = (data && data.ask_depths) || [];
 
     if (bids.length === 0 && asks.length === 0) {
-      bidsContainer.innerHTML = '<div class="hearth-empty">Awaiting orders…</div>';
-      asksContainer.innerHTML = '<div class="hearth-empty">Awaiting orders…</div>';
+      bidsContainer.innerHTML = '<div class="hearth-empty">No resting limit orders</div>';
+      asksContainer.innerHTML = '<div class="hearth-empty">No resting limit orders</div>';
       return;
     }
 
@@ -298,29 +239,54 @@ const Hearth = (() => {
   // ── Metrics ──
 
   function updatePoolInfo(data) {
-    const d = data || MOCK_POOL;
+    if (!data) {
+      const xfgEl = document.getElementById('pool-xfg');
+      const heatEl = document.getElementById('pool-heat');
+      const priceEl = document.getElementById('price-xfg-heat');
+      const usdEl = document.getElementById('price-xfg-usd');
+      if (xfgEl) xfgEl.textContent = '—';
+      if (heatEl) heatEl.textContent = '—';
+      if (priceEl) priceEl.textContent = '— HΞ∆Ŧ';
+      if (usdEl) usdEl.textContent = '—';
+      return;
+    }
+    const d = data;
     document.getElementById('pool-xfg').textContent = App.fmtXfg(d.reserve_xfg);
     document.getElementById('pool-heat').textContent = App.fmtHeat(d.reserve_heat);
-    // Update the big price display
     const priceEl = document.getElementById('price-xfg-heat');
     const usdEl = document.getElementById('price-xfg-usd');
-    if (priceEl) {
+    if (priceEl && d.spot_price != null) {
       const p = d.spot_price / App.COIN;
       priceEl.textContent = p.toFixed(5) + ' HΞ∆Ŧ';
-      // USD: assume HEAT peg ~$1.58
       const usd = p * 1.58;
       usdEl.textContent = '≈ $' + usd.toFixed(4) + ' USD';
     }
   }
 
   function updateHeatMetrics(data) {
-    const d = data || MOCK_HEAT;
-    document.getElementById('heat-supply').textContent = App.fmtHeat(d.heat_supply || d.total_supply);
-    // Mint ratio: XFG needed to mint 1 HEAT (XFG per HEAT)
-    const redemptionPrice = d.redemption_price || 1580000;
-    const xfgPerHeat = redemptionPrice / App.COIN;
-    document.getElementById('heat-redemption').textContent = xfgPerHeat.toFixed(2) + ':1';
-    document.getElementById('heat-burned').textContent = App.fmtXfg(d.xfg_burned || d.total_burned);
+    if (!data) {
+      const supplyEl = document.getElementById('heat-supply');
+      const redemptionEl = document.getElementById('heat-redemption');
+      const burnedEl = document.getElementById('heat-burned');
+      if (supplyEl) supplyEl.textContent = '—';
+      if (redemptionEl) redemptionEl.textContent = '—';
+      if (burnedEl) burnedEl.textContent = '—';
+      return;
+    }
+    const d = data;
+    document.getElementById('heat-supply').textContent = App.fmtHeat(d.heat_supply || d.total_supply || 0);
+    let redemptionPrice = d.redemption_price;
+    if (redemptionPrice == null && d.redemption_price_num != null && d.redemption_price_denom != null && d.redemption_price_denom > 0) {
+      redemptionPrice = (d.redemption_price_num / d.redemption_price_denom) * App.COIN;
+    }
+    if (redemptionPrice != null) {
+      const xfgPerHeat = redemptionPrice / App.COIN;
+      document.getElementById('heat-redemption').textContent = xfgPerHeat.toFixed(2) + ':1';
+    } else {
+      document.getElementById('heat-redemption').textContent = '—';
+    }
+    const burned = d.total_burned_xfg != null ? d.total_burned_xfg : (d.burned_xfg != null ? d.burned_xfg : d.total_burned);
+    document.getElementById('heat-burned').textContent = App.fmtXfg(burned || 0);
   }
 
   // ── Order Form ──
@@ -456,8 +422,8 @@ const Hearth = (() => {
 
     loadOHLCV(currentTf);
     loadOrderbook();
-    updatePoolInfo(null);
-    updateHeatMetrics(null);
+    App.daemonGet('/amm_pool_info').then(updatePoolInfo).catch(() => updatePoolInfo(null));
+    App.daemonGet('/heat_metrics').then(updateHeatMetrics).catch(() => updateHeatMetrics(null));
 
     document.querySelectorAll('.ohlcv-tf').forEach(btn => {
       btn.addEventListener('click', () => {

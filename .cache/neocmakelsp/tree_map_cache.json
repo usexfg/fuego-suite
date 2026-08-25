@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-07T04:11:09.201079287-04:00",
+  "data": {
+    "/home/ar/fuego/external/gtest/CMakeLists.txt": "/home/ar/fuego/external/CMakeLists.txt",
+    "/home/ar/fuego/src/CMakeLists.txt": "/home/ar/fuego/CMakeLists.txt",
+    "/home/ar/fuego/src/FuegoTor/CMakeLists.txt": "/home/ar/fuego/src/CMakeLists.txt",
+    "/home/ar/fuego/external/secp256k1/src/CMakeLists.txt": "/home/ar/fuego/external/secp256k1/CMakeLists.txt",
+    "/home/ar/fuego/external/miniupnpc/CMakeLists.txt": "/home/ar/fuego/external/CMakeLists.txt",
+    "/home/ar/fuego/src/FuegoI2P/CMakeLists.txt": "/home/ar/fuego/src/CMakeLists.txt",
+    "/home/ar/fuego/tests/CMakeLists.txt": "/home/ar/fuego/CMakeLists.txt",
+    "/home/ar/fuego/external/secp256k1/examples/CMakeLists.txt": "/home/ar/fuego/external/secp256k1/CMakeLists.txt",
+    "/home/ar/fuego/external/secp256k1/CMakeLists.txt": "/home/ar/fuego/external/CMakeLists.txt",
+    "/home/ar/fuego/external/CMakeLists.txt": "/home/ar/fuego/CMakeLists.txt"
+  }
+}

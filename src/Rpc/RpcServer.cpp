@@ -2861,6 +2861,7 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.spot_price = info.spotPrice;
   res.epoch_swap_fees = info.epochSwapFees;
   res.hearth_twap = m_core.getHearthTwap();
+  res.height = m_core.get_current_blockchain_height();
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -2888,22 +2889,31 @@ bool RpcServer::on_get_fuego_price(const COMMAND_RPC_GET_FUEGO_PRICE::request& /
     snprintf(buf, sizeof(buf), "%.4f", heatPegUsd);
     res.heat_peg_usd = buf;
 
-    snprintf(buf, sizeof(buf), "%.4f", ratio * heatPegUsd);
+    const double xfgSpotUsd = ratio * heatPegUsd;
+    snprintf(buf, sizeof(buf), "%.4f", xfgSpotUsd);
     res.xfg_spot_usd = buf;
 
-    res.height = m_core.get_current_blockchain_height();
     res.status = CORE_RPC_STATUS_OK;
-    return true;
-  } catch (const std::exception& e) {
-    res.status = "Error: " + std::string(e.what());
-    return false;
+  } catch (...) {
+    res.status = "Failed";
   }
+  return true;
 }
 
 bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request& req,
                                     COMMAND_RPC_GET_LIMIT_ORDERS::response& res) {
   const auto& deposits = m_core.get_blockchain_storage().getLimitDeposits();
+  uint32_t count = 0;
+  uint32_t skipped = 0;
   for (const auto& kv : deposits) {
+    bool is_withdrawn = kv.second.withdrawn || kv.second.expired;
+    if (req.active_only && is_withdrawn) {
+      continue;
+    }
+    if (req.offset > 0 && skipped < req.offset) {
+      ++skipped;
+      continue;
+    }
     COMMAND_RPC_GET_LIMIT_ORDERS::LimitOrderInfo info;
     info.order_id = Common::podToHex(kv.first);
     info.address_hash = Common::podToHex(kv.second.addressHash);
@@ -2913,9 +2923,12 @@ bool RpcServer::on_get_limit_orders(const COMMAND_RPC_GET_LIMIT_ORDERS::request&
     info.proceeds_heat = kv.second.proceedsHeat;
     info.target_price = kv.second.targetPrice;
     info.expiration = kv.second.expiration;
-    info.withdrawn = kv.second.withdrawn;
-    if (kv.second.expired) info.withdrawn = true;
+    info.withdrawn = is_withdrawn;
     res.orders.push_back(std::move(info));
+    ++count;
+    if (req.limit > 0 && count >= req.limit) {
+      break;
+    }
   }
   res.status = CORE_RPC_STATUS_OK;
   return true;

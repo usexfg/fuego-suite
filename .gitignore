@@ -108,3 +108,7 @@ tui-testnet/fuego-tui.exe
 # Local build dirs
 /build_check/
 /build_presig/
+
+# Standalone repositories
+xfgapi/
+

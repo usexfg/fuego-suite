@@ -21,7 +21,7 @@ jobs:
           submodules: recursive
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1.1
+        uses: microsoft/setup-msbuild@v2
 
       - name: Install OpenSSL
         shell: pwsh
@@ -69,7 +69,7 @@ jobs:
         run: |
           $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
           $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
-          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 17 2022" -A x64 `
+          cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" -G "Visual Studio 18 2026" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `

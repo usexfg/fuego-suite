@@ -181,7 +181,7 @@ bool secp_complete_schnorr_sig(const SecretKey& sk, const SecretKey& k, const Ha
   EC_POINT* rPt = EC_POINT_new(grp);
   if (!ec_point_from_pubkey(R, grp, rPt, ctx)) { EC_POINT_free(rPt); BN_CTX_free(ctx); return false; }
   BIGNUM* x = BN_new(), *y = BN_new();
-  if (!EC_POINT_get_affine_coordinates_GFp(grp, rPt, x, y, ctx)) { BN_free(x); BN_free(y); EC_POINT_free(rPt); BN_CTX_free(ctx); return false; }
+  if (!EC_POINT_get_affine_coordinates(grp, rPt, x, y, ctx)) { BN_free(x); BN_free(y); EC_POINT_free(rPt); BN_CTX_free(ctx); return false; }
   auto e_bytes = secp_adaptor_challenge(R, P, msg);
   BIGNUM *e = BN_bin2bn(e_bytes.data(),32,nullptr), *sk_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(&sk),32,nullptr), *k_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(&k),32,nullptr), *n=get_order(ctx), *e_sk=BN_new(), *s=BN_new();
   BN_mod_mul(e_sk, e, sk_bn, n, ctx);

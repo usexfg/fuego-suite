@@ -141,6 +141,20 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
       appendPod(buf, msg.adaptorExchange.adaptorDleqQ);
       appendPod(buf, msg.adaptorExchange.dleqProof);
       appendPod(buf, msg.adaptorExchange.htlcHashLock);
+      // PTLC extension — covered by digest when non-default, preserves HTLC compat
+      {
+        Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
+        bool ptlcPointNonZero = std::memcmp(&msg.adaptorExchange.ptlcPoint, &zero, sizeof(zero)) != 0;
+        bool usePtlcFields = msg.adaptorExchange.lockType != SwapLockType::HTLC ||
+                             ptlcPointNonZero ||
+                             msg.adaptorExchange.requirePtlc;
+        if (usePtlcFields) {
+          uint8_t lt = static_cast<uint8_t>(msg.adaptorExchange.lockType);
+          buf.push_back(lt);
+          appendPod(buf, msg.adaptorExchange.ptlcPoint);
+          buf.push_back(msg.adaptorExchange.requirePtlc ? 1 : 0);
+        }
+      }
       break;
     case PeerMessageType::NONCE_EXCHANGE:
       appendPod(buf, msg.nonceExchange.pubNonce);
@@ -229,6 +243,9 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("adaptorDleqQ", podHex(msg.adaptorExchange.adaptorDleqQ));
       payload.insert("dleqProof", dleqToHex(msg.adaptorExchange.dleqProof));
       payload.insert("htlcHashLock", podHex(msg.adaptorExchange.htlcHashLock));
+      payload.insert("lockType", static_cast<int64_t>(static_cast<uint8_t>(msg.adaptorExchange.lockType)));
+      payload.insert("ptlcPoint", podHex(msg.adaptorExchange.ptlcPoint));
+      payload.insert("requirePtlc", static_cast<int64_t>(msg.adaptorExchange.requirePtlc ? 1 : 0));
       break;
 
     case PeerMessageType::NONCE_EXCHANGE:
@@ -319,6 +336,25 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         if (p.contains("htlcHashLock") && !p("htlcHashLock").getString().empty()) {
           if (!hexPod(p("htlcHashLock").getString(), msg.adaptorExchange.htlcHashLock))
             return false;
+        }
+        if (p.contains("lockType") && p("lockType").isInteger()) {
+          int64_t lt = p("lockType").getInteger();
+          if (lt >= 0 && lt <= 2) msg.adaptorExchange.lockType = static_cast<SwapLockType>(static_cast<uint8_t>(lt));
+        }
+        if (p.contains("ptlcPoint") && !p("ptlcPoint").getString().empty()) {
+          if (!hexPod(p("ptlcPoint").getString(), msg.adaptorExchange.ptlcPoint))
+            return false;
+        }
+        if (p.contains("requirePtlc") && p("requirePtlc").isInteger()) {
+          msg.adaptorExchange.requirePtlc = p("requirePtlc").getInteger() != 0;
+        }
+        // For pure PTLC, ptlcPoint duplicates adaptorPoint if not explicitly set
+        {
+          Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
+          if (std::memcmp(&msg.adaptorExchange.ptlcPoint, &zero, sizeof(zero)) == 0 &&
+              msg.adaptorExchange.lockType == SwapLockType::PTLC) {
+            msg.adaptorExchange.ptlcPoint = msg.adaptorExchange.adaptorPoint;
+          }
         }
         break;
 

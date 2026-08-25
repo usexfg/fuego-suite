@@ -78,6 +78,9 @@ SwapStateMachine::SwapStateMachine()
   std::memset(&m_params.adaptorPoint, 0, sizeof(m_params.adaptorPoint));
   std::memset(&m_params.adaptorSecret, 0, sizeof(m_params.adaptorSecret));
   std::memset(&m_params.adaptorDleqQ, 0, sizeof(m_params.adaptorDleqQ));
+  std::memset(&m_params.ptlcPoint, 0, sizeof(m_params.ptlcPoint));
+  m_params.lockType = SwapLockType::HTLC;
+  m_params.requirePtlc = false;
   std::memset(&m_params.escrowTxHash, 0, sizeof(m_params.escrowTxHash));
   std::memset(&m_params.hashLock, 0, sizeof(m_params.hashLock));
   std::memset(&m_params.preimage, 0, sizeof(m_params.preimage));
@@ -237,7 +240,7 @@ std::string SwapStateMachine::serialize() const {
   Common::JsonValue root(Common::JsonValue::OBJECT);
 
   // Serialization version — bump when adding new fields.
-  root.insert("serVersion", static_cast<int64_t>(4));
+  root.insert("serVersion", static_cast<int64_t>(5));
 
   root.insert("swapId", m_params.swapId);
   root.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(m_params.pair)));
@@ -253,6 +256,9 @@ std::string SwapStateMachine::serialize() const {
   root.insert("escrowPubKey", Common::podToHex(m_params.escrowPubKey));
   root.insert("adaptorPoint", Common::podToHex(m_params.adaptorPoint));
   root.insert("adaptorDleqQ", Common::podToHex(m_params.adaptorDleqQ));
+  root.insert("ptlcPoint", Common::podToHex(m_params.ptlcPoint));
+  root.insert("lockType", static_cast<int64_t>(static_cast<uint8_t>(m_params.lockType)));
+  root.insert("requirePtlc", static_cast<int64_t>(m_params.requirePtlc ? 1 : 0));
   root.insert("escrowTxHash", Common::podToHex(m_params.escrowTxHash));
   root.insert("escrowOutputIndex", static_cast<int64_t>(m_params.escrowOutputIndex));
 
@@ -454,6 +460,14 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
     Common::podFromHex(root("adaptorPoint").getString(), params.adaptorPoint);
   if (root.contains("adaptorDleqQ"))
     Common::podFromHex(root("adaptorDleqQ").getString(), params.adaptorDleqQ);
+  if (root.contains("ptlcPoint"))
+    Common::podFromHex(root("ptlcPoint").getString(), params.ptlcPoint);
+  if (root.contains("lockType") && root("lockType").isInteger()) {
+    int64_t v = root("lockType").getInteger();
+    if (v >= 0 && v <= 2) params.lockType = static_cast<SwapLockType>(static_cast<uint8_t>(v));
+  }
+  if (root.contains("requirePtlc"))
+    params.requirePtlc = root("requirePtlc").getInteger() != 0;
   if (root.contains("escrowTxHash"))
     Common::podFromHex(root("escrowTxHash").getString(), params.escrowTxHash);
   if (root.contains("escrowOutputIndex"))

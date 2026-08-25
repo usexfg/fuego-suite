@@ -17,6 +17,7 @@
 #include "SwapDaemon.h"
 #include "AdaptorSwap.h"
 #include "SwapHashLock.h"
+#include "SwapPtlcLock.h"
 #include "SwapTimelock.h"
 #include "SwapTxBuilder.h"
 #include "../Treasury/VaultKeys.h"
@@ -793,6 +794,31 @@ bool SwapDaemon::initiate(SwapParams& params) {
       << swapPairToString(params.pair);
   }
 
+  // ── PTLC negotiation ──
+  {
+    IChainClient* ctrClient = m_chainRegistry.getClient(params.pair);
+    bool localPtlc = ctrClient && ctrClient->supportsPtlc();
+    if (isPtlcNativePair(params.pair)) localPtlc = true;
+    if (params.lockType == SwapLockType::HTLC) {
+      if (localPtlc) {
+        // Phase 1: bridge mode (point off-chain + hash on-chain) preserves privacy via DLEQ decorrelation.
+        // Pure PTLC (scriptless Taproot with adaptor verify) lands in Phase 2/4 behind flag.
+        params.lockType = SwapLockType::PTLC_HTLC_BRIDGE;
+        m_logger(Logging::INFO) << "PTLC negotiation: CTR " << swapPairToString(params.pair) << " supports PTLC → BRIDGE (Phase1)";
+      } else {
+        // XFG escrow is always PTLC; CTR HTLC → bridge mode (preserves privacy via DLEQ + point commitment)
+        if (params.requirePtlc) {
+          m_logger(Logging::ERROR) << "requirePtlc=true but CTR chain " << swapPairToString(params.pair) << " does not support PTLC — aborting (no downgrade)";
+          return false;
+        }
+        params.lockType = SwapLockType::PTLC_HTLC_BRIDGE;
+        m_logger(Logging::INFO) << "PTLC negotiation: CTR " << swapPairToString(params.pair) << " HTLC-only → PTLC_HTLC_BRIDGE";
+      }
+      // Native adaptor-only pairs stay PTLC
+      if (isPtlcNativePair(params.pair)) params.lockType = SwapLockType::PTLC;
+    }
+  }
+
   // ── Adaptor sig step 1: generate swap keypair ──
   // If the caller pre-set a keypair (e.g. an AFK taker injecting the
   // identity it published in /requestswap so the maker's expected-key
@@ -968,6 +994,11 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     }
     m_logger(Logging::DEBUGGING) << "Adaptor point T: "
       << Common::podToHex(params.adaptorPoint);
+    // Mirror adaptorPoint into ptlcPoint for PTLC/BRIDGE modes
+    if ((params.lockType == SwapLockType::PTLC || params.lockType == SwapLockType::PTLC_HTLC_BRIDGE) &&
+        isZeroPubKey(params.ptlcPoint)) {
+      params.ptlcPoint = params.adaptorPoint;
+    }
   }
   
   SwapState newState = (sm.currentState() == SwapState::AFK_OFFER_LOCKED) 
@@ -984,7 +1015,7 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     return {false, ""};
   }
 
-  // Bob delivers T + DLEQ + H(t) so Alice can lock CTR without learning t.
+   // Bob delivers T + DLEQ + H(t) (+ PTLC point/lockType) so Alice can lock CTR without learning t.
   if (params.role == SwapRole::BOB && !params.peerEndpoint.empty()) {
     PeerMessage ax;
     ax.type = PeerMessageType::ADAPTOR_EXCHANGE;
@@ -993,6 +1024,17 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     ax.adaptorExchange.adaptorDleqQ = params.adaptorDleqQ;
     ax.adaptorExchange.dleqProof = params.adaptorDleqProof;
     ax.adaptorExchange.htlcHashLock = params.hashLock;
+    ax.adaptorExchange.lockType = params.lockType;
+    // ptlcPoint duplicates T for pure PTLC; keep zero for HTLC.
+    if (params.lockType == SwapLockType::PTLC || params.lockType == SwapLockType::PTLC_HTLC_BRIDGE) {
+      Crypto::PublicKey pt = params.ptlcPoint;
+      Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
+      if (std::memcmp(&pt, &zero, sizeof(zero)) == 0) pt = params.adaptorPoint;
+      ax.adaptorExchange.ptlcPoint = pt;
+    } else {
+      std::memset(&ax.adaptorExchange.ptlcPoint, 0, sizeof(ax.adaptorExchange.ptlcPoint));
+    }
+    ax.adaptorExchange.requirePtlc = params.requirePtlc;
     signPeerMessage(ax, params.ourSwapPubKey, params.ourSwapSecKey);
     if (deliverPeerMessage(ax)) {
       m_logger(Logging::INFO) << "Delivered ADAPTOR_EXCHANGE (T + H(t)) to peer";
@@ -3457,10 +3499,29 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           }
           return true;  // identical duplicate
         }
+        bool localRequire = params.requirePtlc;
         params.adaptorPoint = msg.adaptorExchange.adaptorPoint;
         params.adaptorDleqQ = msg.adaptorExchange.adaptorDleqQ;
         params.adaptorDleqProof = msg.adaptorExchange.dleqProof;
         params.hashLock = msg.adaptorExchange.htlcHashLock;
+        params.lockType = msg.adaptorExchange.lockType;
+        params.ptlcPoint = msg.adaptorExchange.ptlcPoint;
+        // Preserve local requirePtlc OR with peer's (if either requires, enforce)
+        params.requirePtlc = localRequire || msg.adaptorExchange.requirePtlc;
+        // Downgrade check: if we require PTLC but peer sent HTLC, abort
+        if (localRequire && params.lockType == SwapLockType::HTLC) {
+          m_logger(Logging::ERROR) << "PTLC downgrade blocked: requirePtlc=true but peer sent HTLC";
+          std::memset(&params.adaptorPoint, 0, sizeof(params.adaptorPoint));
+          return false;
+        }
+        // Pure PTLC: ptlcPoint may duplicate adaptorPoint if sender omitted
+        {
+          Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
+          if (std::memcmp(&params.ptlcPoint, &zero, sizeof(zero)) == 0 &&
+              params.lockType == SwapLockType::PTLC) {
+            params.ptlcPoint = params.adaptorPoint;
+          }
+        }
         if (!adaptor_verify_adaptor(params, params.escrowPubKey, params.adaptorDleqQ)) {
           m_logger(Logging::ERROR) << "DLEQ proof verification failed!";
           // Reject cleanly: do not leave a half-bound adaptor state.

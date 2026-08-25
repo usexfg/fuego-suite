@@ -18,6 +18,7 @@
 #include "crypto/hash.h"
 #include "crypto/musig2.h"
 #include "crypto/dleq.h"
+#include "SwapTypes.h"
 
 #include <string>
 #include <cstdint>
@@ -87,11 +88,15 @@ struct MsgKeyExchange {
 
 // Phase 2: Bob sends adaptor point T, DLEQ Q, proof, and HTLC hashlock to Alice.
 // htlcHashLock = H(t) so Alice can lock CTR without learning t (Alice-locks model).
+// PTLC extension: lockType + ptlcPoint duplicate T for pure PTLC; wire compat keeps htlcHashLock zero for PTLC.
 struct MsgAdaptorExchange {
   Crypto::PublicKey adaptorPoint;   // T = t*G
   Crypto::PublicKey adaptorDleqQ;   // Q = t*escrowPubKey
   Crypto::DLEQProof dleqProof;
-  Crypto::Hash htlcHashLock{};      // H(t) for HTLC lock; zero for XMR-style adaptor-only
+  Crypto::Hash htlcHashLock{};      // H(t) for HTLC/BRIDGE; zero for pure PTLC/XMR
+  SwapLockType lockType = SwapLockType::HTLC; // negotiated lock type
+  Crypto::PublicKey ptlcPoint{};    // T duplicated for explicit PTLC verify (same as adaptorPoint for PTLC/BRIDGE)
+  bool requirePtlc = false;         // sender policy flag
 };
 
 // Phase 3: Both parties send their Musig2 public nonces.

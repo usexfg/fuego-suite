@@ -14,6 +14,7 @@ public:
                  const std::string& viewKeyHex);
 
   std::string chainName() const override { return "XMR"; }
+  bool supportsPtlc() const override { return true; } // native adaptor-only, point-lock
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

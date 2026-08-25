@@ -15,8 +15,10 @@
 #include "LtcChainClient.h"
 #include "LtcHtlcScript.h"
 #include "Bitcoin/BtcHtlcScript.h"
+#include "Bitcoin/BtcPtlcScript.h"
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
+#include "../SwapPtlcLock.h"
 
 #include <array>
 #include <cstring>
@@ -74,6 +76,7 @@ LtcChainClient::LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std:
   : m_spvClient(std::move(spvClient)), m_wif(wif) {}
 
 ChainClientResult LtcChainClient::lock(const SwapParams& params) {
+  if (params.lockType == SwapLockType::PTLC) return lockPtlc(params);
   if (!m_rpc)
     return ChainClientResult::fail("LTC lock: RPC client not available (SPV mode does not support lock)");
 
@@ -121,6 +124,27 @@ ChainClientResult LtcChainClient::lock(const SwapParams& params) {
   return ChainClientResult::okWithState(lockTxId, redeemScriptHex);
 }
 
+ChainClientResult LtcChainClient::lockPtlc(const SwapParams& params) {
+  if (!m_rpc) return ChainClientResult::fail("LTC PtlcLock: RPC not available");
+  Crypto::PublicKey pt = params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
+  if (std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
+  if (std::memcmp(&pt,&zero,sizeof(zero))==0) return ChainClientResult::fail("LTC PtlcLock: no ptlcPoint");
+  std::vector<uint8_t> ptBytes(reinterpret_cast<uint8_t*>(&pt), reinterpret_cast<uint8_t*>(&pt)+32);
+  std::string recipientKey=params.ctrPubKey;
+  if (recipientKey.empty() && params.ctrAddress.size()==66) { try{auto b=BtcHtlcScript::hexToBytes(params.ctrAddress); if(b.size()==33) recipientKey=params.ctrAddress;}catch (const std::exception&){}}
+  if (recipientKey.size()!=66 && !params.ctrAddress.empty()) { std::string r; if(m_rpc->getAddressPubkey(params.ctrAddress,r) && r.size()==66) recipientKey=r; }
+  if (recipientKey.size()!=66) return ChainClientResult::fail("LTC PtlcLock: need 33-byte pubkey");
+  std::string senderKey; std::string pub; if(m_rpc->getAddressPubkey(getReceiveAddress(),pub) && pub.size()==66) senderKey=pub; if(senderKey.empty()) senderKey=recipientKey;
+  auto recBytes=BtcHtlcScript::hexToBytes(recipientKey); auto sendBytes=BtcHtlcScript::hexToBytes(senderKey);
+  auto redeem=BtcPtlcScript::createPtlcScript(ptBytes,0,recBytes,sendBytes,static_cast<uint32_t>(params.ctrTimeoutBlock));
+  std::string redeemHex=BtcHtlcScript::bytesToHex(redeem); std::string lockTxId; std::string dummy;
+  std::string ptHashHex=Common::podToHex(pt);
+  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,ptHashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount,lockTxId,dummy);
+  if(!ok) return ChainClientResult::fail("LTC PtlcLock failed");
+  return ChainClientResult::okWithState(lockTxId, redeemHex);
+}
+ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) { return verifyLock(params); }
+
 ChainClientResult LtcChainClient::verifyLock(const SwapParams& params) {
   if (m_spvClient) {
     return verifyLockSpv(params);
@@ -131,7 +155,9 @@ ChainClientResult LtcChainClient::verifyLock(const SwapParams& params) {
 
   std::string htlcAddress;
   if (!params.chainState.empty()) {
-    auto redeem = BtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRaw = params.chainState;
+    { auto p=redeemHexRaw.find('|'); if(p!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,p); auto c=redeemHexRaw.find(':'); if(c!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,c); }
+    auto redeem = BtcHtlcScript::hexToBytes(redeemHexRaw);
     if (redeem.empty())
       return ChainClientResult::fail("LTC verifyLock: invalid redeem script in chainState");
     htlcAddress = BtcHtlcScript::witnessScriptToAddress(redeem, "ltc");
@@ -249,7 +275,9 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
     if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
       return ChainClientResult::fail("LTC claim: invalid WIF");
 
-    auto witnessScript = LtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRawC = params.chainState;
+    { auto p=redeemHexRawC.find('|'); if(p!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,p); auto c=redeemHexRawC.find(':'); if(c!=std::string::npos) redeemHexRawC=redeemHexRawC.substr(0,c); }
+    auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawC);
     auto preimageBytes = LtcHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
 
     uint8_t addrVersion = 0;
@@ -284,11 +312,13 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
     return ChainClientResult::ok(txid);
   }
 
+  std::string redeemHexRawC2 = params.chainState;
+  { auto p=redeemHexRawC2.find('|'); if(p!=std::string::npos) redeemHexRawC2=redeemHexRawC2.substr(0,p); auto c=redeemHexRawC2.find(':'); if(c!=std::string::npos) redeemHexRawC2=redeemHexRawC2.substr(0,c); }
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
       params.ctrLockTxId, 0, params.ctrAmount,
-      params.chainState,
+      redeemHexRawC2,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
       claimTxId);
@@ -305,7 +335,9 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
     if (!LtcHtlcScript::wifToPrivKey(m_wif, privKey))
       return ChainClientResult::fail("LTC refund: invalid WIF");
 
-    auto witnessScript = LtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRawL0 = params.chainState;
+    { auto p=redeemHexRawL0.find('|'); if(p!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,p); auto c=redeemHexRawL0.find(':'); if(c!=std::string::npos) redeemHexRawL0=redeemHexRawL0.substr(0,c); }
+    auto witnessScript = LtcHtlcScript::hexToBytes(redeemHexRawL0);
 
     uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
 
@@ -340,11 +372,13 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
     return ChainClientResult::ok(txid);
   }
 
+  std::string redeemHexRawL1 = params.chainState;
+  { auto p=redeemHexRawL1.find('|'); if(p!=std::string::npos) redeemHexRawL1=redeemHexRawL1.substr(0,p); auto c=redeemHexRawL1.find(':'); if(c!=std::string::npos) redeemHexRawL1=redeemHexRawL1.substr(0,c); }
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
       params.ctrLockTxId, 0, params.ctrAmount,
-      params.chainState,
+      redeemHexRawL1,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
       refundTxId);

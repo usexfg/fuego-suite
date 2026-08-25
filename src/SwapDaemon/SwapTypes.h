@@ -105,6 +105,12 @@ enum class SwapPair : uint8_t {
   TON = 27
 };
 
+enum class SwapLockType : uint8_t {
+  HTLC = 0,              // legacy hashlock H(t) — HTLC scripts/contracts
+  PTLC = 1,              // native point lock T, adaptor verify (Taproot/Schnorr)
+  PTLC_HTLC_BRIDGE = 2   // PTLC on XFG leg, HTLC H(t) on CTR leg bridged via DLEQ + H(t)
+};
+
 // Musig2 session state persisted across swap steps.
 struct Musig2State {
   Crypto::Musig2KeyAgg keyAgg;
@@ -153,6 +159,11 @@ struct SwapParams {
   Crypto::SecretKey adaptorSecret;     // t — known by Bob, revealed via ctr chain
   Crypto::PublicKey adaptorDleqQ;      // Q = t*escrowPubKey (second DLEQ point)
   Crypto::DLEQProof adaptorDleqProof; // proves T and Q share the same t
+
+  // ── PTLC / fallback ──
+  SwapLockType lockType = SwapLockType::HTLC; // negotiated per swap
+  Crypto::PublicKey ptlcPoint{};              // T duplicated for pure PTLC (same as adaptorPoint), kept for explicit PTLC verify
+  bool requirePtlc = false;                   // sender policy: abort if peer cannot do PTLC
 
   // Musig2 session state
   Musig2State musig2;
@@ -271,5 +282,7 @@ const char* swapStateToString(SwapState s);
 const char* swapPairToString(SwapPair p);
 SwapPair swapPairFromString(const std::string& s);
 bool swapPairFromString(const std::string& s, SwapPair& out);
+const char* swapLockTypeToString(SwapLockType t);
+bool swapLockTypeFromString(const std::string& s, SwapLockType& out);
 
 } // namespace XfgSwap

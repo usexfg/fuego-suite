@@ -13,7 +13,9 @@ public:
                  const std::string& chainName = "ETH");
 
   std::string chainName() const override { return m_chainName; }
+  bool supportsPtlc() const override { return false; } // Phase 1: BRIDGE (HTLC on EVM, PTLC on XFG). Native Schnorr via EIP in Phase 4.
   ChainClientResult lock(const SwapParams& params) override;
+  ChainClientResult lockPtlc(const SwapParams& params) override { return lock(params); }
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;

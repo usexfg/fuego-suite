@@ -107,6 +107,26 @@ const char* swapPairToString(SwapPair p) {
   return "???";
 }
 
+const char* swapLockTypeToString(SwapLockType t) {
+  switch (t) {
+    case SwapLockType::HTLC: return "HTLC";
+    case SwapLockType::PTLC: return "PTLC";
+    case SwapLockType::PTLC_HTLC_BRIDGE: return "PTLC_HTLC_BRIDGE";
+  }
+  return "???";
+}
+
+bool swapLockTypeFromString(const std::string& s, SwapLockType& out) {
+  if (s.size() < 3 || s.size() > 20) return false;
+  const char* p = s.c_str();
+  int n = static_cast<int>(s.size());
+  if (iequal(p, "HTLC", n)) { out = SwapLockType::HTLC; return true; }
+  if (iequal(p, "PTLC", n)) { out = SwapLockType::PTLC; return true; }
+  if (iequal(p, "PTLC_HTLC_BRIDGE", n)) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
+  if (iequal(p, "BRIDGE", n)) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
+  return false;
+}
+
 const char* swapStateToString(SwapState s) {
   switch (s) {
     // Legacy HTLC flow

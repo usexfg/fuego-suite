@@ -63,6 +63,18 @@ ChainClientResult SolChainClient::lock(const SwapParams& params) {
   return ChainClientResult::ok(solResult.htlcAddress);
 }
 
+ChainClientResult SolChainClient::lockPtlc(const SwapParams& params) {
+  // PTLC on SOL: ed25519 adaptor point commitment off-chain; on-chain still uses HTLC hash for now (bridge).
+  // Store ptlcPoint in chainState suffix for verifier: htlcAddress|ptlcPointHex
+  ChainClientResult base = lock(params);
+  if (!base.success) return base;
+  Crypto::PublicKey pt = params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
+  if (std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
+  std::string ptHex = Common::podToHex(pt);
+  std::string state = base.chainState + "|ptlc:" + ptHex;
+  return ChainClientResult::okWithState(base.txId, state);
+}
+
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
   SolHtlcInfo info;
   if (!m_rpc->getHtlcState(params.ctrLockTxId, info))

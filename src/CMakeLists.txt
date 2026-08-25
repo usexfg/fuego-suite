@@ -286,6 +286,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     SwapDaemon/SwapHashLock.cpp
+    SwapDaemon/SwapPtlcLock.cpp
+    SwapDaemon/Bitcoin/BtcPtlcScript.cpp
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
@@ -682,6 +684,8 @@ add_executable(SwapDaemon
     SwapDaemon/Crypto/Ed25519Verify.cpp
     SwapDaemon/ChainClientConfig.cpp
     SwapDaemon/SwapHashLock.cpp
+    SwapDaemon/SwapPtlcLock.cpp
+    SwapDaemon/Bitcoin/BtcPtlcScript.cpp
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp

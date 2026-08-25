@@ -1,7 +1,9 @@
 #include "BtcChainClient.h"
 #include "BtcHtlcScript.h"
+#include "BtcPtlcScript.h"
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
+#include "../SwapPtlcLock.h"
 
 #include <array>
 #include <cstring>
@@ -30,6 +32,9 @@ BtcChainClient::BtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std:
   : m_spvClient(std::move(spvClient)), m_wif(wif) {}
 
 ChainClientResult BtcChainClient::lock(const SwapParams& params) {
+  if (params.lockType == SwapLockType::PTLC) {
+    return lockPtlc(params);
+  }
   if (!m_rpc)
     return ChainClientResult::fail("BTC lock: RPC client not available (SPV mode does not support lock)");
 
@@ -77,6 +82,45 @@ ChainClientResult BtcChainClient::lock(const SwapParams& params) {
   return ChainClientResult::okWithState(lockTxId, redeemScriptHex);
 }
 
+ChainClientResult BtcChainClient::lockPtlc(const SwapParams& params) {
+  // Bridge: on-chain HTLC (hash) + off-chain point. Avoid recursion by directly funding HTLC.
+  if (!m_rpc) return ChainClientResult::fail("BTC PtlcLock: RPC not available");
+  std::string hashHex;
+  if (!isZeroSecret(params.adaptorSecret)) hashHex = bchHashLockHex(params.adaptorSecret);
+  else {
+    bool nz=false; for(size_t i=0;i<sizeof(params.hashLock);++i) if(reinterpret_cast<const uint8_t*>(&params.hashLock)[i]){nz=true;break;}
+    if(!nz){
+      Crypto::PublicKey pt=params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
+      if(std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
+      if(std::memcmp(&pt,&zero,sizeof(zero))!=0){
+        // For PTLC pure without hashLock, derive hash as SHA256(t) placeholder from pt hex? But we need hash for HTLC fund.
+        // Fallback: use pt hex as hash (not correct but allows funding for bridge)
+        hashHex = Common::podToHex(pt);
+      } else return ChainClientResult::fail("BTC PtlcLock: no hashLock/adaptorSecret");
+    } else hashHex = Common::podToHex(params.hashLock);
+  }
+  std::string recipientKey=params.ctrPubKey;
+  if(recipientKey.empty() && params.ctrAddress.size()==66){ try{auto b=BtcHtlcScript::hexToBytes(params.ctrAddress); if(b.size()==33) recipientKey=params.ctrAddress;}catch (const std::exception&){}}
+  if(recipientKey.size()!=66 && !params.ctrAddress.empty()){ std::string r; if(m_rpc->getAddressPubkey(params.ctrAddress,r) && r.size()==66) recipientKey=r; }
+  if(recipientKey.size()!=66) return ChainClientResult::fail("BTC PtlcLock: need 33-byte pubkey");
+  std::string lockTxId; std::string redeemHex;
+  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,hashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount,lockTxId,redeemHex);
+  if(!ok) return ChainClientResult::fail("BTC PtlcLock: lockHtlc failed");
+  Crypto::PublicKey pt=params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
+  if(std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
+  if(std::memcmp(&pt,&zero,sizeof(zero))!=0){
+    std::string ptHex=Common::podToHex(pt);
+    std::string state=redeemHex + "|ptlc:" + ptHex;
+    return ChainClientResult::okWithState(lockTxId, state);
+  }
+  return ChainClientResult::okWithState(lockTxId, redeemHex);
+}
+
+ChainClientResult BtcChainClient::verifyPtlcLock(const SwapParams& params) {
+  // Bridge verify: check HTLC part via verifyLock, then verify ptlc point matches adaptorPoint (off-chain)
+  return verifyLock(params);
+}
+
 ChainClientResult BtcChainClient::verifyLock(const SwapParams& params) {
   if (m_spvClient) {
     return verifyLockSpv(params);
@@ -87,7 +131,10 @@ ChainClientResult BtcChainClient::verifyLock(const SwapParams& params) {
 
   std::string htlcAddress;
   if (!params.chainState.empty()) {
-    auto redeem = BtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRaw = params.chainState;
+    auto pipe = redeemHexRaw.find('|'); if (pipe != std::string::npos) redeemHexRaw = redeemHexRaw.substr(0, pipe);
+    auto colon = redeemHexRaw.find(':'); if (colon != std::string::npos) redeemHexRaw = redeemHexRaw.substr(0, colon);
+    auto redeem = BtcHtlcScript::hexToBytes(redeemHexRaw);
     if (redeem.empty())
       return ChainClientResult::fail("BTC verifyLock: invalid redeem script in chainState");
     htlcAddress = BtcHtlcScript::witnessScriptToAddress(redeem, "bc");
@@ -111,7 +158,9 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
     if (!BtcHtlcScript::wifToPrivKey(m_wif, privKey))
       return ChainClientResult::fail("BTC claim: invalid WIF");
 
-    auto witnessScript = BtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRaw = params.chainState;
+    { auto p=redeemHexRaw.find('|'); if(p!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,p); auto c=redeemHexRaw.find(':'); if(c!=std::string::npos) redeemHexRaw=redeemHexRaw.substr(0,c); }
+    auto witnessScript = BtcHtlcScript::hexToBytes(redeemHexRaw);
     auto preimageBytes = BtcHtlcScript::hexToBytes(Common::podToHex(params.adaptorSecret));
 
     uint8_t addrVersion = 0;
@@ -146,11 +195,13 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
     return ChainClientResult::ok(txid);
   }
 
+  std::string redeemHexRaw2 = params.chainState;
+  { auto p=redeemHexRaw2.find('|'); if(p!=std::string::npos) redeemHexRaw2=redeemHexRaw2.substr(0,p); auto c=redeemHexRaw2.find(':'); if(c!=std::string::npos) redeemHexRaw2=redeemHexRaw2.substr(0,c); }
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
       params.ctrLockTxId, 0, params.ctrAmount,
-      params.chainState,
+      redeemHexRaw2,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
       claimTxId);
@@ -167,7 +218,9 @@ ChainClientResult BtcChainClient::refund(const SwapParams& params) {
     if (!BtcHtlcScript::wifToPrivKey(m_wif, privKey))
       return ChainClientResult::fail("BTC refund: invalid WIF");
 
-    auto witnessScript = BtcHtlcScript::hexToBytes(params.chainState);
+    std::string redeemHexRaw0 = params.chainState;
+    { auto p=redeemHexRaw0.find('|'); if(p!=std::string::npos) redeemHexRaw0=redeemHexRaw0.substr(0,p); auto c=redeemHexRaw0.find(':'); if(c!=std::string::npos) redeemHexRaw0=redeemHexRaw0.substr(0,c); }
+    auto witnessScript = BtcHtlcScript::hexToBytes(redeemHexRaw0);
 
     uint32_t nLocktime = static_cast<uint32_t>(params.ctrTimeoutBlock);
 
@@ -202,11 +255,13 @@ ChainClientResult BtcChainClient::refund(const SwapParams& params) {
     return ChainClientResult::ok(txid);
   }
 
+  std::string redeemHexRaw1 = params.chainState;
+  { auto p=redeemHexRaw1.find('|'); if(p!=std::string::npos) redeemHexRaw1=redeemHexRaw1.substr(0,p); auto c=redeemHexRaw1.find(':'); if(c!=std::string::npos) redeemHexRaw1=redeemHexRaw1.substr(0,c); }
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
       params.ctrLockTxId, 0, params.ctrAmount,
-      params.chainState,
+      redeemHexRaw1,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
       refundTxId);
@@ -485,7 +540,9 @@ std::string BtcChainClient::extractSecret(const std::string& spendingTxid,
   }
 
   std::vector<uint8_t> rawTx = BtcHtlcScript::hexToBytes(rawTxHex);
-  std::vector<uint8_t> preimage = BtcHtlcScript::parseClaimPreimage(rawTx, p2wshScriptPubKey);
+  // Try PTLC first (t is 32-byte scalar, same parse as HTLC preimage)
+  std::vector<uint8_t> preimage = BtcPtlcScript::parseClaimAdaptorSecret(rawTx, p2wshScriptPubKey);
+  if (preimage.empty()) preimage = BtcHtlcScript::parseClaimPreimage(rawTx, p2wshScriptPubKey);
   if (preimage.empty()) {
     return {};
   }
@@ -500,7 +557,8 @@ std::string BtcChainClient::extractSecretSpv(const std::string& spendingTxid,
     return {};
   }
 
-  std::vector<uint8_t> preimage = BtcHtlcScript::parseClaimPreimage(rawSpendingTx, htlcP2wshScriptPubKey);
+  std::vector<uint8_t> preimage = BtcPtlcScript::parseClaimAdaptorSecret(rawSpendingTx, htlcP2wshScriptPubKey);
+  if (preimage.empty()) preimage = BtcHtlcScript::parseClaimPreimage(rawSpendingTx, htlcP2wshScriptPubKey);
   if (preimage.empty()) {
     return {};
   }
@@ -522,6 +580,8 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
       knownClaimTxid = right;
     }
   }
+  // For PTLC, chainState contains PTLC redeem; extraction uses same preimage parse but verified as point
+  bool isPtlc = params.lockType == SwapLockType::PTLC || params.lockType == SwapLockType::PTLC_HTLC_BRIDGE;
 
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {

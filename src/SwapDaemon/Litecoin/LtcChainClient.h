@@ -17,10 +17,13 @@ public:
   LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "LTC"; }
+  bool supportsPtlc() const override { return true; }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
+  ChainClientResult lockPtlc(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
+  ChainClientResult verifyPtlcLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,

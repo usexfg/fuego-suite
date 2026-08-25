@@ -16,6 +16,18 @@ public:
   virtual ChainClientResult claim(const SwapParams& params) = 0;
   virtual ChainClientResult refund(const SwapParams& params) = 0;
 
+  // ── PTLC capability + PTLC lock path ──
+  // Override in PTLC-capable clients (BTC Taproot, SOL ed25519, XMR/ZANO).
+  // For HTLC-only chains (most EVMs, TON, SIA) keep default false → negotiate yields BRIDGE.
+  virtual bool supportsPtlc() const { return false; }
+  virtual ChainClientResult lockPtlc(const SwapParams& params) {
+    (void)params;
+    return ChainClientResult::fail("PTLC not supported on " + chainName());
+  }
+  virtual ChainClientResult verifyPtlcLock(const SwapParams& params) {
+    return verifyLock(params);
+  }
+
   // The local counterparty-chain receive address for this client (the
   // address HTLC claims/refunds pay into). Advertised in AFK fill results
   // so the taker locks CTR to the maker's address. Empty when not

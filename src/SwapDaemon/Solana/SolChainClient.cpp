@@ -64,18 +64,86 @@ ChainClientResult SolChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult SolChainClient::lockPtlc(const SwapParams& params) {
-  // PTLC on SOL: ed25519 adaptor point commitment off-chain; on-chain still uses HTLC hash for now (bridge).
-  // Store ptlcPoint in chainState suffix for verifier: htlcAddress|ptlcPointHex
-  ChainClientResult base = lock(params);
-  if (!base.success) return base;
+  // PURE PTLC (plan P3): fund the SOL leg against the adaptor POINT T = t*G
+  // via the on-chain `lock_ptlc` instruction (lock_type = 1). There is NO
+  // hash commitment anywhere — the secret is only revealed by adaptor-sig
+  // completion (scriptless scripts), not by preimage disclosure.
   Crypto::PublicKey pt = params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
   if (std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
+  if (std::memcmp(&pt,&zero,sizeof(zero))==0)
+    return ChainClientResult::fail("SOL lockPtlc: no PTLC point (ptlcPoint/adaptorPoint zero)");
   std::string ptHex = Common::podToHex(pt);
-  std::string state = base.chainState + "|ptlc:" + ptHex;
-  return ChainClientResult::okWithState(base.txId, state);
+
+  SolTxResult solResult;
+  bool ok = m_rpc->lockPtlc(
+      m_keypairBase58,
+      params.ctrAddress,
+      ptHex,
+      params.ctrTimeoutBlock,
+      params.ctrAmount,
+      solResult);
+  if (!ok || !solResult.confirmed)
+    return ChainClientResult::fail("SOL lockPtlc failed: " + solResult.error);
+  // txId stays the HTLC state PDA — the canonical reference for
+  // verifyLock/claim, same contract as lock().
+  if (solResult.htlcAddress.empty())
+    return ChainClientResult::fail("SOL lockPtlc: could not derive HTLC account address");
+  // chainState "ptlc:<ptlcPointHex>" — pure marker, no | bridge suffix.
+  return ChainClientResult::okWithState(solResult.htlcAddress, "ptlc:" + ptHex);
+}
+
+// Hex case normalization shared by both verifyLock paths.
+static std::string lowerHex(std::string s) {
+  for (char& c : s) if (c >= 'A' && c <= 'F') c = static_cast<char>(c - 'A' + 'a');
+  return s;
+}
+
+static bool isZeroPub(const Crypto::PublicKey& k) {
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&k);
+  for (size_t i = 0; i < sizeof(Crypto::PublicKey); ++i) if (p[i]) return false;
+  return true;
+}
+
+// Pure PTLC path of verifyLock: chainState "ptlc:<pointHex>". Fetch the
+// HtlcState PDA and bind it to the negotiated POINT (not any hash).
+static ChainClientResult verifyPtlcAccount(SolRpcClient* rpc,
+                                           const SwapParams& params) {
+  SolHtlcInfo info;
+  if (!rpc->getHtlcState(params.ctrLockTxId, info))
+    return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
+  if (info.claimed || info.refunded)
+    return ChainClientResult::fail("SOL verifyLock: HTLC already claimed/refunded");
+  if (info.amount < params.ctrAmount)
+    return ChainClientResult::fail("SOL verifyLock: amount too low");
+  if (info.lockType != 1)
+    return ChainClientResult::fail("SOL verifyLock: state is not a PTLC lock (lock_type != 1)");
+
+  Crypto::PublicKey expected = params.ptlcPoint;
+  Crypto::PublicKey zero{}; std::memset(&zero, 0, sizeof(zero));
+  if (std::memcmp(&expected, &zero, sizeof(zero)) == 0) expected = params.adaptorPoint;
+  if (std::memcmp(&expected, &zero, sizeof(zero)) == 0)
+    return ChainClientResult::fail("SOL verifyLock: no ptlcPoint/adaptorPoint to compare");
+
+  if (lowerHex(info.ptlcPoint) != lowerHex(Common::podToHex(expected)))
+    return ChainClientResult::fail("SOL verifyLock: ptlc_point mismatch");
+
+  if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != 0 &&
+      info.timeoutSlot != params.ctrTimeoutBlock)
+    return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
+  if (!params.ctrAddress.empty() && !info.recipient.empty() &&
+      lowerHex(info.recipient) != lowerHex(params.ctrAddress)) {
+    if (info.recipient != params.ctrAddress)
+      return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
+  }
+  return ChainClientResult::ok(params.ctrLockTxId);
 }
 
 ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
+  // Pure PTLC locks announce themselves via chainState prefix "ptlc:" and are
+  // verified against the bound adaptor point; legacy HTLC keeps the hash path.
+  if (params.chainState.rfind("ptlc:", 0) == 0)
+    return verifyPtlcAccount(m_rpc.get(), params);
+
   SolHtlcInfo info;
   if (!m_rpc->getHtlcState(params.ctrLockTxId, info))
     return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
@@ -101,7 +169,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
     for (char& c : s) if (c >= 'A' && c <= 'F') c = static_cast<char>(c - 'A' + 'a');
     return s;
   };
-  if (lower(info.hashLock) != lower(expectedHash))
+  if (lowerHex(info.hashLock) != lowerHex(expectedHash))
     return ChainClientResult::fail("SOL verifyLock: hash_lock mismatch");
 
   if (params.ctrTimeoutBlock > 0 && info.timeoutSlot != 0 &&
@@ -109,7 +177,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
     return ChainClientResult::fail("SOL verifyLock: timeout_slot mismatch");
   }
   if (!params.ctrAddress.empty() && !info.recipient.empty() &&
-      lower(info.recipient) != lower(params.ctrAddress)) {
+      lowerHex(info.recipient) != lowerHex(params.ctrAddress)) {
     // Recipient may be base58; case-sensitive compare preferred for base58
     if (info.recipient != params.ctrAddress)
       return ChainClientResult::fail("SOL verifyLock: recipient mismatch");
@@ -118,6 +186,10 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
 }
 
 ChainClientResult SolChainClient::claim(const SwapParams& params) {
+  // Legacy HTLC fallback ONLY (plan task: keep untouched). The on-chain
+  // program rejects this for lock_type == 1 — pure PTLC claims go through
+  // SolRpcClient::claimPtlc (completed adaptor signature, no preimage).
+  // Alice-locks: Bob's claim reveals adaptor secret t as the preimage.
   SolTxResult solResult;
   bool ok = m_rpc->claim(
       m_keypairBase58,
@@ -130,9 +202,27 @@ ChainClientResult SolChainClient::claim(const SwapParams& params) {
 }
 
 std::string SolChainClient::tryExtractClaimedSecret(const SwapParams& params) {
+  if (!m_rpc || params.ctrLockTxId.empty()) return {};
+
+  // Pure PTLC: Bob's claim_ptlc completion is verified on-chain (N == s*G +
+  // e*P, t*G == T enforced) and the recovered secret t is stored in
+  // state.preimage exactly like an HTLC preimage — same read-back contract,
+  // different verification upstream.
+  if (params.chainState.rfind("ptlc:", 0) == 0) {
+    SolHtlcInfo ptlcInfo;
+    if (!m_rpc->getHtlcState(params.ctrLockTxId, ptlcInfo)) return {};
+    if (!ptlcInfo.claimed || ptlcInfo.lockType != 1) return {};
+    if (ptlcInfo.preimage.size() != 64) return {};
+    bool any = false;
+    for (char c : ptlcInfo.preimage) {
+      if (c != '0') { any = true; break; }
+    }
+    if (!any) return {};
+    return ptlcInfo.preimage;
+  }
+
   // Alice-locks: Bob's claim writes preimage t into the HTLC state account.
   // ctrLockTxId is the HTLC PDA (not the lock signature) after a successful lock().
-  if (params.ctrLockTxId.empty() || !m_rpc) return {};
   SolHtlcInfo info;
   if (!m_rpc->getHtlcState(params.ctrLockTxId, info)) return {};
   if (!info.claimed) return {};

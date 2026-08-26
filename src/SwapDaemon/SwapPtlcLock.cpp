@@ -31,6 +31,14 @@ SwapLockType negotiateLockType(bool localSupportsPtlc, bool peerSupportsPtlc, bo
   return SwapLockType::HTLC;
 }
 
+SwapLockType negotiateLockTypeV2(bool localSupportsPtlc, bool peerSupportsPtlc,
+                                 bool localSupportsPurePtlc, bool peerSupportsPurePtlc,
+                                 bool requirePtlc) {
+  if (localSupportsPurePtlc && peerSupportsPurePtlc)
+    return SwapLockType::PTLC;
+  return negotiateLockType(localSupportsPtlc, peerSupportsPtlc, requirePtlc);
+}
+
 bool isPtlcNativePair(SwapPair pair) {
   return pair == SwapPair::XMR || pair == SwapPair::ZANO;
 }

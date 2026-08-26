@@ -149,6 +149,11 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_RATE_DIVISOR = 10000;          // basis point denominator
         const uint64_t FEE_POOL_RATE_PRECISION = 1000000ULL;   // 1e6 fixed-point (fits uint32_t for div128_32)
         const uint64_t TESTNET_SWAP_FEE_RATE_BPS = 100;        // 1% on testnet (same as mainnet)
+
+        // Pure PTLC feature default (docs/PTLC_PURE_PLAN.md P4.2). Runtime opt-in
+        // is the FEATURE_PURE_PTLC environment variable on fuego-swapd (cached at
+        // first negotiation); this constant is the compile-time reference default.
+        constexpr bool FEATURE_PURE_PTLC_DEFAULT = false;
         const uint32_t CD_TRANSFER_MIN_REMAINING_TERM = 1;     // minimum term for transferred CD
 
          // CD term limits in epochs (1 epoch = 900 blocks ≈ 5 days on mainnet, 10 blocks on testnet)

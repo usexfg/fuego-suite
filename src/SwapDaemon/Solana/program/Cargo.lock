@@ -1917,6 +1917,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "blake3",
+ "curve25519-dalek",
  "indexmap",
  "proc-macro-crate 3.2.0",
  "unicode-segmentation",

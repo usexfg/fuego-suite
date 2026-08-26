@@ -26,6 +26,21 @@ int main() {
     std::cout << "  PASS\n";
   }
 
+  // 1b. negotiateLockTypeV2 matrix (P4.2 pure)
+  {
+    std::cout << "[1b] negotiateLockTypeV2\n";
+    // both PURE → PTLC pure regardless of base caps
+    assert(negotiateLockTypeV2(true, true,  true, true,  false)==SwapLockType::PTLC);
+    assert(negotiateLockTypeV2(false,false,true, true,  false)==SwapLockType::PTLC);
+    // not both pure → exact legacy behavior
+    assert(negotiateLockTypeV2(true, true,  true, false, false)==SwapLockType::PTLC);
+    assert(negotiateLockTypeV2(true, false, true, false, false)==SwapLockType::PTLC_HTLC_BRIDGE);
+    assert(negotiateLockTypeV2(false,true,  false,true,  false)==SwapLockType::PTLC_HTLC_BRIDGE);
+    assert(negotiateLockTypeV2(false,false,false,false,false)==SwapLockType::HTLC);
+    assert(negotiateLockTypeV2(false,false,false,false,true )==SwapLockType::PTLC); // require signal preserved
+    std::cout << "  PASS\n";
+  }
+
   // 2. ptlcPoint verify
   {
     std::cout << "[2] verifyPtlcPoint\n";

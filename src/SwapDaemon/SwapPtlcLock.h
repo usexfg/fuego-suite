@@ -24,6 +24,15 @@ bool hexToPtlcPoint(const std::string& hex, Crypto::PublicKey& T);
 //   none PTLC + !require → HTLC
 SwapLockType negotiateLockType(bool localSupportsPtlc, bool peerSupportsPtlc, bool requirePtlc);
 
+// V2 negotiation (PTLC_PURE_PLAN P4.2): pure point-lock when BOTH legs report
+// PURE PTLC support (no H(t) anywhere); otherwise falls back to the exact
+// legacy 3-arg negotiation above.
+//   both pure → PTLC (pure T everywhere)
+//   else      → negotiateLockType(localSupportsPtlc, peerSupportsPtlc, requirePtlc)
+SwapLockType negotiateLockTypeV2(bool localSupportsPtlc, bool peerSupportsPtlc,
+                                 bool localSupportsPurePtlc, bool peerSupportsPurePtlc,
+                                 bool requirePtlc);
+
 // True for native adaptor-only pairs (no hashlock; ptlcPoint==ZERO means PTLC).
 bool isPtlcNativePair(SwapPair pair);
 bool isZeroPubKey(const Crypto::PublicKey& k);

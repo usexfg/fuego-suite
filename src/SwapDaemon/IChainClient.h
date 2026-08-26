@@ -20,6 +20,12 @@ public:
   // Override in PTLC-capable clients (BTC Taproot, SOL ed25519, XMR/ZANO).
   // For HTLC-only chains (most EVMs, TON, SIA) keep default false → negotiate yields BRIDGE.
   virtual bool supportsPtlc() const { return false; }
+
+  // True when this client implements PURE point locks (P2TR key-path / native
+  // adaptor verify) — i.e. lockType == SwapLockType::PTLC is funded on-chain
+  // with no H(t) hashlock component (PTLC_PURE_PLAN P2.2/P2.3).
+  // Clients that only do the PTLC_HTLC_BRIDGE hybrid keep the default false.
+  virtual bool supportsPurePtlc() const { return false; }
   virtual ChainClientResult lockPtlc(const SwapParams& params) {
     (void)params;
     return ChainClientResult::fail("PTLC not supported on " + chainName());

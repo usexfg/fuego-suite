@@ -18,6 +18,8 @@ public:
 
   std::string chainName() const override { return "BTC"; }
   bool supportsPtlc() const override { return true; }
+  // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.2.
+  bool supportsPurePtlc() const override { return true; }
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult lockPtlc(const SwapParams& params) override;
@@ -44,6 +46,15 @@ public:
 private:
   // SPV-mode verifyLock: fetch raw tx, parse outputs for P2WSH, verify amount and inclusion
   ChainClientResult verifyLockSpv(const SwapParams& params);
+
+  // Pure-PTLC P2TR key-path spend (claim + refund share the path: the locker's
+  // internal WIF key signs the tweaked key sk_q = sk_internal + tapTweak).
+  // chainState format: "p2tr:<tweakedPub33hex>|ptlc:<ptlcPointHex>"
+  ChainClientResult claimOrRefundPtlcP2tr(const SwapParams& params);
+
+  // Pure-PTLC funding: build BtcTaprootPtlc output (internalKey = our WIF
+  // pubkey) and fund it via wallet sendtoaddress.
+  ChainClientResult lockPtlcPureP2tr(const SwapParams& params);
 
   // SPV-mode extractSecret: fetch raw spending tx, parse witness data
   std::string extractSecretSpv(const std::string& spendingTxid,

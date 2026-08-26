@@ -54,6 +54,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -796,11 +797,31 @@ bool SwapDaemon::initiate(SwapParams& params) {
 
   // ── PTLC negotiation ──
   {
+    // FEATURE_PURE_PTLC (PTLC_PURE_PLAN P4.2): read once per process, cached.
+    // Unset/0/false/off => pure PTLC disabled, negotiation stays exactly as before.
+    static const bool kPurePtlcEnabled = [] {
+      const char* v = std::getenv("FEATURE_PURE_PTLC");
+      if (v == nullptr) return false;
+      std::string s(v);
+      std::transform(s.begin(), s.end(), s.begin(),
+                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      return !(s.empty() || s == "0" || s == "false" || s == "off");
+    }();
+
     IChainClient* ctrClient = m_chainRegistry.getClient(params.pair);
     bool localPtlc = ctrClient && ctrClient->supportsPtlc();
+    // Pure PTLC gate: env flag + local PURE capability. The peer half arrives
+    // later via MsgAdaptorExchange caps; initiate gates on local only — an
+    // HTLC-only peer still downgrades/aborts on wire negotiation
+    // (requirePtlc abort path unchanged).
+    bool localPure =
+      kPurePtlcEnabled && ctrClient != nullptr && ctrClient->supportsPurePtlc();
     if (isPtlcNativePair(params.pair)) localPtlc = true;
     if (params.lockType == SwapLockType::HTLC) {
-      if (localPtlc) {
+      if (localPure) {
+        params.lockType = SwapLockType::PTLC;
+        m_logger(Logging::INFO) << "PTLC negotiation: pure enabled → PTLC";
+      } else if (localPtlc) {
         // Phase 1: bridge mode (point off-chain + hash on-chain) preserves privacy via DLEQ decorrelation.
         // Pure PTLC (scriptless Taproot with adaptor verify) lands in Phase 2/4 behind flag.
         params.lockType = SwapLockType::PTLC_HTLC_BRIDGE;

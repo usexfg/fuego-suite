@@ -724,7 +724,7 @@ bool SolRpcClient::getSignatureStatus(const std::string& signature, bool& confir
 // ---------------------------------------------------------------------------
 
 bool SolRpcClient::parseHtlcState(const std::vector<uint8_t>& data, SolHtlcInfo& info) {
-  // Anchor account layout:
+  // Anchor account layout (post-P3; legacy fields at identical offsets):
   //   8 bytes: discriminator (SHA-256("account:HtlcState")[..8])
   //  32 bytes: sender pubkey
   //  32 bytes: recipient pubkey
@@ -735,10 +735,16 @@ bool SolRpcClient::parseHtlcState(const std::vector<uint8_t>& data, SolHtlcInfo&
   //   1 byte:  refunded (bool)
   //  32 bytes: preimage
   //   1 byte:  bump
-  // Total: 8 + 147 = 155 bytes
+  //  32 bytes: ptlc_point        <- NEW (P3), zeros for HTLC locks
+  //   1 byte:  lock_type          <- NEW (P3), 0 = HTLC, 1 = PTLC
+  // Total: 8 + 180 = 188 bytes (legacy deployment accounts were 155)
 
-  const size_t EXPECTED_SIZE = 155;
-  if (data.size() < EXPECTED_SIZE) return false;
+  const size_t LEGACY_SIZE = 155;   // pre-P3 layout (through bump)
+  const size_t FULL_SIZE = 188;     // with ptlc_point + lock_type
+  if (data.size() < LEGACY_SIZE) return false;
+
+  info.lockType = 0;
+  info.ptlcPoint.clear();
 
   size_t offset = 8; // skip discriminator
 
@@ -779,10 +785,24 @@ bool SolRpcClient::parseHtlcState(const std::vector<uint8_t>& data, SolHtlcInfo&
   info.refunded = (data[offset] != 0);
   offset += 1;
 
-  // preimage (32 bytes)
+  // preimage (32 bytes) — adaptor secret t once claimed (both lock types)
   info.preimage = bytesToHex(std::vector<uint8_t>(data.begin() + offset,
                                                    data.begin() + offset + 32));
   offset += 32;
+
+  // Legacy accounts stop here (155 bytes); treat as HTLC defaults.
+  if (data.size() < FULL_SIZE) return true;
+
+  // bump (1 byte) — vault PDA bump, unused off-chain
+  offset += 1;
+
+  // ptlc_point (32 bytes)
+  info.ptlcPoint = bytesToHex(std::vector<uint8_t>(data.begin() + offset,
+                                                    data.begin() + offset + 32));
+  offset += 32;
+
+  // lock_type (1 byte): 0 = HTLC, 1 = PTLC
+  info.lockType = data[offset];
 
   return true;
 }
@@ -887,6 +907,49 @@ bool SolRpcClient::lock(const std::string& senderSecretKey,
   return sent;
 }
 
+bool SolRpcClient::lockPtlc(const std::string& senderSecretKey,
+                             const std::string& recipientPubkey,
+                             const std::string& ptlcPointHex,
+                             uint64_t timeoutSlot,
+                             uint64_t amountLamports,
+                             SolTxResult& result) {
+  std::string blockhash;
+  if (!getRecentBlockhash(blockhash)) {
+    result.error = "Failed to get recent blockhash";
+    return false;
+  }
+
+  std::vector<uint8_t> point = hexToBytes(ptlcPointHex);
+  if (point.size() != 32) {
+    result.error = "PTLC point must be 32 bytes";
+    return false;
+  }
+
+  std::vector<uint8_t> txBytes = buildLockPtlcTx(senderSecretKey, recipientPubkey,
+                                                  point, timeoutSlot,
+                                                  amountLamports, blockhash);
+  if (txBytes.empty()) {
+    result.error = "Failed to build lock_ptlc transaction";
+    return false;
+  }
+
+  bool sent = sendAndConfirmTransaction(txBytes, result);
+  if (sent) {
+    // Same contract as lock(): record the state PDA, not the tx signature.
+    // PDA = find_program_address([b"xfg_htlc", sender_pubkey, ptlc_point]).
+    std::vector<uint8_t> kp = base58Decode(senderSecretKey);
+    if (kp.size() == 64) {
+      std::vector<uint8_t> senderPub(kp.begin() + 32, kp.end());
+      std::vector<uint8_t> programIdBytes = base58Decode(m_programId);
+      const std::string seed = "xfg_htlc";
+      std::vector<uint8_t> seedBytes(seed.begin(), seed.end());
+      auto pda = derivePDA({seedBytes, senderPub, point}, programIdBytes);
+      if (!pda.first.empty()) result.htlcAddress = base58Encode(pda.first);
+    }
+  }
+  return sent;
+}
+
 bool SolRpcClient::claim(const std::string& claimerSecretKey,
                           const std::string& htlcAccount,
                           const std::string& preimageHex,
@@ -907,6 +970,38 @@ bool SolRpcClient::claim(const std::string& claimerSecretKey,
                                                preimage, blockhash);
   if (txBytes.empty()) {
     result.error = "Failed to build claim transaction";
+    return false;
+  }
+
+  return sendAndConfirmTransaction(txBytes, result);
+}
+
+bool SolRpcClient::claimPtlc(const std::string& claimerSecretKey,
+                              const std::string& htlcAccount,
+                              const std::string& completedSigHex,
+                              const std::string& presigRHex,
+                              const std::string& presigSPrimeHex,
+                              SolTxResult& result) {
+  std::string blockhash;
+  if (!getRecentBlockhash(blockhash)) {
+    result.error = "Failed to get recent blockhash";
+    return false;
+  }
+
+  std::vector<uint8_t> completedSig = hexToBytes(completedSigHex);
+  std::vector<uint8_t> presigR = hexToBytes(presigRHex);
+  std::vector<uint8_t> presigSPrime = hexToBytes(presigSPrimeHex);
+  if (completedSig.size() != 64 || presigR.size() != 32 ||
+      presigSPrime.size() != 32) {
+    result.error = "claimPtlc needs sig=64B, R=32B, r_hat=32B hex";
+    return false;
+  }
+
+  std::vector<uint8_t> txBytes = buildClaimPtlcTx(claimerSecretKey, htlcAccount,
+                                                   completedSig, presigR,
+                                                   presigSPrime, blockhash);
+  if (txBytes.empty()) {
+    result.error = "Failed to build claim_ptlc transaction";
     return false;
   }
 
@@ -1028,7 +1123,9 @@ bool SolRpcClient::waitForClaim(const std::string& htlcAccount,
 //
 // Anchor instruction discriminators:
 //   SHA-256("global:lock")[..8]
+//   SHA-256("global:lock_ptlc")[..8]
 //   SHA-256("global:claim")[..8]
+//   SHA-256("global:claim_ptlc")[..8]
 //   SHA-256("global:refund")[..8]
 
 std::vector<uint8_t> SolRpcClient::buildLockTx(
@@ -1158,6 +1255,106 @@ std::vector<uint8_t> SolRpcClient::buildLockTx(
   return tx;
 }
 
+// lock_ptlc mirrors the Lock instruction byte-for-byte except:
+//   - discriminator "global:lock_ptlc"
+//   - ix data commits ptlc_point (32B) instead of hash_lock (32B)
+//   - HTLC PDA is derived over [b"xfg_htlc", sender_pubkey, ptlc_point]
+// Account ordering, header bytes and signing are identical to buildLockTx.
+std::vector<uint8_t> SolRpcClient::buildLockPtlcTx(
+    const std::string& senderSecretKey,
+    const std::string& recipientPubkey,
+    const std::vector<uint8_t>& point,
+    uint64_t timeoutSlot,
+    uint64_t amountLamports,
+    const std::string& recentBlockhash) {
+
+  if (point.size() != 32) return {};
+
+  std::vector<uint8_t> keypair = base58Decode(senderSecretKey);
+  if (keypair.size() != 64) return {};
+
+  const uint8_t* seed   = keypair.data();
+  const uint8_t* pubkey = keypair.data() + 32;
+
+  std::vector<uint8_t> senderPub(pubkey, pubkey + 32);
+  std::vector<uint8_t> recipientBytes = base58Decode(recipientPubkey);
+  if (recipientBytes.size() != 32) return {};
+
+  std::vector<uint8_t> programIdBytes = base58Decode(m_programId);
+  if (programIdBytes.size() != 32) return {};
+
+  std::vector<uint8_t> blockhashBytes = base58Decode(recentBlockhash);
+  if (blockhashBytes.size() != 32) return {};
+
+  const std::string htlcSeed = "xfg_htlc";
+  std::vector<uint8_t> htlcSeedBytes(htlcSeed.begin(), htlcSeed.end());
+  auto [htlcPda, htlcBump] = derivePDA(
+      {htlcSeedBytes, senderPub, point}, programIdBytes);
+  if (htlcPda.empty()) return {};
+
+  auto [vaultPda, vaultBump] = derivePDA(
+      {htlcSeedBytes, htlcPda}, programIdBytes);
+  if (vaultPda.empty()) return {};
+
+  // Same sorted account layout as buildLockTx.
+  std::vector<std::vector<uint8_t>> accounts = {
+    senderPub,        // [0] signer, writable
+    htlcPda,          // [1] writable
+    vaultPda,         // [2] writable
+    recipientBytes,   // [3] readonly
+    SYSTEM_PROGRAM_ID,// [4] readonly
+    programIdBytes,   // [5] readonly (the program itself)
+  };
+
+  uint8_t numRequiredSignatures   = 1;
+  uint8_t numReadonlySigned       = 0;
+  uint8_t numReadonlyUnsigned     = 3;
+
+  std::vector<uint8_t> ixData = anchorDiscriminator("global:lock_ptlc");
+  ixData.insert(ixData.end(), point.begin(), point.end());
+  appendU64LE(ixData, timeoutSlot);
+  appendU64LE(ixData, amountLamports);
+
+  std::vector<uint8_t> ixAccountIndices = {0, 3, 1, 2, 4};
+
+  std::vector<uint8_t> message;
+  message.push_back(numRequiredSignatures);
+  message.push_back(numReadonlySigned);
+  message.push_back(numReadonlyUnsigned);
+
+  auto numAccounts = compactU16Encode(static_cast<uint16_t>(accounts.size()));
+  message.insert(message.end(), numAccounts.begin(), numAccounts.end());
+  for (const auto& acct : accounts) {
+    message.insert(message.end(), acct.begin(), acct.end());
+  }
+
+  message.insert(message.end(), blockhashBytes.begin(), blockhashBytes.end());
+
+  auto numIx = compactU16Encode(1);
+  message.insert(message.end(), numIx.begin(), numIx.end());
+
+  message.push_back(5);  // program_id at index 5
+
+  auto numIxAccts = compactU16Encode(static_cast<uint16_t>(ixAccountIndices.size()));
+  message.insert(message.end(), numIxAccts.begin(), numIxAccts.end());
+  message.insert(message.end(), ixAccountIndices.begin(), ixAccountIndices.end());
+
+  auto dataLen = compactU16Encode(static_cast<uint16_t>(ixData.size()));
+  message.insert(message.end(), dataLen.begin(), dataLen.end());
+  message.insert(message.end(), ixData.begin(), ixData.end());
+
+  uint8_t signature[64];
+  ed25519Sign(message.data(), message.size(), seed, pubkey, signature);
+
+  std::vector<uint8_t> tx;
+  auto numSigs = compactU16Encode(1);
+  tx.insert(tx.end(), numSigs.begin(), numSigs.end());
+  tx.insert(tx.end(), signature, signature + 64);
+  tx.insert(tx.end(), message.begin(), message.end());
+
+  return tx;
+}
+
 std::vector<uint8_t> SolRpcClient::buildClaimTx(
     const std::string& claimerSecretKey,
     const std::string& htlcAccount,
@@ -1254,6 +1451,107 @@ std::vector<uint8_t> SolRpcClient::buildClaimTx(
   ed25519Sign(message.data(), message.size(), seed, pubkey, signature);
 
   // Assemble transaction
+  std::vector<uint8_t> tx;
+  auto numSigs = compactU16Encode(1);
+  tx.insert(tx.end(), numSigs.begin(), numSigs.end());
+  tx.insert(tx.end(), signature, signature + 64);
+  tx.insert(tx.end(), message.begin(), message.end());
+
+  return tx;
+}
+
+// claim_ptlc mirrors the Claim instruction except:
+//   - discriminator "global:claim_ptlc"
+//   - ix data = disc(8) + completed_sig(64) + presig_r(32) + r_hat(32)
+// The claimer (recipient) signs the fee; the adaptor equation itself is
+// verified on-chain by the program — the tx signature is unrelated to it.
+std::vector<uint8_t> SolRpcClient::buildClaimPtlcTx(
+    const std::string& claimerSecretKey,
+    const std::string& htlcAccount,
+    const std::vector<uint8_t>& completedSig,
+    const std::vector<uint8_t>& presigR,
+    const std::vector<uint8_t>& presigSPrime,
+    const std::string& recentBlockhash) {
+
+  if (completedSig.size() != 64 || presigR.size() != 32 ||
+      presigSPrime.size() != 32) return {};
+
+  std::vector<uint8_t> keypair = base58Decode(claimerSecretKey);
+  if (keypair.size() != 64) return {};
+
+  const uint8_t* seed   = keypair.data();
+  const uint8_t* pubkey = keypair.data() + 32;
+
+  std::vector<uint8_t> claimerPub(pubkey, pubkey + 32);
+  std::vector<uint8_t> htlcBytes = base58Decode(htlcAccount);
+  if (htlcBytes.size() != 32) return {};
+
+  std::vector<uint8_t> programIdBytes = base58Decode(m_programId);
+  if (programIdBytes.size() != 32) return {};
+
+  std::vector<uint8_t> blockhashBytes = base58Decode(recentBlockhash);
+  if (blockhashBytes.size() != 32) return {};
+
+  const std::string vaultSeed = "xfg_htlc";
+  std::vector<uint8_t> vaultSeedBytes(vaultSeed.begin(), vaultSeed.end());
+  auto [vaultPda, vaultBump] = derivePDA(
+      {vaultSeedBytes, htlcBytes}, programIdBytes);
+  if (vaultPda.empty()) return {};
+
+  // Same sorted account layout as buildClaimTx:
+  //   [0] claimer/recipient — signer, writable
+  //   [1] htlc PDA          — non-signer, writable
+  //   [2] vault PDA         — non-signer, writable
+  //   [3] system_program    — non-signer, readonly
+  //   [4] program_id        — non-signer, readonly
+  std::vector<std::vector<uint8_t>> accounts = {
+    claimerPub,
+    htlcBytes,
+    vaultPda,
+    SYSTEM_PROGRAM_ID,
+    programIdBytes,
+  };
+
+  uint8_t numRequiredSignatures   = 1;
+  uint8_t numReadonlySigned       = 0;
+  uint8_t numReadonlyUnsigned     = 2;
+
+  std::vector<uint8_t> ixData = anchorDiscriminator("global:claim_ptlc");
+  ixData.insert(ixData.end(), completedSig.begin(), completedSig.end());
+  ixData.insert(ixData.end(), presigR.begin(), presigR.end());
+  ixData.insert(ixData.end(), presigSPrime.begin(), presigSPrime.end());
+
+  std::vector<uint8_t> ixAccountIndices = {1, 0, 2, 3};
+
+  std::vector<uint8_t> message;
+  message.push_back(numRequiredSignatures);
+  message.push_back(numReadonlySigned);
+  message.push_back(numReadonlyUnsigned);
+
+  auto numAccounts = compactU16Encode(static_cast<uint16_t>(accounts.size()));
+  message.insert(message.end(), numAccounts.begin(), numAccounts.end());
+  for (const auto& acct : accounts) {
+    message.insert(message.end(), acct.begin(), acct.end());
+  }
+
+  message.insert(message.end(), blockhashBytes.begin(), blockhashBytes.end());
+
+  auto numIx = compactU16Encode(1);
+  message.insert(message.end(), numIx.begin(), numIx.end());
+
+  message.push_back(4);  // program_id at index 4
+
+  auto numIxAccts = compactU16Encode(static_cast<uint16_t>(ixAccountIndices.size()));
+  message.insert(message.end(), numIxAccts.begin(), numIxAccts.end());
+  message.insert(message.end(), ixAccountIndices.begin(), ixAccountIndices.end());
+
+  auto dataLen = compactU16Encode(static_cast<uint16_t>(ixData.size()));
+  message.insert(message.end(), dataLen.begin(), dataLen.end());
+  message.insert(message.end(), ixData.begin(), ixData.end());
+
+  uint8_t signature[64];
+  ed25519Sign(message.data(), message.size(), seed, pubkey, signature);
+
   std::vector<uint8_t> tx;
   auto numSigs = compactU16Encode(1);
   tx.insert(tx.end(), numSigs.begin(), numSigs.end());

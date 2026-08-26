@@ -52,6 +52,10 @@ public:
   bool sendRawTransaction(const std::string& rawTxHex, std::string& txid);
   bool decodeRawTransaction(const std::string& rawTxHex, std::string& jsonResult);
 
+  // Wallet spend to any address (incl. P2TR/bech32m) via sendtoaddress.
+  // Used by the pure PTLC path to fund a P2TR output.
+  bool sendToAddress(const std::string& address, uint64_t satoshis, std::string& txid);
+
   // Address utilities
   bool validateAddress(const std::string& address, bool& isValid);
 

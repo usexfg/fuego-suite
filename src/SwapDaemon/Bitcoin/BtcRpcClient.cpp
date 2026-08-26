@@ -368,6 +368,25 @@ bool BtcRpcClient::sendRawTransaction(const std::string& rawTxHex, std::string& 
   }
 }
 
+bool BtcRpcClient::sendToAddress(const std::string& address, uint64_t satoshis,
+                                 std::string& txid) {
+  try {
+    std::string params = "[\"" + address + "\"," +
+                         std::to_string(static_cast<double>(satoshis) / 1e8) + "]";
+    std::string resp = rpcCall("sendtoaddress", params);
+    if (resp.empty()) return false;
+
+    Common::JsonValue json = Common::JsonValue::fromString(resp);
+    if (!json.isObject() || !json.contains("result")) return false;
+    const auto& result = json("result");
+    if (!result.isString()) return false;
+    txid = result.getString();
+    return txid.size() == 64;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 bool BtcRpcClient::decodeRawTransaction(const std::string& rawTxHex, std::string& jsonResult) {
   try {
     std::string params = "[\"" + rawTxHex + "\"]";

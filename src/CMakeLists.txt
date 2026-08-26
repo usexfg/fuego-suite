@@ -288,6 +288,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapHashLock.cpp
     SwapDaemon/SwapPtlcLock.cpp
     SwapDaemon/Bitcoin/BtcPtlcScript.cpp
+    SwapDaemon/Bitcoin/BtcTaprootPtlc.cpp
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
@@ -306,7 +307,6 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
     SwapDaemon/Ton/TonRpcClient.cpp
-    SwapDaemon/Ton/TonChainClient.cpp
     SwapDaemon/Ton/TonCell.cpp
     SwapDaemon/Sia/SiaRpcClient.cpp
     SwapDaemon/Sia/SiaHtlcScript.cpp
@@ -686,6 +686,7 @@ add_executable(SwapDaemon
     SwapDaemon/SwapHashLock.cpp
     SwapDaemon/SwapPtlcLock.cpp
     SwapDaemon/Bitcoin/BtcPtlcScript.cpp
+    SwapDaemon/Bitcoin/BtcTaprootPtlc.cpp
     SwapDaemon/Spv/SpvMerkle.cpp
     SwapDaemon/Spv/SpvHeader.cpp
     SwapDaemon/Spv/SpvHeaderStore.cpp
@@ -704,7 +705,6 @@ add_executable(SwapDaemon
     SwapDaemon/Decred/DcrChainClient.cpp
     SwapDaemon/Decred/DcrHtlcScript.cpp
     SwapDaemon/Ton/TonRpcClient.cpp
-    SwapDaemon/Ton/TonChainClient.cpp
     SwapDaemon/Ton/TonCell.cpp
     SwapDaemon/Sia/SiaRpcClient.cpp
     SwapDaemon/Sia/SiaHtlcScript.cpp

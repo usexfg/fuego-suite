@@ -18,6 +18,8 @@ public:
 
   std::string chainName() const override { return "LTC"; }
   bool supportsPtlc() const override { return true; }
+  // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.3 (mirror of BTC).
+  bool supportsPurePtlc() const override { return true; }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;
@@ -49,6 +51,13 @@ private:
   // SPV-mode extractSecret: fetch raw spending tx, parse witness stack
   std::string extractSecretSpv(const std::string& spendingTxid,
                                const std::vector<uint8_t>& htlcP2wshScriptPubKey);
+
+  // Pure-PTLC funding (P2.3): BtcTaprootPtlc output with hrp "ltc", funded
+  // via wallet sendtoaddress. chainState "p2tr:<tweaked>|ptlc:<point>".
+  ChainClientResult lockPtlcPureP2tr(const SwapParams& params);
+
+  // Pure-PTLC P2TR key-path spend shared by claim + refund.
+  ChainClientResult claimOrRefundPtlcP2tr(const SwapParams& params);
 
   std::unique_ptr<LtcRpcClient> m_rpc;    // null in SPV mode
   std::string m_wif;                       // empty in SPV mode

@@ -154,6 +154,14 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
           appendPod(buf, msg.adaptorExchange.ptlcPoint);
           buf.push_back(msg.adaptorExchange.requirePtlc ? 1 : 0);
         }
+        // Cross-curve extension — length-prefixed string, covered whenever it
+        // carries data or the other extension fields are covered. When every
+        // field is default/empty the digest matches pre-extension peers.
+        if (!msg.adaptorExchange.secpPubHex.empty() || usePtlcFields) {
+          appendU32LE(buf, static_cast<uint32_t>(msg.adaptorExchange.secpPubHex.size()));
+          buf.insert(buf.end(), msg.adaptorExchange.secpPubHex.begin(),
+                     msg.adaptorExchange.secpPubHex.end());
+        }
       }
       break;
     case PeerMessageType::NONCE_EXCHANGE:
@@ -246,6 +254,7 @@ std::string serializePeerMessage(const PeerMessage& msg) {
       payload.insert("lockType", static_cast<int64_t>(static_cast<uint8_t>(msg.adaptorExchange.lockType)));
       payload.insert("ptlcPoint", podHex(msg.adaptorExchange.ptlcPoint));
       payload.insert("requirePtlc", static_cast<int64_t>(msg.adaptorExchange.requirePtlc ? 1 : 0));
+      payload.insert("secpPubHex", msg.adaptorExchange.secpPubHex);
       break;
 
     case PeerMessageType::NONCE_EXCHANGE:
@@ -347,6 +356,9 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
         }
         if (p.contains("requirePtlc") && p("requirePtlc").isInteger()) {
           msg.adaptorExchange.requirePtlc = p("requirePtlc").getInteger() != 0;
+        }
+        if (p.contains("secpPubHex") && p("secpPubHex").isString()) {
+          msg.adaptorExchange.secpPubHex = p("secpPubHex").getString();
         }
         // For pure PTLC, ptlcPoint duplicates adaptorPoint if not explicitly set
         {

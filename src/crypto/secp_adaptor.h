@@ -33,6 +33,11 @@ std::array<uint8_t, 32> secp_adaptor_challenge(const SecpPubKey& R, const SecpPu
 // Derive P = sk*G (compressed). Returns false if sk == 0 or >= n.
 bool secp_secret_to_pubkey(const SecretKey& sec, SecpPubKey& pub);
 
+// Derive the secp256k1 point for the CROSS-CURVE binding from a CryptoNote
+// (little-endian) scalar: reverses bytes to the canonical BE secp scalar,
+// then P = scalar*G. Returns false if scalar==0 or >= n.
+bool secp_point_from_ed_secret(const SecretKey& edSecret, SecpPubKey& out);
+
 // Generate nonce k and R = k*G.
 bool secp_generate_nonce(const SecretKey& k, SecpPubKey& R);
 

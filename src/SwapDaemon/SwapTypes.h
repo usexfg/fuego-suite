@@ -165,6 +165,11 @@ struct SwapParams {
   Crypto::PublicKey ptlcPoint{};              // T duplicated for pure PTLC (same as adaptorPoint), kept for explicit PTLC verify
   bool requirePtlc = false;                   // sender policy: abort if peer cannot do PTLC
 
+  // Cross-curve secp256k1 point T_secp = t·G_secp (Bob publishes, Alice
+  // verifies). Compressed 33-byte hex (66 chars); empty = not published.
+  // Derived from adaptorSecret with the canonical byte-reversal rule.
+  std::string secpPubHex;
+
   // Musig2 session state
   Musig2State musig2;
 

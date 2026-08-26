@@ -83,6 +83,12 @@ public:
   void setHtlcRegistry(const std::string& registryAddress) { m_htlcRegistry = registryAddress; }
   const std::string& htlcRegistry() const { return m_htlcRegistry; }
 
+  // Set the pre-deployed PointTimelock registry address ("0x...").
+  // Pure PTLC (EVM side): locks keyed by a secp256k1 point address instead of
+  // H(t). Empty => pure PTLC unavailable and the chain stays BRIDGE (HTLC).
+  void setPtlcRegistry(const std::string& registryAddress) { m_ptlcRegistry = registryAddress; }
+  const std::string& ptlcRegistry() const { return m_ptlcRegistry; }
+
   // Optional: bytecode for one-time factory deploy (legacy path; lock uses registry).
   void setHtlcBytecode(const std::string& bytecodeHex) { m_htlcBytecode = bytecodeHex; }
 
@@ -111,14 +117,62 @@ public:
   // If claimed, returns 64-char hex preimage; empty if not claimed / error.
   std::string getClaimedPreimage(const std::string& contractIdHex);
 
-  // Claim ETH: claim(contractId, preimage) on the registry.
+  // ─── PointTimelock operations (PointTimelock.sol registry model) ──────────
+  //
+  // Same registry-deployment model as the HTLC path, but locks are keyed by
+  // a secp256k1 point address instead of a hash lock. The claim secret is the
+  // CryptoNote scalar t in canonical BIG-endian form (byte-reversed CryptoNote
+  // LE storage) — see PointTimelock.sol claim() and ContractAbi endianness rule.
+
+  // Compute contractId = keccak256(abi.encodePacked(sender, recipient, value,
+  // pointAddress, timeoutBlock)) matching Solidity PointTimelock.lock().
+  static std::string computePointContractId(const std::string& sender,
+                                            const std::string& recipient,
+                                            uint64_t valueWei,
+                                            const std::string& pointAddress,
+                                            uint64_t timeoutBlock);
+
+  // Call lock() on the PointTimelock registry; on success sets contractIdHex.
+  bool lockPoint(const std::string& fromAddress,
+                 const std::string& recipientAddress,
+                 const std::string& pointAddress,
+                 uint64_t timeoutBlock,
+                 uint64_t valueWei,
+                 std::string& contractIdHex);
+
+  // Verify via getContract(contractId): amount, recipient, pointAddress,
+  // not claimed/refunded. Empty expected* args skip that comparison.
+  bool verifyPointLock(const std::string& contractIdHex,
+                       uint64_t expectedWei,
+                       const std::string& expectedRecipient = "",
+                       const std::string& expectedPointAddress = "");
+
+  // If claimed, returns 64-char hex of the canonical big-endian scalar t;
+  // empty if not claimed / error.
+  std::string getClaimedPointSecret(const std::string& contractIdHex);
+
+  // Claim ETH: claim(contractId, preimage) on the HashedTimelock registry.
   bool claimHtlc(const std::string& fromAddress,
                  const std::string& contractIdHex,
                  const std::string& preimageHex,
                  std::string& claimTxHash);
 
+  // Claim ETH via PointTimelock: claim(contractId, secret) on the
+  // PointTimelock registry. secretHex32 is the canonical BIG-endian scalar t
+  // (byte-reversed CryptoNote LE storage — see ContractAbi endian rule).
+  bool claimPoint(const std::string& fromAddress,
+                  const std::string& contractIdHex,
+                  const std::string& secretHex32,
+                  std::string& claimTxHash);
+
   // Refund ETH after timeout: refund(contractId) on the registry.
   bool refundHtlc(const std::string& fromAddress,
+                   const std::string& contractIdHex,
+                   std::string& refundTxHash);
+
+  // Refund ETH after timeout via PointTimelock: refund(contractId) on the
+  // PointTimelock registry (same selector as the HTLC path).
+  bool refundPoint(const std::string& fromAddress,
                    const std::string& contractIdHex,
                    std::string& refundTxHash);
 
@@ -188,6 +242,9 @@ private:
   std::string m_htlcBytecode;
   // Pre-deployed HashedTimelock registry address ("0x..." + 40 hex).
   std::string m_htlcRegistry;
+  // Pre-deployed PointTimelock registry address ("0x..." + 40 hex).
+  // Empty => pure PTLC routing disabled (BRIDGE fallback at negotiation).
+  std::string m_ptlcRegistry;
 
   // Transaction type: EIP-1559 (default) or Legacy.
   EthTxType m_txType = EthTxType::Eip1559;

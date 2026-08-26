@@ -16,6 +16,7 @@
 #include "AdaptorSwap.h"
 #include "BitcoinCash/HtlcScript.h"
 #include "Sia/SiaHtlcScript.h"
+#include "crypto/secp_adaptor.h"
 #include <cstring>
 #include <vector>
 
@@ -77,6 +78,15 @@ bool adaptor_generate_adaptor(SwapParams& params,
                               const Crypto::PublicKey& dleq_base_point) {
   // Generate adaptor secret t, point T = t*G
   Crypto::generate_keys(params.adaptorPoint, params.adaptorSecret);
+
+  // Cross-curve binding: publish T_secp = t·G_secp (byte-reversed scalar).
+  // Fail closed — a swap without a verifiable cross-curve point must not
+  // proceed (same policy as the DLEQ failure below).
+  Crypto::SecpPubKey secpPub;
+  if (!Crypto::secp_point_from_ed_secret(params.adaptorSecret, secpPub)) {
+    return false;
+  }
+  params.secpPubHex = Crypto::secpPubKeyToHex(secpPub);
 
   // HTLC hashlock H(t) so Alice can lock without learning t (Alice-locks model).
   // Match the counterparty program's hash: SHA-256 for UTXO, keccak for EVM/SOL.

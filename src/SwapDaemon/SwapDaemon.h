@@ -87,6 +87,9 @@ struct ChainClientConfig {
   std::string ethHtlcBinPath;
   // Pre-deployed HashedTimelock registry address ("0x...")
   std::string ethHtlcRegistry;
+  // Pre-deployed PointTimelock registry address ("0x..."). Enables pure PTLC
+  // routing on all EVM chains; empty => BRIDGE (HTLC) — unchanged behavior.
+  std::string ethPtlcRegistry;
 
   // ARB
   std::string arbHost;
@@ -420,6 +423,9 @@ public:
   // Access the swap database (for RPC server).
   SwapDatabase& database() { return m_db; }
   const SwapDatabase& database() const { return m_db; }
+
+  // Access a chain client for RPC enrichment (null if chain not configured).
+  IChainClient* getChainClient(SwapPair pair) const { return m_chainRegistry.getClient(pair); }
 
  private:
   // Scan non-terminal swaps and warn about any stuck longer than threshold.

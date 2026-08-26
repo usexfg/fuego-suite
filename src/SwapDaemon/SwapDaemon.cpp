@@ -31,6 +31,7 @@
 #include "CryptoNoteCore/SwapOfferRelay.h"
 #include "crypto/hash.h"
 #include "crypto/crypto.h"
+#include "crypto/secp_adaptor.h"
 #include "BitcoinCash/BchChainClient.h"
 #include "Bitcoin/BtcRpcClient.h"
 #include "Bitcoin/BtcChainClient.h"
@@ -105,6 +106,19 @@ void applyHtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& binPath,
       logger(Logging::INFO) << chainLabel << " HTLC bytecode loaded ("
         << (bytecode.size() / 2) << " bytes) from " << binPath;
     }
+  }
+}
+// Wire PointTimelock (pure PTLC) registry on the EVM client. Empty address
+// leaves the client BRIDGE-only (HTLC) — unchanged default behavior.
+void applyPtlcConfig(XfgSwap::EthRpcClient& rpc, const std::string& ptlcRegistry,
+                     Logging::LoggerRef& logger, const char* chainLabel) {
+  if (!ptlcRegistry.empty()) {
+    rpc.setPtlcRegistry(ptlcRegistry);
+    logger(Logging::INFO) << chainLabel
+      << " PointTimelock (pure PTLC) registry set: " << ptlcRegistry;
+  } else {
+    logger(Logging::INFO) << chainLabel
+      << " eth_ptlc_registry not set — pure PTLC disabled (BRIDGE)";
   }
 }
 } // namespace
@@ -212,6 +226,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
           chainCfg.ethHost, chainCfg.ethPort);
     }
     applyHtlcConfig(*rpc, chainCfg.ethHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ETH");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ETH");
     m_chainRegistry.registerChain(SwapPair::ETH,
         std::make_unique<EthChainClient>(std::move(rpc), chainCfg.ethAddress));
     m_logger(Logging::INFO) << "ETH chain client registered: "
@@ -230,6 +245,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     applyHtlcConfig(*rpc,
                     chainCfg.arbHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.arbHtlcBinPath,
                     chainCfg.ethHtlcRegistry, m_logger, "ARB");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "ARB");
     m_chainRegistry.registerChain(SwapPair::ARB,
         std::make_unique<EthChainClient>(std::move(rpc), chainCfg.arbAddress, "ARB"));
     m_logger(Logging::INFO) << "ARB chain client registered: "
@@ -249,6 +265,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     applyHtlcConfig(*rpc,
                     chainCfg.baseHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.baseHtlcBinPath,
                     chainCfg.ethHtlcRegistry, m_logger, "BASE");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BASE");
     m_chainRegistry.registerChain(SwapPair::BASE,
         std::make_unique<EthChainClient>(std::move(rpc), chainCfg.baseAddress, "BASE"));
     m_logger(Logging::INFO) << "BASE chain client registered: "
@@ -295,6 +312,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     applyHtlcConfig(*rpc,
                     chainCfg.bscHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.bscHtlcBinPath,
                     chainCfg.ethHtlcRegistry, m_logger, "BSC");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "BSC");
     m_chainRegistry.registerChain(SwapPair::BNB,
         std::make_unique<BscChainClient>(std::move(rpc), chainCfg.bscAddress));
     m_logger(Logging::INFO) << "BSC (BNB) chain client registered: "
@@ -314,6 +332,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     applyHtlcConfig(*rpc,
                     chainCfg.polyHtlcBinPath.empty() ? chainCfg.ethHtlcBinPath : chainCfg.polyHtlcBinPath,
                     chainCfg.ethHtlcRegistry, m_logger, "POLYGON");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "POLYGON");
     m_chainRegistry.registerChain(SwapPair::POLYGON,
         std::make_unique<PolygonChainClient>(std::move(rpc), chainCfg.polyAddress));
     m_logger(Logging::INFO) << "Polygon chain client registered: "
@@ -327,6 +346,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
         chainCfg.gleecChainId);
     applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "GLEEC");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
     m_chainRegistry.registerChain(SwapPair::GLEEC,
         std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
     m_logger(Logging::INFO) << "GLEEC chain client registered: "
@@ -1056,6 +1076,8 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
       std::memset(&ax.adaptorExchange.ptlcPoint, 0, sizeof(ax.adaptorExchange.ptlcPoint));
     }
     ax.adaptorExchange.requirePtlc = params.requirePtlc;
+    // Cross-curve secp point T_secp = t·G_secp for counterparty-chain PTLC
+    ax.adaptorExchange.secpPubHex = params.secpPubHex;
     signPeerMessage(ax, params.ourSwapPubKey, params.ourSwapSecKey);
     if (deliverPeerMessage(ax)) {
       m_logger(Logging::INFO) << "Delivered ADAPTOR_EXCHANGE (T + H(t)) to peer";
@@ -3505,16 +3527,35 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           m_logger(Logging::WARNING) << "ADAPTOR_EXCHANGE ignored (not Alice)";
           return true;
         }
+        // Cross-curve point format gate: fail closed on malformed secpPubHex
+        // (66 hex chars, compressed prefix 02 or 03).
+        if (!msg.adaptorExchange.secpPubHex.empty()) {
+          Crypto::SecpPubKey secpProbe;
+          bool secpFormatOk =
+              msg.adaptorExchange.secpPubHex.size() == 66 &&
+              Crypto::hexToSecpPubKey(msg.adaptorExchange.secpPubHex, secpProbe) &&
+              (secpProbe.data[0] == 0x02 || secpProbe.data[0] == 0x03);
+          if (!secpFormatOk) {
+            m_logger(Logging::ERROR) << "ADAPTOR_EXCHANGE rejected: malformed secpPubHex";
+            return false;
+          }
+        }
         static const Crypto::PublicKey ZERO_PK{};
         const bool alreadyBound =
             std::memcmp(&params.adaptorPoint, &ZERO_PK, sizeof(ZERO_PK)) != 0;
         if (alreadyBound) {
+          // secpPubHex only participates in conflict detection when either
+          // side published it — legacy peers omit it entirely.
+          const bool secpConflict =
+              (!params.secpPubHex.empty() || !msg.adaptorExchange.secpPubHex.empty()) &&
+              params.secpPubHex != msg.adaptorExchange.secpPubHex;
           if (std::memcmp(&params.adaptorPoint, &msg.adaptorExchange.adaptorPoint,
                           sizeof(ZERO_PK)) != 0 ||
               std::memcmp(&params.adaptorDleqQ, &msg.adaptorExchange.adaptorDleqQ,
                           sizeof(ZERO_PK)) != 0 ||
               std::memcmp(&params.hashLock, &msg.adaptorExchange.htlcHashLock,
-                          sizeof(Crypto::Hash)) != 0) {
+                          sizeof(Crypto::Hash)) != 0 ||
+              secpConflict) {
             m_logger(Logging::ERROR) << "Conflicting duplicate ADAPTOR_EXCHANGE rejected";
             return false;
           }
@@ -3527,6 +3568,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
         params.hashLock = msg.adaptorExchange.htlcHashLock;
         params.lockType = msg.adaptorExchange.lockType;
         params.ptlcPoint = msg.adaptorExchange.ptlcPoint;
+        params.secpPubHex = msg.adaptorExchange.secpPubHex;
         // Preserve local requirePtlc OR with peer's (if either requires, enforce)
         params.requirePtlc = localRequire || msg.adaptorExchange.requirePtlc;
         // Downgrade check: if we require PTLC but peer sent HTLC, abort
@@ -3550,6 +3592,7 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           std::memset(&params.adaptorDleqQ, 0, sizeof(params.adaptorDleqQ));
           std::memset(&params.adaptorDleqProof, 0, sizeof(params.adaptorDleqProof));
           std::memset(&params.hashLock, 0, sizeof(params.hashLock));
+          params.secpPubHex.clear();
           return false;
         }
         return true;

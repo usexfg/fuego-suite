@@ -7,6 +7,7 @@
 #include <openssl/evp.h>
 #include <openssl/obj_mac.h>
 #include <cstring>
+#include <algorithm>
 #include <vector>
 
 namespace Crypto {
@@ -101,6 +102,26 @@ bool secp_secret_to_pubkey(const SecretKey& sec, SecpPubKey& pub) {
 
 bool secp_generate_nonce(const SecretKey& k, SecpPubKey& R) {
   return secp_secret_to_pubkey(k, R);
+}
+
+bool secp_point_from_ed_secret(const SecretKey& edSecret, SecpPubKey& out) {
+  // CryptoNote scalars are stored LITTLE-endian; the canonical secp256k1
+  // scalar domain is BIG-endian. Byte-reverse into a local copy before
+  // BN_bin2bn (which interprets big-endian) — see AGENTS.md cross-curve rule:
+  // "secp-domain scalar = byte-reversed CryptoNote scalar".
+  std::array<uint8_t,32> be{};
+  std::memcpy(be.data(), &edSecret, 32);
+  std::reverse(be.begin(), be.end());
+  EC_GROUP* grp = secp_group();
+  BN_CTX* ctx = BN_CTX_new();
+  BIGNUM* priv = BN_bin2bn(be.data(), 32, nullptr);
+  BIGNUM* n = get_order(ctx);
+  if (BN_is_zero(priv) || BN_cmp(priv, n) >= 0) { BN_free(priv); BN_free(n); BN_CTX_free(ctx); return false; }
+  EC_POINT* pt = EC_POINT_new(grp);
+  if (!EC_POINT_mul(grp, pt, priv, nullptr, nullptr, ctx)) { EC_POINT_free(pt); BN_free(priv); BN_free(n); BN_CTX_free(ctx); return false; }
+  size_t len = EC_POINT_point2oct(grp, pt, POINT_CONVERSION_COMPRESSED, out.data.data(), 33, ctx);
+  EC_POINT_free(pt); BN_free(priv); BN_free(n); BN_CTX_free(ctx);
+  return len == 33;
 }
 
 static bool ec_point_from_pubkey(const SecpPubKey& pk, EC_GROUP* grp, EC_POINT* pt, BN_CTX* ctx) {

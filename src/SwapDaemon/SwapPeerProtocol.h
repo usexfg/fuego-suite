@@ -89,6 +89,8 @@ struct MsgKeyExchange {
 // Phase 2: Bob sends adaptor point T, DLEQ Q, proof, and HTLC hashlock to Alice.
 // htlcHashLock = H(t) so Alice can lock CTR without learning t (Alice-locks model).
 // PTLC extension: lockType + ptlcPoint duplicate T for pure PTLC; wire compat keeps htlcHashLock zero for PTLC.
+// Cross-curve extension: secpPubHex is T_secp = t·G_secp (compressed hex) so the
+// counterparty chain can point-lock the same t; optional, empty on legacy peers.
 struct MsgAdaptorExchange {
   Crypto::PublicKey adaptorPoint;   // T = t*G
   Crypto::PublicKey adaptorDleqQ;   // Q = t*escrowPubKey
@@ -97,6 +99,7 @@ struct MsgAdaptorExchange {
   SwapLockType lockType = SwapLockType::HTLC; // negotiated lock type
   Crypto::PublicKey ptlcPoint{};    // T duplicated for explicit PTLC verify (same as adaptorPoint for PTLC/BRIDGE)
   bool requirePtlc = false;         // sender policy flag
+  std::string secpPubHex;           // T_secp = t·G_secp, compressed 33-byte hex (66 chars); empty = legacy peer
 };
 
 // Phase 3: Both parties send their Musig2 public nonces.

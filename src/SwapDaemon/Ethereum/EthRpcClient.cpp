@@ -896,12 +896,50 @@ bool EthRpcClient::claimHtlc(const std::string& /*fromAddress*/,
   return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
 }
 
+bool EthRpcClient::claimPoint(const std::string& /*fromAddress*/,
+                              const std::string& contractIdHex,
+                              const std::string& secretHex32,
+                              std::string& claimTxHash) {
+  if (m_ptlcRegistry.empty()) return false;
+  auto secretBytes = hexToBytes(secretHex32);
+  if (secretBytes.size() != 32) return false;
+
+  // PointTimelock.claim(bytes32 contractId, bytes32 secret) — same selector
+  // shape as the HTLC path; secret is the canonical BIG-endian scalar t.
+  uint8_t cidBuf[32] = {};
+  auto cidBytes = hexToBytes(contractIdHex);
+  if (cidBytes.size() >= 32)
+    std::memcpy(cidBuf, cidBytes.data(), 32);
+  else
+    std::memcpy(cidBuf + (32 - cidBytes.size()), cidBytes.data(), cidBytes.size());
+
+  std::string calldata = "0x" + EthAbi::functionSelector("claim(bytes32,bytes32)").substr(2)
+    + bytesToHex(cidBuf, 32)
+    + bytesToHex(secretBytes.data(), 32);
+
+  auto toBytes   = hexToBytes(m_ptlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/150000, claimTxHash);
+}
+
 bool EthRpcClient::refundHtlc(const std::string& /*fromAddress*/,
                                 const std::string& contractIdHex,
                                 std::string& refundTxHash) {
   if (m_htlcRegistry.empty()) return false;
   std::string calldata = EthAbi::encodeRefund(contractIdHex);
   auto toBytes   = hexToBytes(m_htlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
+  return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
+}
+
+bool EthRpcClient::refundPoint(const std::string& fromAddress,
+                                 const std::string& contractIdHex,
+                                 std::string& refundTxHash) {
+  // Same selector as the HTLC path: refund(bytes32) — verified identical in
+  // PointTimelock.sol and HashedTimelock.sol. Only the target registry differs.
+  if (m_ptlcRegistry.empty()) return false;
+  std::string calldata = EthAbi::encodeRefund(contractIdHex);
+  auto toBytes   = hexToBytes(m_ptlcRegistry);
   auto dataBytes = hexToBytes(calldata.substr(2));
   return signAndSend(toBytes, dataBytes, /*valueWei=*/0, /*gasLimit=*/80000, refundTxHash);
 }
@@ -913,6 +951,124 @@ bool EthRpcClient::sendRawTransaction(const std::string& signedTxHex, std::strin
 
   txHash = jsonGetResult(resp);
   return !txHash.empty();
+}
+
+std::string EthRpcClient::computePointContractId(const std::string& sender,
+                                                 const std::string& recipient,
+                                                 uint64_t valueWei,
+                                                 const std::string& pointAddress,
+                                                 uint64_t timeoutBlock) {
+  auto sendBytes  = hexToBytes(sender);
+  auto recvBytes  = hexToBytes(recipient);
+  auto pointBytes = hexToBytes(pointAddress);
+  if (sendBytes.size() != 20 || recvBytes.size() != 20 || pointBytes.size() != 20)
+    return {};
+
+  std::vector<uint8_t> packed;
+  packed.reserve(20 + 20 + 32 + 20 + 32);
+  packed.insert(packed.end(), sendBytes.begin(), sendBytes.end());
+  packed.insert(packed.end(), recvBytes.begin(), recvBytes.end());
+
+  {
+    std::vector<uint8_t> valBuf(32, 0);
+    for (int i = 0; i < 8; ++i)
+      valBuf[31 - i] = static_cast<uint8_t>((valueWei >> (i * 8)) & 0xFF);
+    packed.insert(packed.end(), valBuf.begin(), valBuf.end());
+  }
+
+  packed.insert(packed.end(), pointBytes.begin(), pointBytes.end());
+
+  {
+    std::vector<uint8_t> toBuf(32, 0);
+    for (int i = 0; i < 8; ++i)
+      toBuf[31 - i] = static_cast<uint8_t>((timeoutBlock >> (i * 8)) & 0xFF);
+    packed.insert(packed.end(), toBuf.begin(), toBuf.end());
+  }
+
+  uint8_t digest[32];
+  keccak(packed.data(), static_cast<int>(packed.size()), digest, 32);
+  return bytesToHex(digest, 32, /*prefix=*/false);
+}
+
+bool EthRpcClient::lockPoint(const std::string& fromAddress,
+                             const std::string& recipientAddress,
+                             const std::string& pointAddress,
+                             uint64_t timeoutBlock,
+                             uint64_t valueWei,
+                             std::string& contractIdHex) {
+  // m_ptlcRegistry is the dedicated pre-deployed PointTimelock registry
+  // address (kept separate from the HashedTimelock registry so a chain can
+  // run BRIDGE and pure-PTLC locks against different deployments).
+  if (m_ptlcRegistry.empty()) {
+    throw std::runtime_error("EthRpcClient::lockPoint: PointTimelock registry address not set "
+                             "(configure setPtlcRegistry() with the deployed PointTimelock address)");
+  }
+
+  std::string calldata = EthAbi::encodeLockPoint(recipientAddress, pointAddress, timeoutBlock);
+  auto toBytes   = hexToBytes(m_ptlcRegistry);
+  auto dataBytes = hexToBytes(calldata.substr(2));
+
+  std::string txHash;
+  if (!signAndSend(toBytes, dataBytes, valueWei, /*gasLimit=*/200000, txHash))
+    return false;
+
+  EthTxReceipt receipt;
+  for (int i = 0; i < 60; ++i) {
+    if (getTransactionReceipt(txHash, receipt) && receipt.success) break;
+#ifdef _WIN32
+    Sleep(1000);
+#else
+    usleep(1000000);
+#endif
+  }
+  if (!receipt.success) return false;
+
+  contractIdHex = computePointContractId(fromAddress, recipientAddress, valueWei,
+                                        pointAddress, timeoutBlock);
+  return !contractIdHex.empty();
+}
+
+bool EthRpcClient::verifyPointLock(const std::string& contractIdHex,
+                                   uint64_t expectedWei,
+                                   const std::string& expectedRecipient,
+                                   const std::string& expectedPointAddress) {
+  if (m_ptlcRegistry.empty()) return false;
+
+  std::string calldata = EthAbi::encodeGetContract(contractIdHex);
+  std::string result;
+  if (!callContract(m_ptlcRegistry, calldata, result)) return false;
+
+  EthAbi::PointContractInfo info;
+  if (!EthAbi::decodeGetContractPoint(result, info)) return false;
+  if (info.amount < expectedWei) return false;
+  if (info.claimed || info.refunded) return false;
+
+  if (!expectedRecipient.empty()) {
+    std::string er = normalizeAddr20(expectedRecipient);
+    std::string ir = normalizeAddr20(info.recipient);
+    if (er != ir) return false;
+  }
+  if (!expectedPointAddress.empty()) {
+    std::string ep = normalizeAddr20(expectedPointAddress);
+    std::string ip = normalizeAddr20(info.pointAddress);
+    if (ep != ip) return false;
+  }
+  return true;
+}
+
+std::string EthRpcClient::getClaimedPointSecret(const std::string& contractIdHex) {
+  if (m_ptlcRegistry.empty() || contractIdHex.empty()) return {};
+  std::string calldata = EthAbi::encodeGetContract(contractIdHex);
+  std::string result;
+  if (!callContract(m_ptlcRegistry, calldata, result)) return {};
+  EthAbi::PointContractInfo info;
+  if (!EthAbi::decodeGetContractPoint(result, info)) return {};
+  if (!info.claimed) return {};
+  bool nonzero = false;
+  for (int i = 0; i < 32; ++i) if (info.secret.data[i]) { nonzero = true; break; }
+  if (!nonzero) return {};
+  // Canonical big-endian scalar t as revealed on-chain (see ContractAbi endian rule).
+  return bytesToHex(reinterpret_cast<const uint8_t*>(&info.secret), 32, /*prefix=*/false);
 }
 
 } // namespace XfgSwap

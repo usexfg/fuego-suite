@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdint>
+#include <cctype>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -14,6 +15,8 @@
 #include "SwapDaemon/SwapPtlcLock.h"
 #include "SwapDaemon/IChainClient.h"
 #include "SwapDaemon/Bitcoin/BtcTaprootPtlc.h"
+#include "SwapDaemon/Ethereum/EthChainClient.h"
+#include "SwapDaemon/Ethereum/ContractAbi.h"
 #include "crypto/secp_adaptor.h"
 #include "crypto/crypto.h"
 
@@ -636,6 +639,105 @@ int main() {
     assert(digestWith(false, true,  false) != prod);  // 1-byte input_index rejected
 
     std::cout << "  PASS (single-sha midstates, spk prefix, 4-byte input_index confirmed)\n";
+  }
+
+  // 10. secp_point_from_ed_secret: known vector + determinism + zero-scalar.
+  //     Python reference (embedded; pure-python EC double-and-add over
+  //     secp256k1, independently cross-checked with `openssl ec -pubout`):
+  //       edSecret LE storage bytes {0x01..0x20}
+  //       -> canonical BE secp scalar = byte-reversed:
+  //          201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201
+  //       P = scalar*G: x=84bb077142...31b1962, y even => compressed "02"||x
+  {
+    std::cout << "[10] secp_point_from_ed_secret known vector\n";
+    const std::string kExpectedCompressed =
+        "0284bb077142c301d471a33a995b2209dbe37889d01be031e6b09ddc65731b1962";
+
+    Crypto::SecretKey t{};
+    {
+      auto* p = reinterpret_cast<uint8_t*>(&t);
+      for (int i = 0; i < 32; ++i) p[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    Crypto::SecpPubKey T1{}, T2{};
+    assert(Crypto::secp_point_from_ed_secret(t, T1));
+    assert(Crypto::secp_point_from_ed_secret(t, T2));
+    assert(T1 == T2);                       // determinism
+
+    std::string hex = Crypto::secpPubKeyToHex(T1);
+    assert(hex.size() == 66);
+    assert(hex[0] == '0' && (hex[1] == '2' || hex[1] == '3'));  // compressed form
+    assert(hex == kExpectedCompressed);     // python/openssl reference vector
+
+    // Zero scalar rejected (no identity point as a lock target).
+    Crypto::SecretKey z{};
+    std::memset(&z, 0, sizeof(z));
+    Crypto::SecpPubKey dummy{};
+    assert(!Crypto::secp_point_from_ed_secret(z, dummy));
+    std::cout << "  PASS vec=" << hex.substr(0, 18) << "... det+zero-scalar ok\n";
+  }
+
+  // 11. Canonical endian rule roundtrip + point-address derivation +
+  //     EthChainClient supportsPurePtlc gating.
+  {
+    std::cout << "[11] endian roundtrip + point address + pure-Ptlc gating\n";
+
+    // LE -> BE -> LE must restore the original CryptoNote scalar bytes.
+    Crypto::SecretKey t{};
+    {
+      auto* p = reinterpret_cast<uint8_t*>(&t);
+      for (int i = 0; i < 32; ++i) p[i] = static_cast<uint8_t>(i * 5 + 3);
+    }
+    std::string be = EthChainClient::secretBeHex(t);
+    assert(be.size() == 64);
+    std::string leBack = EthChainClient::secretLeHexFromBe(be);
+    assert(leBack.size() == 64);
+    {
+      auto nibbleVal = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        return c - 'a' + 10;
+      };
+      const auto* raw = reinterpret_cast<const uint8_t*>(&t);
+      for (size_t i = 0; i < 32; ++i) {
+        int hi = nibbleVal(leBack[2*i]);
+        int lo = nibbleVal(leBack[2*i + 1]);
+        assert(static_cast<uint8_t>((hi << 4) | lo) == raw[i]);   // == original t_le
+      }
+    }
+    // Wrong-length BE input rejected by the extractor transform.
+    assert(EthChainClient::secretLeHexFromBe("").empty());
+    assert(EthChainClient::secretLeHexFromBe("00ff").empty());
+
+    // Point-address derivation from the serialized secp pubkey.
+    Crypto::SecpPubKey T{};
+    assert(Crypto::secp_point_from_ed_secret(t, T));
+    std::string addr =
+        EthAbi::derivePointAddressFromSecpBytes(T.data.data(), T.data.size());
+    assert(addr.size() == 42);                          // 0x + 40 hex
+    assert(addr.rfind("0x", 0) == 0);
+    bool allHex = true;
+    for (size_t i = 2; i < addr.size(); ++i)
+      if (!std::isxdigit(static_cast<unsigned char>(addr[i]))) { allHex = false; break; }
+    assert(allHex);
+    auto addr2 = EthAbi::derivePointAddressFromSecpBytes(T.data.data(), T.data.size());
+    assert(addr == addr2);                              // deterministic
+
+    // 32-byte x-only input: implementation treats it as an even-y compressed
+    // point — accept either a clean rejection or a well-formed address only.
+    std::vector<uint8_t> xOnly(T.data.begin() + 1, T.data.end());
+    assert(xOnly.size() == 32);
+    auto addrTrunc = EthAbi::derivePointAddressFromSecpBytes(xOnly.data(), xOnly.size());
+    if (!addrTrunc.empty()) {
+      assert(addrTrunc.size() == 42 && addrTrunc.rfind("0x", 0) == 0);
+    }
+
+    // supportsPurePtlc gating on the production client (offline, no RPC I/O).
+    auto rpc = std::make_unique<EthRpcClient>("127.0.0.1", 1);
+    EthChainClient eth(std::move(rpc), "0x0000000000000000000000000000000000000001");
+    assert(eth.supportsPurePtlc() == false);            // default => BRIDGE
+    eth.setPtlcRegistry("0x1111111111111111111111111111111111111111");
+    assert(eth.supportsPurePtlc() == true);             // registry wired => pure PTLC
+    std::cout << "  PASS addr=" << addr << "\n";
   }
 
   std::cout << "\nAll Pure PTLC tests passed.\n";

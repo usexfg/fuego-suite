@@ -1,6 +1,8 @@
 #include "EthChainClient.h"
+#include "ContractAbi.h"
 #include "Common/StringTools.h"
 #include "crypto/keccak.h"
+#include "crypto/secp_adaptor.h"
 #include "../Crypto/Secp256k1Signer.h"
 #include "../SwapHashLock.h"
 #include <stdexcept>
@@ -19,14 +21,81 @@ bool isZeroSecret(const Crypto::SecretKey& s) {
   }
   return true;
 }
+
+// True when the swap negotiated a PURE point lock on this chain (not the
+// PTLC_HTLC_BRIDGE hybrid): lockType == PTLC and Bob published T_secp.
+bool ptlcNegotiated(const SwapParams& params) {
+  return params.lockType == SwapLockType::PTLC && !params.secpPubHex.empty();
+}
 } // namespace
+
+// Canonical endian rule (see PointTimelock.sol claim() and ContractAbi):
+// Solidity uint256 / libsecp256k1 read scalars BIG-endian; CryptoNote stores
+// scalars LITTLE-endian. secp-domain secret bytes = byte-reversed CryptoNote
+// scalar bytes. Cross-curve scalar reuse is sound: t < l_ed25519 < n_secp.
+std::string EthChainClient::secretBeHex(const Crypto::SecretKey& t) {
+  const auto* le = reinterpret_cast<const uint8_t*>(&t);
+  std::string hex;
+  hex.reserve(64);
+  static const char* kDigits = "0123456789abcdef";
+  for (int i = 31; i >= 0; --i) {   // reverse => canonical big-endian
+    hex.push_back(kDigits[le[i] >> 4]);
+    hex.push_back(kDigits[le[i] & 0x0F]);
+  }
+  return hex;
+}
+
+// Inverse of secretBeHex: on-chain revealed BE scalar -> CryptoNote LE
+// scalar bytes, ready for XFG adaptor-sig completion.
+std::string EthChainClient::secretLeHexFromBe(const std::string& beHex64) {
+  if (beHex64.size() != 64) return {};
+  std::string out;
+  out.reserve(64);
+  for (int byte = 31; byte >= 0; --byte) {
+    out.push_back(beHex64[2 * byte]);
+    out.push_back(beHex64[2 * byte + 1]);
+  }
+  return out;
+}
 
 EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::string& address,
                                const std::string& chainName)
   : m_rpc(std::move(rpc)), m_address(address), m_chainName(chainName) {}
 
+void EthChainClient::setPtlcRegistry(const std::string& registryAddress) {
+  m_ptlcRegistry = registryAddress;
+  if (m_rpc) m_rpc->setPtlcRegistry(registryAddress);
+}
+
+bool EthChainClient::supportsPurePtlc() const {
+  return !m_ptlcRegistry.empty();
+}
+
 ChainClientResult EthChainClient::lock(const SwapParams& params) {
   try {
+    // ── Pure PTLC routing (PointTimelock registry model) ────────────────────
+    // lockType == PTLC + published T_secp + registry configured => fund the
+    // point lock. Fail-closed: when pure PTLC was negotiated but the registry
+    // is missing we must NOT silently fall back to an HTLC deploy — the
+    // counterparty verified a point lock and the adaptor equation binds to it.
+    if (ptlcNegotiated(params)) {
+      if (m_ptlcRegistry.empty())
+        return ChainClientResult::fail(m_chainName +
+            " pure PTLC negotiated but PointTimelock registry not configured");
+      Crypto::SecpPubKey secpPub;
+      if (!Crypto::hexToSecpPubKey(params.secpPubHex, secpPub))
+        return ChainClientResult::fail(m_chainName + " lock: malformed secpPubHex");
+      std::string pointAddress =
+          EthAbi::derivePointAddressFromSecpBytes(secpPub.data.data(), secpPub.data.size());
+      if (pointAddress.empty())
+        return ChainClientResult::fail(m_chainName + " lock: point-address derivation failed");
+      std::string contractId;
+      if (!m_rpc->lockPoint(m_address, params.ctrAddress, pointAddress,
+                            params.ctrTimeoutBlock, params.ctrAmount, contractId))
+        return ChainClientResult::fail(m_chainName + " lockPoint failed");
+      return ChainClientResult::ok(contractId);
+    }
+
     // Hashlock MUST be keccak256(adaptorSecret) / params.hashLock from Bob.
     // Alice-locks model: Alice has hashLock (H(t)) but not t; Bob has t for claim.
     std::string hashHex;
@@ -60,7 +129,24 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 }
 
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
-  // ctrLockTxId holds the HashedTimelock contractId (not a tx hash).
+  // ctrLockTxId holds the registry contractId (not a tx hash).
+  // Pure PTLC: verify amount + recipient + pointAddress + not claimed/refunded
+  // against the PointTimelock registry. Fail-closed on missing registry.
+  if (ptlcNegotiated(params)) {
+    if (m_ptlcRegistry.empty())
+      return ChainClientResult::fail(m_chainName +
+          " pure PTLC negotiated but PointTimelock registry not configured");
+    Crypto::SecpPubKey secpPub;
+    if (!Crypto::hexToSecpPubKey(params.secpPubHex, secpPub))
+      return ChainClientResult::fail(m_chainName + " verifyLock: malformed secpPubHex");
+    std::string expectedPointAddress =
+        EthAbi::derivePointAddressFromSecpBytes(secpPub.data.data(), secpPub.data.size());
+    bool ok = m_rpc->verifyPointLock(params.ctrLockTxId, params.ctrAmount,
+                                     params.ctrAddress, expectedPointAddress);
+    if (!ok) return ChainClientResult::fail(m_chainName + " lock not verified");
+    return ChainClientResult::ok(params.ctrLockTxId);
+  }
+
   // Verify amount + recipient + hashlock + not claimed/refunded via getContract.
   // Prefer H(t) from adaptorSecret; Alice has only published hashLock — use that.
   std::string expectedHash;
@@ -84,6 +170,21 @@ ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
 ChainClientResult EthChainClient::claim(const SwapParams& params) {
   try {
     std::string claimTxHash;
+    // Pure PTLC: reveal the canonical BIG-endian scalar t via
+    // claim(contractId, secret) on the PointTimelock registry.
+    if (ptlcNegotiated(params)) {
+      if (m_ptlcRegistry.empty())
+        return ChainClientResult::fail(m_chainName +
+            " pure PTLC negotiated but PointTimelock registry not configured");
+      bool ok = m_rpc->claimPoint(
+          m_address,
+          params.ctrLockTxId,
+          secretBeHex(params.adaptorSecret),
+          claimTxHash);
+      if (!ok) return ChainClientResult::fail(m_chainName + " claimPoint failed");
+      return ChainClientResult::ok(claimTxHash);
+    }
+
     bool ok = m_rpc->claimHtlc(
         m_address,
         params.ctrLockTxId,
@@ -101,6 +202,21 @@ ChainClientResult EthChainClient::claim(const SwapParams& params) {
 ChainClientResult EthChainClient::refund(const SwapParams& params) {
   try {
     std::string refundTxHash;
+    // Pure PTLC: refund(contractId) on the PointTimelock registry. Selector is
+    // identical to the HTLC path (refund(bytes32) — verified in both .sol
+    // files), so we route to the shared encoding with m_ptlcRegistry as target.
+    if (ptlcNegotiated(params)) {
+      if (m_ptlcRegistry.empty())
+        return ChainClientResult::fail(m_chainName +
+            " pure PTLC negotiated but PointTimelock registry not configured");
+      bool ok = m_rpc->refundPoint(
+          m_address,
+          params.ctrLockTxId,
+          refundTxHash);
+      if (!ok) return ChainClientResult::fail(m_chainName + " refundPoint failed");
+      return ChainClientResult::ok(refundTxHash);
+    }
+
     bool ok = m_rpc->refundHtlc(
         m_address,
         params.ctrLockTxId,
@@ -203,7 +319,14 @@ bool EthChainClient::getCurrentHeight(uint64_t& height) {
 }
 
 std::string EthChainClient::tryExtractClaimedSecret(const SwapParams& params) {
-  // ctrLockTxId is the HashedTimelock contractId; after claim, preimage is stored on-chain.
+  // Pure PTLC: ctrLockTxId is the PointTimelock contractId; after claim the
+  // canonical BIG-endian scalar t is stored on-chain. Reverse it back to the
+  // CryptoNote LITTLE-endian scalar our XFG adaptor consumes.
+  if (ptlcNegotiated(params)) {
+    if (m_ptlcRegistry.empty()) return {};
+    return secretLeHexFromBe(m_rpc->getClaimedPointSecret(params.ctrLockTxId));
+  }
+  // BRIDGE/HTLC: after claim, preimage is stored on-chain.
   return m_rpc->getClaimedPreimage(params.ctrLockTxId);
 }
 

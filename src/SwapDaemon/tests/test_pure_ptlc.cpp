@@ -709,10 +709,22 @@ int main() {
     assert(EthChainClient::secretLeHexFromBe("00ff").empty());
 
     // Point-address derivation from the serialized secp pubkey.
+    // GOLDEN VECTOR cross-validated three ways (python EC + keccak, EVM
+    // ecrecover via forge/anvil, C++ libsecp256k1): scalar = byte-reversed
+    // {0x01..0x20} => address(t*G) must be exactly:
+    const std::string kGoldenAddr = "0x17ed5da0053633f20437d10e91d24f85242bd097";
+    Crypto::SecretKey tGolden{};
+    {
+      auto* p = reinterpret_cast<uint8_t*>(&tGolden);
+      for (int i = 0; i < 32; ++i) p[i] = static_cast<uint8_t>(i + 1);   // LE {01..20}
+    }
+    Crypto::SecpPubKey Tg{};
+    assert(Crypto::secp_point_from_ed_secret(tGolden, Tg));
+    assert(EthAbi::derivePointAddressFromSecpBytes(Tg.data.data(), Tg.data.size()) == kGoldenAddr);
+    assert(EthAbi::derivePointAddressFromSecret(tGolden) == kGoldenAddr);
     Crypto::SecpPubKey T{};
     assert(Crypto::secp_point_from_ed_secret(t, T));
-    std::string addr =
-        EthAbi::derivePointAddressFromSecpBytes(T.data.data(), T.data.size());
+    std::string addr = EthAbi::derivePointAddressFromSecpBytes(T.data.data(), T.data.size());
     assert(addr.size() == 42);                          // 0x + 40 hex
     assert(addr.rfind("0x", 0) == 0);
     bool allHex = true;

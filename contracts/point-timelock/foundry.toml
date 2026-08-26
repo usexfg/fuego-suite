@@ -1,0 +1,12 @@
+[profile.default]
+src = "test"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.20"
+test = "test"
+
+# PointTimelock.sol lives in the daemon tree; remap so forge can compile it.
+remappings = ["forge-std/=lib/forge-std/src/"]
+
+[profile.default.fuzz]
+runs = 0

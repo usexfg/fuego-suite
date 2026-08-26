@@ -61,7 +61,8 @@ analyze_fuego_code.py
 AGENTS.md
 contrib/
 
-contracts/
+contracts/*
+!contracts/point-timelock/
 mcp/
 sim_out/
 fuego_rag/

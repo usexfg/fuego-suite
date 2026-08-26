@@ -41,6 +41,31 @@ int main() {
     std::cout << "  PASS\n";
   }
 
+  // 1b. isLegacyUtxoPair hash-family matrix (GLEEC-fix adoption)
+  {
+    std::cout << "[1b] isLegacyUtxoPair\n";
+    // SHA-256 family: UTXO + TON
+    assert(isLegacyUtxoPair(SwapPair::BTC)==true);
+    assert(isLegacyUtxoPair(SwapPair::BCH)==true);
+    assert(isLegacyUtxoPair(SwapPair::LTC)==true);
+    assert(isLegacyUtxoPair(SwapPair::DCR)==true);
+    assert(isLegacyUtxoPair(SwapPair::KMD_SPV)==true);
+    assert(isLegacyUtxoPair(SwapPair::DOGE)==true);
+    assert(isLegacyUtxoPair(SwapPair::DASH)==true);
+    assert(isLegacyUtxoPair(SwapPair::ZEC)==true);
+    assert(isLegacyUtxoPair(SwapPair::TON)==true);
+    // GLEEC must be keccak family (EVM client) — the dashpltc fix
+    assert(isLegacyUtxoPair(SwapPair::GLEEC)==false);
+    // SIA handled explicitly via blake2b, not this predicate
+    assert(isLegacyUtxoPair(SwapPair::SIA)==false);
+    // EVM/SOL/native pairs → keccak / no-hashlock paths
+    assert(isLegacyUtxoPair(SwapPair::ETH)==false);
+    assert(isLegacyUtxoPair(SwapPair::SOL)==false);
+    assert(isLegacyUtxoPair(SwapPair::XMR)==false);
+    assert(isLegacyUtxoPair(SwapPair::ZANO)==false);
+    std::cout << "  PASS\n";
+  }
+
   // 2. ptlcPoint verify
   {
     std::cout << "[2] verifyPtlcPoint\n";

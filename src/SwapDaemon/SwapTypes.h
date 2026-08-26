@@ -111,6 +111,35 @@ enum class SwapLockType : uint8_t {
   PTLC_HTLC_BRIDGE = 2   // PTLC on XFG leg, HTLC H(t) on CTR leg bridged via DLEQ + H(t)
 };
 
+// SHA-256 hashlock family: UTXO chains whose HTLC scripts verify OP_SHA256,
+// plus TON (cell-hash preimage convention). Used to select H(t) derivation in
+// adaptor_generate_adaptor and the claim-side binding check.
+//
+// Divergence from origin/dashpltc's helper of the same name:
+//   - BTC and TON are INCLUDED here (their bridge HTLCs are OP_SHA256 /
+//     cell-hash; dashpltc omitted them because its BTC leg had already gone
+//     pure point-lock).
+//   - GLEEC is EXCLUDED: on master GLEEC is an EVM client (GleecChainClient),
+//     so it must take the keccak256 default, not SHA-256.
+//   - SIA is EXCLUDED: Sia uses Blake2b-256(preimage), handled explicitly
+//     alongside this predicate.
+inline bool isLegacyUtxoPair(SwapPair p) {
+  switch (p) {
+    case SwapPair::BCH:
+    case SwapPair::BTC:
+    case SwapPair::LTC:
+    case SwapPair::DCR:
+    case SwapPair::KMD_SPV:
+    case SwapPair::DOGE:
+    case SwapPair::DASH:
+    case SwapPair::ZEC:
+    case SwapPair::TON:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Musig2 session state persisted across swap steps.
 struct Musig2State {
   Crypto::Musig2KeyAgg keyAgg;

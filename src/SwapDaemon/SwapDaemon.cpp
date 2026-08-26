@@ -1951,26 +1951,16 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       if (reinterpret_cast<const uint8_t*>(&expectedH)[i]) { hashSet = true; break; }
     if (hashSet) {
       Crypto::Hash computed{};
-      switch (params.pair) {
-        case SwapPair::BCH: case SwapPair::BTC: case SwapPair::LTC:
-        case SwapPair::DCR: case SwapPair::KMD_SPV:
-        case SwapPair::DOGE: case SwapPair::DASH: case SwapPair::ZEC:
-        case SwapPair::TON: {
-          std::string hex = bchHashLockHex(claimed);
-          Common::podFromHex(hex, computed);
-          break;
-        }
-        case SwapPair::SIA: {
-          auto md = SiaHtlcScript::blake2b256(
-              reinterpret_cast<const uint8_t*>(&claimed), 32);
-          std::memcpy(&computed, md.data(), 32);
-          break;
-        }
-        default: {
-          std::string hex = solHashLockHex(claimed);
-          Common::podFromHex(hex, computed);
-          break;
-        }
+      if (params.pair == SwapPair::SIA) {
+        auto md = SiaHtlcScript::blake2b256(
+            reinterpret_cast<const uint8_t*>(&claimed), 32);
+        std::memcpy(&computed, md.data(), 32);
+      } else if (isLegacyUtxoPair(params.pair)) {
+        std::string hex = bchHashLockHex(claimed);
+        Common::podFromHex(hex, computed);
+      } else {
+        std::string hex = solHashLockHex(claimed);
+        Common::podFromHex(hex, computed);
       }
       if (std::memcmp(&computed, &expectedH, sizeof(expectedH)) != 0) {
         m_logger(Logging::ERROR) << "  Extracted preimage H(t) does not match hashLock — rejecting";

@@ -1632,6 +1632,7 @@ core::HeatMetrics core::getHeatMetrics() const {
   m.treasuryBalance = m_blockchain.getTreasuryBalance();
   m.treasuryHeatReserve = m_blockchain.getTreasuryHeatReserve();
   m.treasuryLpPendingXfg = m_blockchain.getTreasuryLpPendingXfg();
+  m.treasuryCounterXFG = m.treasuryLpPendingXfg;  // v12 alias — same source, both fields for compat
   m.swfHeatBalance = m_blockchain.getSwfHeatBalance();
   m.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   {

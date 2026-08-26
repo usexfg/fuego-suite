@@ -254,7 +254,7 @@ public:
       s(m_bs.m_treasuryXfgReserve, "treasury_xfg_reserve");
       s(m_bs.m_treasuryLpReserve, "treasury_lp_reserve");
       s(m_bs.m_treasurySwapFeeXfg, "treasury_swap_fee_xfg");
-      s(m_bs.m_treasuryCounterXFG, "treasury_counter_xfg");
+      s(m_bs.m_treasuryLpPendingXfg, "treasury_counter_xfg");
        s(m_bs.m_swfBurnedXfgPendingHeat, "swf_balance");
        s(m_bs.m_swfHeatBalance, "swf_heat_balance");
       s(m_bs.m_bonusVaultBalance, "rollover_vault_balance");
@@ -877,7 +877,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_treasuryXfgReserve = 0;
     m_treasuryLpReserve = 0;
     m_treasurySwapFeeXfg = 0;
-    m_treasuryCounterXFG = 0;
+    m_treasuryLpPendingXfg = 0;
     m_treasuryBalance = 0;
     m_feePoolBalance = 0;
     m_currentEpochSwapFees = 0;
@@ -996,7 +996,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
         preEpoch.treasuryLpReserve = m_treasuryLpReserve;
         preEpoch.treasurySwapFeeXfg = m_treasurySwapFeeXfg;
-        preEpoch.treasuryCounterXFG = m_treasuryCounterXFG;
+        preEpoch.treasuryLpPendingXfg = m_treasuryLpPendingXfg;
         preEpoch.swfHeatBalance = m_swfHeatBalance;
         preEpoch.protocolLpShares = m_protocolLpShares;
         preEpoch.treasuryLpYield = m_treasuryLpYield;
@@ -3301,7 +3301,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
       preEpoch.treasuryLpReserve = m_treasuryLpReserve;
       preEpoch.treasurySwapFeeXfg = m_treasurySwapFeeXfg;
-      preEpoch.treasuryCounterXFG = m_treasuryCounterXFG;
+      preEpoch.treasuryLpPendingXfg = m_treasuryLpPendingXfg;
       preEpoch.swfHeatBalance = m_swfHeatBalance;
       preEpoch.protocolLpShares = m_protocolLpShares;
       preEpoch.treasuryLpYield = m_treasuryLpYield;
@@ -5524,11 +5524,11 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     // Pre-V11: at each epoch 80% of the counter was converted to HEAT and
     // minted into CD_APY_POOL (XFG burned 50/50), leaving 20% as reserve.
     if (treasuryShare > 0) {
-      if (m_treasuryCounterXFG > UINT64_MAX - treasuryShare) {
+      if (m_treasuryLpPendingXfg > UINT64_MAX - treasuryShare) {
         logger(ERROR, BRIGHT_RED) << "Treasury counter XFG overflow detected";
         return false;
       }
-      m_treasuryCounterXFG += treasuryShare;
+      m_treasuryLpPendingXfg += treasuryShare;
     }
 
     // Pre-V11 legacy conversion: 80% of GENERAL_RESERVE counter XFG → HEAT →
@@ -5537,8 +5537,8 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     // Treasury LP Manager's ratio-paired LP position (paired with the HEAT
     // leg from mint premiums + donations). The CD pool keeps only its direct
     // sources (69% swap share conversion + Hearth 70% flat fees).
-    if (block.majorVersion < BLOCK_MAJOR_VERSION_11 && m_treasuryCounterXFG > 0) {
-      uint64_t convertAmount = (m_treasuryCounterXFG * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
+    if (block.majorVersion < BLOCK_MAJOR_VERSION_11 && m_treasuryLpPendingXfg > 0) {
+      uint64_t convertAmount = (m_treasuryLpPendingXfg * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
       if (convertAmount > 0) {
         uint64_t heatConverted = convertAmount;
         if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
@@ -5574,7 +5574,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
             return false;
           }
           m_swfBurnedXfgPendingHeat += swfShare;
-          m_treasuryCounterXFG -= convertAmount;
+          m_treasuryLpPendingXfg -= convertAmount;
           logger(INFO) << "GENERAL_RESERVE → HEAT CD_APY_POOL (epoch " << epochNumber << "): "
                        << m_currency.formatAmount(heatConverted) << " HEAT minted | "
                        << m_currency.formatAmount(efShare) << " XFG → EF | "
@@ -5593,7 +5593,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       // compounds inside the reserves and counts toward bootstrap repayment
       // via getTreasuryLpValue() (both legs, actual amounts).
       if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-        const uint64_t availXfg = m_treasuryCounterXFG;
+        const uint64_t availXfg = m_treasuryLpPendingXfg;
         const uint64_t availHeat = m_treasuryHeatReserve;
         uint64_t depositXfg = 0;
         uint64_t depositHeat = 0;
@@ -5619,7 +5619,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
               m_ammPool.reserveHeat += depositHeat;
               m_ammPool.totalLpShares += shares;
               m_protocolLpShares += shares;
-              m_treasuryCounterXFG -= depositXfg;
+              m_treasuryLpPendingXfg -= depositXfg;
               m_treasuryHeatReserve -= depositHeat;
               m_treasuryLpReserve += depositXfg;
               uint64_t lpVIdx = (uint64_t(newHeight) << 32) | (++m_vaultUtxoCounter);
@@ -5637,9 +5637,9 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       } else {
         // Legacy pre-v11: half-convert XFG to HEAT at pool rate for a balanced
         // deposit (bit-identical to baseline).
-        if (m_treasuryCounterXFG > 0 && !m_ammPool.isEmpty()
+        if (m_treasuryLpPendingXfg > 0 && !m_ammPool.isEmpty()
             && m_ammPool.reserveHeat > 0 && m_ammPool.reserveXfg > 0) {
-          uint64_t lpXfg = m_treasuryCounterXFG;
+          uint64_t lpXfg = m_treasuryLpPendingXfg;
           uint64_t lpHeat = lpXfg;
           FixedPoint64 poolRate = FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
           if (!poolRate.isZero()) {
@@ -5663,7 +5663,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
                          << m_currency.formatAmount(lpHeat) << " HEAT → "
                          << lpShares << " LP shares"
                          << " [vault LP_RESERVE UTXO " << lpVIdx << "]";
-            m_treasuryCounterXFG = 0;
+            m_treasuryLpPendingXfg = 0;
           }
         }
       }
@@ -6113,13 +6113,13 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_commitmentIndex.popBonusEpochRate();
       
       // Reverse treasury distribution. treasuryShare is routed to
-      // m_treasuryCounterXFG, not m_treasuryBalance — reverse the right counter.
+      // m_treasuryLpPendingXfg, not m_treasuryBalance — reverse the right counter.
       // m_totalTreasuryAccrued is never incremented anywhere; do not decrement it.
       if (!m_blockEpochDistributions.empty()) {
         auto dist = m_blockEpochDistributions.back();
         m_blockEpochDistributions.pop_back();
-        if (dist.first > 0 && m_treasuryCounterXFG >= dist.first) {
-          m_treasuryCounterXFG -= dist.first;
+        if (dist.first > 0 && m_treasuryLpPendingXfg >= dist.first) {
+          m_treasuryLpPendingXfg -= dist.first;
         }
       }
     } else {
@@ -6147,7 +6147,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_treasuryXfgReserve = snap.treasuryXfgReserve;
     m_treasuryLpReserve = snap.treasuryLpReserve;
     m_treasurySwapFeeXfg = snap.treasurySwapFeeXfg;
-    m_treasuryCounterXFG = snap.treasuryCounterXFG;
+    m_treasuryLpPendingXfg = snap.treasuryLpPendingXfg;
     m_swfHeatBalance = snap.swfHeatBalance;
     m_protocolLpShares = snap.protocolLpShares;
     m_treasuryLpYield = snap.treasuryLpYield;

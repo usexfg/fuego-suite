@@ -199,7 +199,9 @@ namespace CryptoNote {
     uint64_t getPermanentlyBurnedXfg() const { return m_bankingIndex.getPermanentlyBurnedXfg(); }
     uint64_t getTreasuryHeatReserve() const { return m_treasuryHeatReserve; }
     uint64_t getTreasurySwapFeeXfg() const { return m_treasurySwapFeeXfg; }
-    uint64_t getTreasuryCounterXFG() const { return m_treasuryCounterXFG; }
+    uint64_t getTreasuryLpPendingXfg() const { return m_treasuryLpPendingXfg; }
+    // Deprecated alias — keep for external consumers until RPC/docs migrated
+    uint64_t getTreasuryCounterXFG() const { return getTreasuryLpPendingXfg(); }
     uint64_t getSwfHeatBalance() const { return m_swfHeatBalance; }
     // getTreasuryXfgReserve() removed — m_treasuryXfgReserve is dead code (never incremented, only restored from snapshots)
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
@@ -436,7 +438,7 @@ namespace CryptoNote {
       uint64_t vaultUtxoCount;
       uint64_t vaultSpentCount;
       uint64_t treasurySwapFeeXfg;
-      uint64_t treasuryCounterXFG;
+      uint64_t treasuryLpPendingXfg;
       uint64_t swfHeatBalance;
       uint64_t feePoolBalance;
       uint64_t cdHearthFeeAccumulator;
@@ -592,7 +594,7 @@ namespace CryptoNote {
     uint64_t m_treasuryXfgReserve = 0;           // DEPRECATED: dead code, kept for serialization compat only
     uint64_t m_treasuryLpReserve = 0;            // XFG reserved for Hearth LP provision
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
-    uint64_t m_treasuryCounterXFG = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
+    uint64_t m_treasuryLpPendingXfg = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
     uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
     // v11+: tier-weighted CD principal created per epoch. The BV bonus share

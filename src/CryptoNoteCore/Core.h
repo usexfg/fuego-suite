@@ -238,7 +238,7 @@ namespace CryptoNote {
       uint64_t redemptionPriceDenom = 1000000;
       uint64_t treasuryBalance = 0;
       uint64_t treasuryHeatReserve = 0;  // HⲶ∆T minted from 20% swap fee share (for APY floor)
-      uint64_t treasuryCounterXFG = 0;    // unburned treasury XFG reserve / LP source
+      uint64_t treasuryLpPendingXfg = 0;    // unburned treasury XFG reserve / LP source
       uint64_t swfHeatBalance = 0;        // SWF counter HEAT (off-chain DIGM collateral)
       uint64_t epochSwapFees = 0;
       uint64_t vaultHeatCdFeePool = 0;

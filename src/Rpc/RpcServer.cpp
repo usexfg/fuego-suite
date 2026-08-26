@@ -2614,7 +2614,7 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
   res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
   res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
-  res.rollover_vault_balance = m_core.get_blockchain_storage().getTreasuryCounterXFG();
+  res.rollover_vault_balance = m_core.get_blockchain_storage().getTreasuryLpPendingXfg();
   res.current_epoch_swap_fees = m_core.get_blockchain_storage().getCurrentEpochSwapFees();
   res.total_cd_locked = m_core.get_blockchain_storage().getTotalCdLocked();
   res.current_epoch_number = (epochDuration > 0) ? (height / epochDuration) : 0;
@@ -2725,7 +2725,7 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
 bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req,
                                       COMMAND_RPC_GET_TREASURY_INFO::response& res) {
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
-  res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryCounterXFG();
+  res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryLpPendingXfg();
   res.treasury_heat_reserve = m_core.get_blockchain_storage().getTreasuryHeatReserve();
   res.swf_burned_xfg_pending_heat = m_core.get_blockchain_storage().getSwfBurnedXfgPendingHeat();
   res.bonus_vault_balance = m_core.get_blockchain_storage().getBonusVaultBalance();
@@ -2827,7 +2827,7 @@ bool RpcServer::on_get_heat_metrics(const COMMAND_RPC_GET_HEAT_METRICS::request&
   res.redemption_price_num = metrics.redemptionPriceNum;
   res.redemption_price_denom = metrics.redemptionPriceDenom;
   res.treasury_balance = metrics.treasuryBalance;
-  res.treasury_counter_xfg = metrics.treasuryCounterXFG;
+  res.treasury_counter_xfg = metrics.treasuryLpPendingXfg;
   res.swf_burned_xfg_pending_heat = metrics.swfBurnedXfgPendingHeat;
   res.swf_heat_balance = metrics.swfHeatBalance;
   res.epoch_swap_fees = metrics.epochSwapFees;

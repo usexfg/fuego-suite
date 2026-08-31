@@ -194,8 +194,6 @@ public:
 
   std::vector<TransactionId> deleteOutdatedUnconfirmedTransactions();
 
-  std::vector<uint32_t> getTransactionHeights(std::vector<TransactionOutputInformation> transfers);
-
   // Burn transaction management
   // Deprecated BPDF/STARK methods removed (C3/C8 security fixes)
 

@@ -4453,7 +4453,10 @@ CryptoNote::Blockchain::OrderbookEstimate CryptoNote::Blockchain::getOrderbookEs
 
 uint64_t CryptoNote::Blockchain::depositAmountAtHeight(size_t height) const {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_bankingIndex.depositInterestAtHeight(static_cast<BankingIndex::DepositHeight>(height));
+  // Was calling depositInterestAtHeight(), so "XFG Locked in Deposits" reported
+  // accrued interest rather than locked principal — and read 0.0 because no CD
+  // has accrued any (the CD paths are v11+ and v11 is not live).
+  return m_bankingIndex.depositAmountAtHeight(static_cast<BankingIndex::DepositHeight>(height));
 }
 
 void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::vector<Transaction>& transactions, uint32_t height) {

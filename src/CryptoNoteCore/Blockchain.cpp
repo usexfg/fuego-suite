@@ -2944,8 +2944,13 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
             (term == CryptoNote::parameters::DEPOSIT_TERM_LP) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_POOL_XFG) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_POOL_HEAT) ||
-            (term >= 1 && term <= 5) ||  // CD transfer/rollover terms (CommitmentTransfer)
             (term >= m_currency.depositMinTerm() && term <= m_currency.depositMaxTerm());
+        // NOTE: terms 1..5 were previously whitelisted here as "CD transfer/rollover
+        // terms". That was a unit confusion — those are CommitmentTransfer newTerm
+        // codes, whereas `term` on a commitment OUTPUT is a block count. Admitting
+        // them created commitments that matured one block after creation yet were
+        // indexed as CD-locked. No path builds a TransactionInputCommitmentTransfer
+        // (the addInput overload has no callers), so nothing legitimate needed them.
         if (!validTerm) {
           logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
               << " commitment output has invalid term: " << term;

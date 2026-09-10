@@ -837,12 +837,13 @@ void testCdInterestCompounding() {
                                                    ci, false, 0, false);
   TEST(interest == 771);
 
-  // Auto-rolled with a 2-epoch original term: compounding stops after epoch 2,
-  // so later epochs accrue on the frozen base rather than a growing one.
+  // Auto-rolled with a 2-epoch original term. Since AUDIT 2.4 accrual also
+  // stops at maturity, so this covers epochs 0..2 only: 100 + 110 + 121 = 331.
+  // (Before the maturity clamp this ran to epoch 5 and returned >600.)
   uint64_t rolled = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
                                                  ci, false, (uint32_t)(2 * ED), true);
+  TEST(rolled == 331);
   TEST(rolled < interest);
-  TEST(rolled > 600);
 
   // No elapsed time accrues nothing.
   TEST(currency.calculateCdInterest(1000, 100, 100, ci, false, 0, false) == 0);
@@ -897,9 +898,55 @@ void testLegacyDepositWithdrawsForPrincipal() {
 }
 
 
+// AUDIT 2.4: base CD interest must stop accruing at maturity. Before the fix,
+// `term` had no effect on the payout — it appears only in rolloverEpoch, which
+// collapses to endEpoch while auto-roll is disabled — so a 1-block commitment
+// earned the same per-epoch yield as a DEPOSIT_MAX_TERM CD, defeating
+// DEPOSIT_MIN_TERM. calculateCdBonus already clamped; these now agree.
+void testCdInterestStopsAtMaturity() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  CommitmentIndex ci(currency);
+
+  const uint64_t RATE = 100000;  // 10% per epoch
+  const uint64_t ED = parameters::EPOCH_DURATION_BLOCKS;
+  for (uint64_t e = 0; e <= 5; ++e) ci.recordEpochFeeRate(e, RATE, 100, 1000);
+
+  // Held six epochs. A CD whose term expires after two must not be paid for six.
+  uint64_t shortTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                    ci, false, (uint32_t)(2 * ED), false);
+  uint64_t noTerm    = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                    ci, false, 0, false);
+  TEST(shortTerm < noTerm);
+
+  // Accrual is frozen after maturity: holding longer pays no more.
+  uint64_t atMaturity = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED),
+                                                     ci, false, (uint32_t)(2 * ED), false);
+  TEST(shortTerm == atMaturity);
+
+  // A one-block "CD" earns essentially nothing rather than a full epoch's yield.
+  uint64_t oneBlock = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                   ci, false, 1, false);
+  TEST(oneBlock < noTerm);
+  TEST(oneBlock <= 100);   // at most the first epoch's simple yield
+
+  // Longer term pays more than shorter, all else equal — term now matters.
+  uint64_t longTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
+                                                   ci, false, (uint32_t)(4 * ED), false);
+  TEST(longTerm > shortTerm);
+
+  // Bonus and base now clamp identically.
+  for (uint64_t e = 0; e <= 5; ++e) ci.recordBonusEpochRate(e, 100, 1000);
+  uint64_t bonusShort = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(2 * ED));
+  uint64_t bonusLong  = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(4 * ED));
+  TEST(bonusShort <= bonusLong);
+}
+
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
+  testCdInterestStopsAtMaturity();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();

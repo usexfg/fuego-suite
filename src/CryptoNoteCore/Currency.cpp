@@ -382,6 +382,19 @@ double Currency::getBurnPercentage() const {
         : parameters::EPOCH_DURATION_BLOCKS;
     uint64_t startEpoch = creationHeight / epochDuration;
     uint64_t endEpoch = currentHeight / epochDuration;
+
+    // Base interest stops accruing at maturity. Without this a CD kept earning
+    // the full per-epoch rate forever, and `term` had no effect on the payout
+    // at all: it appears only in rolloverEpoch below, which collapses to
+    // endEpoch while auto-roll is disabled. A term=1 commitment therefore
+    // earned the same yield as a DEPOSIT_MAX_TERM one after a single block,
+    // defeating DEPOSIT_MIN_TERM. calculateCdBonus already clamps this way;
+    // the two paths now agree.
+    if (term > 0) {
+      uint64_t expiryEpoch = (creationHeight + term) / epochDuration;
+      if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
+    }
+
     uint64_t epochCount = commitmentIndex.getEpochCount();
 
     // Auto-roll boundary: compound point (only for auto-rolled CDs)

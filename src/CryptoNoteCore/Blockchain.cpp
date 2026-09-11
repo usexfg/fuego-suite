@@ -6752,6 +6752,20 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           // Apply only after validation already enforced conservation; double-check.
           // Expired deposits are claimable (remaining deposit + fill proceeds).
           if (depIt != m_limitDeposits.end() && !depIt->second.withdrawn) {
+            uint8_t addressData[sizeof(wd.spendPublicKey) + sizeof(wd.viewPublicKey)];
+            memcpy(addressData, wd.spendPublicKey.data, sizeof(wd.spendPublicKey));
+            memcpy(addressData + sizeof(wd.spendPublicKey), wd.viewPublicKey.data, sizeof(wd.viewPublicKey));
+            Crypto::Hash computedAddressHash;
+            Crypto::cn_fast_hash(addressData, sizeof(addressData), computedAddressHash);
+            if (memcmp(computedAddressHash.data, depIt->second.addressHash.data, 32) != 0) {
+              logger(ERROR, BRIGHT_RED) << "Limit withdraw ownership check failed: address hash mismatch";
+              return false;
+            }
+            Crypto::Hash authHash = getLimitWithdrawAuthHash(wd.orderId, depIt->second.addressHash, wd.outputsHash);
+            if (!Crypto::check_signature(authHash, wd.spendPublicKey, wd.proof)) {
+              logger(ERROR, BRIGHT_RED) << "Limit withdraw ownership check failed: signature mismatch";
+              return false;
+            }
             if (depIt->second.side == 1) {
               if (m_ammPool.pendingXfg >= depIt->second.amount)
                 m_ammPool.pendingXfg -= depIt->second.amount;
@@ -6786,6 +6800,39 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
 
   for (size_t outputIndex = 0; outputIndex < transaction.outputs.size(); ++outputIndex) {
     const TransactionOutput& output = transaction.outputs[transaction.outputs.size() - 1 - outputIndex];
+    // Reverse the CD bookkeeping pushTransaction applied to this output.
+    // m_heatOnDeposit is the v11+ CD APY denominator (epochCdLocked), so a
+    // creation left un-reversed by a pop skews this node's epoch fee rate
+    // against every other node's — the interest caps then disagree and blocks
+    // are accepted here but rejected there. Only the epoch-boundary snapshot
+    // restored it before, which leaves every intra-epoch pop wrong.
+    if (output.target.type() == typeid(TransactionOutputCommitment)) {
+      const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
+      if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
+          commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
+          commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
+        if (m_heatOnDeposit >= output.amount) {
+          m_heatOnDeposit -= output.amount;
+        } else {
+          m_heatOnDeposit = 0;
+        }
+        // And the tier-weighted creation sum that feeds the bonus denominator.
+        uint64_t weight = m_currency.loyaltyTierWeightPct(commitOut.term);
+        uint64_t weighted = static_cast<uint64_t>(
+            ((uint128_t)output.amount * weight) / 100);
+        uint64_t epochDuration = m_currency.isTestnet()
+            ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
+            : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
+        uint64_t epoch = (height > 0) ? (height / epochDuration) : 0;
+        if (epoch < m_bonusWeightedByEpoch.size()) {
+          if (m_bonusWeightedByEpoch[epoch] >= weighted) {
+            m_bonusWeightedByEpoch[epoch] -= weighted;
+          } else {
+            m_bonusWeightedByEpoch[epoch] = 0;
+          }
+        }
+      }
+    }
     if (output.target.type() == typeid(KeyOutput)) {
       auto amountOutputs = m_indexManager.outputs().find(output.amount);
       if (amountOutputs == m_indexManager.outputs().end()) {
@@ -7016,6 +7063,10 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         if (bIt != bonusByInput.end()) bonusForInput = bIt->second;
         uint64_t baseClaim = (cin.claimedInterest > bonusForInput)
             ? (cin.claimedInterest - bonusForInput) : 0;
+        // pushTransaction decremented m_heatOnDeposit by cin.amount when this
+        // CD was spent; restore it or the APY denominator drifts low.
+        if (m_heatOnDeposit <= UINT64_MAX - cin.amount)
+          m_heatOnDeposit += cin.amount;
         if (m_feePoolBalance <= UINT64_MAX - baseClaim)
           m_feePoolBalance += baseClaim;
         if (m_bonusVaultBalance <= UINT64_MAX - bonusForInput)

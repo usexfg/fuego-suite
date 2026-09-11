@@ -637,8 +637,35 @@ bool ElectrumSpvClient::getRawTx(
     return false;
   }
 
-  rawTx = BchHtlcScript::hexToBytes(hexStr);
-  return !rawTx.empty();
+  std::vector<uint8_t> decoded = BchHtlcScript::hexToBytes(hexStr);
+  if (decoded.empty()) {
+    return false;
+  }
+
+  // AUDIT: the server's reply was previously trusted verbatim. Inclusion is
+  // proved for a TXID, but the bytes used for the P2SH/amount checks came from
+  // this call and were never hashed back to that txid — so a hostile or MITM'd
+  // server could pair a genuine merkle proof for some real txid with entirely
+  // fabricated transaction contents. Bind them.
+  std::vector<uint8_t> h = BchHtlcScript::doubleSha256(decoded);
+  std::reverse(h.begin(), h.end());                 // internal LE -> display BE
+  std::string computed = BchHtlcScript::bytesToHex(h);
+  std::string expected = txid;
+  std::transform(computed.begin(), computed.end(), computed.begin(), ::tolower);
+  std::transform(expected.begin(), expected.end(), expected.begin(), ::tolower);
+  if (computed != expected) {
+    return false;
+  }
+
+  // A 64-byte "transaction" is indistinguishable from an internal merkle node,
+  // which lets a crafted branch reinterpret one as the other. No real lock tx
+  // is 64 bytes.
+  if (decoded.size() == 64) {
+    return false;
+  }
+
+  rawTx = std::move(decoded);
+  return true;
 }
 
 bool ElectrumSpvClient::findSpend(

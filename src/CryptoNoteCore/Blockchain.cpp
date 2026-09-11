@@ -74,7 +74,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 11  // v11: per-epoch bonus weighted sums (v11 pre-state)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 12  // v12: legacy bond epoch rates removed (commitment_index)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -886,11 +886,9 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_totalTreasuryAccrued = 0;
     m_totalRolloverAccrued = 0;
     m_totalCdLocked = 0;
-    m_totalLegacyBondLocked = 0;
     m_heatSupply = 0;
     m_heatOnDeposit = 0;
     m_digmSupply = 0;
-    m_legacyBondYieldPool = 0;
     m_lpCommitmentShares.clear();
     m_lpCommitTxGidx.clear();
     m_vault.clear();
@@ -936,23 +934,10 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       for (uint16_t t = 0; t < block.transactions.size(); ++t)
       {
         const TransactionEntry &transaction = block.transactions[t];
-        std::vector<TransactionExtraField> extraFields;
-        if (parseTransactionExtra(transaction.tx.extra, extraFields)) {
-          for (const auto& field : extraFields) {
-            if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-              const auto& h = boost::get<TransactionExtraHeatCommitment>(field);
-              CommitmentEntry entry;
-              entry.commitment    = h.commitment;
-              entry.txHash        = getObjectHash(transaction.tx);
-              entry.blockHeight   = b;
-              entry.amount        = h.amount;
-              entry.term          = parameters::HEAT_TERM;
-              entry.type          = CommitmentEntry::Type::HEAT;
-              entry.targetChainId = h.metadata.size() > 0 ? h.metadata[0] : 1;
-              m_commitmentIndex.addCommitment(entry);
-            }
-          }
-        }
+        // REMOVED: 0x08 HEAT commitment indexing (STARK off-chain data with
+        // chainID). Historical 0x08 burns stay tallied in the banking index
+        // (see pushToBankingIndex rescan); no new commitment entries are made.
+        (void)transaction;
       }
     }
 
@@ -991,7 +976,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         preEpoch.heatCdFeePool = m_heatCdFeePool;
         preEpoch.cdYieldPool = m_cdYieldPool;
         preEpoch.cdReserve = m_cdReserve;
-        preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
         preEpoch.treasuryBalance = m_treasuryBalance;
         preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
         preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
@@ -2740,7 +2724,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       if (youngestRingMemberTerm > 0 && currentHeight > youngestRingMemberHeight) {
         maxBase = m_currency.calculateCdInterest(
             txin.amount, youngestRingMemberHeight, currentHeight,
-            m_commitmentIndex, false, youngestRingMemberTerm,
+            m_commitmentIndex, youngestRingMemberTerm,
             youngestRingMemberRolled);
         uint64_t maxBonus = m_currency.calculateCdBonus(
             txin.amount, youngestRingMemberHeight, currentHeight,
@@ -2768,14 +2752,14 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
         if (ref2.term > 0 && currentHeight > ref2.transactionIndex.block) {
           uint64_t memberMax = m_currency.calculateCdInterest(
               txin.amount, ref2.transactionIndex.block, currentHeight,
-              m_commitmentIndex, false, ref2.term, rolled2);
+              m_commitmentIndex, ref2.term, rolled2);
           if (memberMax > maxInterest) maxInterest = memberMax;
         }
       }
       if (maxInterest == 0) {
         maxInterest = m_currency.calculateCdInterest(
             txin.amount, youngestRingMemberHeight, currentHeight, m_commitmentIndex,
-            false, 0, false);
+            0, false);
       }
     }
     // Fee pool cap. Pre-v11: the whole claim is pool-backed. v11+: only the
@@ -3302,7 +3286,6 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       preEpoch.heatCdFeePool = m_heatCdFeePool;
       preEpoch.cdYieldPool = m_cdYieldPool;
       preEpoch.cdReserve = m_cdReserve;
-      preEpoch.legacyBondYieldPool = m_legacyBondYieldPool;
       preEpoch.treasuryBalance = m_treasuryBalance;
       preEpoch.treasuryHeatReserve = m_treasuryHeatReserve;
       preEpoch.treasuryXfgReserve = m_treasuryXfgReserve;
@@ -3366,8 +3349,6 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
     bool hasLpRemoveAuth = false;
     uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
-    bool hasLegacyBondClaim = false;
-    uint64_t legacyClaimedInterest = 0;
     // v11+ AMM swap auth
     bool hasAmmSwapAuth = false;
     uint8_t ammSwapDirection = 0;
@@ -3431,10 +3412,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             lpRemoveMinXfg = auth.minAmountXfg;
             lpRemoveMinHeat = auth.minAmountHeat;
           }
-          if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
-            hasLegacyBondClaim = true;
-            legacyClaimedInterest = boost::get<TransactionExtraLegacyBondClaim>(field).claimedInterest;
-          }
+          // REMOVED: 0xCC legacy bond claim (no bond claims exist)
           if (field.type() == typeid(TransactionExtraMarketBuyAuth)) {
             hasMarketBuyAuth = true;
             const auto& auth = boost::get<TransactionExtraMarketBuyAuth>(field);
@@ -3571,7 +3549,6 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: LP add and remove in one tx";
         }
-        if (hasLegacyBondClaim) ++settlementClasses;
         if (settlementClasses > 1) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: multiple settlement tags ("
@@ -4150,74 +4127,8 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
         }
       }
 
-      // Legacy bond interest claim validation (0xCC)
-      if (hasLegacyBondClaim) {
-        bool foundLegacyInput = false;
-        uint32_t creationHeight = 0;
-        uint64_t legacyPrincipal = 0;
-        uint64_t oldInterestToRemove = 0;
-        uint32_t legacyTerm = 0;
-        for (const auto& in : transactions[i].inputs) {
-          if (in.type() == typeid(MultisignatureInput)) {
-            const auto& msIn = boost::get<MultisignatureInput>(in);
-            auto amountOutputs = m_indexManager.multisigOutputs().find(msIn.amount);
-            if (amountOutputs != m_indexManager.multisigOutputs().end() &&
-                msIn.outputIndex < amountOutputs->second.size()) {
-              const auto& usage = amountOutputs->second[msIn.outputIndex];
-              if (!usage.isUsed) {
-                const auto& outTx = m_blocks[usage.transactionIndex.block]
-                    .transactions[usage.transactionIndex.transaction].tx;
-                std::vector<TransactionExtraField> depositExtra;
-                if (parseTransactionExtra(outTx.extra, depositExtra)) {
-                  for (const auto& dField : depositExtra) {
-                    if (dField.type() == typeid(TransactionExtraLegacyBond)) {
-                      const auto& bond = boost::get<TransactionExtraLegacyBond>(dField);
-                      if (bond.amount == msIn.amount) {
-                        foundLegacyInput = true;
-                        creationHeight = bond.originalCreationHeight;
-                        legacyPrincipal = msIn.amount;
-                        legacyTerm = msIn.term;
-                        // Remove old fixed-term interest for this input
-                        if (msIn.term != 0) {
-                          oldInterestToRemove = m_currency.calculateInterest(legacyPrincipal, legacyTerm, block.height);
-                        }
-                        break;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-            if (foundLegacyInput) break;
-          }
-        }
-
-        if (!foundLegacyInput) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " has legacy bond claim but no valid legacy bond input";
-        } else {
-          // Remove old fixed interest from in_amount (legacy bonds use fee-pool interest instead)
-          if (oldInterestToRemove > 0 && in_amount >= oldInterestToRemove) {
-            in_amount -= oldInterestToRemove;
-          }
-
-          uint64_t maxInterest = m_currency.calculateCdInterest(
-              legacyPrincipal > 0 ? legacyPrincipal : (legacyClaimedInterest > in_amount ? in_amount : legacyClaimedInterest),
-              creationHeight, block.height, m_commitmentIndex, true, 0, false);
-          if (maxInterest > m_legacyBondYieldPool) {
-            maxInterest = m_legacyBondYieldPool;
-          }
-          if (legacyClaimedInterest > maxInterest) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                << " legacy bond claim " << legacyClaimedInterest
-                << " exceeds max " << maxInterest;
-          } else {
-            in_amount += legacyClaimedInterest;
-            fee = in_amount < out_amount ? m_currency.minimumFee(blockData.majorVersion) : in_amount - out_amount;
-          }
-        }
-      }
+      // Legacy bond interest claim validation (0xCC) — REMOVED: no bond claims exist.
+      // A 0xCC tag no longer parses (see TransactionExtra.cpp) and claims nothing.
 
       // Legacy v10 LP validation — pre-v11 only (AMM swap removed, no swaps completed)
       if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
@@ -4740,7 +4651,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
     // clearing price — so limit orders track the AMM and cannot arbitrage it.
     const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
-    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
+    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR; 
     // Backstop volume cap: pool-intermediated fills are bounded at
     // HEARTH_BACKSTOP_MAX_BPS (500 = 5×) of the block's auction volume. With no
     // auction volume the backstop is bounded at 500 basis points (5%) of the
@@ -5027,20 +4938,9 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
             }
             logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
 
-            // Index the HEAT commitment for RPC queries
-            Crypto::Hash txHash = getObjectHash(tx.tx);
-            CommitmentEntry entry;
-            entry.commitment = heatCommit.commitment;
-            entry.txHash = txHash;
-            entry.blockHeight = block.height;
-            entry.amount = heatCommit.amount;
-            entry.term = parameters::HEAT_TERM;  // HEAT is permanent
-            entry.type = CommitmentEntry::Type::HEAT;
-            entry.targetChainId = heatCommit.metadata.size() > 0 ? heatCommit.metadata[0] : 1;  // Default to ETH
-            m_commitmentIndex.addCommitment(entry);
-
-            logger(DEBUGGING) << "HEAT commitment indexed: " << Common::podToHex(heatCommit.commitment)
-                             << " amount=" << heatCommit.amount;
+            // REMOVED: 0x08 commitment-entry indexing (STARK off-chain data
+            // with chainID). The burn tally above stays — it is money
+            // accounting for historical burns, not STARK data.
           }
           // REMOVED: COLD deposit type (0xCD) — TransactionExtraSimpleCD no longer issued
           // else if (field.type() == typeid(TransactionExtraSimpleCD)) {
@@ -5122,58 +5022,8 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
           //                      << " has no legacy deposit (multisig) output matching amount=" << migration.amount;
           //   }
           // }
-          // 0xCB: Legacy Bond migration (v1.10.00) — marks bug-era Multisig deposit for 50% CD share
-          else if (field.type() == typeid(TransactionExtraLegacyBond)) {
-            const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
-
-            // Validate: the referenced original tx must exist with a MultisignatureOutput deposit
-            std::list<Crypto::Hash> txIds = {bond.originalTxHash};
-            std::list<Transaction> txs;
-            std::list<Crypto::Hash> missed;
-            getTransactions(txIds, txs, missed, false);
-            bool depositFound = false;
-            if (!txs.empty()) {
-              const auto& origTx = txs.front();
-              for (const auto& out : origTx.outputs) {
-                if (out.target.type() == typeid(MultisignatureOutput) &&
-                    out.amount == bond.amount) {
-                  depositFound = true;
-                  break;
-                }
-              }
-              if (!depositFound) {
-                logger(INFO, BRIGHT_WHITE) << "Legacy bond: original tx " << Common::podToHex(bond.originalTxHash)
-                  << " has no matching multisig deposit output (amount=" << bond.amount << ")";
-              }
-            } else {
-              logger(WARNING) << "Legacy bond rejected: original tx " << Common::podToHex(bond.originalTxHash)
-                              << " not found in blockchain";
-            }
-
-            if (depositFound) {
-              m_totalLegacyBondLocked += bond.amount;
-              logger(DEBUGGING) << "Legacy bond registered: original=" << Common::podToHex(bond.originalTxHash)
-                                << " amount=" << bond.amount
-                                << " totalLegacyBondLocked=" << m_totalLegacyBondLocked;
-            } else {
-              logger(WARNING) << "Legacy bond rejected: original tx " << Common::podToHex(bond.originalTxHash)
-                              << " — deposit validation failed";
-            }
-          }
-          // 0xCC: Legacy Bond interest claim — debit the yield pool
-          else if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
-            const auto& claim = boost::get<TransactionExtraLegacyBondClaim>(field);
-            if (claim.claimedInterest > 0) {
-              if (m_legacyBondYieldPool >= claim.claimedInterest) {
-                m_legacyBondYieldPool -= claim.claimedInterest;
-                logger(DEBUGGING) << "Legacy bond claim: " << claim.claimedInterest
-                                 << " XFG interest paid, pool remaining=" << m_legacyBondYieldPool;
-              } else {
-                logger(WARNING) << "Legacy bond claim: insufficient pool (have="
-                               << m_legacyBondYieldPool << " need=" << claim.claimedInterest << ")";
-              }
-            }
-          }
+          // REMOVED: 0xCB legacy bond registration and 0xCC bond claims.
+          // No bond claims exist; new 0xCB/0xCC tags no longer parse.
           // Check for @ Alias Registration (0xEA)
           else if (field.type() == typeid(TransactionExtraAliasRegistration)) {
             const auto& aliasReg = boost::get<TransactionExtraAliasRegistration>(field);
@@ -5434,7 +5284,9 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
     uint64_t epochNumber = newHeight / epochDuration;
     uint64_t epochStart = (epochNumber - 1) * epochDuration;
     uint64_t epochEnd = epochStart + epochDuration - 1;
-    // Split swap fees: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
+    
+    // Split ATOMIC SWAP fees: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
+    
     uint64_t epochSwapFees = m_currentEpochSwapFees;
     // v11+: CD APY denominator is CD-only HEAT (m_heatOnDeposit), not the total
     // commitment-output pool (which includes mints, LP and pool markers).
@@ -5549,14 +5401,8 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       }
     }
 
-    // Split CD share between regular CDs and legacy bonds (50/50 default)
+    // Full CD share goes to regular CDs (legacy bonds removed — no split).
     uint64_t regularCdShare = cdShare;
-    uint64_t legacyBondShare = 0;
-    uint64_t epochLegacyBondLocked = m_totalLegacyBondLocked;
-    if (epochLegacyBondLocked > 0 && m_totalCdLocked > 0) {
-      legacyBondShare = (cdShare * CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT) / 100;
-      regularCdShare = cdShare - legacyBondShare;
-    }
     // v11+: claims are denominated in HEAT atomics, so the recorded rate must be
     // HEAT-denominated too — convert the XFG fee share at the pool rate once,
     // here. If no rate is available the share defers (rate 0 for this epoch;
@@ -5580,20 +5426,11 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
 
     m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShareHeat, epochCdLocked);
 
-    // Legacy bond fee rate
-    uint64_t legacyEpochFeeRate = 0;
-    if (epochLegacyBondLocked > 0 && legacyBondShare > 0) {
-      legacyEpochFeeRate = static_cast<uint64_t>(
-          (uint128_t)legacyBondShare * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochLegacyBondLocked);
-    }
-    m_commitmentIndex.recordLegacyEpochFeeRate(epochNumber, legacyEpochFeeRate, legacyBondShare, epochLegacyBondLocked);
-
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;
 
-    // Route atomic swap fee treasury share to GENERAL_RESERVE (counter XFG).
-    // Pre-V11: at each epoch 80% of the counter was converted to HEAT and
-    // minted into CD_APY_POOL (XFG burned 50/50), leaving 20% as reserve.
+    // Route Treasury_share of atomic swap fees to GENERAL_RESERVE (counter XFG).
+
     if (treasuryShare > 0) {
       if (m_treasuryLpPendingXfg > UINT64_MAX - treasuryShare) {
         logger(ERROR, BRIGHT_RED) << "Treasury counter XFG overflow detected";
@@ -5602,8 +5439,6 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       m_treasuryLpPendingXfg += treasuryShare;
     }
 
-    // Pre-V11 legacy conversion: 80% of GENERAL_RESERVE counter XFG → HEAT →
-    // CD_APY_POOL UTXOs, XFG burned 50/50 (EF/SWF).
     // V11+: RETIRED — the full 20% treasury share stays as XFG for the
     // Treasury LP Manager's ratio-paired LP position (paired with the HEAT
     // leg from mint premiums + donations). The CD pool keeps only its direct
@@ -5787,15 +5622,6 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       return false;
     }
     m_cdYieldPool += regularCdShare;
-
-    // Route legacy bond share to legacy bond yield pool
-    if (legacyBondShare > 0) {
-      if (m_legacyBondYieldPool > UINT64_MAX - legacyBondShare) {
-        logger(ERROR, BRIGHT_RED) << "Legacy bond yield pool overflow detected";
-        return false;
-      }
-      m_legacyBondYieldPool += legacyBondShare;
-    }
 
     // CD yield: mint HⲶ∆T from swap-fee aggregate demand for CD-holder payout.
     // 100% mint, 0% pool buyback. No phantom XFG ever enters the AMM pool.
@@ -6180,7 +6006,6 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
       m_currentEpochSwapFees += contribution;
       m_totalSwapFeesCollected -= contribution;
       m_commitmentIndex.popEpochFeeRate();
-      m_commitmentIndex.popLegacyEpochFeeRate();
       m_commitmentIndex.popBonusEpochRate();
       
       // Reverse treasury distribution. treasuryShare is routed to
@@ -6217,7 +6042,6 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_heatCdFeePool = snap.heatCdFeePool;
     m_cdYieldPool = snap.cdYieldPool;
     m_cdReserve = snap.cdReserve;
-    m_legacyBondYieldPool = snap.legacyBondYieldPool;
     m_treasuryBalance = snap.treasuryBalance;
     m_treasuryHeatReserve = snap.treasuryHeatReserve;
     m_treasuryXfgReserve = snap.treasuryXfgReserve;
@@ -6481,8 +6305,16 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           uint64_t effectiveCap = std::min(m_feePoolBalance, vaultAvailable);
           if (baseClaim <= effectiveCap) {
             auto spendResult = m_vault.spendUtxos(VaultPartition::CD_APY_POOL, AssetType::HEAT, baseClaim);
-            if (spendResult.amountSpent == baseClaim) {
-              vaultSpendRecord.cdPoolIndices = std::move(spendResult.spentIndices);
+            // spendUtxos overshoots BY DESIGN (the surplus is minted back as
+            // change immediately below), so `== baseClaim` was the rare branch:
+            // the normal `>` case skipped recording the rollback indices and
+            // logged a false shortfall. Without those indices the pop path
+            // cannot un-spend, so a reorg permanently consumed the whole source
+            // UTXO. Append rather than assign — a withdrawal spending several
+            // deposits reaches this once per input.
+            if (spendResult.amountSpent >= baseClaim) {
+              vaultSpendRecord.cdPoolIndices.insert(vaultSpendRecord.cdPoolIndices.end(),
+                  spendResult.spentIndices.begin(), spendResult.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault CD_APY_POOL spend shortfall: needed "
                   << baseClaim << " but could only spend " << spendResult.amountSpent;
@@ -6507,8 +6339,9 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           uint64_t bvAvailable = m_vault.partitionBalance(VaultPartition::BONUS_VAULT, AssetType::HEAT);
           if (bonusForInput <= bvAvailable && bonusForInput <= m_bonusVaultBalance) {
             auto bonusSpend = m_vault.spendUtxos(VaultPartition::BONUS_VAULT, AssetType::HEAT, bonusForInput);
-            if (bonusSpend.amountSpent == bonusForInput) {
-              vaultSpendRecord.bonusVaultIndices = std::move(bonusSpend.spentIndices);
+            if (bonusSpend.amountSpent >= bonusForInput) {
+              vaultSpendRecord.bonusVaultIndices.insert(vaultSpendRecord.bonusVaultIndices.end(),
+                  bonusSpend.spentIndices.begin(), bonusSpend.spentIndices.end());
             } else {
               logger(ERROR, BRIGHT_RED) << "Vault BONUS_VAULT spend shortfall: needed "
                   << bonusForInput << " but could only spend " << bonusSpend.amountSpent;
@@ -7190,12 +7023,10 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         if (m_totalCdInterestPaid >= cin.claimedInterest) {
           m_totalCdInterestPaid -= cin.claimedInterest;
         }
-        auto vaultIt = m_vaultSpentByTx.find(transactionHash);
-        if (vaultIt != m_vaultSpentByTx.end()) {
-          m_vault.unSpendUtxos(vaultIt->second.cdPoolIndices);
-          m_vault.unSpendUtxos(vaultIt->second.bonusVaultIndices);
-          m_vaultSpentByTx.erase(vaultIt);
-        }
+        // NOTE: the vault spend record is per-TRANSACTION, not per-input. It is
+        // consumed once, after the input loop — erasing it here let the first
+        // interest-claiming input swallow the record while later inputs restored
+        // m_feePoolBalance with nothing un-spent behind it.
       }
     } else if (input.type() == typeid(TransactionInputCommitmentTransfer)) {
       const auto& xfer = ::boost::get<TransactionInputCommitmentTransfer>(input);
@@ -7204,6 +7035,18 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         logger(ERROR, BRIGHT_RED) <<
           "Blockchain consistency broken - cannot find spent commitment transfer key.";
       }
+    }
+  }
+
+  // Un-spend the vault UTXOs this transaction consumed. The record is keyed by
+  // transaction, so it is consumed exactly once here rather than inside the
+  // input loop above.
+  {
+    auto vaultIt = m_vaultSpentByTx.find(transactionHash);
+    if (vaultIt != m_vaultSpentByTx.end()) {
+      m_vault.unSpendUtxos(vaultIt->second.cdPoolIndices);
+      m_vault.unSpendUtxos(vaultIt->second.bonusVaultIndices);
+      m_vaultSpentByTx.erase(vaultIt);
     }
   }
 
@@ -7382,14 +7225,6 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           m_ammPool.reserveHeat += amountHeat;
           m_ammPool.reserveXfg += amountXfg;
         }
-      } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
-        const auto& bond = boost::get<TransactionExtraLegacyBond>(field);
-        if (m_totalLegacyBondLocked >= bond.amount) {
-          m_totalLegacyBondLocked -= bond.amount;
-        }
-      } else if (field.type() == typeid(TransactionExtraLegacyBondClaim)) {
-        const auto& claim = boost::get<TransactionExtraLegacyBondClaim>(field);
-        m_legacyBondYieldPool += claim.claimedInterest;
       } else if (field.type() == typeid(TransactionExtraTreasuryFund)) {
         const auto& fund = boost::get<TransactionExtraTreasuryFund>(field);
         if (fund.asset == 0) {

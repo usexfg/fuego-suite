@@ -175,7 +175,14 @@ namespace CryptoNote
         const uint64_t SWAP_FEE_CD_SHARE_PCT = 69;           // 69% of epoch swap fees → CD Yield Pool
         // CD yield: 100% of epoch swap fees buy HEAT from pool → CD holders.
         // No protocol cut — CD holders selling rewards back provides natural ratio recovery.
-        const uint64_t SWAP_FEE_BONUS_VAULT_PCT = 11;           // 11% of epoch swap fees → Bonus Vault (loyalty + tier bonuses)
+        const uint64_t SWAP_FEE_BONUS_VAULT_PCT = 11;           // 11% of epoch swap fees → Bonus Vault (yield floor reserve)
+        // Yield floor: in an epoch whose fee-derived rate falls below this, the
+        // Bonus Vault tops each CD up to it. Flat — independent of term, since
+        // base interest already compounds and so already rewards duration.
+        // Same 1e6 fixed-point scale as the epoch fee rate; 500 = 0.05%/epoch
+        // (~0.6%/yr at 72 epochs). PLACEHOLDER — this is a monetary-policy
+        // number and wants deliberate choice before mainnet.
+        const uint64_t CD_YIELD_FLOOR_RATE = 500;
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
@@ -203,11 +210,7 @@ namespace CryptoNote
         // Bootstrap repayment
         const uint64_t BOOTSTRAP_REPAY_PCT = 20;            // 20% of treasury swap fee share → bootstrap repayment vault
 
-        // Legacy Bond (bug-era Multisig deposit recovery, v1.10.00+) <<---legacy bond idea deprecated remove
-        const uint64_t LEGACY_BOND_CD_SHARE_PCT = 50;        // 50% of CD share → legacy bond yield pool (rest → regular CDs)
-        const uint64_t LEGACY_BOND_TARGET_APY = 50;          // 50% target APY on legacy bonds
-        const uint64_t LEGACY_BOND_TERM_EPOCHS = 72;         // 72 epochs (~1 year) lock period
-        const uint64_t LEGACY_BOND_DEBT_CAP = 2542500000000;     // ₲254,250 total debt cap (in ATOMIC units, 10000000 per XFG)
+        // REMOVED: legacy bond constants (0xCB/0xCC retired — no bond claims exist)
 
         // HEAT Deposits
         const uint64_t DEPOSIT_MIN_AMOUNT = AMOUNT_TIER_0;   // 8 HEAT minimum CD

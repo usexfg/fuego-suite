@@ -352,18 +352,37 @@ double Currency::getBurnPercentage() const {
     }
     uint64_t epochCount = commitmentIndex.getEpochCount();
 
-    uint64_t weight = loyaltyTierWeightPct(term);
+    // YIELD FLOOR (replaces the pro-rata tier bonus).
+    //
+    // The vault now tops a CD up to CD_YIELD_FLOOR_RATE in any epoch whose
+    // fee-derived rate fell below it, rather than splitting realized inflow
+    // pro-rata by tier weight. Three reasons:
+    //
+    //  * The pro-rata form was zero-sum. A depositor's weight sat in both the
+    //    numerator and everyone's shared denominator, so if every CD picked the
+    //    top tier each one received exactly what it would have at the bottom
+    //    tier. "2.5x" bought share, never yield.
+    //  * That shared denominator was stateful and had to be maintained across
+    //    creation, withdrawal, maturity and reorg. It was maintained in none of
+    //    those: never decremented on withdrawal, windowed at 72 epochs
+    //    regardless of the CD's own term, and never reversed on pop. The floor
+    //    reads only this CD's principal and a global per-epoch rate, so there is
+    //    no shared state to drift.
+    //  * A floor is what a reserve is actually for — it smooths lean epochs
+    //    rather than redistributing fat ones.
+    //
+    // Flat in term by design: base interest compounds, so duration is already
+    // rewarded once. Payouts remain capped by the vault at settlement, so this
+    // is a ceiling ("up to"), never a promise the vault cannot honour.
     uint64_t bonus = 0;
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
-      BonusEpochRateEntry entry = commitmentIndex.getBonusEpochRateEntry(e);
-      if (entry.bonusHeat == 0 || entry.weightedBase == 0) continue;
-      // share = bonusHeat × (principal × weight/100) / weightedBase, where
-      // weightedBase = Σ (principal_j × weight_j/100) over the rolling window —
-      // realized BV inflow distributed pro-rata by tier weight (no overpromise).
-      uint64_t share = static_cast<uint64_t>(
-          (((uint128_t)amount * weight) / 100 * entry.bonusHeat) / entry.weightedBase);
-      if (bonus > UINT64_MAX - share) return UINT64_MAX;
-      bonus += share;
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
+      if (epochRate >= parameters::CD_YIELD_FLOOR_RATE) continue;  // not a lean epoch
+      uint64_t shortfall = parameters::CD_YIELD_FLOOR_RATE - epochRate;
+      uint64_t topUp = static_cast<uint64_t>(
+          ((uint128_t)amount * shortfall) / parameters::FEE_POOL_RATE_PRECISION);
+      if (bonus > UINT64_MAX - topUp) return UINT64_MAX;
+      bonus += topUp;
     }
     return bonus;
   }
@@ -373,7 +392,7 @@ double Currency::getBurnPercentage() const {
   uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                           uint32_t currentHeight,
                                           const CommitmentIndex& commitmentIndex,
-                                          bool isLegacyBond, uint32_t term,
+                                          uint32_t term,
                                           bool autoRolled) const {
     if (currentHeight <= creationHeight) return 0;
 
@@ -406,9 +425,7 @@ double Currency::getBurnPercentage() const {
     uint64_t currentBase = amount;
 
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
-      uint64_t epochRate = isLegacyBond
-          ? commitmentIndex.getLegacyEpochFeeRate(e)
-          : commitmentIndex.getEpochFeeRate(e);
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
       uint64_t epochInterest = (uint64_t)(((uint128_t)currentBase * epochRate)
                                           / parameters::FEE_POOL_RATE_PRECISION);
       baseInterest += epochInterest;
@@ -1625,9 +1642,6 @@ double Currency::getBurnPercentage() const {
     burnDepositMinAmount(parameters::BURN_DEPOSIT_MIN_AMOUNT);
 
     depositTermForever(parameters::HEAT_TERM);
-
-    // HEAT conversion rate (1 XFG = 5 HEAT at launch ratio)
-    heatConversionRate(10000000);
 
     // Dynamic money supply initialization
     baseMoneySupply(parameters::MONEY_SUPPLY);

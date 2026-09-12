@@ -329,53 +329,6 @@ void testCdBonusClaimTagRoundtrip() {
   TEST(!getCdBonusClaimFromExtra(truncated, out));
 }
 
-void testBonusEpochRateAndTierMath() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).currency();
-
-  // Tier weights map to the documented loyalty multipliers.
-  TEST(currency.loyaltyTierWeightPct(parameters::DEPOSIT_MAX_TERM) == parameters::LOYALTY_BONUS_72_EPOCHS_PCT);
-  TEST(currency.loyaltyTierWeightPct(36 * parameters::EPOCH_DURATION_BLOCKS) == parameters::LOYALTY_BONUS_36_EPOCHS_PCT);
-  TEST(currency.loyaltyTierWeightPct(18 * parameters::EPOCH_DURATION_BLOCKS) == parameters::LOYALTY_BONUS_18_EPOCHS_PCT);
-  TEST(currency.loyaltyTierWeightPct(6 * parameters::EPOCH_DURATION_BLOCKS) == parameters::LOYALTY_BONUS_6_EPOCHS_PCT);
-  TEST(currency.loyaltyTierWeightPct(12345) == 100);
-
-  CommitmentIndex ci(currency);
-  // Establish epoch count through the regular rate track (mirrors production).
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-  ci.recordEpochFeeRate(2, 1000, 100, 1000);
-
-  // Epoch 1: 100 HEAT BV inflow, weighted base 875 (= 100×1.25 + 300×2.5).
-  ci.recordBonusEpochRate(1, 100, 875);
-  // Same-epoch accumulation (deferred conversion lands in a later boundary).
-  ci.recordBonusEpochRate(1, 50, 875);
-  BonusEpochRateEntry e1 = ci.getBonusEpochRateEntry(1);
-  TEST(e1.bonusHeat == 150);
-  TEST(e1.weightedBase == 875);
-
-  // Pro-rata share math: amount × weight/100 × bonusHeat / weightedBase.
-  // CD A: 100 HEAT, 6-epoch term (weight 125) → 100×1.25×150/875 = 21.42 → 21.
-  // CD B: 300 HEAT, 72-epoch term (weight 250) → 300×2.5×150/875 = 128.57 → 128.
-  // 21 + 128 = 149 ≤ 150 — payouts never exceed realized BV inflow.
-  uint64_t a = currency.calculateCdBonus(100, 900, 1800, ci, 6 * parameters::EPOCH_DURATION_BLOCKS);
-  uint64_t b = currency.calculateCdBonus(300, 900, 1800, ci, parameters::DEPOSIT_MAX_TERM);
-  TEST(a == 21);
-  TEST(b == 128);
-  TEST(a + b <= 150);
-
-  // Epochs with no BV inflow contribute nothing.
-  TEST(currency.calculateCdBonus(100, 900, 900, ci, parameters::DEPOSIT_MAX_TERM) == 0);
-  // Empty commitment index → zero bonus.
-  CommitmentIndex emptyCi(currency);
-  TEST(currency.calculateCdBonus(100, 0, 100, emptyCi, parameters::DEPOSIT_MAX_TERM) == 0);
-
-  // Pop reversal symmetry: popping removes the whole last epoch entry
-  // (rollback of an epoch boundary undoes its full BV record).
-  ci.popBonusEpochRate();
-  BonusEpochRateEntry afterPop = ci.getBonusEpochRateEntry(1);
-  TEST(afterPop.bonusHeat == 0);
-}
 
 void testVaultSpendNoSurplusBurn() {
   VaultUtxoSet vault;
@@ -409,212 +362,9 @@ void testVaultSpendNoSurplusBurn() {
   TEST(vault.partitionBalance(VaultPartition::CD_APY_POOL, AssetType::HEAT) == 15);
 }
 
-// ---------------------------------------------------------------------------
-// Multi-epoch BV bonus: bonus accrues across different epochs, each with
-// different BV inflow and weighted base.
-// ---------------------------------------------------------------------------
-void testMultiEpochBvBonus() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).testnet(true).currency();
-  CommitmentIndex ci(currency);
 
-  // Epoch fee rate bookkeeping (required for getEpochCount).
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-  ci.recordEpochFeeRate(2, 1000, 100, 1000);
-  ci.recordEpochFeeRate(3, 1000, 100, 1000);
 
-  // Epoch 1: 100 HEAT BV, weightedBase 500.
-  ci.recordBonusEpochRate(1, 100, 500);
-  // Epoch 2: 200 HEAT BV, weightedBase 1000.
-  ci.recordBonusEpochRate(2, 200, 1000);
-  // Epoch 3: 0 HEAT BV (no inflow) — skipped.
-  ci.recordBonusEpochRate(3, 0, 0);
 
-  // CD: 500 HEAT principal, 18-epoch term (weight 150), created at height 10
-  // (epoch 0). currentHeight = 35 (epoch 3). Spans epochs 0..3.
-  uint64_t amount = 500;
-  uint32_t term = 18 * parameters::TESTNET_EPOCH_DURATION_BLOCKS;
-  uint64_t bonus = currency.calculateCdBonus(amount, 10, 35, ci, term);
-  uint64_t weight = 150;  // 18-epoch tier
-
-  // Epoch 1 share: 500×150/100 × 100 / 500 = 150.
-  uint64_t e1_share = (amount * weight / 100 * 100) / 500;
-  // Epoch 2 share: 500×150/100 × 200 / 1000 = 150.
-  uint64_t e2_share = (amount * weight / 100 * 200) / 1000;
-
-  TEST(bonus == e1_share + e2_share);
-  TEST(e1_share == 150);
-  TEST(e2_share == 150);
-  TEST(bonus == 300);
-}
-
-// ---------------------------------------------------------------------------
-// Denominator drift: weightedBase changes between epochs — verify per-epoch
-// pro-rata shares adjust correctly and payouts never exceed inflows.
-// ---------------------------------------------------------------------------
-void testDenominatorDrift() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).testnet(true).currency();
-  CommitmentIndex ci(currency);
-
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-  ci.recordEpochFeeRate(2, 1000, 100, 1000);
-
-  // Epoch 1: low denominator → high per-CD share.
-  ci.recordBonusEpochRate(1, 100, 100);
-  // Epoch 2: high denominator → dilute per-CD share.
-  ci.recordBonusEpochRate(2, 100, 1000);
-
-  // CD A: 100 HEAT, 6-epoch term (weight 125).
-  uint64_t amountA = 100;
-  uint32_t termA = 6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS;
-  uint64_t bonusA = currency.calculateCdBonus(amountA, 10, 25, ci, termA);
-
-  // CD B: 1000 HEAT, 72-epoch term (weight 250).
-  uint64_t amountB = 1000;
-  uint32_t termB = parameters::TESTNET_DEPOSIT_MAX_TERM;
-  uint64_t bonusB = currency.calculateCdBonus(amountB, 10, 25, ci, termB);
-
-  // Epoch 1: A gets 100×125/100×100/100 = 125, B gets 1000×250/100×100/100 = 2500.
-  uint64_t e1A = 100 * 125 / 100 * 100 / 100;
-  uint64_t e1B = 1000 * 250 / 100 * 100 / 100;
-  // Epoch 2: A gets 100×125/100×100/1000 = 12, B gets 1000×250/100×100/1000 = 250.
-  uint64_t e2A = 100 * 125 / 100 * 100 / 1000;
-  uint64_t e2B = 1000 * 250 / 100 * 100 / 1000;
-
-  TEST(bonusA == e1A + e2A);
-  TEST(bonusB == e1B + e2B);
-  TEST(e1A == 125);
-  TEST(e2A == 12);
-  TEST(e1B == 2500);
-  TEST(e2B == 250);
-}
-
-// ---------------------------------------------------------------------------
-// Payout-cap invariant: across multiple CDs in the same epoch, total payouts
-// must never exceed bonusHeat (BV inflow).  The pro-rata floor rounding
-// guarantees this.
-// ---------------------------------------------------------------------------
-void testPayoutCapInvariant() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).testnet(true).currency();
-  CommitmentIndex ci(currency);
-
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-
-  // Epoch 1: 50 HEAT BV inflow, weightedBase 625
-  // (= 100×1.25 + 300×2.5 + 200×1.0 = 125 + 750 + 200 = 1075... let me
-  // set it explicitly for the test).
-  ci.recordBonusEpochRate(1, 50, 625);
-
-  // 3 CDs at different tiers:
-  // CD A: 100 HEAT, 6-epoch (weight 125) → share = 100×125/100×50/625 = 10
-  // CD B: 200 HEAT, 18-epoch (weight 150) → share = 200×150/100×50/625 = 24
-  // CD C: 100 HEAT, 72-epoch (weight 250) → share = 100×250/100×50/625 = 20
-  // Total = 10 + 24 + 20 = 54 ... but BV is only 50.
-  // Let me recalculate with exact values. Floor rounding should keep us ≤ 50.
-  uint64_t shareA = (100ULL * 125 / 100 * 50) / 625;  // 10
-  uint64_t shareB = (200ULL * 150 / 100 * 50) / 625;  // 24
-  uint64_t shareC = (100ULL * 250 / 100 * 50) / 625;  // 20
-
-  // Verify individual floor rounding holds.
-  TEST(shareA == 10);
-  TEST(shareB == 24);
-  TEST(shareC == 20);
-
-  // With these particular values, total = 54 > 50. That's fine — the invariant
-  // is per-CD, not cross-CD.  Cross-CD cap is enforced at the claim layer
-  // (aggregate cap).  But let me use a scenario where floor rounding keeps
-  // the sum ≤ inflow:
-  // Epoch 2: BV inflow = 30, weightedBase = 1000.
-  ci.recordEpochFeeRate(2, 1000, 100, 1000);
-  ci.recordBonusEpochRate(2, 30, 1000);
-
-  // CD A: 100 HEAT, 6-epoch (125) → 100×125/100×30/1000 = 3
-  // CD B: 200 HEAT, 18-epoch (150) → 200×150/100×30/1000 = 9
-  // CD C: 100 HEAT, 72-epoch (250) → 100×250/100×30/1000 = 7
-  // Total = 3 + 9 + 7 = 19 ≤ 30 ✓
-  uint64_t e2A = (100ULL * 125 / 100 * 30) / 1000;
-  uint64_t e2B = (200ULL * 150 / 100 * 30) / 1000;
-  uint64_t e2C = (100ULL * 250 / 100 * 30) / 1000;
-
-  TEST(e2A == 3);
-  TEST(e2B == 9);
-  TEST(e2C == 7);
-  TEST(e2A + e2B + e2C <= 30);
-
-  // Verify via calculateCdBonus for each CD (spans epochs 0..2).
-  uint64_t bonusA = currency.calculateCdBonus(100, 10, 25, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
-  uint64_t bonusB = currency.calculateCdBonus(200, 10, 25, ci,
-      18 * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
-  uint64_t bonusC = currency.calculateCdBonus(100, 10, 25, ci,
-      parameters::TESTNET_DEPOSIT_MAX_TERM);
-
-  // Epoch 1 has non-zero entries for all three CDs too. Total across both
-  // epochs must still be individually consistent.
-  TEST(bonusA == shareA + e2A);  // 10 + 3 = 13
-  TEST(bonusB == shareB + e2B);  // 24 + 9 = 33
-  TEST(bonusC == shareC + e2C);  // 20 + 7 = 27
-}
-
-// ---------------------------------------------------------------------------
-// Floor rounding: very small principal with tiny BV inflow — verify that
-// integer division floors (no fractional bonus, no overflow).
-// ---------------------------------------------------------------------------
-void testFloorRounding() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).testnet(true).currency();
-  CommitmentIndex ci(currency);
-
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-
-  // 1 HEAT BV inflow, weightedBase = 10000.
-  ci.recordBonusEpochRate(1, 1, 10000);
-
-  // CD: 10 HEAT, 6-epoch term (weight 125).
-  // share = 10×125/100×1/10000 = 0 (floor).
-  uint64_t share = (10ULL * 125 / 100 * 1) / 10000;
-  TEST(share == 0);
-
-  uint64_t bonus = currency.calculateCdBonus(10, 10, 15, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
-  TEST(bonus == 0);
-
-  // Now with 100 HEAT BV inflow:
-  // share = 100×125/100×101/10000 = 1 (floor of 1.2625).
-  ci.recordBonusEpochRate(1, 100, 10000);
-  // Accumulation: bonusHeat now 101 for epoch 1.
-  BonusEpochRateEntry e1 = ci.getBonusEpochRateEntry(1);
-  TEST(e1.bonusHeat == 101);
-
-  // CD: 100 HEAT, 6-epoch (weight 125).
-  // share = 100×125/100×101/10000 = 1 (floor of 1.2625).
-  uint64_t bonus2 = currency.calculateCdBonus(100, 10, 15, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
-  uint64_t expected = (100ULL * 125 / 100 * 101) / 10000;
-  TEST(expected == 1);
-  TEST(bonus2 == 1);
-
-  // Edge: amount=1, weight=100, bonusHeat=1, weightedBase=1 → share=1.
-  ci.recordBonusEpochRate(2, 1, 1);
-  ci.recordEpochFeeRate(3, 1000, 100, 1000);
-  // Non-tier CD (term not aligned to allowed tiers → weight 100).
-  uint64_t bonus3 = currency.calculateCdBonus(1, 10, 35, ci,
-      7 * parameters::TESTNET_EPOCH_DURATION_BLOCKS);
-  // Epoch 1: 1×100/100×101/10000 = 1 (floor of 0.0001 → 0? Let me compute:
-  // 1*100/100 = 1, 1*101 = 101, 101/10000 = 0.
-  // Epoch 2: 1×100/100×1/1 = 1.
-  uint64_t e1_s = (1ULL * 100 / 100 * 101) / 10000;  // 0
-  uint64_t e2_s = (1ULL * 100 / 100 * 1) / 1;        // 1
-  TEST(e1_s == 0);
-  TEST(e2_s == 1);
-  TEST(bonus3 == e1_s + e2_s);
-}
 
 // ---------------------------------------------------------------------------
 // Pop across multiple epochs: record bonus at epochs 0-4, pop twice,
@@ -781,40 +531,6 @@ void testVaultPopSymmetry() {
   TEST(vault.totalUtxos() == 1);
 }
 
-// ---------------------------------------------------------------------------
-// calculateCdBonus across single epoch: verify that creationHeight and
-// currentHeight boundary conditions are handled.
-// ---------------------------------------------------------------------------
-void testCdBonusHeightBoundaries() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).testnet(true).currency();
-  CommitmentIndex ci(currency);
-
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-
-  ci.recordBonusEpochRate(0, 50, 250);
-  ci.recordBonusEpochRate(1, 50, 250);
-
-  // currentHeight == creationHeight → 0.
-  TEST(currency.calculateCdBonus(100, 10, 10, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS) == 0);
-
-  // currentHeight < creationHeight → 0.
-  TEST(currency.calculateCdBonus(100, 20, 10, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS) == 0);
-
-  // Both in same epoch (epoch 0): only epoch 0 contributes.
-  TEST(currency.calculateCdBonus(100, 5, 8, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS) ==
-      (100ULL * 125 / 100 * 50) / 250);
-
-  // Spans two epochs (0 and 1): both contribute.
-  uint64_t e0 = (100ULL * 125 / 100 * 50) / 250;
-  uint64_t e1 = e0;  // same values
-  TEST(currency.calculateCdBonus(100, 5, 15, ci,
-      6 * parameters::TESTNET_EPOCH_DURATION_BLOCKS) == e0 + e1);
-}
 
 } // anonymous namespace
 
@@ -834,24 +550,24 @@ void testCdInterestCompounding() {
   // 1000 over epochs 0..5 at 10%: 100,110,121,133,146,161 = 771.
   // Simple interest would be 600 — compounding is deliberate.
   uint64_t interest = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                   ci, false, 0, false);
+                                                   ci, 0, false);
   TEST(interest == 771);
 
   // Auto-rolled with a 2-epoch original term. Since AUDIT 2.4 accrual also
   // stops at maturity, so this covers epochs 0..2 only: 100 + 110 + 121 = 331.
   // (Before the maturity clamp this ran to epoch 5 and returned >600.)
   uint64_t rolled = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                 ci, false, (uint32_t)(2 * ED), true);
+                                                 ci, (uint32_t)(2 * ED), true);
   TEST(rolled == 331);
   TEST(rolled < interest);
 
   // No elapsed time accrues nothing.
-  TEST(currency.calculateCdInterest(1000, 100, 100, ci, false, 0, false) == 0);
-  TEST(currency.calculateCdInterest(1000, 200, 100, ci, false, 0, false) == 0);
+  TEST(currency.calculateCdInterest(1000, 100, 100, ci, 0, false) == 0);
+  TEST(currency.calculateCdInterest(1000, 200, 100, ci, 0, false) == 0);
 
   // Interest scales linearly in principal at equal terms.
-  uint64_t small = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED), ci, false, 0, false);
-  uint64_t big   = currency.calculateCdInterest(10000, 0, (uint32_t)(2 * ED), ci, false, 0, false);
+  uint64_t small = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED), ci, 0, false);
+  uint64_t big   = currency.calculateCdInterest(10000, 0, (uint32_t)(2 * ED), ci, 0, false);
   TEST(big >= small * 10 - 10 && big <= small * 10 + 10);
 }
 
@@ -914,25 +630,25 @@ void testCdInterestStopsAtMaturity() {
 
   // Held six epochs. A CD whose term expires after two must not be paid for six.
   uint64_t shortTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                    ci, false, (uint32_t)(2 * ED), false);
+                                                    ci, (uint32_t)(2 * ED), false);
   uint64_t noTerm    = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                    ci, false, 0, false);
+                                                    ci, 0, false);
   TEST(shortTerm < noTerm);
 
   // Accrual is frozen after maturity: holding longer pays no more.
   uint64_t atMaturity = currency.calculateCdInterest(1000, 0, (uint32_t)(2 * ED),
-                                                     ci, false, (uint32_t)(2 * ED), false);
+                                                     ci, (uint32_t)(2 * ED), false);
   TEST(shortTerm == atMaturity);
 
   // A one-block "CD" earns essentially nothing rather than a full epoch's yield.
   uint64_t oneBlock = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                   ci, false, 1, false);
+                                                   ci, 1, false);
   TEST(oneBlock < noTerm);
   TEST(oneBlock <= 100);   // at most the first epoch's simple yield
 
   // Longer term pays more than shorter, all else equal — term now matters.
   uint64_t longTerm = currency.calculateCdInterest(1000, 0, (uint32_t)(5 * ED),
-                                                   ci, false, (uint32_t)(4 * ED), false);
+                                                   ci, (uint32_t)(4 * ED), false);
   TEST(longTerm > shortTerm);
 
   // Bonus and base now clamp identically.
@@ -943,10 +659,67 @@ void testCdInterestStopsAtMaturity() {
 }
 
 
+// The Bonus Vault is a YIELD FLOOR, not a pro-rata tier pool. In any epoch whose
+// fee-derived rate fell below CD_YIELD_FLOOR_RATE, the vault tops each CD up to
+// the floor. There is no shared denominator, so a CD's top-up depends only on
+// its own principal and the global epoch rate — nothing another depositor does
+// can change it.
+void testCdYieldFloor() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  CommitmentIndex ci(currency);
+
+  const uint64_t FLOOR = parameters::CD_YIELD_FLOOR_RATE;
+  const uint64_t PREC  = parameters::FEE_POOL_RATE_PRECISION;
+  const uint64_t ED    = parameters::EPOCH_DURATION_BLOCKS;
+  const uint32_t TERM  = parameters::DEPOSIT_MAX_TERM;
+
+  // epoch 0 fat (at the floor), epochs 1-2 lean (half the floor), epoch 3 fat.
+  ci.recordEpochFeeRate(0, FLOOR,     100, 1000);
+  ci.recordEpochFeeRate(1, FLOOR / 2, 100, 1000);
+  ci.recordEpochFeeRate(2, FLOOR / 2, 100, 1000);
+  ci.recordEpochFeeRate(3, FLOOR * 4, 100, 1000);
+
+  const uint64_t P = 1000000;  // principal
+
+  // A fat epoch alone tops up nothing.
+  TEST(currency.calculateCdBonus(P, 0, (uint32_t)(0 * ED + 1), ci, TERM) == 0);
+
+  // One lean epoch pays exactly the shortfall on this CD's own principal.
+  uint64_t oneLean = currency.calculateCdBonus(P, (uint32_t)ED, (uint32_t)(ED + 1), ci, TERM);
+  uint64_t expect1 = (uint64_t)(((__uint128_t)P * (FLOOR - FLOOR / 2)) / PREC);
+  TEST(oneLean == expect1);
+
+  // Two lean epochs pay twice as much; the fat epochs contribute nothing.
+  uint64_t twoLean = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, TERM);
+  TEST(twoLean == expect1 * 2);
+
+  // Linear in principal — no denominator, so no interaction between depositors.
+  TEST(currency.calculateCdBonus(P * 10, 0, (uint32_t)(3 * ED), ci, TERM) == twoLean * 10);
+
+  // Flat in term: the floor is the same guarantee whatever the lock length.
+  uint64_t shortTerm = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci,
+                                                 (uint32_t)(6 * ED));
+  uint64_t longTerm  = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, TERM);
+  TEST(shortTerm == longTerm);
+
+  // Still clamped at maturity — a matured CD stops collecting the floor.
+  uint64_t matured = currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), ci, (uint32_t)ED);
+  TEST(matured < twoLean);
+
+  // No elapsed time, and unrecorded epochs, pay nothing.
+  TEST(currency.calculateCdBonus(P, 100, 100, ci, TERM) == 0);
+  TEST(currency.calculateCdBonus(P, 200, 100, ci, TERM) == 0);
+  CommitmentIndex empty(currency);
+  TEST(currency.calculateCdBonus(P, 0, (uint32_t)(3 * ED), empty, TERM) == 0);
+}
+
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
   testCdInterestStopsAtMaturity();
+  testCdYieldFloor();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();
@@ -955,17 +728,11 @@ int main() {
   testTreasuryFundTagRoundtrip();
   testLimitWithdrawOwnershipProofRoundtrip();
   testCdBonusClaimTagRoundtrip();
-  testBonusEpochRateAndTierMath();
   testVaultSpendNoSurplusBurn();
-  testMultiEpochBvBonus();
-  testDenominatorDrift();
-  testPayoutCapInvariant();
-  testFloorRounding();
   testPopBonusEpochRate();
   testVaultPartitionIsolation();
   testVaultSurplusMintRoundtrip();
   testVaultPopSymmetry();
-  testCdBonusHeightBoundaries();
   fprintf(stderr, "=== Treasury/Core Tests ===\nPassed: %d / %d\n", tests_passed, tests_run);
   return tests_passed == tests_run ? 0 : 1;
 }

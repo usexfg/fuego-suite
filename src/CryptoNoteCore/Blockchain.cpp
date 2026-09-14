@@ -6323,6 +6323,21 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     m_vaultSpentByTx[transactionHash] = std::move(vaultSpendRecord);
   }
 
+  // HEAT supply is NET creation, not gross HEAT_TERM outputs. Incrementing per
+  // output counted a plain HEAT transfer as new supply — spend a HEAT_TERM
+  // output, emit HEAT_TERM change, and the counter rose again with nothing
+  // minted. It would also double-count vault HEAT paid out as a CD withdrawal,
+  // already counted when minted into the vault. Only the excess of HEAT out
+  // over HEAT in is newly created.
+  {
+    AssetBalance inAssetsHs = getTransactionInputAssetAmounts(transaction.tx, block.height);
+    AssetBalance outAssetsHs = m_currency.getTransactionOutputAssetAmounts(transaction.tx);
+    if (outAssetsHs.heat > inAssetsHs.heat) {
+      uint64_t netHeat = outAssetsHs.heat - inAssetsHs.heat;
+      if (m_heatSupply <= UINT64_MAX - netHeat) m_heatSupply += netHeat;
+    }
+  }
+
   transaction.m_global_output_indexes.resize(transaction.tx.outputs.size());
   for (uint16_t output = 0; output < transaction.tx.outputs.size(); ++output) {
     if (transaction.tx.outputs[output].target.type() == typeid(KeyOutput)) {
@@ -6351,11 +6366,6 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       amountOutputs.push_back(ref);
       // Track total XFG locked in CDs
       m_totalCdLocked += transaction.tx.outputs[output].amount;
-      // Track HEAT supply for burn-to-mint outputs (validated by HeatMintEngine before push)
-      if (commitOut.term == parameters::HEAT_TERM) {
-        if (m_heatSupply <= UINT64_MAX - transaction.tx.outputs[output].amount)
-          m_heatSupply += transaction.tx.outputs[output].amount;
-      }
       // Track DIGM supply for DIGM colored coin outputs
       if (commitOut.term == parameters::DIGM_TERM) {
         if (m_digmSupply <= UINT64_MAX - transaction.tx.outputs[output].amount)
@@ -6872,13 +6882,6 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       if (m_totalCdLocked >= output.amount) {
         m_totalCdLocked -= output.amount;
       }
-      // Reverse HEAT supply for burn-to-mint outputs
-      if (m_heatSupply >= output.amount) {
-        const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
-        if (commitOut.term == parameters::HEAT_TERM) {
-          m_heatSupply -= output.amount;
-        }
-      }
       // Reverse DIGM supply for DIGM colored coin outputs
       if (m_digmSupply >= output.amount) {
         const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
@@ -7009,6 +7012,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
       m_vault.unSpendUtxos(vaultIt->second.cdPoolIndices);
       m_vault.unSpendUtxos(vaultIt->second.bonusVaultIndices);
       m_vaultSpentByTx.erase(vaultIt);
+    }
+  }
+
+  // Mirror of the net HEAT-supply credit in pushTransaction.
+  {
+    AssetBalance inAssetsHs = getTransactionInputAssetAmounts(transaction, height);
+    AssetBalance outAssetsHs = m_currency.getTransactionOutputAssetAmounts(transaction);
+    if (outAssetsHs.heat > inAssetsHs.heat) {
+      uint64_t netHeat = outAssetsHs.heat - inAssetsHs.heat;
+      m_heatSupply = (m_heatSupply >= netHeat) ? (m_heatSupply - netHeat) : 0;
     }
   }
 

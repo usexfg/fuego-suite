@@ -1167,6 +1167,18 @@ namespace CryptoNote
     throwIfTrackingMode();
     throwIfStopped();
 
+    // Certificates of deposit are HEAT-denominated. This path funds a CD from
+    // ordinary XFG key outputs, which consensus now rejects: the commitment it
+    // creates classifies as HEAT while its inputs are XFG, so the per-asset
+    // rule sees HEAT appear from nothing. It only ever validated because a
+    // finite-term commitment was misclassified as XFG on both sides. Fail here
+    // rather than hand the caller a transaction the network will drop — the
+    // SimpleWallet "deposit" command was already retired for the same reason;
+    // use heatDepositV10 (heat_cd), which spends HEAT_TERM commitments.
+    throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+        "XFG-funded CDs are no longer valid: certificates of deposit are "
+        "HEAT-denominated. Use the HEAT deposit path (heat_cd) instead.");
+
     /* If a source address is not specified, use the primary (first) wallet
        address for the creation of the deposit */
     if (sourceAddress.empty())

@@ -5350,7 +5350,17 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
           (uint128_t)regularCdShareHeat * CryptoNote::parameters::FEE_POOL_RATE_PRECISION / epochCdLocked);
     }
 
-    m_commitmentIndex.recordEpochFeeRate(epochNumber, epochFeeRate, regularCdShareHeat, epochCdLocked);
+    // Store under the epoch these fees were actually EARNED in. At a boundary
+    // block h (h % D == 0) epochNumber = h/D, but the settled fees accrued over
+    // [(epochNumber-1)*D, +D-1] — epochStart/epochEnd above say so explicitly.
+    // calculateCdInterest reads getEpochFeeRate(e) for e = height/D, so
+    // recording under epochNumber credited every CD with the PREVIOUS epoch's
+    // rate: a deposit was paid on fees generated before it existed, and the
+    // final epoch's fees reached nobody. The rate value is correct for
+    // epochNumber-1 (its numerator is that epoch's fees and its denominator the
+    // CDs locked at its close); only the index was wrong.
+    uint64_t feeRateEpoch = (epochNumber > 0) ? (epochNumber - 1) : 0;
+    m_commitmentIndex.recordEpochFeeRate(feeRateEpoch, epochFeeRate, regularCdShareHeat, epochCdLocked);
 
     // Cumulative accounting
     m_totalSwapFeesCollected += epochSwapFees;

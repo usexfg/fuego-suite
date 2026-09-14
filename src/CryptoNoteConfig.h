@@ -179,10 +179,20 @@ namespace CryptoNote
         // Yield floor: in an epoch whose fee-derived rate falls below this, the
         // Bonus Vault tops each CD up to it. Flat — independent of term, since
         // base interest already compounds and so already rewards duration.
-        // Same 1e6 fixed-point scale as the epoch fee rate; 500 = 0.05%/epoch
-        // (~0.6%/yr at 72 epochs). PLACEHOLDER — this is a monetary-policy
-        // number and wants deliberate choice before mainnet.
-        const uint64_t CD_YIELD_FLOOR_RATE = 500;
+        //
+        // Same 1e6 fixed-point scale as the epoch fee rate. The top-up is SIMPLE
+        // on the original principal (it does not compound), so the annual figure
+        // is just rate x epochs-per-year:
+        //     111 x 72 / 1e6 = 0.799%/yr
+        // 72 epochs is the protocol's own year (DEPOSIT_MAX_TERM) — 360 days at
+        // 900 blocks x 480s = 5 days per epoch. A calendar year is 73.05 epochs,
+        // which puts the real figure at 0.81%.
+        //
+        // Target is 0.8%/yr. Raise it only out of observed vault surplus: the
+        // floor is a liability, and the vault is fed by 11% of swap fees, so a
+        // floor the vault cannot cover degrades to a first-come haircut at
+        // settlement rather than paying out.
+        const uint64_t CD_YIELD_FLOOR_RATE = 111;
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 

@@ -7701,6 +7701,16 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const Transacti
       return AssetType::HEAT;
     if (ref.term == parameters::DEPOSIT_TERM_LP)
       return AssetType::LP;
+    if (ref.term == parameters::DEPOSIT_TERM_POOL_XFG ||
+        ref.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+      return AssetType::XFG;
+    if (ref.term == parameters::DEPOSIT_TERM_POOL_HEAT)
+      return AssetType::HEAT;
+    // Mirror classifyOutputAsset: a finite-term commitment is a CD, and CDs are
+    // HEAT. Spending one must present HEAT on the input side so the payout can
+    // be checked against the HEAT that actually leaves the vault.
+    if (ref.term > 0)
+      return AssetType::HEAT;
     return AssetType::XFG;
   }
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {

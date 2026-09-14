@@ -49,7 +49,6 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include <CryptoNoteCore/TransactionExtra.h>
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "CryptoNoteCore/CommitmentIndex.h"
 #include "INode.h"
 #include "crypto/crypto.h"
@@ -488,13 +487,32 @@ namespace CryptoNote
 
     std::unique_ptr<ITransaction> transaction = createTransaction();
 
-    // Outputs: deposit amount + claimable interest minus fee, split back to
-    // spendable key outputs. claimedInterest is added to the input side of the
-    // conservation check by getTransactionInputAmount.
+    // A CD is HEAT: both the principal locked and the interest accrued. The
+    // payout must therefore be a HEAT_TERM commitment, not spendable XFG key
+    // outputs — paying XFG here credited the withdrawer in a different asset
+    // from the one debited out of the HEAT CD_APY_POOL / BONUS_VAULT, and the
+    // per-asset conservation rule could not see it because the whole CD was
+    // misclassified as XFG on both sides.
     const uint64_t fee = m_currency.minimumFee();
-    std::vector<uint64_t> outputAmounts = split(deposit.amount + claimedInterest - fee, m_currency.defaultDustThreshold());
-    for (auto amount : outputAmounts) {
-      transaction->addOutput(amount, account.address);
+    const uint64_t payout = deposit.amount + claimedInterest - fee;
+    {
+      const uint32_t outIdx = static_cast<uint32_t>(transaction->getOutputCount());
+      std::array<uint8_t, 32> outSecret;
+      Crypto::SecretKey txSecretKey;
+      transaction->getTransactionSecretKey(txSecretKey);
+      Crypto::KeyDerivation ecdh;
+      Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh);
+      uint8_t preimage[36];
+      memcpy(preimage, &ecdh, 32);
+      preimage[32] = outIdx & 0xFF; preimage[33] = (outIdx >> 8) & 0xFF;
+      preimage[34] = (outIdx >> 16) & 0xFF; preimage[35] = (outIdx >> 24) & 0xFF;
+      Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+      memcpy(outSecret.data(), h.data, 32);
+      CryptoNote::DepositCommitmentKeys outKeys = CryptoNote::deriveCommitmentKeys(outSecret);
+      CryptoNote::TransactionOutputCommitment heatOut;
+      heatOut.commitKey = outKeys.commitKey;
+      heatOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(payout, heatOut);
     }
     transaction->setUnlockTime(0);
 
@@ -755,7 +773,7 @@ namespace CryptoNote
           deposit.height,
           currentHeight,
           commitmentIndex,
-          false, deposit.term, false);
+          deposit.term, false);
       if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
         interest = 0;
       }
@@ -1142,8 +1160,7 @@ namespace CryptoNote
       uint64_t term,
       std::string sourceAddress,
       std::string destinationAddress,
-      std::string &transactionHash,
-      const DepositCommitment& commitment)
+      std::string &transactionHash)
   {
 
     throwIfNotInitialized();
@@ -1267,7 +1284,6 @@ namespace CryptoNote
     if (term == CryptoNote::parameters::HEAT_TERM) {
       // HEAT burn/mint is handled exclusively by mintHeatV10().
       // createDeposit() with HEAT_TERM is NOT a valid mint path.
-      // The legacy 10M ratio (convertXfgToHeat) must NOT be used for minting.
       throw std::system_error(make_error_code(CryptoNote::error::WRONG_PARAMETERS),
         "HEAT burn/mint must use mintHeatV10(), not createDeposit(HEAT_TERM). "
         "Use createDeposit() only for term-locked HEAT CDs (term != HEAT_TERM).");
@@ -5514,16 +5530,11 @@ namespace CryptoNote
           deposit.depositType = Deposit::Type::HEAT;
           isMintAuth = true;
           break;
-        } else if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-          deposit.depositType = Deposit::Type::HEAT;
-          break;
         } else if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
           deposit.depositType = Deposit::Type::HEAT;
           break;
-        } else if (field.type() == typeid(TransactionExtraLegacyBond)) {
-          deposit.depositType = Deposit::Type::LEGACY_BOND;
-          break;
         }
+        // REMOVED: 0xCB legacy bond detection (deposits default to HEAT below)
         // REMOVED: COLD deposit type detection
         // } else if (field.type() == typeid(TransactionExtraSimpleCD)) {
         //   deposit.depositType = Deposit::Type::COLD;

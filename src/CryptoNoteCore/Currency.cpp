@@ -561,7 +561,16 @@ double Currency::getBurnPercentage() const {
         return AssetType::HEAT;
       if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
         return AssetType::XFG;
-      return AssetType::XFG;  // CD deposits
+      // Certificates of deposit are HEAT. Every marker term above is handled
+      // explicitly and the CD — the main case — used to fall through to the
+      // XFG default, which is where HEAT CDs came off the rails: the accrual,
+      // the CD_APY_POOL, the BONUS_VAULT and m_feePoolBalance are all HEAT, and
+      // heatDepositV10 (the heat_cd command) spends HEAT_TERM commitments to
+      // fund one — but classifying the resulting output as XFG made
+      // inAssets.heat != outAssets.heat, so consensus rejected every HEAT CD
+      // ever built. The XFG-funded createDeposit path worked only because of
+      // the same misclassification.
+      return AssetType::HEAT;  // CD deposits are HEAT-denominated
     }
     if (target.type() == typeid(TransactionOutputUnified)) {
       auto& unified = boost::get<TransactionOutputUnified>(target);
@@ -575,7 +584,8 @@ double Currency::getBurnPercentage() const {
         return AssetType::HEAT;
       if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
         return AssetType::XFG;
-      return AssetType::XFG;  // term=0 regular or finite CD
+      // term 0 is an ordinary output (XFG); any finite term is a CD (HEAT).
+      return (unified.term > 0) ? AssetType::HEAT : AssetType::XFG;
     }
     return AssetType::XFG;
   }

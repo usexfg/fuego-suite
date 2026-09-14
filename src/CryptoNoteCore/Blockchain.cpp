@@ -320,6 +320,57 @@ public:
         }
       }
 
+      // Alias registry: without persistence, every registered/released/
+      // transferred alias was wiped on every normal daemon restart (only
+      // rebuildCache(), which runs on cache-load failure, ever repopulated
+      // it). Appended at the end so older caches load unchanged; on a
+      // pre-this-fix cache the index just stays at its constructor-seeded
+      // reserved-alias-only state, same as before.
+      try {
+        s(m_bs.m_aliasIndex, "alias_index");
+      } catch (std::exception&) {
+        if (s.type() != ISerializer::INPUT) {
+          throw;
+        }
+      }
+
+      // Rollback history. Without these a pop after a clean restart silently
+      // skips its reversal: the epoch branch is guarded on m_epochSnapshots
+      // being non-empty, and the vault branch on finding the transaction in
+      // m_vaultSpentByTx. init() reaches popBlock with provably-empty deques
+      // via rollbackBlockchainTo() on a checkpoint or upgrade-height mismatch,
+      // so this is deterministic rather than a rare race. A crash was already
+      // safe only because it forces rebuildCache(), which replays and rebuilds
+      // them; a clean shutdown is the case that reproduced the corruption.
+      try {
+        // std::deque has no serializer overload; round-trip through vectors.
+        std::vector<uint32_t> epochHeights;
+        std::vector<Blockchain::EpochStateSnapshot> epochSnaps;
+        if (s.type() != ISerializer::INPUT) {
+          for (const auto& kv : m_bs.m_epochSnapshots) {
+            epochHeights.push_back(kv.first);
+            epochSnaps.push_back(kv.second);
+          }
+        }
+        s(epochHeights, "epoch_snapshot_heights");
+        s(epochSnaps, "epoch_snapshots");
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_epochSnapshots.clear();
+          size_t n = std::min(epochHeights.size(), epochSnaps.size());
+          for (size_t i = 0; i < n; ++i) {
+            m_bs.m_epochSnapshots.emplace_back(epochHeights[i], epochSnaps[i]);
+          }
+        }
+        s(m_bs.m_vaultSpentByTx, "vault_spent_by_tx");
+      } catch (std::exception&) {
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_epochSnapshots.clear();
+          m_bs.m_vaultSpentByTx.clear();
+        } else {
+          throw;
+        }
+      }
+
     auto dur = std::chrono::steady_clock::now() - start;
 
     logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
@@ -2844,10 +2895,18 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     absoluteIndexes.push_back(absoluteIndex);
   }
 
-  // Collect ring keys — NO maturity check (transfers allowed anytime)
+  // Maturity IS required. The previous "transfers allowed anytime" rule was a
+  // lock bypass: nothing constrains the outputs of a transaction carrying a
+  // CommitmentTransfer input — the input is valued at its full amount
+  // (Currency::getTransactionInputAmount), its key image is marked spent, and
+  // the outputs may be ordinary KeyOutputs. txin.newTerm is range-checked but
+  // never bound to any output, so it re-locks nothing. A hand-crafted transfer
+  // therefore converted an immature CD directly into spendable coins, ahead of
+  // its term, with no version gate. Mirrors the CommitmentSpend check.
   std::vector<const Crypto::PublicKey*> ringKeys;
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
+  uint32_t currentHeight = getCurrentBlockchainHeight();
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentTransfer: global index " << absIdx << " out of range";
@@ -2858,6 +2917,16 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
 
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
+      if (ref.term > 0) {
+        uint32_t memberHeight = ref.transactionIndex.block;
+        uint32_t maturityHeight = memberHeight + ref.term;
+        if (maturityHeight < memberHeight || currentHeight < maturityHeight) {
+          logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx
+                       << " is an immature deposit (matures at block "
+                       << maturityHeight << ", current " << currentHeight << ")";
+          return false;
+        }
+      }
     }
 
     // Reject slashed outputs
@@ -4005,80 +4074,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
               }
             }
           }
-        } else {
-          // Legacy pre-v11 mint validation (Q64.64, XFG per HEAT) — retained for
-          // historical block re-validation. Must remain bit-identical.
-          FixedPoint64 mintRate;
-          if (m_rollingPriceWindow.size() >= 2) {
-            uint64_t twap = getRollingTwap();
-            mintRate = FixedPoint64::fromRaw(static_cast<int128_t>(twap));
-          } else {
-            mintRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-              ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-              : FixedPoint64::fromUint64(1);
-          }
-          uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
-          if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintRate,
-                                                  authXfgBurned, authHeatMinted)) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
-          } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-            FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-              ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-              : FixedPoint64::fromUint64(1);
-            FixedPoint64 heatFp = FixedPoint64::fromUint64(authHeatMinted);
-            uint64_t xfgEquivalent = heatFp.mul(poolRate).toUint64();
-            uint64_t premium = (authXfgBurned > xfgEquivalent)
-              ? authXfgBurned - xfgEquivalent
-              : 0;
-            if (premium > 0 && !m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-              FixedPoint64 premiumFp = FixedPoint64::fromUint64(premium);
-              uint64_t heatPremium = premiumFp.div(poolRate).toUint64();
-              if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
-                logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
-                return false;
-              }
-              m_treasuryHeatReserve += heatPremium;
-            }
-          }
         }
+        // Legacy non-auth HEAT mint validation removed — no pre-v11 HEAT mints exist.
       }
-    }
-    // Legacy non-auth HEAT mint validation — dead code for v10+ blocks.
-    // The per-asset balance check (inAssets.heat == outAssets.heat) rejects any
-    // transaction that creates HEAT, which a mint inherently does. All v10+ mints
-    // use the auth-tag path above. Retained for historical tx validation.
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      if (!hasHeatMintAuth && m_heatMintEngine.isHeatMint(transactions[i])) {
-        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-          uint64_t poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0)
-            ? ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-            : 0;
-          if (poolRate == 0) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
-          } else {
-            uint64_t xfgBurned = 0, heatMinted = 0;
-            if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
-            }
-          }
-        } else {
-          FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
-            ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-            : FixedPoint64::fromUint64(1);
-          uint64_t xfgBurned = 0, heatMinted = 0;
-          if (!m_heatMintEngine.validateMint(transactions[i], fee, poolRate, xfgBurned, heatMinted)) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint validation failed";
-          }
-        }
-      }
-    }
 
-    // DIGM mint validation — lock HEAT → mint DIGM at 0.10 HEAT per DIGM
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
+      // DIGM mint validation — lock HEAT → mint DIGM at 0.10 HEAT per DIGM
       if (m_digmMintEngine.isDigmMint(transactions[i])) {
         uint64_t heatLocked = 0, digmMinted = 0;
         if (!m_digmMintEngine.validateMint(transactions[i], fee, heatLocked, digmMinted)) {
@@ -4086,93 +4086,6 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint validation failed";
         }
       }
-    }
-
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      // AMM swap validation removed — no swaps ever completed pre-v11.
-      // LP auth validation retained (pre-v11 only, for historical block sync)
-
-      // v10 LP add auth — pool math validation (pre-v11 only)
-      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasLpAddAuth) {
-        if (lpAddAmountXfg == 0 && lpAddAmountHeat == 0) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: zero amounts";
-        }
-        uint64_t computedShares = ammMintLpShares(lpAddAmountXfg, lpAddAmountHeat,
-          m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (computedShares != lpAddShares || computedShares == 0) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: share mismatch (computed="
-                                     << computedShares << " declared=" << lpAddShares << ")";
-        }
-        if (!ammValidateDepositRatio(lpAddAmountXfg, lpAddAmountHeat,
-              m_ammPool.reserveXfg, m_ammPool.reserveHeat, 100)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: deposit ratio out of tolerance";
-        }
-      }
-
-      // v10 LP remove auth — pool math validation (pre-v11 only)
-      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 && hasLpRemoveAuth) {
-        if (lpRemoveShares == 0 || lpRemoveShares > m_ammPool.totalLpShares) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: invalid shares";
-        }
-        uint64_t amountXfg = 0, amountHeat = 0;
-        ammGetWithdrawalAmounts(lpRemoveShares, m_ammPool.totalLpShares,
-          m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-        if (amountXfg < lpRemoveMinXfg || amountHeat < lpRemoveMinHeat) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: below minimum";
-        }
-      }
-
-      // Legacy bond interest claim validation (0xCC) — REMOVED: no bond claims exist.
-      // A 0xCC tag no longer parses (see TransactionExtra.cpp) and claims nothing.
-
-      // Legacy v10 LP validation — pre-v11 only (AMM swap removed, no swaps completed)
-      if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
-      std::vector<TransactionExtraField> tx_extra_fields;
-      if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
-        for (const auto& field : tx_extra_fields) {
-          if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
-            const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
-            if (add.amountXfg == 0 && add.amountHeat == 0) {
-              isTransactionValid = false;
-              break;
-            }
-            uint64_t shares = ammMintLpShares(add.amountXfg, add.amountHeat,
-              m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            if (shares == 0) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM LP shares zero";
-              break;
-            }
-            if (!ammValidateDepositRatio(add.amountXfg, add.amountHeat,
-              m_ammPool.reserveXfg, m_ammPool.reserveHeat, 100)) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM deposit ratio out of tolerance";
-              break;
-            }
-          } else if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
-            const auto& rem = boost::get<TransactionExtraAmmRemoveLiquidity>(field);
-            if (rem.lpSharesBurned == 0 || rem.lpSharesBurned > m_ammPool.totalLpShares) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM LP shares invalid";
-              break;
-            }
-            uint64_t amountXfg = 0, amountHeat = 0;
-            ammGetWithdrawalAmounts(rem.lpSharesBurned, m_ammPool.totalLpShares,
-              m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-            if (amountXfg < rem.minAmountXfg || amountHeat < rem.minAmountHeat) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM withdrawal below minimum";
-              break;
-            }
-          }
-        }
-      }
-      } // end pre-v11 AMM legacy validation
     }
 
     if (!isTransactionValid) {
@@ -4399,14 +4312,8 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
       g_orderbookBootstrapBlocksRemaining--;
       if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
         uint64_t spotPrice;
-        if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-          // V11+: canonical order price scale (HEAT/XFG × COIN).
-          spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        } else {
-          // Legacy pre-v11: XFG/HEAT × COIN (bit-identical to original).
-          spotPrice = static_cast<uint64_t>(
-              (static_cast<uint128_t>(m_ammPool.reserveXfg) * parameters::COIN) / m_ammPool.reserveHeat);
-        }
+        // V11+: canonical order price scale (HEAT/XFG × COIN).
+        spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
         g_orderbookLastClearingPrice = spotPrice;
       }
     } else {
@@ -4788,15 +4695,9 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   }
 
   if (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0) {
-    if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-      // V11+: discovered price — the call-auction clearing price (last-price
-      // semantics, bootstrap-seeded from the pool ratio). Mint TWAP reads this.
-      block.hearthPoolRatio = g_orderbookLastClearingPrice;
-    } else {
-      // Legacy pre-v11: XFG/HEAT × 1e18 (matches the pre-v11 P_clear seed).
-      block.hearthPoolRatio = static_cast<uint64_t>(
-          ((uint128_t)m_ammPool.reserveXfg * 1000000000000000000ULL) / m_ammPool.reserveHeat);
-    }
+    // V11+: discovered price — the call-auction clearing price (last-price
+    // semantics, bootstrap-seeded from the pool ratio). Mint TWAP reads this.
+    block.hearthPoolRatio = g_orderbookLastClearingPrice;
   }
 }
 
@@ -4904,6 +4805,9 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
   {
     int64_t deposit = 0;
     uint64_t permanentBurns = 0;  // Track permanent burns for ethereal_xfg
+    // Reorg-undo journal for this block's alias register/release/transfer
+    // mutations — popBlock replays these (in reverse) via applyAliasUndo.
+    std::vector<AliasUndoOp> aliasUndoOps;
 
     logger(DEBUGGING) << "Processing block " << block.height << " for BankingIndex, current burned: " << m_bankingIndex.getBurnedXfgAmount();
 
@@ -5092,6 +4996,10 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                   aliasEntry.registeredBlock = block.height;
 
                   if (m_aliasIndex.registerAlias(aliasEntry)) {
+                    AliasUndoOp undo;
+                    undo.opType = 0;  // register -> undo removes it
+                    undo.alias = aliasEntry.alias;
+                    aliasUndoOps.push_back(undo);
                     logger(INFO) << "@ Alias registered in block " << block.height
                                  << ": @" << aliasReg.alias
                                  << " (type=" << static_cast<int>(aliasReg.aliasType) << ")";
@@ -5133,6 +5041,11 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                   if (!Crypto::check_signature(challenge, ownerAddr.spendPublicKey, aliasRel.proof)) {
                     logger(WARNING) << "@ Alias release rejected: invalid ownership proof for @" << aliasRel.alias;
                   } else if (removeAlias(aliasRel.alias)) {
+                    AliasUndoOp undo;
+                    undo.opType = 1;  // release -> undo restores the prior entry
+                    undo.alias = aliasRel.alias;
+                    undo.priorEntry = *existingEntry;
+                    aliasUndoOps.push_back(undo);
                     logger(INFO) << "@ Alias released in block " << block.height << ": @" << aliasRel.alias;
                   } else {
                     logger(WARNING) << "@ Alias release failed for @" << aliasRel.alias;
@@ -5182,6 +5095,11 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                       Crypto::Hash newAddrHash;
                       Crypto::cn_fast_hash(newprev, 64, newAddrHash);
                       if (replaceAliasOwnership(aliasXfer.alias, newAddrHash)) {
+                        AliasUndoOp undo;
+                        undo.opType = 2;  // transfer -> undo reverts addressHash
+                        undo.alias = aliasXfer.alias;
+                        undo.priorAddressHash = existingEntry->addressHash;
+                        aliasUndoOps.push_back(undo);
                         logger(INFO) << "@ Alias transferred in block " << block.height
                                      << ": @" << aliasXfer.alias;
                       } else {
@@ -5236,6 +5154,14 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
 
     // Push deposit tracking
     m_bankingIndex.pushBlock(deposit, interest);
+
+    // Record this block's alias mutations for popBlock reversal.
+    if (!aliasUndoOps.empty()) {
+      m_aliasUndoLog.push_back({block.height, std::move(aliasUndoOps)});
+      while (m_aliasUndoLog.size() > MAX_ROLLBACK_HISTORY) {
+        m_aliasUndoLog.pop_front();
+      }
+    }
 
     // Add permanent burns to EternalFlame if any were found
     if (permanentBurns > 0) {
@@ -5831,7 +5757,7 @@ bool CryptoNote::Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heat
   m_ammPool.reserveXfg  = xfgReserve;
   m_ammPool.reserveHeat = heatReserve;
 
-  logger(INFO, BRIGHT_WHITE) << "Hearth AMM pool bootstrapped: "
+  logger(INFO, BRIGHT_WHITE) << "Hearth pool bootstrapped: "
     << m_currency.formatAmount(xfgReserve) << " XFG + "
     << m_currency.formatAmount(heatReserve) << " HEAT";
   return true;
@@ -5977,6 +5903,18 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     logger(ERROR, BRIGHT_RED)
       << "popBlock: order-fill rollback records evicted before height "
       << poppedHeight << " — pool state may diverge (reorg deeper than rollback history)";
+  }
+
+  // Reverse this block's alias register/release/transfer mutations. Must
+  // undo LIFO (applyAliasUndo's own contract) so a block that both
+  // registers and releases the same alias lands back at "never existed".
+  if (!m_aliasUndoLog.empty() && m_aliasUndoLog.back().first == poppedHeight) {
+    applyAliasUndo(m_aliasIndex, m_aliasUndoLog.back().second);
+    m_aliasUndoLog.pop_back();
+  } else if (!m_aliasUndoLog.empty() && m_aliasUndoLog.back().first < poppedHeight) {
+    logger(ERROR, BRIGHT_RED)
+      << "popBlock: alias rollback records evicted before height "
+      << poppedHeight << " — alias index may diverge (reorg deeper than rollback history)";
   }
 
   popTransactions(m_blocks.back(), getObjectHash(m_blocks.back().bl.baseTransaction));

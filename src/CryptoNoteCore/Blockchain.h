@@ -420,7 +420,6 @@ namespace CryptoNote {
       uint64_t heatCdFeePool;
       uint64_t cdYieldPool;
       uint64_t cdReserve;
-      uint64_t legacyBondYieldPool;
       uint64_t treasuryBalance;
       uint64_t treasuryHeatReserve;
       uint64_t treasuryXfgReserve;
@@ -446,6 +445,34 @@ namespace CryptoNote {
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
       uint64_t bonusWeightedBase;
+
+      void serialize(ISerializer& s) {
+        s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
+        s(heatCdFeePool, "heat_cd_fee_pool"); s(cdYieldPool, "cd_yield_pool");
+        s(cdReserve, "cd_reserve"); s(treasuryBalance, "treasury_balance");
+        s(treasuryHeatReserve, "treasury_heat_reserve");
+        s(treasuryXfgReserve, "treasury_xfg_reserve");
+        s(treasuryLpReserve, "treasury_lp_reserve");
+        s(protocolLpShares, "protocol_lp_shares");
+        s(treasuryLpYield, "treasury_lp_yield");
+        s(bootstrapRepaymentVault, "bootstrap_repayment_vault");
+        s(swfBurnedXfgPendingHeat, "swf_burned_xfg_pending_heat");
+        s(twapAccumulatorLo, "twap_accumulator_lo");
+        s(twapAccumulatorHi, "twap_accumulator_hi");
+        s(twapBlockCount, "twap_block_count");
+        s(ammReserveXfg, "amm_reserve_xfg"); s(ammReserveHeat, "amm_reserve_heat");
+        s(ammTotalLpShares, "amm_total_lp_shares");
+        s(vaultUtxoCount, "vault_utxo_count"); s(vaultSpentCount, "vault_spent_count");
+        s(treasurySwapFeeXfg, "treasury_swap_fee_xfg");
+        s(treasuryLpPendingXfg, "treasury_lp_pending_xfg");
+        s(swfHeatBalance, "swf_heat_balance");
+        s(feePoolBalance, "fee_pool_balance");
+        s(cdHearthFeeAccumulator, "cd_hearth_fee_accumulator");
+        s(bootstrapRepaid, "bootstrap_repaid");
+        s(bonusVaultBalance, "bonus_vault_balance");
+        s(bonusVaultPendingXfg, "bonus_vault_pending_xfg");
+        s(bonusWeightedBase, "bonus_weighted_base");
+      }
     };
 
     friend class BlockCacheSerializer;
@@ -503,6 +530,11 @@ namespace CryptoNote {
     struct VaultSpendRecord {
       std::vector<uint64_t> cdPoolIndices;
       std::vector<uint64_t> bonusVaultIndices;
+
+      void serialize(ISerializer& s) {
+        s(cdPoolIndices, "cd_pool_indices");
+        s(bonusVaultIndices, "bonus_vault_indices");
+      }
     };
     std::map<Crypto::Hash, VaultSpendRecord, HashLess> m_vaultSpentByTx;
 
@@ -544,6 +576,9 @@ namespace CryptoNote {
       uint64_t priceHeat = 0;  // auction: fill's price value (fillXfg × p*/COIN)
     };
     std::deque<std::pair<uint32_t, std::vector<OrderFillRecord>>> m_blockOrderFills;
+    // Per-block alias register/release/transfer undo journal for popBlock
+    // reversal (see AliasIndex.h's AliasUndoOp / applyAliasUndo).
+    std::deque<std::pair<uint32_t, std::vector<AliasUndoOp>>> m_aliasUndoLog;
     // Per-block dir-1 swap CD-fee HEAT equivalents (recorded at settle for
     // exact popBlock reversal — the pop-time pool rate differs from push-time).
     std::deque<std::pair<uint32_t, std::vector<uint64_t>>> m_blockSwapCdFeeHeatEq;
@@ -562,8 +597,6 @@ namespace CryptoNote {
     uint64_t m_feePoolBalance = 0;        // total XFG available for CD interest payouts (69% of swap fees)
     uint64_t m_currentEpochSwapFees = 0;  // fees accumulated in current epoch (reset each epoch boundary)
     uint64_t m_totalCdLocked = 0;         // total XFG locked in CDs (for epoch rate calculation)
-    uint64_t m_totalLegacyBondLocked = 0;  // total XFG in legacy bonds (for separate CD share split)
-    uint64_t m_legacyBondYieldPool = 0;    // accumulated legacy bond share of swap fees
 
     // Per-block swap-fee contribution tracking — used by popBlock to undo epoch accumulator.
     std::deque<uint64_t> m_blockSwapFeeContributions;

@@ -868,8 +868,15 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
     }
     if (rawTx.empty()) return {};
 
+    // M-3: use 5-arg parseClaimSecret to verify t*G == T.
+    if (params.secpPubHex.size() != 66) return {};
+    Crypto::SecpPubKey expectedT{};
+    auto tBytes = BtcHtlcScript::hexToBytes(params.secpPubHex);
+    if (tBytes.size() != 33) return {};
+    std::memcpy(expectedT.data.data(), tBytes.data(), 33);
+
     Crypto::SecretKey t{};
-    if (!BtcTaprootPtlc::parseClaimSecret(rawTx, tweaked33, presig, t))
+    if (!BtcTaprootPtlc::parseClaimSecret(rawTx, tweaked33, presig, expectedT, t))
       return {};
     if (isZeroSecretLtc(t)) return {};
     return Common::podToHex(t);

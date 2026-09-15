@@ -928,8 +928,16 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
     }
     if (rawTx.empty()) return {};
 
+    // M-3: use 5-arg parseClaimSecret to verify t*G == T.
+    // params.secpPubHex is the full 66-char compressed secp256k1 point (33 bytes).
+    if (params.secpPubHex.size() != 66) return {};
+    Crypto::SecpPubKey expectedT{};
+    auto tBytes = BtcHtlcScript::hexToBytes(params.secpPubHex);
+    if (tBytes.size() != 33) return {};
+    std::memcpy(expectedT.data.data(), tBytes.data(), 33);
+
     Crypto::SecretKey t{};
-    if (!BtcTaprootPtlc::parseClaimSecret(rawTx, tweaked33, presig, t))
+    if (!BtcTaprootPtlc::parseClaimSecret(rawTx, tweaked33, presig, expectedT, t))
       return {};
     if (isZeroSecret(t)) return {};
     return Common::podToHex(t);

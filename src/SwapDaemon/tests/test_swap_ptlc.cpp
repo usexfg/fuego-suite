@@ -142,7 +142,7 @@ int main() {
     Crypto::SecpSchnorrSig sig;
     assert(Crypto::secp_complete_schnorr_sig(sk,k,msg,sig));
     Crypto::SecretKey extracted;
-    assert(Crypto::secp_adaptor_extract(presig,sig,extracted));
+    assert(Crypto::secp_adaptor_extract(presig,sig,T,extracted));
     assert(std::memcmp(&extracted,&t,sizeof(t))==0);
     std::cout << "  PASS\n";
   }

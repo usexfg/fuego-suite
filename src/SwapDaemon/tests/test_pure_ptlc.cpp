@@ -414,8 +414,12 @@ int main() {
     auto tx = BtcTaprootPtlc::buildRawTaprootSpendTx(kTxid, 1, {sig64}, destSpk, 123456);
     assert(tx.size() > 60 && tx[4] == 0x00 && tx[5] == 0x01); // segwit marker/flag present
 
+    // Derive T = t*G for the 5-arg parseClaimSecret.
+    Crypto::SecpPubKey T{};
+    assert(Crypto::secp_secret_to_pubkey(t, T));
+
     Crypto::SecretKey extracted{};
-    assert(BtcTaprootPtlc::parseClaimSecret(tx, tweakedPub33, presig, extracted));
+    assert(BtcTaprootPtlc::parseClaimSecret(tx, tweakedPub33, presig, T, extracted));
     assert(std::memcmp(&extracted, &t, sizeof(t)) == 0);
 
     // Corrupted R_x in the witness -> no matching candidate -> false.
@@ -423,12 +427,12 @@ int main() {
     badSig[0] ^= 0x01;
     auto txCorrupt = BtcTaprootPtlc::buildRawTaprootSpendTx(kTxid, 1, {badSig}, destSpk, 123456);
     Crypto::SecretKey dummy{};
-    assert(!BtcTaprootPtlc::parseClaimSecret(txCorrupt, tweakedPub33, presig, dummy));
+    assert(!BtcTaprootPtlc::parseClaimSecret(txCorrupt, tweakedPub33, presig, T, dummy));
 
     // Non-segwit tx -> parser rejects -> false.
     auto txLegacy = tx;
     txLegacy[4] = 0xFF; // break SegWit marker
-    assert(!BtcTaprootPtlc::parseClaimSecret(txLegacy, tweakedPub33, presig, dummy));
+    assert(!BtcTaprootPtlc::parseClaimSecret(txLegacy, tweakedPub33, presig, T, dummy));
     std::cout << "  PASS\n";
   }
 

@@ -79,10 +79,13 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   CHECK(!acceptedWrongT, "extract REFUSES a scalar that does not open the given point");
 
   // The 3-arg form still recovers t (it only guards t != 0) — this is the
-  // weaker contract the 4-arg overload exists to replace.
+  // weaker contract the 4-arg overload exists to replace (AUDIT M-3).
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   SecretKey legacy{};
   CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract still recovers t");
   CHECK(std::memcmp(&legacy, &t, sizeof(t)) == 0, "3-arg result equals t");
+#pragma GCC diagnostic pop
 
   // A presig/sig pair from different sessions yields a scalar that opens
   // nothing — precisely the rogue-signature case 1.2 describes.

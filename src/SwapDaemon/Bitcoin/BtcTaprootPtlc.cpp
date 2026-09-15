@@ -512,7 +512,40 @@ bool BtcTaprootPtlc::parseClaimSecret(
 
     Crypto::SecpSchnorrSig schnorr{};
     std::memcpy(schnorr.data.data(), front.data(), 64);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     return Crypto::secp_adaptor_extract(storedPresig, schnorr, tOut);
+#pragma GCC diagnostic pop
+  }
+  return false;
+}
+
+bool BtcTaprootPtlc::parseClaimSecret(
+    const std::vector<uint8_t>& rawTx,
+    const std::vector<uint8_t>& tweakedPub33,
+    const Crypto::SecpAdaptorPresig& storedPresig,
+    const Crypto::SecpPubKey& expectedT,
+    Crypto::SecretKey& tOut) {
+  if (tweakedPub33.size() != 33) throw std::runtime_error("tweakedPub must be 33");
+  std::vector<std::vector<std::vector<uint8_t>>> witnesses;
+  if (!parseSegWitWitnesses(rawTx, witnesses)) return false;
+
+  std::array<uint8_t,32> wantRx{};
+  std::memcpy(wantRx.data(), storedPresig.R.data.data() + 1, 32);
+
+  for (const auto& stack : witnesses) {
+    if (stack.empty()) continue;
+    const auto& front = stack.front();
+    if (front.size() != 64 && front.size() != 65) continue;
+    bool plausibleShape =
+        stack.size() == 1 ||
+        (stack.size() >= 3 && stack.back().size() >= 33);
+    if (!plausibleShape) continue;
+    if (std::memcmp(front.data(), wantRx.data(), 32) != 0) continue;
+
+    Crypto::SecpSchnorrSig schnorr{};
+    std::memcpy(schnorr.data.data(), front.data(), 64);
+    return Crypto::secp_adaptor_extract(storedPresig, schnorr, expectedT, tOut);
   }
   return false;
 }

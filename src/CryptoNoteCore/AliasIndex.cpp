@@ -15,6 +15,9 @@
 #include "AliasIndex.h"
 #include "../CryptoNoteConfig.h"
 #include "../Common/StringTools.h"
+#include "../Serialization/ISerializer.h"
+#include "../Serialization/SerializationOverloads.h"
+#include "CryptoNoteSerialization.h"
 #include <algorithm>
 #include <cctype>
 
@@ -278,6 +281,64 @@ bool AliasIndex::replaceAliasOwnership(const std::string& alias,
 size_t AliasIndex::size() const {
   std::lock_guard<std::mutex> lock(m_mutex);
   return m_aliases.size();
+}
+
+// ============================================================================
+// PERSISTENCE
+// ============================================================================
+
+void AliasEntry::serialize(ISerializer& s) {
+  s(alias, "alias");
+  s(ownerAddress, "ownerAddress");
+  s(aliasHash, "aliasHash");
+  s(addressHash, "addressHash");
+  s(aliasType, "aliasType");
+  s(registeredBlock, "registeredBlock");
+}
+
+void AliasIndex::serialize(ISerializer& s) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  // Loading replaces the whole index (including the two reserved entries the
+  // constructor already seeded) with exactly what was persisted, rather than
+  // merging into the pre-existing maps.
+  if (s.type() == ISerializer::INPUT) {
+    m_aliases.clear();
+    m_addrHashToAlias.clear();
+  }
+
+  s(m_aliases, "aliases");
+
+  if (s.type() == ISerializer::INPUT) {
+    for (const auto& kv : m_aliases) {
+      std::string addrHashHex = Common::podToHex(kv.second.addressHash);
+      if (m_addrHashToAlias.find(addrHashHex) == m_addrHashToAlias.end()) {
+        m_addrHashToAlias[addrHashHex] = kv.first;
+      }
+    }
+  }
+}
+
+// ============================================================================
+// REORG UNDO
+// ============================================================================
+
+void applyAliasUndo(AliasIndex& index, const std::vector<AliasUndoOp>& ops) {
+  for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+    switch (it->opType) {
+      case 0:  // undo register -> remove
+        index.removeAlias(it->alias);
+        break;
+      case 1:  // undo release -> restore the entry as it was
+        index.registerAlias(it->priorEntry);
+        break;
+      case 2:  // undo transfer -> revert addressHash
+        index.replaceAliasOwnership(it->alias, it->priorAddressHash);
+        break;
+      default:
+        break;
+    }
+  }
 }
 
 }  // namespace CryptoNote

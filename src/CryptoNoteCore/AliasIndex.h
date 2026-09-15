@@ -26,6 +26,8 @@
 
 namespace CryptoNote {
 
+class ISerializer;
+
 // @ Alias entry for on-chain alias registry
 struct AliasEntry {
   std::string alias;            // "fuegodev" (regular)
@@ -34,6 +36,8 @@ struct AliasEntry {
   Crypto::Hash addressHash;     // cn_fast_hash(address) for privacy
   uint8_t aliasType = 1;        // 0 = reserved (deprecated), 1 = Regular [a-z0-9&]
   uint32_t registeredBlock = 0;
+
+  void serialize(ISerializer& s);
 };
 
 class AliasIndex {
@@ -69,6 +73,12 @@ public:
   // State
   size_t size() const;
 
+  // Cache persistence: without this, every registered/released/transferred
+  // alias is wiped on a normal daemon restart (there is no on-disk record —
+  // only rebuildCache(), which runs on cache-load failure, replays the chain
+  // and repopulates this index).
+  void serialize(ISerializer& s);
+
   // Validation helpers (static, usable by callers before registration)
   static bool isValidRegularAlias(const std::string& alias);
 
@@ -82,5 +92,23 @@ private:
   // Reserved alias names (registered at genesis / init)
   void reserveDevTeamAliases();
 };
+
+// Reorg-undo journal entry for a single AliasIndex mutation. The Blockchain
+// records one of these per successful register/release/transfer while
+// processing a block, and replays them via applyAliasUndo when that block is
+// popped during a reorg — otherwise a reorged-out mutation permanently
+// squats (or frees, or misattributes) the alias name.
+struct AliasUndoOp {
+  uint8_t opType = 0;               // 0 = register, 1 = release, 2 = transfer
+  std::string alias;
+  AliasEntry priorEntry;            // opType==1: full entry to restore on undo
+  Crypto::Hash priorAddressHash{};  // opType==2: addressHash to revert to on undo
+};
+
+// Reverts `ops` against `index`, LAST-applied-first (LIFO). A block that
+// registers then releases the same alias must undo as a unit in that order
+// (undo the release, then undo the register) to land back at "never
+// existed" — applying in forward order would leave it registered.
+void applyAliasUndo(AliasIndex& index, const std::vector<AliasUndoOp>& ops);
 
 }  // namespace CryptoNote

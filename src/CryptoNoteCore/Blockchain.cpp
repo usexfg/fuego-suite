@@ -37,6 +37,8 @@
 #include "../Serialization/SerializationOverloads.h"
 #include "CryptoNoteTools.h"
 #include "TransactionExtra.h"
+#include "../crypto/crypto.h"
+#include "../Common/StringTools.h"
 #include "CommitmentIndex.h"
 #include "CryptoNoteConfig.h"
 #include "OrderbookIndex.h"
@@ -4959,28 +4961,40 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                   AccountPublicAddress devFundAddr;
                   bool devAddrParsed = m_currency.parseAccountAddressString(
                     std::string(CryptoNote::FUEGO_DEV_FUND_ADDRESS), devFundAddr);
-                  for (const auto& out : tx.tx.outputs) {
-                    if (out.amount < parameters::ALIAS_REGISTRATION_FEE) continue;
-                    // Verify output is addressed to the dev fund key.
-                    const auto* keyOut = boost::get<KeyOutput>(&out.target);
-                    if (!keyOut) continue;
-                    if (devAddrParsed) {
-                      // Check that the output one-time key is derivable to the dev fund address.
-                      // Use a heuristic: accept if the output exists and amount matches when we
-                      // cannot do full key derivation here (no tx private key in scope).
-                      // Full enforcement requires the tx public key and is done in wallet scanning.
-                      // At consensus level we enforce amount; wallet-level enforces destination.
-                      feeOutputFound = true;
-      } else {
-                      feeOutputFound = true; // dev addr parse failed — allow, log warning
-                      logger(WARNING) << "@ Could not parse FUEGO_DEV_FUND_ADDRESS for fee check";
+                  Crypto::SecretKey devViewSecretKey;
+                  bool devViewKeyParsed = devAddrParsed &&
+                    Common::podFromHex(std::string(CryptoNote::FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX), devViewSecretKey);
+                  if (devViewKeyParsed) {
+                    // Real destination check: derive the one-time output key the dev
+                    // fund's stealth address would receive at each output position
+                    // (using ITS OWN view secret key, the same way the recipient
+                    // wallet would) and compare against the actual output key. A
+                    // self-paid output can never match this unless it happens to
+                    // collide with the dev fund's derived key, which is
+                    // computationally infeasible.
+                    Crypto::PublicKey txPubKey = getTransactionPublicKeyFromExtra(tx.tx.extra);
+                    Crypto::KeyDerivation derivation;
+                    if (Crypto::generate_key_derivation(txPubKey, devViewSecretKey, derivation)) {
+                      for (size_t outIdx = 0; outIdx < tx.tx.outputs.size(); ++outIdx) {
+                        const auto& out = tx.tx.outputs[outIdx];
+                        if (out.amount < parameters::ALIAS_REGISTRATION_FEE) continue;
+                        const auto* keyOut = boost::get<KeyOutput>(&out.target);
+                        if (!keyOut) continue;
+                        Crypto::PublicKey expectedKey;
+                        if (Crypto::derive_public_key(derivation, outIdx, devFundAddr.spendPublicKey, expectedKey) &&
+                            expectedKey == keyOut->key) {
+                          feeOutputFound = true;
+                          break;
+                        }
+                      }
                     }
-                    break;
+                  } else {
+                    logger(WARNING) << "@ Could not parse FUEGO_DEV_FUND_ADDRESS or view key for fee check";
                   }
                   if (!feeOutputFound) {
                     logger(WARNING) << "@ Alias registration skipped in block " << block.height
                                     << ": @" << aliasReg.alias
-                                    << " — missing ALIAS_REGISTRATION_FEE output ("
+                                    << " — missing ALIAS_REGISTRATION_FEE output to the dev fund ("
                                     << parameters::ALIAS_REGISTRATION_FEE << " atomic units)";
                     feeOk = false;
                   }

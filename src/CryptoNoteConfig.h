@@ -375,7 +375,16 @@ namespace CryptoNote
 	// const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
 
 	// Fuego Development Fund ( @fuegoxfg ) receives network banking fees on HEAT CDs and general donations
-	const char FUEGO_DEV_FUND_ADDRESS[] = "fireVHx639SLMhzmBoJ8drTXbVyv2eRG6A8aMLc1taTiRNwk8pnwXpBDUSjH1dT5fg7yVVZrKkvm31CmigAMdVDg7sgxJmAUNp";
+	//
+	// TEMPORARY DEVELOPMENT PLACEHOLDER (2026-09): this address+view-key pair is a
+	// throwaway dev wallet, not the real production dev fund. It exists so the
+	// alias-registration fee's destination check (below) has a real, matching
+	// key pair to derive-and-compare against during development. MUST be
+	// replaced with the real Fuego Developer Fund address + its view secret key
+	// before mainnet launch — the two constants must always come from the same
+	// wallet, or every alias registration will fail the fee check.
+	const char FUEGO_DEV_FUND_ADDRESS[] = "fire4c3EeknNCLob735kM2VbzF7caWU7WLcyZGD2U9Q3Pjg74tu7CdGK36zXNKrA5kbm1cbQV6EMD2cQ64c1xnAy9ot19mSowk";
+	const char FUEGO_DEV_FUND_VIEW_SECRET_KEY_HEX[] = "1844735ad5affe443d78d694fe1be33129af4c880b91a0793b20f4680595b90a";
 
 	// Standard individual aliases are @fire aliases (V10 feature).
 	// Group/multi-sig "tandalias" are in design phase (see docs/design/group-aliases-plan.md).

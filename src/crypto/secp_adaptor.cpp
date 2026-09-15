@@ -144,7 +144,9 @@ bool secp_adaptor_sign(const SecretKey& sk, const SecretKey& k, const SecretKey&
   auto e_bytes = secp_adaptor_challenge(R, P, msg);
   BIGNUM *sk_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(&sk), 32, nullptr);
   BIGNUM *k_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(&k), 32, nullptr);
-  BIGNUM *t_bn = BN_bin2bn(reinterpret_cast<const unsigned char*>(&t), 32, nullptr);
+  // t is a CryptoNote LE scalar; secp domain is BE — byte-reverse before loading.
+  std::array<uint8_t,32> t_be{}; std::memcpy(t_be.data(), &t, 32); std::reverse(t_be.begin(), t_be.end());
+  BIGNUM *t_bn = BN_bin2bn(t_be.data(), 32, nullptr);
   BIGNUM *e_bn = BN_bin2bn(e_bytes.data(), 32, nullptr);
   BIGNUM *n = get_order(ctx), *e_sk = BN_new(), *tmp = BN_new(), *s_prime = BN_new();
   if (BN_is_zero(sk_bn) || BN_is_zero(k_bn) || BN_cmp(sk_bn,n)>=0 || BN_cmp(k_bn,n)>=0 || BN_cmp(t_bn,n)>=0) { BN_free(sk_bn); BN_free(k_bn); BN_free(t_bn); BN_free(e_bn); BN_free(n); BN_free(e_sk); BN_free(tmp); BN_free(s_prime); BN_CTX_free(ctx); return false; }

@@ -132,7 +132,7 @@ int main() {
     assert(Crypto::secp_adaptor_sign(sk,k,t,msg,presig));
     Crypto::SecpPubKey P,T;
     assert(Crypto::secp_secret_to_pubkey(sk,P));
-    assert(Crypto::secp_secret_to_pubkey(t,T));
+    assert(Crypto::secp_point_from_ed_secret(t,T));
     assert(Crypto::secp_adaptor_verify(P,T,presig,msg));
     // wrong T should fail
     Crypto::SecretKey wrong_t{}; reinterpret_cast<uint8_t*>(&wrong_t)[0]=9; reinterpret_cast<uint8_t*>(&wrong_t)[1]=9;

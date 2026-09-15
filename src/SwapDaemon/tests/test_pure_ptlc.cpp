@@ -1,4 +1,5 @@
 // Pure PTLC (P2TR key-path) unit tests — P2.1/P2.2/P2.3
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <cstdint>
@@ -414,13 +415,16 @@ int main() {
     auto tx = BtcTaprootPtlc::buildRawTaprootSpendTx(kTxid, 1, {sig64}, destSpk, 123456);
     assert(tx.size() > 60 && tx[4] == 0x00 && tx[5] == 0x01); // segwit marker/flag present
 
-    // Derive T = t*G for the 5-arg parseClaimSecret.
+    // Derive T = t*G using the canonical byte-reversal path (CryptoNote LE → secp BE).
     Crypto::SecpPubKey T{};
-    assert(Crypto::secp_secret_to_pubkey(t, T));
+    assert(Crypto::secp_point_from_ed_secret(t, T));
 
     Crypto::SecretKey extracted{};
     assert(BtcTaprootPtlc::parseClaimSecret(tx, tweakedPub33, presig, T, extracted));
-    assert(std::memcmp(&extracted, &t, sizeof(t)) == 0);
+    // extracted is in secp BE domain (rev of CryptoNote LE t).
+    Crypto::SecretKey t_rev = t;
+    std::reverse(reinterpret_cast<uint8_t*>(&t_rev), reinterpret_cast<uint8_t*>(&t_rev) + 32);
+    assert(std::memcmp(&extracted, &t_rev, sizeof(t_rev)) == 0);
 
     // Corrupted R_x in the witness -> no matching candidate -> false.
     auto badSig = sig64;

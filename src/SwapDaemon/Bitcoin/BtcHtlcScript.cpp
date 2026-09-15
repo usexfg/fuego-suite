@@ -344,6 +344,7 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
 
     uint64_t spkLen = 0;
     if (!readVarInt(p, end, spkLen)) return {};
+    if (spkLen > 10000) return {};
     if (p + spkLen > end) return {};
     p += spkLen;  // scriptPubKey
   }
@@ -354,6 +355,8 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
     if (!readVarInt(p, end, witnessItemCount)) return {};
 
     // Read all witness stack items
+    static constexpr uint64_t MAX_WITNESS_ITEMS = 64;
+    if (witnessItemCount > MAX_WITNESS_ITEMS) return {};
     std::vector<std::vector<uint8_t>> witnessStack;
     witnessStack.reserve(witnessItemCount);
     for (uint64_t j = 0; j < witnessItemCount; ++j) {

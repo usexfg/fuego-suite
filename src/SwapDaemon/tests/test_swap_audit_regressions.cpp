@@ -55,8 +55,9 @@ static void testAdaptorExtractBindsToPublishedPoint() {
 
   SecpPubKey P{}, T{}, TOther{};
   CHECK(secp_secret_to_pubkey(sk, P), "signer pubkey derives");
-  CHECK(secp_secret_to_pubkey(t, T), "adaptor point T = t*G derives");
-  CHECK(secp_secret_to_pubkey(tOther, TOther), "unrelated point T' derives");
+  // T must be derived the same way production derives it: CryptoNote LE → byte-reverse → secp point.
+  CHECK(secp_point_from_ed_secret(t, T), "adaptor point T = t*G derives");
+  CHECK(secp_point_from_ed_secret(tOther, TOther), "unrelated point T' derives");
   CHECK(T != TOther, "T and T' are distinct points");
 
   const Hash msg = msgDigest(0x11);
@@ -78,13 +79,16 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   bool acceptedWrongT = secp_adaptor_extract(presig, sig, TOther, bogus);
   CHECK(!acceptedWrongT, "extract REFUSES a scalar that does not open the given point");
 
-  // The 3-arg form still recovers t (it only guards t != 0) — this is the
-  // weaker contract the 4-arg overload exists to replace (AUDIT M-3).
+  // The 3-arg form still recovers the adaptor scalar (non-zero guard only) — the weaker
+  // contract the 4-arg overload replaces (AUDIT M-3). The scalar is in secp BE domain
+  // (rev of CryptoNote LE t), not raw t bytes.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   SecretKey legacy{};
-  CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract still recovers t");
-  CHECK(std::memcmp(&legacy, &t, sizeof(t)) == 0, "3-arg result equals t");
+  CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract recovers adaptor scalar");
+  SecretKey t_rev = t;
+  std::reverse(reinterpret_cast<uint8_t*>(&t_rev), reinterpret_cast<uint8_t*>(&t_rev) + 32);
+  CHECK(std::memcmp(&legacy, &t_rev, sizeof(t_rev)) == 0, "3-arg result equals rev(t) (secp BE domain)");
 #pragma GCC diagnostic pop
 
   // A presig/sig pair from different sessions yields a scalar that opens

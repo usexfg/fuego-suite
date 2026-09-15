@@ -349,6 +349,7 @@ bool BtcTaprootPtlc::adaptorToSchnorrSig(
     // s = s' - t
     std::array<uint8_t,32> s_prime = presig.s_prime;
     std::array<uint8_t,32> t_bytes{}; std::memcpy(t_bytes.data(), &t, 32);
+    std::reverse(t_bytes.begin(), t_bytes.end()); // CryptoNote LE → secp BE
     std::array<uint8_t,32> neg_t = Crypto::secp_scalar_neg(t_bytes);
     auto s = Crypto::secp_scalar_add(s_prime, neg_t);
     std::memcpy(outSig.data.data()+32, s.data(), 32);
@@ -439,6 +440,8 @@ bool BtcTaprootPtlc::parseSegWitWitnesses(
   for(uint64_t i = 0; i < vinCount; ++i){
     uint64_t itemCount = 0;
     if(!readVarIntTap(p, end, itemCount)) return false;
+    static constexpr uint64_t MAX_WITNESS_ITEMS = 64;
+    if (itemCount > MAX_WITNESS_ITEMS) return false;
     auto& stack = witnesses[static_cast<size_t>(i)];
     stack.reserve(static_cast<size_t>(itemCount));
     for(uint64_t j = 0; j < itemCount; ++j){
@@ -488,6 +491,7 @@ std::vector<uint8_t> BtcTaprootPtlc::extractClaimSchnorrSig(
 // P2.1: t = s' - s against the stored presig. Completing an adaptor preserves R,
 // so presig.R_x identifies our claim on both key-path ([sig]) and script-path
 // ([sig <script> <control>]) witnesses.
+[[deprecated("use 5-arg overload passing expectedT to bind extraction to the published adaptor point")]]
 bool BtcTaprootPtlc::parseClaimSecret(
     const std::vector<uint8_t>& rawTx,
     const std::vector<uint8_t>& tweakedPub33,

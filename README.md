@@ -1,6 +1,6 @@
 <img title="The Long Night Is Coming, and the DEBT comes with it" src="https://github.com/usexfg/fuego-data/blob/master/fuego-images/fuegoline.gif?raw=true"><img/>
 
-### Fuego is a sovereign privacy blockchain banking network and cryptocurrency built & maintained by advocates of freedom thru sound money and free open-source software.
+### Fuego is a sovereign privacy blockchain banking network and cryptocurrency developed & maintained by advocates of freedom thru sound money and free open-source software.
 
 Based on the CryptoNote protocol.
 

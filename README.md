@@ -1,6 +1,6 @@
 <img title="The Long Night Is Coming, and the DEBT comes with it" src="https://github.com/usexfg/fuego-data/blob/master/fuego-images/fuegoline.gif?raw=true"><img/>
 
-### Fuego is a sovereign privacy blockchain banking network & cryptocurrency built and maintained by advocates of freedom thru sound money and free open-source software.
+### Fuego is a sovereign privacy blockchain banking network and cryptocurrency built & maintained by advocates of freedom thru sound money and free open-source software.
 
 Based on the CryptoNote protocol.
 
@@ -22,14 +22,14 @@ Based on the CryptoNote protocol.
 | **Core** | Dynamic Ring Size | 32, 16, or min 8 decoys per transaction, adaptive to pool depth |
 | **Core** | Sub-addresses | Multiple addresses from single seed; integrated (v1) wallets |
 | **Core** | Fire Aliases | 8 characters ONLY, on-chain '@' aliases for fire addresses; (@fuegoxfg for development) integrated with ecosystem wallets |
-| **Assets** | ΗΞΔŦ flatcoin | XFG-colored coin pegged to purchasing power by rate of inflation on 1 USD since Q1|2009 value ⩰ $1.58 | Burn XFG to mint at pool price |
-| **Assets** | Hearth Floor | Block-discrete on-chain exchange with adaptive-spread AMM pool band; batch-clears at VWAP |
-| **Assets** | Certificates of Deposit | HEAT-denominated time-locked deposits earning yield from protocol fees |
+| **Assets** | ΗΞΔŦ flatcoin | XFG-colored coin pegged to purchasing power by rate of inflation on 1 USD since Q1 2009 value ⩰ $1.58 / Minted only by burning XFG at TWAP of Hearth's price / Launch ratio 10 : 1 |
+| **Assets** | Hearth Floor | Block-discrete on-chain exchange with limit order matching & adaptive-spread pool swap; batch-clears at VWAP |
+| **Assets** | Certificates of Deposit | ΗΞΔŦ-denominated time-locked deposits earning yield from protocol fees |
 | **Swaps** | Atomic Swaps | Cross-chain XFG swaps via COMIT protocol with PTLC/HTLC adaptor signatures |
 | **Swaps** | ЅШ𑫛𑫒**❋**XFG | Integrated TUI, Go-based swap engine with inter-chain fee routing |
 | **Network** | I2P / Tor  | Pluggable transport-layer privacy |
-| **Wallet** | `fire_wallet`| Full-featured CLI: send, receive, deposits, HEAT mint/swap, pool operations |
-| **Wallet** | TUI(suite) | Go-based terminal UI for atomic swaps, CD operations, HEAT mint |
+| **Wallet** | `fire_wallet`| Full-featured CLI: send, receive, deposits, ΗΞΔŦ mint/swap, pool operations |
+| **Wallet** | TUI(suite) | Go-based terminal UI for atomic swaps, CD operations, ΗΞΔŦ mint |
 | **GUI Wallet/SDK** | Fuego Valise | Cross-platform GUI (Flutter/Rust) — [fuego-valise](https://github.com/usexfg/fuego-valise) Fuego SDK |
 | **Tools** | RPC API | JSON-RPC: heat_metrics, amm_quote, amm_pool_info, swap fees, CD queries |
 | **Dev Tools** | MCP Server | AI-agent integration for swap/mint automation |

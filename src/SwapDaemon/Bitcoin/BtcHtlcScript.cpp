@@ -318,12 +318,14 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
   if (!readVarInt(p, end, vinCount)) return {};
 
   // Skip inputs: for each input, skip 32-byte txid + 4-byte vout + varint scriptSig + scriptSig + 4-byte sequence
+  static constexpr uint64_t MAX_SCRIPT_SIG_LEN = 10000;
   for (uint64_t i = 0; i < vinCount; ++i) {
     if (p + 36 > end) return {};
     p += 36;  // txid + vout
 
     uint64_t sigLen = 0;
     if (!readVarInt(p, end, sigLen)) return {};
+    if (sigLen > MAX_SCRIPT_SIG_LEN) return {};
     if (p + sigLen > end) return {};
     p += sigLen;  // scriptSig
 
@@ -342,6 +344,7 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
 
     uint64_t spkLen = 0;
     if (!readVarInt(p, end, spkLen)) return {};
+    if (spkLen > 10000) return {};
     if (p + spkLen > end) return {};
     p += spkLen;  // scriptPubKey
   }
@@ -352,6 +355,8 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
     if (!readVarInt(p, end, witnessItemCount)) return {};
 
     // Read all witness stack items
+    static constexpr uint64_t MAX_WITNESS_ITEMS = 64;
+    if (witnessItemCount > MAX_WITNESS_ITEMS) return {};
     std::vector<std::vector<uint8_t>> witnessStack;
     witnessStack.reserve(witnessItemCount);
     for (uint64_t j = 0; j < witnessItemCount; ++j) {
@@ -377,6 +382,18 @@ std::vector<uint8_t> BtcHtlcScript::parseClaimPreimage(
 
     // Found the HTLC witness stack. The preimage is always at index 1.
     const auto& preimageItem = witnessStack[1];
+
+    // M-2: verify SHA256(preimage) == hashLock embedded in the witnessScript.
+    // Script layout: [0]=OP_IF [1]=OP_SHA256 [2]=0x20 (push32) [3..34]=hashLock
+    if (lastItem.size() < 35 ||
+        lastItem[0] != BtcOpCode::OP_IF ||
+        lastItem[1] != BtcOpCode::OP_SHA256 ||
+        lastItem[2] != 0x20) {
+      continue;
+    }
+    std::vector<uint8_t> hashLock(lastItem.begin() + 3, lastItem.begin() + 35);
+    if (sha256(preimageItem) != hashLock) continue;
+
     return preimageItem;
   }
 

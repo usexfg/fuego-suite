@@ -1,7 +1,8 @@
 // Copyright (c) 2017-2026 Fuego Developers
 //
 // Wall-clock cross-chain timelock comparator.
-// XFG block timing is ~480s; counterparty chains vary.
+// XFG block timing is DIFFICULTY_TARGET seconds (see CryptoNoteConfig.h);
+// counterparty chains vary.
 // The safety invariant: XFG refund window must outlast the
 // counterparty timeout by a safety margin in wall-clock time.
 
@@ -18,7 +19,7 @@ constexpr uint64_t DEFAULT_SAFETY_MARGIN_SEC = 3600;
 // Block/interval times in milliseconds (to avoid floating 0 for fast chains).
 uint64_t msPerBlock(SwapPair pair);
 
-// Returns true if the XFG refund window (xfgTimeoutH - xfgCurH)*480s
+// Returns true if the XFG refund window (xfgTimeoutH - xfgCurH)*DIFFICULTY_TARGET
 // outlasts the counterparty timeout by at least marginSec wall-clock seconds.
 // Both current heights and timeout heights must be passed in native units.
 bool timelockOrderingOk(SwapPair pair,

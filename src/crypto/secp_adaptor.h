@@ -48,8 +48,9 @@ bool secp_adaptor_sign(const SecretKey& sk, const SecretKey& k, const SecretKey&
 bool secp_adaptor_verify(const SecpPubKey& P, const SecpPubKey& T, const SecpAdaptorPresig& presig, const Hash& msg);
 
 // Extract t = s' - s (scalar mod n). sig is complete Schnorr sig [R_x||s] with same R as presig.
-// 3-arg form guards only t != 0 (AUDIT 1.2/3.2). Prefer the 4-arg overload when
-// the adaptor point T is known — it also verifies t*G == T.
+// The 4-arg overload additionally verifies t*G == expectedT; prefer it whenever T is known.
+// The 3-arg form only guards t != 0 (AUDIT M-3) — use only when T is unavailable.
+[[deprecated("use 4-arg overload that also verifies t*G == T")]]
 bool secp_adaptor_extract(const SecpAdaptorPresig& presig, const SecpSchnorrSig& sig, SecretKey& t_out);
 bool secp_adaptor_extract(const SecpAdaptorPresig& presig, const SecpSchnorrSig& sig,
                           const SecpPubKey& expectedT, SecretKey& t_out);

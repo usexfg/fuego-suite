@@ -94,6 +94,33 @@ struct musig2_s_comm {
   EllipticCurvePoint comm;
 };
 
+// Validate that bytes represent a non-identity, prime-order group element.
+// ge_frombytes_vartime checks the curve equation but not the subgroup;
+// multiplying by cofactor 8 and testing for the neutral element catches
+// small-order points (the cofactor check that makes DLEQ safe).
+static bool point_is_valid(const unsigned char bytes[32]) {
+  int nonzero = 0;
+  for (int i = 0; i < 32; ++i) nonzero |= bytes[i];
+  if (!nonzero) return false;
+  ge_p3 p3;
+  if (ge_frombytes_vartime(&p3, bytes) != 0) return false;
+  ge_p2 p2;
+  ge_p3_to_p2(&p2, &p3);
+  ge_p1p1 p1p1;
+  ge_mul8(&p1p1, &p2);
+  ge_p2 p2r;
+  ge_p1p1_to_p2(&p2r, &p1p1);
+  unsigned char out[32];
+  ge_tobytes(out, &p2r);
+  static const unsigned char kNeutral[32] = {
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  };
+  int diff = 0;
+  for (int i = 0; i < 32; ++i) diff |= (out[i] ^ kNeutral[i]);
+  return diff != 0;
+}
+
 // ─── key aggregation ──────────────────────────────────────────────────
 
 bool musig2_key_agg(
@@ -129,6 +156,10 @@ bool musig2_key_agg(
 
   memcpy(coeff_buf.pk, &pub1, 32);
   hash_to_scalar(&coeff_buf, sizeof(coeff_buf), agg.coeff[1]);
+
+  // Validate keys: on-curve AND in the prime-order subgroup (rejects small-order).
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&pub0))) return false;
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&pub1))) return false;
 
   // P = a0*P0 + a1*P1
   ge_p3 P0_p3, P1_p3;
@@ -225,6 +256,10 @@ bool musig2_session_init(
 
   hash_to_scalar(&b_buf, sizeof(b_buf), session.b);
 
+  // Validate aggregated nonce points: on-curve AND prime-order subgroup.
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&agg_nonce.R_agg[0]))) return false;
+  if (!point_is_valid(reinterpret_cast<const unsigned char*>(&agg_nonce.R_agg[1]))) return false;
+
   // R = R_agg[0] + b * R_agg[1]
   ge_p3 R0_p3;
   if (ge_frombytes_vartime(&R0_p3,
@@ -295,10 +330,11 @@ bool musig2_partial_sign(
     unsigned int signer_index,
     Musig2PartialSig &partial_sig)
 {
-  // Guard: reject if this session has already produced a partial signature.
+  // Guard: reject if this nonce has already been used for signing.
   // Reusing the same nonce in two signatures leaks the private key.
-  if (session.nonceSigned) {
-    return false; // nonce already used — refuse to sign
+  // Checked on the nonce so it survives session re-initialization.
+  if (sec_nonce.signed_flag || session.nonceSigned) {
+    return false;
   }
 
   // k_eff = k[0] + b * k[1]
@@ -320,10 +356,11 @@ bool musig2_partial_sign(
             ax,
             k_eff);
 
-  // Securely erase secret nonces — MUST NOT be reused
-  memset(&sec_nonce, 0, sizeof(Musig2SecNonce));
+  // Mark nonce as used before zeroing so the flag survives the erase.
+  sec_nonce.signed_flag = true;
+  // Securely erase secret nonce scalars — MUST NOT be reused.
+  memset(sec_nonce.k, 0, sizeof(sec_nonce.k));
 
-  // Mark session as signed to prevent nonce reuse on any subsequent call.
   session.nonceSigned = true;
   return true;
 }

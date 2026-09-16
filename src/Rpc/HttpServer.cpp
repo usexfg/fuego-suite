@@ -102,6 +102,9 @@ void HttpServer::acceptLoop() {
       resp.addHeader("content-type", "application/json");
 
       parser.receiveRequest(stream, req);
+      // Stamp the TCP-layer peer IP so RpcServer rate limiting can key on it.
+      // This is the only trusted source; X-Forwarded-For is not consulted.
+      req.addHeader("X-Remote-Addr", addr.first.toDottedDecimal());
 				if (authenticate(req)) {
 					processRequest(req, resp);
 				}

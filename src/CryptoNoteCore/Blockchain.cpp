@@ -5357,6 +5357,12 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
               ((uint128_t)regularCdShare * poolRate) / parameters::COIN);
         }
       }
+      // Hearth flat-fee HEAT is already HEAT-denominated; add directly so it
+      // reaches the epoch rate numerator and CDs receive credit for it.
+      if (m_ammPool.cdHearthFeeAccumulator > 0 &&
+          regularCdShareHeat <= UINT64_MAX - m_ammPool.cdHearthFeeAccumulator) {
+        regularCdShareHeat += m_ammPool.cdHearthFeeAccumulator;
+      }
     }
     uint64_t epochFeeRate = 0;
     if (epochCdLocked > 0 && regularCdShareHeat > 0) {
@@ -6391,10 +6397,15 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       } else if (commitOut.term == parameters::DEPOSIT_TERM_POOL_HEAT) {
         m_poolLockedHeat += transaction.tx.outputs[output].amount;
       }
-      // Track HEAT locked in CDs (finite term commitments, NOT mint outputs)
+      // Track HEAT locked in CDs (finite term commitments, NOT mint outputs).
+      // Exclude LP and swap-receive markers: they are never spendable via
+      // CommitmentSpend, so counting them inflates epochCdLocked and depresses
+      // the epoch fee rate for all genuine CD holders.
       if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
           commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
-          commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
+          commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+          commitOut.term != parameters::DEPOSIT_TERM_LP &&
+          commitOut.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) {
         if (m_heatOnDeposit <= UINT64_MAX - transaction.tx.outputs[output].amount)
           m_heatOnDeposit += transaction.tx.outputs[output].amount;
         // v11+: tier-weighted creation sum for the BV bonus denominator.
@@ -6912,12 +6923,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           if (m_poolLockedHeat >= output.amount) m_poolLockedHeat -= output.amount;
         }
       }
-      // Reverse HEAT-on-deposit for CD outputs (finite term, non-HEAT_TERM, non-pool)
+      // Reverse HEAT-on-deposit for CD outputs (finite term, non-HEAT_TERM, non-pool).
+      // Mirror the pushTransaction exclusions: LP and swap-receive markers were
+      // never incremented into m_heatOnDeposit, so do not decrement them here.
       {
         const auto& commitOut = ::boost::get<TransactionOutputCommitment>(output.target);
         if (commitOut.term > 0 && commitOut.term != parameters::HEAT_TERM &&
             commitOut.term != parameters::DEPOSIT_TERM_POOL_XFG &&
-            commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT) {
+            commitOut.term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+            commitOut.term != parameters::DEPOSIT_TERM_LP &&
+            commitOut.term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) {
           if (m_heatOnDeposit >= output.amount) m_heatOnDeposit -= output.amount;
           // Reverse the v11+ tier-weighted creation sum for the BV denominator.
           uint64_t weight = m_currency.loyaltyTierWeightPct(commitOut.term);

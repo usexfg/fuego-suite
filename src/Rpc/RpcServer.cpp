@@ -112,37 +112,42 @@ RpcServer::HandlerFunction jsonMethodSwapAuth(bool (RpcServer::*handler)(typenam
 
 }
 
+static constexpr uint32_t MAX_TX_SUBMITS_PER_SEC    = 20;
+static constexpr uint32_t MAX_ORDER_SUBMITS_PER_SEC = 20;
+
 // ── Rate limiting helper ───────────────────────────────────────────────────
-// Fixed 1-second window token bucket. `windowStart` is the Unix time of the
-// current window; `count` is the number of requests accepted in it. When the
-// window rolls over, both are reset. Not per-IP (that would require client
-// address plumbing through HttpRequest); this bounds the total per-node rate,
-// which defeats the flood vector the findings describe.
-bool RpcServer::rateLimit(std::atomic<uint64_t>& windowStart,
-                          std::atomic<uint32_t>& count,
-                          uint32_t maxPerWindow) {
+// Per-IP 1-second window token bucket keyed on the TCP-layer peer address
+// supplied in the X-Remote-Addr header (set by HttpServer, never trusting
+// client-supplied X-Forwarded-For). The map is bounded by MAX_IP_BUCKETS;
+// when it exceeds that, entries idle for >60 s are expired first.
+bool RpcServer::rateLimitByIp(
+    std::unordered_map<std::string, IpBucket>& buckets,
+    const std::string& ip,
+    uint32_t maxPerWindow)
+{
   const uint64_t now = static_cast<uint64_t>(std::time(nullptr));
-  uint64_t start = windowStart.load(std::memory_order_relaxed);
+  std::lock_guard<std::mutex> lock(m_rateMutex);
 
-  if (now != start) {
-    // New window (or first request). CAS so concurrent requests don't clobber.
-    uint64_t expected = start;
-    if (windowStart.compare_exchange_strong(expected, now, std::memory_order_relaxed)) {
-      count.store(1, std::memory_order_relaxed);
-      return true;
+  if (buckets.size() >= MAX_IP_BUCKETS) {
+    for (auto it = buckets.begin(); it != buckets.end(); ) {
+      if (now > it->second.windowStart + 60)
+        it = buckets.erase(it);
+      else
+        ++it;
     }
-    // Lost the race: another thread opened the window; fall through to count.
   }
 
-  uint32_t c = count.load(std::memory_order_relaxed);
-  while (c < maxPerWindow) {
-    if (count.compare_exchange_weak(c, c + 1, std::memory_order_relaxed)) {
-      return true;
-    }
-    // c was reloaded by compare_exchange_weak on failure; retry.
+  IpBucket& b = buckets[ip];
+  if (now != b.windowStart) {
+    b.windowStart = now;
+    b.count = 1;
+    return true;
   }
-  return false;
+  if (b.count >= maxPerWindow) return false;
+  ++b.count;
+  return true;
 }
+
 
 std::unordered_map<std::string, RpcServer::RpcHandler<RpcServer::HandlerFunction>> RpcServer::s_handlers = {
 
@@ -265,6 +270,27 @@ void RpcServer::processRequest(const HttpRequest& request, HttpResponse& respons
     response.addHeader("Access-Control-Allow-Origin", m_cors_domain);
     response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Swap-Token");
+  }
+
+  // Per-IP rate limiting for expensive / state-changing endpoints.
+  // IP is set by HttpServer from the TCP-layer peer address (X-Remote-Addr);
+  // X-Forwarded-For is intentionally not consulted.
+  {
+    const auto& hdrs = request.getHeaders();
+    auto ipIt = hdrs.find("X-Remote-Addr");
+    const std::string ip = (ipIt != hdrs.end()) ? ipIt->second : "unknown";
+
+    bool throttled = false;
+    if (url == "/sendrawtransaction") {
+      throttled = !rateLimitByIp(m_txRateBuckets, ip, MAX_TX_SUBMITS_PER_SEC);
+    } else if (url == "/placeorder") {
+      throttled = !rateLimitByIp(m_orderRateBuckets, ip, MAX_ORDER_SUBMITS_PER_SEC);
+    }
+    if (throttled) {
+      response.setStatus(HttpResponse::STATUS_429);
+      response.setBody("{\"status\":\"Rate limit exceeded\"}");
+      return;
+    }
   }
 
   auto it = s_handlers.find(url);
@@ -1442,13 +1468,7 @@ bool RpcServer::on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMM
     return true;
   }
 
-  // DoS guard: bound the order-placement rate so a single client cannot fill
-  // the orderbook with valid-but-useless orders (spam / griefing).
-  static const uint32_t MAX_ORDER_SUBMITS_PER_SEC = 20;
-  if (!rateLimit(m_lastOrderSubmitWindow, m_orderSubmitCount, MAX_ORDER_SUBMITS_PER_SEC)) {
-    res.status = "Order rate limit exceeded";
-    return true;
-  }
+  // Rate limiting is now applied per-IP at processRequest level.
 
   if (req.pair > 7 || req.side > 1) {
     res.status = "Invalid pair or side";
@@ -1593,16 +1613,7 @@ bool RpcServer::on_get_transactions(const COMMAND_RPC_GET_TRANSACTIONS::request&
 }
 
 bool RpcServer::on_send_raw_tx(const COMMAND_RPC_SEND_RAW_TX::request& req, COMMAND_RPC_SEND_RAW_TX::response& res) {
-  // DoS guard: bound the rate of raw-tx submissions per second. Transaction
-  // validation and pool insertion are CPU-heavy; an unthrottled client can
-  // flood the node.
-  static const uint32_t MAX_TX_SUBMITS_PER_SEC = 20;
-  if (!rateLimit(m_lastTxSubmitWindow, m_txSubmitCount, MAX_TX_SUBMITS_PER_SEC)) {
-    logger(WARNING) << "on_send_raw_tx: rate limit exceeded, rejecting";
-    res.status = "Failed";
-    return true;
-  }
-
+  // Rate limiting is now applied per-IP at processRequest level.
   BinaryArray tx_blob;
   if (!fromHex(req.tx_as_hex, tx_blob))
   {
@@ -2327,27 +2338,18 @@ bool RpcServer::on_prove_collateral(const COMMAND_RPC_PROVE_COLLATERAL::request&
     res.amount += output.amount;
   }
 
-  // Parse transaction extra to detect commitment types
+  // Parse transaction extra to detect commitment types.
+  // Only the 0xD5 encrypted deposit secret is reported. Legacy 0x08 HEAT
+  // and 0x07 YIELD extras are retired and no longer reported.
   if (req.commitment) {
     std::vector<TransactionExtraField> extraFields;
     if (parseTransactionExtra(tx.extra, extraFields)) {
       for (const auto& field : extraFields) {
-        // Check for HEAT commitment (0x08 = 136)
-        if (field.type() == typeid(TransactionExtraHeatCommitment)) {
+        // Encrypted deposit secret (0xD5). This is NOT the retired COLD
+        // tag 0xCD — it only means the tx carries a 0xD5 secret.
+        if (field.type() == typeid(TransactionExtraDepositSecret)) {
           res.hasCommitment = true;
-          res.commitmentType = 0x08; // 136
-          break;
-        }
-        // Check for YIELD commitment (0x07 = 7)
-        else if (field.type() == typeid(TransactionExtraYieldCommitment)) {
-          res.hasCommitment = true;
-          res.commitmentType = 0x07; // 7
-          break;
-        }
-        // Check for CD deposit commitment (0xCD = 205)
-        else if (field.type() == typeid(TransactionExtraDepositSecret)) {
-          res.hasCommitment = true;
-          res.commitmentType = 0xCD; // 205
+          res.commitmentType = 0xD5; // 213
           break;
         }
       }
@@ -2607,6 +2609,7 @@ bool RpcServer::on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EX
 
 bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req,
                                       COMMAND_RPC_GET_FEE_POOL_INFO::response& res) {
+  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   const uint64_t epochDuration = m_core.currency().isTestnet()
     ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
     : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
@@ -2624,6 +2627,7 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
 
 bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req,
                                       COMMAND_RPC_GET_EPOCH_HISTORY::response& res) {
+  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   static constexpr uint32_t MAX_EPOCH_HISTORY = 100;
 
   const uint64_t totalEpochs = m_core.getCommitmentIndex().getEpochCount();
@@ -2663,13 +2667,14 @@ bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::reques
 
 bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req,
                                       COMMAND_RPC_ESTIMATE_CD_YIELD::response& res) {
+  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   const uint32_t currentHeight = (req.current_height > 0)
     ? req.current_height
     : static_cast<uint32_t>(m_core.get_current_blockchain_height());
 
   res.estimated_interest = m_core.currency().calculateCdInterest(
     req.amount, req.creation_height, currentHeight, m_core.getCommitmentIndex(),
-    false, req.term, false);
+    req.term, false);
 
   const uint64_t epochDuration = m_core.currency().isTestnet()
     ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
@@ -2696,7 +2701,7 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
       const auto& ci = m_core.getCommitmentIndex();
       uint64_t base = m_core.currency().calculateCdInterest(
           req.amount, req.creation_height, currentHeight, ci,
-          false, req.term, false);
+          req.term, false);
       uint64_t bonus = m_core.currency().calculateCdBonus(
           req.amount, req.creation_height, currentHeight, ci, req.term);
       uint64_t bv = m_core.get_blockchain_storage().getBonusVaultBalance();
@@ -2725,6 +2730,7 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
 
 bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req,
                                       COMMAND_RPC_GET_TREASURY_INFO::response& res) {
+  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
   res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryCounterXFG();
   res.treasury_heat_reserve = m_core.get_blockchain_storage().getTreasuryHeatReserve();

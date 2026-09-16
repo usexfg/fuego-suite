@@ -31,6 +31,8 @@ const char* getStatusString(CryptoNote::HttpResponse::HTTP_STATUS status) {
     return "401 Unauthorized";
   case CryptoNote::HttpResponse::STATUS_404:
     return "404 Not Found";
+  case CryptoNote::HttpResponse::STATUS_429:
+    return "429 Too Many Requests";
   case CryptoNote::HttpResponse::STATUS_500:
     return "500 Internal Server Error";
   default:
@@ -48,6 +50,8 @@ const char* getErrorBody(CryptoNote::HttpResponse::HTTP_STATUS status) {
     return "Authorization required\n";
   case CryptoNote::HttpResponse::STATUS_404:
     return "Requested url is not found\n";
+  case CryptoNote::HttpResponse::STATUS_429:
+    return "Rate limit exceeded\n";
   case CryptoNote::HttpResponse::STATUS_500:
     return "Internal server error is occurred\n";
   default:

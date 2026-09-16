@@ -18,6 +18,7 @@
 
 #include "pedersen.h"
 #include <cstring>
+#include <mutex>
 
 extern "C" {
 #include "hash-ops.h"
@@ -26,7 +27,7 @@ extern "C" {
 namespace Crypto {
 
 static ge_p3 s_H_p3;
-static bool s_H_initialized = false;
+static std::once_flag s_H_once;
 
 // Encode uint64_t amount as 32-byte little-endian scalar.
 // Valid without reduction since amount < 2^64 < group order l (~2^252).
@@ -42,13 +43,7 @@ static void amount_to_scalar(unsigned char out[32], uint64_t amount) {
   out[7] = (unsigned char)(amount >> 56);
 }
 
-void pedersen_init() {
-  if (s_H_initialized) return;
-
-  // hash_to_ec pattern from crypto.cpp:
-  // 1. Hash fixed seed
-  // 2. Map hash to curve point via Elligator
-  // 3. Multiply by cofactor 8 to land in prime-order subgroup
+static void do_pedersen_init() {
   static const char seed[] = "Fuego_pedersen_H_generator_v1";
   unsigned char h[32];
   cn_fast_hash(seed, sizeof(seed) - 1, reinterpret_cast<char*>(h));
@@ -58,17 +53,19 @@ void pedersen_init() {
   ge_fromfe_frombytes_vartime(&point_p2, h);
   ge_mul8(&point_p1p1, &point_p2);
   ge_p1p1_to_p3(&s_H_p3, &point_p1p1);
+}
 
-  s_H_initialized = true;
+void pedersen_init() {
+  std::call_once(s_H_once, do_pedersen_init);
 }
 
 const ge_p3& pedersen_H() {
-  if (!s_H_initialized) pedersen_init();
+  std::call_once(s_H_once, do_pedersen_init);
   return s_H_p3;
 }
 
 void pedersen_commit(EllipticCurvePoint &result, uint64_t amount, const EllipticCurveScalar &mask) {
-  if (!s_H_initialized) pedersen_init();
+  std::call_once(s_H_once, do_pedersen_init);
 
   unsigned char amount_scalar[32];
   amount_to_scalar(amount_scalar, amount);

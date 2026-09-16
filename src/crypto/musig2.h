@@ -57,6 +57,7 @@ struct Musig2KeyAgg {
 // Secret nonce state (MUST be kept private, used exactly once).
 struct Musig2SecNonce {
   EllipticCurveScalar k[MUSIG2_V];  // secret nonce scalars
+  bool signed_flag = false;          // set before zeroing in musig2_partial_sign
 };
 
 // Public nonce (sent to counterparty).

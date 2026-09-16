@@ -256,7 +256,10 @@ double Currency::getBurnPercentage() const {
 		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange, uint64_t burnedCoinsOverride) const {
 		unsigned int selectedEmissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
 
-    assert(selectedEmissionSpeedFactor > 0 && selectedEmissionSpeedFactor <= 8 * sizeof(uint64_t));
+    if (selectedEmissionSpeedFactor == 0 || selectedEmissionSpeedFactor > 8 * sizeof(uint64_t)) {
+      logger(ERROR, BRIGHT_RED) << "Invalid emission speed factor: " << selectedEmissionSpeedFactor;
+      return false;
+    }
 
     // Only use burn-adjusted reward formula for v10+ blocks (when burns were introduced)
     // burnedCoinsOverride: when != UINT64_MAX, use deterministic height-indexed value
@@ -268,10 +271,16 @@ double Currency::getBurnPercentage() const {
         // This makes burned coins available for re-emission
         uint64_t Osavvirsak = (alreadyGeneratedCoins > eternalFlame) ?
                               (alreadyGeneratedCoins - eternalFlame) : 0;
-        assert(Osavvirsak <= m_moneySupply);
+        if (Osavvirsak > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "Osavvirsak exceeds money supply at height " << height;
+          return false;
+        }
         baseReward = (m_moneySupply - Osavvirsak) >> selectedEmissionSpeedFactor;
     } else {
-        assert(alreadyGeneratedCoins <= m_moneySupply);
+        if (alreadyGeneratedCoins > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "alreadyGeneratedCoins exceeds money supply at height " << height;
+          return false;
+        }
         baseReward = (m_moneySupply - alreadyGeneratedCoins) >> selectedEmissionSpeedFactor;
     }
 

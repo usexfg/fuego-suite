@@ -79,12 +79,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
 
       - name: Build C++
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF
-          make -C build -j$(nproc)
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
+          cmake --build build -j$(nproc)
 
       - name: Build Go
         run: |
@@ -169,7 +169,8 @@ jobs:
           $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
           $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
-            -G "Visual Studio 18 2026" -A x64 `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
@@ -219,7 +220,7 @@ jobs:
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libsecp256k1-dev
+          sudo apt-get install -y cmake build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libsecp256k1-dev libboost-dev libjsoncpp-dev libicu-dev libssl-dev
 
       - name: Create toolchain file
         run: |
@@ -282,10 +283,10 @@ jobs:
           name: raspberry-pi
           path: ${{ steps.pkg.outputs.asset }}
 
-  # ── AppImage ──
+# ── AppImage ──
   build-appimage:
     name: AppImage Linux
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -294,8 +295,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev wget fuse
-        
-      - name: Download AppImageTool
         run: |
           wget -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
@@ -384,38 +383,43 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Create Dockerfile
+- name: Create Dockerfile
         run: |
           cat > Dockerfile << 'EOF'
           FROM ubuntu:22.04 as builder
 
-           RUN apt-get update && apt-get install -y \
-               build-essential cmake libboost-all-dev \
-               libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev git \
-               && rm -rf /var/lib/apt/lists/*
+          RUN apt-get update && apt-get install -y \
+              build-essential cmake libboost-all-dev \
+              libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev git \
+              && rm -rf /var/lib/apt/lists/*
 
           WORKDIR /src
           COPY . .
 
-           RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF && \
-               make -C build -j$(nproc)
+          RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF && \
+              cmake --build build -j$(nproc)
 
           FROM ubuntu:22.04
 
-           RUN apt-get update && apt-get install -y \
-               libboost-filesystem1.74.0 libboost-thread1.74.0 \
-               libboost-date-time1.74.0 libboost-chrono1.74.0 \
-               libboost-regex1.74.0 libboost-serialization1.74.0 \
-               libboost-program-options1.74.0 libboost-coroutine1.74.0 \
-               libboost-context1.74.0 libboost-atomic1.74.0 \
-               libssl3 libicu70 libjsoncpp25 libsecp256k1-0 ca-certificates \
-               && rm -rf /var/lib/apt/lists/*
+          RUN apt-get update && apt-get install -y \
+              libboost1.83-dev libboost-filesystem1.83.0 \
+              libboost-thread1.83.0 libboost-date-time1.83.0 \
+              libboost-chrono1.83.0 libboost-regex1.83.0 \
+              libboost-serialization1.83.0 libboost-program-options1.83.0 \
+              libboost-coroutine1.83.0 libboost-context1.83.0 \
+              libboost-atomic1.83.0 \
+              libssl3 libicu72 libjsoncpp25 libsecp256k1-0 ca-certificates \
+              && rm -rf /var/lib/apt/lists/*
 
           COPY --from=builder /src/build/src/fuegod /usr/local/bin/
           COPY --from=builder /src/build/src/fire_wallet /usr/local/bin/
           COPY --from=builder /src/build/src/walletd /usr/local/bin/
           COPY --from=builder /src/build/src/testnetd /usr/local/bin/
           COPY --from=builder /src/build/src/test_wallet /usr/local/bin/
+          COPY --from=builder /src/build/src/xfg-swapd /usr/local/bin/
+          COPY --from=builder /src/build/src/optimizer /usr/local/bin/
+          COPY --from=builder /src/build/src/FuegoI2P /usr/local/bin/
+          COPY --from=builder /src/build/src/unified /usr/local/bin/
 
           RUN useradd -m -u 1000 fuego
           USER fuego

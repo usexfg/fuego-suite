@@ -89,7 +89,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
           
       - name: Build
         run: |
@@ -107,7 +107,7 @@ sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev
+          sudo apt-get install -y build-essential cmake libboost-all-dev libssl-dev libicu-dev libjsoncpp-dev libsecp256k1-dev ninja-build
 
       - name: Build with sanitizers
         run: |

@@ -450,3 +450,43 @@ Gugger 2020) is a separate, reviewable piece of work.
 | Build compiles (Daemon, SimpleWallet, SwapDaemonLib) | claude-code/opus-5 | 2026-09-10 | PASS |
 | 14 suites, 0 failures (audit-regressions 37/37, core 177/177) | claude-code/opus-5 | 2026-09-10 | PASS |
 | 3.9 closed | — | — | NO — remains OPEN by design |
+
+---
+
+## Build Fix: Remove orphaned `recordLegacyEpochFeeRate` from CommitmentIndex
+
+**Branch/Feature**: master
+**Started**: 2026-09-16
+**Agent**: opencode
+**Status**: COMPLETE
+
+The `CommitmentIndex.cpp` file contained three orphaned legacy-epoch-fee methods
+(`recordLegacyEpochFeeRate`, `getLegacyEpochFeeRate`, `popLegacyEpochFeeRate`) that
+reference `m_legacyEpochFeeRates`, which is not declared in `CommitmentIndex.h`.
+This caused the build error:
+
+```
+error: no declaration matches 'void CryptoNote::CommitmentIndex::recordLegacyEpochFeeRate(...)'
+```
+
+Fix: removed the three orphaned method definitions and the serialization line for
+`m_legacyEpochFeeRates` (the live model uses `recordEpochFeeRate` / `m_epochFeeRates`).
+No callers of the legacy methods exist in the codebase.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Remove `recordLegacyEpochFeeRate` + `getLegacyEpochFeeRate` + `popLegacyEpochFeeRate` from `.cpp` | opencode | 2026-09-16 | DONE |
+| 2 | Remove `m_legacyEpochFeeRates` serialization from `serialize()` | opencode | 2026-09-16 | DONE |
+| 3 | Verify full build (`crypto`, `core_tests`, `SwapDaemon`, `SimpleWallet`) compiles clean | opencode | 2026-09-16 | DONE |
+| 4 | Verify `core_tests` 147/147 pass | opencode | 2026-09-16 | DONE |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (`CryptoNoteCore`, `SwapDaemon`, `SimpleWallet`, `fire_wallet`) | opencode | 2026-09-16 | PASS |
+| Core tests (`core_tests` 147/147) | opencode | 2026-09-16 | PASS |
+| No orphaned `recordLegacyEpochFeeRate` references remain | opencode | 2026-09-16 | PASS |
+| All tasks complete | opencode | 2026-09-16 | PASS |

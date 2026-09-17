@@ -416,6 +416,17 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_ALIAS:
+           {
+             TransactionExtraAliasRegistration alias;
+             if (getAliasFromExtra(transactionExtra, alias)) {
+               transactionExtraFields.push_back(alias);
+             } else {
+               return false;
+             }
+             break;
+           }
+
             case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;

@@ -28,7 +28,6 @@
 #include "crypto/hash.h"
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Wallet/WalletErrors.h"
 #include "Common/Base58.h"
@@ -263,36 +262,26 @@ std::error_code PaymentServiceJsonRpcServer::handleGetStatus(const GetStatus::Re
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleCreateDeposit(const CreateDeposit::Request& request, CreateDeposit::Response& response) {
-  // Generate appropriate commitment based on deposit term
-  CryptoNote::DepositCommitment commitment;
-
+  // No commitment extras: term-locked HEAT CDs are TransactionOutputCommitment
+  // outputs (term field); HEAT burns must use mintHeatV10, not this endpoint
+  // with HEAT_TERM (WalletGreen::createDeposit rejects HEAT_TERM).
   if (!request.metadata.empty()) {
     std::vector<uint8_t> metadata;
     if (!Common::fromHex(request.metadata, metadata)) {
       return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
     }
-    commitment.metadata = metadata;
   }
 
   // Check if this is a burn deposit (FOREVER term)
   bool isBurnDeposit = (request.term == CryptoNote::parameters::HEAT_TERM);
   response.isBurnDeposit = isBurnDeposit;
 
-  // Generate commitment based on deposit type
-  if (isBurnDeposit) {
-    commitment = CryptoNote::DepositCommitmentGenerator::generateHeatCommitment(
-      request.amount, commitment.metadata);
-  } else {
-    commitment = CryptoNote::DepositCommitmentGenerator::generateYieldCommitment(
-      request.term, request.amount, commitment.metadata);
-  }
-
   // Calculate transaction fees
   uint64_t baseFee = 800000; // 0.008 XFG base transaction fee
   response.transactionFee = baseFee;
   response.totalFees = baseFee;
 
-  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash, commitment);
+  return service.createDeposit(request.amount, request.term, request.sourceAddress, response.transactionHash);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleWithdrawDeposit(const WithdrawDeposit::Request &request, WithdrawDeposit::Response &response)

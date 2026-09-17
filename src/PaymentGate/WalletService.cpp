@@ -1759,8 +1759,7 @@ namespace PaymentService
         uint64_t amount,
         uint64_t term,
         std::string sourceAddress,
-        std::string & transactionHash,
-        const CryptoNote::DepositCommitment& commitment)
+        std::string & transactionHash)
     {
 
       try
@@ -1834,7 +1833,7 @@ namespace PaymentService
         }
 
         /* Create or send the deposit */
-        wallet.createDeposit(amount, term, sourceAddress, sourceAddress, transactionHash, commitment);
+        wallet.createDeposit(amount, term, sourceAddress, sourceAddress, transactionHash);
 
         // Staged unlock removed — deposits are straightforward term-locked CDs.
       }

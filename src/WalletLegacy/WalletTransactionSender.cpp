@@ -28,7 +28,6 @@
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "WalletLegacy/WalletTransactionSender.h"
 #include "WalletLegacy/WalletUtils.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "Common/FileSystem.h"
 #include "Common/Int128.h"
 #include "Common/PathTools.h"
@@ -442,31 +441,7 @@ namespace CryptoNote
     return makeGetRandomOutsRequest(std::move(context), false, transactionSK);
   }
 
-  std::unique_ptr<WalletRequest> WalletTransactionSender::makeWithdrawLegacyBondRequest(TransactionId &transactionId,
-                                                                                       std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
-                                                                                       DepositId depositId,
-                                                                                       uint64_t interest,
-                                                                                       uint64_t fee)
-  {
-    std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
-    context->dustPolicy.dustThreshold = m_currency.defaultDustThreshold();
-
-    std::vector<DepositId> depositIds = {depositId};
-    context->foundMoney = selectDepositTransfers(depositIds, context->selectedTransfers);
-    
-    // Total money including interest (for transaction building)
-    uint64_t totalMoney = context->foundMoney + interest;
-    throwIf(totalMoney < fee, error::WRONG_AMOUNT);
-
-    // Add transaction to cache (record the total output amount)
-    transactionId = m_transactionsCache.addNewTransaction(totalMoney, fee, std::string(), {}, 0, {});
-    context->transactionId = transactionId;
-    context->mixIn = 0;
-
-    setSpendingTransactionToDeposits(transactionId, depositIds);
-
-    return doSendLegacyBondWithdrawTransaction(std::move(context), events, depositId, interest);
-  }
+  // REMOVED: makeWithdrawLegacyBondRequest — no bond claims exist (0xCB/0xCC retired).
 
   std::shared_ptr<WalletRequest> WalletTransactionSender::makeSendFusionRequest(TransactionId &transactionId, std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
                                                                                 const std::vector<WalletLegacyTransfer> &transfers, const std::list<TransactionOutputInformation> &fusionInputs, uint64_t fee, const std::string &extra, uint64_t mixIn, uint64_t unlockTimestamp)
@@ -970,9 +945,11 @@ namespace CryptoNote
         transaction->signInputKey(i, inputs[i], ephKeys[i]);
       }
 
-      // ── Deposit type detection & commitment ──────────────────────────
+      // ── Deposit type detection ─────────────────────────────────────
+      // 0x08 HEAT extras are retired: no new ones are created. A caller-set
+      // 0x08 tag is still recognized for historical deposits; otherwise
+      // deposits carry no commitment extra (CDs are commitment outputs).
       bool isHeatDeposit = false;
-      // bool isColdDeposit = false;
       Deposit::Type detectedType = Deposit::Type::HEAT;
 
       if (!context->extra.empty()) {
@@ -981,26 +958,12 @@ namespace CryptoNote
           detectedType = Deposit::Type::HEAT;
           isHeatDeposit = true;
         }
-        // } else if (tag == TX_EXTRA_SIMPLE_CD) {
-        //   detectedType = Deposit::Type::COLD;
-        //   isColdDeposit = true;
-        // }
       } else {
-        std::vector<uint8_t> generatedExtra;
         if (context->depositTerm == parameters::HEAT_TERM) {
-          auto [commitment, secret] = CryptoNote::DepositCommitmentGenerator::generateHeatCommitmentWithSecret(
-            depositAmount, std::vector<uint8_t>());
-          if (!CryptoNote::createTxExtraWithHeatCommitment(commitment.commitment, depositAmount, commitment.metadata, generatedExtra)) {
-            throw std::runtime_error("Failed to generate HEAT commitment for burn deposit");
-          }
-          transaction->appendExtra(generatedExtra);
-          isHeatDeposit = true;
-          detectedType = Deposit::Type::HEAT;
-        } else {
-          // REMOVED: COLD deposit creation (was for non-HEAT term deposits)
-          // COLD deposits are no longer supported. Only HEAT deposits (HEAT_TERM) are allowed.
-          throw std::runtime_error("COLD deposits are no longer supported. Use HEAT deposit with HEAT_TERM.");
+          // HEAT burns must use mintHeatV10(), not legacy 0x08 extras.
+          throw std::runtime_error("HEAT burn/mint must use mintHeatV10(). Legacy 0x08 commitment extras are retired.");
         }
+        // Term-locked deposits need no commitment extra.
       }
 
       transactionInfo.hash = transaction->getTransactionHash();
@@ -1130,76 +1093,9 @@ namespace CryptoNote
     return std::unique_ptr<WalletRequest>();
   }
 
-  std::unique_ptr<WalletRequest> WalletTransactionSender::doSendLegacyBondWithdrawTransaction(std::shared_ptr<SendTransactionContext> &&context,
-                                                                                             std::deque<std::unique_ptr<WalletLegacyEvent>> &events,
-                                                                                             DepositId depositId,
-                                                                                             uint64_t interest)
-  {
-    if (m_isStoping)
-    {
-      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::TX_CANCELLED)));
-      return std::unique_ptr<WalletRequest>();
-    }
-
-    try
-    {
-      WalletLegacyTransaction &transactionInfo = m_transactionsCache.getTransaction(context->transactionId);
-
-      std::unique_ptr<ITransaction> transaction = createTransaction();
-      std::vector<MultisignatureInput> inputs = prepareMultisignatureInputs(context->selectedTransfers);
-
-      // Interest claim 0xCC extra
-      std::vector<uint8_t> extra;
-      TransactionExtraLegacyBondClaim claim;
-      claim.claimedInterest = interest;
-      addLegacyBondClaimToExtra(extra, claim);
-      transaction->appendExtra(extra);
-
-      // Output amount = principal + interest - fee
-      uint64_t totalAmount = context->foundMoney + interest;
-      std::vector<uint64_t> outputAmounts = splitAmount(totalAmount - transactionInfo.fee, context->dustPolicy.dustThreshold);
-
-      for (const auto &input : inputs)
-      {
-        transaction->addInput(input);
-      }
-
-      for (auto amount : outputAmounts)
-      {
-        transaction->addOutput(amount, m_keys.address);
-      }
-
-      transaction->setUnlockTime(transactionInfo.unlockTime);
-
-      assert(inputs.size() == context->selectedTransfers.size());
-      for (size_t i = 0; i < inputs.size(); ++i)
-      {
-        transaction->signInputMultisignature(i, context->selectedTransfers[i].transactionPublicKey, context->selectedTransfers[i].outputInTransaction, m_keys);
-      }
-
-      transactionInfo.hash = transaction->getTransactionHash();
-      Transaction lowlevelTransaction = convertTransaction(*transaction, static_cast<size_t>(m_upperTransactionSizeLimit));
-
-      UnconfirmedSpentDepositDetails unconfirmed;
-      unconfirmed.depositsSum = context->foundMoney;
-      unconfirmed.fee = transactionInfo.fee;
-      unconfirmed.transactionId = context->transactionId;
-      m_transactionsCache.addDepositSpendingTransaction(transaction->getTransactionHash(), unconfirmed);
-
-      return std::unique_ptr<WalletRelayDepositTransactionRequest>(new WalletRelayDepositTransactionRequest(lowlevelTransaction,
-                                                                                                            std::bind(&WalletTransactionSender::relayDepositTransactionCallback, this, context, std::vector<DepositId>{depositId}, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)));
-    }
-    catch (std::system_error &ec)
-    {
-      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, ec.code()));
-    }
-    catch (std::exception &)
-    {
-      events.push_back(makeCompleteEvent(m_transactionsCache, context->transactionId, make_error_code(error::INTERNAL_WALLET_ERROR)));
-    }
-
-    return std::unique_ptr<WalletRequest>();
-  }
+  // REMOVED: doSendLegacyBondWithdrawTransaction — no bond claims exist
+  // (0xCB/0xCC retired). Legacy XFG multisig deposits withdraw principal-only
+  // via the regular deposit-withdraw path (calculateInterest == 0).
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendCommitmentWithdrawTransaction(
       std::shared_ptr<SendTransactionContext>&& context,

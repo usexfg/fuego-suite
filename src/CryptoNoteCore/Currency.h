@@ -224,14 +224,13 @@ public:
     // Interest functions
     uint64_t calculateInterest(uint64_t amount, uint32_t term, uint32_t height) const;
     // Fee-pool interest: accrued from swap fees over epochs a CD was locked
-    // isLegacyBond=true uses legacy bond fee rate track (50% CD share for bug-era deposits)
     // term=0 skips loyalty bonus check (conservative cap); pass actual term for payout
     // autoRolled=true compounds interest at the auto-roll boundary (doubled earning period)
     // v11+: returns BASE interest only; loyalty bonus is paid from Bonus Vault via calculateCdBonus().
     uint64_t calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                   uint32_t currentHeight,
                                   const CommitmentIndex& commitmentIndex,
-                                  bool isLegacyBond = false, uint32_t term = 0,
+                                  uint32_t term = 0,
                                   bool autoRolled = false) const;
     // v11+: BV-backed loyalty bonus. Σ over locked epochs of
     // bonusHeat_e × amount × tierWeight(term) / weightedBase_e — realized BV
@@ -278,9 +277,6 @@ public:
   uint64_t getBurnDepositLargeAmount() const { return m_burnDepositLargeAmount; }
   uint32_t getDepositTermForever() const { return m_depositTermForever; }
   uint32_t getDepositTermBurn() const { return m_depositTermForever; }  // Alias for compatibility
-
-  // HEAT token conversion methods
-  uint64_t getHeatConversionRate() const { return m_heatConversionRate; }
 
   // Money supply methods
   uint64_t getBaseMoneySupply() const { return m_baseMoneySupply; }
@@ -392,9 +388,6 @@ private:
   uint64_t m_burnDepositStandardAmount;
   uint64_t m_burnDepositLargeAmount;
   uint32_t m_depositTermForever;
-
-  // HEAT token conversion
-  uint64_t m_heatConversionRate;
 
   // Money supply
   uint64_t m_baseMoneySupply;
@@ -535,9 +528,6 @@ public:
   CurrencyBuilder& burnDepositStandardAmount(uint64_t val) { m_currency.m_burnDepositStandardAmount = val; return *this; }
   CurrencyBuilder& burnDepositLargeAmount(uint64_t val) { m_currency.m_burnDepositLargeAmount = val; return *this; }
   CurrencyBuilder& depositTermForever(uint32_t val) { m_currency.m_depositTermForever = val; return *this; }
-
-  // HEAT conversion builder
-  CurrencyBuilder& heatConversionRate(uint64_t val) { m_currency.m_heatConversionRate = val; return *this; }
 
   // Money supply builders
   CurrencyBuilder& baseMoneySupply(uint64_t val) { m_currency.m_baseMoneySupply = val; return *this; }

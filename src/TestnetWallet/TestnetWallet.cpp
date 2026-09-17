@@ -51,7 +51,6 @@
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/AliasIndex.h"
 #include "CryptoNoteCore/TransactionExtra.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 
 namespace CryptoNote
 {
@@ -224,7 +223,7 @@ namespace CryptoNote
             burnCount++;
             success_msg_writer() << "  [" << i << "] Amount: " << m_currency.formatAmount(deposit.amount)
                                  << " TEST | Status: Burned"
-                                 << " | Type: HEAT (0x08)";
+                                 << " | Type: HEAT";
           }
         }
       }

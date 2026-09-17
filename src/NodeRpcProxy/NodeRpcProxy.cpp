@@ -787,8 +787,7 @@ std::error_code NodeRpcProxy::jsonRpcCommand(const std::string& method, const Re
 }
 
 std::error_code NodeRpcProxy::getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                              uint32_t currentHeight, uint64_t& outInterest,
-                                              bool isLegacyBond) {
+                                              uint32_t currentHeight, uint64_t& outInterest) {
   COMMAND_RPC_ESTIMATE_CD_YIELD::request req;
   COMMAND_RPC_ESTIMATE_CD_YIELD::response res;
   req.amount = amount;

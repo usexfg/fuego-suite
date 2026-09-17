@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="178" height="48" viewBox="0 0 178 48" role="img" aria-labelledby="fuego-lockup">
+  <title id="fuego-lockup">Fuego</title>
+  <path fill="#C5A059" fill-rule="evenodd" d="M24 8 37.86 16 37.86 32 24 40 10.14 32 10.14 16Z M24 11.5 34.83 17.75 34.83 30.25 24 36.5 13.17 30.25 13.17 17.75Z"/>
+  <path fill="#C5A059" d="M24 14C26.6 18.2 29.5 20.8 29.5 25.6 29.5 29.8 27 34 24 34 21 34 18.5 29.8 18.5 25.6 18.5 22.9 20.2 21.2 21.4 18.8 21.7 21.2 21.2 22.9 22.3 24.4 23.2 22.2 23.5 17.4 24 14Z"/>
+  <g fill="none" stroke="#F5F1E8" stroke-width="2.6">
+    <path d="M56 14v20M56 14h12M56 23.5h9"/>
+    <path d="M78 14v14a6 6 0 0 0 12 0V14"/>
+    <path d="M100 14v20M100 14h12M100 23.5h9M100 34h12"/>
+    <path d="M137.07 16.93A10 10 0 1 0 140 24h-8"/>
+    <path d="M148 24a10 10 0 1 0 20 0 10 10 0 1 0-20 0"/>
+  </g>
+</svg>

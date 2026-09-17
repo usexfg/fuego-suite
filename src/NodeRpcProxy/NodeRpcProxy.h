@@ -90,8 +90,7 @@ public:
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override;
 
   virtual std::error_code getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                        uint32_t currentHeight, uint64_t& outInterest,
-                                        bool isLegacyBond = false) override;
+                                        uint32_t currentHeight, uint64_t& outInterest) override;
   virtual std::error_code getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
                                          uint32_t currentHeight, CdClaimInfo& out,
                                          uint32_t term = 0) override;

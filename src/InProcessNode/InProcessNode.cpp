@@ -1111,9 +1111,8 @@ void InProcessNode::isSynchronizedAsync(bool& syncStatus, const Callback& callba
 }
 
 std::error_code InProcessNode::getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                              uint32_t currentHeight, uint64_t& outInterest,
-                                              bool isLegacyBond) {
-  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, isLegacyBond, 0, false);
+                                              uint32_t currentHeight, uint64_t& outInterest) {
+  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, 0, false);
 }
 
 std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
@@ -1122,7 +1121,7 @@ std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creation
   out = CdClaimInfo{};
   std::error_code ec = core.calculateCdInterest(amount, creationHeight, currentHeight,
                                                 out.formulaInterest,
-                                                false, 0, false);
+                                                0, false);
   if (ec) return ec;
   out.feePoolBalance = core.getFeePoolBalance();
   out.vaultBalance = core.getCdApyVaultBalance();
@@ -1133,7 +1132,7 @@ std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creation
   // v11+: consensus split (base without loyalty + BV-backed bonus).
   uint64_t base = 0, bonus = 0;
 ec = core.calculateCdInterest(amount, creationHeight, currentHeight, base,
-                                 false, term, false);
+                                 term, false);
   if (ec) return ec;
   out.baseInterest = base;
   ec = core.calculateCdBonus(amount, creationHeight, currentHeight, bonus, term);

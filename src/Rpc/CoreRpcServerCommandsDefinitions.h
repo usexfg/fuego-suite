@@ -509,7 +509,7 @@ struct COMMAND_RPC_GETBLOCKCOUNT {
 struct COMMAND_RPC_PROVE_COLLATERAL {
   struct request {
     std::string transactionHash;
-    uint8_t commitment_type;  // 136=Burn(0x08), 7=CIA(0x07), 205=CD(0xCD)
+    uint8_t commitment_type;  // 213=deposit secret(0xD5). Legacy 0x08/0x07 retired, 0xCD COLD retired.
     bool commitment;          // Whether to verify commitment
 
     void serialize(ISerializer &s) {

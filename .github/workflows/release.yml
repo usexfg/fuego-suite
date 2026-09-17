@@ -169,7 +169,7 @@ jobs:
           $vcpkgDir = if (Test-Path "C:\vcpkg") { "C:\vcpkg" } else { "$env:VCPKG_INSTALLATION_ROOT" }
           $toolchain = Join-Path $vcpkgDir "scripts/buildsystems/vcpkg.cmake"
           cmake -S "${{ github.workspace }}" -B "${{ github.workspace }}/build" `
-            -G "Visual Studio 17 2022" -A x64 `
+            -G "Visual Studio 18 2026" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
             -DBOOST_ROOT="C:\boost" `
             -DBOOST_LIBRARYDIR="C:\boost\lib" `
@@ -379,7 +379,7 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
-- name: Create Dockerfile
+      - name: Create Dockerfile
         run: |
           cat > Dockerfile << 'EOF'
           FROM ubuntu:22.04 as builder
@@ -398,13 +398,12 @@ jobs:
           FROM ubuntu:22.04
 
           RUN apt-get update && apt-get install -y \
-              libboost1.83-dev libboost-filesystem1.83.0 \
-              libboost-thread1.83.0 libboost-date-time1.83.0 \
-              libboost-chrono1.83.0 libboost-regex1.83.0 \
-              libboost-serialization1.83.0 libboost-program-options1.83.0 \
-              libboost-coroutine1.83.0 libboost-context1.83.0 \
-              libboost-atomic1.83.0 \
-              libssl3 libicu72 libjsoncpp25 libsecp256k1-0 ca-certificates \
+              libboost-filesystem1.74.0 libboost-thread1.74.0 \
+              libboost-date-time1.74.0 libboost-chrono1.74.0 \
+              libboost-regex1.74.0 libboost-serialization1.74.0 \
+              libboost-program-options1.74.0 libboost-coroutine1.74.0 \
+              libboost-context1.74.0 libboost-atomic1.74.0 \
+              libssl3 libicu70 libjsoncpp25 libsecp256k1-0 ca-certificates \
               && rm -rf /var/lib/apt/lists/*
 
           COPY --from=builder /src/build/src/fuegod /usr/local/bin/

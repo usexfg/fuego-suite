@@ -4,6 +4,57 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## CI green: fix Build check failures + release.yml parse error
+
+**Branch/Feature**: master
+**Started**: 2026-09-17
+**Agent**: opencode (muse-spark)
+**Status**: IN PROGRESS (pushed, monitoring CI)
+
+Build check run 35164418726 failed all 5 jobs; release.yml failed YAML parse
+(0 jobs). Root causes found in CI logs:
+
+- **release.yml unparseable**: `Create Dockerfile` step had 1-space indent
+  (broke 262e285d push); fixed to 6 spaces. Also reverted Dockerfile runtime
+  packages 1.83/libicu72 back to 1.74/libicu70 — 1.83 does not exist on the
+  `ubuntu:22.04` builder/runtime image (previous session's change would have
+  failed `apt-get install` on tag builds).
+- **Sanitizers**: `cmake --build build-san -j$(nproc) CryptoNoteCore ...`
+  is invalid (`Unknown argument`); targets must follow `--target`.
+  (Regression from prior make→cmake conversion.)
+- **Ubuntu 24.04 + macOS**: `Currency::calculateCdInterest` definition
+  (6 params) did not match declaration (7 params, `isLegacyBond`) at the
+  pushed commit — fixed by f6e29467 which removed `isLegacyBond` across
+  Currency/Core/ICore/InProcessNode; verified no stragglers and
+  `CryptoNoteCore` + full build compile locally.
+- **Windows**: runner `windows-2025` has VS 18 2026 only
+  (`C:\Program Files\Microsoft Visual Studio\18\Enterprise`, proven by
+  last-green run 34931868908). Prior session's VS 17 2022 "fix" was wrong —
+  reverted both files to `Visual Studio 18 2026`. Also removed stray `\`
+  before the pwsh backtick continuation in check.yml (caused `Ignoring extra
+  path` + `-DCMAKE_TOOLCHAIN_FILE` executed as a command); step now
+  byte-identical to last-green. Stale `ubuntu22.yml`-era workflows in the
+  Actions list are ghosts of deleted files — no action needed.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Fix release.yml indent (Dockerfile step) + revert runtime pkgs to 1.74 | opencode | 2026-09-17 | DONE |
+| 2 | Fix Sanitizers `--target` | opencode | 2026-09-17 | DONE |
+| 3 | Confirm Currency mismatch resolved in tree + local compile | opencode | 2026-09-17 | DONE |
+| 4 | Revert Windows generator to VS 18 2026, fix pwsh continuation | opencode | 2026-09-17 | DONE |
+| 5 | Full local build (all default targets) | opencode | 2026-09-17 | DONE |
+| 6 | Push + monitor Build check to green | opencode | 2026-09-17 | IN PROGRESS |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles (local, AppleClang, all targets) | PASS 2026-09-17 |
+| release.yml / check.yml YAML parse | PASS (ruby YAML.load_file) |
+| CI Build check green | PENDING (monitoring) |
+
+---
+
 ## CD subsystem: verified fixes from work-order (items 1, 2, 4, 5, 7)
 **Branch/Feature**: master
 **Started**: 2026-09-15

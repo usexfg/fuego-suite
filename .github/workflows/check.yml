@@ -76,7 +76,13 @@ jobs:
             -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
             -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
-          cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS
+          # -j is capped at 2 and node reuse is off deliberately. At -j
+          # $NUMBER_OF_PROCESSORS (4 on windows-2025) every target linked but
+          # MSBuild still exited 1, printing no build summary and leaving three
+          # orphaned MSBuild processes for the runner to terminate — the
+          # signature of a worker node dying rather than a compile error.
+          cmake --build "${{ github.workspace }}/build" --config Release -j 2 -- /nodeReuse:false
+          if ($LASTEXITCODE -ne 0) { throw "MSBuild exited $LASTEXITCODE" }
 
   build-ubuntu24:
     name: Ubuntu 24.04

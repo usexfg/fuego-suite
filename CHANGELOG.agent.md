@@ -4,6 +4,46 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## CI: Windows build exits 1 with every target linked
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: IN PROGRESS (pushed, monitoring)
+
+Windows is the only failing job — macOS 14/15, Ubuntu 24.04 and Sanitizers all pass
+on every recent run, across branches. On master (run 35166598710) the Windows log
+shows every target linking (`fuegod.exe`, `xfg-swapd.exe`, `fire_wallet.exe`,
+`unified.exe`, `testnetd.exe`, all test binaries), zero compile errors, only C4244 /
+C4068 warnings — then `Process completed with exit code 1` 0.1s after the last link,
+with no MSBuild build summary and three orphaned MSBuild processes terminated by
+runner cleanup.
+
+A missing summary plus orphaned worker nodes is a worker dying, not a compile error.
+windows-2025 is 4 vCPU / 16 GB and the tree is boost-template heavy.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Cap `-j` at 2 (was `$NUMBER_OF_PROCESSORS` = 4) | Claude Opus 5 | 2026-09-20 | DONE |
+| 2 | Pass `/nodeReuse:false` to stop nodes outliving the step | Claude Opus 5 | 2026-09-20 | DONE |
+| 3 | Throw explicitly on non-zero `$LASTEXITCODE` so the code is visible | Claude Opus 5 | 2026-09-20 | DONE |
+| 4 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-20 | IN PROGRESS |
+
+**This is a hypothesis, not a confirmed fix.** The failure cannot be reproduced in
+this Linux environment — there is no Windows runner here — so it is diagnosed purely
+from the CI log. If the next run still fails, task 3 makes the actual exit code
+visible, which is the next thing to work from.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| YAML parses | PASS (python yaml.safe_load) |
+| Windows CI green | PENDING (monitoring) |
+| All tasks done | NO — task 4 open |
+
+---
+
 ## GLEEC: close to new swaps instead of de-registering (supersedes 6200a3c)
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

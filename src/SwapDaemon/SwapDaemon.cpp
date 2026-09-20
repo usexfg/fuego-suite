@@ -362,21 +362,22 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << " (chainId=" << chainCfg.polyChainId << ")";
   }
 
-  // GLEEC (Evmos fork) — EVM-compatible
-  if (!chainCfg.gleecHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
-        chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
-        chainCfg.gleecChainId);
-    applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
-        !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
-        m_logger, "GLEEC");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
-    m_chainRegistry.registerChain(SwapPair::GLEEC,
-        std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
-    m_logger(Logging::INFO) << "GLEEC chain client registered: "
-      << chainCfg.gleecHost << ":" << chainCfg.gleecPort
-      << " (chainId=" << chainCfg.gleecChainId << ")";
-  }
+  // GLEEC (Evmos fork) — disabled pending chain status investigation
+  // TODO: re-enable once GLEEC chain situation is resolved
+  // if (!chainCfg.gleecHost.empty()) {
+  //   auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
+  //       chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
+  //       chainCfg.gleecChainId);
+  //   applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
+  //       !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
+  //       m_logger, "GLEEC");
+  //   applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
+  //   m_chainRegistry.registerChain(SwapPair::GLEEC,
+  //       std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
+  //   m_logger(Logging::INFO) << "GLEEC chain client registered: "
+  //     << chainCfg.gleecHost << ":" << chainCfg.gleecPort
+  //     << " (chainId=" << chainCfg.gleecChainId << ")";
+  // }
   // ROBINHOOD (Robinhood Chain — EVM L1)
   if (!chainCfg.rhHost.empty()) {
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,

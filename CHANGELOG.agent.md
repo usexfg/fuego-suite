@@ -51,6 +51,29 @@ applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
 
 ---
 
+## Disable GLEEC chain pending status investigation
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Sonnet 4.6
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Comment out GLEEC registration block in SwapDaemon.cpp | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## CI green: fix Build check failures + release.yml parse error
 
 **Branch/Feature**: master

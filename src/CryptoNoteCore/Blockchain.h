@@ -152,11 +152,17 @@ namespace CryptoNote {
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
 
-    // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio.
+    // Rolling 8-block window reducer for HEAT mint price validation.
+    // MEDIAN, not mean: a mean moves by 1/8 of any single block's deviation,
+    // so one manipulated block shifts it immediately. A median of 8 does not
+    // move at all until an attacker controls 4 of the 8 samples, turning a
+    // linear response into a threshold that costs 4 blocks to cross.
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
-    uint64_t getRollingTwap() const;
+    uint64_t getRollingMedianPrice() const;
     uint64_t getMintPrice() const;
+    // Per-epoch ceiling on HEAT issuance, and how much of it is used.
+    uint64_t heatMintEpochQuota() const;
+    uint64_t heatIssuedThisEpoch() const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -446,6 +452,7 @@ namespace CryptoNote {
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
       uint64_t bonusWeightedBase;
+      uint64_t epochStartHeatSupply;
 
       void serialize(ISerializer& s) {
         s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
@@ -473,6 +480,15 @@ namespace CryptoNote {
         s(bonusVaultBalance, "bonus_vault_balance");
         s(bonusVaultPendingXfg, "bonus_vault_pending_xfg");
         s(bonusWeightedBase, "bonus_weighted_base");
+        // Appended: older snapshots simply start the epoch at zero.
+        // Appended: an older snapshot has no baseline, so fall back to the
+        // supply it recorded — the epoch then reads as having issued
+        // nothing so far, and self-corrects at the next boundary.
+        try { s(epochStartHeatSupply, "epoch_start_heat_supply"); }
+        catch (std::exception&) {
+          if (s.type() == ISerializer::INPUT) epochStartHeatSupply = heatSupply;
+          else throw;
+        }
       }
     };
 
@@ -611,6 +627,12 @@ namespace CryptoNote {
     std::deque<std::pair<uint64_t, uint64_t>> m_blockEpochDistributions;  // <treasuryShare, rolloverShare>
     // Per-block TWAP contribution tracking — used by popBlock to undo non-boundary block TWAP accumulation.
     std::deque<uint128_t> m_blockTwapContributions;
+    // HEAT supply as of the start of the current epoch. The epoch's issuance
+    // is m_heatSupply minus this, which both the push path and the
+    // rebuildCache replay already maintain correctly — so the mint quota
+    // needs no per-block bookkeeping of its own and cannot drift between a
+    // node that rebuilt its cache and one that did not.
+    uint64_t m_epochStartHeatSupply = 0;
     // Epoch state snapshots for popBlock reversal
     std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
 

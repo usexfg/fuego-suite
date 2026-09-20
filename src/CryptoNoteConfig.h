@@ -256,6 +256,29 @@ namespace CryptoNote
         const uint64_t DIGM_MINT_MIN_HEAT = 1000000;                // 0.10 HEAT minimum (1 DIGM)
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
+
+        // Ceiling on how fast the mint oracle may RISE, per block.
+        //
+        // Asymmetric on purpose. Only an oracle that reads too HIGH dilutes
+        // holders (it mints more HEAT per XFG than the pool backs), so the
+        // rise is rate-limited and the fall is not. An attacker who moves the
+        // pool must now hold it moved for many blocks to drag the oracle with
+        // it, paying curve slippage and fees every block, while the fall side
+        // stays instant so an honest crash reprices mints immediately.
+        const uint64_t HEAT_ORACLE_MAX_RISE_BPS = 100;              // +1% per block
+
+        // Per-epoch ceiling on HEAT minted by burning XFG, as a share of the
+        // HEAT already in existence, floored by an absolute amount so the
+        // supply can bootstrap from zero.
+        //
+        // This is a damage bound, not a price control: it holds even if the
+        // oracle is wrong, capping what a successful manipulation can issue
+        // before the next epoch re-prices. The cost is liveness — genuine
+        // demand above the quota is rejected until the epoch turns — so the
+        // number is a deliberate tradeoff, not a safe default.
+        // Only oracle-priced mints count against it; CD yield issuance does not.
+        const uint64_t HEAT_MINT_EPOCH_QUOTA_PCT = 25;              // 25% of supply per epoch
+        const uint64_t HEAT_MINT_EPOCH_QUOTA_FLOOR = 10000ULL * 10000000ULL;  // 10,000 HEAT
         // How far BELOW the price-implied amount a mint may land before it is
         // rejected as a client error rather than accepted as a silent loss.
         // Only the shortfall side is tolerant: claiming too much HEAT is

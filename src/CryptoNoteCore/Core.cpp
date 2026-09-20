@@ -1540,7 +1540,7 @@ std::error_code core::getAmmPoolReserves(AmmPoolReserves& out) {
 }
 
 uint64_t core::getHearthTwap() {
-  return m_blockchain.getRollingTwap();
+  return m_blockchain.getRollingMedianPrice();
 }
 
 uint64_t core::getMintPrice() {

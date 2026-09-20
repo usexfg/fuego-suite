@@ -342,6 +342,21 @@ public:
         }
       }
 
+      // HEAT supply at the start of the current epoch, the baseline the mint
+      // quota measures against. Appended at the end so older caches load
+      // unchanged; absent, it falls back to the current supply, which reads
+      // the running epoch as having issued nothing so far and self-corrects
+      // at the next boundary.
+      try {
+        s(m_bs.m_epochStartHeatSupply, "epoch_start_heat_supply");
+      } catch (std::exception&) {
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_epochStartHeatSupply = m_bs.m_heatSupply;
+        } else {
+          throw;
+        }
+      }
+
       // Alias registry: without persistence, every registered/released/
       // transferred alias was wiped on every normal daemon restart (only
       // rebuildCache(), which runs on cache-load failure, ever repopulated
@@ -932,6 +947,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_twapBlockCount = 0;
     m_rollingPriceWindow.clear();
     m_lastTwapVersion = 0;
+    m_epochStartHeatSupply = 0;
     m_cdYieldPool = 0;
     m_cdReserve = 0;
     m_heatCdFeePool = 0;
@@ -1045,6 +1061,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
       if (b > 0 && b % epochDuration == 0) {
         EpochStateSnapshot preEpoch;
         preEpoch.heatSupply = m_heatSupply;
+        preEpoch.epochStartHeatSupply = m_epochStartHeatSupply;
         preEpoch.heatOnDeposit = m_heatOnDeposit;
         preEpoch.heatCdFeePool = m_heatCdFeePool;
         preEpoch.cdYieldPool = m_cdYieldPool;
@@ -3373,6 +3390,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     if (height > 0 && height % epochDuration == 0) {
       EpochStateSnapshot preEpoch;
       preEpoch.heatSupply = m_heatSupply;
+      preEpoch.epochStartHeatSupply = m_epochStartHeatSupply;
       preEpoch.heatOnDeposit = m_heatOnDeposit;
       preEpoch.heatCdFeePool = m_heatCdFeePool;
       preEpoch.cdYieldPool = m_cdYieldPool;
@@ -3412,6 +3430,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     // pre-block fee pool and vault balances; the sum must fit, not each tx alone.
     uint64_t blockClaimedInterest = 0;
     uint64_t blockClaimedBonus = 0;  // v11+: BV-backed bonus aggregate
+    uint64_t blockHeatMinted = 0;    // v11+: HEAT minted by txs in this block
     struct BlockHashLess {
       bool operator()(const Crypto::Hash& left, const Crypto::Hash& right) const {
         return memcmp(left.data, right.data, sizeof(left.data)) < 0;
@@ -4070,6 +4089,23 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                                                     authXfgBurned, authHeatMinted)) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
+            } else {
+              // Per-epoch issuance ceiling. A bound on damage rather than on
+              // price: however wrong the oracle gets, only this much HEAT can
+              // enter existence before the epoch turns and it is re-priced.
+              // Earlier transactions in this same block are counted via
+              // blockHeatMinted, since none of them have reached m_heatSupply
+              // yet at validation time.
+              uint64_t quota = heatMintEpochQuota();
+              uint64_t used = heatIssuedThisEpoch() + blockHeatMinted;
+              if (used > quota || authHeatMinted > quota - used) {
+                isTransactionValid = false;
+                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                    << " HEAT mint rejected: epoch quota exhausted ("
+                    << used << " + " << authHeatMinted << " > " << quota << ")";
+              } else {
+                blockHeatMinted += authHeatMinted;
+              }
             }
           }
         }
@@ -4211,13 +4247,25 @@ uint64_t CryptoNote::Blockchain::getMintPrice() const {
   // Single source of truth for the price a HEAT mint is validated against,
   // so consensus and the RPC that quotes it cannot drift apart.
   //
-  // The 8-block TWAP is preferred because it is expensive to manipulate.
+  // The reduced window is preferred because it is expensive to manipulate.
   // Spot covers the window still filling.
+  uint64_t spot = (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0)
+      ? ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
+      : 0;
+
   if (m_rollingPriceWindow.size() >= 2) {
-    return getRollingTwap();
+    uint64_t median = getRollingMedianPrice();
+    if (median == 0) return 0;
+    // Floored by live spot. The window's rise ceiling is what makes the
+    // oracle costly to push up, but on its own that ceiling would also hold
+    // the oracle stale-high through an honest crash and mint HEAT at a price
+    // the market has already left. Taking the lower of the two tracks a fall
+    // in a single block while ignoring a spike entirely, because a spike can
+    // only ever put spot ABOVE the median.
+    return (spot > 0 && spot < median) ? spot : median;
   }
-  if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
-    return ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+  if (spot > 0) {
+    return spot;
   }
 
   // The fixed launch ratio exists for exactly one situation: the bootstrap
@@ -4238,11 +4286,26 @@ uint64_t CryptoNote::Blockchain::getMintPrice() const {
   return heatLaunchMintPrice();
 }
 
-uint64_t CryptoNote::Blockchain::getRollingTwap() const {
+uint64_t CryptoNote::Blockchain::heatMintEpochQuota() const {
+  uint64_t bySupply = static_cast<uint64_t>(
+      ((uint128_t)m_epochStartHeatSupply * parameters::HEAT_MINT_EPOCH_QUOTA_PCT) / 100);
+  return std::max(bySupply, parameters::HEAT_MINT_EPOCH_QUOTA_FLOOR);
+}
+
+uint64_t CryptoNote::Blockchain::heatIssuedThisEpoch() const {
+  return (m_heatSupply > m_epochStartHeatSupply)
+      ? m_heatSupply - m_epochStartHeatSupply : 0;
+}
+
+uint64_t CryptoNote::Blockchain::getRollingMedianPrice() const {
   if (m_rollingPriceWindow.empty()) return 0;
-  uint64_t sum = 0;
-  for (uint64_t p : m_rollingPriceWindow) sum += p;
-  return sum / m_rollingPriceWindow.size();
+  std::vector<uint64_t> sorted(m_rollingPriceWindow.begin(),
+                               m_rollingPriceWindow.end());
+  std::sort(sorted.begin(), sorted.end());
+  size_t n = sorted.size();
+  if (n % 2 == 1) return sorted[n / 2];
+  return static_cast<uint64_t>(
+      ((uint128_t)sorted[n / 2 - 1] + sorted[n / 2]) / 2);
 }
 
 std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
@@ -4576,30 +4639,33 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   }
 
   // V11+: unfilled remainder of resting orders executes against the pool
-  // (AMM backstop) at the live spot price. Orders are tx-extra-backed (funds
-  // committed via TransactionExtraLimitDeposit), so no gossip, no unbacked
-  // orders. Pre-v11: in-band matching was never wired to a submission path;
-  // no historical blocks contain in-band fills, so nothing to preserve.
+  // (AMM backstop). Orders are tx-extra-backed (funds committed via
+  // TransactionExtraLimitDeposit), so no gossip, no unbacked orders. Pre-v11:
+  // in-band matching was never wired to a submission path; no historical
+  // blocks contain in-band fills, so nothing to preserve.
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() &&
       !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0 &&
       m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH) {
-    // Fills execute at the LIVE pool spot price — never the (frozen) bootstrap
-    // clearing price — so limit orders track the AMM and cannot arbitrage it.
-    const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
-    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR; 
-    // Backstop volume cap: pool-intermediated fills are bounded at
-    // HEARTH_BACKSTOP_MAX_BPS (500 = 5×) of the block's auction volume. With no
-    // auction volume the backstop is bounded at 500 basis points (5%) of the
-    // pool's XFG reserve — never unlimited — so a single quiet block cannot
-    // drain the pool to dust.
-    uint64_t backstopRemaining = 0;
+    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
+
+    // Backstop volume cap. Two bounds, BOTH of which must hold:
+    //   * HEARTH_BACKSTOP_MAX_BPS (5%) of the pool's XFG reserve, always.
+    //     This is what bounds the per-block price impact, and therefore what
+    //     keeps the mint oracle expensive to move.
+    //   * 5x the block's auction volume, when there was any, so that
+    //     pool-intermediated flow cannot dwarf real price discovery.
+    // The auction branch used to REPLACE the reserve bound rather than narrow
+    // it, leaving that path with no bound relative to the pool at all. The
+    // per-addressHash self-trade exclusion in runAuction does not stop a wash
+    // across two addresses, so manufactured auction volume bought a fill of
+    // effectively arbitrary size.
+    uint64_t backstopRemaining = static_cast<uint64_t>(
+        ((uint128_t)m_ammPool.reserveXfg * parameters::HEARTH_BACKSTOP_MAX_BPS) / 10000);
     if (auctionMatchedVolume > 0) {
-      backstopRemaining = static_cast<uint64_t>(
+      uint64_t byAuctionVolume = static_cast<uint64_t>(
           ((uint128_t)auctionMatchedVolume * parameters::HEARTH_BACKSTOP_MAX_BPS) / 100);
-    } else {
-      backstopRemaining = static_cast<uint64_t>(
-          ((uint128_t)m_ammPool.reserveXfg * parameters::HEARTH_BACKSTOP_MAX_BPS) / 10000);
+      backstopRemaining = std::min(backstopRemaining, byAuctionVolume);
     }
 
     for (auto& kv : m_limitDeposits) {
@@ -4608,28 +4674,54 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
       if (dep.expired) continue;
 
-      if (price == 0) continue;
       if (dep.targetPrice == 0) continue;
+      if (backstopRemaining == 0) break;
+
+      // Spot for THIS deposit's turn: earlier fills in this pass have already
+      // moved the reserves, and each fill must be priced against the pool it
+      // actually executes against.
+      const uint64_t spotNow =
+          ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+      if (spotNow == 0) continue;
 
       if (dep.side == 1) {
         // SELL_XFG: user demands at least targetPrice HEAT per XFG.
-        if (dep.targetPrice > price) continue;  // pool won't pay that much
-        uint64_t maxByHeat = static_cast<uint64_t>(
-            ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / price);
-        uint64_t fillXfg = std::min(dep.amount, maxByHeat);
+        //
+        // Fills are priced along the constant-product curve, not at a flat
+        // pre-fill spot. A flat rate handed the taker the entire price impact
+        // for free, which made a buy-then-sell round trip across two blocks
+        // profitable at the LPs' expense and let the mint oracle be moved for
+        // nothing. On the curve a round trip costs exactly the fees.
+        //
+        // Realized gross rate is Rh/(Rx+f), which decays as the fill grows, so
+        // the limit price bounds SIZE rather than gating yes/no:
+        //     f <= Rh*COIN/targetPrice - Rx
+        // A target above spot yields a non-positive bound, which subsumes the
+        // old spot pre-check; a large order now fills the portion that clears
+        // its limit instead of being rejected whole.
+        uint128_t limitBound =
+            ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / dep.targetPrice;
+        if (limitBound <= m_ammPool.reserveXfg) continue;
+        uint64_t maxByLimit = static_cast<uint64_t>(limitBound - m_ammPool.reserveXfg);
+
+        uint64_t fillXfg = std::min(dep.amount, maxByLimit);
         fillXfg = std::min(fillXfg, backstopRemaining);
         if (fillXfg == 0 || m_ammPool.pendingXfg < fillXfg) continue;
-        backstopRemaining -= fillXfg;
 
-        // Taker pays the 1% fee by receiving (div-bps)/div of gross.
-        uint64_t grossHeat = static_cast<uint64_t>(
-            ((uint128_t)fillXfg * price) / parameters::COIN);
+        uint64_t grossHeat = ammGetOutputAmount(
+            fillXfg, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+        // Taker pays the fee by receiving (div-bps)/div of gross.
         uint64_t heatPaid = static_cast<uint64_t>(
             ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
         uint64_t feeHeat = grossHeat - heatPaid;
-        if (grossHeat == 0 || m_ammPool.reserveHeat < grossHeat) continue;
         uint64_t cdFeeHeat = static_cast<uint64_t>(
             ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
+        // Validate before committing anything: a skip must not consume
+        // backstop budget or leave the pool half-updated.
+        if (grossHeat == 0 || heatPaid == 0) continue;
+        if (m_ammPool.reserveHeat < heatPaid + cdFeeHeat) continue;
+
+        backstopRemaining -= fillXfg;
         // Saturating add: an overflow must not abort the fill pass mid-way
         // (partial application would fork consensus).
         m_ammPool.cdHearthFeeAccumulator =
@@ -4651,42 +4743,54 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         block.orderbookNumMatches++;
       } else {
         // BUY_XFG: user pays at most targetPrice HEAT per XFG.
-        if (dep.targetPrice < price) continue;  // pool asks more than that
-        uint64_t desiredXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * parameters::COIN) / price);
-        // Budget cap: fee-inclusive cost must never exceed the deposit budget.
-        uint64_t maxBudgetXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * (feeDiv - feeBps) * parameters::COIN)
-              / (feeDiv * price));
-        uint64_t fillXfg = std::min(desiredXfg, maxBudgetXfg);
-        fillXfg = std::min(fillXfg, m_ammPool.reserveXfg);
+        //
+        // Curve cost of extracting g XFG is Rh*g/(Rx-g), so the average rate
+        // Rh/(Rx-g) RISES with size. Both the limit price and the HEAT budget
+        // therefore bound the gross fill:
+        //     limit:  g <= Rx - Rh*COIN/targetPrice
+        //     budget: g <= budget*Rx/(Rh + budget)
+        uint128_t limitFloor =
+            ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / dep.targetPrice;
+        if (limitFloor >= m_ammPool.reserveXfg) continue;
+        uint64_t maxByLimit = static_cast<uint64_t>(m_ammPool.reserveXfg - limitFloor);
+        uint64_t maxByBudget = static_cast<uint64_t>(
+            ((uint128_t)dep.amount * m_ammPool.reserveXfg) /
+            ((uint128_t)m_ammPool.reserveHeat + dep.amount));
+
+        // Net XFG the user receives; the fee is taken in XFG, as before.
+        uint64_t fillXfg = static_cast<uint64_t>(
+            ((uint128_t)std::min(maxByLimit, maxByBudget) * (feeDiv - feeBps)) / feeDiv);
         fillXfg = std::min(fillXfg, backstopRemaining);
         if (fillXfg == 0) continue;
-        backstopRemaining -= fillXfg;
-        // Net XFG the user receives; fee deducted from gross like dir-1 swaps.
+
         uint64_t grossXfg = static_cast<uint64_t>(
             ((uint128_t)fillXfg * feeDiv) / (feeDiv - feeBps));
-        uint64_t heatCost = static_cast<uint64_t>(
-            ((uint128_t)grossXfg * price) / parameters::COIN);
-        if (heatCost == 0 || heatCost > dep.amount) continue;
-        if (m_ammPool.pendingHeat < heatCost) continue;
-        if (m_ammPool.reserveXfg < grossXfg) continue;
+        if (grossXfg == 0 || grossXfg >= m_ammPool.reserveXfg) continue;
+        uint64_t heatCost = ammGetInputAmount(
+            grossXfg, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
 
         uint64_t feeXfg = grossXfg - fillXfg;
         uint64_t cdFeeXfg = static_cast<uint64_t>(
             ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
-        // Convert the XFG CD share to HEAT at the PRE-fill spot rate.
+        // The CD share is taken in XFG but accrues in HEAT; convert at this
+        // deposit's pre-fill spot.
         uint64_t feeHeatEq = static_cast<uint64_t>(
-            ((uint128_t)cdFeeXfg * price) / parameters::COIN);
-        // Saturating add: an overflow must not abort the fill pass mid-way.
+            ((uint128_t)cdFeeXfg * spotNow) / parameters::COIN);
+
+        if (heatCost == 0 || heatCost > dep.amount) continue;
+        if (m_ammPool.pendingHeat < heatCost) continue;
+        if (m_ammPool.reserveXfg < fillXfg + cdFeeXfg) continue;
+
+        backstopRemaining -= fillXfg;
+        // Saturating add, and credited ONCE: this accumulator was previously
+        // incremented twice per fill, inflating the CD yield pool's claim to
+        // double the fee the pool actually paid out.
         m_ammPool.cdHearthFeeAccumulator =
           (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq)
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + feeHeatEq;
-
         m_ammPool.pendingHeat -= heatCost;
         m_ammPool.reserveXfg -= (fillXfg + cdFeeXfg);  // 30% of the fee stays with LPs
         m_ammPool.reserveHeat += heatCost;
-        m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
         dep.amount -= heatCost;
         dep.proceedsXfg += fillXfg;
 
@@ -5776,16 +5880,38 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
       // Activation boundary: discard pre-v11 entries (different scale) so the
       // mint price cannot mix XFG/HEAT-era values with canonical ones.
       m_rollingPriceWindow.clear();
+      // Anchor the mint quota's baseline here too. Left at zero it would read
+      // the entire pre-existing HEAT supply as issued this epoch and reject
+      // every mint until the first epoch boundary.
+      m_epochStartHeatSupply = m_heatSupply;
     }
     m_twapAccumulator += (uint128_t)spotPrice;
     m_twapBlockCount++;
     m_blockTwapContributions.push_back((uint128_t)spotPrice);
 
-    // Rolling 8-block TWAP for mint validation (anti-manipulation). Use the
-    // live AMM spot, not the user-controlled call-auction clearing price;
+    // Rolling window for mint validation (anti-manipulation). Use the live
+    // AMM spot, not the user-controlled call-auction clearing price;
     // otherwise tiny crossed orders can manufacture an oracle price and mint
     // unbacked HEAT at that price.
-    m_rollingPriceWindow.push_back(spotPrice);
+    //
+    // The sample is clamped on the way UP only, to
+    // HEAT_ORACLE_MAX_RISE_BPS over the previous sample. Manipulating the
+    // oracle upward is the only direction that dilutes holders, and this
+    // turns a single expensive block into a sustained one: the pool must be
+    // held moved for many consecutive blocks, paying curve slippage and fees
+    // each time, before the oracle follows. Falls pass through unclamped so a
+    // genuine crash is never priced stale — see getMintPrice, which also
+    // floors the reduced window by live spot.
+    uint64_t oracleSample = spotPrice;
+    if (!m_rollingPriceWindow.empty()) {
+      uint64_t prev = m_rollingPriceWindow.back();
+      if (prev > 0) {
+        uint64_t ceiling = static_cast<uint64_t>(
+            ((uint128_t)prev * (10000 + parameters::HEAT_ORACLE_MAX_RISE_BPS)) / 10000);
+        if (oracleSample > ceiling) oracleSample = ceiling;
+      }
+    }
+    m_rollingPriceWindow.push_back(oracleSample);
     m_lastTwapVersion = block.majorVersion;
     if (spotPrice > 0) {
       // One-way: from here on a missing pool price is an error, not a cue to
@@ -5807,6 +5933,9 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
     // consumed+reset there at this point.
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
+    // A fresh mint quota for the new epoch. The boundary block's own mints
+    // were already checked against the outgoing epoch's remaining quota.
+    m_epochStartHeatSupply = m_heatSupply;
   }
 }
 
@@ -6038,6 +6167,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (!m_epochSnapshots.empty() && m_epochSnapshots.back().first == poppedHeight) {
     const auto& snap = m_epochSnapshots.back().second;
     m_heatSupply = snap.heatSupply;
+    m_epochStartHeatSupply = snap.epochStartHeatSupply;
     m_heatOnDeposit = snap.heatOnDeposit;
     m_heatCdFeePool = snap.heatCdFeePool;
     m_cdYieldPool = snap.cdYieldPool;
@@ -6120,6 +6250,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   if (!m_rollingPriceWindow.empty()) {
     m_rollingPriceWindow.pop_back();
   }
+
 
   m_blocks.pop_back();
   m_blockIndex.pop();

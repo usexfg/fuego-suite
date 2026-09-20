@@ -156,6 +156,7 @@ namespace CryptoNote {
     // Simple average of the last 8 blocks' hearthPoolRatio.
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
+    uint64_t getMintPrice() const;
 
     struct OrderbookLevel {
       uint64_t price;

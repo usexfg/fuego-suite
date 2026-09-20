@@ -1161,6 +1161,10 @@ uint64_t InProcessNode::getHearthTwap() {
   return core.getHearthTwap();
 }
 
+uint64_t InProcessNode::getMintPrice() {
+  return core.getMintPrice();
+}
+
 std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   ICore::AmmPoolInfo coreInfo;
   auto ec = core.getAmmPoolInfo(coreInfo);

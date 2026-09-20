@@ -41,6 +41,15 @@ uint64_t ammGetInputAmount(uint64_t outputAmount,
 
 uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB);
 
+/// Fixed launch mint price, on the canonical scale (HEAT atomics per XFG
+/// atomic x COIN), derived from HEAT_LAUNCH_RATIO_NUM/DENOM.
+///
+/// The Hearth pool cannot hold HEAT before any HEAT exists, and HEAT cannot
+/// be minted without a price, so at launch there is no pool price to mint
+/// against. This breaks that deadlock: mint validation falls back to it
+/// until the pool carries a price of its own.
+uint64_t heatLaunchMintPrice();
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB);

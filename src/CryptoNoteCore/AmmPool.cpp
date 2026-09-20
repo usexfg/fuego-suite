@@ -62,6 +62,14 @@ uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
   return (uint64_t)(scaled / reserveA);
 }
 
+uint64_t heatLaunchMintPrice() {
+  if (parameters::HEAT_LAUNCH_RATIO_NUM == 0) return 0;
+  // HEAT_LAUNCH_RATIO is XFG per HEAT; the canonical price scale is HEAT per
+  // XFG x COIN, so invert. At 10 XFG per HEAT this is COIN / 10 = 1,000,000.
+  uint128_t scaled = (uint128_t)parameters::COIN * parameters::HEAT_LAUNCH_RATIO_DENOM;
+  return (uint64_t)(scaled / parameters::HEAT_LAUNCH_RATIO_NUM);
+}
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {

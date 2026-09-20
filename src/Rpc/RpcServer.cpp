@@ -2867,6 +2867,7 @@ bool RpcServer::on_amm_pool_info(const COMMAND_RPC_AMM_POOL_INFO::request& req,
   res.spot_price = info.spotPrice;
   res.epoch_swap_fees = info.epochSwapFees;
   res.hearth_twap = m_core.getHearthTwap();
+  res.mint_price = m_core.getMintPrice();
   res.height = m_core.get_current_blockchain_height();
   res.status = CORE_RPC_STATUS_OK;
   return true;

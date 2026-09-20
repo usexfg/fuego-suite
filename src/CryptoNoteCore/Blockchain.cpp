@@ -4039,13 +4039,8 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       if (hasHeatMintAuth) {
         if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
           // V11+: canonical price scale (HEAT atomics per XFG atomic × COIN).
-          // Rolling 8-block TWAP, spot fallback, fail closed on no price.
-          uint64_t mintPrice = 0;
-          if (m_rollingPriceWindow.size() >= 2) {
-            mintPrice = getRollingTwap();
-          } else if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
-            mintPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          }
+          // Rolling 8-block TWAP, spot fallback, then the fixed launch ratio.
+          uint64_t mintPrice = getMintPrice();
           if (mintPrice == 0) {
             isTransactionValid = false;
             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
@@ -4217,6 +4212,24 @@ uint64_t CryptoNote::Blockchain::getHearthSpotPrice() const {
 uint64_t CryptoNote::Blockchain::getPoolTwap() const {
   if (m_twapBlockCount == 0) return 0;
   return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
+}
+
+uint64_t CryptoNote::Blockchain::getMintPrice() const {
+  // Single source of truth for the price a HEAT mint is validated against,
+  // so consensus and the RPC that quotes it cannot drift apart.
+  //
+  // The 8-block TWAP is preferred because it is expensive to manipulate. Spot
+  // covers the window still filling. The launch ratio covers the bootstrap
+  // deadlock: accumulateTwap only samples while the pool is non-empty, and
+  // the pool cannot hold HEAT before any HEAT is minted, so without it no
+  // first mint is possible and the pool can never be seeded.
+  if (m_rollingPriceWindow.size() >= 2) {
+    return getRollingTwap();
+  }
+  if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
+    return ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+  }
+  return heatLaunchMintPrice();
 }
 
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {

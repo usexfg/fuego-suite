@@ -1543,6 +1543,10 @@ uint64_t core::getHearthTwap() {
   return m_blockchain.getRollingTwap();
 }
 
+uint64_t core::getMintPrice() {
+  return m_blockchain.getMintPrice();
+}
+
 size_t core::getCommitmentCount() const {
   return m_blockchain.getCommitmentCount();
 }

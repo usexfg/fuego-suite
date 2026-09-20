@@ -185,6 +185,9 @@ public:
   // Rolling 8-block TWAP of Hearth spot price for HEAT mint validation.
   // Returns 0 if unavailable (caller should fall back to spot pool rate).
   virtual uint64_t getHearthTwap() { return 0; }
+  /// Price a HEAT mint is validated against: 8-block TWAP, spot while that
+  /// window fills, or the fixed launch ratio before the pool has a price.
+  virtual uint64_t getMintPrice() { return 0; }
 };
 
 }

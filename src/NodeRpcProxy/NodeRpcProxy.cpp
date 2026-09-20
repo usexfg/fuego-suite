@@ -17,6 +17,7 @@
 
 #include "NodeRpcProxy.h"
 #include "NodeErrors.h"
+#include "CryptoNoteCore/AmmPool.h"
 
 #include <atomic>
 #include <system_error>
@@ -860,6 +861,19 @@ uint64_t NodeRpcProxy::getHearthTwap() {
   std::error_code ec = jsonCommand("/amm_pool_info", req, res);
   if (ec) return 0;
   return res.hearth_twap;
+}
+
+uint64_t NodeRpcProxy::getMintPrice() {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return 0;
+  // A daemon predating the field leaves it 0; fall back to the local
+  // selection so an older node degrades rather than blocking the quote.
+  if (res.mint_price > 0) return res.mint_price;
+  if (res.hearth_twap > 0) return res.hearth_twap;
+  if (res.spot_price > 0) return res.spot_price;
+  return heatLaunchMintPrice();
 }
 
 std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRpcEntry>& deposits) {

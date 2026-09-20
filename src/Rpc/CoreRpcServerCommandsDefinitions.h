@@ -2542,6 +2542,11 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     uint64_t spot_price;
     uint64_t epoch_swap_fees;
     uint64_t hearth_twap;
+    // The price a HEAT mint is validated against right now: the 8-block
+    // TWAP, the spot price while that window fills, or the fixed launch
+    // ratio before the pool carries a price. Clients quote from this rather
+    // than re-deriving the selection.
+    uint64_t mint_price = 0;
     uint64_t height;
     std::string status;
     void serialize(ISerializer &s) {
@@ -2551,6 +2556,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(spot_price)
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(hearth_twap)
+      KV_MEMBER(mint_price)
       KV_MEMBER(height)
       KV_MEMBER(status)
     }

@@ -367,7 +367,9 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
         chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
         chainCfg.gleecChainId);
-    applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "GLEEC");
+    applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
+        !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
+        m_logger, "GLEEC");
     applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
     m_chainRegistry.registerChain(SwapPair::GLEEC,
         std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));

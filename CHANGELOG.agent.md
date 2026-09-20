@@ -4,6 +4,53 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Fix: GLEEC uses per-chain HTLC registry (gleecHtlcRegistry)
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Sonnet 4.6
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Audit artifact "Adding a Swap Chain" for inaccuracies | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 2 | Fix SwapDaemon.cpp: GLEEC registration uses `gleecHtlcRegistry` when set, falls back to `ethHtlcRegistry` | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 3 | Fix artifact: "11" EVM registrations corrected to "14" | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 4 | Fix artifact: "Four mappings" corrected to "Six mappings" with accurate per-category description | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 5 | Fix artifact: HTLC section updated to describe GLEEC's per-chain registry key | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 6 | Publish corrected artifact to https://claude.ai/artifact/CX6twezMZBjmNBbVDaz4b1 | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+
+### Root Cause
+
+`gleecHtlcRegistry` was defined in `ChainClientConfig` (SwapDaemon.h:198), parsed from JSON
+config (ChainClientConfig.cpp:202), but never read. Line 370 of SwapDaemon.cpp passed
+`chainCfg.ethHtlcRegistry` to `applyHtlcConfig` for the GLEEC chain, silently ignoring the
+per-chain override.
+
+### Fix (SwapDaemon.cpp:370-372)
+
+```cpp
+// Before
+applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "GLEEC");
+
+// After
+applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
+    !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
+    m_logger, "GLEEC");
+```
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env, no build runner) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## CI green: fix Build check failures + release.yml parse error
 
 **Branch/Feature**: master

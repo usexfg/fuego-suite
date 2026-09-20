@@ -4,6 +4,44 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## REVERTED: reserve-proof exemption for DOGE/DASH/ZEC
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: COMPLETE (revert of 3f8e308)
+
+Commit 3f8e308 added `IChainClient::requiresReserveProof()` and exempted DOGE,
+DASH and ZEC from the reserve-proof gate. That was wrong and is fully reverted.
+
+**Decision: proof of funds is required on every chain. Do not re-add an exemption.**
+
+The premise of 3f8e308 was that `verifymessage` is unreliable on these nodes. It
+is not — DOGE, DASH and ZEC are Bitcoin forks that all support `verifymessage`,
+and `DogeChainClient`/`DashChainClient`/`ZecChainClient` already implement
+`verifyReserveProof` against it plus a `listunspent` balance check. Nothing was
+broken, so nothing needed exempting.
+
+Exempting them also removed the only gate that makes a maker's AFK lock
+conditional on the taker actually holding funds — free griefing: a taker with a
+zero balance could force the maker to lock XFG on every offer.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Revert 3f8e308 in full (8 files) | Claude Opus 5 | 2026-09-20 | DONE |
+| 2 | Verify tree byte-identical to 6200a3c | Claude Opus 5 | 2026-09-20 | DONE |
+| 3 | Verify zero `requiresReserveProof` references remain | Claude Opus 5 | 2026-09-20 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## Fix: GLEEC uses per-chain HTLC registry (gleecHtlcRegistry)
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
@@ -46,33 +84,6 @@ applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
 | Check | Result |
 |-------|--------|
 | Build compiles | Not verified (remote env, no build runner) |
-| Tests pass | Not verified |
-| All tasks done | YES |
-
----
-
-## Skip reserve-proof gate for DOGE, DASH, ZEC
-
-**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
-**Started**: 2026-09-20
-**Agent**: Claude Sonnet 4.6
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Add `requiresReserveProof()` virtual (default true) to IChainClient | Claude Sonnet 4.6 | 2026-09-20 | DONE |
-| 2 | Override to false in DogeChainClient, DashChainClient, ZecChainClient | Claude Sonnet 4.6 | 2026-09-20 | DONE |
-| 3 | Gate verifyReserveProof call in handleSwapRequest behind requiresReserveProof() | Claude Sonnet 4.6 | 2026-09-20 | DONE |
-| 4 | Remove mandatory-empty-proof check from RpcServer (enforcement is in the daemon) | Claude Sonnet 4.6 | 2026-09-20 | DONE |
-| 5 | Update RPC command doc comment to note proof is optional for exempt chains | Claude Sonnet 4.6 | 2026-09-20 | DONE |
-
-### Sign-off
-
-| Check | Result |
-|-------|--------|
-| Build compiles | Not verified (remote env) |
 | Tests pass | Not verified |
 | All tasks done | YES |
 

@@ -4216,13 +4216,12 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     requiredCtrAmount = static_cast<uint64_t>(result);
   }
 
-  if (client->requiresReserveProof()) {
-    ChainClientResult proofResult = client->verifyReserveProof(offerId, requiredCtrAmount, proofOfFunds);
-    if (!proofResult.success) {
-      m_logger(Logging::ERROR) << "Reserve proof failed for offer " << offerId << ": " << proofResult.error;
-      recordTakerFailure(takerPubKey);
-      return false;
-    }
+  // Bind the reserve proof to this offer (proof message must equal offerId).
+  ChainClientResult proofResult = client->verifyReserveProof(offerId, requiredCtrAmount, proofOfFunds);
+  if (!proofResult.success) {
+    m_logger(Logging::ERROR) << "Reserve proof failed for offer " << offerId << ": " << proofResult.error;
+    recordTakerFailure(takerPubKey);
+    return false;
   }
 
   // Bind expected taker swap pubkey for later KEY_EXCHANGE (anti first-wins).

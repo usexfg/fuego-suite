@@ -4050,33 +4050,6 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                                                     authXfgBurned, authHeatMinted)) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
-            } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-              // Premium = excess XFG burned beyond base mint cost (enforced at
-              // 0.5% by validateMint; minters may burn more voluntarily).
-              // Converted to HEAT and credited to the CD APY pool.
-              uint64_t actualBurned = (inAssets.xfg > outAssets.xfg + fee)
-                ? inAssets.xfg - outAssets.xfg - fee : authXfgBurned;
-              uint64_t xfgEquivalent = static_cast<uint64_t>(
-                  ((uint128_t)authHeatMinted * parameters::COIN) / mintPrice);
-              uint64_t premium = (actualBurned > xfgEquivalent)
-                ? actualBurned - xfgEquivalent
-                : 0;
-              if (premium > 0) {
-                uint64_t heatPremium = static_cast<uint64_t>(
-                    ((uint128_t)premium * mintPrice) / parameters::COIN);
-                if (heatPremium > 0) {
-                  if (m_heatSupply > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "HEAT supply overflow on mint premium";
-                    return false;
-                  }
-                  if (m_heatCdFeePool > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "CD fee pool overflow on mint premium";
-                    return false;
-                  }
-                  m_heatSupply   += heatPremium;
-                  m_heatCdFeePool += heatPremium;
-                }
-              }
             }
           }
         }
@@ -5418,7 +5391,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
 
     // V11+: RETIRED — the full 20% treasury share stays as XFG for the
     // Treasury LP Manager's ratio-paired LP position (paired with the HEAT
-    // leg from mint premiums + donations). The CD pool keeps only its direct
+    // leg from donations). The CD pool keeps only its direct
     // sources (69% swap share conversion + Hearth 70% flat fees).
     if (block.majorVersion < BLOCK_MAJOR_VERSION_11 && m_treasuryLpPendingXfg > 0) {
       uint64_t convertAmount = (m_treasuryLpPendingXfg * CryptoNote::parameters::GENERAL_RESERVE_EPOCH_CONVERT_PCT) / 100;
@@ -5468,7 +5441,7 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       // Treasury LP Manager: the protocol's own Hearth LP position, funded from
       // BOTH assets WITHOUT cross-conversion and WITHOUT imbalanced deposits:
       //   XFG: the treasury counter (treasury fee share + XFG donations).
-      //   HEAT: the treasury HEAT reserve (mint premiums + HEAT donations/fees).
+      //   HEAT: the treasury HEAT reserve (HEAT donations/fees).
       // A deposit only happens when both legs can be paired AT the pool ratio
       // (x/h = reserveXfg/reserveHeat) — balanced mints earn fair pro-rata
       // shares (no single-sided over-credit, no LP dilution). The excess leg

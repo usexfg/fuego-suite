@@ -40,6 +40,11 @@ public:
   // configured or not derivable.
   virtual std::string getReceiveAddress() const { return ""; }
 
+  // Returns false for chains whose nodes do not support in-protocol reserve
+  // proof signing (e.g. DOGE, DASH, ZEC verifymessage is unreliable across
+  // node versions). handleSwapRequest skips the proof gate for these chains.
+  virtual bool requiresReserveProof() const { return true; }
+
   // Verify a counterparty reserve proof.
   // expectedMessage: the proof's signed message must equal this (binds the proof
   //   to a specific swap/offer — pass the offerId). Empty disables the binding check.

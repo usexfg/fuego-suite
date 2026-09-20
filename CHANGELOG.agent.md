@@ -51,6 +51,33 @@ applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
 
 ---
 
+## Skip reserve-proof gate for DOGE, DASH, ZEC
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Sonnet 4.6
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add `requiresReserveProof()` virtual (default true) to IChainClient | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 2 | Override to false in DogeChainClient, DashChainClient, ZecChainClient | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 3 | Gate verifyReserveProof call in handleSwapRequest behind requiresReserveProof() | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 4 | Remove mandatory-empty-proof check from RpcServer (enforcement is in the daemon) | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 5 | Update RPC command doc comment to note proof is optional for exempt chains | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## Disable GLEEC chain pending status investigation
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

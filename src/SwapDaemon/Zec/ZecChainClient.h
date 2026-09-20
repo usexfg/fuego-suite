@@ -15,6 +15,7 @@ public:
   ZecChainClient(std::unique_ptr<ZecRpcClient> rpc, const std::string& wif);
 
   std::string chainName() const override { return "ZEC"; }
+  bool requiresReserveProof() const override { return false; }
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

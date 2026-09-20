@@ -15,6 +15,7 @@ public:
   DashChainClient(std::unique_ptr<DashRpcClient> rpc, const std::string& wif);
 
   std::string chainName() const override { return "DASH"; }
+  bool requiresReserveProof() const override { return false; }
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

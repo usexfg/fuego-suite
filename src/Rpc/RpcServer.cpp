@@ -1362,13 +1362,6 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
       return true;
     }
   }
-  // Reserve proof is mandatory — the maker verifies it against the chain
-  // before locking funds. Empty proofs are rejected here (fail fast).
-  if (req.proofOfFunds.empty()) {
-    res.status = "proofOfFunds is required (chain reserve proof bound to offerId)";
-    return true;
-  }
-
   // Echo the offer's pair + amount so the taker can drive its local swap
   // daemon after the maker locks (informational only).
   for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::ZANO); ++pair) {

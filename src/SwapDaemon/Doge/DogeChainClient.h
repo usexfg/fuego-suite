@@ -15,6 +15,7 @@ public:
   DogeChainClient(std::unique_ptr<DogeRpcClient> rpc, const std::string& wif);
 
   std::string chainName() const override { return "DOGE"; }
+  bool requiresReserveProof() const override { return false; }
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

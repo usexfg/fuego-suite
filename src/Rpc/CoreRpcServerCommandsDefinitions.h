@@ -1885,7 +1885,8 @@ struct COMMAND_RPC_CANCEL_SWAP_OFFER {
  * the AFK lock. proofOfFunds format per chain (see chain client
  * verifyReserveProof): EVM "0xaddr:130hexSig:offerId" (EIP-191),
  * SOL "b58pub:b58sig:offerId" (Ed25519), Bitcoin-family
- * "address:signature:offerId" (signmessage). */
+ * "address:signature:offerId" (signmessage). Empty for chains where
+ * requiresReserveProof() returns false (DOGE, DASH, ZEC). */
 struct COMMAND_RPC_REQUEST_SWAP {
   struct request {
     std::string offerId;

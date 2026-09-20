@@ -188,6 +188,7 @@ public:
   /// Price a HEAT mint is validated against: 8-block TWAP, spot while that
   /// window fills, or the fixed launch ratio before the pool has a price.
   virtual uint64_t getMintPrice() { return 0; }
+  virtual uint32_t getMintPriceHeight() { return 0; }
 };
 
 }

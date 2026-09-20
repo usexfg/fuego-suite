@@ -221,6 +221,7 @@ namespace CryptoNote {
     virtual std::error_code getAmmPoolReserves(AmmPoolReserves& out) override;
     virtual uint64_t getHearthTwap() override;
     virtual uint64_t getMintPrice() override;
+    virtual uint32_t getMintPriceHeight() override;
     virtual std::error_code getAmmPoolInfo(ICore::AmmPoolInfo& info) override;
 
     // HEAT stablecoin / Hearth AMM metrics (v11+)

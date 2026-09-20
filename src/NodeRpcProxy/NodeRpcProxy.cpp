@@ -868,12 +868,21 @@ uint64_t NodeRpcProxy::getMintPrice() {
   COMMAND_RPC_AMM_POOL_INFO::response res;
   std::error_code ec = jsonCommand("/amm_pool_info", req, res);
   if (ec) return 0;
-  // A daemon predating the field leaves it 0; fall back to the local
-  // selection so an older node degrades rather than blocking the quote.
-  if (res.mint_price > 0) return res.mint_price;
-  if (res.hearth_twap > 0) return res.hearth_twap;
-  if (res.spot_price > 0) return res.spot_price;
-  return heatLaunchMintPrice();
+  // No local fallback. A mint is validated against the price the daemon
+  // recorded at a specific height, so a price this wallet derived on its own
+  // is not one any transaction can pin — quoting from it would build mints
+  // that consensus rejects. Reconstructing the launch ratio here would be
+  // worse still: it is exactly what m_poolPriceEstablished latches off once
+  // the pool has ever priced. Report nothing and let the caller fail.
+  return res.mint_price;
+}
+
+uint32_t NodeRpcProxy::getMintPriceHeight() {
+  COMMAND_RPC_AMM_POOL_INFO::request req;
+  COMMAND_RPC_AMM_POOL_INFO::response res;
+  std::error_code ec = jsonCommand("/amm_pool_info", req, res);
+  if (ec) return 0;
+  return res.mint_price_height;
 }
 
 std::error_code NodeRpcProxy::getLimitDeposits(std::vector<INode::LimitDepositRpcEntry>& deposits) {

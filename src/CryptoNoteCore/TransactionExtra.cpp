@@ -273,6 +273,9 @@ namespace CryptoNote
              auth.heatMinted = 0;
              for (int i = 0; i < 8; ++i)
                auth.heatMinted |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
+             auth.priceHeight = 0;
+             for (int i = 0; i < 4; ++i)
+               auth.priceHeight |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
              transactionExtraFields.push_back(auth);
               break;
             }
@@ -590,7 +593,7 @@ namespace CryptoNote
 
     bool operator()(const TransactionExtraHeatMintAuth &t)
     {
-      return addHeatMintAuthToExtra(extra, t.xfgBurned, t.heatMinted);
+      return addHeatMintAuthToExtra(extra, t.xfgBurned, t.heatMinted, t.priceHeight);
     }
 
     bool operator()(const TransactionExtraHeatSendAuth &t)
@@ -1511,10 +1514,12 @@ namespace CryptoNote
     return true;
   }
 
-  bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted) {
+  bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned,
+                              uint64_t heatMinted, uint32_t priceHeight) {
     tx_extra.push_back(TX_EXTRA_HEAT_MINT_AUTH);
     for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((xfgBurned >> (i*8)) & 0xFF));
     for (int i = 0; i < 8; ++i) tx_extra.push_back(static_cast<uint8_t>((heatMinted >> (i*8)) & 0xFF));
+    for (int i = 0; i < 4; ++i) tx_extra.push_back(static_cast<uint8_t>((priceHeight >> (i*8)) & 0xFF));
     return true;
   }
 

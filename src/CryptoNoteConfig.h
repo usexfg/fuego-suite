@@ -279,17 +279,22 @@ namespace CryptoNote
         // Only oracle-priced mints count against it; CD yield issuance does not.
         const uint64_t HEAT_MINT_EPOCH_QUOTA_PCT = 25;              // 25% of supply per epoch
         const uint64_t HEAT_MINT_EPOCH_QUOTA_FLOOR = 10000ULL * 10000000ULL;  // 10,000 HEAT
-        // How far BELOW the price-implied amount a mint may land before it is
-        // rejected as a client error rather than accepted as a silent loss.
-        // Only the shortfall side is tolerant: claiming too much HEAT is
-        // dilution and stays exact, claiming too little only ever hurts the
-        // minter. Sized for TWAP drift between building a mint and its block:
-        // the 8-block mean absorbs about an eighth of a spot move per block,
-        // so even a violent swing shifts it a few percent over the block or
-        // two a transaction waits. A wallet computing the amount correctly
-        // never approaches this; one that has the ratio wrong misses by
-        // multiples and is caught.
-        const uint64_t HEAT_MINT_SHORTFALL_TOLERANCE_BPS = 500;     // 5%
+        // How many blocks back a mint may pin the price it was quoted at.
+        //
+        // A mint declares the height whose mint price it used, and consensus
+        // validates against that exact price, so both the upper and lower
+        // bound on the HEAT claimed are exact equalities. This replaces a
+        // tolerance band: the band existed only because the price could drift
+        // between building a transaction and mining it, and a pinned height
+        // removes the drift instead of forgiving it.
+        //
+        // The cost is bounded staleness. A minter always pins whichever of
+        // the last few heights priced best for them, so this is also the
+        // window over which a falling price can still be minted against.
+        // HEAT_ORACLE_MAX_RISE_BPS caps what that is worth on the way up; on
+        // the way down it is worth as much as the fall, which is why the
+        // window is a few blocks and not a few dozen.
+        const uint64_t HEAT_MINT_PRICE_PIN_DEPTH = 3;               // ~24 minutes
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool

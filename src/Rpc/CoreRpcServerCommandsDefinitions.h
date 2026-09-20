@@ -2547,6 +2547,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
     // ratio before the pool carries a price. Clients quote from this rather
     // than re-deriving the selection.
     uint64_t mint_price = 0;
+    uint32_t mint_price_height = 0;
     uint64_t height;
     std::string status;
     void serialize(ISerializer &s) {
@@ -2557,6 +2558,7 @@ struct COMMAND_RPC_AMM_POOL_INFO {
       KV_MEMBER(epoch_swap_fees)
       KV_MEMBER(hearth_twap)
       KV_MEMBER(mint_price)
+      KV_MEMBER(mint_price_height)
       KV_MEMBER(height)
       KV_MEMBER(status)
     }

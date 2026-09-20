@@ -262,6 +262,10 @@ struct TransactionExtraAmmClaim {
 struct TransactionExtraHeatMintAuth {
   uint64_t xfgBurned;
   uint64_t heatMinted;
+  // Height whose mint price this transaction was quoted against. Consensus
+  // validates the amounts against that exact price rather than whatever the
+  // price happens to be when the transaction is mined.
+  uint32_t priceHeight;
   bool serialize(ISerializer& serializer);
 };
 
@@ -431,7 +435,8 @@ bool addAmmAddLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t amountXf
 bool addAmmRemoveLiquidityToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpSharesBurned, uint64_t minXfg, uint64_t minHeat);
 bool addAmmCompoundToExtra(std::vector<uint8_t>& tx_extra);
 bool addAmmClaimToExtra(std::vector<uint8_t>& tx_extra, uint64_t lpShares, uint64_t minXfg, uint64_t minHeat);
-bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned, uint64_t heatMinted);
+bool addHeatMintAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t xfgBurned,
+                            uint64_t heatMinted, uint32_t priceHeight);
 bool addHeatSendAuthToExtra(std::vector<uint8_t>& tx_extra, uint64_t heatAmount);
 bool addAmmSwapAuthToExtra(std::vector<uint8_t>& tx_extra, uint8_t direction, uint64_t inputAmount,
                            uint64_t outputAmount, uint64_t minOutput);

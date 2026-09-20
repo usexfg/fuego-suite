@@ -357,6 +357,41 @@ public:
         }
       }
 
+      // The mint oracle's sample window, and the recent mint prices a
+      // transaction may pin. Both are consensus inputs. Without them a
+      // restarted node priced mints off bare spot while a node that had been
+      // running priced off the reduced window, and the two would disagree on
+      // whether the same mint is valid. Appended at the end so older caches
+      // load unchanged; those predate v11 and carry no samples.
+      try {
+        std::vector<uint64_t> window(m_bs.m_rollingPriceWindow.begin(),
+                                     m_bs.m_rollingPriceWindow.end());
+        s(window, "rolling_price_window");
+        std::vector<uint64_t> pinHeights, pinPrices;
+        for (const auto& e : m_bs.m_recentMintPrices) {
+          pinHeights.push_back(e.first);
+          pinPrices.push_back(e.second);
+        }
+        s(pinHeights, "mint_price_heights");
+        s(pinPrices, "mint_price_values");
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_rollingPriceWindow.assign(window.begin(), window.end());
+          m_bs.m_recentMintPrices.clear();
+          size_t pinned = std::min(pinHeights.size(), pinPrices.size());
+          for (size_t i = 0; i < pinned; ++i) {
+            m_bs.m_recentMintPrices.push_back(
+                {static_cast<uint32_t>(pinHeights[i]), pinPrices[i]});
+          }
+        }
+      } catch (std::exception&) {
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_rollingPriceWindow.clear();
+          m_bs.m_recentMintPrices.clear();
+        } else {
+          throw;
+        }
+      }
+
       // Alias registry: without persistence, every registered/released/
       // transferred alias was wiped on every normal daemon restart (only
       // rebuildCache(), which runs on cache-load failure, ever repopulated
@@ -948,6 +983,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_rollingPriceWindow.clear();
     m_lastTwapVersion = 0;
     m_epochStartHeatSupply = 0;
+    m_recentMintPrices.clear();
     m_cdYieldPool = 0;
     m_cdReserve = 0;
     m_heatCdFeePool = 0;
@@ -3455,6 +3491,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     AssetBalance inAssets, outAssets;
     bool hasHeatMintAuth = false;
     uint64_t authXfgBurned = 0, authHeatMinted = 0;
+    uint32_t authPriceHeight = 0;
     bool hasLpAddAuth = false;
     uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
     bool hasLpRemoveAuth = false;
@@ -3507,6 +3544,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             const auto& auth = boost::get<TransactionExtraHeatMintAuth>(field);
             authXfgBurned = auth.xfgBurned;
             authHeatMinted = auth.heatMinted;
+            authPriceHeight = auth.priceHeight;
           }
           if (field.type() == typeid(TransactionExtraLpAddAuth)) {
             hasLpAddAuth = true;
@@ -4078,11 +4116,16 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       if (hasHeatMintAuth) {
         if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
           // V11+: canonical price scale (HEAT atomics per XFG atomic × COIN).
-          // Rolling 8-block TWAP, spot fallback, then the fixed launch ratio.
-          uint64_t mintPrice = getMintPrice();
-          if (mintPrice == 0) {
+          // Validated against the price at the height the transaction pinned,
+          // not the price now, so the wallet's arithmetic and consensus's are
+          // the same number and the claimed amount can be exact. A height
+          // outside the pin window is absent from the deque, which is what
+          // bounds how stale a quote may be.
+          uint64_t mintPrice = 0;
+          if (!getMintPriceAtHeight(authPriceHeight, mintPrice)) {
             isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                << " HEAT mint rejected: no mint price pinned at height " << authPriceHeight;
           } else {
             uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
             if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintPrice,
@@ -4284,6 +4327,21 @@ uint64_t CryptoNote::Blockchain::getMintPrice() const {
     return 0;
   }
   return heatLaunchMintPrice();
+}
+
+uint32_t CryptoNote::Blockchain::getMintPriceHeight() const {
+  return m_recentMintPrices.empty() ? 0 : m_recentMintPrices.back().first;
+}
+
+bool CryptoNote::Blockchain::getMintPriceAtHeight(uint32_t height,
+                                                  uint64_t& price) const {
+  for (const auto& entry : m_recentMintPrices) {
+    if (entry.first == height) {
+      price = entry.second;
+      return price != 0;
+    }
+  }
+  return false;
 }
 
 uint64_t CryptoNote::Blockchain::heatMintEpochQuota() const {
@@ -5937,6 +5995,18 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
     // were already checked against the outgoing epoch's remaining quota.
     m_epochStartHeatSupply = m_heatSupply;
   }
+
+  // Record the price a mint pinning THIS height will be validated against.
+  // Deliberately outside the pool-non-empty guard above: at launch the pool
+  // is necessarily empty, because no HEAT exists yet to seed it, and
+  // getMintPrice returns the fixed launch ratio that a bootstrap mint still
+  // has to be able to pin.
+  if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    m_recentMintPrices.push_back({height, getMintPrice()});
+    while (m_recentMintPrices.size() > parameters::HEAT_MINT_PRICE_PIN_DEPTH) {
+      m_recentMintPrices.pop_front();
+    }
+  }
 }
 
 bool CryptoNote::Blockchain::bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve) {
@@ -6249,6 +6319,15 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   // Reverse rolling 8-block TWAP window
   if (!m_rollingPriceWindow.empty()) {
     m_rollingPriceWindow.pop_back();
+  }
+
+  // Reverse the pinned mint price for this height. The deque is left one
+  // entry short at the front rather than refilled, so the pin window simply
+  // narrows until new blocks arrive — fail-closed, same as the sample window
+  // above.
+  if (!m_recentMintPrices.empty() &&
+      m_recentMintPrices.back().first == poppedHeight) {
+    m_recentMintPrices.pop_back();
   }
 
 

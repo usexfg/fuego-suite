@@ -160,6 +160,10 @@ namespace CryptoNote {
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingMedianPrice() const;
     uint64_t getMintPrice() const;
+    // Height the current mint price belongs to, and the price a transaction
+    // pinning an earlier height must be validated against.
+    uint32_t getMintPriceHeight() const;
+    bool getMintPriceAtHeight(uint32_t height, uint64_t& price) const;
     // Per-epoch ceiling on HEAT issuance, and how much of it is used.
     uint64_t heatMintEpochQuota() const;
     uint64_t heatIssuedThisEpoch() const;
@@ -633,6 +637,10 @@ namespace CryptoNote {
     // needs no per-block bookkeeping of its own and cannot drift between a
     // node that rebuilt its cache and one that did not.
     uint64_t m_epochStartHeatSupply = 0;
+    // The last HEAT_MINT_PRICE_PIN_DEPTH mint prices, by height. A mint
+    // declares which of these it was quoted against, so the wallet and
+    // consensus evaluate the same number and the amounts can be exact.
+    std::deque<std::pair<uint32_t, uint64_t>> m_recentMintPrices;
     // Epoch state snapshots for popBlock reversal
     std::deque<std::pair<uint32_t, EpochStateSnapshot>> m_epochSnapshots;
 

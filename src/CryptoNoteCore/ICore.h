@@ -162,6 +162,7 @@ public:
   }
   virtual uint64_t getHearthTwap() { return 0; }
   virtual uint64_t getMintPrice() { return 0; }
+  virtual uint32_t getMintPriceHeight() { return 0; }
   struct AmmPoolInfo {
     uint64_t reserveXfg = 0;
     uint64_t reserveHeat = 0;

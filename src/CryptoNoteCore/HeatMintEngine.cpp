@@ -139,7 +139,7 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
   uint64_t expectedHeat = expectedHeatFor(actualXfgBurned, price);
 
   // Upper bound: claiming more HEAT than the price allows is dilution.
-  // Exact, no tolerance.
+  // Subsumed by the equality below, kept as the explicit dilution guard.
   if (heatMinted > expectedHeat) return false;
 
   // Lower bound: claiming materially less is a client bug, and without this
@@ -147,21 +147,16 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
   // they were owed never existed. A wallet that miscomputes the ratio now
   // fails loudly instead of quietly costing its user.
   //
-  // Tolerant only on this side, and only by
-  // HEAT_MINT_SHORTFALL_TOLERANCE_BPS, so ordinary TWAP drift between
-  // building a mint and its inclusion does not reject honest transactions.
-  if (parameters::HEAT_MINT_SHORTFALL_TOLERANCE_BPS < 10000) {
-    uint64_t floorHeat = static_cast<uint64_t>(
-        ((uint128_t)expectedHeat *
-         (10000 - parameters::HEAT_MINT_SHORTFALL_TOLERANCE_BPS)) / 10000);
-    if (heatMinted < floorHeat) {
+  // Exact, with no tolerance band, because `price` is the price at the height
+  // the transaction pinned rather than whatever the price is at inclusion.
+  // There is no drift left to forgive: the wallet and consensus are quoting
+  // the same block.
+  if (heatMinted != expectedHeat) {
 #ifdef HEAT_MINT_DEBUG
-      fprintf(stderr, "[HeatMint] validateMintAuth FAIL: shortfall (minted=%llu floor=%llu expected=%llu)\n",
-        (unsigned long long)heatMinted, (unsigned long long)floorHeat,
-        (unsigned long long)expectedHeat);
+    fprintf(stderr, "[HeatMint] validateMintAuth FAIL: amount (minted=%llu expected=%llu)\n",
+      (unsigned long long)heatMinted, (unsigned long long)expectedHeat);
 #endif
-      return false;
-    }
+    return false;
   }
 
   return true;

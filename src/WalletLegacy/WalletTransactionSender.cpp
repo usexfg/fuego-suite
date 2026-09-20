@@ -1738,7 +1738,20 @@ namespace CryptoNote
       uint64_t fee,
       uint64_t mixIn)
   {
-    throwIf(xfgBurned == 0 || heatMinted == 0, error::WRONG_AMOUNT);
+    throwIf(xfgBurned == 0, error::WRONG_AMOUNT);
+
+    // Quote against the daemon's mint price and pin the height it came from,
+    // overriding whatever the caller computed. Consensus validates the
+    // claimed HEAT against the price recorded at priceHeight, so a figure
+    // derived anywhere else is not one this transaction can pin, and the
+    // mint would simply be rejected. Same two-step floor as consensus:
+    // expectedHeat = xfgBurned x price / COIN.
+    uint64_t mintPrice = m_node.getMintPrice();
+    uint32_t priceHeight = m_node.getMintPriceHeight();
+    throwIf(mintPrice == 0, error::WRONG_AMOUNT);
+    heatMinted = static_cast<uint64_t>(
+        (static_cast<uint128_t>(xfgBurned) * mintPrice) / CryptoNote::parameters::COIN);
+    throwIf(heatMinted == 0, error::WRONG_AMOUNT);
 
     uint64_t neededMoney = getSumWithOverflowCheck(xfgBurned, fee);
     std::shared_ptr<SendTransactionContext> context = std::make_shared<SendTransactionContext>();
@@ -1751,6 +1764,7 @@ namespace CryptoNote
     context->isV10HeatMint = true;
     context->v10XfgBurned = xfgBurned;
     context->v10HeatMinted = heatMinted;
+    context->v10PriceHeight = priceHeight;
     context->dynamicRingSize = m_currency.isTestnet();  // allow bootstrap ring sizes on testnet
 
     transactionId = m_transactionsCache.addNewTransaction(neededMoney, fee, std::string(), {}, 0, {});
@@ -1758,7 +1772,7 @@ namespace CryptoNote
 
     // Build auth tag extra inline — will be appended in doSendHeatMintV10Transaction
     std::vector<uint8_t> extra;
-    addHeatMintAuthToExtra(extra, xfgBurned, heatMinted);
+    addHeatMintAuthToExtra(extra, xfgBurned, heatMinted, priceHeight);
     context->extra = std::string(extra.begin(), extra.end());
 
     Crypto::SecretKey transactionSK;
@@ -1839,7 +1853,7 @@ namespace CryptoNote
 
       // Build auth tag extra
       std::vector<uint8_t> extra;
-      addHeatMintAuthToExtra(extra, xfgBurned, heatMinted);
+      addHeatMintAuthToExtra(extra, xfgBurned, heatMinted, context->v10PriceHeight);
       CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
       transaction->appendExtra(extraData);
 

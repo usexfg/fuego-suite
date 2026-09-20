@@ -56,6 +56,7 @@ struct SendTransactionContext
   bool isV10HeatMint = false;
   uint64_t v10XfgBurned = 0;
   uint64_t v10HeatMinted = 0;
+  uint32_t v10PriceHeight = 0;  // mint price height this quote pins
   bool isV10LpAdd = false;  // LP add (reuses heat mint fields, separate flag for routing)
   bool isV10AmmSwap = false;
   uint8_t v10SwapDirection = 0;

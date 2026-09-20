@@ -1393,30 +1393,24 @@ namespace CryptoNote
     // Dynamax: probe at maxMixin (32); wallet ring construction uses available outs
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
 
-    // Auto-compute heatMinted using the rolling 8-block TWAP of Hearth spot price.
-    // Canonical scale: price = HEAT atomics per XFG atomic × COIN.
-    // expectedHeat = xfgBurned × price / COIN.
-    // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
+    // Quote against the daemon's mint price and pin the height it came from.
+    // Canonical scale: price = HEAT atomics per XFG atomic × COIN, and
+    // expectedHeat = xfgBurned × price / COIN — the same two-step floor
+    // consensus applies, so the claimed amount matches exactly.
+    //
+    // No local derivation and no fallback: consensus validates against the
+    // price recorded at priceHeight, so a price computed here would not be
+    // one any transaction can pin.
+    uint32_t priceHeight = 0;
     {
-      uint64_t twap = m_node.getHearthTwap();
-      if (twap > 0) {
-        heatMinted = static_cast<uint64_t>(
-            (static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN);
-      } else {
-        INode::AmmPoolReserves reserves;
-        if (!m_node.getAmmPoolReserves(reserves) && reserves.reserveXfg > 0 && reserves.reserveHeat > 0) {
-          // Match the consensus spot fallback exactly: price = floor(rH × COIN / rX),
-          // expectedHeat = floor(xfgBurned × price / COIN). Two-step floor avoids the
-          // wallet over-quoting (and the mint being rejected).
-          uint64_t spotPrice = static_cast<uint64_t>(
-              (static_cast<uint128_t>(reserves.reserveHeat) * parameters::COIN) / reserves.reserveXfg);
-          heatMinted = static_cast<uint64_t>(
-              (static_cast<uint128_t>(xfgBurned) * spotPrice) / parameters::COIN);
-        } else {
-          throw std::system_error(make_error_code(error::WRONG_AMOUNT),
-                                  "No pool price available for HEAT mint");
-        }
+      uint64_t mintPrice = m_node.getMintPrice();
+      priceHeight = m_node.getMintPriceHeight();
+      if (mintPrice == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                "No mint price available for HEAT mint");
       }
+      heatMinted = static_cast<uint64_t>(
+          (static_cast<uint128_t>(xfgBurned) * mintPrice) / parameters::COIN);
     }
     if (heatMinted == 0) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "HEAT amount too small for current pool rate");
@@ -1475,8 +1469,9 @@ namespace CryptoNote
     transaction->setUnlockTime(0);
 
     // Auth tag extra: 0xF5 + 8 bytes LE xfgBurned + 8 bytes LE heatMinted
+    //                      + 4 bytes LE priceHeight
     std::vector<uint8_t> extra;
-    addHeatMintAuthToExtra(extra, xfgBurned, heatMinted);
+    addHeatMintAuthToExtra(extra, xfgBurned, heatMinted, priceHeight);
     CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
     transaction->appendExtra(extraData);
 

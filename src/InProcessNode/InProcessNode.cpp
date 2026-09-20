@@ -1165,6 +1165,10 @@ uint64_t InProcessNode::getMintPrice() {
   return core.getMintPrice();
 }
 
+uint32_t InProcessNode::getMintPriceHeight() {
+  return core.getMintPriceHeight();
+}
+
 std::error_code InProcessNode::getAmmPoolInfo(AmmPoolInfo& info) {
   ICore::AmmPoolInfo coreInfo;
   auto ec = core.getAmmPoolInfo(coreInfo);

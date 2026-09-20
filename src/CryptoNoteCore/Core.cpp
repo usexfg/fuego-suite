@@ -1547,6 +1547,10 @@ uint64_t core::getMintPrice() {
   return m_blockchain.getMintPrice();
 }
 
+uint32_t core::getMintPriceHeight() {
+  return m_blockchain.getMintPriceHeight();
+}
+
 size_t core::getCommitmentCount() const {
   return m_blockchain.getCommitmentCount();
 }

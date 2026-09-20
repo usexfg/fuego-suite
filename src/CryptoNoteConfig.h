@@ -256,6 +256,17 @@ namespace CryptoNote
         const uint64_t DIGM_MINT_MIN_HEAT = 1000000;                // 0.10 HEAT minimum (1 DIGM)
 
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
+        // How far BELOW the price-implied amount a mint may land before it is
+        // rejected as a client error rather than accepted as a silent loss.
+        // Only the shortfall side is tolerant: claiming too much HEAT is
+        // dilution and stays exact, claiming too little only ever hurts the
+        // minter. Sized for TWAP drift between building a mint and its block:
+        // the 8-block mean absorbs about an eighth of a spot move per block,
+        // so even a violent swing shifts it a few percent over the block or
+        // two a transaction waits. A wallet computing the amount correctly
+        // never approaches this; one that has the ratio wrong misses by
+        // multiples and is caught.
+        const uint64_t HEAT_MINT_SHORTFALL_TOLERANCE_BPS = 500;     // 5%
 
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool

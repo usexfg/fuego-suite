@@ -129,11 +129,40 @@ bool HeatMintEngine::validateMintAuth(const Transaction& tx,
   uint64_t actualXfgBurned = 0, actualHeatMinted = 0;
   if (!validateMint(tx, fee, price, actualXfgBurned, actualHeatMinted)) return false;
 
-  if (actualXfgBurned < xfgBurned) return false;
+  // The declared burn must be the whole burn. `<` let a transaction consume
+  // more XFG than it declared, and since the HEAT claimed is checked only
+  // against an upper bound, that surplus was simply lost by the minter —
+  // undeclared, uncredited, and invisible.
+  if (actualXfgBurned != xfgBurned) return false;
   if (actualHeatMinted != heatMinted) return false;
 
   uint64_t expectedHeat = expectedHeatFor(actualXfgBurned, price);
+
+  // Upper bound: claiming more HEAT than the price allows is dilution.
+  // Exact, no tolerance.
   if (heatMinted > expectedHeat) return false;
+
+  // Lower bound: claiming materially less is a client bug, and without this
+  // consensus accepted it silently — the minter's XFG burned and the HEAT
+  // they were owed never existed. A wallet that miscomputes the ratio now
+  // fails loudly instead of quietly costing its user.
+  //
+  // Tolerant only on this side, and only by
+  // HEAT_MINT_SHORTFALL_TOLERANCE_BPS, so ordinary TWAP drift between
+  // building a mint and its inclusion does not reject honest transactions.
+  if (parameters::HEAT_MINT_SHORTFALL_TOLERANCE_BPS < 10000) {
+    uint64_t floorHeat = static_cast<uint64_t>(
+        ((uint128_t)expectedHeat *
+         (10000 - parameters::HEAT_MINT_SHORTFALL_TOLERANCE_BPS)) / 10000);
+    if (heatMinted < floorHeat) {
+#ifdef HEAT_MINT_DEBUG
+      fprintf(stderr, "[HeatMint] validateMintAuth FAIL: shortfall (minted=%llu floor=%llu expected=%llu)\n",
+        (unsigned long long)heatMinted, (unsigned long long)floorHeat,
+        (unsigned long long)expectedHeat);
+#endif
+      return false;
+    }
+  }
 
   return true;
 }

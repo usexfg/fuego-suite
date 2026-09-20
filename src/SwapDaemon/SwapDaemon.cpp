@@ -362,22 +362,29 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << " (chainId=" << chainCfg.polyChainId << ")";
   }
 
-  // GLEEC (Evmos fork) — disabled pending chain status investigation
-  // TODO: re-enable once GLEEC chain situation is resolved
-  // if (!chainCfg.gleecHost.empty()) {
-  //   auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
-  //       chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
-  //       chainCfg.gleecChainId);
-  //   applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
-  //       !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
-  //       m_logger, "GLEEC");
-  //   applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
-  //   m_chainRegistry.registerChain(SwapPair::GLEEC,
-  //       std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
-  //   m_logger(Logging::INFO) << "GLEEC chain client registered: "
-  //     << chainCfg.gleecHost << ":" << chainCfg.gleecPort
-  //     << " (chainId=" << chainCfg.gleecChainId << ")";
-  // }
+  // GLEEC (Evmos fork) — EVM-compatible, closed to new swaps.
+  // See isPairClosedToNewSwaps: registration is deliberate so in-flight swaps
+  // keep their claim and refund paths.
+  if (!chainCfg.gleecHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
+        chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
+        chainCfg.gleecChainId);
+    // Registry must be GLEEC's own: the shared ethHtlcRegistry address is only
+    // valid where CREATE2 put the contract at the same address, which an
+    // Evmos fork does not guarantee.
+    if (chainCfg.gleecHtlcRegistry.empty()) {
+      m_logger(Logging::WARNING) << "GLEEC: gleec_htlc_registry not set — HTLC registry left unconfigured";
+    } else {
+      applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.gleecHtlcRegistry, m_logger, "GLEEC");
+    }
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
+    m_chainRegistry.registerChain(SwapPair::GLEEC,
+        std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
+    m_logger(Logging::WARNING) << "GLEEC chain client registered CLOSED TO NEW SWAPS "
+      << "(existing swaps can still claim/refund): "
+      << chainCfg.gleecHost << ":" << chainCfg.gleecPort
+      << " (chainId=" << chainCfg.gleecChainId << ")";
+  }
   // ROBINHOOD (Robinhood Chain — EVM L1)
   if (!chainCfg.rhHost.empty()) {
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,
@@ -882,7 +889,21 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
+// Pairs closed to NEW swaps. The chain client stays registered on purpose:
+// every recovery path (refund, and handleCtrLocked's on-chain secret
+// extraction) resolves through getClient(pair), so de-registering a chain that
+// has swaps on disk strands their XFG escrow instead of failing safe.
+static bool isPairClosedToNewSwaps(SwapPair p) {
+  return p == SwapPair::GLEEC;
+}
+
 bool SwapDaemon::initiate(SwapParams& params) {
+  if (isPairClosedToNewSwaps(params.pair)) {
+    m_logger(Logging::ERROR) << swapPairToString(params.pair)
+      << " is closed to new swaps (in-flight swaps can still claim and refund)";
+    return false;
+  }
+
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
     m_logger(Logging::ERROR) << "Cannot connect to fuegod";
@@ -4191,6 +4212,11 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
+  if (isPairClosedToNewSwaps(pair)) {
+    m_logger(Logging::WARNING) << swapPairToString(pair)
+      << " is closed to new swaps — rejecting fill for offer " << offerId;
+    return false;
+  }
   IChainClient* client = m_chainRegistry.getClient(pair);
   if (!client) {
     m_logger(Logging::ERROR) << "No chain client for pair " << (int)targetOffer.pair;

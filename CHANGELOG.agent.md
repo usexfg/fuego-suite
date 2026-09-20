@@ -4,6 +4,78 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## GLEEC: close to new swaps instead of de-registering (supersedes 6200a3c)
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+Commit 6200a3c disabled GLEEC by commenting out its registration block. Guardian
+verification found that this strands funds. Replaced with a drain: the client stays
+registered, new swaps are refused.
+
+### Why de-registering strands funds
+
+Every recovery path resolves the chain client through `getClient(pair)`, and a null
+client there is not a safe failure — it is the stranding mechanism:
+
+- `SwapDaemon.cpp:3230` — the XFG escrow refund `broadcastEscrowRefundDirect` sits
+  *inside* `if (ctrRefundOk)`. Null client leaves `ctrRefundOk` false, so the escrow
+  refund never broadcasts. `checkTimeouts` re-enters every tick forever. The XFG is
+  recoverable without touching GLEEC at all, but the gate blocks it.
+- `SwapDaemon.cpp:3161` — the SPV refund branch returns before reaching the escrow
+  logic at all.
+- `SwapDaemon.cpp:2069` — `handleCtrLocked` returns before `tryExtractClaimedSecret`.
+  That call is Alice's trustless route to the adaptor secret when Bob claims on chain
+  but withholds SECRET_REVEAL. Without it Bob can claim the CTR leg, stay silent, and
+  refund the XFG escrow at timeout, taking both legs.
+
+Chains staged this way already (ZANO/TON/SIA/DOT) were never live, so they have no
+swaps on disk. GLEEC was live, so it can.
+
+### Also
+
+De-registering bought nothing: `SwapOfferRelay.h:285` caps gossiped offers at
+`MAX_PAIR_INDEX = 11` and GLEEC is 12, so GLEEC offers never entered the order book
+on any build. The only thing registration provided was the recovery paths above.
+
+The `ethHtlcRegistry` fallback from 1088a69 is removed rather than restored. It
+assumed CREATE2 same-address deployment across all 14 EVM chains; GLEEC is an Evmos
+fork with no such guarantee, so that address likely holds no code there — and an EVM
+call to a codeless address does not revert, so it would fail silently with CTR funds
+stranded. `gleec_htlc_registry` is now required, with a warning when unset.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Restore GLEEC registration; require gleec_htlc_registry, no cross-chain fallback | Claude Opus 5 | 2026-09-20 | DONE |
+| 2 | Add `isPairClosedToNewSwaps`; refuse GLEEC in `initiate` | Claude Opus 5 | 2026-09-20 | DONE |
+| 3 | Refuse GLEEC fills in `handleSwapRequest` (AFK maker path) | Claude Opus 5 | 2026-09-20 | DONE |
+| 4 | Log registration at WARNING stating closed-to-new-swaps | Claude Opus 5 | 2026-09-20 | DONE |
+
+### Known issues NOT addressed here (pre-existing, filed for follow-up)
+
+- `SwapDaemon.cpp:3230` / `:3161` / `:2069` gating is still wrong for any chain whose
+  client is absent for other reasons (misconfig, RPC down at boot). The correct fix is
+  to ungate `broadcastEscrowRefundDirect` from `ctrRefundOk`, but that changes
+  fund-handling semantics for all 25 chains and needs its own review.
+- `SwapDaemon.cpp:4152` / `RpcServer.cpp:1374` scan `pair <= ZANO` (24) while the enum
+  runs to `DOT` (28). MONAD and OPTIMISM are registered but their offers are never found.
+- `MAX_PAIR_INDEX = 11` means pairs 12-28 (17 chains, incl. DOGE/DASH/ZEC/MONAD/OPTIMISM)
+  are advertised by registry, oracle and UI but unreachable through the offer book.
+- `m_takerHistory` grows unbounded: `pruneTakerHistory` only erases entries with
+  `failedSwaps == 0`, so each failed proof from a fresh pubkey leaves a permanent entry.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (no Windows/full build runner in this env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## REVERTED: reserve-proof exemption for DOGE/DASH/ZEC
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

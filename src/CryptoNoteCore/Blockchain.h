@@ -507,6 +507,13 @@ namespace CryptoNote {
     std::deque<uint64_t> m_rollingPriceWindow;
     uint8_t m_lastTwapVersion = 0;
 
+    // True once the Hearth pool has ever produced a price. Latches the fixed
+    // launch mint price off for good: see getMintPrice(). Monotonic — never
+    // cleared, including on reorg, because the failure it guards against is
+    // minting at the launch ratio when a real market price exists, and
+    // failing closed is always the safer error.
+    bool m_poolPriceEstablished = false;
+
     // CD yield state
     uint64_t m_cdYieldPool = 0;
     uint64_t m_cdReserve = 0;

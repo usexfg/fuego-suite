@@ -322,6 +322,26 @@ public:
         }
       }
 
+      // Has the Hearth pool ever produced a price? Gates the fixed launch
+      // mint price (getMintPrice). Appended at the end so older caches load
+      // unchanged; when the field is absent, infer it from pool and supply
+      // state rather than defaulting to false, so a chain that already has a
+      // live pool never reverts to launch-ratio pricing on a cache reload.
+      try {
+        uint8_t established = m_bs.m_poolPriceEstablished ? 1 : 0;
+        s(established, "pool_price_established");
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_poolPriceEstablished = established != 0;
+        }
+      } catch (std::exception&) {
+        if (s.type() == ISerializer::INPUT) {
+          m_bs.m_poolPriceEstablished =
+              !m_bs.m_ammPool.isEmpty() || m_bs.m_heatSupply > 0;
+        } else {
+          throw;
+        }
+      }
+
       // Alias registry: without persistence, every registered/released/
       // transferred alias was wiped on every normal daemon restart (only
       // rebuildCache(), which runs on cache-load failure, ever repopulated
@@ -4191,16 +4211,29 @@ uint64_t CryptoNote::Blockchain::getMintPrice() const {
   // Single source of truth for the price a HEAT mint is validated against,
   // so consensus and the RPC that quotes it cannot drift apart.
   //
-  // The 8-block TWAP is preferred because it is expensive to manipulate. Spot
-  // covers the window still filling. The launch ratio covers the bootstrap
-  // deadlock: accumulateTwap only samples while the pool is non-empty, and
-  // the pool cannot hold HEAT before any HEAT is minted, so without it no
-  // first mint is possible and the pool can never be seeded.
+  // The 8-block TWAP is preferred because it is expensive to manipulate.
+  // Spot covers the window still filling.
   if (m_rollingPriceWindow.size() >= 2) {
     return getRollingTwap();
   }
   if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
     return ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+  }
+
+  // The fixed launch ratio exists for exactly one situation: the bootstrap
+  // deadlock. accumulateTwap only samples while the pool is non-empty, and
+  // the pool cannot hold HEAT before any HEAT is minted, so at launch there
+  // is no price to mint against and the pool can never be seeded.
+  //
+  // It is NOT a general fallback. Once the pool has ever produced a price,
+  // m_poolPriceEstablished latches and this returns 0 instead, so a drained
+  // pool, a cleared TWAP window, a partial resync or any other transient
+  // fault rejects the mint rather than pricing it at a launch ratio the
+  // market has long since left behind. Minting at a stale 10:1 while the
+  // real price is elsewhere is a free arbitrage against every holder;
+  // refusing to mint for a while is not.
+  if (m_poolPriceEstablished) {
+    return 0;
   }
   return heatLaunchMintPrice();
 }
@@ -5754,6 +5787,11 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
     // unbacked HEAT at that price.
     m_rollingPriceWindow.push_back(spotPrice);
     m_lastTwapVersion = block.majorVersion;
+    if (spotPrice > 0) {
+      // One-way: from here on a missing pool price is an error, not a cue to
+      // fall back to the launch ratio.
+      m_poolPriceEstablished = true;
+    }
     if (m_rollingPriceWindow.size() > 8) {
       m_rollingPriceWindow.pop_front();
     }

@@ -4,6 +4,70 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Order-book pair cap raised to the full enum; PulseX renamed to PulseChain; GLEEC re-enabled
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-21
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+### Correction to the two prior GLEEC entries
+
+Both 6200a3c (de-register GLEEC) and 35fb15a (close GLEEC to new swaps) rested on
+the premise that GLEEC had been live and could therefore have swaps persisted on
+disk. That premise was wrong — no chain in this daemon has ever been live. It was
+inferred from GLEEC calling `registerChain` while ZANO/TON/SIA/DOT do not, and was
+never verified. With no swaps on disk there is nothing to strand, so the fund-loss
+reasoning in entry "GLEEC: close to new swaps" does not apply to the current state.
+
+The latent bugs it describes (`SwapDaemon.cpp:3230`, `:3161`, `:2069`) are still real
+and still worth fixing before anything goes live — they are simply not urgent.
+
+GLEEC is fully enabled again. `isPairClosedToNewSwaps` is removed. The only GLEEC
+change that survives is the registry correctness fix: `gleec_htlc_registry` is
+required rather than silently falling back to `ethHtlcRegistry`.
+
+### Order-book pair cap (the actual blocker)
+
+`SwapOfferRelay::MAX_PAIR_INDEX` was 11 with `m_orderBooks[12]`, while `SwapPair`
+runs to `DOT = 28`. `validateOffer` drops any offer with `pair > MAX_PAIR_INDEX`, so
+pairs 12-28 — GLEEC, ROBINHOOD, AVAX, CRO, BOB, SIA, UNICHAIN, PLASMA, DOGE, DASH,
+ZEC, PULSECHAIN, ZANO, MONAD, OPTIMISM, TON, DOT — were advertised by the registry,
+quoted by the price oracle and offered in the UI, but could never reach an order
+book. 17 of 25 registered chains could not trade over gossip.
+
+Every `m_orderBooks` access already routed through `isValidPair`, so the array was
+never indexed out of bounds — the cap failed closed, silently.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `MAX_PAIR_INDEX` 11 → 28; `m_orderBooks` sized `MAX_PAIR_INDEX + 1` | Claude Opus 5 | 2026-09-21 | DONE |
+| 2 | Make `MAX_PAIR_INDEX` public so callers stop duplicating the literal | Claude Opus 5 | 2026-09-21 | DONE |
+| 3 | `OfferManager.cpp` `mo.pair > 11` → reference the constant | Claude Opus 5 | 2026-09-21 | DONE |
+| 4 | Loop bounds `pair <= ZANO` → `pair <= DOT` in SwapDaemon.cpp + RpcServer.cpp | Claude Opus 5 | 2026-09-21 | DONE |
+| 5 | Rename PULSEX → PULSECHAIN across enum, strings, config keys, client, dir | Claude Opus 5 | 2026-09-21 | DONE |
+| 6 | Revert GLEEC drain mode; remove `isPairClosedToNewSwaps` | Claude Opus 5 | 2026-09-21 | DONE |
+
+### PulseX → PulseChain
+
+The pair was named for PulseX, which is a DEX, while every field around it already
+described PulseChain: chain id 369, native PLS, 18 decimals, `rpc.pulsechain.com`.
+The chain is PulseChain; the name was simply wrong. Renamed throughout —
+`SwapPair::PULSECHAIN` (index 23, unchanged), `PulseChainClient`,
+`src/SwapDaemon/PulseChain/`, and config keys `pulsechain_*`. The string alias is now
+`PLS` (the native coin) rather than `PULS`. Config keys changed without a
+compatibility shim because nothing is deployed.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | PASS — all 8 changed translation units pass `g++ -std=c++17 -fsyntax-only` with the project's own flags (`-DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=40`): SwapTypes, SwapTimelock, PriceOracle, SwapOfferRelay, OfferManager, ChainClientConfig, SwapDaemon, RpcServer. Not a full link. |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## CI: Windows build exits 1 with every target linked
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

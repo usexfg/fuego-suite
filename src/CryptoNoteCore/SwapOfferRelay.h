@@ -276,13 +276,21 @@ public:
   std::vector<Fill> matchOrder(SwapOrder::Side takerSide, uint8_t pair,
                                uint64_t takerPrice, uint64_t takerAmount);
 
+  // Highest valid SwapPair index. Must track the last enumerator of
+  // XfgSwap::SwapPair (SwapDaemon/SwapTypes.h), currently DOT = 28. Core does
+  // not include the swap-daemon headers, so this is kept in sync by hand:
+  // raising SwapPair without raising this silently drops every offer for the
+  // new pair in validateOffer, since the pair never reaches an order book.
+  // Public so callers bound their own pair inputs against this rather than
+  // duplicating the literal.
+  static constexpr uint8_t MAX_PAIR_INDEX = 28; // m_orderBooks[29], valid indices 0..28
+
 private:
   // ── Legacy v1 internals ──
   bool validateOffer(const SwapOfferMsg& offer) const;
   void cleanupLegacyOffers();
 
   // ── v2 Orderbook internals ──
-  static constexpr uint8_t MAX_PAIR_INDEX = 11; // m_orderBooks[12] valid indices 0..11 (SwapPair core set)
   bool isValidPair(uint8_t pair) const { return pair <= MAX_PAIR_INDEX; }
   std::string generateOrderId(const SwapOrder& o) const;
   bool validateOrderSignature(const SwapOrder& o) const;
@@ -345,7 +353,7 @@ private:
   NativeXfgPriceRange m_nativeXfgPrice;
 
   // ── v2 Orderbook state ──
-  PairOrderBook m_orderBooks[12];  // indexed by pair (0..11) — ALWAYS bounds-check pair first
+  PairOrderBook m_orderBooks[MAX_PAIR_INDEX + 1];  // indexed by pair — ALWAYS bounds-check pair first
   std::map<std::string, SwapOrder> m_allOrders;  // orderId → order (all orders across all pairs)
   // Fill replay keys: hash(taker|maker|amount|price|height) — not maker-only
   std::map<std::string, uint64_t> m_fillReplay; // key → insert time (unix)

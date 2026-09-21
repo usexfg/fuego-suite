@@ -70,8 +70,7 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       // Validate economic fields: pair must index a valid order-book slot and
       // the offer amount must be positive. A zero amount can never be filled
       // and would spam the relay with useless offers.
-      // Bound mirrors SwapOfferRelay::MAX_PAIR_INDEX (valid indices 0..11).
-      if (mo.pair > 11) {
+      if (mo.pair > CryptoNote::SwapOfferRelay::MAX_PAIR_INDEX) {
         m_logger(Logging::ERROR) << "Managed offer skipped: invalid pair " << (int)mo.pair;
         continue;
       }

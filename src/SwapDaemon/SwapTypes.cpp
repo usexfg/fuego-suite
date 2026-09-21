@@ -56,8 +56,8 @@ bool swapPairFromString(const std::string& s, SwapPair& out) {
   if (iequal(p, "DOGE", n))    { out = SwapPair::DOGE;      return true; }
   if (iequal(p, "DASH", n))    { out = SwapPair::DASH;      return true; }
   if (iequal(p, "ZEC", n))     { out = SwapPair::ZEC;       return true; }
-  if (iequal(p, "PULSEX", n))  { out = SwapPair::PULSEX;    return true; }
-  if (iequal(p, "PULS", n))    { out = SwapPair::PULSEX;    return true; }
+  if (iequal(p, "PULSECHAIN", n))  { out = SwapPair::PULSECHAIN;    return true; }
+  if (iequal(p, "PLS", n))     { out = SwapPair::PULSECHAIN;    return true; }
   if (iequal(p, "ZANO", n))    { out = SwapPair::ZANO;      return true; }
   if (iequal(p, "TON", n))     { out = SwapPair::TON;       return true; }
   if (iequal(p, "MONAD", n))   { out = SwapPair::MONAD;     return true; }
@@ -100,7 +100,7 @@ const char* swapPairToString(SwapPair p) {
     case SwapPair::DOGE:    return "DOGE";
     case SwapPair::DASH:    return "DASH";
     case SwapPair::ZEC:     return "ZEC";
-    case SwapPair::PULSEX:  return "PULSEX";
+    case SwapPair::PULSECHAIN:  return "PULSECHAIN";
     case SwapPair::ZANO:    return "ZANO";
     case SwapPair::TON:     return "TON";
     case SwapPair::MONAD:   return "MONAD";

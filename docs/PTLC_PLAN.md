@@ -83,7 +83,7 @@ PTLC replaces `H(t)` with a point lock `T=t*G` and an adaptor signature `s'`. Cl
 | Bitcoin Taproot P2TR | Yes (Schnorr BIP340/341 + MuSig2) | Schnorr adaptor `s'*G=R+e*P+T` | — |
 | Bitcoin legacy P2WSH/P2SH, LTC, BCH, KMD, DOGE, DASH, ZEC, DCR | No | ECDSA adaptor `secp256k1_ecdsa_adaptor_encrypt` + DLEQ (162B) | Keep HTLC `OP_SHA256` |
 | Elements/Liquid | Yes (Taproot 2021) | Schnorr adaptor | — |
-| Ethereum + EVMs (ARB/BASE/BNB/POLY/GLEEC/AVAX/CRO/BOB/UNICHAIN/PLASMA/MONAD/OP/PULSEX/ROBINHOOD) | No (no Schnorr opcode; ecrecover=ECDSA) | **PTLC_HTLC_BRIDGE**: PTLC `T` on XFG + HTLC `H(t)` on EVM + DLEQ bridge `Q=t*escrowPubKey` | HashedTimelock HTLC |
+| Ethereum + EVMs (ARB/BASE/BNB/POLY/GLEEC/AVAX/CRO/BOB/UNICHAIN/PLASMA/MONAD/OP/PULSECHAIN/ROBINHOOD) | No (no Schnorr opcode; ecrecover=ECDSA) | **PTLC_HTLC_BRIDGE**: PTLC `T` on XFG + HTLC `H(t)` on EVM + DLEQ bridge `Q=t*escrowPubKey` | HashedTimelock HTLC |
 | Solana SBF `xfg_htlc` PDA | Partial (ed25519 adaptor via syscall) | ed25519 adaptor `c=Hs(R+T,P,m)` | keccak HTLC |
 | TON FunC `htlc.fc` | No | Bridge | SHA256 HTLC |
 | SIA `blake2b` | No | Bridge | blake2b HTLC |

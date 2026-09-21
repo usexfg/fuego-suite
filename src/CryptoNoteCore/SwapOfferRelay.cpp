@@ -161,7 +161,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
-  // pair must index a valid order book slot (0..11)
+  // pair must index a valid order book slot (0..MAX_PAIR_INDEX)
   if (!isValidPair(offer.pair)) return false;
   Crypto::Hash offerHash = offerCanonicalHash(offer);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
@@ -534,7 +534,7 @@ std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request&
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
   if (!isValidPair(order.pair)) return;
   uint8_t pair = order.pair;
-  if (!isValidPair(pair)) return;  // bounds: m_orderBooks has 12 slots
+  if (!isValidPair(pair)) return;  // bounds: m_orderBooks has MAX_PAIR_INDEX + 1 slots
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
 

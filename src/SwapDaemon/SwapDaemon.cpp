@@ -52,7 +52,7 @@
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
-#include "PulseX/PulseXChainClient.h"
+#include "PulseChain/PulseChainClient.h"
 #include "Unichain/UnichainChainClient.h"
 #include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -362,9 +362,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << " (chainId=" << chainCfg.polyChainId << ")";
   }
 
-  // GLEEC (Evmos fork) — EVM-compatible, closed to new swaps.
-  // See isPairClosedToNewSwaps: registration is deliberate so in-flight swaps
-  // keep their claim and refund paths.
+  // GLEEC (Evmos fork) — EVM-compatible
   if (!chainCfg.gleecHost.empty()) {
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
         chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
@@ -380,8 +378,7 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
     m_chainRegistry.registerChain(SwapPair::GLEEC,
         std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
-    m_logger(Logging::WARNING) << "GLEEC chain client registered CLOSED TO NEW SWAPS "
-      << "(existing swaps can still claim/refund): "
+    m_logger(Logging::INFO) << "GLEEC chain client registered: "
       << chainCfg.gleecHost << ":" << chainCfg.gleecPort
       << " (chainId=" << chainCfg.gleecChainId << ")";
   }
@@ -446,15 +443,15 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
     m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
   }
-  // PULSEX (PulseChain)
-  if (!chainCfg.pulsexHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsexHost, chainCfg.pulsexPort,
-        chainCfg.pulsexPrivKeyHex, chainCfg.pulsexAddress, chainCfg.pulsexChainId);
-    applyHtlcConfig(*rpc, chainCfg.pulsexHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSEX");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSEX");
-    m_chainRegistry.registerChain(SwapPair::PULSEX,
-        std::make_unique<PulseXChainClient>(std::move(rpc), chainCfg.pulsexAddress));
-    m_logger(Logging::INFO) << "PULSEX chain client registered: " << chainCfg.pulsexHost << ":" << chainCfg.pulsexPort;
+  // PULSECHAIN (native PLS — EVM, chain id 369)
+  if (!chainCfg.pulsechainHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechainHost, chainCfg.pulsechainPort,
+        chainCfg.pulsechainPrivKeyHex, chainCfg.pulsechainAddress, chainCfg.pulsechainChainId);
+    applyHtlcConfig(*rpc, chainCfg.pulsechainHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
+    m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
+        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechainAddress));
+    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechainHost << ":" << chainCfg.pulsechainPort;
   }
   // MONAD
   if (!chainCfg.monadHost.empty()) {
@@ -889,21 +886,7 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
-// Pairs closed to NEW swaps. The chain client stays registered on purpose:
-// every recovery path (refund, and handleCtrLocked's on-chain secret
-// extraction) resolves through getClient(pair), so de-registering a chain that
-// has swaps on disk strands their XFG escrow instead of failing safe.
-static bool isPairClosedToNewSwaps(SwapPair p) {
-  return p == SwapPair::GLEEC;
-}
-
 bool SwapDaemon::initiate(SwapParams& params) {
-  if (isPairClosedToNewSwaps(params.pair)) {
-    m_logger(Logging::ERROR) << swapPairToString(params.pair)
-      << " is closed to new swaps (in-flight swaps can still claim and refund)";
-    return false;
-  }
-
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
     m_logger(Logging::ERROR) << "Cannot connect to fuegod";
@@ -4170,7 +4153,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::ZANO); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(SwapPair::DOT); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {
@@ -4212,11 +4195,6 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
-  if (isPairClosedToNewSwaps(pair)) {
-    m_logger(Logging::WARNING) << swapPairToString(pair)
-      << " is closed to new swaps — rejecting fill for offer " << offerId;
-    return false;
-  }
   IChainClient* client = m_chainRegistry.getClient(pair);
   if (!client) {
     m_logger(Logging::ERROR) << "No chain client for pair " << (int)targetOffer.pair;

@@ -3161,40 +3161,65 @@ bool SwapDaemon::refund(const std::string& swapId) {
     m_logger(Logging::INFO) << "Timeout elapsed (SPV state). Refunding counterparty ("
       << swapPairToString(params.pair) << ") HTLC...";
 
+    // Whether we already took the CTR leg is a fact, not a state label. The SPV
+    // claim path records it (ctrClaimTxId, adaptorSecretRevealedToPeer) WITHOUT
+    // leaving ADAPTOR_WAITING_SPV, and ADAPTOR_SECRET_CONFIRMED_SPV is entered
+    // on confirmations of the LOCK tx, so neither state tells us on its own.
+    const bool alreadyClaimedCtr =
+        !params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer;
+
+    bool ctrRefundOk = false;
     auto* client = m_chainRegistry.getClient(params.pair);
     if (!client) {
       m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-        << " client not configured — cannot refund";
-      return false;
-    }
-
-    auto result = client->refund(params);
-    if (result.success) {
-      m_logger(Logging::INFO) << "  " << client->chainName()
-        << " refunded, txid: " << result.txId;
-      // v11+: also return the XFG escrow to the maker unilaterally.
-      {
-        static const Crypto::Hash ZERO_HASH{};
-        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-          if (!broadcastEscrowRefundDirect(params)) {
-            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-            return false;
-          }
+        << " client not configured — cannot refund counterparty leg";
+    } else {
+      auto result = client->refund(params);
+      if (result.success) {
+        m_logger(Logging::INFO) << "  " << client->chainName()
+          << " refunded, txid: " << result.txId;
+        ctrRefundOk = true;
+      } else {
+        m_logger(Logging::ERROR) << "  " << client->chainName()
+          << " refund failed: " << result.error;
+        if (result.fatal) {
+          sm.transition(SwapState::FAILED);
+          m_db.saveSwap(sm);
+          return false;
         }
       }
-      sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
-      m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
-      return true;
     }
 
-    m_logger(Logging::ERROR) << "  " << client->chainName()
-      << " refund failed: " << result.error;
-    if (result.fatal) {
-      sm.transition(SwapState::FAILED);
-      m_db.saveSwap(sm);
+    // Recovering the XFG escrow is independent of the counterparty refund, but
+    // ONLY while we have not claimed the CTR leg. Having claimed it, taking the
+    // escrow back as well would be both legs. The old code gated on
+    // ctrRefundOk, which blocked that case only by accident — a claimed output
+    // makes refund() fail — while also stranding the escrow whenever the CTR
+    // refund failed for an unrelated reason (no client, RPC down).
+    bool escrowRefundOk = true;
+    if (alreadyClaimedCtr) {
+      m_logger(Logging::WARNING)
+        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
+        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
+      escrowRefundOk = false;
+    } else {
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        escrowRefundOk = broadcastEscrowRefundDirect(params);
+        if (!escrowRefundOk) {
+          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
+        }
+      }
     }
-    return false;
+
+    if (ctrRefundOk && escrowRefundOk) {
+      sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
+      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
+    } else if (!ctrRefundOk) {
+      m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
+    }
+    return ctrRefundOk && escrowRefundOk;
   }
 
   // Counterparty chain refund: the CTR leg is locked and the swap timed out.
@@ -3232,15 +3257,20 @@ bool SwapDaemon::refund(const std::string& swapId) {
       }
     }
 
-    // v11+: return the XFG escrow to the maker unilaterally. This does NOT
-    // depend on the counterparty refund: while the swap is still CTR_LOCKED the
-    // peer cannot have learned the adaptor secret — that only happens once we
-    // claim the CTR leg, which moves the state on — so nobody else can spend
-    // the escrow. Gating it on ctrRefundOk stranded recoverable XFG whenever
-    // the CTR leg could not be refunded (an unconfigured client, an RPC
-    // outage, a chain that was never registered).
+    // v11+: return the XFG escrow to the maker unilaterally. Independent of the
+    // counterparty refund, but only while we have not claimed the CTR leg —
+    // taking both would be theft. Reaching this state should mean we have not
+    // claimed, but the guard keys on the recorded fact rather than trusting the
+    // state label, because the SPV claim path records a claim without changing
+    // state. Gating on ctrRefundOk instead stranded recoverable XFG whenever the
+    // CTR leg could not be refunded (unconfigured client, RPC outage).
     bool escrowRefundOk = true;
-    {
+    if (!params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer) {
+      m_logger(Logging::WARNING)
+        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
+        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
+      escrowRefundOk = false;
+    } else {
       static const Crypto::Hash ZERO_HASH{};
       if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
         escrowRefundOk = broadcastEscrowRefundDirect(params);

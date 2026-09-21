@@ -97,21 +97,42 @@ transition. Also corrected the block comment, which claimed "Bob locked on the
 counterparty chain" — `SwapDaemon.cpp:1882` shows Alice locks the CTR leg and Bob
 verifies it.
 
-### 2. The SPV branch keeps its gate — the guardian recommendation was wrong
+### 2. The SPV branch: both the guardian's fix AND my first analysis were wrong
 
 Guardian's adversarial pass recommended ungating `broadcastEscrowRefundDirect` in
-both places. Applying that to the SPV branch would introduce a fund-theft path.
+both places. That would introduce a fund-theft path, so it was not applied.
 
-That branch covers `ADAPTOR_WAITING_SPV` **and** `ADAPTOR_SECRET_CONFIRMED_SPV`. In
-the latter the adaptor secret is already revealed, which means the CTR leg was
-claimed. If Bob could refund the XFG escrow there regardless of the CTR refund
-outcome, Bob would hold both legs. Today the gate blocks exactly that: having
-claimed the CTR leg, `client->refund()` fails on the already-spent output, so
-`ctrRefundOk` stays false and the escrow refund does not run.
+The first analysis written here was **also wrong**, and is corrected below.
 
-So the gate is load-bearing in that branch, not a copy of the same bug. Fixing the
-`WAITING_SPV` half properly means splitting the branch by state, which is a real
-design change and is deliberately not attempted here.
+It claimed `ADAPTOR_SECRET_CONFIRMED_SPV` implies the CTR leg was claimed, and that
+the branch should therefore be split by state. The code does not support that:
+`SwapDaemon.cpp:2424` enters that state on `getTransactionDetails(params.ctrLockTxId)`
+— confirmations of the **lock** tx. The claim was inferred from the state's *name*,
+which is the same failure mode as the guardian finding.
+
+What actually records a claim is `params.ctrClaimTxId` (set at `:1971` and `:2041`)
+and `params.adaptorSecretRevealedToPeer` (`:2040`). The SPV claim path sets both
+**without leaving `ADAPTOR_WAITING_SPV`**, so *either* SPV state can hold an
+already-claimed swap. Splitting by state would have been wrong too.
+
+**The fix is one predicate, applied to both branches:**
+
+```cpp
+const bool alreadyClaimedCtr =
+    !params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer;
+```
+
+- Not claimed → refund the escrow, independent of the CTR refund.
+- Claimed → refuse the escrow refund and log loudly. We already hold the CTR leg;
+  taking the escrow back as well is both legs. The counterparty can still claim the
+  escrow with the secret, which is the correct outcome.
+
+`ctrRefundOk` was only ever an accidental proxy for this: a claimed output makes
+`refund()` fail. It blocked the theft case by luck while stranding recoverable XFG
+whenever the CTR refund failed for an unrelated reason.
+
+The `ADAPTOR_CTR_LOCKED` branch now uses the same predicate rather than trusting the
+state invariant, since the SPV path proves a state label is not a reliable witness.
 
 ### 3. `m_takerHistory` grew without bound (FIXED)
 

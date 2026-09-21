@@ -76,12 +76,13 @@ jobs:
             -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
             -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
-          # Every target links and MSBuild still exits 1, printing no build
-          # summary, so the failing project is not visible in the console log.
-          # /nodeReuse:false stopped worker nodes outliving the step; the file
-          # logger below records errors and warnings only, and is dumped on
-          # failure so the actual cause appears in the job log.
-          cmake --build "${{ github.workspace }}/build" --config Release -j 2 -- `
+          # MSBuild can exit non-zero without printing a build summary, which
+          # leaves a failing project invisible in the console log while every
+          # other target still links. The file loggers below record errors and
+          # warnings only and are dumped on failure; they are what identified
+          # the __uint128_t error in core_tests. /nodeReuse:false keeps worker
+          # nodes from outliving the step.
+          cmake --build "${{ github.workspace }}/build" --config Release -j $env:NUMBER_OF_PROCESSORS -- `
             /nodeReuse:false `
             "/flp1:logfile=${{ github.workspace }}/msbuild-errors.log;errorsonly;verbosity=diagnostic" `
             "/flp2:logfile=${{ github.workspace }}/msbuild-warnings.log;warningsonly"

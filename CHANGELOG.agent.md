@@ -91,8 +91,45 @@ windows-2025 is 4 vCPU / 16 GB and the tree is boost-template heavy.
 | 1 | Cap `-j` at 2 (was `$NUMBER_OF_PROCESSORS` = 4) | Claude Opus 5 | 2026-09-20 | DONE — did not fix it |
 | 2 | Pass `/nodeReuse:false` to stop nodes outliving the step | Claude Opus 5 | 2026-09-20 | DONE — fixed the orphans |
 | 3 | Throw explicitly on non-zero `$LASTEXITCODE` so the code is visible | Claude Opus 5 | 2026-09-20 | DONE |
-| 4 | Add MSBuild `errorsonly` file logger, dumped on failure | Claude Opus 5 | 2026-09-21 | DONE |
-| 5 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | IN PROGRESS |
+| 4 | Add MSBuild `errorsonly` file logger, dumped on failure | Claude Opus 5 | 2026-09-21 | DONE — found the cause |
+| 5 | Fix `__uint128_t` in TreasuryCoreTests.cpp:690 | Claude Opus 5 | 2026-09-21 | DONE |
+| 6 | Restore `-j $NUMBER_OF_PROCESSORS` (the cap was for a disproven theory) | Claude Opus 5 | 2026-09-21 | DONE |
+| 7 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | IN PROGRESS |
+
+### ROOT CAUSE FOUND (run 35568840910)
+
+```
+tests/CoreTests/TreasuryCoreTests.cpp(690,35): error C2065: '__uint128_t': undeclared identifier
+tests/CoreTests/TreasuryCoreTests.cpp(690,47): error C2146: syntax error: missing ')' before identifier 'P'
+```
+
+`__uint128_t` is a GCC/Clang builtin. MSVC has no such type, which is exactly why
+Windows was the only failing platform while macOS, Ubuntu and Sanitizers stayed
+green. The second error is the first one cascading.
+
+It was the **only** `__uint128_t` in the entire repository, and it sat in
+`core_tests.vcxproj` — a test project, not a shipped binary. That is why every
+`.exe` linked successfully and the failure looked mysterious: the failing project
+produced no console output of its own, MSBuild printed no build summary, and the
+error was ~5 minutes upstream of the end of a 1456-line log.
+
+The repo already carries the portable type: `uint128_t` in `src/Common/Int128.h`
+(builtin `unsigned __int128` on GCC/Clang, a hand-written struct with an explicit
+`operator uint64_t()` on MSVC). `TreasuryCoreTests.cpp` already included that header.
+The fix matches the identical computation in `Currency::calculateCdBonus`
+(`Currency.cpp:392`), which compiles on MSVC today:
+
+```cpp
+static_cast<uint64_t>(((uint128_t)P * (FLOOR - FLOOR / 2)) / PREC)
+```
+
+This bug is **pre-existing and unrelated to this branch** — it is why master
+(run 35166598710) was red too.
+
+Both earlier hypotheses were wrong and are recorded as such: worker-node death
+(disproven — no orphans, still failed) and parallelism (disproven — `-j 2` changed
+nothing). The `-j` cap is therefore reverted; `/nodeReuse:false` and the file
+loggers are kept, since the loggers are what made the cause visible at all.
 
 ### Result of run 35506839843 — first hypothesis was wrong
 
@@ -120,8 +157,9 @@ is not an option — CI has to surface the error itself.
 | Check | Result |
 |-------|--------|
 | YAML parses | PASS (python yaml.safe_load) |
-| Windows CI green | NO — still failing, cause not yet identified |
-| All tasks done | NO — task 5 open |
+| Build compiles | PASS — TreasuryCoreTests.cpp passes `g++ -fsyntax-only` with the project's flags |
+| Windows CI green | PENDING — root cause identified and fixed, awaiting confirmation |
+| All tasks done | NO — task 7 open |
 
 ---
 

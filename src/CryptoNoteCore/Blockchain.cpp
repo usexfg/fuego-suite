@@ -4768,6 +4768,15 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
         uint64_t grossHeat = ammGetOutputAmount(
             fillXfg, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+        // The size bound above is derived from the exact rational rate, but
+        // the curve's output is floored, so on a dust-sized fill the realized
+        // rate can land a hair under the limit (the error scales as COIN /
+        // fillXfg). Check the rate actually achieved, so the limit price is
+        // an exact guarantee rather than an approximate one.
+        if (fillXfg == 0 ||
+            ((uint128_t)grossHeat * parameters::COIN) / fillXfg < dep.targetPrice) {
+          continue;
+        }
         // Taker pays the fee by receiving (div-bps)/div of gross.
         uint64_t heatPaid = static_cast<uint64_t>(
             ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
@@ -4826,6 +4835,12 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         if (grossXfg == 0 || grossXfg >= m_ammPool.reserveXfg) continue;
         uint64_t heatCost = ammGetInputAmount(
             grossXfg, m_ammPool.reserveHeat, m_ammPool.reserveXfg, 0);
+        // Same truncation guard as the sell side, in the other direction:
+        // the buyer must not end up paying above their limit.
+        if (heatCost > 0 &&
+            ((uint128_t)heatCost * parameters::COIN) / grossXfg > dep.targetPrice) {
+          continue;
+        }
 
         uint64_t feeXfg = grossXfg - fillXfg;
         uint64_t cdFeeXfg = static_cast<uint64_t>(
@@ -6002,6 +6017,13 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
   // getMintPrice returns the fixed launch ratio that a bootstrap mint still
   // has to be able to pin.
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+    if (m_recentMintPrices.empty()) {
+      // First v11 block: anchor the mint quota's baseline here as well as in
+      // the sample-window activation branch above, which only runs while the
+      // pool is non-empty. Left at zero the baseline would read the entire
+      // pre-existing HEAT supply as issued this epoch and reject every mint.
+      m_epochStartHeatSupply = m_heatSupply;
+    }
     m_recentMintPrices.push_back({height, getMintPrice()});
     while (m_recentMintPrices.size() > parameters::HEAT_MINT_PRICE_PIN_DEPTH) {
       m_recentMintPrices.pop_front();

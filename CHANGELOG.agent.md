@@ -68,6 +68,88 @@ compatibility shim because nothing is deployed.
 
 ---
 
+## Fix escrow-refund gating (CTR_LOCKED) and unbounded taker history
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-21
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+Two bugs previously logged as known-but-unfixed. One is fixed; the second half of
+the first turned out to be a wrong recommendation and is deliberately left alone.
+
+### 1. XFG escrow refund was gated on the counterparty refund (FIXED)
+
+`SwapDaemon.cpp`, `ADAPTOR_CTR_LOCKED` + `role == BOB`: `broadcastEscrowRefundDirect`
+sat inside `if (ctrRefundOk)`. If the CTR leg could not be refunded — unconfigured
+client, RPC outage, a chain not registered — the XFG escrow was never broadcast, and
+`checkTimeouts` re-entered the same path every tick forever. The escrow needs no
+counterparty interaction to recover, so it was strandable for reasons unrelated to it.
+
+Safety argument for ungating: in `ADAPTOR_CTR_LOCKED` the peer cannot have learned
+the adaptor secret `t`. `t` is revealed only when we claim the CTR leg, and that
+moves the state on. So while the swap sits in this state nobody else can spend the
+escrow, and recovering it is independent of the CTR leg.
+
+The swap now reaches `ADAPTOR_REFUNDED` only when **both** legs succeed, so a failed
+CTR refund keeps being retried rather than being lost to an early terminal
+transition. Also corrected the block comment, which claimed "Bob locked on the
+counterparty chain" — `SwapDaemon.cpp:1882` shows Alice locks the CTR leg and Bob
+verifies it.
+
+### 2. The SPV branch keeps its gate — the guardian recommendation was wrong
+
+Guardian's adversarial pass recommended ungating `broadcastEscrowRefundDirect` in
+both places. Applying that to the SPV branch would introduce a fund-theft path.
+
+That branch covers `ADAPTOR_WAITING_SPV` **and** `ADAPTOR_SECRET_CONFIRMED_SPV`. In
+the latter the adaptor secret is already revealed, which means the CTR leg was
+claimed. If Bob could refund the XFG escrow there regardless of the CTR refund
+outcome, Bob would hold both legs. Today the gate blocks exactly that: having
+claimed the CTR leg, `client->refund()` fails on the already-spent output, so
+`ctrRefundOk` stays false and the escrow refund does not run.
+
+So the gate is load-bearing in that branch, not a copy of the same bug. Fixing the
+`WAITING_SPV` half properly means splitting the branch by state, which is a real
+design change and is deliberately not attempted here.
+
+### 3. `m_takerHistory` grew without bound (FIXED)
+
+`pruneTakerHistory` erased only entries with `failedSwaps == 0`, and
+`recordTakerFailure` only ever incremented that counter. Any key that failed once
+left a permanent entry. `takerPubKey` is self-asserted and free to mint, and
+`handleSwapRequest` is reachable from gossiped P2P messages, so this was a remote
+memory-exhaustion vector — made easier to hit by the reserve-proof revert, since
+the proof now always runs and so failures are easier to provoke.
+
+- `TakerRecord` gains `lastSeen`; entries expire on inactivity (`TAKER_RECORD_TTL_SECONDS`, 2h) regardless of `failedSwaps`.
+- `recordTakerFailure` hard-caps the map at `MAX_TAKER_HISTORY_ENTRIES` (4096), evicting the least recently active entry before inserting a new key.
+
+Dropping the permanent ban costs nothing: it keyed on a free identifier, so rotating
+the key already evaded it.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Ungate escrow refund in the CTR_LOCKED branch; require both legs for terminal state | Claude Opus 5 | 2026-09-21 | DONE |
+| 2 | Correct the stale "Bob locked on the counterparty chain" comment | Claude Opus 5 | 2026-09-21 | DONE |
+| 3 | Establish that the SPV branch gate is load-bearing; leave it | Claude Opus 5 | 2026-09-21 | DONE |
+| 4 | Add `lastSeen` + inactivity expiry to taker history | Claude Opus 5 | 2026-09-21 | DONE |
+| 5 | Hard-cap taker history with LRU eviction | Claude Opus 5 | 2026-09-21 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | PASS — SwapDaemon.cpp passes `g++ -fsyntax-only` with the project's flags |
+| Tests pass | Not verified — no test covers the refund state machine or taker rate limiting |
+| All tasks done | YES |
+
+**Review note:** item 1 is fund-handling logic in an atomic swap. The argument above
+is structural, not empirical — nothing here exercises the refund path at runtime, and
+no chain is deployed to test against. It deserves a human read.
+
+---
+
 ## CI: Windows build exits 1 with every target linked
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

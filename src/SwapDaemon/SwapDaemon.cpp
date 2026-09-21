@@ -3197,8 +3197,8 @@ bool SwapDaemon::refund(const std::string& swapId) {
     return false;
   }
 
-  // Counterparty chain refund: Bob locked on the counterparty chain but the
-  // swap timed out before Alice claimed.  Bob must also refund the CTR HTLC.
+  // Counterparty chain refund: the CTR leg is locked and the swap timed out.
+  // Bob unwinds the CTR HTLC and recovers his own XFG escrow.
   if (current == SwapState::ADAPTOR_CTR_LOCKED && params.role == SwapRole::BOB) {
     if (currentHeight < params.xfgTimeoutHeight) {
       m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
@@ -3232,24 +3232,34 @@ bool SwapDaemon::refund(const std::string& swapId) {
       }
     }
 
-    if (ctrRefundOk) {
-      // v11+: also return the XFG escrow to the maker unilaterally.
-      {
-        static const Crypto::Hash ZERO_HASH{};
-        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-          if (!broadcastEscrowRefundDirect(params)) {
-            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-            return false;
-          }
+    // v11+: return the XFG escrow to the maker unilaterally. This does NOT
+    // depend on the counterparty refund: while the swap is still CTR_LOCKED the
+    // peer cannot have learned the adaptor secret — that only happens once we
+    // claim the CTR leg, which moves the state on — so nobody else can spend
+    // the escrow. Gating it on ctrRefundOk stranded recoverable XFG whenever
+    // the CTR leg could not be refunded (an unconfigured client, an RPC
+    // outage, a chain that was never registered).
+    bool escrowRefundOk = true;
+    {
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        escrowRefundOk = broadcastEscrowRefundDirect(params);
+        if (!escrowRefundOk) {
+          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
         }
       }
+    }
+
+    // Terminal only when both legs are done, so a failed CTR refund keeps
+    // being retried instead of being lost to an early state transition.
+    if (ctrRefundOk && escrowRefundOk) {
       sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
       m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
-    } else {
+      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
+    } else if (!ctrRefundOk) {
       m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
     }
-    return ctrRefundOk;
+    return ctrRefundOk && escrowRefundOk;
   }
 
   m_logger(Logging::ERROR) << "Cannot refund swap in state: "
@@ -4323,21 +4333,38 @@ bool SwapDaemon::isTakerRateLimited(const std::string& takerPubKey) {
 
 void SwapDaemon::recordTakerFailure(const std::string& takerPubKey) {
   std::lock_guard<std::mutex> lock(m_takerMutex);
+  time_t now = time(nullptr);
+
+  // Hard cap before inserting: a peer can mint unlimited takerPubKeys, so
+  // without this the map grows without bound between prune ticks. Evict the
+  // least recently active entry to make room.
+  if (m_takerHistory.size() >= MAX_TAKER_HISTORY_ENTRIES &&
+      m_takerHistory.find(takerPubKey) == m_takerHistory.end()) {
+    auto oldest = std::min_element(
+        m_takerHistory.begin(), m_takerHistory.end(),
+        [](const auto& a, const auto& b) { return a.second.lastSeen < b.second.lastSeen; });
+    if (oldest != m_takerHistory.end()) m_takerHistory.erase(oldest);
+  }
+
   auto& record = m_takerHistory[takerPubKey];
-  record.requestTimes.push_back(time(nullptr));
+  record.requestTimes.push_back(now);
   record.failedSwaps++;
+  record.lastSeen = now;
 }
 
 void SwapDaemon::pruneTakerHistory() {
   std::lock_guard<std::mutex> lock(m_takerMutex);
   time_t now = std::time(nullptr);
   for (auto it = m_takerHistory.begin(); it != m_takerHistory.end(); ) {
-    // Drop entries with no failed swaps and no recent requests (older than 2 hours)
     it->second.requestTimes.erase(
         std::remove_if(it->second.requestTimes.begin(), it->second.requestTimes.end(),
-                       [now](time_t t) { return (now - t) > 7200; }),
+                       [now](time_t t) { return (now - t) > TAKER_RECORD_TTL_SECONDS; }),
         it->second.requestTimes.end());
-    if (it->second.requestTimes.empty() && it->second.failedSwaps == 0) {
+    // Expire on inactivity regardless of failedSwaps. Keying the old
+    // failedSwaps == 0 condition on a counter that never decreased made every
+    // entry that ever failed permanent.
+    if (it->second.requestTimes.empty() &&
+        (now - it->second.lastSeen) > TAKER_RECORD_TTL_SECONDS) {
       it = m_takerHistory.erase(it);
     } else {
       ++it;

@@ -566,11 +566,19 @@ public:
    struct TakerRecord {
      std::vector<time_t> requestTimes;
      uint32_t failedSwaps = 0;
+     time_t lastSeen = 0;
    };
    std::mutex m_takerMutex;
    std::map<std::string, TakerRecord> m_takerHistory;
    static constexpr uint32_t MAX_TAKER_REQUESTS_PER_HOUR = 5;
    static constexpr uint32_t TAKER_BAN_THRESHOLD = 3;
+   // takerPubKey is self-asserted and free to mint, so an unbounded map is a
+   // remote memory-exhaustion vector: every failed proof from a fresh key used
+   // to leave a permanent entry. Entries expire by inactivity and the map is
+   // hard-capped; a permanent ban was never worth anything anyway, since
+   // rotating the key evades it.
+   static constexpr time_t TAKER_RECORD_TTL_SECONDS = 7200;   // 2h since last activity
+   static constexpr size_t MAX_TAKER_HISTORY_ENTRIES = 4096;
 
    bool isTakerRateLimited(const std::string& takerPubKey);
    void recordTakerFailure(const std::string& takerPubKey);

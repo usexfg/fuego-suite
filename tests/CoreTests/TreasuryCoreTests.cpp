@@ -687,7 +687,7 @@ void testCdYieldFloor() {
 
   // One lean epoch pays exactly the shortfall on this CD's own principal.
   uint64_t oneLean = currency.calculateCdBonus(P, (uint32_t)ED, (uint32_t)(ED + 1), ci, TERM);
-  uint64_t expect1 = (uint64_t)(((__uint128_t)P * (FLOOR - FLOOR / 2)) / PREC);
+  uint64_t expect1 = (uint64_t)(((uint128_t)P * (FLOOR - FLOOR / 2)) / PREC);
   TEST(oneLean == expect1);
 
   // Two lean epochs pay twice as much; the fat epochs contribute nothing.

@@ -114,22 +114,6 @@ bool HeatMintEngine::validateMint(const Transaction& tx,
 
   if (heatOutputs > expectedHeat) return false;
 
-  // Enforce mandatory mint premium: minter must burn enough XFG to cover
-  // the base mint cost plus HEAT_MINT_PREMIUM_BPS of that cost.
-  if (parameters::HEAT_MINT_PREMIUM_BPS > 0 && heatOutputs > 0) {
-    uint64_t minXfg = static_cast<uint64_t>(
-        ((uint128_t)heatOutputs * parameters::COIN) / price);
-    uint64_t requiredXfg = minXfg + static_cast<uint64_t>(
-        ((uint128_t)minXfg * parameters::HEAT_MINT_PREMIUM_BPS) / 10000);
-    if (xfgBurned < requiredXfg) {
-#ifdef HEAT_MINT_DEBUG
-      fprintf(stderr, "[HeatMint] validateMint FAIL: premium deficit (burned=%llu required=%llu)\n",
-        (unsigned long long)xfgBurned, (unsigned long long)requiredXfg);
-#endif
-      return false;
-    }
-  }
-
   heatMinted = heatOutputs;
   return true;
 }

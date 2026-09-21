@@ -76,13 +76,27 @@ jobs:
             -DBOOST_INCLUDEDIR="C:\boost\include\boost-1_85" `
             -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR" `
             -DOPENSSL_INCLUDE_DIR="$env:OPENSSL_INCLUDE_DIR"
-          # -j is capped at 2 and node reuse is off deliberately. At -j
-          # $NUMBER_OF_PROCESSORS (4 on windows-2025) every target linked but
-          # MSBuild still exited 1, printing no build summary and leaving three
-          # orphaned MSBuild processes for the runner to terminate — the
-          # signature of a worker node dying rather than a compile error.
-          cmake --build "${{ github.workspace }}/build" --config Release -j 2 -- /nodeReuse:false
-          if ($LASTEXITCODE -ne 0) { throw "MSBuild exited $LASTEXITCODE" }
+          # Every target links and MSBuild still exits 1, printing no build
+          # summary, so the failing project is not visible in the console log.
+          # /nodeReuse:false stopped worker nodes outliving the step; the file
+          # logger below records errors and warnings only, and is dumped on
+          # failure so the actual cause appears in the job log.
+          cmake --build "${{ github.workspace }}/build" --config Release -j 2 -- `
+            /nodeReuse:false `
+            "/flp1:logfile=${{ github.workspace }}/msbuild-errors.log;errorsonly;verbosity=diagnostic" `
+            "/flp2:logfile=${{ github.workspace }}/msbuild-warnings.log;warningsonly"
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "=============== MSBuild errors ==============="
+            $errLog = "${{ github.workspace }}/msbuild-errors.log"
+            if ((Test-Path $errLog) -and (Get-Item $errLog).Length -gt 0) {
+              Get-Content $errLog
+            } else {
+              Write-Host "(error log empty — MSBuild returned $code without logging an error)"
+            }
+            Write-Host "=============================================="
+            throw "MSBuild exited $code"
+          }
 
   build-ubuntu24:
     name: Ubuntu 24.04

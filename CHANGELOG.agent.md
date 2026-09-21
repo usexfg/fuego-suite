@@ -88,23 +88,40 @@ windows-2025 is 4 vCPU / 16 GB and the tree is boost-template heavy.
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Cap `-j` at 2 (was `$NUMBER_OF_PROCESSORS` = 4) | Claude Opus 5 | 2026-09-20 | DONE |
-| 2 | Pass `/nodeReuse:false` to stop nodes outliving the step | Claude Opus 5 | 2026-09-20 | DONE |
+| 1 | Cap `-j` at 2 (was `$NUMBER_OF_PROCESSORS` = 4) | Claude Opus 5 | 2026-09-20 | DONE — did not fix it |
+| 2 | Pass `/nodeReuse:false` to stop nodes outliving the step | Claude Opus 5 | 2026-09-20 | DONE — fixed the orphans |
 | 3 | Throw explicitly on non-zero `$LASTEXITCODE` so the code is visible | Claude Opus 5 | 2026-09-20 | DONE |
-| 4 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-20 | IN PROGRESS |
+| 4 | Add MSBuild `errorsonly` file logger, dumped on failure | Claude Opus 5 | 2026-09-21 | DONE |
+| 5 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | IN PROGRESS |
 
-**This is a hypothesis, not a confirmed fix.** The failure cannot be reproduced in
-this Linux environment — there is no Windows runner here — so it is diagnosed purely
-from the CI log. If the next run still fails, task 3 makes the actual exit code
-visible, which is the next thing to work from.
+### Result of run 35506839843 — first hypothesis was wrong
+
+Windows failed again, but the run disproved the worker-node theory:
+
+- `MSBuild exited 1` printed by the new throw, so the exit code is confirmed as 1.
+- **No orphaned MSBuild processes** this time, so `/nodeReuse:false` did fix that
+  symptom — and the orphans were therefore a consequence, not the cause.
+- Every target still links (`xfg-swapd.exe`, `test_wallet.exe`, `fire_wallet.exe`).
+- Still **no MSBuild build summary** anywhere in the log.
+
+A non-zero exit with every target built and no summary means the failing project is
+not visible in console output at the default verbosity. Capping `-j` at 2 changed
+nothing, so parallelism is not the cause either.
+
+Rather than guess a third time, the build now attaches two MSBuild file loggers
+(`errorsonly` and `warningsonly`) and dumps the error log to the job output on
+failure. The next run should name the failing project outright. Note the run also
+downloads its full log only through `results-receiver.actions.githubusercontent.com`,
+which this environment's egress proxy blocks (403), so grepping the archive locally
+is not an option — CI has to surface the error itself.
 
 ### Sign-off
 
 | Check | Result |
 |-------|--------|
 | YAML parses | PASS (python yaml.safe_load) |
-| Windows CI green | PENDING (monitoring) |
-| All tasks done | NO — task 4 open |
+| Windows CI green | NO — still failing, cause not yet identified |
+| All tasks done | NO — task 5 open |
 
 ---
 

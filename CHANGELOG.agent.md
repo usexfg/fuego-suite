@@ -73,7 +73,10 @@ compatibility shim because nothing is deployed.
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
 **Started**: 2026-09-20
 **Agent**: Claude Opus 5
-**Status**: IN PROGRESS (pushed, monitoring)
+**Status**: COMPLETE — all 5 jobs green on run 35571080637
+
+**Note:** the `__uint128_t` fix lives on this branch only. `master` is still red for
+the same reason until this branch merges or the one-line fix is ported.
 
 Windows is the only failing job — macOS 14/15, Ubuntu 24.04 and Sanitizers all pass
 on every recent run, across branches. On master (run 35166598710) the Windows log
@@ -94,7 +97,7 @@ windows-2025 is 4 vCPU / 16 GB and the tree is boost-template heavy.
 | 4 | Add MSBuild `errorsonly` file logger, dumped on failure | Claude Opus 5 | 2026-09-21 | DONE — found the cause |
 | 5 | Fix `__uint128_t` in TreasuryCoreTests.cpp:690 | Claude Opus 5 | 2026-09-21 | DONE |
 | 6 | Restore `-j $NUMBER_OF_PROCESSORS` (the cap was for a disproven theory) | Claude Opus 5 | 2026-09-21 | DONE |
-| 7 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | IN PROGRESS |
+| 7 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | DONE |
 
 ### ROOT CAUSE FOUND (run 35568840910)
 
@@ -158,8 +161,9 @@ is not an option — CI has to surface the error itself.
 |-------|--------|
 | YAML parses | PASS (python yaml.safe_load) |
 | Build compiles | PASS — TreasuryCoreTests.cpp passes `g++ -fsyntax-only` with the project's flags |
-| Windows CI green | PENDING — root cause identified and fixed, awaiting confirmation |
-| All tasks done | NO — task 7 open |
+| Windows CI green | PASS — run 35571080637, Windows Build 13m19s, conclusion success |
+| Full CI green | PASS — all 5 jobs (Windows, Ubuntu 24.04, macOS 14, macOS 15, Sanitizers) |
+| All tasks done | YES |
 
 ---
 

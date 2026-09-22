@@ -3728,8 +3728,16 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT balance mismatch";
              } else {
                uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
-               uint64_t grossHeat = static_cast<uint64_t>(
-                   ((uint128_t)xfgBurned * poolRate) / parameters::COIN);
+               // Constant-product pricing. This previously priced linearly off
+               // the spot rate, so a swap of ANY size executed with zero
+               // slippage: depositing XFG equal to the pool's XFG reserve
+               // extracted 99% of the HEAT reserve where x*y=k pays 49.7%, and
+               // two transactions round-tripped the pool empty for ~2% in fees.
+               // ammGetOutputAmount is called with feeBps=0 so the curve and the
+               // fee stay separable — the 1% taker fee is applied below and its
+               // CD share is debited from reserves at settlement.
+               uint64_t grossHeat = ammGetOutputAmount(xfgBurned, m_ammPool.reserveXfg,
+                                                       m_ammPool.reserveHeat, 0);
                uint64_t expectedHeat = static_cast<uint64_t>(
                    ((uint128_t)grossHeat * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
                      / parameters::HEARTH_FEE_DIVISOR);
@@ -3746,8 +3754,9 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG balance mismatch";
              } else {
                uint64_t heatDeposited = inAssets.heat - outAssets.heat;
-               uint64_t grossXfg = static_cast<uint64_t>(
-                   ((uint128_t)heatDeposited * parameters::COIN) / poolRate);
+               // Constant-product pricing — see the XFG->HEAT branch above.
+               uint64_t grossXfg = ammGetOutputAmount(heatDeposited, m_ammPool.reserveHeat,
+                                                      m_ammPool.reserveXfg, 0);
                uint64_t expectedXfg = static_cast<uint64_t>(
                    ((uint128_t)grossXfg * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
                      / parameters::HEARTH_FEE_DIVISOR);
@@ -4611,7 +4620,10 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   // no historical blocks contain in-band fills, so nothing to preserve.
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() &&
       !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0 &&
-      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH) {
+      // HEARTH_MIN_XFG_DEPTH is declared in whole XFG (like HEARTH_POOL_SEED_XFG,
+      // which is scaled at its use site). Comparing it raw against a COIN-scaled
+      // reserve made the guard mean 0.0005 XFG, i.e. a no-op.
+      m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH * parameters::COIN) {
     // Fills execute at the LIVE pool spot price — never the (frozen) bootstrap
     // clearing price — so limit orders track the AMM and cannot arbitrage it.
     const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
@@ -4650,15 +4662,24 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         if (fillXfg == 0 || m_ammPool.pendingXfg < fillXfg) continue;
         backstopRemaining -= fillXfg;
 
+        // Constant-product pricing: the limit test above uses spot, but the
+        // fill itself must walk the curve. Pricing the whole fill at spot let
+        // a resting order execute with zero slippage against the pool.
+        uint64_t grossHeat = ammGetOutputAmount(fillXfg, m_ammPool.reserveXfg,
+                                                m_ammPool.reserveHeat, 0);
         // Taker pays the 1% fee by receiving (div-bps)/div of gross.
-        uint64_t grossHeat = static_cast<uint64_t>(
-            ((uint128_t)fillXfg * price) / parameters::COIN);
         uint64_t heatPaid = static_cast<uint64_t>(
             ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
         uint64_t feeHeat = grossHeat - heatPaid;
         if (grossHeat == 0 || m_ammPool.reserveHeat < grossHeat) continue;
         uint64_t cdFeeHeat = static_cast<uint64_t>(
             ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
+        if (m_ammPool.reserveHeat < heatPaid + cdFeeHeat) continue;
+        if (!ammValidateInvariant(m_ammPool.reserveXfg, m_ammPool.reserveHeat,
+                                  m_ammPool.reserveXfg + fillXfg,
+                                  m_ammPool.reserveHeat - (heatPaid + cdFeeHeat))) {
+          continue;  // skip the fill rather than shrink the pool's k
+        }
         // Saturating add: an overflow must not abort the fill pass mid-way
         // (partial application would fork consensus).
         m_ammPool.cdHearthFeeAccumulator =
@@ -4681,29 +4702,42 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
       } else {
         // BUY_XFG: user pays at most targetPrice HEAT per XFG.
         if (dep.targetPrice < price) continue;  // pool asks more than that
-        uint64_t desiredXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * parameters::COIN) / price);
-        // Budget cap: fee-inclusive cost must never exceed the deposit budget.
-        uint64_t maxBudgetXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * (feeDiv - feeBps) * parameters::COIN)
-              / (feeDiv * price));
-        uint64_t fillXfg = std::min(desiredXfg, maxBudgetXfg);
-        fillXfg = std::min(fillXfg, m_ammPool.reserveXfg);
-        fillXfg = std::min(fillXfg, backstopRemaining);
-        if (fillXfg == 0) continue;
-        backstopRemaining -= fillXfg;
+        // Constant-product: the HEAT budget buys along the curve. This used to
+        // derive the fill from the spot rate, which gave the order the whole
+        // pool at a single price with no slippage.
+        uint64_t heatCost = dep.amount;
+        if (heatCost == 0 || m_ammPool.pendingHeat < heatCost) continue;
+        uint64_t grossXfg = ammGetOutputAmount(heatCost, m_ammPool.reserveHeat,
+                                               m_ammPool.reserveXfg, 0);
+        if (grossXfg == 0) continue;
+        // Per-block backstop budget is denominated in XFG: when the curve would
+        // return more than the remaining allowance, walk the curve backwards to
+        // find the HEAT spend that yields exactly the allowance.
+        if (grossXfg > backstopRemaining) {
+          heatCost = ammGetInputAmount(backstopRemaining, m_ammPool.reserveHeat,
+                                       m_ammPool.reserveXfg, 0);
+          if (heatCost == 0 || heatCost > dep.amount) continue;
+          grossXfg = ammGetOutputAmount(heatCost, m_ammPool.reserveHeat,
+                                        m_ammPool.reserveXfg, 0);
+          if (grossXfg == 0) continue;
+        }
         // Net XFG the user receives; fee deducted from gross like dir-1 swaps.
-        uint64_t grossXfg = static_cast<uint64_t>(
-            ((uint128_t)fillXfg * feeDiv) / (feeDiv - feeBps));
-        uint64_t heatCost = static_cast<uint64_t>(
-            ((uint128_t)grossXfg * price) / parameters::COIN);
-        if (heatCost == 0 || heatCost > dep.amount) continue;
-        if (m_ammPool.pendingHeat < heatCost) continue;
-        if (m_ammPool.reserveXfg < grossXfg) continue;
+        uint64_t fillXfg = static_cast<uint64_t>(
+            ((uint128_t)grossXfg * (feeDiv - feeBps)) / feeDiv);
+        if (fillXfg == 0) continue;
+        backstopRemaining -= std::min(grossXfg, backstopRemaining);
 
         uint64_t feeXfg = grossXfg - fillXfg;
         uint64_t cdFeeXfg = static_cast<uint64_t>(
             ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
+        // ammGetOutputAmount already bounds grossXfg below reserveXfg, so these
+        // hold arithmetically; kept as guards against a truncation regression.
+        if (m_ammPool.reserveXfg < fillXfg + cdFeeXfg) continue;
+        if (!ammValidateInvariant(m_ammPool.reserveXfg, m_ammPool.reserveHeat,
+                                  m_ammPool.reserveXfg - (fillXfg + cdFeeXfg),
+                                  m_ammPool.reserveHeat + heatCost)) {
+          continue;  // skip the fill rather than shrink the pool's k
+        }
         // Convert the XFG CD share to HEAT at the PRE-fill spot rate.
         uint64_t feeHeatEq = static_cast<uint64_t>(
             ((uint128_t)cdFeeXfg * price) / parameters::COIN);
@@ -6567,11 +6601,23 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
                 << m_ammPool.reserveHeat << " need=" << (heatPaid + feeHeat);
               return false;
             }
-            m_ammPool.reserveXfg += xfgDeposited;
             // Fee split 70/30: 70% → CD yield (debited from reserves), 30% stays
             // with LPs (maker role — the pool is the counterparty).
             uint64_t cdFeeHeat = static_cast<uint64_t>(
                 ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
+            // Constant-product guard. Validation prices this swap on the curve,
+            // so the post-swap product must not fall below the pre-swap one —
+            // the taker fee is what makes it rise. Checked here because
+            // settlement is the only place both reserves move together.
+            const uint64_t preXfg = m_ammPool.reserveXfg;
+            const uint64_t preHeat = m_ammPool.reserveHeat;
+            if (!ammValidateInvariant(preXfg, preHeat,
+                                      preXfg + xfgDeposited,
+                                      preHeat - (heatPaid + cdFeeHeat))) {
+              logger(ERROR, BRIGHT_RED) << "AMM swap XFG→HEAT would break the constant-product invariant";
+              return false;
+            }
+            m_ammPool.reserveXfg += xfgDeposited;
             m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);
             if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFeeHeat) {
               logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
@@ -6596,11 +6642,22 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
                 << m_ammPool.reserveXfg << " need=" << (xfgPaid + feeXfg);
               return false;
             }
-            m_ammPool.reserveHeat += heatDeposited;
             // 70/30: 70% of the XFG fee leaves reserves for CD yield; 30% stays
             // with LPs (maker role).
             uint64_t cdFeeXfg = static_cast<uint64_t>(
                 ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
+            // Constant-product guard — see the XFG→HEAT branch above.
+            {
+              const uint64_t preXfg = m_ammPool.reserveXfg;
+              const uint64_t preHeat = m_ammPool.reserveHeat;
+              if (!ammValidateInvariant(preXfg, preHeat,
+                                        preXfg - (xfgPaid + cdFeeXfg),
+                                        preHeat + heatDeposited)) {
+                logger(ERROR, BRIGHT_RED) << "AMM swap HEAT→XFG would break the constant-product invariant";
+                return false;
+              }
+            }
+            m_ammPool.reserveHeat += heatDeposited;
             m_ammPool.reserveXfg -= (xfgPaid + cdFeeXfg);
             // Convert the XFG CD share to HEAT at the post-swap rate.
             uint64_t feeHeatEq = 0;

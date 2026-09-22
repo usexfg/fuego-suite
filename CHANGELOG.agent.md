@@ -94,7 +94,9 @@ Naming:
 | 10a | SwapParams field initializers (AFK maker path) | claude-code | 2026-09-22 | DONE |
 | 10b | First-LP guard: seed locked LP shares + refuse zero-supply mint against non-empty reserves | claude-code | 2026-09-22 | DONE |
 | 10c | `rebuildCache` re-applies the Hearth seed via shared `applyHearthSeed()` | claude-code | 2026-09-22 | DONE |
-| 10d | `HEARTH_MIN_XFG_DEPTH` COIN scaling | claude-code | 2026-09-22 | BLOCKED (changes the backstop gate for every block; needs the v11-activation answer first) |
+| 10d | `HEARTH_MIN_XFG_DEPTH` COIN scaling | claude-code | 2026-09-22 | DONE |
+| 11 | Route AMM swaps and the limit-order backstop through `ammGetOutputAmount`/`ammGetInputAmount`; assert `ammValidateInvariant` at every reserve mutation | claude-code | 2026-09-22 | DONE |
+| 11b | Mint-oracle redesign (8-block TWAP of a now-curved pool) | claude-code | 2026-09-22 | TODO (design decision — see note) |
 | 11 | Route swaps through `ammGetOutputAmount` + assert `ammValidateInvariant`; mint-oracle redesign | claude-code | 2026-09-22 | TODO |
 
 ### Sign-off
@@ -102,8 +104,14 @@ Naming:
 |-------|--------|
 | Build compiles: `CryptoNoteCore` (Linux, GCC 13.3, Boost 1.83) | PASS 2026-09-22 |
 | Build compiles: `SwapDaemonLib` | PASS 2026-09-22 |
-| Tests pass | PENDING |
-| All tasks done | NO (6, 10, 11 outstanding) |
+| Tests: `test_hearth_amm` (31), `test_orderbook_auction` (57), `test_orderbook_phase3`, `test_orderbook_phase5` | PASS 2026-09-22 |
+| All tasks done | NO (6c, 11b outstanding) |
+
+> The AMM suites above previously exercised `ammGetOutputAmount`,
+> `ammGetInputAmount`, `ammValidateSwap` and `ammValidateInvariant` as dead
+> code — no production path called them. Task 11 makes them the live pricing
+> functions, so these tests now cover consensus behavior rather than an
+> unused library.
 
 > **Note on task 6.** Mirroring the v11 rules into mempool admission does NOT
 > by itself close the block-template halt: the AMM checks price against

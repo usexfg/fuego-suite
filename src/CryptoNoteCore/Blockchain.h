@@ -710,7 +710,12 @@ namespace CryptoNote {
     bool check_tx_outputs(const Transaction& tx, uint32_t height) const;
     const TransactionEntry& transactionByIndex(TxIndex index);
     bool pushBlock(const Block &blockData, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
-     bool pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height);
+     // `rejectedTx`, when non-null, receives the hash of the transaction that
+     // made the block invalid. The caller must not return that transaction to
+     // the mempool: doing so rebuilds an identical, equally invalid block
+     // template on the next attempt, which is a chain halt for the price of one
+     // transaction fee.
+     bool pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height, Crypto::Hash* rejectedTx = nullptr);
 
     bool pushBlock(BlockEntry &block);
     void popBlock(const Crypto::Hash &blockHash);
@@ -734,7 +739,11 @@ namespace CryptoNote {
     bool loadBlockchainIndices();
 
     bool loadTransactions(const Block& block, std::vector<Transaction>& transactions, uint32_t height);
-    void saveTransactions(const std::vector<Transaction>& transactions, uint32_t height);
+    // Returns a failed block's transactions to the mempool, except `skip` (the
+    // transaction that caused the failure), which is dropped so the next block
+    // template is not rebuilt around it.
+    void saveTransactions(const std::vector<Transaction>& transactions, uint32_t height,
+                          const Crypto::Hash* skip = nullptr);
 
     void sendMessage(const BlockchainMessage& message);
 

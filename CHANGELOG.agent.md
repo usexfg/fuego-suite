@@ -85,7 +85,9 @@ Naming:
 | 3 | `popTransactions` on block-size rejection | claude-code | 2026-09-22 | DONE |
 | 4 | Remove duplicate `cdHearthFeeAccumulator` add | claude-code | 2026-09-22 | DONE |
 | 5 | `acceptSwap` height check fail-closed | claude-code | 2026-09-22 | DONE |
-| 6 | Mirror v11 settlement rules into TransactionPool admission | claude-code | 2026-09-22 | TODO |
+| 6 | Break the block-template halt loop: drop the rejected tx instead of re-pooling it | claude-code | 2026-09-22 | DONE |
+| 6b | Remove the mint-premium credit from the validation loop (unreversed, survived block rejection) | claude-code | 2026-09-22 | DONE |
+| 6c | Optional: pre-check v11 rules at mempool admission as an early reject | claude-code | 2026-09-22 | TODO (optimisation — see note) |
 | 7 | Disable ARB + ROBINHOOD (Arbitrum block.number domain) | claude-code | 2026-09-22 | DONE |
 | 8 | Fix 52 example-config keys + string-aware comment stripping | claude-code | 2026-09-22 | DONE |
 | 9 | PulseX -> PulseChain rename with legacy fallbacks | claude-code | 2026-09-22 | DONE |
@@ -103,11 +105,18 @@ Naming:
 | Tests pass | PENDING |
 | All tasks done | NO (6, 10, 11 outstanding) |
 
-> **This branch is not deployable as it stands.** Task 2 makes a settlement
-> failure reject the block, which is correct, but until task 6 mirrors the v11
-> rules into mempool admission a transaction that passes validation and fails
-> settlement can be used to poison block templates. Do not run this on a node
-> until task 6 lands.
+> **Note on task 6.** Mirroring the v11 rules into mempool admission does NOT
+> by itself close the block-template halt: the AMM checks price against
+> `m_ammPool` reserves, which move with every block, so a transaction admitted
+> when reserves were high can still fail settlement at template time. The
+> mirror goes stale between admission and block construction. What actually
+> made it a halt is that `saveTransactions` returned every transaction of a
+> rejected block to the pool, including the offending one, so the next template
+> was identical. `pushBlock` now reports the rejected transaction and it is
+> dropped rather than re-pooled — an attacker gets one wasted block per fee
+> instead of a stalled chain. A mempool pre-check (6c) remains worth adding so
+> poisoned transactions do not propagate, but it is an optimisation, not the
+> fix.
 
 ---
 

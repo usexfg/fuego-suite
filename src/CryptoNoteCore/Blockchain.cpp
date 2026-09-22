@@ -3278,15 +3278,25 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const Crypto::Has
     return false;
   }
 
-  if (!pushBlock(blockData, transactions, id, bvc, height)) {
-    saveTransactions(transactions, height);
+  Crypto::Hash rejectedTx = NULL_HASH;
+  if (!pushBlock(blockData, transactions, id, bvc, height, &rejectedTx)) {
+    // Drop the offending transaction rather than returning it to the pool.
+    // Previously every transaction went back, so a single cheap transaction
+    // that passes mempool admission but fails block validation was re-selected
+    // into the next template forever and mining could not progress.
+    saveTransactions(transactions, height, rejectedTx == NULL_HASH ? nullptr : &rejectedTx);
+    if (rejectedTx != NULL_HASH) {
+      logger(WARNING, BRIGHT_YELLOW) << "Dropping transaction " << rejectedTx
+        << " from the pool: it fails block validation and would poison every "
+           "subsequent block template";
+    }
     return false;
   }
 
   return true;
 }
 
-bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height) {
+bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector<Transaction> &transactions, const Crypto::Hash &id, block_verification_context &bvc, uint32_t height, Crypto::Hash* rejectedTx) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   auto blockProcessingStart = std::chrono::steady_clock::now();
@@ -4088,34 +4098,21 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                                                     authXfgBurned, authHeatMinted)) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
-            } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-              // Premium = excess XFG burned beyond base mint cost (enforced at
-              // 0.5% by validateMint; minters may burn more voluntarily).
-              // Converted to HEAT and credited to the CD APY pool.
-              uint64_t actualBurned = (inAssets.xfg > outAssets.xfg + fee)
-                ? inAssets.xfg - outAssets.xfg - fee : authXfgBurned;
-              uint64_t xfgEquivalent = static_cast<uint64_t>(
-                  ((uint128_t)authHeatMinted * parameters::COIN) / mintPrice);
-              uint64_t premium = (actualBurned > xfgEquivalent)
-                ? actualBurned - xfgEquivalent
-                : 0;
-              if (premium > 0) {
-                uint64_t heatPremium = static_cast<uint64_t>(
-                    ((uint128_t)premium * mintPrice) / parameters::COIN);
-                if (heatPremium > 0) {
-                  if (m_heatSupply > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "HEAT supply overflow on mint premium";
-                    return false;
-                  }
-                  if (m_heatCdFeePool > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "CD fee pool overflow on mint premium";
-                    return false;
-                  }
-                  m_heatSupply   += heatPremium;
-                  m_heatCdFeePool += heatPremium;
-                }
-              }
             }
+            // The mint-premium credit that used to live here has been removed.
+            // HEAT_MINT_PREMIUM_BPS is 0 and the premium is documented as going
+            // nowhere, but this code credited m_heatSupply and m_heatCdFeePool
+            // (which gates CD interest claims) from inside the VALIDATION loop:
+            //   * it was the only mutation in validation, and popTransaction had
+            //     no reverse for it, so a reorg left the credit in place;
+            //   * it ran before the block was known valid, so a block shaped
+            //     [valid premium mint][any invalid tx] was rejected while the
+            //     credit survived — repeatable for free on every node that
+            //     merely evaluated it;
+            //   * its trigger, `authXfgBurned > authHeatMinted`, compares XFG
+            //     atomics against HEAT atomics, so at the 10:1 launch ratio it
+            //     was always true, and the "premium" it computed was integer
+            //     truncation residue rather than a real excess burn.
           }
         }
         // Legacy non-auth HEAT mint validation removed — no pre-v11 HEAT mints exist.
@@ -4134,6 +4131,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     if (!isTransactionValid) {
       logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has at least one invalid transaction: " << tx_id;
       bvc.m_verification_failed = true;
+      if (rejectedTx != nullptr) *rejectedTx = tx_id;
 
       block.transactions.pop_back();
       popTransactions(block, minerTransactionHash);
@@ -4150,6 +4148,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       logger(ERROR, BRIGHT_RED) << "Block " << blockHash
         << " transaction settlement failed: " << tx_id;
       bvc.m_verification_failed = true;
+      if (rejectedTx != nullptr) *rejectedTx = tx_id;
       popTransactions(block, minerTransactionHash);
       return false;
     }
@@ -7729,10 +7728,15 @@ bool CryptoNote::Blockchain::loadTransactions(const Block& block, std::vector<Tr
   return true;
 }
 
-void CryptoNote::Blockchain::saveTransactions(const std::vector<Transaction>& transactions, uint32_t height) {
+void CryptoNote::Blockchain::saveTransactions(const std::vector<Transaction>& transactions, uint32_t height,
+                                              const Crypto::Hash* skip) {
   tx_verification_context context;
   for (size_t i = 0; i < transactions.size(); ++i) {
-    if (!m_tx_pool.add_tx(transactions[transactions.size() - 1 - i], context, true, height)) {
+    const Transaction& tx = transactions[transactions.size() - 1 - i];
+    if (skip != nullptr && getObjectHash(tx) == *skip) {
+      continue;  // caused the block to be rejected — do not re-pool it
+    }
+    if (!m_tx_pool.add_tx(tx, context, true, height)) {
       logger(WARNING, BRIGHT_MAGENTA) << "CryptoNote::Blockchain::saveTransactions, failed to add transaction to pool";
     }
   }

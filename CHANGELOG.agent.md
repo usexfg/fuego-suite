@@ -4,6 +4,452 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Order-book pair cap raised to the full enum; PulseX renamed to PulseChain; GLEEC re-enabled
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-21
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+### Correction to the two prior GLEEC entries
+
+Both 6200a3c (de-register GLEEC) and 35fb15a (close GLEEC to new swaps) rested on
+the premise that GLEEC had been live and could therefore have swaps persisted on
+disk. That premise was wrong — no chain in this daemon has ever been live. It was
+inferred from GLEEC calling `registerChain` while ZANO/TON/SIA/DOT do not, and was
+never verified. With no swaps on disk there is nothing to strand, so the fund-loss
+reasoning in entry "GLEEC: close to new swaps" does not apply to the current state.
+
+The latent bugs it describes (`SwapDaemon.cpp:3230`, `:3161`, `:2069`) are still real
+and still worth fixing before anything goes live — they are simply not urgent.
+
+GLEEC is fully enabled again. `isPairClosedToNewSwaps` is removed. The only GLEEC
+change that survives is the registry correctness fix: `gleec_htlc_registry` is
+required rather than silently falling back to `ethHtlcRegistry`.
+
+### Order-book pair cap (the actual blocker)
+
+`SwapOfferRelay::MAX_PAIR_INDEX` was 11 with `m_orderBooks[12]`, while `SwapPair`
+runs to `DOT = 28`. `validateOffer` drops any offer with `pair > MAX_PAIR_INDEX`, so
+pairs 12-28 — GLEEC, ROBINHOOD, AVAX, CRO, BOB, SIA, UNICHAIN, PLASMA, DOGE, DASH,
+ZEC, PULSECHAIN, ZANO, MONAD, OPTIMISM, TON, DOT — were advertised by the registry,
+quoted by the price oracle and offered in the UI, but could never reach an order
+book. 17 of 25 registered chains could not trade over gossip.
+
+Every `m_orderBooks` access already routed through `isValidPair`, so the array was
+never indexed out of bounds — the cap failed closed, silently.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `MAX_PAIR_INDEX` 11 → 28; `m_orderBooks` sized `MAX_PAIR_INDEX + 1` | Claude Opus 5 | 2026-09-21 | DONE |
+| 2 | Make `MAX_PAIR_INDEX` public so callers stop duplicating the literal | Claude Opus 5 | 2026-09-21 | DONE |
+| 3 | `OfferManager.cpp` `mo.pair > 11` → reference the constant | Claude Opus 5 | 2026-09-21 | DONE |
+| 4 | Loop bounds `pair <= ZANO` → `pair <= DOT` in SwapDaemon.cpp + RpcServer.cpp | Claude Opus 5 | 2026-09-21 | DONE |
+| 5 | Rename PULSEX → PULSECHAIN across enum, strings, config keys, client, dir | Claude Opus 5 | 2026-09-21 | DONE |
+| 6 | Revert GLEEC drain mode; remove `isPairClosedToNewSwaps` | Claude Opus 5 | 2026-09-21 | DONE |
+
+### PulseX → PulseChain
+
+The pair was named for PulseX, which is a DEX, while every field around it already
+described PulseChain: chain id 369, native PLS, 18 decimals, `rpc.pulsechain.com`.
+The chain is PulseChain; the name was simply wrong. Renamed throughout —
+`SwapPair::PULSECHAIN` (index 23, unchanged), `PulseChainClient`,
+`src/SwapDaemon/PulseChain/`, and config keys `pulsechain_*`. The string alias is now
+`PLS` (the native coin) rather than `PULS`. Config keys changed without a
+compatibility shim because nothing is deployed.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | PASS — all 8 changed translation units pass `g++ -std=c++17 -fsyntax-only` with the project's own flags (`-DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=40`): SwapTypes, SwapTimelock, PriceOracle, SwapOfferRelay, OfferManager, ChainClientConfig, SwapDaemon, RpcServer. Not a full link. |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
+## Fix escrow-refund gating (CTR_LOCKED) and unbounded taker history
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-21
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+Two bugs previously logged as known-but-unfixed. One is fixed; the second half of
+the first turned out to be a wrong recommendation and is deliberately left alone.
+
+### 1. XFG escrow refund was gated on the counterparty refund (FIXED)
+
+`SwapDaemon.cpp`, `ADAPTOR_CTR_LOCKED` + `role == BOB`: `broadcastEscrowRefundDirect`
+sat inside `if (ctrRefundOk)`. If the CTR leg could not be refunded — unconfigured
+client, RPC outage, a chain not registered — the XFG escrow was never broadcast, and
+`checkTimeouts` re-entered the same path every tick forever. The escrow needs no
+counterparty interaction to recover, so it was strandable for reasons unrelated to it.
+
+Safety argument for ungating: in `ADAPTOR_CTR_LOCKED` the peer cannot have learned
+the adaptor secret `t`. `t` is revealed only when we claim the CTR leg, and that
+moves the state on. So while the swap sits in this state nobody else can spend the
+escrow, and recovering it is independent of the CTR leg.
+
+The swap now reaches `ADAPTOR_REFUNDED` only when **both** legs succeed, so a failed
+CTR refund keeps being retried rather than being lost to an early terminal
+transition. Also corrected the block comment, which claimed "Bob locked on the
+counterparty chain" — `SwapDaemon.cpp:1882` shows Alice locks the CTR leg and Bob
+verifies it.
+
+### 2. The SPV branch: both the guardian's fix AND my first analysis were wrong
+
+Guardian's adversarial pass recommended ungating `broadcastEscrowRefundDirect` in
+both places. That would introduce a fund-theft path, so it was not applied.
+
+The first analysis written here was **also wrong**, and is corrected below.
+
+It claimed `ADAPTOR_SECRET_CONFIRMED_SPV` implies the CTR leg was claimed, and that
+the branch should therefore be split by state. The code does not support that:
+`SwapDaemon.cpp:2424` enters that state on `getTransactionDetails(params.ctrLockTxId)`
+— confirmations of the **lock** tx. The claim was inferred from the state's *name*,
+which is the same failure mode as the guardian finding.
+
+What actually records a claim is `params.ctrClaimTxId` (set at `:1971` and `:2041`)
+and `params.adaptorSecretRevealedToPeer` (`:2040`). The SPV claim path sets both
+**without leaving `ADAPTOR_WAITING_SPV`**, so *either* SPV state can hold an
+already-claimed swap. Splitting by state would have been wrong too.
+
+**The fix is one predicate, applied to both branches:**
+
+```cpp
+const bool alreadyClaimedCtr =
+    !params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer;
+```
+
+- Not claimed → refund the escrow, independent of the CTR refund.
+- Claimed → refuse the escrow refund and log loudly. We already hold the CTR leg;
+  taking the escrow back as well is both legs. The counterparty can still claim the
+  escrow with the secret, which is the correct outcome.
+
+`ctrRefundOk` was only ever an accidental proxy for this: a claimed output makes
+`refund()` fail. It blocked the theft case by luck while stranding recoverable XFG
+whenever the CTR refund failed for an unrelated reason.
+
+The `ADAPTOR_CTR_LOCKED` branch now uses the same predicate rather than trusting the
+state invariant, since the SPV path proves a state label is not a reliable witness.
+
+### 3. `m_takerHistory` grew without bound (FIXED)
+
+`pruneTakerHistory` erased only entries with `failedSwaps == 0`, and
+`recordTakerFailure` only ever incremented that counter. Any key that failed once
+left a permanent entry. `takerPubKey` is self-asserted and free to mint, and
+`handleSwapRequest` is reachable from gossiped P2P messages, so this was a remote
+memory-exhaustion vector — made easier to hit by the reserve-proof revert, since
+the proof now always runs and so failures are easier to provoke.
+
+- `TakerRecord` gains `lastSeen`; entries expire on inactivity (`TAKER_RECORD_TTL_SECONDS`, 2h) regardless of `failedSwaps`.
+- `recordTakerFailure` hard-caps the map at `MAX_TAKER_HISTORY_ENTRIES` (4096), evicting the least recently active entry before inserting a new key.
+
+Dropping the permanent ban costs nothing: it keyed on a free identifier, so rotating
+the key already evaded it.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Ungate escrow refund in the CTR_LOCKED branch; require both legs for terminal state | Claude Opus 5 | 2026-09-21 | DONE |
+| 2 | Correct the stale "Bob locked on the counterparty chain" comment | Claude Opus 5 | 2026-09-21 | DONE |
+| 3 | Establish that the SPV branch gate is load-bearing; leave it | Claude Opus 5 | 2026-09-21 | DONE |
+| 4 | Add `lastSeen` + inactivity expiry to taker history | Claude Opus 5 | 2026-09-21 | DONE |
+| 5 | Hard-cap taker history with LRU eviction | Claude Opus 5 | 2026-09-21 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | PASS — SwapDaemon.cpp passes `g++ -fsyntax-only` with the project's flags |
+| Tests pass | Not verified — no test covers the refund state machine or taker rate limiting |
+| All tasks done | YES |
+
+**Review note:** item 1 is fund-handling logic in an atomic swap. The argument above
+is structural, not empirical — nothing here exercises the refund path at runtime, and
+no chain is deployed to test against. It deserves a human read.
+
+---
+
+## CI: Windows build exits 1 with every target linked
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: COMPLETE — all 5 jobs green on run 35571080637
+
+**Note:** the `__uint128_t` fix lives on this branch only. `master` is still red for
+the same reason until this branch merges or the one-line fix is ported.
+
+Windows is the only failing job — macOS 14/15, Ubuntu 24.04 and Sanitizers all pass
+on every recent run, across branches. On master (run 35166598710) the Windows log
+shows every target linking (`fuegod.exe`, `xfg-swapd.exe`, `fire_wallet.exe`,
+`unified.exe`, `testnetd.exe`, all test binaries), zero compile errors, only C4244 /
+C4068 warnings — then `Process completed with exit code 1` 0.1s after the last link,
+with no MSBuild build summary and three orphaned MSBuild processes terminated by
+runner cleanup.
+
+A missing summary plus orphaned worker nodes is a worker dying, not a compile error.
+windows-2025 is 4 vCPU / 16 GB and the tree is boost-template heavy.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Cap `-j` at 2 (was `$NUMBER_OF_PROCESSORS` = 4) | Claude Opus 5 | 2026-09-20 | DONE — did not fix it |
+| 2 | Pass `/nodeReuse:false` to stop nodes outliving the step | Claude Opus 5 | 2026-09-20 | DONE — fixed the orphans |
+| 3 | Throw explicitly on non-zero `$LASTEXITCODE` so the code is visible | Claude Opus 5 | 2026-09-20 | DONE |
+| 4 | Add MSBuild `errorsonly` file logger, dumped on failure | Claude Opus 5 | 2026-09-21 | DONE — found the cause |
+| 5 | Fix `__uint128_t` in TreasuryCoreTests.cpp:690 | Claude Opus 5 | 2026-09-21 | DONE |
+| 6 | Restore `-j $NUMBER_OF_PROCESSORS` (the cap was for a disproven theory) | Claude Opus 5 | 2026-09-21 | DONE |
+| 7 | Confirm Windows green on CI | Claude Opus 5 | 2026-09-21 | DONE |
+
+### ROOT CAUSE FOUND (run 35568840910)
+
+```
+tests/CoreTests/TreasuryCoreTests.cpp(690,35): error C2065: '__uint128_t': undeclared identifier
+tests/CoreTests/TreasuryCoreTests.cpp(690,47): error C2146: syntax error: missing ')' before identifier 'P'
+```
+
+`__uint128_t` is a GCC/Clang builtin. MSVC has no such type, which is exactly why
+Windows was the only failing platform while macOS, Ubuntu and Sanitizers stayed
+green. The second error is the first one cascading.
+
+It was the **only** `__uint128_t` in the entire repository, and it sat in
+`core_tests.vcxproj` — a test project, not a shipped binary. That is why every
+`.exe` linked successfully and the failure looked mysterious: the failing project
+produced no console output of its own, MSBuild printed no build summary, and the
+error was ~5 minutes upstream of the end of a 1456-line log.
+
+The repo already carries the portable type: `uint128_t` in `src/Common/Int128.h`
+(builtin `unsigned __int128` on GCC/Clang, a hand-written struct with an explicit
+`operator uint64_t()` on MSVC). `TreasuryCoreTests.cpp` already included that header.
+The fix matches the identical computation in `Currency::calculateCdBonus`
+(`Currency.cpp:392`), which compiles on MSVC today:
+
+```cpp
+static_cast<uint64_t>(((uint128_t)P * (FLOOR - FLOOR / 2)) / PREC)
+```
+
+This bug is **pre-existing and unrelated to this branch** — it is why master
+(run 35166598710) was red too.
+
+Both earlier hypotheses were wrong and are recorded as such: worker-node death
+(disproven — no orphans, still failed) and parallelism (disproven — `-j 2` changed
+nothing). The `-j` cap is therefore reverted; `/nodeReuse:false` and the file
+loggers are kept, since the loggers are what made the cause visible at all.
+
+### Result of run 35506839843 — first hypothesis was wrong
+
+Windows failed again, but the run disproved the worker-node theory:
+
+- `MSBuild exited 1` printed by the new throw, so the exit code is confirmed as 1.
+- **No orphaned MSBuild processes** this time, so `/nodeReuse:false` did fix that
+  symptom — and the orphans were therefore a consequence, not the cause.
+- Every target still links (`xfg-swapd.exe`, `test_wallet.exe`, `fire_wallet.exe`).
+- Still **no MSBuild build summary** anywhere in the log.
+
+A non-zero exit with every target built and no summary means the failing project is
+not visible in console output at the default verbosity. Capping `-j` at 2 changed
+nothing, so parallelism is not the cause either.
+
+Rather than guess a third time, the build now attaches two MSBuild file loggers
+(`errorsonly` and `warningsonly`) and dumps the error log to the job output on
+failure. The next run should name the failing project outright. Note the run also
+downloads its full log only through `results-receiver.actions.githubusercontent.com`,
+which this environment's egress proxy blocks (403), so grepping the archive locally
+is not an option — CI has to surface the error itself.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| YAML parses | PASS (python yaml.safe_load) |
+| Build compiles | PASS — TreasuryCoreTests.cpp passes `g++ -fsyntax-only` with the project's flags |
+| Windows CI green | PASS — run 35571080637, Windows Build 13m19s, conclusion success |
+| Full CI green | PASS — all 5 jobs (Windows, Ubuntu 24.04, macOS 14, macOS 15, Sanitizers) |
+| All tasks done | YES |
+
+---
+
+## GLEEC: close to new swaps instead of de-registering (supersedes 6200a3c)
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: COMPLETE
+
+Commit 6200a3c disabled GLEEC by commenting out its registration block. Guardian
+verification found that this strands funds. Replaced with a drain: the client stays
+registered, new swaps are refused.
+
+### Why de-registering strands funds
+
+Every recovery path resolves the chain client through `getClient(pair)`, and a null
+client there is not a safe failure — it is the stranding mechanism:
+
+- `SwapDaemon.cpp:3230` — the XFG escrow refund `broadcastEscrowRefundDirect` sits
+  *inside* `if (ctrRefundOk)`. Null client leaves `ctrRefundOk` false, so the escrow
+  refund never broadcasts. `checkTimeouts` re-enters every tick forever. The XFG is
+  recoverable without touching GLEEC at all, but the gate blocks it.
+- `SwapDaemon.cpp:3161` — the SPV refund branch returns before reaching the escrow
+  logic at all.
+- `SwapDaemon.cpp:2069` — `handleCtrLocked` returns before `tryExtractClaimedSecret`.
+  That call is Alice's trustless route to the adaptor secret when Bob claims on chain
+  but withholds SECRET_REVEAL. Without it Bob can claim the CTR leg, stay silent, and
+  refund the XFG escrow at timeout, taking both legs.
+
+Chains staged this way already (ZANO/TON/SIA/DOT) were never live, so they have no
+swaps on disk. GLEEC was live, so it can.
+
+### Also
+
+De-registering bought nothing: `SwapOfferRelay.h:285` caps gossiped offers at
+`MAX_PAIR_INDEX = 11` and GLEEC is 12, so GLEEC offers never entered the order book
+on any build. The only thing registration provided was the recovery paths above.
+
+The `ethHtlcRegistry` fallback from 1088a69 is removed rather than restored. It
+assumed CREATE2 same-address deployment across all 14 EVM chains; GLEEC is an Evmos
+fork with no such guarantee, so that address likely holds no code there — and an EVM
+call to a codeless address does not revert, so it would fail silently with CTR funds
+stranded. `gleec_htlc_registry` is now required, with a warning when unset.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Restore GLEEC registration; require gleec_htlc_registry, no cross-chain fallback | Claude Opus 5 | 2026-09-20 | DONE |
+| 2 | Add `isPairClosedToNewSwaps`; refuse GLEEC in `initiate` | Claude Opus 5 | 2026-09-20 | DONE |
+| 3 | Refuse GLEEC fills in `handleSwapRequest` (AFK maker path) | Claude Opus 5 | 2026-09-20 | DONE |
+| 4 | Log registration at WARNING stating closed-to-new-swaps | Claude Opus 5 | 2026-09-20 | DONE |
+
+### Known issues NOT addressed here (pre-existing, filed for follow-up)
+
+- `SwapDaemon.cpp:3230` / `:3161` / `:2069` gating is still wrong for any chain whose
+  client is absent for other reasons (misconfig, RPC down at boot). The correct fix is
+  to ungate `broadcastEscrowRefundDirect` from `ctrRefundOk`, but that changes
+  fund-handling semantics for all 25 chains and needs its own review.
+- `SwapDaemon.cpp:4152` / `RpcServer.cpp:1374` scan `pair <= ZANO` (24) while the enum
+  runs to `DOT` (28). MONAD and OPTIMISM are registered but their offers are never found.
+- `MAX_PAIR_INDEX = 11` means pairs 12-28 (17 chains, incl. DOGE/DASH/ZEC/MONAD/OPTIMISM)
+  are advertised by registry, oracle and UI but unreachable through the offer book.
+- `m_takerHistory` grows unbounded: `pruneTakerHistory` only erases entries with
+  `failedSwaps == 0`, so each failed proof from a fresh pubkey leaves a permanent entry.
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (no Windows/full build runner in this env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
+## REVERTED: reserve-proof exemption for DOGE/DASH/ZEC
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Opus 5
+**Status**: COMPLETE (revert of 3f8e308)
+
+Commit 3f8e308 added `IChainClient::requiresReserveProof()` and exempted DOGE,
+DASH and ZEC from the reserve-proof gate. That was wrong and is fully reverted.
+
+**Decision: proof of funds is required on every chain. Do not re-add an exemption.**
+
+The premise of 3f8e308 was that `verifymessage` is unreliable on these nodes. It
+is not — DOGE, DASH and ZEC are Bitcoin forks that all support `verifymessage`,
+and `DogeChainClient`/`DashChainClient`/`ZecChainClient` already implement
+`verifyReserveProof` against it plus a `listunspent` balance check. Nothing was
+broken, so nothing needed exempting.
+
+Exempting them also removed the only gate that makes a maker's AFK lock
+conditional on the taker actually holding funds — free griefing: a taker with a
+zero balance could force the maker to lock XFG on every offer.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Revert 3f8e308 in full (8 files) | Claude Opus 5 | 2026-09-20 | DONE |
+| 2 | Verify tree byte-identical to 6200a3c | Claude Opus 5 | 2026-09-20 | DONE |
+| 3 | Verify zero `requiresReserveProof` references remain | Claude Opus 5 | 2026-09-20 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
+## Fix: GLEEC uses per-chain HTLC registry (gleecHtlcRegistry)
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Sonnet 4.6
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Audit artifact "Adding a Swap Chain" for inaccuracies | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 2 | Fix SwapDaemon.cpp: GLEEC registration uses `gleecHtlcRegistry` when set, falls back to `ethHtlcRegistry` | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 3 | Fix artifact: "11" EVM registrations corrected to "14" | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 4 | Fix artifact: "Four mappings" corrected to "Six mappings" with accurate per-category description | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 5 | Fix artifact: HTLC section updated to describe GLEEC's per-chain registry key | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+| 6 | Publish corrected artifact to https://claude.ai/artifact/CX6twezMZBjmNBbVDaz4b1 | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+
+### Root Cause
+
+`gleecHtlcRegistry` was defined in `ChainClientConfig` (SwapDaemon.h:198), parsed from JSON
+config (ChainClientConfig.cpp:202), but never read. Line 370 of SwapDaemon.cpp passed
+`chainCfg.ethHtlcRegistry` to `applyHtlcConfig` for the GLEEC chain, silently ignoring the
+per-chain override.
+
+### Fix (SwapDaemon.cpp:370-372)
+
+```cpp
+// Before
+applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "GLEEC");
+
+// After
+applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath,
+    !chainCfg.gleecHtlcRegistry.empty() ? chainCfg.gleecHtlcRegistry : chainCfg.ethHtlcRegistry,
+    m_logger, "GLEEC");
+```
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env, no build runner) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
+## Disable GLEEC chain pending status investigation
+
+**Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr
+**Started**: 2026-09-20
+**Agent**: Claude Sonnet 4.6
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Comment out GLEEC registration block in SwapDaemon.cpp | Claude Sonnet 4.6 | 2026-09-20 | DONE |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| Build compiles | Not verified (remote env) |
+| Tests pass | Not verified |
+| All tasks done | YES |
+
+---
+
 ## CI green: fix Build check failures + release.yml parse error
 
 **Branch/Feature**: master

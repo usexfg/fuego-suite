@@ -13,7 +13,7 @@ const SwapXFG = (() => {
   const PAIR_BY_INDEX = [
     'SOL', 'ETH', 'XMR', 'BCH', 'ARB', 'BASE', 'KMD_SPV', 'BNB', 'DCR', 'BTC',
     'LTC', 'POLYGON', 'GLEEC', 'ROBINHOOD', 'AVAX', 'CRO', 'BOB', 'SIA',
-    'UNICHAIN', 'PLASMA', 'DOGE', 'DASH', 'ZEC', 'PULSEX', 'ZANO', 'TON',
+    'UNICHAIN', 'PLASMA', 'DOGE', 'DASH', 'ZEC', 'PULSECHAIN', 'ZANO', 'TON',
     'MONAD', 'OPTIMISM'
   ];
 
@@ -42,7 +42,7 @@ const SwapXFG = (() => {
     DOGE:     { icon: '/coin-icons/doge.png', color: '#C2A633', ticker: 'DOGE', name: 'Dogecoin' },
     DASH:     { icon: '/coin-icons/dash.png', color: '#008CE7', ticker: 'DASH', name: 'Dash' },
     ZEC:      { icon: '/coin-icons/zec.png', color: '#F4B728', ticker: 'ZEC', name: 'Zcash' },
-    PULSEX:   { icon: '/coin-icons/plsx.png', color: '#FF7B00', ticker: 'PLS', name: 'PulseChain' },
+    PULSECHAIN:   { icon: '/coin-icons/plsx.png', color: '#FF7B00', ticker: 'PLS', name: 'PulseChain' },
     ZANO:     { icon: '/coin-icons/zano.png', color: '#8A2BE2', ticker: 'ZANO', name: 'Zano' },
     MONAD:    { icon: '/coin-icons/monad.png', color: '#836EF9', ticker: 'MON', name: 'Monad' },
     OPTIMISM: { icon: '/coin-icons/op.jpg', color: '#FF0420', ticker: 'ETH', name: 'Optimism' }

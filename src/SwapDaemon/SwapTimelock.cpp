@@ -30,7 +30,7 @@ uint64_t msPerBlock(SwapPair pair) {
     case SwapPair::DOGE: return 60000;   // ~60s/block
     case SwapPair::DASH: return 260000;  // ~2.6min/block
     case SwapPair::ZEC:  return 150000;  // ~2.5min/block
-    case SwapPair::PULSEX: return 1000;  // ~1s/block
+    case SwapPair::PULSECHAIN: return 1000;  // ~1s/block
     case SwapPair::ZANO: return 120000;  // ~2min/block
     case SwapPair::TON: return 5000;     // ~5s/block
     case SwapPair::MONAD: return 500;    // ~0.5s/block

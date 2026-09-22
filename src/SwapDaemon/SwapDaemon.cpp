@@ -52,7 +52,7 @@
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
-#include "PulseX/PulseXChainClient.h"
+#include "PulseChain/PulseChainClient.h"
 #include "Unichain/UnichainChainClient.h"
 #include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -367,7 +367,14 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.gleecHost, chainCfg.gleecPort,
         chainCfg.gleecPrivKeyHex, chainCfg.gleecAddress,
         chainCfg.gleecChainId);
-    applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "GLEEC");
+    // Registry must be GLEEC's own: the shared ethHtlcRegistry address is only
+    // valid where CREATE2 put the contract at the same address, which an
+    // Evmos fork does not guarantee.
+    if (chainCfg.gleecHtlcRegistry.empty()) {
+      m_logger(Logging::WARNING) << "GLEEC: gleec_htlc_registry not set — HTLC registry left unconfigured";
+    } else {
+      applyHtlcConfig(*rpc, chainCfg.gleecHtlcBinPath, chainCfg.gleecHtlcRegistry, m_logger, "GLEEC");
+    }
     applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "GLEEC");
     m_chainRegistry.registerChain(SwapPair::GLEEC,
         std::make_unique<GleecChainClient>(std::move(rpc), chainCfg.gleecAddress));
@@ -436,15 +443,15 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
     m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
   }
-  // PULSEX (PulseChain)
-  if (!chainCfg.pulsexHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsexHost, chainCfg.pulsexPort,
-        chainCfg.pulsexPrivKeyHex, chainCfg.pulsexAddress, chainCfg.pulsexChainId);
-    applyHtlcConfig(*rpc, chainCfg.pulsexHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSEX");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSEX");
-    m_chainRegistry.registerChain(SwapPair::PULSEX,
-        std::make_unique<PulseXChainClient>(std::move(rpc), chainCfg.pulsexAddress));
-    m_logger(Logging::INFO) << "PULSEX chain client registered: " << chainCfg.pulsexHost << ":" << chainCfg.pulsexPort;
+  // PULSECHAIN (native PLS — EVM, chain id 369)
+  if (!chainCfg.pulsechainHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechainHost, chainCfg.pulsechainPort,
+        chainCfg.pulsechainPrivKeyHex, chainCfg.pulsechainAddress, chainCfg.pulsechainChainId);
+    applyHtlcConfig(*rpc, chainCfg.pulsechainHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
+    m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
+        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechainAddress));
+    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechainHost << ":" << chainCfg.pulsechainPort;
   }
   // MONAD
   if (!chainCfg.monadHost.empty()) {
@@ -3154,44 +3161,69 @@ bool SwapDaemon::refund(const std::string& swapId) {
     m_logger(Logging::INFO) << "Timeout elapsed (SPV state). Refunding counterparty ("
       << swapPairToString(params.pair) << ") HTLC...";
 
+    // Whether we already took the CTR leg is a fact, not a state label. The SPV
+    // claim path records it (ctrClaimTxId, adaptorSecretRevealedToPeer) WITHOUT
+    // leaving ADAPTOR_WAITING_SPV, and ADAPTOR_SECRET_CONFIRMED_SPV is entered
+    // on confirmations of the LOCK tx, so neither state tells us on its own.
+    const bool alreadyClaimedCtr =
+        !params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer;
+
+    bool ctrRefundOk = false;
     auto* client = m_chainRegistry.getClient(params.pair);
     if (!client) {
       m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-        << " client not configured — cannot refund";
-      return false;
-    }
-
-    auto result = client->refund(params);
-    if (result.success) {
-      m_logger(Logging::INFO) << "  " << client->chainName()
-        << " refunded, txid: " << result.txId;
-      // v11+: also return the XFG escrow to the maker unilaterally.
-      {
-        static const Crypto::Hash ZERO_HASH{};
-        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-          if (!broadcastEscrowRefundDirect(params)) {
-            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-            return false;
-          }
+        << " client not configured — cannot refund counterparty leg";
+    } else {
+      auto result = client->refund(params);
+      if (result.success) {
+        m_logger(Logging::INFO) << "  " << client->chainName()
+          << " refunded, txid: " << result.txId;
+        ctrRefundOk = true;
+      } else {
+        m_logger(Logging::ERROR) << "  " << client->chainName()
+          << " refund failed: " << result.error;
+        if (result.fatal) {
+          sm.transition(SwapState::FAILED);
+          m_db.saveSwap(sm);
+          return false;
         }
       }
+    }
+
+    // Recovering the XFG escrow is independent of the counterparty refund, but
+    // ONLY while we have not claimed the CTR leg. Having claimed it, taking the
+    // escrow back as well would be both legs. The old code gated on
+    // ctrRefundOk, which blocked that case only by accident — a claimed output
+    // makes refund() fail — while also stranding the escrow whenever the CTR
+    // refund failed for an unrelated reason (no client, RPC down).
+    bool escrowRefundOk = true;
+    if (alreadyClaimedCtr) {
+      m_logger(Logging::WARNING)
+        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
+        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
+      escrowRefundOk = false;
+    } else {
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        escrowRefundOk = broadcastEscrowRefundDirect(params);
+        if (!escrowRefundOk) {
+          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
+        }
+      }
+    }
+
+    if (ctrRefundOk && escrowRefundOk) {
       sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
       m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
-      return true;
+      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
+    } else if (!ctrRefundOk) {
+      m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
     }
-
-    m_logger(Logging::ERROR) << "  " << client->chainName()
-      << " refund failed: " << result.error;
-    if (result.fatal) {
-      sm.transition(SwapState::FAILED);
-      m_db.saveSwap(sm);
-    }
-    return false;
+    return ctrRefundOk && escrowRefundOk;
   }
 
-  // Counterparty chain refund: Bob locked on the counterparty chain but the
-  // swap timed out before Alice claimed.  Bob must also refund the CTR HTLC.
+  // Counterparty chain refund: the CTR leg is locked and the swap timed out.
+  // Bob unwinds the CTR HTLC and recovers his own XFG escrow.
   if (current == SwapState::ADAPTOR_CTR_LOCKED && params.role == SwapRole::BOB) {
     if (currentHeight < params.xfgTimeoutHeight) {
       m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
@@ -3225,24 +3257,39 @@ bool SwapDaemon::refund(const std::string& swapId) {
       }
     }
 
-    if (ctrRefundOk) {
-      // v11+: also return the XFG escrow to the maker unilaterally.
-      {
-        static const Crypto::Hash ZERO_HASH{};
-        if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-          if (!broadcastEscrowRefundDirect(params)) {
-            m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-            return false;
-          }
+    // v11+: return the XFG escrow to the maker unilaterally. Independent of the
+    // counterparty refund, but only while we have not claimed the CTR leg —
+    // taking both would be theft. Reaching this state should mean we have not
+    // claimed, but the guard keys on the recorded fact rather than trusting the
+    // state label, because the SPV claim path records a claim without changing
+    // state. Gating on ctrRefundOk instead stranded recoverable XFG whenever the
+    // CTR leg could not be refunded (unconfigured client, RPC outage).
+    bool escrowRefundOk = true;
+    if (!params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer) {
+      m_logger(Logging::WARNING)
+        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
+        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
+      escrowRefundOk = false;
+    } else {
+      static const Crypto::Hash ZERO_HASH{};
+      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+        escrowRefundOk = broadcastEscrowRefundDirect(params);
+        if (!escrowRefundOk) {
+          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
         }
       }
+    }
+
+    // Terminal only when both legs are done, so a failed CTR refund keeps
+    // being retried instead of being lost to an early state transition.
+    if (ctrRefundOk && escrowRefundOk) {
       sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
       m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC refunded. Swap marked ADAPTOR_REFUNDED.";
-    } else {
+      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
+    } else if (!ctrRefundOk) {
       m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
     }
-    return ctrRefundOk;
+    return ctrRefundOk && escrowRefundOk;
   }
 
   m_logger(Logging::ERROR) << "Cannot refund swap in state: "
@@ -4146,7 +4193,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::ZANO); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(SwapPair::DOT); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {
@@ -4316,21 +4363,38 @@ bool SwapDaemon::isTakerRateLimited(const std::string& takerPubKey) {
 
 void SwapDaemon::recordTakerFailure(const std::string& takerPubKey) {
   std::lock_guard<std::mutex> lock(m_takerMutex);
+  time_t now = time(nullptr);
+
+  // Hard cap before inserting: a peer can mint unlimited takerPubKeys, so
+  // without this the map grows without bound between prune ticks. Evict the
+  // least recently active entry to make room.
+  if (m_takerHistory.size() >= MAX_TAKER_HISTORY_ENTRIES &&
+      m_takerHistory.find(takerPubKey) == m_takerHistory.end()) {
+    auto oldest = std::min_element(
+        m_takerHistory.begin(), m_takerHistory.end(),
+        [](const auto& a, const auto& b) { return a.second.lastSeen < b.second.lastSeen; });
+    if (oldest != m_takerHistory.end()) m_takerHistory.erase(oldest);
+  }
+
   auto& record = m_takerHistory[takerPubKey];
-  record.requestTimes.push_back(time(nullptr));
+  record.requestTimes.push_back(now);
   record.failedSwaps++;
+  record.lastSeen = now;
 }
 
 void SwapDaemon::pruneTakerHistory() {
   std::lock_guard<std::mutex> lock(m_takerMutex);
   time_t now = std::time(nullptr);
   for (auto it = m_takerHistory.begin(); it != m_takerHistory.end(); ) {
-    // Drop entries with no failed swaps and no recent requests (older than 2 hours)
     it->second.requestTimes.erase(
         std::remove_if(it->second.requestTimes.begin(), it->second.requestTimes.end(),
-                       [now](time_t t) { return (now - t) > 7200; }),
+                       [now](time_t t) { return (now - t) > TAKER_RECORD_TTL_SECONDS; }),
         it->second.requestTimes.end());
-    if (it->second.requestTimes.empty() && it->second.failedSwaps == 0) {
+    // Expire on inactivity regardless of failedSwaps. Keying the old
+    // failedSwaps == 0 condition on a counter that never decreased made every
+    // entry that ever failed permanent.
+    if (it->second.requestTimes.empty() &&
+        (now - it->second.lastSeen) > TAKER_RECORD_TTL_SECONDS) {
       it = m_takerHistory.erase(it);
     } else {
       ++it;

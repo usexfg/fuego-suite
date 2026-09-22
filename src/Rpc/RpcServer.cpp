@@ -1371,7 +1371,7 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
 
   // Echo the offer's pair + amount so the taker can drive its local swap
   // daemon after the maker locks (informational only).
-  for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::ZANO); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::DOT); ++pair) {
     auto offers = m_swapRelay->getOffers(static_cast<uint8_t>(pair));
     for (const auto& offer : offers) {
       if (offer.offerId == req.offerId) {

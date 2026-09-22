@@ -98,7 +98,7 @@ enum class SwapPair : uint8_t {
   DOGE = 20,
   DASH = 21,
   ZEC = 22,
-  PULSEX = 23,
+  PULSECHAIN = 23,
   ZANO = 24,
   MONAD = 25,
   OPTIMISM = 26,

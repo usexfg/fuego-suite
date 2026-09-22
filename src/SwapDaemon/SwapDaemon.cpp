@@ -52,7 +52,7 @@
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
-#include "PulseX/PulseXChainClient.h"
+#include "PulseChain/PulseChainClient.h"
 #include "Unichain/UnichainChainClient.h"
 #include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -91,6 +91,27 @@
 #include "Ethereum/EthRpcClient.h"
 
 namespace {
+
+// Arbitrum-family chains (Arbitrum One and Orbit chains such as Robinhood
+// Chain) are refused at registration.
+//
+// On these chains Solidity `block.number` returns an estimate of the PARENT
+// chain's block number, while eth_blockNumber — the source of ctrTimeoutBlock
+// via EthChainClient::getCurrentHeight — returns the local L2/L3 height. The
+// two live in different domains, and the local height runs far ahead, so the
+// HTLC's `block.number >= timeoutBlock` never becomes true: refund() is
+// unreachable and locked funds are stranded permanently. The per-chain
+// msPerBlock entries compound this by modelling the local block rate against a
+// clock that advances at the parent chain's rate, which makes
+// timelockOrderingOk pass when the real counterparty window outlasts the XFG
+// refund window.
+//
+// Re-enable only after EthChainClient reads ArbSys(100).arbBlockNumber() (or
+// the receipt's l1BlockNumber) for these chains, or the lock contracts move to
+// block.timestamp — and after msPerBlock is corrected to the clock actually
+// used by the deployed contract.
+constexpr bool kArbitrumFamilyEnabled = false;
+
 // Load HTLC deploy bytecode from a .bin path (hex text). Returns empty on failure.
 std::string loadHtlcBytecode(const std::string& path) {
   if (path.empty()) return {};
@@ -254,7 +275,13 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "ETH chain client registered: "
       << chainCfg.ethHost << ":" << chainCfg.ethPort;
   }
-  if (!chainCfg.arbHost.empty()) {
+  if (!kArbitrumFamilyEnabled && !chainCfg.arbHost.empty()) {
+    m_logger(Logging::ERROR)
+      << "ARB configured but DISABLED: Arbitrum block.number tracks the parent "
+         "chain, so HTLC refunds are unreachable and funds would be locked "
+         "permanently. See kArbitrumFamilyEnabled.";
+  }
+  if (kArbitrumFamilyEnabled && !chainCfg.arbHost.empty()) {
     std::unique_ptr<EthRpcClient> rpc;
     if (!chainCfg.arbPrivKeyHex.empty() && !chainCfg.arbAddress.empty()) {
       rpc = std::make_unique<EthRpcClient>(
@@ -375,8 +402,16 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
       << chainCfg.gleecHost << ":" << chainCfg.gleecPort
       << " (chainId=" << chainCfg.gleecChainId << ")";
   }
-  // ROBINHOOD (Robinhood Chain — EVM L1)
-  if (!chainCfg.rhHost.empty()) {
+  // ROBINHOOD (Robinhood Chain — an Arbitrum Orbit chain, NOT an EVM L1 as the
+  // previous comment here claimed; that error is why msPerBlock modelled a
+  // local ~3s clock).
+  if (!kArbitrumFamilyEnabled && !chainCfg.rhHost.empty()) {
+    m_logger(Logging::ERROR)
+      << "ROBINHOOD configured but DISABLED: Robinhood Chain is Arbitrum Orbit, "
+         "so block.number tracks the parent chain and HTLC refunds are "
+         "unreachable. See kArbitrumFamilyEnabled.";
+  }
+  if (kArbitrumFamilyEnabled && !chainCfg.rhHost.empty()) {
     auto rpc = std::make_unique<EthRpcClient>(chainCfg.rhHost, chainCfg.rhPort,
         chainCfg.rhPrivKeyHex, chainCfg.rhAddress, chainCfg.rhChainId);
     applyHtlcConfig(*rpc, chainCfg.rhHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "ROBINHOOD");
@@ -436,15 +471,15 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         std::make_unique<PlasmaChainClient>(std::move(rpc), chainCfg.plasmaAddress));
     m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
   }
-  // PULSEX (PulseChain)
-  if (!chainCfg.pulsexHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsexHost, chainCfg.pulsexPort,
-        chainCfg.pulsexPrivKeyHex, chainCfg.pulsexAddress, chainCfg.pulsexChainId);
-    applyHtlcConfig(*rpc, chainCfg.pulsexHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSEX");
-    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSEX");
-    m_chainRegistry.registerChain(SwapPair::PULSEX,
-        std::make_unique<PulseXChainClient>(std::move(rpc), chainCfg.pulsexAddress));
-    m_logger(Logging::INFO) << "PULSEX chain client registered: " << chainCfg.pulsexHost << ":" << chainCfg.pulsexPort;
+  // PULSECHAIN (PulseChain)
+  if (!chainCfg.pulsechainHost.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechainHost, chainCfg.pulsechainPort,
+        chainCfg.pulsechainPrivKeyHex, chainCfg.pulsechainAddress, chainCfg.pulsechainChainId);
+    applyHtlcConfig(*rpc, chainCfg.pulsechainHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
+    applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
+    m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
+        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechainAddress));
+    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechainHost << ":" << chainCfg.pulsechainPort;
   }
   // MONAD
   if (!chainCfg.monadHost.empty()) {
@@ -1127,17 +1162,19 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     }
   }
 
+  // Fail closed: an unchecked getHeight left currentHeight at 0, which made the
+  // timelock ordering check below compute the XFG window as the ABSOLUTE chain
+  // height (~13.7 years) and pass unconditionally — the acceptor then locked
+  // with no timelock protection at all. The initiate path already checks this.
   uint32_t currentHeight = 0;
-  m_rpc.getHeight(currentHeight);
-  
+  if (!m_rpc.getHeight(currentHeight)) {
+    const std::string msg = "Cannot query fuegod height — refusing accept (timelock check required)";
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
+  }
+
     // AFK Safety Check: Check remaining time of Maker's lock
     if (sm.currentState() == SwapState::AFK_OFFER_LOCKED) {
-      uint32_t currentHeight = 0;
-      if (!m_rpc.getHeight(currentHeight)) {
-        m_logger(Logging::ERROR) << "Cannot query fuegod height";
-        return {false, ""};
-      }
-      
       // Fuego block time = 480s (8 min). 1 hour = 7.5 blocks. Use 8 blocks as safe minimum.
       int32_t remainingBlocks = static_cast<int32_t>(params.xfgTimeoutHeight) - currentHeight;
       

@@ -23,6 +23,50 @@
 
 namespace XfgSwap {
 
+// ─── Comment stripping ──────────────────────────────────────────────────────
+//
+// The shipped example config is documented with `//` comments. Two separate
+// defects made that fatal:
+//   * Common::JsonValue has no comment support (readNonWsChar skips whitespace
+//     only), so the validation below rejected the documented config outright
+//     with "Config file is not valid JSON" — the example was unloadable.
+//   * jsonGetStr/jsonGetUint locate a key with a raw find() over the whole
+//     text, so a commented-out example line such as
+//         //   "btc_rpc_host": "127.0.0.1",
+//     is found before the operator's real entry and silently used as live
+//     configuration.
+// Stripping must be string-aware: a legitimate value like
+// "https://rpc.example.com" contains `//` inside a string literal.
+static std::string stripJsonComments(const std::string& in) {
+  std::string out;
+  out.reserve(in.size());
+  bool inStr = false, esc = false;
+  for (size_t i = 0; i < in.size(); ++i) {
+    const char c = in[i];
+    if (inStr) {
+      out += c;
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') inStr = false;
+      continue;
+    }
+    if (c == '"') { inStr = true; out += c; continue; }
+    if (c == '/' && i + 1 < in.size() && in[i + 1] == '/') {
+      while (i < in.size() && in[i] != '\n') ++i;
+      if (i < in.size()) out += '\n';  // keep line numbering for error messages
+      continue;
+    }
+    if (c == '/' && i + 1 < in.size() && in[i + 1] == '*') {
+      i += 2;
+      while (i + 1 < in.size() && !(in[i] == '*' && in[i + 1] == '/')) ++i;
+      ++i;  // skip '*'; loop increment skips '/'
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 // ─── Minimal JSON key-value parser ──────────────────────────────────────────
 
 static std::string jsonGetStr(const std::string& json, const std::string& key,
@@ -110,7 +154,9 @@ bool loadChainClientConfig(const std::string& path,
   }
   std::ostringstream ss;
   ss << f.rdbuf();
-  const std::string json = ss.str();
+  // Strip comments before BOTH the validation below and every jsonGet* lookup;
+  // see stripJsonComments for why each matters.
+  const std::string json = stripJsonComments(ss.str());
 
   // Validate the file is actually parseable JSON. Previously the loader used
   // `string::find()` lookups that silently treat malformed JSON as missing
@@ -277,13 +323,22 @@ bool loadChainClientConfig(const std::string& path,
   out.zecWif     = jsonGetStr(json, "zec_wif", "");
   out.zecTestnet = jsonGetBool(json, "zec_testnet", false);
 
-  // PULSEX (PulseChain — EVM, chain id 369)
-  out.pulsexHost       = jsonGetStr (json, "pulsex_rpc_host", "");
-  out.pulsexPort       = static_cast<uint16_t>(jsonGetUint(json, "pulsex_rpc_port", 8545));
-  out.pulsexPrivKeyHex = jsonGetStr (json, "pulsex_priv_key");
-  out.pulsexAddress    = jsonGetStr (json, "pulsex_address");
-  out.pulsexChainId    = jsonGetUint(json, "pulsex_chain_id", 369);
-  out.pulsexHtlcBinPath= jsonGetStr (json, "pulsex_htlc_bin", out.ethHtlcBinPath);
+  // PULSECHAIN (PulseChain — EVM, chain id 369)
+  // PulseChain. The legacy `pulsex_*` keys named the DEX rather than the chain;
+  // they are still honoured as a fallback so existing operator configs keep
+  // working, but `pulsechain_*` wins where both are present.
+  out.pulsechainHost       = jsonGetStr (json, "pulsechain_rpc_host",
+                                         jsonGetStr(json, "pulsex_rpc_host", ""));
+  out.pulsechainPort       = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port",
+                                         jsonGetUint(json, "pulsex_rpc_port", 8545)));
+  out.pulsechainPrivKeyHex = jsonGetStr (json, "pulsechain_priv_key",
+                                         jsonGetStr(json, "pulsex_priv_key", ""));
+  out.pulsechainAddress    = jsonGetStr (json, "pulsechain_address",
+                                         jsonGetStr(json, "pulsex_address", ""));
+  out.pulsechainChainId    = jsonGetUint(json, "pulsechain_chain_id",
+                                         jsonGetUint(json, "pulsex_chain_id", 369));
+  out.pulsechainHtlcBinPath= jsonGetStr (json, "pulsechain_htlc_bin",
+                                         jsonGetStr(json, "pulsex_htlc_bin", out.ethHtlcBinPath));
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   out.zanoDaemonHost = jsonGetStr(json, "zano_daemon_host", "");
@@ -469,9 +524,9 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
 
-  if (!validateHex(out.pulsexPrivKeyHex, 32, "pulsex_priv_key", errorMsg)) return false;
-  if (!out.pulsexAddress.empty() && (out.pulsexAddress.size() < 2 || out.pulsexAddress.substr(0, 2) != "0x")) {
-    errorMsg = "pulsex_address must start with 0x";
+  if (!validateHex(out.pulsechainPrivKeyHex, 32, "pulsechain_priv_key", errorMsg)) return false;
+  if (!out.pulsechainAddress.empty() && (out.pulsechainAddress.size() < 2 || out.pulsechainAddress.substr(0, 2) != "0x")) {
+    errorMsg = "pulsechain_address must start with 0x";
     return false;
   }
   if (!validateHex(out.zanoSpendKeyHex, 32, "zano_spend_key", errorMsg)) return false;

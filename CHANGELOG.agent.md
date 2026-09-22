@@ -4,6 +4,110 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## HEAT / Hearth / CD / atomic-swap audit remediation
+
+**Branch/Feature**: claude/heat-hearth-audit-e2093c
+**Started**: 2026-09-22
+**Agent**: claude-code
+**Status**: IN PROGRESS
+
+Remediation of findings from a multi-agent audit of the HEAT flatcoin, Hearth
+exchange, HEAT CDs and the atomic swap daemon. Each finding was confirmed
+against source by an independent verifier before any code was touched; three
+of the auditor's own claims were refuted in that pass and are NOT actioned
+here (timelock directionality is correct, the production MuSig2 nonce-reuse
+guard is sound, CD terms are consensus-bounded at CryptoNoteFormatUtils).
+
+Consensus defects fixed:
+
+- **Limit-withdraw `break` escaped the per-transaction loop** (Blockchain.cpp).
+  The nearest enclosing loop was the `for` over `transactions`, not the
+  tx-extra field loop, so a failed ownership/replay check skipped the
+  `if (!isTransactionValid)` rejection *and* left every later transaction in
+  the block unvalidated and unconnected, while control still reached
+  `pushBlock`. Replaced with a chained `else if` (identical short-circuit, no
+  loop escape).
+- **`pushTransaction`'s failure return was discarded** on the live path while
+  the `rebuildCache` replay honoured it, so a swap sized past the reserve
+  registered outputs and then aborted settlement with the pool untouched —
+  unbacked assets live, aborted rebuild on restart. Now rejects the block.
+  All 24 failure paths in `pushTransaction` were reviewed first: every one is
+  a genuine error (double-spend, malformed claim, overflow, settlement
+  invariant, bad signature), none a normal-operation outcome.
+- **Block-size rejection skipped `popTransactions`**, leaving key images and
+  HEAT/CD/vault/AMM state of a rejected block applied on every node that
+  evaluated it, making the referenced outputs unspendable network-wide.
+- **`cdHearthFeeAccumulator` double-credited** on every AMM-backstop BUY_XFG
+  fill (saturating add followed by a second bare `+=`), minted as unbacked
+  HEAT into CD_APY_POOL at the epoch boundary and reversed only once by
+  `popBlock`. Removed the duplicate.
+
+Swap daemon:
+
+- **`acceptSwap` timelock check failed open**: an unchecked `getHeight` left
+  `currentHeight` at 0 (a shadowing declaration inside the AFK branch consumed
+  the checked value), making the XFG window compute as the absolute chain
+  height and pass unconditionally. Now fails closed, matching the initiate path.
+- **ARB and ROBINHOOD disabled.** Both are Arbitrum-family; Solidity
+  `block.number` there tracks the parent chain while `eth_blockNumber`
+  (the source of `ctrTimeoutBlock`) returns the local height, so
+  `block.number >= timeoutBlock` never becomes true and HTLC refunds are
+  unreachable. Gated behind `kArbitrumFamilyEnabled` with an operator-facing
+  error when configured. The prior comment calling Robinhood Chain an "EVM L1"
+  was wrong and is corrected.
+
+Configuration:
+
+- **Every chain host/port key in `swap_config.example.json` was unreadable** —
+  52 keys used `*_host`/`*_port` while the loader reads `*_rpc_host`/
+  `*_rpc_port`. Since registration is gated on a non-empty host, an operator
+  copying the shipped example got zero chain clients. Keys corrected.
+- **The example config could not be loaded at all**: it is documented with
+  `//` comments and `Common::JsonValue` has no comment support, so validation
+  rejected it outright. Worse, `jsonGetStr` locates keys with a raw `find()`,
+  so commented-out example lines were read as live configuration. Added a
+  string-aware `stripJsonComments` (a legitimate `https://` value must not be
+  eaten) applied before both validation and every lookup.
+
+Naming:
+
+- **PulseX renamed to PulseChain** throughout. PulseX is the DEX; the chain is
+  PulseChain (chain id 369, `rpc.pulsechain.com`). Enum, client class, struct
+  fields, config keys, dashboard assets and docs updated. Legacy `pulsex_*`
+  config keys and the `PULSEX` pair string are still accepted as fallbacks;
+  the `PULS` alias is joined by the correct `PLS` ticker.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Limit-withdraw `break` -> `else if` chain | claude-code | 2026-09-22 | DONE |
+| 2 | Honour `pushTransaction` return in pushBlock | claude-code | 2026-09-22 | DONE |
+| 3 | `popTransactions` on block-size rejection | claude-code | 2026-09-22 | DONE |
+| 4 | Remove duplicate `cdHearthFeeAccumulator` add | claude-code | 2026-09-22 | DONE |
+| 5 | `acceptSwap` height check fail-closed | claude-code | 2026-09-22 | DONE |
+| 6 | Mirror v11 settlement rules into TransactionPool admission | claude-code | 2026-09-22 | TODO |
+| 7 | Disable ARB + ROBINHOOD (Arbitrum block.number domain) | claude-code | 2026-09-22 | DONE |
+| 8 | Fix 52 example-config keys + string-aware comment stripping | claude-code | 2026-09-22 | DONE |
+| 9 | PulseX -> PulseChain rename with legacy fallbacks | claude-code | 2026-09-22 | DONE |
+| 10 | First-LP guard, rebuildCache re-seed, SwapParams field init, HEARTH_MIN_XFG_DEPTH scaling | claude-code | 2026-09-22 | TODO |
+| 11 | Route swaps through `ammGetOutputAmount` + assert `ammValidateInvariant`; mint-oracle redesign | claude-code | 2026-09-22 | TODO |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles: `CryptoNoteCore` (Linux, GCC 13.3, Boost 1.83) | PASS 2026-09-22 |
+| Build compiles: `SwapDaemonLib` | PASS 2026-09-22 |
+| Tests pass | PENDING |
+| All tasks done | NO (6, 10, 11 outstanding) |
+
+> **This branch is not deployable as it stands.** Task 2 makes a settlement
+> failure reject the block, which is correct, but until task 6 mirrors the v11
+> rules into mempool admission a transaction that passes validation and fails
+> settlement can be used to poison block templates. Do not run this on a node
+> until task 6 lands.
+
+---
+
 ## CI green: fix Build check failures + release.yml parse error
 
 **Branch/Feature**: master

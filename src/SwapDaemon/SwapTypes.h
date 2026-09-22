@@ -98,7 +98,7 @@ enum class SwapPair : uint8_t {
   DOGE = 20,
   DASH = 21,
   ZEC = 22,
-  PULSEX = 23,
+  PULSECHAIN = 23,
   ZANO = 24,
   MONAD = 25,
   OPTIMISM = 26,
@@ -212,11 +212,17 @@ struct SwapParams {
   // ── Legacy HTLC fields (kept for backward compat) ──
   Crypto::Hash hashLock;
   Crypto::Hash preimage;        // known only by initiator until claim
-  uint32_t xfgTimeoutHeight;
-  uint64_t ctrTimeoutBlock;     // counterparty chain timeout
+  // These three MUST keep their initializers. The AFK maker path builds a bare
+  // `SwapParams` and never assigns them before the record is serialized to the
+  // swap database; xfgTimeoutHeight gates every *_REFUNDED transition, so an
+  // indeterminate value either let the maker refund while the taker's
+  // counterparty leg was still locked, or made the maker's own refund
+  // unreachable.
+  uint32_t xfgTimeoutHeight = 0;
+  uint64_t ctrTimeoutBlock = 0;  // counterparty chain timeout
 
   // Chain state
-  uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
+  uint32_t htlcOutputIndex = 0;  // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
   std::string ctrClaimTxId;     // counterparty claim tx hash (Bob's on-chain claim of CTR)
   uint32_t requiredConfirmations = 6;  // SPV confirmations required (default 6 for BCH)

@@ -49,7 +49,7 @@ static const double SEED_TON_USD = 5.50;
 static const double SEED_DOGE_USD = 0.22;
 static const double SEED_DASH_USD = 30.0;
 static const double SEED_ZEC_USD = 45.0;
-static const double SEED_PULSEX_USD = 0.0007;  // native PLS on PulseChain
+static const double SEED_PULSECHAIN_USD = 0.0007;  // native PLS on PulseChain
 static const double SEED_ZANO_USD = 3.20;
 static const double SEED_BTC_USD = 65000.0;
 static const double SEED_LTC_USD = 90.0;
@@ -116,7 +116,7 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::DOGE: return SEED_DOGE_USD / xfgUsd;
     case SwapPair::DASH: return SEED_DASH_USD / xfgUsd;
     case SwapPair::ZEC: return SEED_ZEC_USD / xfgUsd;
-    case SwapPair::PULSEX: return SEED_PULSEX_USD / xfgUsd;
+    case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / xfgUsd;
     case SwapPair::ZANO: return SEED_ZANO_USD / xfgUsd;
     case SwapPair::BTC: return SEED_BTC_USD / xfgUsd;
     case SwapPair::LTC: return SEED_LTC_USD / xfgUsd;
@@ -152,7 +152,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::DOGE: return SEED_DOGE_USD / SEED_XFG_USD;
     case SwapPair::DASH: return SEED_DASH_USD / SEED_XFG_USD;
     case SwapPair::ZEC: return SEED_ZEC_USD / SEED_XFG_USD;
-    case SwapPair::PULSEX: return SEED_PULSEX_USD / SEED_XFG_USD;
+    case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / SEED_XFG_USD;
     case SwapPair::ZANO: return SEED_ZANO_USD / SEED_XFG_USD;
     case SwapPair::BTC: return SEED_BTC_USD / SEED_XFG_USD;
     case SwapPair::LTC: return SEED_LTC_USD / SEED_XFG_USD;
@@ -191,7 +191,7 @@ double PriceOracle::ctrDivisor(SwapPair pair) {
     case SwapPair::DOGE: return 1e8;      // koinu (1 DOGE = 1e8 koinu)
     case SwapPair::DASH: return 1e8;      // duffs (1 DASH = 1e8 duffs)
     case SwapPair::ZEC: return 1e8;       // zatoshis (1 ZEC = 1e8 zats)
-    case SwapPair::PULSEX: return 1e18;   // PLS (18 decimals)
+    case SwapPair::PULSECHAIN: return 1e18;   // PLS (18 decimals)
     case SwapPair::ZANO: return 1e12;     // atoms (1 ZANO = 1e12 atoms)
     case SwapPair::BTC: return 1e8;       // satoshi
     case SwapPair::LTC: return 1e8;       // litoshi

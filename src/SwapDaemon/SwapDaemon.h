@@ -273,13 +273,13 @@ struct ChainClientConfig {
   std::string zecWif;          // WIF-encoded private key (mainnet prefix 0x80)
   bool        zecTestnet = false;
 
-  // PULSEX (PulseChain — EVM, chain id 369, native PLS 18 decimals)
-  std::string pulsexHost;
-  uint16_t    pulsexPort   = 8545;
-  std::string pulsexPrivKeyHex;
-  std::string pulsexAddress;
-  uint64_t    pulsexChainId = 369;
-  std::string pulsexHtlcBinPath;
+  // PULSECHAIN (PulseChain — EVM, chain id 369, native PLS 18 decimals)
+  std::string pulsechainHost;
+  uint16_t    pulsechainPort   = 8545;
+  std::string pulsechainPrivKeyHex;
+  std::string pulsechainAddress;
+  uint64_t    pulsechainChainId = 369;
+  std::string pulsechainHtlcBinPath;
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   std::string zanoDaemonHost;

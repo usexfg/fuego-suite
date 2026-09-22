@@ -25,8 +25,8 @@
 
   // ── BTC ──
   // RPC mode (requires bitcoind with -txindex and a funded wallet):
-  //   "btc_host": "127.0.0.1",
-  //   "btc_port": 8332,
+  //   "btc_rpc_host": "127.0.0.1",
+  //   "btc_rpc_port": 8332,
   //   "btc_rpc_user": "your_rpc_user",
   //   "btc_rpc_pass": "your_rpc_pass",
   //
@@ -39,32 +39,32 @@
   "btc_wif": "replace_with_your_btc_wif",  // P2PKH address: 1... (send BTC here)
 
   // ── LTC ──
-  // "ltc_host": "127.0.0.1",
-  // "ltc_port": 9332,
+  // "ltc_rpc_host": "127.0.0.1",
+  // "ltc_rpc_port": 9332,
   "ltc_mode": "spv",
   "ltc_spv_server_0": "ltc.merkle.io:50002",
   "ltc_spv_min_servers": 1,
   "ltc_wif": "replace_with_your_ltc_wif",  // P2PKH address: L... (send LTC here)
 
   // ── KMD ──
-  // "kmd_host": "127.0.0.1",
-  // "kmd_port": 7771,
+  // "kmd_rpc_host": "127.0.0.1",
+  // "kmd_rpc_port": 7771,
   "kmd_mode": "spv",
   "kmd_spv_server_0": "electrum1.cipig.net:10001",
   "kmd_spv_min_servers": 1,
   "kmd_wif": "replace_with_your_kmd_wif",  // P2PKH address: R... (send KMD here)
 
   // ── BCH ──
-  // "bch_host": "127.0.0.1",
-  // "bch_port": 8332,
+  // "bch_rpc_host": "127.0.0.1",
+  // "bch_rpc_port": 8332,
   "bch_mode": "spv",
   "bch_spv_server_0": "electroncash.org:50002",
   "bch_spv_min_servers": 1,
   "bch_wif": "replace_with_your_bch_wif",  // P2PKH address: 1... (send BCH here)
 
   // ── DCR ── (SPV is read-only; claim/refund needs RPC mode with dcrwallet)
-  // "dcr_host": "127.0.0.1",
-  // "dcr_port": 9108,
+  // "dcr_rpc_host": "127.0.0.1",
+  // "dcr_rpc_port": 9108,
   // "dcr_rpc_user": "your_rpc_user",
   // "dcr_rpc_pass": "your_rpc_pass",
   "dcr_mode": "spv",
@@ -83,81 +83,81 @@
   //
   // ETH — Ethereum Mainnet (chain ID 1)
   "eth_mode": "rpc",
-  "eth_host": "eth.llamarpc.com",           // Free public RPC
-  "eth_port": 443,
+  "eth_rpc_host": "eth.llamarpc.com",           // Free public RPC
+  "eth_rpc_port": 443,
   "eth_wif": "<64_hex_private_key>",
   //
   // ARB — Arbitrum One (chain ID 42161)
   "arb_mode": "rpc",
-  "arb_host": "arb1.arbitrum.io",
-  "arb_port": 443,
+  "arb_rpc_host": "arb1.arbitrum.io",
+  "arb_rpc_port": 443,
   "arb_wif": "<64_hex_private_key>",
   //
   // BASE — Base L2 (chain ID 8453)
   "base_mode": "rpc",
-  "base_host": "mainnet.base.org",
-  "base_port": 443,
+  "base_rpc_host": "mainnet.base.org",
+  "base_rpc_port": 443,
   "base_wif": "<64_hex_private_key>",
   //
   // BSC — BNB Smart Chain (chain ID 56)
   "bsc_mode": "rpc",
-  "bsc_host": "bsc-dataseed.binance.org",
-  "bsc_port": 443,
+  "bsc_rpc_host": "bsc-dataseed.binance.org",
+  "bsc_rpc_port": 443,
   "bsc_wif": "<64_hex_private_key>",
 
   // POLYGON — Polygon PoS (chain ID 137)
   "poly_mode": "rpc",
-  "poly_host": "polygon-rpc.com",
-  "poly_port": 443,
+  "poly_rpc_host": "polygon-rpc.com",
+  "poly_rpc_port": 443,
   "poly_wif": "<64_hex_private_key>",
 
   // ROBINHOOD — Robinhood Chain L1 (chain ID 4663)
-  "rh_host": "rpc.robinhood.vercel.app",
-  "rh_port": 443,
+  "rh_rpc_host": "rpc.robinhood.vercel.app",
+  "rh_rpc_port": 443,
   "rh_priv_key": "<64_hex_private_key>",
   // AVAX — Avalanche C-Chain (chain ID 43114)
-  "avax_host": "api.avax.network",
-  "avax_port": 443,
+  "avax_rpc_host": "api.avax.network",
+  "avax_rpc_port": 443,
   "avax_priv_key": "<64_hex_private_key>",
   // CRO — Cronos (chain ID 25)
-  "cro_host": "evm.cronos.org",
-  "cro_port": 443,
+  "cro_rpc_host": "evm.cronos.org",
+  "cro_rpc_port": 443,
   "cro_priv_key": "<64_hex_private_key>",
   // BOB — Bob BTC rollup (chain ID 60808)
-  "bob_host": "rpc.gobob.xyz",
-  "bob_port": 443,
+  "bob_rpc_host": "rpc.gobob.xyz",
+  "bob_rpc_port": 443,
   "bob_priv_key": "<64_hex_private_key>",
   // UNICHAIN — Unichain (chain ID 130)
-  "uni_host": "sepolia.unichain.org",
-  "uni_port": 443,
+  "uni_rpc_host": "sepolia.unichain.org",
+  "uni_rpc_port": 443,
   "uni_priv_key": "<64_hex_private_key>",
   // PLASMA — Plasma (chain ID 9745)
-  "plasma_host": "rpc.plasma.to",
-  "plasma_port": 443,
+  "plasma_rpc_host": "rpc.plasma.to",
+  "plasma_rpc_port": 443,
   "plasma_priv_key": "<64_hex_private_key>",
-  // PULSEX — PulseChain native PLS (chain ID 369)
-  "pulsex_host": "rpc.pulsechain.com",
-  "pulsex_port": 443,
-  "pulsex_priv_key": "<64_hex_private_key>",
+  // PULSECHAIN — PulseChain native PLS (chain ID 369)
+  "pulsechain_rpc_host": "rpc.pulsechain.com",
+  "pulsechain_rpc_port": 443,
+  "pulsechain_priv_key": "<64_hex_private_key>",
   // MONAD — Monad (chain ID 185)
-  "monad_host": "rpc.testnet.monad.xyz",
-  "monad_port": 443,
+  "monad_rpc_host": "rpc.testnet.monad.xyz",
+  "monad_rpc_port": 443,
   "monad_priv_key": "<64_hex_private_key>",
   // OPTIMISM — Optimism L2 (chain ID 10)
-  "op_host": "mainnet.optimism.io",
-  "op_port": 443,
+  "op_rpc_host": "mainnet.optimism.io",
+  "op_rpc_port": 443,
   "op_priv_key": "<64_hex_private_key>",
   // DOGE — Dogecoin (port 22556)
-  "doge_host": "127.0.0.1",
-  "doge_port": 22556,
+  "doge_rpc_host": "127.0.0.1",
+  "doge_rpc_port": 22556,
   "doge_wif": "<doge_wif>",
   // DASH — Dash (port 9998)
-  "dash_host": "127.0.0.1",
-  "dash_port": 9998,
+  "dash_rpc_host": "127.0.0.1",
+  "dash_rpc_port": 9998,
   "dash_wif": "<dash_wif>",
   // ZEC — Zcash (port 8232)
-  "zec_host": "127.0.0.1",
-  "zec_port": 8232,
+  "zec_rpc_host": "127.0.0.1",
+  "zec_rpc_port": 8232,
   "zec_wif": "<zec_wif>",
   // ZANO
   "zano_daemon_host": "127.0.0.1",
@@ -165,23 +165,23 @@
   "zano_spend_key": "<64_hex>",
   "zano_view_key": "<64_hex>",
   // TON
-  "ton_host": "toncenter.com",
-  "ton_port": 443,
+  "ton_rpc_host": "toncenter.com",
+  "ton_rpc_port": 443,
   "ton_wallet_key": "<ed25519_seed_hex>",
   // SIA
-  "sia_host": "127.0.0.1",
-  "sia_port": 9980,
+  "sia_rpc_host": "127.0.0.1",
+  "sia_rpc_port": 9980,
   "sia_api_password": "<sia_password>",
   // DOT — Polkadot (staged)
-  "dot_host": "rpc.polkadot.io",
-  "dot_port": 443,
+  "dot_rpc_host": "rpc.polkadot.io",
+  "dot_rpc_port": 443,
   "dot_address": "<ss58_address>",
 
   // ── SOL (Solana — Light Client) ───────────────────────────────────────────
   // Connect to any Solana JSON-RPC endpoint. Public endpoints are free.
   "sol_mode": "rpc",
-  "sol_host": "api.mainnet-beta.solana.com",
-  "sol_port": 443,
+  "sol_rpc_host": "api.mainnet-beta.solana.com",
+  "sol_rpc_port": 443,
   "sol_program_id": "65QnMn6ZM6GFpE7XkBPNqpFL2K4wKjJd1FpZvPzGqYJX",
   "sol_keypair_path": "/path/to/your/solana-keypair.json",
 

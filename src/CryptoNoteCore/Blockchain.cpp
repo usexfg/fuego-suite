@@ -3819,6 +3819,12 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             const Crypto::Hash computedOutputsHash = getLimitWithdrawOutputHash(transactions[i].outputs);
             const Crypto::Hash authHash = getLimitWithdrawAuthHash(
                 limitWithdrawOrderId, dep.addressHash, limitWithdrawOutputsHash);
+            // NOTE: these checks must never `break`. The nearest enclosing loop
+            // is the per-transaction loop, so a break would skip the
+            // `if (!isTransactionValid)` rejection below AND leave every later
+            // transaction in the block unvalidated and unconnected while control
+            // still reached pushBlock. Chained `else if` gives the same
+            // short-circuit behavior without escaping the loop.
             if (memcmp(computedAddressHash.data, dep.addressHash.data, sizeof(dep.addressHash.data)) != 0 ||
                 memcmp(computedOutputsHash.data, limitWithdrawOutputsHash.data,
                        sizeof(computedOutputsHash.data)) != 0 ||
@@ -3827,21 +3833,18 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                          << " limit withdraw: ownership proof or replay check failed";
-              break;
-            }
-            if ((dep.side == 1 && m_ammPool.pendingXfg < dep.amount) ||
-                (dep.side == 0 && m_ammPool.pendingHeat < dep.amount)) {
+            } else if ((dep.side == 1 && m_ammPool.pendingXfg < dep.amount) ||
+                       (dep.side == 0 && m_ammPool.pendingHeat < dep.amount)) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                          << " limit withdraw: pending reserve shortfall";
-              break;
             }
             // Expired deposits remain claimable: remaining deposit + fill proceeds.
             // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
             // Exact-payout rule: the transaction must return the full
             // remaining deposit and proceeds. Under-claims would silently
             // destroy unclaimed escrow, so they are rejected as invalid.
-            if (dep.side == 1) {
+            else if (dep.side == 1) {
               if ((uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.amount ||
                   (uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.proceedsHeat) {
                 isTransactionValid = false;
@@ -4108,7 +4111,18 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     }
 
     ++transactionIndex.transaction;
-    pushTransaction(block, tx_id, transactionIndex);
+    // pushTransaction settles HEAT, CD, vault, AMM and limit-order state; a
+    // false return means that settlement aborted part-way. Ignoring it accepted
+    // the block with half-applied state (and let a swap sized past the reserve
+    // create assets with the pool untouched), while the cache-rebuild replay
+    // honours the same return — so the two diverged. Reject the block instead.
+    if (!pushTransaction(block, tx_id, transactionIndex)) {
+      logger(ERROR, BRIGHT_RED) << "Block " << blockHash
+        << " transaction settlement failed: " << tx_id;
+      bvc.m_verification_failed = true;
+      popTransactions(block, minerTransactionHash);
+      return false;
+    }
 
     cumulative_block_size += blob_size;
     fee_summary += fee;
@@ -4117,6 +4131,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
   if (!checkCumulativeBlockSize(blockHash, cumulative_block_size, m_blocks.size())) {
     bvc.m_verification_failed = true;
+    // Every transaction above was already connected by pushTransaction (key
+    // images, output indices, HEAT/CD/vault/AMM state). Without this rollback a
+    // single oversized block left those key images recorded on every node that
+    // evaluated it, making the referenced outputs unspendable network-wide.
+    popTransactions(block, minerTransactionHash);
     return false;
   }
 
@@ -4667,7 +4686,10 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         m_ammPool.pendingHeat -= heatCost;
         m_ammPool.reserveXfg -= (fillXfg + cdFeeXfg);  // 30% of the fee stays with LPs
         m_ammPool.reserveHeat += heatCost;
-        m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
+        // NOTE: feeHeatEq is credited once, by the saturating add above. A
+        // second `+= feeHeatEq` here double-counted the CD share on every
+        // backstop BUY_XFG fill — minted as unbacked HEAT into CD_APY_POOL at
+        // the epoch boundary, and reversed only once by popBlock.
         dep.amount -= heatCost;
         dep.proceedsXfg += fillXfg;
 

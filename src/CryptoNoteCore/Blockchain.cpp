@@ -4056,9 +4056,8 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
             } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-              // Premium = excess XFG burned beyond base mint cost (enforced at
-              // 0.5% by validateMint; minters may burn more voluntarily).
-              // Converted to HEAT and credited to the CD APY pool.
+              // Premium = excess XFG actually burned beyond what's required to mint
+              // the HEAT (recompute actual burn; declared value may understate).
               uint64_t actualBurned = (inAssets.xfg > outAssets.xfg + fee)
                 ? inAssets.xfg - outAssets.xfg - fee : authXfgBurned;
               uint64_t xfgEquivalent = static_cast<uint64_t>(
@@ -4069,18 +4068,11 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
               if (premium > 0) {
                 uint64_t heatPremium = static_cast<uint64_t>(
                     ((uint128_t)premium * mintPrice) / parameters::COIN);
-                if (heatPremium > 0) {
-                  if (m_heatSupply > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "HEAT supply overflow on mint premium";
-                    return false;
-                  }
-                  if (m_heatCdFeePool > UINT64_MAX - heatPremium) {
-                    logger(ERROR, BRIGHT_RED) << "CD fee pool overflow on mint premium";
-                    return false;
-                  }
-                  m_heatSupply   += heatPremium;
-                  m_heatCdFeePool += heatPremium;
+                if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
+                  logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
+                  return false;
                 }
+                m_treasuryHeatReserve += heatPremium;
               }
             }
           }

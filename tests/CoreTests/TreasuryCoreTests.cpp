@@ -687,6 +687,7 @@ void testCdYieldFloor() {
 
   // One lean epoch pays exactly the shortfall on this CD's own principal.
   uint64_t oneLean = currency.calculateCdBonus(P, (uint32_t)ED, (uint32_t)(ED + 1), ci, TERM);
+
   // uint128_t (Common/Int128.h), not the __uint128_t GCC/Clang builtin: MSVC
   // has no such type and only this line used it. Mirrors the same computation
   // in Currency::calculateCdBonus, which this asserts against.

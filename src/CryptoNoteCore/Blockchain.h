@@ -192,6 +192,16 @@ namespace CryptoNote {
     void setBootstrapAmount(uint64_t xfg, uint64_t heat);
     void addSwapFee(uint64_t amount);
     bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
+
+    // Applies the genesis Hearth seed: reserves, the matching protocol-owned LP
+    // share supply, and the bootstrap debt. Called from the constructor AND from
+    // rebuildCache, which zeroes m_ammPool and cannot replay the seed from chain
+    // data — without it a rebuilt node ran with different reserves than one that
+    // never rebuilt. Seeding totalLpShares alongside the reserves is what stops
+    // the first liquidity provider from taking the seed: with a zero share
+    // supply, ammMintLpShares ignores existing reserves and hands 100% of supply
+    // to an arbitrarily small deposit.
+    void applyHearthSeed();
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     const VaultUtxoSet& getVault() const { return m_vault; }
     uint64_t getSwfBalance() const { return m_swfBurnedXfgPendingHeat; }

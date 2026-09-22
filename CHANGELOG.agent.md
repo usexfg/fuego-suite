@@ -89,7 +89,10 @@ Naming:
 | 7 | Disable ARB + ROBINHOOD (Arbitrum block.number domain) | claude-code | 2026-09-22 | DONE |
 | 8 | Fix 52 example-config keys + string-aware comment stripping | claude-code | 2026-09-22 | DONE |
 | 9 | PulseX -> PulseChain rename with legacy fallbacks | claude-code | 2026-09-22 | DONE |
-| 10 | First-LP guard, rebuildCache re-seed, SwapParams field init, HEARTH_MIN_XFG_DEPTH scaling | claude-code | 2026-09-22 | TODO |
+| 10a | SwapParams field initializers (AFK maker path) | claude-code | 2026-09-22 | DONE |
+| 10b | First-LP guard: seed locked LP shares + refuse zero-supply mint against non-empty reserves | claude-code | 2026-09-22 | DONE |
+| 10c | `rebuildCache` re-applies the Hearth seed via shared `applyHearthSeed()` | claude-code | 2026-09-22 | DONE |
+| 10d | `HEARTH_MIN_XFG_DEPTH` COIN scaling | claude-code | 2026-09-22 | BLOCKED (changes the backstop gate for every block; needs the v11-activation answer first) |
 | 11 | Route swaps through `ammGetOutputAmount` + assert `ammValidateInvariant`; mint-oracle redesign | claude-code | 2026-09-22 | TODO |
 
 ### Sign-off

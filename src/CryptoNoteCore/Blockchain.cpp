@@ -512,15 +512,37 @@ private:
                           m_aliasIndex() {
   m_vaultKeys = deriveVaultKeys(m_currency.genesisBlockHash());
   m_vault.setSpendKey(m_vaultKeys.spendKey);
-  // Seed Hearth pool at 1:1 for immediate peg
+  applyHearthSeed();
+} // upgradekit
+
+void CryptoNote::Blockchain::applyHearthSeed() {
+  // Seed the Hearth pool at the 10:1 launch ratio.
   m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
   m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
+
+  // The seed is protocol-owned liquidity, so it must carry a matching share
+  // supply. Previously totalLpShares stayed 0 while the reserves were non-zero,
+  // which sent the first LP add down the `totalShares == 0` branch of
+  // ammMintLpShares — that branch ignores existing reserves, so a deposit as
+  // small as 0.00032 XFG minted 100% of the share supply and a subsequent
+  // LP remove paid out the entire seed pro-rata.
+  //
+  // These shares are deliberately left UNOWNED — locked liquidity, the same
+  // role Uniswap's MIN_LIQUIDITY plays. They are counted in totalLpShares so
+  // later deposits price pro-rata against the real reserves, but they are not
+  // credited to m_protocolLpShares: doing that would make getTreasuryLpValue()
+  // return the full seed immediately, and the bootstrap check
+  // (owned.xfg >= owed.xfg && owned.heat >= owed.heat) would mark the seed
+  // repaid at the first v11 epoch boundary, before any fee revenue existed.
+  m_ammPool.totalLpShares = ammMintLpShares(
+      m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0, 0, 0);
+
   // Bootstrap: protocol owes the seed provider in both legs (XFG and HEAT).
   if (!m_bootstrapRepaid) {
     m_bootstrapXfgOwed = m_ammPool.reserveXfg;
     m_bootstrapHeatOwed = m_ammPool.reserveHeat;
   }
-} // upgradekit
+}
 
 namespace {
 
@@ -955,6 +977,14 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_blockTwapContributions.clear();
     m_blockSwapFeeContributions.clear();
     m_blockEpochDistributions.clear();
+
+    // Re-apply the genesis Hearth seed. It is NOT derivable from chain data —
+    // the constructor sets it — so zeroing m_ammPool above without this left a
+    // rebuilt node with empty reserves while a node that never rebuilt still
+    // held the seed. Beyond diverging on every price, the replay below could not
+    // even reproduce the chain: with poolRate == 0 the AMM swap validation fails
+    // closed and pushTransaction aborts the rebuild.
+    applyHearthSeed();
 
     // Orderbook globals: same initial values as a fresh sync.
     g_orderbookMempool.clear();

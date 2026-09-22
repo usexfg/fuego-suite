@@ -70,6 +70,13 @@ uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
   if (amountA == 0 || amountB == 0) return 0;
 
   if (totalShares == 0) {
+    // Genesis mint only. A zero share supply against NON-ZERO reserves is the
+    // seeded-pool state: this branch derives shares from the deposit alone and
+    // ignores what is already in the pool, so it would hand 100% of the share
+    // supply to an arbitrarily small deposit and let the holder withdraw the
+    // whole reserve pro-rata. Blockchain::applyHearthSeed mints the seed's own
+    // shares so this cannot arise; refuse if it somehow does.
+    if (reserveA != 0 || reserveB != 0) return 0;
     uint128_t product = (uint128_t)amountA * amountB;
     uint64_t shares = isqrt128(product);
     const uint64_t MIN_LIQUIDITY = 1000;

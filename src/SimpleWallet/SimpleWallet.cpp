@@ -3633,7 +3633,9 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       memcpy(preimage + 32, &addr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy — addressHash is sufficient
+    // Empty addresses were intended for privacy, but isValid() currently
+    // requires ownerAddress, so this path fails until private resolution is designed.
+    aliasReg.ownerAddress = "";
     aliasReg.aliasType = aliasType;
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 

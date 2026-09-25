@@ -1605,8 +1605,9 @@ bool core::removeAlias(const std::string& alias) {
 }
 
 bool core::replaceAliasOwnership(const std::string& alias,
-                                 const Crypto::Hash& newAddressHash) {
-  return m_blockchain.replaceAliasOwnership(alias, newAddressHash);
+                                 const Crypto::Hash& newAddressHash,
+                                 const std::string& newOwnerAddress) {
+  return m_blockchain.replaceAliasOwnership(alias, newAddressHash, newOwnerAddress);
 }
 
 core::HeatMetrics core::getHeatMetrics() const {

@@ -93,10 +93,10 @@ Returns all registered aliases. Use sparingly — on a large network this can be
 
 ## Privacy note
 
-Aliases are stored on-chain with the full address in the registration transaction extra. The AliasIndex also stores the address hash (`cn_fast_hash(spendKey||viewKey)`) for ownership verification.
+Alias registration and transfer data are public chain data. The AliasIndex also stores the address hash (`cn_fast_hash(spendKey||viewKey)`) for ownership checks, but that hash does not conceal the address when an RPC response or transaction extra contains it.
 
-- `/get_all_aliases` returns alias names, types, and registration blocks — no addresses.
-- `/get_alias` returns the full address (targeted, single-alias lookup).
-- `/get_alias_by_address` returns the alias name for a given address.
+- `/get_all_aliases` returns every alias and its recorded address.
+- `/get_alias` returns the recorded address for one alias.
+- `/get_alias_by_address` returns the alias and recorded address for a given address.
 
-This design blocks mass surveillance while enabling targeted alias resolution for swaps and transfers. An observer must know the alias name to retrieve its address — one at a time, not in bulk.
+These endpoints are enumerable while the daemon's RPC endpoint is reachable. The alias handlers do not block access in restricted RPC mode. Do not treat alias resolution as private; registration subaddresses and both old and new transfer addresses are visible in public transaction extras.

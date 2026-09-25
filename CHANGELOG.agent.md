@@ -1026,3 +1026,25 @@ No callers of the legacy methods exist in the codebase.
 | Core tests (`core_tests` 147/147) | opencode | 2026-09-16 | PASS |
 | No orphaned `recordLegacyEpochFeeRate` references remain | opencode | 2026-09-16 | PASS |
 | All tasks complete | opencode | 2026-09-16 | PASS |
+
+---
+
+## Alias resolution integrity and Farcaster privacy review
+
+**Started**: 2026-09-23
+**Agent**: Codex
+**Status**: COMPLETE
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Update alias transfer to retain the new owner address and reject a destination that differs from the signed hash | Codex | 2026-09-25 | DONE |
+| 2 | Restore both fields on reorganization, persist rollback history, and rebuild older alias caches | Codex | 2026-09-25 | DONE |
+| 3 | Build, run alias tests, and review the consensus-facing diff | Codex | 2026-09-25 | DONE |
+| 4 | Audit public alias and Farcaster privacy exposure; record wallet-link safeguards | Codex | 2026-09-25 | DONE |
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Alias index test target builds | Codex | 2026-09-25 | PASS |
+| Alias tests pass (including transfer undo serialization) | Codex | 2026-09-25 | PASS |
+| Guardian review | Codex + Fuego Guardian | 2026-09-25 | PASS — no blocking defect; privacy caveats documented |
+| All tasks done | Codex | 2026-09-25 | PASS |

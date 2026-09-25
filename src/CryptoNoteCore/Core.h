@@ -306,7 +306,8 @@ namespace CryptoNote {
     std::vector<AliasEntry> getAllAliases() const;
     bool removeAlias(const std::string& alias);
     bool replaceAliasOwnership(const std::string& alias,
-                               const Crypto::Hash& newAddressHash);
+                               const Crypto::Hash& newAddressHash,
+                               const std::string& newOwnerAddress);
 
     bool is_key_image_spent(const Crypto::KeyImage &key_im);
 

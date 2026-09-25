@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 12  // v12: legacy bond epoch rates removed (commitment_index)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 13  // v13: replay aliases and persist their reorg undo log
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -373,6 +373,29 @@ public:
         }
       }
 
+      // Alias rollback history must survive a clean restart just like the
+      // alias index. Cache v13 forces replay of older caches so previously
+      // transferred aliases also pick up their current resolved address.
+      std::vector<uint32_t> aliasUndoHeights;
+      std::vector<std::vector<AliasUndoOp>> aliasUndoOps;
+      if (s.type() != ISerializer::INPUT) {
+        for (const auto& kv : m_bs.m_aliasUndoLog) {
+          aliasUndoHeights.push_back(kv.first);
+          aliasUndoOps.push_back(kv.second);
+        }
+      }
+      s(aliasUndoHeights, "alias_undo_heights");
+      s(aliasUndoOps, "alias_undo_ops");
+      if (s.type() == ISerializer::INPUT) {
+        if (aliasUndoHeights.size() != aliasUndoOps.size()) {
+          throw std::runtime_error("Invalid alias undo cache");
+        }
+        m_bs.m_aliasUndoLog.clear();
+        for (size_t i = 0; i < aliasUndoHeights.size(); ++i) {
+          m_bs.m_aliasUndoLog.emplace_back(aliasUndoHeights[i], std::move(aliasUndoOps[i]));
+        }
+      }
+
     auto dur = std::chrono::steady_clock::now() - start;
 
     logger(INFO) << "Serialization time: " << std::chrono::duration_cast<std::chrono::milliseconds>(dur).count() << "ms";
@@ -663,9 +686,11 @@ bool CryptoNote::Blockchain::removeAlias(const std::string& alias) {
   return m_aliasIndex.removeAlias(alias);
 }
 
-bool CryptoNote::Blockchain::replaceAliasOwnership(const std::string& alias, const Crypto::Hash& newAddressHash) {
+bool CryptoNote::Blockchain::replaceAliasOwnership(const std::string& alias,
+                                                   const Crypto::Hash& newAddressHash,
+                                                   const std::string& newOwnerAddress) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
-  return m_aliasIndex.replaceAliasOwnership(alias, newAddressHash);
+  return m_aliasIndex.replaceAliasOwnership(alias, newAddressHash, newOwnerAddress);
 }
 
 bool CryptoNote::Blockchain::init(const std::string& config_folder, bool load_existing) {
@@ -954,6 +979,8 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_orderbookSnapshots.clear();
     m_blockTwapContributions.clear();
     m_blockSwapFeeContributions.clear();
+    m_aliasIndex.reset();
+    m_aliasUndoLog.clear();
     m_blockEpochDistributions.clear();
 
     // Orderbook globals: same initial values as a fresh sync.
@@ -5108,11 +5135,15 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
                       memcpy(newprev + 32, &newOwnerAddr.viewPublicKey,  32);
                       Crypto::Hash newAddrHash;
                       Crypto::cn_fast_hash(newprev, 64, newAddrHash);
-                      if (replaceAliasOwnership(aliasXfer.alias, newAddrHash)) {
+                      if (aliasXfer.newAddressHash != newAddrHash) {
+                        logger(WARNING) << "@ Alias transfer rejected: signed destination hash does not match address for @"
+                                        << aliasXfer.alias;
+                      } else if (replaceAliasOwnership(aliasXfer.alias, newAddrHash,
+                                                aliasXfer.newOwnerAddress)) {
                         AliasUndoOp undo;
-                        undo.opType = 2;  // transfer -> undo reverts addressHash
+                        undo.opType = 2;  // transfer -> undo restores prior owner
                         undo.alias = aliasXfer.alias;
-                        undo.priorAddressHash = existingEntry->addressHash;
+                        undo.priorEntry = *existingEntry;
                         aliasUndoOps.push_back(undo);
                         logger(INFO) << "@ Alias transferred in block " << block.height
                                      << ": @" << aliasXfer.alias;

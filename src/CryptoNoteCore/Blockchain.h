@@ -352,9 +352,10 @@ namespace CryptoNote {
     // Release (void/delete) an alias — caller must have verified ownership first
     bool removeAlias(const std::string& alias);
 
-    // Transfer alias ownership to a new address hash
+    // Transfer alias ownership to a new address and its hash
     bool replaceAliasOwnership(const std::string& alias,
-                               const Crypto::Hash& newAddressHash);
+                               const Crypto::Hash& newAddressHash,
+                               const std::string& newOwnerAddress);
 
     void updateCurrentMerkleRoot(const Crypto::Hash& root);
     uint64_t getConsensusPercentageForCurrentRoot() const;

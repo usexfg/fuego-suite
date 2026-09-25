@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
+#include <mutex>
 #include "Blockchain.h"
 #include "DigmMintEngine.h"
 
@@ -630,6 +631,122 @@ bool CryptoNote::Blockchain::checkTransactionSize(size_t blobSize) {
   return true;
 }
 
+bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, std::string& reason) {
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) {
+    return true;  // unparseable extra is caught elsewhere; not a settlement verdict
+  }
+
+  bool heatMint = false, ammSwap = false, marketBuy = false, marketSell = false;
+  bool heatSend = false, treasuryFund = false, lpAdd = false, lpRemove = false;
+  size_t limitDeposits = 0, limitWithdraws = 0;
+  const TransactionExtraLimitDeposit* deposit = nullptr;
+  const TransactionExtraLimitWithdraw* withdraw = nullptr;
+
+  for (const auto& f : fields) {
+    if (f.type() == typeid(TransactionExtraHeatMintAuth))        heatMint = true;
+    else if (f.type() == typeid(TransactionExtraAmmSwapAuth))    ammSwap = true;
+    else if (f.type() == typeid(TransactionExtraMarketBuyAuth))  marketBuy = true;
+    else if (f.type() == typeid(TransactionExtraMarketSellAuth)) marketSell = true;
+    else if (f.type() == typeid(TransactionExtraHeatSendAuth))   heatSend = true;
+    else if (f.type() == typeid(TransactionExtraTreasuryFund))   treasuryFund = true;
+    else if (f.type() == typeid(TransactionExtraLpAddAuth))      lpAdd = true;
+    else if (f.type() == typeid(TransactionExtraLpRemoveAuth))   lpRemove = true;
+    else if (f.type() == typeid(TransactionExtraLimitDeposit)) {
+      ++limitDeposits;
+      deposit = &boost::get<TransactionExtraLimitDeposit>(f);
+    } else if (f.type() == typeid(TransactionExtraLimitWithdraw)) {
+      ++limitWithdraws;
+      withdraw = &boost::get<TransactionExtraLimitWithdraw>(f);
+    }
+  }
+
+  // Mirrors the unvalidated-settlement guard in pushBlock: settlement executes
+  // every tag present while validation only exercises the first matching branch.
+  int settlementClasses = 0;
+  if (heatMint) ++settlementClasses;
+  if (ammSwap) ++settlementClasses;
+  if (marketBuy) ++settlementClasses;
+  if (marketSell) ++settlementClasses;
+  if (heatSend) ++settlementClasses;
+  if (limitDeposits > 0) ++settlementClasses;
+  if (limitWithdraws > 0) ++settlementClasses;
+  if (treasuryFund) ++settlementClasses;
+  if (lpAdd || lpRemove) ++settlementClasses;
+
+  if (lpAdd && lpRemove) {
+    reason = "LP add and remove in one transaction";
+    return false;
+  }
+  if (settlementClasses > 1) {
+    reason = "multiple settlement tag classes";
+    return false;
+  }
+  if (limitDeposits > 1 || limitWithdraws > 1) {
+    reason = "duplicate limit order tags";
+    return false;
+  }
+
+  if (deposit != nullptr) {
+    // Price tick is a pure property of the tag — always safe to reject on.
+    if (deposit->targetPrice == 0 ||
+        deposit->targetPrice % parameters::ORDER_PRICE_TICK != 0) {
+      reason = "limit deposit price violates tick";
+      return false;
+    }
+  }
+
+  if (withdraw != nullptr) {
+    if (withdraw->orderId == NULL_HASH) {
+      reason = "limit withdraw missing orderId";
+      return false;
+    }
+    // try_lock, never a blocking lock. fill_block_template calls this while
+    // holding the mempool lock, whereas pushBlock takes m_blockchain_lock and
+    // then reaches the mempool through saveTransactions — blocking here would
+    // be an AB-BA deadlock. Skipping the stateful part under contention is
+    // safe: this is an advisory pre-check and pushBlock stays authoritative,
+    // so degrading to "allow" can only cost one wasted block, never a false
+    // rejection.
+    std::unique_lock<decltype(m_blockchain_lock)> lk(m_blockchain_lock, std::try_to_lock);
+    if (!lk.owns_lock()) {
+      return true;
+    }
+    auto it = m_limitDeposits.find(withdraw->orderId);
+    // An unknown orderId is NOT rejected here: the matching deposit may simply
+    // not be on chain yet. Only states that can never become valid again are.
+    if (it != m_limitDeposits.end()) {
+      if (it->second.withdrawn) {
+        reason = "limit withdraw: order already withdrawn";
+        return false;
+      }
+      Crypto::Hash computedAddressHash{};
+      uint8_t addressData[sizeof(withdraw->spendPublicKey.data) + sizeof(withdraw->viewPublicKey.data)];
+      memcpy(addressData, withdraw->spendPublicKey.data, sizeof(withdraw->spendPublicKey.data));
+      memcpy(addressData + sizeof(withdraw->spendPublicKey.data),
+             withdraw->viewPublicKey.data, sizeof(withdraw->viewPublicKey.data));
+      Crypto::cn_fast_hash(addressData, sizeof(addressData), computedAddressHash);
+      if (memcmp(computedAddressHash.data, it->second.addressHash.data,
+                 sizeof(it->second.addressHash.data)) != 0) {
+        reason = "limit withdraw: not the order's owner";
+        return false;
+      }
+      if (getLimitWithdrawOutputHash(tx.outputs) != withdraw->outputsHash) {
+        reason = "limit withdraw: outputs hash mismatch";
+        return false;
+      }
+      const Crypto::Hash authHash = getLimitWithdrawAuthHash(
+          withdraw->orderId, it->second.addressHash, withdraw->outputsHash);
+      if (!Crypto::check_signature(authHash, withdraw->spendPublicKey, withdraw->proof)) {
+        reason = "limit withdraw: bad ownership proof";
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 bool CryptoNote::Blockchain::haveTransaction(const Crypto::Hash &id) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
@@ -933,6 +1050,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
     m_rollingPriceWindow.clear();
+    m_blockTwapEvictions.clear();
     m_lastTwapVersion = 0;
     m_cdYieldPool = 0;
     m_cdReserve = 0;
@@ -4093,14 +4211,47 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           // V11+: canonical price scale (HEAT atomics per XFG atomic × COIN).
           // Rolling 8-block TWAP, spot fallback, fail closed on no price.
           uint64_t mintPrice = 0;
-          if (m_rollingPriceWindow.size() >= 2) {
-            mintPrice = getRollingTwap();
-          } else if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
-            mintPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          const char* mintReject = nullptr;
+          if (m_ammPool.isEmpty() || m_ammPool.reserveXfg == 0) {
+            mintReject = "no pool price available";
+          } else if (m_ammPool.reserveXfg <
+                     parameters::HEAT_MINT_MIN_POOL_XFG * parameters::COIN) {
+            // Manipulation cost scales with depth. Below the floor the oracle is
+            // too cheap to push for the price to mean anything.
+            mintReject = "pool below minimum depth for minting";
+          } else if (m_rollingPriceWindow.size() < parameters::HEAT_MINT_TWAP_WINDOW) {
+            // Refuse rather than fall back to spot. The old code minted off spot
+            // whenever the window held fewer than 2 samples, which handed an
+            // attacker an unsmoothed oracle for the first blocks after
+            // activation or any cache rebuild — exactly when it is cheapest.
+            mintReject = "price window not yet full";
+          } else {
+            // Conservative side. Minting more HEAT per XFG is the profitable
+            // direction, so take whichever of the lagging median and the live
+            // spot is LOWER: pushing the median up requires holding the skew
+            // across the window, and it still only pays off if spot is high at
+            // mint time too.
+            const uint64_t twap = getRollingTwap();
+            const uint64_t spot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+            mintPrice = std::min(twap, spot);
+            if (mintPrice == 0) mintReject = "no pool price available";
           }
-          if (mintPrice == 0) {
+          // Even a successfully manipulated price must not be exploitable at
+          // unbounded size. Capped on HEAT minted rather than XFG burned: the
+          // declared burn is only a lower bound on the real one, so capping it
+          // could be bypassed by under-declaring; heatMinted is enforced exact.
+          if (mintReject == nullptr) {
+            const uint64_t maxMint = static_cast<uint64_t>(
+                ((uint128_t)m_ammPool.reserveHeat *
+                 parameters::HEAT_MINT_MAX_OF_RESERVE_BPS) / 10000);
+            if (authHeatMinted > maxMint) {
+              mintReject = "mint exceeds the per-mint share of the pool's HEAT reserve";
+            }
+          }
+          if (mintReject != nullptr) {
             isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
+            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+              << " HEAT mint rejected: " << mintReject;
           } else {
             uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
             if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintPrice,
@@ -4278,9 +4429,15 @@ uint64_t CryptoNote::Blockchain::getPoolTwap() const {
 
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {
   if (m_rollingPriceWindow.empty()) return 0;
-  uint64_t sum = 0;
-  for (uint64_t p : m_rollingPriceWindow) sum += p;
-  return sum / m_rollingPriceWindow.size();
+  // MEDIAN, not mean. With a mean, one extreme sample drags the oracle by
+  // (excess / window) — an attacker who can spike the pool for a single block
+  // moves the mint price every time. A median only moves if more than half the
+  // window is controlled, so the skew has to be held for ~window/2 blocks and
+  // pays arbitrage to the pool the whole time. HEAT_MINT_TWAP_WINDOW is odd so
+  // the median is an actual sample rather than an interpolation.
+  std::vector<uint64_t> sorted(m_rollingPriceWindow.begin(), m_rollingPriceWindow.end());
+  std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
+  return sorted[sorted.size() / 2];
 }
 
 std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
@@ -5842,19 +5999,44 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
       // Activation boundary: discard pre-v11 entries (different scale) so the
       // mint price cannot mix XFG/HEAT-era values with canonical ones.
       m_rollingPriceWindow.clear();
+      m_blockTwapEvictions.clear();
     }
     m_twapAccumulator += (uint128_t)spotPrice;
     m_twapBlockCount++;
     m_blockTwapContributions.push_back((uint128_t)spotPrice);
 
-    // Rolling 8-block TWAP for mint validation (anti-manipulation). Use the
+    // Rolling median window for mint validation (anti-manipulation). Use the
     // live AMM spot, not the user-controlled call-auction clearing price;
     // otherwise tiny crossed orders can manufacture an oracle price and mint
     // unbacked HEAT at that price.
-    m_rollingPriceWindow.push_back(spotPrice);
+    //
+    // The sample is clamped to HEAT_MINT_MAX_SAMPLE_MOVE_BPS of the previous
+    // one before it enters the window. This bounds oracle velocity: however far
+    // the pool is pushed within one block, the oracle can only follow at ~2% per
+    // block, so a spike cannot become mint price even momentarily. Legitimate
+    // moves still track, just over several blocks.
+    uint64_t sample = spotPrice;
+    if (!m_rollingPriceWindow.empty()) {
+      const uint64_t prev = m_rollingPriceWindow.back();
+      const uint64_t maxStep = static_cast<uint64_t>(
+          ((uint128_t)prev * parameters::HEAT_MINT_MAX_SAMPLE_MOVE_BPS) / 10000);
+      if (sample > prev && sample - prev > maxStep) sample = prev + maxStep;
+      else if (sample < prev && prev - sample > maxStep) sample = prev - maxStep;
+    }
+    // Record the evicted head so popBlock can restore the window exactly.
+    // Popping only the tail permanently shrank the window after it had slid.
+    uint64_t evicted = 0;
+    bool didEvict = false;
+    m_rollingPriceWindow.push_back(sample);
     m_lastTwapVersion = block.majorVersion;
-    if (m_rollingPriceWindow.size() > 8) {
+    if (m_rollingPriceWindow.size() > parameters::HEAT_MINT_TWAP_WINDOW) {
+      evicted = m_rollingPriceWindow.front();
+      didEvict = true;
       m_rollingPriceWindow.pop_front();
+    }
+    m_blockTwapEvictions.push_back({height, didEvict, evicted});
+    while (m_blockTwapEvictions.size() > MAX_ROLLBACK_HISTORY) {
+      m_blockTwapEvictions.pop_front();
     }
   }
 
@@ -6177,9 +6359,20 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_blockTwapContributions.pop_back();
   }
 
-  // Reverse rolling 8-block TWAP window
-  if (!m_rollingPriceWindow.empty()) {
-    m_rollingPriceWindow.pop_back();
+  // Reverse the rolling median window, gated on this block's own record.
+  // accumulateTwap pushes a record for exactly the blocks that pushed a sample,
+  // so the record is the only reliable signal. The previous unconditional
+  // pop_back removed an EARLIER block's sample whenever the popped block had
+  // not contributed one (empty pool, pre-v11), and never restored the head it
+  // had evicted, so the window drifted and shrank under reorgs.
+  if (!m_blockTwapEvictions.empty() && m_blockTwapEvictions.back().height == poppedHeight) {
+    if (!m_rollingPriceWindow.empty()) {
+      m_rollingPriceWindow.pop_back();
+    }
+    if (m_blockTwapEvictions.back().didEvict) {
+      m_rollingPriceWindow.push_front(m_blockTwapEvictions.back().value);
+    }
+    m_blockTwapEvictions.pop_back();
   }
 
   m_blocks.pop_back();

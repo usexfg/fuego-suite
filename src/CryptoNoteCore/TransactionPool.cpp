@@ -233,6 +233,21 @@ namespace CryptoNote
       return false;
     }
 
+    // v11+ settlement pre-check. Block validation enforces a large rule set that
+    // the pool historically knew nothing about, so a transaction could be
+    // admitted, selected into a template, and then make the whole block
+    // invalid. This rejects the cases that are certain to fail; the
+    // authoritative check remains in pushBlock.
+    {
+      std::string settlementReason;
+      if (!m_validator.checkTransactionSettlement(tx, settlementReason)) {
+        logger(WARNING, BRIGHT_YELLOW) << "Transaction " << id
+          << " rejected by settlement pre-check: " << settlementReason;
+        tvc.m_verification_failed = true;
+        return false;
+      }
+    }
+
     std::vector<TransactionExtraField> txExtraFields;
     parseTransactionExtra(tx.extra, txExtraFields);
     TransactionExtraTTL ttl;
@@ -601,6 +616,18 @@ namespace CryptoNote
         logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << txd.id << " uses more money than it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount)
                                        << " and will not be included in the block template";
         continue;
+      }
+
+      // Re-check at selection time, not just at admission: the settlement rules
+      // read chain state that moves with every block, so a verdict taken when
+      // the transaction entered the pool can be stale by now.
+      {
+        std::string settlementReason;
+        if (!m_validator.checkTransactionSettlement(txd.tx, settlementReason)) {
+          logger(WARNING, BRIGHT_YELLOW) << "Transaction " << txd.id
+            << " skipped for block template: " << settlementReason;
+          continue;
+        }
       }
 
       size_t blockSizeLimit = (txd.fee == 0) ? median_size : max_total_size;

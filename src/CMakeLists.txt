@@ -547,6 +547,16 @@ target_link_libraries(core_tests PRIVATE
 target_include_directories(core_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src)
 
+# Regression tests for the HEAT / Hearth / CD / swap audit remediation. Builds a
+# real Blockchain + tx_memory_pool, so it exercises the shipped settlement
+# pre-check and Hearth seed rather than a copy of their logic.
+add_executable(audit_regression_tests
+    ../tests/CoreTests/AuditRegressionTests.cpp)
+target_link_libraries(audit_regression_tests PRIVATE
+    CryptoNoteCore Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(audit_regression_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src)
+
 # Orderbook unit tests (Phase 1: matching engine + data structures)
 add_executable(test_orderbook
     ../tests/CoreTests/OrderbookTest.cpp)

@@ -87,7 +87,7 @@ Naming:
 | 5 | `acceptSwap` height check fail-closed | claude-code | 2026-09-22 | DONE |
 | 6 | Break the block-template halt loop: drop the rejected tx instead of re-pooling it | claude-code | 2026-09-22 | DONE |
 | 6b | Remove the mint-premium credit from the validation loop (unreversed, survived block rejection) | claude-code | 2026-09-22 | DONE |
-| 6c | Optional: pre-check v11 rules at mempool admission as an early reject | claude-code | 2026-09-22 | TODO (optimisation — see note) |
+| 6c | Settlement pre-check at mempool admission AND block-template selection | claude-code | 2026-09-22 | DONE |
 | 7 | Disable ARB + ROBINHOOD (Arbitrum block.number domain) | claude-code | 2026-09-22 | DONE |
 | 8 | Fix 52 example-config keys + string-aware comment stripping | claude-code | 2026-09-22 | DONE |
 | 9 | PulseX -> PulseChain rename with legacy fallbacks | claude-code | 2026-09-22 | DONE |
@@ -96,16 +96,30 @@ Naming:
 | 10c | `rebuildCache` re-applies the Hearth seed via shared `applyHearthSeed()` | claude-code | 2026-09-22 | DONE |
 | 10d | `HEARTH_MIN_XFG_DEPTH` COIN scaling | claude-code | 2026-09-22 | DONE |
 | 11 | Route AMM swaps and the limit-order backstop through `ammGetOutputAmount`/`ammGetInputAmount`; assert `ammValidateInvariant` at every reserve mutation | claude-code | 2026-09-22 | DONE |
-| 11b | Mint-oracle redesign (8-block TWAP of a now-curved pool) | claude-code | 2026-09-22 | TODO (design decision — see note) |
-| 11 | Route swaps through `ammGetOutputAmount` + assert `ammValidateInvariant`; mint-oracle redesign | claude-code | 2026-09-22 | TODO |
+| 11b | Mint-oracle hardening: median window, velocity clamp, conservative side, depth floor, per-mint HEAT cap | claude-code | 2026-09-22 | DONE |
+| 11c | Exact popBlock restore of the rolling price window, gated on a per-block record (was shrinking, and popped an earlier block's sample when the popped block had none) | claude-code | 2026-09-25 | DONE |
+| 11d | Per-mint cap moved from declared XFG burn to HEAT minted — the declared burn is only a lower bound, so capping it was bypassable | claude-code | 2026-09-25 | DONE |
 
 ### Sign-off
 | Check | Status |
 |-------|--------|
 | Build compiles: `CryptoNoteCore` (Linux, GCC 13.3, Boost 1.83) | PASS 2026-09-22 |
 | Build compiles: `SwapDaemonLib` | PASS 2026-09-22 |
-| Tests: `test_hearth_amm` (31), `test_orderbook_auction` (57), `test_orderbook_phase3`, `test_orderbook_phase5` | PASS 2026-09-22 |
-| All tasks done | NO (6c, 11b outstanding) |
+| Tests: `test_hearth_amm` (31), `test_orderbook_auction` (57), `test_orderbook_phase3`, `test_orderbook_phase5` | PASS 2026-09-25 |
+| Tests: `core_tests` — Treasury/Core suite (147) | PASS 2026-09-25 |
+| Tests: `audit_regression_tests` — new, 40 checks against a real Blockchain + tx_memory_pool | PASS 2026-09-25 |
+| Mutation check: reverting the zero-supply LP guard, and separately the seed LP shares, each turns `audit_regression_tests` red | PASS 2026-09-25 |
+| All tasks done | YES |
+
+> **Coverage gap, stated plainly.** The Chaingen integration suite
+> (`tests/CoreTests/Chaingen*.cpp`, `BlockValidation.cpp`, `DoubleSpend.cpp`, …)
+> is not wired into any build target — even with `BUILD_TESTS=ON`, only
+> `alias_index_tests` is built — so no automated test pushes a block through
+> `pushBlock`. The loop changes here (the `break` fix, honouring
+> `pushTransaction`'s return, `popTransactions` on the size rejection, and
+> dropping the rejected transaction) are verified by build, review and the
+> suites above, not by a block-level test. Wiring Chaingen back in is the
+> highest-value follow-up.
 
 > The AMM suites above previously exercised `ammGetOutputAmount`,
 > `ammGetInputAmount`, `ammValidateSwap` and `ammValidateInvariant` as dead

@@ -85,6 +85,7 @@ namespace CryptoNote {
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) override;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, std::string& reason) override;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);
@@ -152,8 +153,10 @@ namespace CryptoNote {
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
 
-    // Rolling 8-block TWAP for HEAT mint price validation.
-    // Simple average of the last 8 blocks' hearthPoolRatio.
+    // Rolling MEDIAN of the last HEAT_MINT_TWAP_WINDOW pool spot samples, used
+    // as the HEAT mint price reference. Median rather than mean so a single
+    // manipulated block cannot drag the oracle; samples are velocity-clamped
+    // before they enter the window (see accumulateTwap).
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
 
@@ -514,6 +517,11 @@ namespace CryptoNote {
 
     // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
     std::deque<uint64_t> m_rollingPriceWindow;
+    // Per-block record of the sample evicted from the head of the rolling
+    // window, so popBlock can restore it. Without this, popping only the tail
+    // shrank the window permanently once it had started sliding.
+    struct TwapEviction { uint32_t height; bool didEvict; uint64_t value; };
+    std::deque<TwapEviction> m_blockTwapEvictions;
     uint8_t m_lastTwapVersion = 0;
 
     // CD yield state

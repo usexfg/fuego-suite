@@ -258,6 +258,34 @@ namespace CryptoNote
         const uint64_t HEAT_MINT_MIN_HEAT = 1000000;                // 0.1 HEAT minimum mint
         const uint64_t HEAT_MINT_PREMIUM_BPS = 0;                      // mint premium disabled for launch (re-enable later if needed)
 
+        // ── HEAT mint oracle hardening ──
+        // The mint price comes from the Hearth pool, so anyone who can move the
+        // pool can move the amount of HEAT a burn produces. Constant-product
+        // pricing makes moving it cost real slippage rather than a flat fee, but
+        // a shallow pool is still cheap to push. These bound what a push buys.
+        //
+        // Odd window so the median is exact. 31 blocks x 480s ~= 4.1 hours: an
+        // attacker must hold the skew across the whole window, paying arbitrage
+        // to the pool every block, not just land one block.
+        const uint64_t HEAT_MINT_TWAP_WINDOW = 31;
+        // Per-block clamp on how far the sample fed to the oracle may move from
+        // the previous sample. Bounds oracle velocity to ~2%/block (~15%/hour)
+        // regardless of what happens to the pool in a single block, so a spike
+        // cannot be converted into mint price even momentarily.
+        const uint64_t HEAT_MINT_MAX_SAMPLE_MOVE_BPS = 200;
+        // Minimum pool depth (whole XFG) before minting is allowed at all.
+        // Manipulation cost scales with depth; below this the oracle is too
+        // cheap to move to be worth trusting. Raise as reserves grow.
+        const uint64_t HEAT_MINT_MIN_POOL_XFG = 2500;
+        // Cap the HEAT a single mint may create at this share of the pool's
+        // HEAT reserve, so even a successfully manipulated price cannot be
+        // exploited at unbounded size. Deliberately capped on HEAT MINTED, not
+        // XFG burned: validateMintAuth prices off the ACTUAL burn and requires
+        // the declared burn only to be a lower bound, so a cap on the declared
+        // figure is bypassed by under-declaring. heatMinted is enforced equal
+        // to the real output, so it cannot be.
+        const uint64_t HEAT_MINT_MAX_OF_RESERVE_BPS = 500;  // 5%
+
         // HEAT output bill denominations (descending, in atomic units).
         // Every HEAT mint decomposes into these standard sizes so outputs pool
         // into shared per-amount decoy pools for ring-signature privacy.

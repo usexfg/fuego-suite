@@ -19,6 +19,8 @@
 
 #include "CryptoNoteBasic.h"
 
+#include <string>
+
 namespace CryptoNote {
 
   struct BlockInfo {
@@ -47,6 +49,18 @@ namespace CryptoNote {
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) = 0;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) = 0;
     virtual bool checkTransactionSize(size_t blobSize) = 0;
+
+    // Pre-check of the v11+ settlement tags for mempool admission and block
+    // template selection. Returns false, with a reason, only when the
+    // transaction is CERTAIN to be rejected by block validation.
+    //
+    // A true return is not a guarantee of validity — pushBlock remains
+    // authoritative. This deliberately implements only checks with no false
+    // positives: rejecting a transaction that would in fact be valid is
+    // censorship. In particular it does NOT mirror the AMM rate checks, whose
+    // inputs (pool reserves) move with every block, so a verdict taken at
+    // admission would be stale by the time a template is built.
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, std::string& reason) = 0;
   };
 
 }

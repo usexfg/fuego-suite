@@ -1,5 +1,11 @@
 # swapxfg — Fuego Cross-Chain Swap Terminal
 
+> **Maintenance status: frozen compatibility UI.** Do not add new chain
+> definitions or swap protocol behavior here. `xfg-swapd` owns execution and
+> the dashboard consumes its `list_chains`/status catalog for the human-facing
+> workflow. Keep this TUI buildable until dashboard parity is proven, then
+> remove it in a separate migration.
+
 Unified TUI for atomic swaps using adaptor signatures on the XFG side.
 
 ## Features

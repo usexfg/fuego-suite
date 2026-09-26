@@ -4,6 +4,83 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## PR #65 follow-up: executable swap pairs, configuration, and refund recovery
+
+**Branch/Feature**: codex/pr65-recovered
+**Started**: 2026-09-22
+**Agent**: Codex (GPT-6) with Fuego Guardian reviewers
+**Status**: IN PROGRESS — fee accounting and live fund-handling gates remain
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify Qodo and residual claims against merged PR #65 | Codex + Fuego Guardian reviewers | 2026-09-22 | DONE |
+| 2 | Align dashboard pair mapping and gate staged pair relay/order admission | Codex / offer-pairs reviewer | 2026-09-22 | DONE |
+| 3 | Fix PulseChain example keys and validate GLEEC HTLC readiness for new swaps | Codex / config reviewer | 2026-09-22 | DONE |
+| 4 | Gate local offer publication and new swaps on executable, reachable clients | Codex (GPT-6) | 2026-09-23 | DONE |
+| 5 | Repair SPV claim recording and independent per-leg refund recovery | Codex (GPT-6) | 2026-09-25 | DONE — source paths and focused SPV tests |
+| 6 | Bound malformed P2P taker identities and verify affected paths | Codex (GPT-6) | 2026-09-23 | DONE |
+| 7 | Apply PulseChain and CI naming convention fixes | Codex (GPT-6) | 2026-09-23 | DONE |
+| 8 | Resolve confirmed counterparty claim, XFG claim, and refund race outcomes before release | Codex / Fuego Guardian reviewer | 2026-09-25 | IN PROGRESS — direct path hardened; testnet race exercise pending |
+| 9 | Make atomic-swap fee accounting durable and idempotent | Codex (GPT-6) | 2026-09-25 | TODO — server RPC cannot safely retry after uncertain result |
+| 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-25 | IN PROGRESS — managed worktree saved; split/review before merge |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles | PASS — recovered checkout `xfg-swapd` links, 2026-09-25 |
+| Focused tests pass | PASS — swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2, 2026-09-25; earlier orderbook 98/98 and BCH/KMD tests |
+| All tasks done | PENDING — fee accounting, testnet races, and scoped integration; see `PR65_FOLLOWUP_ADVERSARIAL_REVIEW.md` |
+
+`graphify update .` was attempted on 2026-09-23 but failed inside the installed
+`hyppo` dependency (`cannot cache function '_center_distmat': no locator
+available`). No graph update was signed off.
+
+## Dashboard Parity, Network Profiles, and Testnet Safety
+
+**Branch/Feature**: `codex/evm-dropin-batch`
+**Started**: 2026-09-24
+**Agent**: Codex
+**Status**: IN PROGRESS
+
+The legacy SwapXFG TUI remains frozen but present. It will not be removed until
+both browser surfaces have live-data and execution parity, recovery workflows
+remain reachable, and the testnet integration gates below pass.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 0 | Replace the 64-bit counterparty-amount ceiling with versioned uint256 atomics, string-safe APIs, full-width EVM ABI/RLP, and non-EVM overflow rejection | Codex | 2026-09-24 | OFFLINE IMPLEMENTED; INTEGRATION REVIEW PENDING |
+| 1 | Add explicit mainnet/testnet/dev profiles, isolated ports/data, service-reported network identity, dashboard badge, and fail-closed write gating | Codex | 2026-09-24 | IN PROGRESS |
+| 2 | Remove Hearth mock/random fallbacks and expose honest live, stale, unavailable, and error states | Codex | 2026-09-24 | TODO |
+| 3 | Add quote-first Hearth execution, slippage/min-output protection, correct limit-order units/expiry, and order management | Codex | 2026-09-24 | TODO |
+| 4 | Complete SwapXFG signed order placement/cancel/my-orders and real soft-offer fill/status flows without weakening recovery | Codex | 2026-09-24 | TODO |
+| 5 | Add deterministic fixtures, unit/UI tests, testnet integrations, and mainnet read-only smoke checks | Codex | 2026-09-24 | TODO |
+| 6 | Remove the frozen TUI only after every dashboard acceptance gate passes | Codex | 2026-09-24 | BLOCKED ON GATES |
+
+### Sign-Off
+
+The user confirmed no prior swaps exist; there is no deployed record set to
+migrate. The v2 new-swap wire still rejects amount/version mismatch before
+funding. Offline validation on the isolated worktree: `xfg-swapd` and
+`SwapDaemonLib` build; ETH protocol 21/21, state-machine SPV 10/10, audit
+regressions 36/36, production gates 19/19, pre-sig 9/9, pair catalog,
+generic EVM config, BSC/Polygon, and price-oracle tests pass. Dashboard Go
+tests and JS syntax check pass. This is not funded-chain validation and has
+not yet been integrated into the dirty main xfgo checkout.
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Network/profile mismatch tests | — | — | PENDING |
+| Hearth live-data and transaction-safety tests | — | — | PENDING |
+| SwapXFG order/fill/recovery tests | — | — | PENDING |
+| Testnet integration suite | — | — | PENDING |
+| Mainnet read-only smoke checks | — | — | PENDING |
+| Dashboard parity accepted; TUI removal authorized | — | — | NO |
+
+---
+
 ## Order-book pair cap raised to the full enum; PulseX renamed to PulseChain; GLEEC re-enabled
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

@@ -119,6 +119,11 @@ static void appendU32LE(std::vector<uint8_t>& buf, uint32_t v) {
   buf.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
 }
 
+static void appendU64LE(std::vector<uint8_t>& buf, uint64_t v) {
+  for (unsigned i = 0; i < 8; ++i)
+    buf.push_back(static_cast<uint8_t>((v >> (8 * i)) & 0xff));
+}
+
 template <typename T>
 static void appendPod(std::vector<uint8_t>& buf, const T& v) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
@@ -135,6 +140,13 @@ Crypto::Hash peerMessageDigest(const PeerMessage& msg) {
   switch (msg.type) {
     case PeerMessageType::KEY_EXCHANGE:
       appendPod(buf, msg.keyExchange.swapPubKey);
+      if (msg.keyExchange.amountProtocolVersion == 2) {
+        buf.push_back(2);
+        buf.push_back(static_cast<uint8_t>(msg.keyExchange.pair));
+        appendU64LE(buf, msg.keyExchange.xfgAmount);
+        const auto amountBytes = atomicAmountToBigEndian(msg.keyExchange.ctrAmount);
+        buf.insert(buf.end(), amountBytes.begin(), amountBytes.end());
+      }
       break;
     case PeerMessageType::ADAPTOR_EXCHANGE:
       appendPod(buf, msg.adaptorExchange.adaptorPoint);
@@ -244,6 +256,12 @@ std::string serializePeerMessage(const PeerMessage& msg) {
   switch (msg.type) {
     case PeerMessageType::KEY_EXCHANGE:
       payload.insert("swapPubKey", podHex(msg.keyExchange.swapPubKey));
+      if (msg.keyExchange.amountProtocolVersion == 2) {
+        payload.insert("amountProtocolVersion", static_cast<int64_t>(2));
+        payload.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(msg.keyExchange.pair)));
+        payload.insert("xfgAmountAtomic", std::to_string(msg.keyExchange.xfgAmount));
+        payload.insert("ctrAmountAtomic", atomicAmountToString(msg.keyExchange.ctrAmount));
+      }
       break;
 
     case PeerMessageType::ADAPTOR_EXCHANGE:
@@ -333,6 +351,24 @@ bool deserializePeerMessage(const std::string& json, PeerMessage& msg) {
       case PeerMessageType::KEY_EXCHANGE:
         if (!hexPod(p("swapPubKey").getString(), msg.keyExchange.swapPubKey))
           return false;
+        if (p.contains("amountProtocolVersion")) {
+          if (!p("amountProtocolVersion").isInteger() ||
+              p("amountProtocolVersion").getInteger() != 2 ||
+              !p.contains("pair") || !p("pair").isInteger() ||
+              !p.contains("xfgAmountAtomic") || !p.contains("ctrAmountAtomic"))
+            return false;
+          const int64_t pairId = p("pair").getInteger();
+          if (pairId < 0 || pairId > 255 || !isKnownSwapPair(static_cast<uint8_t>(pairId)))
+            return false;
+          msg.keyExchange.amountProtocolVersion = 2;
+          msg.keyExchange.pair = static_cast<SwapPair>(pairId);
+          const std::string xfgText = p("xfgAmountAtomic").getString();
+          AtomicAmount xfgWide = 0;
+          if (!parseAtomicAmount(xfgText, xfgWide) ||
+              !atomicAmountToUint64(xfgWide, msg.keyExchange.xfgAmount) ||
+              !parseAtomicAmount(p("ctrAmountAtomic").getString(), msg.keyExchange.ctrAmount))
+            return false;
+        }
         break;
 
       case PeerMessageType::ADAPTOR_EXCHANGE:

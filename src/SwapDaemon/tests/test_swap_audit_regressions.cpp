@@ -68,10 +68,15 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   SecpSchnorrSig sig{};
   CHECK(secp_complete_schnorr_sig(sk, k, msg, sig), "counterparty completes the signature");
 
-  // Correct point: extraction succeeds and returns exactly t.
+  // Correct point: extraction succeeds and returns the scalar in canonical
+  // secp256k1 big-endian form (the byte-reverse of CryptoNote's LE storage).
+  SecretKey t_rev = t;
+  std::reverse(reinterpret_cast<uint8_t*>(&t_rev),
+               reinterpret_cast<uint8_t*>(&t_rev) + 32);
   SecretKey got{};
   CHECK(secp_adaptor_extract(presig, sig, T, got), "extract succeeds for the published T");
-  CHECK(std::memcmp(&got, &t, sizeof(t)) == 0, "recovered scalar equals t");
+  CHECK(std::memcmp(&got, &t_rev, sizeof(t_rev)) == 0,
+        "recovered scalar equals rev(t) in the secp domain");
 
   // Wrong point: the scalar is non-zero and would have passed the old check,
   // but it does not open T', so extraction must refuse it.
@@ -86,8 +91,6 @@ static void testAdaptorExtractBindsToPublishedPoint() {
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   SecretKey legacy{};
   CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract recovers adaptor scalar");
-  SecretKey t_rev = t;
-  std::reverse(reinterpret_cast<uint8_t*>(&t_rev), reinterpret_cast<uint8_t*>(&t_rev) + 32);
   CHECK(std::memcmp(&legacy, &t_rev, sizeof(t_rev)) == 0, "3-arg result equals rev(t) (secp BE domain)");
 #pragma GCC diagnostic pop
 
@@ -103,12 +106,6 @@ static void testAdaptorExtractBindsToPublishedPoint() {
 
 // ── AUDIT 6.1 ────────────────────────────────────────────────────────────────
 
-// Mirrors the derivation in EthChainClient::verifyLock.
-static uint64_t runwayBlocksFor(uint64_t msPer) {
-  uint64_t runway = (msPer > 0) ? (3600ULL * 1000ULL) / msPer : 300;
-  return std::max<uint64_t>(runway, 30);
-}
-
 static void testLockTimeoutFloor() {
   std::cout << "\nAUDIT 6.1: lock timeout floor leaves real claim runway\n";
 
@@ -122,20 +119,20 @@ static void testLockTimeoutFloor() {
 
   bool allCoverAnHour = true, allAtLeastFloor = true;
   for (auto p : pairs) {
-    uint64_t msPer = XfgSwap::msPerBlock(p);
-    if (msPer == 0) { allCoverAnHour = false; continue; }
-    uint64_t runway = runwayBlocksFor(msPer);
-    if (runway * msPer < 3600ULL * 1000ULL) allCoverAnHour = false;
+    uint64_t minMsPer = XfgSwap::minMsPerBlock(p);
+    if (minMsPer == 0) { allCoverAnHour = false; continue; }
+    uint64_t runway = XfgSwap::claimRunwayBlocks(p);
+    if (runway * minMsPer < 3600ULL * 1000ULL) allCoverAnHour = false;
     if (runway < 30) allAtLeastFloor = false;
   }
   CHECK(allCoverAnHour, "every chain's runway spans at least one hour of blocks");
   CHECK(allAtLeastFloor, "runway never drops below the 30-block floor");
 
   // The check itself: a lock expiring at or before tip+confirmations+runway is
-  // rejected; one beyond it is accepted. minTimeoutBlock == 0 disables the test,
-  // which is the fail-open path used when the chain tip is unavailable.
+  // rejected; one beyond it is accepted. EthChainClient now refuses the
+  // verification entirely when the chain tip cannot be queried.
   const uint64_t tip = 1'000'000, conf = 6;
-  const uint64_t runway = runwayBlocksFor(XfgSwap::msPerBlock(XfgSwap::SwapPair::ETH));
+  const uint64_t runway = XfgSwap::claimRunwayBlocks(XfgSwap::SwapPair::ETH);
   const uint64_t minTimeoutBlock = tip + conf + runway;
 
   auto rejected = [&](uint64_t onChainTimeout, uint64_t minBlock) {
@@ -147,7 +144,6 @@ static void testLockTimeoutFloor() {
   CHECK(rejected(minTimeoutBlock - 1, minTimeoutBlock), "one block short is rejected");
   CHECK(!rejected(minTimeoutBlock, minTimeoutBlock), "exactly the floor is accepted");
   CHECK(!rejected(minTimeoutBlock + 1000, minTimeoutBlock), "a generous timeout is accepted");
-  CHECK(!rejected(tip + 1, 0), "minTimeoutBlock == 0 skips the check (tip unavailable)");
 }
 
 

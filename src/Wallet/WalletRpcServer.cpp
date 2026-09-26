@@ -861,6 +861,7 @@ bool wallet_rpc_server::on_get_transfers(const wallet_rpc::COMMAND_RPC_GET_TRANS
 
 bool wallet_rpc_server::on_get_height(const wallet_rpc::COMMAND_RPC_GET_HEIGHT::request& req, wallet_rpc::COMMAND_RPC_GET_HEIGHT::response& res) {
   res.height = m_node.getLastLocalBlockHeight();
+  res.network = m_currency.isTestnet() ? "testnet" : "mainnet";
   return true;
 }
 

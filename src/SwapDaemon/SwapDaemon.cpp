@@ -23,6 +23,7 @@
 #include "../Treasury/VaultKeys.h"
 #include "SwapPeerProtocol.h"
 #include "Common/StringTools.h"
+#include "Common/JsonValue.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionExtra.h"
@@ -52,7 +53,7 @@
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
-#include "PulseChain/PulseChainClient.h"
+#include "PulseChain/pulse_chain_client.h"
 #include "Unichain/UnichainChainClient.h"
 #include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -87,6 +88,7 @@
 #include <stdexcept>
 #include <thread>
 #include <chrono>
+#include <limits>
 #include "../Logging/ILogger.h"
 #include "Ethereum/EthRpcClient.h"
 
@@ -210,10 +212,26 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
 
 SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
                         const std::string& dataDir, Logging::ILogger& logger,
-                        const ChainClientConfig& chainCfg)
+                        const std::string& network,
+                        const std::string& profile)
   : m_rpc(fuegodHost, fuegodPort)
   , m_db(dataDir)
-  , m_logger(logger, "SwapDaemon") {
+  , m_logger(logger, "SwapDaemon")
+  , m_network(network)
+  , m_profile(profile) {
+  // Chain clients not configured — processSwap() will warn if needed.
+}
+
+SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
+                        const std::string& dataDir, Logging::ILogger& logger,
+                        const ChainClientConfig& chainCfg,
+                        const std::string& network,
+                        const std::string& profile)
+  : m_rpc(fuegodHost, fuegodPort)
+  , m_db(dataDir)
+  , m_logger(logger, "SwapDaemon")
+  , m_network(network)
+  , m_profile(profile) {
   if (!chainCfg.bchHost.empty() || chainCfg.bchMode == "spv") {
     if (chainCfg.bchMode == "spv" && !chainCfg.bchSpvServers.empty()) {
       // SPV mode: create ElectrumSpvClient with BCH checkpoints
@@ -444,14 +462,14 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
   }
   // PULSECHAIN (native PLS — EVM, chain id 369)
-  if (!chainCfg.pulsechainHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechainHost, chainCfg.pulsechainPort,
-        chainCfg.pulsechainPrivKeyHex, chainCfg.pulsechainAddress, chainCfg.pulsechainChainId);
-    applyHtlcConfig(*rpc, chainCfg.pulsechainHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
+  if (!chainCfg.pulsechain_host.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechain_host, chainCfg.pulsechain_port,
+        chainCfg.pulsechain_priv_key_hex, chainCfg.pulsechain_address, chainCfg.pulsechain_chain_id);
+    applyHtlcConfig(*rpc, chainCfg.pulsechain_htlc_bin_path, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
     applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
     m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
-        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechainAddress));
-    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechainHost << ":" << chainCfg.pulsechainPort;
+        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechain_address));
+    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechain_host << ":" << chainCfg.pulsechain_port;
   }
   // MONAD
   if (!chainCfg.monadHost.empty()) {
@@ -473,6 +491,40 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
         std::make_unique<OptimismChainClient>(std::move(rpc), chainCfg.opAddress));
     m_logger(Logging::INFO) << "OPTIMISM chain client registered: " << chainCfg.opHost << ":" << chainCfg.opPort;
   }
+
+  // Data-driven EVM registrations. These entries deliberately run after the
+  // legacy flat fields so a catalog-keyed entry supersedes an old per-chain
+  // stanza without adding another subclass or another field cluster.
+  for (const auto& evmCfg : chainCfg.evmChains) {
+    const auto* descriptor = swapPairDescriptor(evmCfg.pair);
+    if (!descriptor || descriptor->family != SwapChainFamily::EVM ||
+        descriptor->support == SwapPairSupport::STAGED ||
+        (descriptor->txEnvelope != EvmTxEnvelope::LEGACY &&
+         descriptor->txEnvelope != EvmTxEnvelope::EIP1559)) {
+      m_logger(Logging::WARNING) << "Ignoring non-executable generic EVM entry";
+      continue;
+    }
+
+    const EthTxType txType = descriptor->txEnvelope == EvmTxEnvelope::LEGACY
+        ? EthTxType::Legacy : EthTxType::Eip1559;
+    std::unique_ptr<EthRpcClient> rpc;
+    if (!evmCfg.privateKeyHex.empty() && !evmCfg.address.empty()) {
+      rpc = std::make_unique<EthRpcClient>(
+          evmCfg.rpcUrl, 0, evmCfg.privateKeyHex, evmCfg.address,
+          evmCfg.chainId, txType);
+    } else {
+      rpc = std::make_unique<EthRpcClient>(evmCfg.rpcUrl, 0);
+    }
+    applyHtlcConfig(*rpc, evmCfg.htlcBinPath, evmCfg.htlcRegistry,
+                    m_logger, descriptor->symbol);
+    applyPtlcConfig(*rpc, evmCfg.ptlcRegistry, m_logger, descriptor->symbol);
+    m_chainRegistry.registerChain(evmCfg.pair,
+        std::make_unique<EthChainClient>(std::move(rpc), evmCfg.address,
+                                         descriptor->symbol));
+    m_logger(Logging::INFO) << descriptor->symbol
+      << " generic EVM client registered (chainId=" << evmCfg.chainId << ")";
+  }
+
   // DOGE
   if (!chainCfg.dogeHost.empty()) {
     auto rpc = std::make_unique<DogeRpcClient>(chainCfg.dogeHost, chainCfg.dogePort, chainCfg.dogeRpcUser, chainCfg.dogeRpcPass);
@@ -776,7 +828,7 @@ void SwapDaemon::recordCompletedTrade(const SwapStateMachine& sm) {
   double rate = 0.0;
   double div = PriceOracle::ctrDivisor(p.pair);
   if (div > 0.0 && p.ctrAmount > 0) {
-    double wholeCtr = static_cast<double>(p.ctrAmount) / div;
+    double wholeCtr = p.ctrAmount.convert_to<double>() / div;
     if (wholeCtr > 0.0)
       rate = (static_cast<double>(p.xfgAmount) / 1e7) / wholeCtr;
   }
@@ -795,7 +847,9 @@ void SwapDaemon::recordCompletedTrade(const SwapStateMachine& sm) {
     CryptoNote::SwapTradeRecord trade;
     trade.pair = static_cast<uint8_t>(p.pair);
     trade.xfgAmount = p.xfgAmount;
-    trade.ctrAmount = p.ctrAmount;
+    trade.ctrAmountAtomic = atomicAmountToString(p.ctrAmount);
+    if (!atomicAmountToUint64(p.ctrAmount, trade.ctrAmount))
+      trade.ctrAmount = 0; // legacy numeric field is never truncated
     trade.rate = rate;
     trade.timestamp = static_cast<uint64_t>(local.timestamp);
     trade.blockHeight = 0;
@@ -886,7 +940,131 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
+SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool refresh) {
+  ChainReadiness result;
+  const auto* descriptor = swapPairDescriptor(pair);
+  if (!descriptor) {
+    result.error = "unknown pair id";
+    return result;
+  }
+  if (!CryptoNote::SwapOfferRelay::isExecutablePair(descriptor->id)) {
+    result.error = descriptor->support == SwapPairSupport::STAGED
+        ? "implementation is staged" : "pair is not executable";
+    return result;
+  }
+
+  IChainClient* client = m_chainRegistry.getClient(pair);
+  if (!client) {
+    result.error = "chain client is not configured";
+    return result;
+  }
+  result.configured = true;
+
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(m_readinessMutex);
+    auto it = m_readinessCache.find(pair);
+    if (!refresh && it != m_readinessCache.end() &&
+        now - it->second.checkedAt < std::chrono::seconds(60))
+      return it->second.value;
+  }
+
+  result.error = client->readinessError();
+  if (result.error.empty() && descriptor->family != SwapChainFamily::EVM) {
+    if (!client->isReadyForNewSwap())
+      result.error = "chain client is not ready for new swaps";
+    else {
+      uint64_t height = 0;
+      if (!client->getCurrentHeight(height) || height == 0)
+        result.error = "chain height query failed";
+    }
+  }
+  result.ready = result.error.empty();
+  {
+    std::lock_guard<std::mutex> lock(m_readinessMutex);
+    m_readinessCache[pair] = {result, now};
+  }
+  return result;
+}
+
+bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason, bool refresh) {
+  const ChainReadiness readiness = getChainReadiness(pair, refresh);
+  if (reason) *reason = readiness.error;
+  return readiness.ready;
+}
+
+bool SwapDaemon::hasConfirmedCounterpartyClaim(const SwapParams& params,
+                                               IChainClient* client) {
+  if (!client) return false;
+  if (params.role == SwapRole::ALICE && client->hasConfirmedClaim(params))
+    return true;
+  if (params.ctrClaimTxId.empty()) return false;
+  ChainClientResult status;
+  client->getTransactionDetails(params.ctrClaimTxId, status);
+  const uint32_t required = params.requiredConfirmations
+      ? params.requiredConfirmations : 6;
+  return status.success && status.confirmed &&
+         status.confirmations >= required &&
+         (!params.useSpvVerification || status.spvVerified);
+}
+
+bool SwapDaemon::reportSwapFeeOnce(SwapStateMachine& sm, bool claim) {
+  const std::string swap_id = sm.params().swapId;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    auto& params = sm.params();
+    bool& report_attempted = claim
+        ? params.escrow_claim_fee_report_attempted
+        : params.escrow_refund_fee_report_attempted;
+    if (report_attempted) return true;
+    const uint64_t one_percent =
+        (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+        CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+    const uint64_t nominal_fee = claim ? 2 * one_percent : one_percent;
+    // The deterministic claim and direct refund spend the network fee out of
+    // the protocol fee. Only the treasury output is available for distribution.
+    const uint64_t fee = nominal_fee > SwapTxBuilder::MIN_FEE
+        ? nominal_fee - SwapTxBuilder::MIN_FEE : 0;
+    report_attempted = true;
+    if (m_db.saveSwap(sm)) {
+      // /addswapfee has no idempotency key. A failed or interrupted call is
+      // ambiguous, so never retry it automatically and risk double accrual.
+      if (fee > 0 && !m_rpc.addSwapFee(fee))
+        m_logger(Logging::ERROR) << "  Swap fee report outcome unresolved for "
+                                  << swap_id << "; reconcile accounting manually";
+      return true;
+    }
+    SwapStateMachine latest;
+    if (!m_db.loadSwap(swap_id, latest)) return false;
+    sm = std::move(latest);
+  }
+  return false;
+}
+
 bool SwapDaemon::initiate(SwapParams& params) {
+  const auto* amountDescriptor = swapPairDescriptor(params.pair);
+  if (!amountDescriptor || params.xfgAmount == 0 || params.ctrAmount == 0 ||
+      params.amountProtocolVersion != 2) {
+    m_logger(Logging::ERROR) << "Invalid new-swap amount or amount protocol version";
+    return false;
+  }
+  if (amountDescriptor->family != SwapChainFamily::EVM &&
+      params.ctrAmount > (std::numeric_limits<uint64_t>::max)()) {
+    m_logger(Logging::ERROR) << "Counterparty amount exceeds native adapter range";
+    return false;
+  }
+  const uint64_t initiation_fee =
+      (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+      CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+  if (initiation_fee <= SwapTxBuilder::MIN_FEE) {
+    m_logger(Logging::ERROR) << "XFG amount is too small to fund the refund treasury output";
+    return false;
+  }
+  if (!canStartNewSwap(params.pair)) {
+    m_logger(Logging::ERROR) << "Cannot initiate new swap for "
+      << swapPairToString(params.pair) << ": chain client unavailable or not ready";
+    return false;
+  }
+  params.useSpvVerification = m_chainRegistry.getClient(params.pair)->usesSpvVerification();
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
     m_logger(Logging::ERROR) << "Cannot connect to fuegod";
@@ -913,30 +1091,72 @@ bool SwapDaemon::initiate(SwapParams& params) {
     uint64_t ctrCurrentHeight = 0;
     bool ctrHeightOk = client && client->getCurrentHeight(ctrCurrentHeight) && ctrCurrentHeight > 0;
 
+    if (params.xfgTimeoutHeight <= currentHeight) {
+      m_logger(Logging::ERROR) << "XFG timeout must be above the current height";
+      return false;
+    }
+
+    const uint64_t minCtrBlockMs = minMsPerBlock(params.pair);
+    const uint64_t maxCtrBlockMs = maxMsPerBlock(params.pair);
+    if (minCtrBlockMs == 0 || maxCtrBlockMs < minCtrBlockMs) {
+      m_logger(Logging::ERROR) << "Invalid block-time bounds for "
+        << swapPairToString(params.pair);
+      return false;
+    }
+    const uint64_t confirmations = params.requiredConfirmations
+        ? params.requiredConfirmations : 6;
+    const uint64_t maxUint64 = std::numeric_limits<uint64_t>::max();
+    uint64_t minimumCtrBlocks = 0;
+    if (!minimumCounterpartyWindowBlocks(
+            params.pair, confirmations, minimumCtrBlocks)) {
+      m_logger(Logging::ERROR) << "Invalid counterparty claim-runway calculation";
+      return false;
+    }
+
     if (params.ctrTimeoutBlock == 0) {
       // Caller didn't specify a CTR timeout — auto-derive a safe one.
-      // CTR window = 50% of XFG remaining window (in wall-clock ms). The
-      // subsequent timelockOrderingOk check verifies the margin holds.
+      // Start with 50% of the XFG window using the slow timing bound, then
+      // raise it if needed to preserve a full claim runway at the fast bound.
+      // The subsequent ordering check rejects catalogs whose bounds cannot
+      // satisfy both sides of the invariant.
       if (!ctrHeightOk) {
         m_logger(Logging::ERROR)
           << "ctrTimeoutBlock not set and counterparty chain height unavailable — cannot auto-derive";
         return false;
       }
-      uint64_t xfgRemainingMs = (params.xfgTimeoutHeight - currentHeight) * 480000ULL;
-      uint64_t ctrWindowMs = xfgRemainingMs / 2;
-      uint64_t ctrBlocks = ctrWindowMs / msPerBlock(params.pair);
-      if (ctrBlocks == 0) ctrBlocks = 1;
+      const uint64_t xfgBlocks =
+          static_cast<uint64_t>(params.xfgTimeoutHeight) - currentHeight;
+      const uint64_t xfgBlockMs =
+          CryptoNote::parameters::DIFFICULTY_TARGET * 1000ULL;
+      if (xfgBlockMs == 0 || xfgBlocks > maxUint64 / xfgBlockMs) {
+        m_logger(Logging::ERROR) << "XFG timeout calculation overflow";
+        return false;
+      }
+      const uint64_t ctrWindowMs = (xfgBlocks * xfgBlockMs) / 2;
+      uint64_t ctrBlocks = ctrWindowMs / maxCtrBlockMs;
+      ctrBlocks = std::max<uint64_t>(ctrBlocks, minimumCtrBlocks);
+      if (ctrCurrentHeight > maxUint64 - ctrBlocks) {
+        m_logger(Logging::ERROR) << "Counterparty timeout height overflow";
+        return false;
+      }
       params.ctrTimeoutBlock = ctrCurrentHeight + ctrBlocks;
       m_logger(Logging::INFO)
         << "Auto-derived ctrTimeoutBlock=" << params.ctrTimeoutBlock
         << " (" << ctrBlocks << " " << swapPairToString(params.pair)
-        << " blocks ≈ " << (ctrWindowMs / 60000ULL) << " min wall-clock)";
+        << " blocks; timing bounds " << minCtrBlockMs << "-"
+        << maxCtrBlockMs << " ms/block)";
     }
 
     if (!ctrHeightOk) {
       // Fail closed: never fund escrow without a verified wall-clock ordering.
       m_logger(Logging::ERROR)
         << "Cannot query counterparty chain height — refusing initiate (timelock check required)";
+      return false;
+    }
+    if (ctrCurrentHeight > maxUint64 - minimumCtrBlocks ||
+        params.ctrTimeoutBlock < ctrCurrentHeight + minimumCtrBlocks) {
+      m_logger(Logging::ERROR)
+        << "Counterparty timeout leaves less than the required confirmations plus 1h claim runway";
       return false;
     }
     if (!timelockOrderingOk(params.pair, currentHeight, params.xfgTimeoutHeight,
@@ -1075,6 +1295,10 @@ bool SwapDaemon::initiate(SwapParams& params) {
     kx.type = PeerMessageType::KEY_EXCHANGE;
     kx.swapId = params.swapId;
     kx.keyExchange.swapPubKey = params.ourSwapPubKey;
+    kx.keyExchange.amountProtocolVersion = 2;
+    kx.keyExchange.pair = params.pair;
+    kx.keyExchange.xfgAmount = params.xfgAmount;
+    kx.keyExchange.ctrAmount = params.ctrAmount;
     if (signPeerMessage(kx, params.ourSwapPubKey, params.ourSwapSecKey)) {
       if (deliverPeerMessage(kx)) {
         m_logger(Logging::INFO) << "Delivered KEY_EXCHANGE to peer";
@@ -1112,8 +1336,15 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
   }
+
+  if (!canStartNewSwap(sm.params().pair)) {
+    const std::string msg = "Counterparty chain is unavailable or not ready for new swaps";
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
+  }
   
   auto& params = sm.params();
+  params.useSpvVerification = m_chainRegistry.getClient(params.pair)->usesSpvVerification();
   std::string warning = "";
 
   // Peer identity: if already bound, lock expected to that key.
@@ -1293,8 +1524,26 @@ bool SwapDaemon::checkTimeouts() {
 
     const auto& params = sm.params();
 
+    // Alice's counterparty lock expires before the XFG escrow. Check its own
+    // chain height so she can recover that lock without waiting for XFG time.
+    SwapState current = sm.currentState();
+    if (params.role == SwapRole::ALICE && params.ctrTimeoutBlock > 0 &&
+        !params.ctrLockTxId.empty() &&
+        (!params.adaptorSecretReceived || params.ctrRefundSubmitted) &&
+        (current == SwapState::ADAPTOR_CTR_LOCKED ||
+         current == SwapState::ADAPTOR_WAITING_SPV ||
+         current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV)) {
+      auto* client = m_chainRegistry.getClient(params.pair);
+      uint64_t ctrHeight = 0;
+      if (client && client->getCurrentHeight(ctrHeight) &&
+          ctrHeight >= params.ctrTimeoutBlock) {
+        refund(swapId);
+        anyExpired = true;
+        continue;
+      }
+    }
+
     if (params.xfgTimeoutHeight > 0 && currentHeight >= params.xfgTimeoutHeight) {
-      SwapState current = sm.currentState();
 
       // v11+ escrow swaps refund unilaterally: the maker's signed refund
       // needs no peer cooperation, so execute it automatically at timeout.
@@ -1941,11 +2190,9 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       }
       // 1. Broadcast the deterministic XFG claim (pays Alice, reveals t).
       if (!params.ringTxBroadcast) {
-        if (broadcastEscrowClaimDirect(params)) {
-          const std::string sigHex = params.escrowClaimSigHex;
-          if (!saveSwapMerged(sm, [sigHex](SwapStateMachine& latest) {
+        if (broadcastEscrowClaimDirect(sm)) {
+          if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
                 latest.params().ringTxBroadcast = true;
-                latest.params().escrowClaimSigHex = sigHex;
               })) {
             m_logger(Logging::ERROR) << "  Failed to persist XFG claim broadcast";
             return false;
@@ -1956,19 +2203,28 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
           return true;
         }
       }
+      const auto& saved = sm.params();
+      uint32_t xfgConfirmations = 0;
+      if (saved.escrowClaimTxId.empty() ||
+          !m_rpc.getTransactionConfirmations(saved.escrowClaimTxId, xfgConfirmations) ||
+          xfgConfirmations < 6) {
+        if (!saved.escrowClaimTxHex.empty()) broadcastEscrowClaimDirect(sm);
+        m_logger(Logging::INFO) << "  XMR flow: waiting for confirmed XFG claim";
+        return true;
+      }
       // 2. Wait for Alice's share reveal, then sweep the shared address.
-      if (!params.peerXmrShareReceived) {
+      if (!saved.peerXmrShareReceived) {
         m_logger(Logging::INFO) << "  XMR flow: waiting for Alice's spend-share reveal";
         return true;
       }
-      auto result = client->claim(params);
+      auto result = client->claim(saved);
       if (!result.success) {
         m_logger(Logging::ERROR) << "  XMR claim sweep failed: " << result.error;
         if (result.fatal) { sm.transition(SwapState::FAILED); m_db.saveSwap(sm); }
         return false;
       }
       m_logger(Logging::INFO) << "  XMR claimed, txid: " << result.txId;
-      params.ctrClaimTxId = result.txId;
+      sm.params().ctrClaimTxId = result.txId;
       if (!sm.transition(SwapState::ADAPTOR_SECRET_REVEALED) || !m_db.saveSwap(sm)) {
         m_logger(Logging::ERROR) << "  Failed to advance after XMR claim";
         return false;
@@ -1984,8 +2240,9 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
       m_logger(Logging::ERROR) << "  Cannot derive claim tx hash for XMR flow";
       return false;
     }
-    std::vector<TxOutputInfo> outs;
-    if (m_rpc.getTransactionOutputs(Common::podToHex(claimHash), outs)) {
+    uint32_t xfgConfirmations = 0;
+    if (m_rpc.getTransactionConfirmations(Common::podToHex(claimHash),
+                                          xfgConfirmations) && xfgConfirmations >= 6) {
       if (!params.xmrShareSent) {
         if (!revealXmrShare(sm)) {
           m_logger(Logging::WARNING) << "  Share reveal pending — will retry";
@@ -2033,38 +2290,59 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
         << " client not configured — cannot claim";
       return false;
     }
+    if (params.ctrClaimAttempted) {
+      if (params.ctrClaimTxId.empty()) {
+        m_logger(Logging::ERROR)
+          << "  CTR claim outcome unresolved; inspect the counterparty chain before retry";
+        return false;
+      }
+      if (!hasConfirmedCounterpartyClaim(params, client)) {
+        m_logger(Logging::INFO) << "  CTR claim awaiting chain confirmations";
+        return false;
+      }
+      params.adaptorSecretRevealedToPeer = true;
+      if (!sm.transition(SwapState::ADAPTOR_SECRET_REVEALED) ||
+          !m_db.saveSwap(sm)) return false;
+      PeerMessage rev;
+      rev.type = PeerMessageType::SECRET_REVEAL;
+      rev.swapId = params.swapId;
+      rev.secretReveal.adaptorSecret = params.adaptorSecret;
+      rev.secretReveal.claimTxId = params.ctrClaimTxId;
+      if (signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey))
+        deliverPeerMessage(rev);
+      return true;
+    }
+    params.ctrClaimAttempted = true;
+    if (!m_db.saveSwap(sm)) {
+      m_logger(Logging::ERROR) << "  Cannot persist CTR claim intent";
+      return false;
+    }
     auto result = client->claim(params);
-    if (result.success) {
+    if (result.success && !result.txId.empty()) {
       m_logger(Logging::INFO) << "  " << client->chainName()
         << " claimed, txid: " << result.txId;
-      params.adaptorSecretRevealedToPeer = true;  // on-chain reveal
       params.ctrClaimTxId = result.txId;
       // Append claim txid to chainState so peers that share state can extract.
       if (!params.chainState.empty() && params.chainState.find(':') == std::string::npos
           && !result.txId.empty()) {
         params.chainState = params.chainState + ":" + result.txId;
       }
-      // Push SECRET_REVEAL so Alice learns t even without chain indexer.
-      {
-        PeerMessage rev;
-        rev.type = PeerMessageType::SECRET_REVEAL;
-        rev.swapId = params.swapId;
-        rev.secretReveal.adaptorSecret = params.adaptorSecret;
-        rev.secretReveal.claimTxId = result.txId;
-        if (signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey)) {
-          deliverPeerMessage(rev);
-        }
+      const std::string claimTxId = result.txId;
+      const std::string chainState = params.chainState;
+      if (!saveSwapMerged(sm, [claimTxId, chainState](SwapStateMachine& latest) {
+            latest.params().ctrClaimAttempted = true;
+            latest.params().ctrClaimTxId = claimTxId;
+            latest.params().chainState = chainState;
+          })) {
+        m_logger(Logging::ERROR) << "  CTR claim submitted but persistence failed";
+        return false;
       }
-      sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
-      m_db.saveSwap(sm);
+      m_logger(Logging::INFO) << "  CTR claim submitted; waiting before revealing secret or paying XFG";
       return true;
     }
     m_logger(Logging::ERROR) << "  " << client->chainName()
-      << " claim failed: " << result.error;
-    if (result.fatal) {
-      sm.transition(SwapState::FAILED);
-      m_db.saveSwap(sm);
-    }
+      << " claim outcome unresolved: " << result.error
+      << "; keeping swap active for reconciliation";
     return false;
   }
 
@@ -2134,6 +2412,11 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
     }
   }
 
+  if (!hasConfirmedCounterpartyClaim(params, client)) {
+    m_logger(Logging::INFO) << "  CTR claim secret observed; waiting for claim confirmations";
+    return false;
+  }
+
   params.adaptorSecret = claimed;
   params.adaptorSecretReceived = true;
   m_logger(Logging::INFO) << "  Extracted adaptor secret from Bob's CTR claim (bound to T and H(t))";
@@ -2143,6 +2426,18 @@ bool SwapDaemon::handleCtrLocked(SwapStateMachine& sm) {
 }
 
 bool SwapDaemon::handleSecretRevealed(SwapStateMachine& sm) {
+  const auto& params = sm.params();
+  if (params.role == SwapRole::BOB && params.pair != SwapPair::XMR &&
+      !params.ctrClaimTxId.empty() &&
+      hasConfirmedCounterpartyClaim(params, m_chainRegistry.getClient(params.pair))) {
+    PeerMessage rev;
+    rev.type = PeerMessageType::SECRET_REVEAL;
+    rev.swapId = params.swapId;
+    rev.secretReveal.adaptorSecret = params.adaptorSecret;
+    rev.secretReveal.claimTxId = params.ctrClaimTxId;
+    if (signPeerMessage(rev, params.ourSwapPubKey, params.ourSwapSecKey))
+      deliverPeerMessage(rev);
+  }
   return finalizeEscrowSpend(sm, "Adaptor secret learned");
 }
 
@@ -2152,7 +2447,7 @@ bool SwapDaemon::handleSecretConfirmedSpv(SwapStateMachine& sm) {
 
 bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& logContext) {
   SwapParams& params = sm.params();
-  const std::string& swapId = params.swapId;
+  const std::string swapId = params.swapId;
 
   // Protocol fee: 1% initiation + 1% claim = 2% of escrow amount → treasury
   Crypto::PublicKey treasuryKey;
@@ -2172,33 +2467,89 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
 
   m_logger(Logging::INFO) << "  " << logContext << ". Building adapted escrow spend tx...";
 
-  // If tx already broadcast, transition to terminal state.
-  if (params.ringTxBroadcast) {
-    sm.transition(SwapState::ADAPTOR_XFG_SPENT);
-    m_db.saveSwap(sm);
-    m_logger(Logging::INFO) << "  Escrow spend confirmed. Swap " << swapId << " completed.";
-    recordCompletedTrade(sm);
-    return true;
+  // Broadcast acceptance is not inclusion. Keep the active swap and retry
+  // the exact saved transaction until Fuego reports six confirmations.
+  const bool claimAlreadyPrepared =
+      params.ringTxBroadcast || !params.escrowClaimTxHex.empty();
+  if (claimAlreadyPrepared) {
+    uint32_t confirmations = 0;
+    if (!params.escrowClaimTxId.empty() &&
+        m_rpc.getTransactionConfirmations(params.escrowClaimTxId, confirmations) &&
+        confirmations >= 6) {
+      if (!reportSwapFeeOnce(sm, true)) return false;
+      if (!sm.transition(SwapState::ADAPTOR_XFG_SPENT) || !m_db.saveSwap(sm))
+        return false;
+      m_logger(Logging::INFO) << "  Escrow claim confirmed. Swap " << swapId << " completed.";
+      recordCompletedTrade(sm);
+      return true;
+    }
   }
 
-  // Reorg/TOCTOU guard: when the CTR lock is SPV-verified, re-verify it still has
-  // required confirmations before broadcasting the irreversible XFG claim. If the
-  // CTR chain reorged, hold the XFG and re-enter WAITING_SPV so the UI shows
-  // the reorg instead of double-spending.
-  if (!params.ctrLockTxId.empty() && logContext == std::string("SPV confirmed")) {
+  // Recheck both the lock and the claim immediately before spending XFG. A
+  // confirmed lock alone says nothing about whether Bob's claim survived a
+  // reorg. Alice's extraction path must prove the lock outpoint was spent.
+  if (params.useSpvVerification) {
     auto* vClient = m_chainRegistry.getClient(params.pair);
-    if (vClient) {
-      ChainClientResult vr;
-      vClient->getTransactionDetails(params.ctrLockTxId, vr);
-      uint32_t req = params.requiredConfirmations ? params.requiredConfirmations : 6;
-      if (!vr.confirmed || vr.confirmations < req || !vr.spvVerified) {
-        m_logger(Logging::WARNING) << "  Reorg guard: CTR lock not confirmed (" << vr.confirmations << "/" << req
-          << ") spvVerified=" << vr.spvVerified << " — holding XFG, re-entering WAITING_SPV";
-        sm.transition(SwapState::ADAPTOR_WAITING_SPV);
-        m_db.saveSwap(sm);
+    const uint32_t req = params.requiredConfirmations ? params.requiredConfirmations : 6;
+    ChainClientResult lockStatus;
+    if (!vClient || params.ctrLockTxId.empty() ||
+        !vClient->getTransactionDetails(params.ctrLockTxId, lockStatus).success ||
+        !lockStatus.confirmed || !lockStatus.spvVerified ||
+        lockStatus.confirmations < req) {
+      m_logger(Logging::WARNING) << "  Reorg guard: CTR lock proof unavailable; holding XFG";
+      return false;
+    }
+    if (params.role == SwapRole::BOB) {
+      ChainClientResult claimStatus;
+      if (params.ctrClaimTxId.empty() ||
+          !vClient->getTransactionDetails(params.ctrClaimTxId, claimStatus).success ||
+          !claimStatus.confirmed || !claimStatus.spvVerified ||
+          claimStatus.confirmations < req) {
+        m_logger(Logging::WARNING) << "  Reorg guard: CTR claim proof unavailable; holding XFG";
+        return false;
+      }
+    } else {
+      Crypto::SecretKey verifiedSecret{};
+      const std::string observed = vClient->tryExtractClaimedSecret(params);
+      if (!Common::podFromHex(observed, verifiedSecret) ||
+          std::memcmp(&verifiedSecret, &params.adaptorSecret,
+                      sizeof(verifiedSecret)) != 0) {
+        m_logger(Logging::WARNING) << "  Reorg guard: confirmed CTR spend unavailable; holding XFG";
         return false;
       }
     }
+  }
+  if (!params.useSpvVerification && params.pair != SwapPair::XMR) {
+    auto* vClient = m_chainRegistry.getClient(params.pair);
+    if (!hasConfirmedCounterpartyClaim(params, vClient)) {
+      m_logger(Logging::WARNING) << "  CTR claim no longer confirmed; holding XFG";
+      return false;
+    }
+    if (params.role == SwapRole::ALICE) {
+      Crypto::SecretKey observedSecret{};
+      const std::string observed = vClient->tryExtractClaimedSecret(params);
+      if (!Common::podFromHex(observed, observedSecret) ||
+          std::memcmp(&observedSecret, &params.adaptorSecret,
+                      sizeof(observedSecret)) != 0) {
+        m_logger(Logging::WARNING) << "  CTR claim secret no longer visible; holding XFG";
+        return false;
+      }
+    }
+  }
+
+  // A signed transaction is saved before the first network send. If the
+  // process stopped at that point, a restart must recheck the counterparty
+  // claim before submitting it for the first time. The same guard applies
+  // to retries after a dropped or reorganized counterparty claim.
+  if (claimAlreadyPrepared) {
+    if (!params.escrowClaimTxHex.empty() && broadcastEscrowClaimDirect(sm) &&
+        !sm.params().ringTxBroadcast) {
+      if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+            latest.params().ringTxBroadcast = true;
+          })) return false;
+    }
+    m_logger(Logging::INFO) << "  Escrow claim pending confirmation";
+    return false;
   }
 
   // v11+ direct claim: spend the escrow output with the completed MuSig2
@@ -2206,23 +2557,26 @@ bool SwapDaemon::finalizeEscrowSpend(SwapStateMachine& sm, const std::string& lo
   {
     static const Crypto::Hash ZERO_HASH{};
     if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-      if (broadcastEscrowClaimDirect(params)) {
-        const std::string sigHex = params.escrowClaimSigHex;
-        if (!saveSwapMerged(sm, [sigHex](SwapStateMachine& latest) {
+      if (broadcastEscrowClaimDirect(sm)) {
+        if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
               latest.params().ringTxBroadcast = true;
-              latest.params().escrowClaimSigHex = sigHex;
-              latest.transition(SwapState::ADAPTOR_XFG_SPENT);
             })) {
           m_logger(Logging::ERROR) << "  Failed to persist broadcast claim state";
           return false;
         }
-        m_logger(Logging::INFO) << "  Escrow claim broadcast. Swap " << swapId << " completed.";
-        recordCompletedTrade(sm);
+        m_logger(Logging::INFO) << "  Escrow claim submitted; awaiting confirmation for " << swapId;
         return true;
       }
       m_logger(Logging::INFO) << "  Direct escrow claim not ready — will retry next tick.";
       return true;
     }
+  }
+
+  // New swaps require a recorded direct escrow output. The cooperative path
+  // below predates confirmation tracking and may not terminalize on broadcast.
+  if (params.amountProtocolVersion == 2) {
+    m_logger(Logging::ERROR) << "Direct XFG escrow transaction is missing";
+    return false;
   }
 
   // If peer has sent both Round 1 and Round 2 data, finalize and broadcast.
@@ -2378,16 +2732,35 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
 
   // Alice-locks + SPV: Bob claims with t; Alice waits for on-chain preimage.
   if (params.role == SwapRole::BOB && !isZeroSecret(params.adaptorSecret)) {
-    auto claimResult = client->claim(params);
-    if (claimResult.success) {
-      m_logger(Logging::INFO) << "  SPV path: Bob CTR claim submitted " << claimResult.txId;
-    } else if (claimResult.fatal) {
-      m_logger(Logging::ERROR) << "  SPV path: claim fatal — " << claimResult.error;
-      sm.transition(SwapState::FAILED);
-      m_db.saveSwap(sm);
-      return true;
-    } else {
-      m_logger(Logging::INFO) << "  SPV path: claim pending — " << claimResult.error;
+    if (!params.ctrClaimAttempted) {
+      // Save the intent before the external call: a lost RPC response does not
+      // prove the claim failed and must not authorize an XFG refund later.
+      params.ctrClaimAttempted = true;
+      if (!m_db.saveSwap(sm)) return false;
+      auto claimResult = client->claim(params);
+      if (!claimResult.success || claimResult.txId.empty()) {
+        m_logger(Logging::ERROR) << "  SPV claim outcome unresolved — "
+          << claimResult.error << "; inspect CTR chain before refunding XFG";
+        return false;
+      }
+      const std::string claimTxId = claimResult.txId;
+      params.ctrClaimTxId = claimTxId;
+      params.adaptorSecretRevealedToPeer = true;
+      if (!saveSwapMerged(sm, [claimTxId](SwapStateMachine& latest) {
+            latest.params().ctrClaimAttempted = true;
+            latest.params().ctrClaimTxId = claimTxId;
+            latest.params().adaptorSecretRevealedToPeer = true;
+          })) {
+        m_logger(Logging::ERROR) << "  SPV claim broadcast but persistence failed";
+        return false;
+      }
+      m_logger(Logging::INFO) << "  SPV path: Bob CTR claim submitted " << claimTxId;
+      return true;  // reload the persisted claim before verifying either leg
+    } else if (params.ctrClaimTxId.empty()) {
+      m_logger(Logging::ERROR)
+        << "  SPV claim may have been submitted but no txid was recorded; "
+           "manual CTR reconciliation required";
+      return false;
     }
   }
 
@@ -2398,10 +2771,26 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
       return false;
     }
     Crypto::SecretKey sec;
-    if (Common::podFromHex(claimed, sec)) {
-      params.adaptorSecret = sec;
-      params.adaptorSecretReceived = true;
+    Crypto::PublicKey derivedT;
+    if (!Common::podFromHex(claimed, sec) ||
+        !Crypto::secret_key_to_public_key(sec, derivedT) ||
+        std::memcmp(&derivedT, &params.adaptorPoint, sizeof(derivedT)) != 0) {
+      m_logger(Logging::ERROR) << "  SPV claim preimage does not match adaptor point";
+      return false;
     }
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&params.hashLock, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
+      Crypto::Hash computed{};
+      const std::string hashHex = isLegacyUtxoPair(params.pair)
+          ? bchHashLockHex(sec) : solHashLockHex(sec);
+      if (!Common::podFromHex(hashHex, computed) ||
+          std::memcmp(&computed, &params.hashLock, sizeof(computed)) != 0) {
+        m_logger(Logging::ERROR) << "  SPV claim preimage does not match hash lock";
+        return false;
+      }
+    }
+    params.adaptorSecret = sec;
+    params.adaptorSecretReceived = true;
   }
 
   // Prefer verifying the *lock* has enough depth before advancing.
@@ -2409,10 +2798,11 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
   client->getTransactionDetails(params.ctrLockTxId, spvResult);
 
   if (spvResult.fatal) {
-    m_logger(Logging::ERROR) << "  SPV verification failed fatally: " << spvResult.error;
-    sm.transition(SwapState::FAILED);
-    m_db.saveSwap(sm);
-    return true;
+    // A counterparty claim may already be on-chain. Never archive a funded
+    // swap as FAILED because an SPV lookup errored; keep it available for
+    // claim confirmation, timeout handling, and operator reconciliation.
+    m_logger(Logging::ERROR) << "  SPV verification failed: " << spvResult.error;
+    return false;
   }
 
   if (!spvResult.success) {
@@ -2420,7 +2810,18 @@ bool SwapDaemon::handleWaitingSpv(SwapStateMachine& sm) {
     return false;
   }
 
-  if (spvResult.confirmed && spvResult.confirmations >= required) {
+  if (spvResult.confirmed && spvResult.spvVerified &&
+      spvResult.confirmations >= required) {
+    if (params.role == SwapRole::BOB) {
+      ChainClientResult claimStatus;
+      client->getTransactionDetails(params.ctrClaimTxId, claimStatus);
+      if (!claimStatus.success || !claimStatus.confirmed || !claimStatus.spvVerified ||
+          claimStatus.confirmations < required) {
+        m_logger(Logging::INFO) << "  SPV CTR claim not confirmed ("
+          << claimStatus.confirmations << "/" << required << "); holding XFG";
+        return false;
+      }
+    }
     sm.transition(SwapState::ADAPTOR_SECRET_CONFIRMED_SPV);
     m_db.saveSwap(sm);
     m_logger(Logging::INFO) << "  SPV verified (" << spvResult.confirmations
@@ -2608,6 +3009,18 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
   SwapParams& params = sm.params();
   SwapState current = sm.currentState();
 
+  // A submitted refund races the peer's claim. Until the counterparty chain
+  // proves which spend won, neither side may continue the XFG claim path.
+  if (params.role == SwapRole::BOB &&
+      (params.ctrRefundSubmitted || params.escrowRefundBroadcast)) {
+    m_logger(Logging::INFO) << "Refund recovery in progress for " << swapId;
+    return true;
+  }
+  if (params.role == SwapRole::ALICE && params.ctrRefundSubmitted) {
+    m_logger(Logging::INFO) << "Counterparty refund outcome pending for " << swapId;
+    return true;
+  }
+
   m_logger(Logging::INFO) << "Processing swap " << swapId
     << " state=" << swapStateToString(current)
     << " height=" << currentHeight;
@@ -2636,6 +3049,11 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
 
         if (params.role == SwapRole::BOB) {
           if (!escrowTxKnown) {
+            if (!canStartNewSwap(params.pair)) {
+              m_logger(Logging::ERROR) << "Refusing to fund XFG escrow: "
+                << swapPairToString(params.pair) << " is not ready for a new swap";
+              return false;
+            }
             if (!fundEscrow(params)) {
               m_logger(Logging::ERROR) << "Failed to fund escrow for swap " << swapId;
               return false;
@@ -2719,7 +3137,8 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
   // Advance in-progress cooperative ring sig (refund or spend) if peer
   // data has arrived since the last tick.  This handles the async round-
   // trip for swaps that are waiting on peer Ring Round 1 or 2 responses.
-  if (!sm.isTerminal() && params.ringOurRound1Sent &&
+  if (!sm.isTerminal() && params.amountProtocolVersion != 2 &&
+      params.ringOurRound1Sent &&
       params.ringPeerRound1Received && params.ringPeerRound2Received &&
       !params.ringTxBroadcast) {
     // Both peer rounds received — finalize and broadcast.
@@ -2917,10 +3336,7 @@ bool SwapDaemon::refund(const std::string& swapId) {
       }
       static const Crypto::Hash ZERO_HASH{};
       if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-        if (!broadcastEscrowRefundDirect(params)) {
-          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry";
-          return false;
-        }
+        return refundFundedLeg(sm, currentHeight);
       }
       if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
           !m_db.saveSwap(sm)) {
@@ -2971,18 +3387,13 @@ bool SwapDaemon::refund(const std::string& swapId) {
     {
       static const Crypto::Hash ZERO_HASH{};
       if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-        if (broadcastEscrowRefundDirect(params)) {
-          if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
-              !m_db.saveSwap(sm)) {
-            m_logger(Logging::ERROR) << "  Direct refund broadcast but persistence failed";
-            return false;
-          }
-          m_logger(Logging::INFO) << "  Direct escrow refund broadcast. Swap marked ADAPTOR_REFUNDED.";
-          return true;
-        }
-        m_logger(Logging::ERROR) << "  Direct escrow refund failed";
-        return false;
+        return refundFundedLeg(sm, currentHeight);
       }
+    }
+
+    if (params.amountProtocolVersion == 2) {
+      m_logger(Logging::ERROR) << "Direct XFG escrow transaction is missing";
+      return false;
     }
 
     m_logger(Logging::INFO) << "Timeout elapsed. Building cooperative refund tx...";
@@ -3146,155 +3557,172 @@ bool SwapDaemon::refund(const std::string& swapId) {
     return true;
   }
 
-  // SPV waiting states: Alice locked on counterparty chain but SPV verification
-  // hasn't confirmed yet. If timeout elapsed, Bob can refund the counterparty HTLC.
-  if ((current == SwapState::ADAPTOR_WAITING_SPV ||
-       current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV) &&
-      params.role == SwapRole::BOB) {
-    if (currentHeight < params.xfgTimeoutHeight) {
-      m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
-        << ", timeout: " << params.xfgTimeoutHeight
-        << " (" << (params.xfgTimeoutHeight - currentHeight) << " blocks remaining)";
-      return false;
-    }
-
-    m_logger(Logging::INFO) << "Timeout elapsed (SPV state). Refunding counterparty ("
-      << swapPairToString(params.pair) << ") HTLC...";
-
-    // Whether we already took the CTR leg is a fact, not a state label. The SPV
-    // claim path records it (ctrClaimTxId, adaptorSecretRevealedToPeer) WITHOUT
-    // leaving ADAPTOR_WAITING_SPV, and ADAPTOR_SECRET_CONFIRMED_SPV is entered
-    // on confirmations of the LOCK tx, so neither state tells us on its own.
-    const bool alreadyClaimedCtr =
-        !params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer;
-
-    bool ctrRefundOk = false;
-    auto* client = m_chainRegistry.getClient(params.pair);
-    if (!client) {
-      m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-        << " client not configured — cannot refund counterparty leg";
-    } else {
-      auto result = client->refund(params);
-      if (result.success) {
-        m_logger(Logging::INFO) << "  " << client->chainName()
-          << " refunded, txid: " << result.txId;
-        ctrRefundOk = true;
-      } else {
-        m_logger(Logging::ERROR) << "  " << client->chainName()
-          << " refund failed: " << result.error;
-        if (result.fatal) {
-          sm.transition(SwapState::FAILED);
-          m_db.saveSwap(sm);
-          return false;
-        }
-      }
-    }
-
-    // Recovering the XFG escrow is independent of the counterparty refund, but
-    // ONLY while we have not claimed the CTR leg. Having claimed it, taking the
-    // escrow back as well would be both legs. The old code gated on
-    // ctrRefundOk, which blocked that case only by accident — a claimed output
-    // makes refund() fail — while also stranding the escrow whenever the CTR
-    // refund failed for an unrelated reason (no client, RPC down).
-    bool escrowRefundOk = true;
-    if (alreadyClaimedCtr) {
-      m_logger(Logging::WARNING)
-        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
-        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
-      escrowRefundOk = false;
-    } else {
-      static const Crypto::Hash ZERO_HASH{};
-      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-        escrowRefundOk = broadcastEscrowRefundDirect(params);
-        if (!escrowRefundOk) {
-          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-        }
-      }
-    }
-
-    if (ctrRefundOk && escrowRefundOk) {
-      sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
-      m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
-    } else if (!ctrRefundOk) {
-      m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
-    }
-    return ctrRefundOk && escrowRefundOk;
-  }
-
-  // Counterparty chain refund: the CTR leg is locked and the swap timed out.
-  // Bob unwinds the CTR HTLC and recovers his own XFG escrow.
-  if (current == SwapState::ADAPTOR_CTR_LOCKED && params.role == SwapRole::BOB) {
-    if (currentHeight < params.xfgTimeoutHeight) {
-      m_logger(Logging::ERROR) << "Cannot refund yet. Current height: " << currentHeight
-        << ", timeout: " << params.xfgTimeoutHeight
-        << " (" << (params.xfgTimeoutHeight - currentHeight) << " blocks remaining)";
-      return false;
-    }
-
-    m_logger(Logging::INFO) << "Timeout elapsed. Refunding counterparty ("
-      << swapPairToString(params.pair) << ") HTLC...";
-
-    bool ctrRefundOk = false;
-    auto* client = m_chainRegistry.getClient(params.pair);
-    if (!client) {
-      m_logger(Logging::ERROR) << "  " << swapPairToString(params.pair)
-        << " client not configured — cannot refund";
-    } else {
-      auto result = client->refund(params);
-      if (result.success) {
-        m_logger(Logging::INFO) << "  " << client->chainName()
-          << " refunded, txid: " << result.txId;
-        ctrRefundOk = true;
-      } else {
-        m_logger(Logging::ERROR) << "  " << client->chainName()
-          << " refund failed: " << result.error;
-        if (result.fatal) {
-          sm.transition(SwapState::FAILED);
-          m_db.saveSwap(sm);
-          return false;
-        }
-      }
-    }
-
-    // v11+: return the XFG escrow to the maker unilaterally. Independent of the
-    // counterparty refund, but only while we have not claimed the CTR leg —
-    // taking both would be theft. Reaching this state should mean we have not
-    // claimed, but the guard keys on the recorded fact rather than trusting the
-    // state label, because the SPV claim path records a claim without changing
-    // state. Gating on ctrRefundOk instead stranded recoverable XFG whenever the
-    // CTR leg could not be refunded (unconfigured client, RPC outage).
-    bool escrowRefundOk = true;
-    if (!params.ctrClaimTxId.empty() || params.adaptorSecretRevealedToPeer) {
-      m_logger(Logging::WARNING)
-        << "  CTR leg already claimed (txid " << params.ctrClaimTxId
-        << ") — NOT refunding the XFG escrow; the counterparty can claim it with the secret";
-      escrowRefundOk = false;
-    } else {
-      static const Crypto::Hash ZERO_HASH{};
-      if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) != 0) {
-        escrowRefundOk = broadcastEscrowRefundDirect(params);
-        if (!escrowRefundOk) {
-          m_logger(Logging::WARNING) << "  Escrow refund pending — will retry next tick";
-        }
-      }
-    }
-
-    // Terminal only when both legs are done, so a failed CTR refund keeps
-    // being retried instead of being lost to an early state transition.
-    if (ctrRefundOk && escrowRefundOk) {
-      sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight);
-      m_db.saveSwap(sm);
-      m_logger(Logging::INFO) << "  Counterparty HTLC and XFG escrow refunded. Swap marked ADAPTOR_REFUNDED.";
-    } else if (!ctrRefundOk) {
-      m_logger(Logging::WARNING) << "  Counterparty refund failed — will retry next tick.";
-    }
-    return ctrRefundOk && escrowRefundOk;
+  // Bob funded the XFG escrow; Alice funded the counterparty lock. Each side
+  // recovers only the leg it owns after that chain's deadline.
+  if (current == SwapState::ADAPTOR_CTR_LOCKED ||
+      current == SwapState::ADAPTOR_WAITING_SPV ||
+      current == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV) {
+    return refundFundedLeg(sm, currentHeight);
   }
 
   m_logger(Logging::ERROR) << "Cannot refund swap in state: "
     << swapStateToString(current);
   return false;
+}
+
+bool SwapDaemon::refundFundedLeg(SwapStateMachine& sm,
+                                  uint32_t currentHeight) {
+  SwapParams& params = sm.params();
+  if (params.role == SwapRole::BOB) {
+    if (currentHeight < params.xfgTimeoutHeight) {
+      m_logger(Logging::ERROR) << "Cannot refund XFG before height "
+        << params.xfgTimeoutHeight;
+      return false;
+    }
+    // The claim may have reached the network even if its RPC response did
+    // not. A known or ambiguous claim must stop before any XFG refund call.
+    if (params.ctrClaimAttempted || !params.ctrClaimTxId.empty() ||
+        params.adaptorSecretRevealedToPeer) {
+      m_logger(Logging::WARNING)
+        << "  CTR claim attempted or submitted; XFG refund held for reconciliation";
+      return false;
+    }
+    if (params.escrowRefundBroadcast) {
+      uint32_t confirmations = 0;
+      if (!params.escrowRefundTxId.empty() &&
+          m_rpc.getTransactionConfirmations(params.escrowRefundTxId, confirmations) &&
+          confirmations >= 6) {
+        if (!reportSwapFeeOnce(sm, false)) return false;
+        if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
+            !m_db.saveSwap(sm)) return false;
+        m_logger(Logging::INFO) << "  XFG escrow refund confirmed; swap refunded";
+        return true;
+      }
+      // The same signed transaction is persisted before the first send. Retry
+      // it if it was dropped; never create a conflicting replacement here.
+      broadcastEscrowRefundDirect(sm);
+      m_logger(Logging::INFO) << "  XFG refund pending confirmation";
+      return false;
+    }
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&params.escrowTxHash, &ZERO_HASH, sizeof(ZERO_HASH)) == 0) {
+      m_logger(Logging::ERROR) << "  No XFG escrow transaction recorded for direct refund";
+      return false;
+    }
+    if (!broadcastEscrowRefundDirect(sm)) {
+      m_logger(Logging::WARNING) << "  XFG escrow refund pending — will retry";
+      return false;
+    }
+    if (!saveSwapMerged(sm, [](SwapStateMachine& latest) {
+          latest.params().escrowRefundBroadcast = true;
+        })) {
+      m_logger(Logging::ERROR) << "  XFG refund broadcast but persistence failed";
+      return false;
+    }
+    m_logger(Logging::INFO) << "  XFG refund submitted; swap retained for confirmation";
+    return true;
+  }
+
+  // Alice alone can refund the counterparty lock she funded. Its chain height
+  // governs the refund; the XFG deadline is later by the safety margin.
+  if (params.ctrLockTxId.empty() || params.ctrTimeoutBlock == 0) {
+    m_logger(Logging::ERROR) << "  No counterparty lock or refund deadline recorded";
+    return false;
+  }
+  auto* client = m_chainRegistry.getClient(params.pair);
+  if (!client) {
+    m_logger(Logging::ERROR) << "  Counterparty client unavailable for Alice refund";
+    return false;
+  }
+  bool claimReconciliationSaveFailed = false;
+  auto reconcileConfirmedClaim = [&]() -> bool {
+    const std::string observed = client->tryExtractClaimedSecret(sm.params());
+    Crypto::SecretKey secret{};
+    Crypto::PublicKey derivedT{};
+    if (!Common::podFromHex(observed, secret) ||
+        !Crypto::secret_key_to_public_key(secret, derivedT) ||
+        std::memcmp(&derivedT, &sm.params().adaptorPoint, sizeof(derivedT)) != 0 ||
+        (!sm.params().useSpvVerification &&
+         !hasConfirmedCounterpartyClaim(sm.params(), client)) ||
+        (sm.params().useSpvVerification && !sm.params().ctrClaimTxId.empty() &&
+         !hasConfirmedCounterpartyClaim(sm.params(), client))) return false;
+    Crypto::Hash expected = sm.params().hashLock;
+    static const Crypto::Hash ZERO_HASH{};
+    if (std::memcmp(&expected, &ZERO_HASH, sizeof(expected)) != 0) {
+      const std::string hashHex = isLegacyUtxoPair(sm.params().pair)
+          ? bchHashLockHex(secret) : solHashLockHex(secret);
+      Crypto::Hash actual{};
+      if (!Common::podFromHex(hashHex, actual) ||
+          std::memcmp(&actual, &expected, sizeof(actual)) != 0) return false;
+    }
+    sm.params().adaptorSecret = secret;
+    sm.params().adaptorSecretReceived = true;
+    if (sm.params().ctrRefundSubmitted) sm.params().ctrRefundSubmitted = false;
+    if (sm.currentState() == SwapState::ADAPTOR_CTR_LOCKED)
+      sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
+    else if (sm.currentState() == SwapState::ADAPTOR_WAITING_SPV)
+      sm.transition(SwapState::ADAPTOR_SECRET_CONFIRMED_SPV);
+    if (!m_db.saveSwap(sm)) {
+      claimReconciliationSaveFailed = true;
+      return false;
+    }
+    m_logger(Logging::INFO) << "  Counterparty claim confirmed; resuming XFG claim";
+    return true;
+  };
+  uint64_t ctrHeight = 0;
+  if (!client->getCurrentHeight(ctrHeight) || ctrHeight < params.ctrTimeoutBlock) {
+    m_logger(Logging::INFO) << "  Counterparty refund deadline not yet verified";
+    return false;
+  }
+  if (params.ctrRefundSubmitted) {
+    // Broadcast acceptance is not confirmation. Retain the funded swap until
+    // inclusion is verified; clients without this query need reconciliation.
+    ChainClientResult status;
+    client->getTransactionDetails(params.ctrRefundTxId, status);
+    const uint32_t required = params.requiredConfirmations
+        ? params.requiredConfirmations : 6;
+    if (!params.ctrRefundTxId.empty() && status.success && status.confirmed &&
+        (!params.useSpvVerification || status.spvVerified) &&
+        status.confirmations >= required) {
+      if (!sm.transition(SwapState::ADAPTOR_REFUNDED, currentHeight) ||
+          !m_db.saveSwap(sm)) return false;
+      m_logger(Logging::INFO) << "  Counterparty refund confirmed; swap refunded";
+      return true;
+    }
+    if (reconcileConfirmedClaim()) return true;
+    if (claimReconciliationSaveFailed) return false;
+    m_logger(Logging::INFO) << "  Counterparty refund submitted; awaiting confirmation";
+    return false;
+  }
+  if (reconcileConfirmedClaim()) return true;
+  if (claimReconciliationSaveFailed) return false;
+  if (params.ctrRefundAttempted) {
+    m_logger(Logging::WARNING)
+      << "  Counterparty refund outcome unknown; reconcile the chain before retrying";
+    return false;
+  }
+  params.ctrRefundAttempted = true;
+  if (!m_db.saveSwap(sm)) {
+    m_logger(Logging::ERROR) << "  Could not persist counterparty refund intent";
+    return false;
+  }
+  auto result = client->refund(params);
+  if (!result.success || result.txId.empty()) {
+    m_logger(Logging::ERROR) << "  Counterparty refund failed or outcome unknown: "
+      << result.error;
+    return false;
+  }
+  const std::string refundTxId = result.txId;
+  if (!saveSwapMerged(sm, [refundTxId](SwapStateMachine& latest) {
+        latest.params().ctrRefundAttempted = true;
+        latest.params().ctrRefundSubmitted = true;
+        latest.params().ctrRefundTxId = refundTxId;
+      })) {
+    m_logger(Logging::ERROR) << "  Counterparty refund submitted but persistence failed";
+    return false;
+  }
+  m_logger(Logging::INFO) << "  Counterparty refund submitted: " << refundTxId;
+  return true;
 }
 
 // ── v11+ direct escrow spends (unilateral; no peer cooperation) ────────────
@@ -3400,53 +3828,70 @@ bool SwapDaemon::revealXmrShare(SwapStateMachine& sm) {
   return true;
 }
 
-bool SwapDaemon::broadcastEscrowClaimDirect(SwapParams& params) {
+bool SwapDaemon::broadcastEscrowClaimDirect(SwapStateMachine& sm) {
   // Claim: spend the escrow output before the refund timeout using the
   // completed MuSig2 adaptor aggregate over the deterministic claim tx.
-  Crypto::Signature claimSig{};
-  if (!params.escrowClaimSigHex.empty()) {
-    if (!Common::podFromHex(params.escrowClaimSigHex, claimSig)) {
-      m_logger(Logging::ERROR) << "  Persisted claim signature is malformed";
+  SwapParams& params = sm.params();
+  if (params.escrowClaimTxHex.empty()) {
+    Crypto::Signature claimSig{};
+    if (!params.escrowClaimSigHex.empty()) {
+      if (!Common::podFromHex(params.escrowClaimSigHex, claimSig)) {
+        m_logger(Logging::ERROR) << "  Persisted claim signature is malformed";
+        return false;
+      }
+    } else {
+      claimSig = adaptor_aggregate(params, /*adapted=*/true);
+      if (isZeroSignature(claimSig)) {
+        m_logger(Logging::WARNING) << "  Cannot aggregate claim sig yet (adaptor secret missing)";
+        return false;
+      }
+    }
+
+    const Crypto::PublicKey destinationKey = (params.role == SwapRole::BOB)
+        ? params.peerSwapPubKey : params.ourSwapPubKey;
+    CryptoNote::Transaction tx;
+    Crypto::Hash prefixHash;
+    if (!SwapTxBuilder::buildDeterministicClaimTx(params, destinationKey,
+                                                  params.protocolFee,
+                                                  params.treasuryPubKey,
+                                                  tx, prefixHash)) {
+      m_logger(Logging::ERROR) << "  Failed to build deterministic claim tx";
       return false;
     }
-  } else {
-    claimSig = adaptor_aggregate(params, /*adapted=*/true);
-    if (isZeroSignature(claimSig)) {
-      m_logger(Logging::WARNING) << "  Cannot aggregate claim sig yet (adaptor secret missing)";
+    tx.signatures.push_back(std::vector<Crypto::Signature>{claimSig});
+    const std::string txHex = SwapTxBuilder::serializeToHex(tx);
+    Crypto::Hash txHash{};
+    if (txHex.empty() || !CryptoNote::getObjectHash(tx, txHash)) return false;
+    const std::string txId = Common::podToHex(txHash);
+    const std::string sigHex = Common::podToHex(claimSig);
+    if (!saveSwapMerged(sm, [txHex, txId, sigHex](SwapStateMachine& latest) {
+          latest.params().escrowClaimTxHex = txHex;
+          latest.params().escrowClaimTxId = txId;
+          latest.params().escrowClaimSigHex = sigHex;
+        })) {
+      m_logger(Logging::ERROR) << "  Could not persist signed XFG claim before broadcast";
       return false;
     }
-    params.escrowClaimSigHex = Common::podToHex(claimSig);
   }
 
-  const Crypto::PublicKey destinationKey = (params.role == SwapRole::BOB)
-      ? params.peerSwapPubKey : params.ourSwapPubKey;
-
-  CryptoNote::Transaction tx;
-  Crypto::Hash prefixHash;
-  if (!SwapTxBuilder::buildDeterministicClaimTx(params, destinationKey,
-                                                params.protocolFee,
-                                                params.treasuryPubKey,
-                                                tx, prefixHash)) {
-    m_logger(Logging::ERROR) << "  Failed to build deterministic claim tx";
-    return false;
+  const auto& saved = sm.params();
+  if (saved.escrowClaimTxHex.empty() || saved.escrowClaimTxId.empty()) return false;
+  const bool accepted = m_rpc.sendRawTransaction(saved.escrowClaimTxHex);
+  if (!accepted) {
+    std::vector<TxOutputInfo> outputs;
+    if (!m_rpc.getTransactionOutputs(saved.escrowClaimTxId, outputs)) {
+      m_logger(Logging::WARNING) << "  Escrow claim broadcast unresolved; retrying saved tx";
+      return false;
+    }
   }
-  tx.signatures.push_back(std::vector<Crypto::Signature>{claimSig});
-
-  const std::string txHex = SwapTxBuilder::serializeToHex(tx);
-  if (!m_rpc.sendRawTransaction(txHex)) {
-    m_logger(Logging::ERROR) << "  Escrow claim broadcast failed — will retry";
-    return false;
-  }
-  if (params.protocolFee > 0) {
-    m_rpc.addSwapFee(params.protocolFee);
-  }
-  m_logger(Logging::INFO) << "  Escrow claim broadcast (direct escrow spend).";
+  m_logger(Logging::INFO) << "  Escrow claim submitted: " << saved.escrowClaimTxId;
   return true;
 }
 
-bool SwapDaemon::broadcastEscrowRefundDirect(SwapParams& params) {
+bool SwapDaemon::broadcastEscrowRefundDirect(SwapStateMachine& sm) {
   // Refund: Bob alone spends the escrow output after the refund timeout
   // with a plain Schnorr signature under his refund key.
+  SwapParams& params = sm.params();
   if (params.role != SwapRole::BOB) {
     m_logger(Logging::ERROR) << "  Escrow refund is maker-only";
     return false;
@@ -3456,58 +3901,78 @@ bool SwapDaemon::broadcastEscrowRefundDirect(SwapParams& params) {
       (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
       CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
 
-  CryptoNote::Transaction tx;
-  tx.version = CryptoNote::TRANSACTION_VERSION_2;
-  tx.unlockTime = 0;
-  CryptoNote::KeyPair txKey;
-  Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
-  CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
+  if (params.escrowRefundTxHex.empty()) {
+    Crypto::PublicKey treasuryKey{};
+    if (params.xfgAmount < refundFee ||
+        refundFee <= SwapTxBuilder::MIN_FEE ||
+        !getTreasuryPubKey(treasuryKey)) return false;
+    CryptoNote::Transaction tx;
+    tx.version = CryptoNote::TRANSACTION_VERSION_2;
+    tx.unlockTime = 0;
+    CryptoNote::KeyPair txKey;
+    Crypto::generate_keys(txKey.publicKey, txKey.secretKey);
+    CryptoNote::addTransactionPublicKeyToExtra(tx.extra, txKey.publicKey);
 
-  CryptoNote::TransactionInputSwapEscrow in;
-  in.amount = params.xfgAmount;
-  in.escrowTxId = params.escrowTxHash;
-  in.escrowOutputIndex = 0;
-  in.mode = 1; // refund
-  in.keyImage = SwapTxBuilder::swapEscrowKeyImage(params.escrowTxHash, 0, 1);
-  tx.inputs.push_back(in);
+    CryptoNote::TransactionInputSwapEscrow in;
+    in.amount = params.xfgAmount;
+    in.escrowTxId = params.escrowTxHash;
+    in.escrowOutputIndex = 0;
+    in.mode = 1; // refund
+    in.keyImage = SwapTxBuilder::swapEscrowKeyImage(params.escrowTxHash, 0, 1);
+    tx.inputs.push_back(in);
 
-  CryptoNote::KeyOutput ko;
-  ko.key = params.ourSwapPubKey;
-  CryptoNote::TransactionOutput out;
-  out.amount = params.xfgAmount - refundFee;
-  out.target = ko;
-  tx.outputs.push_back(out);
+    CryptoNote::KeyOutput ko;
+    ko.key = params.ourSwapPubKey;
+    CryptoNote::TransactionOutput out;
+    out.amount = params.xfgAmount - refundFee;
+    out.target = ko;
+    tx.outputs.push_back(out);
 
-  const uint64_t treasuryAmount =
-      refundFee > SwapTxBuilder::MIN_FEE ? refundFee - SwapTxBuilder::MIN_FEE : 0;
-  if (treasuryAmount > 0) {
-    CryptoNote::KeyOutput treasuryOut;
-    treasuryOut.key = params.treasuryPubKey;
-    CryptoNote::TransactionOutput treasuryOutput;
-    treasuryOutput.amount = treasuryAmount;
-    treasuryOutput.target = treasuryOut;
-    tx.outputs.push_back(treasuryOutput);
+    const uint64_t treasuryAmount =
+        refundFee > SwapTxBuilder::MIN_FEE ? refundFee - SwapTxBuilder::MIN_FEE : 0;
+    if (treasuryAmount > 0) {
+      CryptoNote::KeyOutput treasuryOut;
+      treasuryOut.key = treasuryKey;
+      CryptoNote::TransactionOutput treasuryOutput;
+      treasuryOutput.amount = treasuryAmount;
+      treasuryOutput.target = treasuryOut;
+      tx.outputs.push_back(treasuryOutput);
+    }
+
+    Crypto::Hash prefixHash;
+    if (!CryptoNote::getObjectHash(
+            static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash)) return false;
+    Crypto::Signature refundSig;
+    Crypto::generate_signature(prefixHash, params.ourSwapPubKey,
+                               params.ourSwapSecKey, refundSig);
+    tx.signatures.push_back(std::vector<Crypto::Signature>{refundSig});
+
+    const std::string txHex = SwapTxBuilder::serializeToHex(tx);
+    Crypto::Hash txHash;
+    if (txHex.empty() || !CryptoNote::getObjectHash(tx, txHash)) return false;
+    const std::string txId = Common::podToHex(txHash);
+    if (!saveSwapMerged(sm, [txHex, txId, treasuryKey, refundFee](SwapStateMachine& latest) {
+          latest.params().escrowRefundTxHex = txHex;
+          latest.params().escrowRefundTxId = txId;
+          latest.params().treasuryPubKey = treasuryKey;
+          latest.params().protocolFee = refundFee;
+        })) {
+      m_logger(Logging::ERROR) << "  Could not persist signed XFG refund before broadcast";
+      return false;
+    }
   }
 
-  Crypto::Hash prefixHash;
-  if (!CryptoNote::getObjectHash(
-          static_cast<CryptoNote::TransactionPrefix&>(tx), prefixHash)) {
-    return false;
+  const auto& saved = sm.params();
+  if (saved.escrowRefundTxHex.empty() || saved.escrowRefundTxId.empty()) return false;
+  const bool accepted = m_rpc.sendRawTransaction(saved.escrowRefundTxHex);
+  if (!accepted) {
+    std::vector<TxOutputInfo> outputs;
+    if (!m_rpc.getTransactionOutputs(saved.escrowRefundTxId, outputs)) {
+      m_logger(Logging::ERROR) << "  Escrow refund broadcast unresolved; retrying saved tx later";
+      return false;
+    }
   }
-  Crypto::Signature refundSig;
-  Crypto::generate_signature(prefixHash, params.ourSwapPubKey,
-                             params.ourSwapSecKey, refundSig);
-  tx.signatures.push_back(std::vector<Crypto::Signature>{refundSig});
-
-  const std::string txHex = SwapTxBuilder::serializeToHex(tx);
-  if (!m_rpc.sendRawTransaction(txHex)) {
-    m_logger(Logging::ERROR) << "  Escrow refund broadcast failed — will retry";
-    return false;
-  }
-  if (refundFee > 0) {
-    m_rpc.addSwapFee(refundFee);
-  }
-  m_logger(Logging::INFO) << "  Escrow refund broadcast (direct escrow spend).";
+  m_logger(Logging::INFO) << "  Escrow refund submitted: " << saved.escrowRefundTxId;
   return true;
 }
 
@@ -3684,6 +4149,14 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
 
     switch (msg.type) {
       case PeerMessageType::KEY_EXCHANGE:
+        if (msg.keyExchange.amountProtocolVersion != params.amountProtocolVersion ||
+            (params.amountProtocolVersion == 2 &&
+             (msg.keyExchange.pair != params.pair ||
+              msg.keyExchange.xfgAmount != params.xfgAmount ||
+              msg.keyExchange.ctrAmount != params.ctrAmount))) {
+          m_logger(Logging::WARNING) << "KEY_EXCHANGE amount/version mismatch for " << msg.swapId;
+          return false;
+        }
         if (keyExchanged) {
           m_logger(Logging::WARNING) << "Duplicate KEY_EXCHANGE rejected for swap " << msg.swapId;
           return false;
@@ -4060,7 +4533,6 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           return false;
         }
         params.adaptorSecret = msg.secretReveal.adaptorSecret;
-        params.adaptorSecretReceived = true;
         if (!msg.secretReveal.claimTxId.empty()) {
           params.ctrClaimTxId = msg.secretReveal.claimTxId;
           if (!params.chainState.empty() && params.chainState.find(':') == std::string::npos) {
@@ -4068,9 +4540,8 @@ bool SwapDaemon::handlePeerMessage(const PeerMessage& msg) {
           }
         }
         m_logger(Logging::INFO) << "  Received adaptor secret from peer (verified against T)";
-        if (sm.currentState() == SwapState::ADAPTOR_CTR_LOCKED) {
-          sm.transition(SwapState::ADAPTOR_SECRET_REVEALED);
-        }
+        // A peer message reveals t but does not prove that its CTR claim won
+        // on-chain. handleCtrLocked verifies the chain before XFG can move.
         return true;
       }
 
@@ -4181,6 +4652,12 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds) {
   m_logger(Logging::INFO) << "Received swap request for offer " << offerId << " amount " << amount;
 
+  if (!CryptoNote::SwapOfferRelay::isValidSwapRequestInput(
+          offerId, takerPubKey, proofOfFunds)) {
+    m_logger(Logging::WARNING) << "Rejecting malformed swap request input";
+    return false;
+  }
+
   if (isTakerRateLimited(takerPubKey)) {
     m_logger(Logging::WARNING) << "Taker " << takerPubKey.substr(0, 16) << "... is rate-limited — rejecting";
     return false;
@@ -4193,7 +4670,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
 
   CryptoNote::SwapOfferMsg targetOffer;
   bool found = false;
-  for (int pair = 0; pair <= static_cast<int>(SwapPair::DOT); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(MAX_SWAP_PAIR_INDEX); ++pair) {
     auto pairOffers = m_swapRelay->getOffers(pair);
     for (const auto& offer : pairOffers) {
       if (offer.offerId == offerId) {
@@ -4235,13 +4712,13 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
-  IChainClient* client = m_chainRegistry.getClient(pair);
-  if (!client) {
-    m_logger(Logging::ERROR) << "No chain client for pair " << (int)targetOffer.pair;
+  if (!canStartNewSwap(pair)) {
+    m_logger(Logging::ERROR) << "Chain not ready for new offer fills: " << (int)targetOffer.pair;
     return false;
   }
+  IChainClient* client = m_chainRegistry.getClient(pair);
 
-  uint64_t requiredCtrAmount = 0;
+  AtomicAmount requiredCtrAmount = 0;
   {
     if (targetOffer.rateNum == 0) {
       m_logger(Logging::ERROR) << "Invalid (zero) rate for offer " << offerId;
@@ -4250,18 +4727,16 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
     // Integer math — avoid double precision loss on large 1e18-divisor chains.
     //   requiredCtr = fillAmount(atomic XFG) * ctrDivisor / rateNum
     // The 1e7 scaling on rateNum and (implicitly) on fillAmount cancels out.
-    uint64_t ctrDiv = static_cast<uint64_t>(m_oracle.ctrDivisor(pair));
-    uint128_t num = static_cast<uint128_t>(fillAmount) * ctrDiv;
-    uint128_t result = num / static_cast<uint128_t>(targetOffer.rateNum);
-    if (result > static_cast<uint128_t>(UINT64_MAX)) {
-      m_logger(Logging::ERROR) << "CTR amount overflow for offer " << offerId;
-      return false;
-    }
-    requiredCtrAmount = static_cast<uint64_t>(result);
+    const auto* amountDescriptor = swapPairDescriptor(pair);
+    if (!amountDescriptor || amountDescriptor->decimals > 38) return false;
+    AtomicAmount ctrDiv = 1;
+    for (uint8_t i = 0; i < amountDescriptor->decimals; ++i) ctrDiv *= 10;
+    requiredCtrAmount = (AtomicAmount(fillAmount) * ctrDiv) / targetOffer.rateNum;
+    if (requiredCtrAmount == 0) return false;
   }
 
   // Bind the reserve proof to this offer (proof message must equal offerId).
-  ChainClientResult proofResult = client->verifyReserveProof(offerId, requiredCtrAmount, proofOfFunds);
+  ChainClientResult proofResult = client->verifyReserveProofWide(offerId, requiredCtrAmount, proofOfFunds);
   if (!proofResult.success) {
     m_logger(Logging::ERROR) << "Reserve proof failed for offer " << offerId << ": " << proofResult.error;
     recordTakerFailure(takerPubKey);
@@ -4433,7 +4908,8 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     return false;
   }
   m_offerManager.reset(new OfferManager(
-    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger()));
+    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
+    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair)); }));
   if (!m_offerManager->loadConfig(jsonPath)) {
     m_offerManager.reset();
     return false;
@@ -4447,20 +4923,28 @@ std::string SwapDaemon::buildStatusJson() {
   std::ostringstream json;
   json << "{";
 
+  json << "\"network\":" << Common::JsonValue(m_network).toString() << ",";
+  json << "\"profile\":" << Common::JsonValue(m_profile).toString() << ",";
+
   uint32_t height = 0;
   m_rpc.getHeight(height);
   json << "\"height\":" << height << ",";
+
+  json << "\"chains\":" << buildChainCatalogJson() << ",";
 
   json << "\"offers\":[";
   if (m_swapRelay) {
     auto offers = m_swapRelay->getAllOffers();
     for (size_t i = 0; i < offers.size(); ++i) {
       if (i > 0) json << ",";
-      json << "{\"offerId\":\"" << offers[i].offerId << "\""
+      json << "{\"offerId\":" << Common::JsonValue(offers[i].offerId).toString()
            << ",\"pair\":" << (int)offers[i].pair
            << ",\"xfgAmount\":" << offers[i].xfgAmount
+           << ",\"xfgAmountAtomic\":\"" << offers[i].xfgAmount << "\""
            << ",\"filledAmount\":" << offers[i].filledAmount
+           << ",\"filledAmountAtomic\":\"" << offers[i].filledAmount << "\""
            << ",\"rateNum\":" << offers[i].rateNum
+           << ",\"rateNumAtomic\":\"" << offers[i].rateNum << "\""
            << ",\"postedHeight\":" << offers[i].postedHeight
            << ",\"ttlBlocks\":" << offers[i].ttlBlocks
            << ",\"timestamp\":" << offers[i].timestamp
@@ -4482,8 +4966,9 @@ std::string SwapDaemon::buildStatusJson() {
       if (!first) json << ",";
       first = false;
       const auto& p = sm.params();
-      json << "{\"swapId\":\"" << id << "\""
-           << ",\"state\":\"" << swapStateToString(sm.currentState()) << "\""
+      json << "{\"swapId\":" << Common::JsonValue(id).toString()
+           << ",\"state\":"
+           << Common::JsonValue(std::string(swapStateToString(sm.currentState()))).toString()
            << ",\"pair\":" << (int)p.pair
            << ",\"timeoutHeight\":" << p.xfgTimeoutHeight
            << "}";
@@ -4491,6 +4976,38 @@ std::string SwapDaemon::buildStatusJson() {
   }
   json << "]}";
   return json.str();
+}
+
+std::string SwapDaemon::buildChainCatalogJson() {
+  Common::JsonValue::Array chains;
+  chains.reserve(SWAP_PAIR_COUNT);
+  for (const auto& descriptor : SWAP_PAIR_CATALOG) {
+    const ChainReadiness readiness = getChainReadiness(descriptor.pair, false);
+    Common::JsonValue entry(Common::JsonValue::OBJECT);
+    entry.insert("id", static_cast<int64_t>(descriptor.id));
+    entry.insert("key", std::string(descriptor.key));
+    entry.insert("symbol", std::string(descriptor.symbol));
+    entry.insert("assetTicker", std::string(descriptor.assetTicker));
+    entry.insert("name", std::string(descriptor.displayName));
+    entry.insert("family", std::string(swapChainFamilyToString(descriptor.family)));
+    entry.insert("chainId", static_cast<int64_t>(descriptor.chainId));
+    // Keep blockTimeMs as the ordering-side value for old dashboard clients;
+    // new clients can show both safety bounds explicitly.
+    entry.insert("blockTimeMs", static_cast<int64_t>(descriptor.maxBlockTimeMs));
+    entry.insert("minBlockTimeMs", static_cast<int64_t>(descriptor.minBlockTimeMs));
+    entry.insert("maxBlockTimeMs", static_cast<int64_t>(descriptor.maxBlockTimeMs));
+    entry.insert("decimals", static_cast<int64_t>(descriptor.decimals));
+    entry.insert("implementation", std::string(swapPairSupportToString(descriptor.support)));
+    entry.insert("txEnvelope", std::string(evmTxEnvelopeToString(descriptor.txEnvelope)));
+    entry.insert("icon", std::string(descriptor.icon));
+    entry.insert("color", std::string(descriptor.color));
+    entry.insert("protocol", Common::JsonValue(isProtocolSwapPair(descriptor.id)));
+    entry.insert("configured", Common::JsonValue(readiness.configured));
+    entry.insert("ready", Common::JsonValue(readiness.ready));
+    entry.insert("readinessError", readiness.error);
+    chains.push_back(std::move(entry));
+  }
+  return Common::JsonValue(std::move(chains)).toString();
 }
 
 bool SwapDaemon::startStatusServer(uint16_t port) {

@@ -17,6 +17,7 @@
 
 #include "WalletLegacy.h"
 #include "crypto/adaptor.h"
+#include "SwapDaemon/SwapPairCatalog.h"
 
 #include <algorithm>
 #include <memory>
@@ -2025,6 +2026,12 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
 
   if (amount == 0) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
   if (timeout_hours == 0 || timeout_hours > 200) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  const auto* pairDescriptor =
+      XfgSwap::swapPairDescriptor(static_cast<XfgSwap::SwapPair>(pair));
+  if (!pairDescriptor ||
+      pairDescriptor->support == XfgSwap::SwapPairSupport::STAGED) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
 
   // 1. Generate AFK Lock Data
   Crypto::AFKLockData lockData;
@@ -2040,8 +2047,8 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   {
     const uint8_t* secretBytes = reinterpret_cast<const uint8_t*>(&lockData.secret);
     uint8_t digest[32];
-    bool utxoFamily = (pair == 3 /*BCH*/ || pair == 6 /*KMD_SPV*/ || pair == 8 /*DCR*/ ||
-                       pair == 9 /*BTC*/ || pair == 10 /*LTC*/);
+    const bool utxoFamily =
+        pairDescriptor->family == XfgSwap::SwapChainFamily::UTXO;
     if (utxoFamily) {
       SHA256(secretBytes, 32, digest);
     } else {

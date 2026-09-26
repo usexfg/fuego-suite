@@ -82,54 +82,26 @@
 
         <div class="bridge-input-group" id="to-group">
           <div class="bridge-chain">
-            <img id="to-chain-icon" src="/coin-icons/btc.png" alt="?" class="bridge-logo">
+            <img id="to-chain-icon" src="/coin-icons/fuego.png" alt="?" class="bridge-logo">
             <div>
               <div style="font-weight:600;font-size:14px;" id="to-chain-name">Select chain</div>
               <div style="font-size:11px;color:var(--text-muted);" id="to-chain-ticker">—</div>
             </div>
             <div style="margin-left:auto;">
               <select class="form-input" id="to-chain-select" style="width:auto;padding:6px 28px 6px 8px;font-size:12px;">
-                <option value="BTC">Bitcoin (BTC)</option>
-                <option value="ETH">Ethereum (ETH)</option>
-                <option value="SOL">Solana (SOL)</option>
-                <option value="XMR">Monero (XMR)</option>
-                <option value="LTC">Litecoin (LTC)</option>
-                <option value="BCH">Bitcoin Cash (BCH)</option>
-                <option value="ARB">Arbitrum (ARB)</option>
-                <option value="BASE">Base</option>
-                <option value="BNB">BNB Chain</option>
-                <option value="DCR">Decred (DCR)</option>
-                <option value="KMD_SPV">Komodo (KMD)</option>
-                <option value="POLYGON">Polygon</option>
-                <option value="GLEEC">Gleec (GLEEC)</option>
-                <option value="ROBINHOOD">Robinhood Chain</option>
-                <option value="AVAX">Avalanche (AVAX)</option>
-                <option value="CRO">Cronos (CRO)</option>
-                <option value="BOB">Bob</option>
-                <option value="SIA">Sia (SC)</option>
-                <option value="TON">TON</option>
-                <option value="UNICHAIN">Unichain</option>
-                <option value="PLASMA">Plasma (XPL)</option>
-                <option value="DOGE">Dogecoin (DOGE)</option>
-                <option value="DASH">Dash (DASH)</option>
-                <option value="ZEC">Zcash (ZEC)</option>
-                <option value="PLS">PulseChain (PLS)</option>
-                <option value="ZANO">Zano (ZANO)</option>
-                <option value="MONAD">Monad</option>
-                <option value="OPTIMISM">Optimism (OP)</option>
-                <option value="DOT">Polkadot (DOT)</option>
+                <option value="">Loading xfg-swapd catalog…</option>
               </select>
             </div>
           </div>
-          <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;padding:8px 0;color:var(--text-secondary);" id="bridge-estimated">0.00</div>
-          <div class="bridge-balance">Estimated output (after 2% fee)</div>
+          <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;padding:8px 0;color:var(--text-secondary);" id="bridge-estimated">—</div>
+          <div class="bridge-balance">Quoted counterparty amount</div>
         </div>
 
         <div class="bridge-rate" id="bridge-rate">Select an amount to see the rate</div>
-        <div class="bridge-fee">Network fee: ~0.3% + 2% swap fee · Time: depends on counterparty chain</div>
+        <div class="bridge-fee">Exact amounts come from the selected offer or your counterparty agreement; network fees are not estimated here.</div>
 
         <button type="button" class="btn btn-block btn-primary" id="bridge-init-btn" style="font-size:15px;padding:14px;">
-          Post / Initiate Swap
+          Review / Initiate Swap
         </button>
       </div>
 
@@ -137,12 +109,20 @@
         <div class="card-header"><span>Swap Counterparty</span></div>
         <div class="card-body">
           <div class="form-group">
-            <label class="form-label">Counterparty Public Key (hex)</label>
+            <label class="form-label">Counterparty amount (atomic units)</label>
+            <input type="text" class="form-input" id="ctr-amount" inputmode="numeric" placeholder="Exact amount locked on the counterparty chain">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Peer swap endpoint</label>
+            <input type="text" class="form-input" id="peer-endpoint" placeholder="host:18901">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expected peer public key (optional)</label>
             <input type="text" class="form-input" id="peer-pubkey" placeholder="Ed25519 public key of your swap partner">
           </div>
           <div style="font-size:12px;color:var(--text-muted);">
-            For AFK (maker) book takes, leave empty unless the offer binds a peer.
-            Selected offer details appear in the orderbook below.
+            New swaps require a locally ready chain adapter. A selected offer fills
+            the amounts, but the peer endpoint still comes from the maker.
           </div>
           <div id="selected-offer-summary" class="selected-offer-summary" hidden></div>
         </div>
@@ -232,8 +212,8 @@
         </div>
         <div class="code-block" id="init-cli-cmd" style="display:none;"></div>
         <div style="display:flex;gap:8px;">
-          <button type="button" class="btn btn-primary" id="init-exec-btn" style="flex:1;">Execute via Wallet</button>
-          <button type="button" class="btn btn-secondary" id="init-copy-btn" style="flex:1;">Copy CLI Command</button>
+          <button type="button" class="btn btn-primary" id="init-exec-btn" style="flex:1;">Execute via xfg-swapd</button>
+          <button type="button" class="btn btn-secondary" id="init-copy-btn" style="flex:1;">Copy CLI command</button>
         </div>
       </div>
     </div>

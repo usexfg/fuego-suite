@@ -17,6 +17,8 @@ public:
   BchChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "BCH"; }
+  bool usesSpvVerification() const override { return m_spvClient != nullptr; }
+  bool isReadyForNewSwap() override { return m_spvClient != nullptr; }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

@@ -929,6 +929,7 @@ bool RpcServer::on_get_peer_list(
 
 bool RpcServer::on_get_info(const COMMAND_RPC_GET_INFO::request& req, COMMAND_RPC_GET_INFO::response& res) {
   res.height = m_core.get_current_blockchain_height();
+  res.network = m_core.currency().isTestnet() ? "testnet" : "mainnet";
   res.difficulty = m_core.getNextBlockDifficulty();
   res.tx_count = m_core.get_blockchain_total_transactions() - res.height; //without coinbase
   res.tx_pool_size = m_core.get_pool_transactions_count();
@@ -979,6 +980,7 @@ bool RpcServer::on_get_info(const COMMAND_RPC_GET_INFO::request& req, COMMAND_RP
 
 bool RpcServer::on_get_height(const COMMAND_RPC_GET_HEIGHT::request& req, COMMAND_RPC_GET_HEIGHT::response& res) {
   res.height = m_core.get_current_blockchain_height();
+  res.network = m_core.currency().isTestnet() ? "testnet" : "mainnet";
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -1037,7 +1039,15 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
   params.pair        = XfgSwap::swapPairFromString(req.pair);
   params.role        = XfgSwap::SwapRole::BOB;
   params.xfgAmount   = req.xfg_amount;
-  params.ctrAmount   = req.ctr_amount;
+  if (!req.ctr_amount_atomic.empty()) {
+    if (req.ctr_amount != 0 ||
+        !XfgSwap::parseAtomicAmount(req.ctr_amount_atomic, params.ctrAmount)) {
+      res.status = "Invalid ctr_amount_atomic or conflicting legacy amount";
+      return true;
+    }
+  } else {
+    params.ctrAmount = req.ctr_amount;
+  }
   params.ctrAddress  = req.ctr_address;
   params.peerEndpoint = req.peer_endpoint;
 
@@ -1257,6 +1267,8 @@ bool RpcServer::on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& r
     entry.pair        = t.pair;
     entry.xfgAmount   = t.xfgAmount;
     entry.ctrAmount   = t.ctrAmount;
+    entry.ctrAmountAtomic = t.ctrAmountAtomic.empty()
+        ? std::to_string(t.ctrAmount) : t.ctrAmountAtomic;
     entry.rate        = std::to_string(t.rate);
     entry.blockHeight = t.blockHeight;
     entry.timestamp   = t.timestamp;
@@ -1368,10 +1380,15 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
     res.status = "proofOfFunds is required (chain reserve proof bound to offerId)";
     return true;
   }
+  if (!CryptoNote::SwapOfferRelay::isValidSwapRequestInput(
+          req.offerId, req.takerPubKey, req.proofOfFunds)) {
+    res.status = "offerId or proofOfFunds exceeds swap-request size limit";
+    return true;
+  }
 
   // Echo the offer's pair + amount so the taker can drive its local swap
   // daemon after the maker locks (informational only).
-  for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::DOT); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::MAX_SWAP_PAIR_INDEX); ++pair) {
     auto offers = m_swapRelay->getOffers(static_cast<uint8_t>(pair));
     for (const auto& offer : offers) {
       if (offer.offerId == req.offerId) {
@@ -1470,7 +1487,7 @@ bool RpcServer::on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMM
 
   // Rate limiting is now applied per-IP at processRequest level.
 
-  if (req.pair > 7 || req.side > 1) {
+  if (!SwapOfferRelay::isExecutablePair(req.pair) || req.side > 1) {
     res.status = "Invalid pair or side";
     return true;
   }
@@ -1549,7 +1566,7 @@ bool RpcServer::on_get_open_orders(const COMMAND_RPC_GET_OPEN_ORDERS::request& r
   }
 
   // Return all orders for now (address filter not yet implemented)
-  for (int pair = 0; pair < 8; ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::MAX_SWAP_PAIR_INDEX); ++pair) {
     auto snap = m_swapRelay->getOrderBookSnapshot(pair, 1000);
     for (const auto& lvl : snap.bids) {
       (void)lvl;

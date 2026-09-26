@@ -4,6 +4,11 @@
 
 #include <iostream>
 #include <cstring>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include "Common/JsonValue.h"
+#include "SwapDaemon/SwapDatabase.h"
 #include "SwapDaemon/SwapTypes.h"
 #include "SwapDaemon/SwapStateMachine.h"
 
@@ -310,7 +315,19 @@ static bool test_serialization_roundtrip() {
   params.swapId = "test_serial";
   params.pair = SwapPair::BCH;
   params.role = SwapRole::BOB;
+  params.ctrAmount = AtomicAmount(100) * 1000000000000000000ULL;
   params.requiredConfirmations = 6;
+  params.useSpvVerification = true;
+  params.ctrClaimAttempted = true;
+  params.ctrClaimTxId = "claim-tx";
+  params.ctrRefundAttempted = true;
+  params.ctrRefundSubmitted = true;
+  params.ctrRefundTxId = "refund-tx";
+  params.escrowRefundBroadcast = true;
+  params.escrowClaimTxHex = "signed-claim";
+  params.escrowClaimTxId = "claim-id";
+  params.escrow_claim_fee_report_attempted = true;
+  params.escrow_refund_fee_report_attempted = true;
   // Value-init zeros secret pods so needEnc is false without a key; still set
   // a key so tests match production (enc key always present when persisting).
   SwapStateMachine sm(params);
@@ -329,9 +346,28 @@ static bool test_serialization_roundtrip() {
   }
 
   SwapStateMachine restored = SwapStateMachine::deserialize(serialized);
+  if (restored.params().ctrAmount != params.ctrAmount ||
+      restored.params().amountProtocolVersion != 2) {
+    std::cout << "FAIL: full-width amount/version lost in serialization\n";
+    return false;
+  }
   if (restored.currentState() != SwapState::ADAPTOR_WAITING_SPV) {
     std::cout << "FAIL: deserialized state is " << swapStateToString(restored.currentState())
               << ", expected ADAPTOR_WAITING_SPV\n";
+    return false;
+  }
+  if (!restored.params().useSpvVerification ||
+      !restored.params().ctrClaimAttempted ||
+      restored.params().ctrClaimTxId != "claim-tx" ||
+      !restored.params().ctrRefundAttempted ||
+      !restored.params().ctrRefundSubmitted ||
+      restored.params().ctrRefundTxId != "refund-tx" ||
+      !restored.params().escrowRefundBroadcast ||
+      restored.params().escrowClaimTxHex != "signed-claim" ||
+      restored.params().escrowClaimTxId != "claim-id" ||
+      !restored.params().escrow_claim_fee_report_attempted ||
+      !restored.params().escrow_refund_fee_report_attempted) {
+    std::cout << "FAIL: refund and claim leg status lost on deserialize\n";
     return false;
   }
 
@@ -349,9 +385,79 @@ static bool test_serialization_roundtrip() {
   return true;
 }
 
+static bool test_legacy_claim_records_fail_closed() {
+  std::cout << "  test_legacy_claim_records_fail_closed... ";
+  SwapParams params{};
+  params.swapId = "legacy-claim";
+  params.pair = SwapPair::BCH;
+  params.role = SwapRole::BOB;
+  SwapStateMachine sm(params);
+  sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+  sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+  sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+  sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+
+  for (SwapState state : {SwapState::ADAPTOR_CTR_LOCKED,
+                          SwapState::ADAPTOR_WAITING_SPV,
+                          SwapState::ADAPTOR_SECRET_CONFIRMED_SPV}) {
+    if (state != sm.currentState()) sm.transition(state);
+    Common::JsonValue root = Common::JsonValue::fromString(sm.serialize());
+    root.erase("ctrClaimAttempted");
+    root.erase("useSpvVerification");
+    const SwapStateMachine restored = SwapStateMachine::deserialize(root.toString());
+    if (!restored.params().ctrClaimAttempted ||
+        (state != SwapState::ADAPTOR_CTR_LOCKED &&
+         !restored.params().useSpvVerification)) {
+      std::cout << "FAIL: legacy record could authorize XFG refund\n";
+      return false;
+    }
+  }
+  std::cout << "PASS\n";
+  return true;
+}
+
+static bool test_terminal_archive_masks_stale_active_record() {
+  std::cout << "  test_terminal_archive_masks_stale_active_record... ";
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() /
+      ("xfg-swap-archive-" + std::to_string(
+          std::chrono::steady_clock::now().time_since_epoch().count()));
+  SwapDatabase db(dir.string());
+  SwapParams params{};
+  params.swapId = "archive-test";
+  params.pair = SwapPair::BCH;
+  params.role = SwapRole::BOB;
+  params.xfgTimeoutHeight = 10;
+  SwapStateMachine sm(params);
+  sm.transition(SwapState::ADAPTOR_KEYS_EXCHANGED);
+  sm.transition(SwapState::ADAPTOR_ESCROW_FUNDED);
+  sm.transition(SwapState::ADAPTOR_PRESIGS_READY);
+  sm.transition(SwapState::ADAPTOR_CTR_LOCKED);
+  const bool activeSaved = db.saveSwap(sm);
+  const std::string staleJson = sm.serialize();
+  const bool terminalSaved = sm.transition(SwapState::ADAPTOR_REFUNDED, 11) &&
+      db.saveSwap(sm);
+  const fs::path active = dir / "swaps" / "archive-test.json";
+  const fs::path archive = dir / "archive" / "archive-test.json";
+  SwapStateMachine loaded;
+  bool ok = activeSaved && terminalSaved && fs::exists(archive) &&
+      !fs::exists(active) && !db.loadSwap(params.swapId, loaded);
+  // Simulate a crash that left the old active file beside a committed archive.
+  { std::ofstream out(active); out << staleJson; }
+  SwapStateMachine stale = SwapStateMachine::deserialize(staleJson);
+  ok = ok && !db.loadSwap(params.swapId, loaded) && db.listSwaps().empty() &&
+      !db.saveSwap(stale);
+  db.migrateTerminalSwaps();
+  ok = ok && !fs::exists(active);
+  fs::remove_all(dir);
+  if (!ok) { std::cout << "FAIL\n"; return false; }
+  std::cout << "PASS\n";
+  return true;
+}
+
 int main() {
   std::cout << "=== SwapStateMachine SPV state tests ===\n\n";
-  int pass = 0, total = 10;
+  int pass = 0, total = 12;
   if (test_spv_waiting_to_confirmed())    ++pass;
   if (test_spv_waiting_stays_on_retry())  ++pass;
   if (test_spv_waiting_to_refunded())     ++pass;
@@ -362,6 +468,8 @@ int main() {
   if (test_invalid_transitions())         ++pass;
   if (test_state_string_mapping())        ++pass;
   if (test_serialization_roundtrip())     ++pass;
+  if (test_legacy_claim_records_fail_closed()) ++pass;
+  if (test_terminal_archive_masks_stale_active_record()) ++pass;
 
   std::cout << "\n=== " << pass << "/" << total << " tests passed ===\n";
   return (pass == total) ? 0 : 1;

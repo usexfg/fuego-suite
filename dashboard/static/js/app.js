@@ -87,6 +87,27 @@ const App = (() => {
     return data.result;
   }
 
+  // Cross-chain execution belongs to xfg-swapd (18902), not walletd. The Go
+  // dashboard proxy injects the optional control token so it never reaches the
+  // browser or copied commands.
+  async function swapRpc(method, params = {}) {
+    const resp = await fetch('/api/swapd-rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+    });
+    const text = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text.trim() || `xfg-swapd HTTP ${resp.status}`);
+    }
+    if (!resp.ok) throw new Error(data.error?.message || `xfg-swapd HTTP ${resp.status}`);
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    return data.result;
+  }
+
   async function getHealth() {
     try {
       const resp = await fetch('/api/health');
@@ -184,7 +205,7 @@ const App = (() => {
   }
 
   return {
-    init, on, rpc, daemonGet, walletRpc,
+    init, on, rpc, daemonGet, walletRpc, swapRpc,
     fmtXfg, fmtHeat, fmtPct, fmtPrice, fmtTime, fmtHeight, fmtDuration,
     copyToClipboard, showToast,
     get health() { return health; },

@@ -38,7 +38,7 @@ ChainClientResult TonChainClient::lock(const SwapParams& params) {
 
   std::string lockRef, err;
   bool ok = m_rpc->lockHtlc(m_walletKeyHex, params.ctrAddress, hashHex,
-                            params.ctrTimeoutBlock, params.ctrAmount, lockRef, err);
+                            params.ctrTimeoutBlock, params.ctrAmount64(), lockRef, err);
   if (!ok) return ChainClientResult::fail(err.empty() ? "TON lock failed" : err);
   return ChainClientResult::ok(lockRef);
 }
@@ -53,7 +53,7 @@ ChainClientResult TonChainClient::verifyLock(const SwapParams& params) {
     return ChainClientResult::fail("TON verifyLock: get_state failed");
   if (st.claimed || st.refunded)
     return ChainClientResult::fail("TON verifyLock: already claimed/refunded");
-  if (st.amountNano < params.ctrAmount)
+  if (st.amountNano < params.ctrAmount64())
     return ChainClientResult::fail("TON verifyLock: amount too low");
 
   std::string expectedHash;

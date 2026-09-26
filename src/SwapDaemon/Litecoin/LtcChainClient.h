@@ -17,6 +17,8 @@ public:
   LtcChainClient(std::shared_ptr<ISpvClient> spvClient, const std::string& wif);
 
   std::string chainName() const override { return "LTC"; }
+  bool usesSpvVerification() const override { return m_spvClient != nullptr; }
+  bool isReadyForNewSwap() override { return m_spvClient != nullptr; }
   bool supportsPtlc() const override { return true; }
   // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.3 (mirror of BTC).
   bool supportsPurePtlc() const override { return true; }

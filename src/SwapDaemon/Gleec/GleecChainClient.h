@@ -7,5 +7,7 @@ public:
   GleecChainClient(std::unique_ptr<EthRpcClient> rpc,
                    const std::string& address)
     : EthChainClient(std::move(rpc), address, "GLEEC") {}
+
+  bool isReadyForNewSwap() override { return hasDeployedHtlcRegistry(); }
 };
 }

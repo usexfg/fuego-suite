@@ -7,6 +7,7 @@
 // the full SwapOfferRelay core/p2p dependencies.
 
 #include "CryptoNoteCore/SwapOfferRelay.h"
+#include "SwapDaemon/SwapTypes.h"
 
 #include <cassert>
 #include <cstdio>
@@ -143,6 +144,44 @@ static std::vector<MatchFill> matchOrders(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 int main() {
+  // The array bound includes every enum value, while staged chains cannot
+  // enter either the legacy offer relay or the signed order book.
+  static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::DOT) ==
+                    SwapOfferRelay::MAX_PAIR_INDEX,
+                "SwapOfferRelay capacity must cover SwapPair");
+  static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::XMR) == 2 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DCR) == 8 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::SIA) == 17 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DOGE) == 20 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DASH) == 21 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::ZEC) == 22 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::ZANO) == 24 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
+                "Update executable-pair admission when staged indices change");
+  for (uint8_t pair = 0; pair <= SwapOfferRelay::MAX_PAIR_INDEX; ++pair) {
+    const bool staged = pair == 2 || pair == 8 || pair == 17 ||
+                        pair == 20 || pair == 21 || pair == 22 ||
+                        pair == 24 || pair == 27 || pair == 28;
+    TEST(SwapOfferRelay::isExecutablePair(pair) == !staged);
+  }
+  TEST(!SwapOfferRelay::isExecutablePair(29));
+  TEST(!SwapOfferRelay::isExecutablePair(255));
+
+  // P2P requests reach this shared ingress without the RPC's input checks.
+  const std::string validTakerKey(64, 'a');
+  TEST(SwapOfferRelay::isValidSwapRequestInput(
+      "offer", validTakerKey, std::string(65536, 'p')));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(4096, 'a'), "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(63, 'a'), "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(63, 'a') + "g", "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", validTakerKey, std::string(65537, 'p')));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      std::string(129, 'o'), validTakerKey, "proof"));
+
 
   // ── PriceLevel::totalDepth ──
 

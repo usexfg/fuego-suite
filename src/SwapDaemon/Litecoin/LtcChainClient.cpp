@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "LtcChainClient.h"
+#include "../utxo_claim_proof.h"
 #include "LtcHtlcScript.h"
 #include "Bitcoin/BtcHtlcScript.h"
 #include "Bitcoin/BtcPtlcScript.h"
@@ -185,7 +186,7 @@ ChainClientResult LtcChainClient::lock(const SwapParams& params) {
       recipientKey,
       hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount,
+      params.ctrAmount64(),
       lockTxId,
       redeemScriptHex);
   if (!ok) return ChainClientResult::fail("LTC lockHtlc failed");
@@ -209,7 +210,7 @@ ChainClientResult LtcChainClient::lockPtlc(const SwapParams& params) {
   auto redeem=BtcPtlcScript::createPtlcScript(ptBytes,0,recBytes,sendBytes,static_cast<uint32_t>(params.ctrTimeoutBlock));
   std::string redeemHex=BtcHtlcScript::bytesToHex(redeem); std::string lockTxId; std::string dummy;
   std::string ptHashHex=Common::podToHex(pt);
-  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,ptHashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount,lockTxId,dummy);
+  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,ptHashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount64(),lockTxId,dummy);
   if(!ok) return ChainClientResult::fail("LTC PtlcLock failed");
   return ChainClientResult::okWithState(lockTxId, redeemHex);
 }
@@ -254,7 +255,7 @@ ChainClientResult LtcChainClient::lockPtlcPureP2tr(const SwapParams& params) {
     m_rpc->importAddress(out.p2trAddress, "fuego-ptlc", false);
 
     std::string lockTxId;
-    if (!m_rpc->sendToAddress(out.p2trAddress, params.ctrAmount, lockTxId))
+    if (!m_rpc->sendToAddress(out.p2trAddress, params.ctrAmount64(), lockTxId))
       return ChainClientResult::fail("LTC PtlcLock pure: sendtoaddress to " +
                                      out.p2trAddress + " failed");
 
@@ -317,13 +318,13 @@ ChainClientResult LtcChainClient::claimOrRefundPtlcP2tr(const SwapParams& params
   }
 
   const uint64_t fee = 1000;
-  if (params.ctrAmount <= fee)
+  if (params.ctrAmount64() <= fee)
     return ChainClientResult::fail("LTC Ptlc spend: amount too small for fee");
-  const uint64_t outputAmount = params.ctrAmount - fee;
+  const uint64_t outputAmount = params.ctrAmount64() - fee;
 
   std::array<uint8_t, 32> sighash{};
   if (!BtcTaprootPtlc::computeTaprootKeyPathSighash(
-          params.ctrLockTxId, 0, params.ctrAmount,
+          params.ctrLockTxId, 0, params.ctrAmount64(),
           out.tweakedPubKeyXOnly, destSpk, outputAmount,
           /*nVersion=*/2, /*nSequence=*/0xFFFFFFFD, /*nLockTime=*/0, sighash))
     return ChainClientResult::fail("LTC Ptlc spend: sighash computation failed");
@@ -377,7 +378,7 @@ ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) {
   }
 
   if (m_rpc) {
-    bool ok = m_rpc->verifyLock(p2trAddress, params.ctrAmount);
+    bool ok = m_rpc->verifyLock(p2trAddress, params.ctrAmount64());
     if (!ok)
       return ChainClientResult::fail("LTC PTLC lock not verified at " + p2trAddress);
     return ChainClientResult::ok(params.ctrLockTxId);
@@ -429,7 +430,7 @@ ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) {
       if (p + spkLen > end) return ChainClientResult::fail("LTC verifyPtlcLock SPV: truncated");
       if (spkLen == 34 && p[0] == 0x51 && p[1] == 0x20 &&
           std::memcmp(p + 2, xOnlyVec.data(), 32) == 0 &&
-          value >= params.ctrAmount) {
+          value >= params.ctrAmount64()) {
         foundP2tr = true;
       }
       p += spkLen;
@@ -437,7 +438,7 @@ ChainClientResult LtcChainClient::verifyPtlcLock(const SwapParams& params) {
 
     if (!foundP2tr)
       return ChainClientResult::fail("LTC verifyPtlcLock SPV: no P2TR output with expected amount " +
-                                     std::to_string(params.ctrAmount));
+                                     std::to_string(params.ctrAmount64()));
 
     SpvTxInclusion inclusion;
     if (!m_spvClient->verifyTxInclusion(params.ctrLockTxId, inclusion))
@@ -478,7 +479,7 @@ ChainClientResult LtcChainClient::verifyLock(const SwapParams& params) {
         "cannot listunspent by txid alone");
   }
 
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("LTC lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -545,7 +546,7 @@ ChainClientResult LtcChainClient::verifyLockSpv(const SwapParams& params) {
 
     // Check for P2WSH output (34 bytes): OP_0 PUSH32 <32-byte-hash>
     // Require chainState redeem script so we bind to the negotiated HTLC.
-    if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20 && value >= params.ctrAmount) {
+    if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20 && value >= params.ctrAmount64()) {
       if (!params.chainState.empty()) {
         auto redeemScript = LtcHtlcScript::hexToBytes(params.chainState);
         auto expectedHash = LtcHtlcScript::sha256(redeemScript);
@@ -602,14 +603,14 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
     auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("LTC claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     const uint32_t nSequence = 0xFFFFFFFD;
 
     auto der = LtcHtlcScript::signInput(privKey, 2, 0, nSequence,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount,
+        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("LTC claim SPV: signing failed");
@@ -618,7 +619,7 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
     auto witnessStack = LtcHtlcScript::createClaimWitness(der, preimageBytes, witnessScript);
 
     auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, 0);
 
     std::string txid;
@@ -632,7 +633,7 @@ ChainClientResult LtcChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       redeemHexRawC2,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -668,13 +669,13 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
     auto outputScript = LtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("LTC refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     auto der = LtcHtlcScript::signInput(privKey, 2, nLocktime,
         0xFFFFFFFE,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount,
+        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("LTC refund SPV: signing failed");
@@ -683,7 +684,7 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
     auto witnessStack = LtcHtlcScript::createRefundWitness(der, witnessScript);
 
     auto rawTx = LtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, nLocktime);
 
     std::string txid;
@@ -697,7 +698,7 @@ ChainClientResult LtcChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       redeemHexRawL1,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -767,12 +768,18 @@ ChainClientResult LtcChainClient::getTransactionDetails(const std::string& txId,
       return result;
     }
 
+    if (!inclusion.included || !inclusion.merkleVerified ||
+        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
+        inclusion.depth == 0) {
+      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
+      return result;
+    }
+    result = ChainClientResult::ok(txId);
     result.success = true;
-    result.confirmed = true;
-    result.spvVerified = true;
+    result.confirmed = inclusion.included;
+    result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
-    result.confirmations = (tipHeight >= inclusion.blockHeight)
-        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    result.confirmations = inclusion.depth;
     return result;
   }
 
@@ -856,7 +863,9 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
     if (m_spvClient) {
       for (uint32_t vout = 0; vout < 4 && rawTx.empty(); ++vout) {
         SpvSpend spend;
-        if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+        if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+            !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                     params.requiredConfirmations : 6))
           continue;
         if (spend.spendingTxid.empty()) continue;
         m_spvClient->getRawTx(spend.spendingTxid, rawTx);
@@ -866,7 +875,9 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
       if (m_rpc->getRawTransaction(params.ctrClaimTxId, rawHex) && !rawHex.empty())
         rawTx = LtcHtlcScript::hexToBytes(rawHex);
     }
-    if (rawTx.empty()) return {};
+    if (rawTx.empty() ||
+        (!m_spvClient &&
+         !spends_utxo_lock_output(rawTx, params.ctrLockTxId))) return {};
 
     // M-3: use 5-arg parseClaimSecret to verify t*G == T.
     if (params.secpPubHex.size() != 66) return {};
@@ -899,7 +910,9 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {
       SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                   params.requiredConfirmations : 6))
         continue;
       if (spend.spendingTxid.empty()) continue;
       std::string secret = extractSecret(spend.spendingTxid, redeemHex);
@@ -908,6 +921,10 @@ std::string LtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   }
 
   if (m_rpc && !knownClaimTxid.empty()) {
+    std::string rawHex;
+    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
+        !spends_utxo_lock_output(LtcHtlcScript::hexToBytes(rawHex),
+                              params.ctrLockTxId)) return {};
     std::string secret = extractSecret(knownClaimTxid, redeemHex);
     if (!secret.empty()) return secret;
   }

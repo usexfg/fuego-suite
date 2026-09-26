@@ -16,6 +16,7 @@
 #include "SwapDaemon/Ethereum/EthRpcClient.h"
 #include "SwapDaemon/Ethereum/ContractAbi.h"
 #include "SwapDaemon/Crypto/RlpEncoder.h"
+#include "SwapDaemon/SwapPeerProtocol.h"
 #include "Common/StringTools.h"
 #include "crypto/crypto.h"
 
@@ -113,6 +114,84 @@ int main() {
     std::string enc = EthAbi::encodeLock(
         "0x2222222222222222222222222222222222222222", hl, 999);
     CHECK(enc.size() > 10 && enc[0] == '0' && enc[1] == 'x', "encodeLock returns 0x hex");
+  }
+
+  // ── Full-width native EVM amounts ──────────────────────────────────
+  {
+    AtomicAmount hundredEth = 0;
+    CHECK(parseAtomicAmount("100000000000000000000", hundredEth),
+          "100 ETH parses as uint256 atomic amount");
+    uint64_t narrow = 0;
+    CHECK(!atomicAmountToUint64(hundredEth, narrow),
+          "100 ETH cannot silently narrow to uint64");
+    const std::string max256 =
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    AtomicAmount boundary = 0;
+    CHECK(parseAtomicAmount(max256, boundary) &&
+          atomicAmountToString(boundary) == max256,
+          "uint256 maximum parses without loss");
+    CHECK(!parseAtomicAmount(
+          "115792089237316195423570985008687907853269984665640564039457584007913129639936",
+          boundary), "uint256 maximum plus one is rejected");
+    CHECK(!parseAtomicAmount("01", boundary) && !parseAtomicAmount("-1", boundary),
+          "noncanonical and signed decimal amounts are rejected");
+    const std::string sender = "1111111111111111111111111111111111111111";
+    const std::string recip = "2222222222222222222222222222222222222222";
+    const std::string hashLock(64, 'a');
+    const std::string id = EthRpcClient::computeContractId(sender, recip, hundredEth,
+                                                             hashLock, 12345678);
+    std::vector<uint8_t> packed;
+    auto pushHex = [&](const std::string& hex) {
+      for (size_t i = 0; i < hex.size(); i += 2) {
+        unsigned byte = 0;
+        sscanf(hex.c_str() + i, "%2x", &byte);
+        packed.push_back(static_cast<uint8_t>(byte));
+      }
+    };
+    pushHex(sender);
+    pushHex(recip);
+    const auto bytes = atomicAmountToBigEndian(hundredEth);
+    packed.insert(packed.end(), bytes.begin(), bytes.end());
+    pushHex(hashLock);
+    const auto timeout = atomicAmountToBigEndian(12345678);
+    packed.insert(packed.end(), timeout.begin(), timeout.end());
+    uint8_t digest[32];
+    keccak(packed.data(), static_cast<int>(packed.size()), digest, 32);
+    CHECK(id == toHex(digest, 32), "100 ETH contract ID packs all 256 amount bits");
+
+    auto hexWord = [&](const std::array<uint8_t, 32>& word) {
+      return toHex(word.data(), word.size());
+    };
+    const std::string abi = "0x" + std::string(24, '0') + sender +
+        std::string(24, '0') + recip + hexWord(bytes) + hashLock +
+        hexWord(timeout) + std::string(63, '0') + "0" +
+        std::string(63, '0') + "0" + std::string(64, '0');
+    EthAbi::ContractInfo info{};
+    CHECK(EthAbi::decodeGetContract(abi, info) && info.amount == hundredEth,
+          "ABI getContract decodes high amount bits");
+
+    CryptoNote::SwapDaemon::Crypto::RlpEncoder rlp;
+    rlp.writeUint256(bytes.data());
+    const auto encoded = rlp.finalize();
+    CHECK(encoded.size() > 8 && encoded[0] != 0x80,
+          "RLP uint256 value remains nonzero above uint64");
+
+    PeerMessage kx{};
+    kx.type = PeerMessageType::KEY_EXCHANGE;
+    kx.swapId = "wide-amount-test";
+    kx.keyExchange.amountProtocolVersion = 2;
+    kx.keyExchange.pair = SwapPair::ETH;
+    kx.keyExchange.xfgAmount = 1000000000;
+    kx.keyExchange.ctrAmount = hundredEth;
+    const auto originalDigest = peerMessageDigest(kx);
+    PeerMessage decoded{};
+    CHECK(deserializePeerMessage(serializePeerMessage(kx), decoded) &&
+          decoded.keyExchange.ctrAmount == hundredEth &&
+          peerMessageDigest(decoded) == originalDigest,
+          "v2 peer wire preserves and signs full-width amount");
+    kx.keyExchange.ctrAmount += 1;
+    CHECK(peerMessageDigest(kx) != originalDigest,
+          "v2 peer signature digest binds exact atomic amount");
   }
 
   // ── RLP empty list = 0xc0 ────────────────────────────────────────────

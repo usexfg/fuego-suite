@@ -2428,7 +2428,7 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     fail_msg_writer() << "Usage: initiate_swap <amount> <peer_pubkey_hex> <pair> [role]";
     fail_msg_writer() << "  amount:        XFG to lock in Musig2 escrow";
     fail_msg_writer() << "  peer_pubkey:   64-char hex Ed25519 public key of swap counterparty";
-    fail_msg_writer() << "  pair:          XMR, ETH, or BCH";
+    fail_msg_writer() << "  pair:          protocol pair symbol (see xfg-swapd --help)";
     fail_msg_writer() << "  role:          alice (default) or bob";
     return true;
   }
@@ -2449,21 +2449,14 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     }
 
     // Parse pair
-    std::string pairStr = args[2];
-    std::transform(pairStr.begin(), pairStr.end(), pairStr.begin(), ::toupper);
     XfgSwap::SwapPair pair;
-    if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
-    else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
-    else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
-    else if (pairStr == "SOL") pair = XfgSwap::SwapPair::SOL;
-    else if (pairStr == "ARB") pair = XfgSwap::SwapPair::ARB;
-    else if (pairStr == "BASE") pair = XfgSwap::SwapPair::BASE;
-    else if (pairStr == "BNB") pair = XfgSwap::SwapPair::BNB;
-    else if (pairStr == "DCR") pair = XfgSwap::SwapPair::DCR;
-    else {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use SOL, ETH, XMR, BCH, ARB, BASE, BNB, or DCR.";
+    if (!XfgSwap::swapPairFromString(args[2], pair) ||
+        !XfgSwap::isProtocolSwapPair(static_cast<uint8_t>(pair))) {
+      fail_msg_writer() << "Invalid or staged pair: " << args[2]
+                        << ". Run xfg-swapd --help for the catalog.";
       return true;
     }
+    const std::string pairStr = XfgSwap::swapPairToString(pair);
 
     // Parse role (default: Alice)
     XfgSwap::SwapRole role = XfgSwap::SwapRole::ALICE;

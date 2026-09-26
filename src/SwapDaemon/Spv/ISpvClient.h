@@ -20,6 +20,14 @@ struct SpvSpend {
   SpvTxInclusion inclusion;
 };
 
+inline bool isVerifiedSpvSpend(const SpvSpend& spend,
+                               uint32_t requiredConfirmations) {
+  return spend.spent && !spend.spendingTxid.empty() &&
+         spend.inclusion.included && spend.inclusion.merkleVerified &&
+         spend.inclusion.blockHeight > 0 &&
+         spend.inclusion.depth >= requiredConfirmations;
+}
+
 class ISpvClient {
 public:
   virtual ~ISpvClient() = default;

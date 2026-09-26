@@ -24,13 +24,13 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 | 8 | Resolve confirmed counterparty claim, XFG claim, and refund race outcomes before release | Codex / Fuego Guardian reviewer | 2026-09-25 | IN PROGRESS — direct path hardened; testnet race exercise pending |
 | 9 | Make atomic-swap fee accounting durable and idempotent | Codex (GPT-6) | 2026-09-25 | TODO — server RPC cannot safely retry after uncertain result |
 | 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-25 | IN PROGRESS — managed worktree saved; split/review before merge |
-| 11 | Close BTC/BCH/LTC/KMD new swaps until transport and consensus SPV validation are complete | Codex (GPT-6) | 2026-09-25 | DONE — source gate and syntax checks; linked build gate pending disk space |
+| 11 | Close BTC/BCH/LTC/KMD new swaps until transport and consensus SPV validation are complete | Codex (GPT-6) | 2026-09-26 | DONE — source gate, linked build, and focused tests passed |
 
 ### Sign-off
 | Check | Status |
 |-------|--------|
-| Build compiles | PASS before BTC/BCH/LTC/KMD gate; final gate passed C++ syntax checks, linked rebuild blocked by disk exhaustion |
-| Focused tests pass | PASS before final UTXO admission gate — swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2, 2026-09-25; affected tests syntax-check after gate |
+| Build compiles | PASS — Codex (GPT-6), 2026-09-26; fresh Release build linked `xfg-swapd` and all six focused test executables after the final UTXO gate |
+| Focused tests pass | PASS — Codex (GPT-6), 2026-09-26; orderbook 115/115, swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2 |
 | All tasks done | PENDING — fee accounting, testnet races, and scoped integration; see `PR65_FOLLOWUP_ADVERSARIAL_REVIEW.md` |
 
 `graphify update .` was attempted on 2026-09-23 but failed inside the installed

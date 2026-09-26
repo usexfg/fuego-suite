@@ -79,23 +79,20 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
 
 ## Verification in the recovered checkout
 
-- `ninja -C /private/tmp/xfgo-integration-build -j1 xfg-swapd test_spv_electrum`
-  linked successfully after the latest source changes.
-- `test_spv_config_wiring`: all cases passed.
+- On 2026-09-26, a fresh Release Ninja build from this exact worktree linked
+  `xfg-swapd`, `test_p2p_orderbook`, `test_spv_config_wiring`,
+  `test_swap_pair_catalog`, `test_swap_state_machine_spv`,
+  `test_spv_electrum`, and `test_eth_protocol` after the final
+  BTC/BCH/LTC/KMD admission gate and readiness refresh.
+- `test_p2p_orderbook`: 115/115 passed.
+- `test_spv_config_wiring`: all cases passed, including PulseChain example
+  keys, GLEEC configuration, and staged UTXO readiness.
 - `test_eth_protocol`: 21/21 passed; `test_swap_pair_catalog` passed.
 - `test_swap_state_machine_spv`: 12/12 passed.
-- `test_spv_electrum`: all connection and SPV client cases passed outside the
-  sandbox, including raw TXID and broadcast identity checks. The sandbox
-  blocks the test's local loopback listener.
-- `node dashboard/tests/swapxfg_pairs.test.cjs`: 2/2 passed after changing the
-  test to exercise the runtime catalog mapping and disabled options.
-- After the final BTC/BCH/LTC/KMD gate, `clang++ -fsyntax-only` passed for the
-  relay predicate, both affected C++ test sources, and `SwapDaemon.cpp` using
-  the repository's Boost compile definitions. The full linked tests
-  have not yet been rerun after that last gate: the Release Ninja attempt
-  stopped while compiling `P2p/NetNode.cpp` because the shared disk ran out of
-  space. The generated build directory was removed after the failure.
-- `git diff --check`: clean before this report was written; rerun at handoff.
+- `test_spv_electrum`: all connection and SPV client cases passed, including
+  raw TXID and broadcast identity checks.
+- `node dashboard/tests/swapxfg_pairs.test.cjs`: 2/2 passed.
+- `git diff --check`: clean after the documentation update.
 
 This is an in-progress security hardening branch, not a production-ready swap
 release.

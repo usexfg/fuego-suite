@@ -215,6 +215,10 @@ public:
   const std::string &blockchinIndicesFileName() const { return m_blockchinIndicesFileName; }
 
   bool isTestnet() const { return m_testnet; }
+  // Mainnet minimum-difficulty floors (10000 .. 1000000, per algorithm) apply
+  // unless testnet. Local-mining test harnesses switch them off through
+  // CurrencyBuilder::difficultyFloorEnforced(false); nodes never do.
+  bool difficultyFloorEnforced() const { return !m_testnet && m_difficultyFloorEnforced; }
 
   const Block& genesisBlock() const { return m_genesisBlock; }
   const Crypto::Hash& genesisBlockHash() const { return m_genesisBlockHash; }
@@ -316,6 +320,7 @@ public:
 
   difficulty_type nextDifficulty(uint32_t height, uint8_t blockMajorVersion, std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
   difficulty_type nextDifficultyV1(std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
+  difficulty_type clampDifficulty(difficulty_type next, difficulty_type mainnetFloor) const;
   difficulty_type nextDifficultyV2(std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
   difficulty_type nextDifficultyV3(std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
   difficulty_type nextDifficultyV4(uint32_t height, uint8_t blockMajorVersion, std::vector<uint64_t> timestamps, std::vector<difficulty_type> Difficulties) const;
@@ -439,6 +444,7 @@ private:
   std::string m_blockchinIndicesFileName;
 
   bool m_testnet;
+  bool m_difficultyFloorEnforced = true;
 
   Block m_genesisBlock;
   Crypto::Hash m_genesisBlockHash;
@@ -566,6 +572,8 @@ public:
   CurrencyBuilder& blockIndexesFileName(const std::string& val) { m_currency.m_blockIndexesFileName = val; return *this; }
   CurrencyBuilder& txPoolFileName(const std::string& val) { m_currency.m_txPoolFileName = val; return *this; }
   CurrencyBuilder& blockchinIndicesFileName(const std::string& val) { m_currency.m_blockchinIndicesFileName = val; return *this; }
+
+  CurrencyBuilder& difficultyFloorEnforced(bool val) { m_currency.m_difficultyFloorEnforced = val; return *this; }
 
   CurrencyBuilder& testnet(bool val) {
     m_currency.m_testnet = val;

@@ -1045,6 +1045,16 @@ double Currency::getBurnPercentage() const {
 	}
 
 
+	// Minimum for an algorithm's output: the mainnet floor on mainnet, none on
+	// testnet (unchanged), and 1 under the harness switch so a locally mined
+	// chain never yields the invalid difficulty 0 that the floor used to mask.
+	difficulty_type Currency::clampDifficulty(difficulty_type next, difficulty_type mainnetFloor) const {
+		if (m_testnet) {
+			return next;
+		}
+		return std::max<difficulty_type>(next, m_difficultyFloorEnforced ? mainnetFloor : 1);
+	}
+
 	difficulty_type Currency::nextDifficultyV1(std::vector<uint64_t> timestamps,
 				std::vector<difficulty_type> cumulativeDifficulties) const {
 		assert(m_difficultyWindow >= 2);
@@ -1144,9 +1154,7 @@ double Currency::getBurnPercentage() const {
 		uint64_t nextDiffZ = low / timeSpan;
 
 		// minimum limit
- 		if (!isTestnet() && nextDiffZ < 10000) {
- 			nextDiffZ = 10000;
- 		}
+ 		nextDiffZ = clampDifficulty(nextDiffZ, 10000);
 
 		return nextDiffZ;
 	}
@@ -1207,9 +1215,7 @@ double Currency::getBurnPercentage() const {
 		next_difficulty = static_cast<uint64_t>(nextDifficulty);
 
 		// minimum limit
- 		if (!isTestnet() && next_difficulty < 10000) {
- 			next_difficulty = 10000;
- 		}
+ 		next_difficulty = clampDifficulty(next_difficulty, 10000);
 
 		return next_difficulty;
 	}
@@ -1228,7 +1234,7 @@ double Currency::getBurnPercentage() const {
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V3; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t Dracarys = CryptoNote::parameters::UPGRADE_HEIGHT_V4;
-	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 10000;
+	   		   uint64_t difficulty_plate = difficultyFloorEnforced() ? 10000 : 1;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size() && timestamps.size() <= static_cast<uint64_t>(N + 1));
@@ -1275,10 +1281,7 @@ double Currency::getBurnPercentage() const {
 			     next_D = ((next_D+50)/100)*100 + est_HR;
 			   }
 	         	   // mini-lim
-	   		   if (!isTestnet() && next_D < 10000) {
-	  		   	next_D = 10000;
-
-			   }
+	   		   next_D = clampDifficulty(next_D, 10000);
 
 			   return  next_D;
 	}
@@ -1295,7 +1298,7 @@ double Currency::getBurnPercentage() const {
 			   uint64_t N = CryptoNote::parameters::DIFFICULTY_WINDOW_V4; // N=60, 90, and 120 for T=600, 120, 60.
 			   uint64_t  L(0), next_D, i, this_timestamp(0), previous_timestamp(0), avg_D;
 			   uint32_t FanG = CryptoNote::parameters::UPGRADE_HEIGHT_V7;
-	   		   uint64_t difficulty_plate = isTestnet() ? 1 : 100000;
+	   		   uint64_t difficulty_plate = difficultyFloorEnforced() ? 100000 : 1;
 
 
 			   assert(timestamps.size() == cumulativeDifficulties.size());
@@ -1369,10 +1372,7 @@ double Currency::getBurnPercentage() const {
 			     next_D = ((next_D+50)/100)*100 + est_HR;
 			   }
 	         	   // mini-lim
-	   		   if (!isTestnet() && next_D < 10000) {
-	  		   	next_D = 10000;
-
-			   }
+	   		   next_D = clampDifficulty(next_D, 10000);
 
 			   return  next_D;
 	}
@@ -1448,7 +1448,7 @@ double Currency::getBurnPercentage() const {
 
 		const uint64_t T = isTestnet() ? CryptoNote::parameters::DIFFICULTY_TARGET_TESTNET : CryptoNote::parameters::DIFFICULTY_TARGET;
 		const uint64_t N = 39;
-		const uint64_t minDifficulty = isTestnet() ? 1 : 1000000;
+		const uint64_t minDifficulty = difficultyFloorEnforced() ? 1000000 : 1;
 
 		if (timestamps.size() != cumulativeDifficulties.size() || timestamps.size() <= N) {
 			return minDifficulty;

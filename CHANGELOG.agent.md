@@ -17,7 +17,7 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 | 1 | Verify Qodo and residual claims against merged PR #65 | Codex + Fuego Guardian reviewers | 2026-09-22 | DONE |
 | 2 | Align dashboard pair mapping and gate staged pair relay/order admission | Codex / offer-pairs reviewer | 2026-09-22 | DONE |
 | 3 | Fix PulseChain example keys and validate GLEEC HTLC readiness for new swaps | Codex / config reviewer | 2026-09-22 | DONE |
-| 4 | Gate local offer publication and new swaps on executable, reachable clients | Codex (GPT-6) | 2026-09-23 | DONE |
+| 4 | Gate local offer publication and new swaps on executable, reachable clients | Codex (GPT-6) | 2026-09-25 | DONE — money-changing decisions force a fresh readiness check |
 | 5 | Repair SPV claim recording and independent per-leg refund recovery | Codex (GPT-6) | 2026-09-25 | DONE — source paths and focused SPV tests |
 | 6 | Bound malformed P2P taker identities and verify affected paths | Codex (GPT-6) | 2026-09-23 | DONE |
 | 7 | Apply PulseChain and CI naming convention fixes | Codex (GPT-6) | 2026-09-23 | DONE |

@@ -1059,7 +1059,7 @@ bool SwapDaemon::initiate(SwapParams& params) {
     m_logger(Logging::ERROR) << "XFG amount is too small to fund the refund treasury output";
     return false;
   }
-  if (!canStartNewSwap(params.pair)) {
+  if (!canStartNewSwap(params.pair, nullptr, true)) {
     m_logger(Logging::ERROR) << "Cannot initiate new swap for "
       << swapPairToString(params.pair) << ": chain client unavailable or not ready";
     return false;
@@ -1337,7 +1337,7 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
     return {false, msg};
   }
 
-  if (!canStartNewSwap(sm.params().pair)) {
+  if (!canStartNewSwap(sm.params().pair, nullptr, true)) {
     const std::string msg = "Counterparty chain is unavailable or not ready for new swaps";
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
@@ -3049,7 +3049,7 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
 
         if (params.role == SwapRole::BOB) {
           if (!escrowTxKnown) {
-            if (!canStartNewSwap(params.pair)) {
+            if (!canStartNewSwap(params.pair, nullptr, true)) {
               m_logger(Logging::ERROR) << "Refusing to fund XFG escrow: "
                 << swapPairToString(params.pair) << " is not ready for a new swap";
               return false;
@@ -4712,7 +4712,7 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
-  if (!canStartNewSwap(pair)) {
+  if (!canStartNewSwap(pair, nullptr, true)) {
     m_logger(Logging::ERROR) << "Chain not ready for new offer fills: " << (int)targetOffer.pair;
     return false;
   }
@@ -4909,7 +4909,7 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
   }
   m_offerManager.reset(new OfferManager(
     *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
-    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair)); }));
+    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair), nullptr, true); }));
   if (!m_offerManager->loadConfig(jsonPath)) {
     m_offerManager.reset();
     return false;

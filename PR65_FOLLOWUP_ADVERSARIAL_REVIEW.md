@@ -33,6 +33,9 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
   the confirmed counterparty claim before a first send or retry, and retain the
   swap until six Fuego confirmations. New version-2 swaps cannot fall through
   to the older cooperative path that marked a swap terminal on broadcast.
+- New-swap initiation, acceptance, escrow funding, offer fill and maker offer
+  publication now refresh chain readiness at the decision point. The 60-second
+  cache remains for display queries, rather than authorizing a new fund move.
 - Alice's counterparty refund stores intent and transaction ID. A confirmed
   claim can supersede an attempted refund when the chain client independently
   reveals and validates the secret. EVM reads historical claimed state;
@@ -87,7 +90,8 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
 - `node dashboard/tests/swapxfg_pairs.test.cjs`: 2/2 passed after changing the
   test to exercise the runtime catalog mapping and disabled options.
 - After the final BTC/BCH/LTC/KMD gate, `clang++ -fsyntax-only` passed for the
-  relay predicate and both affected C++ test sources. The full linked tests
+  relay predicate, both affected C++ test sources, and `SwapDaemon.cpp` using
+  the repository's Boost compile definitions. The full linked tests
   have not yet been rerun after that last gate: the Release Ninja attempt
   stopped while compiling `P2p/NetNode.cpp` because the shared disk ran out of
   space. The generated build directory was removed after the failure.

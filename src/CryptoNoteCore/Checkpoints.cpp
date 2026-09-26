@@ -90,7 +90,10 @@ bool Checkpoints::is_alternative_block_allowed(uint32_t  blockchain_height, uint
   if (0 == block_height)
     return false;
 
-  if (block_height < blockchain_height - CryptoNote::parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW && !is_in_checkpoint_zone(block_height)) {
+  // Guard the unsigned subtraction: below the window it wrapped to ~2^64 and
+  // rejected every alternative block on any chain shorter than 60 blocks.
+  const uint64_t maxReorgDepth = CryptoNote::parameters::CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW;
+  if (blockchain_height > maxReorgDepth && block_height < blockchain_height - maxReorgDepth && !is_in_checkpoint_zone(block_height)) {
     logger(Logging::DEBUGGING, Logging::WHITE)
       << "<< Checkpoints.cpp << " << "Reorganization depth too deep : " << (blockchain_height - block_height) << ". Block Rejected";
     return false;

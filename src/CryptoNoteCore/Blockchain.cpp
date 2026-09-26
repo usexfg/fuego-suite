@@ -497,6 +497,9 @@ private:
                          m_tx_pool(tx_pool),
                          m_current_block_cumul_sz_limit(0),
 			 m_checkpoints(logger, &currency),
+                         // Gates ring-signature verification in check_tx_input(). Was never
+                         // initialized (indeterminate std::atomic<bool> before C++20).
+                         m_is_in_checkpoint_zone(false),
 			 m_blockchainIndexesEnabled(blockchainIndexesEnabled),
 			 m_blockchainAutosaveEnabled(blockchainAutosaveEnabled),
                          m_upgradeDetectorV2(currency, m_blocks, BLOCK_MAJOR_VERSION_2, logger),
@@ -1498,7 +1501,15 @@ double calc_poisson_ln(double lam, uint64_t k)
   return logx;
 }
 
-bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator>& alt_chain, bool discard_disconnected_chain) {
+// Drops an alternative block through its element pointer. The key is copied
+// first: erase-by-key must not read the key out of the node it destroys.
+void CryptoNote::Blockchain::removeAlternativeBlock(const blocks_ext_by_hash::value_type* entry) {
+  const Crypto::Hash id = entry->first;
+  m_orthanBlocksIndex.remove(entry->second.bl);
+  m_alternative_chains.erase(id);
+}
+
+bool CryptoNote::Blockchain::switch_to_alternative_blockchain(alt_chain_list& alt_chain, bool discard_disconnected_chain) {
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
   if (!(alt_chain.size())) {
@@ -1523,7 +1534,7 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
 	  uint64_t high_timestamp = alt_chain.back()->second.bl.timestamp;
 	  Crypto::Hash low_block = alt_chain.front()->second.bl.previousBlockHash;
 	  //Make sure that the high_timestamp is really highest
-	  for (const blocks_ext_by_hash::iterator &it : alt_chain)
+	  for (const auto* it : alt_chain)
 	  {
 		  if (high_timestamp < it->second.bl.timestamp)
 			  high_timestamp = it->second.bl.timestamp;
@@ -1615,14 +1626,12 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
       rollback_blockchain_switching(disconnected_chain, split_height);
       //add_block_as_invalid(ch_ent->second, get_block_hash(ch_ent->second.bl));
       logger(INFO, BRIGHT_WHITE) << "The block was inserted as invalid while connecting new alternative chain,  block_id: " << get_block_hash(ch_ent->second.bl);
-      m_orthanBlocksIndex.remove(ch_ent->second.bl);
-      m_alternative_chains.erase(ch_ent);
+      removeAlternativeBlock(ch_ent);
 
       for (auto alt_ch_to_orph_iter = ++alt_ch_iter; alt_ch_to_orph_iter != alt_chain.end(); alt_ch_to_orph_iter++) {
         //block_verification_context bvc = boost::value_initialized<block_verification_context>();
         //add_block_as_invalid((*alt_ch_iter)->second, (*alt_ch_iter)->first);
-        m_orthanBlocksIndex.remove((*alt_ch_to_orph_iter)->second.bl);
-        m_alternative_chains.erase(*alt_ch_to_orph_iter);
+        removeAlternativeBlock(*alt_ch_to_orph_iter);
       }
 
       return false;
@@ -1648,8 +1657,7 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
   //removing all_chain entries from alternative chain
   for (auto ch_ent : alt_chain) {
     blocksFromCommonRoot.push_back(get_block_hash(ch_ent->second.bl));
-    m_orthanBlocksIndex.remove(ch_ent->second.bl);
-    m_alternative_chains.erase(ch_ent);
+    removeAlternativeBlock(ch_ent);
   }
 
   sendMessage(BlockchainMessage(ChainSwitchMessage(std::move(blocksFromCommonRoot))));
@@ -1660,7 +1668,7 @@ bool CryptoNote::Blockchain::switch_to_alternative_blockchain(std::list<blocks_e
 
 //------------------------------------------------------------------
 // This function calculates the difficulty target for the block being added to an alternate chain.
-difficulty_type CryptoNote::Blockchain::get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator>& alt_chain, BlockEntry& bei) {
+difficulty_type CryptoNote::Blockchain::get_next_difficulty_for_alternative_chain(const alt_chain_list& alt_chain, BlockEntry& bei) {
   std::vector<uint64_t> timestamps;
   std::vector<difficulty_type> cumulative_difficulties;
   uint8_t BlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(m_blocks.size()));
@@ -1950,10 +1958,10 @@ bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Cryp
 
     //build alternative subchain, front -> mainchain, back -> alternative head
     blocks_ext_by_hash::iterator alt_it = it_prev; //m_alternative_chains.find()
-    std::list<blocks_ext_by_hash::iterator> alt_chain;
+    alt_chain_list alt_chain;
     std::vector<uint64_t> timestamps;
     while (alt_it != m_alternative_chains.end()) {
-      alt_chain.push_front(alt_it);
+      alt_chain.push_front(&*alt_it);
       timestamps.push_back(alt_it->second.bl.timestamp);
       alt_it = m_alternative_chains.find(alt_it->second.bl.previousBlockHash);
     }
@@ -2032,7 +2040,7 @@ bool CryptoNote::Blockchain::handle_alternative_block(const Block& b, const Cryp
 
     m_orthanBlocksIndex.add(bei.bl);
 
-    alt_chain.push_back(i_res.first);
+    alt_chain.push_back(&*i_res.first);
 
     if (is_a_checkpoint) {
       //do reorganize!
@@ -2658,8 +2666,12 @@ bool CryptoNote::Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) {
       return false;
   } else {
     //interpret as time
+    // Tolerance follows the version of the block the spend lands in. This read
+    // an uninitialized Blockchain::blockMajorVersion member (81 s vs 480 s
+    // tolerance depending on stack contents), so nodes could disagree.
+    const uint8_t nextBlockMajorVersion = getBlockMajorVersionForHeight(static_cast<uint32_t>(getCurrentBlockchainHeight()));
     uint64_t current_time = static_cast<uint64_t>(time(NULL));
-    if (current_time + m_currency.lockedTxAllowedDeltaSeconds(blockMajorVersion) >= unlock_time)
+    if (current_time + m_currency.lockedTxAllowedDeltaSeconds(nextBlockMajorVersion) >= unlock_time)
       return true;
     else
       return false;

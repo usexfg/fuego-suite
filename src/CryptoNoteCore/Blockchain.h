@@ -62,6 +62,7 @@
 
 #undef ERROR
 using phmap::parallel_flat_hash_map;
+using phmap::parallel_node_hash_map;
 namespace CryptoNote {
   struct NOTIFY_REQUEST_GET_OBJECTS_request;
   struct NOTIFY_RESPONSE_GET_OBJECTS_request;
@@ -220,7 +221,6 @@ namespace CryptoNote {
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
     bool withdrawTreasuryLp(uint64_t sharesToBurn);
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
-    uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);
     bool resetAndSetGenesisBlock(const Block& b);
     bool haveBlock(const Crypto::Hash& id);
@@ -413,7 +413,14 @@ namespace CryptoNote {
     Crypto::cn_context m_cn_context;
     Tools::ObserverManager<IBlockchainStorageObserver> m_observerManager;
 
-    typedef parallel_flat_hash_map<Crypto::Hash, BlockEntry> blocks_ext_by_hash;
+    // Node-based on purpose: an alternative chain is walked as a list of
+    // element pointers held across inserts (the new alt block, then the
+    // disconnected main chain re-added as alternatives). A flat map moves
+    // elements on rehash, which left those handles dangling: reorgs failed
+    // on moved-from blocks, then segfaulted. Iterators die on rehash even in
+    // a node map, so hold element pointers (alt_chain_list), never iterators.
+    typedef parallel_node_hash_map<Crypto::Hash, BlockEntry> blocks_ext_by_hash;
+    typedef std::list<blocks_ext_by_hash::value_type*> alt_chain_list;
 
     size_t m_current_block_cumul_sz_limit;
     blocks_ext_by_hash m_alternative_chains; // Crypto::Hash -> block_extended_info
@@ -691,9 +698,10 @@ namespace CryptoNote {
     Logging::LoggerRef logger;
 
 
-    bool switch_to_alternative_blockchain(std::list<blocks_ext_by_hash::iterator> &alt_chain, bool discard_disconnected_chain);
+    bool switch_to_alternative_blockchain(alt_chain_list &alt_chain, bool discard_disconnected_chain);
+    void removeAlternativeBlock(const blocks_ext_by_hash::value_type* entry);
     bool handle_alternative_block(const Block &b, const Crypto::Hash &id, block_verification_context &bvc, bool sendNewAlternativeBlockMessage = true);
-    difficulty_type get_next_difficulty_for_alternative_chain(const std::list<blocks_ext_by_hash::iterator> &alt_chain, BlockEntry &bei);
+    difficulty_type get_next_difficulty_for_alternative_chain(const alt_chain_list &alt_chain, BlockEntry &bei);
     void pushToBankingIndex(const BlockEntry &block, uint64_t interest);
     bool prevalidate_miner_transaction(const Block &b, uint32_t height);
     bool validate_miner_transaction(const Block &b, uint32_t height, size_t cumulativeBlockSize, uint64_t alreadyGeneratedCoins, uint64_t fee, uint64_t &reward, int64_t &emissionChange, const std::vector<Transaction>& blockTransactions = {});

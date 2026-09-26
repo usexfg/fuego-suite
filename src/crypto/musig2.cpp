@@ -94,10 +94,11 @@ struct musig2_s_comm {
   EllipticCurvePoint comm;
 };
 
-// Validate that bytes represent a non-identity, prime-order group element.
-// ge_frombytes_vartime checks the curve equation but not the subgroup;
-// multiplying by cofactor 8 and testing for the neutral element catches
-// small-order points (the cofactor check that makes DLEQ safe).
+// Reject bytes that are not a usable group element: all-zero, off the curve,
+// or small-order. ge_frombytes_vartime checks the curve equation only;
+// multiplying by the cofactor 8 and testing for the neutral element catches
+// the small-order points. This does not prove prime-order subgroup
+// membership — a point with a torsion component still passes.
 static bool point_is_valid(const unsigned char bytes[32]) {
   int nonzero = 0;
   for (int i = 0; i < 32; ++i) nonzero |= bytes[i];
@@ -157,7 +158,7 @@ bool musig2_key_agg(
   memcpy(coeff_buf.pk, &pub1, 32);
   hash_to_scalar(&coeff_buf, sizeof(coeff_buf), agg.coeff[1]);
 
-  // Validate keys: on-curve AND in the prime-order subgroup (rejects small-order).
+  // Validate keys: on-curve, not the identity, not small-order.
   if (!point_is_valid(reinterpret_cast<const unsigned char*>(&pub0))) return false;
   if (!point_is_valid(reinterpret_cast<const unsigned char*>(&pub1))) return false;
 
@@ -330,11 +331,20 @@ bool musig2_partial_sign(
     unsigned int signer_index,
     Musig2PartialSig &partial_sig)
 {
-  // Guard: reject if this nonce has already been used for signing.
-  // Reusing the same nonce in two signatures leaks the private key.
-  // Checked on the nonce so it survives session re-initialization.
-  if (sec_nonce.signed_flag || session.nonceSigned) {
-    return false;
+  // Guard: reusing a nonce in two signatures leaks the private key. The
+  // session flag covers a repeated call on the same session; the nonce check
+  // covers the same nonce handed to a re-initialized session. A nonce is
+  // erased to all-zero by its one use below, and a zero nonce is never valid
+  // anyway (k = 0 reveals the key from a single signature), so an all-zero
+  // nonce means consumed or never generated. The swap state machine relies on
+  // the same all-zero == consumed encoding when it persists the nonce.
+  {
+    unsigned char acc = 0;
+    const unsigned char* n = reinterpret_cast<const unsigned char*>(&sec_nonce);
+    for (size_t i = 0; i < sizeof(Musig2SecNonce); ++i) acc |= n[i];
+    if (session.nonceSigned || acc == 0) {
+      return false;
+    }
   }
 
   // k_eff = k[0] + b * k[1]
@@ -356,10 +366,9 @@ bool musig2_partial_sign(
             ax,
             k_eff);
 
-  // Mark nonce as used before zeroing so the flag survives the erase.
-  sec_nonce.signed_flag = true;
-  // Securely erase secret nonce scalars — MUST NOT be reused.
-  memset(sec_nonce.k, 0, sizeof(sec_nonce.k));
+  // Securely erase the secret nonce — MUST NOT be reused. All-zero now marks
+  // it consumed (see the guard above).
+  memset(&sec_nonce, 0, sizeof(Musig2SecNonce));
 
   session.nonceSigned = true;
   return true;

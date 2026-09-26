@@ -80,15 +80,13 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   CHECK(!acceptedWrongT, "extract REFUSES a scalar that does not open the given point");
 
   // The 3-arg form still recovers the adaptor scalar (non-zero guard only) — the weaker
-  // contract the 4-arg overload replaces (AUDIT M-3). The scalar is in secp BE domain
-  // (rev of CryptoNote LE t), not raw t bytes.
+  // contract the 4-arg overload replaces (AUDIT M-3). Both overloads return t in the
+  // CryptoNote LE domain it was signed with.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   SecretKey legacy{};
   CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract recovers adaptor scalar");
-  SecretKey t_rev = t;
-  std::reverse(reinterpret_cast<uint8_t*>(&t_rev), reinterpret_cast<uint8_t*>(&t_rev) + 32);
-  CHECK(std::memcmp(&legacy, &t_rev, sizeof(t_rev)) == 0, "3-arg result equals rev(t) (secp BE domain)");
+  CHECK(std::memcmp(&legacy, &t, sizeof(t)) == 0, "3-arg result equals t (CryptoNote LE domain)");
 #pragma GCC diagnostic pop
 
   // A presig/sig pair from different sessions yields a scalar that opens

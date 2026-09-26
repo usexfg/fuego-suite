@@ -165,10 +165,6 @@ namespace CryptoNote
          // Allowed CD Tiers (Epochs)
          const std::vector<uint32_t> CD_ALLOWED_TIERS = {6, 18, 36, 72};
 
-         // Loyalty maturity bonus: 2.5× yield multiplier on last 2.5 epochs for max-term (72-epoch) CDs
-         const uint64_t LOYALTY_BONUS_PCT = 150;                // +150% extra = 2.5× total on bonus epochs
-         const uint64_t LOYALTY_BONUS_FULL_EPOCHS = 2;          // last 2 full epochs get full bonus
-         // The 0.5 epoch (3rd-to-last) gets half bonus: +75%
 
         const uint64_t BANKING_FEE_BPS_DIVISOR = 10000;      // basis point denominator
         // Swap fee split: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
@@ -241,15 +237,6 @@ namespace CryptoNote
         const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG = 0x53575258;  // 'SWRX' — user receives XFG from HEAT→XFG swap
         const uint32_t DIGM_TERM = 0x44494D47;                       // 'DIMG' — DIGM colored coin marker
 
-        // CD loyalty bonus multipliers (multiplied by base APY)
-        const uint64_t LOYALTY_BONUS_72_EPOCHS_PCT = 250;       // 72 epochs: 2.5× bonus
-        const uint64_t LOYALTY_BONUS_36_EPOCHS_PCT = 200;       // 36 epochs: 2.0× bonus
-        const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150;       // 18 epochs: 1.5× bonus
-        const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;        // 6 epochs: 1.25× bonus
-        const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;         // Rolling: 1.0× (no bonus)
-       // v11+: rolling window (epochs) for the BV bonus-share denominator —
-       // matches the max CD term so expired CDs age out of the denominator.
-       const uint64_t BONUS_WEIGHTED_WINDOW_EPOCHS = 72;
 
         // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
         const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000;              // 0.10 HEAT in atomic units

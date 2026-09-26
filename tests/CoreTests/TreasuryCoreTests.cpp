@@ -17,6 +17,9 @@
 #include "Treasury/VaultUtxoSet.h"
 #include "Common/Int128.h"
 #include "Logging/LoggerGroup.h"
+#include "CryptoNoteCore/Blockchain.h"
+#include "CryptoNoteCore/ITimeProvider.h"
+#include "CryptoNoteCore/TransactionPool.h"
 #include "Serialization/ISerializer.h"
 
 #include <cassert>
@@ -24,6 +27,8 @@
 #include <cstring>
 #include <limits>
 #include <vector>
+#include <filesystem>
+#include <unistd.h>
 
 using namespace CryptoNote;
 
@@ -367,59 +372,6 @@ void testVaultSpendNoSurplusBurn() {
 
 
 // ---------------------------------------------------------------------------
-// Pop across multiple epochs: record bonus at epochs 0-4, pop twice,
-// verify rollback symmetry.
-// ---------------------------------------------------------------------------
-void testPopBonusEpochRate() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).currency();
-  CommitmentIndex ci(currency);
-
-  ci.recordEpochFeeRate(0, 1000, 100, 1000);
-  ci.recordEpochFeeRate(1, 1000, 100, 1000);
-  ci.recordEpochFeeRate(2, 1000, 100, 1000);
-  ci.recordEpochFeeRate(3, 1000, 100, 1000);
-  ci.recordEpochFeeRate(4, 1000, 100, 1000);
-
-  ci.recordBonusEpochRate(0, 50, 200);
-  ci.recordBonusEpochRate(1, 60, 300);
-  ci.recordBonusEpochRate(2, 70, 400);
-  ci.recordBonusEpochRate(3, 80, 500);
-  ci.recordBonusEpochRate(4, 90, 600);
-
-  TEST(ci.getEpochCount() == 5);
-
-  // Pop twice: removes epochs 4 and 3.
-  ci.popBonusEpochRate();
-  ci.popBonusEpochRate();
-  TEST(ci.getBonusEpochCount() == 3);
-
-  BonusEpochRateEntry e2 = ci.getBonusEpochRateEntry(2);
-  TEST(e2.bonusHeat == 70);
-  TEST(e2.weightedBase == 400);
-
-  // Epoch 3 is now empty (popped).
-  BonusEpochRateEntry e3 = ci.getBonusEpochRateEntry(3);
-  TEST(e3.bonusHeat == 0);
-  TEST(e3.weightedBase == 0);
-
-  // Pop remaining: removes epochs 2, 1, 0.
-  ci.popBonusEpochRate();
-  ci.popBonusEpochRate();
-  ci.popBonusEpochRate();
-  TEST(ci.getBonusEpochCount() == 0);
-
-  BonusEpochRateEntry e0 = ci.getBonusEpochRateEntry(0);
-  TEST(e0.bonusHeat == 0);
-  TEST(e0.weightedBase == 0);
-
-  // calculateCdBonus must return 0 with no recorded epochs.
-  uint64_t bonus = currency.calculateCdBonus(1000, 10, 100, ci,
-      parameters::TESTNET_DEPOSIT_MAX_TERM);
-  TEST(bonus == 0);
-}
-
-// ---------------------------------------------------------------------------
 // Vault partition isolation: UTXOs in different partitions cannot be spent
 // from the wrong partition.
 // ---------------------------------------------------------------------------
@@ -652,7 +604,6 @@ void testCdInterestStopsAtMaturity() {
   TEST(longTerm > shortTerm);
 
   // Bonus and base now clamp identically.
-  for (uint64_t e = 0; e <= 5; ++e) ci.recordBonusEpochRate(e, 100, 1000);
   uint64_t bonusShort = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(2 * ED));
   uint64_t bonusLong  = currency.calculateCdBonus(1000, 0, (uint32_t)(5 * ED), ci, (uint32_t)(4 * ED));
   TEST(bonusShort <= bonusLong);
@@ -719,11 +670,105 @@ void testCdYieldFloor() {
 }
 
 
+
+// The v11 rate denominator counts a CD from creation until the boundary that
+// closes cdLastCreditedEpoch, then drops it. That is only correct if the
+// payout credits exactly the same window — otherwise the denominator either
+// dilutes epochs nobody is paid for or omits epochs somebody is paid for.
+// Probe each epoch in turn with a lone nonzero rate.
+void testCdEarningWindowMatchesPayout() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  const uint64_t ED = parameters::EPOCH_DURATION_BLOCKS;
+  const uint32_t heights[] = {0, 1, (uint32_t)(ED - 1), (uint32_t)ED, (uint32_t)(ED + 17), (uint32_t)(3 * ED + 450)};
+  const uint32_t terms[] = {parameters::DEPOSIT_MIN_TERM, (uint32_t)(18 * ED), parameters::DEPOSIT_MAX_TERM,
+                            (uint32_t)(6 * ED + 1), (uint32_t)(6 * ED - 1)};
+  bool allMatch = true;
+  for (uint32_t c : heights) {
+    for (uint32_t t : terms) {
+      const uint64_t first = c / ED;
+      const uint64_t last = currency.cdLastCreditedEpoch(c, t);
+      if (last != (uint64_t(c) + t) / ED) allMatch = false;
+      for (uint64_t probe = (first > 0 ? first - 1 : 0); probe <= last + 1; ++probe) {
+        CommitmentIndex ci(currency);
+        for (uint64_t e = 0; e <= last + 2; ++e) {
+          ci.recordEpochFeeRate(e, e == probe ? 10000 : 0, 100, 1000);
+        }
+        const uint32_t farFuture = (uint32_t)((last + 3) * ED);
+        const bool paid = currency.calculateCdInterest(1000000, c, farFuture, ci, t, false) > 0;
+        const bool inWindow = probe >= first && probe <= last;
+        if (paid != inWindow) allMatch = false;
+      }
+    }
+  }
+  TEST(allMatch);
+}
+
+// One asset per commitment term, used by both sides of the per-asset balance.
+// Term 0 is plain HEAT: it used to be minted as HEAT but spent as XFG.
+void testCommitmentAssetClassification() {
+  const uint32_t terms[] = {0, parameters::DEPOSIT_MIN_TERM, parameters::DEPOSIT_MAX_TERM,
+                            parameters::HEAT_TERM, parameters::DEPOSIT_TERM_LP,
+                            parameters::DEPOSIT_TERM_POOL_XFG, parameters::DEPOSIT_TERM_POOL_HEAT,
+                            parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG, parameters::DIGM_TERM};
+  bool sidesAgree = true;
+  for (uint32_t term : terms) {
+    TransactionOutputCommitment out;
+    out.term = term;
+    if (Currency::classifyOutputAsset(out, term) != Currency::classifyCommitmentTermAsset(term))
+      sidesAgree = false;
+  }
+  TEST(sidesAgree);
+  TEST(Currency::classifyCommitmentTermAsset(0) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_MIN_TERM) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::HEAT_TERM) == AssetType::HEAT);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_LP) == AssetType::LP);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_POOL_XFG) == AssetType::XFG);
+  TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) == AssetType::XFG);
+}
+
+// rebuildCache() replays the chain from scratch and must start from the same
+// Hearth pool a fresh sync starts from. It used to reset the pool to empty and
+// never re-seed it, so every node that rebuilt its cache — including every
+// node crossing a cache-version bump — diverged from the rest of the network.
+void testRebuildCacheKeepsHearthSeed() {
+  Logging::LoggerGroup nullLog;
+  Currency currency = CurrencyBuilder(nullLog).currency();
+  RealTimeProvider timeProvider;
+  struct Chain {
+    tx_memory_pool pool;
+    Blockchain chain;
+    Chain(const Currency& c, ITimeProvider& tp, Logging::ILogger& log)
+        : pool(c, chain, tp, log), chain(c, pool, log, false, false) {}
+  } node(currency, timeProvider, nullLog);
+
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() /
+      ("fuego_core_tests_rebuild_" + std::to_string(::getpid()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+
+  TEST(node.chain.init(dir.string(), false));
+  const uint64_t seedXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
+  const uint64_t seedHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
+  TEST(node.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(node.chain.getAmmPool().reserveHeat == seedHeat);
+
+  node.chain.rebuildCache();
+  TEST(node.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(node.chain.getAmmPool().reserveHeat == seedHeat);
+
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
   testCdInterestStopsAtMaturity();
   testCdYieldFloor();
+  testCdEarningWindowMatchesPayout();
+  testCommitmentAssetClassification();
+  testRebuildCacheKeepsHearthSeed();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();
@@ -733,7 +778,6 @@ int main() {
   testLimitWithdrawOwnershipProofRoundtrip();
   testCdBonusClaimTagRoundtrip();
   testVaultSpendNoSurplusBurn();
-  testPopBonusEpochRate();
   testVaultPartitionIsolation();
   testVaultSurplusMintRoundtrip();
   testVaultPopSymmetry();

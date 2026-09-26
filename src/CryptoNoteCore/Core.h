@@ -163,6 +163,12 @@ namespace CryptoNote {
     uint64_t getCdApyVaultBalance() override { return m_blockchain.getCdApyVaultBalance(); }
     uint64_t getBonusVaultBalance() override { return m_blockchain.getBonusVaultBalance(); }
     uint64_t getBonusVaultUtxoBalance() override { return m_blockchain.getBonusVaultUtxoBalance(); }
+    std::error_code estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                    uint32_t currentHeight, uint32_t term,
+                                    CdClaimEstimate& out) override {
+      out = m_blockchain.estimateCdClaim(amount, creationHeight, currentHeight, term);
+      return {};
+    }
     std::error_code calculateCdBonus(uint64_t amount, uint32_t creationHeight,
                                      uint32_t currentHeight, uint64_t& outBonus,
                                      uint32_t term = 0) override {

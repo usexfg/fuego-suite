@@ -12,8 +12,10 @@ using namespace CryptoNote;
 
 gen_double_spend_in_different_chains::gen_double_spend_in_different_chains()
 {
-  expected_blockchain_height = 4 + 2 * m_currency.minedMoneyUnlockWindow();
+  // The node stays on the tx_1 chain: genesis, 2 x unlock window, blk_1, blk_2.
+  expected_blockchain_height = 3 + 2 * m_currency.minedMoneyUnlockWindow();
 
+  REGISTER_CALLBACK_METHOD(gen_double_spend_in_different_chains, mark_refused_switch);
   REGISTER_CALLBACK_METHOD(gen_double_spend_in_different_chains, check_double_spend);
 }
 
@@ -31,12 +33,13 @@ bool gen_double_spend_in_different_chains::generate(std::vector<test_event_entry
   events.push_back(tx_1);
   MAKE_NEXT_BLOCK_TX1(events, blk_2, blk_1r, miner_account, tx_1);
 
-  // Alternative chain
+  // Alternative chain double-spending tx_1's inputs through tx_2. (4) makes it
+  // heavier, but it lacks tx_1, so Fuego refuses the reorg (upstream switched).
   events.push_back(tx_2);
   MAKE_NEXT_BLOCK_TX1(events, blk_3, blk_1r, miner_account, tx_2);
-  // Switch to alternative chain
+  DO_CALLBACK(events, "mark_refused_switch");
   MAKE_NEXT_BLOCK(events, blk_4, blk_3, miner_account);
-  CHECK_AND_NO_ASSERT_MES(expected_blockchain_height == get_block_height(blk_4) + 1, false, "expected_blockchain_height has invalid value");
+  CHECK_AND_NO_ASSERT_MES(expected_blockchain_height == get_block_height(blk_2) + 1, false, "expected_blockchain_height has invalid value");
 
   DO_CALLBACK(events, "check_double_spend");
 
@@ -54,8 +57,9 @@ bool gen_double_spend_in_different_chains::check_double_spend(CryptoNote::core& 
   std::vector<Block> blocks(block_list.begin(), block_list.end());
   CHECK_EQ(expected_blockchain_height, blocks.size());
 
+  // tx_2 stays pooled (kept by its alt block); (3) and (4) stay alternative.
   CHECK_EQ(1, c.get_pool_transactions_count());
-  CHECK_EQ(1, c.get_alternative_blocks_count());
+  CHECK_EQ(2, c.get_alternative_blocks_count());
 
   CryptoNote::AccountBase bob_account = boost::get<CryptoNote::AccountBase>(events[1]);
   CryptoNote::AccountBase alice_account = boost::get<CryptoNote::AccountBase>(events[2]);
@@ -64,9 +68,25 @@ bool gen_double_spend_in_different_chains::check_double_spend(CryptoNote::core& 
   map_hash2tx_t mtx;
   r = find_block_chain(events, chain, mtx, get_block_hash(blocks.back()));
   CHECK_TEST_CONDITION(r);
-  CHECK_EQ(0, get_balance(bob_account, blocks, mtx));
-  CHECK_EQ(send_amount - m_currency.minimumFee(), get_balance(alice_account, blocks, mtx));
+  // tx_1 stands: alice holds its amount, bob keeps the rest of send_amount.
+  CHECK_EQ(send_amount - send_amount / 2, get_balance(bob_account, blocks, mtx));
+  CHECK_EQ(send_amount / 2 - m_currency.minimumFee(), get_balance(alice_account, blocks, mtx));
 
+  return true;
+}
+
+bool gen_double_spend_in_different_chains::check_block_verification_context(const CryptoNote::block_verification_context& bvc, size_t event_idx, const CryptoNote::Block& /*blk*/)
+{
+  if (event_idx == m_refused_switch_block_idx) {
+    return bvc.m_verification_failed && !bvc.m_added_to_main_chain;
+  }
+
+  return !bvc.m_verification_failed;
+}
+
+bool gen_double_spend_in_different_chains::mark_refused_switch(CryptoNote::core& /*c*/, size_t ev_index, const std::vector<test_event_entry>& /*events*/)
+{
+  m_refused_switch_block_idx = ev_index + 1;
   return true;
 }
 
@@ -79,7 +99,8 @@ DoubleSpendBase::DoubleSpendBase() :
   send_amount(MK_COINS(17)),
   has_invalid_tx(false)
 {
-  m_currency = CurrencyBuilder(m_logger).upgradeHeightV2(0).currency();
+  CurrencyBuilder builder(m_logger);
+  m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).difficultyFloorEnforced(false).currency();
   m_outputTxKey = generateKeyPair();
   m_bob_account.generate();
   m_alice_account.generate();
@@ -134,12 +155,13 @@ bool DoubleSpendBase::check_double_spend(CryptoNote::core& c, size_t /*ev_index*
 TestGenerator DoubleSpendBase::prepare(std::vector<test_event_entry>& events) const {
 
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
 
-  // unlock
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  // unlock, plus one matured coinbase per ring decoy
+  const size_t decoys = minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION);
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + decoys, TX_V2_MIN_BLOCK_VERSION);
 
-  auto builder = generator.createTxBuilder(generator.minerAccount, m_bob_account, send_amount, m_currency.minimumFee());
+  auto builder = generator.createTxBuilder(generator.minerAccount, m_bob_account, send_amount, m_currency.minimumFee(), decoys);
 
   builder.setTxKeys(m_outputTxKey);
   builder.m_destinations.clear();
@@ -156,7 +178,7 @@ TestGenerator DoubleSpendBase::prepare(std::vector<test_event_entry>& events) co
   generator.makeNextBlock(tx);
 
   // unlock
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), TX_V2_MIN_BLOCK_VERSION);
 
   return generator;
 }

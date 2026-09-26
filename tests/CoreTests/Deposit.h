@@ -14,7 +14,8 @@
 namespace DepositTests {
 struct DepositTestsBase : public test_chain_unit_base {
   DepositTestsBase() {
-    m_currency = CryptoNote::CurrencyBuilder(m_logger).upgradeHeightV2(0).depositMinTerm(10).depositMinTotalRateFactor(100).currency();
+    CryptoNote::CurrencyBuilder builder(m_logger);
+    m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).depositMinTerm(10).depositMinTotalRateFactor(100).difficultyFloorEnforced(false).currency();
     from.generate();
     to.generate();
     REGISTER_CALLBACK_METHOD(DepositTestsBase, mark_invalid_block);
@@ -64,7 +65,8 @@ struct BankingIndexTest : public DepositTestsBase {
   using Core = CryptoNote::core;
   using Events = std::vector<test_event_entry>;
   BankingIndexTest() {
-    m_currency = CryptoNote::CurrencyBuilder(m_logger).upgradeHeightV2(0).depositMinTerm(10).depositMinTotalRateFactor(100).minimumFee(1000).currency();
+    CryptoNote::CurrencyBuilder builder(m_logger);
+    m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).depositMinTerm(10).depositMinTotalRateFactor(100).minimumFee(1000).difficultyFloorEnforced(false).currency();
     REGISTER_CALLBACK_METHOD(BankingIndexTest, interestZero);
     REGISTER_CALLBACK_METHOD(BankingIndexTest, interestOneMinimal);
     REGISTER_CALLBACK_METHOD(BankingIndexTest, interestTwoMininmal);
@@ -85,22 +87,31 @@ struct BankingIndexTest : public DepositTestsBase {
     return c.fullDepositAmount() == 3 * m_currency.depositMinAmount();
   }
 
-  bool interestZero(const Core& c, std::size_t ev_index, const Events& events) {
-    return 0;
+  // Legacy XFG deposits earn no on-chain interest in Fuego
+  // (Currency::calculateInterest returns 0 by design), so every interest
+  // checkpoint must read zero; upstream expected one or two minimal amounts.
+  // These used to `return 0`, i.e. fail unconditionally.
+  static uint64_t interestAtTip(Core& c) {
+    return c.get_blockchain_storage().depositInterestAtHeight(c.get_current_blockchain_height() - 1);
   }
 
-  bool interestOneMinimal(const Core& c, std::size_t ev_index, const Events& events) {
-    return 0;
+  bool interestZero(Core& c, std::size_t ev_index, const Events& events) {
+    return interestAtTip(c) == 0;
   }
 
-  bool interestTwoMininmal(const Core& c, std::size_t ev_index, const Events& events) {
-    return 0;
+  bool interestOneMinimal(Core& c, std::size_t ev_index, const Events& events) {
+    return interestAtTip(c) == 0;
+  }
+
+  bool interestTwoMininmal(Core& c, std::size_t ev_index, const Events& events) {
+    return interestAtTip(c) == 0;
   }
 };
 
 struct EmissionTest : public DepositTestsBase {
   EmissionTest() {
-    m_currency = CryptoNote::CurrencyBuilder(m_logger).upgradeHeightV2(0).depositMinTerm(10).depositMinTotalRateFactor(100).currency();
+    CryptoNote::CurrencyBuilder builder(m_logger);
+    m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).depositMinTerm(10).depositMinTotalRateFactor(100).difficultyFloorEnforced(false).currency();
     REGISTER_CALLBACK_METHOD(EmissionTest, save_emission_before);
     REGISTER_CALLBACK_METHOD(EmissionTest, save_emission_after);
   }
@@ -109,7 +120,9 @@ struct EmissionTest : public DepositTestsBase {
     if (emission_after == 0 || emission_before == 0) {
       return true;
     }
-    return emission_after == emission_before + CryptoNote::START_BLOCK_REWARD + m_currency.calculateInterest(m_currency.depositMinAmount(), m_currency.depositMinTerm(), 0);
+    // The withdrawal block adds exactly its base reward: no interest is minted
+    // for legacy deposits, and its fee is paid out of existing coins.
+    return emission_after == emission_before + blockRewardAfter(m_currency, emission_before, TX_V2_MIN_BLOCK_VERSION);
   }
 
   bool save_emission_before(CryptoNote::core& c, std::size_t /*ev_index*/,
@@ -133,11 +146,24 @@ struct EmissionTestRestore : public EmissionTest {
     if (emission_after == 0 || emission_before == 0) {
       return true;
     }
-    return emission_after == emission_before + CryptoNote::START_BLOCK_REWARD * 3 - m_currency.calculateInterest(m_currency.depositMinAmount(), m_currency.depositMinTerm(), 0);
+    // The heavier alternative chain replaces the withdrawal block and its
+    // successor with four empty blocks: emission advances by three more
+    // decaying base rewards from the pre-reorg level (no interest to undo).
+    uint64_t expected = emission_before;
+    for (int i = 0; i < 3; ++i) {
+      expected += blockRewardAfter(m_currency, expected, TX_V2_MIN_BLOCK_VERSION);
+    }
+    return emission_after == expected;
   }
 };
 
 struct BlocksOfFirstTypeCantHaveTransactionsOfTypeTwo : public DepositTestsBase {
+  BlocksOfFirstTypeCantHaveTransactionsOfTypeTwo() {
+    // A chain that stops at v7, the last version refusing version-2 txs.
+    CryptoNote::CurrencyBuilder builder(m_logger);
+    m_currency = activateBlockVersionsUpTo(builder, CryptoNote::BLOCK_MAJOR_VERSION_7).depositMinTerm(10)
+      .depositMinTotalRateFactor(100).difficultyFloorEnforced(false).currency();
+  }
   bool generate(std::vector<test_event_entry>& events);
 };
 

@@ -27,7 +27,10 @@ namespace {
     CryptoNote::Block blk_prev = blk_last;
     for (size_t i = 0; i < new_block_count; ++i) {
       CryptoNote::Block blk_next;
-      CryptoNote::difficulty_type diffic = currency.nextDifficulty(timestamps, cummulative_difficulties);
+      // nextDifficulty dispatches on (height, version); pass the ones the core
+      // will use for this block, or it computes a different target and rejects it.
+      CryptoNote::difficulty_type diffic = currency.nextDifficulty(
+          get_block_height(blk_prev) + 1, block_major_version, timestamps, cummulative_difficulties);
       if (!generator.constructBlockManually(blk_next, blk_prev, miner_account,
         test_generator::bf_major_ver | test_generator::bf_timestamp | test_generator::bf_diffic,
         block_major_version, 0, blk_prev.timestamp, Crypto::Hash(), diffic)) {
@@ -35,7 +38,11 @@ namespace {
       }
 
       commulative_diffic += diffic;
-      if (timestamps.size() == currency.difficultyWindow()) {
+      // Keep the window the core uses for this version. nextDifficultyV2+
+      // truncate oversized input to its OLDEST entries, so a v1-sized window
+      // froze the v2 result (1377) and the lift never ended.
+      const size_t window = currency.difficultyBlocksCountByBlockVersion(block_major_version);
+      while (timestamps.size() >= window) {
         timestamps.erase(timestamps.begin());
         cummulative_difficulties.erase(cummulative_difficulties.begin());
       }
@@ -192,7 +199,9 @@ bool gen_block_invalid_nonce::generate(std::vector<test_event_entry>& events) co
   }
 
   // Create invalid nonce
-  difficulty_type diffic = m_currency.nextDifficulty(timestamps, commulative_difficulties);
+  difficulty_type diffic = m_currency.nextDifficulty(
+      get_block_height(boost::get<Block>(events.back())) + 1, m_blockMajorVersion,
+      timestamps, commulative_difficulties);
   assert(1 < diffic);
   const Block& blk_last = boost::get<Block>(events.back());
   uint64_t timestamp = blk_last.timestamp;
@@ -452,7 +461,7 @@ bool gen_block_miner_tx_out_is_small::generate(std::vector<test_event_entry>& ev
     test_generator::bf_major_ver | test_generator::bf_miner_tx, m_blockMajorVersion, 0, 0, Crypto::Hash(), 0, miner_tx);
   events.push_back(blk_1);
 
-  DO_CALLBACK(events, "check_block_purged");
+  DO_CALLBACK(events, "check_underspend_accepted");
 
   return true;
 }
@@ -486,7 +495,7 @@ bool gen_block_miner_tx_has_no_out::generate(std::vector<test_event_entry>& even
     test_generator::bf_major_ver | test_generator::bf_miner_tx, m_blockMajorVersion, 0, 0, Crypto::Hash(), 0, miner_tx);
   events.push_back(blk_1);
 
-  DO_CALLBACK(events, "check_block_purged");
+  DO_CALLBACK(events, "check_underspend_accepted");
 
   return true;
 }
@@ -550,6 +559,11 @@ bool gen_block_is_too_big::generate(std::vector<test_event_entry>& events) const
   }
 
   blk_1.baseTransaction.extra.resize(blk_1.baseTransaction.extra.size() + 1);
+  // Re-commit the v2 merge-mining tag to the grown miner tx; otherwise the v2
+  // variant is rejected for a stale tag instead of for its size.
+  if (!fillParentBlock(blk_1)) {
+    return false;
+  }
   events.push_back(blk_1);
 
   DO_CALLBACK(events, "check_block_purged");
@@ -588,7 +602,7 @@ gen_block_invalid_binary_format::gen_block_invalid_binary_format(uint8_t blockMa
     m_blockMajorVersion(blockMajorVersion) {
   CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
   currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : 0);
-  m_currency = currencyBuilder.currency();
+  m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
 
   REGISTER_CALLBACK("check_all_blocks_purged", gen_block_invalid_binary_format::check_all_blocks_purged);
   REGISTER_CALLBACK("corrupt_blocks_boundary", gen_block_invalid_binary_format::corrupt_blocks_boundary);
@@ -620,7 +634,8 @@ bool gen_block_invalid_binary_format::generate(std::vector<test_event_entry>& ev
   do
   {
     blk_last = boost::get<Block>(events.back());
-    diffic = m_currency.nextDifficulty(timestamps, cummulative_difficulties);
+    diffic = m_currency.nextDifficulty(get_block_height(blk_last) + 1, m_blockMajorVersion,
+                                       timestamps, cummulative_difficulties);
     if (!lift_up_difficulty(m_currency, events, timestamps, cummulative_difficulties, generator, 1, blk_last,
       miner_account, m_blockMajorVersion)) {
       return false;
@@ -630,14 +645,15 @@ bool gen_block_invalid_binary_format::generate(std::vector<test_event_entry>& ev
   while (diffic < 1500);
 
   blk_last = boost::get<Block>(events.back());
-  MAKE_TX(events, tx_0, miner_account, miner_account, MK_COINS(120), boost::get<Block>(events[1]));
+  MAKE_TX(events, tx_0, miner_account, miner_account, MK_COINS(29), boost::get<Block>(events[1]));
   DO_CALLBACK(events, "corrupt_blocks_boundary");
 
   Block blk_test;
   std::vector<Crypto::Hash> tx_hashes;
   tx_hashes.push_back(getObjectHash(tx_0));
   size_t txs_size = getObjectBinarySize(tx_0);
-  diffic = m_currency.nextDifficulty(timestamps, cummulative_difficulties);
+  diffic = m_currency.nextDifficulty(get_block_height(blk_last) + 1, m_blockMajorVersion,
+                                     timestamps, cummulative_difficulties);
   if (!generator.constructBlockManually(blk_test, blk_last, miner_account,
     test_generator::bf_major_ver | test_generator::bf_diffic | test_generator::bf_timestamp | test_generator::bf_tx_hashes,
     m_blockMajorVersion, 0, blk_last.timestamp, Crypto::Hash(), diffic, Transaction(), tx_hashes, txs_size))

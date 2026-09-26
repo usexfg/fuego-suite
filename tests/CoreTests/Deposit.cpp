@@ -56,7 +56,7 @@ void DepositTestsBase::addDepositOutput(Transaction& transaction) {
 
 Transaction DepositTestsBase::createDepositTransaction(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   //builder.
   builder.m_destinations.clear();
 
@@ -85,39 +85,51 @@ void DepositTestsBase::addDepositInput(Transaction& transaction) {
  */
 }
 
+// Fuego admits version-2 txs (multisig / legacy deposit outputs) only in
+// blocks >= v8; upstream gated them at v2. Upstream's version of this test
+// pushed an empty v1 block that failed on its block version alone.
 bool BlocksOfFirstTypeCantHaveTransactionsOfTypeTwo::generate(std::vector<test_event_entry>& events) {
-  MAKE_GENESIS_BLOCK(events, firstBlock, from, 1338224400);
-  generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  REWIND_BLOCKS_N(events, otherBlock, firstBlock, from, m_currency.timestampCheckWindow() - 1);
-  construct_tx_to_key(m_logger, events, transaction, firstBlock, from, to, 100, 10, 0);
-  addDepositOutput(transaction);
-  transaction.version = TRANSACTION_VERSION_2;
-  Block secondBlock;
-  generator.constructBlockManually(secondBlock, firstBlock, from, test_generator::bf_major_ver, BLOCK_MAJOR_VERSION_1);
-  DO_CALLBACK(events, "mark_invalid_block");
-  events.push_back(secondBlock);
+  const uint8_t lastVersionWithoutTxV2 = BLOCK_MAJOR_VERSION_7;
+  TestGenerator generator(m_currency, events);
+  generator.generator.defaultMajorVersion = lastVersionWithoutTxV2;
+  const size_t decoys = minRingDecoys(m_currency, lastVersionWithoutTxV2);
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + decoys, lastVersionWithoutTxV2);
+
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100,
+    m_currency.minimumFee(), decoys);
+  builder.m_destinations.clear();
+
+  TransactionBuilder::KeysVector kv;
+  kv.push_back(to.getAccountKeys());
+
+  builder.addMultisignatureOut(m_currency.depositMinAmount(), kv, 1, m_currency.depositMinTerm());
+  builder.setVersion(TRANSACTION_VERSION_2);
+  auto tx = builder.build();
+  generator.addEvent(tx); // the pool admits it; the v7 block carrying it must fail
+  generator.addCallback("mark_invalid_block");
+  generator.makeNextBlock(tx);
   return true;
 }
 
 bool BlocksOfSecondTypeCanHaveTransactionsOfTypeOne::generate(std::vector<test_event_entry>& events) {
-  MAKE_GENESIS_BLOCK(events, firstBlock, from, 1338224400);
-  generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  REWIND_BLOCKS_N(events, otherBlock, firstBlock, from, m_currency.timestampCheckWindow() - 1);
-  if (!construct_tx_to_key(m_logger, events, transaction, firstBlock, from, to, 100, 100000, 0)) {
-    return false;
-  }
-  Block secondBlock;
-  generator.constructBlock(secondBlock, otherBlock, from, {transaction});
-  events.push_back(transaction);
-  events.push_back(secondBlock);
+  TestGenerator generator(m_currency, events);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  const size_t decoys = minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION);
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + decoys, TX_V2_MIN_BLOCK_VERSION);
+
+  auto builder = generator.createTxBuilder(generator.minerAccount, to, MK_COINS(1), m_currency.minimumFee(), decoys);
+  builder.setVersion(TRANSACTION_VERSION_1);
+  auto tx = builder.build();
+  generator.addEvent(tx);
+  generator.makeNextBlock(tx);
   return true;
 }
 
 bool BlocksOfSecondTypeCanHaveTransactionsOfTypeTwo::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -132,11 +144,11 @@ bool BlocksOfSecondTypeCanHaveTransactionsOfTypeTwo::generate(std::vector<test_e
 
 bool TransactionOfTypeOneWithDepositInputIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -161,9 +173,9 @@ bool TransactionOfTypeOneWithDepositInputIsRejected::generate(std::vector<test_e
 
 bool TransactionOfTypeOneWithDepositOutputIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -179,9 +191,9 @@ bool TransactionOfTypeOneWithDepositOutputIsRejected::generate(std::vector<test_
 
 bool TransactionWithAmountLowerThenMinIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -196,9 +208,9 @@ bool TransactionWithAmountLowerThenMinIsRejected::generate(std::vector<test_even
 
 bool TransactionWithMinAmountIsAccepted::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -212,9 +224,9 @@ bool TransactionWithMinAmountIsAccepted::generate(std::vector<test_event_entry>&
 
 bool TransactionWithTermLowerThenMinIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -229,9 +241,9 @@ bool TransactionWithTermLowerThenMinIsRejected::generate(std::vector<test_event_
 
 bool TransactionWithMinTermIsAccepted::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -245,15 +257,15 @@ bool TransactionWithMinTermIsAccepted::generate(std::vector<test_event_entry>& e
 
 bool TransactionWithTermGreaterThenMaxIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
   kv.push_back(to.getAccountKeys());
 
-  builder.addMultisignatureOut(m_currency.depositMinAmount(), kv, 1, m_currency.depositMaxTermV1() + 1);
+  builder.addMultisignatureOut(m_currency.depositMinAmount(), kv, 1, m_currency.depositMaxTerm() + 1);
   auto tx = builder.build();
   generator.addCallback("mark_invalid_tx"); // should be rejected by the core
   generator.addEvent(tx);
@@ -262,9 +274,9 @@ bool TransactionWithTermGreaterThenMaxIsRejected::generate(std::vector<test_even
 
 bool TransactionWithMaxTermIsAccepted::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -278,9 +290,9 @@ bool TransactionWithMaxTermIsAccepted::generate(std::vector<test_event_entry>& e
 
 bool TransactionWithoutSignaturesIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -296,9 +308,9 @@ bool TransactionWithoutSignaturesIsRejected::generate(std::vector<test_event_ent
 
 bool TransactionWithZeroRequiredSignaturesIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -312,9 +324,9 @@ bool TransactionWithZeroRequiredSignaturesIsRejected::generate(std::vector<test_
 
 bool TransactionWithNumberOfRequiredSignaturesGreaterThanKeysIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   TransactionBuilder::KeysVector kv;
@@ -342,9 +354,9 @@ Crypto::PublicKey generate_invalid_pub_key() {
 
 bool TransactionWithInvalidKeyIsRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
-  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
+  auto builder = generator.createTxBuilder(generator.minerAccount, from, 100, m_currency.minimumFee() + 1, minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
   builder.m_destinations.clear();
 
   auto pub = generate_invalid_pub_key();
@@ -361,11 +373,11 @@ bool TransactionWithInvalidKeyIsRejected::generate(std::vector<test_event_entry>
 
 bool TransactionWithDepositExtendsEmission::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -379,7 +391,7 @@ bool TransactionWithDepositExtendsEmission::generate(std::vector<test_event_entr
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -391,7 +403,7 @@ bool TransactionWithDepositExtendsEmission::generate(std::vector<test_event_entr
     generator.addCallback("save_emission_before");
     generator.makeNextBlock(tx);
     generator.addCallback("save_emission_after");
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   return true;
@@ -399,11 +411,11 @@ bool TransactionWithDepositExtendsEmission::generate(std::vector<test_event_entr
 
 bool TransactionWithDepositRestorsEmissionOnAlternativeChain::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -417,7 +429,7 @@ bool TransactionWithDepositRestorsEmissionOnAlternativeChain::generate(std::vect
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
   auto lastBlock = generator.lastBlock;
 
   {
@@ -429,25 +441,25 @@ bool TransactionWithDepositRestorsEmissionOnAlternativeChain::generate(std::vect
     generator.addEvent(tx);
     generator.makeNextBlock(tx);
     generator.addCallback("save_emission_before");
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   // move to alternative chain
   generator.lastBlock = lastBlock;
-  generator.generateBlocks(4, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(4, TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("save_emission_after");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
 
   return true;
 }
 
 bool TransactionWithOutputToSpentInputWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -461,7 +473,7 @@ bool TransactionWithOutputToSpentInputWillBeRejected::generate(std::vector<test_
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -488,11 +500,11 @@ bool TransactionWithOutputToSpentInputWillBeRejected::generate(std::vector<test_
 
 bool TransactionWithMultipleInputsThatSpendOneOutputWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -506,7 +518,7 @@ bool TransactionWithMultipleInputsThatSpendOneOutputWillBeRejected::generate(std
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -524,11 +536,11 @@ bool TransactionWithMultipleInputsThatSpendOneOutputWillBeRejected::generate(std
 
 bool TransactionWithInputWithAmountThatIsDoesntHaveOutputWithSameAmountWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -542,7 +554,7 @@ bool TransactionWithInputWithAmountThatIsDoesntHaveOutputWithSameAmountWillBeRej
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -560,11 +572,11 @@ bool TransactionWithInputWithAmountThatIsDoesntHaveOutputWithSameAmountWillBeRej
 //TODO: check
 bool TransactionWithInputWithIndexLargerThanNumberOfOutputsWithThisSumWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, 2 * m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -578,7 +590,7 @@ bool TransactionWithInputWithIndexLargerThanNumberOfOutputsWithThisSumWillBeReje
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -596,11 +608,11 @@ bool TransactionWithInputWithIndexLargerThanNumberOfOutputsWithThisSumWillBeReje
 
 bool TransactionWithInputThatPointsToTheOutputButHasAnotherTermWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -613,7 +625,7 @@ bool TransactionWithInputThatPointsToTheOutputButHasAnotherTermWillBeRejected::g
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -630,11 +642,11 @@ bool TransactionWithInputThatPointsToTheOutputButHasAnotherTermWillBeRejected::g
 
 bool TransactionThatTriesToSpendOutputWhosTermHasntFinishedWillBeRejected::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -647,7 +659,7 @@ bool TransactionThatTriesToSpendOutputWhosTermHasntFinishedWillBeRejected::gener
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 2, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 2, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -663,11 +675,11 @@ bool TransactionThatTriesToSpendOutputWhosTermHasntFinishedWillBeRejected::gener
 
 bool TransactionWithAmountThatHasAlreadyFinishedWillBeAccepted::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -680,7 +692,7 @@ bool TransactionWithAmountThatHasAlreadyFinishedWillBeAccepted::generate(std::ve
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   {
     TransactionBuilder builder(m_currency);
@@ -696,12 +708,12 @@ bool TransactionWithAmountThatHasAlreadyFinishedWillBeAccepted::generate(std::ve
 
 bool TransactionWithDepositExtendsTotalDeposit::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("amountZero");
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -714,18 +726,19 @@ bool TransactionWithDepositExtendsTotalDeposit::generate(std::vector<test_event_
     generator.makeNextBlock(tx);
   }
   generator.addCallback("amountOneMinimal");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   return true;
 }
 
 bool TransactionWithMultipleDepositOutsExtendsTotalDeposit::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  // Four deposit outputs need four matured coinbases, each ring with a matured decoy.
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION) + 4, TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("amountZero");
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, 4 * m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -741,18 +754,18 @@ bool TransactionWithMultipleDepositOutsExtendsTotalDeposit::generate(std::vector
     generator.makeNextBlock(tx);
   }
   generator.addCallback("amountThreeMinimal");
-  generator.generateBlocks(2, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(2, TX_V2_MIN_BLOCK_VERSION);
   return true;
 }
 
 bool TransactionWithDepositIsClearedAfterInputSpend::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("amountZero");
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -765,7 +778,7 @@ bool TransactionWithDepositIsClearedAfterInputSpend::generate(std::vector<test_e
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   generator.addCallback("amountOneMinimal");
   {
@@ -778,18 +791,18 @@ bool TransactionWithDepositIsClearedAfterInputSpend::generate(std::vector<test_e
     generator.makeNextBlock(tx);
   }
   generator.addCallback("amountZero");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
 
   return true;
 }
 
 bool TransactionWithDepositUpdatesInterestAfterDepositUnlock::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -802,7 +815,7 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlock::generate(std::vect
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   generator.addCallback("interestZero");
   {
@@ -814,7 +827,7 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlock::generate(std::vect
     generator.addEvent(tx);
     generator.makeNextBlock(tx);
     generator.addCallback("interestOneMinimal");
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   return true;
@@ -822,11 +835,11 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlock::generate(std::vect
 
 bool TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, 2 * m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -840,7 +853,7 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple::generate(s
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
 
   generator.addCallback("interestZero");
   {
@@ -857,7 +870,7 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple::generate(s
     generator.addEvent(tx);
     generator.makeNextBlock(tx);
     generator.addCallback("interestTwoMininmal");
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   return true;
@@ -865,11 +878,11 @@ bool TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple::generate(s
 
 bool TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -882,7 +895,7 @@ bool TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain::generat
     generator.makeNextBlock(tx);
   }
 
-  generator.generateBlocks(m_currency.depositMinTerm() - 1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() - 1, TX_V2_MIN_BLOCK_VERSION);
   auto lastBlock = generator.lastBlock;
 
   generator.addCallback("interestZero");
@@ -895,25 +908,25 @@ bool TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain::generat
     generator.addEvent(tx);
     generator.makeNextBlock(tx);
     generator.addCallback("interestOneMinimal");
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   generator.lastBlock = lastBlock;
-  generator.generateBlocks(4, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(4, TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("interestZero");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
 
   return true;
 }
 
 bool TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION), TX_V2_MIN_BLOCK_VERSION);
   auto lastBlock = generator.lastBlock;
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount() + 100, m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -927,24 +940,24 @@ bool TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain::generate(
   }
 
   generator.addCallback("amountOneMinimal");
-  generator.generateBlocks(m_currency.depositMinTerm(), BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm(), TX_V2_MIN_BLOCK_VERSION);
 
   generator.addCallback("amountOneMinimal");
   generator.lastBlock = lastBlock;
-  generator.generateBlocks(m_currency.depositMinTerm() + 4, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() + 4, TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("amountZero");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
 
   return true;
 }
 
 bool TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain::generate(std::vector<test_event_entry>& events) {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + 3, BLOCK_MAJOR_VERSION_2);
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + 3, TX_V2_MIN_BLOCK_VERSION);
   KeyPair key;
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount(), m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount(), m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_destinations.clear();
 
     TransactionBuilder::KeysVector kv;
@@ -959,10 +972,10 @@ bool TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain::gen
 
   auto lastBlock = generator.lastBlock;
   generator.addCallback("amountOneMinimal");
-  generator.generateBlocks(m_currency.depositMinTerm(), BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm(), TX_V2_MIN_BLOCK_VERSION);
 
   {
-    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount(), m_currency.minimumFee());
+    auto builder = generator.createTxBuilder(generator.minerAccount, from, m_currency.depositMinAmount(), m_currency.minimumFee(), minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION));
     builder.m_sources.clear();
     builder.m_destinations.clear();
     TransactionBuilder::KeysVector kv;
@@ -974,13 +987,13 @@ bool TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain::gen
     auto tx = builder.build();
     generator.addEvent(tx);
     generator.makeNextBlock(tx);
-    generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+    generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
   }
 
   generator.lastBlock = lastBlock;
-  generator.generateBlocks(m_currency.depositMinTerm() + 4, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(m_currency.depositMinTerm() + 4, TX_V2_MIN_BLOCK_VERSION);
   generator.addCallback("amountOneMinimal");
-  generator.generateBlocks(1, BLOCK_MAJOR_VERSION_2);
+  generator.generateBlocks(1, TX_V2_MIN_BLOCK_VERSION);
 
   return true;
 }

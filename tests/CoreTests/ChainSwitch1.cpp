@@ -11,6 +11,8 @@ using namespace CryptoNote;
 gen_chain_switch_1::gen_chain_switch_1()
 {
   REGISTER_CALLBACK("check_split_not_switched", gen_chain_switch_1::check_split_not_switched);
+  REGISTER_CALLBACK("mark_refused_switch", gen_chain_switch_1::mark_refused_switch);
+  REGISTER_CALLBACK("check_switch_refused", gen_chain_switch_1::check_switch_refused);
   REGISTER_CALLBACK("check_split_switched", gen_chain_switch_1::check_split_switched);
 }
 
@@ -20,12 +22,19 @@ bool gen_chain_switch_1::generate(std::vector<test_event_entry>& events) const
 {
   uint64_t ts_start = 1338224400;
   /*
-  (0 )-(1 )-(2 ) -(3 )-(4 )                  <- main chain, until 7 isn't connected
-              \ |-(5 )-(6 )-(7 )|            <- alt chain, until 7 isn't connected
+  (0 )-(1 )-(2 ) -(3 )-(4 )                       <- main chain, until 8 is connected
+              \ |-(5 )-(6 )-(7 )-(8 )|            <- alt chain, until 8 is connected
+
+  Fuego refuses to switch to a heavier alternative chain that lacks any
+  transaction of the main-chain segment it would replace (anti double-spend
+  reorg rule in Blockchain::switch_to_alternative_blockchain). Upstream this
+  scenario switched at (7) and returned the 7-coin tx to the pool; here (7)
+  is heavier but lacks that tx, so the switch is refused, and (8) carries it,
+  so the switch then succeeds.
 
   transactions ([n] - tx amount, (m) - block):
   (1)     : miner -[ 5]-> account_1 ( +5 in main chain,  +5 in alt chain)
-  (3)     : miner -[ 7]-> account_2 ( +7 in main chain,  +0 in alt chain), tx will be in tx pool after switch
+  (3), (8): miner -[ 7]-> account_2 ( +7 in main chain,  +7 in alt chain), missing from the alt chain until (8)
   (4), (6): miner -[11]-> account_3 (+11 in main chain, +11 in alt chain)
   (5)     : miner -[13]-> account_4 ( +0 in main chain, +13 in alt chain), tx will be in tx pool before switch
 
@@ -83,9 +92,47 @@ bool gen_chain_switch_1::generate(std::vector<test_event_entry>& events) const
   //split
   MAKE_NEXT_BLOCK_TX_LIST(events, blk_5, blk_2r, miner_account, txs_blk_5);                       // 22 + 2N
   MAKE_NEXT_BLOCK_TX_LIST(events, blk_6, blk_5, miner_account, txs_blk_6);                        // 23 + 2N
-  DO_CALLBACK(events, "check_split_not_switched");                                                // 21 + 2N
-  MAKE_NEXT_BLOCK(events, blk_7, blk_6, miner_account);                                           // 24 + 2N
-  DO_CALLBACK(events, "check_split_switched");                                                    // 25 + 2N
+  DO_CALLBACK(events, "check_split_not_switched");                                                // 23 + 2N
+  DO_CALLBACK(events, "mark_refused_switch");                                                     // 24 + 2N
+  MAKE_NEXT_BLOCK(events, blk_7, blk_6, miner_account);                                           // 25 + 2N
+  DO_CALLBACK(events, "check_switch_refused");                                                    // 26 + 2N
+  MAKE_NEXT_BLOCK_TX1(events, blk_8, blk_7, miner_account, txs_blk_3.front());                    // 27 + 2N
+  DO_CALLBACK(events, "check_split_switched");                                                    // 28 + 2N
+
+  return true;
+}
+
+bool gen_chain_switch_1::check_block_verification_context(const CryptoNote::block_verification_context& bvc, size_t event_idx, const CryptoNote::Block& /*blk*/)
+{
+  if (event_idx == m_refused_switch_block_idx) {
+    return bvc.m_verification_failed && !bvc.m_added_to_main_chain;
+  }
+
+  return !bvc.m_verification_failed;
+}
+
+bool gen_chain_switch_1::mark_refused_switch(CryptoNote::core& /*c*/, size_t ev_index, const std::vector<test_event_entry>& /*events*/)
+{
+  m_refused_switch_block_idx = ev_index + 1;
+  return true;
+}
+
+bool gen_chain_switch_1::check_switch_refused(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events)
+{
+  DEFINE_TESTS_ERROR_CONTEXT("gen_chain_switch_1::check_switch_refused");
+
+  std::list<Block> blocks;
+  bool r = c.get_blocks(0, 10000, blocks);
+  CHECK_TEST_CONDITION(r);
+  CHECK_EQ(5 + 2 * m_currency.minedMoneyUnlockWindow(), blocks.size());
+  CHECK_TEST_CONDITION(std::equal(blocks.begin(), blocks.end(), m_chain_1.begin()));
+
+  // (7) outweighs (4) but lacks the 7-coin tx: kept as an alternative block only.
+  CHECK_EQ(3, c.get_alternative_blocks_count());
+
+  std::vector<Transaction> tx_pool = c.getPoolTransactions();
+  CHECK_EQ(1, tx_pool.size());
+  CHECK_TEST_CONDITION(tx_pool.front() == m_tx_pool.front());
 
   return true;
 }
@@ -140,11 +187,11 @@ bool gen_chain_switch_1::check_split_switched(CryptoNote::core& c, size_t ev_ind
   std::list<Block> blocks;
   bool r = c.get_blocks(0, 10000, blocks);
   CHECK_TEST_CONDITION(r);
-  CHECK_EQ(6 + 2 * m_currency.minedMoneyUnlockWindow(), blocks.size());
+  CHECK_EQ(7 + 2 * m_currency.minedMoneyUnlockWindow(), blocks.size());
   auto it = blocks.end();
-  --it; --it; --it;
+  --it; --it; --it; --it;
   CHECK_TEST_CONDITION(std::equal(blocks.begin(), it, m_chain_1.begin()));
-  CHECK_TEST_CONDITION(blocks.back() == boost::get<Block>(events[24 + 2 * m_currency.minedMoneyUnlockWindow()]));  // blk_7
+  CHECK_TEST_CONDITION(blocks.back() == boost::get<Block>(events[27 + 2 * m_currency.minedMoneyUnlockWindow()]));  // blk_8
 
   std::list<Block> alt_blocks;
   r = c.get_alternative_blocks(alt_blocks);
@@ -162,18 +209,13 @@ bool gen_chain_switch_1::check_split_switched(CryptoNote::core& c, size_t ev_ind
   r = find_block_chain(events, chain, mtx, get_block_hash(blocks.back()));
   CHECK_TEST_CONDITION(r);
   CHECK_EQ(MK_COINS(8),  get_balance(m_recipient_account_1, chain, mtx));
-  CHECK_EQ(MK_COINS(3),  get_balance(m_recipient_account_2, chain, mtx));
+  CHECK_EQ(MK_COINS(10), get_balance(m_recipient_account_2, chain, mtx));
   CHECK_EQ(MK_COINS(14), get_balance(m_recipient_account_3, chain, mtx));
   CHECK_EQ(MK_COINS(16), get_balance(m_recipient_account_4, chain, mtx));
 
+  // Every main-chain tx is in the new chain and the 13-coin tx was mined in (5).
   std::vector<Transaction> tx_pool = c.getPoolTransactions();
-  CHECK_EQ(1, tx_pool.size());
-  CHECK_TEST_CONDITION(!(tx_pool.front() == m_tx_pool.front()));
-
-  std::vector<size_t> tx_outs;
-  uint64_t transfered;
-  lookup_acc_outs(m_recipient_account_2.getAccountKeys(), tx_pool.front(), tx_outs, transfered);
-  CHECK_EQ(MK_COINS(7), transfered);
+  CHECK_EQ(0, tx_pool.size());
 
   return true;
 }

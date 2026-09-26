@@ -156,7 +156,20 @@ bool init_spent_output_indices(map_output_idx_t& outs, map_output_t& outs_mine, 
     return true;
 }
 
-bool fill_output_entries(std::vector<output_index>& out_indices, size_t sender_out, size_t nmix, size_t& real_entry_idx, std::vector<TransactionSourceEntry::OutputEntry>& output_entries)
+// A ring member still locked where the new tx lands makes the core reject the
+// whole input. Mirrors Blockchain::is_tx_spendtime_unlocked for a spend on top
+// of the head (time-based locks use the smaller, pre-v7 tolerance).
+static bool unlocked_at_head(const output_index& oi, const std::vector<CryptoNote::Block>& blockchain)
+{
+  const uint64_t unlockTime = oi.p_tx->unlockTime;
+  if (unlockTime < CryptoNote::parameters::CRYPTONOTE_MAX_BLOCK_NUMBER)
+    return blockchain.size() - 1 + CryptoNote::parameters::CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_BLOCKS >= unlockTime;
+
+  return static_cast<uint64_t>(time(nullptr)) + CryptoNote::parameters::CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS >= unlockTime;
+}
+
+bool fill_output_entries(std::vector<output_index>& out_indices, size_t sender_out, size_t nmix, size_t& real_entry_idx,
+                         std::vector<TransactionSourceEntry::OutputEntry>& output_entries, const std::vector<CryptoNote::Block>& blockchain)
 {
   if (out_indices.size() <= nmix)
     return false;
@@ -176,7 +189,7 @@ bool fill_output_entries(std::vector<output_index>& out_indices, size_t sender_o
       sender_out_found = true;
       real_entry_idx = output_entries.size();
     }
-    else if (0 < rest)
+    else if (0 < rest && unlocked_at_head(oi, blockchain))
     {
       --rest;
       append = true;
@@ -209,39 +222,53 @@ bool fill_tx_sources(std::vector<TransactionSourceEntry>& sources, const std::ve
     if (!init_spent_output_indices(outs, outs_mine, blockchain, mtx, from))
         return false;
 
-    // Iterate in reverse is more efficiency
-    uint64_t sources_amount = 0;
-    bool sources_found = false;
-    BOOST_REVERSE_FOREACH(const map_output_t::value_type o, outs_mine)
-    {
-        for (size_t i = 0; i < o.second.size() && !sources_found; ++i)
+    auto collect = [&](bool spendableOnly) {
+        sources.clear();
+        uint64_t sources_amount = 0;
+        bool sources_found = false;
+        // Iterate in reverse is more efficiency
+        BOOST_REVERSE_FOREACH(const map_output_t::value_type o, outs_mine)
         {
-            size_t sender_out = o.second[i];
-            const output_index& oi = outs[o.first][sender_out];
-            if (oi.spent)
-                continue;
+            for (size_t i = 0; i < o.second.size() && !sources_found; ++i)
+            {
+                size_t sender_out = o.second[i];
+                const output_index& oi = outs[o.first][sender_out];
+                if (oi.spent)
+                    continue;
 
-            CryptoNote::TransactionSourceEntry ts;
-            ts.amount = oi.amount;
-            ts.realOutputIndexInTransaction = oi.out_no;
-            ts.realTransactionPublicKey = getTransactionPublicKeyFromExtra(oi.p_tx->extra); // incoming tx public key
-            size_t realOutput;
-            if (!fill_output_entries(outs[o.first], sender_out, nmix, realOutput, ts.outputs))
-              continue;
+                if (spendableOnly && !unlocked_at_head(oi, blockchain))
+                    continue;
 
-            ts.realOutput = realOutput;
+                CryptoNote::TransactionSourceEntry ts;
+                ts.amount = oi.amount;
+                ts.realOutputIndexInTransaction = oi.out_no;
+                ts.realTransactionPublicKey = getTransactionPublicKeyFromExtra(oi.p_tx->extra); // incoming tx public key
+                size_t realOutput;
+                if (!fill_output_entries(outs[o.first], sender_out, nmix, realOutput, ts.outputs, blockchain))
+                  continue;
 
-            sources.push_back(ts);
+                ts.realOutput = realOutput;
 
-            sources_amount += ts.amount;
-            sources_found = amount <= sources_amount;
+                sources.push_back(ts);
+
+                sources_amount += ts.amount;
+                sources_found = amount <= sources_amount;
+            }
+
+            if (sources_found)
+                break;
         }
 
-        if (sources_found)
-            break;
-    }
+        return sources_found;
+    };
 
-    return sources_found;
+    // Prefer outputs spendable at the head; fall back to locked ones only when
+    // they cannot cover the amount (some scenarios spend locked outputs on
+    // purpose). A ring spend (nmix > 0) never takes a locked real member.
+    if (collect(true))
+        return true;
+
+    return nmix == 0 && collect(false);
 }
 
 bool fill_tx_destination(TransactionDestinationEntry &de, const CryptoNote::AccountBase &to, uint64_t amount) {

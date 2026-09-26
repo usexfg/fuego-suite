@@ -95,7 +95,35 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_VENDORED_SECP256K1=OFF -G Ninja
           cmake --build build -j$(nproc)
-        
+
+      - name: Unit and regression tests
+        run: |
+          ./build/src/audit_regression_tests
+          ./build/src/test_hearth_amm
+          ./build/src/test_daemons/core_tests
+          ./build/src/test_daemons/test_orderbook
+          ./build/src/test_daemons/test_orderbook_auction
+          ./build/src/test_daemons/test_orderbook_phase3
+          ./build/src/test_daemons/test_orderbook_phase5
+
+      # Consensus scenarios replayed through a real core. The slow tier
+      # (--include-slow, gen_block_invalid_binary_format) is not run here.
+      - name: Chaingen consensus scenarios
+        run: |
+          status=0
+          ./build/src/chaingen_tests --generate_and_play_test_data \
+            --data-dir "$RUNNER_TEMP/chaingen" > "$RUNNER_TEMP/chaingen.log" 2>&1 || status=$?
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/chaingen.log" | grep -a -E '#TEST#|Test run:|Failures:|FAILED TESTS|^  [A-Za-z]'
+          if [ "$status" -ne 0 ]; then tail -n 300 "$RUNNER_TEMP/chaingen.log"; fi
+          exit "$status"
+
+      - name: Upload Chaingen log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaingen-log
+          path: ${{ runner.temp }}/chaingen.log
+
   sanitizers-ubuntu:
     name: Sanitizers (ASan+UBSan)
     runs-on: ubuntu-24.04
@@ -116,14 +144,19 @@ jobs:
             -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -G Ninja
-          cmake --build build-san -j$(nproc) --target CryptoNoteCore core_tests test_orderbook
+          cmake --build build-san -j$(nproc) --target CryptoNoteCore core_tests test_orderbook \
+            audit_regression_tests test_hearth_amm test_orderbook_auction test_orderbook_phase3 test_orderbook_phase5
 
       - name: Run core tests under sanitizers
         run: |
-          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
-            ./build-san/src/test_daemons/core_tests
-          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
-            ./build-san/src/test_daemons/test_orderbook
+          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
+          ./build-san/src/test_daemons/core_tests
+          ./build-san/src/test_daemons/test_orderbook
+          ./build-san/src/audit_regression_tests
+          ./build-san/src/test_hearth_amm
+          ./build-san/src/test_daemons/test_orderbook_auction
+          ./build-san/src/test_daemons/test_orderbook_phase3
+          ./build-san/src/test_daemons/test_orderbook_phase5
 
   build-macos:
     name: macOS

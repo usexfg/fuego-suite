@@ -4,6 +4,112 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Chaingen integration suite wired in; consensus defects it exposed
+
+**Branch/Feature**: claude/heat-hearth-audit-e2093c
+**Started**: 2026-09-25
+**Agent**: claude-code
+**Status**: DONE — pending review
+
+The upstream CryptoNote Chaingen suite (block/tx scenarios replayed through a
+real `core`) builds again as `chaingen_tests` and runs in CI. Getting it to
+run exposed six defects in production code, fixed here. Every scenario that
+still disagreed with Fuego was traced to a deliberate Fuego rule and ported to
+assert that rule, never loosened to pass.
+
+Production defects:
+
+- **Reorg use-after-free.** `m_alternative_chains` was a
+  `parallel_flat_hash_map`, but `handle_alternative_block` collects the
+  alternative chain as iterators and then inserts the new block (and the
+  switch re-adds the old chain) — any insert that grows a submap moves every
+  element. ASan: heap-use-after-free, freed by `resize` from the insert at
+  `handle_alternative_block`, read in `switch_to_alternative_blockchain`. A
+  reorg then pushed moved-from blocks ("coinbase transaction in block has no
+  inputs"), rolled back, and segfaulted. Now a node map, walked by element
+  pointer (`alt_chain_list`), removed through `removeAlternativeBlock`.
+- **2 MB leaked per `Crypto::cn_context`**: the POSIX destructor's `munmap`
+  was commented out, and the buffer was never read (`cn_slow_hash` uses the C
+  per-thread scratchpad). Constructed per wallet save, swap-secret
+  encryption/decryption, mining thread and nonce search. Now holds no memory.
+- **Per-thread slow-hash scratchpad (2 MB) leaked at thread exit** for
+  short-lived hashing threads. `SlowHashThreadScope` frees it in the nonce
+  search, the daemon miner, the standalone miner and SwapP2P connection
+  threads. The suite was OOM-killed at 9.08 GB about two-thirds through;
+  the full default tier now peaks at 862 MB, the largest scenario's own
+  ~1,000 max-size blocks.
+- **`m_is_in_checkpoint_zone` was never initialized** — it gates
+  ring-signature verification in `check_tx_input` (if true, signatures are
+  skipped). Nothing ever sets it true; the daemon's `core` lives on `main`'s
+  stack, so it has read zeroed pages by luck. Now initialized to `false`.
+- **Uninitialized `Blockchain::blockMajorVersion`** chose the timestamp-lock
+  tolerance in `is_tx_spendtime_unlocked` (81 s vs 480 s by stack contents),
+  so nodes could disagree on a time-locked spend. Now uses the version of the
+  block the spend lands in; the member is removed.
+- **Max-reorg-depth unsigned underflow** (`Checkpoints::is_alternative_block_allowed`):
+  `height - 60` wrapped below 60, so no alternative block was accepted on a
+  chain shorter than 60 blocks (fresh chains, testnet). Mainnet unaffected.
+
+Harness (tests/): v2+ blocks now carry a merge-mining parent block (the nonce
+search never terminated without it); the replay core runs with no checkpoints
+(it loaded mainnet's, putting every test block in the checkpoint zone, which
+skips PoW and coinbase checks); version-aware reward zone and difficulty
+window; ring decoys and spendable ring members; denominated coinbases;
+chain files in `<temp>/fuego-chaingen` (`--data-dir`), not the launch
+directory; `--filter`; `--include-slow`; non-zero exit on exceptions.
+
+Test-only consensus switch: `CurrencyBuilder::difficultyFloorEnforced(false)`
+turns the mainnet minimum-difficulty floors (10000 … 1000000) into a floor of
+1 so a test can mine v2+ blocks; nodes never set it. The seven floor sites go
+through `Currency::clampDifficulty`. Proof of no consensus change: 240,000
+seeded inputs across block versions 1–12, mainnet and testnet, give
+byte-identical `nextDifficulty` output on master and this branch.
+
+Scenarios ported to Fuego rules: reorgs dropping a main-chain tx are refused
+(`gen_chain_switch_1` now asserts refusal, then a switch once the tx is
+carried; `gen_double_spend_in_different_chains`); pre-v10 coinbase underspend
+is accepted and emission tracks the payout; decaying block reward and the
+inherited CryptoNote block-size penalty on fees (`cryptonoteCoinVersion` 1)
+in `gen_block_reward`; kept-by-block double spends — the offending tx is
+dropped (task 6 below); minimum fee enforced even kept-by-block; version-2
+transactions only from block v8 (multisig, legacy deposits, `gen_upgrade`);
+legacy deposits earn no interest; amounts rescaled to Fuego emission.
+`BankingIndexTest`'s interest callbacks were `return 0;` — unconditional
+failures — and now assert zero interest.
+
+Not run, with the reason in `ChaingenMain.cpp`: four legacy-deposit
+scenarios that need a reorg Fuego refuses, and three whose term/amount rules
+only apply from the hardcoded mainnet height 821000. Opt-in slow tier:
+`gen_block_invalid_binary_format` (v1, v2).
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| C1 | Build target `chaingen_tests`; fix harness API drift | claude-code | 2026-09-25 | DONE |
+| C2 | Reorg use-after-free: node map + element pointers | claude-code | 2026-09-25 | DONE |
+| C3 | `cn_context` allocation removed; `SlowHashThreadScope` on short-lived hashing threads | claude-code | 2026-09-25 | DONE |
+| C4 | Initialize `m_is_in_checkpoint_zone`; replay core without mainnet checkpoints | claude-code | 2026-09-25 | DONE |
+| C5 | Max-reorg-depth underflow guard | claude-code | 2026-09-25 | DONE |
+| C6 | `difficultyFloorEnforced` switch + `clampDifficulty`; master/branch differential | claude-code | 2026-09-26 | DONE |
+| C7 | Remove uninitialized `Blockchain::blockMajorVersion`; version of the landing block | claude-code | 2026-09-25 | DONE |
+| C8 | Port scenarios to Fuego rules (block validation, reorg, underspend, reward, double spend, fee, multisig, deposits, upgrade) | claude-code | 2026-09-26 | DONE |
+| C9 | CI: unit/regression suites + Chaingen default tier (Release); five more suites under ASan+UBSan | claude-code | 2026-09-26 | DONE |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles: full `make` (all default targets) | PASS 2026-09-26 |
+| Chaingen default tier, Release: 144/144 pass, 634 s, peak RSS 862 MB | PASS 2026-09-26 |
+| Chaingen, ASan+UBSan: final harness, first 25 scenarios clean (legacy deposits); post-reorg-fix run, 91 scenarios incl. `gen_simple_chain_split_1`, 0 errors. A full ASan run takes hours and is not in CI | PARTIAL 2026-09-26 |
+| Suites under ASan+UBSan with leak detection: `audit_regression_tests`, `core_tests`, `test_orderbook`, `test_orderbook_auction`, `test_orderbook_phase3`, `test_orderbook_phase5`, `test_hearth_amm` | PASS 2026-09-26 |
+| Pre-fix reproduction: master and pre-fix branch segfault at `gen_simple_chain_split_1`; ASan heap-use-after-free | PASS 2026-09-25 |
+| Mutation: disabling the underspend emission adjustment fails `gen_block_miner_tx_out_is_small`; disabling the missing-tx reorg rule fails `gen_chain_switch_1` | PASS 2026-09-25 |
+| Difficulty differential vs master: 240,000 inputs, v1–v12, mainnet + testnet, byte-identical | PASS 2026-09-26 |
+| Slow tier (`--include-slow`, `gen_block_invalid_binary_format`) | NOT RUN TO COMPLETION |
+| All tasks done | YES |
+
+---
+
 ## HEAT / Hearth / CD / atomic-swap audit remediation
 
 **Branch/Feature**: claude/heat-hearth-audit-e2093c
@@ -120,6 +226,9 @@ Naming:
 > dropping the rejected transaction) are verified by build, review and the
 > suites above, not by a block-level test. Wiring Chaingen back in is the
 > highest-value follow-up.
+>
+> Update 2026-09-26: resolved by the "Chaingen integration suite" entry above;
+> the kept-by-block double-spend scenarios now assert task 6's drop.
 
 > The AMM suites above previously exercised `ammGetOutputAmount`,
 > `ammGetInputAmount`, `ammValidateSwap` and `ammValidateInvariant` as dead

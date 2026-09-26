@@ -337,17 +337,17 @@ bool gen_tx_key_offest_points_to_foreign_key::generate(std::vector<test_event_en
   REWIND_BLOCKS(events, blk_1r, blk_1, miner_account);
   MAKE_ACCOUNT(events, alice_account);
   MAKE_ACCOUNT(events, bob_account);
-  MAKE_TX_LIST_START(events, txs_0, miner_account, bob_account, MK_COINS(60) + 1, blk_1);
-  MAKE_TX_LIST(events, txs_0, miner_account, alice_account, MK_COINS(60) + 1, blk_1);
+  MAKE_TX_LIST_START(events, txs_0, miner_account, bob_account, MK_COINS(29) + 1, blk_1);
+  MAKE_TX_LIST(events, txs_0, miner_account, alice_account, MK_COINS(29) + 1, blk_1);
   MAKE_NEXT_BLOCK_TX_LIST(events, blk_2, blk_1r, miner_account, txs_0);
 
   std::vector<TransactionSourceEntry> sources_bob;
   std::vector<TransactionDestinationEntry> destinations_bob;
-  fill_tx_sources_and_destinations(events, blk_2, bob_account, miner_account, MK_COINS(60) + 1 - m_currency.minimumFee(), m_currency.minimumFee(), 0, sources_bob, destinations_bob);
+  fill_tx_sources_and_destinations(events, blk_2, bob_account, miner_account, MK_COINS(29) + 1 - m_currency.minimumFee(), m_currency.minimumFee(), 0, sources_bob, destinations_bob);
 
   std::vector<TransactionSourceEntry> sources_alice;
   std::vector<TransactionDestinationEntry> destinations_alice;
-  fill_tx_sources_and_destinations(events, blk_2, alice_account, miner_account, MK_COINS(60) + 1 - m_currency.minimumFee(), m_currency.minimumFee(), 0, sources_alice, destinations_alice);
+  fill_tx_sources_and_destinations(events, blk_2, alice_account, miner_account, MK_COINS(29) + 1 - m_currency.minimumFee(), m_currency.minimumFee(), 0, sources_alice, destinations_alice);
 
   tx_builder builder;
   builder.step1_init();
@@ -684,15 +684,18 @@ bool GenerateTransactionWithZeroFee::generate(std::vector<test_event_entry>& eve
   CryptoNote::Transaction tx;
   construct_tx_to_key(m_logger, events, tx, blk_0, alice_account, bob_account, MK_COINS(1), 0, 0);
 
-  if (!m_keptByBlock) {
-    DO_CALLBACK(events, "mark_invalid_tx");
-  } else {
+  // Upstream re-admitted a zero-fee tx when kept by a block. Fuego's pool
+  // enforces the minimum fee for every non-fusion tx, kept or not
+  // (tx_memory_pool::add_tx), and block txs enter through the pool, so both
+  // variants must be rejected.
+  if (m_keptByBlock) {
     event_visitor_settings settings;
     settings.txs_keeped_by_block = true;
     settings.valid_mask = 1;
     events.push_back(settings);
   }
 
+  DO_CALLBACK(events, "mark_invalid_tx");
   events.push_back(tx);
 
   return true;
@@ -701,7 +704,8 @@ bool GenerateTransactionWithZeroFee::generate(std::vector<test_event_entry>& eve
 MultiSigTx_OutputSignatures::MultiSigTx_OutputSignatures(size_t givenKeys, uint32_t requiredSignatures, bool shouldSucceed) :
   m_givenKeys(givenKeys), m_requiredSignatures(requiredSignatures), m_shouldSucceed(shouldSucceed) {
 
-  m_currency = CurrencyBuilder(m_logger).upgradeHeightV2(0).currency();
+  CurrencyBuilder builder(m_logger);
+  m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).difficultyFloorEnforced(false).currency();
 
   for (size_t i = 0; i < m_givenKeys; ++i) {
     AccountBase acc;
@@ -713,18 +717,20 @@ MultiSigTx_OutputSignatures::MultiSigTx_OutputSignatures(size_t givenKeys, uint3
 
 bool MultiSigTx_OutputSignatures::generate(std::vector<test_event_entry>& events) const {
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
   return generate(generator);
 }
 
 bool MultiSigTx_OutputSignatures::generate(TestGenerator& generator) const {
 
-  generator.generateBlocks(m_currency.minedMoneyUnlockWindow(), BLOCK_MAJOR_VERSION_2);
+  // One matured coinbase per ring decoy on top of the one being spent.
+  const size_t decoys = minRingDecoys(m_currency, TX_V2_MIN_BLOCK_VERSION);
+  generator.generateBlocks(m_currency.minedMoneyUnlockWindow() + decoys, TX_V2_MIN_BLOCK_VERSION);
 
   std::vector<TransactionSourceEntry> sources;
   std::vector<TransactionDestinationEntry> destinations;
   fill_tx_sources_and_destinations(generator.events, generator.lastBlock, generator.minerAccount, generator.minerAccount,
-    MK_COINS(1), m_currency.minimumFee(), 0, sources, destinations);
+    MK_COINS(1), m_currency.minimumFee(), decoys, sources, destinations);
 
   tx_builder builder;
   builder.step1_init(TRANSACTION_VERSION_2);
@@ -832,13 +838,14 @@ MultiSigTx_Input::MultiSigTx_Input(
     m_givenSignatures(givenSignatures),
     m_inputShouldSucceed(inputShouldSucceed) {
 
-  m_currency = CurrencyBuilder(m_logger).upgradeHeightV2(0).currency();
+  CurrencyBuilder builder(m_logger);
+  m_currency = activateBlockVersionsUpTo(builder, TX_V2_MIN_BLOCK_VERSION).difficultyFloorEnforced(false).currency();
 }
 
 bool MultiSigTx_Input::generate(std::vector<test_event_entry>& events) const {
 
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
 
   // create outputs
   MultiSigTx_OutputSignatures::generate(generator);
@@ -876,7 +883,7 @@ MultiSigTx_BadInputSignature::MultiSigTx_BadInputSignature() :
 bool MultiSigTx_BadInputSignature::generate(std::vector<test_event_entry>& events) const {
 
   TestGenerator generator(m_currency, events);
-  generator.generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
+  generator.generator.defaultMajorVersion = TX_V2_MIN_BLOCK_VERSION;
 
   // create outputs
   MultiSigTx_OutputSignatures::generate(generator);

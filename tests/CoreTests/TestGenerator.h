@@ -50,25 +50,31 @@ public:
   }
 
   void generateBlocks() {
-    generateBlocks(currency().minedMoneyUnlockWindow());
+    generateBlocks(currency().minedMoneyUnlockWindow(), generator.defaultMajorVersion);
   }
 
+  // Coinbases split into digit denominations (constructBlock), as on a real
+  // chain: from v7 a key input needs a ring of >= 2, and one-output coinbases
+  // leave every amount unique, so no spend could find a decoy.
   void generateBlocks(size_t count, uint8_t majorVersion = CryptoNote::BLOCK_MAJOR_VERSION_1) {
+    const uint8_t defaultVersion = generator.defaultMajorVersion;
+    generator.defaultMajorVersion = majorVersion;
     while (count--) {
       CryptoNote::Block next;
-      generator.constructBlockManually(next, lastBlock, minerAccount, test_generator::bf_major_ver, majorVersion);
+      generator.constructBlock(next, lastBlock, minerAccount);
       lastBlock = next;
 	  ++height;
       events.push_back(next);
     }
+    generator.defaultMajorVersion = defaultVersion;
   }
 
-  TransactionBuilder createTxBuilder(const CryptoNote::AccountBase& from, const CryptoNote::AccountBase& to, uint64_t amount, uint64_t fee) {
+  TransactionBuilder createTxBuilder(const CryptoNote::AccountBase& from, const CryptoNote::AccountBase& to, uint64_t amount, uint64_t fee, size_t nmix = 0) {
 
     std::vector<CryptoNote::TransactionSourceEntry> sources;
     std::vector<CryptoNote::TransactionDestinationEntry> destinations;
 
-    fillTxSourcesAndDestinations(sources, destinations, from, to, amount, fee);
+    fillTxSourcesAndDestinations(sources, destinations, from, to, amount, fee, nmix);
 
     TransactionBuilder builder(generator.currency());
 

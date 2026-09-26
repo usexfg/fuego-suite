@@ -156,7 +156,10 @@ class test_chain_unit_base: boost::noncopyable
 {
 public:
   test_chain_unit_base() :
-    m_currency(CryptoNote::CurrencyBuilder(m_logger).currency()) {
+    // Scenarios mine locally at test difficulty; mainnet minimum-difficulty
+    // floors (10000+ from v2, 1000000 at v10) would make every v2+ block
+    // unminable in a test run.
+    m_currency(CryptoNote::CurrencyBuilder(m_logger).difficultyFloorEnforced(false).currency()) {
   }
 
   typedef std::function<bool (CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry> &events)> verify_callback;
@@ -382,6 +385,14 @@ inline bool replay_events_through_core(CryptoNote::core& cr, const std::vector<t
   }
 }
 //--------------------------------------------------------------------------
+// Directory for the replay core's chain files (blocks.dat, blockindexes.dat).
+// They are reused and truncated per scenario and grow to hundreds of MB, so
+// they must not land in whatever directory the runner was started from.
+inline std::string& chaingenDataDir() {
+  static std::string dir;
+  return dir;
+}
+
 template<class t_test_class>
 inline bool do_replay_events(std::vector<test_event_entry>& events, t_test_class& validator)
 {
@@ -401,14 +412,21 @@ inline bool do_replay_events(std::vector<test_event_entry>& events, t_test_class
   Logging::ConsoleLogger logger;
   CryptoNote::CoreConfig coreConfig;
   coreConfig.init(vm);
+  coreConfig.configFolder = chaingenDataDir();
   CryptoNote::MinerConfig emptyMinerConfig;
   CryptoNote::cryptonote_protocol_stub pr; //TODO: stub only for this kind of test, make real validation of relayed objects
-  CryptoNote::core c(validator.currency(), &pr, logger);
+  CryptoNote::core c(validator.currency(), &pr, logger,
+                     /*blockchainIndexesEnabled=*/false, /*blockchainAutosaveEnabled=*/false);
   if (!c.init(coreConfig, emptyMinerConfig, false))
   {
     std::cout << concolor::magenta << "Failed to init core" << concolor::normal << std::endl;
     return false;
   }
+  // Blockchain::init loads the mainnet checkpoints for any non-testnet
+  // currency. Every test height sits below the last one, and the checkpoint
+  // zone skips PoW and accepts any coinbase amount — replay with none, so the
+  // scenarios exercise the validation a node runs past its last checkpoint.
+  c.set_checkpoints(CryptoNote::Checkpoints(logger, &validator.currency()));
 
   return replay_events_through_core<t_test_class>(c, events, validator);
 }
@@ -509,9 +527,30 @@ inline bool do_replay_file(const std::string& filename)
     std::list<CryptoNote::Transaction> SET_NAME; \
     MAKE_TX_LIST(VEC_EVENTS, SET_NAME, FROM, TO, AMOUNT, HEAD);
 
+
+// START_BLOCK_REWARD was a flat-reward constant inherited from the original
+// CryptoNote test suite and no longer exists. Fuego's emission decays, so the
+// nearest faithful meaning is the reward the currency pays for an empty block
+// at chain start — computed with the same function the chain validates with.
+// Checks that assume a flat per-block reward remain stale under decaying
+// emission; this keeps them compiling without hiding that.
+// Unpenalized base reward of a block of blockMajorVersion once
+// alreadyGeneratedCoins have been emitted (the emission speed is per version).
+inline uint64_t blockRewardAfter(const CryptoNote::Currency& currency, uint64_t alreadyGeneratedCoins,
+                                 uint8_t blockMajorVersion = CryptoNote::BLOCK_MAJOR_VERSION_1) {
+  uint64_t reward = 0;
+  int64_t emissionChange = 0;
+  currency.getBlockReward(blockMajorVersion, 0, 0, alreadyGeneratedCoins, 0, 0, reward, emissionChange);
+  return reward;
+}
+
+inline uint64_t startBlockReward(const CryptoNote::Currency& currency) {
+  return blockRewardAfter(currency, 0);
+}
+
 #define MAKE_MINER_TX_AND_KEY_MANUALLY(TX, BLK, KEY)                                                                  \
   Transaction TX;                                                                                                     \
-  if (!constructMinerTxManually(this->m_currency, get_block_height(BLK) + 1, generator.getAlreadyGeneratedCoins(BLK), \
+  if (!constructMinerTxManually(this->m_currency, BLK.majorVersion, get_block_height(BLK) + 1, generator.getAlreadyGeneratedCoins(BLK), \
     miner_account.getAccountKeys().address, TX, 0, KEY))                                                          \
     return false;
 
@@ -539,7 +578,43 @@ inline bool do_replay_file(const std::string& filename)
       return 1; \
     }
 
+// Fuego accepts version-2 transactions (multisignature and legacy deposit
+// outputs) only in blocks >= v8 (Blockchain::pushBlock); upstream allowed
+// them from v2. Scenarios built on them run a v8 chain.
+const uint8_t TX_V2_MIN_BLOCK_VERSION = CryptoNote::BLOCK_MAJOR_VERSION_8;
+
+// Decoys per key input needed to meet Currency::minMixin(), which Fuego
+// counts as ring size (outputIndexes.size()), not as decoys.
+inline size_t minRingDecoys(const CryptoNote::Currency& currency, uint8_t blockMajorVersion) {
+  const size_t ringSize = currency.minMixin(blockMajorVersion);
+  return ringSize > 0 ? ringSize - 1 : 0;
+}
+
+// Schedules block versions 2..majorVersion from height 1 (genesis stays v1).
+inline CryptoNote::CurrencyBuilder& activateBlockVersionsUpTo(CryptoNote::CurrencyBuilder& builder, uint8_t majorVersion) {
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_2) builder.upgradeHeightV2(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_3) builder.upgradeHeightV3(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_4) builder.upgradeHeightV4(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_5) builder.upgradeHeightV5(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_6) builder.upgradeHeightV6(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_7) builder.upgradeHeightV7(0);
+  if (majorVersion >= CryptoNote::BLOCK_MAJOR_VERSION_8) builder.upgradeHeightV8(0);
+  return builder;
+}
+
+// Runner filter (--filter): only scenarios whose name contains this substring
+// run. Empty runs everything.
+inline std::string& chaingenFilter() {
+  static std::string filter;
+  return filter;
+}
+
+inline bool chaingenSelected(const char* testname) {
+  return chaingenFilter().empty() || std::string(testname).find(chaingenFilter()) != std::string::npos;
+}
+
 #define GENERATE_AND_PLAY(genclass)                                                                        \
+  if (chaingenSelected(#genclass))                                                                         \
   {                                                                                                        \
     std::vector<test_event_entry> events;                                                                  \
     ++tests_count;                                                                                         \
@@ -596,7 +671,7 @@ bool GenerateAndPlay(const char* testname, GenClassT&& g) {
   return succeeded;
 }
 
-#define GENERATE_AND_PLAY_EX(genclass) { ++tests_count; if (!GenerateAndPlay(#genclass, genclass)) failed_tests.push_back(#genclass); }
+#define GENERATE_AND_PLAY_EX(genclass) { if (chaingenSelected(#genclass)) { ++tests_count; if (!GenerateAndPlay(#genclass, genclass)) failed_tests.push_back(#genclass); } }
 
 
 #define CALL_TEST(test_name, function)                                                                     \

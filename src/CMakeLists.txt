@@ -547,6 +547,36 @@ target_link_libraries(core_tests PRIVATE
 target_include_directories(core_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src)
 
+# Chaingen integration suite: generates event sequences (blocks, transactions,
+# checkpoints) and replays them through a real core, so it is the only test
+# that pushes whole blocks through Blockchain::pushBlock. It had fallen out of
+# the build entirely — not even BUILD_TESTS compiled it.
+add_executable(chaingen_tests
+    ../tests/CoreTests/ChaingenMain.cpp
+    ../tests/CoreTests/Chaingen.cpp
+    ../tests/CoreTests/Chaingen001.cpp
+    ../tests/CoreTests/BlockReward.cpp
+    ../tests/CoreTests/BlockValidation.cpp
+    ../tests/CoreTests/ChainSplit1.cpp
+    ../tests/CoreTests/ChainSwitch1.cpp
+    ../tests/CoreTests/DoubleSpend.cpp
+    ../tests/CoreTests/IntegerOverflow.cpp
+    ../tests/CoreTests/RingSignature.cpp
+    ../tests/CoreTests/TransactionTests.cpp
+    ../tests/CoreTests/TransactionValidation.cpp
+    ../tests/CoreTests/Upgrade.cpp
+    ../tests/CoreTests/RandomOuts.cpp
+    ../tests/CoreTests/Deposit.cpp
+    ../tests/CoreTests/TransactionBuilder.cpp
+    ../tests/TestGenerator/TestGenerator.cpp)
+target_link_libraries(chaingen_tests PRIVATE
+    CryptoNoteCore Common Crypto Logging Serialization System
+    ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(chaingen_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/tests/CoreTests)
+
 # Regression tests for the HEAT / Hearth / CD / swap audit remediation. Builds a
 # real Blockchain + tx_memory_pool, so it exercises the shipped settlement
 # pre-check and Hearth seed rather than a copy of their logic.

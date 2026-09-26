@@ -100,21 +100,24 @@ bool gen_double_spend_in_tx<txs_keeped_by_block>::generate(std::vector<test_even
   INIT_DOUBLE_SPEND_TEST();
   DO_CALLBACK(events, "mark_last_valid_block");
 
+  // Bob's outputs from tx_0: Fuego sorts outputs by amount, so output 0 is not
+  // necessarily his, nor global index 0 — let the harness locate them.
   std::vector<CryptoNote::TransactionSourceEntry> sources;
-  CryptoNote::TransactionSourceEntry se;
-  se.amount = tx_0.outputs[0].amount;
-  se.outputs.push_back(std::make_pair(0, boost::get<CryptoNote::KeyOutput>(tx_0.outputs[0].target).key));
-  se.realOutput = 0;
-  se.realTransactionPublicKey = CryptoNote::getTransactionPublicKeyFromExtra(tx_0.extra);
-  se.realOutputIndexInTransaction = 0;
-  sources.push_back(se);
+  std::vector<CryptoNote::TransactionDestinationEntry> destinations;
+  fill_tx_sources_and_destinations(events, blk_1r, bob_account, alice_account, send_amount - this->m_currency.minimumFee(),
+    this->m_currency.minimumFee(), 0, sources, destinations);
   // Double spend!
-  sources.push_back(se);
+  sources.push_back(sources.front());
+
+  uint64_t inputs_amount = 0;
+  for (const auto& source : sources) {
+    inputs_amount += source.amount;
+  }
 
   CryptoNote::TransactionDestinationEntry de;
   de.addr = alice_account.getAccountKeys().address;
-  de.amount = 2 * se.amount - this->m_currency.minimumFee();
-  std::vector<CryptoNote::TransactionDestinationEntry> destinations;
+  de.amount = inputs_amount - this->m_currency.minimumFee();
+  destinations.clear();
   destinations.push_back(de);
 
   CryptoNote::Transaction tx_1;

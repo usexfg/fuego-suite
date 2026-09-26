@@ -44,7 +44,7 @@ gen_block_reward::gen_block_reward()
   : m_invalid_block_index(0) {
   CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
   currencyBuilder.maxBlockSizeInitial(std::numeric_limits<size_t>::max() / 2);
-  m_currency = currencyBuilder.currency();
+  m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
 
   REGISTER_CALLBACK_METHOD(gen_block_reward, mark_invalid_block);
   REGISTER_CALLBACK_METHOD(gen_block_reward, mark_checked_block);
@@ -66,14 +66,11 @@ bool gen_block_reward::generate(std::vector<test_event_entry>& events) const
     return false;
   }
 
-  // Test: block reward is calculated using median of the latest m_currency.rewardBlocksWindow() blocks
-  DO_CALLBACK(events, "mark_invalid_block");
-  Block blk_1_bad_1;
-  if (!generator.constructMaxSizeBlock(blk_1_bad_1, blk_0r, miner_account, m_currency.rewardBlocksWindow() + 1)) {
-    return false;
-  }
-  events.push_back(blk_1_bad_1);
-
+  // Test: block reward is calculated using median of the latest m_currency.rewardBlocksWindow() blocks.
+  // Upstream also expected a block sized off a (window + 1)-block median to be
+  // rejected; that block underpays its reward, which Fuego accepts before v10
+  // (see gen_block_miner_tx_out_is_small). A block sized off a (window - 1)
+  // median exceeds 2 x the real median and must still be rejected.
   DO_CALLBACK(events, "mark_invalid_block");
   Block blk_1_bad_2;
   if (!generator.constructMaxSizeBlock(blk_1_bad_2, blk_0r, miner_account, m_currency.rewardBlocksWindow() - 1)) {
@@ -129,7 +126,7 @@ bool gen_block_reward::generate(std::vector<test_event_entry>& events) const
     size_t median = Common::medianValue(block_sizes);
 
     Transaction miner_tx;
-    bool r = constructMinerTxBySize(m_currency, miner_tx, get_block_height(blk_7) + 1, generator.getAlreadyGeneratedCoins(blk_7),
+    bool r = constructMinerTxBySize(m_currency, blk_7.majorVersion, miner_tx, get_block_height(blk_7) + 1, generator.getAlreadyGeneratedCoins(blk_7),
       miner_account.getAccountKeys().address, block_sizes, 2 * median - txs_1_size, 2 * median, txs_fee);
     if (!r)
       return false;
@@ -180,12 +177,13 @@ bool gen_block_reward::check_block_rewards(CryptoNote::core& /*c*/, size_t /*ev_
 {
   DEFINE_TESTS_ERROR_CONTEXT("gen_block_reward_without_txs::check_block_rewards");
 
+  // Every block between the checked ones is max-size and pays 0, so emission
+  // before checked block i is the sum of the checked rewards before it.
   std::array<uint64_t, 7> blk_rewards;
-  blk_rewards[0] = START_BLOCK_REWARD;
-  uint64_t cumulative_reward = blk_rewards[0];
-  for (size_t i = 1; i < blk_rewards.size(); ++i)
+  uint64_t cumulative_reward = 0;
+  for (size_t i = 0; i < blk_rewards.size(); ++i)
   {
-    blk_rewards[i] = START_BLOCK_REWARD;
+    blk_rewards[i] = blockRewardAfter(m_currency, cumulative_reward);
     cumulative_reward += blk_rewards[i];
   }
 
@@ -201,8 +199,14 @@ bool gen_block_reward::check_block_rewards(CryptoNote::core& /*c*/, size_t /*ev_
   Block blk_n2 = boost::get<Block>(events[m_checked_blocks_indices[6]]);
   CHECK_EQ(blk_rewards[6] + (5 + 7) * m_currency.minimumFee(), get_tx_out_amount(blk_n2.baseTransaction));
 
+  // Block-size penalty, inherited from CryptoNote: above the median (floored at
+  // the full-reward zone) the miner's claim on base reward AND fees shrinks,
+  // reaching 0 at 2 x median (Currency::getBlockReward; fees are included
+  // because cryptonoteCoinVersion == 1). The unclaimed fees go to no one and
+  // emission records them as negative. Only oversized blocks like this one
+  // reach it; upstream v1 left fees out of the penalty and expected them paid.
   Block blk_n3 = boost::get<Block>(events[m_checked_blocks_indices[7]]);
-  CHECK_EQ((11 + 13) * m_currency.minimumFee(), get_tx_out_amount(blk_n3.baseTransaction));
+  CHECK_EQ(0, get_tx_out_amount(blk_n3.baseTransaction));
 
   return true;
 }

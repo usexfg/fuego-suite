@@ -36,7 +36,7 @@ gen_upgrade::gen_upgrade() : m_invalidBlockIndex(0), m_checkBlockTemplateVersion
   currencyBuilder.maxBlockSizeInitial(std::numeric_limits<size_t>::max() / 2);
   currencyBuilder.upgradeHeightV2(UpgradeDetectorBase::UNDEF_HEIGHT);
   currencyBuilder.upgradeHeightV3(UpgradeDetectorBase::UNDEF_HEIGHT);
-  m_currency = currencyBuilder.currency();
+  m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
 
   REGISTER_CALLBACK_METHOD(gen_upgrade, markInvalidBlock);
   REGISTER_CALLBACK_METHOD(gen_upgrade, checkBlockTemplateVersionIsV1);
@@ -94,17 +94,20 @@ bool gen_upgrade::generate(std::vector<test_event_entry>& events) const {
   generator.defaultMajorVersion = BLOCK_MAJOR_VERSION_2;
   generator.defaultMinorVersion = BLOCK_MINOR_VERSION_0;
 
-  if (!checkAfterUpgrade(events, generator, blk4, minerAccount)) {
+  Block mainTip;
+  if (!checkAfterUpgrade(events, generator, blk4, minerAccount, mainTip)) {
     return false;
   }
 
-  // Create a few blocks with version 2.0
+  // Create a few blocks with version 2.0 on the main tip. Upstream built them
+  // on blk4, orphaning the tx-carrying block checkAfterUpgrade just mined;
+  // Fuego refuses a reorg that drops a main-chain tx.
   Block blk5;
-  if (!makeBlocks(events, generator, blk5, blk4, minerAccount, 3, BLOCK_MAJOR_VERSION_2, BLOCK_MINOR_VERSION_0)) {
+  if (!makeBlocks(events, generator, blk5, mainTip, minerAccount, 3, BLOCK_MAJOR_VERSION_2, BLOCK_MINOR_VERSION_0)) {
     return false;
   }
 
-  if (!checkAfterUpgrade(events, generator, blk5, minerAccount)) {
+  if (!checkAfterUpgrade(events, generator, blk5, minerAccount, mainTip)) {
     return false;
   }
 
@@ -130,7 +133,8 @@ bool gen_upgrade::checkBeforeUpgrade(std::vector<test_event_entry>& events, test
 }
 
 bool gen_upgrade::checkAfterUpgrade(std::vector<test_event_entry>& events, test_generator& generator,
-                                    const CryptoNote::Block& parentBlock, const CryptoNote::AccountBase& minerAcc) const {
+                                    const CryptoNote::Block& parentBlock, const CryptoNote::AccountBase& minerAcc,
+                                    CryptoNote::Block& mainTip) const {
   // Checking 1: get_block_templare returns block with major version 2
   DO_CALLBACK(events, "checkBlockTemplateVersionIsV2");
 
@@ -146,10 +150,14 @@ bool gen_upgrade::checkAfterUpgrade(std::vector<test_event_entry>& events, test_
     return false;
   }
 
+  // Upstream expected a v2 block carrying a version-2 tx to be accepted once
+  // v2 activates. Fuego admits version-2 txs only from block v8
+  // (TX_V2_MIN_BLOCK_VERSION), so on the main tip it must still be rejected.
   Block blk2;
-  if (!makeBlockTxV2(events, generator, blk2, parentBlock, minerAcc, to, m_currency.minNumberVotingBlocks(), BLOCK_MAJOR_VERSION_2, BLOCK_MINOR_VERSION_0, false)) {
+  if (!makeBlockTxV2(events, generator, blk2, blk1, minerAcc, to, m_currency.minNumberVotingBlocks(), BLOCK_MAJOR_VERSION_2, BLOCK_MINOR_VERSION_0, true)) {
     return false;
   }
+  mainTip = blk1;
 
   // Checking 3: block with version 1.1 doesn't accepted
   DO_CALLBACK(events, "markInvalidBlock");
@@ -215,8 +223,13 @@ bool gen_upgrade::makeBlockTxV1(std::vector<test_event_entry>& events, test_gene
   builder.setVersion(TRANSACTION_VERSION_1);
   auto tx = builder.build();
   gen.addEvent(tx);
-  gen.makeNextBlock(tx);
-  lastBlock = gen.lastBlock;
+  // Mine with the caller's generator (gen holds a copy), so later blocks can
+  // extend this one.
+  if (!generator.constructBlock(b, parentBlock, minerAcc, std::list<Transaction>{tx})) {
+    return false;
+  }
+  events.push_back(b);
+  lastBlock = b;
   return true;
 }
 
@@ -236,10 +249,13 @@ bool gen_upgrade::makeBlockTxV2(std::vector<test_event_entry>& events, test_gene
   builder.addMultisignatureOut(m_currency.depositMinAmount(), kv, 1, m_currency.depositMinTerm());
   builder.setVersion(TRANSACTION_VERSION_2);
   auto tx = builder.build();
-  //if (before) gen.addCallback("markInvalidBlock"); // should be rejected by the core
   gen.addEvent(tx);
   if (before) gen.addCallback("markInvalidBlock"); // should be rejected by the core
-  gen.makeNextBlock(tx);
-  lastBlock = gen.lastBlock;
+  // Mine with the caller's generator (gen holds a copy).
+  if (!generator.constructBlock(b, parentBlock, minerAcc, std::list<Transaction>{tx})) {
+    return false;
+  }
+  events.push_back(b);
+  lastBlock = b;
   return true;
 }

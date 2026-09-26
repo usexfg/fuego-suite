@@ -18,7 +18,7 @@ public:
 
     CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
     currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : UINT64_C(0));
-    m_currency = currencyBuilder.currency();
+    m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
 
     REGISTER_CALLBACK("check_block_purged", CheckBlockPurged::check_block_purged);
     REGISTER_CALLBACK("markInvalidBlock", CheckBlockPurged::markInvalidBlock);
@@ -61,7 +61,7 @@ struct CheckBlockAccepted : public test_chain_unit_base {
 
     CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
     currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : UINT64_C(0));
-    m_currency = currencyBuilder.currency();
+    m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
 
     REGISTER_CALLBACK("check_block_accepted", CheckBlockAccepted::check_block_accepted);
   }
@@ -242,10 +242,39 @@ struct gen_block_miner_tx_with_txin_to_key : public CheckBlockPurged
   bool generate(std::vector<test_event_entry>& events) const;
 };
 
-struct gen_block_miner_tx_out_is_small : public CheckBlockPurged
+// Fuego accepts a pre-v10 coinbase that pays less than the block reward
+// (Blockchain::validate_miner_transaction: underspend lowers emission); only
+// v10+ demands exact equality. Upstream CryptoNote purged these blocks.
+struct CheckPreV10UnderspendAccepted : public CheckBlockAccepted {
+  CheckPreV10UnderspendAccepted(uint8_t blockMajorVersion)
+    : CheckBlockAccepted(2, blockMajorVersion) {
+    REGISTER_CALLBACK("check_underspend_accepted", CheckPreV10UnderspendAccepted::check_underspend_accepted);
+  }
+
+  bool check_underspend_accepted(CryptoNote::core& c, size_t eventIdx, const std::vector<test_event_entry>& events) {
+    DEFINE_TESTS_ERROR_CONTEXT("CheckPreV10UnderspendAccepted::check_underspend_accepted");
+
+    CHECK_TEST_CONDITION(check_block_accepted(c, eventIdx, events));
+
+    // Emission must track what the coinbases actually paid, not the reward.
+    uint64_t paid = 0;
+    for (size_t i = 0; i < eventIdx; ++i) {
+      if (typeid(CryptoNote::Block) == events[i].type()) {
+        for (const auto& out : boost::get<CryptoNote::Block>(events[i]).baseTransaction.outputs) {
+          paid += out.amount;
+        }
+      }
+    }
+    CHECK_EQ(paid, c.getTotalGeneratedAmount());
+
+    return true;
+  }
+};
+
+struct gen_block_miner_tx_out_is_small : public CheckPreV10UnderspendAccepted
 {
   gen_block_miner_tx_out_is_small(uint8_t blockMajorVersion)
-    : CheckBlockPurged(1, blockMajorVersion) {}
+    : CheckPreV10UnderspendAccepted(blockMajorVersion) {}
 
   bool generate(std::vector<test_event_entry>& events) const;
 };
@@ -258,10 +287,10 @@ struct gen_block_miner_tx_out_is_big : public CheckBlockPurged
   bool generate(std::vector<test_event_entry>& events) const;
 };
 
-struct gen_block_miner_tx_has_no_out : public CheckBlockPurged
+struct gen_block_miner_tx_has_no_out : public CheckPreV10UnderspendAccepted
 {
   gen_block_miner_tx_has_no_out(uint8_t blockMajorVersion)
-    : CheckBlockPurged(1, blockMajorVersion) {}
+    : CheckPreV10UnderspendAccepted(blockMajorVersion) {}
 
   bool generate(std::vector<test_event_entry>& events) const;
 };
@@ -289,7 +318,7 @@ struct gen_block_is_too_big : public CheckBlockPurged
     CryptoNote::CurrencyBuilder currencyBuilder(m_logger);
     currencyBuilder.upgradeHeightV2(blockMajorVersion == CryptoNote::BLOCK_MAJOR_VERSION_1 ? UNDEF_HEIGHT : UINT64_C(0));
     currencyBuilder.maxBlockSizeInitial(std::numeric_limits<size_t>::max() / 2);
-    m_currency = currencyBuilder.currency();
+    m_currency = currencyBuilder.difficultyFloorEnforced(false).currency();
   }
 
   bool generate(std::vector<test_event_entry>& events) const;

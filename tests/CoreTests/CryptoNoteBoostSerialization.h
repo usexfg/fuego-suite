@@ -86,6 +86,106 @@ namespace boost
     a & x.keyImage;
   }
 
+  // ── Input/output variants added after this harness was written ──
+  // The chaingen event log is serialized through boost; without these, the
+  // TransactionInput/TransactionOutput variants cannot be archived at all.
+  // EllipticCurvePoint/EllipticCurveScalar need their own entries: in C++,
+  // Crypto::PublicKey/SecretKey DERIVE from them (the typedefs in CryptoTypes.h
+  // apply to C only), so the PublicKey/SecretKey serializers above do not match
+  // a field declared as the base type. No ambiguity results — an exact
+  // PublicKey& match outranks the derived-to-base conversion.
+  template <class Archive>
+  inline void serialize(Archive &a, Crypto::EllipticCurvePoint &x, const boost::serialization::version_type ver)
+  {
+    a & reinterpret_cast<char (&)[sizeof(Crypto::EllipticCurvePoint)]>(x);
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, Crypto::EllipticCurveScalar &x, const boost::serialization::version_type ver)
+  {
+    a & reinterpret_cast<char (&)[sizeof(Crypto::EllipticCurveScalar)]>(x);
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, Crypto::MembershipProof &x, const boost::serialization::version_type ver)
+  {
+    a & reinterpret_cast<char (&)[sizeof(Crypto::MembershipProof)]>(x);
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionInputCommitmentSpend &x, const boost::serialization::version_type ver)
+  {
+    a & x.amount;
+    a & x.outputIndexes;
+    a & x.keyImage;
+    a & x.claimedInterest;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionInputCommitmentTransfer &x, const boost::serialization::version_type ver)
+  {
+    a & x.amount;
+    a & x.outputIndexes;
+    a & x.keyImage;
+    a & x.newTerm;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionInputSwapEscrow &x, const boost::serialization::version_type ver)
+  {
+    a & x.amount;
+    a & x.escrowTxId;
+    a & x.escrowOutputIndex;
+    a & x.mode;
+    a & x.keyImage;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionInputUnified &x, const boost::serialization::version_type ver)
+  {
+    a & x.outputIndexes;
+    a & x.keyImage;
+    a & x.pseudoCommitment;
+    a & x.sigC0;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionOutputCommitment &x, const boost::serialization::version_type ver)
+  {
+    a & x.commitKey;
+    a & x.term;
+    a & x.amountCommitment;
+    a & x.amountProof;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionOutputOrder &x, const boost::serialization::version_type ver)
+  {
+    a & x.side;
+    a & x.price;
+    a & x.expiration;
+    a & x.spendKey;
+    a & x.viewKey;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionOutputSwapEscrow &x, const boost::serialization::version_type ver)
+  {
+    a & x.claimKey;
+    a & x.refundKey;
+    a & x.adaptorPoint;
+    a & x.refundTimeout;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, CryptoNote::TransactionOutputUnified &x, const boost::serialization::version_type ver)
+  {
+    a & x.key;
+    a & x.term;
+    a & x.commitment;
+    a & x.proof;
+  }
+
   template <class Archive>
   inline void serialize(Archive &a, CryptoNote::TransactionOutput &x, const boost::serialization::version_type ver)
   {

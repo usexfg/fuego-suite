@@ -23,7 +23,7 @@ private:
                           const CryptoNote::Block& parentBlock, const CryptoNote::AccountBase& minerAcc, bool checkReward) const;
 
   bool checkAfterUpgrade(std::vector<test_event_entry>& events, test_generator& generator,
-                         const CryptoNote::Block& parentBlock, const CryptoNote::AccountBase& minerAcc) const;
+                         const CryptoNote::Block& parentBlock, const CryptoNote::AccountBase& minerAcc, CryptoNote::Block& mainTip) const;
 
   bool checkBlockTemplateVersion(CryptoNote::core& c, uint8_t expectedMajorVersion, uint8_t expectedMinorVersion);
   bool makeBlockTxV1(std::vector<test_event_entry>& events, test_generator& generator, CryptoNote::Block& lastBlock,

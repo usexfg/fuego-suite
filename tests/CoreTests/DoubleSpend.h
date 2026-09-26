@@ -51,7 +51,9 @@ struct gen_double_spend_in_the_same_block : public gen_double_spend_base< gen_do
 {
   static const uint64_t send_amount = MK_COINS(17);
   static const bool has_invalid_tx = !txs_keeped_by_block;
-  static const size_t expected_pool_txs_count = has_invalid_tx ? 1 : 2;
+  // Kept-by-block: upstream re-pooled both txs of the rejected block; Fuego
+  // drops the one that failed it (Blockchain::pushBlock), so one stays.
+  static const size_t expected_pool_txs_count = 1;
   static const uint64_t expected_bob_balance = send_amount;
   static const uint64_t expected_alice_balance = 0;
 
@@ -64,7 +66,8 @@ struct gen_double_spend_in_different_blocks : public gen_double_spend_base< gen_
 {
   static const uint64_t send_amount = MK_COINS(17);
   static const bool has_invalid_tx = !txs_keeped_by_block;
-  static const size_t expected_pool_txs_count = has_invalid_tx ? 0 : 1;
+  // The kept-by-block double spend fails its block and is dropped, not re-pooled.
+  static const size_t expected_pool_txs_count = 0;
   static const uint64_t expected_bob_balance = 0;
   static uint64_t expected_alice_balance;
 
@@ -85,7 +88,8 @@ struct gen_double_spend_in_alt_chain_in_the_same_block : public gen_double_spend
 {
   static const uint64_t send_amount = MK_COINS(17);
   static const bool has_invalid_tx = !txs_keeped_by_block;
-  static const size_t expected_pool_txs_count = has_invalid_tx ? 1 : 2;
+  // Kept-by-block: the tx that fails the alt block is dropped, not re-pooled.
+  static const size_t expected_pool_txs_count = 1;
   static const uint64_t expected_bob_balance = send_amount;
   static const uint64_t expected_alice_balance = 0;
 
@@ -98,7 +102,8 @@ struct gen_double_spend_in_alt_chain_in_different_blocks : public gen_double_spe
 {
   static const uint64_t send_amount = MK_COINS(17);
   static const bool has_invalid_tx = !txs_keeped_by_block;
-  static const size_t expected_pool_txs_count = has_invalid_tx ? 1 : 2;
+  // Kept-by-block: the tx that fails the alt block is dropped, not re-pooled.
+  static const size_t expected_pool_txs_count = 1;
   static const uint64_t expected_bob_balance = send_amount;
   static const uint64_t expected_alice_balance = 0;
 
@@ -109,14 +114,20 @@ struct gen_double_spend_in_alt_chain_in_different_blocks : public gen_double_spe
 class gen_double_spend_in_different_chains : public test_chain_unit_base
 {
 public:
-  static const uint64_t send_amount = MK_COINS(31);
+  // Fits the ~30.52 XFG genesis coinbase (upstream emission paid ~70 per block).
+  static const uint64_t send_amount = MK_COINS(29);
   size_t expected_blockchain_height;
 
   gen_double_spend_in_different_chains();
 
   bool generate(std::vector<test_event_entry>& events) const;
 
+  bool check_block_verification_context(const CryptoNote::block_verification_context& bvc, size_t event_idx, const CryptoNote::Block& blk);
+  bool mark_refused_switch(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
   bool check_double_spend(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
+
+private:
+  size_t m_refused_switch_block_idx = 0;
 };
 
 

@@ -92,11 +92,24 @@ private:
 };
 
 inline CryptoNote::difficulty_type getTestDifficulty() { return 1; }
-void fillNonce(CryptoNote::Block& blk, const CryptoNote::difficulty_type& diffic);
 
-bool constructMinerTxManually(const CryptoNote::Currency& currency, uint32_t height, uint64_t alreadyGeneratedCoins,
+// v2+ blocks carry a merge-mining parent block whose coinbase extra must commit
+// to this block's aux header hash (as miner::set_block_template does). Without
+// it the parent-block serializer throws, get_block_longhash fails and no nonce
+// can ever be found. Call once the miner tx and tx hashes are final — the tag
+// commits to both. Timestamp and nonce sit in the parent header and are not
+// covered, so re-mining does not invalidate the tag. No-op for v1 blocks.
+bool fillParentBlock(CryptoNote::Block& blk);
+
+// Returns false (instead of spinning forever) when the block cannot be hashed.
+bool fillNonce(CryptoNote::Block& blk, const CryptoNote::difficulty_type& diffic);
+
+// blockMajorVersion is required, not defaulted: the reward formula differs by
+// version (v10+ is burn-adjusted), so a silent default would build miner txs
+// the real chain rejects for any non-default-version block.
+bool constructMinerTxManually(const CryptoNote::Currency& currency, uint8_t blockMajorVersion, uint32_t height, uint64_t alreadyGeneratedCoins,
   const CryptoNote::AccountPublicAddress& minerAddress, CryptoNote::Transaction& tx, uint64_t fee,
   CryptoNote::KeyPair* pTxKey = 0);
-bool constructMinerTxBySize(const CryptoNote::Currency& currency, CryptoNote::Transaction& baseTransaction, uint32_t height,
+bool constructMinerTxBySize(const CryptoNote::Currency& currency, uint8_t blockMajorVersion, CryptoNote::Transaction& baseTransaction, uint32_t height,
   uint64_t alreadyGeneratedCoins, const CryptoNote::AccountPublicAddress& minerAddress,
   std::vector<size_t>& blockSizes, size_t targetTxSize, size_t targetBlockSize, uint64_t fee = 0);

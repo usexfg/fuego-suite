@@ -7,6 +7,8 @@
 
 #include "Common/CommandLine.h"
 
+#include <boost/filesystem.hpp>
+
 #include "BlockReward.h"
 #include "BlockValidation.h"
 #include "ChainSplit1.h"
@@ -30,6 +32,9 @@ namespace
   const command_line::arg_descriptor<bool>        arg_play_test_data              = {"play_test_data", ""};
   const command_line::arg_descriptor<bool>        arg_generate_and_play_test_data = {"generate_and_play_test_data", ""};
   const command_line::arg_descriptor<bool>        arg_test_transactions           = {"test_transactions", ""};
+  const command_line::arg_descriptor<std::string> arg_filter                      = {"filter", "Run only scenarios whose name contains this substring", ""};
+  const command_line::arg_descriptor<bool>        arg_include_slow                = {"include-slow", "Also run scenarios that take tens of minutes"};
+  const command_line::arg_descriptor<std::string> arg_data_dir                    = {"data-dir", "Directory for the replay core's chain files (default: <temp>/fuego-chaingen)", ""};
 }
 
 int main(int argc, char* argv[])
@@ -43,6 +48,9 @@ int main(int argc, char* argv[])
   command_line::add_arg(desc_options, arg_play_test_data);
   command_line::add_arg(desc_options, arg_generate_and_play_test_data);
   command_line::add_arg(desc_options, arg_test_transactions);
+  command_line::add_arg(desc_options, arg_filter);
+  command_line::add_arg(desc_options, arg_data_dir);
+  command_line::add_arg(desc_options, arg_include_slow);
 
   po::variables_map vm;
   bool r = command_line::handle_error_helper(desc_options, [&]()
@@ -58,6 +66,13 @@ int main(int argc, char* argv[])
   {
     std::cout << desc_options << std::endl;
     return 0;
+  }
+
+  chaingenFilter() = command_line::get_arg(vm, arg_filter);
+  const bool includeSlow = command_line::get_arg(vm, arg_include_slow);
+  chaingenDataDir() = command_line::get_arg(vm, arg_data_dir);
+  if (chaingenDataDir().empty()) {
+    chaingenDataDir() = (boost::filesystem::temp_directory_path() / "fuego-chaingen").string();
   }
 
   size_t tests_count = 0;
@@ -77,12 +92,9 @@ int main(int argc, char* argv[])
   GENERATE_AND_PLAY_EX(TestCase(CryptoNote::BLOCK_MAJOR_VERSION_1)) \
   GENERATE_AND_PLAY_EX(TestCase(CryptoNote::BLOCK_MAJOR_VERSION_2))
 
-    GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain);
     GENERATE_AND_PLAY(DepositTests::TransactionWithDepositExtendsTotalDeposit);
     GENERATE_AND_PLAY(DepositTests::TransactionWithMultipleDepositOutsExtendsTotalDeposit);
     GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUpdatesInterestAfterDepositUnlock);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain);
     GENERATE_AND_PLAY(DepositTests::TransactionWithDepositIsClearedAfterInputSpend);
     GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUpdatesInterestAfterDepositUnlockMultiple);
 
@@ -91,11 +103,8 @@ int main(int argc, char* argv[])
     GENERATE_AND_PLAY(DepositTests::BlocksOfSecondTypeCanHaveTransactionsOfTypeTwo);
     GENERATE_AND_PLAY(DepositTests::TransactionOfTypeOneWithDepositInputIsRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionOfTypeOneWithDepositOutputIsRejected);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithAmountLowerThenMinIsRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionWithMinAmountIsAccepted);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithTermLowerThenMinIsRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionWithMinTermIsAccepted);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithTermGreaterThenMaxIsRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionWithMaxTermIsAccepted);
     GENERATE_AND_PLAY(DepositTests::TransactionWithoutSignaturesIsRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionWithZeroRequiredSignaturesIsRejected);
@@ -109,7 +118,20 @@ int main(int argc, char* argv[])
     GENERATE_AND_PLAY(DepositTests::TransactionThatTriesToSpendOutputWhosTermHasntFinishedWillBeRejected);
     GENERATE_AND_PLAY(DepositTests::TransactionWithAmountThatHasAlreadyFinishedWillBeAccepted);
     GENERATE_AND_PLAY(DepositTests::TransactionWithDepositExtendsEmission);
-    GENERATE_AND_PLAY(DepositTests::TransactionWithDepositRestorsEmissionOnAlternativeChain);
+
+    // Not run: each needs a reorg that drops a main-chain deposit tx, which
+    // Fuego refuses (Blockchain::switch_to_alternative_blockchain missing-tx
+    // rule, covered by gen_chain_switch_1 / gen_double_spend_in_different_chains).
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesPartOfAmountAfterSwitchToAlternativeChain);
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesInterestAfterSwitchToAlternativeChain);
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithDepositUnrolesAmountAfterSwitchToAlternativeChain);
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithDepositRestorsEmissionOnAlternativeChain);
+    // Not run: legacy-deposit term/amount checks in Blockchain::check_tx_outputs
+    // apply only from the hardcoded mainnet height 821000, which no test chain
+    // reaches; enabling them needs that height as a currency parameter.
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithAmountLowerThenMinIsRejected);
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithTermLowerThenMinIsRejected);
+    //GENERATE_AND_PLAY(DepositTests::TransactionWithTermGreaterThenMaxIsRejected);
 
     GENERATE_AND_PLAY(gen_simple_chain_001);
     GENERATE_AND_PLAY(gen_simple_chain_split_1);
@@ -148,7 +170,11 @@ int main(int argc, char* argv[])
     GENERATE_AND_PLAY_EX_2VER(gen_block_has_invalid_tx);
     GENERATE_AND_PLAY_EX_2VER(gen_block_is_too_big);
     GENERATE_AND_PLAY_EX_2VER(TestBlockCumulativeSizeExceedsLimit);
-    GENERATE_AND_PLAY_EX_2VER(gen_block_invalid_binary_format); // Takes up to 30 minutes, if CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW == 10
+    if (includeSlow) {
+      // Mines to difficulty >= 1500 so no bit-flipped block passes PoW by
+      // chance (a lower target makes it flaky); tens of minutes of CryptoNight.
+      GENERATE_AND_PLAY_EX_2VER(gen_block_invalid_binary_format);
+    }
 
     // Transaction verification tests
     GENERATE_AND_PLAY(gen_tx_big_version);
@@ -234,6 +260,11 @@ int main(int argc, char* argv[])
       }
     }
     std::cout << concolor::normal << std::endl;
+
+    if (tests_count == 0) {
+      std::cout << "No scenario matched --filter \"" << chaingenFilter() << "\"" << std::endl;
+      return 1;
+    }
   }
   else if (command_line::get_arg(vm, arg_test_transactions))
   {
@@ -250,5 +281,6 @@ int main(int argc, char* argv[])
 
   } catch (std::exception& e) {
     std::cout << "Exception in main(): " << e.what() << std::endl;
+    return 1;
   }
 }

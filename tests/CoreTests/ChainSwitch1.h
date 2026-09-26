@@ -16,10 +16,15 @@ public:
 
   bool generate(std::vector<test_event_entry>& events) const;
 
+  bool check_block_verification_context(const CryptoNote::block_verification_context& bvc, size_t event_idx, const CryptoNote::Block& blk);
+
   bool check_split_not_switched(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
+  bool mark_refused_switch(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
+  bool check_switch_refused(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
   bool check_split_switched(CryptoNote::core& c, size_t ev_index, const std::vector<test_event_entry>& events);
 
 private:
+  size_t m_refused_switch_block_idx = 0;
   std::list<CryptoNote::Block> m_chain_1;
 
   CryptoNote::AccountBase m_recipient_account_1;

@@ -1,49 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DeXFG — Orderbook</title>
+  <title>DeXFG — Ordergraph &amp; Atomic Swaps</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
+
 <body>
+  <!-- Navigation -->
   <nav class="nav">
-    <a href="/" class="nav-brand"><img src="/coin-icons/fuego.png" alt="Fuego" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;border-radius:4px;"></a>
-    <a href="/hearth.html" class="nav-link">Hearth</a>
-    <a href="/swapxfg.html" class="nav-link active">DeXFG</a>
+    <a href="/" class="nav-brand">
+      <img src="/coin-icons/fuego.png" alt="Fuego" class="nav-brand-logo">
+      <div class="nav-brand-meta">
+        <span class="nav-brand-title">FUEGO RESERVE</span>
+        <span class="nav-brand-sub">Maison de XFG</span>
+      </div>
+    </a>
+
+    <div class="nav-links-wrap">
+      <a href="/hearth.html" class="nav-link">
+        <span>The Hearth Floor</span>
+        <span class="nav-link-badge">XFG / HEAT</span>
+      </a>
+      <a href="/swapxfg.html" class="nav-link active">
+        <span>DeXFG Ordergraph</span>
+        <span class="nav-link-badge">Cross-Chain Exchange</span>
+      </a>
+    </div>
+
     <div class="nav-status">
-      <span class="status-dot offline" id="status-daemon"></span>
-      <span>Daemon</span>
-      <span class="status-dot offline" id="status-wallet"></span>
-      <span>Wallet</span>
-      <span class="status-dot offline" id="status-swapd"></span>
-      <span>Swap</span>
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-daemon"></span>
+        <span>DAEMON</span>
+      </span>
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-wallet"></span>
+        <span>WALLET</span>
+      </span>
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-swapd"></span>
+        <span>SWAPD</span>
+      </span>
     </div>
   </nav>
 
   <div class="dexfg-page">
     <header class="dexfg-header">
-      <h1>DeXFG Orderbook</h1>
-      <p>Menu of availability — atomic swaps via adaptor signatures. No custodian, no KYC.</p>
+      <h1>DEXFG // CROSS-CHAIN ORDERGRAPH</h1>
+      <p>Menu of Availability — Atomic Swaps via Adaptor Signatures · Trustless · Non-Custodial · Zero KYC</p>
     </header>
 
-    <!-- 1. ORDERGRAPH (hero) -->
+    <!-- 1. ORDERGRAPH (Cross-Chain Plot) -->
     <section class="card ordergraph-card" id="ordergraph-section">
       <div class="card-header">
-        <span>Ordergraph</span>
-        <div class="ordergraph-legend">
-          <span class="og-leg"><span class="og-disc sell-xfg" style="background:#ff6b35"><img src="/coin-icons/fuego.png" alt=""></span> Sell XFG</span>
-          <span class="og-leg"><span class="og-disc" style="background:#f7931a"><img src="/coin-icons/btc.png" alt=""></span> Buy XFG</span>
-          <span class="og-leg muted">Center = fair · size = remaining · fade = expiry</span>
+        <div class="title-glow">
+          <span>● ORDERGRAPH // LIQUIDITY MATRIX</span>
         </div>
-        <span class="badge badge-blue" id="offer-count">0 open</span>
+        <div class="ordergraph-legend">
+          <span class="og-leg"><span class="og-disc sell-xfg" style="background:#ff9100"><img
+                src="/coin-icons/fuego.png" alt=""></span> Sell XFG</span>
+          <span class="og-leg"><span class="og-disc" style="background:#f7931a"><img src="/coin-icons/btc.png"
+                alt=""></span> Buy XFG</span>
+          <span class="og-leg muted">Equator = Oracle Fair · Size = Volume · Fade = Expiry</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="badge badge-gold" id="total-depth-badge">0 XFG Depth</span>
+          <span class="badge badge-firegold" id="offer-count">0 Open</span>
+        </div>
       </div>
+
+      <!-- Exploration Toolbar -->
+      <div class="astrolabe-toolbar">
+        <div class="filter-chips" id="category-filter-chips">
+          <span class="filter-chip active" data-cat="all">All Chains (28)</span>
+          <span class="filter-chip" data-cat="privacy">Privacy</span>
+          <span class="filter-chip" data-cat="calibers">Major UTXO</span>
+          <span class="filter-chip" data-cat="evm">EVM &amp; L2</span>
+          <span class="filter-chip" data-cat="alt">Alt Chains</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="filter-chips" id="side-filter-chips">
+            <span class="filter-chip active" data-side="all">All Sides</span>
+            <span class="filter-chip" data-side="sell">Sell XFG</span>
+            <span class="filter-chip" data-side="buy">Buy XFG</span>
+          </div>
+
+          <div class="search-box-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-chain-input" id="search-chain" placeholder="Filter chain...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Plot Area -->
       <div class="card-body ordergraph-body">
         <div class="ordergraph-wrap">
           <div class="ordergraph-y">
-            <span>above fair</span>
-            <span class="fair-label">FAIR</span>
-            <span>below fair</span>
+            <span style="color:var(--green);">+15% FAIR</span>
+            <span>+10%</span>
+            <span>+5%</span>
+            <span class="equator-label">0% EQUATOR</span>
+            <span>-5%</span>
+            <span>-10%</span>
+            <span style="color:var(--red);">-15% FAIR</span>
           </div>
           <div class="ordergraph-plot" id="ordergraph-plot">
             <div class="ordergraph-fair-line"></div>
@@ -51,23 +113,30 @@
           </div>
         </div>
         <div class="ordergraph-axis" id="ordergraph-axis"></div>
+        <!-- Order Inspection HUD -->
         <div class="ordergraph-tooltip" id="ordergraph-tooltip" hidden></div>
       </div>
     </section>
 
-    <!-- 2. SWAP AMOUNT FORM (secondary) -->
+    <!-- 2. SWAP AMOUNT FORM & COUNTERPARTY -->
     <section class="dexfg-form-row">
-      <div class="bridge-card" style="max-width:none;margin:0;flex:1;">
-        <div class="bridge-input-group" id="from-group">
+      <div class="bridge-card" style="max-width:none;margin:0;flex:1.2;">
+        <div class="card-header" style="padding:0 0 10px 0;background:none;border-bottom:1px solid var(--border);">
+          <span style="color:var(--gold-bright);font-size:11px;font-weight:800;">ATOMIC SWAP CONSOLE</span>
+          <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">Adaptor Signatures</span>
+        </div>
+
+        <div class="bridge-input-group" id="from-group" style="margin-top:10px;">
           <div class="bridge-chain">
             <img src="/coin-icons/fuego.png" alt="XFG" class="bridge-logo">
             <div>
-              <div style="font-weight:600;font-size:14px;">Fuego</div>
-              <div style="font-size:11px;color:var(--text-muted);">XFG</div>
+              <div style="font-weight:800;font-size:13px;color:var(--gold-bright);">Fuego (XFG)</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">7 Decimals</div>
             </div>
             <div style="margin-left:auto;text-align:right;">
-              <div style="font-size:11px;color:var(--text-muted);">Balance</div>
-              <div style="font-family:var(--font-mono);font-size:13px;" id="xfg-balance">—</div>
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Wallet Balance</div>
+              <div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--text-primary);"
+                id="xfg-balance">—</div>
             </div>
           </div>
           <input type="text" class="bridge-amount-input" id="bridge-amount" placeholder="0.00" inputmode="decimal">
@@ -84,11 +153,13 @@
           <div class="bridge-chain">
             <img id="to-chain-icon" src="/coin-icons/btc.png" alt="?" class="bridge-logo">
             <div>
-              <div style="font-weight:600;font-size:14px;" id="to-chain-name">Select chain</div>
-              <div style="font-size:11px;color:var(--text-muted);" id="to-chain-ticker">—</div>
+              <div style="font-weight:800;font-size:13px;" id="to-chain-name">Select Counterparty Chain</div>
+              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);" id="to-chain-ticker">—
+              </div>
             </div>
             <div style="margin-left:auto;">
-              <select class="form-input" id="to-chain-select" style="width:auto;padding:6px 28px 6px 8px;font-size:12px;">
+              <select class="form-input" id="to-chain-select"
+                style="width:auto;padding:5px 28px 5px 10px;font-size:11px;font-weight:700;">
                 <option value="BTC">Bitcoin (BTC)</option>
                 <option value="ETH">Ethereum (ETH)</option>
                 <option value="SOL">Solana (SOL)</option>
@@ -100,7 +171,7 @@
                 <option value="BNB">BNB Chain</option>
                 <option value="DCR">Decred (DCR)</option>
                 <option value="KMD_SPV">Komodo (KMD)</option>
-                <option value="POLYGON">Polygon</option>
+                <option value="POLYGON">Polygon (MATIC)</option>
                 <option value="GLEEC">Gleec (GLEEC)</option>
                 <option value="ROBINHOOD">Robinhood Chain</option>
                 <option value="AVAX">Avalanche (AVAX)</option>
@@ -113,7 +184,7 @@
                 <option value="DOGE">Dogecoin (DOGE)</option>
                 <option value="DASH">Dash (DASH)</option>
                 <option value="ZEC">Zcash (ZEC)</option>
-                <option value="PLS">PulseChain (PLS)</option>
+                <option value="PULSECHAIN">PulseChain (PLS)</option>
                 <option value="ZANO">Zano (ZANO)</option>
                 <option value="MONAD">Monad</option>
                 <option value="OPTIMISM">Optimism (OP)</option>
@@ -121,28 +192,35 @@
               </select>
             </div>
           </div>
-          <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;padding:8px 0;color:var(--text-secondary);" id="bridge-estimated">0.00</div>
-          <div class="bridge-balance">Estimated output (after 2% fee)</div>
+          <div
+            style="font-family:var(--font-mono);font-size:26px;font-weight:700;padding:4px 0;color:var(--firegold-bright);"
+            id="bridge-estimated">0.00</div>
+          <div class="bridge-balance">Estimated Output (after 2% protocol swap fee)</div>
         </div>
 
-        <div class="bridge-rate" id="bridge-rate">Select an amount to see the rate</div>
-        <div class="bridge-fee">Network fee: ~0.3% + 2% swap fee · Time: depends on counterparty chain</div>
+        <div class="bridge-rate" id="bridge-rate">Enter volume to view rate</div>
+        <div class="bridge-fee">
+          Swap Fee: 2% (69% CD Yield Pool · 11% Bonus Vault · 20% Treasury) · Schnorr Adaptor Sigs
+        </div>
 
-        <button type="button" class="btn btn-block btn-primary" id="bridge-init-btn" style="font-size:15px;padding:14px;">
-          Post / Initiate Swap
+        <button type="button" class="btn btn-block btn-firegold" id="bridge-init-btn"
+          style="font-size:13px;padding:12px;">
+          Post / Initiate Atomic Swap
         </button>
       </div>
 
-      <div class="card" style="flex:1;min-width:260px;">
-        <div class="card-header"><span>Swap Counterparty</span></div>
+      <div class="card" style="flex:0.8;min-width:260px;">
+        <div class="card-header">
+          <span>Counterparty Data</span>
+        </div>
         <div class="card-body">
           <div class="form-group">
-            <label class="form-label">Counterparty Public Key (hex)</label>
-            <input type="text" class="form-input" id="peer-pubkey" placeholder="Ed25519 public key of your swap partner">
+            <label class="form-label">Counterparty Ed25519 Public Key (Hex)</label>
+            <input type="text" class="form-input" id="peer-pubkey" placeholder="Optional for public book orders">
           </div>
-          <div style="font-size:12px;color:var(--text-muted);">
-            For AFK (maker) book takes, leave empty unless the offer binds a peer.
-            Selected offer details appear in the orderbook below.
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">
+            For maker book takes, leave blank unless fulfilling a peer order.
+            Clicking any order on the Ordergraph fills this panel automatically.
           </div>
           <div id="selected-offer-summary" class="selected-offer-summary" hidden></div>
         </div>
@@ -150,16 +228,18 @@
     </section>
 
     <!-- 3. ORDERBOOK LIST -->
-    <section class="card" id="orderbook-section">
+    <section class="card" id="orderbook-section" style="margin-bottom:16px;">
       <div class="card-header">
-        <span>DeXFG Orderbook</span>
-        <span class="badge badge-green" id="book-count">0</span>
+        <div class="title-glow">
+          <span>● DEXFG ORDERBOOK</span>
+        </div>
+        <span class="badge badge-green" id="book-count">0 Offers</span>
       </div>
       <div class="card-body" style="padding:0;">
         <div id="orderbook-list"></div>
         <div id="orderbook-empty" class="empty-state">
           <span class="empty-state-icon">☰</span>
-          <span class="empty-state-text">No open offers — post above or wait for peers</span>
+          <span class="empty-state-text">No active orders — post above or wait for peers</span>
         </div>
       </div>
     </section>
@@ -167,20 +247,22 @@
     <!-- 4. ACTIVE SWAPS -->
     <section class="card" style="margin-bottom:16px;">
       <div class="card-header">
-        <span>Active Swaps</span>
-        <span class="badge badge-green" id="active-count">0</span>
+        <div class="title-glow">
+          <span>● ACTIVE SWAPS</span>
+        </div>
+        <span class="badge badge-firegold" id="active-count">0 Active</span>
       </div>
       <div class="card-body" style="padding:0; max-height:360px; overflow-y:auto;">
         <div id="active-swaps-list"></div>
         <div id="swaps-empty" class="empty-state">
           <span class="empty-state-icon">↔</span>
-          <span class="empty-state-text">No active swaps</span>
+          <span class="empty-state-text">No in-flight swaps</span>
         </div>
       </div>
     </section>
 
-    <!-- Secondary panels -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px;">
+    <!-- 5. SECONDARY PANELS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
       <div class="card">
         <div class="card-header"><span>Price Oracle — TWAP</span></div>
         <div class="card-body" style="padding:0;">
@@ -188,51 +270,76 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><span>Implied Rates</span></div>
+        <div class="card-header"><span>Implied Market Rates</span></div>
         <div class="card-body" style="padding:0; max-height:240px; overflow-y:auto;">
           <table>
-            <thead><tr><th>Chain</th><th style="text-align:right">Implied Price</th><th style="text-align:right">Spread</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Chain</th>
+                <th style="text-align:right">Implied Price</th>
+                <th style="text-align:right">Spread</th>
+              </tr>
+            </thead>
             <tbody id="chain-rates"></tbody>
           </table>
         </div>
       </div>
       <div class="card" style="grid-column:1 / -1;">
-        <div class="card-header"><span>SPV Verification</span></div>
+        <div class="card-header"><span>SPV Verification Telemetry</span></div>
         <div class="card-body" style="padding:0;">
           <div class="metrics-grid">
-            <div class="metric"><span class="metric-label">SPV Headers</span><span class="metric-value" id="spv-height">—</span></div>
-            <div class="metric"><span class="metric-label">Verified Txs</span><span class="metric-value green" id="spv-verified">—</span></div>
-            <div class="metric"><span class="metric-label">SPV Peers</span><span class="metric-value blue" id="spv-peers">—</span></div>
-            <div class="metric"><span class="metric-label">Chain</span><span class="metric-value" id="spv-chain">—</span></div>
+            <div class="metric"><span class="metric-label">SPV Headers</span><span class="metric-value gold"
+                id="spv-height">—</span></div>
+            <div class="metric"><span class="metric-label">Verified Txs</span><span class="metric-value green"
+                id="spv-verified">—</span></div>
+            <div class="metric"><span class="metric-label">SPV Peers</span><span class="metric-value blue"
+                id="spv-peers">—</span></div>
+            <div class="metric"><span class="metric-label">Anchor Chain</span><span class="metric-value"
+                id="spv-chain">—</span></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Initiate Swap Modal -->
+  <!-- Swap Modal -->
   <div class="modal-overlay" id="init-modal">
     <div class="modal">
       <div class="modal-header">
-        <span>Confirm Swap</span>
+        <span>CONFIRM ATOMIC SWAP // DEXFG</span>
         <button type="button" class="modal-close" id="init-modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="init-modal-details" style="margin-bottom:16px;"></div>
-        <div class="progress-steps" id="init-progress" style="margin-bottom:16px;">
-          <div class="step active"><div class="step-dot">1</div><div class="step-label">Init</div></div>
+        <div id="init-modal-details" style="margin-bottom:14px;"></div>
+        <div class="progress-steps" id="init-progress" style="margin-bottom:14px;">
+          <div class="step active">
+            <div class="step-dot">1</div>
+            <div class="step-label">Init</div>
+          </div>
           <div class="step-line"></div>
-          <div class="step"><div class="step-dot">2</div><div class="step-label">Escrow</div></div>
+          <div class="step">
+            <div class="step-dot">2</div>
+            <div class="step-label">Escrow</div>
+          </div>
           <div class="step-line"></div>
-          <div class="step"><div class="step-dot">3</div><div class="step-label">Lock CTR</div></div>
+          <div class="step">
+            <div class="step-dot">3</div>
+            <div class="step-label">Lock CTR</div>
+          </div>
           <div class="step-line"></div>
-          <div class="step"><div class="step-dot">4</div><div class="step-label">Claim</div></div>
+          <div class="step">
+            <div class="step-dot">4</div>
+            <div class="step-label">Claim</div>
+          </div>
           <div class="step-line"></div>
-          <div class="step"><div class="step-dot">5</div><div class="step-label">Done</div></div>
+          <div class="step">
+            <div class="step-dot">5</div>
+            <div class="step-label">Done</div>
+          </div>
         </div>
-        <div class="code-block" id="init-cli-cmd" style="display:none;"></div>
+        <div class="code-block" id="init-cli-cmd" style="display:none;margin-bottom:12px;"></div>
         <div style="display:flex;gap:8px;">
-          <button type="button" class="btn btn-primary" id="init-exec-btn" style="flex:1;">Execute via Wallet</button>
+          <button type="button" class="btn btn-firegold" id="init-exec-btn" style="flex:1;">Submit via Wallet</button>
           <button type="button" class="btn btn-secondary" id="init-copy-btn" style="flex:1;">Copy CLI Command</button>
         </div>
       </div>
@@ -243,4 +350,5 @@
   <script src="/js/app.js"></script>
   <script src="/js/swapxfg.js"></script>
 </body>
+
 </html>

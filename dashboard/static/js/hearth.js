@@ -1,28 +1,30 @@
-// ── Hearth Exchange Page ───────────────────────────────────────────────────────
+// ── Hearth Exchange — Monaco Terminal Logic ──────────────────────────────────
 'use strict';
 
 const Hearth = (() => {
   let priceChart;
   let currentTf = '1h';
-  let orderSide = 0;   // 0=buy, 1=sell
-  let orderType = 'limit'; // limit, market (market uses AMM under the hood)
+  let orderSide = 0;   // 0 = Buy XFG (bid), 1 = Sell XFG (ask)
+  let orderType = 'limit'; // limit, market
   let indicators = { sma20: true, ema12: false, vol: true };
   let activeDrawTool = null;
+  let currentSpotPrice = 1580000;
+  let userWalletBalance = 0;
 
-  // ── Mock Data ──
-
+  // ──  Mock Data (Fallback whe
+n daemons are booting / syncing) ──
   function mockCandles(count) {
     const now = Math.floor(Date.now() / 1000);
     const candles = [];
     let price = 1580000;
     for (let i = count; i > 0; i--) {
       const t = now - i * 3600;
-      const change = (Math.random() - 0.48) * 40000;
+      const change = (Math.random() - 0.48) * 35000;
       const open = price;
-      const close = price + change;
-      const high = Math.max(open, close) + Math.random() * 20000;
-      const low = Math.min(open, close) - Math.random() * 20000;
-      const vol = Math.floor(Math.random() * 5000 * 10000000) + 500000000;
+      const close = Math.max(1200000, price + change);
+      const high = Math.max(open, close) + Math.random() * 18000;
+      const low = Math.min(open, close) - Math.random() * 18000;
+      const vol = Math.floor(Math.random() * 4500 * 10000000) + 400000000;
       candles.push({ t, o: Math.floor(open), h: Math.floor(high), l: Math.floor(low), c: Math.floor(close), v: vol });
       price = close;
     }
@@ -35,14 +37,15 @@ const Hearth = (() => {
     const bids = [], bidAmts = [], bidDepths = [];
     const asks = [], askAmts = [], askDepths = [];
     let cumBid = 0, cumAsk = 0;
-    for (let i = 0; i < 18; i++) {
-      bids.push(bestBid - i * 15000);
-      const amt = Math.floor(Math.random() * 800 + 200) * 10000000;
+    for (let i = 0; i < 16; i++) {
+      bids.push(bestBid - i * 14000);
+      const amt = Math.floor(Math.random() * 750 + 220) * 10000000;
       bidAmts.push(amt);
       cumBid += amt;
       bidDepths.push(cumBid);
-      asks.push(bestAsk + i * 12000);
-      const aamt = Math.floor(Math.random() * 600 + 150) * 10000000;
+
+      asks.push(bestAsk + i * 14000);
+      const aamt = Math.floor(Math.random() * 650 + 180) * 10000000;
       askAmts.push(aamt);
       cumAsk += aamt;
       askDepths.push(cumAsk);
@@ -54,76 +57,83 @@ const Hearth = (() => {
   }
 
   const MOCK_POOL = {
-    spot_price: 1580000, reserve_xfg: 125000 * 10000000, reserve_heat: 19750000 * 10000000,
-    total_lp_shares: 42000, accumulated_lp_fees: 3200 * 10000000, epoch_swap_fees: 180 * 10000000
+    spot_price: 1580000,
+    reserve_xfg: 125000 * 10000000,
+    reserve_heat: 19750000 * 10000000,
+    total_lp_shares: 42000,
+    accumulated_lp_fees: 3200 * 10000000,
+    epoch_swap_fees: 180 * 10000000
   };
 
   const MOCK_HEAT = {
-    heat_supply: 8500000 * 10000000, redemption_price: 1580000,
-    xfg_burned: 1200000 * 10000000, fee_pool: 45000 * 10000000
+    heat_supply: 8500000 * 10000000,
+    redemption_price: 1580000,
+    xfg_burned: 1200000 * 10000000,
+    fee_pool: 45000 * 10000000
   };
 
-  // ── Charts ──
+  // ── Monaco Terminal Chart (Gold / Firegold up, White-Hot Blue down) ──
 
   function initPriceChart() {
     const container = document.getElementById('hearth-chart');
+    if (!container || typeof klinecharts === 'undefined') return;
+
     priceChart = klinecharts.init(container, {
       styles: {
         grid: {
           show: true,
-          horizontal: { color: 'rgba(42,42,58,0.2)' },
-          vertical: { color: 'rgba(42,42,58,0.2)' }
+          horizontal: { color: 'rgba(255,145,0,0.06)' },
+          vertical: { color: 'rgba(255,145,0,0.04)' }
         },
         candle: {
           type: 'candle_solid',
           bar: {
-            upColor: '#e8734a',
-            downColor: '#5b8def',
-            noChangeColor: '#8a8a9a',
-            upBorderColor: '#e8734a',
-            downBorderColor: '#5b8def',
-            noChangeBorderColor: '#8a8a9a',
-            upWickColor: '#e8734a',
-            downWickColor: '#5b8def',
-            noChangeWickColor: '#8a8a9a'
+            upColor: '#ff9100',          // Firegold for Up Candles
+            downColor: '#00f0ff',        // White-Hot Blue for Down Candles
+            noChangeColor: '#5d6175',
+            upBorderColor: '#c9a44c',
+            downBorderColor: '#00f0ff',
+            noChangeBorderColor: '#5d6175',
+            upWickColor: '#c9a44c',
+            downWickColor: '#e0faff',
+            noChangeWickColor: '#5d6175'
           },
           areaLineSize: 1,
           priceMark: {
-            high: { color: '#c0603a', textOffset: 5, textSize: 10 },
-            low: { color: '#4a70b8', textOffset: 5, textSize: 10 },
-            last: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8a8a9a' }
+            high: { color: '#c9a44c', textOffset: 5, textSize: 10 },
+            low: { color: '#00f0ff', textOffset: 5, textSize: 10 },
+            last: { upColor: '#ff9100', downColor: '#00f0ff', noChangeColor: '#5d6175' }
           }
         },
         indicator: {
-          ohlc: { upColor: '#e8734a', downColor: '#5b8def', noChangeColor: '#8a8a9a' },
+          ohlc: { upColor: '#ff9100', downColor: '#00f0ff', noChangeColor: '#5d6175' },
           bars: [
-            { color: 'rgba(100,140,200,0.5)', borderColor: 'rgba(100,140,200,0.7)' }
+            { color: 'rgba(0,240,255,0.45)', borderColor: 'rgba(0,240,255,0.7)' }
           ],
           lines: [
-            { color: 'rgba(220,180,80,0.7)', size: 1 },
-            { color: 'rgba(160,100,200,0.7)', size: 1 },
-            { color: 'rgba(100,140,200,0.7)', size: 1 }
+            { color: '#c9a44c', size: 1.5 }, // Gold SMA 20
+            { color: '#ff9100', size: 1.5 }, // Firegold EMA 12
+            { color: '#00f0ff', size: 1.5 }  // White-Hot Blue VOL
           ]
         },
         xAxis: {
-          axisLine: { color: '#2a2a3a' },
-          tickLine: { color: '#2a2a3a' },
-          tickText: { color: '#555570', size: 10 }
+          axisLine: { color: 'rgba(255,255,255,0.1)' },
+          tickLine: { color: 'rgba(255,255,255,0.1)' },
+          tickText: { color: '#5d6175', size: 10 }
         },
         yAxis: {
-          axisLine: { color: '#2a2a3a' },
-          tickLine: { color: '#2a2a3a' },
-          tickText: { color: '#555570', size: 10 }
+          axisLine: { color: 'rgba(255,255,255,0.1)' },
+          tickLine: { color: 'rgba(255,255,255,0.1)' },
+          tickText: { color: '#5d6175', size: 10 }
         },
-        separator: { color: '#2a2a3a' },
+        separator: { color: 'rgba(255,145,0,0.2)' },
         crosshair: {
-          horizontal: { line: { color: '#555570' }, text: { color: '#e8e8f0', backgroundColor: '#1a1a25' } },
-          vertical: { line: { color: '#555570' }, text: { color: '#e8e8f0', backgroundColor: '#1a1a25' } }
+          horizontal: { line: { color: '#ff9100', style: 2 }, text: { color: '#000', backgroundColor: '#c9a44c' } },
+          vertical: { line: { color: '#ff9100', style: 2 }, text: { color: '#000', backgroundColor: '#c9a44c' } }
         }
       }
     });
 
-    // Subscribe crosshair for info panel
     const crosshairEl = document.getElementById('chart-crosshair');
     priceChart.subscribeAction('onCrosshairChange', (event) => {
       if (!event || !event.data || !event.data.kLineData) {
@@ -139,6 +149,10 @@ const Hearth = (() => {
       document.getElementById('ch-v').textContent = 'V ' + (d.volume >= 1e6 ? (d.volume / 1e6).toFixed(1) + 'M' : d.volume.toFixed(0));
       const date = new Date(d.timestamp);
       document.getElementById('ch-time').textContent = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    });
+
+    window.addEventListener('resize', () => {
+      if (priceChart) priceChart.resize();
     });
 
     // Indicator toggles
@@ -172,14 +186,15 @@ const Hearth = (() => {
         startDrawing(tool);
       });
     });
+
+    rebuildIndicators();
   }
 
   function rebuildIndicators() {
     if (!priceChart) return;
-    // Remove then re-add indicators
-    try { priceChart.removeIndicator('candle_pane', 'MA'); } catch(e) {}
-    try { priceChart.removeIndicator('candle_pane', 'EMA'); } catch(e) {}
-    try { priceChart.removeIndicator('vol_pane', 'VOL'); } catch(e) {}
+    try { priceChart.removeIndicator('candle_pane', 'MA'); } catch (e) { }
+    try { priceChart.removeIndicator('candle_pane', 'EMA'); } catch (e) { }
+    try { priceChart.removeIndicator('vol_pane', 'VOL'); } catch (e) { }
     if (indicators.sma20) priceChart.createIndicator('MA', false, { id: 'candle_pane' });
     if (indicators.ema12) priceChart.createIndicator('EMA', false, { id: 'candle_pane' });
     if (indicators.vol) priceChart.createIndicator('VOL', false, { id: 'vol_pane' });
@@ -187,12 +202,12 @@ const Hearth = (() => {
 
   function startDrawing(tool) {
     if (!activeDrawTool || !priceChart) return;
-    const s = { line: { color: '#ff6b35', style: 0, size: 1 }, text: { color: '#ff6b35', size: 10 } };
+    const s = { line: { color: '#ff9100', style: 0, size: 1.5 }, text: { color: '#c9a44c', size: 10 } };
     const configs = {
       segment: { name: 'segment', styles: s },
-      horizontalRay: { name: 'priceLine', styles: { ...s, line: { color: '#ff6b35', style: 2, size: 1 } } },
-      fibonacci: { name: 'fibonacciLine', styles: { ...s, polyline: { color: '#ffc107', style: 2, size: 1 } } },
-      rectangle: { name: 'rect', styles: { ...s, polygon: { color: 'rgba(255,107,53,0.1)', borderColor: '#ff6b35' } } }
+      horizontalRay: { name: 'priceLine', styles: { ...s, line: { color: '#ff9100', style: 2, size: 1.5 } } },
+      fibonacci: { name: 'fibonacciLine', styles: { ...s, polyline: { color: '#c9a44c', style: 2, size: 1 } } },
+      rectangle: { name: 'rect', styles: { ...s, polygon: { color: 'rgba(255,145,0,0.15)', borderColor: '#ff9100' } } }
     };
     const config = configs[tool];
     if (config) {
@@ -206,14 +221,12 @@ const Hearth = (() => {
     }
   }
 
-  let rawCandles = [];
-
   async function loadOHLCV(timeframe) {
     currentTf = timeframe;
     let data = [];
     try {
       const candles = await App.rpc('get_ohlvc', { timeframe, count: 200 });
-      if (candles && candles.candles) {
+      if (candles && candles.candles && candles.candles.length) {
         data = candles.candles.map(c => ({
           timestamp: c.t * 1000,
           open: c.o / App.COIN,
@@ -223,7 +236,9 @@ const Hearth = (() => {
           volume: c.v / App.COIN
         }));
       }
-    } catch (e) { console.warn('OHLCV load failed, using mock data'); }
+    } catch (e) {
+      // offline fallback
+    }
 
     if (data.length === 0) {
       const mock = mockCandles(120);
@@ -237,24 +252,30 @@ const Hearth = (() => {
       }));
     }
 
-    rawCandles = data;
-    priceChart.applyNewData(data);
+    if (priceChart) {
+      priceChart.applyNewData(data);
+    }
   }
 
-  // ── Hearth Orderbook ──
+  // ── Depth Ladder ──
 
   async function loadOrderbook() {
     try {
       const data = await App.rpc('get_orderbook_state', { depth: 20 });
-      renderHearthOrderbook(data);
-      return;
-    } catch (e) { console.warn('Orderbook load failed, using mock data'); }
+      if (data && (data.bid_prices || data.ask_prices)) {
+        renderHearthOrderbook(data);
+        return;
+      }
+    } catch (e) {
+      // offline fallback
+    }
     renderHearthOrderbook(mockOrderbook());
   }
 
   function renderHearthOrderbook(data) {
     const bidsContainer = document.getElementById('hearth-bids');
     const asksContainer = document.getElementById('hearth-asks');
+    if (!bidsContainer || !asksContainer) return;
 
     const bids = data.bid_prices || [];
     const asks = data.ask_prices || [];
@@ -263,96 +284,156 @@ const Hearth = (() => {
     const askAmounts = data.ask_amounts || data.ask_depths || [];
     const askDepths = data.ask_depths || [];
 
-    if (bids.length === 0 && asks.length === 0) {
-      bidsContainer.innerHTML = '<div class="hearth-empty">Awaiting orders…</div>';
-      asksContainer.innerHTML = '<div class="hearth-empty">Awaiting orders…</div>';
-      return;
-    }
-
     const maxBidDepth = Math.max(...bidDepths, 1);
     const maxAskDepth = Math.max(...askDepths, 1);
 
+    // Bids Ladder (Gold/Firegold)
     let bidHtml = '';
     for (let i = 0; i < bids.length; i++) {
-      const pct = ((bidDepths[i] || 0) / maxBidDepth) * 100;
-      bidHtml += `<div class="hearth-order hearth-order-bid">
-        <span class="hearth-order-price">${App.fmtPrice(bids[i])}</span>
-        <span class="hearth-order-amount">${App.fmtXfg(bidAmounts[i] || 0)}</span>
-        <div class="hearth-order-bar" style="width:${pct}%"></div>
-      </div>`;
+      const pct = Math.min(100, Math.round(((bidDepths[i] || 0) / maxBidDepth) * 100));
+      const pWhole = (bids[i] / App.COIN).toFixed(5);
+      const aWhole = (bidAmounts[i] / App.COIN).toFixed(2);
+      bidHtml += `
+        <div class="ladder-row" data-price="${pWhole}" data-amount="${aWhole}" title="Prefill ${pWhole} HΞ∆Ŧ">
+          <span class="price-val">${pWhole}</span>
+          <span class="amt-val">${aWhole} XFG</span>
+          <div class="row-bar" style="width:${pct}%"></div>
+        </div>`;
     }
-    bidsContainer.innerHTML = bidHtml || '<div class="hearth-empty">No bids</div>';
+    bidsContainer.innerHTML = bidHtml || '<div class="hearth-empty-state">No bids</div>';
 
+    // Asks Ladder (White-Hot Blue)
     let askHtml = '';
     for (let i = asks.length - 1; i >= 0; i--) {
-      const pct = ((askDepths[i] || 0) / maxAskDepth) * 100;
-      askHtml += `<div class="hearth-order hearth-order-ask">
-        <span class="hearth-order-price">${App.fmtPrice(asks[i])}</span>
-        <span class="hearth-order-amount">${App.fmtXfg(askAmounts[i] || 0)}</span>
-        <div class="hearth-order-bar" style="width:${pct}%"></div>
-      </div>`;
+      const pct = Math.min(100, Math.round(((askDepths[i] || 0) / maxAskDepth) * 100));
+      const pWhole = (asks[i] / App.COIN).toFixed(5);
+      const aWhole = (askAmounts[i] / App.COIN).toFixed(2);
+      askHtml += `
+        <div class="ladder-row" data-price="${pWhole}" data-amount="${aWhole}" title="Prefill ${pWhole} HΞ∆Ŧ">
+          <span class="price-val">${pWhole}</span>
+          <span class="amt-val">${aWhole} XFG</span>
+          <div class="row-bar" style="width:${pct}%"></div>
+        </div>`;
     }
-    asksContainer.innerHTML = askHtml || '<div class="hearth-empty">No asks</div>';
+    asksContainer.innerHTML = askHtml || '<div class="hearth-empty-state">No asks</div>';
+
+    // Instant click prefill
+    [bidsContainer, asksContainer].forEach(container => {
+      container.querySelectorAll('.ladder-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const p = row.dataset.price;
+          const a = row.dataset.amount;
+          if (p && document.getElementById('order-price')) {
+            document.getElementById('order-price').value = p;
+          }
+          if (a && document.getElementById('order-amount')) {
+            document.getElementById('order-amount').value = a;
+          }
+          updateOrderEstimate();
+          App.showToast(`Prefilled ${a} XFG @ ${p} HΞ∆Ŧ`);
+        });
+      });
+    });
   }
 
-  // ── Metrics ──
+  // ── Telemetry Strip Upgrades ──
 
   function updatePoolInfo(data) {
     const d = data || MOCK_POOL;
-    document.getElementById('pool-xfg').textContent = App.fmtXfg(d.reserve_xfg);
-    document.getElementById('pool-heat').textContent = App.fmtHeat(d.reserve_heat);
-    // Update the big price display
+    currentSpotPrice = d.spot_price || 1580000;
+
+    const xfgReserve = document.getElementById('pool-xfg');
+    const heatReserve = document.getElementById('pool-heat');
+    if (xfgReserve) xfgReserve.textContent = App.fmtXfg(d.reserve_xfg) + ' XFG';
+    if (heatReserve) heatReserve.textContent = App.fmtHeat(d.reserve_heat) + ' HΞ∆Ŧ';
+
     const priceEl = document.getElementById('price-xfg-heat');
     const usdEl = document.getElementById('price-xfg-usd');
     if (priceEl) {
-      const p = d.spot_price / App.COIN;
+      const p = currentSpotPrice / App.COIN;
       priceEl.textContent = p.toFixed(5) + ' HΞ∆Ŧ';
-      // USD: assume HEAT peg ~$1.58
       const usd = p * 1.58;
-      usdEl.textContent = '≈ $' + usd.toFixed(4) + ' USD';
+      if (usdEl) usdEl.textContent = `≈ $${usd.toFixed(4)} USD`;
     }
+
+    updateOrderEstimate();
   }
 
   function updateHeatMetrics(data) {
     const d = data || MOCK_HEAT;
-    document.getElementById('heat-supply').textContent = App.fmtHeat(d.heat_supply || d.total_supply);
-    // Mint ratio: XFG needed to mint 1 HEAT (XFG per HEAT)
+    const supplyEl = document.getElementById('heat-supply');
+    const burnedEl = document.getElementById('heat-burned');
+    const redemptionEl = document.getElementById('heat-redemption');
+
+    if (supplyEl) supplyEl.textContent = App.fmtHeat(d.heat_supply || d.total_supply) + ' HΞ∆Ŧ';
+    if (burnedEl) burnedEl.textContent = App.fmtXfg(d.xfg_burned || d.total_burned) + ' XFG';
+
     const redemptionPrice = d.redemption_price || 1580000;
     const xfgPerHeat = redemptionPrice / App.COIN;
-    document.getElementById('heat-redemption').textContent = xfgPerHeat.toFixed(2) + ':1';
-    document.getElementById('heat-burned').textContent = App.fmtXfg(d.xfg_burned || d.total_burned);
+    if (redemptionEl) redemptionEl.textContent = `${xfgPerHeat.toFixed(2)} XFG / HΞ∆Ŧ`;
   }
 
-  // ── Order Form ──
+  // ── Order Console ──
 
   function initOrderForm() {
-    // Side tabs (Buy/Sell)
-    document.querySelectorAll('.tabs .tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        orderSide = tab.dataset.side === 'buy' ? 0 : 1;
+    const tabBuy = document.getElementById('tab-buy');
+    const tabSell = document.getElementById('tab-sell');
+    if (tabBuy && tabSell) {
+      tabBuy.addEventListener('click', () => {
+        orderSide = 0;
+        tabBuy.classList.add('active');
+        tabSell.classList.remove('active');
         updateOrderButton();
+        updateOrderEstimate();
       });
-    });
+      tabSell.addEventListener('click', () => {
+        orderSide = 1;
+        tabSell.classList.add('active');
+        tabBuy.classList.remove('active');
+        updateOrderButton();
+        updateOrderEstimate();
+      });
+    }
 
-    // Type selector (Limit/Market/AMM)
-    document.querySelectorAll('.type-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        orderType = btn.dataset.type;
+    document.querySelectorAll('.type-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.type-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        orderType = chip.dataset.type;
         updateOrderFields();
         updateOrderButton();
+        updateOrderEstimate();
       });
     });
 
-    document.getElementById('order-preview-btn').addEventListener('click', showOrderPreview);
-    document.getElementById('order-modal-close').addEventListener('click', () => {
+    document.querySelectorAll('.pct-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const pct = parseFloat(chip.dataset.pct) || 0;
+        let base = userWalletBalance > 0 ? (userWalletBalance / App.COIN) : 100;
+        const targetAmt = (base * pct).toFixed(2);
+        document.getElementById('order-amount').value = targetAmt;
+        updateOrderEstimate();
+      });
+    });
+
+    const amtInput = document.getElementById('order-amount');
+    const priceInput = document.getElementById('order-price');
+    if (amtInput) amtInput.addEventListener('input', updateOrderEstimate);
+    if (priceInput) priceInput.addEventListener('input', updateOrderEstimate);
+
+    const previewBtn = document.getElementById('order-preview-btn');
+    if (previewBtn) previewBtn.addEventListener('click', showOrderPreview);
+
+    const closeBtn = document.getElementById('order-modal-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => {
       document.getElementById('order-modal').classList.remove('active');
     });
-    document.getElementById('order-exec-btn').addEventListener('click', executeOrder);
-    document.getElementById('order-copy-btn').addEventListener('click', () => {
+
+    const execBtn = document.getElementById('order-exec-btn');
+    if (execBtn) execBtn.addEventListener('click', executeOrder);
+
+    const copyBtn = document.getElementById('order-copy-btn');
+    if (copyBtn) copyBtn.addEventListener('click', () => {
       App.copyToClipboard(document.getElementById('order-cli-cmd').textContent);
     });
 
@@ -364,66 +445,119 @@ const Hearth = (() => {
     const priceGroup = document.getElementById('price-group');
     const expiryGroup = document.getElementById('expiry-group');
     if (orderType === 'market') {
-      priceGroup.style.display = 'none';
-      expiryGroup.style.display = 'none';
+      if (priceGroup) priceGroup.style.display = 'none';
+      if (expiryGroup) expiryGroup.style.display = 'none';
     } else {
-      priceGroup.style.display = '';
-      expiryGroup.style.display = '';
+      if (priceGroup) priceGroup.style.display = '';
+      if (expiryGroup) expiryGroup.style.display = '';
     }
   }
 
   function updateOrderButton() {
     const btn = document.getElementById('order-preview-btn');
-    const side = orderSide === 0 ? 'Buy' : 'Sell';
-    btn.textContent = `${side} XFG`;
-    btn.className = `btn btn-primary btn-execute ${orderSide === 0 ? 'btn-buy' : 'btn-sell'}`;
+    if (!btn) return;
+    const actionWord = orderSide === 0 ? 'Buy' : 'Sell';
+    const modeWord = orderType === 'limit' ? 'Limit Order' : 'Market Swap';
+    btn.textContent = `${actionWord} XFG (${modeWord})`;
+    btn.className = `btn btn-block ${orderSide === 0 ? 'btn-buy' : 'btn-sell'}`;
+  }
+
+  function updateOrderEstimate() {
+    const amt = parseFloat(document.getElementById('order-amount')?.value) || 0;
+    const sub = document.getElementById('order-estimate-sub');
+    if (!sub) return;
+
+    if (amt <= 0) {
+      sub.textContent = 'Continuous liquidity via on-chain AMM';
+      return;
+    }
+
+    let price = currentSpotPrice / App.COIN;
+    if (orderType === 'limit') {
+      const customPrice = parseFloat(document.getElementById('order-price')?.value);
+      if (customPrice > 0) price = customPrice;
+    }
+
+    const grossProceeds = amt * price;
+    const fee = grossProceeds * 0.01; // 1% taker fee
+    const cdYieldShare = fee * 0.70;  // 70% to CD APY pool
+    const netProceeds = orderSide === 0 ? grossProceeds + fee : grossProceeds - fee;
+
+    sub.innerHTML = orderSide === 0
+      ? `Est. Cost: <strong style="color:var(--firegold-bright);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> (1% fee · 70% to CD Yield)`
+      : `Est. Proceeds: <strong style="color:var(--heat-blue-hot);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> (net of 1% fee · 70% to CD Yield)`;
   }
 
   function showOrderPreview() {
-    const amount = document.getElementById('order-amount').value;
-    if (!amount) { App.showToast('Enter an amount'); return; }
+    const amount = document.getElementById('order-amount')?.value;
+    if (!amount || parseFloat(amount) <= 0) {
+      App.showToast('Enter an amount in XFG');
+      return;
+    }
 
     const side = orderSide === 0 ? 'buy' : 'sell';
+    const sideLabel = orderSide === 0 ? 'BUY XFG' : 'SELL XFG';
     const details = document.getElementById('order-modal-details');
-    let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">`;
-    html += `<div class="metric"><span class="metric-label">Type</span><span class="metric-value">${orderType.toUpperCase()}</span></div>`;
-    html += `<div class="metric"><span class="metric-label">Side</span><span class="metric-value ${orderSide === 0 ? 'green' : 'red'}">${side.toUpperCase()}</span></div>`;
-    html += `<div class="metric"><span class="metric-label">Amount</span><span class="metric-value">${amount} XFG</span></div>`;
+
+    let price = (currentSpotPrice / App.COIN).toFixed(5);
+    let expiry = '4320';
     if (orderType === 'limit') {
-      const price = document.getElementById('order-price').value;
-      const expiry = document.getElementById('order-expiry').value || '4320';
-      html += `<div class="metric"><span class="metric-label">Price</span><span class="metric-value accent">${price} HΞ∆Ŧ</span></div>`;
-      html += `<div class="metric"><span class="metric-label">Expiry</span><span class="metric-value">${expiry} blocks</span></div>`;
+      const pInput = document.getElementById('order-price')?.value;
+      if (!pInput || parseFloat(pInput) <= 0) {
+        App.showToast('Enter a limit price');
+        return;
+      }
+      price = parseFloat(pInput).toFixed(5);
+      expiry = document.getElementById('order-expiry')?.value || '4320';
     }
-    html += `</div>`;
+
+    const gross = (parseFloat(amount) * parseFloat(price)).toFixed(4);
+    const cdYield = (gross * 0.01 * 0.70).toFixed(4);
+
+    let html = `
+      <div style="background:#000;border:1px solid var(--border-firegold);border-radius:6px;padding:14px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--firegold-bright);">ORDER // HEARTH-${Date.now().toString(36).toUpperCase()}</span>
+          <span class="badge ${orderSide === 0 ? 'badge-green' : 'badge-red'}">${sideLabel}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;">
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">TYPE</span><span style="font-family:var(--font-mono);font-weight:700;">${orderType.toUpperCase()}</span></div>
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">AMOUNT</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--gold-bright);">${amount} XFG</span></div>
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">PRICE</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--heat-blue-hot);">${price} HΞ∆Ŧ</span></div>
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">CONSIDERATION</span><span style="font-family:var(--font-mono);font-weight:700;">≈ ${gross} HΞ∆Ŧ</span></div>
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">TAKER FEE (1%)</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">70% CD Yield (${cdYield} HΞ∆Ŧ)</span></div>
+          <div><span style="font-size:9px;color:var(--text-muted);display:block;">EXPIRATION</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">${expiry} Blocks (~${(parseInt(expiry) / 720).toFixed(1)} Epochs)</span></div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;">
+        Orders are committed on-chain via transaction extra data and matched per block against the continuous AMM pool at spot price.
+      </div>`;
+
     details.innerHTML = html;
 
     const atomicAmt = Math.round(parseFloat(amount) * App.COIN);
+    const cliEl = document.getElementById('order-cli-cmd');
     if (orderType === 'limit') {
-      const price = document.getElementById('order-price').value;
-      const expiry = document.getElementById('order-expiry').value || '4320';
-      document.getElementById('order-cli-cmd').textContent =
-        `fire_wallet place_order ${side} ${amount} ${price} ${expiry}`;
+      cliEl.textContent = `fire_wallet place_order ${side} ${amount} ${price} ${expiry}`;
     } else {
-      document.getElementById('order-cli-cmd').textContent =
-        `fire_wallet amm_swap ${orderSide === 0 ? 0 : 1} ${atomicAmt}`;
+      cliEl.textContent = `fire_wallet amm_swap ${orderSide === 0 ? 0 : 1} ${atomicAmt}`;
     }
+    cliEl.style.display = 'block';
 
     document.getElementById('order-modal').classList.add('active');
   }
 
   async function executeOrder() {
-    const amount = document.getElementById('order-amount').value;
-    if (!amount) { App.showToast('Enter an amount'); return; }
+    const amount = document.getElementById('order-amount')?.value;
+    if (!amount) return;
 
     try {
       const atomicAmt = Math.round(parseFloat(amount) * App.COIN);
       let result;
 
       if (orderType === 'limit') {
-        const price = document.getElementById('order-price').value;
-        const expiry = parseInt(document.getElementById('order-expiry').value) || 0;
-        if (!price) { App.showToast('Enter a price for limit order'); return; }
+        const price = document.getElementById('order-price')?.value;
+        const expiry = parseInt(document.getElementById('order-expiry')?.value) || 4320;
         result = await App.walletRpc('place_limit_order', {
           side: orderSide,
           amount: atomicAmt,
@@ -441,14 +575,26 @@ const Hearth = (() => {
         });
       }
 
-      App.showToast(`Order sent! tx: ${result.tx_hash ? result.tx_hash.substring(0, 16) + '...' : 'submitted'}`);
+      App.showToast(`Order sent! Tx: ${result.tx_hash ? result.tx_hash.substring(0, 16) + '…' : 'ok'}`);
       document.getElementById('order-modal').classList.remove('active');
+      loadOrderbook();
     } catch (e) {
-      App.showToast(`Error: ${e.message}`);
+      App.showToast(`Order submission: ${e.message || 'Check wallet daemon'}`);
     }
   }
 
-  // ── Init ──
+  async function loadUserBalance() {
+    try {
+      const bal = await App.walletRpc('getbalance');
+      if (bal && bal.availableBalance != null) {
+        userWalletBalance = bal.availableBalance;
+      }
+    } catch (e) {
+      // offline
+    }
+  }
+
+  // ── Lifecycle ──
 
   function init() {
     initPriceChart();
@@ -458,6 +604,7 @@ const Hearth = (() => {
     loadOrderbook();
     updatePoolInfo(null);
     updateHeatMetrics(null);
+    loadUserBalance();
 
     document.querySelectorAll('.ohlcv-tf').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -469,9 +616,12 @@ const Hearth = (() => {
 
     App.on('pool_info', updatePoolInfo);
     App.on('heat_metric', updateHeatMetrics);
-    App.on('block', () => { loadOrderbook(); loadOHLCV(currentTf); });
+    App.on('block', () => {
+      loadOrderbook();
+      loadOHLCV(currentTf);
+    });
 
-    setInterval(loadOrderbook, 10000);
+    setInterval(loadOrderbook, 8000);
   }
 
   return { init };

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hearth Exchange — Fuego</title>
+  <title>Hearth Exchange — Monaco Terminal</title>
   <link rel="stylesheet" href="/css/style.css">
   <style>
     /* ── Chart Overlay HUD ── */
@@ -107,13 +107,13 @@
   </style>
 </head>
 <body>
-  <!-- Navigation -->
+  <!-- Monaco Terminal Navigation -->
   <nav class="nav">
     <a href="/" class="nav-brand">
       <img src="/coin-icons/fuego.png" alt="Fuego" class="nav-brand-logo">
       <div class="nav-brand-meta">
-        <span class="nav-brand-title">FUEGO</span>
-        <span class="nav-brand-sub">XFG NETWORK</span>
+        <span class="nav-brand-title">FUEGO // TERMINAL</span>
+        <span class="nav-brand-sub">HEARTH PROTOCOL</span>
       </div>
     </a>
 
@@ -152,10 +152,10 @@
         <div class="fascia-header">
           <div class="fascia-title">
             <span style="color:var(--firegold-bright);">●</span>
-            <span>HEARTH EXCHANGE</span>
+            <span>HEARTH EXCHANGE // TELEMETRY STRIP</span>
           </div>
           <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">
-            V12 · ON-CHAIN AMM + LIMIT OVERLAY
+            PROTOCOL V12 // ON-CHAIN AMM + LIMIT OVERLAY
           </div>
         </div>
         <div class="telemetry-grid">
@@ -168,11 +168,11 @@
             <span class="telemetry-val" id="heat-supply">—</span>
           </div>
           <div class="telemetry-cell" title="On-chain AMM pool XFG reserve">
-            <span class="telemetry-label">Fuego Reserve</span>
+            <span class="telemetry-label">Pool XFG Reserve</span>
             <span class="telemetry-val gold" id="pool-xfg">—</span>
           </div>
           <div class="telemetry-cell heat-cell" title="On-chain AMM pool HΞ∆T reserve">
-            <span class="telemetry-label" style="color:var(--heat-blue);">Hearth Floor</span>
+            <span class="telemetry-label" style="color:var(--heat-blue);">Pool HΞ∆Ŧ Reserve</span>
             <span class="telemetry-val" id="pool-heat">—</span>
           </div>
           <div class="telemetry-cell" title="Hearth pool TWAP mint price (XFG per HEAT)">
@@ -182,6 +182,10 @@
           <div class="telemetry-cell heat-cell" title="Purchasing power peg target ($1.58 USD reference)">
             <span class="telemetry-label" style="color:var(--heat-blue);">HΞ∆Ŧ Peg ($1.58)</span>
             <span class="telemetry-val" id="heat-peg">1 HΞ∆Ŧ ≋ $1.58</span>
+          </div>
+          <div class="telemetry-cell" title="70% of Hearth taker fees route to CD APY yield pool">
+            <span class="telemetry-label">CD Fee Yield</span>
+            <span class="telemetry-val" style="color:var(--green);" id="cd-fee-routing">70% to CD APY Pool</span>
           </div>
         </div>
       </div>
@@ -204,7 +208,7 @@
           <div class="hearth-spot-bar">
             <div class="spot-price-group">
               <span class="spot-price-main" id="price-xfg-heat">— HΞ∆Ŧ</span>
-              <span class="spot-price-usd" id="price-xfg-usd" style="color:var(--text-primary); font-weight:700;">≈ $— USD</span>
+              <span class="spot-price-usd" id="price-xfg-usd">≈ $— USD</span>
               <span class="spot-price-spread" id="price-spread">Spread: 100 bps</span>
             </div>
             <div class="timeframe-pushers">
@@ -313,7 +317,7 @@
   <div class="modal-overlay" id="order-modal">
     <div class="modal">
       <div class="modal-header">
-        <span>CONFIRM ORDER</span>
+        <span>CONFIRM ORDER // HEARTH TERMINAL</span>
         <button type="button" class="modal-close" id="order-modal-close">&times;</button>
       </div>
       <div class="modal-body">

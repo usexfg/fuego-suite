@@ -27,6 +27,7 @@
 #include "CryptoNoteCore/IMinerHandler.h"
 #include "CryptoNoteCore/MinerConfig.h"
 #include "CryptoNoteCore/OnceInInterval.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 
 #include <Logging/LoggerRef.h>
 
@@ -91,6 +92,11 @@ namespace CryptoNote {
     std::vector<BinaryArray> m_extra_messages;
     miner_config m_config;
     std::string m_config_folder_path;
+    // FCI basket vote — populated from MinerConfig at init(), injected into
+    // every coinbase.  present_mask == 0 means no vote is emitted.
+    TransactionExtraMinerBasketVote m_fci_basket;
+    // Paradio future-feature vote (tag 0x39); empty string means skip.
+    std::string m_paradio_vote;
     std::atomic<uint64_t> m_last_hr_merge_time;
     std::atomic<uint64_t> m_hashes;
     std::atomic<uint64_t> m_current_hash_rate;

@@ -127,6 +127,22 @@ namespace CryptoNote
           break;
         }
 
+        case TX_EXTRA_MINER_BASKET_VOTE:
+        {
+          TransactionExtraMinerBasketVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
+        case TX_EXTRA_MINER_PARADIO_VOTE:
+        {
+          TransactionExtraMinerParadioVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
         case TX_EXTRA_HEAT_COMMITMENT:
         {
           TransactionExtraHeatCommitment heatCommitment;
@@ -505,6 +521,16 @@ namespace CryptoNote
       return true;
     }
 
+    bool operator()(const TransactionExtraMinerBasketVote &t)
+    {
+      return addMinerBasketVoteToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraMinerParadioVote &t)
+    {
+      return addMinerParadioVoteToExtra(extra, t);
+    }
+
     bool operator()(const TransactionExtraHeatCommitment &t)
     {
       return addHeatCommitmentToExtra(extra, t);
@@ -740,6 +766,40 @@ namespace CryptoNote
     return true;
   }
 
+  bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_BASKET_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
+  bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_PARADIO_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
   std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t> &extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key)
   {
     std::vector<TransactionExtraField> tx_extra_fields;
@@ -922,6 +982,31 @@ namespace CryptoNote
   bool tx_extra_message::serialize(ISerializer &s)
   {
     s(data, "data");
+    return true;
+  }
+
+  bool TransactionExtraMinerBasketVote::serialize(ISerializer &s)
+  {
+    s(present_mask, "present_mask");
+    // Only the fields flagged in present_mask are serialized on the wire.
+    // This lets a miner contribute a partial basket (e.g. only power + gas)
+    // without polluting the epoch median for commodities they didn't price.
+    // Phase 1: all votes land permanently on-chain for future back-pay audit.
+    if (present_mask & (1 << 0)) s(power, "power");
+    if (present_mask & (1 << 1)) s(milk,  "milk");
+    if (present_mask & (1 << 2)) s(bread, "bread");
+    if (present_mask & (1 << 3)) s(eggs,  "eggs");
+    if (present_mask & (1 << 4)) s(gas,   "gas");
+    return true;
+  }
+
+  bool TransactionExtraMinerParadioVote::serialize(ISerializer &s)
+  {
+    // Future DIGM Paradio feature: miner embeds a song title (UTF-8, max 128 B)
+    // as a block-level vote for which track plays next on the Paradio stream.
+    // Kept separate from the basket vote (tag 0x39) so each is independently
+    // optional and consensus for either subsystem is independent.
+    s(song_title, "song_title");
     return true;
   }
 

@@ -4,6 +4,103 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Fuego Cost Index (FCI) Miner Basket Oracle & Voting
+
+**Started**: 2026-09-26
+**Agent**: Antigravity (Gemini 3.6 Flash)
+**Status**: DONE
+
+### Changes
+
+- `MinerConfig.h` / `MinerConfig.cpp`: Added miner configuration options for FCI basket commodity pricing (power, milk, gas, bread, eggs) in microUSD integers, ISO-4217 currency rates, oracle JSON auto-fetch file path, staleness warning days, and Paradio song vote.
+- `TransactionExtra.h` / `TransactionExtra.cpp`: Defined `TransactionExtraMinerBasketVote` (tag `0x38`) and `TransactionExtraMinerParadioVote` (tag `0x39`) structures with partial-basket bitmasks and binary serialization. Added helper functions `addMinerBasketVoteToExtra`, `getMinerBasketVoteFromExtra`, `addMinerParadioVoteToExtra`, and `getMinerParadioVoteFromExtra`.
+- `Miner.h` / `Miner.cpp`: Integrated FCI basket vote and Paradio vote extra tags into block miner coinbase transaction generation.
+- `CryptoNoteConfig.h`: Reserved transaction extra tags `TX_EXTRA_MINER_BASKET_VOTE` (`0x38`) and `TX_EXTRA_MINER_PARADIO_VOTE` (`0x39`).
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Implement FCI miner basket oracle config & microUSD parsing | Antigravity | 2026-09-26 | DONE |
+| Add TX_EXTRA_MINER_BASKET_VOTE (0x38) & TX_EXTRA_MINER_PARADIO_VOTE (0x39) | Antigravity | 2026-09-26 | DONE |
+| Wire miner coinbase extra generation for FCI oracle votes | Antigravity | 2026-09-26 | DONE |
+| Commit and push changes to new `fci` branch | Antigravity | 2026-09-26 | DONE |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Antigravity | 2026-09-26 |
+| All tasks verified | PASS | Antigravity | 2026-09-26 |
+
+---
+
+## Dashboard Polish: Gold Color & Label Cleanup
+
+**Started**: 2026-09-24
+**Agent**: Antigravity (Gemini 3.8 Flash)
+**Status**: DONE
+
+### Changes
+
+- `style.css`: Replaced `--gold-bright: #ffd700` (pure yellow) with `--gold-bright: #c9a44c` (burnished gold). Updated dim, glow, and border-gold values to match. `#ffd700` under dark backgrounds reads as cartoon/taxi yellow, not gold.
+- `style.css`: Stripped "Monaco Terminal" from all CSS comment section headers — theme names don't belong in comment banners visible-adjacent to the UI.
+- `hearth.html`: Removed "FUEGO // TERMINAL" nav brand title → now `FUEGO` with sub `XFG NETWORK`. Stripped "// TELEMETRY STRIP" from the Hearth fascia section header. Stripped "// HEARTH TERMINAL" from modal confirm header.
+- `swapxfg.html`: Same nav brand cleanup. `data-cat="calibers"` label was already correct (`Major UTXO`).
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Fix gold to burnished `#c9a44c` | Antigravity | 2026-09-24 | DONE |
+| Strip "Monaco Terminal" from all visible UI text | Antigravity | 2026-09-24 | DONE |
+| Clean section/fascia/modal label text | Antigravity | 2026-09-24 | DONE |
+| Build passes (`go build`) | Antigravity | 2026-09-24 | DONE |
+
+---
+
+## Maison de XFG Dashboard: Le Salon du Hearth & Celestial Ordergraph Astrolabe
+
+**Branch/Feature**: maison-xfg-dashboard-improvements
+**Started**: 2026-09-24
+**Agent**: Antigravity (Gemini 3.8 Flash)
+**Status**: COMPLETE
+
+### Architecture & Interface Overview
+
+Elevated the Fuego web dashboard to reflect the **Maison de XFG** private Swiss haute-horlogerie and sovereign banking aesthetic, uniting **Le Salon du Hearth** (on-chain AMM and limit-order overlay) and the **DeXFG Astrolabe** (cross-maison atomic clearing matrix with Ordergraph):
+
+1. **Design System & Antigravity Depth (`dashboard/static/css/style.css`)**:
+   - Replaced generic palette with haute-horlogerie metals: champagne gold (`#d4af37`), flame amber (`#ff6b35`), brushed titanium, and deep sapphire obsidian.
+   - Integrated subtle Côte de Genève / guilloché textured backdrops, glassmorphic card bezels (`backdrop-filter: blur(16px)`), and layered elevation shadows.
+   - Added jewel-accented status complications for Daemon, Vault, and Swapd services.
+
+2. **Le Salon du Hearth (`dashboard/hearth.html`, `dashboard/static/js/hearth.js`)**:
+   - Transformed fireplace into an Atrium Complications Fascia showcasing Caliber Burned, HΞ∆T Complication Supply, AMM Reserves, Artisanal Mint Parity, Regulated Peg Benchmark ($1.58 USD reference), and 70% CD Yield Pool Accumulator.
+   - Built an interactive bid/ask depth ladder where clicking any price row instantly prefills target price and volume into the order console.
+   - Implemented quick balance proportion chips (25%, 50%, 75%, MAX), limit vs instant AMM swap mode toggles, live fee routing readouts, and Artisanal Clearing Certificate execution modals.
+
+3. **Celestial Ordergraph Astrolabe (`dashboard/static/swapxfg.html`, `dashboard/static/js/swapxfg.js`)**:
+   - Upgraded the multi-chain plot with the 0% Chrono-Fair Equator in illuminated champagne gold, discrete ±15% Y-axis benchmarks, and symmetrical horological fan-out of cabochon markers.
+   - Added interactive chain category filters (Sovereign Privacy, Core Calibers, EVM & Rollups, Alternative Curves), side filters (Offer XFG vs Acquire XFG), and instant search filtering.
+   - Developed the Swiss Horological Loupe HUD with real-time spread divergence, block expiry estimates, and 1-click ticket prefill actions.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Create Maison de XFG Haute Horlogerie & Antigravity tokens in `style.css` | Antigravity | 2026-09-24 | DONE |
+| 2 | Redesign Hearth Salon layout with Atrium Fascia dials & interactive depth ladder | Antigravity | 2026-09-24 | DONE |
+| 3 | Enhance KLineCharts styling, click-to-prefill, and order console in `hearth.js` | Antigravity | 2026-09-24 | DONE |
+| 4 | Upgrade DeXFG Ordergraph hero with category chips, search, and Chrono-Fair Equator | Antigravity | 2026-09-24 | DONE |
+| 5 | Implement Horological Loupe HUD and symmetrical cabochon fan-out in `swapxfg.js` | Antigravity | 2026-09-24 | DONE |
+| 6 | Verify Go binary build, HTTP 200 responses, and JS syntax correctness | Antigravity | 2026-09-24 | DONE |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles (`go build`) | PASS | Antigravity | 2026-09-24 |
+| HTTP endpoints functional (200 OK) | PASS | Antigravity | 2026-09-24 |
+| JavaScript syntax clean (`node -c`) | PASS | Antigravity | 2026-09-24 |
+| All tasks verified | PASS | Antigravity | 2026-09-24 |
+
+---
+
 ## Order-book pair cap raised to the full enum; PulseX renamed to PulseChain; GLEEC re-enabled
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

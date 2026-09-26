@@ -43,6 +43,9 @@
 // parser + struct stay so historical burns keep their banking-index tally.
 #define TX_EXTRA_HEAT_COMMITMENT            0x08
 #define TX_EXTRA_BURN_RECEIPT               0x18
+// 0x3_ tags: Miner Oracle & Voting
+#define TX_EXTRA_MINER_BASKET_VOTE          0x38
+#define TX_EXTRA_MINER_PARADIO_VOTE         0x39
 #define TX_EXTRA_DIGM_MINT                  0xA8
 // 0x_A tags: DIGM Artist related meta/msgs/txns
 #define TX_EXTRA_DIGM_ALBUM                 0x0A
@@ -118,6 +121,21 @@ struct tx_extra_message {
 
 struct TransactionExtraTTL {
   uint64_t ttl;
+};
+
+struct TransactionExtraMinerBasketVote {
+  uint8_t present_mask;
+  uint32_t power;
+  uint32_t milk;
+  uint32_t bread;
+  uint32_t eggs;
+  uint32_t gas;
+  bool serialize(ISerializer& serializer);
+};
+
+struct TransactionExtraMinerParadioVote {
+  std::string song_title;
+  bool serialize(ISerializer& serializer);
 };
 
 struct TransactionExtraHeatCommitment {
@@ -388,7 +406,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -412,6 +430,12 @@ void setPaymentIdToTransactionExtraNonce(BinaryArray& extra_nonce, const Crypto:
 bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypto::Hash& payment_id);
 bool appendMergeMiningTagToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMergeMiningTag& mm_tag);
 bool append_message_to_extra(std::vector<uint8_t>& tx_extra, const tx_extra_message& message);
+
+bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote);
+bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote);
+bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote);
+bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote);
+
 // bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration);  // REMOVED: COLD migration
 // bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond);  // REMOVED
 // bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond);  // REMOVED

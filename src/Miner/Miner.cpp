@@ -97,6 +97,7 @@ void Miner::runWorkers(BlockMiningParameters blockMiningParameters, size_t threa
 }
 
 void Miner::workerFunc(const Block& blockTemplate, difficulty_type difficulty, uint32_t nonceStep) {
+  Crypto::SlowHashThreadScope hashScope;  // one worker thread per template
   try {
     Block block = blockTemplate;
     Crypto::cn_context cryptoContext;

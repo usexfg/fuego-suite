@@ -288,6 +288,7 @@ namespace CryptoNote
 
       for (unsigned i = 0; i < nthreads; ++i) {
         threads[i] = std::async(std::launch::async, [&, i]() {
+          Crypto::SlowHashThreadScope hashScope;  // thread exits after this search
           Crypto::cn_context localctx;
           Crypto::Hash h;
 
@@ -364,6 +365,7 @@ namespace CryptoNote
   //-----------------------------------------------------------------------------------------------------
   bool miner::worker_thread(uint32_t th_local_index)
   {
+    Crypto::SlowHashThreadScope hashScope;  // mining threads exit on stop()
     logger(INFO, YELLOW) << "CPU thread "<< th_local_index << " MINING";
     uint32_t nonce = m_starter_nonce + th_local_index;
     difficulty_type local_diff = 0;

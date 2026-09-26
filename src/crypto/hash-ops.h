@@ -65,7 +65,13 @@ enum {
 
 void cn_fast_hash(const void *data, size_t length, char *hash);
 
-void cn_slow_hash(const void *data, size_t length, char *hash, int light, int variant, int prehashed); 
+void cn_slow_hash(const void *data, size_t length, char *hash, int light, int variant, int prehashed);
+
+/* cn_slow_hash() allocates a 2 MB scratchpad per thread on first use and keeps
+   it until slow_hash_free_state() runs on that same thread. A thread that
+   hashes and then exits without freeing it leaks the scratchpad. */
+void slow_hash_allocate_state(void);
+void slow_hash_free_state(void);
 
 void hash_extra_blake(const void *data, size_t length, char *hash);
 void hash_extra_groestl(const void *data, size_t length, char *hash);

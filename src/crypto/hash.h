@@ -70,6 +70,15 @@ namespace Crypto {
     cn_slow_hash(data, length, reinterpret_cast<char *>(&hash), light, variant, prehashed);
   }
 
+  // Releases the calling thread's slow-hash scratchpad on scope exit. Put one
+  // at the top of any short-lived thread that may compute slow hashes.
+  struct SlowHashThreadScope {
+    SlowHashThreadScope() = default;
+    ~SlowHashThreadScope() { slow_hash_free_state(); }
+    SlowHashThreadScope(const SlowHashThreadScope&) = delete;
+    SlowHashThreadScope& operator=(const SlowHashThreadScope&) = delete;
+  };
+
   inline void cn_slow_hash_prehashed(const void *data, std::size_t length, Hash &hash, int light = 0, int variant = 0, int prehashed = 0) {
      cn_slow_hash(data, length, reinterpret_cast<char *>(&hash), light, variant, 1);
   }

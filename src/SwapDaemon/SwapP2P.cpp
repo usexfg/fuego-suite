@@ -14,6 +14,7 @@
 
 #include "SwapP2P.h"
 #include "Common/WinCompat.h"
+#include "crypto/hash.h"
 
 #include <cstring>
 #include <chrono>
@@ -180,6 +181,8 @@ void SwapP2P::acceptLoop() {
 }
 
 void SwapP2P::handleConnection(int clientSock) {
+  // Detached thread per connection; handlers may run the slow-hash KDF.
+  Crypto::SlowHashThreadScope hashScope;
   SwapMessage msg;
   if (readFramedMessage(clientSock, msg)) {
     m_logger(Logging::DEBUGGING) << "SwapP2P: received msg type="

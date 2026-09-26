@@ -28,7 +28,7 @@ public:
 
   std::string chainName() const override { return "KMD"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return m_spvClient != nullptr; }
+  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

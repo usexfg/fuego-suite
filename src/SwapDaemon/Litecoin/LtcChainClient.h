@@ -18,7 +18,7 @@ public:
 
   std::string chainName() const override { return "LTC"; }
   bool usesSpvVerification() const override { return m_spvClient != nullptr; }
-  bool isReadyForNewSwap() override { return m_spvClient != nullptr; }
+  bool isReadyForNewSwap() override { return false; } // Neither transport has a complete safe swap path
   bool supportsPtlc() const override { return true; }
   // Pure PTLC (P2TR key-path, no H(t)) per PTLC_PURE_PLAN P2.3 (mirror of BTC).
   bool supportsPurePtlc() const override { return true; }

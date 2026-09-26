@@ -281,10 +281,10 @@ static void test_chain_clients_expose_spv_mode() {
   expectConfig(BtcChainClient(spv, "").usesSpvVerification(), "BTC SPV mode hidden");
   expectConfig(LtcChainClient(spv, "").usesSpvVerification(), "LTC SPV mode hidden");
   expectConfig(KmdChainClient(spv, "").usesSpvVerification(), "KMD SPV mode hidden");
-  expectConfig(BtcChainClient(spv, "").isReadyForNewSwap(), "BTC SPV new swaps blocked");
-  expectConfig(BchChainClient(spv, "").isReadyForNewSwap(), "BCH SPV new swaps blocked");
-  expectConfig(LtcChainClient(spv, "").isReadyForNewSwap(), "LTC SPV new swaps blocked");
-  expectConfig(KmdChainClient(spv, "").isReadyForNewSwap(), "KMD SPV new swaps blocked");
+  expectConfig(!BtcChainClient(spv, "").isReadyForNewSwap(), "BTC SPV mode admitted a new swap");
+  expectConfig(!BchChainClient(spv, "").isReadyForNewSwap(), "BCH SPV mode admitted a new swap");
+  expectConfig(!LtcChainClient(spv, "").isReadyForNewSwap(), "LTC SPV mode admitted a new swap");
+  expectConfig(!KmdChainClient(spv, "").isReadyForNewSwap(), "KMD SPV mode admitted a new swap");
   expectConfig(DcrChainClient(spv, nullptr, "").usesSpvVerification(), "DCR SPV mode hidden");
   expectConfig(!DcrChainClient(spv, nullptr, "").isReadyForNewSwap(),
       "unwired DCR SPV client admitted a new swap");

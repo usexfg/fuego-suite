@@ -15,7 +15,7 @@ substitute for a testnet fund-handling exercise.
 | 4: PowerShell variable | Confirmed. `$err_log` is used consistently. |
 | 5: GLEEC registry | Confirmed unsafe for new swaps. The client stays registered, while readiness requires a valid deployed HTLC registry and blocks offer publication/initiation when absent. |
 | 7: PulseChain example | Confirmed. The example keys match the loader; the config test parses them. |
-| 8: staged offer pairs | Confirmed for SIA/ZANO/TON/DOT. Relay admission and local publication now use executable-pair checks; local initiation also needs a configured, ready client. XMR, DCR, DOGE, DASH and ZEC are additionally held from new swaps because their claim or refund proof paths are incomplete. |
+| 8: staged offer pairs | Confirmed for SIA/ZANO/TON/DOT. Relay admission and local publication now use executable-pair checks; local initiation also needs a configured, ready client. XMR, DCR, DOGE, DASH, ZEC, BTC, BCH, LTC and KMD are additionally held from new swaps because their end-to-end claim, proof, or lock submission paths are incomplete. |
 
 The additional claims that `MAX_PAIR_INDEX` was still 11 and the offer scans
 stopped at ZANO were stale against merged PR #65: it had already expanded
@@ -36,9 +36,11 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
 - Alice's counterparty refund stores intent and transaction ID. A confirmed
   claim can supersede an attempted refund when the chain client independently
   reveals and validates the secret. EVM reads historical claimed state;
-  Solana reads finalized HTLC state; UTXO SPV requires a merkle proof and
-  depth. UTXO full-node modes without independent spend discovery are closed
-  to new swaps.
+  Solana reads finalized HTLC state. The UTXO SPV verifier requires a merkle
+  proof and depth, but these pairs are now closed to new swaps because their
+  SPV transports cannot submit locks and their header store omits
+  chain-specific difficulty validation. Their full-node modes lack
+  independent spend discovery.
 - Electrum raw transaction lookup and broadcast now consume the connection
   layer's unwrapped string results, check a locally calculated TXID, and
   reject malformed proof response types rather than throwing. The in-process
@@ -61,7 +63,11 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
    or Fuego confirmation polling. Source tests do not establish this behavior.
 3. The Fuego `f_transaction_json` confirmation response used by the new direct
    path has compiled and unit-level coverage, but no live RPC validation.
-4. The recovered edits are saved in the managed worktree
+4. BTC/BCH/LTC/KMD need a transport that can submit both sides' transactions,
+   verify network identity and difficulty transitions, and discover confirmed
+   claims independently. A merkle proof against a low-difficulty chain served
+   by Electrum is insufficient for a fund-release decision.
+5. The recovered edits are saved in the managed worktree
    `/Users/aejt/.codex/worktrees/pr65-recovered/xfgo` on
    `codex/pr65-recovered`. The main checkout was reset during this task and
    contains unrelated work. The review worktree also includes separate EVM
@@ -80,6 +86,11 @@ an expiry/size cap; the follow-up also bounds incoming taker identity data.
   blocks the test's local loopback listener.
 - `node dashboard/tests/swapxfg_pairs.test.cjs`: 2/2 passed after changing the
   test to exercise the runtime catalog mapping and disabled options.
+- After the final BTC/BCH/LTC/KMD gate, `clang++ -fsyntax-only` passed for the
+  relay predicate and both affected C++ test sources. The full linked tests
+  have not yet been rerun after that last gate: the Release Ninja attempt
+  stopped while compiling `P2p/NetNode.cpp` because the shared disk ran out of
+  space. The generated build directory was removed after the failure.
 - `git diff --check`: clean before this report was written; rerun at handoff.
 
 This is an in-progress security hardening branch, not a production-ready swap

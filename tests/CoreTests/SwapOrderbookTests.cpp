@@ -146,11 +146,15 @@ static std::vector<MatchFill> matchOrders(
 int main() {
   // The array bound includes every enum value, while staged chains cannot
   // enter either the legacy offer relay or the signed order book.
-  static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::DOT) ==
+  static_assert(XfgSwap::MAX_SWAP_PAIR_INDEX ==
                     SwapOfferRelay::MAX_PAIR_INDEX,
                 "SwapOfferRelay capacity must cover SwapPair");
   static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::XMR) == 2 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::BCH) == 3 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::KMD_SPV) == 6 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::DCR) == 8 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::BTC) == 9 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::LTC) == 10 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::SIA) == 17 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::DOGE) == 20 &&
                     static_cast<uint8_t>(XfgSwap::SwapPair::DASH) == 21 &&
@@ -159,12 +163,13 @@ int main() {
                     static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
                 "Update executable-pair admission when staged indices change");
   for (uint8_t pair = 0; pair <= SwapOfferRelay::MAX_PAIR_INDEX; ++pair) {
-    const bool staged = pair == 2 || pair == 8 || pair == 17 ||
+    const bool staged = pair == 2 || pair == 3 || pair == 6 ||
+                        pair == 8 || pair == 9 || pair == 10 || pair == 17 ||
                         pair == 20 || pair == 21 || pair == 22 ||
                         pair == 24 || pair == 27 || pair == 28;
     TEST(SwapOfferRelay::isExecutablePair(pair) == !staged);
   }
-  TEST(!SwapOfferRelay::isExecutablePair(29));
+  TEST(!SwapOfferRelay::isExecutablePair(XfgSwap::MAX_SWAP_PAIR_INDEX + 1));
   TEST(!SwapOfferRelay::isExecutablePair(255));
 
   // P2P requests reach this shared ingress without the RPC's input checks.

@@ -298,11 +298,14 @@ public:
     return XfgSwap::isProtocolSwapPair(pair);
   }
 
-  // Order-book capacity includes staged SwapPair values, but offers and orders
-  // must name a chain with an executable client. Keep these indices in sync
-  // with SwapDaemon/SwapTypes.h. Client readiness adds a per-config gate.
+  // Order-book capacity includes reserved SwapPair values, but offers and
+  // orders require an end-to-end executable chain path. The UTXO SPV clients
+  // cannot submit locks and do not validate chain-specific difficulty; their
+  // full-node modes lack independent claim discovery. Keep the numeric gates
+  // in sync with SwapPairCatalog.h. Client readiness adds a per-config gate.
   static constexpr bool isExecutablePair(uint8_t pair) {
-    return isProtocolPair(pair) && pair != 2 && pair != 8 &&
+    return isProtocolPair(pair) && pair != 2 && pair != 3 &&
+           pair != 6 && pair != 8 && pair != 9 && pair != 10 &&
            pair != 17 && pair != 20 && pair != 21 && pair != 22 &&
            pair != 24 && pair != 27 && pair != 28;
   }

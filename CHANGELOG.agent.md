@@ -24,18 +24,18 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 | 8 | Resolve confirmed counterparty claim, XFG claim, and refund race outcomes before release | Codex / Fuego Guardian reviewer | 2026-09-25 | IN PROGRESS — direct path hardened; testnet race exercise pending |
 | 9 | Make atomic-swap fee accounting durable and idempotent | Codex (GPT-6) | 2026-09-25 | TODO — server RPC cannot safely retry after uncertain result |
 | 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-25 | IN PROGRESS — managed worktree saved; split/review before merge |
+| 11 | Close BTC/BCH/LTC/KMD new swaps until transport and consensus SPV validation are complete | Codex (GPT-6) | 2026-09-25 | DONE — source gate and syntax checks; linked build gate pending disk space |
 
 ### Sign-off
 | Check | Status |
 |-------|--------|
-| Build compiles | PASS — recovered checkout `xfg-swapd` links, 2026-09-25 |
-| Focused tests pass | PASS — swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2, 2026-09-25; earlier orderbook 98/98 and BCH/KMD tests |
+| Build compiles | PASS before BTC/BCH/LTC/KMD gate; final gate passed C++ syntax checks, linked rebuild blocked by disk exhaustion |
+| Focused tests pass | PASS before final UTXO admission gate — swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2, 2026-09-25; affected tests syntax-check after gate |
 | All tasks done | PENDING — fee accounting, testnet races, and scoped integration; see `PR65_FOLLOWUP_ADVERSARIAL_REVIEW.md` |
 
 `graphify update .` was attempted on 2026-09-23 but failed inside the installed
 `hyppo` dependency (`cannot cache function '_center_distmat': no locator
 available`). No graph update was signed off.
-
 ## Dashboard Parity, Network Profiles, and Testnet Safety
 
 **Branch/Feature**: `codex/evm-dropin-batch`

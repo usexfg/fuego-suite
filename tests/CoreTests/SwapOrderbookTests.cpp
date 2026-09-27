@@ -7,6 +7,7 @@
 // the full SwapOfferRelay core/p2p dependencies.
 
 #include "CryptoNoteCore/SwapOfferRelay.h"
+#include "SwapDaemon/SwapTypes.h"
 
 #include <cassert>
 #include <cstdio>
@@ -15,6 +16,14 @@
 #include <deque>
 
 using namespace CryptoNote;
+
+static_assert(SwapOfferRelay::MAX_PAIR_INDEX ==
+              static_cast<uint8_t>(XfgSwap::SwapPair::DOT),
+              "relay storage must cover every SwapPair ID");
+static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::MONAD) == 25 &&
+              static_cast<uint8_t>(XfgSwap::SwapPair::OPTIMISM) == 26 &&
+              static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
+              "executable pair IDs must match SwapPair ordering");
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -416,6 +425,20 @@ int main() {
     TEST(snap.bids.empty());
     TEST(snap.asks.empty());
     TEST(snap.spread == 0);
+  }
+
+  // ── Executable pair admission ──
+
+  // Admission rejects reserved or incomplete pairs while retaining all
+  // enum slots for storage and future activation.
+  {
+    const uint8_t disabled[] = {2, 3, 6, 8, 9, 10, 17, 20, 21, 22, 24, 27, 28};
+    for (uint8_t pair : disabled) TEST(!SwapOfferRelay::isExecutablePair(pair));
+    TEST(SwapOfferRelay::isExecutablePair(0));   // SOL
+    TEST(SwapOfferRelay::isExecutablePair(23));  // PULSECHAIN
+    TEST(SwapOfferRelay::isExecutablePair(25));  // MONAD
+    TEST(SwapOfferRelay::isExecutablePair(26));  // OPTIMISM
+    TEST(!SwapOfferRelay::isExecutablePair(29));
   }
 
   // ── SwapOrder defaults ──

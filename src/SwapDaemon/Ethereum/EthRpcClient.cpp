@@ -30,6 +30,7 @@
 #include <stdexcept>
 #include <iomanip>
 #include <algorithm>
+#include <cctype>
 
 namespace XfgSwap {
 
@@ -407,6 +408,9 @@ std::string EthRpcClient::httpPost(const std::string& path, const std::string& b
 // ---------------------------------------------------------------------------
 
 std::string EthRpcClient::jsonRpc(const std::string& method, const std::string& params) {
+  // Readiness probes can run alongside swap RPC handlers. One request at a
+  // time owns the persistent socket so replies cannot cross between callers.
+  std::lock_guard<std::mutex> lock(m_rpc_mutex);
   static std::atomic<int> requestId{1};
 
   std::ostringstream body;
@@ -420,6 +424,55 @@ std::string EthRpcClient::jsonRpc(const std::string& method, const std::string& 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+bool EthRpcClient::isValidEvmAddress(const std::string& address) {
+  if (address.size() != 42 || address.compare(0, 2, "0x") != 0)
+    return false;
+  bool nonzero = false;
+  for (size_t i = 2; i < address.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(address[i]);
+    if (!std::isxdigit(c)) return false;
+    nonzero |= address[i] != '0';
+  }
+  return nonzero;
+}
+
+bool EthRpcClient::getChainId(uint64_t& chain_id) {
+  const std::string response = jsonRpc("eth_chainId", "[]");
+  if (response.empty() || jsonHasError(response)) return false;
+  const std::string result = jsonGetResult(response);
+  if (result.size() < 3 || result.compare(0, 2, "0x") != 0 ||
+      result.size() > 18) return false;
+  for (size_t i = 2; i < result.size(); ++i)
+    if (!std::isxdigit(static_cast<unsigned char>(result[i]))) return false;
+  chain_id = hexToUint64(result);
+  return chain_id != 0 && chain_id != UINT64_MAX;
+}
+
+bool EthRpcClient::hasDeployedHtlcRegistry() {
+  if (!isValidEvmAddress(m_htlcRegistry)) return false;
+  const std::string params = "[\"" + m_htlcRegistry + "\",\"latest\"]";
+  const std::string response = jsonRpc("eth_getCode", params);
+  if (response.empty() || jsonHasError(response)) return false;
+  const std::string code = jsonGetResult(response);
+  if (code.size() <= 2 || code.compare(0, 2, "0x") != 0 ||
+      (code.size() - 2) % 2 != 0) return false;
+  bool nonzero = false;
+  for (size_t i = 2; i < code.size(); ++i) {
+    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return false;
+    nonzero |= code[i] != '0';
+  }
+  if (!nonzero) return false;
+
+  // HashedTimelock.getContract(0x00...) returns an eight-word zero tuple for
+  // an unused id. A random contract with bytecode must not pass readiness.
+  std::string result;
+  if (!callContract(m_htlcRegistry, EthAbi::encodeGetContract(std::string(64, '0')),
+                    result) || result.size() != 514 ||
+      result.compare(0, 2, "0x") != 0) return false;
+  return std::all_of(result.begin() + 2, result.end(),
+                     [](char c) { return c == '0'; });
+}
 
 bool EthRpcClient::getBlockNumber(uint64_t& blockNum) {
   std::string resp = jsonRpc("eth_blockNumber", "[]");

@@ -16,6 +16,10 @@ public:
   virtual ChainClientResult claim(const SwapParams& params) = 0;
   virtual ChainClientResult refund(const SwapParams& params) = 0;
 
+  // New-swap admission only. Existing swaps must retain this client for
+  // claim/refund even when an RPC or registry is temporarily unavailable.
+  virtual std::string readinessError() { return ""; }
+
   // ── PTLC capability + PTLC lock path ──
   // Override in PTLC-capable clients (BTC Taproot, SOL ed25519, XMR/ZANO).
   // For HTLC-only chains (most EVMs, TON, SIA) keep default false → negotiate yields BRIDGE.

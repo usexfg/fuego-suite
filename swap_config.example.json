@@ -136,8 +136,8 @@
   "plasma_port": 443,
   "plasma_priv_key": "<64_hex_private_key>",
   // PULSECHAIN — PulseChain native PLS (chain ID 369)
-  "pulsechain_host": "rpc.pulsechain.com",
-  "pulsechain_port": 443,
+  "pulsechain_rpc_host": "rpc.pulsechain.com",
+  "pulsechain_rpc_port": 443,
   "pulsechain_priv_key": "<64_hex_private_key>",
   // MONAD — Monad (chain ID 185)
   "monad_host": "rpc.testnet.monad.xyz",

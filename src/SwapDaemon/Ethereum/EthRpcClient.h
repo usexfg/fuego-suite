@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <mutex>
 
 namespace XfgSwap {
 
@@ -49,6 +50,12 @@ public:
                EthTxType txType = EthTxType::Eip1559);
 
   ~EthRpcClient() { closeSocket(); clear(); }
+
+  bool hasSigner() const { return m_hasSigner; }
+  uint64_t expectedChainId() const { return m_chainId; }
+  bool getChainId(uint64_t& chain_id);
+  static bool isValidEvmAddress(const std::string& address);
+  bool hasDeployedHtlcRegistry();
 
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
@@ -243,6 +250,7 @@ private:
   std::string              m_signerAddress;
   uint64_t                 m_chainId = 0;
   bool                     m_hasSigner = false;
+  std::mutex               m_rpc_mutex;
 
   // Pre-compiled HTLC contract bytecode (hex, no 0x prefix) — optional.
   std::string m_htlcBytecode;

@@ -14,6 +14,7 @@
 // Reads a JSON config file and populates ChainClientConfig struct.
 
 #include "SwapDaemon.h"
+#include "Ethereum/EthRpcClient.h"
 #include "Common/JsonValue.h"
 
 #include <fstream>
@@ -278,12 +279,12 @@ bool loadChainClientConfig(const std::string& path,
   out.zecTestnet = jsonGetBool(json, "zec_testnet", false);
 
   // PULSECHAIN (PulseChain — EVM, chain id 369)
-  out.pulsechainHost       = jsonGetStr (json, "pulsechain_rpc_host", "");
-  out.pulsechainPort       = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
-  out.pulsechainPrivKeyHex = jsonGetStr (json, "pulsechain_priv_key");
-  out.pulsechainAddress    = jsonGetStr (json, "pulsechain_address");
-  out.pulsechainChainId    = jsonGetUint(json, "pulsechain_chain_id", 369);
-  out.pulsechainHtlcBinPath= jsonGetStr (json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
+  out.pulsechain_host          = jsonGetStr(json, "pulsechain_rpc_host", "");
+  out.pulsechain_port          = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
+  out.pulsechain_priv_key_hex = jsonGetStr (json, "pulsechain_priv_key");
+  out.pulsechain_address       = jsonGetStr(json, "pulsechain_address");
+  out.pulsechain_chain_id      = jsonGetUint(json, "pulsechain_chain_id", 369);
+  out.pulsechain_htlc_bin_path = jsonGetStr(json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   out.zanoDaemonHost = jsonGetStr(json, "zano_daemon_host", "");
@@ -469,8 +470,14 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
 
-  if (!validateHex(out.pulsechainPrivKeyHex, 32, "pulsechain_priv_key", errorMsg)) return false;
-  if (!out.pulsechainAddress.empty() && (out.pulsechainAddress.size() < 2 || out.pulsechainAddress.substr(0, 2) != "0x")) {
+  if (!out.gleecHost.empty() &&
+      !EthRpcClient::isValidEvmAddress(out.gleecHtlcRegistry)) {
+    errorMsg = "gleec_htlc_registry must be a nonzero 0x-prefixed 20-byte address when gleec_rpc_host is set";
+    return false;
+  }
+
+  if (!validateHex(out.pulsechain_priv_key_hex, 32, "pulsechain_priv_key", errorMsg)) return false;
+  if (!out.pulsechain_address.empty() && (out.pulsechain_address.size() < 2 || out.pulsechain_address.substr(0, 2) != "0x")) {
     errorMsg = "pulsechain_address must start with 0x";
     return false;
   }

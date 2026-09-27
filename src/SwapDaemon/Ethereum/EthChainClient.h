@@ -39,6 +39,8 @@ public:
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
 
+  std::string readinessError() override;
+
   std::string getReceiveAddress() const override { return m_address; }
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,

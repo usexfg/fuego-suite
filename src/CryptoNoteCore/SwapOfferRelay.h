@@ -285,6 +285,30 @@ public:
   // duplicating the literal.
   static constexpr uint8_t MAX_PAIR_INDEX = 28; // m_orderBooks[29], valid indices 0..28
 
+  // Storage capacity is independent of executable swap support. Core cannot
+  // include SwapTypes.h, so keep these reserved/unfinished IDs synchronized
+  // with SwapPair and assert their names in SwapOrderbookTests.cpp.
+  static constexpr bool isExecutablePair(uint8_t pair) {
+    switch (pair) {
+      case 2:  // XMR
+      case 3:  // BCH
+      case 6:  // KMD_SPV
+      case 8:  // DCR
+      case 9:  // BTC
+      case 10: // LTC
+      case 17: // SIA
+      case 20: // DOGE
+      case 21: // DASH
+      case 22: // ZEC
+      case 24: // ZANO
+      case 27: // TON
+      case 28: // DOT
+        return false;
+      default:
+        return pair <= MAX_PAIR_INDEX;
+    }
+  }
+
 private:
   // ── Legacy v1 internals ──
   bool validateOffer(const SwapOfferMsg& offer) const;

@@ -26,11 +26,13 @@ namespace XfgSwap {
 OfferManager::OfferManager(CryptoNote::SwapOfferRelay& relay,
                            const Crypto::SecretKey& makerSecretKey,
                            const Crypto::PublicKey& makerPublicKey,
-                           Logging::ILogger& logger)
+                           Logging::ILogger& logger,
+                           std::function<bool(uint8_t)> pair_ready)
   : m_relay(relay),
     m_makerSecretKey(makerSecretKey),
     m_makerPublicKey(makerPublicKey),
-    m_logger(logger, "OfferManager") {}
+    m_logger(logger, "OfferManager"),
+    m_pair_ready(std::move(pair_ready)) {}
 
 bool OfferManager::loadConfig(const std::string& jsonPath) {
   std::ifstream f(jsonPath);
@@ -67,11 +69,11 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       mo.slippagePct  = static_cast<uint8_t>(entry("slippagePct").getInteger());
       if (mo.slippagePct == 0) mo.slippagePct = 5;
 
-      // Validate economic fields: pair must index a valid order-book slot and
-      // the offer amount must be positive. A zero amount can never be filled
+      // Validate economic fields: pair must be executable and the offer
+      // amount must be positive. A zero amount can never be filled
       // and would spam the relay with useless offers.
-      if (mo.pair > CryptoNote::SwapOfferRelay::MAX_PAIR_INDEX) {
-        m_logger(Logging::ERROR) << "Managed offer skipped: invalid pair " << (int)mo.pair;
+      if (!CryptoNote::SwapOfferRelay::isExecutablePair(mo.pair)) {
+        m_logger(Logging::ERROR) << "Managed offer skipped: non-executable pair " << (int)mo.pair;
         continue;
       }
       if (mo.xfgAmount == 0) {
@@ -182,6 +184,10 @@ void OfferManager::tick(uint32_t currentHeight) {
   m_running = true;
 
   for (auto& state : m_states) {
+    if (!m_pair_ready(state.config.pair)) {
+      cancelManagedOffer(state);
+      continue;
+    }
     uint64_t compositeRateNum = compositeToRateNum(state.config.pair);
     if (compositeRateNum == 0) continue;
 

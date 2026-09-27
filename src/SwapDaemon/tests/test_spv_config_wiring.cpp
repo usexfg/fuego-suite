@@ -4,12 +4,17 @@
 // Verifies that ChainClientConfig correctly parses SPV fields from JSON
 // and that SwapDaemon creates an ElectrumSpvClient when mode == "spv".
 
+#ifdef NDEBUG
+#undef NDEBUG  // Keep config assertions active in Release test builds.
+#endif
 #include <cassert>
 #include <iostream>
 #include <string>
 #include <vector>
 #include <fstream>
 #include <cstdio>
+#include <filesystem>
+#include <iterator>
 
 #include "SwapDaemon/SwapDaemon.h"
 
@@ -50,6 +55,7 @@ static std::string writeTempConfig(const std::string& jsonContent) {
 static void test_config_parse_spv_mode() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electroncash.org:50002",
     "bch_spv_server_1": "bch.imaginary.cash:50002",
     "bch_spv_min_servers": 2,
@@ -113,6 +119,7 @@ static void test_config_defaults_rpc_mode() {
 static void test_config_spv_single_server_no_checkpoint() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electrum.imaginary.cash:50002"
   })";
 
@@ -141,6 +148,7 @@ static void test_config_spv_single_server_no_checkpoint() {
 static void test_config_spv_server_gap() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "server-a:50002",
     "bch_spv_server_2": "server-b:50002"
   })";
@@ -169,6 +177,7 @@ static void test_config_spv_overrides_rpc() {
     "bch_rpc_host": "127.0.0.1",
     "bch_rpc_port": 8332,
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electroncash.org:50002",
     "bch_spv_checkpoint_height": 586670,
     "bch_spv_checkpoint_hash": "0000000000000000016b5e0b8a70a85812e6546c2c7e0b52c7719c0e194677a2"
@@ -190,6 +199,59 @@ static void test_config_spv_overrides_rpc() {
   std::cout << "  PASS: test_config_spv_overrides_rpc" << std::endl;
 }
 
+static void test_pulsechain_example_keys() {
+  const auto example = std::filesystem::path(__FILE__).parent_path()
+      .parent_path().parent_path().parent_path() / "swap_config.example.json";
+  std::ifstream file(example);
+  assert(file.is_open());
+  const std::string contents((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+  const std::string host_key = "\"pulsechain_rpc_host\": \"";
+  const std::string port_key = "\"pulsechain_rpc_port\": ";
+  const auto host_start = contents.find(host_key);
+  const auto port_start = contents.find(port_key);
+  assert(host_start != std::string::npos && port_start != std::string::npos);
+  const auto value_start = host_start + host_key.size();
+  const auto value_end = contents.find('"', value_start);
+  assert(value_end != std::string::npos);
+  const std::string host = contents.substr(value_start, value_end - value_start);
+  const unsigned port = std::stoul(contents.substr(port_start + port_key.size()));
+
+  const std::string path = writeTempConfig(
+      "{\"pulsechain_rpc_host\":\"" + host +
+      "\",\"pulsechain_rpc_port\":" + std::to_string(port) + "}");
+  ChainClientConfig cfg;
+  std::string error;
+  assert(loadChainClientConfig(path, cfg, error));
+  assert(cfg.pulsechain_host == host);
+  assert(cfg.pulsechain_port == port);
+  std::remove(path.c_str());
+  std::cout << "  PASS: test_pulsechain_example_keys" << std::endl;
+}
+
+static void test_gleec_registry_required() {
+  for (const std::string registry : {"", "0x123"}) {
+    const std::string path = writeTempConfig(
+        "{\"gleec_rpc_host\":\"localhost\",\"gleec_htlc_registry\":\"" +
+        registry + "\"}");
+    ChainClientConfig cfg;
+    std::string error;
+    assert(!loadChainClientConfig(path, cfg, error));
+    assert(error.find("gleec_htlc_registry") != std::string::npos);
+    std::remove(path.c_str());
+  }
+  const std::string address = "0x1111111111111111111111111111111111111111";
+  const std::string path = writeTempConfig(
+      "{\"gleec_rpc_host\":\"localhost\",\"gleec_htlc_registry\":\"" +
+      address + "\"}");
+  ChainClientConfig cfg;
+  std::string error;
+  assert(loadChainClientConfig(path, cfg, error));
+  assert(cfg.gleecHtlcRegistry == address);
+  std::remove(path.c_str());
+  std::cout << "  PASS: test_gleec_registry_required" << std::endl;
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -201,6 +263,8 @@ int main() {
   test_config_spv_single_server_no_checkpoint();
   test_config_spv_server_gap();
   test_config_spv_overrides_rpc();
+  test_pulsechain_example_keys();
+  test_gleec_registry_required();
   std::cout << "All SPV config wiring tests passed." << std::endl;
   return 0;
 }

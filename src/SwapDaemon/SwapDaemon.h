@@ -274,12 +274,12 @@ struct ChainClientConfig {
   bool        zecTestnet = false;
 
   // PULSECHAIN (PulseChain — EVM, chain id 369, native PLS 18 decimals)
-  std::string pulsechainHost;
-  uint16_t    pulsechainPort   = 8545;
-  std::string pulsechainPrivKeyHex;
-  std::string pulsechainAddress;
-  uint64_t    pulsechainChainId = 369;
-  std::string pulsechainHtlcBinPath;
+  std::string pulsechain_host;
+  uint16_t    pulsechain_port   = 8545;
+  std::string pulsechain_priv_key_hex;
+  std::string pulsechain_address;
+  uint64_t    pulsechain_chain_id = 369;
+  std::string pulsechain_htlc_bin_path;
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   std::string zanoDaemonHost;
@@ -517,6 +517,10 @@ public:
   // Returns the resolved XFG address. If input is an alias (@name or short name),
   // resolves via RPC. If already an address, returns as-is. Returns "" on failure.
   std::string resolveAddressOrAlias(const std::string& input);
+
+  // Checks admission for a new swap or offer. Existing swaps never use this
+  // gate, so claim and refund recovery remain available after RPC loss.
+  bool canStartNewSwap(SwapPair pair, std::string* reason = nullptr);
 
   // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
   // with the peer, attach the final signature, and broadcast.

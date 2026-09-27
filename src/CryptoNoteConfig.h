@@ -264,6 +264,12 @@ namespace CryptoNote
         const uint64_t HEARTH_CD_SHARE_PCT = 70;                    // of the 1%: 70% → CD yield pool (percent, not bps — divisor is 100)
         const uint64_t HEARTH_MAKER_REBATE_BPS = 30;                // of the 1%: 30% → maker rebate
         const uint64_t HEARTH_FEE_DIVISOR = 10000;
+        // Wallet policy, not consensus: how far under the quoted price a
+        // wallet builds, so a price that moves before inclusion does not
+        // invalidate the transaction. The shortfall is burned (mints) or left
+        // with the LPs (swaps).
+        const uint64_t WALLET_MINT_TWAP_MARGIN_BPS = 50;             // HEAT mints: 0.5% under the TWAP
+        const uint64_t WALLET_SWAP_SLIPPAGE_BPS = 50;                // swaps: 0.5% under the curve
         const uint64_t ORDER_PRICE_TICK = COIN / 100;               // min price granularity (1%)
         const uint64_t HEARTH_BACKSTOP_MAX_BPS = 500;                // backstop fills ≤ 5× auction volume per block
         constexpr uint64_t HEARTH_POOL_SEED_XFG = 10000;        // 10,000 XFG at genesis (COIN units)

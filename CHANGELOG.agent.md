@@ -60,7 +60,7 @@ but must be revisited if any pre-merge records are found or imported later.
 | 7 | Apply PulseChain and CI naming convention fixes | Codex (GPT-6) | 2026-09-23 | DONE |
 | 8 | Resolve confirmed counterparty claim, XFG claim, and refund race outcomes before release | Codex / Fuego Guardian reviewer | 2026-09-25 | IN PROGRESS — direct path hardened; testnet race exercise pending |
 | 9 | Make atomic-swap fee accounting durable and idempotent | Codex (GPT-6) | 2026-09-25 | TODO — server RPC cannot safely retry after uncertain result |
-| 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-25 | IN PROGRESS — managed worktree saved; split/review before merge |
+| 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-27 | DONE — reviewed integration branch merged with current Hearth work; unrelated working-tree edits preserved |
 | 11 | Close BTC/BCH/LTC/KMD new swaps until transport and consensus SPV validation are complete | Codex (GPT-6) | 2026-09-26 | DONE — source gate, linked build, and focused tests passed |
 
 ### Sign-off
@@ -88,7 +88,7 @@ remain reachable, and the testnet integration gates below pass.
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 0 | Replace the 64-bit counterparty-amount ceiling with versioned uint256 atomics, string-safe APIs, full-width EVM ABI/RLP, and non-EVM overflow rejection | Codex | 2026-09-24 | OFFLINE IMPLEMENTED; INTEGRATION REVIEW PENDING |
+| 0 | Replace the 64-bit counterparty-amount ceiling with versioned uint256 atomics, string-safe APIs, full-width EVM ABI/RLP, and non-EVM overflow rejection | Codex | 2026-09-27 | OFFLINE VERIFIED IN INTEGRATION BRANCH; FUNDED TESTNET PENDING |
 | 1 | Add explicit mainnet/testnet/dev profiles, isolated ports/data, service-reported network identity, dashboard badge, and fail-closed write gating | Codex | 2026-09-24 | IN PROGRESS |
 | 2 | Remove Hearth mock/random fallbacks and expose honest live, stale, unavailable, and error states | Codex | 2026-09-24 | TODO |
 | 3 | Add quote-first Hearth execution, slippage/min-output protection, correct limit-order units/expiry, and order management | Codex | 2026-09-24 | TODO |
@@ -104,8 +104,8 @@ funding. Offline validation on the isolated worktree: `xfg-swapd` and
 `SwapDaemonLib` build; ETH protocol 21/21, state-machine SPV 10/10, audit
 regressions 36/36, production gates 19/19, pre-sig 9/9, pair catalog,
 generic EVM config, BSC/Polygon, and price-oracle tests pass. Dashboard Go
-tests and JS syntax check pass. This is not funded-chain validation and has
-not yet been integrated into the dirty main xfgo checkout.
+tests and JS syntax check pass. The later swap-integration section above
+records the merged offline checks. This is not funded-chain validation.
 
 | Gate | Signed By | Date | Result |
 |------|-----------|------|--------|
@@ -1273,17 +1273,52 @@ and HEAT atomic units. Consequences, each confirmed in code:
   is invalid while that tx is pooled.
 - CD withdrawals pay their fee in HEAT, which the coinbase pays out as XFG.
 
+Fixed by one settlement function, `Blockchain::validateSettlement`, used by block
+validation, the mempool (`checkTransactionSettlement`) and the block template.
+A transaction carries at most one settlement tag; the tag becomes per-asset
+sources and sinks (`AssetFlows`); HEAT and LP must balance exactly and the fee is
+the XFG surplus (`settleAssetFlows`). Pool markers are sinks, never outputs. The
+function also covers every condition settlement relies on — `pushBlock` ignores
+`pushTransaction`'s result, so settlement must never be the one to discover a
+failure. Further changes:
+- Swaps are priced on the constant-product curve (`ammSwapNetOutput`); v11 priced
+  them linearly at spot, so a large swap drained the pool. Settlement and
+  reversal use the declared amounts; the 70% CD share of the fee is derived from
+  the declared output, so the reversal is exact.
+- Mints require the 8-block TWAP (the spot fallback let a swap earlier in the
+  block set the mint price) and are priced by the declared burn. Pricing by all
+  XFG removed minus the *minimum* fee credited any extra fee — which the miner
+  collects — as burned HEAT backing. The over-burn "premium" credit to the
+  treasury is gone: it was applied during validation and never reversed.
+- LP adds mint the declared shares (at most what the deposit earns) and the
+  reversal removes exactly those; it used to recompute them from the post-add
+  pool, which is wrong for the first deposit.
+- The retired 0x08 burn tag is refused at v11+ (see task 8 for v10).
+- The block template admits one reserve-moving transaction (swap, LP add or
+  remove) per block and each order id once, and uses the fee
+  `validateSettlement` returns.
+- `m_heatSupply` (metric only) counts minted HEAT, not pool payouts.
+
+Testnet: v11 has been active there since height 30, and these rules apply to its
+whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
+withdrawals were paid under the old fee rule and will not revalidate; the
+testnet needs a reset. Mainnet v11 (1,111,111) is not active.
+
 ### Task List
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
 | 1 | CD activation height: consensus gate, claim-age rule, wallet refusal, test | Claude Opus 5.5 | 2026-09-26 | DONE |
 | 2 | Mempool output checks at the next block height | Claude Opus 5.5 | 2026-09-26 | DONE |
 | 3 | Limit-withdraw validation: no loop exit on failure | Claude Opus 5.5 | 2026-09-26 | DONE |
-| 4 | XFG-only fee model across validation, settlement, reversal, mempool, template | Claude Opus 5.5 | 2026-09-27 | IN PROGRESS |
+| 4 | XFG-only fee model: validateSettlement (block, mempool, template); swap/LP settlement + exact reversal | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 5 | Constant-product swap pricing (was linear at spot); mints TWAP-only, priced by the declared burn | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 6 | Wallet pricing: WalletGreen + SimpleWallet mint at TWAP, swaps quoted on the curve | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 7 | HEAT-only builders pay an XFG fee (CD create/withdraw, HEAT limit orders) | Claude Opus 5.5 | 2026-09-27 | TODO |
+| 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn (live on v10) | Claude Opus 5.5 | 2026-09-27 | TODO |
 
 ### Sign-off
 | Check | Status |
 |-------|--------|
-| Build compiles | PASS (tasks 1-3) |
-| Tests pass | PASS (tasks 1-3): core 153/153, hearth 31/31, auction 57/57, p2p 61/61 |
-| All tasks done | NO — task 4 in progress |
+| Build compiles | PASS (tasks 1-6): Daemon, SimpleWallet, PaymentGateService, test targets |
+| Tests pass | PASS (tasks 1-6): core 178/178, hearth 31/31, auction 57/57, p2p 61/61 |
+| All tasks done | NO — tasks 7-8 open |

@@ -47,6 +47,11 @@ namespace CryptoNote {
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) = 0;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) = 0;
     virtual bool checkTransactionSize(size_t blobSize) = 0;
+    // Checks tx against the rules of the next block and returns the fee it
+    // adds to the coinbase. v11+: the settlement rule — HEAT and LP balance
+    // exactly and the fee is the XFG surplus. Earlier: inputs minus outputs,
+    // false when outputs exceed inputs.
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) = 0;
   };
 
 }

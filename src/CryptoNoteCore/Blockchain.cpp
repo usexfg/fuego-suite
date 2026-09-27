@@ -86,6 +86,61 @@ class BlockchainIndicesSerializer;
 
 namespace CryptoNote {
 
+namespace {
+
+bool addChecked(uint64_t& sum, uint64_t value) {
+  if (sum > UINT64_MAX - value) return false;
+  sum += value;
+  return true;
+}
+
+// A v11 swap's Hearth fee, reconstructed from the net output the taker
+// declared: gross = output ÷ 99%, fee = gross − output. Settlement debits the
+// CD share (70%) from the reserves; the other 30%, and anything the taker left
+// below the curve, stays with the LPs. It depends only on the declared output,
+// so a reversal recomputes it exactly.
+uint64_t swapCdFeeOut(uint64_t output) {
+  const uint64_t div = parameters::HEARTH_FEE_DIVISOR;
+  const uint64_t bps = parameters::HEARTH_FEE_BPS;
+  const uint64_t gross = static_cast<uint64_t>(((uint128_t)output * div) / (div - bps));
+  const uint64_t fee = gross > output ? gross - output : 0;
+  return static_cast<uint64_t>(((uint128_t)fee * parameters::HEARTH_CD_SHARE_PCT) / 100);
+}
+
+// The CD share enters cdHearthFeeAccumulator in HEAT. A HEAT→XFG swap's fee is
+// XFG, converted at the post-swap spot price — the reserves a reversal sees
+// before it undoes the swap.
+bool swapCdFeeHeat(uint8_t direction, uint64_t cdFeeOut, uint64_t postReserveXfg,
+                   uint64_t postReserveHeat, uint64_t& cdFeeHeat) {
+  if (direction == 0) {
+    cdFeeHeat = cdFeeOut;
+    return true;
+  }
+  cdFeeHeat = 0;
+  if (postReserveXfg == 0) return true;
+  const uint128_t heat = ((uint128_t)cdFeeOut * ammGetSpotPrice(postReserveXfg, postReserveHeat)) /
+                         parameters::COIN;
+  if (heat > UINT64_MAX) return false;
+  cdFeeHeat = static_cast<uint64_t>(heat);
+  return true;
+}
+
+bool isSettlementTag(const CryptoNote::TransactionExtraField& f) {
+  using namespace CryptoNote;
+  return f.type() == typeid(TransactionExtraHeatMintAuth) ||
+         f.type() == typeid(TransactionExtraHeatSendAuth) ||
+         f.type() == typeid(TransactionExtraAmmSwapAuth) ||
+         f.type() == typeid(TransactionExtraMarketBuyAuth) ||
+         f.type() == typeid(TransactionExtraMarketSellAuth) ||
+         f.type() == typeid(TransactionExtraLimitDeposit) ||
+         f.type() == typeid(TransactionExtraLimitWithdraw) ||
+         f.type() == typeid(TransactionExtraLpAddAuth) ||
+         f.type() == typeid(TransactionExtraLpRemoveAuth) ||
+         f.type() == typeid(TransactionExtraTreasuryFund);
+}
+
+}  // namespace
+
 // custom serialization to speedup cache loading
 bool serialize(std::vector<std::pair<TxIndex, uint16_t>>& value, Common::StringView name, CryptoNote::ISerializer& s) {
   const size_t elementSize = sizeof(std::pair<TxIndex, uint16_t>);
@@ -3446,13 +3501,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     // pre-block fee pool and vault balances; the sum must fit, not each tx alone.
     uint64_t blockClaimedInterest = 0;
     uint64_t blockClaimedBonus = 0;  // v11+: BV-backed bonus aggregate
-    struct BlockHashLess {
-      bool operator()(const Crypto::Hash& left, const Crypto::Hash& right) const {
-        return memcmp(left.data, right.data, sizeof(left.data)) < 0;
-      }
-    };
-    std::set<Crypto::Hash, BlockHashLess> blockLimitDepositIds;
-    std::set<Crypto::Hash, BlockHashLess> blockLimitWithdrawIds;
+    SettlementScratch blockSettlement;  // v11+: order ids settled earlier in this block
 
     for (size_t i = 0; i < transactions.size(); ++i)
     {
@@ -3468,52 +3517,25 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     // v11+ per-asset balance rule
     AssetBalance inAssets, outAssets;
+    // Tags the pre-v11 checks below read. v11+ transactions are parsed and
+    // checked by validateSettlement.
     bool hasHeatMintAuth = false;
     uint64_t authXfgBurned = 0, authHeatMinted = 0;
-    bool hasLpAddAuth = false;
-    uint64_t lpAddAmountXfg = 0, lpAddAmountHeat = 0, lpAddShares = 0;
-    bool hasLpRemoveAuth = false;
-    uint64_t lpRemoveShares = 0, lpRemoveMinXfg = 0, lpRemoveMinHeat = 0;
-    // v11+ AMM swap auth
     bool hasAmmSwapAuth = false;
     uint8_t ammSwapDirection = 0;
-    uint64_t ammSwapInput = 0, ammSwapOutput = 0, ammSwapMinOutput = 0;
-
-    // v11+ orderbook auth tags
     bool hasMarketBuyAuth = false;
-    uint64_t marketBuyXfgWanted = 0, marketBuyMaxHeat = 0;
     bool hasMarketSellAuth = false;
-    uint64_t marketSellXfgAmount = 0, marketSellMinHeat = 0;
     bool hasHeatSendAuth = false;
-    uint64_t heatSendAmount = 0;
-
     bool hasLimitDeposit = false;
-    bool hasDuplicateLimitDeposit = false;
     bool hasLimitWithdraw = false;
-    bool hasDuplicateLimitWithdraw = false;
-    bool hasLegacyLpAddTag = false;
-    bool hasLegacyLpRemoveTag = false;
     bool hasTreasuryFund = false;
-    bool hasDuplicateTreasuryFund = false;
     uint8_t treasuryFundAsset = 0;
     uint64_t treasuryFundAmount = 0;
-    uint8_t limitDepositSide = 0;
-    uint64_t limitDepositAmount = 0;
-    uint64_t limitDepositTargetPrice = 0;
-    uint32_t limitDepositExpiration = 0;
-    Crypto::Hash limitDepositOrderId = Crypto::Hash();
-    Crypto::Hash limitDepositAddressHash = Crypto::Hash();
-    Crypto::Hash limitWithdrawOrderId = Crypto::Hash();
-    Crypto::PublicKey limitWithdrawSpendPublicKey{};
-    Crypto::PublicKey limitWithdrawViewPublicKey{};
-    Crypto::Hash limitWithdrawOutputsHash{};
-    Crypto::Signature limitWithdrawProof{};
 
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
       outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i]);
 
-       // Scan for v10 auth tags
       std::vector<TransactionExtraField> tx_extra_fields;
       if (parseTransactionExtra(transactions[i].extra, tx_extra_fields)) {
         for (const auto& field : tx_extra_fields) {
@@ -3522,89 +3544,24 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             const auto& auth = boost::get<TransactionExtraHeatMintAuth>(field);
             authXfgBurned = auth.xfgBurned;
             authHeatMinted = auth.heatMinted;
-          }
-          if (field.type() == typeid(TransactionExtraLpAddAuth)) {
-            hasLpAddAuth = true;
-            const auto& auth = boost::get<TransactionExtraLpAddAuth>(field);
-            lpAddAmountXfg = auth.amountXfg;
-            lpAddAmountHeat = auth.amountHeat;
-            lpAddShares = auth.lpShares;
-          }
-          if (field.type() == typeid(TransactionExtraLpRemoveAuth)) {
-            hasLpRemoveAuth = true;
-            const auto& auth = boost::get<TransactionExtraLpRemoveAuth>(field);
-            lpRemoveShares = auth.lpSharesBurned;
-            lpRemoveMinXfg = auth.minAmountXfg;
-            lpRemoveMinHeat = auth.minAmountHeat;
-          }
-          // REMOVED: 0xCC legacy bond claim (no bond claims exist)
-          if (field.type() == typeid(TransactionExtraMarketBuyAuth)) {
+          } else if (field.type() == typeid(TransactionExtraMarketBuyAuth)) {
             hasMarketBuyAuth = true;
-            const auto& auth = boost::get<TransactionExtraMarketBuyAuth>(field);
-            marketBuyXfgWanted = auth.xfgWanted;
-            marketBuyMaxHeat = auth.maxHeatCost;
-          }
-          if (field.type() == typeid(TransactionExtraMarketSellAuth)) {
+          } else if (field.type() == typeid(TransactionExtraMarketSellAuth)) {
             hasMarketSellAuth = true;
-            const auto& auth = boost::get<TransactionExtraMarketSellAuth>(field);
-            marketSellXfgAmount = auth.xfgToSell;
-            marketSellMinHeat = auth.minHeatReceive;
-          }
-           if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
-             hasHeatSendAuth = true;
-             heatSendAmount = boost::get<TransactionExtraHeatSendAuth>(field).heatAmount;
-           }
-           if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
-             hasAmmSwapAuth = true;
-             const auto& auth = boost::get<TransactionExtraAmmSwapAuth>(field);
-             ammSwapDirection = auth.direction;
-             ammSwapInput = auth.inputAmount;
-             ammSwapOutput = auth.outputAmount;
-             ammSwapMinOutput = auth.minOutput;
-           }
-           if (field.type() == typeid(TransactionExtraLimitDeposit)) {
-             const auto& dep = boost::get<TransactionExtraLimitDeposit>(field);
-             if (hasLimitDeposit) {
-               hasDuplicateLimitDeposit = true;
-             } else {
-               hasLimitDeposit = true;
-               limitDepositSide = dep.side;
-               limitDepositAmount = dep.amount;
-               limitDepositTargetPrice = dep.targetPrice;
-               limitDepositExpiration = dep.expiration;
-               limitDepositOrderId = dep.orderId;
-               limitDepositAddressHash = dep.addressHash;
-             }
-           }
-           if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
-             const auto& withdraw = boost::get<TransactionExtraLimitWithdraw>(field);
-             if (hasLimitWithdraw) {
-               hasDuplicateLimitWithdraw = true;
-             } else {
-               hasLimitWithdraw = true;
-               limitWithdrawOrderId = withdraw.orderId;
-               limitWithdrawSpendPublicKey = withdraw.spendPublicKey;
-               limitWithdrawViewPublicKey = withdraw.viewPublicKey;
-               limitWithdrawOutputsHash = withdraw.outputsHash;
-               limitWithdrawProof = withdraw.proof;
-             }
-           }
-          if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
-            hasLegacyLpAddTag = true;
-          }
-          if (field.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
-            hasLegacyLpRemoveTag = true;
-          }
-          if (field.type() == typeid(TransactionExtraTreasuryFund)) {
+          } else if (field.type() == typeid(TransactionExtraHeatSendAuth)) {
+            hasHeatSendAuth = true;
+          } else if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
+            hasAmmSwapAuth = true;
+            ammSwapDirection = boost::get<TransactionExtraAmmSwapAuth>(field).direction;
+          } else if (field.type() == typeid(TransactionExtraLimitDeposit)) {
+            hasLimitDeposit = true;
+          } else if (field.type() == typeid(TransactionExtraLimitWithdraw)) {
+            hasLimitWithdraw = true;
+          } else if (field.type() == typeid(TransactionExtraTreasuryFund) && !hasTreasuryFund) {
             const auto& fund = boost::get<TransactionExtraTreasuryFund>(field);
-            if (hasTreasuryFund) {
-              // Duplicate fund tags are ambiguous — reject loudly, never drop a leg.
-              hasDuplicateTreasuryFund = true;
-            } else {
-              hasTreasuryFund = true;
-              treasuryFundAsset = fund.asset;
-              treasuryFundAmount = fund.amount;
-            }
+            hasTreasuryFund = true;
+            treasuryFundAsset = fund.asset;
+            treasuryFundAmount = fund.amount;
           }
         }
       }
@@ -3619,81 +3576,14 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                                  << " carries a v11 settlement tag before activation";
     }
 
-    // v10 per-asset balance check. The coinbase is validated separately by
-    // prevalidate_miner_transaction; every transaction in this vector is a
-    // regular transaction, including the first one.
-    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      // v11+: legacy AMM LP tags are retired — only the auth tags (LpAddAuth /
-      // LpRemoveAuth) may drive LP settlement from v11 onward.
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
-          (hasLegacyLpAddTag || hasLegacyLpRemoveTag)) {
-        isTransactionValid = false;
-        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " legacy AMM LP tag rejected at v11+";
-      }
-      // v11+: Treasury fund tag — burn of `amount` of the given asset with no
-      // corresponding output. Conservation is enforced in the per-asset
-      // branches below; this validates the tag itself.
-      if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasTreasuryFund) {
-        if (hasDuplicateTreasuryFund) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " treasury fund: duplicate tags rejected";
-        } else if (treasuryFundAmount == 0 || treasuryFundAsset > 1) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " treasury fund: invalid amount/asset";
-        }
-      }
-      if (isTransactionValid && hasLimitDeposit) {
-        if (hasDuplicateLimitDeposit || limitDepositOrderId == Crypto::Hash() ||
-            !blockLimitDepositIds.insert(limitDepositOrderId).second ||
-            m_limitDeposits.find(limitDepositOrderId) != m_limitDeposits.end()) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                     << " limit deposit: duplicate or reused orderId";
-        }
-      }
-      if (isTransactionValid && hasLimitWithdraw && hasDuplicateLimitWithdraw) {
-        isTransactionValid = false;
-        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                   << " limit withdraw: duplicate tags rejected";
-      }
-      // Reject txs carrying more than one settlement-tag class (unvalidated-settlement
-      // guard): validation only exercises the first matching branch while settlement
-      // executes every present tag.
-      if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-        int settlementClasses = 0;
-        if (hasHeatMintAuth) ++settlementClasses;
-        if (hasAmmSwapAuth) ++settlementClasses;
-        if (hasMarketBuyAuth) ++settlementClasses;
-        if (hasMarketSellAuth) ++settlementClasses;
-        if (hasHeatSendAuth) ++settlementClasses;
-        if (hasLimitDeposit) ++settlementClasses;
-        if (hasLimitWithdraw) ++settlementClasses;
-        if (hasTreasuryFund) ++settlementClasses;
-        if (hasLpAddAuth || hasLpRemoveAuth) ++settlementClasses;
-        if (hasLpAddAuth && hasLpRemoveAuth) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: LP add and remove in one tx";
-        }
-        if (settlementClasses > 1) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " rejected: multiple settlement tags ("
-                                     << settlementClasses << " classes)";
-        }
-      }
-      // For mint/send txs, fee must be computed from XFG-only amounts (HEAT commitments inflate out_amount)
+    // v10 per-asset balance check — pre-v11 blocks only, kept bit-identical to
+    // how they were validated. v11+ uses the flows rule below. The coinbase is
+    // validated separately by prevalidate_miner_transaction; every transaction
+    // in this vector is a regular transaction, including the first one.
+    uint64_t txFee = fee;  // what this transaction adds to fee_summary
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10 &&
+        block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) {
       uint64_t xfgFee = fee;
-      if (hasTreasuryFund) {
-        // getTransactionAllInputsAmount/getOutputAmount include both assets.
-        // A TreasuryFund burn is therefore already present in `fee`; remove
-        // it before applying the per-asset conservation equation below.
-        if (fee < treasuryFundAmount) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                     << " treasury fund exceeds aggregate input/output delta";
-        } else {
-          xfgFee = fee - treasuryFundAmount;
-        }
-      }
       if (hasHeatMintAuth) {
         // Fee = XFG inputs - XFG change outputs - XFG burned (burn is not a fee).
         // Treasury-fund XFG is burned too — exclude it from the fee.
@@ -3715,64 +3605,14 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
             << " heat_out=" << outAssets.heat << " minted=" << authHeatMinted;
         }
        } else if (hasHeatSendAuth) {
-         // HEAT send: conservation of both XFG and HEAT. heatSendAmount is the
-         // declared gross send amount; the actual transfer is in tx outputs.
+         // HEAT send: conservation of both XFG and HEAT; the transfer itself
+         // is in the tx outputs.
          if (inAssets.xfg < outAssets.xfg + xfgFee ||
              inAssets.heat != outAssets.heat) {
            isTransactionValid = false;
            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT send balance mismatch";
          }
        } else if (hasAmmSwapAuth) {
-         // AMM swap: validate pool rate consistency
-         // direction 0 = XFG->HEAT, 1 = HEAT->XFG
-         if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-           // V11+: canonical price (HEAT atomics per XFG atomic × COIN), fail closed.
-           uint64_t poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0)
-             ? ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
-             : 0;
-
-           if (poolRate == 0) {
-             isTransactionValid = false;
-             logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap rejected: no pool rate available";
-           } else if (ammSwapDirection == 0) {
-             // XFG->HEAT: XFG inputs cover XFG outputs + fee + pool deposit.
-             // Taker pays the 1% Hearth fee by receiving (div - bps)/div of gross.
-             if (inAssets.xfg < outAssets.xfg + xfgFee) {
-               isTransactionValid = false;
-               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT balance mismatch";
-             } else {
-               uint64_t xfgBurned = inAssets.xfg - outAssets.xfg - xfgFee;
-               uint64_t grossHeat = static_cast<uint64_t>(
-                   ((uint128_t)xfgBurned * poolRate) / parameters::COIN);
-               uint64_t expectedHeat = static_cast<uint64_t>(
-                   ((uint128_t)grossHeat * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
-                     / parameters::HEARTH_FEE_DIVISOR);
-
-               if (outAssets.heat > expectedHeat || inAssets.lp != outAssets.lp) {
-                 isTransactionValid = false;
-                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap XFG->HEAT validation failed: expected HEAT=" << expectedHeat << " actual=" << outAssets.heat;
-               }
-             }
-           } else {
-             // HEAT->XFG: HEAT inputs cover HEAT outputs + pool deposit, fee-adjusted.
-             if (inAssets.heat < outAssets.heat) {
-               isTransactionValid = false;
-               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG balance mismatch";
-             } else {
-               uint64_t heatDeposited = inAssets.heat - outAssets.heat;
-               uint64_t grossXfg = static_cast<uint64_t>(
-                   ((uint128_t)heatDeposited * parameters::COIN) / poolRate);
-               uint64_t expectedXfg = static_cast<uint64_t>(
-                   ((uint128_t)grossXfg * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS))
-                     / parameters::HEARTH_FEE_DIVISOR);
-
-               if (outAssets.xfg > expectedXfg || inAssets.lp != outAssets.lp) {
-                 isTransactionValid = false;
-                 logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
-               }
-             }
-           }
-         } else {
            // Legacy pre-v11 validation (Q64.64 XFG per HEAT) — bit-identical to original.
            FixedPoint64 poolRate = (!m_ammPool.isEmpty() && m_ammPool.reserveHeat > 0)
              ? FixedPoint64::fromRatio(m_ammPool.reserveXfg, m_ammPool.reserveHeat)
@@ -3799,8 +3639,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " AMM swap HEAT->XFG validation failed: expected XFG=" << expectedXfg << " actual=" << outAssets.xfg;
              }
            }
-         }
-       } else if (hasMarketBuyAuth) {
+                } else if (hasMarketBuyAuth) {
         // Market buy: user commits HEAT to buy XFG. At validation time,
         // XFG is conserved; settlement locks/spends HEAT at block finalization.
         if (inAssets.xfg < outAssets.xfg + xfgFee ||
@@ -3816,176 +3655,29 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " market sell balance mismatch";
         }
-      } else if (hasLimitDeposit) {
-        // Limit deposit: one-sided deposit into pool pending reserves.
-        // SELL_XFG (side=1): user deposits XFG, no HEAT change.
-        // BUY_XFG (side=0): user deposits HEAT, no XFG change.
-        if (limitDepositSide > 1) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit invalid side " << static_cast<int>(limitDepositSide);
-        }
-        if (limitDepositSide == 1) {
-          if (inAssets.xfg < outAssets.xfg + xfgFee + limitDepositAmount ||
-              inAssets.heat != outAssets.heat) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit SELL_XFG balance mismatch";
-          }
-        } else {
-          if (inAssets.heat < outAssets.heat + limitDepositAmount ||
-              inAssets.xfg < outAssets.xfg + xfgFee) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit BUY_XFG balance mismatch";
-          }
-        }
-        if (limitDepositAmount == 0) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit zero amount";
-        }
-        // Min price tick (v11+): limit prices must be positive multiples of
-        // the tick. Pre-v11 deposits re-validate under their original rules.
-        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
-            (limitDepositTargetPrice == 0 ||
-             limitDepositTargetPrice % parameters::ORDER_PRICE_TICK != 0)) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit deposit price violates tick";
-        }
-      } else if (hasLimitWithdraw) {
-        // Limit withdraw: reclaim pending one-sided deposit.
-        // CRITICAL: deposit must exist, not already withdrawn, and net extra
-        // outputs cannot exceed the deposited amount (prevents unbacked mint).
-        if (limitWithdrawOrderId == Crypto::Hash()) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " limit withdraw missing orderId";
-        } else {
-          auto depIt = m_limitDeposits.find(limitWithdrawOrderId);
-          if (depIt == m_limitDeposits.end() || depIt->second.withdrawn) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-              << " limit withdraw: unknown or already-withdrawn orderId";
-          } else {
-            const auto& dep = depIt->second;
-            Crypto::Hash computedAddressHash{};
-            uint8_t addressData[sizeof(limitWithdrawSpendPublicKey.data) + sizeof(limitWithdrawViewPublicKey.data)];
-            memcpy(addressData, limitWithdrawSpendPublicKey.data, sizeof(limitWithdrawSpendPublicKey.data));
-            memcpy(addressData + sizeof(limitWithdrawSpendPublicKey.data),
-                   limitWithdrawViewPublicKey.data, sizeof(limitWithdrawViewPublicKey.data));
-            Crypto::cn_fast_hash(addressData, sizeof(addressData), computedAddressHash);
-            const Crypto::Hash computedOutputsHash = getLimitWithdrawOutputHash(transactions[i].outputs);
-            const Crypto::Hash authHash = getLimitWithdrawAuthHash(
-                limitWithdrawOrderId, dep.addressHash, limitWithdrawOutputsHash);
-            if (memcmp(computedAddressHash.data, dep.addressHash.data, sizeof(dep.addressHash.data)) != 0 ||
-                memcmp(computedOutputsHash.data, limitWithdrawOutputsHash.data,
-                       sizeof(computedOutputsHash.data)) != 0 ||
-                !Crypto::check_signature(authHash, limitWithdrawSpendPublicKey, limitWithdrawProof) ||
-                !blockLimitWithdrawIds.insert(limitWithdrawOrderId).second) {
-              // No `break` here or below: this is the block's transaction
-              // loop, not a switch. Breaking out skipped the rejection at the
-              // end of the iteration, so the block was ACCEPTED with this tx
-              // stored but never pushed and every later tx never validated.
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                         << " limit withdraw: ownership proof or replay check failed";
-            } else if ((dep.side == 1 && m_ammPool.pendingXfg < dep.amount) ||
-                       (dep.side == 0 && m_ammPool.pendingHeat < dep.amount)) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                         << " limit withdraw: pending reserve shortfall";
-            } else {
-              // Expired deposits remain claimable: remaining deposit + fill proceeds.
-              // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
-              // Exact-payout rule: the transaction must return the full
-              // remaining deposit and proceeds. Under-claims would silently
-              // destroy unclaimed escrow, so they are rejected as invalid.
-              if (dep.side == 1) {
-                if ((uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.amount ||
-                    (uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.proceedsHeat) {
-                  isTransactionValid = false;
-                  logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                    << " limit withdraw SELL_XFG exact payout mismatch";
-                }
-              } else {
-                if ((uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.amount ||
-                    (uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.proceedsXfg) {
-                  isTransactionValid = false;
-                  logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                    << " limit withdraw BUY_XFG exact payout mismatch";
-                }
-              }
-            }
-          }
-        }
-      } else if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasLpAddAuth) {
-        // v11+ LP add: pool math + conservation with LP share outputs.
-        if (lpAddAmountXfg == 0 && lpAddAmountHeat == 0) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: zero amounts";
-        } else {
-          uint64_t computedShares = ammMintLpShares(lpAddAmountXfg, lpAddAmountHeat,
-            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          if (computedShares != lpAddShares || computedShares == 0) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: share mismatch (computed="
-                                       << computedShares << " declared=" << lpAddShares << ")";
-          }
-          if (isTransactionValid && !ammValidateDepositRatio(lpAddAmountXfg, lpAddAmountHeat,
-                m_ammPool.reserveXfg, m_ammPool.reserveHeat, 100)) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: deposit ratio out of tolerance";
-          }
-          if (isTransactionValid) {
-            // Conservation: user XFG/HEAT inputs cover outputs + fee + pool deposit;
-            // LP share commitment outputs mint exactly the declared shares.
-            if (inAssets.xfg < outAssets.xfg + xfgFee + lpAddAmountXfg ||
-                inAssets.heat < outAssets.heat + lpAddAmountHeat ||
-                inAssets.lp + lpAddShares != outAssets.lp) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP add auth: per-asset conservation violation";
-            }
-          }
-        }
-      } else if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 && hasLpRemoveAuth) {
-        // v11+ LP remove: burn shares, release proportional reserves.
-        if (lpRemoveShares == 0 || lpRemoveShares > m_ammPool.totalLpShares) {
-          isTransactionValid = false;
-          logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: invalid shares";
-        } else {
-          uint64_t amountXfg = 0, amountHeat = 0;
-          ammGetWithdrawalAmounts(lpRemoveShares, m_ammPool.totalLpShares,
-            m_ammPool.reserveXfg, m_ammPool.reserveHeat, amountXfg, amountHeat);
-          if (amountXfg < lpRemoveMinXfg || amountHeat < lpRemoveMinHeat) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: below minimum";
-          }
-          if (isTransactionValid) {
-            if (inAssets.lp != outAssets.lp + lpRemoveShares ||
-                outAssets.xfg > inAssets.xfg + amountXfg ||
-                outAssets.heat > inAssets.heat + amountHeat) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " LP remove auth: per-asset conservation violation";
-            }
-          }
-        }
       } else {
-        // Treasury-fund txs burn `amount` of the given asset with no output;
-        // the other assets must be conserved.
-        bool violation = false;
-        if (hasTreasuryFund && treasuryFundAsset == 0) {
-          violation = ((uint128_t)outAssets.xfg + xfgFee + treasuryFundAmount > inAssets.xfg ||
-                       inAssets.heat != outAssets.heat ||
-                       inAssets.lp != outAssets.lp);
-        } else if (hasTreasuryFund && treasuryFundAsset == 1) {
-          violation = ((uint128_t)outAssets.xfg + xfgFee > inAssets.xfg ||
-                       (uint128_t)outAssets.heat + treasuryFundAmount != inAssets.heat ||
-                       inAssets.lp != outAssets.lp);
-        } else {
-          violation = (inAssets.xfg < outAssets.xfg + xfgFee ||
-                       inAssets.heat != outAssets.heat ||
-                       inAssets.lp != outAssets.lp);
-        }
-        if (violation) {
+        if (inAssets.xfg < outAssets.xfg + xfgFee ||
+            inAssets.heat != outAssets.heat ||
+            inAssets.lp != outAssets.lp) {
           isTransactionValid = false;
           logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " per-asset balance violation";
         }
+      }
+    }
+
+    // v11+: the settlement rule — see validateSettlement. The fee it returns
+    // is the XFG surplus, the only amount the transaction adds to the coinbase.
+    // The v10 rule summed XFG and HEAT atomics into one fee: a mint's burned
+    // XFG and every treasury donation reached the miner, and swaps, limit
+    // orders and LP adds could not validate at all.
+    if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
+      AssetFlows flows;
+      std::string settlementError;
+      if (!validateSettlement(transactions[i], block.height, blockSettlement, flows, txFee,
+                              settlementError)) {
+        isTransactionValid = false;
+        logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " settlement rejected: "
+                                   << settlementError;
       }
     }
 
@@ -4092,49 +3784,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     }
 
     if (isTransactionValid && block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
-      if (hasHeatMintAuth) {
-        if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11) {
-          // V11+: canonical price scale (HEAT atomics per XFG atomic × COIN).
-          // Rolling 8-block TWAP, spot fallback, fail closed on no price.
-          uint64_t mintPrice = 0;
-          if (m_rollingPriceWindow.size() >= 2) {
-            mintPrice = getRollingTwap();
-          } else if (!m_ammPool.isEmpty() && m_ammPool.reserveXfg > 0) {
-            mintPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-          }
-          if (mintPrice == 0) {
-            isTransactionValid = false;
-            logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint rejected: no pool price available";
-          } else {
-            uint64_t mintFee = m_currency.minimumFee(blockData.majorVersion);
-            if (!m_heatMintEngine.validateMintAuth(transactions[i], mintFee, mintPrice,
-                                                    authXfgBurned, authHeatMinted)) {
-              isTransactionValid = false;
-              logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " HEAT mint auth validation failed";
-            } else if (isTransactionValid && authXfgBurned > authHeatMinted) {
-              // Premium = excess XFG actually burned beyond what's required to mint
-              // the HEAT (recompute actual burn; declared value may understate).
-              uint64_t actualBurned = (inAssets.xfg > outAssets.xfg + fee)
-                ? inAssets.xfg - outAssets.xfg - fee : authXfgBurned;
-              uint64_t xfgEquivalent = static_cast<uint64_t>(
-                  ((uint128_t)authHeatMinted * parameters::COIN) / mintPrice);
-              uint64_t premium = (actualBurned > xfgEquivalent)
-                ? actualBurned - xfgEquivalent
-                : 0;
-              if (premium > 0) {
-                uint64_t heatPremium = static_cast<uint64_t>(
-                    ((uint128_t)premium * mintPrice) / parameters::COIN);
-                if (heatPremium > 0 && m_treasuryHeatReserve > UINT64_MAX - heatPremium) {
-                  logger(ERROR, BRIGHT_RED) << "Treasury HEAT reserve overflow detected";
-                  return false;
-                }
-                m_treasuryHeatReserve += heatPremium;
-              }
-            }
-          }
-        }
-        // Legacy non-auth HEAT mint validation removed — no pre-v11 HEAT mints exist.
-      }
+      // v11+ HEAT mints are priced in validateSettlement.
 
       // DIGM mint validation — lock HEAT → mint DIGM at 0.10 HEAT per DIGM
       if (m_digmMintEngine.isDigmMint(transactions[i])) {
@@ -4159,7 +3809,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     pushTransaction(block, tx_id, transactionIndex);
 
     cumulative_block_size += blob_size;
-    fee_summary += fee;
+    fee_summary += txFee;
       // Interest calculation removed - no on-chain interest
   }
 
@@ -4268,7 +3918,9 @@ uint64_t CryptoNote::Blockchain::getPoolTwap() const {
 }
 
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {
-  if (m_rollingPriceWindow.empty()) return 0;
+  // Fewer than two blocks is no average: validateSettlement refuses mints then,
+  // and wallets reading 0 here refuse to build one.
+  if (m_rollingPriceWindow.size() < 2) return 0;
   uint64_t sum = 0;
   for (uint64_t p : m_rollingPriceWindow) sum += p;
   return sum / m_rollingPriceWindow.size();
@@ -6406,18 +6058,21 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     m_vaultSpentByTx[transactionHash] = std::move(vaultSpendRecord);
   }
 
-  // HEAT supply is NET creation, not gross HEAT_TERM outputs. Incrementing per
-  // output counted a plain HEAT transfer as new supply — spend a HEAT_TERM
-  // output, emit HEAT_TERM change, and the counter rose again with nothing
-  // minted. It would also double-count vault HEAT paid out as a CD withdrawal,
-  // already counted when minted into the vault. Only the excess of HEAT out
-  // over HEAT in is newly created.
+  // HEAT supply counts HEAT created by burning XFG — the mint tag's amount,
+  // which validation holds to the transaction's HEAT outputs. Counting every
+  // excess of HEAT out over HEAT in also counted the pool's and escrow's
+  // payouts, which move HEAT that already exists. (Epoch work credits the
+  // HEAT it mints itself.)
   {
-    AssetBalance inAssetsHs = getTransactionInputAssetAmounts(transaction.tx, block.height);
-    AssetBalance outAssetsHs = m_currency.getTransactionOutputAssetAmounts(transaction.tx);
-    if (outAssetsHs.heat > inAssetsHs.heat) {
-      uint64_t netHeat = outAssetsHs.heat - inAssetsHs.heat;
-      if (m_heatSupply <= UINT64_MAX - netHeat) m_heatSupply += netHeat;
+    std::vector<TransactionExtraField> supplyFields;
+    if (parseTransactionExtra(transaction.tx.extra, supplyFields)) {
+      for (const auto& f : supplyFields) {
+        if (f.type() == typeid(TransactionExtraHeatMintAuth)) {
+          const uint64_t minted = boost::get<TransactionExtraHeatMintAuth>(f).heatMinted;
+          m_heatSupply = (m_heatSupply > UINT64_MAX - minted) ? UINT64_MAX : m_heatSupply + minted;
+          break;
+        }
+      }
     }
   }
 
@@ -6541,98 +6196,36 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
             }
             break;  // one swap auth per tx
           }
-          // V11+: settle from ACTUAL balance deltas. Declared auth.inputAmount/outputAmount
-          // are untrusted hints (bounds-checked at validation); the tx's real
-          // inputs/outputs are the source of truth.
-          AssetBalance inAssets = getTransactionInputAssetAmounts(transaction.tx, block.height);
-          AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction.tx);
-          uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction.tx, block.height);
-          uint64_t out_amount = getOutputAmount(transaction.tx);
-          uint64_t txFee = (in_amount < out_amount)
-            ? m_currency.minimumFee(block.bl.majorVersion)
-            : in_amount - out_amount;
-          const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
-          const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
-          if (auth.direction == 0) {
-            // XFG→HEAT: pool gains (in.xfg − out.xfg − fee) XFG, pays out (out.heat − in.heat) HEAT.
-            uint64_t xfgDeposited = (inAssets.xfg > outAssets.xfg + txFee)
-              ? inAssets.xfg - outAssets.xfg - txFee : 0;
-            uint64_t heatPaid = (outAssets.heat > inAssets.heat)
-              ? outAssets.heat - inAssets.heat : 0;
-            // Taker received fee-adjusted output; gross reconstructs the pre-fee amount.
-            uint64_t grossHeat = static_cast<uint64_t>(
-                ((uint128_t)heatPaid * feeDiv) / (feeDiv - feeBps));
-            uint64_t feeHeat = (grossHeat > heatPaid) ? grossHeat - heatPaid : 0;
-            if (heatPaid == 0 || m_ammPool.reserveHeat < heatPaid + feeHeat) {
-              logger(ERROR, BRIGHT_RED) << "AMM swap XFG→HEAT settlement invariant violation: reserveHeat="
-                << m_ammPool.reserveHeat << " need=" << (heatPaid + feeHeat);
-              return false;
-            }
-            m_ammPool.reserveXfg += xfgDeposited;
-            // Fee split 70/30: 70% → CD yield (debited from reserves), 30% stays
-            // with LPs (maker role — the pool is the counterparty).
-            uint64_t cdFeeHeat = static_cast<uint64_t>(
-                ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
-            m_ammPool.reserveHeat -= (heatPaid + cdFeeHeat);
-            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFeeHeat) {
-              logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
-              return false;
-            }
-            m_ammPool.cdHearthFeeAccumulator += cdFeeHeat;
-            logger(INFO) << "AMM swap XFG→HEAT settled: pool +"
-                         << m_currency.formatAmount(xfgDeposited) << " XFG, -"
-                         << m_currency.formatAmount(heatPaid + feeHeat) << " HEAT, cdFee="
-                         << m_currency.formatAmount(feeHeat);
-          } else {
-            // HEAT→XFG: pool gains (in.heat − out.heat) HEAT, pays out (out.xfg − in.xfg) XFG.
-            uint64_t heatDeposited = (inAssets.heat > outAssets.heat)
-              ? inAssets.heat - outAssets.heat : 0;
-            uint64_t xfgPaid = (outAssets.xfg > inAssets.xfg)
-              ? outAssets.xfg - inAssets.xfg : 0;
-            uint64_t grossXfg = static_cast<uint64_t>(
-                ((uint128_t)xfgPaid * feeDiv) / (feeDiv - feeBps));
-            uint64_t feeXfg = (grossXfg > xfgPaid) ? grossXfg - xfgPaid : 0;
-            if (xfgPaid == 0 || m_ammPool.reserveXfg < xfgPaid + feeXfg) {
-              logger(ERROR, BRIGHT_RED) << "AMM swap HEAT→XFG settlement invariant violation: reserveXfg="
-                << m_ammPool.reserveXfg << " need=" << (xfgPaid + feeXfg);
-              return false;
-            }
-            m_ammPool.reserveHeat += heatDeposited;
-            // 70/30: 70% of the XFG fee leaves reserves for CD yield; 30% stays
-            // with LPs (maker role).
-            uint64_t cdFeeXfg = static_cast<uint64_t>(
-                ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
-            m_ammPool.reserveXfg -= (xfgPaid + cdFeeXfg);
-            // Convert the XFG CD share to HEAT at the post-swap rate.
-            uint64_t feeHeatEq = 0;
-            if (m_ammPool.reserveXfg > 0) {
-              uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-              if (postRate > 0) {
-                feeHeatEq = static_cast<uint64_t>(
-                    ((uint128_t)cdFeeXfg * postRate) / parameters::COIN);
-              }
-            }
-            if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq) {
-              logger(ERROR, BRIGHT_RED) << "CD fee accumulator overflow";
-              return false;
-            }
-            m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
-            // Record for exact popBlock reversal (pop-time rate differs).
+          // V11+: settle the declared amounts. validateSettlement priced them
+          // on the curve, balanced them against the transaction's inputs and
+          // outputs, and checked the reserves can absorb them.
+          const bool xfgIn = auth.direction == 0;
+          uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
+          uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
+          const uint64_t cdFeeOut = swapCdFeeOut(auth.outputAmount);
+          reserveIn += auth.inputAmount;
+          reserveOut -= auth.outputAmount + cdFeeOut;
+          uint64_t cdFeeHeat = 0;
+          swapCdFeeHeat(auth.direction, cdFeeOut, m_ammPool.reserveXfg, m_ammPool.reserveHeat, cdFeeHeat);
+          m_ammPool.cdHearthFeeAccumulator += cdFeeHeat;
+          if (!xfgIn) {
+            // HEAT→XFG converts its fee at the post-swap rate; keep the figure
+            // so popBlock reverses exactly what was credited.
             if (m_blockSwapCdFeeHeatEq.empty() ||
                 m_blockSwapCdFeeHeatEq.back().first != block.height) {
               m_blockSwapCdFeeHeatEq.push_back({block.height, {}});
             }
-            m_blockSwapCdFeeHeatEq.back().second.push_back(feeHeatEq);
-            logger(INFO) << "AMM swap HEAT→XFG settled: pool +"
-                         << m_currency.formatAmount(heatDeposited) << " HEAT, -"
-                         << m_currency.formatAmount(xfgPaid + feeXfg) << " XFG, cdFee="
-                         << m_currency.formatAmount(feeHeatEq);
+            m_blockSwapCdFeeHeatEq.back().second.push_back(cdFeeHeat);
           }
+          logger(INFO) << "AMM swap " << (xfgIn ? "XFG→HEAT" : "HEAT→XFG") << " settled: pool +"
+                       << m_currency.formatAmount(auth.inputAmount) << ", -"
+                       << m_currency.formatAmount(auth.outputAmount + cdFeeOut)
+                       << ", cdFee(HEAT)=" << m_currency.formatAmount(cdFeeHeat);
           break;  // one swap auth per tx
         }
       }
 
-      uint64_t authLpAddXfg = 0, authLpAddHeat = 0;
+      uint64_t authLpAddXfg = 0, authLpAddHeat = 0, authLpAddShares = 0;
       uint64_t authLpRemoveShares = 0;
       bool processedLegacyLpAdd = false;
       bool processedLegacyLpRemove = false;
@@ -6640,7 +6233,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
         if (f.type() == typeid(TransactionExtraLpAddAuth)) {
           const auto& a = boost::get<TransactionExtraLpAddAuth>(f);
           if (a.amountXfg > 0 || a.amountHeat > 0) {
-            authLpAddXfg = a.amountXfg; authLpAddHeat = a.amountHeat;
+            authLpAddXfg = a.amountXfg; authLpAddHeat = a.amountHeat; authLpAddShares = a.lpShares;
           }
         }
         if (f.type() == typeid(TransactionExtraLpRemoveAuth)) {
@@ -6695,12 +6288,9 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       // v11+ auth-only LP add (no legacy AmmAddLiquidity tag present)
       if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_11 &&
           !processedLegacyLpAdd && (authLpAddXfg > 0 || authLpAddHeat > 0)) {
-        uint64_t shares = ammMintLpShares(authLpAddXfg, authLpAddHeat,
-          m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-        if (shares == 0) {
-          logger(ERROR, BRIGHT_RED) << "LP add settlement: zero shares computed";
-          return false;
-        }
+        // The declared shares — validateSettlement held them to at most what
+        // the deposit earns — so the reversal can remove exactly these.
+        const uint64_t shares = authLpAddShares;
         m_ammPool.reserveXfg += authLpAddXfg;
         m_ammPool.reserveHeat += authLpAddHeat;
         m_ammPool.totalLpShares += shares;
@@ -7099,13 +6689,17 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
     }
   }
 
-  // Mirror of the net HEAT-supply credit in pushTransaction.
+  // Mirror of the HEAT-supply credit in pushTransaction.
   {
-    AssetBalance inAssetsHs = getTransactionInputAssetAmounts(transaction, height);
-    AssetBalance outAssetsHs = m_currency.getTransactionOutputAssetAmounts(transaction);
-    if (outAssetsHs.heat > inAssetsHs.heat) {
-      uint64_t netHeat = outAssetsHs.heat - inAssetsHs.heat;
-      m_heatSupply = (m_heatSupply >= netHeat) ? (m_heatSupply - netHeat) : 0;
+    std::vector<TransactionExtraField> supplyFields;
+    if (parseTransactionExtra(transaction.extra, supplyFields)) {
+      for (const auto& f : supplyFields) {
+        if (f.type() == typeid(TransactionExtraHeatMintAuth)) {
+          const uint64_t minted = boost::get<TransactionExtraHeatMintAuth>(f).heatMinted;
+          m_heatSupply = (m_heatSupply >= minted) ? (m_heatSupply - minted) : 0;
+          break;
+        }
+      }
     }
   }
 
@@ -7144,69 +6738,28 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           }
           break;
         }
-        // V11+: reverse actual-delta settlement (mirror of pushTransaction).
-        AssetBalance inAssets = getTransactionInputAssetAmounts(transaction, height);
-        AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction);
-        uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction, height);
-        uint64_t out_amount = getOutputAmount(transaction);
-        uint64_t txFee = (in_amount < out_amount)
-          ? m_currency.minimumFee(majorVersion)
-          : in_amount - out_amount;
-        const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
-        const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
-        if (auth.direction == 0) {
-          uint64_t xfgDeposited = (inAssets.xfg > outAssets.xfg + txFee)
-            ? inAssets.xfg - outAssets.xfg - txFee : 0;
-          uint64_t heatPaid = (outAssets.heat > inAssets.heat)
-            ? outAssets.heat - inAssets.heat : 0;
-          uint64_t grossHeat = static_cast<uint64_t>(
-              ((uint128_t)heatPaid * feeDiv) / (feeDiv - feeBps));
-          uint64_t feeHeat = (grossHeat > heatPaid) ? grossHeat - heatPaid : 0;
-          if (m_ammPool.reserveXfg >= xfgDeposited) m_ammPool.reserveXfg -= xfgDeposited;
-          uint64_t cdFeeHeat = static_cast<uint64_t>(
-              ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
-          m_ammPool.reserveHeat += (heatPaid + cdFeeHeat);
-          if (m_ammPool.cdHearthFeeAccumulator >= cdFeeHeat)
-            m_ammPool.cdHearthFeeAccumulator -= cdFeeHeat;
+        // V11+: exact inverse of the settlement in pushTransaction.
+        const bool xfgIn = auth.direction == 0;
+        const uint64_t cdFeeOut = swapCdFeeOut(auth.outputAmount);
+        uint64_t cdFeeHeat = 0;
+        if (xfgIn) {
+          cdFeeHeat = cdFeeOut;
+        } else if (!m_blockSwapCdFeeHeatEq.empty() &&
+                   m_blockSwapCdFeeHeatEq.back().first == height &&
+                   !m_blockSwapCdFeeHeatEq.back().second.empty()) {
+          cdFeeHeat = m_blockSwapCdFeeHeatEq.back().second.back();
+          m_blockSwapCdFeeHeatEq.back().second.pop_back();
         } else {
-          uint64_t heatDeposited = (inAssets.heat > outAssets.heat)
-            ? inAssets.heat - outAssets.heat : 0;
-          uint64_t xfgPaid = (outAssets.xfg > inAssets.xfg)
-            ? outAssets.xfg - inAssets.xfg : 0;
-          uint64_t grossXfg = static_cast<uint64_t>(
-              ((uint128_t)xfgPaid * feeDiv) / (feeDiv - feeBps));
-          uint64_t feeXfg = (grossXfg > xfgPaid) ? grossXfg - xfgPaid : 0;
-          uint64_t feeHeatEq = 0;
-          if (m_ammPool.reserveXfg > 0) {
-            uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            if (postRate > 0) {
-              feeHeatEq = static_cast<uint64_t>(
-                  ((uint128_t)feeXfg * postRate) / parameters::COIN);
-            }
-          }
-          if (m_ammPool.reserveHeat >= heatDeposited) m_ammPool.reserveHeat -= heatDeposited;
-          uint64_t cdFeeXfg = static_cast<uint64_t>(
-              ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
-          m_ammPool.reserveXfg += (xfgPaid + cdFeeXfg);
-          // Reversal uses the recorded HEAT equivalent (exact). Fallback to a
-          // deterministic recompute when the record is absent (disk-loaded
-          // pops) — identical on all nodes.
-          uint64_t cdFeeHeatEq = 0;
-          if (!m_blockSwapCdFeeHeatEq.empty() &&
-              m_blockSwapCdFeeHeatEq.back().first == height &&
-              !m_blockSwapCdFeeHeatEq.back().second.empty()) {
-            cdFeeHeatEq = m_blockSwapCdFeeHeatEq.back().second.back();
-            m_blockSwapCdFeeHeatEq.back().second.pop_back();
-          } else if (m_ammPool.reserveXfg > 0) {
-            uint64_t postRate = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
-            if (postRate > 0) {
-              cdFeeHeatEq = static_cast<uint64_t>(
-                  ((uint128_t)cdFeeXfg * postRate) / parameters::COIN);
-            }
-          }
-          if (m_ammPool.cdHearthFeeAccumulator >= cdFeeHeatEq)
-            m_ammPool.cdHearthFeeAccumulator -= cdFeeHeatEq;
+          // No record (popped after a restart): the reserves are still the
+          // post-swap reserves the push converted the fee at.
+          swapCdFeeHeat(auth.direction, cdFeeOut, m_ammPool.reserveXfg, m_ammPool.reserveHeat, cdFeeHeat);
         }
+        uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
+        uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
+        reserveIn = reserveIn >= auth.inputAmount ? reserveIn - auth.inputAmount : 0;
+        reserveOut += auth.outputAmount + cdFeeOut;
+        m_ammPool.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator >= cdFeeHeat
+            ? m_ammPool.cdHearthFeeAccumulator - cdFeeHeat : 0;
         break;
       } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
         const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
@@ -7250,8 +6803,10 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         for (const auto& f2 : tx_extra_fields)
           if (f2.type() == typeid(TransactionExtraAmmAddLiquidity)) { hasLegacy = true; break; }
         if (!hasLegacy && majorVersion >= BLOCK_MAJOR_VERSION_11 && (a.amountXfg > 0 || a.amountHeat > 0)) {
-          uint64_t shares = ammMintLpShares(a.amountXfg, a.amountHeat,
-            m_ammPool.totalLpShares, m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+          // Exactly the shares the push minted (the declared ones). Recomputing
+          // them from the post-deposit pool was off by rounding, and for the
+          // first deposit used the proportional formula instead of the root.
+          const uint64_t shares = a.lpShares;
           if (m_ammPool.reserveHeat >= a.amountHeat) m_ammPool.reserveHeat -= a.amountHeat;
           if (m_ammPool.reserveXfg >= a.amountXfg) m_ammPool.reserveXfg -= a.amountXfg;
           if (m_ammPool.totalLpShares >= shares) m_ammPool.totalLpShares -= shares;
@@ -7839,6 +7394,336 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const Transacti
     return Currency::classifyCommitmentTermAsset(it->second[absIdx].term);
   }
   return AssetType::XFG;
+}
+
+
+bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t height,
+                                                SettlementScratch& scratch, AssetFlows& flows,
+                                                uint64_t& xfgFee, std::string& error) const {
+  flows = AssetFlows();
+  xfgFee = 0;
+
+  for (const auto& in : tx.inputs) {
+    const AssetType asset = classifyInputAsset(in);
+    uint64_t& slot = asset == AssetType::HEAT ? flows.in.heat
+                   : asset == AssetType::LP   ? flows.in.lp
+                                              : flows.in.xfg;
+    if (!addChecked(slot, m_currency.getTransactionInputAmount(in, height))) {
+      error = "input amounts overflow";
+      return false;
+    }
+  }
+
+  // A pool marker is value locked to the pool key — no ring may spend one — so
+  // it is not an output the sender keeps. Markers are held apart and must be
+  // covered by what the transaction declares it deposits into the pool.
+  uint64_t markerXfg = 0, markerHeat = 0;
+  for (const auto& out : tx.outputs) {
+    const bool commitment = out.target.type() == typeid(TransactionOutputCommitment);
+    const uint32_t term = commitment ? boost::get<TransactionOutputCommitment>(out.target).term : 0;
+    uint64_t* slot;
+    if (commitment && term == parameters::DEPOSIT_TERM_POOL_XFG) {
+      slot = &markerXfg;
+    } else if (commitment && term == parameters::DEPOSIT_TERM_POOL_HEAT) {
+      slot = &markerHeat;
+    } else {
+      const AssetType asset = Currency::classifyOutputAsset(out.target, term);
+      slot = asset == AssetType::HEAT ? &flows.out.heat
+           : asset == AssetType::LP   ? &flows.out.lp
+                                      : &flows.out.xfg;
+    }
+    if (!addChecked(*slot, out.amount)) {
+      error = "output amounts overflow";
+      return false;
+    }
+  }
+
+  // An extra that does not parse carries no settlement tag — pushTransaction
+  // and popTransaction read it the same way.
+  std::vector<TransactionExtraField> fields;
+  if (!parseTransactionExtra(tx.extra, fields)) {
+    fields.clear();
+  }
+  // At most one settlement tag per transaction: validation and settlement then
+  // cannot disagree about which one applies.
+  const TransactionExtraField* tag = nullptr;
+  for (const auto& f : fields) {
+    if (f.type() == typeid(TransactionExtraHeatCommitment)) {
+      // Its amount was never checked against a burn, yet it fed the Eternal
+      // Flame and with it the block reward.
+      error = "legacy burn tag 0x08 is retired";
+      return false;
+    }
+    if (f.type() == typeid(TransactionExtraAmmAddLiquidity) ||
+        f.type() == typeid(TransactionExtraAmmRemoveLiquidity)) {
+      error = "legacy AMM LP tag is retired; use LpAddAuth / LpRemoveAuth";
+      return false;
+    }
+    if (!isSettlementTag(f)) continue;
+    if (tag) {
+      error = "more than one settlement tag";
+      return false;
+    }
+    tag = &f;
+  }
+
+  // Sources and sinks. Only deposits into the pool or escrow may be carried by
+  // pool markers.
+  uint64_t poolSinkXfg = 0, poolSinkHeat = 0;
+  const std::type_info& kind = tag ? tag->type() : typeid(void);
+  const LimitDepositInfo* withdrawnOrder = nullptr;
+  uint64_t lpRemoveXfg = 0, lpRemoveHeat = 0;
+  if (kind == typeid(TransactionExtraHeatMintAuth)) {
+    const auto& a = boost::get<TransactionExtraHeatMintAuth>(*tag);
+    flows.xfgSink = a.xfgBurned;
+    flows.heatSource = a.heatMinted;
+  } else if (kind == typeid(TransactionExtraAmmSwapAuth)) {
+    const auto& a = boost::get<TransactionExtraAmmSwapAuth>(*tag);
+    if (a.direction > 1 || a.inputAmount == 0 || a.outputAmount == 0) {
+      error = "AMM swap: invalid direction or zero amount";
+      return false;
+    }
+    if (a.direction == 0) {
+      flows.xfgSink = poolSinkXfg = a.inputAmount;
+      flows.heatSource = a.outputAmount;
+    } else {
+      flows.heatSink = poolSinkHeat = a.inputAmount;
+      flows.xfgSource = a.outputAmount;
+    }
+  } else if (kind == typeid(TransactionExtraLimitDeposit)) {
+    const auto& d = boost::get<TransactionExtraLimitDeposit>(*tag);
+    if (d.side > 1 || d.amount == 0) {
+      error = "limit deposit: invalid side or zero amount";
+      return false;
+    }
+    if (d.side == 1) {
+      flows.xfgSink = poolSinkXfg = d.amount;  // SELL_XFG escrows XFG
+    } else {
+      flows.heatSink = poolSinkHeat = d.amount;  // BUY_XFG escrows HEAT
+    }
+  } else if (kind == typeid(TransactionExtraLimitWithdraw)) {
+    const auto& w = boost::get<TransactionExtraLimitWithdraw>(*tag);
+    auto it = m_limitDeposits.find(w.orderId);
+    if (w.orderId == Crypto::Hash() || it == m_limitDeposits.end() || it->second.withdrawn) {
+      error = "limit withdraw: unknown or already-withdrawn order";
+      return false;
+    }
+    withdrawnOrder = &it->second;
+    // The whole remaining escrow and every fill's proceeds leave together.
+    if (withdrawnOrder->side == 1) {
+      flows.xfgSource = withdrawnOrder->amount;
+      flows.heatSource = withdrawnOrder->proceedsHeat;
+    } else {
+      flows.heatSource = withdrawnOrder->amount;
+      flows.xfgSource = withdrawnOrder->proceedsXfg;
+    }
+  } else if (kind == typeid(TransactionExtraLpAddAuth)) {
+    const auto& a = boost::get<TransactionExtraLpAddAuth>(*tag);
+    flows.xfgSink = poolSinkXfg = a.amountXfg;
+    flows.heatSink = poolSinkHeat = a.amountHeat;
+    flows.lpSource = a.lpShares;
+  } else if (kind == typeid(TransactionExtraLpRemoveAuth)) {
+    const auto& a = boost::get<TransactionExtraLpRemoveAuth>(*tag);
+    if (a.lpSharesBurned == 0 || a.lpSharesBurned > m_ammPool.totalLpShares) {
+      error = "LP remove: shares exceed the pool's share supply";
+      return false;
+    }
+    ammGetWithdrawalAmounts(a.lpSharesBurned, m_ammPool.totalLpShares,
+                            m_ammPool.reserveXfg, m_ammPool.reserveHeat, lpRemoveXfg, lpRemoveHeat);
+    flows.lpSink = a.lpSharesBurned;
+    flows.xfgSource = lpRemoveXfg;
+    flows.heatSource = lpRemoveHeat;
+  } else if (kind == typeid(TransactionExtraTreasuryFund)) {
+    const auto& f = boost::get<TransactionExtraTreasuryFund>(*tag);
+    if (f.amount == 0 || f.asset > 1) {
+      error = "treasury fund: invalid amount or asset";
+      return false;
+    }
+    if (f.asset == 0) {
+      flows.xfgSink = f.amount;
+    } else {
+      flows.heatSink = f.amount;
+    }
+  }
+  // HEAT sends and market buy/sell move nothing in or out: plain balance.
+
+  if (markerXfg > poolSinkXfg || markerHeat > poolSinkHeat) {
+    error = "pool marker output exceeds the declared pool deposit";
+    return false;
+  }
+  if (!settleAssetFlows(flows, xfgFee)) {
+    error = "per-asset balance violation (xfg " + std::to_string(flows.in.xfg) + "+" +
+            std::to_string(flows.xfgSource) + " vs " + std::to_string(flows.out.xfg) + "+" +
+            std::to_string(flows.xfgSink) + ", heat " + std::to_string(flows.in.heat) + "+" +
+            std::to_string(flows.heatSource) + " vs " + std::to_string(flows.out.heat) + "+" +
+            std::to_string(flows.heatSink) + ", lp " + std::to_string(flows.in.lp) + "+" +
+            std::to_string(flows.lpSource) + " vs " + std::to_string(flows.out.lp) + "+" +
+            std::to_string(flows.lpSink) + ")";
+    return false;
+  }
+
+  // Each tag's own rules, including every condition its settlement in
+  // pushTransaction relies on — pushBlock does not act on a settlement
+  // failure, so none may be left for settlement to discover.
+  if (kind == typeid(TransactionExtraHeatMintAuth)) {
+    const auto& a = boost::get<TransactionExtraHeatMintAuth>(*tag);
+    // Priced by the 8-block TWAP only. The spot fallback let a swap earlier in
+    // the same block set the price a mint pays.
+    const uint64_t price = getRollingTwap();
+    if (price == 0) {
+      error = "HEAT mint: no TWAP price yet";
+      return false;
+    }
+    // With the XFG fee the scan's burn is exactly the declared burn, so the
+    // mint is priced by the XFG that is actually destroyed. Pricing it with
+    // the minimum fee counted any fee above the minimum as burned too.
+    if (!m_heatMintEngine.validateMintAuth(tx, xfgFee, price, a.xfgBurned, a.heatMinted)) {
+      error = "HEAT mint: minted HEAT exceeds the burn at the TWAP price";
+      return false;
+    }
+  } else if (kind == typeid(TransactionExtraAmmSwapAuth)) {
+    // Constant-product pricing. The earlier v11 rule priced a swap linearly at
+    // the spot price, so a large swap took far more than the curve allows.
+    const auto& a = boost::get<TransactionExtraAmmSwapAuth>(*tag);
+    const bool xfgIn = a.direction == 0;
+    const uint64_t reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
+    const uint64_t reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
+    const uint64_t net = ammSwapNetOutput(a.inputAmount, reserveIn, reserveOut);
+    if (net == 0) {
+      error = "AMM swap: the pool cannot price this swap";
+      return false;
+    }
+    if (a.outputAmount > net || a.outputAmount < a.minOutput) {
+      error = "AMM swap: output " + std::to_string(a.outputAmount) + " outside [" +
+              std::to_string(a.minOutput) + ", " + std::to_string(net) + "] on the curve";
+      return false;
+    }
+    const uint64_t cdFeeOut = swapCdFeeOut(a.outputAmount);
+    if (reserveIn > UINT64_MAX - a.inputAmount || reserveOut < a.outputAmount ||
+        reserveOut - a.outputAmount < cdFeeOut) {
+      error = "AMM swap: reserves cannot settle it";
+      return false;
+    }
+    const uint64_t postIn = reserveIn + a.inputAmount;
+    const uint64_t postOut = reserveOut - a.outputAmount - cdFeeOut;
+    uint64_t cdFeeHeat = 0;
+    if (!swapCdFeeHeat(a.direction, cdFeeOut, xfgIn ? postIn : postOut, xfgIn ? postOut : postIn,
+                       cdFeeHeat) ||
+        m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFeeHeat) {
+      error = "AMM swap: CD fee accumulator overflow";
+      return false;
+    }
+  } else if (kind == typeid(TransactionExtraLimitDeposit)) {
+    const auto& d = boost::get<TransactionExtraLimitDeposit>(*tag);
+    if (d.orderId == Crypto::Hash() || scratch.limitDepositIds.count(d.orderId) ||
+        m_limitDeposits.find(d.orderId) != m_limitDeposits.end()) {
+      error = "limit deposit: duplicate or reused orderId";
+      return false;
+    }
+    if (d.targetPrice == 0 || d.targetPrice % parameters::ORDER_PRICE_TICK != 0) {
+      error = "limit deposit: price violates the tick";
+      return false;
+    }
+    const uint64_t pending = d.side == 1 ? m_ammPool.pendingXfg : m_ammPool.pendingHeat;
+    if (pending > UINT64_MAX - d.amount) {
+      error = "limit deposit: pending reserve overflow";
+      return false;
+    }
+    scratch.limitDepositIds.insert(d.orderId);
+  } else if (kind == typeid(TransactionExtraLimitWithdraw)) {
+    const auto& w = boost::get<TransactionExtraLimitWithdraw>(*tag);
+    uint8_t addressData[sizeof(w.spendPublicKey.data) + sizeof(w.viewPublicKey.data)];
+    memcpy(addressData, w.spendPublicKey.data, sizeof(w.spendPublicKey.data));
+    memcpy(addressData + sizeof(w.spendPublicKey.data), w.viewPublicKey.data, sizeof(w.viewPublicKey.data));
+    Crypto::Hash addressHash{};
+    Crypto::cn_fast_hash(addressData, sizeof(addressData), addressHash);
+    const Crypto::Hash outputsHash = getLimitWithdrawOutputHash(tx.outputs);
+    const Crypto::Hash authHash =
+        getLimitWithdrawAuthHash(w.orderId, withdrawnOrder->addressHash, w.outputsHash);
+    if (memcmp(addressHash.data, withdrawnOrder->addressHash.data, sizeof(addressHash.data)) != 0 ||
+        memcmp(outputsHash.data, w.outputsHash.data, sizeof(outputsHash.data)) != 0 ||
+        !Crypto::check_signature(authHash, w.spendPublicKey, w.proof)) {
+      error = "limit withdraw: ownership proof failed";
+      return false;
+    }
+    if (scratch.limitWithdrawIds.count(w.orderId)) {
+      error = "limit withdraw: order already withdrawn in this block";
+      return false;
+    }
+    const uint64_t pending = withdrawnOrder->side == 1 ? m_ammPool.pendingXfg : m_ammPool.pendingHeat;
+    if (pending < withdrawnOrder->amount) {
+      error = "limit withdraw: pending reserve shortfall";
+      return false;
+    }
+    scratch.limitWithdrawIds.insert(w.orderId);
+  } else if (kind == typeid(TransactionExtraLpAddAuth)) {
+    const auto& a = boost::get<TransactionExtraLpAddAuth>(*tag);
+    const uint64_t shares = ammMintLpShares(a.amountXfg, a.amountHeat, m_ammPool.totalLpShares,
+                                            m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+    // The depositor may take fewer shares than the formula gives — slippage
+    // room for reserves that move before inclusion — never more. Settlement
+    // mints exactly the declared shares, which the LP output carries.
+    if (a.lpShares == 0 || a.lpShares > shares) {
+      error = "LP add: declared shares " + std::to_string(a.lpShares) + " exceed the " +
+              std::to_string(shares) + " the deposit earns";
+      return false;
+    }
+    if (!ammValidateDepositRatio(a.amountXfg, a.amountHeat, m_ammPool.reserveXfg,
+                                 m_ammPool.reserveHeat, 100)) {
+      error = "LP add: deposit ratio out of tolerance";
+      return false;
+    }
+    if (m_ammPool.reserveXfg > UINT64_MAX - a.amountXfg ||
+        m_ammPool.reserveHeat > UINT64_MAX - a.amountHeat ||
+        m_ammPool.totalLpShares > UINT64_MAX - a.lpShares) {
+      error = "LP add: pool overflow";
+      return false;
+    }
+  } else if (kind == typeid(TransactionExtraLpRemoveAuth)) {
+    const auto& a = boost::get<TransactionExtraLpRemoveAuth>(*tag);
+    if (lpRemoveXfg == 0 || lpRemoveHeat == 0 ||
+        lpRemoveXfg > m_ammPool.reserveXfg || lpRemoveHeat > m_ammPool.reserveHeat) {
+      error = "LP remove: payout cannot settle";
+      return false;
+    }
+    if (lpRemoveXfg < a.minAmountXfg || lpRemoveHeat < a.minAmountHeat) {
+      error = "LP remove: payout below the declared minimum";
+      return false;
+    }
+  } else if (kind == typeid(TransactionExtraTreasuryFund)) {
+    const auto& f = boost::get<TransactionExtraTreasuryFund>(*tag);
+    const uint64_t ledger = f.asset == 0 ? m_swfBurnedXfgPendingHeat : m_treasuryHeatReserve;
+    if (ledger > UINT64_MAX - f.amount) {
+      error = "treasury fund: ledger overflow";
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, uint64_t& fee) {
+  std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+  const uint32_t height = static_cast<uint32_t>(m_blocks.size());
+  if (getBlockMajorVersionForHeight(height) >= BLOCK_MAJOR_VERSION_11) {
+    SettlementScratch scratch;
+    AssetFlows flows;
+    std::string error;
+    if (!validateSettlement(tx, height, scratch, flows, fee, error)) {
+      logger(DEBUGGING) << "Transaction " << getObjectHash(tx) << " settlement rejected: " << error;
+      return false;
+    }
+    return true;
+  }
+  // Before v11 the fee is inputs minus outputs. The pool used to admit
+  // outputs above inputs for mint and swap tags; the fee then underflowed and
+  // the block template carried it into the coinbase.
+  const uint64_t in = m_currency.getTransactionAllInputsAmount(tx, height);
+  const uint64_t out = getOutputAmount(tx);
+  if (out > in) {
+    return false;
+  }
+  fee = in - out;
+  return true;
 }
 
 CryptoNote::AssetBalance CryptoNote::Blockchain::getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const {

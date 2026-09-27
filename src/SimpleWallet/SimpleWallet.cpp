@@ -44,6 +44,8 @@
 #include "Common/PathTools.h"
 #include "Common/Util.h"
 #include "Common/DnsTools.h"
+#include "Common/Int128.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
@@ -3972,26 +3974,27 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   }
 
   // Query live AMM pool rate from daemon — consensus validates against this, not hardcoded ratio
-  uint64_t poolReserveXfg = 0;
-  uint64_t poolReserveHeat = 0;
+  uint64_t poolTwap = 0;
   try {
     COMMAND_RPC_AMM_POOL_INFO::request poolReq;
     COMMAND_RPC_AMM_POOL_INFO::response poolRes;
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
     invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
-    poolReserveXfg = poolRes.reserve_xfg;
-    poolReserveHeat = poolRes.reserve_heat;
+    poolTwap = poolRes.hearth_twap;
   } catch (const std::exception& e) {
     fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
     return false;
   }
-  if (poolReserveXfg == 0 || poolReserveHeat == 0) {
-    fail_msg_writer() << "Hearth pool is empty — cannot mint HEAT yet";
+  if (poolTwap == 0) {
+    fail_msg_writer() << "No Hearth TWAP yet — HEAT mints open two blocks into v11";
     return false;
   }
 
-  // Calculate HEAT amount using live pool rate: heatAmount = xfgAmount * reserveHeat / reserveXfg
-  uint64_t heatAmount = xfgAmount * poolReserveHeat / poolReserveXfg;
+  // Consensus prices the mint at the 8-block TWAP; build a little under it so
+  // the TWAP moving before inclusion does not invalidate the mint.
+  uint64_t heatAmount = static_cast<uint64_t>(
+      ((static_cast<uint128_t>(xfgAmount) * poolTwap) / parameters::COIN) *
+      (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
 
   // Enforce minimum HEAT mint (0.1 HEAT mainnet, 0.01 HEAT testnet)
   uint64_t minHeat = m_currency.isTestnet()
@@ -4000,7 +4003,8 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   if (heatAmount < minHeat) {
     fail_msg_writer() << "Minimum HEAT mint is " << m_currency.formatAmount(minHeat)
                       << " HEAT. You need at least "
-                      << m_currency.formatAmount(minHeat * poolReserveXfg / poolReserveHeat + 1)
+                      << m_currency.formatAmount(static_cast<uint64_t>(
+                             (static_cast<uint128_t>(minHeat) * parameters::COIN) / poolTwap) + 1)
                       << " XFG to mint that much.";
     return false;
   }
@@ -4008,8 +4012,9 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT Mint:";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
-  success_msg_writer() << "  Rate: " << m_currency.formatAmount(poolReserveXfg)
-                       << " XFG / " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
+  success_msg_writer() << "  Price: " << m_currency.formatAmount(poolTwap)
+                       << " HEAT per XFG (8-block TWAP, minted "
+                       << parameters::WALLET_MINT_TWAP_MARGIN_BPS / 100.0 << "% under it)";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
   // Confirmation prompt — user must explicitly approve the mint
@@ -4098,7 +4103,31 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
                        << " | min output: " << m_currency.formatAmount(minOutput);
 
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  uint64_t outputAmount = minOutput;
+  // Quote on the constant-product curve, net of the 1% fee — the most
+  // consensus accepts — a little under it so the pool moving before
+  // inclusion does not invalidate the swap.
+  uint64_t outputAmount = 0;
+  try {
+    COMMAND_RPC_AMM_POOL_INFO::request poolReq;
+    COMMAND_RPC_AMM_POOL_INFO::response poolRes;
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
+    const uint64_t reserveIn = direction == 0 ? poolRes.reserve_xfg : poolRes.reserve_heat;
+    const uint64_t reserveOut = direction == 0 ? poolRes.reserve_heat : poolRes.reserve_xfg;
+    const uint64_t net = ammSwapNetOutput(amount, reserveIn, reserveOut);
+    outputAmount = static_cast<uint64_t>(
+        (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
+    return false;
+  }
+  if (outputAmount == 0 || outputAmount < minOutput) {
+    fail_msg_writer() << "Pool quote " << m_currency.formatAmount(outputAmount)
+                      << " is below your minimum " << m_currency.formatAmount(minOutput);
+    return false;
+  }
+  success_msg_writer() << "Quote: " << m_currency.formatAmount(outputAmount)
+                       << (direction == 0 ? " HEAT" : " XFG");
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);

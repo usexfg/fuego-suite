@@ -628,7 +628,7 @@ A group alias implementation is successful if:
 2. **Security**
    - [ ] No single member can unilaterally spend (unless M=1 explicitly chosen)
    - [ ] Double-spend protection works for group outputs
-   - [ ] Signature verification is quantum-resistant (based on discrete log)
+   - [ ] Signature verification is quantum-resistant (see docs/PQ-MIGRATION-PLAN.md; current Ed25519/discrete-log schemes are NOT quantum-resistant and must migrate to PQ signatures)
 
 3. **Usability**
    - [ ] Clear CLI commands for all operations

@@ -44,6 +44,7 @@
 #include "Common/StringTools.h"
 #include "Common/Int128.h"
 #include "CryptoNoteCore/Account.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -1406,25 +1407,17 @@ namespace CryptoNote
     // expectedHeat = xfgBurned × price / COIN.
     // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
     {
-      uint64_t twap = m_node.getHearthTwap();
-      if (twap > 0) {
-        heatMinted = static_cast<uint64_t>(
-            (static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN);
-      } else {
-        INode::AmmPoolReserves reserves;
-        if (!m_node.getAmmPoolReserves(reserves) && reserves.reserveXfg > 0 && reserves.reserveHeat > 0) {
-          // Match the consensus spot fallback exactly: price = floor(rH × COIN / rX),
-          // expectedHeat = floor(xfgBurned × price / COIN). Two-step floor avoids the
-          // wallet over-quoting (and the mint being rejected).
-          uint64_t spotPrice = static_cast<uint64_t>(
-              (static_cast<uint128_t>(reserves.reserveHeat) * parameters::COIN) / reserves.reserveXfg);
-          heatMinted = static_cast<uint64_t>(
-              (static_cast<uint128_t>(xfgBurned) * spotPrice) / parameters::COIN);
-        } else {
-          throw std::system_error(make_error_code(error::WRONG_AMOUNT),
-                                  "No pool price available for HEAT mint");
-        }
+      // Consensus prices a mint at the 8-block TWAP and refuses one without
+      // it. Build a little under it, so the TWAP moving before inclusion does
+      // not invalidate the mint.
+      const uint64_t twap = m_node.getHearthTwap();
+      if (twap == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                "No Hearth TWAP yet — HEAT mints open two blocks into v11");
       }
+      heatMinted = static_cast<uint64_t>(
+          ((static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN) *
+          (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
     }
     if (heatMinted == 0) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "HEAT amount too small for current pool rate");
@@ -1991,18 +1984,23 @@ namespace CryptoNote
     }
 
     // direction == 1: HEAT→XFG — spend unlocked HEAT_TERM deposits as commitment inputs
-    uint64_t outputAmount = expectedOutput > 0 ? expectedOutput : minOutput;
+    // Consensus caps the declared output at the constant-product curve, net
+    // of the 1% fee (ammSwapNetOutput). Quote a little under it so the pool
+    // moving before inclusion does not invalidate the swap. An explicit
+    // expectedOutput is the caller's quote and is used as given.
+    uint64_t outputAmount = expectedOutput;
     if (outputAmount == 0) {
       INode::AmmPoolReserves reserves;
-      std::error_code pec = m_node.getAmmPoolReserves(reserves);
-      if (!pec && reserves.reserveHeat > 0) {
-        outputAmount = inputAmount * reserves.reserveXfg / reserves.reserveHeat;
-      } else {
-        outputAmount = inputAmount * 10; // inverse of launch 10:1
+      if (m_node.getAmmPoolReserves(reserves) || reserves.reserveHeat == 0 || reserves.reserveXfg == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Hearth pool reserves unavailable");
       }
+      const uint64_t net = ammSwapNetOutput(inputAmount, reserves.reserveHeat, reserves.reserveXfg);
+      outputAmount = static_cast<uint64_t>(
+          (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
     }
-    if (outputAmount < minOutput) {
-      outputAmount = minOutput;
+    if (outputAmount == 0 || outputAmount < minOutput) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                              "Swap quote is below the requested minimum output");
     }
 
     uint32_t currentHeight = getBlockCount();

@@ -18,7 +18,9 @@
 #include "TransactionPool.h"
 
 #include <algorithm>
+#include <cstring>
 #include <ctime>
+#include <set>
 #include <vector>
 #include <unordered_set>
 
@@ -45,6 +47,58 @@ using namespace Logging;
 
 namespace CryptoNote
 {
+  namespace
+  {
+    struct HashLess
+    {
+      bool operator()(const Crypto::Hash &a, const Crypto::Hash &b) const
+      {
+        return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+      }
+    };
+
+    // What a transaction's settlement tag touches that another transaction in
+    // the same block could touch too.
+    struct PoolTouch
+    {
+      bool movesReserves = false;
+      bool hasDeposit = false;
+      bool hasWithdraw = false;
+      Crypto::Hash depositId{};
+      Crypto::Hash withdrawId{};
+    };
+
+    PoolTouch getPoolTouch(const Transaction &tx)
+    {
+      PoolTouch touch;
+      std::vector<TransactionExtraField> fields;
+      if (!parseTransactionExtra(tx.extra, fields))
+      {
+        return touch;
+      }
+      for (const auto &f : fields)
+      {
+        if (f.type() == typeid(TransactionExtraAmmSwapAuth) ||
+            f.type() == typeid(TransactionExtraLpAddAuth) ||
+            f.type() == typeid(TransactionExtraLpRemoveAuth))
+        {
+          touch.movesReserves = true;
+        }
+        else if (f.type() == typeid(TransactionExtraLimitDeposit))
+        {
+          touch.hasDeposit = true;
+          touch.depositId = boost::get<TransactionExtraLimitDeposit>(f).orderId;
+        }
+        else if (f.type() == typeid(TransactionExtraLimitWithdraw))
+        {
+          touch.hasWithdraw = true;
+          touch.withdrawId = boost::get<TransactionExtraLimitWithdraw>(f).orderId;
+        }
+      }
+      return touch;
+    }
+  }
+
 
   //---------------------------------------------------------------------------------
   // BlockTemplate
@@ -205,30 +259,16 @@ namespace CryptoNote
       }
     }
 
-    uint64_t inputs_amount = m_currency.getTransactionAllInputsAmount(tx, height);   
-    uint64_t outputs_amount = get_outs_money_amount(tx);
-
-    logger(DEBUGGING, WHITE) << "Processing tx " << id << " with inputs of " << inputs_amount << " and outputs of " << outputs_amount;
-
-    // Check for AMM swap or HEAT mint auth tag — allows HEAT minting (outputs > inputs)
-    bool hasAmmSwapAuth = false;
-    bool hasHeatMintAuth = false;
-    std::vector<TransactionExtraField> extraFieldsForAuth;
-    parseTransactionExtra(tx.extra, extraFieldsForAuth);
-    for (const auto& field : extraFieldsForAuth) {
-      if (field.type() == typeid(TransactionExtraAmmSwapAuth)) {
-        hasAmmSwapAuth = true;
-        break;
-      }
-      if (field.type() == typeid(TransactionExtraHeatMintAuth)) {
-        hasHeatMintAuth = true;
-        break;
-      }
-    }
-
-    if (outputs_amount > inputs_amount && !hasAmmSwapAuth && !hasHeatMintAuth)
+    // The fee this transaction adds to the coinbase, by the next block's rules
+    // (Blockchain::checkTransactionSettlement). v11+ checks its settlement
+    // against the tip and takes the XFG surplus; before v11 it is inputs minus
+    // outputs. Admitting outputs above inputs for mint and swap tags let the
+    // fee underflow into the block template's coinbase.
+    uint64_t fee = 0;
+    if (!m_validator.checkTransactionSettlement(tx, fee))
     {
-      logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << id << " uses more money then it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount);
+      logger(WARNING, BRIGHT_YELLOW) << "Transaction " << id
+                                     << " rejected: outputs exceed inputs or its settlement is invalid";
       tvc.m_verification_failed = true;
       return false;
     }
@@ -241,7 +281,6 @@ namespace CryptoNote
       ttl.ttl = 0;
     }
 
-    const uint64_t fee = inputs_amount - outputs_amount;
     bool isFusionTransaction = fee == 0 && m_currency.isFusionTransaction(tx, blobSize);
 
     if (ttl.ttl != 0 && !keptByBlock)
@@ -572,6 +611,8 @@ namespace CryptoNote
 
     BlockTemplate blockTemplate;
 
+    bool reservesMoved = false;
+    std::set<Crypto::Hash, HashLess> depositIds, withdrawIds;
     for (auto it = m_fee_index.rbegin(); it != m_fee_index.rend(); ++it)
     {
       const auto &txd = *it;
@@ -581,25 +622,25 @@ namespace CryptoNote
         continue;
       }
 
-      uint64_t inputs_amount = m_currency.getTransactionAllInputsAmount(txd.tx, height);
-      uint64_t outputs_amount = get_outs_money_amount(txd.tx);
-
-      // Allow outputs > inputs for AMM swaps and HEAT mints (HEAT is minted, not from inputs)
-      bool allowMint = false;
-      std::vector<TransactionExtraField> blockExtraFields;
-      parseTransactionExtra(txd.tx.extra, blockExtraFields);
-      for (const auto& field : blockExtraFields) {
-        if (field.type() == typeid(TransactionExtraAmmSwapAuth) ||
-            field.type() == typeid(TransactionExtraHeatMintAuth)) {
-          allowMint = true;
-          break;
-        }
-      }
-
-      if (outputs_amount > inputs_amount && !allowMint)
+      // Re-check against the current tip: v11 settlement reads pool and order
+      // state that moves every block, and the fee must be the one pushBlock
+      // will count for this transaction.
+      uint64_t txFee = 0;
+      if (!m_validator.checkTransactionSettlement(txd.tx, txFee))
       {
-        logger(WARNING, BRIGHT_YELLOW) << "Transaction, with id " << txd.id << " uses more money than it has: uses " << m_currency.formatAmount(outputs_amount) << ", has " << m_currency.formatAmount(inputs_amount)
-                                       << " and will not be included in the block template";
+        logger(DEBUGGING) << "Transaction " << txd.id << " no longer settles and will not be included in the block template";
+        continue;
+      }
+      // Each candidate is checked against the tip alone, so the template keeps
+      // candidates from depending on each other: one transaction that moves
+      // the reserves (swap, LP add or remove) — a second would be priced
+      // against reserves the first already moved — and each order id placed or
+      // withdrawn once.
+      const PoolTouch touch = getPoolTouch(txd.tx);
+      if ((touch.movesReserves && reservesMoved) ||
+          (touch.hasDeposit && depositIds.count(touch.depositId)) ||
+          (touch.hasWithdraw && withdrawIds.count(touch.withdrawId)))
+      {
         continue;
       }
 
@@ -615,7 +656,10 @@ namespace CryptoNote
       if (ready && blockTemplate.addTransaction(txd.id, txd.tx))
       {
         total_size += txd.blobSize;
-        fee += txd.fee;
+        fee += txFee;
+        reservesMoved = reservesMoved || touch.movesReserves;
+        if (touch.hasDeposit) depositIds.insert(touch.depositId);
+        if (touch.hasWithdraw) withdrawIds.insert(touch.withdrawId);
         logger(DEBUGGING) << "Transaction " << txd.id << " included in the block template";
       }
       else

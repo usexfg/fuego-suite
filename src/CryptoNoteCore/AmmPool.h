@@ -41,6 +41,11 @@ uint64_t ammGetInputAmount(uint64_t outputAmount,
 
 uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB);
 
+// A Hearth swap's net output: the constant-product output for `input`, less
+// the 1% taker fee. Consensus caps a swap's declared output at this, and
+// wallets quote from it.
+uint64_t ammSwapNetOutput(uint64_t input, uint64_t reserveIn, uint64_t reserveOut);
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB);

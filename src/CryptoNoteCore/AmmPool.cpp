@@ -62,6 +62,13 @@ uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB) {
   return (uint64_t)(scaled / reserveA);
 }
 
+uint64_t ammSwapNetOutput(uint64_t input, uint64_t reserveIn, uint64_t reserveOut) {
+  const uint64_t gross = ammGetOutputAmount(input, reserveIn, reserveOut, 0);
+  return static_cast<uint64_t>(
+      ((uint128_t)gross * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS)) /
+      parameters::HEARTH_FEE_DIVISOR);
+}
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {

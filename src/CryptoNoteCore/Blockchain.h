@@ -21,7 +21,9 @@
 #include "Common/Int128.h"
 
 #include <atomic>
+#include <cstring>
 #include <deque>
+#include <set>
 
 #include "../../external/parallel_hashmap/phmap.h"
 
@@ -85,6 +87,7 @@ namespace CryptoNote {
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) override;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);
@@ -177,6 +180,27 @@ namespace CryptoNote {
     OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
     AssetType classifyInputAsset(const TransactionInput& in) const;
+
+    // Order ids already settled by earlier transactions of the same block (or
+    // block template): an order may be placed or withdrawn once per block.
+    struct SettlementScratch {
+      struct HashLess {
+        bool operator()(const Crypto::Hash& a, const Crypto::Hash& b) const {
+          return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+        }
+      };
+      std::set<Crypto::Hash, HashLess> limitDepositIds;
+      std::set<Crypto::Hash, HashLess> limitWithdrawIds;
+    };
+    // v11+ settlement of one transaction against the current chain state: its
+    // single settlement tag becomes per-asset sources and sinks (AssetFlows),
+    // settleAssetFlows balances them, and the tag's own checks run — curve
+    // price, LP shares, order ownership, mint price — covering every condition
+    // pushTransaction's settlement relies on. xfgFee is the only amount the
+    // transaction adds to the coinbase. Block validation, the mempool and the
+    // block template all go through here.
+    bool validateSettlement(const Transaction& tx, uint32_t height, SettlementScratch& scratch,
+                            AssetFlows& flows, uint64_t& xfgFee, std::string& error) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }

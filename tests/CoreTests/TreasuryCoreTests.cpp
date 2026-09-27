@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <vector>
 #include <filesystem>
 #include <unistd.h>
@@ -727,38 +728,240 @@ void testCommitmentAssetClassification() {
   TEST(Currency::classifyCommitmentTermAsset(parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) == AssetType::XFG);
 }
 
+// A real Blockchain at genesis in a temp directory: Hearth pool seeded, no
+// TWAP yet. Removes its directory on scope exit.
+struct TestChain {
+  Logging::LoggerGroup log;
+  Currency currency;
+  RealTimeProvider timeProvider;
+  tx_memory_pool pool;
+  Blockchain chain;
+  std::filesystem::path dir;
+  bool ok = false;
+
+  explicit TestChain(const std::string& tag)
+      : currency(CurrencyBuilder(log).currency()),
+        pool(currency, chain, timeProvider, log),
+        chain(currency, pool, log, false, false),
+        dir(std::filesystem::temp_directory_path() /
+            ("fuego_core_tests_" + tag + "_" + std::to_string(::getpid()))) {
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ok = chain.init(dir.string(), false);
+  }
+  ~TestChain() {
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+  }
+};
+
 // rebuildCache() replays the chain from scratch and must start from the same
 // Hearth pool a fresh sync starts from. It used to reset the pool to empty and
 // never re-seed it, so every node that rebuilt its cache — including every
 // node crossing a cache-version bump — diverged from the rest of the network.
 void testRebuildCacheKeepsHearthSeed() {
-  Logging::LoggerGroup nullLog;
-  Currency currency = CurrencyBuilder(nullLog).currency();
-  RealTimeProvider timeProvider;
-  struct Chain {
-    tx_memory_pool pool;
-    Blockchain chain;
-    Chain(const Currency& c, ITimeProvider& tp, Logging::ILogger& log)
-        : pool(c, chain, tp, log), chain(c, pool, log, false, false) {}
-  } node(currency, timeProvider, nullLog);
-
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() /
-      ("fuego_core_tests_rebuild_" + std::to_string(::getpid()));
-  std::filesystem::remove_all(dir);
-  std::filesystem::create_directories(dir);
-
-  TEST(node.chain.init(dir.string(), false));
+  TestChain t("rebuild");
+  TEST(t.ok);
   const uint64_t seedXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
   const uint64_t seedHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
-  TEST(node.chain.getAmmPool().reserveXfg == seedXfg);
-  TEST(node.chain.getAmmPool().reserveHeat == seedHeat);
+  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
 
-  node.chain.rebuildCache();
-  TEST(node.chain.getAmmPool().reserveXfg == seedXfg);
-  TEST(node.chain.getAmmPool().reserveHeat == seedHeat);
+  t.chain.rebuildCache();
+  TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
+  TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
+}
 
-  std::error_code ec;
-  std::filesystem::remove_all(dir, ec);
+TransactionOutput keyOut(uint64_t amount) {
+  TransactionOutput out;
+  out.amount = amount;
+  out.target = KeyOutput{};
+  return out;
+}
+
+TransactionOutput commitmentOut(uint64_t amount, uint32_t term) {
+  TransactionOutputCommitment commitment{};
+  commitment.term = term;
+  TransactionOutput out;
+  out.amount = amount;
+  out.target = commitment;
+  return out;
+}
+
+// XFG key inputs only: validateSettlement neither resolves nor signs them.
+Transaction settlementTx(const std::vector<uint64_t>& xfgInputs,
+                         const std::vector<TransactionOutput>& outputs,
+                         const std::vector<uint8_t>& extra) {
+  Transaction tx{};
+  for (uint64_t amount : xfgInputs) {
+    KeyInput in{};
+    in.amount = amount;
+    tx.inputs.push_back(in);
+  }
+  tx.outputs = outputs;
+  tx.extra = extra;
+  return tx;
+}
+
+// The v11 balance rule: the fee is the XFG surplus only; HEAT and LP balance
+// exactly, counting declared sources and sinks.
+void testSettleAssetFlows() {
+  const uint64_t C = parameters::COIN;
+  uint64_t fee = 0;
+
+  // A mint burns 100 XFG and creates 9 HEAT, paying a 1 XFG fee. The v10 rule
+  // summed the assets: its "fee" was 100 + 1 − 9 = 92, all paid to the miner.
+  AssetFlows mint;
+  mint.in.xfg = 101 * C;
+  mint.xfgSink = 100 * C;
+  mint.heatSource = 9 * C;
+  mint.out.heat = 9 * C;
+  TEST(settleAssetFlows(mint, fee) && fee == 1 * C);
+
+  // HEAT beyond the declared source is refused, and so is HEAT left over.
+  AssetFlows more = mint;
+  more.out.heat += 1;
+  TEST(!settleAssetFlows(more, fee));
+  AssetFlows less = mint;
+  less.out.heat -= 1;
+  TEST(!settleAssetFlows(less, fee));
+
+  // LP shares balance exactly too.
+  AssetFlows lp;
+  lp.in.xfg = 1 * C;
+  lp.lpSource = 5;
+  lp.out.lp = 6;
+  TEST(!settleAssetFlows(lp, fee));
+
+  // Outputs above inputs: refused, never an underflowed fee.
+  AssetFlows over;
+  over.in.xfg = 1 * C;
+  over.out.xfg = 2 * C;
+  TEST(!settleAssetFlows(over, fee));
+
+  // Sums that overflow are refused.
+  AssetFlows wrap;
+  wrap.in.xfg = UINT64_MAX;
+  wrap.xfgSource = 1;
+  TEST(!settleAssetFlows(wrap, fee));
+}
+
+// validateSettlement on a real chain: fees, conversions, retired tags.
+void testValidateSettlementBasics() {
+  TestChain t("settle");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto check = [&](const Transaction& tx) {
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(tx, 1, scratch, flows, fee, err);
+  };
+
+  // A 50 XFG treasury donation is burned, not paid to the miner.
+  std::vector<uint8_t> fund;
+  addTreasuryFundToExtra(fund, 0, 50 * C);
+  TEST(check(settlementTx({100 * C}, {keyOut(49 * C)}, fund)) && fee == 1 * C);
+
+  // A plain transaction cannot turn XFG into HEAT.
+  TEST(!check(settlementTx({100 * C}, {commitmentOut(90 * C, parameters::HEAT_TERM)}, {})));
+
+  // A mint is priced by the 8-block TWAP; at genesis there is none.
+  std::vector<uint8_t> mint;
+  addHeatMintAuthToExtra(mint, 10 * C, 1 * C);
+  TEST(!check(settlementTx({11 * C}, {commitmentOut(1 * C, parameters::HEAT_TERM)}, mint)));
+
+  // The retired 0x08 burn tag is refused: its amount was never checked
+  // against a burn, yet it raised the Eternal Flame and the block reward.
+  std::vector<uint8_t> legacyBurn;
+  TransactionExtraHeatCommitment claimed{};
+  claimed.amount = 1000000 * C;
+  addHeatCommitmentToExtra(legacyBurn, claimed);
+  TEST(!check(settlementTx({10 * C}, {keyOut(9 * C)}, legacyBurn)));
+
+  // One settlement tag per transaction.
+  std::vector<uint8_t> twoTags;
+  addTreasuryFundToExtra(twoTags, 0, 1 * C);
+  addTreasuryFundToExtra(twoTags, 0, 1 * C);
+  TEST(!check(settlementTx({10 * C}, {keyOut(7 * C)}, twoTags)));
+
+  // Before v11 the pool's fee is inputs minus outputs; outputs above inputs
+  // are refused even with a mint tag (it used to underflow the fee).
+  uint64_t legacyFee = 0;
+  TEST(t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, {}), legacyFee) &&
+       legacyFee == 1 * C);
+  TEST(!t.chain.checkTransactionSettlement(
+      settlementTx({1 * C}, {commitmentOut(100 * C, parameters::HEAT_TERM)}, mint), legacyFee));
+}
+
+// Swaps are priced on the constant-product curve, not linearly at spot.
+void testValidateSettlementSwapCurve() {
+  TestChain t("swap");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint64_t rX = t.chain.getAmmPool().reserveXfg;
+  const uint64_t rH = t.chain.getAmmPool().reserveHeat;
+  const uint64_t input = rX / 10;
+  const uint64_t gross = ammGetOutputAmount(input, rX, rH, 0);
+  const uint64_t net = static_cast<uint64_t>(
+      ((uint128_t)gross * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS)) /
+      parameters::HEARTH_FEE_DIVISOR);
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto swap = [&](uint64_t output, uint64_t marker, uint64_t minOutput) {
+    std::vector<uint8_t> extra;
+    addAmmSwapAuthToExtra(extra, 0, input, output, minOutput);
+    std::vector<TransactionOutput> outs{commitmentOut(output, parameters::HEAT_TERM)};
+    if (marker > 0) outs.push_back(commitmentOut(marker, parameters::DEPOSIT_TERM_POOL_XFG));
+    Blockchain::SettlementScratch scratch;
+    return t.chain.validateSettlement(settlementTx({input + 1 * C}, outs, extra), 1, scratch,
+                                      flows, fee, err);
+  };
+
+  // The curve's net output settles, the deposit carried by a pool marker.
+  TEST(swap(net, input, 0) && fee == 1 * C);
+  // Or with no marker at all: the declared input is the sink either way.
+  TEST(swap(net, 0, 0) && fee == 1 * C);
+  // One atom above the curve is refused.
+  TEST(!swap(net + 1, input, 0));
+  // The old linear price paid a 10%-of-reserve swap ~10% more than the curve.
+  const uint64_t linear = static_cast<uint64_t>(
+      ((uint128_t)input * rH / rX) * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS) /
+      parameters::HEARTH_FEE_DIVISOR);
+  TEST(linear > net && !swap(linear, input, 0));
+  // A marker may not carry more than the declared input.
+  TEST(!swap(net, input + 1, 0));
+  // The taker's own minimum is enforced.
+  TEST(!swap(net, input, net + 1));
+}
+
+// Limit deposits escrow the declared amount; order ids are single-use.
+void testValidateSettlementLimitDeposit() {
+  TestChain t("limit");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  Crypto::Hash orderId;
+  memset(orderId.data, 7, sizeof(orderId.data));
+  const Crypto::Hash addressHash{};
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto deposit = [&](uint64_t price) {
+    std::vector<uint8_t> extra;
+    addLimitDepositToExtra(extra, 1, 100 * C, price, 1000, orderId, addressHash);
+    return settlementTx({101 * C}, {commitmentOut(100 * C, parameters::DEPOSIT_TERM_POOL_XFG)}, extra);
+  };
+
+  Blockchain::SettlementScratch block;
+  TEST(t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK), 1, block, flows, fee, err) &&
+       fee == 1 * C);
+  // The same order id again in the same block is refused.
+  TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK), 1, block, flows, fee, err));
+  // Off-tick prices are refused.
+  Blockchain::SettlementScratch fresh;
+  TEST(!t.chain.validateSettlement(deposit(10 * parameters::ORDER_PRICE_TICK + 1), 1, fresh, flows, fee, err));
 }
 
 // CDs open on their own height after HEAT and Hearth have run alone. Mainnet
@@ -781,6 +984,10 @@ int main() {
   testCdEarningWindowMatchesPayout();
   testCommitmentAssetClassification();
   testRebuildCacheKeepsHearthSeed();
+  testSettleAssetFlows();
+  testValidateSettlementBasics();
+  testValidateSettlementSwapCurve();
+  testValidateSettlementLimitDeposit();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();

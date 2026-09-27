@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <mutex>
 
 namespace XfgSwap {
 
@@ -249,6 +250,7 @@ private:
   std::string              m_signerAddress;
   uint64_t                 m_chainId = 0;
   bool                     m_hasSigner = false;
+  std::mutex               m_rpc_mutex;
 
   // Pre-compiled HTLC contract bytecode (hex, no 0x prefix) — optional.
   std::string m_htlcBytecode;

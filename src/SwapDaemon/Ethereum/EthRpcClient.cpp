@@ -408,6 +408,9 @@ std::string EthRpcClient::httpPost(const std::string& path, const std::string& b
 // ---------------------------------------------------------------------------
 
 std::string EthRpcClient::jsonRpc(const std::string& method, const std::string& params) {
+  // Readiness probes can run alongside swap RPC handlers. One request at a
+  // time owns the persistent socket so replies cannot cross between callers.
+  std::lock_guard<std::mutex> lock(m_rpc_mutex);
   static std::atomic<int> requestId{1};
 
   std::ostringstream body;

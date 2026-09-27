@@ -671,10 +671,6 @@ bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFee
   uint64_t suggestedTip = hexToUint64(tipStr);
   if (suggestedTip == UINT64_MAX) return false;
 
-  // Floor at 1 gwei
-  const uint64_t minTip = 1000000000ULL; // 1 gwei
-  maxPriorityFeePerGas = (suggestedTip > minTip) ? suggestedTip : minTip;
-
   // Query latest block to get base fee
   std::string blockResp = jsonRpc("eth_getBlockByNumber",
                                    "[\"latest\",false]");
@@ -689,10 +685,27 @@ bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFee
   uint64_t baseFee = hexToUint64(baseFeeStr);
   if (baseFee == UINT64_MAX) return false;
 
-  // maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas
+  return calculateCappedEip1559Fees(suggestedTip, baseFee,
+                                     maxPriorityFeePerGas, maxFeePerGas);
+}
+
+bool EthRpcClient::calculateCappedEip1559Fees(uint64_t suggestedTipWei,
+                                               uint64_t baseFeeWei,
+                                               uint64_t& maxPriorityFeePerGas,
+                                               uint64_t& maxFeePerGas) {
+  // maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas. A quote above the
+  // operator ceiling fails closed rather than exposing the signer to an
+  // unexpectedly expensive RPC suggestion.
+  constexpr uint64_t minTipWei = 1000000000ULL; // 1 gwei
+  const uint64_t priority = (suggestedTipWei > minTipWei)
+      ? suggestedTipWei : minTipWei;
   const uint64_t max = std::numeric_limits<uint64_t>::max();
-  if (baseFee > (max - maxPriorityFeePerGas) / 2) return false;
-  maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas;
+  if (priority > MAX_FEE_PER_GAS_WEI ||
+      baseFeeWei > (max - priority) / 2) return false;
+  const uint64_t candidate = baseFeeWei * 2 + priority;
+  if (candidate > MAX_FEE_PER_GAS_WEI) return false;
+  maxPriorityFeePerGas = priority;
+  maxFeePerGas = candidate;
   return true;
 }
 
@@ -703,9 +716,8 @@ bool EthRpcClient::queryGasPrice(uint64_t& gasPriceWei) {
   if (priceStr.empty()) return false;
   uint64_t rawPrice = hexToUint64(priceStr);
   if (rawPrice == 0 || rawPrice == UINT64_MAX) return false;
-  constexpr uint64_t MAX_GAS_PRICE_WEI = 500000000000ULL; // 500 gwei cap
-  if (rawPrice > MAX_GAS_PRICE_WEI) {
-    rawPrice = MAX_GAS_PRICE_WEI;
+  if (rawPrice > MAX_FEE_PER_GAS_WEI) {
+    rawPrice = MAX_FEE_PER_GAS_WEI;
   }
   gasPriceWei = rawPrice;
   return true;
@@ -713,20 +725,50 @@ bool EthRpcClient::queryGasPrice(uint64_t& gasPriceWei) {
 
 bool EthRpcClient::estimateGas(const std::string& to, const std::string& data,
                                 const AtomicAmount& valueWei, uint64_t& gasEstimate) {
-  // Build eth_estimateGas call
-  std::string params = "[{\"to\":\"" + to + "\",\"data\":\"" + data +
-      "\",\"value\":\"" + atomicAmountToHex(valueWei) + "\"},\"latest\"]";
+  // Simulate as the configured signer: some RPC nodes apply sender-specific
+  // balance, nonce, or authorization rules during eth_estimateGas. Contract
+  // creation omits `to` per JSON-RPC.
+  const std::string params = buildEstimateGasParams(
+      m_signerAddress, to, data, valueWei);
   std::string resp = jsonRpc("eth_estimateGas", params);
   if (resp.empty() || jsonHasError(resp)) return false;
   std::string result = jsonGetResult(resp);
   if (result.empty()) return false;
   gasEstimate = hexToUint64(result);
-  if (gasEstimate == UINT64_MAX ||
+  if (gasEstimate == 0 || gasEstimate == UINT64_MAX ||
       gasEstimate > std::numeric_limits<uint64_t>::max() - gasEstimate / 5)
     return false;
   // Add 20% buffer
   gasEstimate = gasEstimate + gasEstimate / 5;
   return true;
+}
+
+std::string EthRpcClient::buildEstimateGasParams(const std::string& from,
+                                                 const std::string& to,
+                                                 const std::string& data,
+                                                 const AtomicAmount& valueWei) {
+  // Contract creation omits `to` per JSON-RPC. Include a sender when the
+  // client has one configured; public read-only estimateGas callers may not.
+  std::string txObject = "{";
+  if (!from.empty()) txObject += "\"from\":\"" + from + "\",";
+  if (!to.empty()) txObject += "\"to\":\"" + to + "\",";
+  txObject += "\"data\":\"" + data + "\",\"value\":\"" +
+      atomicAmountToHex(valueWei) + "\"}";
+  return "[" + txObject + ",\"latest\"]";
+}
+
+bool EthRpcClient::transactionFundingSufficient(const AtomicAmount& balanceWei,
+                                                  const AtomicAmount& valueWei,
+                                                  uint64_t gasLimit,
+                                                  uint64_t feePerGasWei,
+                                                  uint64_t estimatedGas) {
+  if (estimatedGas == 0 || estimatedGas > gasLimit) return false;
+  // Both fee inputs are bounded uint64 quantities. Their exact product fits
+  // uint128, but adding an arbitrary uint256 lock value still needs a guard.
+  const AtomicAmount feeWei = AtomicAmount(gasLimit) * feePerGasWei;
+  const AtomicAmount maxAmount = (std::numeric_limits<AtomicAmount>::max)();
+  if (valueWei > maxAmount - feeWei) return false;
+  return balanceWei >= valueWei + feeWei;
 }
 
 bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
@@ -739,27 +781,43 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                              "construct with EthRpcClient(host, port, privKeyHex, address, chainId)");
   }
 
-  // Fetch current nonce for the signer address.
-  uint64_t nonce = 0;
-  if (!getNonce(m_signerAddress, nonce)) {
-    return false;
+  // Collect bounded fee rates before signing. `valueWei` remains uint256; gas
+  // limit and wei-per-gas stay uint64 throughout fee estimation and encoding.
+  uint64_t maxPriorityFeePerGas = 0;
+  uint64_t maxFeePerGas = 0;
+  uint64_t gasPriceWei = m_gasPriceFallback;
+  if (m_txType == EthTxType::Eip1559) {
+    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) return false;
+    gasPriceWei = maxFeePerGas;
+  } else {
+    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
   }
+
+  // The RPC estimate includes a 20% safety buffer. Reject before signing if
+  // the caller's transaction gas cap cannot cover it.
+  uint64_t estimatedGas = 0;
+  const std::string toHexValue = to.empty() ? std::string() : bytesToHex(to);
+  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, estimatedGas) ||
+      estimatedGas > gasLimit) return false;
+
+  // Balance includes both the native lock value and the maximum transaction
+  // fee. No transaction signature or broadcast is produced on an RPC failure,
+  // insufficient balance, or uint256 addition overflow.
+  AtomicAmount balanceWei = 0;
+  if (!getBalance(m_signerAddress, balanceWei) ||
+      !transactionFundingSufficient(balanceWei, valueWei, gasLimit,
+                                    gasPriceWei, estimatedGas)) return false;
+
+  // Fetch nonce only after funding preflight, then sign and broadcast.
+  uint64_t nonce = 0;
+  if (!getNonce(m_signerAddress, nonce)) return false;
 
   std::vector<uint8_t> rawTx;
 
   if (m_txType == EthTxType::Eip1559) {
-    // Dynamic fee estimation for EIP-1559
-    uint64_t maxPriorityFeePerGas = 0;
-    uint64_t maxFeePerGas = 0;
-    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) {
-      return false;
-    }
     rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
                                   gasLimit, to, valueWei, data);
   } else {
-    // Legacy: query eth_gasPrice, fall back to configured default
-    uint64_t gasPriceWei = m_gasPriceFallback;
-    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
     rawTx = buildLegacySignedTx(nonce, gasPriceWei, gasLimit, to, valueWei, data);
   }
 

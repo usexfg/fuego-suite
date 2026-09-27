@@ -356,6 +356,7 @@ struct ChainClientConfig {
 };
 
 class SwapDaemon {
+  friend struct SwapDaemonTestAccess;
 public:
   // Construct with only the Fuegod connection.  Chain clients are disabled;
   // processSwap() will log a warning and skip counterparty-chain steps.
@@ -473,6 +474,10 @@ public:
   IChainClient* getChainClient(SwapPair pair) const { return m_chainRegistry.getClient(pair); }
 
  private:
+  // A caller-supplied key constrains the first signed KEY_EXCHANGE; it must
+  // not make the pending swap appear to have exchanged keys already.
+  static bool preparePeerIdentity(SwapParams& params);
+
   // Scan non-terminal swaps and warn about any stuck longer than threshold.
   // Called from checkTimeouts().
   void checkStuckSwaps();

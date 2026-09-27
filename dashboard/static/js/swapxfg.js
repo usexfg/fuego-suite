@@ -448,8 +448,7 @@ const SwapXFG = (() => {
     const scale = 10n ** BigInt(decimals);
     const whole = value / scale;
     const fraction = (value % scale).toString().padStart(decimals, '0').replace(/0+$/, '');
-    const clipped = fraction.slice(0, 8);
-    return clipped ? `${whole}.${clipped}` : whole.toString();
+    return fraction ? `${whole}.${fraction}` : whole.toString();
   }
 
   function collectInitiationRequest() {

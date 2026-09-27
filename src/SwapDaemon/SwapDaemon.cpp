@@ -1040,6 +1040,17 @@ bool SwapDaemon::reportSwapFeeOnce(SwapStateMachine& sm, bool claim) {
   return false;
 }
 
+bool SwapDaemon::preparePeerIdentity(SwapParams& params) {
+  static const Crypto::PublicKey ZERO{};
+  if (std::memcmp(&params.peerSwapPubKey, &ZERO, sizeof(ZERO)) == 0) return true;
+  if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) != 0 &&
+      std::memcmp(&params.expectedPeerSwapPubKey, &params.peerSwapPubKey,
+                  sizeof(ZERO)) != 0) return false;
+  params.expectedPeerSwapPubKey = params.peerSwapPubKey;
+  params.peerSwapPubKey = ZERO;
+  return true;
+}
+
 bool SwapDaemon::initiate(SwapParams& params) {
   const auto* amountDescriptor = swapPairDescriptor(params.pair);
   if (!amountDescriptor || params.xfgAmount == 0 || params.ctrAmount == 0 ||
@@ -1264,13 +1275,14 @@ bool SwapDaemon::initiate(SwapParams& params) {
   m_logger(Logging::DEBUGGING) << "Generated swap keypair: "
     << Common::podToHex(params.ourSwapPubKey);
 
-  // expectedPeerSwapPubKey: if caller pre-set it, KEY_EXCHANGE must match.
-  // If peerSwapPubKey was already known (offer), promote it to expected.
+  // A supplied peer key is an expected identity, not a completed exchange.
+  // Keep peerSwapPubKey empty until the signed KEY_EXCHANGE arrives; otherwise
+  // handlePeerMessage sees the first real exchange as a duplicate.
   {
     static const Crypto::PublicKey ZERO{};
-    if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) == 0 &&
-        std::memcmp(&params.peerSwapPubKey, &ZERO, sizeof(ZERO)) != 0) {
-      params.expectedPeerSwapPubKey = params.peerSwapPubKey;
+    if (!preparePeerIdentity(params)) {
+      m_logger(Logging::ERROR) << "Conflicting expected and pre-bound peer swap keys";
+      return false;
     }
     if (std::memcmp(&params.expectedPeerSwapPubKey, &ZERO, sizeof(ZERO)) == 0) {
       m_logger(Logging::WARNING)

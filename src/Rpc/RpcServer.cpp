@@ -1053,8 +1053,8 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
 
   if (!req.peer_pub_key.empty()) {
     if (!Common::fromHex(req.peer_pub_key,
-                         &params.peerSwapPubKey,
-                         sizeof(params.peerSwapPubKey))) {
+                         &params.expectedPeerSwapPubKey,
+                         sizeof(params.expectedPeerSwapPubKey))) {
       res.status = "Invalid peer_pub_key";
       return true;
     }

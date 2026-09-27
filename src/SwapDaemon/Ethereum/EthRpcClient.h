@@ -213,6 +213,10 @@ public:
                    const AtomicAmount& valueWei, uint64_t& gasEstimate);
 
 private:
+  // Test access for offline transaction-envelope vectors. Production callers
+  // use sendTransaction(), which estimates fees and broadcasts the result.
+  friend struct EthRpcClientTestAccess;
+
   std::string httpPost(const std::string& path, const std::string& body);
   std::string jsonRpc(const std::string& method, const std::string& params);
 
@@ -228,6 +232,22 @@ private:
                    const AtomicAmount& valueWei,
                    uint64_t gasLimit,
                    std::string& txHash);
+
+  // The gas estimate is already buffered by estimateGas(). Fees remain
+  // uint64 wei-per-gas and uint64 gas units; only their product and total are
+  // widened for exact, overflow-safe balance comparison.
+  static bool transactionFundingSufficient(const AtomicAmount& balanceWei,
+                                            const AtomicAmount& valueWei,
+                                            uint64_t gasLimit,
+                                            uint64_t feePerGasWei,
+                                            uint64_t estimatedGas);
+
+  // Keep the eth_estimateGas request envelope shared with offline tests so
+  // the sender used for simulation cannot silently diverge from the signer.
+  static std::string buildEstimateGasParams(const std::string& from,
+                                             const std::string& to,
+                                             const std::string& data,
+                                             const AtomicAmount& valueWei);
 
   // Build a signed raw EIP-155 (type-0) transaction.
   std::vector<uint8_t> buildLegacySignedTx(uint64_t nonce,
@@ -248,6 +268,15 @@ private:
 
   // Estimate dynamic fees for EIP-1559.
   bool estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFeePerGas);
+
+  // Refuse RPC-suggested fee envelopes above the same 500 gwei ceiling used
+  // for legacy transactions. Never silently turn a high quote into a signed
+  // transaction with an operator-unapproved maximum fee.
+  static bool calculateCappedEip1559Fees(uint64_t suggestedTipWei,
+                                          uint64_t baseFeeWei,
+                                          uint64_t& maxPriorityFeePerGas,
+                                          uint64_t& maxFeePerGas);
+  static constexpr uint64_t MAX_FEE_PER_GAS_WEI = 500000000000ULL;
 
   // Query eth_gasPrice for legacy (type-0) transactions.
   // Returns false if the RPC call fails; caller should use m_gasPriceFallback.

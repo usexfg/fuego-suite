@@ -946,6 +946,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(PaymentGateService PRIVATE -lresolv)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
+  target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
 endif ()
 
 # --------------------------

@@ -185,6 +185,15 @@
       width: 100%;
       height: 100%;
     }
+    #hearth-chart-status {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      text-align: center;
+      pointer-events: none;
+    }
 
     /* ── Chart Crosshair Info ── */
     .chart-crosshair {
@@ -391,18 +400,19 @@
           <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ Supply</span><span class="mantel-stat-val" id="heat-supply">—</span></div>
           <div class="mantel-stat"><span class="mantel-stat-label">XFG Reserve</span><span class="mantel-stat-val green" id="pool-xfg">—</span></div>
           <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ Reserve</span><span class="mantel-stat-val blue" id="pool-heat">—</span></div>
-          <div class="mantel-stat"><span class="mantel-stat-label">Mint Ratio</span><span class="mantel-stat-val green" id="heat-redemption">—</span></div>
+          <div class="mantel-stat"><span class="mantel-stat-label">Pool XFG/HEAT</span><span class="mantel-stat-val green" id="heat-redemption">—</span></div>
           <div class="mantel-stat"><span class="mantel-stat-label">HΞ∆Ŧ ≋ $1.58</span><span class="mantel-stat-val accent" id="heat-peg" style="font-size:10px;font-weight:400;">peg</span></div>
         </div>
       </div>
       <div class="hearth-body">
         <div class="hearth-side hearth-side-bids">
-          <div class="hearth-side-label">XFG Bids</div>
+          <div class="hearth-side-label">Buy XFG · HEAT budget (sample)</div>
           <div id="hearth-bids"><div class="hearth-empty">No bids yet</div></div>
         </div>
         <div class="fireplace">
           <div class="fireplace-chart">
             <div id="hearth-chart" class="chart-container tv"></div>
+            <div id="hearth-chart-status" class="hearth-empty"></div>
             <div class="chart-crosshair" id="chart-crosshair">
               <span id="ch-o">O —</span>
               <span id="ch-h">H —</span>
@@ -427,6 +437,7 @@
           <div class="price-display">
             <div class="price-main" id="price-xfg-heat">—</div>
             <div class="price-usd" id="price-xfg-usd"></div>
+            <div class="price-usd" id="hearth-market-status">Live pool unavailable</div>
             <div style="display:flex;justify-content:center;gap:12px;margin-top:4px;">
               <button class="btn btn-sm btn-secondary ohlcv-tf active" data-tf="1h" style="padding:2px 8px;font-size:10px;">1H</button>
               <button class="btn btn-sm btn-secondary ohlcv-tf" data-tf="4h" style="padding:2px 8px;font-size:10px;">4H</button>
@@ -444,12 +455,12 @@
               </div>
               <div class="type-selector" style="flex:1;">
                 <div class="type-btn active" data-type="limit">Limit</div>
-                <div class="type-btn" data-type="market">Market</div>
+                <div class="type-btn" data-type="market">Quoted AMM</div>
               </div>
             </div>
             <div class="order-row">
               <div class="form-group" style="flex:1;">
-                <label class="form-label">Amount</label>
+                <label class="form-label" id="order-amount-label">HEAT Budget</label>
                 <input type="text" class="form-input" id="order-amount" placeholder="0.00" style="width:100%;">
               </div>
               <div class="form-group" id="price-group" style="flex:1;">
@@ -457,15 +468,15 @@
                 <input type="text" class="form-input" id="order-price" placeholder="0.00" style="width:100%;">
               </div>
               <div class="form-group" id="expiry-group" style="flex:0 0 80px;">
-                <label class="form-label">Expiry</label>
-                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320" style="width:100%;">
+                <label class="form-label">Expiry Height</label>
+                <input type="text" class="form-input" id="order-expiry" placeholder="0 = none" value="0" style="width:100%;">
               </div>
-              <button class="btn btn-primary btn-execute" id="order-preview-btn" style="flex:0 0 auto;">Buy XFG</button>
+              <button class="btn btn-primary btn-execute" id="order-preview-btn" style="flex:0 0 auto;">Preview Buy XFG</button>
             </div>
           </div>
         </div>
         <div class="hearth-side hearth-side-asks">
-          <div class="hearth-side-label">HΞ∆Ŧ Asks</div>
+          <div class="hearth-side-label">Sell XFG · XFG amount (sample)</div>
           <div id="hearth-asks"><div class="hearth-empty">No asks yet</div></div>
         </div>
       </div>
@@ -484,7 +495,7 @@
         <div id="order-modal-details" style="margin-bottom:16px;"></div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <button class="btn btn-secondary btn-sm" id="order-exec-btn" style="flex:1;">Execute via Wallet</button>
-          <button class="btn btn-secondary btn-sm" id="order-copy-btn" style="flex:1;">Copy CLI Command</button>
+          <button class="btn btn-secondary btn-sm" id="order-copy-btn" style="flex:1;">Copy RPC Request</button>
         </div>
         <div class="code-block" id="order-cli-cmd" style="display:none;"></div>
       </div>

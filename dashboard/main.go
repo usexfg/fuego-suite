@@ -169,19 +169,30 @@ func fetchJSON(url string, timeout time.Duration) (map[string]interface{}, error
 	return result, nil
 }
 
-func fetchRaw(url string, timeout time.Duration) ([]byte, error) {
+func fetchJSONPost(url string, timeout time.Duration) (map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader("{}"))
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("daemon HTTP %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return nil, err
+	}
+	if status, ok := result["status"].(string); ok && status != "OK" {
+		return nil, fmt.Errorf("daemon status %s", status)
+	}
+	return result, nil
 }
 
 // ── Event Pollers ──────────────────────────────────────────────────────────────
@@ -199,18 +210,13 @@ func pollDaemon(bus *EventBus, daemonPort int) {
 		}
 
 		// HEAT metrics
-		if data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/heat_metrics", daemonPort), 3*time.Second); err == nil {
+		if data, err := fetchJSONPost(fmt.Sprintf("http://127.0.0.1:%d/heat_metrics", daemonPort), 3*time.Second); err == nil {
 			bus.Broadcast(Event{Type: EventHeat, Payload: data, Time: time.Now().Unix()})
 		}
 
 		// Pool info
-		if data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second); err == nil {
+		if data, err := fetchJSONPost(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second); err == nil {
 			bus.Broadcast(Event{Type: EventPool, Payload: data, Time: time.Now().Unix()})
-		}
-
-		// Orderbook
-		if body, err := fetchRaw(fmt.Sprintf("http://127.0.0.1:%d/json_rpc", daemonPort), 3*time.Second); err == nil {
-			_ = body // orderbook fetched via RPC proxy
 		}
 
 		// Health status
@@ -613,6 +619,7 @@ func main() {
 	mux.HandleFunc("/heat_metrics", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_pool_info", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_quote", proxyHandler(daemonProxy))
+	mux.HandleFunc("/get_limit_orders", proxyHandler(daemonProxy))
 	mux.HandleFunc("/getswapprice", proxyHandler(daemonProxy))
 
 	// Wallet proxy (direct)

@@ -75,6 +75,19 @@ const App = (() => {
     return resp.json();
   }
 
+  // Non-JSON-RPC daemon routes use a flat JSON request/response body.
+  async function daemonPost(path, params = {}) {
+    const resp = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (!resp.ok) throw new Error(`daemon HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.status && data.status !== 'OK') throw new Error(data.status);
+    return data;
+  }
+
   // Wallet RPC proxy — browser never touches the access key
   async function walletRpc(method, params = {}) {
     const resp = await fetch('/api/wallet', {
@@ -205,7 +218,7 @@ const App = (() => {
   }
 
   return {
-    init, on, rpc, daemonGet, walletRpc, swapRpc,
+    init, on, rpc, daemonGet, daemonPost, walletRpc, swapRpc,
     fmtXfg, fmtHeat, fmtPct, fmtPrice, fmtTime, fmtHeight, fmtDuration,
     copyToClipboard, showToast,
     get health() { return health; },

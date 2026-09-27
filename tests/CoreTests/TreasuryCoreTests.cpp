@@ -907,6 +907,8 @@ void testValidateSettlementSwapCurve() {
   const uint64_t net = static_cast<uint64_t>(
       ((uint128_t)gross * (parameters::HEARTH_FEE_DIVISOR - parameters::HEARTH_FEE_BPS)) /
       parameters::HEARTH_FEE_DIVISOR);
+  // /amm_quote uses this same helper; a wallet quote above net cannot settle.
+  TEST(net == ammSwapNetOutput(input, rX, rH));
   AssetFlows flows;
   uint64_t fee = 0;
   std::string err;

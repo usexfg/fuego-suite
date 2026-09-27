@@ -75,3 +75,26 @@ func TestSwapdRPCProxyAllowlistAndToken(t *testing.T) {
 		t.Fatal("forbidden method reached upstream")
 	}
 }
+
+func TestFetchJSONPostUsesDaemonFlatJSON(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST", r.Method)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != "{}" {
+			t.Errorf("body = %q, want {}", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"heat_supply":123,"status":"OK"}`))
+	}))
+	defer upstream.Close()
+
+	result, err := fetchJSONPost(upstream.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["heat_supply"] != float64(123) {
+		t.Fatalf("heat_supply = %v", result["heat_supply"])
+	}
+}

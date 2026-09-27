@@ -39,9 +39,9 @@ checks and recovery paths remain separate by design.
 4. Confirm `src/SwapDaemon/SwapTypes.h` in the canonical checkout has
    `AtomicAmount ctrAmount`; a passing temp build is not delivery.
 
-Acceptance: one scoped, reproducible main-checkout commit with no unrelated
-files staged and no review/test failures. No funded mainnet assertion follows
-from offline tests.
+Status: delivered to canonical `xfgo` through reviewed commit chain ending at
+`cea2a86ac`. The main checkout retained its unrelated HEAT/Starkproof edits.
+No funded mainnet assertion follows from offline tests.
 
 ## Packet 1 — full-width amount sign-off
 
@@ -59,8 +59,8 @@ Implementation checklist:
   safety ceiling used by legacy transactions. Validate against a real RPC on
   a funded testnet before claiming production readiness.
 
-Status: offline implementation and focused tests complete in the integration
-work; funded testnet execution remains open.
+Status: offline implementation and focused tests complete in canonical `xfgo`;
+funded testnet execution remains open.
 
 ## Packet 2 — generic EVM batch chains
 
@@ -93,6 +93,14 @@ money-moving trade; mark bootstrap/no-data behavior visibly and require
 operator policy. Record which new EVM assets have no trusted oracle feed.
 
 ## Packet 4 — live dashboard parity
+
+Current status: partial. Hearth's operator page now removes simulated
+production market data, reads live pool/HEAT metrics and a bounded sample of
+live limit deposits, and previews exact-output AMM trades against a
+curve-consistent quote. Historical candles, order cancellation/claim, complete
+depth and ownership filtering, and funded browser-to-wallet execution remain
+open. SwapXFG still lacks offer placement/cancel and full fill/recovery UI.
+The isolated fake-data Hearth design copy remains separate.
 
 - SwapXFG: daemon-backed catalog/status, balances, quote, signed offer
   placement/cancel, own orders, taker fill, swap timeline, claim/refund,

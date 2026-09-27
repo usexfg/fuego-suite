@@ -4,6 +4,33 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Hearth live-data and quote-first operator controls
+
+**Branch/Feature**: `codex/swap-uint256-integration`
+**Started**: 2026-09-27
+**Agent**: Codex (GPT-6)
+**Status**: PARTIAL DASHBOARD PARITY — offline verified, funded UI execution pending
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Align `/amm_quote` with the constant-product AMM settlement bound rather than combined orderbook estimate | Codex (GPT-6) | 2026-09-27 | DONE — core links and 179/179 core regressions pass |
+| 2 | Remove production random candles, orderbook and pool/HEAT fixtures; surface unavailable states | Codex (GPT-6) | 2026-09-27 | DONE — separate design sandbox untouched |
+| 3 | Read live pool, HEAT metrics, and sampled limit deposits with correct units and absolute expiry | Codex (GPT-6) | 2026-09-27 | DONE — Go and JS offline tests pass |
+| 4 | Preview exact-output AMM swaps with correct direction, strict output floor, fresh quote recheck, and exact atomic parsing | Codex (GPT-6) | 2026-09-27 | DONE — no funded wallet execution claimed |
+| 5 | Add historical candles, owned order cancel/claim, complete order depth, and full SwapXFG fill/recovery controls | Codex | — | PENDING — TUI remains available |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| C++ build and core regressions | PASS — `fuegod` links; treasury/core 179/179 |
+| Dashboard offline tests | PASS — Go `go test ./...`; JS Hearth/order-pair 7/7; JS syntax |
+| Live funded browser-to-wallet exercise | NOT RUN — do not mark dashboard production-operational |
+
+---
+
 ## Swap uint256 amount and review-blocker integration
 
 **Branch/Feature**: `codex/swap-uint256-integration`

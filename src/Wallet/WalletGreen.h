@@ -31,6 +31,7 @@
 #include "Transfers/TransfersSynchronizer.h"
 #include "Transfers/BlockchainSynchronizer.h"
 #include "crypto/subaddress.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 
 namespace CryptoNote
 {
@@ -365,6 +366,38 @@ protected:
 
   void validateTransactionParameters(const TransactionParameters &transactionParameters) const;
   size_t doTransfer(const TransactionParameters &transactionParameters, Crypto::SecretKey &transactionSK);
+
+  // One HEAT deposit ready to spend: its input and what signs it.
+  struct HeatSpend
+  {
+    TransactionInputCommitmentSpend input;
+    std::vector<Crypto::PublicKey> ring;  // ring keys, in the input's order
+    KeyPair keys;
+    size_t realIndex = 0;
+  };
+  // Unlocked HEAT deposits covering `amount`; returns their total.
+  uint64_t selectHeatDeposits(uint64_t amount, std::vector<size_t> &depositIds) const;
+  // A ring-signable spend of each deposit, with decoys of the deposit's own
+  // amount (rings index commitment outputs by amount).
+  std::vector<HeatSpend> prepareHeatSpends(const std::vector<size_t> &depositIds, uint64_t mixin);
+  // XFG the transaction spends — at least its fee: selects transfers, adds the
+  // change output, and prepares the key inputs.
+  void prepareXfgInputs(ITransaction &transaction, uint64_t xfgNeeded, uint64_t mixin,
+                        std::vector<InputInfo> &keysInfo);
+  // A commitment output this wallet can find and spend: its key is derived
+  // from the view key and output index, as the scanner re-derives it.
+  void addCommitmentToSelf(ITransaction &transaction, uint64_t amount, uint32_t term);
+  void addHeatOutputToSelf(ITransaction &transaction, uint64_t amount)
+  {
+    addCommitmentToSelf(transaction, amount, parameters::HEAT_TERM);
+  }
+  // The keys of a commitment output this wallet received, re-derived from the
+  // view key the way the scanner recognized it.
+  CryptoNote::DepositCommitmentKeys deriveOwnCommitmentKeys(const TransactionOutputInformation &transfer) const;
+  // Adds every input, then signs them. A signature covers the whole prefix,
+  // so ITransaction refuses an input once anything is signed.
+  void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
+                        const std::vector<HeatSpend> &heatSpends);
 
   void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,

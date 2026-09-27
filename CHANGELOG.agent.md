@@ -1346,6 +1346,28 @@ routed — all of it to the burn tally, `MINT_BURN_EF_PCT` (50%) to the Eternal
 Flame, `MINT_BURN_TREASURY_PCT` (50%) to the SWF — and the init rescan matches.
 Nothing undid the SWF share on a pop; `popBlock` now does, for both tags.
 
+WalletGreen (walletd, PaymentGate) HEAT builders, task 7a — compile-verified
+only; no e2e send is possible here (the block-serving RPC hang):
+- HEAT must balance exactly, so HEAT sends, CD creation, CD withdrawal and
+  rollover, and HEAT limit orders now take the XFG fee from XFG inputs. HEAT
+  sends had no XFG fee at all (fee 0, refused by every mempool); a CD paid its
+  fee out of HEAT.
+- Every input is added before any is signed. ITransaction refuses an input
+  once anything is signed, so a spend of two HEAT deposits threw, and a CD
+  withdrawal with a bonus claim threw (its extra was appended after signing).
+- Each HEAT deposit gets decoys of its own amount; all rings used the first
+  deposit's decoys, and rings index commitment outputs by amount.
+- HEAT limit orders (BUY_XFG) spend HEAT; they used to fund a HEAT escrow with
+  XFG. Prices are checked against the tick before building.
+- CD keys: a withdrawal re-derives the key from the view key when no secret was
+  stored — only createDeposit stored one, so CDs from heatDepositV10 could not
+  be withdrawn. Rollover gave the new CD a random secret it never stored: the
+  scanner could not find it and nothing could spend it. It now derives it
+  from the view key like every other owned output.
+- Legacy (pre-v10, multisig) deposits pay out XFG again; 7d83625bb had made
+  every payout HEAT, which consensus refuses — withdrawals of old deposits from
+  walletd have failed on mainnet since.
+
 Testnet: v11 has been active there since height 30, and these rules apply to its
 whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
 withdrawals were paid under the old fee rule and will not revalidate; the
@@ -1360,7 +1382,8 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | 4 | XFG-only fee model: validateSettlement (block, mempool, template); swap/LP settlement + exact reversal | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 5 | Constant-product swap pricing (was linear at spot); mints TWAP-only, priced by the declared burn | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 6 | Wallet pricing: WalletGreen + SimpleWallet mint at TWAP, swaps quoted on the curve | Claude Opus 5.5 | 2026-09-27 | DONE |
-| 7 | HEAT-only builders pay an XFG fee (CD create/withdraw, HEAT limit orders) | Claude Opus 5.5 | 2026-09-27 | TODO |
+| 7a | WalletGreen HEAT builders: XFG fee inputs, per-amount rings, add-then-sign (send, CD create/withdraw/rollover, HEAT limit orders, HEAT→XFG swap) | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 7b | WalletLegacy (SimpleWallet) HEAT builders: same fixes through its async request chain | Claude Opus 5.5 | 2026-09-27 | TODO |
 | 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn: mempool refuses them now; consensus cutoff height (default = v11) | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 9 | v11 mint burns feed the burn tally, the Eternal Flame and the SWF (0x08's 50/50 routing); SWF share undone on pop | Claude Opus 5.5 | 2026-09-27 | DONE |
 

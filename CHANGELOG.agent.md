@@ -280,3 +280,27 @@ Gugger 2020) is a separate, reviewable piece of work.
 | Build compiles (Daemon, SimpleWallet, SwapDaemonLib) | claude-code/opus-5 | 2026-09-10 | PASS |
 | 14 suites, 0 failures (audit-regressions 37/37, core 177/177) | claude-code/opus-5 | 2026-09-10 | PASS |
 | 3.9 closed | — | — | NO — remains OPEN by design |
+
+---
+
+## fuego-valise SDK Sync Trigger
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-09-27
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Add `.github/workflows/notify-valise.yml`: repository_dispatch to fuego-valise when contract source files change on master | claude-code | 2026-09-27 | DONE |
+
+No C++ source changed. The job needs the `VALISE_DISPATCH_TOKEN` secret; without it it warns and exits 0.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| No source change (build unaffected) | claude-code | 2026-09-27 | PASS |
+| All tasks complete | claude-code | 2026-09-27 | PASS |

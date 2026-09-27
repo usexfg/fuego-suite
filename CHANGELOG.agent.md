@@ -1326,6 +1326,26 @@ failure. Further changes:
   `validateSettlement` returns.
 - `m_heatSupply` (metric only) counts minted HEAT, not pool payouts.
 
+Live on mainnet v10 (found in this review; tasks 8-9):
+- The 0x08 burn tag's amount was never checked against a burn, yet
+  `pushToBankingIndex` fed half of it to the Eternal Flame — and the v10+ block
+  reward re-emits the Eternal Flame. A crafted transaction could inflate every
+  later block reward. The wallets merely stopped creating the tag.
+- v10 blocks validate a `HeatMintAuth` mint's asset balance but never its
+  price: HEAT could be minted from a zero burn. v10 also settles legacy AMM tags
+  into the pool.
+- Mitigation now: the mempool relays none of these tags before v11 (policy, no
+  fork). Consensus: `HEATWAVE_TAG_CUTOFF_HEIGHT` rejects them in pre-v11 blocks
+  from that height — a soft fork, defaulting to the v11 height (no change) until
+  a release sets an earlier one. Whether either was ever used on mainnet cannot
+  be checked from this machine (no synced mainnet chain).
+
+v11 mints never fed the Eternal Flame: only 0x08 did, and the mint tag replaced
+it. `pushToBankingIndex` now routes a v11 mint's declared burn the way 0x08 was
+routed — all of it to the burn tally, `MINT_BURN_EF_PCT` (50%) to the Eternal
+Flame, `MINT_BURN_TREASURY_PCT` (50%) to the SWF — and the init rescan matches.
+Nothing undid the SWF share on a pop; `popBlock` now does, for both tags.
+
 Testnet: v11 has been active there since height 30, and these rules apply to its
 whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
 withdrawals were paid under the old fee rule and will not revalidate; the
@@ -1341,11 +1361,13 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | 5 | Constant-product swap pricing (was linear at spot); mints TWAP-only, priced by the declared burn | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 6 | Wallet pricing: WalletGreen + SimpleWallet mint at TWAP, swaps quoted on the curve | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 7 | HEAT-only builders pay an XFG fee (CD create/withdraw, HEAT limit orders) | Claude Opus 5.5 | 2026-09-27 | TODO |
-| 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn (live on v10) | Claude Opus 5.5 | 2026-09-27 | TODO |
+| 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn: mempool refuses them now; consensus cutoff height (default = v11) | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 9 | v11 mint burns feed the burn tally, the Eternal Flame and the SWF (0x08's 50/50 routing); SWF share undone on pop | Claude Opus 5.5 | 2026-09-27 | DONE |
 
 ### Sign-off
 | Check | Status |
 |-------|--------|
 | Build compiles | PASS (tasks 1-6): Daemon, SimpleWallet, PaymentGateService, test targets |
 | Tests pass | PASS (tasks 1-6): core 178/178, hearth 31/31, auction 57/57, p2p 61/61 |
-| All tasks done | NO — tasks 7-8 open |
+| Tests pass (tasks 8-9) | PASS: core 185/185, hearth 31/31, auction 57/57, p2p 115/115 |
+| All tasks done | NO — task 7 open |

@@ -893,6 +893,22 @@ void testValidateSettlementBasics() {
        legacyFee == 1 * C);
   TEST(!t.chain.checkTransactionSettlement(
       settlementTx({1 * C}, {commitmentOut(100 * C, parameters::HEAT_TERM)}, mint), legacyFee));
+  // Before v11 the pool relays no HEAT, Hearth or 0x08 tag at all, even on a
+  // balanced transaction: v10 has no mint price and never checked a 0x08 burn.
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, legacyBurn), legacyFee));
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(9 * C)}, mint), legacyFee));
+  TEST(!t.chain.checkTransactionSettlement(settlementTx({10 * C}, {keyOut(8 * C)}, fund), legacyFee));
+}
+
+// The pre-v11 tag cutoff defaults to the v11 height on mainnet, so it changes
+// no v10 block until a release moves it earlier; testnet is at v11 already.
+void testHeatwaveTagCutoffHeight() {
+  Logging::LoggerGroup nullLog;
+  Currency mainnet = CurrencyBuilder(nullLog).currency();
+  TEST(mainnet.heatwaveTagCutoffHeight() == parameters::HEATWAVE_TAG_CUTOFF_HEIGHT);
+  TEST(mainnet.heatwaveTagCutoffHeight() <= mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  TEST(testnet.heatwaveTagCutoffHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
 }
 
 // Swaps are priced on the constant-product curve, not linearly at spot.
@@ -990,6 +1006,7 @@ int main() {
   testValidateSettlementBasics();
   testValidateSettlementSwapCurve();
   testValidateSettlementLimitDeposit();
+  testHeatwaveTagCutoffHeight();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();

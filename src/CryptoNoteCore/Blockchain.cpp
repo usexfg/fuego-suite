@@ -125,6 +125,56 @@ bool swapCdFeeHeat(uint8_t direction, uint64_t cdFeeOut, uint64_t postReserveXfg
   return true;
 }
 
+// Tags with no place before v11: HEAT and Hearth settlement, the legacy AMM
+// tags pushTransaction still settles into the pool, and the 0x08 burn tag.
+bool isHeatwaveTag(const CryptoNote::TransactionExtraField& f) {
+  using namespace CryptoNote;
+  return f.type() == typeid(TransactionExtraHeatCommitment) ||
+         f.type() == typeid(TransactionExtraHeatMintAuth) ||
+         f.type() == typeid(TransactionExtraHeatSendAuth) ||
+         f.type() == typeid(TransactionExtraAmmSwapAuth) ||
+         f.type() == typeid(TransactionExtraAmmSwap) ||
+         f.type() == typeid(TransactionExtraAmmAddLiquidity) ||
+         f.type() == typeid(TransactionExtraAmmRemoveLiquidity) ||
+         f.type() == typeid(TransactionExtraAmmCompound) ||
+         f.type() == typeid(TransactionExtraAmmClaim) ||
+         f.type() == typeid(TransactionExtraLpAddAuth) ||
+         f.type() == typeid(TransactionExtraLpRemoveAuth) ||
+         f.type() == typeid(TransactionExtraOrderPlace) ||
+         f.type() == typeid(TransactionExtraOrderCancel) ||
+         f.type() == typeid(TransactionExtraMarketBuyAuth) ||
+         f.type() == typeid(TransactionExtraMarketSellAuth) ||
+         f.type() == typeid(TransactionExtraLimitDeposit) ||
+         f.type() == typeid(TransactionExtraLimitWithdraw) ||
+         f.type() == typeid(TransactionExtraTreasuryFund) ||
+         f.type() == typeid(TransactionExtraCdBonusClaim);
+}
+
+bool carriesHeatwaveTag(const CryptoNote::Transaction& tx) {
+  std::vector<CryptoNote::TransactionExtraField> fields;
+  if (!CryptoNote::parseTransactionExtra(tx.extra, fields)) return false;
+  for (const auto& f : fields) {
+    if (isHeatwaveTag(f)) return true;
+  }
+  return false;
+}
+
+// XFG a block's transaction burns into the banking index: a 0x08 tag's
+// amount (historical), or from v11 a HEAT mint's declared burn, which
+// validateSettlement holds to the XFG the transaction destroys. Every burn is
+// routed alike — all of it to the burn tally, MINT_BURN_EF_PCT to the Eternal
+// Flame (which the block reward re-emits), MINT_BURN_TREASURY_PCT to the SWF.
+uint64_t bankedBurn(const CryptoNote::TransactionExtraField& f, uint8_t blockMajorVersion) {
+  using namespace CryptoNote;
+  if (f.type() == typeid(TransactionExtraHeatCommitment)) {
+    return boost::get<TransactionExtraHeatCommitment>(f).amount;
+  }
+  if (blockMajorVersion >= BLOCK_MAJOR_VERSION_11 && f.type() == typeid(TransactionExtraHeatMintAuth)) {
+    return boost::get<TransactionExtraHeatMintAuth>(f).xfgBurned;
+  }
+  return 0;
+}
+
 bool isSettlementTag(const CryptoNote::TransactionExtraField& f) {
   using namespace CryptoNote;
   return f.type() == typeid(TransactionExtraHeatMintAuth) ||
@@ -903,12 +953,14 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
         std::vector<TransactionExtraField> extraFields;
         if (parseTransactionExtra(tx.tx.extra, extraFields)) {
           for (const auto& field : extraFields) {
-            if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-              const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-              totalRescannedBurns += heatCommit.amount;
+            // Same burns, same routing as pushToBankingIndex.
+            const uint64_t burned = bankedBurn(field, block.bl.majorVersion);
+            if (burned > 0) {
+              totalRescannedBurns += burned;
               // Overall tally: 100% of the burn. EF bucket: its 50% routing share.
-              m_bankingIndex.addTotalBurn(heatCommit.amount, b);
-              uint64_t efShare = (heatCommit.amount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
+              m_bankingIndex.addTotalBurn(burned, b);
+              uint64_t efShare = static_cast<uint64_t>(
+                  ((uint128_t)burned * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100);
               m_bankingIndex.addForeverDeposit(efShare, b);
           }
         }
@@ -3575,6 +3627,12 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                  << " carries a v11 settlement tag before activation";
     }
+    if (isTransactionValid && block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 &&
+        block.height >= m_currency.heatwaveTagCutoffHeight() && carriesHeatwaveTag(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                 << " carries a HEAT/Hearth or 0x08 tag in a pre-v11 block past the cutoff";
+    }
 
     // v10 per-asset balance check — pre-v11 blocks only, kept bit-identical to
     // how they were validated. v11+ uses the flows rule below. The coinbase is
@@ -4538,19 +4596,22 @@ void CryptoNote::Blockchain::rebuildOrderbookFromUtxoSet(uint32_t height) {
           }
         }
         for (const auto& field : extraFields) {
-          // Check for HEAT commitment (0x08) - permanent burn
-          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-            const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            permanentBurns += (heatCommit.amount * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100;
+          // XFG burns: the historical 0x08 tag and, from v11, HEAT mints —
+          // which fed nothing before, though a mint is the main XFG burn.
+          const uint64_t burned = bankedBurn(field, block.bl.majorVersion);
+          if (burned > 0) {
+            permanentBurns += static_cast<uint64_t>(
+                ((uint128_t)burned * CryptoNote::parameters::MINT_BURN_EF_PCT) / 100);
             // Overall burn tally: 100% of the burn.
-            m_bankingIndex.addTotalBurn(heatCommit.amount, block.height);
-            uint64_t treasuryShare = (heatCommit.amount * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100;
+            m_bankingIndex.addTotalBurn(burned, block.height);
+            uint64_t treasuryShare = static_cast<uint64_t>(
+                ((uint128_t)burned * CryptoNote::parameters::MINT_BURN_TREASURY_PCT) / 100);
             if (m_swfBurnedXfgPendingHeat <= UINT64_MAX - treasuryShare) {
               m_swfBurnedXfgPendingHeat += treasuryShare;
             } else {
               logger(ERROR, BRIGHT_RED) << "SWF balance overflow in HEAT burn routing";
             }
-            logger(DEBUGGING) << "Detected HEAT burn in block " << block.height << ": " << heatCommit.amount << " XFG";
+            logger(DEBUGGING) << "Detected XFG burn in block " << block.height << ": " << burned << " XFG";
 
             // REMOVED: 0x08 commitment-entry indexing (STARK off-chain data
             // with chainID). The burn tally above stays — it is money
@@ -5668,6 +5729,22 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
   size_t commitmentsRemoved = m_commitmentIndex.rollbackToHeight(poppedHeight);
   if (commitmentsRemoved > 0) {
     logger(DEBUGGING) << "Removed " << commitmentsRemoved << " commitments during block rollback at height " << poppedHeight;
+  }
+
+  // Undo the SWF shares pushToBankingIndex credited for this block's burns.
+  // The banking index drops the block's tally and Eternal Flame entries
+  // itself; nothing undid the SWF share, so every reorg across a burn left it
+  // credited. (Epoch-boundary blocks also restore it from their snapshot.)
+  for (const auto& blockTx : m_blocks.back().transactions) {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(blockTx.tx.extra, fields)) continue;
+    for (const auto& f : fields) {
+      const uint64_t burned = bankedBurn(f, m_blocks.back().bl.majorVersion);
+      const uint64_t swfShare = static_cast<uint64_t>(
+          ((uint128_t)burned * parameters::MINT_BURN_TREASURY_PCT) / 100);
+      m_swfBurnedXfgPendingHeat = m_swfBurnedXfgPendingHeat >= swfShare
+          ? m_swfBurnedXfgPendingHeat - swfShare : 0;
+    }
   }
 
   m_bankingIndex.popBlock();
@@ -7713,6 +7790,12 @@ bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, u
       return false;
     }
     return true;
+  }
+  // Before v11 no HEAT, Hearth or 0x08 tag is relayed, whatever the cutoff
+  // height: v10 has no price rule for mints and never checked a 0x08 burn.
+  if (carriesHeatwaveTag(tx)) {
+    logger(DEBUGGING) << "Transaction " << getObjectHash(tx) << " carries a HEAT/Hearth tag before v11";
+    return false;
   }
   // Before v11 the fee is inputs minus outputs. The pool used to admit
   // outputs above inputs for mint and swap tags; the fee then underflowed and

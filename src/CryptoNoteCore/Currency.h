@@ -200,6 +200,9 @@ public:
   // parameters::CD_ACTIVATION_HEIGHT. Testnet: its v11 height, so CDs keep
   // being exercised there and its existing history stays valid.
   uint32_t cdActivationHeight() const;
+  // First height at which a pre-v11 block may not carry HEAT, Hearth or
+  // legacy-burn tags (parameters::HEATWAVE_TAG_CUTOFF_HEIGHT; testnet: v11).
+  uint32_t heatwaveTagCutoffHeight() const;
   uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }

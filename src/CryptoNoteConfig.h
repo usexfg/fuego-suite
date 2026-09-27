@@ -349,6 +349,12 @@ namespace CryptoNote
         // alone for a while. Defaults to the v12 height until a release sets a
         // date; a v11.x release can move it earlier without waiting on v12.
         const uint32_t CD_ACTIVATION_HEIGHT                          = UPGRADE_HEIGHT_V12;
+        // Pre-v11 blocks at or above this height may not carry HEAT, Hearth or
+        // legacy-burn tags. v10 had no price rule for mints, settled legacy AMM
+        // tags into the pool, and tallied the 0x08 burn tag — whose amount was
+        // never checked — into the Eternal Flame and so the block reward. A
+        // soft fork: moving it below v11 needs miners on the release first.
+        const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT                    = UPGRADE_HEIGHT_V11;
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

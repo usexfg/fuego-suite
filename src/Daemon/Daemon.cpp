@@ -368,8 +368,10 @@ int main(int argc, char* argv[])
     auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
       swapRpcHost, rpcConfig.bindPort, swapDataDir, logManager);
     swapDaemon->setSwapRelay(swapRelay.get());
+    swapDaemon->start();
     rpcServer.setSwapDb(swapDb.get());
     rpcServer.setSwapDaemon(swapDaemon.get());
+    logger(INFO) << "SwapDaemon started";
 
     // start components
     if (!command_line::has_arg(vm, arg_console)) {
@@ -425,11 +427,6 @@ int main(int argc, char* argv[])
     }
     rpcServer.enableCors(command_line::get_arg(vm, arg_enable_cors));
     logger(INFO) << "Core rpc server started ok";
-
-    // Start the embedded swapd only after the RPC server is up: its start()
-    // and 30s tick loop query fuegod's height over the RPC started above.
-    swapDaemon->start();
-    logger(INFO) << "SwapDaemon started";
 
     Tools::SignalHandler::install([&dch, &p2psrv] {
       dch.stop_handling();

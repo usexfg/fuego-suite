@@ -88,16 +88,19 @@ if(MSVC)
     string(REPLACE "/W3" "/W0" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     string(REPLACE "/W3" "/W0" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 else()
-    set(CMAKE_C_FLAGS_DEBUG   "-g3 -O0 -fno-strict-aliasing")
-    set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -fno-strict-aliasing")
     # -fno-strict-aliasing is REQUIRED for correct hashes: jh.c (the CN
     # finalizer selected for ~1/4 of blocks) type-puns its bitslice state
     # and GCC miscompiles it at -O1+ under strict aliasing (TBAA), yielding
     # wrong hash_extra_jh results. Monero and uPlexa build with this flag;
     # without it the daemon rejects ~25% of valid mainnet blocks with
-    # "too weak proof of work".
-    set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG -fno-strict-aliasing")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fno-strict-aliasing")
+    # "too weak proof of work". Applied to the base flags (not per-config)
+    # so Debug, Release, RelWithDebInfo and no-build-type builds all get it.
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-strict-aliasing")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
+    set(CMAKE_C_FLAGS_DEBUG   "-g3 -O0")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
+    set(CMAKE_C_FLAGS_RELEASE   "-O3 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 endif()
 
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")

@@ -1096,6 +1096,15 @@ TransactionId WalletLegacy::lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, u
 TransactionId WalletLegacy::heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
 
+  // Consensus rejects CD outputs below the activation height; say so plainly
+  // instead of building a transaction the network will refuse.
+  const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+  if (nextHeight < m_currency.cdActivationHeight()) {
+    throw std::system_error(make_error_code(error::WRONG_STATE),
+        "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
+        " (current height " + std::to_string(nextHeight) + ")");
+  }
+
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;

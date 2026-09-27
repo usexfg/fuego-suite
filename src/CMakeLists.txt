@@ -947,6 +947,9 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
   target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
+  # core_tests builds a real Blockchain (rebuildCache regression), which links
+  # the DNS checkpoint lookup.
+  target_link_libraries(core_tests PRIVATE -lresolv)
 endif ()
 
 # --------------------------

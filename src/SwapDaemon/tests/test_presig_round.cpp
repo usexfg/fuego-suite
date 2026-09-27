@@ -137,11 +137,8 @@ static bool testNonceNonResurrection() {
 
   if (!adaptor_session_init(p, p.escrowTxHash, true)) return false;
   if (!adaptor_partial_sign(p)) return false;
-  // The scalar bytes are erased; signed_flag intentionally remains true to
-  // prevent reuse even if a caller initializes a second session in memory.
-  if (!isZeroBytes(reinterpret_cast<const uint8_t*>(p.musig2.ourSecNonce.k),
-                   sizeof(p.musig2.ourSecNonce.k)) ||
-      !p.musig2.ourSecNonce.signed_flag) return false;
+  if (!isZeroBytes(reinterpret_cast<const uint8_t*>(&p.musig2.ourSecNonce),
+                   sizeof(Crypto::Musig2SecNonce))) return false;  // consumed in memory
   p.musig2.partialSigGenerated = true;
 
   SwapStateMachine sm(p);
@@ -155,8 +152,8 @@ static bool testNonceNonResurrection() {
   const SwapParams& lp = loaded.params();
 
   // Nonce stays zeroed after reload (never resurrected for re-signing).
-  if (!isZeroBytes(reinterpret_cast<const uint8_t*>(lp.musig2.ourSecNonce.k),
-                   sizeof(lp.musig2.ourSecNonce.k))) return false;
+  if (!isZeroBytes(reinterpret_cast<const uint8_t*>(&lp.musig2.ourSecNonce),
+                   sizeof(Crypto::Musig2SecNonce))) return false;
   if (!lp.musig2.partialSigGenerated) return false;
   // Our partial sig survives (needed to complete/verify the aggregate).
   if (!bytesEqual(lp.musig2.ourPartialSig.s.data, p.musig2.ourPartialSig.s.data, 32)) return false;

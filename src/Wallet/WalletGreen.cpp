@@ -477,8 +477,16 @@ namespace CryptoNote
             m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       INode::CdClaimInfo claimInfo;
       std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
-          static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo);
-      if (!ec && claimInfo.formulaInterest > 0) {
+          static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo, deposit.term);
+      // Spending the CD consumes its key image, so interest left off this
+      // transaction can never be claimed later. If the node cannot say what
+      // has accrued, stop rather than withdraw with a zero claim.
+      if (ec) {
+        throw std::system_error(ec,
+            "cannot read this CD's accrued interest from the node; withdrawal "
+            "aborted so the interest is not forfeited");
+      }
+      if (claimInfo.formulaInterest > 0) {
         claimedInterest = claimInfo.poolInfoPresent
             ? capInterestByPool(depositId, claimInfo.formulaInterest, claimedBonus, deposit.term)
             : claimInfo.formulaInterest;
@@ -1736,6 +1744,13 @@ namespace CryptoNote
     // HEAT CD terms are epoch counts, never HEAT_TERM (mint marker) or bare createDeposit XFG terms
     if (termEpochs == parameters::HEAT_TERM) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "term_epochs must not be HEAT_TERM");
+    }
+    // Consensus rejects CD outputs below the activation height; say so plainly
+    // instead of building a transaction the network will refuse.
+    if (getBlockCount() < m_currency.cdActivationHeight()) {
+      throw std::system_error(make_error_code(error::WRONG_STATE),
+          "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
+          " (current height " + std::to_string(getBlockCount()) + ")");
     }
 
     fee = m_currency.minimumFee();

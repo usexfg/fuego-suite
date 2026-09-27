@@ -115,6 +115,8 @@ namespace CryptoNote {
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
     uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
+    CdClaimEstimate estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                    uint32_t currentHeight, uint32_t term) const;
 
     // W-3: mints the vault-spend surplus back to the source partition as a
     // change UTXO (indexed above the current block height, so popBlock's
@@ -189,9 +191,7 @@ namespace CryptoNote {
       uint64_t heat = 0;
     };
     TreasuryLpValue getTreasuryLpValue() const;
-    void setBootstrapAmount(uint64_t xfg, uint64_t heat);
     void addSwapFee(uint64_t amount);
-    bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     const VaultUtxoSet& getVault() const { return m_vault; }
     uint64_t getSwfBalance() const { return m_swfBurnedXfgPendingHeat; }
@@ -445,7 +445,6 @@ namespace CryptoNote {
       bool bootstrapRepaid;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
-      uint64_t bonusWeightedBase;
 
       void serialize(ISerializer& s) {
         s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
@@ -472,7 +471,6 @@ namespace CryptoNote {
         s(bootstrapRepaid, "bootstrap_repaid");
         s(bonusVaultBalance, "bonus_vault_balance");
         s(bonusVaultPendingXfg, "bonus_vault_pending_xfg");
-        s(bonusWeightedBase, "bonus_weighted_base");
       }
     };
 
@@ -489,7 +487,15 @@ namespace CryptoNote {
 
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
-    uint64_t m_heatOnDeposit = 0;       // HEAT locked in CDs (excludes mint outputs, HEAT_TERM)
+    // HEAT in CDs still earning: added at creation, dropped at the boundary
+    // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
+    uint64_t m_heatOnDeposit = 0;
+    // Last credited epoch ((creationHeight + term) / D) → CD HEAT ending there.
+    // Creation-side only; boundaries read it and never edit it.
+    std::map<uint64_t, uint64_t> m_cdExpiryByEpoch;
+    // CD HEAT created in the block being pushed (reset by its miner tx). Those
+    // CDs start in the next epoch, so a boundary block excludes them.
+    uint64_t m_blockCdCreatedHeat = 0;
     CryptoNote::HeatMintEngine m_heatMintEngine;
 
     // DIGM stablecoin state (on-chain commitments)
@@ -635,13 +641,7 @@ namespace CryptoNote {
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
     uint64_t m_treasuryLpPendingXfg = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
-    uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
-    // v11+: tier-weighted CD principal created per epoch. The BV bonus share
-    // denominator at an epoch boundary is the rolling sum over the last
-    // BONUS_WEIGHTED_WINDOW_EPOCHS entries — deterministic, spend-agnostic
-    // (ring privacy hides a spent CD's term), and strictly bounded so total
-    // bonus payouts can never exceed realized BV inflows.
-    std::vector<uint64_t> m_bonusWeightedByEpoch;
+    uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (funds the lean-epoch yield floor)
     // Autonomous Treasury Vault
     VaultUtxoSet m_vault;
     VaultKeypair m_vaultKeys;
@@ -709,6 +709,7 @@ namespace CryptoNote {
     void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
     bool processBlockEpochWork(const Block& block, uint32_t height, const Crypto::Hash& blockHash);
+    void seedHearthPool();
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);

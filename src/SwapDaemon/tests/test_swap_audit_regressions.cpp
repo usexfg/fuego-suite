@@ -68,15 +68,12 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   SecpSchnorrSig sig{};
   CHECK(secp_complete_schnorr_sig(sk, k, msg, sig), "counterparty completes the signature");
 
-  // Correct point: extraction succeeds and returns the scalar in canonical
-  // secp256k1 big-endian form (the byte-reverse of CryptoNote's LE storage).
-  SecretKey t_rev = t;
-  std::reverse(reinterpret_cast<uint8_t*>(&t_rev),
-               reinterpret_cast<uint8_t*>(&t_rev) + 32);
+  // Correct point: extraction succeeds and returns the CryptoNote LE scalar
+  // accepted by both the secp adaptor signer and the XFG spend path.
   SecretKey got{};
   CHECK(secp_adaptor_extract(presig, sig, T, got), "extract succeeds for the published T");
-  CHECK(std::memcmp(&got, &t_rev, sizeof(t_rev)) == 0,
-        "recovered scalar equals rev(t) in the secp domain");
+  CHECK(std::memcmp(&got, &t, sizeof(t)) == 0,
+        "recovered scalar equals t in the CryptoNote LE domain");
 
   // Wrong point: the scalar is non-zero and would have passed the old check,
   // but it does not open T', so extraction must refuse it.
@@ -85,13 +82,13 @@ static void testAdaptorExtractBindsToPublishedPoint() {
   CHECK(!acceptedWrongT, "extract REFUSES a scalar that does not open the given point");
 
   // The 3-arg form still recovers the adaptor scalar (non-zero guard only) — the weaker
-  // contract the 4-arg overload replaces (AUDIT M-3). The scalar is in secp BE domain
-  // (rev of CryptoNote LE t), not raw t bytes.
+  // contract the 4-arg overload replaces (AUDIT M-3). Both overloads return t in the
+  // CryptoNote LE domain it was signed with.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   SecretKey legacy{};
   CHECK(secp_adaptor_extract(presig, sig, legacy), "3-arg extract recovers adaptor scalar");
-  CHECK(std::memcmp(&legacy, &t_rev, sizeof(t_rev)) == 0, "3-arg result equals rev(t) (secp BE domain)");
+  CHECK(std::memcmp(&legacy, &t, sizeof(t)) == 0, "3-arg result equals t (CryptoNote LE domain)");
 #pragma GCC diagnostic pop
 
   // A presig/sig pair from different sessions yields a scalar that opens

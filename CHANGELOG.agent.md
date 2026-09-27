@@ -1130,3 +1130,46 @@ New defects found and fixed:
 | Tests pass | PASS — every unit target; core 150/150, swap-audit 37/37, presig 9/9, hearth 31/31, auction 57/57, p2p 61/61 (live e2e harnesses need network args, not run) |
 | Regression tests fail without the fix | PASS — rebuildCache test fails 148/150 with the seed call removed |
 | All tasks done | YES |
+
+---
+
+## HEAT CD deferral; limit-withdraw loop exit; Hearth transaction-layer review
+
+**Branch/Feature**: master
+**Started**: 2026-09-26
+**Agent**: Claude Opus 5.5
+**Status**: IN PROGRESS
+
+CDs are deferred so HEAT and Hearth run on their own first (owner's call,
+2026-09-25): `CD_ACTIVATION_HEIGHT` defaults to the v12 height; testnet keeps
+CDs from its v11 height. The mempool now validates outputs at the next block's
+height. A limit-withdraw `break` that let invalid blocks through is fixed.
+
+The burns/Hearth/LP review (two findings recovered from agent checkpoints, the
+rest traced by hand) found the v11 transaction layer has never worked end to
+end, from one root cause: the fee is `all inputs − all outputs`, summing XFG
+and HEAT atomic units. Consequences, each confirmed in code:
+- HEAT mint: the burned XFG minus the minted HEAT lands in `fee_summary`, and
+  v10+ coinbase validation requires the miner to claim it (~90% of every burn
+  at 10:1). Treasury-fund donations reach the miner the same way.
+- XFG→HEAT swaps always fail validation; limit deposits (both sides) and LP
+  adds always fail; limit withdrawals are refused by the mempool.
+- A HEAT→XFG swap underflows the mempool fee; `fill_block_template` adds it
+  to the coinbase while validation substitutes `minimumFee`, so every template
+  is invalid while that tx is pooled.
+- CD withdrawals pay their fee in HEAT, which the coinbase pays out as XFG.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | CD activation height: consensus gate, claim-age rule, wallet refusal, test | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 2 | Mempool output checks at the next block height | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 3 | Limit-withdraw validation: no loop exit on failure | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 4 | XFG-only fee model across validation, settlement, reversal, mempool, template | Claude Opus 5.5 | 2026-09-27 | IN PROGRESS |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles | PASS (tasks 1-3) |
+| Tests pass | PASS (tasks 1-3): core 153/153, hearth 31/31, auction 57/57, p2p 61/61 |
+| All tasks done | NO — task 4 in progress |

@@ -565,7 +565,13 @@ bool CryptoNote::Blockchain::removeObserver(IBlockchainStorageObserver* observer
 }
 
 bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock) {
-  return checkTransactionInputs(tx, maxUsedBlock.height, maxUsedBlock.id) && check_tx_outputs(tx, maxUsedBlock.height);
+  // Outputs are judged by the rules of the block the transaction would enter,
+  // not by the height of its youngest input (maxUsedBlock.height): height-gated
+  // output rules otherwise misfire in the mempool — a CD built from old inputs
+  // would be refused after activation. The block-template path never
+  // re-checks outputs, so this is the only mempool check they get.
+  return checkTransactionInputs(tx, maxUsedBlock.height, maxUsedBlock.id) &&
+         check_tx_outputs(tx, getCurrentBlockchainHeight());
 }
 
 bool CryptoNote::Blockchain::checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) {
@@ -2787,13 +2793,15 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     // youngest ring member predates V12, the real spend could be a legacy
     // deposit, so no interest may be claimed. Applies only to v11+ blocks —
     // pre-v11 blocks re-validate under their original rules (resync safety).
-    uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+    // No HEAT CD can exist below cdActivationHeight, so a ring whose youngest
+    // member is older than that may be a legacy deposit: withdraw-only.
+    uint32_t cdStartHeight = m_currency.cdActivationHeight();
     uint32_t validatingBlockHeight = currentHeight + 1;
     uint8_t validatingBlockVersion = getBlockMajorVersionForHeight(validatingBlockHeight);
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
-        youngestRingMemberHeight < v11Height) {
-      logger(INFO) << "CommitmentSpend: interest claim on pre-V11 deposit (youngest ring member at height "
-                   << youngestRingMemberHeight << " < V11 " << v11Height << ") rejected";
+        youngestRingMemberHeight < cdStartHeight) {
+      logger(INFO) << "CommitmentSpend: interest claim on a pre-CD deposit (youngest ring member at height "
+                   << youngestRingMemberHeight << " < CD activation " << cdStartHeight << ") rejected";
       return false;
     }
     // Pre-v12 blocks keep the ORIGINAL max-across-ring cap (resync safety —
@@ -3047,6 +3055,14 @@ bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t he
         if (!validTerm) {
           logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
               << " commitment output has invalid term: " << term;
+          return false;
+        }
+        // HEAT CDs open at their own activation height, after HEAT and Hearth
+        // have run on their own.
+        if (term >= m_currency.depositMinTerm() && term <= m_currency.depositMaxTerm() &&
+            height < m_currency.cdActivationHeight()) {
+          logger(INFO, BRIGHT_WHITE) << getObjectHash(tx)
+              << " CD deposit rejected: CDs activate at height " << m_currency.cdActivationHeight();
           return false;
         }
         // v11+ deposit gate: no new finite-term HEAT CDs while the CD yield
@@ -3862,36 +3878,38 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
                        sizeof(computedOutputsHash.data)) != 0 ||
                 !Crypto::check_signature(authHash, limitWithdrawSpendPublicKey, limitWithdrawProof) ||
                 !blockLimitWithdrawIds.insert(limitWithdrawOrderId).second) {
+              // No `break` here or below: this is the block's transaction
+              // loop, not a switch. Breaking out skipped the rejection at the
+              // end of the iteration, so the block was ACCEPTED with this tx
+              // stored but never pushed and every later tx never validated.
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                          << " limit withdraw: ownership proof or replay check failed";
-              break;
-            }
-            if ((dep.side == 1 && m_ammPool.pendingXfg < dep.amount) ||
-                (dep.side == 0 && m_ammPool.pendingHeat < dep.amount)) {
+            } else if ((dep.side == 1 && m_ammPool.pendingXfg < dep.amount) ||
+                       (dep.side == 0 && m_ammPool.pendingHeat < dep.amount)) {
               isTransactionValid = false;
               logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                          << " limit withdraw: pending reserve shortfall";
-              break;
-            }
-            // Expired deposits remain claimable: remaining deposit + fill proceeds.
-            // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
-            // Exact-payout rule: the transaction must return the full
-            // remaining deposit and proceeds. Under-claims would silently
-            // destroy unclaimed escrow, so they are rejected as invalid.
-            if (dep.side == 1) {
-              if ((uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.amount ||
-                  (uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.proceedsHeat) {
-                isTransactionValid = false;
-                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                  << " limit withdraw SELL_XFG exact payout mismatch";
-              }
             } else {
-              if ((uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.amount ||
-                  (uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.proceedsXfg) {
-                isTransactionValid = false;
-                logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                  << " limit withdraw BUY_XFG exact payout mismatch";
+              // Expired deposits remain claimable: remaining deposit + fill proceeds.
+              // side 1 = SELL_XFG (deposit XFG); side 0 = BUY_XFG (deposit HEAT)
+              // Exact-payout rule: the transaction must return the full
+              // remaining deposit and proceeds. Under-claims would silently
+              // destroy unclaimed escrow, so they are rejected as invalid.
+              if (dep.side == 1) {
+                if ((uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.amount ||
+                    (uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.proceedsHeat) {
+                  isTransactionValid = false;
+                  logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                    << " limit withdraw SELL_XFG exact payout mismatch";
+                }
+              } else {
+                if ((uint128_t)outAssets.heat != (uint128_t)inAssets.heat + dep.amount ||
+                    (uint128_t)outAssets.xfg + xfgFee != (uint128_t)inAssets.xfg + dep.proceedsXfg) {
+                  isTransactionValid = false;
+                  logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                    << " limit withdraw BUY_XFG exact payout mismatch";
+                }
               }
             }
           }

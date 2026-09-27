@@ -196,6 +196,10 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
+  // First height at which HEAT CDs may be created and earn interest. Mainnet:
+  // parameters::CD_ACTIVATION_HEIGHT. Testnet: its v11 height, so CDs keep
+  // being exercised there and its existing history stays valid.
+  uint32_t cdActivationHeight() const;
   uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }

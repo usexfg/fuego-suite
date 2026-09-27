@@ -761,6 +761,18 @@ void testRebuildCacheKeepsHearthSeed() {
   std::filesystem::remove_all(dir, ec);
 }
 
+// CDs open on their own height after HEAT and Hearth have run alone. Mainnet
+// waits for CD_ACTIVATION_HEIGHT (v12's height until a release sets a date);
+// testnet keeps CDs from its v11 height so they stay exercised.
+void testCdActivationHeight() {
+  Logging::LoggerGroup nullLog;
+  Currency mainnet = CurrencyBuilder(nullLog).currency();
+  TEST(mainnet.cdActivationHeight() == parameters::CD_ACTIVATION_HEIGHT);
+  TEST(mainnet.cdActivationHeight() > mainnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+  Currency testnet = CurrencyBuilder(nullLog).testnet(true).currency();
+  TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -769,6 +781,7 @@ int main() {
   testCdEarningWindowMatchesPayout();
   testCommitmentAssetClassification();
   testRebuildCacheKeepsHearthSeed();
+  testCdActivationHeight();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();
   testFiftyFiftySplitDust();

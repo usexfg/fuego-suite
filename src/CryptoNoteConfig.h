@@ -339,6 +339,10 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V10                            = 1003000; //{Wildfire}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH exchange
         const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG + BP+
+        // HEAT CDs activate on their own height, after HEAT and Hearth have run
+        // alone for a while. Defaults to the v12 height until a release sets a
+        // date; a v11.x release can move it earlier without waiting on v12.
+        const uint32_t CD_ACTIVATION_HEIGHT                          = UPGRADE_HEIGHT_V12;
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

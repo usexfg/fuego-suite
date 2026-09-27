@@ -1745,6 +1745,13 @@ namespace CryptoNote
     if (termEpochs == parameters::HEAT_TERM) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "term_epochs must not be HEAT_TERM");
     }
+    // Consensus rejects CD outputs below the activation height; say so plainly
+    // instead of building a transaction the network will refuse.
+    if (getBlockCount() < m_currency.cdActivationHeight()) {
+      throw std::system_error(make_error_code(error::WRONG_STATE),
+          "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
+          " (current height " + std::to_string(getBlockCount()) + ")");
+    }
 
     fee = m_currency.minimumFee();
     if (bankingFee == 0) {

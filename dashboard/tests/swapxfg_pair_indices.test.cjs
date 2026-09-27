@@ -24,4 +24,6 @@ test('every numeric SwapPair ID resolves to its canonical chain key', () => {
     assert.equal(swapxfg.pairKeyFromIndex(Number(id)), name, `pair ${id}`);
   }
   assert.equal(swapxfg.pairKeyFromIndex(29), null);
+  assert.equal(swapxfg.isDisplayablePair('DOT'), false,
+    'reserved DOT offers must stay out of the dashboard feed');
 });

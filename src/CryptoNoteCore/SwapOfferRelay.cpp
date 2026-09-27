@@ -533,7 +533,6 @@ std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request&
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
   if (!isExecutablePair(order.pair)) return;
   uint8_t pair = order.pair;
-  if (!isValidPair(pair)) return;  // bounds: m_orderBooks has MAX_PAIR_INDEX + 1 slots
   uint64_t price = order.price;
   auto& book = m_orderBooks[pair];
 

@@ -69,8 +69,8 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       mo.slippagePct  = static_cast<uint8_t>(entry("slippagePct").getInteger());
       if (mo.slippagePct == 0) mo.slippagePct = 5;
 
-      // Validate economic fields: pair must index a valid order-book slot and
-      // the offer amount must be positive. A zero amount can never be filled
+      // Validate economic fields: pair must be executable and the offer
+      // amount must be positive. A zero amount can never be filled
       // and would spam the relay with useless offers.
       if (!CryptoNote::SwapOfferRelay::isExecutablePair(mo.pair)) {
         m_logger(Logging::ERROR) << "Managed offer skipped: non-executable pair " << (int)mo.pair;

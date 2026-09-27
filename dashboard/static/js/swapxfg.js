@@ -64,6 +64,10 @@ const SwapXFG = (() => {
     return null;
   }
 
+  function isDisplayablePair(pairKey) {
+    return !!CHAIN_INFO[pairKey];
+  }
+
   function normalizeOffer(raw) {
     const pairKey = pairKeyFromIndex(raw.pair);
     const xfgAmount = Number(raw.xfgAmount || raw.xfg_amount || 0);
@@ -317,7 +321,7 @@ const SwapXFG = (() => {
     // DOT has a reserved enum index but no executable chain client yet.
     // Keep its canonical ID while excluding it from the displayed offer feed.
     offers = rawOffers.map(normalizeOffer).filter(o =>
-      o.pairKey && CHAIN_INFO[o.pairKey] && o.remaining > 0);
+      o.pairKey && isDisplayablePair(o.pairKey) && o.remaining > 0);
 
     // Recompute fair % after height/oracle
     offers.forEach(o => { o.fairPct = fairPctFor(o.pairKey, o.rateXfgPerCtr); });
@@ -763,7 +767,7 @@ const SwapXFG = (() => {
     if (data.chain) document.getElementById('spv-chain').textContent = data.chain;
   }
 
-  return { init, pairKeyFromIndex };
+  return { init, pairKeyFromIndex, isDisplayablePair };
 })();
 
 document.addEventListener('DOMContentLoaded', SwapXFG.init);

@@ -55,6 +55,7 @@ static std::string writeTempConfig(const std::string& jsonContent) {
 static void test_config_parse_spv_mode() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electroncash.org:50002",
     "bch_spv_server_1": "bch.imaginary.cash:50002",
     "bch_spv_min_servers": 2,
@@ -118,6 +119,7 @@ static void test_config_defaults_rpc_mode() {
 static void test_config_spv_single_server_no_checkpoint() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electrum.imaginary.cash:50002"
   })";
 
@@ -146,6 +148,7 @@ static void test_config_spv_single_server_no_checkpoint() {
 static void test_config_spv_server_gap() {
   std::string json = R"({
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "server-a:50002",
     "bch_spv_server_2": "server-b:50002"
   })";
@@ -174,6 +177,7 @@ static void test_config_spv_overrides_rpc() {
     "bch_rpc_host": "127.0.0.1",
     "bch_rpc_port": 8332,
     "bch_mode": "spv",
+    "bch_wif": "test-only-wif",
     "bch_spv_server_0": "electroncash.org:50002",
     "bch_spv_checkpoint_height": 586670,
     "bch_spv_checkpoint_hash": "0000000000000000016b5e0b8a70a85812e6546c2c7e0b52c7719c0e194677a2"

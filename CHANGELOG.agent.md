@@ -15,14 +15,14 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 |---|------|-------|------|--------|
 | 1 | Align dashboard pair IDs with `SwapPair`; keep staged DOT out of the offer feed | Codex (GPT-6) | 2026-09-27 | DONE |
 | 2 | Align PulseChain example/config names, header name, and CI variable | Codex (GPT-6) | 2026-09-27 | DONE |
-| 3 | Reject non-executable pairs from relay and local new-swap paths | Codex (GPT-6) | 2026-09-27 | IN PROGRESS |
-| 4 | Require a usable GLEEC HTLC registry before new offers or swaps | Codex (GPT-6) | 2026-09-27 | TODO |
-| 5 | Run focused build and tests; prepare a scoped PR | Codex (GPT-6) | 2026-09-27 | TODO |
+| 3 | Reject non-executable pairs from relay and local new-swap paths | Codex (GPT-6) | 2026-09-27 | DONE |
+| 4 | Require a usable GLEEC HTLC registry before new offers or swaps | Codex (GPT-6) | 2026-09-27 | DONE |
+| 5 | Run focused build and tests; prepare a scoped PR | Codex (GPT-6) | 2026-09-27 | IN PROGRESS — tests pass; PR publication pending |
 
 | Gate | Signed By | Date | Result |
 |------|-----------|------|--------|
-| Build compiles | — | — | PENDING |
-| Focused tests pass | — | — | PENDING |
+| Build compiles (`xfg-swapd`, three C++ tests) | Codex (GPT-6) | 2026-09-27 | PASS — fresh Release Ninja build |
+| Focused tests pass (orderbook 79/79, ETH 15/15, config 7 cases, dashboard 1) | Codex (GPT-6) | 2026-09-27 | PASS |
 | All tasks done | — | — | PENDING |
 
 ---

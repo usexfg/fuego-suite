@@ -279,12 +279,12 @@ bool loadChainClientConfig(const std::string& path,
   out.zecTestnet = jsonGetBool(json, "zec_testnet", false);
 
   // PULSECHAIN (PulseChain — EVM, chain id 369)
-  out.pulsechain_host       = jsonGetStr (json, "pulsechain_rpc_host", "");
-  out.pulsechain_port       = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
+  out.pulsechain_host          = jsonGetStr(json, "pulsechain_rpc_host", "");
+  out.pulsechain_port          = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
   out.pulsechain_priv_key_hex = jsonGetStr (json, "pulsechain_priv_key");
-  out.pulsechain_address    = jsonGetStr (json, "pulsechain_address");
-  out.pulsechain_chain_id    = jsonGetUint(json, "pulsechain_chain_id", 369);
-  out.pulsechain_htlc_bin_path= jsonGetStr (json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
+  out.pulsechain_address       = jsonGetStr(json, "pulsechain_address");
+  out.pulsechain_chain_id      = jsonGetUint(json, "pulsechain_chain_id", 369);
+  out.pulsechain_htlc_bin_path = jsonGetStr(json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   out.zanoDaemonHost = jsonGetStr(json, "zano_daemon_host", "");

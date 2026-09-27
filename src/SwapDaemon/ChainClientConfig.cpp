@@ -14,6 +14,7 @@
 // Reads a JSON config file and populates ChainClientConfig struct.
 
 #include "SwapDaemon.h"
+#include "Ethereum/EthRpcClient.h"
 #include "Common/JsonValue.h"
 
 #include <fstream>
@@ -468,6 +469,12 @@ bool loadChainClientConfig(const std::string& path,
   }
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
+
+  if (!out.gleecHost.empty() &&
+      !EthRpcClient::isValidEvmAddress(out.gleecHtlcRegistry)) {
+    errorMsg = "gleec_htlc_registry must be a nonzero 0x-prefixed 20-byte address when gleec_rpc_host is set";
+    return false;
+  }
 
   if (!validateHex(out.pulsechain_priv_key_hex, 32, "pulsechain_priv_key", errorMsg)) return false;
   if (!out.pulsechain_address.empty() && (out.pulsechain_address.size() < 2 || out.pulsechain_address.substr(0, 2) != "0x")) {

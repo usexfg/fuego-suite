@@ -15,6 +15,20 @@
 
 namespace XfgSwap {
 
+std::string EthChainClient::readinessError() {
+  if (!m_rpc || !m_rpc->hasSigner()) return "EVM signer is not configured";
+  if (!EthRpcClient::isValidEvmAddress(m_address))
+    return "EVM signer address is invalid";
+  if (!EthRpcClient::isValidEvmAddress(m_rpc->htlcRegistry()))
+    return "HTLC registry address is missing or invalid";
+  uint64_t chain_id = 0;
+  if (!m_rpc->getChainId(chain_id)) return "EVM chain ID query failed";
+  if (chain_id != m_rpc->expectedChainId()) return "EVM chain ID mismatch";
+  if (!m_rpc->hasDeployedHtlcRegistry())
+    return "HTLC registry code or ABI probe failed";
+  return "";
+}
+
 namespace {
 bool isZeroSecret(const Crypto::SecretKey& s) {
   const uint8_t* p = reinterpret_cast<const uint8_t*>(&s);

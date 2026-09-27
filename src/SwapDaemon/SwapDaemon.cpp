@@ -886,6 +886,24 @@ std::string SwapDaemon::resolveAddressOrAlias(const std::string& input) {
   return input; // treat as raw address
 }
 
+bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason) {
+  auto fail = [reason](const std::string& error) {
+    if (reason) *reason = error;
+    return false;
+  };
+  if (!CryptoNote::SwapOfferRelay::isExecutablePair(static_cast<uint8_t>(pair)))
+    return fail("pair is not executable");
+  IChainClient* client = m_chainRegistry.getClient(pair);
+  if (!client) return fail("chain client is not configured");
+  const std::string error = client->readinessError();
+  if (!error.empty()) return fail(error);
+  uint64_t height = 0;
+  if (!client->getCurrentHeight(height) || height == 0)
+    return fail("chain height query failed");
+  if (reason) reason->clear();
+  return true;
+}
+
 bool SwapDaemon::initiate(SwapParams& params) {
   uint32_t currentHeight = 0;
   if (!m_rpc.getHeight(currentHeight)) {
@@ -894,6 +912,13 @@ bool SwapDaemon::initiate(SwapParams& params) {
   }
 
   m_logger(Logging::INFO) << "Connected to fuegod at height " << currentHeight;
+
+  std::string readiness_error;
+  if (!canStartNewSwap(params.pair, &readiness_error)) {
+    m_logger(Logging::ERROR) << "Cannot initiate " << swapPairToString(params.pair)
+      << " swap: " << readiness_error;
+    return false;
+  }
 
   params.ctrAddress = resolveAddressOrAlias(params.ctrAddress);
 
@@ -1109,6 +1134,13 @@ SwapDaemon::AcceptResult SwapDaemon::accept(const std::string& swapId) {
       sm.currentState() != SwapState::AFK_OFFER_LOCKED) {
     const std::string msg = std::string("Swap is not in a state that can be accepted (current: ")
                             + swapStateToString(sm.currentState()) + ")";
+    m_logger(Logging::ERROR) << msg;
+    return {false, msg};
+  }
+
+  std::string readiness_error;
+  if (!canStartNewSwap(sm.params().pair, &readiness_error)) {
+    const std::string msg = "Counterparty chain is not ready for a new swap: " + readiness_error;
     m_logger(Logging::ERROR) << msg;
     return {false, msg};
   }
@@ -2636,6 +2668,11 @@ bool SwapDaemon::processSwap(SwapStateMachine& sm) {
 
         if (params.role == SwapRole::BOB) {
           if (!escrowTxKnown) {
+            if (!canStartNewSwap(params.pair)) {
+              m_logger(Logging::ERROR) << "Refusing XFG escrow funding: "
+                << swapPairToString(params.pair) << " is not ready";
+              return false;
+            }
             if (!fundEscrow(params)) {
               m_logger(Logging::ERROR) << "Failed to fund escrow for swap " << swapId;
               return false;
@@ -4235,6 +4272,11 @@ bool SwapDaemon::handleSwapRequest(const std::string& offerId, uint64_t amount,
   }
 
   SwapPair pair = static_cast<SwapPair>(targetOffer.pair);
+  if (!canStartNewSwap(pair)) {
+    m_logger(Logging::ERROR) << "Chain not ready for new offer fill: "
+      << static_cast<int>(targetOffer.pair);
+    return false;
+  }
   IChainClient* client = m_chainRegistry.getClient(pair);
   if (!client) {
     m_logger(Logging::ERROR) << "No chain client for pair " << (int)targetOffer.pair;
@@ -4433,7 +4475,8 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
     return false;
   }
   m_offerManager.reset(new OfferManager(
-    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger()));
+    *m_swapRelay, m_makerSecretKey, m_makerPublicKey, m_logger.getLogger(),
+    [this](uint8_t pair) { return canStartNewSwap(static_cast<SwapPair>(pair)); }));
   if (!m_offerManager->loadConfig(jsonPath)) {
     m_offerManager.reset();
     return false;

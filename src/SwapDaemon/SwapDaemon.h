@@ -518,6 +518,10 @@ public:
   // resolves via RPC. If already an address, returns as-is. Returns "" on failure.
   std::string resolveAddressOrAlias(const std::string& input);
 
+  // Checks admission for a new swap or offer. Existing swaps never use this
+  // gate, so claim and refund recovery remain available after RPC loss.
+  bool canStartNewSwap(SwapPair pair, std::string* reason = nullptr);
+
   // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
   // with the peer, attach the final signature, and broadcast.
   // txType: "spend" (adapted, Bob claims) or "refund" (cooperative, both sign)

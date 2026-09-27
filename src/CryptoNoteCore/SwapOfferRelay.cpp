@@ -161,8 +161,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
-  // pair must index a valid order book slot (0..MAX_PAIR_INDEX)
-  if (!isValidPair(offer.pair)) return false;
+  if (!isExecutablePair(offer.pair)) return false;
   Crypto::Hash offerHash = offerCanonicalHash(offer);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
 }
@@ -482,7 +481,7 @@ bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
   if (o.orderId.empty() || o.orderId.size() != 64) return false;
   if (o.amount == 0 || o.price == 0) return false;
   if (o.ttlBlocks == 0 || o.ttlBlocks > 1080) return false;
-  if (!isValidPair(o.pair)) return false;
+  if (!isExecutablePair(o.pair)) return false;
   if (o.side != SwapOrder::Side::BID && o.side != SwapOrder::Side::ASK) return false;
 
   // orderId must be the canonical hash of maker fields
@@ -532,7 +531,7 @@ std::string SwapOfferRelay::makeFillReplayKey(const COMMAND_ORDER_FILL::request&
 }
 
 void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
-  if (!isValidPair(order.pair)) return;
+  if (!isExecutablePair(order.pair)) return;
   uint8_t pair = order.pair;
   if (!isValidPair(pair)) return;  // bounds: m_orderBooks has MAX_PAIR_INDEX + 1 slots
   uint64_t price = order.price;
@@ -547,7 +546,7 @@ void SwapOfferRelay::insertOrderIntoBook(SwapOrder order) {
 
 void SwapOfferRelay::handleOrderOpen(const COMMAND_ORDER_OPEN::request& msg) {
   // CRITICAL: pair bounds before any book access
-  if (!isValidPair(msg.pair)) return;
+  if (!isExecutablePair(msg.pair)) return;
   if (msg.side > 1) return;
 
   SwapOrder order;
@@ -749,7 +748,7 @@ std::vector<SwapOfferRelay::Fill> SwapOfferRelay::matchOrder(
 
   // NOTE: caller must hold m_mutex
   std::vector<Fill> fills;
-  if (!isValidPair(pair)) return fills;
+  if (!isExecutablePair(pair)) return fills;
 
   auto& oppositeLadder = (takerSide == SwapOrder::Side::ASK)
                          ? m_orderBooks[pair].bids

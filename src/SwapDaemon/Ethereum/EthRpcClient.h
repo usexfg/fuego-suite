@@ -50,6 +50,12 @@ public:
 
   ~EthRpcClient() { closeSocket(); clear(); }
 
+  bool hasSigner() const { return m_hasSigner; }
+  uint64_t expectedChainId() const { return m_chainId; }
+  bool getChainId(uint64_t& chain_id);
+  static bool isValidEvmAddress(const std::string& address);
+  bool hasDeployedHtlcRegistry();
+
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
   bool getBalance(const std::string& address, uint64_t& balanceWei);

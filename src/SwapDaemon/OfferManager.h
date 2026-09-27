@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 namespace CryptoNote {
   class SwapOfferRelay;
@@ -40,7 +41,8 @@ public:
   OfferManager(CryptoNote::SwapOfferRelay& relay,
                const Crypto::SecretKey& makerSecretKey,
                const Crypto::PublicKey& makerPublicKey,
-               Logging::ILogger& logger);
+               Logging::ILogger& logger,
+               std::function<bool(uint8_t)> pair_ready);
 
   bool loadConfig(const std::string& jsonPath);
   bool loadConfigFromJson(const std::string& json);
@@ -67,6 +69,7 @@ private:
   Crypto::SecretKey m_makerSecretKey;
   Crypto::PublicKey m_makerPublicKey;
   Logging::LoggerRef m_logger;
+  std::function<bool(uint8_t)> m_pair_ready;
   std::vector<OfferState> m_states;
   uint32_t m_ttlBlocks = 60;
   bool m_running = false;

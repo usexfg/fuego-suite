@@ -4,6 +4,29 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## PR #65 scoped follow-up: pair identity and executable offers
+
+**Branch/Feature**: codex/pr65-review-ready
+**Started**: 2026-09-27
+**Agent**: Codex (GPT-6)
+**Status**: IN PROGRESS
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Align dashboard pair IDs with `SwapPair`; keep staged DOT out of the offer feed | Codex (GPT-6) | 2026-09-27 | DONE |
+| 2 | Align PulseChain example/config names, header name, and CI variable | Codex (GPT-6) | 2026-09-27 | DONE |
+| 3 | Reject non-executable pairs from relay and local new-swap paths | Codex (GPT-6) | 2026-09-27 | IN PROGRESS |
+| 4 | Require a usable GLEEC HTLC registry before new offers or swaps | Codex (GPT-6) | 2026-09-27 | TODO |
+| 5 | Run focused build and tests; prepare a scoped PR | Codex (GPT-6) | 2026-09-27 | TODO |
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles | — | — | PENDING |
+| Focused tests pass | — | — | PENDING |
+| All tasks done | — | — | PENDING |
+
+---
+
 ## Order-book pair cap raised to the full enum; PulseX renamed to PulseChain; GLEEC re-enabled
 
 **Branch/Feature**: claude/artifact-cx6twez-bug-vxf4jr

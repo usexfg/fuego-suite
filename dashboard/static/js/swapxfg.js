@@ -13,8 +13,8 @@ const SwapXFG = (() => {
   const PAIR_BY_INDEX = [
     'SOL', 'ETH', 'XMR', 'BCH', 'ARB', 'BASE', 'KMD_SPV', 'BNB', 'DCR', 'BTC',
     'LTC', 'POLYGON', 'GLEEC', 'ROBINHOOD', 'AVAX', 'CRO', 'BOB', 'SIA',
-    'UNICHAIN', 'PLASMA', 'DOGE', 'DASH', 'ZEC', 'PULSECHAIN', 'ZANO', 'TON',
-    'MONAD', 'OPTIMISM'
+    'UNICHAIN', 'PLASMA', 'DOGE', 'DASH', 'ZEC', 'PULSECHAIN', 'ZANO', 'MONAD',
+    'OPTIMISM', 'TON', 'DOT'
   ];
 
   const CHAIN_INFO = {
@@ -314,7 +314,10 @@ const SwapXFG = (() => {
     if (data.height != null) chainHeight = Number(data.height) || chainHeight;
 
     const rawOffers = data.offers || [];
-    offers = rawOffers.map(normalizeOffer).filter(o => o.pairKey && o.remaining > 0);
+    // DOT has a reserved enum index but no executable chain client yet.
+    // Keep its canonical ID while excluding it from the displayed offer feed.
+    offers = rawOffers.map(normalizeOffer).filter(o =>
+      o.pairKey && CHAIN_INFO[o.pairKey] && o.remaining > 0);
 
     // Recompute fair % after height/oracle
     offers.forEach(o => { o.fairPct = fairPctFor(o.pairKey, o.rateXfgPerCtr); });
@@ -760,7 +763,7 @@ const SwapXFG = (() => {
     if (data.chain) document.getElementById('spv-chain').textContent = data.chain;
   }
 
-  return { init };
+  return { init, pairKeyFromIndex };
 })();
 
 document.addEventListener('DOMContentLoaded', SwapXFG.init);

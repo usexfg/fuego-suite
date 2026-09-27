@@ -52,7 +52,7 @@
 #include "Monad/MonadChainClient.h"
 #include "Optimism/OptimismChainClient.h"
 #include "Plasma/PlasmaChainClient.h"
-#include "PulseChain/PulseChainClient.h"
+#include "PulseChain/pulse_chain_client.h"
 #include "Unichain/UnichainChainClient.h"
 #include "RobinhoodChain/RobinhoodChainClient.h"
 #include "Doge/DogeChainClient.h"
@@ -444,14 +444,14 @@ SwapDaemon::SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
     m_logger(Logging::INFO) << "PLASMA chain client registered: " << chainCfg.plasmaHost << ":" << chainCfg.plasmaPort;
   }
   // PULSECHAIN (native PLS — EVM, chain id 369)
-  if (!chainCfg.pulsechainHost.empty()) {
-    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechainHost, chainCfg.pulsechainPort,
-        chainCfg.pulsechainPrivKeyHex, chainCfg.pulsechainAddress, chainCfg.pulsechainChainId);
-    applyHtlcConfig(*rpc, chainCfg.pulsechainHtlcBinPath, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
+  if (!chainCfg.pulsechain_host.empty()) {
+    auto rpc = std::make_unique<EthRpcClient>(chainCfg.pulsechain_host, chainCfg.pulsechain_port,
+        chainCfg.pulsechain_priv_key_hex, chainCfg.pulsechain_address, chainCfg.pulsechain_chain_id);
+    applyHtlcConfig(*rpc, chainCfg.pulsechain_htlc_bin_path, chainCfg.ethHtlcRegistry, m_logger, "PULSECHAIN");
     applyPtlcConfig(*rpc, chainCfg.ethPtlcRegistry, m_logger, "PULSECHAIN");
     m_chainRegistry.registerChain(SwapPair::PULSECHAIN,
-        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechainAddress));
-    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechainHost << ":" << chainCfg.pulsechainPort;
+        std::make_unique<PulseChainClient>(std::move(rpc), chainCfg.pulsechain_address));
+    m_logger(Logging::INFO) << "PULSECHAIN chain client registered: " << chainCfg.pulsechain_host << ":" << chainCfg.pulsechain_port;
   }
   // MONAD
   if (!chainCfg.monadHost.empty()) {

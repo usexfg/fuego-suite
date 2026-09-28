@@ -69,6 +69,30 @@ uint64_t ammSwapNetOutput(uint64_t input, uint64_t reserveIn, uint64_t reserveOu
       parameters::HEARTH_FEE_DIVISOR);
 }
 
+uint64_t ammLimitSellCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t limitPrice) {
+  if (limitPrice == 0 || reserveXfg == 0) return 0;
+  // reserveXfg + f ≤ reserveHeat·COIN / limitPrice
+  const uint128_t bound = ((uint128_t)reserveHeat * parameters::COIN) / limitPrice;
+  if (bound <= reserveXfg) return 0;
+  const uint128_t capacity = bound - reserveXfg;
+  return capacity > UINT64_MAX ? UINT64_MAX : static_cast<uint64_t>(capacity);
+}
+
+uint64_t ammLimitBuyCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t limitPrice) {
+  if (limitPrice == 0 || reserveXfg == 0) return 0;
+  // reserveXfg − g ≥ ceil(reserveHeat·COIN / limitPrice)
+  const uint128_t keep = ((uint128_t)reserveHeat * parameters::COIN + limitPrice - 1) / limitPrice;
+  return keep < reserveXfg ? static_cast<uint64_t>(reserveXfg - keep) : 0;
+}
+
+uint64_t ammCostToTake(uint64_t output, uint64_t reserveIn, uint64_t reserveOut) {
+  if (output == 0 || output >= reserveOut || reserveIn == 0) return 0;
+  const uint128_t num = (uint128_t)reserveIn * output;
+  const uint128_t den = reserveOut - output;
+  const uint128_t cost = (num + den - 1) / den;
+  return cost > UINT64_MAX ? 0 : static_cast<uint64_t>(cost);
+}
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {

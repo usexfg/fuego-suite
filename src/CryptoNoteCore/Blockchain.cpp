@@ -4322,11 +4322,14 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty() &&
       !g_orderbookIsInBootstrap && m_ammPool.reserveXfg > 0 &&
       m_ammPool.reserveXfg >= parameters::HEARTH_MIN_XFG_DEPTH) {
-    // Fills execute at the LIVE pool spot price — never the (frozen) bootstrap
-    // clearing price — so limit orders track the AMM and cannot arbitrage it.
-    const uint64_t price = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+    // Fills are priced on the constant-product curve like any swap of their
+    // size, against the reserves as earlier fills this block left them. They
+    // used to execute at the pre-block spot price: up to the backstop cap that
+    // beat the curve by more than the 1% fee, so alternating sell and buy
+    // orders drained the pool a little every block. An order's limit holds
+    // for its average price over the fill, before the fee.
     const uint64_t feeBps = parameters::HEARTH_FEE_BPS;
-    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR; 
+    const uint64_t feeDiv = parameters::HEARTH_FEE_DIVISOR;
     // Backstop volume cap: pool-intermediated fills are bounded at
     // HEARTH_BACKSTOP_MAX_BPS (500 = 5×) of the block's auction volume. With no
     // auction volume the backstop is bounded at 500 basis points (5%) of the
@@ -4343,30 +4346,30 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
     for (auto& kv : m_limitDeposits) {
       LimitDepositInfo& dep = kv.second;
-      if (dep.withdrawn) continue;
-
-      if (dep.expired) continue;
-
-      if (price == 0) continue;
-      if (dep.targetPrice == 0) continue;
+      if (dep.withdrawn || dep.expired || dep.targetPrice == 0 || backstopRemaining == 0) continue;
+      const uint64_t spot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+      if (spot == 0) continue;
 
       if (dep.side == 1) {
-        // SELL_XFG: user demands at least targetPrice HEAT per XFG.
-        if (dep.targetPrice > price) continue;  // pool won't pay that much
-        uint64_t maxByHeat = static_cast<uint64_t>(
-            ((uint128_t)m_ammPool.reserveHeat * parameters::COIN) / price);
-        uint64_t fillXfg = std::min(dep.amount, maxByHeat);
-        fillXfg = std::min(fillXfg, backstopRemaining);
-        if (fillXfg == 0 || m_ammPool.pendingXfg < fillXfg) continue;
+        // SELL_XFG: at least targetPrice HEAT per XFG.
+        uint64_t fillXfg = std::min({dep.amount, backstopRemaining, m_ammPool.pendingXfg,
+            ammLimitSellCapacity(m_ammPool.reserveXfg, m_ammPool.reserveHeat, dep.targetPrice)});
+        uint64_t grossHeat = ammGetOutputAmount(fillXfg, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+        if (fillXfg > 0 && (uint128_t)grossHeat * parameters::COIN < (uint128_t)dep.targetPrice * fillXfg) {
+          // The output's floor can cost the last atom of price.
+          --fillXfg;
+          grossHeat = ammGetOutputAmount(fillXfg, m_ammPool.reserveXfg, m_ammPool.reserveHeat, 0);
+        }
+        if (fillXfg == 0 || grossHeat == 0 ||
+            (uint128_t)grossHeat * parameters::COIN < (uint128_t)dep.targetPrice * fillXfg) {
+          continue;
+        }
         backstopRemaining -= fillXfg;
 
         // Taker pays the 1% fee by receiving (div-bps)/div of gross.
-        uint64_t grossHeat = static_cast<uint64_t>(
-            ((uint128_t)fillXfg * price) / parameters::COIN);
         uint64_t heatPaid = static_cast<uint64_t>(
             ((uint128_t)grossHeat * (feeDiv - feeBps)) / feeDiv);
         uint64_t feeHeat = grossHeat - heatPaid;
-        if (grossHeat == 0 || m_ammPool.reserveHeat < grossHeat) continue;
         uint64_t cdFeeHeat = static_cast<uint64_t>(
             ((uint128_t)feeHeat * parameters::HEARTH_CD_SHARE_PCT) / 100);
         // Saturating add: an overflow must not abort the fill pass mid-way
@@ -4389,53 +4392,53 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         fillsThisBlock.push_back(rec);
         block.orderbookNumMatches++;
       } else {
-        // BUY_XFG: user pays at most targetPrice HEAT per XFG.
-        if (dep.targetPrice < price) continue;  // pool asks more than that
-        uint64_t desiredXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * parameters::COIN) / price);
-        // Budget cap: fee-inclusive cost must never exceed the deposit budget.
-        uint64_t maxBudgetXfg = static_cast<uint64_t>(
-            ((uint128_t)dep.amount * (feeDiv - feeBps) * parameters::COIN)
-              / (feeDiv * price));
-        uint64_t fillXfg = std::min(desiredXfg, maxBudgetXfg);
-        fillXfg = std::min(fillXfg, m_ammPool.reserveXfg);
-        fillXfg = std::min(fillXfg, backstopRemaining);
-        if (fillXfg == 0) continue;
-        backstopRemaining -= fillXfg;
-        // Net XFG the user receives; fee deducted from gross like dir-1 swaps.
-        uint64_t grossXfg = static_cast<uint64_t>(
-            ((uint128_t)fillXfg * feeDiv) / (feeDiv - feeBps));
-        uint64_t heatCost = static_cast<uint64_t>(
-            ((uint128_t)grossXfg * price) / parameters::COIN);
-        if (heatCost == 0 || heatCost > dep.amount) continue;
-        if (m_ammPool.pendingHeat < heatCost) continue;
-        if (m_ammPool.reserveXfg < grossXfg) continue;
+        // BUY_XFG: at most targetPrice HEAT per XFG, paid from the escrowed
+        // HEAT. grossXfg leaves the pool; the taker gets it less the 1% fee.
+        const uint64_t budgetXfg = static_cast<uint64_t>(
+            ((uint128_t)m_ammPool.reserveXfg * dep.amount) /
+            ((uint128_t)m_ammPool.reserveHeat + dep.amount));
+        uint64_t grossXfg = std::min({backstopRemaining, budgetXfg,
+            ammLimitBuyCapacity(m_ammPool.reserveXfg, m_ammPool.reserveHeat, dep.targetPrice)});
+        uint64_t heatCost = ammCostToTake(grossXfg, m_ammPool.reserveHeat, m_ammPool.reserveXfg);
+        if (grossXfg > 0 && (heatCost > dep.amount ||
+            (uint128_t)heatCost * parameters::COIN > (uint128_t)dep.targetPrice * grossXfg)) {
+          // The cost's ceiling can cost the last atom of budget or price.
+          --grossXfg;
+          heatCost = ammCostToTake(grossXfg, m_ammPool.reserveHeat, m_ammPool.reserveXfg);
+        }
+        if (grossXfg == 0 || heatCost == 0 || heatCost > dep.amount || m_ammPool.pendingHeat < heatCost ||
+            (uint128_t)heatCost * parameters::COIN > (uint128_t)dep.targetPrice * grossXfg) {
+          continue;
+        }
+        backstopRemaining -= grossXfg;
 
-        uint64_t feeXfg = grossXfg - fillXfg;
-        uint64_t cdFeeXfg = static_cast<uint64_t>(
+        const uint64_t netXfg = static_cast<uint64_t>(
+            ((uint128_t)grossXfg * (feeDiv - feeBps)) / feeDiv);
+        const uint64_t feeXfg = grossXfg - netXfg;
+        const uint64_t cdFeeXfg = static_cast<uint64_t>(
             ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
-        // Convert the XFG CD share to HEAT at the PRE-fill spot rate.
-        uint64_t feeHeatEq = static_cast<uint64_t>(
-            ((uint128_t)cdFeeXfg * price) / parameters::COIN);
-        // Saturating add: an overflow must not abort the fill pass mid-way.
+        // The XFG CD share enters the HEAT accumulator at the pre-fill spot —
+        // once. It used to be added a second time, which the reversal never
+        // undid and the epoch mint turned into unbacked CD yield.
+        const uint64_t feeHeatEq = static_cast<uint64_t>(
+            ((uint128_t)cdFeeXfg * spot) / parameters::COIN);
         m_ammPool.cdHearthFeeAccumulator =
           (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq)
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + feeHeatEq;
 
         m_ammPool.pendingHeat -= heatCost;
-        m_ammPool.reserveXfg -= (fillXfg + cdFeeXfg);  // 30% of the fee stays with LPs
+        m_ammPool.reserveXfg -= (netXfg + cdFeeXfg);  // 30% of the fee stays with LPs
         m_ammPool.reserveHeat += heatCost;
-        m_ammPool.cdHearthFeeAccumulator += feeHeatEq;
         dep.amount -= heatCost;
-        dep.proceedsXfg += fillXfg;
+        dep.proceedsXfg += netXfg;
 
         OrderFillRecord rec;
         rec.orderId = kv.first;
         rec.side = 0;
-        rec.xfg = fillXfg + cdFeeXfg;
+        rec.xfg = netXfg + cdFeeXfg;
         rec.heat = heatCost;
         rec.feeHeat = feeHeatEq;
-        rec.netXfg = fillXfg;
+        rec.netXfg = netXfg;
         fillsThisBlock.push_back(rec);
         block.orderbookNumMatches++;
       }

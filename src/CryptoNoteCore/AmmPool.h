@@ -46,6 +46,20 @@ uint64_t ammGetSpotPrice(uint64_t reserveA, uint64_t reserveB);
 // wallets quote from it.
 uint64_t ammSwapNetOutput(uint64_t input, uint64_t reserveIn, uint64_t reserveOut);
 
+// Limit-order fills against the pool (the block-time backstop). Prices are
+// HEAT per XFG × COIN before the 1% fee, and are the curve's average over
+// the fill — a fill moves the price like any trade of its size.
+//
+// XFG a SELL_XFG order can sell before its average price falls below
+// limitPrice: selling f pays reserveHeat·f / (reserveXfg + f).
+uint64_t ammLimitSellCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t limitPrice);
+// XFG, before the fee, a BUY_XFG order can take before its average price
+// rises above limitPrice: taking g costs reserveHeat·g / (reserveXfg − g).
+uint64_t ammLimitBuyCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t limitPrice);
+// Input that takes `output` out of the pool, rounded up so the product of the
+// reserves never shrinks. 0 when output is 0 or not below reserveOut.
+uint64_t ammCostToTake(uint64_t output, uint64_t reserveIn, uint64_t reserveOut);
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB);

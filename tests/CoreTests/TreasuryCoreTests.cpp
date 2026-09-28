@@ -994,6 +994,43 @@ void testCdActivationHeight() {
   TEST(testnet.cdActivationHeight() == testnet.upgradeHeight(BLOCK_MAJOR_VERSION_11));
 }
 
+// Limit fills are priced on the curve: an order's limit holds for its average
+// price over the fill, and a sell/buy round trip no longer profits.
+void testLimitFillsOnTheCurve() {
+  const uint64_t C = parameters::COIN;
+  const uint64_t X = 10000 * C, H = 1000 * C;
+
+  // Selling f pays an average of H/(X+f); at 0.08 HEAT/XFG that allows 2,500.
+  const uint64_t sellLimit = 8 * C / 100;
+  const uint64_t f = ammLimitSellCapacity(X, H, sellLimit);
+  TEST(f == 2500 * C);
+  const uint64_t gross = ammGetOutputAmount(f, X, H, 0);
+  TEST((uint128_t)gross * C >= (uint128_t)sellLimit * f);
+  const uint64_t past = ammGetOutputAmount(f + C, X, H, 0);
+  TEST((uint128_t)past * C < (uint128_t)sellLimit * (f + C));
+
+  // Taking g costs an average of H/(X−g); at 0.125 HEAT/XFG that allows 2,000.
+  const uint64_t buyLimit = 125 * C / 1000;
+  const uint64_t g = ammLimitBuyCapacity(X, H, buyLimit);
+  TEST(g == 2000 * C);
+  const uint64_t cost = ammCostToTake(g, H, X);
+  TEST((uint128_t)cost * C <= (uint128_t)buyLimit * g);
+  // The cost rounds up, so the product of the reserves never shrinks.
+  TEST((uint128_t)(H + cost) * (X - g) >= (uint128_t)H * X);
+  TEST(ammCostToTake(X, H, X) == 0);
+
+  // Round trip at the 5% backstop cap: sell 500 XFG, buy back with all the
+  // HEAT received. At the old flat spot price it came back ~8% ahead.
+  const uint64_t sell = X / 20;
+  const uint64_t heatGot = ammGetOutputAmount(sell, X, H, 0) / 100 * 99;
+  const uint64_t xfgBack = ammGetOutputAmount(heatGot, H - heatGot, X + sell, 0) / 100 * 99;
+  TEST(xfgBack < sell);
+  const uint64_t flatHeat = static_cast<uint64_t>((uint128_t)sell * H / X) / 100 * 99;
+  const uint64_t flatBack = static_cast<uint64_t>(
+      (uint128_t)flatHeat * (X + sell) / (H - flatHeat)) / 100 * 99;
+  TEST(flatBack > sell);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1007,6 +1044,7 @@ int main() {
   testValidateSettlementSwapCurve();
   testValidateSettlementLimitDeposit();
   testHeatwaveTagCutoffHeight();
+  testLimitFillsOnTheCurve();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();

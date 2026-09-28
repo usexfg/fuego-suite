@@ -2530,11 +2530,15 @@ struct COMMAND_RPC_AMM_QUOTE {
     uint64_t expected_output;
     uint64_t price_impact_bps;
     uint64_t fee;
+    // Selling XFG only: the HEAT burning the same XFG would mint at the 8-block
+    // TWAP (no pool, no price impact). 0 when there is no TWAP yet.
+    uint64_t mint_output = 0;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(expected_output)
       KV_MEMBER(price_impact_bps)
       KV_MEMBER(fee)
+      KV_MEMBER(mint_output)
       KV_MEMBER(status)
     }
   };

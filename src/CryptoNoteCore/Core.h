@@ -260,6 +260,7 @@ namespace CryptoNote {
       uint64_t expectedOutput = 0;
       uint64_t priceImpactBps = 0;
       uint64_t fee = 0;
+      uint64_t mintOutput = 0;  // selling XFG: HEAT a burn of the input mints at the TWAP
     };
     AmmQuote getAmmQuote(uint64_t inputAmount, uint8_t direction) const;
 

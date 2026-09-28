@@ -1652,6 +1652,12 @@ core::HeatMetrics core::getHeatMetrics() const {
 core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const {
   AmmQuote q;
   if (inputAmount == 0 || direction > 1) return q;
+  // The alternative to selling XFG on Hearth: burning it mints HEAT at the
+  // TWAP, with no price impact — for a large sale, often far more HEAT.
+  if (direction == 0) {
+    q.mintOutput = static_cast<uint64_t>(
+        ((uint128_t)inputAmount * m_blockchain.getRollingTwap()) / parameters::COIN);
+  }
   const auto& pool = m_blockchain.getAmmPool();
   const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
   const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;

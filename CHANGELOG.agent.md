@@ -1368,6 +1368,25 @@ only; no e2e send is possible here (the block-serving RPC hang):
   every payout HEAT, which consensus refuses — withdrawals of old deposits from
   walletd have failed on mainnet since.
 
+Tasks 10-12 (owner review of swap pricing, 2026-09-28):
+- The block-time backstop filled resting limit orders at the pre-block spot
+  price. At its cap (5% of the XFG reserve) that beats the curve by more than
+  the 1% fee, so alternating sell and buy orders pulled about 0.2% of the pool
+  per block. Fills now take the curve against the reserves earlier fills left,
+  and an order's limit holds for its average price over the fill
+  (`ammLimitSellCapacity`, `ammLimitBuyCapacity`, `ammCostToTake`, which rounds
+  up so the reserve product never shrinks). BUY fills also added the CD fee
+  share to `cdHearthFeeAccumulator` twice while the reversal removed it once;
+  the epoch mint turned the extra into unbacked CD yield.
+- Selling a large amount of XFG on Hearth moves the pool hard (10,000 XFG into
+  the genesis pool: 0.1 → 0.025 HEAT per XFG), while minting at the TWAP gives
+  about twice the HEAT with no price impact. `sell_xfg` stays a Hearth sale but
+  shows both amounts and the price move, then asks; `/amm_quote` returns the
+  mint amount too.
+- walletd's `amm_swap` direction 0 burned XFG (it called the mint), while the
+  SimpleWallet RPC's `amm_swap` sold on Hearth. Both now sell on Hearth; minting
+  is `heat_mint` in both. `sell_xfg` / `buy_xfg` are RPC aliases in both.
+
 Testnet: v11 has been active there since height 30, and these rules apply to its
 whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
 withdrawals were paid under the old fee rule and will not revalidate; the
@@ -1384,6 +1403,9 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | 6 | Wallet pricing: WalletGreen + SimpleWallet mint at TWAP, swaps quoted on the curve | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 7a | WalletGreen HEAT builders: XFG fee inputs, per-amount rings, add-then-sign (send, CD create/withdraw/rollover, HEAT limit orders, HEAT→XFG swap) | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 7b | WalletLegacy (SimpleWallet) HEAT builders: same fixes through its async request chain | Claude Opus 5.5 | 2026-09-27 | TODO |
+| 10 | Limit-order backstop fills priced on the curve, limits held on the average; BUY fills credited the CD fee twice | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 11 | `/amm_quote` returns `mint_output`; `sell_xfg` shows the Hearth and mint quotes and the price move, then confirms | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 12 | walletd `amm_swap` direction 0 sells on Hearth (it burned); `sell_xfg`/`buy_xfg` RPC aliases; wallet RPC quotes the curve when no output is given | Claude Opus 5.5 | 2026-09-28 | DONE |
 | 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn: mempool refuses them now; consensus cutoff height (default = v11) | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 9 | v11 mint burns feed the burn tally, the Eternal Flame and the SWF (0x08's 50/50 routing); SWF share undone on pop | Claude Opus 5.5 | 2026-09-27 | DONE |
 
@@ -1393,4 +1415,5 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Build compiles | PASS (tasks 1-6): Daemon, SimpleWallet, PaymentGateService, test targets |
 | Tests pass | PASS (tasks 1-6): core 178/178, hearth 31/31, auction 57/57, p2p 61/61 |
 | Tests pass (tasks 8-9) | PASS: core 185/185, hearth 31/31, auction 57/57, p2p 115/115 |
-| All tasks done | NO — task 7 open |
+| Tests pass (tasks 10-12) | PASS: core 194/194, hearth 31/31, auction 57/57, p2p 115/115 |
+| All tasks done | NO — task 7b open |

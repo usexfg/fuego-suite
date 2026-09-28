@@ -2857,6 +2857,7 @@ bool RpcServer::on_amm_quote(const COMMAND_RPC_AMM_QUOTE::request& req,
   res.expected_output = quote.expectedOutput;
   res.price_impact_bps = quote.priceImpactBps;
   res.fee = quote.fee;
+  res.mint_output = quote.mintOutput;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

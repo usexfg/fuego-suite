@@ -2109,21 +2109,41 @@ namespace CryptoNote
     fee = m_currency.minimumFee();
 
     if (direction == 0) {
-      // XFG→HEAT: spend XFG KeyInputs + mint HEAT (mintHeatV10)
-      uint64_t heatOut = expectedOutput > 0 ? expectedOutput : minOutput;
-      if (heatOut == 0) {
+      // Hearth sell: the XFG goes into the pool and HEAT comes out on the
+      // curve. This used to call mintHeatV10 — burning the XFG instead — so
+      // `amm_swap` burned here but sold on Hearth in the SimpleWallet RPC.
+      // Burning is `heat_mint`.
+      uint64_t outputAmount = expectedOutput;
+      if (outputAmount == 0) {
         INode::AmmPoolReserves reserves;
-        std::error_code pec = m_node.getAmmPoolReserves(reserves);
-        if (!pec && reserves.reserveXfg > 0) {
-          heatOut = inputAmount * reserves.reserveHeat / reserves.reserveXfg;
-        } else {
-          heatOut = inputAmount / 10;
+        if (m_node.getAmmPoolReserves(reserves) || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+          throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Hearth pool reserves unavailable");
         }
+        const uint64_t net = ammSwapNetOutput(inputAmount, reserves.reserveXfg, reserves.reserveHeat);
+        outputAmount = static_cast<uint64_t>(
+            (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
       }
-      if (heatOut < minOutput) {
-        heatOut = minOutput;
+      if (outputAmount == 0 || outputAmount < minOutput) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                "Swap quote is below the requested minimum output");
       }
-      mintHeatV10(inputAmount, heatOut, fee, mixin, transactionHash);
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      CryptoNote::TransactionOutputCommitment poolOut;
+      poolOut.commitKey = CryptoNote::computePoolCommitKey();
+      poolOut.term = parameters::DEPOSIT_TERM_POOL_XFG;
+      transaction->addOutput(inputAmount, poolOut);
+      for (uint64_t bill : decomposeHeatIntoBills(outputAmount)) {
+        addHeatOutputToSelf(*transaction, bill);
+      }
+      transaction->setUnlockTime(0);
+      std::vector<uint8_t> extra;
+      addAmmSwapAuthToExtra(extra, direction, inputAmount, outputAmount, minOutput);
+      transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, inputAmount + fee, mixin, keysInfo);
+      addAndSignInputs(*transaction, keysInfo, {});
+      transactionHash = Common::podToHex(transaction->getTransactionHash());
+      validateSaveAndSendTransaction(*transaction, {}, false, true);
       return;
     }
 

@@ -271,6 +271,9 @@ namespace CryptoNote
         const uint64_t WALLET_MINT_TWAP_MARGIN_BPS = 50;             // HEAT mints: 0.5% under the TWAP
         const uint64_t WALLET_SWAP_SLIPPAGE_BPS = 50;                // swaps: 0.5% under the curve
         const uint64_t ORDER_PRICE_TICK = COIN / 100;               // min price granularity (1%)
+        // Swaps in one block may move the Hearth price by at most this much
+        // from the block's opening price: 100 = up to double or down to half.
+        const uint64_t HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100;
         const uint64_t HEARTH_BACKSTOP_MAX_BPS = 500;                // backstop fills ≤ 5× auction volume per block
         constexpr uint64_t HEARTH_POOL_SEED_XFG = 10000;        // 10,000 XFG at genesis (COIN units)
         constexpr uint64_t HEARTH_POOL_SEED_HEAT = 1000;        // 1,000 HEAT at genesis (10:1 ratio, 10 XFG = 1 HEAT @ $1.58 CPI-adj)

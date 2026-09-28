@@ -1387,6 +1387,29 @@ Tasks 10-12 (owner review of swap pricing, 2026-09-28):
   SimpleWallet RPC's `amm_swap` sold on Hearth. Both now sell on Hearth; minting
   is `heat_mint` in both. `sell_xfg` / `buy_xfg` are RPC aliases in both.
 
+Tasks 13-15 (owner review, 2026-09-28):
+- A HEAT→XFG swap's CD fee share is XFG, and it was valued in HEAT at the
+  post-trade spot. A trade that spiked the price (900 HEAT into a 1,000 XFG /
+  100 HEAT pool: ~97×) credited ~61 HEAT of CD yield for a fee worth 0.63 HEAT —
+  unbacked HEAT at the epoch mint. Swaps and HEAT-paid limit fills now value it
+  at the TWAP of earlier blocks; with no TWAP yet it stays in the reserves.
+- The TWAP window dropped its oldest entry on every push, restored none on a
+  pop, and was never saved. After a reorg or a restart a node priced mints from
+  a different window than its peers; with mints now TWAP-only, a restarted node
+  would reject any block carrying a mint. `m_blockSpotHistory` keeps each v11
+  block's end-of-block price (1,000 blocks past the window), is saved with the
+  cache, and pops exactly; `twapBefore(h)` averages the 8 blocks below h, so
+  validation, settlement and reversal agree, and the per-swap CD records go.
+- No limit capped a swap's price impact (`MAX_MARKET_PRICE_DEVIATION_PCT` feeds
+  only an RPC estimate). Swaps must now keep the price within double or half of
+  the block's opening price (`HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100`); limit
+  fills stay capped at 5% of the reserve per block. `sell_xfg` checks it first.
+- The seed had no LP shares, so the first deposit by anyone — or the Treasury's
+  first provisioning — owned the whole pool, and the bootstrap-repaid check
+  passed at once. The seed now carries √(xfg·heat) shares for its provider
+  (`m_seedLpShares`); later deposits earn their pro-rata slice. The provider
+  cannot remove them yet (task 16).
+
 Testnet: v11 has been active there since height 30, and these rules apply to its
 whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
 withdrawals were paid under the old fee rule and will not revalidate; the
@@ -1406,6 +1429,10 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | 10 | Limit-order backstop fills priced on the curve, limits held on the average; BUY fills credited the CD fee twice | Claude Opus 5.5 | 2026-09-28 | DONE |
 | 11 | `/amm_quote` returns `mint_output`; `sell_xfg` shows the Hearth and mint quotes and the price move, then confirms | Claude Opus 5.5 | 2026-09-28 | DONE |
 | 12 | walletd `amm_swap` direction 0 sells on Hearth (it burned); `sell_xfg`/`buy_xfg` RPC aliases; wallet RPC quotes the curve when no output is given | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 13 | CD fee shares valued at the TWAP of earlier blocks (was the post-trade spot); TWAP from a saved per-block spot history that reverses exactly | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 14 | Per-block price band: swaps keep the price within double/half of the block's opening price | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 15 | Seed carries LP shares (√(xfg·heat)) held by its provider; cache v15 | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 16 | Seed provider can remove the seed's shares: needs the provider's key in consensus and spendable LP outputs | — | — | TODO |
 | 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn: mempool refuses them now; consensus cutoff height (default = v11) | Claude Opus 5.5 | 2026-09-27 | DONE |
 | 9 | v11 mint burns feed the burn tally, the Eternal Flame and the SWF (0x08's 50/50 routing); SWF share undone on pop | Claude Opus 5.5 | 2026-09-27 | DONE |
 
@@ -1416,4 +1443,5 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Tests pass | PASS (tasks 1-6): core 178/178, hearth 31/31, auction 57/57, p2p 61/61 |
 | Tests pass (tasks 8-9) | PASS: core 185/185, hearth 31/31, auction 57/57, p2p 115/115 |
 | Tests pass (tasks 10-12) | PASS: core 194/194, hearth 31/31, auction 57/57, p2p 115/115 |
-| All tasks done | NO — task 7b open |
+| Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
+| All tasks done | NO — tasks 7b and 16 open |

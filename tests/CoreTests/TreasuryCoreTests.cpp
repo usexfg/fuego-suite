@@ -767,10 +767,30 @@ void testRebuildCacheKeepsHearthSeed() {
   TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
   TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
 
+  // The seed carries its provider's LP shares: √(xfg · heat).
+  const uint64_t seedShares = ammInitialLpShares(seedXfg, seedHeat);
+  TEST(seedShares > 0 && t.chain.getAmmPool().totalLpShares == seedShares);
+
   t.chain.rebuildCache();
   TEST(t.chain.getAmmPool().reserveXfg == seedXfg);
   TEST(t.chain.getAmmPool().reserveHeat == seedHeat);
+  TEST(t.chain.getAmmPool().totalLpShares == seedShares);
 }
+
+// With seed shares, a first LP deposit earns its fair slice: 1% of both
+// reserves earns 1% of the shares. Without them it earned every share — and
+// with them the whole pool, seed included.
+void testSeedLpSharesMakeFirstDepositFair() {
+  TestChain t("seedshares");
+  TEST(t.ok);
+  const auto& pool = t.chain.getAmmPool();
+  const uint64_t shares = ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100,
+                                          pool.totalLpShares, pool.reserveXfg, pool.reserveHeat);
+  TEST(shares == pool.totalLpShares / 100);
+  // Without the seed's shares the same deposit took everything.
+  TEST(ammMintLpShares(pool.reserveXfg / 100, pool.reserveHeat / 100, 0, 0, 0) > 0);
+}
+
 
 TransactionOutput keyOut(uint64_t amount) {
   TransactionOutput out;
@@ -1031,6 +1051,34 @@ void testLimitFillsOnTheCurve() {
   TEST(flatBack > sell);
 }
 
+// Swaps may move the pool at most HEARTH_MAX_BLOCK_PRICE_MOVE_PCT from the
+// block's opening price: 100 = double or half.
+void testSwapPriceBand() {
+  TestChain t("band");
+  TEST(t.ok);
+  const uint64_t C = parameters::COIN;
+  const uint64_t rX = t.chain.getAmmPool().reserveXfg;
+  const uint64_t rH = t.chain.getAmmPool().reserveHeat;
+  AssetFlows flows;
+  uint64_t fee = 0;
+  std::string err;
+  auto sell = [&](uint64_t input) {
+    const uint64_t output = ammSwapNetOutput(input, rX, rH);
+    std::vector<uint8_t> extra;
+    addAmmSwapAuthToExtra(extra, 0, input, output, 0);
+    Blockchain::SettlementScratch scratch;
+    scratch.openingSpot = ammGetSpotPrice(rX, rH);
+    return t.chain.validateSettlement(
+        settlementTx({input + 1 * C}, {commitmentOut(output, parameters::HEAT_TERM),
+                                       commitmentOut(input, parameters::DEPOSIT_TERM_POOL_XFG)}, extra),
+        1, scratch, flows, fee, err);
+  };
+  // Selling 30% of the XFG reserve leaves the price at ~0.59× — inside.
+  TEST(sell(rX * 3 / 10));
+  // Selling 50% leaves it at ~0.44× — past half, refused for that reason.
+  TEST(!sell(rX / 2) && err.find("band") != std::string::npos);
+}
+
 int main() {
   testCdInterestCompounding();
   testLegacyDepositWithdrawsForPrincipal();
@@ -1045,6 +1093,8 @@ int main() {
   testValidateSettlementLimitDeposit();
   testHeatwaveTagCutoffHeight();
   testLimitFillsOnTheCurve();
+  testSeedLpSharesMakeFirstDepositFair();
+  testSwapPriceBand();
   testCdActivationHeight();
   testBankingIndexTallyAndReversal();
   testBankingIndexSerializationRoundtrip();

@@ -161,6 +161,9 @@ namespace CryptoNote {
     // Simple average of the last 8 blocks' hearthPoolRatio.
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
+    // TWAP of the 8 v11 blocks below `height` (0 below two blocks): the price
+    // HEAT mints at, and the rate CD fee shares are valued at, in block `height`.
+    uint64_t twapBefore(uint32_t height) const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -191,6 +194,10 @@ namespace CryptoNote {
       };
       std::set<Crypto::Hash, HashLess> limitDepositIds;
       std::set<Crypto::Hash, HashLess> limitWithdrawIds;
+      // Pool spot price when the block opened (HEAT per XFG × COIN); swaps
+      // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
+      // 0 checks no band.
+      uint64_t openingSpot = 0;
     };
     // v11+ settlement of one transaction against the current chain state: its
     // single settlement tag becomes per-asset sources and sinks (AssetFlows),
@@ -528,14 +535,22 @@ namespace CryptoNote {
 
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;
+    // LP shares of the genesis seed, held by the seed provider. The seed used
+    // to have none, so the first LP deposit — by anyone — owned the whole pool.
+    uint64_t m_seedLpShares = 0;
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
 
-    // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
-    std::deque<uint64_t> m_rollingPriceWindow;
-    uint8_t m_lastTwapVersion = 0;
+    // End-of-block Hearth spot price of each v11 block, (height, price), most
+    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the 8-block
+    // TWAP window and saved with the block cache. twapBefore(h) averages the 8
+    // entries below h, so validation, settlement, a reorg and a restart all
+    // see the same price. The old window dropped its oldest entry on each
+    // push and restored none on a pop, and was never saved: after a reorg or a
+    // restart a node priced mints differently from its peers.
+    std::deque<std::pair<uint32_t, uint64_t>> m_blockSpotHistory;
 
     // CD yield state
     uint64_t m_cdYieldPool = 0;
@@ -610,9 +625,6 @@ namespace CryptoNote {
     // Per-block alias register/release/transfer undo journal for popBlock
     // reversal (see AliasIndex.h's AliasUndoOp / applyAliasUndo).
     std::deque<std::pair<uint32_t, std::vector<AliasUndoOp>>> m_aliasUndoLog;
-    // Per-block dir-1 swap CD-fee HEAT equivalents (recorded at settle for
-    // exact popBlock reversal — the pop-time pool rate differs from push-time).
-    std::deque<std::pair<uint32_t, std::vector<uint64_t>>> m_blockSwapCdFeeHeatEq;
     // Per-block LP-removal reserve deltas (recorded at settle for exact
     // popBlock reversal). Recomputing from post-burn state is not the inverse
     // of the forward path: once lpSharesBurned exceeds the post-burn supply

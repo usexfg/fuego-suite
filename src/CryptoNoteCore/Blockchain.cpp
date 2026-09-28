@@ -76,7 +76,7 @@ bool operator<(const Crypto::KeyImage& keyImage1, const Crypto::KeyImage& keyIma
 }
 }
 
-#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 14  // v14: CD denominator from maturity schedule (forces replay)
+#define CURRENT_BLOCKCACHE_STORAGE_ARCHIVE_VER 15  // v15: block spot history, seed LP shares (forces replay)
 #define CURRENT_BLOCKCHAININDICES_STORAGE_ARCHIVE_VER 1
 
 namespace CryptoNote {
@@ -108,21 +108,31 @@ uint64_t swapCdFeeOut(uint64_t output) {
 }
 
 // The CD share enters cdHearthFeeAccumulator in HEAT. A HEAT→XFG swap's fee is
-// XFG, converted at the post-swap spot price — the reserves a reversal sees
-// before it undoes the swap.
-bool swapCdFeeHeat(uint8_t direction, uint64_t cdFeeOut, uint64_t postReserveXfg,
-                   uint64_t postReserveHeat, uint64_t& cdFeeHeat) {
+// XFG, valued at the TWAP of the blocks before this one. At the post-swap spot
+// price, a swap that spiked the price credited many times the fee's worth to
+// CD yield — unbacked HEAT at the next epoch mint. With no TWAP yet the XFG
+// share stays in the reserves. The TWAP excludes the swap's own block, so a
+// reversal computes the same share.
+struct SwapCdShare {
+  uint64_t fromReserve = 0;  // leaves the output reserve
+  uint64_t heat = 0;         // credited to cdHearthFeeAccumulator
+};
+
+SwapCdShare swapCdShare(uint8_t direction, uint64_t output, uint64_t twap) {
+  SwapCdShare share;
+  const uint64_t cdFeeOut = swapCdFeeOut(output);
   if (direction == 0) {
-    cdFeeHeat = cdFeeOut;
-    return true;
+    share.fromReserve = cdFeeOut;
+    share.heat = cdFeeOut;
+    return share;
   }
-  cdFeeHeat = 0;
-  if (postReserveXfg == 0) return true;
-  const uint128_t heat = ((uint128_t)cdFeeOut * ammGetSpotPrice(postReserveXfg, postReserveHeat)) /
-                         parameters::COIN;
-  if (heat > UINT64_MAX) return false;
-  cdFeeHeat = static_cast<uint64_t>(heat);
-  return true;
+  const uint128_t heat = ((uint128_t)cdFeeOut * twap) / parameters::COIN;
+  if (twap == 0 || heat > UINT64_MAX) {
+    return share;
+  }
+  share.fromReserve = cdFeeOut;
+  share.heat = static_cast<uint64_t>(heat);
+  return share;
 }
 
 // Tags with no place before v11: HEAT and Hearth settlement, the legacy AMM
@@ -379,10 +389,18 @@ public:
       s(m_bs.m_cdExpiryByEpoch, "cd_expiry_by_epoch");
       s(m_bs.m_digmSupply, "digm_supply");
       s(m_bs.m_ammPool, "amm_pool");
+      s(m_bs.m_seedLpShares, "seed_lp_shares");
       s(m_bs.m_poolLockedXfg, "pool_locked_xfg");
       s(m_bs.m_poolLockedHeat, "pool_locked_heat");
       s(m_bs.m_lpCommitmentShares, "lp_commitment_shares");
       s(m_bs.m_twapBlockCount, "twap_block_count");
+      {
+        std::vector<std::pair<uint32_t, uint64_t>> spots(m_bs.m_blockSpotHistory.begin(),
+                                                         m_bs.m_blockSpotHistory.end());
+        s(spots, "block_spot_history");
+        if (s.type() == ISerializer::INPUT)
+          m_bs.m_blockSpotHistory.assign(spots.begin(), spots.end());
+      }
       {
         uint64_t twap_lo = (uint64_t)(m_bs.m_twapAccumulator & 0xFFFFFFFFFFFFFFFFULL);
         uint64_t twap_hi = (uint64_t)(m_bs.m_twapAccumulator >> 64);
@@ -640,6 +658,12 @@ private:
 void CryptoNote::Blockchain::seedHearthPool() {
   m_ammPool.reserveXfg = parameters::HEARTH_POOL_SEED_XFG * parameters::COIN;
   m_ammPool.reserveHeat = parameters::HEARTH_POOL_SEED_HEAT * parameters::COIN;
+  // The seed is its provider's liquidity and carries LP shares like any
+  // first deposit. With none, the first LP to deposit anything owned every
+  // share, and so the whole pool; and the Treasury's first provisioning did,
+  // which made the bootstrap-repaid check pass at once.
+  m_seedLpShares = ammInitialLpShares(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
+  m_ammPool.totalLpShares = m_seedLpShares;
   // Bootstrap: protocol owes the seed provider in both legs (XFG and HEAT).
   m_bootstrapXfgOwed = m_ammPool.reserveXfg;
   m_bootstrapHeatOwed = m_ammPool.reserveHeat;
@@ -1043,8 +1067,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_poolLockedHeat = 0;
     m_twapAccumulator = 0;
     m_twapBlockCount = 0;
-    m_rollingPriceWindow.clear();
-    m_lastTwapVersion = 0;
+    m_blockSpotHistory.clear();
     m_cdYieldPool = 0;
     m_cdReserve = 0;
     m_heatCdFeePool = 0;
@@ -1083,7 +1106,6 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     m_vaultUtxoCounter = 0;
     m_vaultSpentByTx.clear();
     m_blockOrderFills.clear();
-    m_blockSwapCdFeeHeatEq.clear();
     m_blockLpRemoveAmounts.clear();
     m_epochSnapshots.clear();
     m_orderbookSnapshots.clear();
@@ -3554,6 +3576,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     uint64_t blockClaimedInterest = 0;
     uint64_t blockClaimedBonus = 0;  // v11+: BV-backed bonus aggregate
     SettlementScratch blockSettlement;  // v11+: order ids settled earlier in this block
+    blockSettlement.openingSpot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
 
     for (size_t i = 0; i < transactions.size(); ++i)
     {
@@ -3976,12 +3999,20 @@ uint64_t CryptoNote::Blockchain::getPoolTwap() const {
 }
 
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {
+  return twapBefore(static_cast<uint32_t>(m_blocks.size()));
+}
+
+uint64_t CryptoNote::Blockchain::twapBefore(uint32_t height) const {
   // Fewer than two blocks is no average: validateSettlement refuses mints then,
   // and wallets reading 0 here refuse to build one.
-  if (m_rollingPriceWindow.size() < 2) return 0;
-  uint64_t sum = 0;
-  for (uint64_t p : m_rollingPriceWindow) sum += p;
-  return sum / m_rollingPriceWindow.size();
+  uint128_t sum = 0;
+  size_t count = 0;
+  for (auto it = m_blockSpotHistory.rbegin(); it != m_blockSpotHistory.rend() && count < 8; ++it) {
+    if (it->first >= height) continue;
+    sum += it->second;
+    ++count;
+  }
+  return count < 2 ? 0 : static_cast<uint64_t>(sum / count);
 }
 
 std::vector<CryptoNote::Blockchain::OrderbookLevel> CryptoNote::Blockchain::getOrderbookBidCurve(uint32_t maxLevels) const {
@@ -4415,13 +4446,15 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
         const uint64_t netXfg = static_cast<uint64_t>(
             ((uint128_t)grossXfg * (feeDiv - feeBps)) / feeDiv);
         const uint64_t feeXfg = grossXfg - netXfg;
-        const uint64_t cdFeeXfg = static_cast<uint64_t>(
+        // The XFG CD share enters the HEAT accumulator at the TWAP of earlier
+        // blocks, as a swap's does — once. It used to be added a second time,
+        // which the reversal never undid and the epoch mint turned into
+        // unbacked CD yield. With no TWAP yet it stays in the reserves.
+        const uint64_t twap = twapBefore(height);
+        const uint64_t cdFeeXfg = twap == 0 ? 0 : static_cast<uint64_t>(
             ((uint128_t)feeXfg * parameters::HEARTH_CD_SHARE_PCT) / 100);
-        // The XFG CD share enters the HEAT accumulator at the pre-fill spot —
-        // once. It used to be added a second time, which the reversal never
-        // undid and the epoch mint turned into unbacked CD yield.
         const uint64_t feeHeatEq = static_cast<uint64_t>(
-            ((uint128_t)cdFeeXfg * spot) / parameters::COIN);
+            ((uint128_t)cdFeeXfg * twap) / parameters::COIN);
         m_ammPool.cdHearthFeeAccumulator =
           (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - feeHeatEq)
             ? UINT64_MAX : m_ammPool.cdHearthFeeAccumulator + feeHeatEq;
@@ -5535,23 +5568,16 @@ void CryptoNote::Blockchain::accumulateTwap(const Block& block, uint32_t height)
   if (block.majorVersion >= BLOCK_MAJOR_VERSION_11 && !m_ammPool.isEmpty()) {
     uint64_t spotPrice = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     // V11+: canonical price scale (HEAT/XFG × COIN), stored raw.
-    if (m_rollingPriceWindow.empty() || m_lastTwapVersion < BLOCK_MAJOR_VERSION_11) {
-      // Activation boundary: discard pre-v11 entries (different scale) so the
-      // mint price cannot mix XFG/HEAT-era values with canonical ones.
-      m_rollingPriceWindow.clear();
-    }
     m_twapAccumulator += (uint128_t)spotPrice;
     m_twapBlockCount++;
     m_blockTwapContributions.push_back((uint128_t)spotPrice);
 
-    // Rolling 8-block TWAP for mint validation (anti-manipulation). Use the
-    // live AMM spot, not the user-controlled call-auction clearing price;
-    // otherwise tiny crossed orders can manufacture an oracle price and mint
-    // unbacked HEAT at that price.
-    m_rollingPriceWindow.push_back(spotPrice);
-    m_lastTwapVersion = block.majorVersion;
-    if (m_rollingPriceWindow.size() > 8) {
-      m_rollingPriceWindow.pop_front();
+    // The 8-block TWAP for mints (see twapBefore). Use the live AMM spot, not
+    // the user-controlled call-auction clearing price; otherwise tiny crossed
+    // orders can manufacture an oracle price and mint unbacked HEAT at it.
+    m_blockSpotHistory.push_back({height, spotPrice});
+    while (m_blockSpotHistory.size() > MAX_ROLLBACK_HISTORY + 8) {
+      m_blockSpotHistory.pop_front();
     }
   }
 
@@ -5785,9 +5811,7 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
 
   // Reverse per-block dir-1 swap CD-fee HEAT equivalents (recorded at settle;
   // the pop-time pool rate differs from push-time).
-  if (!m_blockSwapCdFeeHeatEq.empty() && m_blockSwapCdFeeHeatEq.back().first == poppedHeight) {
-    m_blockSwapCdFeeHeatEq.pop_back();
-  }
+
 
   // Reverse per-block LP-removal reserve deltas (recorded at settle).
   if (!m_blockLpRemoveAmounts.empty() && m_blockLpRemoveAmounts.back().first == poppedHeight) {
@@ -5875,9 +5899,9 @@ void CryptoNote::Blockchain::popBlock(const Crypto::Hash& blockHash) {
     m_blockTwapContributions.pop_back();
   }
 
-  // Reverse rolling 8-block TWAP window
-  if (!m_rollingPriceWindow.empty()) {
-    m_rollingPriceWindow.pop_back();
+  // Drop the popped block's spot price; the older ones are all still here.
+  if (!m_blockSpotHistory.empty() && m_blockSpotHistory.back().first == poppedHeight) {
+    m_blockSpotHistory.pop_back();
   }
 
   m_blocks.pop_back();
@@ -6282,25 +6306,14 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           const bool xfgIn = auth.direction == 0;
           uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
           uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
-          const uint64_t cdFeeOut = swapCdFeeOut(auth.outputAmount);
+          const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount, twapBefore(block.height));
           reserveIn += auth.inputAmount;
-          reserveOut -= auth.outputAmount + cdFeeOut;
-          uint64_t cdFeeHeat = 0;
-          swapCdFeeHeat(auth.direction, cdFeeOut, m_ammPool.reserveXfg, m_ammPool.reserveHeat, cdFeeHeat);
-          m_ammPool.cdHearthFeeAccumulator += cdFeeHeat;
-          if (!xfgIn) {
-            // HEAT→XFG converts its fee at the post-swap rate; keep the figure
-            // so popBlock reverses exactly what was credited.
-            if (m_blockSwapCdFeeHeatEq.empty() ||
-                m_blockSwapCdFeeHeatEq.back().first != block.height) {
-              m_blockSwapCdFeeHeatEq.push_back({block.height, {}});
-            }
-            m_blockSwapCdFeeHeatEq.back().second.push_back(cdFeeHeat);
-          }
+          reserveOut -= auth.outputAmount + cd.fromReserve;
+          m_ammPool.cdHearthFeeAccumulator += cd.heat;
           logger(INFO) << "AMM swap " << (xfgIn ? "XFG→HEAT" : "HEAT→XFG") << " settled: pool +"
                        << m_currency.formatAmount(auth.inputAmount) << ", -"
-                       << m_currency.formatAmount(auth.outputAmount + cdFeeOut)
-                       << ", cdFee(HEAT)=" << m_currency.formatAmount(cdFeeHeat);
+                       << m_currency.formatAmount(auth.outputAmount + cd.fromReserve)
+                       << ", cdFee(HEAT)=" << m_currency.formatAmount(cd.heat);
           break;  // one swap auth per tx
         }
       }
@@ -6818,28 +6831,16 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
           }
           break;
         }
-        // V11+: exact inverse of the settlement in pushTransaction.
+        // V11+: exact inverse of the settlement in pushTransaction — the same
+        // TWAP (blocks below this one), so the same CD share.
         const bool xfgIn = auth.direction == 0;
-        const uint64_t cdFeeOut = swapCdFeeOut(auth.outputAmount);
-        uint64_t cdFeeHeat = 0;
-        if (xfgIn) {
-          cdFeeHeat = cdFeeOut;
-        } else if (!m_blockSwapCdFeeHeatEq.empty() &&
-                   m_blockSwapCdFeeHeatEq.back().first == height &&
-                   !m_blockSwapCdFeeHeatEq.back().second.empty()) {
-          cdFeeHeat = m_blockSwapCdFeeHeatEq.back().second.back();
-          m_blockSwapCdFeeHeatEq.back().second.pop_back();
-        } else {
-          // No record (popped after a restart): the reserves are still the
-          // post-swap reserves the push converted the fee at.
-          swapCdFeeHeat(auth.direction, cdFeeOut, m_ammPool.reserveXfg, m_ammPool.reserveHeat, cdFeeHeat);
-        }
+        const SwapCdShare cd = swapCdShare(auth.direction, auth.outputAmount, twapBefore(height));
         uint64_t& reserveIn = xfgIn ? m_ammPool.reserveXfg : m_ammPool.reserveHeat;
         uint64_t& reserveOut = xfgIn ? m_ammPool.reserveHeat : m_ammPool.reserveXfg;
         reserveIn = reserveIn >= auth.inputAmount ? reserveIn - auth.inputAmount : 0;
-        reserveOut += auth.outputAmount + cdFeeOut;
-        m_ammPool.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator >= cdFeeHeat
-            ? m_ammPool.cdHearthFeeAccumulator - cdFeeHeat : 0;
+        reserveOut += auth.outputAmount + cd.fromReserve;
+        m_ammPool.cdHearthFeeAccumulator = m_ammPool.cdHearthFeeAccumulator >= cd.heat
+            ? m_ammPool.cdHearthFeeAccumulator - cd.heat : 0;
         break;
       } else if (field.type() == typeid(TransactionExtraAmmAddLiquidity)) {
         const auto& add = boost::get<TransactionExtraAmmAddLiquidity>(field);
@@ -7649,7 +7650,7 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
     const auto& a = boost::get<TransactionExtraHeatMintAuth>(*tag);
     // Priced by the 8-block TWAP only. The spot fallback let a swap earlier in
     // the same block set the price a mint pays.
-    const uint64_t price = getRollingTwap();
+    const uint64_t price = twapBefore(height);
     if (price == 0) {
       error = "HEAT mint: no TWAP price yet";
       return false;
@@ -7678,20 +7679,31 @@ bool CryptoNote::Blockchain::validateSettlement(const Transaction& tx, uint32_t 
               std::to_string(a.minOutput) + ", " + std::to_string(net) + "] on the curve";
       return false;
     }
-    const uint64_t cdFeeOut = swapCdFeeOut(a.outputAmount);
+    const SwapCdShare cd = swapCdShare(a.direction, a.outputAmount, twapBefore(height));
     if (reserveIn > UINT64_MAX - a.inputAmount || reserveOut < a.outputAmount ||
-        reserveOut - a.outputAmount < cdFeeOut) {
+        reserveOut - a.outputAmount < cd.fromReserve) {
       error = "AMM swap: reserves cannot settle it";
       return false;
     }
-    const uint64_t postIn = reserveIn + a.inputAmount;
-    const uint64_t postOut = reserveOut - a.outputAmount - cdFeeOut;
-    uint64_t cdFeeHeat = 0;
-    if (!swapCdFeeHeat(a.direction, cdFeeOut, xfgIn ? postIn : postOut, xfgIn ? postOut : postIn,
-                       cdFeeHeat) ||
-        m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cdFeeHeat) {
+    if (m_ammPool.cdHearthFeeAccumulator > UINT64_MAX - cd.heat) {
       error = "AMM swap: CD fee accumulator overflow";
       return false;
+    }
+    // Per-block price band: from the block's opening price, the pool may at
+    // most double or halve (HEARTH_MAX_BLOCK_PRICE_MOVE_PCT). Swaps had no
+    // limit: one trade could move the price ~100× — for the trader, a fill far
+    // worse than any sane minimum; for everyone, the price the TWAP averages.
+    if (scratch.openingSpot > 0) {
+      const uint64_t postIn = reserveIn + a.inputAmount;
+      const uint64_t postOut = reserveOut - a.outputAmount - cd.fromReserve;
+      const uint64_t postSpot = xfgIn ? ammGetSpotPrice(postIn, postOut) : ammGetSpotPrice(postOut, postIn);
+      const uint128_t band = 100 + parameters::HEARTH_MAX_BLOCK_PRICE_MOVE_PCT;
+      if ((uint128_t)postSpot * 100 > (uint128_t)scratch.openingSpot * band ||
+          (uint128_t)postSpot * band < (uint128_t)scratch.openingSpot * 100) {
+        error = "AMM swap: would move the pool price past the block's band (spot " +
+                std::to_string(scratch.openingSpot) + " -> " + std::to_string(postSpot) + ")";
+        return false;
+      }
     }
   } else if (kind == typeid(TransactionExtraLimitDeposit)) {
     const auto& d = boost::get<TransactionExtraLimitDeposit>(*tag);
@@ -7786,6 +7798,7 @@ bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, u
   const uint32_t height = static_cast<uint32_t>(m_blocks.size());
   if (getBlockMajorVersionForHeight(height) >= BLOCK_MAJOR_VERSION_11) {
     SettlementScratch scratch;
+    scratch.openingSpot = ammGetSpotPrice(m_ammPool.reserveXfg, m_ammPool.reserveHeat);
     AssetFlows flows;
     std::string error;
     if (!validateSettlement(tx, height, scratch, flows, fee, error)) {

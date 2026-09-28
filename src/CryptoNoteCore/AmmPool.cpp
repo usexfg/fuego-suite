@@ -93,6 +93,10 @@ uint64_t ammCostToTake(uint64_t output, uint64_t reserveIn, uint64_t reserveOut)
   return cost > UINT64_MAX ? 0 : static_cast<uint64_t>(cost);
 }
 
+uint64_t ammInitialLpShares(uint64_t amountA, uint64_t amountB) {
+  return isqrt128((uint128_t)amountA * amountB);
+}
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB) {

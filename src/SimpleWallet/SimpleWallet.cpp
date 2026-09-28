@@ -4142,6 +4142,16 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
                       << " is below your minimum " << m_currency.formatAmount(minOutput);
     return false;
   }
+  // Consensus lets one block move the price at most to double or half of
+  // its opening price (HEARTH_MAX_BLOCK_PRICE_MOVE_PCT); say so up front.
+  const uint64_t band = 100 + parameters::HEARTH_MAX_BLOCK_PRICE_MOVE_PCT;
+  if (spotBefore > 0 && (static_cast<uint128_t>(spotAfter) * 100 > static_cast<uint128_t>(spotBefore) * band ||
+                         static_cast<uint128_t>(spotAfter) * band < static_cast<uint128_t>(spotBefore) * 100)) {
+    fail_msg_writer() << "This trade would move the Hearth price from " << m_currency.formatAmount(spotBefore)
+                      << " to " << m_currency.formatAmount(spotAfter)
+                      << " HEAT per XFG — past the per-block limit (at most double or half). Split it across blocks.";
+    return false;
+  }
   const double moveBps = spotBefore > 0
       ? (static_cast<double>(spotAfter) - static_cast<double>(spotBefore)) * 10000.0 / spotBefore : 0.0;
   success_msg_writer() << "Hearth " << (direction == 0 ? "sell" : "buy") << ": "

@@ -60,6 +60,9 @@ uint64_t ammLimitBuyCapacity(uint64_t reserveXfg, uint64_t reserveHeat, uint64_t
 // reserves never shrinks. 0 when output is 0 or not below reserveOut.
 uint64_t ammCostToTake(uint64_t output, uint64_t reserveIn, uint64_t reserveOut);
 
+// LP shares of a pool's first liquidity: √(amountA · amountB).
+uint64_t ammInitialLpShares(uint64_t amountA, uint64_t amountB);
+
 uint64_t ammMintLpShares(uint64_t amountA, uint64_t amountB,
                           uint64_t totalShares,
                           uint64_t reserveA, uint64_t reserveB);

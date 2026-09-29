@@ -1,5 +1,87 @@
-// ── Hearth Exchange — Monaco Terminal Logic ──────────────────────────────────
+// ── Hearth — the salon floor ─────────────────────────────────────────────────
 'use strict';
+
+// Chart colours are resolved from the stylesheet on every theme change, so the
+// plot can never drift from the surface it is drawn on. Nothing is cached.
+const CHART_TOKENS = [
+  '--dir-up', '--dir-up-line', '--dir-down', '--dir-down-line',
+  '--ink-30', '--ink-20', '--ink-50', '--ink-90',
+  '--hairline', '--hairline-soft',
+  '--accent', '--accent-line', '--flame',
+  '--surface-active', '--surface-raised', '--surface-panel'
+];
+
+const ChartStyle = (() => {
+  const read = () => App.tokens(CHART_TOKENS);
+
+  // Direction carries the two directional hues and nothing else. Overlays,
+  // axes and the crosshair stay in the neutral or the house accent so they
+  // never compete with the data for the eye.
+  const build = t => ({
+    grid: {
+      show: true,
+      horizontal: { color: t['--hairline-soft'] },
+      vertical: { color: t['--hairline-soft'] }
+    },
+    candle: {
+      type: 'candle_solid',
+      bar: {
+        upColor: t['--dir-up'],
+        downColor: t['--dir-down'],
+        noChangeColor: t['--ink-30'],
+        upBorderColor: t['--dir-up'],
+        downBorderColor: t['--dir-down'],
+        noChangeBorderColor: t['--ink-30'],
+        upWickColor: t['--dir-up-line'],
+        downWickColor: t['--dir-down-line'],
+        noChangeWickColor: t['--ink-20']
+      },
+      areaLineSize: 1,
+      priceMark: {
+        high: { color: t['--ink-50'], textOffset: 5, textSize: 10 },
+        low: { color: t['--ink-50'], textOffset: 5, textSize: 10 },
+        last: { upColor: t['--dir-up'], downColor: t['--dir-down'], noChangeColor: t['--ink-30'] }
+      }
+    },
+    indicator: {
+      ohlc: { upColor: t['--dir-up'], downColor: t['--dir-down'], noChangeColor: t['--ink-30'] },
+      // Volume takes the candle's own direction, translucent. A bar drawn
+      // in an identity colour reads as a third series that means nothing.
+      bars: [{ upColor: t['--dir-up'] + '33', downColor: t['--dir-down'] + '33',
+               noChangeColor: t['--ink-30'] + '33',
+               borderUpColor: t['--dir-up'] + '66', borderDownColor: t['--dir-down'] + '66',
+               borderNoChangeColor: t['--ink-30'] + '66' }],
+      lines: [
+        { color: t['--accent'], size: 1 },   // MA — the house accent
+        { color: t['--ink-50'], size: 1 },   // EMA — neutral
+        { color: t['--flame'], size: 1 }     // VOL — the complication
+      ]
+    },
+    xAxis: { axisLine: { color: t['--hairline'] }, tickLine: { color: t['--hairline-soft'] }, tickText: { color: t['--ink-30'], size: 10 } },
+    yAxis: { axisLine: { color: t['--hairline'] }, tickLine: { color: t['--hairline-soft'] }, tickText: { color: t['--ink-30'], size: 10 } },
+    separator: { color: t['--hairline'] },
+    crosshair: {
+      horizontal: { line: { color: t['--accent-line'], style: 1 }, text: { color: t['--ink-90'], backgroundColor: t['--surface-active'] } },
+      vertical: { line: { color: t['--accent-line'], style: 1 }, text: { color: t['--ink-90'], backgroundColor: t['--surface-active'] } }
+    }
+  });
+
+  return {
+    build,
+    read,
+    // Overlays are an annotation on the chart, not a feature of it.
+    overlay: () => {
+      const t = read();
+      const s = { line: { color: t['--accent'], style: 0, size: 1 }, text: { color: t['--ink-50'], size: 10 } };
+      return {
+        segment: { name: 'segment', styles: s },
+        horizontalRay: { name: 'priceLine', styles: { ...s, line: { color: t['--accent'], style: 2, size: 1 } } },
+        fibonacci: { name: 'fibonacciLine', styles: { ...s, polyline: { color: t['--accent-line'], style: 2, size: 1 } } },
+        rectangle: { name: 'rect', styles: { ...s, polygon: { color: t['--accent'] + '18', borderColor: t['--accent-line'] } } }
+      };
+    }
+  };
+})();
 
 const Hearth = (() => {
   let priceChart;
@@ -10,26 +92,14 @@ const Hearth = (() => {
   let activeDrawTool = null;
   let currentSpotPrice = 1580000;
   let userWalletBalance = 0;
+  // Which series the pool chart is currently showing. 'pool' is the live
+  // HΞΔŦ-per-XFG feed; 'archive' is real XFG/USD history. The two are different
+  // units, so every label and readout keys off this.
+  let chartSource = 'pool';
 
-  // ──  Mock Data (Fallback whe
-n daemons are booting / syncing) ──
-  function mockCandles(count) {
-    const now = Math.floor(Date.now() / 1000);
-    const candles = [];
-    let price = 1580000;
-    for (let i = count; i > 0; i--) {
-      const t = now - i * 3600;
-      const change = (Math.random() - 0.48) * 35000;
-      const open = price;
-      const close = Math.max(1200000, price + change);
-      const high = Math.max(open, close) + Math.random() * 18000;
-      const low = Math.min(open, close) - Math.random() * 18000;
-      const vol = Math.floor(Math.random() * 4500 * 10000000) + 400000000;
-      candles.push({ t, o: Math.floor(open), h: Math.floor(high), l: Math.floor(low), c: Math.floor(close), v: vol });
-      price = close;
-    }
-    return { candles };
-  }
+  // Depth still falls back to a placeholder ladder while the house daemons are
+  // booting, but the price chart no longer invents candles: it shows the real
+  // archive below, and says plainly when it has no live feed.
 
   function mockOrderbook() {
     const bestBid = 1575000;
@@ -72,67 +142,30 @@ n daemons are booting / syncing) ──
     fee_pool: 45000 * 10000000
   };
 
-  // ── Monaco Terminal Chart (Gold / Firegold up, White-Hot Blue down) ──
+  // ── Chart ─────────────────────────────────────────────────────────────────
+  // Direction carries the only two chromatic hues. Overlays, axes and the
+  // crosshair are drawn in neutral or the house accent so they never compete
+  // with the data for the eye.
+
+  // klinecharts 9.8 has no removeAllOverlay(); overlays are removed by id.
+  function clearOverlays(chart) {
+    if (!chart) return;
+    try {
+      const list = chart.getCompleteOverlays ? chart.getCompleteOverlays() : [];
+      (list || []).forEach(o => {
+        const id = o && (o.id || o.name);
+        if (id) chart.removeOverlay(id);
+      });
+    } catch (e) {
+      console.warn('[hearth] clearing overlays failed:', e);
+    }
+  }
 
   function initPriceChart() {
     const container = document.getElementById('hearth-chart');
     if (!container || typeof klinecharts === 'undefined') return;
 
-    priceChart = klinecharts.init(container, {
-      styles: {
-        grid: {
-          show: true,
-          horizontal: { color: 'rgba(255,145,0,0.06)' },
-          vertical: { color: 'rgba(255,145,0,0.04)' }
-        },
-        candle: {
-          type: 'candle_solid',
-          bar: {
-            upColor: '#ff9100',          // Firegold for Up Candles
-            downColor: '#00f0ff',        // White-Hot Blue for Down Candles
-            noChangeColor: '#5d6175',
-            upBorderColor: '#c9a44c',
-            downBorderColor: '#00f0ff',
-            noChangeBorderColor: '#5d6175',
-            upWickColor: '#c9a44c',
-            downWickColor: '#e0faff',
-            noChangeWickColor: '#5d6175'
-          },
-          areaLineSize: 1,
-          priceMark: {
-            high: { color: '#c9a44c', textOffset: 5, textSize: 10 },
-            low: { color: '#00f0ff', textOffset: 5, textSize: 10 },
-            last: { upColor: '#ff9100', downColor: '#00f0ff', noChangeColor: '#5d6175' }
-          }
-        },
-        indicator: {
-          ohlc: { upColor: '#ff9100', downColor: '#00f0ff', noChangeColor: '#5d6175' },
-          bars: [
-            { color: 'rgba(0,240,255,0.45)', borderColor: 'rgba(0,240,255,0.7)' }
-          ],
-          lines: [
-            { color: '#c9a44c', size: 1.5 }, // Gold SMA 20
-            { color: '#ff9100', size: 1.5 }, // Firegold EMA 12
-            { color: '#00f0ff', size: 1.5 }  // White-Hot Blue VOL
-          ]
-        },
-        xAxis: {
-          axisLine: { color: 'rgba(255,255,255,0.1)' },
-          tickLine: { color: 'rgba(255,255,255,0.1)' },
-          tickText: { color: '#5d6175', size: 10 }
-        },
-        yAxis: {
-          axisLine: { color: 'rgba(255,255,255,0.1)' },
-          tickLine: { color: 'rgba(255,255,255,0.1)' },
-          tickText: { color: '#5d6175', size: 10 }
-        },
-        separator: { color: 'rgba(255,145,0,0.2)' },
-        crosshair: {
-          horizontal: { line: { color: '#ff9100', style: 2 }, text: { color: '#000', backgroundColor: '#c9a44c' } },
-          vertical: { line: { color: '#ff9100', style: 2 }, text: { color: '#000', backgroundColor: '#c9a44c' } }
-        }
-      }
-    });
+    priceChart = klinecharts.init(container, { styles: ChartStyle.build(ChartStyle.read()) });
 
     const crosshairEl = document.getElementById('chart-crosshair');
     priceChart.subscribeAction('onCrosshairChange', (event) => {
@@ -142,11 +175,15 @@ n daemons are booting / syncing) ──
       }
       crosshairEl.classList.add('visible');
       const d = event.data.kLineData;
-      document.getElementById('ch-o').textContent = 'O ' + d.open.toFixed(5);
-      document.getElementById('ch-h').textContent = 'H ' + d.high.toFixed(5);
-      document.getElementById('ch-l').textContent = 'L ' + d.low.toFixed(5);
-      document.getElementById('ch-c').textContent = 'C ' + d.close.toFixed(5);
-      document.getElementById('ch-v').textContent = 'V ' + (d.volume >= 1e6 ? (d.volume / 1e6).toFixed(1) + 'M' : d.volume.toFixed(0));
+      // The chart carries two different units depending on where its series came
+      // from, and the readout must never imply the wrong one.
+      const f = chartSource === 'archive' ? XfgArchive.usd : v => v.toFixed(5);
+      const u = chartSource === 'archive' ? '$' : '';
+      document.getElementById('ch-o').textContent = 'O ' + u + f(d.open);
+      document.getElementById('ch-h').textContent = 'H ' + u + f(d.high);
+      document.getElementById('ch-l').textContent = 'L ' + u + f(d.low);
+      document.getElementById('ch-c').textContent = 'C ' + u + f(d.close);
+      document.getElementById('ch-v').textContent = 'V ' + XfgArchive.vol(d.volume);
       const date = new Date(d.timestamp);
       document.getElementById('ch-time').textContent = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     });
@@ -170,7 +207,7 @@ n daemons are booting / syncing) ──
       btn.addEventListener('click', () => {
         const tool = btn.dataset.tool;
         if (tool === 'clear') {
-          priceChart.removeAllOverlay();
+          clearOverlays(priceChart);
           document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
           activeDrawTool = null;
           return;
@@ -202,14 +239,7 @@ n daemons are booting / syncing) ──
 
   function startDrawing(tool) {
     if (!activeDrawTool || !priceChart) return;
-    const s = { line: { color: '#ff9100', style: 0, size: 1.5 }, text: { color: '#c9a44c', size: 10 } };
-    const configs = {
-      segment: { name: 'segment', styles: s },
-      horizontalRay: { name: 'priceLine', styles: { ...s, line: { color: '#ff9100', style: 2, size: 1.5 } } },
-      fibonacci: { name: 'fibonacciLine', styles: { ...s, polyline: { color: '#c9a44c', style: 2, size: 1 } } },
-      rectangle: { name: 'rect', styles: { ...s, polygon: { color: 'rgba(255,145,0,0.15)', borderColor: '#ff9100' } } }
-    };
-    const config = configs[tool];
+    const config = ChartStyle.overlay()[tool];
     if (config) {
       priceChart.createOverlay({
         ...config,
@@ -241,20 +271,46 @@ n daemons are booting / syncing) ──
     }
 
     if (data.length === 0) {
-      const mock = mockCandles(120);
-      data = mock.candles.map(c => ({
-        timestamp: c.t * 1000,
-        open: c.o / App.COIN,
-        high: c.h / App.COIN,
-        low: c.l / App.COIN,
-        close: c.c / App.COIN,
-        volume: c.v / App.COIN
-      }));
+      // No live pool feed. This used to draw random mock candles, which put
+      // invented prices on a trading chart indistinguishable from real ones.
+      // It now plots the real XFG/USD archive instead, and says in the caption
+      // that the unit has changed — the pool's own HΞΔŦ quote stays in the spot
+      // bar above and is never mixed into this axis.
+      return plotArchive(timeframe);
     }
 
+    chartSource = 'pool';
+    setCaption('Live pool · HΞΔŦ per XFG');
     if (priceChart) {
       priceChart.applyNewData(data);
     }
+  }
+
+  function setCaption(text) {
+    const el = document.getElementById('chart-caption');
+    if (el) el.textContent = text;
+  }
+
+  // Real daily XFG/USD history onto the main chart. The source is daily, so 1H
+  // and 4H have nothing honest to show and fall back to daily rather than
+  // inventing intraday bars.
+  async function plotArchive(timeframe) {
+    const tf = (timeframe === '1w') ? '1w' : '1d';
+    try {
+      await XfgArchive.load();
+    } catch (e) {
+      console.warn('[hearth] price archive unavailable:', e);
+      chartSource = 'archive';
+      setCaption('XFG / USD — archive unavailable');
+      if (priceChart) priceChart.applyNewData([]);
+      return;
+    }
+    if (!priceChart) return;
+    const s = XfgArchive.span();
+    chartSource = 'archive';
+    setCaption(`XFG / USD · ${tf === '1w' ? 'weekly' : 'daily'} archive · `
+      + `${s.first} – ${s.last} · not the pool price`);
+    priceChart.applyNewData(XfgArchive.series(tf));
   }
 
   // ── Depth Ladder ──
@@ -456,9 +512,9 @@ n daemons are booting / syncing) ──
   function updateOrderButton() {
     const btn = document.getElementById('order-preview-btn');
     if (!btn) return;
-    const actionWord = orderSide === 0 ? 'Buy' : 'Sell';
-    const modeWord = orderType === 'limit' ? 'Limit Order' : 'Market Swap';
-    btn.textContent = `${actionWord} XFG (${modeWord})`;
+    const actionWord = orderSide === 0 ? 'Acquire' : 'Release';
+    const modeWord = orderType === 'limit' ? 'Standing Limit' : 'Immediate';
+    btn.textContent = `${actionWord} · ${modeWord}`;
     btn.className = `btn btn-block ${orderSide === 0 ? 'btn-buy' : 'btn-sell'}`;
   }
 
@@ -468,7 +524,7 @@ n daemons are booting / syncing) ──
     if (!sub) return;
 
     if (amt <= 0) {
-      sub.textContent = 'Continuous liquidity via on-chain AMM';
+      sub.textContent = 'Continuous depth against the salon pool';
       return;
     }
 
@@ -484,8 +540,8 @@ n daemons are booting / syncing) ──
     const netProceeds = orderSide === 0 ? grossProceeds + fee : grossProceeds - fee;
 
     sub.innerHTML = orderSide === 0
-      ? `Est. Cost: <strong style="color:var(--firegold-bright);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> (1% fee · 70% to CD Yield)`
-      : `Est. Proceeds: <strong style="color:var(--heat-blue-hot);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> (net of 1% fee · 70% to CD Yield)`;
+      ? `Consideration <strong style="color:var(--ink-100);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> · salon fee 1% · 70% to CD yield`
+      : `Proceeds <strong style="color:var(--ink-100);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> · net of salon fee 1% · 70% to CD yield`;
   }
 
   function showOrderPreview() {
@@ -496,7 +552,7 @@ n daemons are booting / syncing) ──
     }
 
     const side = orderSide === 0 ? 'buy' : 'sell';
-    const sideLabel = orderSide === 0 ? 'BUY XFG' : 'SELL XFG';
+    const sideLabel = orderSide === 0 ? 'Acquire XFG' : 'Release XFG';
     const details = document.getElementById('order-modal-details');
 
     let price = (currentSpotPrice / App.COIN).toFixed(5);
@@ -514,26 +570,28 @@ n daemons are booting / syncing) ──
     const gross = (parseFloat(amount) * parseFloat(price)).toFixed(4);
     const cdYield = (gross * 0.01 * 0.70).toFixed(4);
 
-    let html = `
-      <div style="background:#000;border:1px solid var(--border-firegold);border-radius:6px;padding:14px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <span style="font-family:var(--font-mono);font-size:11px;color:var(--firegold-bright);">ORDER // HEARTH-${Date.now().toString(36).toUpperCase()}</span>
+    const field = (label, value, tone) =>
+      `<div><span class="rf-label">${label}</span><span class="rf-value"${tone ? ` style="color:var(${tone})"` : ''}>${value}</span></div>`;
+
+    details.innerHTML = `
+      <div class="rf">
+        <div class="rf-head">
+          <span class="rf-ref">HEARTH · ${Date.now().toString(36).toUpperCase()}</span>
           <span class="badge ${orderSide === 0 ? 'badge-green' : 'badge-red'}">${sideLabel}</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;">
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">TYPE</span><span style="font-family:var(--font-mono);font-weight:700;">${orderType.toUpperCase()}</span></div>
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">AMOUNT</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--gold-bright);">${amount} XFG</span></div>
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">PRICE</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--heat-blue-hot);">${price} HΞ∆Ŧ</span></div>
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">CONSIDERATION</span><span style="font-family:var(--font-mono);font-weight:700;">≈ ${gross} HΞ∆Ŧ</span></div>
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">TAKER FEE (1%)</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">70% CD Yield (${cdYield} HΞ∆Ŧ)</span></div>
-          <div><span style="font-size:9px;color:var(--text-muted);display:block;">EXPIRATION</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">${expiry} Blocks (~${(parseInt(expiry) / 720).toFixed(1)} Epochs)</span></div>
+        <div class="rf-grid">
+          ${field('Manner', orderType === 'limit' ? 'Standing Limit' : 'Immediate (Pool)')}
+          ${field('Amount', `${amount} XFG`, '--maison-bright')}
+          ${field('Limit', `${price} HΞ∆Ŧ`, '--heat-bright')}
+          ${field('Consideration', `≈ ${gross} HΞ∆Ŧ`)}
+          ${field('Salon Fee 1%', `70% CD yield · ${cdYield} HΞ∆Ŧ`)}
+          ${field('Term', `${expiry} blocks · ~${(parseInt(expiry) / 720).toFixed(1)} epochs`)}
         </div>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);line-height:1.4;">
-        Orders are committed on-chain via transaction extra data and matched per block against the continuous AMM pool at spot price.
-      </div>`;
-
-    details.innerHTML = html;
+      <p class="rf-note">
+        Standing orders are committed on-chain and matched at each block against
+        the continuous salon pool at its prevailing mid.
+      </p>`;
 
     const atomicAmt = Math.round(parseFloat(amount) * App.COIN);
     const cliEl = document.getElementById('order-cli-cmd');
@@ -621,8 +679,16 @@ n daemons are booting / syncing) ──
       loadOHLCV(currentTf);
     });
 
-    setInterval(loadOrderbook, 8000);
-  }
+    // A register change repaints the plot in place — no reload, no re-fetch,
+    // and the selected indicators and overlays are left exactly as they were.
+    App.on('theme', () => {
+      if (priceChart) {
+        try { priceChart.setStyles(ChartStyle.build(ChartStyle.read())); }
+        catch (e) { console.warn('[hearth] theme repaint failed:', e); }
+      }
+    });
+
+    setInterval(loadOrderbook, 8000);  }
 
   return { init };
 })();

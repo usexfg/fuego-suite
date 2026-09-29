@@ -241,23 +241,58 @@ const SwapXFG = (() => {
 
   // ── Oracle Chart ──
 
+  // ── Oracle chart ───────────────────────────────────────────────────────────
+  // Colours resolve from the live stylesheet so the plot follows a register
+  // change without a reload.
+  const ORACLE_TOKENS = [
+    '--ink-30', '--hairline-soft', '--hairline', '--accent', '--accent-line',
+    '--surface-panel', '--surface-active', '--font-mono'
+  ];
+
+  function oracleStyle() {
+    const t = App.tokens(ORACLE_TOKENS);
+    return {
+      layout: {
+        background: { color: t['--surface-panel'] },
+        textColor: t['--ink-30'],
+        fontFamily: t['--font-mono'],
+        fontSize: 10
+      },
+      grid: { vertLines: { visible: false }, horzLines: { color: t['--hairline-soft'] } },
+      rightPriceScale: { borderColor: t['--hairline'], scaleMargins: { top: 0.15, bottom: 0.05 } },
+      timeScale: { borderColor: t['--hairline'], timeVisible: true, secondsVisible: false },
+      crosshair: {
+        vertLine: { color: t['--accent-line'], width: 1, style: 2, labelBackgroundColor: t['--surface-active'] },
+        horzLine: { color: t['--accent-line'], width: 1, style: 2, labelBackgroundColor: t['--surface-active'] }
+      }
+    };
+  }
+
   function initOracleChart() {
     const container = document.getElementById('oracle-chart');
     if (!container || typeof LightweightCharts === 'undefined') return;
     oracleChart = LightweightCharts.createChart(container, {
-      layout: { background: { color: '#000000' }, textColor: '#a0a5b8' },
-      grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.06)' } },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
-      timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true },
+      ...oracleStyle(),
       width: container.clientWidth,
       height: 200
     });
+    // The oracle mid is a reference, not a move — house accent, single weight.
     oracleLineSeries = oracleChart.addLineSeries({
-      color: '#c9a44c', lineWidth: 2, priceLineVisible: false
+      color: App.tokens(ORACLE_TOKENS)['--accent'],
+      lineWidth: 1, priceLineVisible: false,
+      lastValueVisible: true, priceLineStyle: 2
     });
     new ResizeObserver(() => {
       if (oracleChart && container) oracleChart.applyOptions({ width: container.clientWidth });
     }).observe(container);
+
+    App.on('theme', () => {
+      if (!oracleChart) return;
+      const t = App.tokens(ORACLE_TOKENS);
+      oracleChart.applyOptions(oracleStyle());
+      if (oracleLineSeries) oracleLineSeries.applyOptions({ color: t['--accent'] });
+    });
+
     loadOracleHistory();
   }
 
@@ -517,37 +552,37 @@ const SwapXFG = (() => {
       ? `Sell XFG → ${info.ticker}`
       : `Buy XFG ← ${info.ticker}`;
     const fairSign = o.fairPct >= 0 ? '+' : '';
-    const fairColor = o.fairPct >= 0 ? 'var(--green)' : 'var(--red)';
+    const fairColor = o.fairPct >= 0 ? 'var(--dir-pos-bright)' : 'var(--dir-neg-bright)';
     const expText = o.blocksLeft != null ? `~${o.blocksLeft} blocks (~${Math.round(o.blocksLeft / 8)}h)` : 'No lock expiry';
 
     tip.innerHTML = `
       <div class="loupe-header">
         <img src="${info.icon}" alt="" style="width:18px;height:18px;border-radius:50%;object-fit:contain;">
         <span class="loupe-title">${info.name} (${info.ticker})</span>
-        <span class="badge ${o.isSell ? 'badge-firegold' : 'badge-blue'}" style="margin-left:auto;">${o.isSell ? 'SELL' : 'BUY'}</span>
+        <span class="badge ${o.isSell ? 'badge-firegold' : 'badge-blue'}" style="margin-left:auto;">${o.isSell ? "RELEASE" : "ACQUIRE"}</span>
       </div>
       <div class="loupe-row">
-        <span style="color:var(--text-muted);">DIRECTION</span>
+        <span style="color:var(--ink-30);">Direction</span>
         <span>${direction}</span>
       </div>
       <div class="loupe-row">
-        <span style="color:var(--text-muted);">VOLUME</span>
-        <span style="color:var(--gold-bright);font-weight:700;">${App.fmtXfg(o.remaining)} XFG</span>
+        <span style="color:var(--ink-30);">Size</span>
+        <span style="color:var(--maison-bright);font-weight:700;">${App.fmtXfg(o.remaining)} XFG</span>
       </div>
       <div class="loupe-row">
-        <span style="color:var(--text-muted);">RATE</span>
+        <span style="color:var(--ink-30);">Rate</span>
         <span>${o.rateXfgPerCtr.toFixed(6)} / ${info.ticker}</span>
       </div>
       <div class="loupe-row">
-        <span style="color:var(--text-muted);">SPREAD</span>
+        <span style="color:var(--ink-30);">Spread</span>
         <span style="color:${fairColor};font-weight:700;">${fairSign}${o.fairPct.toFixed(2)}% vs Fair</span>
       </div>
       <div class="loupe-row">
-        <span style="color:var(--text-muted);">EXPIRY</span>
+        <span style="color:var(--ink-30);">Term</span>
         <span>${expText}</span>
       </div>
       <div class="loupe-btn-row">
-        <button type="button" class="btn btn-sm btn-firegold" id="loupe-fill-btn" style="flex:1;">Fill Form</button>
+        <button type="button" class="btn btn-sm btn-firegold" id="loupe-fill-btn" style="flex:1;">Prefill</button>
         <button type="button" class="btn btn-sm btn-secondary" id="loupe-copy-btn">Copy ID</button>
       </div>`;
 
@@ -618,7 +653,7 @@ const SwapXFG = (() => {
       const sellCls = o.isSell ? ' sell-xfg' : '';
       const idShort = o.offerId ? o.offerId.substring(0, 16) + '…' : '—';
       const fairSign = o.fairPct >= 0 ? '+' : '';
-      const fairColor = o.fairPct >= 0 ? 'var(--green)' : 'var(--red)';
+      const fairColor = o.fairPct >= 0 ? 'var(--dir-pos-bright)' : 'var(--dir-neg-bright)';
 
       return `
         <div class="ob-row${sel}" id="ob-row-${cssId(o.offerId)}" data-offer-id="${escapeAttr(o.offerId)}">
@@ -631,18 +666,18 @@ const SwapXFG = (() => {
                 <div class="ob-title">${side} · ${info.name}</div>
                 <div class="ob-sub">${idShort}${o.isSoftOrder ? ' · Soft Order' : ' · Book Order'}</div>
               </div>
-              <span class="badge ${o.isSell ? 'badge-firegold' : 'badge-blue'}">${o.isSell ? 'SELL XFG' : 'BUY XFG'}</span>
+              <span class="badge ${o.isSell ? 'badge-firegold' : 'badge-blue'}">${o.isSell ? "Release XFG" : "Acquire XFG"}</span>
             </div>
             <div class="ob-grid">
-              <div><span class="k">Remaining Volume</span><span class="v" style="color:var(--gold-bright);">${App.fmtXfg(o.remaining)} XFG</span></div>
+              <div><span class="k">Remaining Volume</span><span class="v" style="color:var(--maison-bright);">${App.fmtXfg(o.remaining)} XFG</span></div>
               <div><span class="k">Rate</span><span class="v">${o.rateXfgPerCtr.toFixed(6)} / ${info.ticker}</span></div>
               <div><span class="k">vs Fair</span><span class="v" style="color:${fairColor};">${fairSign}${o.fairPct.toFixed(2)}%</span></div>
               <div><span class="k">Expiry</span><span class="v">${o.blocksLeft != null ? o.blocksLeft + ' blks' : '—'}</span></div>
             </div>
           </div>
           <div class="ob-actions">
-            <button type="button" class="btn btn-firegold btn-sm" data-act="accept" data-id="${escapeAttr(o.offerId)}">Accept Offer</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-act="fill" data-id="${escapeAttr(o.offerId)}">Fill Form</button>
+            <button type="button" class="btn btn-firegold btn-sm" data-act="accept" data-id="${escapeAttr(o.offerId)}">Accept</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-act="fill" data-id="${escapeAttr(o.offerId)}">Prefill</button>
             <button type="button" class="btn btn-secondary btn-sm" data-act="copy" data-id="${escapeAttr(o.offerId)}">Copy ID</button>
           </div>
         </div>`;
@@ -707,7 +742,7 @@ const SwapXFG = (() => {
     const info = CHAIN_INFO[o.pairKey] || {};
     el.hidden = false;
     el.innerHTML = `
-      <div style="color:var(--firegold-bright);font-weight:700;margin-bottom:3px;">SELECTED // ${o.offerId.substring(0, 24)}…</div>
+      <div style="color:var(--maison-bright);font-weight:700;margin-bottom:3px;">SELECTED // ${o.offerId.substring(0, 24)}…</div>
       <div>Side: <strong>${o.isSell ? 'Sell XFG' : 'Buy XFG'}</strong> · Chain: <strong>${info.name}</strong></div>
       <div>Volume: <strong>${App.fmtXfg(o.remaining)} XFG</strong> · Rate: <strong>${o.rateXfgPerCtr.toFixed(6)}</strong> · <strong>${o.fairPct.toFixed(2)}% vs Fair</strong></div>`;
   }
@@ -772,22 +807,25 @@ const SwapXFG = (() => {
 
     const modalDetails = document.getElementById('init-modal-details');
     if (modalDetails) {
+      const field = (label, value, color) =>
+        `<div><span class="rf-label">${label}</span><span class="rf-value"${color ? ` style="color:${color}"` : ''}>${value}</span></div>`;
       modalDetails.innerHTML = `
-        <div style="background:#000;border:1px solid var(--border-firegold);border-radius:6px;padding:14px;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-            <span style="font-family:var(--font-mono);font-size:11px;color:var(--firegold-bright);">SWAP // ATOMIC-${Date.now().toString(36).toUpperCase()}</span>
+        <div class="rf">
+          <div class="rf-head">
+            <span class="rf-ref">Transfer · ${Date.now().toString(36).toUpperCase()}</span>
             <span class="badge badge-firegold">${info.name}</span>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;">
-            <div><span style="font-size:9px;color:var(--text-muted);display:block;">FROM</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--firegold-bright);">${amount} XFG</span></div>
-            <div><span style="font-size:9px;color:var(--text-muted);display:block;">ESTIMATED TO</span><span style="font-family:var(--font-mono);font-weight:700;color:${info.color};">${output.toFixed(4)} ${info.ticker}</span></div>
-            <div><span style="font-size:9px;color:var(--text-muted);display:block;">SWAP FEE (2%)</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">${fee.toFixed(4)} XFG (69% CD Yield)</span></div>
-            <div><span style="font-size:9px;color:var(--text-muted);display:block;">TIMELOCK</span><span style="font-family:var(--font-mono);color:var(--text-secondary);">4,320 Blocks</span></div>
+          <div class="rf-grid">
+            ${field('Released', `${amount} XFG`, 'var(--maison-bright)')}
+            ${field('Received', `${output.toFixed(4)} ${info.ticker}`, info.color)}
+            ${field('House Fee 2%', `${fee.toFixed(4)} XFG`)}
+            ${field('Term', '4,320 blocks')}
           </div>
         </div>
-        <div style="font-size:10px;color:var(--text-muted);line-height:1.4;">
-          Atomic swap executed trustless via Schnorr adaptor signatures. No custodian, no wrapped tokens.
-        </div>`;
+        <p class="rf-note">
+          Settlement is by Schnorr adaptor signature. No custodian is involved at
+          any point, and the counterparty learns nothing beyond the exchange itself.
+        </p>`;
     }
 
     const cliEl = document.getElementById('init-cli-cmd');
@@ -851,8 +889,8 @@ const SwapXFG = (() => {
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
             <img src="${info.icon}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:contain;background:${info.color}33;">
             <div style="flex:1;">
-              <div style="font-weight:800;font-size:13px;color:var(--gold-bright);">XFG ↔ ${info.name} (${info.ticker})</div>
-              <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">${sid ? sid.substring(0, 20) + '…' : '—'}</div>
+              <div style="font-weight:600;font-size:13px;color:var(--maison-bright);">XFG ↔ ${info.name} (${info.ticker})</div>
+              <div style="font-size:10px;color:var(--ink-30);font-family:var(--font-mono);">${sid ? sid.substring(0, 20) + '…' : '—'}</div>
             </div>
             <span class="badge ${state.badge}">${state.label}</span>
           </div>
@@ -865,7 +903,7 @@ const SwapXFG = (() => {
               ${i < steps.length - 1 ? `<div class="step-line ${step.status === 'done' ? 'done' : (step.status === 'active' ? 'active' : '')}"></div>` : ''}
             `).join('')}
           </div>
-          ${s.error ? `<div style="margin-top:6px;font-size:11px;color:var(--red);">${s.error}</div>` : ''}
+          ${s.error ? `<div style="margin-top:6px;font-size:11px;color:var(--dir-neg-bright);">${s.error}</div>` : ''}
         </div>`;
     }).join('');
   }
@@ -881,12 +919,12 @@ const SwapXFG = (() => {
       ADAPTOR_CTR_LOCKED:          { label: 'Counterparty Locked', badge: 'badge-firegold' },
       ADAPTOR_SECRET_REVEALED:     { label: 'Secret Revealed', badge: 'badge-green' },
       ADAPTOR_XFG_SPENT:           { label: 'Completed', badge: 'badge-green' },
-      ADAPTOR_REFUNDED:            { label: 'Refunded', badge: 'badge-red' },
+      ADAPTOR_REFUNDED:            { label: 'Refunded', badge: 'badge-warn' },
       FAILED:                      { label: 'Failed', badge: 'badge-red' },
       AFK_OFFER_LOCKED:            { label: 'AFK Locked', badge: 'badge-blue' },
       AFK_OFFER_ACCEPTED:          { label: 'AFK Accepted', badge: 'badge-firegold' },
       AFK_CLAIMED:                 { label: 'AFK Completed', badge: 'badge-green' },
-      AFK_REFUNDED:                { label: 'AFK Refunded', badge: 'badge-red' }
+      AFK_REFUNDED:                { label: 'AFK Refunded', badge: 'badge-warn' }
     };
     return map[state] || { label: state || 'Pending', badge: 'badge-blue' };
   }
@@ -930,8 +968,8 @@ const SwapXFG = (() => {
             const ci = CHAIN_INFO[key] || { icon: '', color: '#888', ticker: chain, name: chain };
             return `<tr>
               <td><img src="${ci.icon || ''}" alt="" style="width:16px;height:16px;border-radius:50%;vertical-align:middle;margin-right:6px;object-fit:contain;">${ci.name} (${ci.ticker})</td>
-              <td style="text-align:right;color:var(--firegold-bright);">${info.price != null ? App.fmtPrice(info.price) : '—'}</td>
-              <td style="text-align:right;color:var(--text-secondary);">${info.spread != null ? App.fmtPct(info.spread) : '—'}</td>
+              <td style="text-align:right;color:var(--maison-bright);">${info.price != null ? App.fmtPrice(info.price) : '—'}</td>
+              <td style="text-align:right;color:var(--ink-70);">${info.spread != null ? App.fmtPct(info.spread) : '—'}</td>
             </tr>`;
           }).join('');
         }

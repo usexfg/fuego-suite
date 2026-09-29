@@ -7,6 +7,56 @@ const App = (() => {
   const listeners = {};
   let health = { daemon: false, wallet: false, swapd: false };
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  // Three registered registers. The choice is cosmetic only: it is persisted,
+  // restored before first paint, and announced so charts can re-read their
+  // tokens. Directional colour never changes meaning between registers.
+  const THEMES = ['maison', 'fulltrade', 'reference'];
+  const THEME_KEY = 'xfg.theme';
+  let theme = 'reference';
+
+  function storedTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return THEMES.includes(v) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function applyTheme(name, persist) {
+    if (!THEMES.includes(name)) return;
+    theme = name;
+    document.documentElement.setAttribute('data-theme', name);
+    if (persist !== false) { try { localStorage.setItem(THEME_KEY, name); } catch (e) { /* private mode */ } }
+    syncThemeSwitcher();
+    emit('theme', name);
+  }
+
+  function syncThemeSwitcher() {
+    document.querySelectorAll('.theme-opt').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.theme === theme));
+    });
+  }
+
+  function initThemeSwitcher() {
+    // Restored here rather than at module load so the very first paint is
+    // already in the right register — no flash of the default.
+    applyTheme(storedTheme() || theme, false);
+
+    document.querySelectorAll('.theme-opt').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.theme, true));
+    });
+    syncThemeSwitcher();
+  }
+
+  // Read the live token values. Charts must resolve colours through this rather
+  // than caching them, so they follow a theme change.
+  function tokens(names) {
+    const cs = getComputedStyle(document.documentElement);
+    const out = {};
+    names.forEach(n => { out[n] = cs.getPropertyValue(n).trim(); });
+    return out;
+  }
+
   // ── WebSocket ──
 
   function connectWS() {
@@ -179,14 +229,17 @@ const App = (() => {
   // ── Init ──
 
   function init() {
+    initThemeSwitcher();
     connectWS();
     startHealthPolling();
   }
-
   return {
     init, on, rpc, daemonGet, walletRpc,
     fmtXfg, fmtHeat, fmtPct, fmtPrice, fmtTime, fmtHeight, fmtDuration,
     copyToClipboard, showToast,
+    tokens, applyTheme, initThemeSwitcher,
+    get theme() { return theme; },
+    get THEMES() { return THEMES.slice(); },
     get health() { return health; },
     get COIN() { return COIN; }
   };

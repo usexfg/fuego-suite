@@ -3,213 +3,129 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hearth Exchange — Monaco Terminal</title>
+  <title>Hearth — Bank of XFG</title>
   <link rel="stylesheet" href="/css/style.css">
-  <style>
-    /* ── Chart Overlay HUD ── */
-    .chart-crosshair {
-      position: absolute;
-      top: 8px;
-      left: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--text-secondary);
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid var(--border);
-      padding: 3px 8px;
-      border-radius: 4px;
-      z-index: 15;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.15s;
-    }
-    .chart-crosshair.visible { opacity: 1; }
-    .chart-crosshair #ch-o { color: var(--text-muted); }
-    .chart-crosshair #ch-h { color: var(--green); }
-    .chart-crosshair #ch-l { color: var(--red); }
-    .chart-crosshair #ch-c { color: var(--firegold-bright); font-weight: 700; }
-    .chart-crosshair #ch-v { color: var(--heat-blue); }
-    .chart-crosshair #ch-time { color: var(--text-muted); margin-left: auto; }
-
-    .chart-indicators {
-      position: absolute;
-      top: 8px;
-      right: 12px;
-      display: flex;
-      gap: 4px;
-      z-index: 15;
-    }
-    .ind-btn {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 7px;
-      font-family: var(--font-mono);
-      font-size: 9px;
-      font-weight: 700;
-      color: var(--text-muted);
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .ind-btn:hover { color: #fff; border-color: var(--border-bright); }
-    .ind-btn.active { color: #000; border-color: var(--firegold-bright); background: var(--firegold); }
-    .ind-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .chart-drawing-tools {
-      position: absolute;
-      top: 36px;
-      right: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      z-index: 15;
-    }
-    .draw-btn {
-      width: 26px;
-      height: 26px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--text-muted);
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .draw-btn:hover { color: var(--firegold-bright); border-color: var(--firegold); }
-    .draw-btn.active { color: #000; border-color: var(--firegold-bright); background: var(--firegold); }
-    .draw-btn[data-tool="clear"] { color: var(--red); }
-
-    .hearth-empty-state {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 120px;
-      color: var(--text-muted);
-      font-size: 11px;
-      font-family: var(--font-mono);
-    }
-  </style>
+  <script>
+    // Resolve the register before first paint so the surface never flashes
+    // the default theme on load. Kept inline and tiny for that reason.
+    (function () {
+      var t;
+      try { t = localStorage.getItem('xfg.theme'); } catch (e) {}
+      document.documentElement.setAttribute('data-theme',
+        (t === 'maison' || t === 'fulltrade' || t === 'reference') ? t : 'reference');
+    })();
+  </script>
 </head>
 <body>
-  <!-- Monaco Terminal Navigation -->
+  <a class="skip-link" href="#main">Skip to the working surface</a>
+
   <nav class="nav">
-    <a href="/" class="nav-brand">
-      <img src="/coin-icons/fuego.png" alt="Fuego" class="nav-brand-logo">
+    <a href="/hearth.html" class="nav-brand">
+      <img src="/coin-icons/fuego.png" alt="Fuego Reserve" class="nav-brand-logo">
       <div class="nav-brand-meta">
-        <span class="nav-brand-title">FUEGO // TERMINAL</span>
-        <span class="nav-brand-sub">HEARTH PROTOCOL</span>
+        <span class="nav-brand-title">Fuego Reserve</span>
+        <span class="nav-brand-sub">Atelier Terminal</span>
       </div>
     </a>
 
     <div class="nav-links-wrap">
       <a href="/hearth.html" class="nav-link active">
-        <span>Hearth Exchange</span>
-        <span class="nav-link-badge">AMM / Limit</span>
+        <span>Hearth</span>
+        <span class="nav-link-badge">The Salon Floor</span>
       </a>
       <a href="/swapxfg.html" class="nav-link">
-        <span>DeXFG Ordergraph</span>
-        <span class="nav-link-badge">Atomic Swap</span>
+        <span>DeXFG</span>
+        <span class="nav-link-badge">Cross-Maison Transfer</span>
       </a>
     </div>
 
     <div class="nav-status">
       <span class="nav-status-item">
         <span class="status-dot offline" id="status-daemon"></span>
-        <span>DAEMON</span>
+        <span>Caliber</span>
       </span>
       <span class="nav-status-item">
         <span class="status-dot offline" id="status-wallet"></span>
-        <span>WALLET</span>
+        <span>Vault</span>
       </span>
       <span class="nav-status-item">
         <span class="status-dot offline" id="status-swapd"></span>
-        <span>SWAPD</span>
+        <span>Transfer</span>
       </span>
+    </div>
+
+    <div class="theme-switch">
+      <div class="theme-seg" role="group" aria-label="Interface register">
+        <button type="button" class="theme-opt" data-theme="maison" aria-pressed="false" title="Quiet register — near-black, hairlines, sharp corners">Maison</button>
+        <button type="button" class="theme-opt" data-theme="fulltrade" aria-pressed="false" title="House reference — warm primary, graded depth, generous controls">FullTrade</button>
+        <button type="button" class="theme-opt" data-theme="reference" aria-pressed="false" title="The doctrine itself — zero radius, zero shadow, flat surfaces, maximum density">Reference</button>
+      </div>
     </div>
   </nav>
 
-  <div class="hearth-wrap">
-    <!-- ═══ Hearth Terminal Block ═══ -->
+  <div class="hearth-wrap" id="main">
     <div class="hearth-chamber">
-      <!-- Top Telemetry Strip -->
+
+      <!-- ═══ Register ═══ -->
       <div class="hearth-fascia">
         <div class="fascia-header">
           <div class="fascia-title">
-            <span style="color:var(--firegold-bright);">●</span>
-            <span>HEARTH EXCHANGE // TELEMETRY STRIP</span>
+            <span class="dot"></span>
+            <span>Hearth — Salon Register</span>
           </div>
-          <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">
-            PROTOCOL V12 // ON-CHAIN AMM + LIMIT OVERLAY
+          <div class="caps">
+            Series XII · Pool Depths with Limit Overlay
           </div>
         </div>
         <div class="telemetry-grid">
-          <div class="telemetry-cell" title="Total XFG burned to mint HEAT">
-            <span class="telemetry-label">XFG Burned</span>
+          <div class="telemetry-cell" title="XFG committed to the burn-to-mint transformation">
+            <span class="telemetry-label">XFG Transformed</span>
             <span class="telemetry-val firegold" id="heat-burned">—</span>
           </div>
-          <div class="telemetry-cell heat-cell" title="Total HΞ∆T supply in circulation">
-            <span class="telemetry-label" style="color:var(--heat-blue);">HΞ∆Ŧ Supply</span>
+          <div class="telemetry-cell heat-cell" title="HΞ∆Ŧ in circulation">
+            <span class="telemetry-label">HΞ∆Ŧ Circulating</span>
             <span class="telemetry-val" id="heat-supply">—</span>
           </div>
-          <div class="telemetry-cell" title="On-chain AMM pool XFG reserve">
+          <div class="telemetry-cell" title="XFG held by the salon pool">
             <span class="telemetry-label">Pool XFG Reserve</span>
             <span class="telemetry-val gold" id="pool-xfg">—</span>
           </div>
-          <div class="telemetry-cell heat-cell" title="On-chain AMM pool HΞ∆T reserve">
-            <span class="telemetry-label" style="color:var(--heat-blue);">Pool HΞ∆Ŧ Reserve</span>
+          <div class="telemetry-cell heat-cell" title="HΞ∆Ŧ held by the salon pool">
+            <span class="telemetry-label">Pool HΞ∆Ŧ Reserve</span>
             <span class="telemetry-val" id="pool-heat">—</span>
           </div>
-          <div class="telemetry-cell" title="Hearth pool TWAP mint price (XFG per HEAT)">
-            <span class="telemetry-label">Mint Ratio</span>
+          <div class="telemetry-cell" title="Salon pool mid price, XFG per HΞ∆Ŧ">
+            <span class="telemetry-label">Salon Mid</span>
             <span class="telemetry-val" id="heat-redemption">—</span>
           </div>
-          <div class="telemetry-cell heat-cell" title="Purchasing power peg target ($1.58 USD reference)">
-            <span class="telemetry-label" style="color:var(--heat-blue);">HΞ∆Ŧ Peg ($1.58)</span>
+          <div class="telemetry-cell heat-cell" title="Purchasing-power reference, adjusted for inflation since 2009">
+            <span class="telemetry-label">HΞ∆Ŧ Reference</span>
             <span class="telemetry-val" id="heat-peg">1 HΞ∆Ŧ ≋ $1.58</span>
-          </div>
-          <div class="telemetry-cell" title="70% of Hearth taker fees route to CD APY yield pool">
-            <span class="telemetry-label">CD Fee Yield</span>
-            <span class="telemetry-val" style="color:var(--green);" id="cd-fee-routing">70% to CD APY Pool</span>
           </div>
         </div>
       </div>
 
-      <!-- Hearth Floor Grid: XFG Bids Ladder | Candlestick Chamber | HΞ∆T Asks Ladder -->
+      <!-- ═══ Floor ═══ -->
       <div class="hearth-floor-grid">
-        <!-- Left: XFG Bids Ladder -->
+
+        <!-- Bids -->
         <div class="ladder-panel ladder-bids">
           <div class="ladder-header bids-head">
             <span>XFG Bids</span>
-            <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);">PRICE / DEPTH</span>
+            <span>Price / Depth</span>
           </div>
           <div class="ladder-list" id="hearth-bids">
-            <div class="hearth-empty-state">Syncing book…</div>
+            <div class="hearth-empty-state">Awaiting depth…</div>
           </div>
         </div>
 
-        <!-- Center: Spot Bar + Kline Chart + Order Console -->
+        <!-- Centre -->
         <div class="hearth-center">
           <div class="hearth-spot-bar">
             <div class="spot-price-group">
               <span class="spot-price-main" id="price-xfg-heat">— HΞ∆Ŧ</span>
-              <span class="spot-price-usd" id="price-xfg-usd">≈ $— USD</span>
-              <span class="spot-price-spread" id="price-spread">Spread: 100 bps</span>
+              <span class="spot-price-usd" id="price-xfg-usd">≈ $—</span>
+              <span class="spot-price-spread" id="price-spread">Spread —</span>
             </div>
             <div class="timeframe-pushers">
               <button class="tf-pusher active ohlcv-tf" data-tf="1h">1H</button>
@@ -220,8 +136,8 @@
           </div>
 
           <div class="hearth-chart-wrap">
-            <div id="hearth-chart" class="chart-container tv"></div>
-            <!-- Crosshair HUD -->
+            <div class="chart-caption" id="chart-caption">Live pool · HΞΔŦ per XFG</div>
+            <div id="hearth-chart" class="chart-container"></div>
             <div class="chart-crosshair" id="chart-crosshair">
               <span id="ch-o">O —</span>
               <span id="ch-h">H —</span>
@@ -230,108 +146,103 @@
               <span id="ch-v">V —</span>
               <span id="ch-time"></span>
             </div>
-            <!-- Indicator Pills -->
             <div class="chart-indicators" id="chart-indicators">
-              <button class="ind-btn active" data-ind="sma20" title="SMA 20"><span class="ind-dot" style="background:#c9a44c;"></span>MA 20</button>
-              <button class="ind-btn" data-ind="ema12" title="EMA 12"><span class="ind-dot" style="background:#ff9100;"></span>EMA 12</button>
-              <button class="ind-btn active" data-ind="vol" title="Volume"><span class="ind-dot" style="background:#00f0ff;"></span>VOL</button>
+              <button class="ind-btn active" data-ind="sma20" title="Simple moving average, 20 periods"><span class="ind-dot" style="background:var(--maison);"></span>MA 20</button>
+              <button class="ind-btn" data-ind="ema12" title="Exponential moving average, 12 periods"><span class="ind-dot" style="background:var(--ink-50);"></span>EMA 12</button>
+              <button class="ind-btn active" data-ind="vol" title="Volume — coloured by the candle's own direction"><span class="ind-dot ind-dot-dual"></span>VOL</button>
             </div>
-            <!-- Drawing Tool Palette -->
             <div class="chart-drawing-tools" id="chart-drawing-tools">
-              <button class="draw-btn" data-tool="segment" title="Trendline">⁄</button>
-              <button class="draw-btn" data-tool="horizontalRay" title="Horizontal Ray">―</button>
-              <button class="draw-btn" data-tool="fibonacci" title="Fibonacci Retracement">%</button>
-              <button class="draw-btn" data-tool="rectangle" title="Rectangle Zone">▢</button>
-              <button class="draw-btn" data-tool="clear" title="Clear Overlays">✕</button>
+              <button class="draw-btn" data-tool="segment" title="Trendline" aria-label="Trendline">⁄</button>
+              <button class="draw-btn" data-tool="horizontalRay" title="Horizontal ray" aria-label="Horizontal ray">―</button>
+              <button class="draw-btn" data-tool="fibonacci" title="Fibonacci retracement" aria-label="Fibonacci retracement">%</button>
+              <button class="draw-btn" data-tool="rectangle" title="Rectangle zone" aria-label="Rectangle zone">▢</button>
+              <button class="draw-btn" data-tool="clear" title="Clear overlays" aria-label="Clear overlays">✕</button>
             </div>
           </div>
 
-          <!-- Order Ticket Console -->
+
+          <!-- Ticket -->
           <div class="order-ticket-console">
             <div class="order-ticket-top">
               <div class="side-switch">
-                <button type="button" class="side-btn active buy-side" id="tab-buy" data-side="buy">Buy XFG (Bid)</button>
-                <button type="button" class="side-btn sell-side" id="tab-sell" data-side="sell">Sell XFG (Ask)</button>
+                <button type="button" class="side-btn buy-side active" id="tab-buy" data-side="buy">Acquire XFG</button>
+                <button type="button" class="side-btn sell-side" id="tab-sell" data-side="sell">Release XFG</button>
               </div>
               <div class="type-switch">
-                <button type="button" class="type-chip active" data-type="limit">Limit Order</button>
-                <button type="button" class="type-chip" data-type="market">Market Swap (AMM)</button>
+                <button type="button" class="type-chip active" data-type="limit">Standing Limit</button>
+                <button type="button" class="type-chip" data-type="market">Immediate (Pool)</button>
               </div>
             </div>
 
             <div class="order-inputs-grid">
               <div class="form-group">
-                <label class="form-label">Amount (XFG)</label>
-                <input type="text" class="form-input" id="order-amount" placeholder="0.00" inputmode="decimal">
+                <label class="form-label" for="order-amount">Amount (XFG)</label>
+                <input type="text" class="form-input" id="order-amount" placeholder="0.00" inputmode="decimal" autocomplete="off">
                 <div class="pct-chips">
                   <span class="pct-chip" data-pct="0.25">25%</span>
                   <span class="pct-chip" data-pct="0.50">50%</span>
                   <span class="pct-chip" data-pct="0.75">75%</span>
-                  <span class="pct-chip" data-pct="1.00">MAX</span>
+                  <span class="pct-chip" data-pct="1.00">Max</span>
                 </div>
               </div>
 
               <div class="form-group" id="price-group">
-                <label class="form-label">Limit Price (HΞ∆Ŧ / XFG)</label>
-                <input type="text" class="form-input" id="order-price" placeholder="0.00" inputmode="decimal">
-                <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);margin-top:3px;">
-                  Click book row to prefill
-                </div>
+                <label class="form-label" for="order-price">Limit (HΞ∆Ŧ / XFG)</label>
+                <input type="text" class="form-input" id="order-price" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                <div class="hint">Select a depth level to prefill</div>
               </div>
 
               <div class="form-group" id="expiry-group">
-                <label class="form-label">Expiry (Blocks)</label>
-                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320">
-                <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);margin-top:3px;">
-                  4,320 blk ≈ 1 Epoch
-                </div>
+                <label class="form-label" for="order-expiry">Term (Blocks)</label>
+                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320" autocomplete="off">
+                <div class="hint">4,320 blk ≈ one Epoch</div>
               </div>
 
-              <button type="button" class="btn btn-firegold" id="order-preview-btn" style="height:38px;">
-                Review Order
-              </button>
+              <button type="button" class="btn btn-block btn-firegold" id="order-preview-btn">Review</button>
             </div>
 
             <div class="order-fee-notice">
-              <span>Taker Fee: 1% (70% CD Yield Pool · 30% Maker Rebate)</span>
-              <span id="order-estimate-sub">Continuous liquidity via on-chain AMM</span>
+              <span>Salon fee 1% · 70% CD yield · 30% house rebate</span>
+              <span id="order-estimate-sub">Continuous depth against the salon pool</span>
             </div>
           </div>
         </div>
 
-        <!-- Right: HΞ∆T Asks Ladder -->
+        <!-- Asks -->
         <div class="ladder-panel ladder-asks">
           <div class="ladder-header asks-head">
             <span>HΞ∆Ŧ Asks</span>
-            <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);">PRICE / DEPTH</span>
+            <span>Price / Depth</span>
           </div>
           <div class="ladder-list" id="hearth-asks">
-            <div class="hearth-empty-state">Syncing book…</div>
+            <div class="hearth-empty-state">Awaiting depth…</div>
           </div>
         </div>
+
       </div>
     </div>
   </div>
 
-  <!-- Order Preview Modal -->
+  <!-- Review -->
   <div class="modal-overlay" id="order-modal">
     <div class="modal">
       <div class="modal-header">
-        <span>CONFIRM ORDER // HEARTH TERMINAL</span>
-        <button type="button" class="modal-close" id="order-modal-close">&times;</button>
+        <span>Review — Hearth</span>
+        <button type="button" class="modal-close" id="order-modal-close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="order-modal-details" style="margin-bottom:14px;"></div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-          <button type="button" class="btn btn-firegold" id="order-exec-btn" style="flex:1;">Submit via Wallet</button>
-          <button type="button" class="btn btn-secondary" id="order-copy-btn" style="flex:1;">Copy CLI Command</button>
+        <div id="order-modal-details" class="mb-md"></div>
+        <div class="row gap-md mb-sm">
+          <button type="button" class="btn btn-firegold flex-1" id="order-exec-btn">Commit via Vault</button>
+          <button type="button" class="btn btn-secondary flex-1" id="order-copy-btn">Copy Command</button>
         </div>
-        <div class="code-block" id="order-cli-cmd" style="display:none;"></div>
+        <div class="code-block" id="order-cli-cmd" hidden></div>
       </div>
     </div>
   </div>
 
   <script src="/vendor/klinecharts.min.js"></script>
+  <script src="/js/archive.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/hearth.js"></script>
 </body>

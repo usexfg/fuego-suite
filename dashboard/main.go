@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -517,7 +518,44 @@ func openBrowser(url string) {
 	}
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
+// ── Static Asset Resolution ────────────────────────────────────────────────────
+
+// resolveAssetRoot finds the directory that holds hearth.html and static/.
+// It is anchored to the executable's location rather than the process working
+// directory, so the binary works when launched from anywhere (launchd, a
+// release bin dir, a double-click, `open`, etc.) and not just from dashboard/.
+func resolveAssetRoot() string {
+	var candidates []string
+
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			exeDir,                     // build/release/bin/ alongside static/
+			filepath.Dir(exeDir),       // bin/ inside build/release/
+			filepath.Join(exeDir, "..", "dashboard"), // repo layout: build/release/bin -> dashboard
+		)
+	}
+
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			wd,
+			filepath.Join(wd, "dashboard"),
+		)
+	}
+
+	for _, dir := range candidates {
+		if _, err := os.Stat(filepath.Join(dir, "static", "hearth.html")); err == nil {
+			return dir
+		}
+	}
+
+	// Last resort: current working directory, so error messages stay relative.
+	wd, _ := os.Getwd()
+	return wd
+}
 
 func main() {
 	cfg := parseFlags()
@@ -578,11 +616,10 @@ func main() {
 		})
 	}
 
-	// Static files
-	staticDir := "static"
-	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
-		staticDir = "./static"
-	}
+	// Static files — resolved relative to the binary, not the working directory.
+	// Every page lives in static/, so a single file server owns the whole surface.
+	assetRoot := resolveAssetRoot()
+	staticDir := filepath.Join(assetRoot, "static")
 	fileServer := http.FileServer(http.Dir(staticDir))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -590,12 +627,6 @@ func main() {
 			http.Redirect(w, r, "/hearth.html", http.StatusTemporaryRedirect)
 			return
 		}
-		// hearth.html lives at the dashboard root, serve it from there
-		if r.URL.Path == "/hearth.html" {
-			http.ServeFile(w, r, "hearth.html")
-			return
-		}
-		// All other static assets served from static/
 		fileServer.ServeHTTP(w, r)
 	})
 
@@ -624,7 +655,7 @@ func main() {
 	}()
 
 	browserURL := fmt.Sprintf("http://%s", addr)
-	log.Printf("fuego-dashboard listening on %s", browserURL)
+	log.Printf("fuego-dashboard listening on %s (assets: %s)", browserURL, assetRoot)
 	go openBrowser(browserURL)
 
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {

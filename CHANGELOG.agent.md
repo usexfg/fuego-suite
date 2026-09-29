@@ -1123,3 +1123,407 @@ No callers of the legacy methods exist in the codebase.
 | Core tests (`core_tests` 147/147) | opencode | 2026-09-16 | PASS |
 | No orphaned `recordLegacyEpochFeeRate` references remain | opencode | 2026-09-16 | PASS |
 | All tasks complete | opencode | 2026-09-16 | PASS |
+
+---
+
+## Feature: Hearth / DeXFG Atelier Terminal — three-register design system
+
+**Start date:** 2026-09-28
+**Scope:** `dashboard/` (Go server, static assets, CSS/JS, build)
+
+### Problem
+
+The dashboard served a 404 for `/hearth.html` because `main.go` resolved assets
+relative to the process working directory rather than the binary. Fixing that
+surfaced three further defects, and the design work then met a specification
+conflict that needed a real answer rather than a preference.
+
+### Defects found and fixed
+
+| # | Defect | Impact |
+|---|--------|--------|
+| 1 | `main.go` resolved `hearth.html` / `static/` against the CWD | 404 on every page when launched from anywhere but `dashboard/` |
+| 2 | A **stale** `dashboard/hearth.html` sat at the asset root while the current copy lived in `static/`; the server served the stale one at `/hearth.html` | The live Hearth page rendered an old build. Root copy retired; all pages now served from `static/` by a single file server |
+| 3 | `js/hearth.js` had a comment split mid-line, leaving `n daemons are booting / syncing) ──` as bare code | **The live Hearth page's JavaScript had never parsed.** No chart, no ladders, no ticket. Pre-existing, not introduced here |
+| 4 | `cp -r static ../build/release/bin/static` was not idempotent | Repeat builds produced a nested `static/static` |
+| 5 | `make build-dashboard` never copied `hearth.html` | Release bundle could not serve the page at all |
+| 6 | `fuego.png` and `plsx.png` were missing from `static/coin-icons/` | 404 on the house mark itself |
+| 7 | `ADAPTOR_REFUNDED` / `AFK_REFUNDED` were graded as `badge-red` (failure) | A refund is a normal outcome, not a fault. Regraded to a warning badge |
+
+### Design
+
+Rewrote the visual system as a token architecture. All three registers are pure
+token swaps, so switching one never reflows a panel or changes what a control
+means:
+
+- `maison` — near-black, hairlines, sharp corners, no fill
+- `fulltrade` — the house reference (`trader-design`): warm primary, graded
+  depth, 16px radius, 52px filled CTA, 22px inputs
+- `synth` — fulltrade's character at maison's volume
+
+**One invariant:** directional colour never changes meaning between registers.
+The house trades on the eastern convention (rising/bid warm, falling/ask cool),
+so `--dir-up` is always warm and `--dir-down` always cool. A client who has
+learned the surface must not relearn it because they changed the appearance.
+
+Geometry and type scale are also tokens, because the registers genuinely differ
+in weight. Selection is persisted, resolved before first paint (inline boot
+script) so there is no theme flash, and announced to charts so both plotting
+libraries repaint in place — `klinecharts.setStyles` and
+`lightweight-charts.applyOptions` — with no reload and no re-fetch.
+
+Also added `dashboard/harness/smoke.js`: a DOM-shim harness that initialises all
+three pages in all three registers and asserts the chart actually repaints with
+distinct palettes. Chart libraries are stubbed at the dependency boundary; the
+harness tests wiring, not the libraries. This is what would have caught defect 3.
+
+### House Economics (unchanged, verified against `fuego-heat-and-hearth`)
+
+`HEARTH_FEE_BPS` 100 (1% taker) · `HEARTH_CD_SHARE_BPS` 70 · `HEARTH_MAKER_REBATE_BPS` 30
+· `HEAT_PEG_USD` 1.58 · `HEAT_LAUNCH_RATIO` 10:1 · swap fee split 69/11/20
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Anchor asset resolution to the binary; retire the stale root `hearth.html` | opencode | 2026-09-28 | DONE |
+| 2 | Repair the pre-existing `hearth.js` parse error | opencode | 2026-09-28 | DONE |
+| 3 | Make `build-dashboard` idempotent and deploy the full static tree | opencode | 2026-09-28 | DONE |
+| 4 | Sync missing coin icons; fix the `/coin-icons/fuego.png` 404 | opencode | 2026-09-28 | DONE |
+| 5 | Rewrite the visual system as a token architecture (no raw values in markup) | opencode | 2026-09-28 | DONE |
+| 6 | Add the three registers and the persisted selector to all three pages | opencode | 2026-09-28 | DONE |
+| 7 | Repaint both chart libraries in place on a register change | opencode | 2026-09-28 | DONE |
+| 8 | Build `hearthtest` as a fully independent bench on demo data | opencode | 2026-09-28 | DONE |
+| 9 | Regrade refund states from failure to warning | opencode | 2026-09-28 | DONE |
+| 10 | Write `harness/smoke.js`; verify all pages × all registers | opencode | 2026-09-28 | DONE |
+| 11 | Visual review in a real browser across all three registers | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Dashboard builds (`go build`) | opencode | 2026-09-28 | PASS |
+| All 4 JS modules parse | opencode | 2026-09-28 | PASS |
+| Harness: 3 pages × 3 registers, chart repaints with distinct palettes | opencode | 2026-09-28 | PASS (9/9) |
+| CSS: braces balanced, no undefined tokens, no dead tokens | opencode | 2026-09-28 | PASS |
+| All routes serve 200 from an unrelated CWD | opencode | 2026-09-28 | PASS |
+| Release bundle clean (no nested `static/static`) | opencode | 2026-09-28 | PASS |
+| Visual review in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+No browser was available in this environment, so the three registers have been
+verified structurally (tokens resolve, charts repaint, all routes serve) but not
+**visually**. Task 11 remains open for that reason. Layout behaviour across
+register switches and across viewports still needs eyes on it.
+
+---
+
+## Feature: Register retune — WCAG AA floor, `reserve` register, brand and copy
+
+**Date:** 2026-09-28
+**Scope:** `dashboard/static/` (CSS, HTML, JS)
+
+Follow-on to the three-register work. Two lessons from the previous pass fed
+directly into this one: the specification for this surface is the project's own
+`trader-design` skill, not the generic `trading-design` skill; and a design that
+has not been measured is a guess.
+
+### Measured contrast failures, and the fix
+
+Audited every text token in every register against the surfaces it actually
+sits on. `--ink-30` — the token behind **every label on the surface** — failed
+4.5:1 in all three registers (2.17:1 to 3.48:1). `--ink-50` failed in `maison`.
+`--bad` failed in `maison` (3.92:1) and `fulltrade` (3.48:1). `fulltrade`'s
+white CTA label sat on a 3.03:1 fill.
+
+| Fix | Before | After |
+|-----|--------|-------|
+| `--ink-30` floor | 0.26–0.42 alpha | 0.46 alpha — 4.63:1 on the darkest surface |
+| `--ink-50` | 0.44–0.48 alpha | 0.58 alpha — 6.75:1 |
+| `--bad` (maison / fulltrade) | 3.92 / 3.48 | 4.75 / 4.92 |
+| `fulltrade` CTA label | white on 3.03:1 | `#14100a` on 6.24:1 |
+
+The ladder is now floor-first: hierarchy comes from size, weight and
+letter-spacing, never from illegibility. `--ink-20` is marked decorative-only
+(borders, offline dots, rules) and is never used for text; placeholders were
+moved off it to the compliant floor. The measured constraint is recorded in the
+stylesheet next to the ladder so the next person to retune it inherits the
+reasoning.
+
+### The `reserve` register (replaces `synth`)
+
+`ui-ux-pro-max` was run and its output weighed rather than applied wholesale:
+
+- **Taken:** the amber/primary family and the "dark canvas, vibrant accent,
+  trust" reading for a financial terminal. That became `reserve` — the maison
+  canvas, the compliant ladder, a burnished amber primary (`#e0a33c`) and a
+  filled call to action. It is the house register and the new default.
+- **Taken from the UX domain:** z-index scale (`--z-hud/pop/chrome/modal/toast`),
+  skip link, `aria-label` on every icon-only control (7 per Hearth page, 2 on
+  DeXFG; zero buttons now lack an accessible name), `cursor: pointer` on depth
+  rows, decorative marks marked `aria-hidden`.
+- **Rejected, with reasons:** glassmorphism and backdrop blur (blur destroys the
+  crispness a column of figures depends on); the Hero/Features/CTA pattern
+  (these pages are the application, not a landing page); the `#8B5CF6` CTA
+  (the project spec is `#FF6B35`); 16px body text (trading density is the
+  constraint); "use theme colours directly, not `var()`" (that is advice for
+  codebases without a token layer — this one has one, and that is the whole
+  architecture).
+
+Kept from the typography recommendation: the IBM Plex pairing, which the
+surface already vendors, and which is family-consistent between the mono voice
+and the prose voice.
+
+`fulltrade` and `maison` are unchanged apart from the contrast work.
+
+### Copy and brand
+
+- Brand is now **Fuego Reserve** across all three pages (was "Bank of XFG").
+- Removed the CD-distribution cell from the salon register on both Hearth
+  surfaces, at the client's request.
+- `synth` retired from the CSS, the switcher, both theme registries, and the
+  pre-paint boot scripts. No residual references.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Measure contrast for every text token in every register | opencode | 2026-09-28 | DONE |
+| 2 | Re-space the neutral ladder to a 4.5:1 floor | opencode | 2026-09-28 | DONE |
+| 3 | Fix `--bad` in `maison` and `fulltrade` | opencode | 2026-09-28 | DONE |
+| 4 | Fix `fulltrade` CTA label contrast (3.03:1) | opencode | 2026-09-28 | DONE |
+| 5 | Build the `reserve` register; make it the default | opencode | 2026-09-28 | DONE |
+| 6 | Retire `synth` from CSS, switcher, registries, boot scripts | opencode | 2026-09-28 | DONE |
+| 7 | Rename brand to Fuego Reserve across all pages | opencode | 2026-09-28 | DONE |
+| 8 | Remove the CD-distribution cell from the salon register | opencode | 2026-09-28 | DONE |
+| 9 | Add z-index scale, skip link, `aria-label` sweep, `cursor: pointer` | opencode | 2026-09-28 | DONE |
+| 10 | Emoji audit | opencode | 2026-09-28 | DONE — no pictographic emoji; arrows, crosses and geometric marks are typographic and retained deliberately |
+| 11 | Visual review in a real browser | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Contrast: all text tokens ≥ 4.5:1 in all 3 registers | opencode | 2026-09-28 | PASS (0 failures) |
+| CTA labels ≥ 4.5:1 in all 3 registers | opencode | 2026-09-28 | PASS |
+| Harness: 3 pages × 3 registers, chart repaints distinctly | opencode | 2026-09-28 | PASS (9/9) |
+| CSS: braces balanced, no undefined refs, no dead tokens | opencode | 2026-09-28 | PASS |
+| Every button has an accessible name | opencode | 2026-09-28 | PASS (54/54) |
+| No residual `synth` references | opencode | 2026-09-28 | PASS |
+| All routes serve 200 from an unrelated CWD | opencode | 2026-09-28 | PASS |
+| Visual review in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+Still no browser in this environment. Contrast is now *measured* rather than
+eyeballed, which is the substantive part of accessibility and it is verified.
+What remains unverified is layout: whether the `fulltrade` 22px inputs and 16px
+radii crowd the three-column floor grid at narrow widths, and whether the
+`reserve` amber reads as warm rather than loud beside the red/blue directional
+pair. Task 11 stays open.
+
+---
+
+## Feature: `reference` register — the trading-design doctrine applied
+
+**Date:** 2026-09-28
+**Scope:** `dashboard/static/` (CSS, HTML, JS, harness)
+
+`reserve` retired and replaced by `reference`, built to the `trading-design`
+skill's own specification rather than to a house interpretation of it. This is
+the third register and the new default.
+
+### The register
+
+| Rule in the spec | How it is met | Verified |
+|------------------|---------------|----------|
+| Zero radius, no exceptions | `--radius-card/ctl/pill: 0` | yes |
+| No shadows anywhere | `--glow`, `--shadow-modal`, `--shadow-pop`, `--halo: none` | yes |
+| No gradients on surfaces | `--cta-fill: none` — the action is flat | yes |
+| 1px-gap grid, hairlines do the work | container bg is the hairline colour, children own their surface | yes |
+| Canvas 3–6% brightness | `#0a0a0f` — 5.9% max channel, 0.3% luminance | yes |
+| Five elevation levels | base / panel / raised / hover / active, single brightness steps | yes |
+| Two directional hues + one accent | `#f7768e` warm up, `#7aa2f7` cool down, `#e0af68` accent | yes |
+| Row height 20–28px | 20px | yes |
+| Data 11–13px, labels 10–12px | 11px / 10px | yes |
+| Transitions under 100ms | 60ms linear | yes |
+| Monospace dominant, sans for prose only | unchanged, already compliant | yes |
+
+### Palette derivation
+
+Tokyo Night, re-stepped. The spec requires established community palettes and
+forbids inventing one, so TN is the source; the doctrine's own canvas band is
+then applied, because TN's `#1a1b26` is ~10% brightness, well above the 3–6%
+the spec asks for.
+
+Its three upper text tiers already cleared 4.5:1 and were kept for the
+palette's character. Its two lower tiers did not, and were lifted along TN's
+229° foreground hue until they did. Each of the five tiers was then solved to a
+distinct *target* ratio — 11.9 / 9.1 / 6.6 / 5.4 / 4.6 — because solving each
+to the minimum collapsed the bottom two into the same value. The bottom three
+step down in saturation as well as lightness, so they recede rather than
+compete.
+
+**An internal tension in the spec, resolved toward accessibility:** the visual
+language section prescribes a neutral ladder of 40–50% and 20–30% opacity, which
+cannot clear 4.5:1 on a near-black canvas — it lands at 2.2–4.3:1. The
+accessibility section requires 4.5:1 for body text. The accessibility rule wins;
+the ladder's *step structure* is preserved, the absolute opacities are lifted.
+
+### Directional convention held
+
+`reference` uses TN's red and blue, and the warm-is-up / cool-is-down mapping is
+unchanged from the other two registers. The spec permits register-varying
+conventions ("red/green in US, green/red in some Asian markets") but the
+invariant is kept deliberately: a change of appearance must never change what a
+colour means to the person using it.
+
+### Supporting change: shadows tokenised
+
+The doctrine forbids shadows, but three were hard-coded in component code — the
+modal, the popover, and the status-lamp halo — so no register could zero them.
+They are now `--shadow-modal`, `--shadow-pop` and `--halo`. Focus rings and
+selection outlines stay literal: the spec *requires* a focus indicator, and an
+inset outline marks selection rather than depth.
+
+`reserve` removed from the CSS, the switcher, both theme registries, the
+pre-paint boot scripts and the harness. No residual references.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Derive and verify the TN-derived ramp against the canvas band | opencode | 2026-09-28 | DONE |
+| 2 | Solve five distinct ladder tiers, each clearing 4.5:1 | opencode | 2026-09-28 | DONE |
+| 3 | Write the `reference` register: zero radius, zero shadow, flat, dense | opencode | 2026-09-28 | DONE |
+| 4 | Tokenise the hard-coded modal / popover / halo shadows | opencode | 2026-09-28 | DONE |
+| 5 | Retire `reserve` everywhere | opencode | 2026-09-28 | DONE |
+| 6 | Make `reference` the default; update boot scripts and harness | opencode | 2026-09-28 | DONE |
+| 7 | Visual review in a real browser | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| All doctrine rules machine-checked | opencode | 2026-09-28 | PASS (15/15) |
+| Contrast ≥ 4.5:1, all text tokens, all 3 registers | opencode | 2026-09-28 | PASS (0 failures) |
+| Canvas inside the 3–6% band | opencode | 2026-09-28 | PASS (5.9% max channel) |
+| CSS: braces balanced, no undefined refs, no dead tokens | opencode | 2026-09-28 | PASS |
+| Harness: 3 pages × 3 registers | opencode | 2026-09-28 | PASS (9/9) |
+| No raw pixels in markup | opencode | 2026-09-28 | PASS |
+| No residual `reserve` references | opencode | 2026-09-28 | PASS |
+| All routes 200 from an unrelated CWD | opencode | 2026-09-28 | PASS |
+| Visual review in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+Every rule in the spec that can be checked mechanically has been, and 15/15
+pass. What has not been checked is the thing no script can judge: whether
+zero-radius, zero-shadow, 20px rows is what you want to look at for hours at a
+time. The spec is emphatic that it is, and it is denser and quieter than
+`fulltrade` and `maison` by a wide margin. That is the register's argument, and
+task 11 is the only way to settle it.
+
+---
+
+## Feature: XFG/USD price archive on the bench — 2026-09-28
+
+### What changed
+
+The bench previously had no real data on it at all: every candle came from
+`Demo.buildSeries()`, a seeded PRNG. Real XFG/USD history is now plotted on
+the bench as a **separate panel on its own axis**.
+
+**Why a separate panel, not the existing chart.** The bench quotes HΞΔŦ per
+XFG at the $1.58 reference, with `spot = 158` and the page deriving
+`usd = spot × 1.58` — i.e. $249.64/XFG. The last historical close is
+$0.00900725/XFG. That is a factor of ~27,700. Plotting one on the other's axis
+would read as a broken page, and "fixing" the axis would mean rebuilding every
+number on the bench (reserves, book, spread, the 140–178 clamp, the 158
+constant) — a different product, not a bug fix. So the archive is additive and
+the bench above it is untouched.
+
+**The data.** Source: `fuego-flutter-wallet/assets/data/xfg_historical_prices.json`,
+2630 daily rows, 2019-02-07 → 2026-04-21. Reduced to OHLCV at
+`dashboard/static/data/xfg_historical_prices.json` (545 KB → 298 KB):
+
+- `market_cap`, `price_btc`, `taker_buy_volume` — all 2630 rows zero. Dropped.
+- `total_supply` — constant 73803584. Dropped. **The file's supply figure is
+  wrong** (real supply is ~7.38M, not 73.8M), so no supply or market-cap
+  number is derived from this data anywhere.
+- 2026-04-20 is absent from the source; noted in the asset's `meta`.
+
+**Verification of the data before plotting:** 0 OHLC integrity violations,
+0 nulls, cadence confirmed daily. Volume is sparse — 2024/2630 rows non-zero,
+zero from 2020-07-22 to 2024, last non-zero 2026-04-08. It is plotted as given
+and the chart tolerates zero-volume bars.
+
+**1D/1W only.** The source is daily, so 1H and 4H cannot be filled honestly.
+They are omitted from the markup rather than resampled from nothing. 1W is an
+honest roll-up of the daily bars (open = first daily open, close = last daily
+close, volume summed, Monday-aligned), and the panel says so while 1W is
+selected.
+
+**Precision.** Prices span three orders of magnitude ($0.0001 → $0.07), so a
+fixed decimal count would truncate the early history. The crosshair scales
+precision to the value.
+
+**Staleness.** The last bar is 2026-04-21. The subtitle carries the true last
+bar date so the archive cannot be mistaken for live.
+
+### Also fixed
+
+- `reference` `--ink-30` was `#6e7aad` at **4.44:1 on `--surface-raised`**,
+  under the 4.5:1 floor. The comment above the ramp also claimed the ladder was
+  solved against `--surface-inset`, which is the *most* generous surface;
+  `--surface-raised` is what binds (no selector puts ink text on
+  `--surface-hover`/`--surface-active` — checked). Re-solved to `#707cae`:
+  4.56:1 on raised, 4.75:1 on panel, ladder still monotonic.
+- Harness `querySelectorAll` returned blank stubs with an empty `dataset`, so
+  no data-attribute-driven control could be exercised. It now returns real
+  element handles parsed from the markup, and `El` grew a `classList`.
+- Harness stubs `fetch` to reject, so the archive would have been permanently
+  unexercised. It now serves the real asset, and asserts the daily bar count,
+  the 1W roll-up, the populated subtitle, the error state, and recovery.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Audit source JSON (cadence, nulls, OHLC integrity, dead fields) | opencode | 2026-09-28 | DONE |
+| 2 | Reduce to OHLCV asset; record provenance in `meta` | opencode | 2026-09-28 | DONE |
+| 3 | `Archive` module: fetch, validate, daily + weekly roll-up | opencode | 2026-09-28 | DONE |
+| 4 | Archive panel markup, 1D/1W only, own crosshair id prefix | opencode | 2026-09-28 | DONE |
+| 5 | Archive CSS in the bench stylesheet only (not shared) | opencode | 2026-09-28 | DONE |
+| 6 | Re-solve `reference` `--ink-30` against the binding surface | opencode | 2026-09-28 | DONE |
+| 7 | Harness: real controls, real fetch, archive assertions | opencode | 2026-09-28 | DONE |
+| 8 | `make build-dashboard`; confirm asset ships and routes 200 | opencode | 2026-09-28 | DONE |
+| 9 | Visual review in a real browser | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Source data: 0 OHLC violations, 0 nulls, daily cadence | opencode | 2026-09-28 | PASS |
+| No supply / market-cap field survives the reduction | opencode | 2026-09-28 | PASS |
+| Weekly roll-up vs source: 0 OHLC mismatches, volume conserved | opencode | 2026-09-28 | PASS (377 buckets, Monday-aligned) |
+| Contrast ≥ 4.5:1, all text tokens, all 3 registers | opencode | 2026-09-28 | PASS (0 failures) |
+| Harness: 3 pages × 3 registers, archive in all registers | opencode | 2026-09-28 | PASS (9/9, 2630d → 377w) |
+| Archive failure path surfaces an error and recovers | opencode | 2026-09-28 | PASS |
+| Crosshair id prefixes cannot collide | opencode | 2026-09-28 | PASS |
+| Asset ships; `/data/xfg_historical_prices.json` 200 `application/json` | opencode | 2026-09-28 | PASS (297,708 B) |
+| Visual review in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+The weekly roll-up, the data itself, and the failure path are all covered by
+the harness against the real asset. What is **not** verified is appearance:
+the panel has never been rendered in a browser, so the axis label density at
+$0.000098, the legibility of the subtitle at narrow widths, and whether the
+archive reads as subordinate to the bench are all open. Task 9.
+
+Also unresolved, carried forward: the request to set maison's text size to
+match `reserve` was never actioned, because `reserve` had already been
+retired by the register work above. It needs restating against a live
+reference.

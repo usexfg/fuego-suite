@@ -787,7 +787,7 @@ bool RpcServer::on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOU
 bool RpcServer::on_get_random_commitment_outs(const COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request& req,
                                                 COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response& res) {
   res.status = "Failed";
-  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, res.outs)) {
+  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, req.ring_class, res.outs)) {
     return true;
   }
   res.status = CORE_RPC_STATUS_OK;

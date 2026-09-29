@@ -304,3 +304,45 @@ No C++ source changed. The job needs the `VALISE_DISPATCH_TOKEN` secret; without
 |------|-----------|------|--------|
 | No source change (build unaffected) | claude-code | 2026-09-27 | PASS |
 | All tasks complete | claude-code | 2026-09-27 | PASS |
+
+---
+
+## HEAT CDs at V12, Spend-Key-Bound Commitment Keys, Transfer Theft Fix
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-09-28
+**Agent**: claude-code
+**Status**: COMPLETE (consensus rules activate at the V12 height; mainnet height still a placeholder)
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Height-aware asset classification: finite-term CDs created at or above `upgradeHeight(V12)` are HEAT (`Currency::isHeatCdHeight`, `classifyCommitmentRef`); legacy CDs stay XFG, withdraw-only | claude-code | 2026-09-28 | DONE |
+| 2 | CD interest (`claimedInterest`) counted as HEAT from V12 — it is backed by the HEAT CD_APY_POOL / BONUS_VAULT partitions | claude-code | 2026-09-28 | DONE |
+| 3 | Asset-homogeneous CommitmentSpend rings from V12 (closes the first-ring-member asset switch); all-HEAT_TERM rings allowed from V12 | claude-code | 2026-09-28 | DONE |
+| 4 | CommitmentTransfer rings accept CDs only (pool outputs share a commit key derivable from a public seed; HEAT/LP/SWRX members allowed asset switches); classified by ring | claude-code | 2026-09-28 | DONE |
+| 5 | TreasuryFund burn excluded from the miner fee sum from V12 (was minted again to the miner as XFG); block template and mempool minimum-fee check mirror it | claude-code | 2026-09-28 | DONE |
+| 6 | Block template fee for mints (outputs > inputs) uses the consensus minimum fee instead of a wrapped subtraction | claude-code | 2026-09-28 | DONE |
+| 7 | `/getrandom_commitment_outs.bin` `ring_class` filter (HEAT_TERM / mature HEAT CDs / mature legacy CDs; no pool or slashed outputs), plumbed through ICore, INode, InProcessNode, NodeRpcProxy | claude-code | 2026-09-28 | DONE |
+| 8 | Spend-key-bound (v2) commitment keys: `Hs(D‖i‖"fuego_commit_v2")·G + B`; v1 keys let the sender and any view-key holder spend HEAT/CDs. Scanner detects v2 then v1; `ITransfersContainer::getAvailableKeyImage` tells schemes apart | claude-code | 2026-09-28 | DONE |
+| 9 | WalletGreen: HEAT send / HEAT CD / withdraw / rollover rebuilt — XFG network fee inputs, ring classes, all inputs added before signing (per-input signing invalidated earlier signatures), bill-denominated CDs, v2 outputs, keys checked against the on-chain commit key | claude-code | 2026-09-28 | DONE |
+| 10 | WalletLegacy: all commitment outputs v2; spends pick v1/v2 by recorded key image | claude-code | 2026-09-28 | DONE |
+| 11 | Build Daemon, PaymentGateService, SimpleWallet, Wallet; cross-check v2 keys and tx serialization against the fuego-valise Rust SDK | claude-code | 2026-09-29 | DONE |
+
+### Known Open Items
+
+- Mainnet `UPGRADE_HEIGHT_V12` = 2666666 is ~21 years out at 480 s blocks, and no V12 upgrade detector exists, so blocks never report major version 12. All new rules key on height, not block version.
+- Testnet V12 = 180: a testnet already past 180 will not resync (historical finite-term CDs now classify as HEAT) without a reset or a later V12 height.
+- The mixed-ring asset switch remains open under v11 rules (not changed there for resync safety).
+- WalletLegacy/SimpleWallet HEAT send and HEAT deposit still lack XFG network-fee inputs, sign per input, and pay the banking fee as an XFG output funded by HEAT; they will be rejected.
+- AMM HEAT→XFG swap: the pool output classifies as HEAT so the expected XFG is 0, and SWRX outputs can never mature; LP-term commitments can never be spent (maturity overflow).
+- `tests/UnitTests/INodeStubs.h` already had a stale `getRandomCommitmentOutsForAmount` signature; updated, but the unit-test target was not built in this change.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet, Transfers) | claude-code | 2026-09-29 | PASS |
+| v2 commit keys + tx roundtrip match Rust SDK (C++ parser, deriveCommitmentPublicKeyV2) | claude-code | 2026-09-29 | PASS |
+| Unit/regression test suites | — | — | NOT RUN |

@@ -434,7 +434,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     // AMM direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
     // AMM direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
     AssetBalance inAssets = get_blockchain_storage().getTransactionInputAssetAmounts(tx, height);
-    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx);
+    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx, height);
     uint64_t fee = amount_in < amount_out ? m_currency.minimumFee() : amount_in - amount_out;
 
     if (hasHeatMintAuth || ammSwapDirection == 0) {
@@ -843,8 +843,8 @@ bool core::get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return m_blockchain.getRandomOutsByAmount(req, res);
 }
 
-bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
-  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight);
+bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, uint8_t ringClass, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
+  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight, ringClass);
 }
 
 bool core::get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,

@@ -85,7 +85,7 @@ public:
 
   virtual void isSynchronized(bool& syncStatus, const Callback& callback) override { }
 
-  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) override {
     callback(std::error_code());
   }

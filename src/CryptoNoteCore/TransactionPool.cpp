@@ -268,9 +268,17 @@ namespace CryptoNote
       }
     }
 
+    // HEAT-CD height onward the TreasuryFund burn is not a miner fee, so the
+    // network fee (XFG) must clear the minimum on its own.
+    uint64_t networkFee = fee;
+    if (m_currency.isHeatCdHeight(height)) {
+      const uint64_t burn = getTreasuryFundBurn(tx.extra);
+      networkFee = (fee >= burn) ? fee - burn : 0;
+    }
+
     // Check minimum fee based on current block version
     // For mempool transactions, use the latest version rules
-    if (!isFusionTransaction && fee < m_currency.minimumFee()) {
+    if (!isFusionTransaction && networkFee < m_currency.minimumFee()) {
       logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
         ", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
       tvc.m_verification_failed = true;
@@ -615,7 +623,17 @@ namespace CryptoNote
       if (ready && blockTemplate.addTransaction(txd.id, txd.tx))
       {
         total_size += txd.blobSize;
-        fee += txd.fee;
+        // Mirror Blockchain::pushBlock's fee_summary: mints with outputs above
+        // inputs count the minimum fee, and from the HEAT-CD height a
+        // TreasuryFund burn is not a miner fee.
+        uint64_t minerFee = (inputs_amount < outputs_amount)
+            ? m_currency.minimumFee(m_currency.blockMajorVersionAtHeight(height))
+            : inputs_amount - outputs_amount;
+        if (m_currency.isHeatCdHeight(height)) {
+          const uint64_t burn = getTreasuryFundBurn(txd.tx.extra);
+          minerFee = (minerFee >= burn) ? minerFee - burn : 0;
+        }
+        fee += minerFee;
         logger(DEBUGGING) << "Transaction " << txd.id << " included in the block template";
       }
       else

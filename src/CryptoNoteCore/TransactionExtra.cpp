@@ -1918,6 +1918,25 @@ namespace CryptoNote
     return true;
   }
 
+  uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra) {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx_extra, fields)) {
+      return 0;
+    }
+    uint64_t amount = 0;
+    bool found = false;
+    for (const auto& field : fields) {
+      if (field.type() == typeid(TransactionExtraTreasuryFund)) {
+        if (found) {
+          return 0;  // duplicate tags are rejected by consensus
+        }
+        found = true;
+        amount = boost::get<TransactionExtraTreasuryFund>(field).amount;
+      }
+    }
+    return amount;
+  }
+
   DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
     DepositCommitmentKeys keys;
     static const char label[] = "fuego_commit_key";
@@ -1937,6 +1956,56 @@ namespace CryptoNote
         reinterpret_cast<Crypto::EllipticCurveScalar&>(keys.amountMask));
     }
     return keys;
+  }
+
+  DepositCommitmentKeys deriveCommitmentKeysV1(const Crypto::KeyDerivation& derivation, uint32_t outputIndex) {
+    uint8_t preimage[36];
+    memcpy(preimage, &derivation, 32);
+    preimage[32] = outputIndex & 0xFF;
+    preimage[33] = (outputIndex >> 8) & 0xFF;
+    preimage[34] = (outputIndex >> 16) & 0xFF;
+    preimage[35] = (outputIndex >> 24) & 0xFF;
+    Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> depositSecret;
+    memcpy(depositSecret.data(), h.data, 32);
+    return deriveCommitmentKeys(depositSecret);
+  }
+
+  static const uint8_t COMMITMENT_KEY_V2_DOMAIN[] = {
+    'f', 'u', 'e', 'g', 'o', '_', 'c', 'o', 'm', 'm', 'i', 't', '_', 'v', '2'
+  };
+
+  bool deriveCommitmentPublicKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                   const Crypto::PublicKey& spendPublicKey, Crypto::PublicKey& commitKey) {
+    return Crypto::derive_public_key(derivation, outputIndex, spendPublicKey,
+                                     COMMITMENT_KEY_V2_DOMAIN, sizeof(COMMITMENT_KEY_V2_DOMAIN), commitKey);
+  }
+
+  void deriveCommitmentSecretKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                   const Crypto::SecretKey& spendSecretKey, Crypto::SecretKey& keyScalar) {
+    Crypto::derive_secret_key(derivation, outputIndex, spendSecretKey,
+                              COMMITMENT_KEY_V2_DOMAIN, sizeof(COMMITMENT_KEY_V2_DOMAIN), keyScalar);
+  }
+
+  bool deriveOwnedCommitmentKeys(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                 const Crypto::PublicKey& spendPublicKey, const Crypto::SecretKey& spendSecretKey,
+                                 const Crypto::KeyImage& recordedKeyImage,
+                                 Crypto::PublicKey& commitKey, Crypto::SecretKey& keyScalar, Crypto::KeyImage& keyImage) {
+    if (deriveCommitmentPublicKeyV2(derivation, outputIndex, spendPublicKey, commitKey)) {
+      deriveCommitmentSecretKeyV2(derivation, outputIndex, spendSecretKey, keyScalar);
+      Crypto::generate_key_image(commitKey, keyScalar, keyImage);
+      if (keyImage == recordedKeyImage) {
+        return true;
+      }
+    }
+    DepositCommitmentKeys v1 = deriveCommitmentKeysV1(derivation, outputIndex);
+    if (v1.keyImage == recordedKeyImage) {
+      commitKey = v1.commitKey;
+      keyScalar = v1.keyScalar;
+      keyImage = v1.keyImage;
+      return true;
+    }
+    return false;
   }
 
   namespace {

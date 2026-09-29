@@ -2095,7 +2095,8 @@ bool CryptoNote::Blockchain::getOutsByAmountAndIndexes(uint64_t amount,
 }
 
 bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
-    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
+    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height,
+    uint8_t ringClass) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -2108,10 +2109,25 @@ bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount
   std::vector<size_t> validIndices;
   validIndices.reserve(allRefs.size());
 
-  // Filter by height: only outputs created at or before max_height
-  if (max_height > 0) {
+  // Ring classes (see COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request):
+  // 1 HEAT_TERM, 2 mature HEAT CDs, 3 mature legacy XFG CDs. Every class
+  // skips slashed and pool-owned outputs, which checkCommitmentSpendInput
+  // rejects, and keeps rings asset-homogeneous.
+  const uint32_t chainHeight = getCurrentBlockchainHeight();
+  auto eligible = [&](const CommitmentOutputRef& ref) {
+    if (max_height > 0 && ref.transactionIndex.block > max_height) return false;
+    if (ringClass == 0) return true;
+    if (ref.isSlashed) return false;
+    if (ringClass == 1) return ref.term == parameters::HEAT_TERM;
+    if (ringClass > 3 || !Currency::isFiniteCdTerm(ref.term)) return false;
+    const bool heatCd = m_currency.isHeatCdHeight(ref.transactionIndex.block);
+    if (heatCd != (ringClass == 2)) return false;
+    return static_cast<uint64_t>(ref.transactionIndex.block) + ref.term <= chainHeight;
+  };
+
+  if (max_height > 0 || ringClass != 0) {
     for (size_t i = 0; i < allRefs.size(); ++i) {
-      if (allRefs[i].transactionIndex.block <= max_height) {
+      if (eligible(allRefs[i])) {
         validIndices.push_back(i);
       }
     }
@@ -2599,6 +2615,14 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   uint32_t youngestRingMemberTerm = 0;
   bool youngestRingMemberRolled = false;
   bool youngestTermInitialized = false;
+  // HEAT-CD height onward: every ring member must carry the same asset. The
+  // real spend is hidden, and the input is classified by its first member, so
+  // a mixed ring (e.g. a HEAT CD beside a legacy XFG CD or a HEAT_TERM output
+  // of the same amount) would let the spender switch asset at equal atomic
+  // amount.
+  const bool homogeneousRing = m_currency.isHeatCdHeight(currentHeight);
+  AssetType ringAsset = AssetType::XFG;
+  bool ringAssetSet = false;
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -2606,6 +2630,16 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     }
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
+
+    const AssetType memberAsset = m_currency.classifyCommitmentRef(ref.term, ref.transactionIndex.block);
+    if (!ringAssetSet) {
+      ringAsset = memberAsset;
+      ringAssetSet = true;
+    } else if (homogeneousRing && memberAsset != ringAsset) {
+      logger(INFO) << "CommitmentSpend: ring mixes asset classes (member at index " << absIdx
+                   << ", term 0x" << std::hex << ref.term << std::dec << ")";
+      return false;
+    }
 
     const bool finiteCd = ref.term > 0 && ref.term != CryptoNote::parameters::HEAT_TERM &&
                           ref.term != parameters::DEPOSIT_TERM_POOL_XFG &&
@@ -2687,7 +2721,10 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
 
   // Degenerate-ring guard: if every member is FOREVER-term, no valid real spend
   // is possible (all keyScalars were discarded for burns). Reject immediately.
-  if (!hasNonForever) {
+  // From the HEAT-CD height HEAT_TERM outputs are wallet-owned HEAT and rings
+  // must be asset-homogeneous, so an all-HEAT_TERM ring is the normal HEAT
+  // spend; ring-signature validity alone decides it.
+  if (!hasNonForever && !homogeneousRing) {
     logger(INFO) << "CommitmentSpend: all ring members are burned outputs — no valid real spend possible";
     return false;
   }
@@ -2864,6 +2901,9 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
   std::vector<const Crypto::PublicKey*> ringKeys;
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
+  const bool homogeneousRing = m_currency.isHeatCdHeight(getCurrentBlockchainHeight());
+  AssetType ringAsset = AssetType::XFG;
+  bool ringAssetSet = false;
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentTransfer: global index " << absIdx << " out of range";
@@ -2871,6 +2911,25 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     }
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
+
+    // Only CDs are transferable. Pool-owned outputs share a commit key whose
+    // secret derives from a public seed, and HEAT / LP / swap-receive outputs
+    // are other assets: admitting any of them as ring members would let a
+    // transfer re-issue them as a CD (theft of pool reserves, or an asset
+    // switch at equal atomic amount).
+    if (!Currency::isFiniteCdTerm(ref.term)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx
+                   << " is not a CD (term 0x" << std::hex << ref.term << std::dec << ") — rejected";
+      return false;
+    }
+    const AssetType memberAsset = m_currency.classifyCommitmentRef(ref.term, ref.transactionIndex.block);
+    if (!ringAssetSet) {
+      ringAsset = memberAsset;
+      ringAssetSet = true;
+    } else if (homogeneousRing && memberAsset != ringAsset) {
+      logger(INFO) << "CommitmentTransfer: ring mixes legacy XFG CDs and HEAT CDs — rejected";
+      return false;
+    }
 
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
@@ -3400,7 +3459,7 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     if (block.bl.majorVersion >= BLOCK_MAJOR_VERSION_10) {
       inAssets = getTransactionInputAssetAmounts(transactions[i], block.height);
-      outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i]);
+      outAssets = m_currency.getTransactionOutputAssetAmounts(transactions[i], block.height);
 
        // Scan for v10 auth tags
       std::vector<TransactionExtraField> tx_extra_fields;
@@ -4272,7 +4331,14 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     pushTransaction(block, tx_id, transactionIndex);
 
     cumulative_block_size += blob_size;
-    fee_summary += fee;
+    // HEAT-CD height onward: a TreasuryFund amount is burned into a treasury
+    // ledger (SWF pending HEAT / treasury HEAT reserve), not paid to the miner.
+    // Counting it in the coinbase fee would mint it a second time as XFG.
+    if (hasTreasuryFund && m_currency.isHeatCdHeight(block.height)) {
+      fee_summary += (fee >= treasuryFundAmount) ? fee - treasuryFundAmount : 0;
+    } else {
+      fee_summary += fee;
+    }
       // Interest calculation removed - no on-chain interest
   }
 
@@ -6661,7 +6727,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
           // are untrusted hints (bounds-checked at validation); the tx's real
           // inputs/outputs are the source of truth.
           AssetBalance inAssets = getTransactionInputAssetAmounts(transaction.tx, block.height);
-          AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction.tx);
+          AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction.tx, block.height);
           uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction.tx, block.height);
           uint64_t out_amount = getOutputAmount(transaction.tx);
           uint64_t txFee = (in_amount < out_amount)
@@ -7236,7 +7302,7 @@ void CryptoNote::Blockchain::popTransaction(const Transaction& transaction, cons
         }
         // V11+: reverse actual-delta settlement (mirror of pushTransaction).
         AssetBalance inAssets = getTransactionInputAssetAmounts(transaction, height);
-        AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction);
+        AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(transaction, height);
         uint64_t in_amount = m_currency.getTransactionAllInputsAmount(transaction, height);
         uint64_t out_amount = getOutputAmount(transaction);
         uint64_t txFee = (in_amount < out_amount)
@@ -7877,38 +7943,52 @@ void CryptoNote::Blockchain::addSwapFee(uint64_t amount) {
   m_totalSwapFeesCollected += amount;
 }
 
-CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const TransactionInput& in) const {
-  if (in.type() == typeid(KeyInput) || in.type() == typeid(MultisignatureInput)) {
+CryptoNote::AssetType CryptoNote::Blockchain::classifyCommitmentRing(uint64_t amount,
+    const std::vector<uint32_t>& outputIndexes) const {
+  auto it = m_indexManager.commitmentOutputs().find(amount);
+  if (it == m_indexManager.commitmentOutputs().end() || it->second.empty())
+    return AssetType::XFG;  // conservative: treat unresolvable as XFG
+  if (outputIndexes.empty())
     return AssetType::XFG;
-  }
+  uint64_t absIdx = outputIndexes[0];  // first member = absolute (cumulative first offset)
+  if (absIdx >= it->second.size())
+    return AssetType::XFG;
+  // Rings are asset-homogeneous from the HEAT-CD height onward (enforced in
+  // checkCommitmentSpendInput / checkCommitmentTransferInput), so the first
+  // member names the ring's asset.
+  const auto& ref = it->second[absIdx];
+  return m_currency.classifyCommitmentRef(ref.term, ref.transactionIndex.block);
+}
+
+CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const TransactionInput& in) const {
   if (in.type() == typeid(TransactionInputCommitmentSpend)) {
     const auto& cs = boost::get<TransactionInputCommitmentSpend>(in);
-    auto it = m_indexManager.commitmentOutputs().find(cs.amount);
-    if (it == m_indexManager.commitmentOutputs().end() || it->second.empty())
-      return AssetType::XFG;  // conservative: treat unresolvable as XFG
-    if (cs.outputIndexes.empty())
-      return AssetType::XFG;
-    uint64_t absIdx = cs.outputIndexes[0];  // first member = absolute (cumulative first offset)
-    if (absIdx >= it->second.size())
-      return AssetType::XFG;
-    const auto& ref = it->second[absIdx];
-    if (ref.term == parameters::HEAT_TERM)
-      return AssetType::HEAT;
-    if (ref.term == parameters::DEPOSIT_TERM_LP)
-      return AssetType::LP;
-    return AssetType::XFG;
+    return classifyCommitmentRing(cs.amount, cs.outputIndexes);
   }
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
-    return AssetType::XFG;
+    // Transfer rings hold CDs only; before the HEAT-CD height every CD is XFG.
+    const auto& ct = boost::get<TransactionInputCommitmentTransfer>(in);
+    return classifyCommitmentRing(ct.amount, ct.outputIndexes);
   }
-  return AssetType::XFG;
+  return AssetType::XFG;  // KeyInput, MultisignatureInput
 }
 
 CryptoNote::AssetBalance CryptoNote::Blockchain::getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const {
   AssetBalance bal;
+  // From the HEAT-CD height, CD interest is HEAT: it is backed by the HEAT
+  // CD_APY_POOL / BONUS_VAULT partitions, whatever the principal's asset.
+  const bool heatInterest = m_currency.isHeatCdHeight(height);
   for (const auto& in : tx.inputs) {
     AssetType asset = classifyInputAsset(in);
     uint64_t amount = m_currency.getTransactionInputAmount(in, height);
+    if (heatInterest && in.type() == typeid(TransactionInputCommitmentSpend)) {
+      const auto& cs = boost::get<TransactionInputCommitmentSpend>(in);
+      if (cs.claimedInterest > 0 && amount != 0) {
+        // amount == principal + claimedInterest (0 on overflow: add nothing).
+        amount = cs.amount;
+        bal.heat += cs.claimedInterest;
+      }
+    }
     switch (asset) {
       case AssetType::HEAT: bal.heat += amount; break;
       case AssetType::LP:   bal.lp   += amount; break;

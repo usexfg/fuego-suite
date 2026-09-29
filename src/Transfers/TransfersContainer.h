@@ -223,6 +223,7 @@ public:
   virtual void getUnconfirmedTransactions(std::vector<Crypto::Hash>& transactions) const override;
   virtual std::vector<TransactionSpentOutputInformation> getSpentOutputs() const override;
   virtual bool getTransfer(const Crypto::Hash& transactionHash, uint32_t outputInTransaction, TransactionOutputInformation& transfer, TransferState& transferState) const override;
+  virtual bool getAvailableKeyImage(const Crypto::Hash& transactionHash, uint32_t outputInTransaction, Crypto::KeyImage& keyImage) const override;
 
   // IStreamSerializable
   virtual void save(std::ostream& os) override;

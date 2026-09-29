@@ -82,7 +82,7 @@ public:
 
   virtual void relayTransaction(const Transaction& transaction, const Callback& callback) = 0;
   virtual void getRandomOutsByAmounts(std::vector<uint64_t>&& amounts, uint64_t outsCount, std::vector<COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount>& result, const Callback& callback) = 0;
-  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) = 0;
+  virtual void getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback) = 0;
   // Bulk lookup of creation heights for (amount, global_index) pairs. Used by wallets for OSPEAD decoy filtering.
   // Default impl: leaves heights vector empty so wallet falls back to no-filter behavior when daemon lacks the endpoint.
   virtual void getOutputsHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries, std::vector<uint32_t>& heights, const Callback& callback) {

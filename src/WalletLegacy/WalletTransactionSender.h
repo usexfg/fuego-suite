@@ -45,6 +45,8 @@ public:
   // Register a sub-address so its outputs are eligible as transaction inputs
   // AccountKeys MUST contain sub spend secret key (b_ij = b + m)
   void addSubAddress(const AccountKeys& subKeys, ITransfersContainer& subContainer);
+  CryptoNote::DepositCommitmentKeys ownedCommitmentKeys(const TransactionOutputInformation& transfer,
+                                                        const Crypto::KeyDerivation& ecdh);
 
   std::unique_ptr<WalletRequest> makeSendRequest(Crypto::SecretKey& transactionSK,
                                                  bool optimize,

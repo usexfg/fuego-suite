@@ -175,6 +175,7 @@ namespace CryptoNote {
     OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
     AssetType classifyInputAsset(const TransactionInput& in) const;
+    AssetType classifyCommitmentRing(uint64_t amount, const std::vector<uint32_t>& outputIndexes) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
@@ -219,7 +220,7 @@ namespace CryptoNote {
       uint32_t& totalBlockCount, uint32_t& startBlockIndex);
     bool handleGetObjects(NOTIFY_REQUEST_GET_OBJECTS_request& arg, NOTIFY_RESPONSE_GET_OBJECTS_request& rsp); //Deprecated. Should be removed with CryptoNoteProtocolHandler.
     bool getRandomOutsByAmount(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request& req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response& res);
-    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0);
+    bool getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height = 0, uint8_t ringClass = 0);
     // Bulk lookup of creation block heights for (amount, global_index) pairs.
     // heights is sized to queries.size(); 0 for unknown/invalid.
     bool getOutputHeights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,

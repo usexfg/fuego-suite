@@ -345,6 +345,28 @@ struct DepositCommitmentKeys {
 
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
+// Legacy (v1) commitment keys of output `outputIndex`: the secret is
+// H(D || outputIndex_LE32) with D the view-key ECDH derivation, so the sender
+// and any view-key holder can derive the spend scalar. Detect/spend only.
+DepositCommitmentKeys deriveCommitmentKeysV1(const Crypto::KeyDerivation& derivation, uint32_t outputIndex);
+
+// Spend-key-bound (v2) commitment keys, the only scheme new outputs use:
+//   s = Hs(D || varint(i) || "fuego_commit_v2")
+//   commitKey = s*G + B        keyScalar = s + b
+// D (view-key ECDH) finds the output; spending needs the recipient's spend
+// secret b, which neither the sender nor a view-key holder has.
+bool deriveCommitmentPublicKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                 const Crypto::PublicKey& spendPublicKey, Crypto::PublicKey& commitKey);
+void deriveCommitmentSecretKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                 const Crypto::SecretKey& spendSecretKey, Crypto::SecretKey& keyScalar);
+
+// Spend keys of an owned commitment output, choosing the scheme whose key
+// image equals the one recorded at detection. False when neither matches.
+bool deriveOwnedCommitmentKeys(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                               const Crypto::PublicKey& spendPublicKey, const Crypto::SecretKey& spendSecretKey,
+                               const Crypto::KeyImage& recordedKeyImage,
+                               Crypto::PublicKey& commitKey, Crypto::SecretKey& keyScalar, Crypto::KeyImage& keyImage);
+
 enum class DepositType : uint8_t {
   HEAT      = 0x02,
   // COLD = 0xCD,  // REMOVED: COLD deposit type
@@ -447,6 +469,9 @@ bool addLimitWithdrawToExtra(std::vector<uint8_t>& tx_extra,
                              const Crypto::Hash& outputsHash,
                              const Crypto::Signature& proof);
 bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint64_t amount);
+// Amount burned by the single TreasuryFund tag in tx_extra (0 when absent,
+// duplicated or unparsable — those txs are invalid anyway).
+uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);

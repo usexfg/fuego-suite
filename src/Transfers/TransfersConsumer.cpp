@@ -106,27 +106,23 @@ void findMyOutputs(
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // All commitment types (COLD, HEAT/FOREVER) use deterministic ECDH:
-      // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
-      // so all are recoverable on rescan. No term filter needed.
-      {
-        uint8_t preimage[36];
-        memcpy(preimage, &derivation, 32);
-        uint32_t outIdx = static_cast<uint32_t>(idx);
-        preimage[32] = outIdx & 0xFF;
-        preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF;
-        preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), secHash.data, 32);
-
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        if (ck.commitKey == out.commitKey) {
-          for (const auto& spendKey : spendKeys) {
-            outputs[spendKey].push_back(static_cast<uint32_t>(idx));
-            break;
-          }
+      // v2 (spend-key bound): commitKey = Hs(D||i||domain)*G + B names the
+      // owning spend key. v1 (legacy): commitKey from H(D||i) alone.
+      bool found = false;
+      for (const auto& spendKey : spendKeys) {
+        Crypto::PublicKey v2Key;
+        if (CryptoNote::deriveCommitmentPublicKeyV2(derivation, static_cast<uint32_t>(idx), spendKey, v2Key) &&
+            v2Key == out.commitKey) {
+          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
+          found = true;
+          break;
+        }
+      }
+      if (!found &&
+          CryptoNote::deriveCommitmentKeysV1(derivation, static_cast<uint32_t>(idx)).commitKey == out.commitKey) {
+        for (const auto& spendKey : spendKeys) {
+          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
+          break;
         }
       }
     }
@@ -516,21 +512,22 @@ std::error_code createTransfers(
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // Re-derive commitment keys (same ECDH formula used at creation)
+      // Key image of the owned commitment: v2 needs the spend secret (absent
+      // in tracking wallets, which then cannot see these outputs spent).
       KeyDerivation derivation;
       if (generate_key_derivation(txPubKey, account.viewSecretKey, derivation)) {
-        uint8_t preimage[36];
-        memcpy(preimage, &derivation, 32);
-        uint32_t outIdx = static_cast<uint32_t>(idx);
-        preimage[32] = outIdx & 0xFF;
-        preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF;
-        preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash secHash = cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), secHash.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        info.keyImage = ck.keyImage;
+        const uint32_t outIdx = static_cast<uint32_t>(idx);
+        Crypto::PublicKey v2Key;
+        if (CryptoNote::deriveCommitmentPublicKeyV2(derivation, outIdx, account.address.spendPublicKey, v2Key) &&
+            v2Key == out.commitKey) {
+          if (account.spendSecretKey != NULL_SECRET_KEY) {
+            Crypto::SecretKey keyScalar;
+            CryptoNote::deriveCommitmentSecretKeyV2(derivation, outIdx, account.spendSecretKey, keyScalar);
+            Crypto::generate_key_image(out.commitKey, keyScalar, info.keyImage);
+          }
+        } else {
+          info.keyImage = CryptoNote::deriveCommitmentKeysV1(derivation, outIdx).keyImage;
+        }
       }
       info.amount = amount;
       info.term = out.term;

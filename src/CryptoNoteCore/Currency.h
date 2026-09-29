@@ -254,8 +254,16 @@ public:
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
 
-    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
-    AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
+    // Finite-term CD marker: term > 0 and not one of the reserved term tags.
+    static bool isFiniteCdTerm(uint32_t term);
+    // HEAT CDs activate at the V12 upgrade height: finite-term commitments
+    // created at or above it carry HEAT principal; older ones are legacy XFG.
+    bool isHeatCdHeight(uint32_t height) const;
+    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term, bool heatCds);
+    // Asset of an existing commitment output, from its term and creation height.
+    AssetType classifyCommitmentRef(uint32_t term, uint32_t creationHeight) const;
+    // `height` is the height of the block that includes (or would include) tx.
+    AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx, uint32_t height) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 
   bool constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,

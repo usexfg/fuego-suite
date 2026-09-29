@@ -80,6 +80,8 @@ public:
   bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
                        uint64_t precomputedInterest,
                        std::string &txHashOut);
+  bool rolloverDepositWithInterest(DepositId depositId, uint32_t newTerm,
+                                   uint64_t interest, std::string &txHashOut);
 
   // Caps a formula interest amount by the CD yield pool backing (fee pool +
   // CD_APY_POOL vault) so the built tx matches what consensus accepts.
@@ -255,6 +257,25 @@ protected:
     TransactionOutputInformation out;
     WalletRecord *wallet;
   };
+
+  // A wallet-owned commitment input with its ring, ready to add and sign.
+  struct CommitmentSpendPlan
+  {
+    TransactionInputCommitmentSpend input;
+    std::vector<Crypto::PublicKey> ringKeys;  // ascending global index
+    KeyPair keys;
+    size_t realPos = 0;
+  };
+
+  uint8_t commitmentRingClass(const Deposit& deposit) const;
+  KeyPair ownedCommitmentKeys(const Deposit& deposit);
+  CommitmentSpendPlan planCommitmentSpend(const Deposit& deposit, uint64_t claimedInterest, uint64_t mixin);
+  void addOwnedCommitmentOutput(ITransaction& transaction, const Crypto::PublicKey& spendPublicKey,
+                                const Crypto::PublicKey& viewPublicKey, uint32_t term, uint64_t amount);
+  const Crypto::PublicKey& primarySpendPublicKey() const;
+  std::vector<InputInfo> prepareXfgFunding(ITransaction& transaction, uint64_t neededMoney, uint64_t mixin);
+  void addAndSignInputs(ITransaction& transaction, std::vector<InputInfo>& keysInfo,
+                        const std::vector<CommitmentSpendPlan>& commitments);
 
   struct ReceiverAmounts
   {

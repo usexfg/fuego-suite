@@ -501,7 +501,7 @@ std::error_code NodeRpcProxy::doGetRandomOutsByAmounts(std::vector<uint64_t>& am
   return ec;
 }
 
-void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
                                                      std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result,
                                                      const Callback& callback) {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -510,18 +510,19 @@ void NodeRpcProxy::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t ou
     return;
   }
 
-  scheduleRequest([this, amount, outsCount, maxHeight, &result]() {
-    return doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  scheduleRequest([this, amount, outsCount, maxHeight, ringClass, &result]() {
+    return doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, ringClass, result);
   }, callback);
 }
 
-std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+std::error_code NodeRpcProxy::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
                                                                    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result) {
   COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request req = AUTO_VAL_INIT(req);
   COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response rsp = AUTO_VAL_INIT(rsp);
   req.amount = amount;
   req.outs_count = outsCount;
   req.max_height = maxHeight;
+  req.ring_class = ringClass;
 
   std::error_code ec = binaryCommand("/getrandom_commitment_outs.bin", req, rsp);
   if (!ec) {

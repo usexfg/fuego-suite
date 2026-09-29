@@ -513,54 +513,61 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
-  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
-    if (target.type() == typeid(KeyOutput)) {
-      return AssetType::XFG;
-    }
-    if (target.type() == typeid(MultisignatureOutput)) {
-      return AssetType::XFG;
-    }
-    if (target.type() == typeid(TransactionOutputCommitment)) {
-      if (term == parameters::HEAT_TERM)
-        return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_LP)
-        return AssetType::LP;
-      if (term == parameters::DEPOSIT_TERM_POOL_XFG)
-        return AssetType::XFG;
-      if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
-        return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-        return AssetType::XFG;
-      return AssetType::XFG;  // CD deposits
-    }
-    if (target.type() == typeid(TransactionOutputUnified)) {
-      auto& unified = boost::get<TransactionOutputUnified>(target);
-      if (unified.term == parameters::HEAT_TERM)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_LP)
-        return AssetType::LP;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_XFG)
-        return AssetType::XFG;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_HEAT)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-        return AssetType::XFG;
-      return AssetType::XFG;  // term=0 regular or finite CD
-    }
-    return AssetType::XFG;
+  bool Currency::isFiniteCdTerm(uint32_t term) {
+    return term > 0 &&
+           term != parameters::HEAT_TERM &&
+           term != parameters::DEPOSIT_TERM_LP &&
+           term != parameters::DEPOSIT_TERM_POOL_XFG &&
+           term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+           term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
+           term != parameters::DIGM_TERM;
   }
 
-  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx) const {
+  bool Currency::isHeatCdHeight(uint32_t height) const {
+    return height >= upgradeHeight(BLOCK_MAJOR_VERSION_12);
+  }
+
+  static AssetType classifyCommitmentTerm(uint32_t term, bool heatCds) {
+    if (term == parameters::HEAT_TERM)
+      return AssetType::HEAT;
+    if (term == parameters::DEPOSIT_TERM_LP)
+      return AssetType::LP;
+    if (term == parameters::DEPOSIT_TERM_POOL_XFG)
+      return AssetType::XFG;
+    if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
+      return AssetType::HEAT;
+    if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+      return AssetType::XFG;
+    // Finite-term CDs: XFG principal before the HEAT-CD activation height
+    // (legacy, withdraw-only), HEAT principal from it onward.
+    if (heatCds && Currency::isFiniteCdTerm(term))
+      return AssetType::HEAT;
+    return AssetType::XFG;  // term=0 regular, legacy CD, DIGM
+  }
+
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term, bool heatCds) {
+    if (target.type() == typeid(TransactionOutputCommitment)) {
+      return classifyCommitmentTerm(term, heatCds);
+    }
+    if (target.type() == typeid(TransactionOutputUnified)) {
+      return classifyCommitmentTerm(boost::get<TransactionOutputUnified>(target).term, heatCds);
+    }
+    return AssetType::XFG;  // KeyOutput, MultisignatureOutput
+  }
+
+  AssetType Currency::classifyCommitmentRef(uint32_t term, uint32_t creationHeight) const {
+    return classifyCommitmentTerm(term, isHeatCdHeight(creationHeight));
+  }
+
+  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx, uint32_t height) const {
+    const bool heatCds = isHeatCdHeight(height);
     AssetBalance bal;
     for (const auto& out : tx.outputs) {
-      AssetType asset = AssetType::XFG;
       uint32_t term = 0;
       if (out.target.type() == typeid(TransactionOutputCommitment)) {
-        const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-        term = co.term;
+        term = boost::get<TransactionOutputCommitment>(out.target).term;
       }
-      asset = classifyOutputAsset(out.target, term);
-      switch (asset) {
+      switch (classifyOutputAsset(out.target, term, heatCds)) {
         case AssetType::HEAT: bal.heat += out.amount; break;
         case AssetType::LP:   bal.lp   += out.amount; break;
         default:              bal.xfg  += out.amount; break;

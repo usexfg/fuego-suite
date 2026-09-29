@@ -346,3 +346,30 @@ No C++ source changed. The job needs the `VALISE_DISPATCH_TOKEN` secret; without
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet, Transfers) | claude-code | 2026-09-29 | PASS |
 | v2 commit keys + tx roundtrip match Rust SDK (C++ parser, deriveCommitmentPublicKeyV2) | claude-code | 2026-09-29 | PASS |
 | Unit/regression test suites | — | — | NOT RUN |
+
+---
+
+## XFG CDs Principal-Only; XFG CD Creation Retired in Wallets
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-09-29
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Consensus (v11+ blocks): `claimedInterest > 0` requires every ring member to be a HEAT CD (finite term, created at or above the HEAT-CD height). XFG CDs earn zero interest in any asset; before the HEAT-CD height no claim can carry interest | claude-code | 2026-09-29 | DONE |
+| 2 | `/estimate_cd_yield` and `InProcessNode::getCdClaimInfo` report zero interest for XFG CDs | claude-code | 2026-09-29 | DONE |
+| 3 | WalletGreen / WalletLegacy: interest only computed for HEAT CDs; XFG CD rollover refused; XFG CD creation (`createDeposit`, `makeDepositRequest` finite terms) refused at every height | claude-code | 2026-09-29 | DONE |
+| 4 | Withdrawal of existing XFG CDs kept: principal returned as XFG (commitment and pre-v10 multisignature paths) | claude-code | 2026-09-29 | DONE |
+
+Resync impact: v11-era blocks carrying CD interest claims (testnet, V11 = 30) no longer validate; testnet needs a reset. Mainnet is below V11 in the checkpoint set, so it has no such blocks.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-09-29 | PASS |
+| Unit/regression test suites | — | — | NOT RUN |

@@ -2606,6 +2606,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
   bool ringHasNonCdMember = false;
+  bool ringHasNonHeatCdMember = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
   // Track youngest (highest creation height) ring member for interest cap.
   // Using the youngest member prevents gaming the system by including old
@@ -2646,6 +2647,9 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
                           ref.term != parameters::DEPOSIT_TERM_POOL_HEAT;
     if (!finiteCd) {
       ringHasNonCdMember = true;
+    }
+    if (!Currency::isFiniteCdTerm(ref.term) || !m_currency.isHeatCdHeight(ref.transactionIndex.block)) {
+      ringHasNonHeatCdMember = true;
     }
 
     // Track youngest (most recent) ring member for interest bounds check
@@ -2751,18 +2755,17 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       logger(INFO) << "CommitmentSpend: positive interest claim requires a finite-CD ring";
       return false;
     }
-    // Legacy XFG deposits (created before V12) are withdraw-only in the new
-    // system: no HEAT-denominated interest accrues on XFG principal. If the
-    // youngest ring member predates V12, the real spend could be a legacy
-    // deposit, so no interest may be claimed. Applies only to v11+ blocks —
-    // pre-v11 blocks re-validate under their original rules (resync safety).
-    uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+    // Only HEAT CDs (finite-term, created at or above the HEAT-CD height)
+    // earn interest. XFG CDs — every CD created before that height — are
+    // principal-only: zero interest in any asset. The real spend is hidden,
+    // so every ring member must be a HEAT CD. Before the HEAT-CD height no
+    // HEAT CD exists, so no v11+ block can carry an interest claim. Pre-v11
+    // blocks re-validate under their original rules (resync safety).
     uint32_t validatingBlockHeight = currentHeight + 1;
     uint8_t validatingBlockVersion = getBlockMajorVersionForHeight(validatingBlockHeight);
-    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
-        youngestRingMemberHeight < v11Height) {
-      logger(INFO) << "CommitmentSpend: interest claim on pre-V11 deposit (youngest ring member at height "
-                   << youngestRingMemberHeight << " < V11 " << v11Height << ") rejected";
+    if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 && ringHasNonHeatCdMember) {
+      logger(INFO) << "CommitmentSpend: interest claim on a ring with a non-HEAT-CD member rejected "
+                   << "(XFG CDs are principal-only)";
       return false;
     }
     // Pre-v12 blocks keep the ORIGINAL max-across-ring cap (resync safety —

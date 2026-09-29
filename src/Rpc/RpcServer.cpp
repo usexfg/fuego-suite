@@ -2713,6 +2713,15 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
     }
   }
 
+  // XFG CDs (created before the HEAT-CD height) are principal-only.
+  if (!m_core.currency().isHeatCdHeight(req.creation_height)) {
+    res.estimated_interest = 0;
+    res.claimable_interest = 0;
+    res.base_interest = 0;
+    res.bonus_interest = 0;
+    res.claimable_bonus = 0;
+  }
+
   res.note = "Estimate only: the protocol distributes realized fee revenue "
              "(real yield — no interest is printed), so this is based on accrued "
              "epoch fee rates, not a promise; the amount actually claimable is "

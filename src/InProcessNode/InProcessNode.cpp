@@ -24,6 +24,7 @@
 #include "CryptoNoteConfig.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/IBlock.h"
 #include "CryptoNoteCore/VerificationContext.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandlerCommon.h"
@@ -1142,6 +1143,14 @@ ec = core.calculateCdInterest(amount, creationHeight, currentHeight, base,
   uint64_t bvBacking = std::min(core.getBonusVaultBalance(), core.getBonusVaultUtxoBalance());
   out.bonusVaultBalance = bvBacking;
   out.claimableBonus = std::min(out.bonusInterest, bvBacking);
+  // XFG CDs (created before the HEAT-CD height) are principal-only.
+  if (!core.currency().isHeatCdHeight(creationHeight)) {
+    out.formulaInterest = 0;
+    out.claimableInterest = 0;
+    out.baseInterest = 0;
+    out.bonusInterest = 0;
+    out.claimableBonus = 0;
+  }
   return {};
 }
 

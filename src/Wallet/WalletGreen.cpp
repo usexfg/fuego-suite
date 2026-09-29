@@ -694,15 +694,14 @@ namespace CryptoNote
       << " type=" << static_cast<int>(transfer.type);
 
     // Accrued CD interest (pool-aware): claim what consensus accepts today.
-    // Only finite-term CDs earn. Pre-v11 deposits cannot claim (consensus
-    // rejects); an empty yield pool is a rare event — capInterestByPool warns
-    // so the user knows the remainder is forfeited now but becomes claimable
-    // once the pool replenishes from epoch fees.
+    // Only HEAT CDs earn; XFG CDs (created before the HEAT-CD height) are
+    // principal-only. An empty yield pool is a rare event — capInterestByPool
+    // warns so the user knows the remainder is forfeited now but becomes
+    // claimable once the pool replenishes from epoch fees.
     uint64_t claimedInterest = 0;
     uint64_t claimedBonus = 0;
     if (Currency::isFiniteCdTerm(deposit.term) &&
-        static_cast<uint32_t>(deposit.height) >=
-            m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+        m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
       INode::CdClaimInfo claimInfo;
       std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
           static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo);
@@ -726,7 +725,7 @@ namespace CryptoNote
 
       std::vector<InputInfo> keysInfo;
       if (!heatRules) {
-        // Pre-HEAT-CD rules: principal and interest are XFG; fee from principal.
+        // Pre-HEAT-CD rules: XFG CD, principal only (claimedInterest is 0); fee from principal.
         if (deposit.amount + claimedInterest <= fee) {
           throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Deposit does not cover the network fee");
         }
@@ -740,7 +739,7 @@ namespace CryptoNote
         }
         keysInfo = prepareXfgFunding(*transaction, fee, 0);
       } else {
-        // Legacy XFG CD: XFG principal (fee from it); interest paid as HEAT.
+        // XFG CD: principal only, returned as XFG (fee from it).
         if (deposit.amount <= fee) {
           throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Deposit does not cover the network fee");
         }
@@ -880,11 +879,10 @@ namespace CryptoNote
     }
     Deposit deposit = getDeposit(depositId);
 
-    // v11 zero-claim consensus rule: deposits created before v11 activation
-    // cannot claim CD yield (Blockchain.cpp youngest-ring pre-v11 gate).
+    // Only HEAT CDs earn interest; XFG CDs are principal-only.
     uint64_t interest = 0;
     if (Currency::isFiniteCdTerm(deposit.term) &&
-        deposit.height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+        m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
       interest = m_currency.calculateCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height),
           getBlockCount(), commitmentIndex, false, deposit.term, false);
     }
@@ -909,8 +907,8 @@ namespace CryptoNote
     Deposit deposit = getDeposit(depositId);
     uint64_t interest = precomputedInterest;
     if (!Currency::isFiniteCdTerm(deposit.term) ||
-        deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
-      interest = 0;
+        !m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
+      interest = 0;  // XFG CDs are principal-only
     }
     return rolloverDepositWithInterest(depositId, newTerm, interest, txHashOut);
   }
@@ -937,11 +935,10 @@ namespace CryptoNote
       return false;
     }
 
-    // From the HEAT-CD height a new CD is HEAT: only HEAT CDs roll over
-    // (legacy XFG CDs are withdraw-only), and the fee is paid in XFG.
+    // Only HEAT CDs roll over: XFG CDs are withdraw-only, principal-only.
+    // From the HEAT-CD height the fee is paid in XFG.
     const bool heatRules = m_currency.isHeatCdHeight(currentHeight);
-    if (heatRules &&
-        m_currency.classifyCommitmentRef(deposit.term, static_cast<uint32_t>(deposit.height)) != AssetType::HEAT) {
+    if (m_currency.classifyCommitmentRef(deposit.term, static_cast<uint32_t>(deposit.height)) != AssetType::HEAT) {
       m_logger(ERROR) << "Rollover failed: legacy XFG CDs are withdraw-only; withdraw and open a HEAT CD";
       return false;
     }
@@ -1031,173 +1028,11 @@ namespace CryptoNote
     /* Ensure that the address is valid and a part of this container */
     validateSourceAddresses({sourceAddress});
 
-    // XFG-funded CDs are retired at the HEAT-CD height: a finite-term output
-    // is HEAT from then on, so XFG inputs cannot fund it. Use heatDepositV10.
-    if (m_currency.isHeatCdHeight(getBlockCount())) {
-      throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
-        "XFG deposits are retired; CDs are HEAT-funded (heatDepositV10)");
-    }
-
-    CryptoNote::AccountPublicAddress sourceAddr = parseAddress(sourceAddress);
-    CryptoNote::AccountPublicAddress destAddr = parseAddress(destinationAddress);
-
-    /* Create the transaction */
-    std::unique_ptr<ITransaction> transaction = createTransaction();
-
-    /* Select the wallet - If no source address was specified then it will pick funds from anywhere
-     and the change will go to the primary address of the wallet container */
-    std::vector<WalletOuts> wallets;
-    wallets = pickWallets({sourceAddress});
-
-    /* Select the transfers */
-    uint64_t fee = m_currency.minimumFee();
-    uint64_t neededMoney = amount + fee;
-    std::vector<OutputToTransfer> selectedTransfers;
-    uint64_t foundMoney = selectTransfers(neededMoney,
-                                          0 == 0,
-                                          m_currency.defaultDustThreshold(),
-                                          std::move(wallets),
-                                          selectedTransfers);
-
-    /* Do we have enough funds */
-    if (foundMoney < neededMoney)
-    {
-      throw std::system_error(make_error_code(error::WRONG_AMOUNT));
-    }
-
-    /* Now we add the outputs to the transaction, starting with the deposits output
-     which includes the term, and then after that the change outputs */
-
-    // Generate a random 32-byte deposit secret
-    std::array<uint8_t, 32> depositSecret;
-    generate_random_bytes(sizeof(depositSecret), depositSecret.data());
-
-    // Derive commitment keys from the deposit secret
-    CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
-
-    // Create TransactionOutputCommitment instead of MultisignatureOutput
-    CryptoNote::TransactionOutputCommitment commitOut;
-    commitOut.commitKey = commitKeys.commitKey;
-    commitOut.term = static_cast<uint32_t>(term);
-
-    // Add the commitment output to the transaction
-    auto bankingIndex = transaction->addOutput(
-        neededMoney - fee,
-        commitOut);
-
-    // Deposit secret will be stored after inputs are signed (hash is final at that point).
-
-    /* Let's add the change outputs to the transaction */
-
-    std::vector<uint64_t> amounts;
-
-    /* Breakdown the change into specific amounts */
-    decompose_amount_into_digits(
-        foundMoney - neededMoney,
-        m_currency.defaultDustThreshold(),
-        [&](uint64_t chunk) { amounts.push_back(chunk); },
-        [&](uint64_t dust) { amounts.push_back(dust); });
-    std::vector<uint64_t> decomposedChange = amounts;
-
-    /* Now pair each of those amounts to the change address
-     which in the case of a deposit is the source address */
-    typedef std::pair<const AccountPublicAddress *, uint64_t> AmountToAddress;
-    std::vector<AmountToAddress> amountsToAddresses;
-    for (const auto &output : decomposedChange)
-    {
-      amountsToAddresses.emplace_back(AmountToAddress{&sourceAddr, output});
-    }
-
-    /* For the sake of privacy, we shuffle the output order randomly */
-    std::shuffle(amountsToAddresses.begin(), amountsToAddresses.end(), std::default_random_engine{Crypto::rand<std::default_random_engine::result_type>()});
-    std::sort(amountsToAddresses.begin(), amountsToAddresses.end(), [](const AmountToAddress &left, const AmountToAddress &right) {
-      return left.second < right.second;
-    });
-
-    /* Add the change outputs to the transaction */
-    try
-    {
-      for (const auto &amountToAddress : amountsToAddresses)
-      {
-        transaction->addOutput(amountToAddress.second,
-                               *amountToAddress.first);
-      }
-    }
-
-    catch (const std::exception &e)
-    {
-      m_logger(ERROR, BRIGHT_RED) << "Failed to add change outputs: " << e.what();
-      throw;
-    }
-
-    /* Now add the other components of the transaction such as the transaction secret key, unlocktime
-     since this is a deposit, we don't need to add messages or added extras beyond the transaction publick key */
-    Crypto::SecretKey transactionSK;
-    transaction->getTransactionSecretKey(transactionSK);
-    transaction->setUnlockTime(0);
-
-    /* Process commitment based on deposit type */
-    if (term == CryptoNote::parameters::HEAT_TERM) {
-      // HEAT burn/mint is handled exclusively by mintHeatV10().
-      // createDeposit() with HEAT_TERM is NOT a valid mint path.
-      // The legacy 10M ratio (convertXfgToHeat) must NOT be used for minting.
-      throw std::system_error(make_error_code(CryptoNote::error::WRONG_PARAMETERS),
-        "HEAT burn/mint must use mintHeatV10(), not createDeposit(HEAT_TERM). "
-        "Use createDeposit() only for term-locked HEAT CDs (term != HEAT_TERM).");
-    } else {
-      // Term-locked HEAT CD (non-HEAT_TERM)
-      // The TransactionOutputCommitment output with term field is sufficient;
-      // no additional commitment extra needed for term-locked CDs.
-      m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating term-locked HEAT CD for " << amount << " XFG term=" << term;
-    }
-
-    /* Add the transaction extra for messages (if any) */
-    std::vector<WalletMessage> messages;
-    Crypto::PublicKey publicKey = transaction->getTransactionPublicKey();
-    CryptoNote::KeyPair kp = {publicKey, transactionSK};
-    for (size_t i = 0; i < messages.size(); ++i)
-    {
-      CryptoNote::AccountPublicAddress addressBin;
-      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin))
-        continue;
-      CryptoNote::tx_extra_message tag;
-      if (!tag.encrypt(i, messages[i].message, &addressBin, kp))
-        continue;
-      BinaryArray ba;
-      toBinaryArray(tag, ba);
-      ba.insert(ba.begin(), TX_EXTRA_MESSAGE_TAG);
-      transaction->appendExtra(ba);
-    }
-
-    /* Prepare the inputs */
-
-    /* Get additional inputs for the mixin */
-    typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
-    std::vector<outs_for_amount> mixinResult;
-    std::vector<InputInfo> keysInfo;
-    prepareInputs(selectedTransfers, mixinResult, m_currency.maxMixin(), keysInfo);
-
-    /* Add the inputs to the transaction */
-    std::vector<KeyPair> ephKeys;
-    for (auto &input : keysInfo)
-    {
-      transaction->addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
-    }
-
-    /* Now sign the inputs so we can proceed with the transaction */
-    size_t i = 0;
-    for (auto &input : keysInfo)
-    {
-      transaction->signInputKey(i++, input.keyInfo, input.ephKeys);
-    }
-
-    /* Return the transaction hash — inputs are now signed so hash is final */
-    transactionHash = Common::podToHex(transaction->getTransactionHash());
-
-    /* Store deposit secret under the final (post-signing) transaction hash */
-    addBurnDepositSecret(transactionHash, commitKeys.keyScalar, neededMoney - fee, std::vector<uint8_t>());
-
-    size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
+    // XFG-funded CDs are retired at every height: they earn nothing, and
+    // from the HEAT-CD height a finite-term output is HEAT, which XFG inputs
+    // cannot fund. CDs are HEAT-funded (heatDepositV10).
+    throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+      "XFG deposits are retired; CDs are HEAT-funded (heatDepositV10)");
   }
 
   // Split a HEAT amount into standard bill denominations so every output

@@ -343,11 +343,11 @@ namespace CryptoNote
       uint64_t mixIn)
   {
 
-    // Skip term range validation for special terms (FOREVER burns)
-    bool isSpecialTerm = (term == CryptoNote::parameters::HEAT_TERM);
-    if (!isSpecialTerm) {
-      throwIf(term < m_currency.depositMinTerm(), error::DEPOSIT_TERM_TOO_SMALL);
-      throwIf(term > m_currency.depositMaxTerm(), error::DEPOSIT_TERM_TOO_BIG);
+    // Only FOREVER burns (HEAT_TERM) remain on this path. XFG-funded CDs are
+    // retired: they earn nothing, and CDs are HEAT-funded (heat_deposit).
+    if (term != CryptoNote::parameters::HEAT_TERM) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+        "XFG deposits are retired; CDs are HEAT-funded (heat_deposit)");
     }
     throwIf(amount != CryptoNote::parameters::TEST_AMOUNT_TIER_0 && amount < m_currency.depositMinAmount(), error::DEPOSIT_AMOUNT_TOO_SMALL);
 
@@ -1266,14 +1266,13 @@ namespace CryptoNote
           perDepositBonus.push_back(0);
           continue;
         }
-        // Finite-term HEAT CDs claim accrued fee-pool interest — but only
-        // deposits created at/after v11: pre-v11 deposits are withdraw-only
-        // (consensus rejects claimedInterest > 0 on them).
+        // Only HEAT CDs (created at or above the HEAT-CD height) claim
+        // interest; XFG CDs are principal-only (consensus rejects
+        // claimedInterest > 0 on any ring holding one).
         uint64_t interest = 0;
         uint64_t base = 0;
         uint64_t bonus = 0;
-        uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
-        if (static_cast<uint32_t>(dep.height) >= v11Height) {
+        if (m_currency.isHeatCdHeight(static_cast<uint32_t>(dep.height))) {
           INode::CdClaimInfo claimInfo;
           std::error_code ec = m_node.getCdClaimInfo(dep.amount,
               static_cast<uint32_t>(dep.height), currentHeight, claimInfo, dep.term);

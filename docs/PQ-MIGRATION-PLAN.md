@@ -58,7 +58,7 @@ What we can protect now without consensus changes: everything off-chain.
 - Backend spike: evaluate Rust backends (Winterfell / Circle STARKs, Stwo) vs C++ integration cost; pick one. Circuit-friendly hash: Poseidon2 or Rescue (tree + circuit), BLAKE3 acceptable for outer hashing.
 - Note model: note = (asset, amount, diversifier, note_nonce, enc data); commitments in a 4-ary Merkle tree; nullifier = H(spend_auth_secret || note_nonce), uniqueness enforced by the pool's nullifier set.
 - Circuits v1: spend circuit (Merkle membership + nullifier uniqueness + value conservation), receive/decrypt not in circuit (done client-side via KEM keys).
-- Proof sizing: batch verification and recursion/aggregation so per-tx overhead is bounded; verify-time budget per block agreed up front (target: <10ms per tx on commodity hardware, revisit with data).
+- Proof model for Phase 2: per-transaction proofs, verified individually by nodes. Keep the verify-time budget per block agreed up front (target: <10ms per tx on commodity hardware, revisit with data). Aggregation is deliberately deferred to Phase 4 so the base path is stable before recursion is added.
 - Deliverable: offline testnet chain accepting pool transactions with a dummy wallet.
 
 ### Phase 3 — PQ addressing and wallet (months 2-4, overlaps Phase 2)
@@ -71,6 +71,7 @@ What we can protect now without consensus changes: everything off-chain.
 ### Phase 4 — Protocol integration and activation (months 4-6)
 - New transaction types in `src/CryptoNoteCore/`: pool transfer (shield), pool spend (unshield), pool-to-pool. Consensus rules for nullifier set, tree state, and STARK verification in the block validation path.
 - Fee/size accounting: STARK proof size and verify cost priced into fees; batching across the block.
+- Aggregation layer (agreed Oct 1): permissionless per-block recursive folding, added in Phase 4 only. Individual wallets keep generating their own spend proofs (witness never leaves the sender's device; miners/aggregators never see secrets). Anyone (miner, pool, node operator, third-party service) may fold the proofs of the txs they include into one recursive STARK at block-build time; full nodes verify the single aggregate at block validation. Do NOT fold in the mempool (tx churn makes pre-folded bundles stale). Keep the individual proofs in the block alongside the aggregate until the aggregation layer has soaked (fallback verification, debugging, DoS-resistance); drop them in a later upgrade.
 - Checkpoints/treasury: ML-DSA (or threshold ML-DSA) for checkpoint and vault keys; re-derive VaultKeys with PQ scheme.
 - Swaps: HTLC (hash-based, PQ-safe) promoted to primary for cross-chain during transition; PTLC/adaptor privacy deferred pending lattice adaptor signatures or STARK-based swap proofs. Keep `kCrossCurveDleqAvailable = false`.
 - Activation: feature-flag on testnet, soak period (target: 3+ months), then mainnet via network-upgrade height. Migration window with a legacy-pool freeze/sunset height parameterized but not scheduled until CRQC forecasts firm up.

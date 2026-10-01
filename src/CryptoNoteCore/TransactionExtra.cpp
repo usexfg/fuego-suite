@@ -1768,6 +1768,140 @@ namespace CryptoNote
     return keys;
   }
 
+  std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex) {
+    uint8_t preimage[36];
+    memcpy(preimage, &derivation, 32);
+    uint32_t outIdx = static_cast<uint32_t>(outputIndex);
+    preimage[32] = outIdx & 0xFF;
+    preimage[33] = (outIdx >> 8) & 0xFF;
+    preimage[34] = (outIdx >> 16) & 0xFF;
+    preimage[35] = (outIdx >> 24) & 0xFF;
+    Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> depositSecret;
+    memcpy(depositSecret.data(), secHash.data, 32);
+    return depositSecret;
+  }
+
+  DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
+    return deriveCommitmentKeys(depositSecret);
+  }
+
+  bool deriveCommitmentOutputKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    if (recipientSpendPublicKey == Crypto::PublicKey{}) {
+      // Protocol-owned output. These are excluded from commitment-spend rings
+      // by their term (see Blockchain.cpp's pool-term unspendability guard),
+      // so there is no recipient spend authority to bind to.
+      const std::array<uint8_t, 32> depositSecret = deriveDepositSecret(derivation, outputIndex);
+      const DepositCommitmentKeys legacy = deriveLegacyCommitmentKeys(depositSecret);
+      if (!Crypto::check_key(legacy.commitKey)) return false;
+      commitKey = legacy.commitKey;
+      return true;
+    }
+
+    return deriveOwnerBoundCommitKey(derivation, outputIndex, recipientSpendPublicKey, commitKey);
+  }
+
+  bool deriveOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    if (!Crypto::check_key(recipientSpendPublicKey)) {
+      return false;
+    }
+    if (!Crypto::derive_public_key(derivation, outputIndex, recipientSpendPublicKey, commitKey)) {
+      return false;
+    }
+    return Crypto::check_key(commitKey);
+  }
+
+  bool matchOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+    Crypto::PublicKey& outMatchedSpendKey,
+    bool& outAmbiguous) {
+
+    outAmbiguous = false;
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // underive_public_key solves P - tG = B for the single B that produced this
+    // output, so it is evaluated once. Iterating it per candidate key would
+    // return the same B each time and report a false ambiguity.
+    Crypto::PublicKey candidate;
+    if (!Crypto::underive_public_key(derivation, outputIndex, commitKey, candidate)) {
+      return false;
+    }
+    if (!Crypto::check_key(candidate)) {
+      return false;
+    }
+    if (spendPublicKeys.find(candidate) == spendPublicKeys.end()) {
+      return false;
+    }
+
+    // A genuine second match would require a different spend public key to
+    // produce the identical output key at the same index, which cannot happen
+    // for distinct keys. Confirm the recovered key really does re-derive the
+    // output rather than trusting the subtraction alone.
+    Crypto::PublicKey verify;
+    if (!Crypto::derive_public_key(derivation, outputIndex, candidate, verify)) {
+      return false;
+    }
+    if (verify != commitKey) {
+      outAmbiguous = true;
+      return false;
+    }
+
+    outMatchedSpendKey = candidate;
+    return true;
+  }
+
+  bool deriveOwnerBoundKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    Crypto::SecretKey& outSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // derive_secret_key throws on a non-canonical scalar. Validate first so a
+    // bad secret is reported as a rejection rather than an exception.
+    Crypto::PublicKey spendPublic;
+    if (!Crypto::secret_key_to_public_key(recipientSpendSecret, spendPublic)) {
+      return false;
+    }
+
+    Crypto::SecretKey spendSecret;
+    Crypto::derive_secret_key(derivation, outputIndex, recipientSpendSecret, spendSecret);
+
+    // The derived scalar must reproduce the published output key. A mismatch means
+    // the wrong spend secret, so no key image may be produced for it.
+    Crypto::PublicKey check;
+    if (!Crypto::secret_key_to_public_key(spendSecret, check)) {
+      return false;
+    }
+    if (check != commitKey) {
+      return false;
+    }
+
+    Crypto::generate_key_image(commitKey, spendSecret, outKeyImage);
+    outSpendSecret = spendSecret;
+    return true;
+  }
+
   namespace {
   struct DepositKeyData {
     Crypto::KeyDerivation derivation;

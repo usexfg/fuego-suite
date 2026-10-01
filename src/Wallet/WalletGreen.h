@@ -221,6 +221,29 @@ protected:
   void throwIfNotInitialized() const;
   void throwIfStopped() const;
   void throwIfTrackingMode() const;
+  // Derives a user-owned commitment output key at `outputIndex` of `transaction`,
+  // bound to the primary address's spend public key. Every self-owned commitment
+  // output in this wallet routes through here so none can silently fall back to
+  // the sender/view-key-spendable legacy derivation.
+  Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& transaction, size_t outputIndex);
+  // Same, but for an output owned by a third party. `recipientViewPublicKey`
+  // drives the ECDH (delivery) and `recipientSpendPublicKey` binds ownership,
+  // so the recipient can spend the output but the sender cannot.
+  Crypto::PublicKey deriveRecipientCommitmentKey(
+    const ITransaction& transaction,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientViewPublicKey,
+    const Crypto::PublicKey& recipientSpendPublicKey);
+  // Recovers the scalar and key image needed to sign a CommitmentSpend for an
+  // existing deposit. Owner-bound outputs require the recipient spend secret;
+  // legacy outputs fall back to the original ECDH-derived scalar so pre-v11
+  // deposits stay spendable. `recipientSpendSecret` is the primary address's
+  // spend secret.
+  void resolveCommitmentSpendKey(
+    const TransactionOutputInformation& transfer,
+    const Crypto::SecretKey& recipientSpendSecret,
+    KeyPair& outKeyPair,
+    Crypto::KeyImage& outKeyImage) const;
   void doShutdown();
   void clearCaches(bool clearTransactions, bool clearCachedData);
   void clearCacheAndShutdown();

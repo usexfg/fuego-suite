@@ -1527,3 +1527,431 @@ Also unresolved, carried forward: the request to set maison's text size to
 match `reserve` was never actioned, because `reserve` had already been
 retired by the register work above. It needs restating against a live
 reference.
+
+---
+
+## v11 P0 Part 1 — owner-bound commitment derivation
+
+**Started**: 2026-09-29
+**Agent**: opencode (Space Bunny, via okoc)
+**Status**: DONE (Part 1 only; Part 2 asset accounting NOT started)
+**Guide**: `docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md`
+
+### Scope
+
+Part 1 only. The crypto primitives, the owner-bound derivation, the scanner
+rewrite and unit tests. Node/wallet creation-path migration (32 remaining
+`deriveCommitmentKeys` call sites in `WalletGreen.cpp` and
+`WalletTransactionSender.cpp`) and all of Section B are deliberately NOT done —
+creating owner-bound outputs is gated at v11 rollout, and Section B requires the
+v11/v12 activation matrix to be frozen first.
+
+### Changes
+
+- `TransactionExtra.h` / `TransactionExtra.cpp`: Added `deriveOwnerBoundCommitKey`
+  (P = B + tG via the existing `derive_public_key`), `matchOwnerBoundCommitKey`
+  (view-only recognition via `underive_public_key`), and
+  `deriveOwnerBoundKeyImage` (x = b + t, verified xG == P, then key image).
+  Added `deriveDepositSecret` for the unchanged `cn_fast_hash(D || i_LE32)`
+  amount-mask input, and `deriveLegacyCommitmentKeys` as the explicit name for
+  the pre-v11 derivation. `deriveCommitmentKeys` itself is untouched.
+- `TransfersConsumer.cpp`: `findMyOutputs` now tries the owner-bound form first
+  and attributes the output to the **matching** spend key via `underive_public_key`
+  instead of the first element of `spendKeys`, then falls back to the legacy form
+  for old funds. `createTransfers` derives the key image only when the account
+  has a spend secret; a view-only wallet no longer receives a key image it cannot
+  legitimately produce.
+- `MinerConfig.cpp`: removed an unreachable `return false;` and the extra closing
+  brace that prematurely closed `namespace CryptoNote`. This was **pre-existing**
+  breakage (file was byte-identical to HEAD) that made the whole `CryptoNoteCore`
+  target, and therefore every test target, fail to compile.
+- `tests/UnitTests/CommitmentOwnerBoundTest.cpp`: 13 cases covering output
+  indices 0, 1, 127, 128 and 1000000; wrong view key; wrong spend key; sender
+  forgery attempt; invalid public key; two recipients in one transaction;
+  legacy/owner-bound distinguishability; depositSecret byte layout; and legacy
+  recognition of old outputs.
+- `tests/CMakeLists.txt`: registered `commitment_owner_bound_tests`.
+
+### Defects found and fixed during verification
+
+1. `matchOwnerBoundCommitKey` looped `underive_public_key` per registered key.
+   That function solves `P - tG = B` for a single B and returns the same value
+   on every iteration, so the loop reported false ambiguity and rejected every
+   real match. Fixed to derive the candidate once and verify by re-deriving.
+2. `derive_secret_key` throws `std::runtime_error` on a non-canonical scalar.
+   `deriveOwnerBoundKeyImage` now validates with `secret_key_to_public_key`
+   first, so untrusted input is a rejection rather than an exception.
+
+### Verification
+
+| Gate | Result |
+|------|--------|
+| `commitment_owner_bound_tests` (13 cases) | PASS |
+| `alias_index_tests` (9 cases, pre-existing) | PASS |
+| `fuegod` daemon links and runs | PASS |
+| Adversarial: attacker holds r, a, and public data, tries to sign | REJECTED for r, a and zero scalar; only b signs |
+| Adversarial: attacker derives D from r,A | SUCCEEDS, as expected — this is the flaw being fixed for new outputs |
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Owner-bound derivation primitives | opencode | 2026-09-29 | DONE |
+| Scanner attribution fix | opencode | 2026-09-29 | DONE |
+| View-only key-image restriction | opencode | 2026-09-29 | DONE |
+| Unit tests + build | opencode | 2026-09-29 | DONE |
+| fuego-guardian verification (crypto, consensus, wallet, security, quality) | opencode | 2026-09-29 | PASS with reservations |
+| Node/wallet creation-path migration (32 call sites) | — | — | **NOT STARTED** |
+| Valise Rust SDK / walletd / Flutter parity | — | — | **NOT STARTED** |
+| Section B asset accounting | — | — | **NOT STARTED** |
+
+### Not verified / open
+
+- No send → scan → sign → node-verify end-to-end run, and no rescan-after-restart
+  test. Creation paths still emit legacy outputs, so an owner-bound output cannot
+  yet be produced on-chain to exercise that path.
+- Subaddress vectors (`B_sub = B + mG`) are not covered; no test uses a subaddress.
+- No C++/Rust byte-for-byte vectors. The Valise SDK still reproduces the legacy
+  derivation, so cross-implementation agreement does not yet exist.
+- Legacy outputs remain sender- and view-key-spendable. Nothing in this change
+  revokes that; old funds need a sweep, and a sweep can be raced.
+- `MinerConfig.cpp` was fixed only because it blocked the build. That file was
+  already broken at HEAD, which means master does not currently compile. The
+  FCI oracle work it belongs to is unreviewed by this task.
+
+---
+
+## v11 P0 Part 2 — first live creation path migrated (heatDepositV10)
+
+**Started**: 2026-10-01
+**Status**: IN PROGRESS — 1 of 14 live creation paths migrated
+**Guide**: `docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md`
+
+### Build prerequisites (pre-existing, unrelated to this change)
+
+- `BUILD_TESTS` defaults OFF (`CMakeLists.txt:456`), so `tests/` is skipped by a
+  default configure.
+- gtest is gated on a *different* flag, `DO_TESTS` (`external/CMakeLists.txt:7`).
+  `BUILD_TESTS=ON` alone configures the test targets but fails to link.
+- Bundled gtest declares `cmake_minimum_required` < 3.5, which current CMake
+  rejects. Configure needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`.
+
+Full configure line that works:
+`cmake -DBUILD_TESTS=ON -DDO_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../..`
+
+### Changes
+
+- `TransactionExtra.{h,cpp}`: added `deriveCommitmentOutputKey` — the single
+  entry point for CREATING a commitment output. Given a recipient spend public
+  key it returns the owner-bound form; a null key is the explicit protocol-owned
+  escape hatch (pool escrow markers, excluded from rings by term) and returns
+  the legacy key. An invalid key is a rejection, never a silent fallback.
+- `WalletGreen.{h,cpp}`: added `deriveSelfCommitmentKey(transaction, outputIndex)`,
+  which resolves the primary address's `B` and derives through the new helper.
+  Every self-owned commitment output should route through it.
+- `WalletGreen::heatDepositV10`: the CD output and the HEAT change output now use
+  the owner-bound form. The CommitmentSpend signing path derives the spend secret
+  and key image via `deriveOwnerBoundKeyImage` and falls back to the legacy
+  scalar only when the published key is not reproducible from the spend secret —
+  so legacy deposits stay spendable.
+- `include/ITransfersContainer.h`: `TransactionOutputInformation` gained
+  `commitmentKey`. The signer needs the published `P` to choose between the two
+  derivations; it was not previously available off the transfer record.
+
+### Verification
+
+| Gate | Result |
+|------|--------|
+| `commitment_owner_bound_tests` | PASS — 16 cases (13 prior + 3 new) |
+| `alias_index_tests` | PASS — 9 cases |
+| Full `make` incl. `fuegod` | PASS |
+| `fuegod` runs | not verified this session |
+
+The three new cases cover: the helper produces exactly the owner-bound key at
+every guide index (0, 1, 127, 128, 1000000) and the sender cannot sign it; a
+null recipient key reproduces the legacy key exactly; an invalid recipient key
+is rejected.
+
+Note on the invalid-key case: `data[0] = 0xFF` is a *valid* Ed25519 encoding
+(`check_key` returns 1). The test uses an all-`0xFF` key, which does fail.
+
+### Not done / open
+
+- **13 of 14 live creation paths still emit legacy-derived outputs**:
+  `withdrawDeposit`, `rolloverDeposit` (x2), `mintHeatV10`, `cancelLimitOrderV13`,
+  `ammSwapV10`, `sendHeatV10`, and their change/receive legs.
+- `createDeposit` (line ~1232) is **dead code** — it throws unconditionally at
+  the top with "XFG-funded CDs are no longer valid". Its derivation is
+  unreachable. Left untouched deliberately; removing it is a separate change.
+- `WalletTransactionSender.cpp` (17 sites) is untouched.
+- No end-to-end send -> scan -> sign -> node-verify run, and no rescan-after-
+  restart test. No owner-bound output has been produced on a live testnet yet.
+- Valise Rust SDK still reproduces only the legacy derivation. Cross-implementation
+  byte-for-byte vectors do not exist, so neither wallet should ship this yet:
+  a new sender paying an old recipient produces an output the old wallet cannot
+  find.
+
+---
+
+## Defect found during P0 Part 2: rollover CD secrets are never stored
+
+**Found**: 2026-10-01, while migrating `WalletGreen` creation paths
+**Status**: OPEN — blocks migrating `rolloverDeposit`
+**Severity**: pre-existing, unrelated to the owner-bound work
+
+### What happens
+
+`rolloverDeposit` (both overloads, `WalletGreen.cpp` ~792 and ~1011) creates the
+reinvested CD with a **random** 32-byte secret:
+
+    std::array<uint8_t, 32> newDepositSecret;
+    generate_random_bytes(sizeof(newDepositSecret), newDepositSecret.data());
+    CryptoNote::DepositCommitmentKeys newCommitKeys =
+      CryptoNote::deriveCommitmentKeys(newDepositSecret);
+
+That secret is never persisted. The setter `addBurnDepositSecret`
+(`WalletGreen.cpp:6735`) has exactly **one** caller in the whole tree:
+
+    WalletGreen.cpp:1341  — inside createDeposit
+
+and `createDeposit` throws unconditionally at its top ("XFG-funded CDs are no
+longer valid"), so it is dead code. Nothing else in the tree writes
+`m_burnDepositSecrets`.
+
+Every later spend of a rolled-over CD goes through `getBurnDepositSecret`,
+which fails:
+
+    m_logger(ERROR) << "Rollover failed: commitment secret not found";
+    return false;
+
+**Consequence**: a CD produced by `rolloverDeposit` cannot subsequently be
+withdrawn, rolled again, or spent through `withdrawDeposit` / `rolloverDeposit`
+/ `heatDepositV10`. `withdrawDeposit` throws `DEPOSIT_LOCKED` for the same reason.
+The random secret exists nowhere after the process exits, so this is not
+recoverable by a rescan — it is unrecoverable, full stop.
+
+### Why it blocks the owner-bound migration
+
+The random-secret design and the owner-bound design are incompatible:
+
+- random secret -> `commitKey = Hs("fuego_commit_key" || secret)`, recoverable only
+  from the stored secret
+- owner-bound   -> `commitKey = B + tG`, recoverable from ECDH + the recipient's
+  spend key
+
+A random secret is not derived from the transaction at all, so it cannot be
+migrated mechanically the way the ECDH sites were. It has to be redesigned.
+
+### Options (owner decision required)
+
+1. **Store the secret on rollover.** Smallest diff, preserves current behaviour,
+   but keeps a second recovery model alongside ECDH and the "TODO: Persist to
+   wallet file" note at `WalletGreen.cpp:6742` becomes a second way to lose funds.
+2. **Convert rollover to the ECDH self-owned form.** Matches every other creation
+   path, no secret to store or lose, and is what the owner-bound migration wants
+   anyway. Changes rollover's recovery model.
+
+Recommendation: option 2, but this is a design change to a function that is
+currently broken, so it is not being done unilaterally.
+
+### Related: `withdrawDeposit` still uses the stored-secret path
+
+`withdrawDeposit` (~:512) and both `rolloverDeposit` overloads still sign their
+CommitmentSpend from `getBurnDepositSecret` rather than the ECDH path used by
+`ammSwapV10` / `sendHeatV10`. Those three remain unmigrated pending this decision.
+
+### Flagged for the user — `sendHeatV10` recipient-output behaviour change
+
+`sendHeatV10` now binds the recipient HEAT output to the **recipient's** spend
+public key via the new `deriveRecipientCommitmentKey`. Before this change the
+sender, and any holder of the recipient's view key, could derive the spend scalar
+for that output; now only the recipient can. This is the intended fix, but it is
+a live behaviour change on a transfer path, and any tooling that assumed the
+legacy form will break. Not yet covered by an end-to-end test.
+
+---
+
+## v11 P0 Part 2 (cont.) — WalletGreen creation paths migrated
+
+**Date**: 2026-10-01
+**Status**: 10 of 13 live `WalletGreen` paths migrated; 3 blocked (see rollover defect above)
+
+### Changes
+
+New helpers, all routing through the single `deriveCommitmentOutputKey` entry
+point from Part 2 so no site can reach the legacy derivation by omission:
+
+- `deriveSelfCommitmentKey(transaction, outputIndex)` — self-owned output,
+  resolves the primary address's `B`.
+- `deriveRecipientCommitmentKey(transaction, outputIndex, recipientView, recipientSpend)`
+  — third-party output. ECDH still uses the recipient's *view* key for delivery;
+  ownership binds to the recipient's *spend* key.
+- `resolveCommitmentSpendKey(transfer, recipientSpendSecret, outKeyPair, outKeyImage)`
+  — one signing path shared by all CommitmentSpend sites. Tries owner-bound,
+  falls back to the legacy scalar only when the published key is not reproducible
+  from the spend secret. Rejects (does not guess) if neither matches.
+
+Migrated:
+
+| Path | Outputs | Sign |
+|---|---|---|
+| `withdrawDeposit` | payout | (unchanged: reads stored secret) |
+| `mintHeatV10` | HEAT bills | — |
+| `cancelLimitOrderV13` | HEAT refund/proceeds | — |
+| `heatDepositV10` | CD, change | ECDH spend path |
+| `ammSwapV10` | user receive, change | ECDH spend path |
+| `sendHeatV10` | recipient, change | ECDH spend path |
+
+`sendHeatV10`'s recipient output is now bound to the *recipient's* spend key.
+This is a live behaviour change on a transfer path — see the flagged section in
+the defect entry above.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+No new test cases were added for this batch. The helpers added here
+(`deriveSelfCommitmentKey`, `deriveRecipientCommitmentKey`,
+`resolveCommitmentSpendKey`) are wallet-layer and not exercised by the existing
+suite — that gap is called out below rather than papered over.
+
+### Not done / open
+
+- **`rolloverDeposit` (x2) and `withdrawDeposit`'s signing** still use the
+  stored-random-secret path. Blocked on the rollover design decision.
+- `createDeposit` remains dead code (throws unconditionally).
+- **`WalletTransactionSender.cpp` — 17 sites — untouched.** These are the
+  WalletLegacy paths, a separate wallet implementation.
+- **No end-to-end test.** No owner-bound output has been produced, scanned,
+  signed and node-verified. The signing helper's legacy-vs-owner-bound branch is
+  covered only indirectly.
+- **Valise Rust SDK still implements only the legacy derivation.** Ship blocker.
+- `fuegod` was rebuilt but not run this session.
+
+---
+
+## v11 P0 Part 2 (cont.) — WalletLegacy (WalletTransactionSender) migrated
+
+**Date**: 2026-10-01
+**Status**: ALL 17 `WalletTransactionSender.cpp` sites migrated
+
+### Recommendation on the rollover design question (asked earlier)
+
+**Convert to ECDH, do not store the secret.** Reasons:
+
+1. The stored secret is never persisted — `m_burnDepositSecrets` has no
+   serialization anywhere in either wallet. A stored secret is lost on restart,
+   which is the same unrecoverable outcome the rollover bug already produces,
+   only deferred to the next restart instead of the next spend.
+2. Owner-bound output keys have no scalar to store. `P = B + tG` is recovered
+   from ECDH plus the recipient's spend key. Storing a secret would mean keeping
+   two incompatible recovery models for the same output type.
+3. Every migrated path now re-derives from the transaction. That is the property
+   that makes rescan-after-restart work, and it is what the owner-bound form
+   exists to provide.
+
+Not actioned here — rollover is blocked on the user's decision.
+
+### Changes
+
+Added `deriveSelfCommitmentKey`, `deriveRecipientCommitmentKey`,
+`deriveCommitmentOutputKeyFor` and `resolveCommitmentSpendKey` to
+`WalletTransactionSender`, mirroring the WalletGreen helpers. All route through
+the single `deriveCommitmentOutputKey` entry point.
+
+Migrated all 17 sites across 10 functions:
+`doSendMultisigTransaction`, `doSendCommitmentWithdrawTransaction`,
+`doSendHeatMintV10Transaction`, `doSendAmmSwapV10Transaction`,
+`doSendAmmSwapV10CommitmentTransaction`, `doSendLpAddV10Transaction`,
+`doSendLpRemoveV10Transaction`, `doSendHeatDepositV10Transaction`,
+`doSendHeatTransferV10Transaction`, `doSendCancelOrderV13Transaction`.
+
+### Removed: dead burn-deposit-secret event
+
+`doSendMultisigTransaction` pushed `WalletBurnDepositSecretCreatedEvent` carrying
+`commitKeys.keyScalar`. Its only consumer is `WalletLegacy::storeBurnDepositSecret`
+(`WalletLegacy.cpp:1987`), which writes `m_burnDepositSecrets` — and
+`getBurnDepositSecret` has **no callers** in `WalletLegacy`. The map is never
+serialized. So the event stored a spend scalar that nothing could ever read.
+
+Removed the push rather than inventing a key image to give it. This is the
+WalletLegacy instance of the same defect recorded above for WalletGreen.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+`WalletLegacy::storeBurnDepositSecret` / `getBurnDepositSecret` /
+`WalletBurnDepositSecretCreatedEvent` are now unreferenced from the sender path
+but still declared. Removing them is a separate cleanup, not done here.
+
+### Not done / open
+
+- **No new tests for the WalletLegacy helpers.** Same gap as the WalletGreen
+  batch: the helpers are wallet-layer and the existing suite does not reach them.
+- **No end-to-end run.** Nothing has been produced, scanned, signed and
+  node-verified end to end.
+- **Valise Rust SDK still implements only the legacy derivation. Ship blocker.**
+- `rolloverDeposit` (x2) and dead `createDeposit` remain in WalletGreen.
+
+---
+
+## v11 P0 Part 2 (cont.) — rollover converted to ECDH, stored-secret paths removed
+
+**Date**: 2026-10-01
+**Status**: DONE. No wallet path derives a commitment key via the
+sender/view-key-spendable legacy form any more.
+
+### Changes
+
+`rolloverDeposit` (both overloads) and `withdrawDeposit` no longer read
+`getBurnDepositSecret`. All three now re-derive the spend scalar from the
+transaction via `resolveCommitmentSpendKey`, which takes the owner-bound path when
+the published key reproduces from the recipient spend secret and falls back to the
+legacy scalar otherwise. The unrecoverable-secret defect is therefore closed:
+there is no secret left to store, lose, or fail to persist.
+
+`rolloverDeposit` no longer generates a random secret for the reinvested CD. The
+new CD is self-owned and derived like every other output.
+
+`getBurnDepositSecret` / `addBurnDepositSecret` / `m_burnDepositSecrets` in
+WalletGreen and `storeBurnDepositSecret` / `getBurnDepositSecret` /
+`m_burnDepositSecrets` / `WalletBurnDepositSecretCreatedEvent` in WalletLegacy now
+have **no callers**. Left declared rather than deleted — removing them touches
+public method surfaces and the observer callback, which is a separate reviewed
+change.
+
+### Consequence worth stating
+
+Previously any CD created by `rolloverDeposit` was unspendable afterwards
+(`getBurnDepositSecret` always failed). Withdraw and re-roll of such a CD were
+impossible. Both now work for owner-bound CDs, and continue to work for any
+pre-v11 CD through the legacy fallback.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+### Remaining legacy derivation call site
+
+One, in `WalletGreen::createDeposit` — dead code that throws unconditionally
+("XFG-funded CDs are no longer valid"). Its derivation is unreachable. Left as-is
+so that removing dead code stays a separate change.
+
+### Still open
+
+- **Valise Rust SDK implements only the legacy derivation. Ship blocker.**
+- No end-to-end produce -> scan -> sign -> node-verify run.
+- The wallet helpers (`deriveSelfCommitmentKey`, `resolveCommitmentSpendKey`, and
+  the WalletLegacy equivalents) are still not exercised by the test suite.
+- No C++/Rust byte-for-byte vectors exist.

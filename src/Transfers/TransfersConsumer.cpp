@@ -100,33 +100,36 @@ void findMyOutputs(
      }
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // Re-derive commitKey via ECDH and compare (works for COLD, HEAT).
-      // depositSecret = cn_fast_hash(derivation || outputIndex_LE32)
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // All commitment types (COLD, HEAT/FOREVER) use deterministic ECDH:
-      // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
-      // so all are recoverable on rescan. No term filter needed.
-      {
-        uint8_t preimage[36];
-        memcpy(preimage, &derivation, 32);
-        uint32_t outIdx = static_cast<uint32_t>(idx);
-        preimage[32] = outIdx & 0xFF;
-        preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF;
-        preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), secHash.data, 32);
+      // Two derivations may produce this output key. Try the owner-bound form
+      // first: it uses underive_public_key to find WHICH spend key matched,
+      // rather than attributing the output to the first element of spendKeys.
+      Crypto::PublicKey matchedSpendKey;
+      bool ambiguous = false;
+      if (CryptoNote::matchOwnerBoundCommitKey(
+            derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous)) {
+        if (ambiguous) {
+          // Two registered spend keys derive the same output key. Refuse to guess.
+          continue;
+        }
+        outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
+        continue;
+      }
 
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        if (ck.commitKey == out.commitKey) {
-          for (const auto& spendKey : spendKeys) {
-            outputs[spendKey].push_back(static_cast<uint32_t>(idx));
-            break;
-          }
+      // No owner-bound match. Fall back to the pre-v11 form, which the sender
+      // and any view-key holder can also derive. These outputs are exposed and
+      // must be surfaced as such rather than presented as securely received.
+      const std::array<uint8_t, 32> depositSecret =
+        CryptoNote::deriveDepositSecret(derivation, idx);
+      const CryptoNote::DepositCommitmentKeys legacy =
+        CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
+      if (legacy.commitKey == out.commitKey) {
+        for (const auto& spendKey : spendKeys) {
+          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
+          break;
         }
       }
     }
@@ -510,30 +513,40 @@ std::error_code createTransfers(
       info.term = out.term;
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // COLD commitment deposit output.
-      // Re-derive depositSecret to get keyImage for SpentOutputDescriptor tracking.
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // Re-derive commitment keys (same ECDH formula used at creation)
+      // keyImage is required for SpentOutputDescriptor tracking. An owner-bound
+      // key image needs the recipient's spend secret, which a view-only wallet
+      // does not have. Leave it unset in that case rather than falling back to
+      // the legacy derivation, which would not correspond to the actual spend
+      // scalar for an owner-bound output.
       KeyDerivation derivation;
       if (generate_key_derivation(txPubKey, account.viewSecretKey, derivation)) {
-        uint8_t preimage[36];
-        memcpy(preimage, &derivation, 32);
-        uint32_t outIdx = static_cast<uint32_t>(idx);
-        preimage[32] = outIdx & 0xFF;
-        preimage[33] = (outIdx >> 8) & 0xFF;
-        preimage[34] = (outIdx >> 16) & 0xFF;
-        preimage[35] = (outIdx >> 24) & 0xFF;
-        Crypto::Hash secHash = cn_fast_hash(preimage, sizeof(preimage));
-        std::array<uint8_t, 32> depositSecret;
-        memcpy(depositSecret.data(), secHash.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        info.keyImage = ck.keyImage;
+        if (account.spendSecretKey != NULL_SECRET_KEY) {
+          Crypto::SecretKey spendSecret;
+          Crypto::KeyImage keyImage;
+          if (CryptoNote::deriveOwnerBoundKeyImage(
+                derivation, idx, out.commitKey, account.spendSecretKey, spendSecret, keyImage)) {
+            info.keyImage = keyImage;
+          } else {
+            // Not owner-bound under this spend key, so it is a legacy output.
+            // Legacy key images remain derivable from the view secret alone;
+            // that is precisely the exposure the owner-bound form removes.
+            const std::array<uint8_t, 32> depositSecret =
+              CryptoNote::deriveDepositSecret(derivation, idx);
+            const CryptoNote::DepositCommitmentKeys legacy =
+              CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
+            if (legacy.commitKey == out.commitKey) {
+              info.keyImage = legacy.keyImage;
+            }
+          }
+        }
       }
       info.amount = amount;
       info.term = out.term;
+      info.commitmentKey = out.commitKey;
     }
 
    transfers.push_back(info);

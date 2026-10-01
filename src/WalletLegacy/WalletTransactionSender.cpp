@@ -858,6 +858,10 @@ namespace CryptoNote
   // Derive deterministic deposit secret via ECDH for commitment output.
   // depositSecret = H(ECDH(txSecretKey, viewPubKey) || outputIndex_LE32)
   // Returns a 32-byte secret re-derivable from seed using the view key.
+  //
+  // Retained for the amount mask and for spending pre-v11 outputs. New outputs
+  // must go through deriveSelfCommitmentKey / deriveRecipientCommitmentKey so
+  // the sender and any view-key holder cannot derive the spend scalar.
   static std::array<uint8_t, 32> deriveCommitmentSecret(
       const ITransaction& tx,
       const Crypto::PublicKey& viewPublicKey) {
@@ -880,6 +884,73 @@ namespace CryptoNote
     std::array<uint8_t, 32> secret;
     memcpy(secret.data(), h.data, 32);
     return secret;
+  }
+
+  Crypto::PublicKey WalletTransactionSender::deriveSelfCommitmentKey(
+      const ITransaction& tx,
+      size_t outputIndex) {
+    return deriveCommitmentOutputKeyFor(tx, outputIndex, m_keys.address.viewPublicKey,
+                                        m_keys.address.spendPublicKey);
+  }
+
+  Crypto::PublicKey WalletTransactionSender::deriveRecipientCommitmentKey(
+      const ITransaction& tx,
+      size_t outputIndex,
+      const AccountPublicAddress& recipient) {
+    return deriveCommitmentOutputKeyFor(tx, outputIndex, recipient.viewPublicKey,
+                                        recipient.spendPublicKey);
+  }
+
+  Crypto::PublicKey WalletTransactionSender::deriveCommitmentOutputKeyFor(
+      const ITransaction& tx,
+      size_t outputIndex,
+      const Crypto::PublicKey& recipientViewPublicKey,
+      const Crypto::PublicKey& recipientSpendPublicKey) {
+    const uint32_t commitOutputIndex = static_cast<uint32_t>(outputIndex);
+    Crypto::SecretKey txSecretKey;
+    if (!tx.getTransactionSecretKey(txSecretKey)) {
+      throw std::runtime_error("commitment output: could not retrieve tx secret key");
+    }
+    Crypto::KeyDerivation ecdh;
+    if (!Crypto::generate_key_derivation(recipientViewPublicKey, txSecretKey, ecdh)) {
+      throw std::runtime_error("commitment output: ECDH key derivation failed");
+    }
+    Crypto::PublicKey commitKey;
+    if (!CryptoNote::deriveCommitmentOutputKey(ecdh, commitOutputIndex,
+                                              recipientSpendPublicKey, commitKey)) {
+      throw std::runtime_error("commitment output: owner-bound key derivation failed");
+    }
+    return commitKey;
+  }
+
+  // Signing side. Owner-bound outputs require the recipient spend secret;
+  // pre-v11 outputs fall back to the original ECDH-derived scalar so old funds
+  // stay spendable. Rejects rather than guesses if neither reproduces the
+  // published key.
+  void WalletTransactionSender::resolveCommitmentSpendKey(
+      const Crypto::KeyDerivation& ecdh,
+      size_t outputIndex,
+      const Crypto::PublicKey& commitKey,
+      const Crypto::SecretKey& recipientSpendSecret,
+      KeyPair& outKeyPair,
+      Crypto::KeyImage& outKeyImage) {
+    const uint32_t commitOutputIndex = static_cast<uint32_t>(outputIndex);
+    Crypto::SecretKey spendSecret;
+    if (CryptoNote::deriveOwnerBoundKeyImage(ecdh, commitOutputIndex, commitKey,
+                                            recipientSpendSecret, spendSecret, outKeyImage)) {
+      outKeyPair = {commitKey, spendSecret};
+      return;
+    }
+
+    const std::array<uint8_t, 32> depositSecret =
+      CryptoNote::deriveDepositSecret(ecdh, commitOutputIndex);
+    const CryptoNote::DepositCommitmentKeys legacy =
+      CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
+    if (legacy.commitKey != commitKey) {
+      throw std::runtime_error("commitment spend: output matches neither derivation");
+    }
+    outKeyPair = {legacy.commitKey, legacy.keyScalar};
+    outKeyImage = legacy.keyImage;
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendMultisigTransaction(std::shared_ptr<SendTransactionContext> &&context, std::deque<std::unique_ptr<WalletLegacyEvent>> &events)
@@ -906,11 +977,9 @@ namespace CryptoNote
       std::vector<uint64_t> decomposedChange = splitAmount(context->foundMoney - totalAmount, context->dustPolicy.dustThreshold);
 
       // ── Commitment output ────────────────────────────────────────────
-      auto depositSecret = deriveCommitmentSecret(*transaction, m_keys.address.viewPublicKey);
-      CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
-
+      const size_t commitOutputIndex = static_cast<size_t>(transaction->getOutputCount());
       CryptoNote::TransactionOutputCommitment commitOut;
-      commitOut.commitKey = commitKeys.commitKey;
+      commitOut.commitKey = deriveSelfCommitmentKey(*transaction, commitOutputIndex);
       commitOut.term      = static_cast<uint32_t>(context->depositTerm);
 
       auto bankingIndex = transaction->addOutput(depositAmount, commitOut);
@@ -988,16 +1057,6 @@ namespace CryptoNote
       DepositId depositId = (context->depositTerm == parameters::HEAT_TERM)
           ? m_transactionsCache.insertDeposit(deposit, 0, transaction->getTransactionHash())
           : m_transactionsCache.insertDeposit(deposit, bankingIndex, transaction->getTransactionHash());
-
-      if (isHeatDeposit) {
-        std::string txHashStr = Common::podToHex(transactionInfo.hash);
-        std::vector<uint8_t> secretMetadata;
-        // if (isColdDeposit) {
-        //   secretMetadata.assign(context->extra.begin(), context->extra.end());
-        // }
-        events.push_back(std::unique_ptr<WalletBurnDepositSecretCreatedEvent>(
-          new WalletBurnDepositSecretCreatedEvent(txHashStr, commitKeys.keyScalar, depositAmount, secretMetadata)));
-      }
 
       transactionInfo.firstDepositId = depositId;
       transactionInfo.depositCount = 1;
@@ -1255,10 +1314,11 @@ namespace CryptoNote
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
 
-        CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
         KeyPair commitmentKeyPair;
-        commitmentKeyPair.publicKey  = commitKeys.commitKey;
-        commitmentKeyPair.secretKey  = commitKeys.keyScalar;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         // Filter decoys: exclude the real output's global index to prevent duplicate
         // ring members (daemon returns all outputs including the real when pool is small).
@@ -1323,7 +1383,7 @@ namespace CryptoNote
         csInput.claimedInterest = (depositIdx < perDepositInterest.size())
             ? perDepositInterest[depositIdx] : 0;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage      = commitKeys.keyImage;
+        csInput.keyImage      = commitKeyImage;
         transaction->addInput(csInput);
 
         // Sign the input.
@@ -1825,9 +1885,8 @@ namespace CryptoNote
           Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
           memcpy(depositSecret.data(), h.data, 32);
         }
-        CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
         CryptoNote::TransactionOutputCommitment heatOut;
-        heatOut.commitKey = commitKeys.commitKey;
+        heatOut.commitKey = deriveSelfCommitmentKey(*transaction, commitOutputIndex);
         heatOut.term = parameters::HEAT_TERM;
         transaction->addOutput(billAmount, heatOut);
       }
@@ -2237,9 +2296,8 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         memcpy(receiveSecret.data(), h.data, 32);
       }
-      CryptoNote::DepositCommitmentKeys receiveKeys = CryptoNote::deriveCommitmentKeys(receiveSecret);
       CryptoNote::TransactionOutputCommitment receiveOut;
-      receiveOut.commitKey = receiveKeys.commitKey;
+      receiveOut.commitKey = deriveSelfCommitmentKey(*transaction, commitIdx);
       receiveOut.term = receiveTerm;
       transaction->addOutput(outputAmount, receiveOut);
 
@@ -2324,9 +2382,8 @@ namespace CryptoNote
           Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
           memcpy(receiveSecret.data(), h.data, 32);
         }
-        CryptoNote::DepositCommitmentKeys receiveKeys = CryptoNote::deriveCommitmentKeys(receiveSecret);
         CryptoNote::TransactionOutputCommitment receiveOut;
-        receiveOut.commitKey = receiveKeys.commitKey;
+        receiveOut.commitKey = deriveSelfCommitmentKey(*transaction, commitIdx);
         receiveOut.term = parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
         transaction->addOutput(netXfg, receiveOut);
       }
@@ -2351,9 +2408,8 @@ namespace CryptoNote
           Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
           memcpy(changeSecret.data(), h.data, 32);
         }
-        CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(changeSecret);
         CryptoNote::TransactionOutputCommitment changeOut;
-        changeOut.commitKey = cKeys.commitKey;
+        changeOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
         changeOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeHeat, changeOut);
       }
@@ -2385,10 +2441,11 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
         KeyPair commitmentKeyPair;
-        commitmentKeyPair.publicKey = commitKeys.commitKey;
-        commitmentKeyPair.secretKey = commitKeys.keyScalar;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         // Filter decoys
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
@@ -2441,7 +2498,7 @@ namespace CryptoNote
         TransactionInputCommitmentSpend csInput;
         csInput.amount = transfer.amount;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage = commitKeys.keyImage;
+        csInput.keyImage = commitKeyImage;
         transaction->addInput(csInput);
         transaction->signInputCommitmentSpend(depositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
       }
@@ -2499,9 +2556,8 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         memcpy(lpSecret.data(), h.data, 32);
       }
-      CryptoNote::DepositCommitmentKeys lpKeys = CryptoNote::deriveCommitmentKeys(lpSecret);
       CryptoNote::TransactionOutputCommitment lpOut;
-      lpOut.commitKey = lpKeys.commitKey;
+      lpOut.commitKey = deriveSelfCommitmentKey(*transaction, lpIdx);
       lpOut.term = parameters::DEPOSIT_TERM_LP;
       transaction->addOutput(computedShares, lpOut);
       transaction->setUnlockTime(0);
@@ -2545,8 +2601,11 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        KeyPair commitmentKeyPair = {ck.commitKey, ck.keyScalar};
+        KeyPair commitmentKeyPair;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
         for (const auto& d : decoys)
@@ -2589,7 +2648,7 @@ namespace CryptoNote
         TransactionInputCommitmentSpend csInput;
         csInput.amount = transfer.amount;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage = ck.keyImage;
+        csInput.keyImage = commitKeyImage;
         transaction->addInput(csInput);
         transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
         commitmentDepositIdx++;
@@ -2651,8 +2710,11 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        KeyPair commitmentKeyPair = {ck.commitKey, ck.keyScalar};
+        KeyPair commitmentKeyPair;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         // Filter decoys
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
@@ -2700,7 +2762,7 @@ namespace CryptoNote
         TransactionInputCommitmentSpend csInput;
         csInput.amount = transfer.amount;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage = ck.keyImage;
+        csInput.keyImage = commitKeyImage;
         transaction->addInput(csInput);
         transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
         commitmentDepositIdx++;
@@ -2784,9 +2846,8 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         memcpy(cdSecret.data(), h.data, 32);
       }
-      CryptoNote::DepositCommitmentKeys cdKeys = CryptoNote::deriveCommitmentKeys(cdSecret);
       CryptoNote::TransactionOutputCommitment cdOut;
-      cdOut.commitKey = cdKeys.commitKey;
+      cdOut.commitKey = deriveSelfCommitmentKey(*transaction, cdIdx);
       cdOut.term = cdTermBlocks;
       transaction->addOutput(cdAmount, cdOut);
 
@@ -2811,9 +2872,8 @@ namespace CryptoNote
           Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
           memcpy(chSecret.data(), h.data, 32);
         }
-        CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(chSecret);
         CryptoNote::TransactionOutputCommitment chOut;
-        chOut.commitKey = cKeys.commitKey;
+        chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
         chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
       }
@@ -2838,8 +2898,11 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        KeyPair commitmentKeyPair = {ck.commitKey, ck.keyScalar};
+        KeyPair commitmentKeyPair;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
         for (const auto& d : decoys)
@@ -2883,7 +2946,7 @@ namespace CryptoNote
         TransactionInputCommitmentSpend csInput;
         csInput.amount = transfer.amount;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage = ck.keyImage;
+        csInput.keyImage = commitKeyImage;
         transaction->addInput(csInput);
         transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
         commitmentDepositIdx++;
@@ -2932,9 +2995,8 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         memcpy(rcptSecret.data(), h.data, 32);
       }
-      CryptoNote::DepositCommitmentKeys rcptKeys = CryptoNote::deriveCommitmentKeys(rcptSecret);
       CryptoNote::TransactionOutputCommitment rcptOut;
-      rcptOut.commitKey = rcptKeys.commitKey;
+      rcptOut.commitKey = deriveRecipientCommitmentKey(*transaction, rcptIdx, recipient);
       rcptOut.term = parameters::HEAT_TERM;
       transaction->addOutput(amount, rcptOut);
 
@@ -2954,9 +3016,8 @@ namespace CryptoNote
           Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
           memcpy(chSecret.data(), h.data, 32);
         }
-        CryptoNote::DepositCommitmentKeys cKeys = CryptoNote::deriveCommitmentKeys(chSecret);
         CryptoNote::TransactionOutputCommitment chOut;
-        chOut.commitKey = cKeys.commitKey;
+        chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
         chOut.term = parameters::HEAT_TERM;
         transaction->addOutput(changeAmount, chOut);
       }
@@ -2993,8 +3054,11 @@ namespace CryptoNote
         Crypto::Hash h = Crypto::cn_fast_hash(preimage, sizeof(preimage));
         std::array<uint8_t, 32> depositSecret;
         memcpy(depositSecret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(depositSecret);
-        KeyPair commitmentKeyPair = {ck.commitKey, ck.keyScalar};
+        KeyPair commitmentKeyPair;
+        Crypto::KeyImage commitKeyImage;
+        resolveCommitmentSpendKey(ecdh, transfer.outputInTransaction,
+                                   transfer.commitmentKey, m_keys.spendSecretKey,
+                                   commitmentKeyPair, commitKeyImage);
 
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
         for (const auto& d : decoys)
@@ -3038,7 +3102,7 @@ namespace CryptoNote
         TransactionInputCommitmentSpend csInput;
         csInput.amount = transfer.amount;
         csInput.outputIndexes = relOffsets;
-        csInput.keyImage = ck.keyImage;
+        csInput.keyImage = commitKeyImage;
         transaction->addInput(csInput);
         transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
         commitmentDepositIdx++;
@@ -3297,9 +3361,8 @@ namespace CryptoNote
         Crypto::cn_fast_hash(preimage, sizeof(preimage), h);
         std::array<uint8_t, 32> secret;
         memcpy(secret.data(), h.data, 32);
-        CryptoNote::DepositCommitmentKeys ck = CryptoNote::deriveCommitmentKeys(secret);
         CryptoNote::TransactionOutputCommitment heatOut;
-        heatOut.commitKey = ck.commitKey;
+        heatOut.commitKey = deriveSelfCommitmentKey(*transaction, outIdx);
         heatOut.term = parameters::HEAT_TERM;
         transaction->addOutput(heatAmount, heatOut);
       };

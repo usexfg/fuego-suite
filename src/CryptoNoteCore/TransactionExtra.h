@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <boost/variant.hpp>
 
@@ -369,6 +370,81 @@ struct DepositCommitmentKeys {
   Crypto::EllipticCurveScalar amountMask;
 };
 
+// Which derivation produced a commitment output key. The public output key
+// distinguishes the two forms, so no new tx_extra tag is needed for recognition.
+enum class CommitmentDerivation : uint8_t {
+  // v11+ user-owned: P = B + tG, spendable only with the recipient's spend secret.
+  OwnerBound = 0,
+  // Pre-v11: keyScalar = Hs("fuego_commit_key" || depositSecret), which the
+  // sender and any view-key holder can compute. Explicitly exposed.
+  LegacyExposed = 1,
+  // Both forms appear to match. Never guessed; rejected.
+  Ambiguous = 2,
+};
+
+// Public side of the owner-bound derivation. Usable by sender and scanner alike.
+// `recipientSpendPublicKey` is B (B_sub = B + mG on a subaddress).
+// Returns the commit key P = derive_public_key(D, outputIndex, B).
+bool deriveOwnerBoundCommitKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& recipientSpendPublicKey,
+  Crypto::PublicKey& commitKey);
+
+// Scan-side: identify WHICH registered spend public key produced `commitKey`.
+// Uses underive_public_key so the matching key is found rather than assumed.
+// Returns true on a unique match. On a second match, returns false and sets
+// *outAmbiguous, so the caller can reject instead of guessing.
+bool matchOwnerBoundCommitKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+  Crypto::PublicKey& outMatchedSpendKey,
+  bool& outAmbiguous);
+
+// Spender-side: x = derive_secret_key(D, outputIndex, b) and I = key_image(P, x).
+// `recipientSpendSecret` is b (b_sub = b + m on a subaddress). Must be called
+// only in a signing context; callers must not cache the result in view-only state.
+// Verifies xG == P before returning the key image.
+bool deriveOwnerBoundKeyImage(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const Crypto::SecretKey& recipientSpendSecret,
+  Crypto::SecretKey& outSpendSecret,
+  Crypto::KeyImage& outKeyImage);
+
+// Pre-v11 derivation, retained for historical rescans and sweeps. Never call
+// this for new user-owned outputs: anyone with the view secret can spend them.
+DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
+
+// depositSecret = cn_fast_hash(D || i_LE32); retained for the amount mask.
+std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex);
+
+// Single entry point for CREATING a user-owned commitment output.
+//
+// Every creation site needs the same four things and previously open-coded all
+// of them, which is how the sender/view-key-spendable derivation kept being
+// reached by new code. This returns the owner-bound form P = B + tG when the
+// recipient spend public key is supplied, so a caller cannot emit an exposed
+// output by omission.
+//
+// `recipientSpendPublicKey` is B for the destination. Pass a null key only for
+// protocol-owned outputs that are unspendable by design (pool escrow markers);
+// those are excluded from rings by term, not by this function.
+//
+// Returns false if the owner-bound key cannot be derived, so the caller must
+// treat that as a hard error rather than silently falling back to the legacy
+// derivation — a silent fallback would recreate the flaw this replaces.
+bool deriveCommitmentOutputKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& recipientSpendPublicKey,
+  Crypto::PublicKey& commitKey);
+
+// Existing sender/view-key-spendable derivation. Kept under an explicit legacy
+// name; new code must not use it. See deriveOwnerBoundCommitKey for user outputs.
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
 enum class DepositType : uint8_t {

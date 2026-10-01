@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "generatedFor": "xfg-swapd DeFiLlama counterparty pricing",
+  "enumSource": "src/SwapDaemon/SwapTypes.h SwapPair",
+  "lockSemanticsEvidence": {
+    "evm": "src/SwapDaemon/Ethereum/HashedTimelock.sol lock(address payable,bytes32,uint256) external payable - no IERC20 parameter, so every EVM pair locks the chain's native currency",
+    "solana": "src/SwapDaemon/Solana/SolRpcClient.cpp moves vault lamports via system_program, no SPL token account"
+  },
+  "statuses": {
+    "priced": "DeFiLlama identifier resolved and symbol matched",
+    "unpriced": "no DeFiLlama identifier resolves to the correct asset; must never fall back to a substitute",
+    "unexecutable": "priceable but the atomic divisor cannot be represented in the uint64 amount model"
+  },
+  "policies": {
+    "maxProviderAgeSeconds": 120,
+    "maxClockSkewSeconds": 120,
+    "minConfidence": 0.8,
+    "rateScale": 10000000,
+    "rateUnit": "whole XFG per one whole counterparty coin",
+    "guardBand": {
+      "lowDivisor": 1.2,
+      "highDivisor": 0.8,
+      "note": "proposed rate must satisfy referenceRate/1.2 <= rate <= referenceRate/0.8"
+    }
+  },
+  "pairs": [
+    {"id": 0,  "enum": "SOL",         "settlementAsset": "SOL",        "ticker": "SOL", "atomicDivisor": "1e9",  "defiLlamaId": "coingecko:solana",               "expectSymbol": "SOL", "status": "priced"},
+    {"id": 1,  "enum": "ETH",         "settlementAsset": "ETH",        "ticker": "ETH", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced"},
+    {"id": 2,  "enum": "XMR",         "settlementAsset": "XMR",        "ticker": "XMR", "atomicDivisor": "1e12", "defiLlamaId": "coingecko:monero",                "expectSymbol": "XMR", "status": "priced"},
+    {"id": 3,  "enum": "BCH",         "settlementAsset": "BCH",        "ticker": "BCH", "atomicDivisor": "1e8",  "defiLlamaId": "coingecko:bitcoin-cash",          "expectSymbol": "BCH", "status": "priced"},
+    {"id": 4,  "enum": "ARB",         "settlementAsset": "ETH",        "ticker": "ARB", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Arbitrum native settlement is ETH; coingecko:arbitrum is the ARB governance token and must not be used"},
+    {"id": 5,  "enum": "BASE",        "settlementAsset": "ETH",        "ticker": "BASE","atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Base native settlement is ETH"},
+    {"id": 6,  "enum": "KMD_SPV",     "settlementAsset": "KMD",        "ticker": "KMD", "atomicDivisor": "1e8",  "defiLlamaId": null,                                "expectSymbol": "KMD", "status": "unpriced", "note": "neither coingecko:komodo nor coingecko:kmd is served by the prices endpoint"},
+    {"id": 7,  "enum": "BNB",         "settlementAsset": "BNB",        "ticker": "BNB", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:binancecoin",           "expectSymbol": "BNB", "status": "priced"},
+    {"id": 8,  "enum": "DCR",         "settlementAsset": "DCR",        "ticker": "DCR", "atomicDivisor": "1e8",  "defiLlamaId": "coingecko:decred",                "expectSymbol": "DCR", "status": "priced"},
+    {"id": 9,  "enum": "BTC",         "settlementAsset": "BTC",        "ticker": "BTC", "atomicDivisor": "1e8",  "defiLlamaId": "coingecko:bitcoin",               "expectSymbol": "BTC", "status": "priced"},
+    {"id": 10, "enum": "LTC",         "settlementAsset": "LTC",        "ticker": "LTC", "atomicDivisor": "1e8",  "defiLlamaId": "coingecko:litecoin",              "expectSymbol": "LTC", "status": "priced"},
+    {"id": 11, "enum": "POLYGON",     "settlementAsset": "POL",        "ticker": "POLY","atomicDivisor": "1e18", "defiLlamaId": "coingecko:polygon-ecosystem-token","expectSymbol": "POL","status": "priced", "note": "Polygon native gas asset is POL; symbol has been POL since the MATIC rename"},
+    {"id": 12, "enum": "GLEEC",       "settlementAsset": "GLEEC",      "ticker": "GLEEC","atomicDivisor": "1e18", "defiLlamaId": null,                                "expectSymbol": "GLEEC","status": "unpriced", "note": "no DeFiLlama identifier serves GLEEC"},
+    {"id": 13, "enum": "ROBINHOOD",   "settlementAsset": "ETH",        "ticker": "RHC", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Robinhood Chain is an ETH L2"},
+    {"id": 14, "enum": "AVAX",        "settlementAsset": "AVAX",       "ticker": "AVAX","atomicDivisor": "1e18", "defiLlamaId": "coingecko:avalanche-2",          "expectSymbol": "AVAX","status": "priced"},
+    {"id": 15, "enum": "CRO",         "settlementAsset": "CRO",        "ticker": "CRO", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:crypto-com-chain",      "expectSymbol": "CRO", "status": "priced"},
+    {"id": 16, "enum": "BOB",         "settlementAsset": "ETH",        "ticker": "BOB", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Bob is an ETH L2"},
+    {"id": 17, "enum": "SIA",         "settlementAsset": "SC",         "ticker": "SIA", "atomicDivisor": "1e24", "defiLlamaId": "coingecko:siacoin",               "expectSymbol": "SC",  "status": "unexecutable", "note": "1 SC = 10^24 hastings; 10^24 exceeds UINT64_MAX (~1.8e19) so the uint64 amount model cannot represent it. coingecko:sia is not served; coingecko:siacoin is"},
+    {"id": 18, "enum": "UNICHAIN",    "settlementAsset": "ETH",        "ticker": "UNI", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Unichain is an ETH L2"},
+    {"id": 19, "enum": "PLASMA",      "settlementAsset": "XPL",        "ticker": "XPL", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:plasma",                "expectSymbol": "XPL", "status": "priced"},
+    {"id": 20, "enum": "DOGE",        "settlementAsset": "DOGE",       "ticker": "DOGE","atomicDivisor": "1e8",  "defiLlamaId": "coingecko:dogecoin",              "expectSymbol": "DOGE","status": "priced"},
+    {"id": 21, "enum": "DASH",        "settlementAsset": "DASH",       "ticker": "DASH","atomicDivisor": "1e8",  "defiLlamaId": "coingecko:dash",                 "expectSymbol": "DASH","status": "priced"},
+    {"id": 22, "enum": "ZEC",         "settlementAsset": "ZEC",        "ticker": "ZEC", "atomicDivisor": "1e8",  "defiLlamaId": "coingecko:zcash",                "expectSymbol": "ZEC", "status": "priced"},
+    {"id": 23, "enum": "PULSECHAIN",  "settlementAsset": "PLS",        "ticker": "PLS", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:pulsechain",           "expectSymbol": "PLS", "status": "priced", "note": "observed serving a multi-hour-old timestamp; the staleness gate must reject it rather than quote"},
+    {"id": 24, "enum": "ZANO",        "settlementAsset": "ZANO",       "ticker": "ZANO","atomicDivisor": "1e12", "defiLlamaId": "coingecko:zano",                 "expectSymbol": "ZANO","status": "priced"},
+    {"id": 25, "enum": "MONAD",       "settlementAsset": "MON",        "ticker": "MON", "atomicDivisor": "1e18", "defiLlamaId": "coingecko:monad",                "expectSymbol": "MON", "status": "priced"},
+    {"id": 26, "enum": "OPTIMISM",    "settlementAsset": "ETH",        "ticker": "OP",  "atomicDivisor": "1e18", "defiLlamaId": "coingecko:ethereum",              "expectSymbol": "ETH", "status": "priced", "note": "Optimism native settlement is ETH; the current PriceOracle seeds this pair from the OP token price, which is a pricing bug"},
+    {"id": 27, "enum": "TON",         "settlementAsset": "TON",        "ticker": "TON", "atomicDivisor": "1e9",  "defiLlamaId": null,                                "expectSymbol": "TON", "status": "unpriced", "note": "coingecko:the-open-network resolves but returns symbol GRAM, which is not TON; coingecko:toncoin and coingecko:ton are not served. Treating the GRAM quote as TON would be a wrong-substitute violation"},
+    {"id": 28, "enum": "DOT",         "settlementAsset": "DOT",        "ticker": "DOT", "atomicDivisor": "1e10", "defiLlamaId": "coingecko:polkadot",              "expectSymbol": "DOT", "status": "priced"}
+  ],
+  "clientExposure": {
+    "valiseSwapPairSdk": {
+      "file": "lib/models/swap_models.dart",
+      "note": "AGENTS.md and the dev guide both say 12 exposed pairs; the enum actually declares 22. Seven C++ pairs are absent: SIA(17), DOGE(20), DASH(21), ZEC(22), ZANO(24), TON(27), DOT(28)",
+      "ids": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18,19,23,25,26]
+    }
+  }
+}

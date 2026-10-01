@@ -29,6 +29,7 @@
 #include "../Logging/LoggerRef.h"
 #include "../Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "CryptoNoteFormatUtils.h"
+#include "AmmPool.h"
 
 #include "CryptoNoteTools.h"
 #include "CryptoNoteStatInfo.h"
@@ -1605,8 +1606,9 @@ bool core::removeAlias(const std::string& alias) {
 }
 
 bool core::replaceAliasOwnership(const std::string& alias,
-                                 const Crypto::Hash& newAddressHash) {
-  return m_blockchain.replaceAliasOwnership(alias, newAddressHash);
+                                 const Crypto::Hash& newAddressHash,
+                                 const std::string& newOwnerAddress) {
+  return m_blockchain.replaceAliasOwnership(alias, newAddressHash, newOwnerAddress);
 }
 
 core::HeatMetrics core::getHeatMetrics() const {
@@ -1649,17 +1651,27 @@ core::HeatMetrics core::getHeatMetrics() const {
 
 core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const {
   AmmQuote q;
-  auto est = m_blockchain.getOrderbookEstimate(direction, inputAmount);
-  q.expectedOutput = est.estimatedFill;
-  q.fee = std::max<uint64_t>(1, (inputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR);
-  uint64_t spotPrice = m_blockchain.getHearthSpotPrice();
-  if (spotPrice > 0) {
-    if (est.worstCasePrice > 0 && spotPrice > 0) {
-      if (direction == 0) {
-        uint64_t delta = (est.worstCasePrice > spotPrice) ? (est.worstCasePrice - spotPrice) : (spotPrice - est.worstCasePrice);
-        q.priceImpactBps = (delta * 10000) / spotPrice;
-      }
-    }
+  if (inputAmount == 0 || direction > 1) return q;
+  // The alternative to selling XFG on Hearth: burning it mints HEAT at the
+  // TWAP, with no price impact — for a large sale, often far more HEAT.
+  if (direction == 0) {
+    q.mintOutput = static_cast<uint64_t>(
+        ((uint128_t)inputAmount * m_blockchain.getRollingTwap()) / parameters::COIN);
+  }
+  const auto& pool = m_blockchain.getAmmPool();
+  const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
+  const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;
+  if (reserveIn == 0 || reserveOut == 0) return q;
+
+  // This endpoint quotes the same constant-product output that the AMM swap
+  // validator accepts. An orderbook estimate may be higher and must not be
+  // handed to the wallet as a fixed AMM transaction output.
+  const uint64_t gross = ammGetOutputAmount(inputAmount, reserveIn, reserveOut, 0);
+  q.expectedOutput = ammSwapNetOutput(inputAmount, reserveIn, reserveOut);
+  q.fee = gross - q.expectedOutput;  // denominated in the output asset
+  const uint128_t ideal = (uint128_t(inputAmount) * reserveOut) / reserveIn;
+  if (ideal > gross && ideal > 0) {
+    q.priceImpactBps = static_cast<uint64_t>(((ideal - gross) * 10000) / ideal);
   }
   return q;
 }

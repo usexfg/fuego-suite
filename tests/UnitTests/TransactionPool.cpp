@@ -40,6 +40,17 @@ class TransactionValidator : public CryptoNote::ITransactionValidator {
   virtual bool checkTransactionSize(size_t blobSize) override {
     return true;
   }
+
+  virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override {
+    uint64_t in = 0, out = 0;
+    for (const auto& i : tx.inputs) {
+      if (i.type() == typeid(CryptoNote::KeyInput)) in += boost::get<CryptoNote::KeyInput>(i).amount;
+    }
+    for (const auto& o : tx.outputs) out += o.amount;
+    if (out > in) return false;
+    fee = in - out;
+    return true;
+  }
 };
 
 class FakeTimeProvider : public ITimeProvider {

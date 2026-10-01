@@ -356,6 +356,12 @@ add_executable(test_price_oracle_arb
 target_link_libraries(test_price_oracle_arb PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Single-source pair catalog, generic EVM metadata, and endpoint parsing.
+add_executable(test_swap_pair_catalog
+    SwapDaemon/tests/test_swap_pair_catalog.cpp)
+target_link_libraries(test_swap_pair_catalog PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: HTLC hashlock derivation (keccak256/sha256 of secret)
 add_executable(test_swap_hashlock
     SwapDaemon/tests/test_swap_hashlock.cpp)
@@ -940,6 +946,10 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(PaymentGateService PRIVATE -lresolv)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
+  target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
+  # core_tests builds a real Blockchain (rebuildCache regression), which links
+  # the DNS checkpoint lookup.
+  target_link_libraries(core_tests PRIVATE -lresolv)
 endif ()
 
 # --------------------------
@@ -969,6 +979,7 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 # Test daemons → build/test_daemons/ (kept out of production src/)
 # --------------------------
 set(_TEST_DAEMON_TARGETS
+    test_swap_pair_catalog
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_swap_hashlock

@@ -1158,7 +1158,14 @@ namespace CryptoNote
           INode::CdClaimInfo claimInfo;
           std::error_code ec = m_node.getCdClaimInfo(dep.amount,
               static_cast<uint32_t>(dep.height), currentHeight, claimInfo, dep.term);
-          if (!ec && claimInfo.formulaInterest > 0) {
+          // Withdrawing spends the CD's key image: interest left off this
+          // transaction is gone for good. Abort instead of claiming zero.
+          if (ec) {
+            throw std::system_error(ec,
+                "cannot read a CD's accrued interest from the node; withdrawal "
+                "aborted so the interest is not forfeited");
+          }
+          if (claimInfo.formulaInterest > 0) {
             interest = claimInfo.formulaInterest;
             if (claimInfo.poolInfoPresent) {
               poolInfoPresent = true;

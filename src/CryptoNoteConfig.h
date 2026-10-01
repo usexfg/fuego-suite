@@ -189,6 +189,9 @@ const uint64_t FEE_POOL_RATE_PRECISION =
     1000000ULL; // 1e6 fixed-point (fits uint32_t for div128_32)
 const uint64_t TESTNET_SWAP_FEE_RATE_BPS =
     100; // 1% on testnet (same as mainnet)
+const uint64_t WALLET_MINT_TWAP_MARGIN_BPS = 50;
+const uint64_t WALLET_SWAP_SLIPPAGE_BPS = 50;
+const uint64_t HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100;
 
 // ─── Fuego Cost Index (FCI) — on-chain miner inflation oracle ────────────
 // Miners embed TX_EXTRA_MINER_BASKET_VOTE (0x38) in their coinbase.
@@ -251,14 +254,6 @@ const uint32_t TESTNET_CD_MAX_EPOCHS = 72; // testnet maximum
 
 // Allowed CD Tiers (Epochs)
 const std::vector<uint32_t> CD_ALLOWED_TIERS = {6, 18, 36, 72};
-
-// Loyalty maturity bonus: 2.5× yield multiplier on last 2.5 epochs for max-term
-// (72-epoch) CDs
-const uint64_t LOYALTY_BONUS_PCT =
-    150; // +150% extra = 2.5× total on bonus epochs
-const uint64_t LOYALTY_BONUS_FULL_EPOCHS =
-    2; // last 2 full epochs get full bonus
-       // The 0.5 epoch (3rd-to-last) gets half bonus: +75%
 
 const uint64_t BANKING_FEE_BPS_DIVISOR = 10000; // basis point denominator
 // Swap fee split: 69% CD Yield / 11% Bonus Vault / 20% Treasury Reserve
@@ -351,16 +346,6 @@ const uint32_t DEPOSIT_TERM_POOL_HEAT =
 const uint32_t DEPOSIT_TERM_SWAP_RECEIVE_XFG =
     0x53575258; // 'SWRX' — user receives XFG from HEAT→XFG swap
 const uint32_t DIGM_TERM = 0x44494D47; // 'DIMG' — DIGM colored coin marker
-
-// CD loyalty bonus multipliers (multiplied by base APY)
-const uint64_t LOYALTY_BONUS_72_EPOCHS_PCT = 250; // 72 epochs: 2.5× bonus
-const uint64_t LOYALTY_BONUS_36_EPOCHS_PCT = 200; // 36 epochs: 2.0× bonus
-const uint64_t LOYALTY_BONUS_18_EPOCHS_PCT = 150; // 18 epochs: 1.5× bonus
-const uint64_t LOYALTY_BONUS_6_EPOCHS_PCT = 125;  // 6 epochs: 1.25× bonus
-const uint64_t LOYALTY_BONUS_ROLLING_PCT = 100;   // Rolling: 1.0× (no bonus)
-// v11+: rolling window (epochs) for the BV bonus-share denominator —
-// matches the max CD term so expired CDs age out of the denominator.
-const uint64_t BONUS_WEIGHTED_WINDOW_EPOCHS = 72;
 
 // DIGM peg: 1 DIGM = 0.10 HEAT = 1,000,000 atomic HEAT
 const uint64_t DIGM_PEG_HEAT_ATOMIC = 1000000; // 0.10 HEAT in atomic units
@@ -493,6 +478,8 @@ const uint32_t UPGRADE_HEIGHT_V11 =
 const uint32_t UPGRADE_HEIGHT_V12 =
     2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG
              //+ BP+
+const uint32_t CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12;
+const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11;
              // upgradekit
              //
 const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

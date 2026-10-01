@@ -83,69 +83,90 @@ const ChartStyle = (() => {
   };
 })();
 
+// Keep order preparation pure so the browser and offline tests share the same
+// unit, direction, and exact-atomic validation rules.
+const HearthOrder = (() => {
+  const COIN = 10000000n;
+  const MAX_JSON_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
+
+  function atomic(text, label) {
+    const value = String(text).trim();
+    if (!/^\d+(?:\.\d{1,7})?$/.test(value)) {
+      throw new Error(`${label} must be a positive amount with at most 7 decimals`);
+    }
+    const [whole, fraction = ''] = value.split('.');
+    const units = BigInt(whole) * COIN + BigInt((fraction + '0000000').slice(0, 7));
+    if (units === 0n || units > MAX_JSON_INTEGER) {
+      throw new Error(`${label} is zero or exceeds the dashboard's exact JSON range`);
+    }
+    return Number(units);
+  }
+
+  function formatAtomic(value) {
+    const units = BigInt(value);
+    const fraction = String(units % COIN).padStart(7, '0').replace(/0+$/, '');
+    return `${units / COIN}${fraction ? '.' + fraction : ''}`;
+  }
+
+  function isExactAtomic(value) {
+    return (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) ||
+      (typeof value === 'string' && /^\d{1,20}$/.test(value) && BigInt(value) > 0n);
+  }
+
+  function limit(side, amountText, priceText, expiryText) {
+    const amount = atomic(amountText, side === 0 ? 'HEAT budget' : 'XFG amount');
+    const targetPrice = atomic(priceText, 'HEAT/XFG price');
+    if (targetPrice % 100000 !== 0) {
+      throw new Error('Limit price must be a multiple of 0.01 HEAT/XFG');
+    }
+    const rawExpiry = String(expiryText || '0').trim();
+    if (!/^\d+$/.test(rawExpiry)) throw new Error('Expiry must be an absolute block height or 0');
+    const expiration = Number(rawExpiry);
+    if (!Number.isSafeInteger(expiration) || expiration > 0xffffffff) {
+      throw new Error('Expiry height is outside the supported range');
+    }
+    return {
+      type: 'limit', side, inputAsset: side === 0 ? 'HEAT' : 'XFG', amount,
+      params: { side, amount, target_price: targetPrice, expiration, fee: 0, mixin: 0 }
+    };
+  }
+
+  function market(side, amountText, quote) {
+    const direction = side === 0 ? 1 : 0; // buy XFG spends HEAT
+    const inputAsset = side === 0 ? 'HEAT' : 'XFG';
+    const outputAsset = side === 0 ? 'XFG' : 'HEAT';
+    const inputAmount = atomic(amountText, `${inputAsset} input`);
+    const expected = Number(quote && quote.expected_output);
+    if (!Number.isSafeInteger(expected) || expected <= 0) {
+      throw new Error('AMM returned no exact, executable output quote');
+    }
+    return {
+      type: 'market', side, direction, inputAsset, outputAsset,
+      amount: inputAmount, expected,
+      // The wallet creates a fixed-output transaction, not a variable-output
+      // market order. A strict floor keeps the preview and signed output equal.
+      params: { direction, input_amount: inputAmount, expected_output: expected,
+        min_output: expected, fee: 0, mixin: 0 }
+    };
+  }
+
+  return { atomic, formatAtomic, isExactAtomic, limit, market };
+})();
+
 const Hearth = (() => {
   let priceChart;
   let currentTf = '1h';
-  let orderSide = 0;   // 0 = Buy XFG (bid), 1 = Sell XFG (ask)
-  let orderType = 'limit'; // limit, market
+  let orderSide = 0;   // 0=buy, 1=sell
+  let orderType = 'limit'; // limit, market (market uses AMM under the hood)
+  let pendingOrder = null;
   let indicators = { sma20: true, ema12: false, vol: true };
   let activeDrawTool = null;
-  let currentSpotPrice = 1580000;
+  let currentSpotPrice = null;
   let userWalletBalance = 0;
   // Which series the pool chart is currently showing. 'pool' is the live
   // HΞΔŦ-per-XFG feed; 'archive' is real XFG/USD history. The two are different
   // units, so every label and readout keys off this.
   let chartSource = 'pool';
-
-  // Depth still falls back to a placeholder ladder while the house daemons are
-  // booting, but the price chart no longer invents candles: it shows the real
-  // archive below, and says plainly when it has no live feed.
-
-  function mockOrderbook() {
-    const bestBid = 1575000;
-    const bestAsk = 1585000;
-    const bids = [], bidAmts = [], bidDepths = [];
-    const asks = [], askAmts = [], askDepths = [];
-    let cumBid = 0, cumAsk = 0;
-    for (let i = 0; i < 16; i++) {
-      bids.push(bestBid - i * 14000);
-      const amt = Math.floor(Math.random() * 750 + 220) * 10000000;
-      bidAmts.push(amt);
-      cumBid += amt;
-      bidDepths.push(cumBid);
-
-      asks.push(bestAsk + i * 14000);
-      const aamt = Math.floor(Math.random() * 650 + 180) * 10000000;
-      askAmts.push(aamt);
-      cumAsk += aamt;
-      askDepths.push(cumAsk);
-    }
-    return {
-      bid_prices: bids, bid_amounts: bidAmts, bid_depths: bidDepths,
-      ask_prices: asks, ask_amounts: askAmts, ask_depths: askDepths
-    };
-  }
-
-  const MOCK_POOL = {
-    spot_price: 1580000,
-    reserve_xfg: 125000 * 10000000,
-    reserve_heat: 19750000 * 10000000,
-    total_lp_shares: 42000,
-    accumulated_lp_fees: 3200 * 10000000,
-    epoch_swap_fees: 180 * 10000000
-  };
-
-  const MOCK_HEAT = {
-    heat_supply: 8500000 * 10000000,
-    redemption_price: 1580000,
-    xfg_burned: 1200000 * 10000000,
-    fee_pool: 45000 * 10000000
-  };
-
-  // ── Chart ─────────────────────────────────────────────────────────────────
-  // Direction carries the only two chromatic hues. Overlays, axes and the
-  // crosshair are drawn in neutral or the house accent so they never compete
-  // with the data for the eye.
 
   // klinecharts 9.8 has no removeAllOverlay(); overlays are removed by id.
   function clearOverlays(chart) {
@@ -251,39 +272,9 @@ const Hearth = (() => {
     }
   }
 
-  async function loadOHLCV(timeframe) {
+  function loadOHLCV(timeframe) {
     currentTf = timeframe;
-    let data = [];
-    try {
-      const candles = await App.rpc('get_ohlvc', { timeframe, count: 200 });
-      if (candles && candles.candles && candles.candles.length) {
-        data = candles.candles.map(c => ({
-          timestamp: c.t * 1000,
-          open: c.o / App.COIN,
-          high: c.h / App.COIN,
-          low: c.l / App.COIN,
-          close: c.c / App.COIN,
-          volume: c.v / App.COIN
-        }));
-      }
-    } catch (e) {
-      // offline fallback
-    }
-
-    if (data.length === 0) {
-      // No live pool feed. This used to draw random mock candles, which put
-      // invented prices on a trading chart indistinguishable from real ones.
-      // It now plots the real XFG/USD archive instead, and says in the caption
-      // that the unit has changed — the pool's own HΞΔŦ quote stays in the spot
-      // bar above and is never mixed into this axis.
-      return plotArchive(timeframe);
-    }
-
-    chartSource = 'pool';
-    setCaption('Live pool · HΞΔŦ per XFG');
-    if (priceChart) {
-      priceChart.applyNewData(data);
-    }
+    return plotArchive(timeframe);
   }
 
   function setCaption(text) {
@@ -317,15 +308,16 @@ const Hearth = (() => {
 
   async function loadOrderbook() {
     try {
-      const data = await App.rpc('get_orderbook_state', { depth: 20 });
-      if (data && (data.bid_prices || data.ask_prices)) {
-        renderHearthOrderbook(data);
-        return;
-      }
+      const data = await App.daemonPost('/get_limit_orders', {
+        active_only: true, limit: 100, offset: 0
+      });
+      renderHearthOrderbook(data);
     } catch (e) {
-      // offline fallback
+      document.getElementById('hearth-bids').innerHTML =
+        '<div class="hearth-empty">Live orders unavailable</div>';
+      document.getElementById('hearth-asks').innerHTML =
+        '<div class="hearth-empty">Live orders unavailable</div>';
     }
-    renderHearthOrderbook(mockOrderbook());
   }
 
   function renderHearthOrderbook(data) {
@@ -333,60 +325,38 @@ const Hearth = (() => {
     const asksContainer = document.getElementById('hearth-asks');
     if (!bidsContainer || !asksContainer) return;
 
-    const bids = data.bid_prices || [];
-    const asks = data.ask_prices || [];
-    const bidAmounts = data.bid_amounts || data.bid_depths || [];
-    const bidDepths = data.bid_depths || [];
-    const askAmounts = data.ask_amounts || data.ask_depths || [];
-    const askDepths = data.ask_depths || [];
+    const orders = Array.isArray(data && data.orders) ? data.orders : [];
+    const valid = orders.filter(o => o && (o.side === 0 || o.side === 1) &&
+      HearthOrder.isExactAtomic(o.target_price) && HearthOrder.isExactAtomic(o.amount) && !o.withdrawn);
+    const bids = valid.filter(o => o.side === 0)
+      .sort((a, b) => Number(b.target_price) - Number(a.target_price)).slice(0, 18);
+    const asks = valid.filter(o => o.side === 1)
+      .sort((a, b) => Number(a.target_price) - Number(b.target_price)).slice(0, 18);
 
-    const maxBidDepth = Math.max(...bidDepths, 1);
-    const maxAskDepth = Math.max(...askDepths, 1);
+    const renderRows = (sideOrders, asset) => sideOrders.map(order => {
+      const price = HearthOrder.formatAtomic(order.target_price);
+      const amount = HearthOrder.formatAtomic(order.amount);
+      return `<div class="ladder-row" data-price="${price}" data-amount="${amount}" data-side="${order.side}" title="Prefill ${amount} ${asset} at ${price} HEAT/XFG">
+        <span class="price-val">${price}</span>
+        <span class="amt-val">${amount} ${asset}</span>
+      </div>`;
+    }).join('');
+    bidsContainer.innerHTML = renderRows(bids, 'HEAT') ||
+      '<div class="hearth-empty-state">No live bids</div>';
+    asksContainer.innerHTML = renderRows(asks, 'XFG') ||
+      '<div class="hearth-empty-state">No live asks</div>';
 
-    // Bids Ladder (Gold/Firegold)
-    let bidHtml = '';
-    for (let i = 0; i < bids.length; i++) {
-      const pct = Math.min(100, Math.round(((bidDepths[i] || 0) / maxBidDepth) * 100));
-      const pWhole = (bids[i] / App.COIN).toFixed(5);
-      const aWhole = (bidAmounts[i] / App.COIN).toFixed(2);
-      bidHtml += `
-        <div class="ladder-row" data-price="${pWhole}" data-amount="${aWhole}" title="Prefill ${pWhole} HΞ∆Ŧ">
-          <span class="price-val">${pWhole}</span>
-          <span class="amt-val">${aWhole} XFG</span>
-          <div class="row-bar" style="width:${pct}%"></div>
-        </div>`;
-    }
-    bidsContainer.innerHTML = bidHtml || '<div class="hearth-empty-state">No bids</div>';
-
-    // Asks Ladder (White-Hot Blue)
-    let askHtml = '';
-    for (let i = asks.length - 1; i >= 0; i--) {
-      const pct = Math.min(100, Math.round(((askDepths[i] || 0) / maxAskDepth) * 100));
-      const pWhole = (asks[i] / App.COIN).toFixed(5);
-      const aWhole = (askAmounts[i] / App.COIN).toFixed(2);
-      askHtml += `
-        <div class="ladder-row" data-price="${pWhole}" data-amount="${aWhole}" title="Prefill ${pWhole} HΞ∆Ŧ">
-          <span class="price-val">${pWhole}</span>
-          <span class="amt-val">${aWhole} XFG</span>
-          <div class="row-bar" style="width:${pct}%"></div>
-        </div>`;
-    }
-    asksContainer.innerHTML = askHtml || '<div class="hearth-empty-state">No asks</div>';
-
-    // Instant click prefill
     [bidsContainer, asksContainer].forEach(container => {
       container.querySelectorAll('.ladder-row').forEach(row => {
         row.addEventListener('click', () => {
-          const p = row.dataset.price;
-          const a = row.dataset.amount;
-          if (p && document.getElementById('order-price')) {
-            document.getElementById('order-price').value = p;
-          }
-          if (a && document.getElementById('order-amount')) {
-            document.getElementById('order-amount').value = a;
-          }
+          const side = Number(row.dataset.side);
+          document.getElementById(side === 0 ? 'tab-buy' : 'tab-sell')?.click();
+          document.querySelector('.type-chip[data-type="limit"]')?.click();
+          document.getElementById('order-price').value = row.dataset.price;
+          document.getElementById('order-amount').value = row.dataset.amount;
+          pendingOrder = null;
           updateOrderEstimate();
-          App.showToast(`Prefilled ${a} XFG @ ${p} HΞ∆Ŧ`);
+          App.showToast(`Prefilled ${row.dataset.amount} ${side === 0 ? 'HEAT' : 'XFG'} at ${row.dataset.price} HEAT/XFG`);
         });
       });
     });
@@ -394,39 +364,53 @@ const Hearth = (() => {
 
   // ── Telemetry Strip Upgrades ──
 
+  function setMetricText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  }
+
   function updatePoolInfo(data) {
-    const d = data || MOCK_POOL;
-    currentSpotPrice = d.spot_price || 1580000;
-
-    const xfgReserve = document.getElementById('pool-xfg');
-    const heatReserve = document.getElementById('pool-heat');
-    if (xfgReserve) xfgReserve.textContent = App.fmtXfg(d.reserve_xfg) + ' XFG';
-    if (heatReserve) heatReserve.textContent = App.fmtHeat(d.reserve_heat) + ' HΞ∆Ŧ';
-
-    const priceEl = document.getElementById('price-xfg-heat');
-    const usdEl = document.getElementById('price-xfg-usd');
-    if (priceEl) {
-      const p = currentSpotPrice / App.COIN;
-      priceEl.textContent = p.toFixed(5) + ' HΞ∆Ŧ';
-      const usd = p * 1.58;
-      if (usdEl) usdEl.textContent = `≈ $${usd.toFixed(4)} USD`;
-    }
-
+    const valid = data && data.status === 'OK' &&
+      Number(data.reserve_xfg) > 0 && Number(data.reserve_heat) > 0 &&
+      Number(data.spot_price) > 0;
+    currentSpotPrice = valid ? Number(data.spot_price) : null;
+    setMetricText('pool-xfg', valid ? App.fmtXfg(data.reserve_xfg) + ' XFG' : '—');
+    setMetricText('pool-heat', valid ? App.fmtHeat(data.reserve_heat) + ' HΞ∆Ŧ' : '—');
+    setMetricText('price-xfg-heat', valid
+      ? App.fmtPrice(data.spot_price) + ' HΞ∆Ŧ / XFG' : '—');
+    setMetricText('price-spread', valid && Number.isSafeInteger(Number(data.height))
+      ? `Live pool · height ${data.height}` : 'Live pool unavailable');
     updateOrderEstimate();
   }
 
   function updateHeatMetrics(data) {
-    const d = data || MOCK_HEAT;
-    const supplyEl = document.getElementById('heat-supply');
-    const burnedEl = document.getElementById('heat-burned');
-    const redemptionEl = document.getElementById('heat-redemption');
+    const valid = data && data.status === 'OK';
+    setMetricText('heat-supply', valid ? App.fmtHeat(data.heat_supply) + ' HΞ∆Ŧ' : '—');
+    setMetricText('heat-burned', valid ? App.fmtXfg(data.total_burned_xfg) + ' XFG' : '—');
+    const numerator = valid ? Number(data.redemption_price_num) : 0;
+    const denominator = valid ? Number(data.redemption_price_denom) : 0;
+    setMetricText('heat-redemption', numerator > 0 && denominator > 0
+      ? (numerator / denominator).toFixed(4) + ' XFG / HΞ∆Ŧ' : '—');
+  }
 
-    if (supplyEl) supplyEl.textContent = App.fmtHeat(d.heat_supply || d.total_supply) + ' HΞ∆Ŧ';
-    if (burnedEl) burnedEl.textContent = App.fmtXfg(d.xfg_burned || d.total_burned) + ' XFG';
+  function updateReferencePrice(data) {
+    const valid = data && data.status === 'OK';
+    const peg = valid ? Number(data.heat_peg_usd) : 0;
+    const impliedXfgUsd = valid ? Number(data.xfg_spot_usd) : 0;
+    setMetricText('heat-peg', Number.isFinite(peg) && peg > 0
+      ? `1 HΞ∆Ŧ ≋ $${peg.toFixed(4)}` : '—');
+    setMetricText('price-xfg-usd', Number.isFinite(impliedXfgUsd) && impliedXfgUsd > 0
+      ? `Reference-implied $${impliedXfgUsd.toFixed(4)}` : 'Reference-implied USD unavailable');
+  }
 
-    const redemptionPrice = d.redemption_price || 1580000;
-    const xfgPerHeat = redemptionPrice / App.COIN;
-    if (redemptionEl) redemptionEl.textContent = `${xfgPerHeat.toFixed(2)} XFG / HΞ∆Ŧ`;
+  async function refreshMetrics() {
+    const [pool, heat, price] = await Promise.allSettled([
+      App.daemonPost('/amm_pool_info'), App.daemonPost('/heat_metrics'),
+      App.daemonPost('/get_fuego_price')
+    ]);
+    updatePoolInfo(pool.status === 'fulfilled' ? pool.value : null);
+    updateHeatMetrics(heat.status === 'fulfilled' ? heat.value : null);
+    updateReferencePrice(price.status === 'fulfilled' ? price.value : null);
   }
 
   // ── Order Console ──
@@ -464,24 +448,39 @@ const Hearth = (() => {
 
     document.querySelectorAll('.pct-chip').forEach(chip => {
       chip.addEventListener('click', () => {
-        const pct = parseFloat(chip.dataset.pct) || 0;
-        let base = userWalletBalance > 0 ? (userWalletBalance / App.COIN) : 100;
-        const targetAmt = (base * pct).toFixed(2);
-        document.getElementById('order-amount').value = targetAmt;
+        const percent = Number(chip.dataset.pct) * 100;
+        if (orderSide === 0) {
+          App.showToast('HEAT balance unavailable; enter an exact HEAT budget');
+          return;
+        }
+        if (!Number.isSafeInteger(userWalletBalance) || userWalletBalance <= 0) {
+          App.showToast('XFG balance unavailable');
+          return;
+        }
+        if (!Number.isInteger(percent) || percent <= 0 || percent >= 100) {
+          App.showToast('Enter an exact amount and leave XFG for the network fee');
+          return;
+        }
+        const amount = BigInt(userWalletBalance) * BigInt(percent) / 100n;
+        document.getElementById('order-amount').value = HearthOrder.formatAtomic(amount);
+        pendingOrder = null;
         updateOrderEstimate();
       });
     });
 
     const amtInput = document.getElementById('order-amount');
     const priceInput = document.getElementById('order-price');
-    if (amtInput) amtInput.addEventListener('input', updateOrderEstimate);
-    if (priceInput) priceInput.addEventListener('input', updateOrderEstimate);
+    if (amtInput) amtInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
+    if (priceInput) priceInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
+    const expiryInput = document.getElementById('order-expiry');
+    if (expiryInput) expiryInput.addEventListener('input', () => { pendingOrder = null; updateOrderEstimate(); });
 
     const previewBtn = document.getElementById('order-preview-btn');
     if (previewBtn) previewBtn.addEventListener('click', showOrderPreview);
 
     const closeBtn = document.getElementById('order-modal-close');
     if (closeBtn) closeBtn.addEventListener('click', () => {
+      pendingOrder = null;
       document.getElementById('order-modal').classList.remove('active');
     });
 
@@ -507,148 +506,127 @@ const Hearth = (() => {
       if (priceGroup) priceGroup.style.display = '';
       if (expiryGroup) expiryGroup.style.display = '';
     }
+    const amountLabel = document.getElementById('order-amount-label');
+    if (amountLabel) amountLabel.textContent = orderSide === 0
+      ? 'HEAT budget' : 'XFG amount';
   }
 
   function updateOrderButton() {
     const btn = document.getElementById('order-preview-btn');
     if (!btn) return;
-    const actionWord = orderSide === 0 ? 'Acquire' : 'Release';
-    const modeWord = orderType === 'limit' ? 'Standing Limit' : 'Immediate';
-    btn.textContent = `${actionWord} · ${modeWord}`;
+    const side = orderSide === 0 ? 'Acquire' : 'Release';
+    btn.textContent = `Review ${side} XFG`;
     btn.className = `btn btn-block ${orderSide === 0 ? 'btn-buy' : 'btn-sell'}`;
+    updateOrderFields();
   }
 
   function updateOrderEstimate() {
-    const amt = parseFloat(document.getElementById('order-amount')?.value) || 0;
     const sub = document.getElementById('order-estimate-sub');
     if (!sub) return;
-
-    if (amt <= 0) {
-      sub.textContent = 'Continuous depth against the salon pool';
-      return;
-    }
-
-    let price = currentSpotPrice / App.COIN;
-    if (orderType === 'limit') {
-      const customPrice = parseFloat(document.getElementById('order-price')?.value);
-      if (customPrice > 0) price = customPrice;
-    }
-
-    const grossProceeds = amt * price;
-    const fee = grossProceeds * 0.01; // 1% taker fee
-    const cdYieldShare = fee * 0.70;  // 70% to CD APY pool
-    const netProceeds = orderSide === 0 ? grossProceeds + fee : grossProceeds - fee;
-
-    sub.innerHTML = orderSide === 0
-      ? `Consideration <strong style="color:var(--ink-100);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> · salon fee 1% · 70% to CD yield`
-      : `Proceeds <strong style="color:var(--ink-100);">${netProceeds.toFixed(4)} HΞ∆Ŧ</strong> · net of salon fee 1% · 70% to CD yield`;
+    sub.textContent = orderType === 'market'
+      ? 'Exact pool output is shown in a live quote before submission'
+      : 'A limit order is submitted on-chain; fill amount and timing are not guaranteed';
   }
 
-  function showOrderPreview() {
-    const amount = document.getElementById('order-amount')?.value;
-    if (!amount || parseFloat(amount) <= 0) {
-      App.showToast('Enter an amount in XFG');
-      return;
-    }
-
-    const side = orderSide === 0 ? 'buy' : 'sell';
-    const sideLabel = orderSide === 0 ? 'Acquire XFG' : 'Release XFG';
-    const details = document.getElementById('order-modal-details');
-
-    let price = (currentSpotPrice / App.COIN).toFixed(5);
-    let expiry = '4320';
-    if (orderType === 'limit') {
-      const pInput = document.getElementById('order-price')?.value;
-      if (!pInput || parseFloat(pInput) <= 0) {
-        App.showToast('Enter a limit price');
-        return;
+  async function showOrderPreview() {
+    const amount = document.getElementById('order-amount').value;
+    const side = orderSide;
+    const type = orderType;
+    const previewBtn = document.getElementById('order-preview-btn');
+    previewBtn.disabled = true;
+    pendingOrder = null;
+    try {
+      let plan;
+      if (type === 'limit') {
+        plan = HearthOrder.limit(side, amount,
+          document.getElementById('order-price').value,
+          document.getElementById('order-expiry').value);
+      } else {
+        const input = HearthOrder.atomic(amount, side === 0 ? 'HEAT input' : 'XFG input');
+        const quote = await App.daemonPost('/amm_quote', {
+          input_amount: input, direction: side === 0 ? 1 : 0
+        });
+        if (side !== orderSide || type !== orderType ||
+            amount !== document.getElementById('order-amount').value) {
+          throw new Error('Order form changed while quoting. Preview again.');
+        }
+        plan = HearthOrder.market(side, amount, quote);
       }
-      price = parseFloat(pInput).toFixed(5);
-      expiry = document.getElementById('order-expiry')?.value || '4320';
+      pendingOrder = Object.freeze({ ...plan, params: Object.freeze({ ...plan.params }) });
+      const sideLabel = plan.side === 0 ? 'Acquire XFG' : 'Release XFG';
+      const field = (label, value) =>
+        `<div><span class="rf-label">${label}</span><span class="rf-value">${value}</span></div>`;
+      let html = `<div class="rf"><div class="rf-head"><span class="rf-ref">HEARTH · ORDER REVIEW</span>`;
+      html += `<span class="badge ${plan.side === 0 ? 'badge-green' : 'badge-red'}">${sideLabel}</span></div><div class="rf-grid">`;
+      html += field('Manner', plan.type === 'limit' ? 'Standing limit' : 'Immediate pool swap');
+      html += field('Input', `${HearthOrder.formatAtomic(plan.amount)} ${plan.inputAsset}`);
+      if (plan.type === 'limit') {
+        html += field('Limit', `${HearthOrder.formatAtomic(plan.params.target_price)} HEAT/XFG`);
+        html += field('Expiry height', plan.params.expiration || 'None');
+      } else {
+        html += field('Fixed output', `${HearthOrder.formatAtomic(plan.expected)} ${plan.outputAsset}`);
+      }
+      html += '</div></div>';
+      if (plan.type === 'market') {
+        html += '<p class="rf-note">The quote is checked again before submission. A worse pool quote requires a new review; a later block can still reject the transaction.</p>';
+      } else {
+        html += '<p class="rf-note">This creates a standing on-chain order. Execution depends on available liquidity and the selected limit.</p>';
+      }
+      document.getElementById('order-modal-details').innerHTML = html;
+      const request = document.getElementById('order-cli-cmd');
+      request.textContent = JSON.stringify({
+        method: plan.type === 'limit' ? 'place_limit_order' : 'amm_swap',
+        params: plan.params
+      }, null, 2);
+      request.hidden = false;
+      document.getElementById('order-modal').classList.add('active');
+    } catch (e) {
+      App.showToast(`Preview unavailable: ${e.message}`);
+    } finally {
+      previewBtn.disabled = false;
     }
-
-    const gross = (parseFloat(amount) * parseFloat(price)).toFixed(4);
-    const cdYield = (gross * 0.01 * 0.70).toFixed(4);
-
-    const field = (label, value, tone) =>
-      `<div><span class="rf-label">${label}</span><span class="rf-value"${tone ? ` style="color:var(${tone})"` : ''}>${value}</span></div>`;
-
-    details.innerHTML = `
-      <div class="rf">
-        <div class="rf-head">
-          <span class="rf-ref">HEARTH · ${Date.now().toString(36).toUpperCase()}</span>
-          <span class="badge ${orderSide === 0 ? 'badge-green' : 'badge-red'}">${sideLabel}</span>
-        </div>
-        <div class="rf-grid">
-          ${field('Manner', orderType === 'limit' ? 'Standing Limit' : 'Immediate (Pool)')}
-          ${field('Amount', `${amount} XFG`, '--maison-bright')}
-          ${field('Limit', `${price} HΞ∆Ŧ`, '--heat-bright')}
-          ${field('Consideration', `≈ ${gross} HΞ∆Ŧ`)}
-          ${field('Salon Fee 1%', `70% CD yield · ${cdYield} HΞ∆Ŧ`)}
-          ${field('Term', `${expiry} blocks · ~${(parseInt(expiry) / 720).toFixed(1)} epochs`)}
-        </div>
-      </div>
-      <p class="rf-note">
-        Standing orders are committed on-chain and matched at each block against
-        the continuous salon pool at its prevailing mid.
-      </p>`;
-
-    const atomicAmt = Math.round(parseFloat(amount) * App.COIN);
-    const cliEl = document.getElementById('order-cli-cmd');
-    if (orderType === 'limit') {
-      cliEl.textContent = `fire_wallet place_order ${side} ${amount} ${price} ${expiry}`;
-    } else {
-      cliEl.textContent = `fire_wallet amm_swap ${orderSide === 0 ? 0 : 1} ${atomicAmt}`;
-    }
-    cliEl.style.display = 'block';
-
-    document.getElementById('order-modal').classList.add('active');
   }
 
   async function executeOrder() {
-    const amount = document.getElementById('order-amount')?.value;
-    if (!amount) return;
-
+    if (!pendingOrder) return;
+    const plan = pendingOrder;
+    const button = document.getElementById('order-exec-btn');
+    button.disabled = true;
     try {
-      const atomicAmt = Math.round(parseFloat(amount) * App.COIN);
-      let result;
-
-      if (orderType === 'limit') {
-        const price = document.getElementById('order-price')?.value;
-        const expiry = parseInt(document.getElementById('order-expiry')?.value) || 4320;
-        result = await App.walletRpc('place_limit_order', {
-          side: orderSide,
-          amount: atomicAmt,
-          target_price: Math.round(parseFloat(price) * App.COIN),
-          expiration: expiry,
-          fee: 0, mixin: 0
+      if (plan.type === 'market') {
+        const fresh = await App.daemonPost('/amm_quote', {
+          input_amount: plan.amount, direction: plan.direction
         });
-      } else {
-        result = await App.walletRpc('amm_swap', {
-          direction: orderSide === 0 ? 0 : 1,
-          input_amount: atomicAmt,
-          expected_output: 0,
-          min_output: 0,
-          fee: 0, mixin: 0
-        });
+        const current = HearthOrder.market(plan.side, HearthOrder.formatAtomic(plan.amount), fresh);
+        if (current.expected < plan.expected) {
+          pendingOrder = null;
+          document.getElementById('order-modal').classList.remove('active');
+          throw new Error('Pool price moved against this quote. Preview again.');
+        }
       }
-
-      App.showToast(`Order sent! Tx: ${result.tx_hash ? result.tx_hash.substring(0, 16) + '…' : 'ok'}`);
+      const result = await App.walletRpc(
+        plan.type === 'limit' ? 'place_limit_order' : 'amm_swap', plan.params);
+      if (!result || !/^[a-fA-F0-9]{64}$/.test(result.tx_hash || '')) {
+        throw new Error('Wallet did not return a transaction hash; check wallet status before retrying');
+      }
+      App.showToast(`Order sent · ${result.tx_hash.substring(0, 16)}…`);
+      pendingOrder = null;
       document.getElementById('order-modal').classList.remove('active');
       loadOrderbook();
     } catch (e) {
-      App.showToast(`Order submission: ${e.message || 'Check wallet daemon'}`);
+      App.showToast(`Order submission: ${e.message || 'Wallet unavailable'}`);
+    } finally {
+      button.disabled = false;
     }
   }
 
   async function loadUserBalance() {
     try {
-      const bal = await App.walletRpc('getbalance');
-      if (bal && bal.availableBalance != null) {
-        userWalletBalance = bal.availableBalance;
-      }
+      const balance = await App.walletRpc('getbalance');
+      const available = Number(balance && balance.available_balance);
+      userWalletBalance = Number.isSafeInteger(available) && available > 0 ? available : 0;
     } catch (e) {
-      // offline
+      userWalletBalance = 0;
     }
   }
 
@@ -663,6 +641,7 @@ const Hearth = (() => {
     updatePoolInfo(null);
     updateHeatMetrics(null);
     loadUserBalance();
+    refreshMetrics();
 
     document.querySelectorAll('.ohlcv-tf').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -674,13 +653,8 @@ const Hearth = (() => {
 
     App.on('pool_info', updatePoolInfo);
     App.on('heat_metric', updateHeatMetrics);
-    App.on('block', () => {
-      loadOrderbook();
-      loadOHLCV(currentTf);
-    });
+    App.on('block', () => { loadOrderbook(); refreshMetrics(); loadUserBalance(); });
 
-    // A register change repaints the plot in place — no reload, no re-fetch,
-    // and the selected indicators and overlays are left exactly as they were.
     App.on('theme', () => {
       if (priceChart) {
         try { priceChart.setStyles(ChartStyle.build(ChartStyle.read())); }
@@ -688,9 +662,14 @@ const Hearth = (() => {
       }
     });
 
-    setInterval(loadOrderbook, 8000);  }
+    setInterval(loadOrderbook, 10000);
+    setInterval(refreshMetrics, 10000);
+  }
 
-  return { init };
+  return { init, showOrderPreview, executeOrder };
 })();
 
-document.addEventListener('DOMContentLoaded', Hearth.init);
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { ...HearthOrder, _ui: Hearth };
+}
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', Hearth.init);

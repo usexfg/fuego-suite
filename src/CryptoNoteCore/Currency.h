@@ -22,6 +22,7 @@
 #include <vector>
 #include <boost/utility.hpp>
 #include "../CryptoNoteConfig.h"
+#include "CdClaimEstimate.h"
 #include "../crypto/hash.h"
 #include "../Logging/LoggerRef.h"
 #include "CryptoNoteBasic.h"
@@ -195,6 +196,13 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
+  // First height at which HEAT CDs may be created and earn interest. Mainnet:
+  // parameters::CD_ACTIVATION_HEIGHT. Testnet: its v11 height, so CDs keep
+  // being exercised there and its existing history stays valid.
+  uint32_t cdActivationHeight() const;
+  // First height at which a pre-v11 block may not carry HEAT, Hearth or
+  // legacy-burn tags (parameters::HEATWAVE_TAG_CUTOFF_HEIGHT; testnet: v11).
+  uint32_t heatwaveTagCutoffHeight() const;
   uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }
@@ -232,17 +240,17 @@ public:
                                   const CommitmentIndex& commitmentIndex,
                                   uint32_t term = 0,
                                   bool autoRolled = false) const;
-    // v11+: BV-backed loyalty bonus. Σ over locked epochs of
-    // bonusHeat_e × amount × tierWeight(term) / weightedBase_e — realized BV
-    // inflows only, so total payouts can never exceed the vault (no
-    // overpromising). Returns 0 pre-V11 (no bonus epoch rates recorded).
+    // v11+: Bonus Vault yield floor. For each credited epoch whose fee rate
+    // fell below CD_YIELD_FLOOR_RATE, tops the CD up to the floor. Paid from
+    // the BONUS_VAULT partition, so payouts never exceed realized inflows.
     uint64_t calculateCdBonus(uint64_t amount, uint32_t creationHeight,
                                uint32_t currentHeight,
                                const CommitmentIndex& commitmentIndex,
                                uint32_t term) const;
-    // Tier weight in percent for a CD term: 250/200/150/125 for the 72/36/18/6
-    // epoch tiers, 100 otherwise. Mirrors the loyalty multiplier mapping.
-    uint64_t loyaltyTierWeightPct(uint32_t term) const;
+    // Last epoch a CD is credited for. calculateCdInterest and
+    // calculateCdBonus pay epochs [creationHeight / D, this], and the v11+
+    // epoch-rate denominator counts the CD over exactly the same window.
+    uint64_t cdLastCreditedEpoch(uint32_t creationHeight, uint32_t term) const;
     uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;
@@ -254,6 +262,10 @@ public:
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
 
     static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
+    // Asset of a TransactionOutputCommitment by its term. The single mapping
+    // for both sides of the per-asset balance: an output is minted as this
+    // asset, and spending it must present the same asset.
+    static AssetType classifyCommitmentTermAsset(uint32_t term);
     AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 

@@ -13,6 +13,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "KmdChainClient.h"
+#include "../utxo_claim_proof.h"
 #include "KmdHtlcScript.h"
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
@@ -83,7 +84,7 @@ ChainClientResult KmdChainClient::lock(const SwapParams& params) {
       recipientKey,
       hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount,
+      params.ctrAmount64(),
       lockTxId,
       redeemScriptHex);
   if (!ok) return ChainClientResult::fail("KMD lockHtlc failed");
@@ -111,7 +112,7 @@ ChainClientResult KmdChainClient::verifyLock(const SwapParams& params) {
         "cannot listunspent by txid alone");
   }
 
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("KMD lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -214,7 +215,7 @@ ChainClientResult KmdChainClient::verifyLockSpv(const SwapParams& params) {
 
     // Check if this is a P2SH output: OP_HASH160 <20 bytes> OP_EQUAL (23 bytes)
     if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
-      if (value >= params.ctrAmount) {
+      if (value >= params.ctrAmount64()) {
         // Verify the P2SH hash matches the expected HTLC script
         if (!params.chainState.empty()) {
           auto redeemScript = KmdHtlcScript::hexToBytes(params.chainState);
@@ -232,7 +233,7 @@ ChainClientResult KmdChainClient::verifyLockSpv(const SwapParams& params) {
 
   if (!foundP2sh) {
     return ChainClientResult::fail("KMD verifyLock SPV: no P2SH output with expected amount " +
-                                   std::to_string(params.ctrAmount));
+                                   std::to_string(params.ctrAmount64()));
   }
 
   // Verify inclusion via SPV
@@ -268,14 +269,14 @@ ChainClientResult KmdChainClient::claim(const SwapParams& params) {
     auto outputScript = KmdHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("KMD claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     const uint32_t nSequence = 0xFFFFFFFD;
 
     auto der = KmdHtlcScript::signInput(privKey, 1, 0, nSequence,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("KMD claim SPV: signing failed");
@@ -283,7 +284,7 @@ ChainClientResult KmdChainClient::claim(const SwapParams& params) {
     auto scriptSig = KmdHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
 
     auto rawTx = KmdHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         scriptSig, params.ctrAddress, outputAmount, 0);
 
     std::string txid;
@@ -295,7 +296,7 @@ ChainClientResult KmdChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -324,13 +325,13 @@ ChainClientResult KmdChainClient::refund(const SwapParams& params) {
     auto outputScript = KmdHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("KMD refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     auto der = KmdHtlcScript::signInput(privKey, 1, nLocktime,
         0xFFFFFFFE,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("KMD refund SPV: signing failed");
@@ -338,7 +339,7 @@ ChainClientResult KmdChainClient::refund(const SwapParams& params) {
     auto scriptSig = KmdHtlcScript::createRefundScriptSig(der, redeemScript);
 
     auto rawTx = KmdHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         scriptSig, params.ctrAddress, outputAmount, nLocktime);
 
     std::string txid;
@@ -350,7 +351,7 @@ ChainClientResult KmdChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -419,12 +420,18 @@ ChainClientResult KmdChainClient::getTransactionDetails(const std::string& txId,
       return result;
     }
 
+    if (!inclusion.included || !inclusion.merkleVerified ||
+        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
+        inclusion.depth == 0) {
+      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
+      return result;
+    }
+    result = ChainClientResult::ok(txId);
     result.success = true;
-    result.confirmed = true;
-    result.spvVerified = true;
+    result.confirmed = inclusion.included;
+    result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
-    result.confirmations = (tipHeight >= inclusion.blockHeight)
-        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    result.confirmations = inclusion.depth;
     return result;
   }
 
@@ -510,7 +517,9 @@ std::string KmdChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {
       SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                   params.requiredConfirmations : 6))
         continue;
       if (spend.spendingTxid.empty()) continue;
       std::string secret = extractSecret(spend.spendingTxid, redeemHex);
@@ -519,6 +528,10 @@ std::string KmdChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   }
 
   if (m_rpc && !knownClaimTxid.empty()) {
+    std::string rawHex;
+    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
+        !spends_utxo_lock_output(KmdHtlcScript::hexToBytes(rawHex),
+                              params.ctrLockTxId)) return {};
     std::string secret = extractSecret(knownClaimTxid, redeemHex);
     if (!secret.empty()) return secret;
   }

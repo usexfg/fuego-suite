@@ -270,9 +270,11 @@ void serialize(CryptoNote::ISerializer& s) {
 
     struct response {
       uint64_t height;
+      std::string network;
 
       void serialize(ISerializer& s) {
         KV_MEMBER(height)
+        KV_MEMBER(network)
       }
     };
   };

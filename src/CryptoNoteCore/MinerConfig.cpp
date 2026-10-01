@@ -192,9 +192,6 @@ bool tryLoadOracleJson(const std::string& path, double usdRate,
     p = end;
   }
   return loaded;
-
-    return false;
-  }
 }
 
 } // anonymous namespace

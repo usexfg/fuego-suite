@@ -21,7 +21,9 @@
 #include "Common/Int128.h"
 
 #include <atomic>
+#include <cstring>
 #include <deque>
+#include <set>
 
 #include "../../external/parallel_hashmap/phmap.h"
 
@@ -85,6 +87,7 @@ namespace CryptoNote {
     virtual bool checkTransactionInputs(const CryptoNote::Transaction& tx, BlockInfo& maxUsedBlock, BlockInfo& lastFailed) override;
     virtual bool haveSpentKeyImages(const CryptoNote::Transaction& tx) override;
     virtual bool checkTransactionSize(size_t blobSize) override;
+    virtual bool checkTransactionSettlement(const CryptoNote::Transaction& tx, uint64_t& fee) override;
 
     bool init() { return init(Tools::getDefaultDataDirectory(), true); }
     bool init(const std::string& config_folder, bool load_existing);
@@ -115,6 +118,8 @@ namespace CryptoNote {
     uint64_t getBlockTimestamp(uint32_t height);
     uint64_t getCoinsInCirculation();
     uint64_t getFeePoolBalance() const { return m_feePoolBalance; }
+    CdClaimEstimate estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                    uint32_t currentHeight, uint32_t term) const;
 
     // W-3: mints the vault-spend surplus back to the source partition as a
     // change UTXO (indexed above the current block height, so popBlock's
@@ -156,6 +161,9 @@ namespace CryptoNote {
     // Simple average of the last 8 blocks' hearthPoolRatio.
     // Canonical scale: HEAT atomics per XFG atomic × COIN.
     uint64_t getRollingTwap() const;
+    // TWAP of the 8 v11 blocks below `height` (0 below two blocks): the price
+    // HEAT mints at, and the rate CD fee shares are valued at, in block `height`.
+    uint64_t twapBefore(uint32_t height) const;
 
     struct OrderbookLevel {
       uint64_t price;
@@ -175,6 +183,31 @@ namespace CryptoNote {
     OrderbookEstimate getOrderbookEstimate(uint8_t side, uint64_t amount) const;
     AssetBalance getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const;
     AssetType classifyInputAsset(const TransactionInput& in) const;
+
+    // Order ids already settled by earlier transactions of the same block (or
+    // block template): an order may be placed or withdrawn once per block.
+    struct SettlementScratch {
+      struct HashLess {
+        bool operator()(const Crypto::Hash& a, const Crypto::Hash& b) const {
+          return memcmp(a.data, b.data, sizeof(a.data)) < 0;
+        }
+      };
+      std::set<Crypto::Hash, HashLess> limitDepositIds;
+      std::set<Crypto::Hash, HashLess> limitWithdrawIds;
+      // Pool spot price when the block opened (HEAT per XFG × COIN); swaps
+      // must keep the price inside HEARTH_MAX_BLOCK_PRICE_MOVE_PCT of it.
+      // 0 checks no band.
+      uint64_t openingSpot = 0;
+    };
+    // v11+ settlement of one transaction against the current chain state: its
+    // single settlement tag becomes per-asset sources and sinks (AssetFlows),
+    // settleAssetFlows balances them, and the tag's own checks run — curve
+    // price, LP shares, order ownership, mint price — covering every condition
+    // pushTransaction's settlement relies on. xfgFee is the only amount the
+    // transaction adds to the coinbase. Block validation, the mempool and the
+    // block template all go through here.
+    bool validateSettlement(const Transaction& tx, uint32_t height, SettlementScratch& scratch,
+                            AssetFlows& flows, uint64_t& xfgFee, std::string& error) const;
     uint64_t getCdYieldPool() const { return m_cdYieldPool; }
     uint64_t getTreasuryLpYield() const { return m_treasuryLpYield; }
     uint64_t getBootstrapRepaymentVault() const { return m_bootstrapRepaymentVault; }
@@ -189,9 +222,7 @@ namespace CryptoNote {
       uint64_t heat = 0;
     };
     TreasuryLpValue getTreasuryLpValue() const;
-    void setBootstrapAmount(uint64_t xfg, uint64_t heat);
     void addSwapFee(uint64_t amount);
-    bool bootstrapAmmPool(uint64_t xfgReserve, uint64_t heatReserve);
     uint64_t getTreasuryBalance() const { return m_treasuryBalance; }
     const VaultUtxoSet& getVault() const { return m_vault; }
     uint64_t getSwfBalance() const { return m_swfBurnedXfgPendingHeat; }
@@ -352,9 +383,10 @@ namespace CryptoNote {
     // Release (void/delete) an alias — caller must have verified ownership first
     bool removeAlias(const std::string& alias);
 
-    // Transfer alias ownership to a new address hash
+    // Transfer alias ownership to a new address and its hash
     bool replaceAliasOwnership(const std::string& alias,
-                               const Crypto::Hash& newAddressHash);
+                               const Crypto::Hash& newAddressHash,
+                               const std::string& newOwnerAddress);
 
     void updateCurrentMerkleRoot(const Crypto::Hash& root);
     uint64_t getConsensusPercentageForCurrentRoot() const;
@@ -444,7 +476,6 @@ namespace CryptoNote {
       bool bootstrapRepaid;
       uint64_t bonusVaultBalance;
       uint64_t bonusVaultPendingXfg;
-      uint64_t bonusWeightedBase;
 
       void serialize(ISerializer& s) {
         s(heatSupply, "heat_supply"); s(heatOnDeposit, "heat_on_deposit");
@@ -471,7 +502,6 @@ namespace CryptoNote {
         s(bootstrapRepaid, "bootstrap_repaid");
         s(bonusVaultBalance, "bonus_vault_balance");
         s(bonusVaultPendingXfg, "bonus_vault_pending_xfg");
-        s(bonusWeightedBase, "bonus_weighted_base");
       }
     };
 
@@ -488,7 +518,15 @@ namespace CryptoNote {
 
     // HEAT stablecoin state
     uint64_t m_heatSupply = 0;
-    uint64_t m_heatOnDeposit = 0;       // HEAT locked in CDs (excludes mint outputs, HEAT_TERM)
+    // HEAT in CDs still earning: added at creation, dropped at the boundary
+    // closing the CD's last credited epoch. The v11+ epoch-rate denominator.
+    uint64_t m_heatOnDeposit = 0;
+    // Last credited epoch ((creationHeight + term) / D) → CD HEAT ending there.
+    // Creation-side only; boundaries read it and never edit it.
+    std::map<uint64_t, uint64_t> m_cdExpiryByEpoch;
+    // CD HEAT created in the block being pushed (reset by its miner tx). Those
+    // CDs start in the next epoch, so a boundary block excludes them.
+    uint64_t m_blockCdCreatedHeat = 0;
     CryptoNote::HeatMintEngine m_heatMintEngine;
 
     // DIGM stablecoin state (on-chain commitments)
@@ -497,14 +535,22 @@ namespace CryptoNote {
 
     // Hearth AMM state
     CryptoNote::AmmPoolState m_ammPool;
+    // LP shares of the genesis seed, held by the seed provider. The seed used
+    // to have none, so the first LP deposit — by anyone — owned the whole pool.
+    uint64_t m_seedLpShares = 0;
     uint64_t m_poolLockedXfg = 0;    // sum of DEPOSIT_TERM_POOL_XFG outputs
     uint64_t m_poolLockedHeat = 0;   // sum of DEPOSIT_TERM_POOL_HEAT outputs
     uint128_t m_twapAccumulator = 0;
     uint64_t m_twapBlockCount = 0;
 
-    // Rolling 8-block TWAP for HEAT mint validation (anti-manipulation)
-    std::deque<uint64_t> m_rollingPriceWindow;
-    uint8_t m_lastTwapVersion = 0;
+    // End-of-block Hearth spot price of each v11 block, (height, price), most
+    // recent last — kept for MAX_ROLLBACK_HISTORY blocks beyond the 8-block
+    // TWAP window and saved with the block cache. twapBefore(h) averages the 8
+    // entries below h, so validation, settlement, a reorg and a restart all
+    // see the same price. The old window dropped its oldest entry on each
+    // push and restored none on a pop, and was never saved: after a reorg or a
+    // restart a node priced mints differently from its peers.
+    std::deque<std::pair<uint32_t, uint64_t>> m_blockSpotHistory;
 
     // CD yield state
     uint64_t m_cdYieldPool = 0;
@@ -579,9 +625,6 @@ namespace CryptoNote {
     // Per-block alias register/release/transfer undo journal for popBlock
     // reversal (see AliasIndex.h's AliasUndoOp / applyAliasUndo).
     std::deque<std::pair<uint32_t, std::vector<AliasUndoOp>>> m_aliasUndoLog;
-    // Per-block dir-1 swap CD-fee HEAT equivalents (recorded at settle for
-    // exact popBlock reversal — the pop-time pool rate differs from push-time).
-    std::deque<std::pair<uint32_t, std::vector<uint64_t>>> m_blockSwapCdFeeHeatEq;
     // Per-block LP-removal reserve deltas (recorded at settle for exact
     // popBlock reversal). Recomputing from post-burn state is not the inverse
     // of the forward path: once lpSharesBurned exceeds the post-burn supply
@@ -634,13 +677,7 @@ namespace CryptoNote {
     uint64_t m_treasurySwapFeeXfg = 0;          // Swap fee XFG pending burn (counted, not yet burned)
     uint64_t m_treasuryLpPendingXfg = 0;          // Unburned treasury XFG reserve (swap-fee share / LP source)
     uint64_t m_swfHeatBalance = 0;              // SWF counter HEAT (off-chain DIGM collateral, never UTXOs)
-    uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (loyalty + tier bonuses)
-    // v11+: tier-weighted CD principal created per epoch. The BV bonus share
-    // denominator at an epoch boundary is the rolling sum over the last
-    // BONUS_WEIGHTED_WINDOW_EPOCHS entries — deterministic, spend-agnostic
-    // (ring privacy hides a spent CD's term), and strictly bounded so total
-    // bonus payouts can never exceed realized BV inflows.
-    std::vector<uint64_t> m_bonusWeightedByEpoch;
+    uint64_t m_bonusVaultBalance = 0;       // 11% bonus vault (funds the lean-epoch yield floor)
     // Autonomous Treasury Vault
     VaultUtxoSet m_vault;
     VaultKeypair m_vaultKeys;
@@ -708,6 +745,7 @@ namespace CryptoNote {
     void rebuildOrderbookFromUtxoSet(uint32_t height);
     bool pushTransaction(BlockEntry &block, const Crypto::Hash &transactionHash, TxIndex transactionIndex);
     bool processBlockEpochWork(const Block& block, uint32_t height, const Crypto::Hash& blockHash);
+    void seedHearthPool();
     void accumulateTwap(const Block& block, uint32_t height);
     void popTransaction(const Transaction &transaction, const Crypto::Hash &transactionHash,
                         uint32_t height, uint8_t majorVersion);

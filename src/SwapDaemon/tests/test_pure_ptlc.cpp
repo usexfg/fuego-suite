@@ -421,10 +421,8 @@ int main() {
 
     Crypto::SecretKey extracted{};
     assert(BtcTaprootPtlc::parseClaimSecret(tx, tweakedPub33, presig, T, extracted));
-    // extracted is in secp BE domain (rev of CryptoNote LE t).
-    Crypto::SecretKey t_rev = t;
-    std::reverse(reinterpret_cast<uint8_t*>(&t_rev), reinterpret_cast<uint8_t*>(&t_rev) + 32);
-    assert(std::memcmp(&extracted, &t_rev, sizeof(t_rev)) == 0);
+    // extracted is t in the CryptoNote LE domain it was signed with.
+    assert(std::memcmp(&extracted, &t, sizeof(t)) == 0);
 
     // Corrupted R_x in the witness -> no matching candidate -> false.
     auto badSig = sig64;

@@ -8,7 +8,7 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 **Started**: 2026-10-01
 **Agent**: Codex (GPT-6)
-**Status**: IN PROGRESS — merge and release gates pending
+**Status**: MERGED — funded operation and dashboard parity gates pending
 
 | Task | Owner | Date | Status |
 |------|-------|------|--------|
@@ -18,7 +18,7 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 | Restrict dashboard operator proxies to same-origin loopback requests and allowlisted RPC methods | Codex | 2026-10-01 | Go tests pass; browser check pending |
 | Repair the existing `MinerConfig.cpp` namespace break found by the integration build | Codex | 2026-10-01 | DONE; daemon and swap binaries compile |
 | Reject oversized dashboard operator requests and imprecise live Hearth order amounts | Codex | 2026-10-01 | DONE; Go and JavaScript tests pass |
-| Commit merge and push to mainline without disturbing unrelated local work | Codex | — | PENDING |
+| Commit merge and push to mainline without disturbing unrelated local work | Codex | 2026-10-01 | DONE; merge `f64eb0c8b` pushed to GitHub `master` |
 | Verify funded lock/claim/refund, restart/reorg, and full order/recovery UI parity before production activation or TUI removal | Operator + Codex | — | PENDING |
 
 ### Sign-off
@@ -28,7 +28,7 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 | Dashboard Go and JavaScript offline tests | PASS in isolated checkout; funded operation not implied |
 | Focused C++ build/tests | PASS: Release `fuegod` and `xfg-swapd` compile; assertion-enabled catalog, ETH amount/wire, SPV, swap audit, state recovery, Hearth AMM, core, orderbook, and production-gate tests pass |
 | Graphify refresh | BLOCKED by installed `hyppo` cache locator error after AST extraction |
-| Mainline push | PENDING |
+| Mainline push | PASS: GitHub `master` advanced from `ea6950d8f` to `f64eb0c8b`; dirty canonical checkout was not modified |
 | Funded swap and dashboard parity | NOT RUN; TUI remains |
 
 Older entries below describe their original revisions. They do not establish

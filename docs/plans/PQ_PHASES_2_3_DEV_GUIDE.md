@@ -1,11 +1,13 @@
 # Phases 2 & 3 Fuego Post-Quantum Roadmap — Dev Guide
 ## Recursive STARK UTXO Consensus & Quantum-Safe Cross-Chain Banking
 
+> **STATUS: Design specification only — NOT implemented.** No ML-KEM code, `TX_EXTRA_PQ_KEM` (0xD7) tag, `fire_pq` addresses, or PQ library exists anywhere in `src/` as of this commit. Phase 1 is specified in [`HNDL_PHASE1_DEV_GUIDE.md`](HNDL_PHASE1_DEV_GUIDE.md) but is not built or deployed. The current ledger remains fully HNDL-exposed.
+
 ---
 
 ## 1. Executive Context & Threat Transition
 
-Phase 1 ([`HNDL_PHASE1_DEV_GUIDE.md`](file:///home/ar/fuego/docs/developer/HNDL_PHASE1_DEV_GUIDE.md)) deployed hybrid ML-KEM-768 stealth addressing (`TX_EXTRA_PQ_KEM`, `0xD7`) to permanently defeat Harvest Now, Decrypt Later against ledger recipients. 
+Phase 1 ([`HNDL_PHASE1_DEV_GUIDE.md`](HNDL_PHASE1_DEV_GUIDE.md)) specifies hybrid ML-KEM-768 stealth addressing (`TX_EXTRA_PQ_KEM`, `0xD7`) to permanently defeat Harvest Now, Decrypt Later against ledger recipients. It is not yet implemented or deployed. 
 
 However, Phase 1 deliberately leaves **spend authorization** on classical Ed25519 signatures. When a Cryptanalytically Relevant Quantum Computer (CRQC) becomes active:
 1. **Key Image Forgery**: Classical key images $I = x \cdot H_p(P)$ fail because Shor's algorithm computes $x$ directly from public key $P$. An attacker can double-spend unspent outputs.
@@ -22,9 +24,9 @@ Phases 2 and 3 complete the quantum transition of the Fuego protocol:
 │                       FUEGO 3-PHASE POST-QUANTUM SUITE                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ PHASE 1: LEDGER SECRECY (HNDL DEFENSE)                                      │
-│ • ML-KEM-768 Hybrid Stealth Addresses (tx_extra 0xD7)                       │
-│ • Immunity to retroactive harvest and recipient deanonymization             │
-│ • Soft-fork compatible; live on wire                                        │
+│ • ML-KEM-768 Hybrid Stealth Addresses (tx_extra 0xD7) — SPEC ONLY           │
+│ • Immunity to retroactive harvest — once implemented                        │
+│ • Soft-fork compatible; NOT live on wire (no implementation in src/)       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ PHASE 2: CONSENSUS & SPEND IMMUNITY (STARK UTXO)                            │
 │ • Hash-based Nullifiers replace Ed25519 Key Images                          │

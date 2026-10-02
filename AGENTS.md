@@ -15,11 +15,12 @@ writing code, docs, migrations or resync logic.
 
 | Fact | Consequence in code |
 |------|---------------------|
-| No Hearth/AMM swaps and no HΞΔŦ trades exist on mainnet before V11 | Below V11, blocks and mempool reject every HEAT-era feature (`usesHeatEraFeatures`: HEAT mint/send, AMM swap/liquidity, LP auth, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT/LP/pool/SWRX commitment outputs, CD transfers). There is no pre-V11 HEAT history to stay compatible with — do not add "historical re-validation" paths for it. The gate also rejects HEAT mints below V11 (the pre-V11 mint check priced at a fixed 1:1 on an empty pool). |
-| No legacy bonds exist on any network | 0xCB / 0xCC tags are rejected at every height (`usesLegacyBondTags`). Epoch fees are never diverted to a legacy bond pool. Do not reintroduce legacy bonds. |
-| XFG deposits (all CDs created before the HEAT-CD height) are withdraw-only | Principal only — zero interest in XFG or HΞΔŦ, ever. Consensus rejects a positive `claimedInterest` unless every ring member is a HEAT CD. No new XFG deposits are created by any wallet at any height. The withdraw paths stay. |
-| No DIGM mint exists before V12 | Consensus rejects DIGM_TERM outputs below V12 (`createsDigm`). |
-| HEAT CDs activate at V12 (`Currency::isHeatCdHeight`) | Finite-term CDs created at or above it are HEAT; their interest is HEAT. CD interest is backed only by the HEAT CD_APY_POOL / BONUS_VAULT partitions. |
+| No HΞΔŦ, Hearth (AMM/orderbook), CDs or atomic swaps have been used on mainnet yet. The atomic swap code has been live since V10 but has never worked well enough to be used. | Below V11 — and in any block still carrying major version 10, including the block at the V11 height itself — blocks and mempool reject every HEAT-era feature (`usesHeatEraFeatures`): HEAT mint/send, AMM swap/liquidity, LP auth, orderbook, limit orders, TreasuryFund, CD bonus claims, **any** commitment output, **any** CommitmentSpend / CommitmentTransfer input. There is no pre-V11 HEAT/Hearth/CD history to stay compatible with — never add "historical re-validation" paths for it. |
+| The HΞΔŦ launch rate is 10:1 (10 XFG = 1 HΞΔŦ). There is no 1:1 rate anywhere. | The Hearth pool genesis seed is 10,000 XFG / 1,000 HΞΔŦ (`seedHearthPool`, used by the constructor **and** `rebuildCache`). Price code fails closed when no pool/TWAP price exists; never add a fixed-rate fallback. |
+| CDs start at V12 (HEAT CDs); no CD exists before it | Finite-term CD outputs are rejected below V12 (`createsCd`). Every CD is a HΞΔŦ CD; its interest is HΞΔŦ, backed only by the CD_APY_POOL / BONUS_VAULT partitions. |
+| XFG deposits (the pre-existing XFG term deposits) are withdraw-only | Principal only — zero interest in XFG or HΞΔŦ, ever. No wallet creates XFG deposits at any height. Keep the withdraw paths. |
+| No legacy bonds exist on any network | 0xCB / 0xCC tags are rejected at every height (`usesLegacyBondTags`). Epoch fees are never diverted to a legacy bond pool. |
+| No DIGM mint exists before V12 | DIGM_TERM outputs are rejected below V12 (`createsDigm`). |
 
 Consensus invariants (keep them):
 - Commitment rings (CommitmentSpend and CommitmentTransfer) hold a single asset from V11; inputs are classified by ring, so a mixed ring would switch asset at equal atomic amount.

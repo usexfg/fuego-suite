@@ -1486,11 +1486,11 @@ namespace CryptoNote
       if (heatOut == 0) {
         INode::AmmPoolReserves reserves;
         std::error_code pec = m_node.getAmmPoolReserves(reserves);
-        if (!pec && reserves.reserveXfg > 0) {
-          heatOut = inputAmount * reserves.reserveHeat / reserves.reserveXfg;
-        } else {
-          heatOut = inputAmount / 10;
+        if (pec || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+          throw std::system_error(make_error_code(error::WRONG_AMOUNT), "No Hearth pool price available");
         }
+        heatOut = static_cast<uint64_t>(
+            (static_cast<uint128_t>(inputAmount) * reserves.reserveHeat) / reserves.reserveXfg);
       }
       if (heatOut < minOutput) {
         heatOut = minOutput;
@@ -1504,11 +1504,11 @@ namespace CryptoNote
     if (outputAmount == 0) {
       INode::AmmPoolReserves reserves;
       std::error_code pec = m_node.getAmmPoolReserves(reserves);
-      if (!pec && reserves.reserveHeat > 0) {
-        outputAmount = inputAmount * reserves.reserveXfg / reserves.reserveHeat;
-      } else {
-        outputAmount = inputAmount * 10; // inverse of launch 10:1
+      if (pec || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT), "No Hearth pool price available");
       }
+      outputAmount = static_cast<uint64_t>(
+          (static_cast<uint128_t>(inputAmount) * reserves.reserveXfg) / reserves.reserveHeat);
     }
     if (outputAmount < minOutput) {
       outputAmount = minOutput;

@@ -448,3 +448,32 @@ Assumption: no HEAT mint, AMM, LP, orderbook, DIGM or CD-transfer transaction ex
 |------|-----------|------|--------|
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
 | Unit/regression test suites | — | — | NOT RUN |
+
+---
+
+## 10:1 Launch Rate Only; No Commitments Before V11, No CDs Before V12; Pool Re-seed
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-10-02
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `rebuildCache` emptied the Hearth pool without re-seeding it, while a fresh start seeds 10,000 XFG / 1,000 HEAT — nodes would disagree on every price-dependent rule from V11. `seedHearthPool()` now runs in both | claude-code | 2026-10-02 | DONE |
+| 2 | Removed every pre-v11 legacy validation/settlement path (legacy AMM swap, legacy mint auth, legacy non-auth mint, v10 LP add/remove, legacy AMM tags, legacy bond claim, pre-v11 swap settlement and reversal) — all carried fixed-rate fallbacks and are unreachable behind the V11 gate. No 1:1 rate remains | claude-code | 2026-10-02 | DONE |
+| 3 | HEAT-era gate covers any commitment output and any CommitmentSpend / CommitmentTransfer input, and applies to blocks still at major version 10 (the block at the V11 height is v10) | claude-code | 2026-10-02 | DONE |
+| 4 | Finite-term CD outputs rejected below V12 (`createsCd`) — no CD exists before V12 | claude-code | 2026-10-02 | DONE |
+| 5 | WalletGreen AMM swap quotes fail closed without a pool price (no 10:1 guess), uint128 math | claude-code | 2026-10-02 | DONE |
+| 6 | AGENTS.md facts updated: no HEAT/Hearth/CDs/atomic swaps used on mainnet yet; 10:1 launch rate only | claude-code | 2026-10-02 | DONE |
+
+Correction to earlier entries: the pre-v11 paths did not price at 1:1 on mainnet in practice — the pool is seeded at 10:1 — but they carried a 1:1 fallback for an empty pool, which `rebuildCache` produced.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
+| Unit/regression test suites | — | — | NOT RUN |

@@ -474,10 +474,13 @@ bool addTreasuryFundToExtra(std::vector<uint8_t>& tx_extra, uint8_t asset, uint6
 uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra);
 
 // True when tx uses any HEAT-economy feature: HEAT mint/send, AMM swap or
-// liquidity, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT /
-// LP / pool / swap-receive commitment outputs, or CD transfers. None of these
-// existed on mainnet before V11; consensus rejects them below V11.
+// liquidity, orderbook, limit orders, TreasuryFund, CD bonus claims, any
+// commitment output, any CommitmentSpend / CommitmentTransfer input. None of
+// these existed on mainnet before V11; consensus rejects them below V11.
 bool usesHeatEraFeatures(const Transaction& tx);
+// True when tx creates a finite-term CD output. CDs start at V12 (HEAT CDs);
+// consensus rejects them below V12.
+bool createsCd(const Transaction& tx);
 // True when tx creates a DIGM_TERM output. No DIGM mint exists before V12;
 // consensus rejects them below V12.
 bool createsDigm(const Transaction& tx);

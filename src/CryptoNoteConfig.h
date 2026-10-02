@@ -179,7 +179,7 @@ namespace CryptoNote
         const uint64_t EPOCHS_PER_YEAR = 73;                  // 65700 blocks/yr / 900 blocks/epoch
         const uint64_t SWAP_FEE_TREASURY_SHARE_PCT = 20;     // 20% of epoch swap fees → Treasury Reserve
 
-        // HEAT stablecoin peg reference (v11+: 1:1 Hearth pool bootstrap)
+        // HEAT stablecoin peg reference (v11+: Hearth pool seeded at the 10:1 launch rate)
         const double HEAT_PEG_USD = 1.58;                   // HEAT peg reference in USD (launch constant)
         // TODO(Phase 2): CPI adjustment — when enabled, HEAT_PEG_USD updates periodically
         // via BLS CPI-U oracle to preserve purchasing power. Until then, HEAT is fixed at $1.58.

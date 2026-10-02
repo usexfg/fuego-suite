@@ -390,8 +390,14 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
-  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) && usesHeatEraFeatures(tx)) {
+  if ((height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) ||
+       m_blockchain.getBlockMajorVersionForHeight(height) < BLOCK_MAJOR_VERSION_11) &&
+      usesHeatEraFeatures(tx)) {
     logger(ERROR) << "tx uses a HEAT-era feature before V11, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsCd(tx)) {
+    logger(ERROR) << "CD output before V12, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
   if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsDigm(tx)) {

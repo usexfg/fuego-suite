@@ -208,6 +208,7 @@ namespace CryptoNote {
     uint64_t getProtocolLpShares() const { return m_protocolLpShares; }
     bool withdrawTreasuryLp(uint64_t sharesToBurn);
     uint8_t getBlockMajorVersionForHeight(uint32_t height) const;
+    void seedHearthPool();
     uint8_t blockMajorVersion;
     bool addNewBlock(const Block& bl_, block_verification_context& bvc);
     bool resetAndSetGenesisBlock(const Block& b);

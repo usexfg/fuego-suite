@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionExtra.h"
+#include "Currency.h"
 #include "CryptoNoteTools.h"
 #include "../CryptoNoteConfig.h"
 #include "../crypto/hash.h"
@@ -1920,18 +1921,14 @@ namespace CryptoNote
 
   bool usesHeatEraFeatures(const Transaction& tx) {
     for (const auto& in : tx.inputs) {
-      if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+      if (in.type() == typeid(TransactionInputCommitmentTransfer) ||
+          in.type() == typeid(TransactionInputCommitmentSpend)) {
         return true;
       }
     }
     for (const auto& out : tx.outputs) {
       if (out.target.type() == typeid(TransactionOutputCommitment)) {
-        const uint32_t term = boost::get<TransactionOutputCommitment>(out.target).term;
-        if (term == parameters::HEAT_TERM || term == parameters::DEPOSIT_TERM_LP ||
-            term == parameters::DEPOSIT_TERM_POOL_XFG || term == parameters::DEPOSIT_TERM_POOL_HEAT ||
-            term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) {
-          return true;
-        }
+        return true;
       }
     }
     std::vector<TransactionExtraField> fields;
@@ -1949,6 +1946,16 @@ namespace CryptoNote
           t == typeid(TransactionExtraMarketBuyAuth) || t == typeid(TransactionExtraMarketSellAuth) ||
           t == typeid(TransactionExtraLimitDeposit) || t == typeid(TransactionExtraLimitWithdraw) ||
           t == typeid(TransactionExtraTreasuryFund) || t == typeid(TransactionExtraCdBonusClaim)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool createsCd(const Transaction& tx) {
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment) &&
+          Currency::isFiniteCdTerm(boost::get<TransactionOutputCommitment>(out.target).term)) {
         return true;
       }
     }

@@ -390,6 +390,11 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
+  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) && usesHeatEraFeatures(tx)) {
+    logger(ERROR) << "tx uses a HEAT-era feature before V11, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+
   if (!check_inputs_types_supported(tx)) {
     logger(ERROR) << "unsupported input types for tx id= " << getObjectHash(tx);
     return false;

@@ -1918,6 +1918,43 @@ namespace CryptoNote
     return true;
   }
 
+  bool usesHeatEraFeatures(const Transaction& tx) {
+    for (const auto& in : tx.inputs) {
+      if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
+        return true;
+      }
+    }
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment)) {
+        const uint32_t term = boost::get<TransactionOutputCommitment>(out.target).term;
+        if (term == parameters::HEAT_TERM || term == parameters::DEPOSIT_TERM_LP ||
+            term == parameters::DEPOSIT_TERM_POOL_XFG || term == parameters::DEPOSIT_TERM_POOL_HEAT ||
+            term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG || term == parameters::DIGM_TERM) {
+          return true;
+        }
+      }
+    }
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx.extra, fields)) {
+      return false;
+    }
+    for (const auto& f : fields) {
+      const auto& t = f.type();
+      if (t == typeid(TransactionExtraHeatMintAuth) || t == typeid(TransactionExtraHeatSendAuth) ||
+          t == typeid(TransactionExtraAmmSwap) || t == typeid(TransactionExtraAmmSwapAuth) ||
+          t == typeid(TransactionExtraAmmAddLiquidity) || t == typeid(TransactionExtraAmmRemoveLiquidity) ||
+          t == typeid(TransactionExtraAmmCompound) || t == typeid(TransactionExtraAmmClaim) ||
+          t == typeid(TransactionExtraLpAddAuth) || t == typeid(TransactionExtraLpRemoveAuth) ||
+          t == typeid(TransactionExtraOrderPlace) || t == typeid(TransactionExtraOrderCancel) ||
+          t == typeid(TransactionExtraMarketBuyAuth) || t == typeid(TransactionExtraMarketSellAuth) ||
+          t == typeid(TransactionExtraLimitDeposit) || t == typeid(TransactionExtraLimitWithdraw) ||
+          t == typeid(TransactionExtraTreasuryFund) || t == typeid(TransactionExtraCdBonusClaim)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra) {
     std::vector<TransactionExtraField> fields;
     if (!parseTransactionExtra(tx_extra, fields)) {

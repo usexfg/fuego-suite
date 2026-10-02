@@ -1163,15 +1163,12 @@ namespace CryptoNote
       std::unique_ptr<ITransaction> transaction = createTransaction();
       std::vector<MultisignatureInput> inputs = prepareMultisignatureInputs(context->selectedTransfers);
 
-      // Interest claim 0xCC extra
-      std::vector<uint8_t> extra;
-      TransactionExtraLegacyBondClaim claim;
-      claim.claimedInterest = interest;
-      addLegacyBondClaimToExtra(extra, claim);
-      transaction->appendExtra(extra);
+      // Legacy bonds are XFG deposits: principal only, no 0xCC interest claim
+      // (consensus rejects any positive legacy bond interest).
+      (void)interest;
 
-      // Output amount = principal + interest - fee
-      uint64_t totalAmount = context->foundMoney + interest;
+      // Output amount = principal - fee
+      uint64_t totalAmount = context->foundMoney;
       std::vector<uint64_t> outputAmounts = splitAmount(totalAmount - transactionInfo.fee, context->dustPolicy.dustThreshold);
 
       for (const auto &input : inputs)

@@ -3566,6 +3566,24 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     bool isTransactionValid = true;
 
+    // HEAT, the Hearth AMM, LP shares, the orderbook, DIGM and CD transfers
+    // start at V11. Below it the legacy validation fell back to a fixed 1:1
+    // price on an empty pool, so any of these would mint HEAT/LP from XFG
+    // before launch; none ever occurred on mainnet, so all are rejected.
+    if (block.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) &&
+        usesHeatEraFeatures(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                 << " uses a HEAT-era feature before V11";
+    }
+
+    // Legacy bonds earn nothing: XFG deposits are principal-only.
+    if (hasLegacyBondClaim && legacyClaimedInterest > 0) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                 << " legacy bond interest claim rejected (XFG deposits are principal-only)";
+    }
+
     if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 &&
         (hasTreasuryFund || hasLimitDeposit || hasLimitWithdraw)) {
       isTransactionValid = false;
@@ -5610,14 +5628,11 @@ bool CryptoNote::Blockchain::processBlockEpochWork(const Block& block, uint32_t 
       }
     }
 
-    // Split CD share between regular CDs and legacy bonds (50/50 default)
+    // The whole CD share goes to HEAT CDs: legacy bonds (XFG deposits) are
+    // principal-only and can no longer claim, so nothing is diverted to them.
     uint64_t regularCdShare = cdShare;
     uint64_t legacyBondShare = 0;
     uint64_t epochLegacyBondLocked = m_totalLegacyBondLocked;
-    if (epochLegacyBondLocked > 0 && m_totalCdLocked > 0) {
-      legacyBondShare = (cdShare * CryptoNote::parameters::LEGACY_BOND_CD_SHARE_PCT) / 100;
-      regularCdShare = cdShare - legacyBondShare;
-    }
     // v11+: claims are denominated in HEAT atomics, so the recorded rate must be
     // HEAT-denominated too — convert the XFG fee share at the pool rate once,
     // here. If no rate is available the share defers (rate 0 for this epoch;

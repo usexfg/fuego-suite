@@ -398,3 +398,29 @@ Supersedes the "mixed-ring asset switch remains open under v11 rules" open item 
 |------|-----------|------|--------|
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
 | Unit/regression test suites | — | — | NOT RUN |
+
+---
+
+## No HEAT-Era Features Before V11; Legacy Bonds Principal-Only
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-10-02
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `usesHeatEraFeatures`: HEAT mint/send, AMM swap/liquidity, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT/LP/pool/SWRX/DIGM commitment outputs, CD transfers. Rejected in blocks and the mempool below V11. The pre-v11 mint and legacy AMM checks fell back to a fixed 1:1 rate on an empty pool, i.e. HEAT minted from XFG before launch. No such transaction exists on mainnet before V11 | claude-code | 2026-10-02 | DONE |
+| 2 | Legacy bond (0xCC) claims with positive interest rejected at every height; epoch fees no longer diverted to the legacy bond pool | claude-code | 2026-10-02 | DONE |
+| 3 | WalletLegacy legacy bond withdrawal returns principal only (withdraw path kept) | claude-code | 2026-10-02 | DONE |
+
+Assumption: no HEAT mint, AMM, LP, orderbook, DIGM or CD-transfer transaction exists on mainnet below V11. If one does, nodes with this code stop at that block.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
+| Unit/regression test suites | — | — | NOT RUN |

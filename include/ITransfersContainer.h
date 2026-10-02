@@ -124,6 +124,9 @@ namespace CryptoNote
     virtual void getUnconfirmedTransactions(std::vector<Crypto::Hash> &transactions) const = 0;
     virtual std::vector<TransactionSpentOutputInformation> getSpentOutputs() const = 0;
     virtual bool getTransfer(const Crypto::Hash &transactionHash, uint32_t outputInTransaction, TransactionOutputInformation &transfer, TransferState &transferState) const = 0;
+    // Key image recorded at detection for an available owned output (for a
+    // commitment it tells the v1 and v2 key schemes apart).
+    virtual bool getAvailableKeyImage(const Crypto::Hash &transactionHash, uint32_t outputInTransaction, Crypto::KeyImage &keyImage) const { return false; }
   };
 
 } // namespace CryptoNote

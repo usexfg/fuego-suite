@@ -371,6 +371,28 @@ struct DepositCommitmentKeys {
 
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
+// Legacy (v1) commitment keys of output `outputIndex`: the secret is
+// H(D || outputIndex_LE32) with D the view-key ECDH derivation, so the sender
+// and any view-key holder can derive the spend scalar. Detect/spend only.
+DepositCommitmentKeys deriveCommitmentKeysV1(const Crypto::KeyDerivation& derivation, uint32_t outputIndex);
+
+// Spend-key-bound (v2) commitment keys, the only scheme new outputs use:
+//   s = Hs(D || varint(i) || "fuego_commit_v2")
+//   commitKey = s*G + B        keyScalar = s + b
+// D (view-key ECDH) finds the output; spending needs the recipient's spend
+// secret b, which neither the sender nor a view-key holder has.
+bool deriveCommitmentPublicKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                 const Crypto::PublicKey& spendPublicKey, Crypto::PublicKey& commitKey);
+void deriveCommitmentSecretKeyV2(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                                 const Crypto::SecretKey& spendSecretKey, Crypto::SecretKey& keyScalar);
+
+// Spend keys of an owned commitment output, choosing the scheme whose key
+// image equals the one recorded at detection. False when neither matches.
+bool deriveOwnedCommitmentKeys(const Crypto::KeyDerivation& derivation, uint32_t outputIndex,
+                               const Crypto::PublicKey& spendPublicKey, const Crypto::SecretKey& spendSecretKey,
+                               const Crypto::KeyImage& recordedKeyImage,
+                               Crypto::PublicKey& commitKey, Crypto::SecretKey& keyScalar, Crypto::KeyImage& keyImage);
+
 enum class DepositType : uint8_t {
   HEAT      = 0x02,
   // COLD = 0xCD,  // REMOVED: COLD deposit type

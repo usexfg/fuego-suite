@@ -394,6 +394,9 @@ protected:
   // The keys of a commitment output this wallet received, re-derived from the
   // view key the way the scanner recognized it.
   CryptoNote::DepositCommitmentKeys deriveOwnCommitmentKeys(const TransactionOutputInformation &transfer) const;
+  Crypto::PublicKey commitmentOutputKey(ITransaction& transaction, const Crypto::PublicKey& spendPublicKey,
+                                        const Crypto::PublicKey& viewPublicKey) const;
+  const Crypto::PublicKey& primarySpendPublicKey() const;
   // Adds every input, then signs them. A signature covers the whole prefix,
   // so ITransaction refuses an input once anything is signed.
   void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,

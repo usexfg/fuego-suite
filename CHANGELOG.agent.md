@@ -4,6 +4,43 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Spend-key-bound commitment keys (wallet side only)
+
+**Started**: 2026-10-02
+**Agent**: claude-opus-5-5
+**Status**: DONE — branch `claude/spend-key-bound-commitment-keys`, PR pending review
+
+The v1 commitment key came from the view-key derivation alone
+(`depositSecret = H(r·A || i)`, `keyScalar = Hs("fuego_commit_key" || depositSecret)`):
+the sender and any view-key holder could spend HEAT, LP, swap-receive and CD
+outputs. New outputs use v2 keys, `Hs(D || varint(i) || "fuego_commit_v2")·G + B`,
+taken from `a0abbbeb` (branch `claude/valise-sdk-suite-sync-9u8mdk`) without
+that commit's consensus changes. Consensus never derives commit keys, so this is
+not a fork.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| `deriveCommitmentKeysV1` / `deriveCommitmentPublicKeyV2` / `deriveCommitmentSecretKeyV2` / `deriveOwnedCommitmentKeys` (TransactionExtra) | claude-opus-5-5 | 2026-10-02 | DONE |
+| TransfersConsumer detects v2 (any subscribed spend key) then v1; records the matching key image | claude-opus-5-5 | 2026-10-02 | DONE |
+| `ITransfersContainer::getAvailableKeyImage` so spends pick v1/v2 by recorded key image | claude-opus-5-5 | 2026-10-02 | DONE |
+| WalletLegacy: every commitment output v2 (recipient's keys for HEAT sends), spends via `ownedCommitmentKeys` | claude-opus-5-5 | 2026-10-02 | DONE |
+| WalletGreen: every commitment output v2 via `commitmentOutputKey`; `deriveOwnCommitmentKeys` picks v1/v2 by recorded key image | claude-opus-5-5 | 2026-10-02 | DONE |
+| `commitment_keys_v2_tests`: sender/receiver agree, only `b` opens v2, v1 cannot open v2, owned-key selection, fixed vector shared with fuego-valise | claude-opus-5-5 | 2026-10-02 | DONE — 3/3 pass |
+
+Not changed: the burn-deposit path in WalletGreen (random secret kept only in
+the local wallet file, not derivable by sender or view key); pool reserves
+(consensus refuses them as ring members); consensus rules from `a0abbbeb`.
+
+| Gate | Result |
+|------|--------|
+| `CryptoNoteCore`, `Transfers`, `Wallet`, `SimpleWallet`, `Daemon`, `PaymentGateService` build | PASS |
+| `commitment_keys_v2_tests` | PASS (3/3) |
+| Live wallet send/scan/spend on testnet | NOT RUN |
+
+**Sign-off:** claude-opus-5-5 — 2026-10-02
+
+---
+
 ## Mainline swap and operator-dashboard integration
 
 **Started**: 2026-10-01

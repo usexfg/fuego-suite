@@ -873,6 +873,18 @@ std::vector<TransactionSpentOutputInformation> TransfersContainer::getSpentOutpu
   return spentOutputs;
 }
 
+bool TransfersContainer::getAvailableKeyImage(const Crypto::Hash& transactionHash, uint32_t outputInTransaction, Crypto::KeyImage& keyImage) const {
+  TransactionOutputKey transferId { transactionHash, outputInTransaction };
+  std::lock_guard<std::mutex> lk(m_mutex);
+  auto& availableIndex = m_availableTransfers.get<TransactionOutputKeyIndex>();
+  auto it = availableIndex.find(transferId);
+  if (it == availableIndex.end()) {
+    return false;
+  }
+  keyImage = it->keyImage;
+  return true;
+}
+
 bool TransfersContainer::getTransfer(const Crypto::Hash& transactionHash, uint32_t outputInTransaction, TransactionOutputInformation& transfer, TransferState& transferState) const {
   TransactionOutputKey transferId { transactionHash, outputInTransaction };
 

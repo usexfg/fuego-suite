@@ -440,7 +440,7 @@ Assumption: no HEAT mint, AMM, LP, orderbook, DIGM or CD-transfer transaction ex
 |---|------|-------|------|--------|
 | 1 | Legacy bond tags (0xCB / 0xCC) rejected at every height in blocks and mempool — no legacy bonds exist (`usesLegacyBondTags`) | claude-code | 2026-10-02 | DONE |
 | 2 | DIGM_TERM outputs rejected below V12 (`createsDigm`), moved out of the V11 HEAT-era gate — no DIGM mint exists before V12 | claude-code | 2026-10-02 | DONE |
-| 3 | AGENTS.md "Network Facts" section (maintainer-confirmed facts, consensus invariants, agent rules); CLAUDE.md imports AGENTS.md | claude-code | 2026-10-02 | DONE |
+| 3 | AGENTS.md "Network Facts" section (maintainer-confirmed facts, consensus invariants, agent rules) | claude-code | 2026-10-02 | DONE |
 
 ### Sign-Off
 

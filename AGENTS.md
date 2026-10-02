@@ -8,6 +8,30 @@
 - **Build**: CMake 3.16+, Make, Go 1.24+
 - **Protocol**: CryptoNote (RingCT, ring signatures, subaddresses)
 
+## Network Facts (authoritative — confirmed by the maintainer; do not contradict)
+
+These hold on mainnet and are enforced in consensus. Treat them as ground truth when
+writing code, docs, migrations or resync logic.
+
+| Fact | Consequence in code |
+|------|---------------------|
+| No Hearth/AMM swaps and no HΞΔŦ trades exist on mainnet before V11 | Below V11, blocks and mempool reject every HEAT-era feature (`usesHeatEraFeatures`: HEAT mint/send, AMM swap/liquidity, LP auth, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT/LP/pool/SWRX commitment outputs, CD transfers). There is no pre-V11 HEAT history to stay compatible with — do not add "historical re-validation" paths for it. The gate also rejects HEAT mints below V11 (the pre-V11 mint check priced at a fixed 1:1 on an empty pool). |
+| No legacy bonds exist on any network | 0xCB / 0xCC tags are rejected at every height (`usesLegacyBondTags`). Epoch fees are never diverted to a legacy bond pool. Do not reintroduce legacy bonds. |
+| XFG deposits (all CDs created before the HEAT-CD height) are withdraw-only | Principal only — zero interest in XFG or HΞΔŦ, ever. Consensus rejects a positive `claimedInterest` unless every ring member is a HEAT CD. No new XFG deposits are created by any wallet at any height. The withdraw paths stay. |
+| No DIGM mint exists before V12 | Consensus rejects DIGM_TERM outputs below V12 (`createsDigm`). |
+| HEAT CDs activate at V12 (`Currency::isHeatCdHeight`) | Finite-term CDs created at or above it are HEAT; their interest is HEAT. CD interest is backed only by the HEAT CD_APY_POOL / BONUS_VAULT partitions. |
+
+Consensus invariants (keep them):
+- Commitment rings (CommitmentSpend and CommitmentTransfer) hold a single asset from V11; inputs are classified by ring, so a mixed ring would switch asset at equal atomic amount.
+- CD transfer rings accept CDs only (pool outputs share a commit key derivable from a public seed).
+- A TreasuryFund amount is burned into a treasury ledger and is never part of the miner fee sum (V11+). The CD banking fee is payable in XFG (burned to the SWF ledger) or HΞΔŦ (treasury HΞΔŦ reserve); it is not paid to the dev wallet from V11.
+- Every commitment output uses spend-key-bound (v2) keys: `Hs(D‖i‖"fuego_commit_v2")·G + B`. Never create v1 (view-key-only) commitment keys — the sender and any view-key holder can spend those. v1 is detect/spend-only for old outputs.
+- New rules key on block **height** (`upgradeHeight`), not block major version: no V12 upgrade detector exists, so blocks never report major version 12.
+
+Agent rules:
+- Do not ask whether to fix anything that would allow an attack on the network or the currency (theft, inflation, asset switching, double-mint, fee bypass). Fix it, then report what was done.
+- Network facts above come from the maintainer. If code or docs disagree with them, the code/docs are wrong.
+
 ## Architecture
 
 ```
@@ -62,7 +86,7 @@ fuego-suite/
 
 NOT protocol earnings:
 - **Mint premium**: none — `HEAT_MINT_PREMIUM_BPS = 0`, goes nowhere. Do not document as revenue.
-- **CD creation fee**: 0.1% of CD amount → burned and credited (HEAT) to the **Treasury LP Manager** via the `TreasuryFund` tag (v12+). NOT protocol revenue, NOT CD yield. Pre-v12 it was a donation to @fuegoxfg (development fund).
+- **CD creation fee**: 0.1% of CD amount, paid in HΞΔŦ (credited to the **Treasury LP Manager** reserve) or XFG (burned to the SWF ledger) via the `TreasuryFund` tag. NOT protocol revenue, NOT CD yield, never a miner fee, not paid to the development fund.
 
 ### Hearth Exchange — Data Flow Per Block (v12+)
 1. `PoolOrderOrchestrator`: record pool spot price (volatility feed), decide regeneration, compute adaptive spread

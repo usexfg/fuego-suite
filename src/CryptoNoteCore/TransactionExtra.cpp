@@ -1929,7 +1929,7 @@ namespace CryptoNote
         const uint32_t term = boost::get<TransactionOutputCommitment>(out.target).term;
         if (term == parameters::HEAT_TERM || term == parameters::DEPOSIT_TERM_LP ||
             term == parameters::DEPOSIT_TERM_POOL_XFG || term == parameters::DEPOSIT_TERM_POOL_HEAT ||
-            term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG || term == parameters::DIGM_TERM) {
+            term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) {
           return true;
         }
       }
@@ -1949,6 +1949,27 @@ namespace CryptoNote
           t == typeid(TransactionExtraMarketBuyAuth) || t == typeid(TransactionExtraMarketSellAuth) ||
           t == typeid(TransactionExtraLimitDeposit) || t == typeid(TransactionExtraLimitWithdraw) ||
           t == typeid(TransactionExtraTreasuryFund) || t == typeid(TransactionExtraCdBonusClaim)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool createsDigm(const Transaction& tx) {
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment) &&
+          boost::get<TransactionOutputCommitment>(out.target).term == parameters::DIGM_TERM) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool usesLegacyBondTags(const Transaction& tx) {
+    std::vector<TransactionExtraField> fields;
+    parseTransactionExtra(tx.extra, fields);
+    for (const auto& f : fields) {
+      if (f.type() == typeid(TransactionExtraLegacyBond) || f.type() == typeid(TransactionExtraLegacyBondClaim)) {
         return true;
       }
     }

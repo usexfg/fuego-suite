@@ -475,9 +475,15 @@ uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra);
 
 // True when tx uses any HEAT-economy feature: HEAT mint/send, AMM swap or
 // liquidity, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT /
-// LP / pool / swap-receive / DIGM commitment outputs, or CD transfers. None
-// of these existed on mainnet before V11; consensus rejects them below V11.
+// LP / pool / swap-receive commitment outputs, or CD transfers. None of these
+// existed on mainnet before V11; consensus rejects them below V11.
 bool usesHeatEraFeatures(const Transaction& tx);
+// True when tx creates a DIGM_TERM output. No DIGM mint exists before V12;
+// consensus rejects them below V12.
+bool createsDigm(const Transaction& tx);
+// True when tx carries a legacy bond tag (0xCB / 0xCC). No legacy bonds exist
+// on any network; consensus rejects these tags at every height.
+bool usesLegacyBondTags(const Transaction& tx);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);

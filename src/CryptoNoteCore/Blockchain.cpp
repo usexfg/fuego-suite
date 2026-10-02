@@ -3566,22 +3566,26 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
 
     bool isTransactionValid = true;
 
-    // HEAT, the Hearth AMM, LP shares, the orderbook, DIGM and CD transfers
-    // start at V11. Below it the legacy validation fell back to a fixed 1:1
-    // price on an empty pool, so any of these would mint HEAT/LP from XFG
-    // before launch; none ever occurred on mainnet, so all are rejected.
+    // HEAT, the Hearth AMM, LP shares, the orderbook and CD transfers start
+    // at V11. Below it the legacy validation fell back to a fixed 1:1 price on
+    // an empty pool, so any of these would mint HEAT/LP from XFG before
+    // launch; none ever occurred on mainnet, so all are rejected.
     if (block.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) &&
         usesHeatEraFeatures(transactions[i])) {
       isTransactionValid = false;
       logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
                                  << " uses a HEAT-era feature before V11";
     }
-
-    // Legacy bonds earn nothing: XFG deposits are principal-only.
-    if (hasLegacyBondClaim && legacyClaimedInterest > 0) {
+    // No DIGM mint exists before V12.
+    if (block.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) &&
+        createsDigm(transactions[i])) {
       isTransactionValid = false;
-      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
-                                 << " legacy bond interest claim rejected (XFG deposits are principal-only)";
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint before V12";
+    }
+    // No legacy bonds exist; XFG deposits are withdraw-only, principal-only.
+    if (usesLegacyBondTags(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " legacy bond tag rejected";
     }
 
     if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 &&

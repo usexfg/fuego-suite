@@ -394,6 +394,14 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     logger(ERROR) << "tx uses a HEAT-era feature before V11, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
+  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsDigm(tx)) {
+    logger(ERROR) << "DIGM mint before V12, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+  if (usesLegacyBondTags(tx)) {
+    logger(ERROR) << "legacy bond tag, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
 
   if (!check_inputs_types_supported(tx)) {
     logger(ERROR) << "unsupported input types for tx id= " << getObjectHash(tx);

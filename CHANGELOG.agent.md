@@ -373,3 +373,28 @@ Resync impact: v11-era blocks carrying CD interest claims (testnet, V11 = 30) no
 |------|-----------|------|--------|
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-09-29 | PASS |
 | Unit/regression test suites | — | — | NOT RUN |
+
+---
+
+## Asset-Homogeneous Rings and TreasuryFund Miner-Fee Fix from V11
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-10-02
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | CommitmentSpend / CommitmentTransfer rings must be one asset from V11 (was V12): closes the first-ring-member HEAT/XFG switch for the whole v11 era; all-HEAT_TERM rings valid from V11 | claude-code | 2026-10-02 | DONE |
+| 2 | TreasuryFund burn excluded from the miner fee sum from V11 (was V12); block template and mempool minimum fee mirror it | claude-code | 2026-10-02 | DONE |
+
+Supersedes the "mixed-ring asset switch remains open under v11 rules" open item above. Testnet (V11 = 30) needs a reset; mainnet is below V11 per its checkpoints.
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
+| Unit/regression test suites | — | — | NOT RUN |

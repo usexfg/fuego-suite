@@ -268,10 +268,10 @@ namespace CryptoNote
       }
     }
 
-    // HEAT-CD height onward the TreasuryFund burn is not a miner fee, so the
+    // V11 onward the TreasuryFund burn is not a miner fee, so the
     // network fee (XFG) must clear the minimum on its own.
     uint64_t networkFee = fee;
-    if (m_currency.isHeatCdHeight(height)) {
+    if (height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       const uint64_t burn = getTreasuryFundBurn(tx.extra);
       networkFee = (fee >= burn) ? fee - burn : 0;
     }
@@ -624,12 +624,12 @@ namespace CryptoNote
       {
         total_size += txd.blobSize;
         // Mirror Blockchain::pushBlock's fee_summary: mints with outputs above
-        // inputs count the minimum fee, and from the HEAT-CD height a
-        // TreasuryFund burn is not a miner fee.
+        // inputs count the minimum fee, and from V11 a TreasuryFund burn
+        // is not a miner fee.
         uint64_t minerFee = (inputs_amount < outputs_amount)
             ? m_currency.minimumFee(m_currency.blockMajorVersionAtHeight(height))
             : inputs_amount - outputs_amount;
-        if (m_currency.isHeatCdHeight(height)) {
+        if (height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
           const uint64_t burn = getTreasuryFundBurn(txd.tx.extra);
           minerFee = (minerFee >= burn) ? minerFee - burn : 0;
         }

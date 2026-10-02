@@ -2616,12 +2616,12 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   uint32_t youngestRingMemberTerm = 0;
   bool youngestRingMemberRolled = false;
   bool youngestTermInitialized = false;
-  // HEAT-CD height onward: every ring member must carry the same asset. The
+  // V11 onward: every ring member must carry the same asset. The
   // real spend is hidden, and the input is classified by its first member, so
   // a mixed ring (e.g. a HEAT CD beside a legacy XFG CD or a HEAT_TERM output
   // of the same amount) would let the spender switch asset at equal atomic
   // amount.
-  const bool homogeneousRing = m_currency.isHeatCdHeight(currentHeight);
+  const bool homogeneousRing = currentHeight >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
   AssetType ringAsset = AssetType::XFG;
   bool ringAssetSet = false;
   for (uint64_t absIdx : absoluteIndexes) {
@@ -2725,9 +2725,9 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
 
   // Degenerate-ring guard: if every member is FOREVER-term, no valid real spend
   // is possible (all keyScalars were discarded for burns). Reject immediately.
-  // From the HEAT-CD height HEAT_TERM outputs are wallet-owned HEAT and rings
-  // must be asset-homogeneous, so an all-HEAT_TERM ring is the normal HEAT
-  // spend; ring-signature validity alone decides it.
+  // From V11 HEAT_TERM outputs are wallet-owned HEAT and rings must be
+  // asset-homogeneous, so an all-HEAT_TERM ring is the normal HEAT spend;
+  // ring-signature validity alone decides it.
   if (!hasNonForever && !homogeneousRing) {
     logger(INFO) << "CommitmentSpend: all ring members are burned outputs — no valid real spend possible";
     return false;
@@ -2904,7 +2904,7 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
   std::vector<const Crypto::PublicKey*> ringKeys;
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
-  const bool homogeneousRing = m_currency.isHeatCdHeight(getCurrentBlockchainHeight());
+  const bool homogeneousRing = getCurrentBlockchainHeight() >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
   AssetType ringAsset = AssetType::XFG;
   bool ringAssetSet = false;
   for (uint64_t absIdx : absoluteIndexes) {
@@ -4334,10 +4334,10 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     pushTransaction(block, tx_id, transactionIndex);
 
     cumulative_block_size += blob_size;
-    // HEAT-CD height onward: a TreasuryFund amount is burned into a treasury
-    // ledger (SWF pending HEAT / treasury HEAT reserve), not paid to the miner.
+    // V11 onward: a TreasuryFund amount is burned into a treasury ledger
+    // (SWF pending HEAT / treasury HEAT reserve), not paid to the miner.
     // Counting it in the coinbase fee would mint it a second time as XFG.
-    if (hasTreasuryFund && m_currency.isHeatCdHeight(block.height)) {
+    if (hasTreasuryFund && block.height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       fee_summary += (fee >= treasuryFundAmount) ? fee - treasuryFundAmount : 0;
     } else {
       fee_summary += fee;
@@ -7956,7 +7956,7 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyCommitmentRing(uint64_t am
   uint64_t absIdx = outputIndexes[0];  // first member = absolute (cumulative first offset)
   if (absIdx >= it->second.size())
     return AssetType::XFG;
-  // Rings are asset-homogeneous from the HEAT-CD height onward (enforced in
+  // Rings are asset-homogeneous from V11 onward (enforced in
   // checkCommitmentSpendInput / checkCommitmentTransferInput), so the first
   // member names the ring's asset.
   const auto& ref = it->second[absIdx];

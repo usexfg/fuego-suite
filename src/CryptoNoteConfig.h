@@ -338,7 +338,7 @@ namespace CryptoNote
         const uint32_t UPGRADE_HEIGHT_V9                             = 826420; //{Godflame}  (emission|UPX2|Fuego)
         const uint32_t UPGRADE_HEIGHT_V10                            = 1003000; //{Wildfire}  (@fire aliases|dynamaxin|dandelion+|SwapXFG)
         const uint32_t UPGRADE_HEIGHT_V11                            = 1111111; //{HEATWAVE}  HEAT + HEARTH exchange
-        const uint32_t UPGRADE_HEIGHT_V12                            = 2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG + BP+
+        const uint32_t UPGRADE_HEIGHT_V12                            = 1500000; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG + BP+
 // upgradekit
 //
 	    const unsigned UPGRADE_VOTING_THRESHOLD = 90; // percent

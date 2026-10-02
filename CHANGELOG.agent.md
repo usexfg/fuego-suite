@@ -477,3 +477,24 @@ Correction to earlier entries: the pre-v11 paths did not price at 1:1 on mainnet
 |------|-----------|------|--------|
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
 | Unit/regression test suites | — | — | NOT RUN |
+
+---
+
+## Mainnet V12 Height 1,500,000
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-10-02
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `UPGRADE_HEIGHT_V12` 2666666 → 1500000 (maintainer decision). V12 height gates HEAT CDs, CD outputs and DIGM; all are height-based, so no upgrade detector is needed for them | claude-code | 2026-10-02 | DONE |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |

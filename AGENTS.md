@@ -157,7 +157,6 @@ NOT protocol earnings:
 
 | Kind | Path |
 |------|------|
-| Entry | `CLAUDE.md` |
 | Settings / hooks | `.claude/settings.json`, `.claude/hooks/` |
 | Skills | `.claude/skills/fuego-build`, `.claude/skills/crypto-change-gate` |
 | Agents | `.claude/agents/build-doctor.md`, `.claude/agents/crypto-security-reviewer.md` |

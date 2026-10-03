@@ -16,12 +16,16 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionExtra.h"
+#include <cstring>
 #include "Currency.h"
 #include "CryptoNoteTools.h"
 #include "../CryptoNoteConfig.h"
 #include "../crypto/hash.h"
 #include "../crypto/crypto.h"
 #include "../crypto/chacha8.h"
+extern "C" {
+#include "../crypto/crypto-ops.h"
+}
 #include "Common/int-util.h"
 #include "Common/MemoryInputStream.h"
 #include "Common/StreamTools.h"
@@ -1960,6 +1964,27 @@ namespace CryptoNote
       }
     }
     return false;
+  }
+
+  Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, uint8_t mode) {
+    unsigned char buf[32 + 2 + 1];
+    std::memcpy(buf, escrowTxId.data, 32);
+    buf[32] = static_cast<unsigned char>(outputIndex & 0xFF);
+    buf[33] = static_cast<unsigned char>((outputIndex >> 8) & 0xFF);
+    buf[34] = mode;
+    Crypto::Hash seed;
+    Crypto::cn_fast_hash(buf, sizeof(buf), seed);
+    Crypto::Hash h;
+    Crypto::cn_fast_hash(seed.data, sizeof(seed.data), h);
+    ge_p2 point;
+    ge_p1p1 point2;
+    ge_p3 p;
+    ge_fromfe_frombytes_vartime(&point, reinterpret_cast<const unsigned char*>(&h));
+    ge_mul8(&point2, &point);
+    ge_p1p1_to_p3(&p, &point2);
+    Crypto::KeyImage ki;
+    ge_p3_tobytes(reinterpret_cast<unsigned char*>(&ki), &p);
+    return ki;
   }
 
   bool createsDigm(const Transaction& tx) {

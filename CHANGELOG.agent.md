@@ -498,3 +498,30 @@ Correction to earlier entries: the pre-v11 paths did not price at 1:1 on mainnet
 | Gate | Signed By | Date | Result |
 |------|-----------|------|--------|
 | Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
+
+---
+
+## Swap Escrow Key Image Enforcement; Spend/View-Key Review
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
+**Started**: 2026-10-03
+**Agent**: claude-code
+**Status**: COMPLETE
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Consensus: a swap escrow input's key image must equal `swapEscrowKeyImage(escrowTxId, index, mode)`. It enters the global spent set unchecked, so an escrow holder could copy a pending input's key image and freeze that owner's coins permanently | claude-code | 2026-10-03 | DONE |
+| 2 | Mempool and block template track escrow spends per escrow output (claim and refund conflict); conflicting spends no longer reach a template that produces an invalid block | claude-code | 2026-10-03 | DONE |
+| 3 | `swapEscrowKeyImage` moved to CryptoNoteCore; SwapTxBuilder delegates (identical bytes; test_swap_escrow_claim 18/18) | claude-code | 2026-10-03 | DONE |
+| 4 | Review of the v2 spend/view-key code (TransactionExtra, TransfersConsumer, WalletGreen, WalletLegacy, valise SDK builder/scanner) | claude-code | 2026-10-03 | DONE |
+| 5 | Fix from the review: tracking (view-only) wallets left the commitment key image uninitialized for v2 outputs; now a deterministic placeholder, as for key outputs | claude-code | 2026-10-03 | DONE |
+| 6 | Cross-language check: C++ v2 public keys and spend secrets open the outputs built by the Rust SDK; tx round-trips byte-identical | claude-code | 2026-10-03 | DONE |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet, SwapDaemonLib) | claude-code | 2026-10-03 | PASS |
+| test_swap_escrow_claim | claude-code | 2026-10-03 | PASS (18/18) |

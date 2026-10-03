@@ -484,6 +484,10 @@ bool createsCd(const Transaction& tx);
 // True when tx creates a DIGM_TERM output. No DIGM mint exists before V12;
 // consensus rejects them below V12.
 bool createsDigm(const Transaction& tx);
+// Consensus key image of a swap escrow spend: hash_to_ec(H(escrowTxId ||
+// outputIndex_LE16 || mode)). Validation requires it exactly, so the field
+// cannot carry another output's key image into the spent set.
+Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, uint8_t mode);
 // True when tx carries a legacy bond tag (0xCB / 0xCC). No legacy bonds exist
 // on any network; consensus rejects these tags at every height.
 bool usesLegacyBondTags(const Transaction& tx);

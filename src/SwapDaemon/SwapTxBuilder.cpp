@@ -517,20 +517,8 @@ Crypto::KeyImage SwapTxBuilder::swapEscrowKeyImage(const Crypto::Hash& escrowTxI
   if (mode > 1) {
     throw std::invalid_argument("swapEscrowKeyImage: mode must be 0 (claim) or 1 (refund)");
   }
-  unsigned char buf[32 + 2 + 1];
-  std::memcpy(buf, escrowTxId.data, 32);
-  buf[32] = static_cast<unsigned char>(outputIndex & 0xFF);
-  buf[33] = static_cast<unsigned char>((outputIndex >> 8) & 0xFF);
-  buf[34] = mode;
-  Crypto::Hash seed;
-  Crypto::cn_fast_hash(buf, sizeof(buf), seed);
-  Crypto::PublicKey seedKey;
-  std::memcpy(&seedKey, &seed, sizeof(Crypto::PublicKey));
-  ge_p3 p;
-  hashToEc(seedKey, p);
-  Crypto::KeyImage ki;
-  ge_p3_tobytes(reinterpret_cast<unsigned char*>(&ki), &p);
-  return ki;
+  // Single definition shared with consensus (Blockchain::validateSwapEscrowInput).
+  return CryptoNote::swapEscrowKeyImage(escrowTxId, outputIndex, mode);
 }
 
 bool SwapTxBuilder::buildDeterministicClaimTx(const SwapParams& params,

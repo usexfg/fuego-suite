@@ -7262,6 +7262,13 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
       logger(DEBUGGING) << "Swap escrow input must carry exactly one signature";
       return false;
     }
+    // The key image enters the global spent set: it must be the one derived
+    // from this escrow output and mode, never a value copied from another
+    // pending input (that would freeze the other owner's coins).
+    if (input.keyImage != swapEscrowKeyImage(input.escrowTxId, input.escrowOutputIndex, input.mode)) {
+      logger(DEBUGGING) << "Swap escrow input key image does not match its escrow output";
+      return false;
+    }
 
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 

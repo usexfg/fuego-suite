@@ -512,19 +512,20 @@ std::error_code createTransfers(
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // Key image of the owned commitment: v2 needs the spend secret (absent
-      // in tracking wallets, which then cannot see these outputs spent).
+      // Key image of the owned commitment. v2 needs the spend secret; a
+      // tracking wallet (null spend secret) gets a deterministic placeholder
+      // exactly as generate_key_image_helper gives its key outputs, so the
+      // container index stays unique, and it cannot see these spends.
+      info.keyImage = Crypto::KeyImage{};
       KeyDerivation derivation;
       if (generate_key_derivation(txPubKey, account.viewSecretKey, derivation)) {
         const uint32_t outIdx = static_cast<uint32_t>(idx);
         Crypto::PublicKey v2Key;
         if (CryptoNote::deriveCommitmentPublicKeyV2(derivation, outIdx, account.address.spendPublicKey, v2Key) &&
             v2Key == out.commitKey) {
-          if (account.spendSecretKey != NULL_SECRET_KEY) {
-            Crypto::SecretKey keyScalar;
-            CryptoNote::deriveCommitmentSecretKeyV2(derivation, outIdx, account.spendSecretKey, keyScalar);
-            Crypto::generate_key_image(out.commitKey, keyScalar, info.keyImage);
-          }
+          Crypto::SecretKey keyScalar;
+          CryptoNote::deriveCommitmentSecretKeyV2(derivation, outIdx, account.spendSecretKey, keyScalar);
+          Crypto::generate_key_image(out.commitKey, keyScalar, info.keyImage);
         } else {
           info.keyImage = CryptoNote::deriveCommitmentKeysV1(derivation, outIdx).keyImage;
         }

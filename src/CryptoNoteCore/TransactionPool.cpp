@@ -46,6 +46,16 @@ using namespace Logging;
 namespace CryptoNote
 {
 
+  // Claim and refund of one escrow output carry different key images, but
+  // only one can ever be mined (the output is marked used). The pool and the
+  // block template track every escrow spend under the claim-mode key image,
+  // so the second spend of an output is refused instead of being packed into
+  // a block that the chain then rejects.
+  static Crypto::KeyImage swapEscrowSpendMarker(const TransactionInputSwapEscrow &in)
+  {
+    return swapEscrowKeyImage(in.escrowTxId, in.escrowOutputIndex, 0);
+  }
+
   //---------------------------------------------------------------------------------
   // BlockTemplate
   //---------------------------------------------------------------------------------
@@ -84,6 +94,12 @@ namespace CryptoNote
           const auto &msig = boost::get<MultisignatureInput>(in);
           auto r = m_usedOutputs.insert(std::make_pair(msig.amount, msig.outputIndex));
           (void)r; //just to make compiler to shut up
+          assert(r.second);
+        }
+        else if (in.type() == typeid(TransactionInputSwapEscrow))
+        {
+          auto r = m_keyImages.insert(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in)));
+          (void)r;
           assert(r.second);
         }
       }
@@ -127,6 +143,13 @@ namespace CryptoNote
         {
           const auto &msig = boost::get<MultisignatureInput>(in);
           if (m_usedOutputs.count(std::make_pair(msig.amount, msig.outputIndex)))
+          {
+            return false;
+          }
+        }
+        else if (in.type() == typeid(TransactionInputSwapEscrow))
+        {
+          if (m_keyImages.count(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))))
           {
             return false;
           }
@@ -929,6 +952,19 @@ namespace CryptoNote
           m_spent_key_images.erase(it);
         }
       }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        const Crypto::KeyImage marker = swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in));
+        auto it = m_spent_key_images.find(marker);
+        if (it != m_spent_key_images.end())
+        {
+          it->second.erase(tx_id);
+          if (it->second.empty())
+          {
+            m_spent_key_images.erase(it);
+          }
+        }
+      }
     }
 
     return true;
@@ -1007,6 +1043,20 @@ namespace CryptoNote
           return false;
         }
       }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        std::unordered_set<Crypto::Hash> &spenders = m_spent_key_images[swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))];
+        if (!(keptByBlock || spenders.size() == 0))
+        {
+          logger(ERROR, BRIGHT_RED) << "internal error: swap escrow output already spent in pool, tx_id=" << id;
+          return false;
+        }
+        if (!spenders.insert(id).second)
+        {
+          logger(ERROR, BRIGHT_RED) << "internal error: try to insert duplicate iterator in key_image set";
+          return false;
+        }
+      }
     }
 
     return true;
@@ -1045,6 +1095,13 @@ namespace CryptoNote
       {
         const auto &xfer = boost::get<TransactionInputCommitmentTransfer>(in);
         if (m_spent_key_images.count(xfer.keyImage))
+        {
+          return true;
+        }
+      }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        if (m_spent_key_images.count(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))))
         {
           return true;
         }

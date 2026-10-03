@@ -2984,17 +2984,25 @@ void CryptoNote::Blockchain::mintVaultChangeUtxo(const VaultUtxoSet::SpendResult
 bool CryptoNote::Blockchain::check_tx_outputs(const Transaction& tx, uint32_t height) const {  for (TransactionOutput out : tx.outputs) {
     if (out.target.type() == typeid(TransactionOutputCommitment)) {
       // v11+: commitment-output terms must be one of the recognized classes —
-      // zero (plain HEAT), a CD term within [min, max], HEAT_TERM (mint), or a
-      // protocol marker (LP / pool reserves / DIGM / swap receive / transfer).
-      // Arbitrary terms are rejected so asset classification and lock
-      // accounting cannot be spoofed.
+      // a CD term within [min, max], HEAT_TERM (mint), or a protocol marker
+      // (LP / pool reserves / swap receive). Arbitrary terms are rejected so asset
+      // classification and lock accounting cannot be spoofed.
+      //
+      // term 0 is NOT accepted. No producer emits it — every creation site assigns
+      // HEAT_TERM, a validated CD term, or a protocol marker — and it previously
+      // classified as HEAT on the output side but XFG on the input side, breaking
+      // per-asset conservation for any output of that term. The "unlocked
+      // commitment output" case is already HEAT_TERM.
+      //
+      // DIGM_TERM is NOT accepted. It has no sound per-asset accounting:
+      // DigmMintEngine sums commitment inputs as HEAT without knowing the real
+      // ring member's asset, so it must not be minted. See
+      // docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md.
       const auto& commitment = ::boost::get<TransactionOutputCommitment>(out.target);
       if (height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
         const uint32_t term = commitment.term;
         bool validTerm =
-            (term == 0) ||
             (term == CryptoNote::parameters::HEAT_TERM) ||
-            (term == CryptoNote::parameters::DIGM_TERM) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_LP) ||
             (term == CryptoNote::parameters::DEPOSIT_TERM_POOL_XFG) ||
@@ -7735,25 +7743,32 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const Transacti
       return AssetType::XFG;  // conservative: treat unresolvable as XFG
     if (cs.outputIndexes.empty())
       return AssetType::XFG;
-    uint64_t absIdx = cs.outputIndexes[0];  // first member = absolute (cumulative first offset)
-    if (absIdx >= it->second.size())
-      return AssetType::XFG;
-    const auto& ref = it->second[absIdx];
-    if (ref.term == parameters::HEAT_TERM)
-      return AssetType::HEAT;
-    if (ref.term == parameters::DEPOSIT_TERM_LP)
-      return AssetType::LP;
-    if (ref.term == parameters::DEPOSIT_TERM_POOL_XFG ||
-        ref.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-      return AssetType::XFG;
-    if (ref.term == parameters::DEPOSIT_TERM_POOL_HEAT)
-      return AssetType::HEAT;
-    // Mirror classifyOutputAsset: a finite-term commitment is a CD, and CDs are
-    // HEAT. Spending one must present HEAT on the input side so the payout can
-    // be checked against the HEAT that actually leaves the vault.
-    if (ref.term > 0)
-      return AssetType::HEAT;
-    return AssetType::XFG;
+
+    // A ring signature hides which member is real, so the credited asset must not
+    // depend on attacker-chosen member order. resolveCommitmentRingAsset requires
+    // every member to classify alike, so a decoy reorder cannot change the value an
+    // input is credited. An unresolvable ring falls back to XFG rather than taking
+    // the first member's asset.
+    const uint32_t cdMinTerm = m_currency.depositMinTerm();
+    const uint32_t cdMaxTerm = m_currency.depositMaxTerm();
+
+    // Relative offsets are cumulative; decode to absolute, then resolve.
+    std::vector<uint32_t> ringTerms;
+    ringTerms.reserve(cs.outputIndexes.size());
+    uint64_t absIdx = 0;
+    for (uint32_t relIdx : cs.outputIndexes) {
+      absIdx += relIdx;
+      if (absIdx >= it->second.size()) {
+        return AssetType::XFG;  // references a non-existent output
+      }
+      ringTerms.push_back(it->second[absIdx].term);
+    }
+
+    AssetType ringAsset = AssetType::XFG;
+    if (!resolveCommitmentRingAsset(ringTerms, 0, cdMinTerm, cdMaxTerm, ringAsset)) {
+      return AssetType::XFG;  // mixed ring, or an unrecognised term
+    }
+    return ringAsset;
   }
   if (in.type() == typeid(TransactionInputCommitmentTransfer)) {
     return AssetType::XFG;

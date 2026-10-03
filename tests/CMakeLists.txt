@@ -28,3 +28,36 @@ target_link_libraries(commitment_owner_bound_tests PRIVATE
     gtest_main
 )
 add_test(NAME commitment_owner_bound_tests COMMAND commitment_owner_bound_tests)
+
+# Asset classification for commitment terms. Both the input and output side must
+# use one table, or per-asset conservation can be broken by decoy reordering.
+# See docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md section B.
+add_executable(asset_classification_tests
+    UnitTests/AssetClassificationTest.cpp
+)
+target_include_directories(asset_classification_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(asset_classification_tests PRIVATE
+    CryptoNoteCore
+    Crypto
+    Common
+    gtest
+    gtest_main
+)
+add_test(NAME asset_classification_tests COMMAND asset_classification_tests)
+
+# Aggregate uint64 overflow in input-money accumulation. getTransactionInputAmount
+# guards each input's own add, but the running total across inputs wrapped, and a
+# wrapped total reads as "funded" to every caller that compares it against outputs.
+add_executable(input_amount_overflow_tests
+    UnitTests/InputAmountOverflowTest.cpp
+)
+target_include_directories(input_amount_overflow_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(input_amount_overflow_tests PRIVATE
+    CryptoNoteCore
+    Crypto
+    Common
+    Logging
+    gtest
+    gtest_main
+)
+add_test(NAME input_amount_overflow_tests COMMAND input_amount_overflow_tests)

@@ -249,6 +249,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/PricePolicy.cpp
+    SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/StatusServer.cpp
     SwapDaemon/RpcServer.cpp
@@ -354,6 +356,12 @@ target_link_libraries(test_xmr_share_reveal PRIVATE
 add_executable(test_price_oracle_arb
     SwapDaemon/tests/test_price_oracle_arb.cpp)
 target_link_libraries(test_price_oracle_arb PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: DeFiLlama/Pyth feed policy, rate guard, asset catalog
+add_executable(test_price_policy
+    SwapDaemon/tests/test_price_policy.cpp)
+target_link_libraries(test_price_policy PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: HTLC hashlock derivation (keccak256/sha256 of secret)
@@ -659,6 +667,8 @@ add_executable(SwapDaemon
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/PricePolicy.cpp
+    SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
@@ -971,6 +981,7 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 set(_TEST_DAEMON_TARGETS
     test_adaptor_roundtrip
     test_price_oracle_arb
+    test_price_policy
     test_swap_hashlock
     test_sol_htlc_address
     test_sol_e2e

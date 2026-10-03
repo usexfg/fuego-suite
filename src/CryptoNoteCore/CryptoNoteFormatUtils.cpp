@@ -286,6 +286,9 @@ bool get_inputs_money_amount(const Transaction& tx, uint64_t& money) {
       amount = boost::get<TransactionInputSwapEscrow>(in).amount;
     }
 
+    if (amount > UINT64_MAX - money)
+      return false;
+
     money += amount;
   }
   return true;

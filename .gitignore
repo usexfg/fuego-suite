@@ -40,6 +40,10 @@ Thumbs.db
 graphify-out/
 full_diff.txt
 changed_files.txt
+
+# Ori agent runtime: session history, logs, and local state. Local tool state,
+# not part of the project. state.sqlite holds the intern's chat history.
+.ori/
 src_changed.txt
 test_specialist_report.txt
 *.log

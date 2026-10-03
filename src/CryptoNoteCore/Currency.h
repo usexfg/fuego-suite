@@ -253,7 +253,16 @@ public:
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
 
-    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
+    // Same total as getTransactionAllInputsAmount, but reports aggregate
+    // uint64 overflow instead of wrapping. A wrapped total read as a small
+    // funded number to every caller that compares inputs against outputs.
+    bool getTransactionAllInputsAmountChecked(const Transaction &tx, uint32_t height, uint64_t &total) const;
+
+    // cdMinTerm/cdMaxTerm are the runtime CD bounds (Currency::depositMinTerm /
+    // depositMaxTerm). They are parameters because this function is static and the
+    // testnet range differs from mainnet.
+    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term,
+                                         uint32_t cdMinTerm, uint32_t cdMaxTerm);
     AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 

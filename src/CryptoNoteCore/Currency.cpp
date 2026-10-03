@@ -16,6 +16,7 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
+#include "AssetType.h"
 #include "Common/Int128.h"
 #include <cctype>
 #include <numeric>
@@ -532,6 +533,25 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  bool Currency::getTransactionAllInputsAmountChecked(const Transaction &tx, uint32_t height, uint64_t &total) const
+  {
+    total = 0;
+    for (const auto &in : tx.inputs)
+    {
+      uint64_t amount = getTransactionInputAmount(in, height);
+      if (amount > std::numeric_limits<uint64_t>::max() - total)
+      {
+        logger(ERROR, BRIGHT_RED) << "Transaction all-inputs total overflow";
+        return false;
+      }
+      total += amount;
+    }
+
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   bool Currency::sumCommitmentClaimedInterest(const Transaction &tx, uint64_t &total) const
   {
     total = 0;
@@ -552,7 +572,8 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
-  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term,
+                                          uint32_t cdMinTerm, uint32_t cdMaxTerm) {
     if (target.type() == typeid(KeyOutput)) {
       return AssetType::XFG;
     }
@@ -560,41 +581,29 @@ double Currency::getBurnPercentage() const {
       return AssetType::XFG;
     }
     if (target.type() == typeid(TransactionOutputCommitment)) {
-      if (term == parameters::HEAT_TERM)
-        return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_LP)
-        return AssetType::LP;
-      if (term == parameters::DEPOSIT_TERM_POOL_XFG)
-        return AssetType::XFG;
-      if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
-        return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-        return AssetType::XFG;
-      // Certificates of deposit are HEAT. Every marker term above is handled
-      // explicitly and the CD — the main case — used to fall through to the
-      // XFG default, which is where HEAT CDs came off the rails: the accrual,
-      // the CD_APY_POOL, the BONUS_VAULT and m_feePoolBalance are all HEAT, and
-      // heatDepositV10 (the heat_cd command) spends HEAT_TERM commitments to
-      // fund one — but classifying the resulting output as XFG made
-      // inAssets.heat != outAssets.heat, so consensus rejected every HEAT CD
-      // ever built. The XFG-funded createDeposit path worked only because of
-      // the same misclassification.
-      return AssetType::HEAT;  // CD deposits are HEAT-denominated
+      // Same table as the input side (Blockchain::classifyInputAsset), so an output
+      // and the input that later spends it can never be classified as different
+      // assets.
+      //
+      // An unrecognised term means the asset is unknown. XFG is the conservative
+      // choice: it cannot inflate an HEAT or LP balance, and check_tx_outputs
+      // rejects unrecognised terms at v11+ before this is reached.
+      AssetType asset = AssetType::XFG;
+      if (classifyCommitmentTermAsset(term, cdMinTerm, cdMaxTerm, asset)) {
+        return asset;
+      }
+      return AssetType::XFG;
     }
     if (target.type() == typeid(TransactionOutputUnified)) {
-      auto& unified = boost::get<TransactionOutputUnified>(target);
-      if (unified.term == parameters::HEAT_TERM)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_LP)
-        return AssetType::LP;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_XFG)
-        return AssetType::XFG;
-      if (unified.term == parameters::DEPOSIT_TERM_POOL_HEAT)
-        return AssetType::HEAT;
-      if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-        return AssetType::XFG;
-      // term 0 is an ordinary output (XFG); any finite term is a CD (HEAT).
-      return (unified.term > 0) ? AssetType::HEAT : AssetType::XFG;
+      // v12 scheme, not yet live: term 0 is an ordinary XFG output and any finite
+      // term is a CD. Deliberately NOT shared with the commitment table, because the
+      // two schemes disagree about term 0 by design.
+      if (term == parameters::HEAT_TERM) return AssetType::HEAT;
+      if (term == parameters::DEPOSIT_TERM_LP) return AssetType::LP;
+      if (term == parameters::DEPOSIT_TERM_POOL_XFG) return AssetType::XFG;
+      if (term == parameters::DEPOSIT_TERM_POOL_HEAT) return AssetType::HEAT;
+      if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) return AssetType::XFG;
+      return (term > 0) ? AssetType::HEAT : AssetType::XFG;
     }
     return AssetType::XFG;
   }
@@ -608,7 +617,7 @@ double Currency::getBurnPercentage() const {
         const auto& co = boost::get<TransactionOutputCommitment>(out.target);
         term = co.term;
       }
-      asset = classifyOutputAsset(out.target, term);
+      asset = classifyOutputAsset(out.target, term, depositMinTerm(), depositMaxTerm());
       switch (asset) {
         case AssetType::HEAT: bal.heat += out.amount; break;
         case AssetType::LP:   bal.lp   += out.amount; break;

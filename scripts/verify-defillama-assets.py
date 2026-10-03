@@ -59,6 +59,36 @@ def parse_dart_pairs(path):
     return found
 
 
+def parse_cpp_catalog(path):
+    text = open(path, encoding="utf-8").read()
+    block = text[text.index("kAssets[] = {"):]
+    block = block[:block.index("};")]
+    assets = {}
+    row = re.compile(
+        r'\{"([A-Z0-9]+)",\s*"([^"]*)",\s*"([^"]*)",\s*([0-9]+)ULL,\s*"([^"]*)",\s*(true|false),\s*(true|false)\}')
+    for sym, dl, pyth, div, divtext, priced, execable in row.findall(block):
+        assets[sym] = {
+            "defiLlamaId": dl,
+            "pythSymbol": pyth,
+            "atomicDivisor": int(div),
+            "atomicDivisorText": divtext,
+            "priced": priced == "true",
+            "executable": execable == "true",
+        }
+    binds = {}
+    for pair, sym in re.findall(r"\{SwapPair::([A-Z_0-9]+),\s*&kAssets\[(\d+)\]\}", text):
+        binds[pair] = sym
+    ordered = re.findall(r'\{"([A-Z0-9]+)",\s*"[^"]*",\s*"[^"]*",\s*[0-9]+ULL', block)
+    for pair, idx in binds.items():
+        binds[pair] = ordered[int(idx)]
+    return assets, binds
+
+
+def parse_registered_pairs(path):
+    text = open(path, encoding="utf-8").read()
+    return set(re.findall(r"registerChain\(SwapPair::([A-Z_0-9]+)", text))
+
+
 def fetch(ids):
     url = ENDPOINT + ",".join(ids)
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
@@ -97,6 +127,62 @@ def main():
     else:
         notes.append("Valise SwapPairSdk not found at %s, skipped Dart cross-check" % dart_path)
 
+    cat_path = os.path.join(XFGO, "src", "SwapDaemon", "AssetCatalog.cpp")
+    if os.path.exists(cat_path):
+        cat_assets, cat_binds = parse_cpp_catalog(cat_path)
+        for pr in pairs:
+            enum = pr["enum"]
+            sym = cat_binds.get(enum)
+            if sym is None:
+                fail("pair %d (%s) has no binding in AssetCatalog.cpp" % (pr["id"], enum))
+                continue
+            if sym != pr["settlementAsset"]:
+                fail("pair %d (%s): AssetCatalog binds %s, matrix says settlement asset %s"
+                     % (pr["id"], enum, sym, pr["settlementAsset"]))
+            c = cat_assets.get(sym)
+            if c is None:
+                fail("AssetCatalog has no descriptor for symbol %s" % sym)
+                continue
+            if c["defiLlamaId"] != (pr["defiLlamaId"] or ""):
+                fail("pair %d (%s): AssetCatalog defiLlamaId %r != matrix %r"
+                     % (pr["id"], enum, c["defiLlamaId"], pr["defiLlamaId"]))
+            if c["priced"] != (pr["status"] != "unpriced"):
+                fail("pair %d (%s): AssetCatalog priced=%s but matrix status is %s"
+                     % (pr["id"], enum, c["priced"], pr["status"]))
+            if c["executable"] != (pr["status"] != "unexecutable"):
+                fail("pair %d (%s): AssetCatalog executable=%s but matrix status is %s"
+                     % (pr["id"], enum, c["executable"], pr["status"]))
+            if c["atomicDivisorText"] != pr["atomicDivisor"]:
+                fail("pair %d (%s): divisor text %s != matrix %s"
+                     % (pr["id"], enum, c["atomicDivisorText"], pr["atomicDivisor"]))
+        notes.append("AssetCatalog.cpp cross-checked: %d assets, %d pair bindings" % (len(cat_assets), len(cat_binds)))
+    else:
+        notes.append("AssetCatalog.cpp not found at %s, skipped catalog cross-check" % cat_path)
+
+    registered = parse_registered_pairs(os.path.join(XFGO, "src", "SwapDaemon", "SwapDaemon.cpp"))
+    matrix_registered = {p["enum"] for p in pairs if p.get("chainClient") == "wired-config-gated"}
+    matrix_unwired = {p["enum"] for p in pairs if p.get("chainClient") == "implemented-not-wired"}
+    matrix_absent = {p["enum"] for p in pairs if p.get("chainClient") == "no-client"}
+    if matrix_registered != registered:
+        only_matrix = sorted(matrix_registered - registered)
+        only_code = sorted(registered - matrix_registered)
+        fail("chainClient drift: matrix says wired %s, but SwapDaemon.cpp registers %d pairs (matrix-only %s, code-only %s)"
+             % (sorted(matrix_registered), len(registered), only_matrix, only_code))
+    for p in pairs:
+        if p.get("chainClient") != "implemented-not-wired":
+            continue
+        src = p.get("chainClientSource")
+        if not src or not os.path.exists(os.path.join(XFGO, src)):
+            fail("pair %d (%s) is marked implemented-not-wired but %s is missing" % (p["id"], p["enum"], src))
+        if p["enum"] in registered:
+            fail("pair %d (%s) is marked implemented-not-wired but SwapDaemon.cpp does register it" % (p["id"], p["enum"]))
+        notes.append("pair %d (%s) has an implemented client (%s) that is never registered, so it is priced and buildable but not executable"
+                     % (p["id"], p["enum"], src))
+    unwired = [p for p in pairs if p.get("chainClient") == "wired-config-gated"
+               and p["defiLlamaId"] is None]
+    for p in unwired:
+        notes.append("pair %d (%s) has a wired chain client but no DeFiLlama id, so it can execute but cannot be displayed against a reference" % (p["id"], p["enum"]))
+
     distinct = sorted({p["defiLlamaId"] for p in pairs if p["defiLlamaId"]})
     try:
         body = fetch(distinct)
@@ -111,14 +197,11 @@ def main():
     for p in pairs:
         cid = p["defiLlamaId"]
         status = p["status"]
-        if status in ("unpriced", "unexecutable"):
-            if cid and cid in coins:
-                notes.append("pair %d (%s): %s carries id %s which does resolve; confirm the status is still intended" % (p["id"], p["enum"], status, cid))
-            if status == "unpriced" and cid is not None:
-                fail("pair %d (%s) is unpriced but declares a DeFiLlama id" % (p["id"], p["enum"]))
-            continue
-        if not cid:
-            fail("pair %d (%s) is %s but has no DeFiLlama id" % (p["id"], p["enum"], status))
+        if cid is None:
+            if status != "unpriced":
+                fail("pair %d (%s) has no DeFiLlama id but status is %s" % (p["id"], p["enum"], status))
+            else:
+                notes.append("pair %d (%s) is unpriced: no DeFiLlama id serves %s" % (p["id"], p["enum"], p["settlementAsset"]))
             continue
         entry = coins.get(cid)
         if entry is None:
@@ -151,6 +234,8 @@ def main():
 
     print("distinct DeFiLlama ids requested: %d" % len(distinct))
     print("pairs resolving live: %d of %d" % (priced, len(pairs)))
+    print("chain clients wired: %d, implemented-not-wired: %d, no client: %d"
+          % (len(matrix_registered), len(matrix_unwired), len(matrix_absent)))
     for note in notes:
         print("NOTE  %s" % note)
     if failures:

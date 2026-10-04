@@ -528,6 +528,25 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  bool Currency::getTransactionAllInputsAmountChecked(const Transaction &tx, uint32_t height, uint64_t &total) const
+  {
+    total = 0;
+    for (const auto &in : tx.inputs)
+    {
+      uint64_t amount = getTransactionInputAmount(in, height);
+      if (amount > std::numeric_limits<uint64_t>::max() - total)
+      {
+        logger(ERROR, BRIGHT_RED) << "Transaction all-inputs total overflow";
+        return false;
+      }
+      total += amount;
+    }
+
+    return true;
+  }
+
+  /* ---------------------------------------------------------------------------------------------------- */
+
   bool Currency::sumCommitmentClaimedInterest(const Transaction &tx, uint64_t &total) const
   {
     total = 0;
@@ -549,25 +568,7 @@ double Currency::getBurnPercentage() const {
   /* ---------------------------------------------------------------------------------------------------- */
 
   AssetType Currency::classifyCommitmentTermAsset(uint32_t term) {
-    if (term == parameters::HEAT_TERM)
-      return AssetType::HEAT;
-    if (term == parameters::DEPOSIT_TERM_LP)
-      return AssetType::LP;
-    if (term == parameters::DEPOSIT_TERM_POOL_XFG)
-      return AssetType::XFG;
-    if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
-      return AssetType::HEAT;
-    if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
-      return AssetType::XFG;
-    // Certificates of deposit are HEAT. Every marker term above is handled
-    // explicitly and the CD — the main case — used to fall through to the
-    // XFG default, which is where HEAT CDs came off the rails: the accrual,
-    // the CD_APY_POOL, the BONUS_VAULT and m_feePoolBalance are all HEAT, and
-    // heatDepositV10 (the heat_cd command) spends HEAT_TERM commitments to
-    // fund one — but classifying the resulting output as XFG made
-    // inAssets.heat != outAssets.heat, so consensus rejected every HEAT CD
-    // ever built. Term 0 is plain HEAT (check_tx_outputs admits it as such).
-    return AssetType::HEAT;
+    return CryptoNote::classifyCommitmentTermAsset(term);
   }
 
   AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {

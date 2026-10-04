@@ -19,6 +19,9 @@ enum class AssetType : uint8_t {
     LP   = 2,
 };
 
+// The single commitment-term -> asset table; see AssetType.cpp. Currency::classifyCommitmentTermAsset delegates here.
+AssetType classifyCommitmentTermAsset(uint32_t term);
+
 struct AssetBalance {
     uint64_t xfg  = 0;
     uint64_t heat = 0;

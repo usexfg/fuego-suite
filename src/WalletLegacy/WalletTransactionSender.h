@@ -162,6 +162,20 @@ std::shared_ptr<WalletRequest> makeSendFusionRequest(TransactionId& transactionI
                                                      uint64_t fee, const std::string& extra = "", uint64_t mixIn = 0, uint64_t unlockTimestamp = 0);
 
 private:
+  // Single creation entry point for commitment outputs, mirroring
+  // deriveSelfCommitmentKey / deriveRecipientCommitmentKey in WalletGreen.
+  Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& tx, size_t outputIndex);
+  Crypto::PublicKey deriveRecipientCommitmentKey(const ITransaction& tx, size_t outputIndex,
+                                                  const AccountPublicAddress& recipient);
+  Crypto::PublicKey deriveCommitmentOutputKeyFor(const ITransaction& tx, size_t outputIndex,
+                                                  const Crypto::PublicKey& recipientViewPublicKey,
+                                                  const Crypto::PublicKey& recipientSpendPublicKey);
+  // Signing side: owner-bound first, legacy fallback for pre-v11 outputs,
+  // rejection if neither reproduces the published key.
+  void resolveCommitmentSpendKey(const Crypto::KeyDerivation& ecdh, size_t outputIndex,
+                                 const Crypto::PublicKey& commitKey,
+                                 const Crypto::SecretKey& recipientSpendSecret,
+                                 KeyPair& outKeyPair, Crypto::KeyImage& outKeyImage);
   std::unique_ptr<WalletRequest> makeGetRandomOutsRequest(std::shared_ptr<SendTransactionContext>&& context, bool isMultisigTransaction, Crypto::SecretKey& transactionSK);
   std::unique_ptr<WalletRequest> makeGetRandomCommitmentOutsRequest(std::shared_ptr<SendTransactionContext>&& context,
                                                                      uint64_t amount,

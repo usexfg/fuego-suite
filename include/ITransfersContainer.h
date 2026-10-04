@@ -65,6 +65,11 @@ namespace CryptoNote
         uint32_t term;
       };
     };
+
+    // Type: Commitment. The published commit key P. Needed by the signer to
+    // decide between the owner-bound and legacy derivations: an owner-bound
+    // output reproduces P only with the recipient's spend secret.
+    Crypto::PublicKey commitmentKey;
   };
 
   struct TransactionSpentOutputInformation : public TransactionOutputInformation

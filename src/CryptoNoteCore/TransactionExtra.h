@@ -186,7 +186,7 @@ struct TransactionExtraAliasRegistration {
   std::string alias;               // Exactly 8 chars: [a-z0-9] for regular users
   Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
-  std::string ownerAddress;        // Full wallet address (optional: can be empty for privacy)
+  std::string ownerAddress;        // Full address serialized publicly; currently required by isValid().
   uint8_t aliasType = 0;           // 0 = reserved (deprecated), 1 = Regular user (lowercase [a-z0-9])
   uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
   bool serialize(ISerializer& serializer);
@@ -430,9 +430,12 @@ std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivat
 // recipient spend public key is supplied, so a caller cannot emit an exposed
 // output by omission.
 //
-// `recipientSpendPublicKey` is B for the destination. Pass a null key only for
-// protocol-owned outputs that are unspendable by design (pool escrow markers);
-// those are excluded from rings by term, not by this function.
+// `recipientSpendPublicKey` is B for the destination and must be set: a null
+// (all-zero) key is rejected. It is a valid order-4 curve point, so without this
+// check an unpopulated address would pass validation and produce an output that
+// is either unspendable or, under a legacy fallback, spendable by the sender.
+// Protocol-owned outputs (pool escrow markers) are not created here; they use
+// computePoolCommitKey().
 //
 // Returns false if the owner-bound key cannot be derived, so the caller must
 // treat that as a hard error rather than silently falling back to the legacy
@@ -442,6 +445,48 @@ bool deriveCommitmentOutputKey(
   size_t outputIndex,
   const Crypto::PublicKey& recipientSpendPublicKey,
   Crypto::PublicKey& commitKey);
+
+// Key image the scanner records when it first recognises a commitment output as
+// its own. Owner-bound outputs need the spend secret (pass nullptr for a
+// view-only wallet); legacy outputs are derivable from the view secret alone, so a
+// view-only wallet can still track their spends.
+//
+// Returns false when the key image cannot be known (view-only wallet and an
+// owner-bound output, or the output matches neither form). Callers must leave the
+// key image zeroed in that case — never uninitialised — because it is hashed into
+// the spent-output index and written to the wallet cache.
+bool deriveRecordedCommitmentKeyImage(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const Crypto::SecretKey* recipientSpendSecret,
+  Crypto::KeyImage& outKeyImage);
+
+// Everything a signer needs to spend an existing commitment output.
+struct CommitmentSpendKeys {
+  CommitmentDerivation form = CommitmentDerivation::OwnerBound;
+  Crypto::PublicKey commitKey;
+  Crypto::SecretKey spendScalar;
+  Crypto::KeyImage keyImage;
+};
+
+// Spend-side resolution for an output this wallet owns. Both wallets call this,
+// so the owner-bound / legacy decision lives in exactly one place.
+//
+// `publishedCommitKey` is the commit key P recorded when the output was scanned.
+// A null (all-zero) value means "not recorded": the output was recognised by a
+// scanner that predates recording it, and that scanner only knew the legacy form,
+// so it is resolved as legacy.
+//
+// Otherwise the owner-bound form is tried first and the legacy form is the
+// fallback for pre-v11 funds. If neither reproduces P this returns false rather
+// than guessing, so a bad record is a refusal to sign and never a bad signature.
+bool resolveCommitmentSpendKeys(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& publishedCommitKey,
+  const Crypto::SecretKey& recipientSpendSecret,
+  CommitmentSpendKeys& out);
 
 // Existing sender/view-key-spendable derivation. Kept under an explicit legacy
 // name; new code must not use it. See deriveOwnerBoundCommitKey for user outputs.

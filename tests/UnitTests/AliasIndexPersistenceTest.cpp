@@ -138,21 +138,55 @@ TEST(AliasIndexUndo, ReleaseUndoRestoresPriorEntry) {
   EXPECT_EQ(restored->registeredBlock, 60u);
 }
 
-TEST(AliasIndexUndo, TransferUndoRevertsAddressHash) {
+TEST(AliasIndexUndo, TransferUndoRestoresAddressAndHash) {
   AliasIndex index;
   ASSERT_TRUE(index.registerAlias(makeEntry("xferred1", "addrOld", 70)));
-  Crypto::Hash oldHash = index.getAliasByName("xferred1")->addressHash;
+  AliasEntry prior = *index.getAliasByName("xferred1");
   Crypto::Hash newHash = hashOf("addrNewOwner");
-  ASSERT_TRUE(index.replaceAliasOwnership("xferred1", newHash));
+  ASSERT_TRUE(index.replaceAliasOwnership("xferred1", newHash, "addrNewOwner"));
   ASSERT_EQ(index.getAliasByName("xferred1")->addressHash, newHash);
+  EXPECT_EQ(index.getAliasByName("xferred1")->ownerAddress, "addrNewOwner");
+  EXPECT_FALSE(index.getAliasByAddressHash(prior.addressHash).has_value());
+  EXPECT_TRUE(index.getAliasByAddressHash(newHash).has_value());
 
   AliasUndoOp op;
-  op.opType = 2;  // transfer -> undo reverts addressHash
+  op.opType = 2;  // transfer -> undo restores prior owner
   op.alias = "xferred1";
-  op.priorAddressHash = oldHash;
+  op.priorEntry = prior;
 
   applyAliasUndo(index, {op});
-  EXPECT_EQ(index.getAliasByName("xferred1")->addressHash, oldHash);
+  EXPECT_EQ(index.getAliasByName("xferred1")->addressHash, prior.addressHash);
+  EXPECT_EQ(index.getAliasByName("xferred1")->ownerAddress, prior.ownerAddress);
+  EXPECT_TRUE(index.getAliasByAddressHash(prior.addressHash).has_value());
+  EXPECT_FALSE(index.getAliasByAddressHash(newHash).has_value());
+}
+
+TEST(AliasIndexUndo, TransferUndoSurvivesSerialization) {
+  AliasIndex index;
+  ASSERT_TRUE(index.registerAlias(makeEntry("xferred2", "addrBefore", 71)));
+  AliasUndoOp original;
+  original.opType = 2;
+  original.alias = "xferred2";
+  original.priorEntry = *index.getAliasByName(original.alias);
+  ASSERT_TRUE(index.replaceAliasOwnership(original.alias, hashOf("addrAfter"), "addrAfter"));
+
+  std::vector<uint8_t> buffer;
+  {
+    Common::VectorOutputStream out(buffer);
+    BinaryOutputStreamSerializer s(out);
+    serialize(original, s);
+  }
+  AliasUndoOp restored;
+  {
+    Common::MemoryInputStream in(buffer.data(), buffer.size());
+    BinaryInputStreamSerializer s(in);
+    serialize(restored, s);
+  }
+  applyAliasUndo(index, {restored});
+  auto entry = index.getAliasByName(original.alias);
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->ownerAddress, "addrBefore");
+  EXPECT_EQ(entry->addressHash, original.priorEntry.addressHash);
 }
 
 // A block that registers then releases the same alias must undo as a unit,

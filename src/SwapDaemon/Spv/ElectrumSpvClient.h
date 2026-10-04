@@ -46,6 +46,10 @@ public:
   bool getRawTx(const std::string& txid, std::vector<uint8_t>& rawTx) override;
   bool broadcastTx(const std::vector<uint8_t>& rawTx, std::string& txid) override;
 
+  // Compute the canonical txid from locally serialized bytes (strip witness
+  // for SegWit). Never trust an Electrum server's returned txid as identity.
+  static std::string computeTransactionId(const std::vector<uint8_t>& rawTx);
+
   // Get the header store (for testing/inspection)
   const SpvHeaderStore& store() const { return m_store; }
 

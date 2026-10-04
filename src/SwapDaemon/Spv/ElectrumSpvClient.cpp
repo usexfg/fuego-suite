@@ -69,7 +69,9 @@ bool ElectrumSpvClient::syncHeaders() {
     return false;
   }
 
-  if (!subJson.contains("height") || !subJson.contains("hex")) {
+  if (!subJson.isObject() || !subJson.contains("height") ||
+      !subJson.contains("hex") || !subJson("height").isInteger() ||
+      subJson("height").getInteger() < 0 || !subJson("hex").isString()) {
     return false;
   }
 
@@ -118,7 +120,8 @@ bool ElectrumSpvClient::syncHeaders() {
       return false;
     }
 
-    if (!json.contains("headers")) {
+    if (!json.isObject() || !json.contains("headers") ||
+        !json("headers").isString()) {
       return false;
     }
 
@@ -194,7 +197,8 @@ bool ElectrumSpvClient::crossCheckHeader(
       continue;
     }
 
-    if (!json.contains("headers")) {
+    if (!json.isObject() || !json.contains("headers") ||
+        !json("headers").isString()) {
       continue;
     }
 
@@ -320,7 +324,8 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
       height = h;
       return true;
     }
-    if (!json.contains("height")) {
+    if (!json.isObject() || !json.contains("height") ||
+        !json("height").isInteger() || json("height").getInteger() < 0) {
       uint64_t h;
       std::string hash;
       if (!m_store.bestTip(h, hash)) {
@@ -346,7 +351,8 @@ bool ElectrumSpvClient::getTipHeight(uint64_t& height) {
     } catch (const std::exception&) {
       continue;
     }
-    if (!json.contains("height")) {
+    if (!json.isObject() || !json.contains("height") ||
+        !json("height").isInteger() || json("height").getInteger() < 0) {
       continue;
     }
     uint64_t h = static_cast<uint64_t>(json("height").getInteger());
@@ -399,7 +405,12 @@ bool ElectrumSpvClient::verifyTxInclusion(
     return false;
   }
 
-  if (!json.contains("block_height") || !json.contains("merkle") || !json.contains("pos")) {
+  if (!json.isObject() || !json.contains("block_height") ||
+      !json.contains("merkle") || !json.contains("pos") ||
+      !json("block_height").isInteger() || json("block_height").getInteger() < 0 ||
+      !json("pos").isInteger() || json("pos").getInteger() < 0 ||
+      json("pos").getInteger() > UINT32_MAX || !json("merkle").isArray() ||
+      json("merkle").size() > 64) {
     return false;
   }
 
@@ -409,6 +420,7 @@ bool ElectrumSpvClient::verifyTxInclusion(
   std::vector<std::string> branch;
   const Common::JsonValue& merkleArr = json("merkle");
   for (size_t i = 0; i < merkleArr.size(); ++i) {
+    if (!merkleArr[i].isString()) return false;
     branch.push_back(merkleArr[i].getString());
   }
 
@@ -461,6 +473,9 @@ struct ParsedTxOutput {
 
 struct ParsedTx {
   bool valid = false;
+  bool hasWitness = false;
+  size_t baseStart = 4;
+  size_t baseEnd = 0;
   std::vector<ParsedTxInput> inputs;
   std::vector<ParsedTxOutput> outputs;
 };
@@ -530,6 +545,8 @@ static ParsedTx parseRawTx(const std::vector<uint8_t>& raw) {
       pos += 2;  // skip marker + flag
     }
   }
+  tx.hasWitness = hasWitness;
+  tx.baseStart = pos;
 
   // input count
   uint64_t inputCount;
@@ -570,6 +587,7 @@ static ParsedTx parseRawTx(const std::vector<uint8_t>& raw) {
 
     tx.outputs.push_back(std::move(out));
   }
+  tx.baseEnd = pos;
 
   // If witness, skip witness data (not needed for our purposes)
   // Witness: for each input, count + witness items
@@ -586,11 +604,31 @@ static ParsedTx parseRawTx(const std::vector<uint8_t>& raw) {
     }
   }
 
-  // locktime (4 bytes LE) — already consumed if we get here
-  // pos += 4; // not needed since we're done parsing
+  // Locktime is exactly four bytes; reject trailing or truncated data before
+  // hashing the transaction identity.
+  if (pos + 4 != raw.size()) return tx;
 
   tx.valid = true;
   return tx;
+}
+
+std::string ElectrumSpvClient::computeTransactionId(
+    const std::vector<uint8_t>& rawTx) {
+  const ParsedTx parsed = parseRawTx(rawTx);
+  if (!parsed.valid || rawTx.size() == 64) return {};
+  std::vector<uint8_t> base;
+  if (parsed.hasWitness) {
+    base.insert(base.end(), rawTx.begin(), rawTx.begin() + 4);
+    base.insert(base.end(), rawTx.begin() + parsed.baseStart,
+                rawTx.begin() + parsed.baseEnd);
+    base.insert(base.end(), rawTx.end() - 4, rawTx.end());
+  } else {
+    base = rawTx;
+  }
+  std::vector<uint8_t> hash = BchHtlcScript::doubleSha256(base);
+  if (hash.size() != 32) return {};
+  std::reverse(hash.begin(), hash.end());
+  return BchHtlcScript::bytesToHex(hash);
 }
 
 // Compute Electrum scripthash: reverse(sha256(scriptPubKey))
@@ -620,24 +658,14 @@ bool ElectrumSpvClient::getRawTx(
     return false;
   }
 
-  // Result is a JSON string containing the raw hex
-  Common::JsonValue json;
-  try {
-    json = Common::JsonValue::fromString(result);
-  } catch (const std::exception&) {
+  // ElectrumConnection::call already unwraps JSON string results. Parsing
+  // this bare hex as JSON rejects every valid transaction response.
+  if (result.empty() || result.size() % 2 != 0 ||
+      result.find_first_not_of(hexChars) != std::string::npos) {
     return false;
   }
 
-  if (!json.isString()) {
-    return false;
-  }
-
-  std::string hexStr = json.getString();
-  if (hexStr.empty()) {
-    return false;
-  }
-
-  std::vector<uint8_t> decoded = BchHtlcScript::hexToBytes(hexStr);
+  std::vector<uint8_t> decoded = BchHtlcScript::hexToBytes(result);
   if (decoded.empty()) {
     return false;
   }
@@ -647,9 +675,7 @@ bool ElectrumSpvClient::getRawTx(
   // this call and were never hashed back to that txid — so a hostile or MITM'd
   // server could pair a genuine merkle proof for some real txid with entirely
   // fabricated transaction contents. Bind them.
-  std::vector<uint8_t> h = BchHtlcScript::doubleSha256(decoded);
-  std::reverse(h.begin(), h.end());                 // internal LE -> display BE
-  std::string computed = BchHtlcScript::bytesToHex(h);
+  std::string computed = computeTransactionId(decoded);
   std::string expected = txid;
   std::transform(computed.begin(), computed.end(), computed.begin(), ::tolower);
   std::transform(expected.begin(), expected.end(), expected.begin(), ::tolower);
@@ -660,10 +686,6 @@ bool ElectrumSpvClient::getRawTx(
   // A 64-byte "transaction" is indistinguishable from an internal merkle node,
   // which lets a crafted branch reinterpret one as the other. No real lock tx
   // is 64 bytes.
-  if (decoded.size() == 64) {
-    return false;
-  }
-
   rawTx = std::move(decoded);
   return true;
 }
@@ -726,7 +748,8 @@ bool ElectrumSpvClient::findSpend(
 
   for (size_t i = 0; i < historyJson.size(); ++i) {
     const Common::JsonValue& entry = historyJson[i];
-    if (!entry.contains("tx_hash") || !entry("tx_hash").isString()) {
+    if (!entry.isObject() || !entry.contains("tx_hash") ||
+        !entry("tx_hash").isString()) {
       continue;
     }
 
@@ -771,6 +794,8 @@ bool ElectrumSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::stri
   if (m_conns.empty()) {
     return false;
   }
+  const std::string localTxid = computeTransactionId(rawTx);
+  if (localTxid.empty()) return false;
 
   // Convert raw tx to hex string
   std::string hexTx = BchHtlcScript::bytesToHex(rawTx);
@@ -784,20 +809,18 @@ bool ElectrumSpvClient::broadcastTx(const std::vector<uint8_t>& rawTx, std::stri
     return false;
   }
 
-  // Parse result as JSON string
-  Common::JsonValue json;
-  try {
-    json = Common::JsonValue::fromString(result);
-  } catch (const std::exception&) {
+  // ElectrumConnection::call already unwraps JSON string results.
+  static const char hexChars[] = "0123456789abcdefABCDEF";
+  if (result.size() != 64 ||
+      result.find_first_not_of(hexChars) != std::string::npos) {
     return false;
   }
 
-  if (!json.isString()) {
-    return false;
-  }
-
-  txid = json.getString();
-  return txid.size() == 64;
+  std::string returnedTxid = result;
+  std::transform(returnedTxid.begin(), returnedTxid.end(), returnedTxid.begin(), ::tolower);
+  if (returnedTxid != localTxid) return false;
+  txid = localTxid;
+  return true;
 }
 
 // =============================================================================

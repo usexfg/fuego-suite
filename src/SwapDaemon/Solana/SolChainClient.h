@@ -22,10 +22,13 @@ public:
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
+  bool hasConfirmedClaim(const SwapParams& params) override;
   bool getCurrentHeight(uint64_t& height) override;
 
 private:

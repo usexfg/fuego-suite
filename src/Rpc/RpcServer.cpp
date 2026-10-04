@@ -929,6 +929,7 @@ bool RpcServer::on_get_peer_list(
 
 bool RpcServer::on_get_info(const COMMAND_RPC_GET_INFO::request& req, COMMAND_RPC_GET_INFO::response& res) {
   res.height = m_core.get_current_blockchain_height();
+  res.network = m_core.currency().isTestnet() ? "testnet" : "mainnet";
   res.difficulty = m_core.getNextBlockDifficulty();
   res.tx_count = m_core.get_blockchain_total_transactions() - res.height; //without coinbase
   res.tx_pool_size = m_core.get_pool_transactions_count();
@@ -979,6 +980,7 @@ bool RpcServer::on_get_info(const COMMAND_RPC_GET_INFO::request& req, COMMAND_RP
 
 bool RpcServer::on_get_height(const COMMAND_RPC_GET_HEIGHT::request& req, COMMAND_RPC_GET_HEIGHT::response& res) {
   res.height = m_core.get_current_blockchain_height();
+  res.network = m_core.currency().isTestnet() ? "testnet" : "mainnet";
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }
@@ -1000,6 +1002,10 @@ void RpcServer::setSwapDaemon(XfgSwap::SwapDaemon* daemon) {
 }
 
 bool RpcServer::on_get_active_swaps(const COMMAND_RPC_GET_ACTIVE_SWAPS::request& /*req*/, COMMAND_RPC_GET_ACTIVE_SWAPS::response& res) {
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return false;
+  }
   if (!m_swapDb) {
     res.status = "Swap database not available";
     return true;
@@ -1037,14 +1043,22 @@ bool RpcServer::on_initiate_swap(const COMMAND_RPC_INITIATE_SWAP::request& req, 
   params.pair        = XfgSwap::swapPairFromString(req.pair);
   params.role        = XfgSwap::SwapRole::BOB;
   params.xfgAmount   = req.xfg_amount;
-  params.ctrAmount   = req.ctr_amount;
+  if (!req.ctr_amount_atomic.empty()) {
+    if (req.ctr_amount != 0 ||
+        !XfgSwap::parseAtomicAmount(req.ctr_amount_atomic, params.ctrAmount)) {
+      res.status = "Invalid ctr_amount_atomic or conflicting legacy amount";
+      return true;
+    }
+  } else {
+    params.ctrAmount = req.ctr_amount;
+  }
   params.ctrAddress  = req.ctr_address;
   params.peerEndpoint = req.peer_endpoint;
 
   if (!req.peer_pub_key.empty()) {
     if (!Common::fromHex(req.peer_pub_key,
-                         &params.peerSwapPubKey,
-                         sizeof(params.peerSwapPubKey))) {
+                         &params.expectedPeerSwapPubKey,
+                         sizeof(params.expectedPeerSwapPubKey))) {
       res.status = "Invalid peer_pub_key";
       return true;
     }
@@ -1112,6 +1126,14 @@ bool RpcServer::on_refund_swap(const COMMAND_RPC_REFUND_SWAP::request& req, COMM
 }
 
 bool RpcServer::on_list_swaps(const COMMAND_RPC_LIST_SWAPS::request& /*req*/, COMMAND_RPC_LIST_SWAPS::response& res) {
+  // The swap database is this operator's own trades — ids, parameters and
+  // states. Chain-derived data (fee pool, treasury, epoch history, CD yield
+  // estimates) is public consensus state and stays open; wallets on public
+  // nodes need estimate_cd_yield to withdraw a CD with its interest.
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return false;
+  }
   if (!m_swapDb) {
     res.status = "Swap database not available";
     return true;
@@ -1142,6 +1164,10 @@ bool RpcServer::on_list_swaps(const COMMAND_RPC_LIST_SWAPS::request& /*req*/, CO
 }
 
 bool RpcServer::on_get_swap_status(const COMMAND_RPC_GET_SWAP_STATUS::request& req, COMMAND_RPC_GET_SWAP_STATUS::response& res) {
+  if (m_restricted_rpc) {
+    res.status = "Failed, restricted handle";
+    return false;
+  }
   if (!m_swapDb) {
     res.status = "Swap database not available";
     res.found = false;
@@ -1257,6 +1283,8 @@ bool RpcServer::on_get_swap_trades(const COMMAND_RPC_GET_SWAP_TRADES::request& r
     entry.pair        = t.pair;
     entry.xfgAmount   = t.xfgAmount;
     entry.ctrAmount   = t.ctrAmount;
+    entry.ctrAmountAtomic = t.ctrAmountAtomic.empty()
+        ? std::to_string(t.ctrAmount) : t.ctrAmountAtomic;
     entry.rate        = std::to_string(t.rate);
     entry.blockHeight = t.blockHeight;
     entry.timestamp   = t.timestamp;
@@ -1368,10 +1396,15 @@ bool RpcServer::on_request_swap(const COMMAND_RPC_REQUEST_SWAP::request& req, CO
     res.status = "proofOfFunds is required (chain reserve proof bound to offerId)";
     return true;
   }
+  if (!CryptoNote::SwapOfferRelay::isValidSwapRequestInput(
+          req.offerId, req.takerPubKey, req.proofOfFunds)) {
+    res.status = "offerId or proofOfFunds exceeds swap-request size limit";
+    return true;
+  }
 
   // Echo the offer's pair + amount so the taker can drive its local swap
   // daemon after the maker locks (informational only).
-  for (int pair = 0; pair <= static_cast<int>(XfgSwap::SwapPair::DOT); ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::MAX_SWAP_PAIR_INDEX); ++pair) {
     auto offers = m_swapRelay->getOffers(static_cast<uint8_t>(pair));
     for (const auto& offer : offers) {
       if (offer.offerId == req.offerId) {
@@ -1470,7 +1503,7 @@ bool RpcServer::on_place_order(const COMMAND_RPC_PLACE_ORDER::request& req, COMM
 
   // Rate limiting is now applied per-IP at processRequest level.
 
-  if (req.pair > 7 || req.side > 1) {
+  if (!SwapOfferRelay::isExecutablePair(req.pair) || req.side > 1) {
     res.status = "Invalid pair or side";
     return true;
   }
@@ -1549,7 +1582,7 @@ bool RpcServer::on_get_open_orders(const COMMAND_RPC_GET_OPEN_ORDERS::request& r
   }
 
   // Return all orders for now (address filter not yet implemented)
-  for (int pair = 0; pair < 8; ++pair) {
+  for (int pair = 0; pair <= static_cast<int>(XfgSwap::MAX_SWAP_PAIR_INDEX); ++pair) {
     auto snap = m_swapRelay->getOrderBookSnapshot(pair, 1000);
     for (const auto& lvl : snap.bids) {
       (void)lvl;
@@ -2609,7 +2642,6 @@ bool RpcServer::on_check_commitment_exists(const COMMAND_RPC_CHECK_COMMITMENT_EX
 
 bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::request& req,
                                       COMMAND_RPC_GET_FEE_POOL_INFO::response& res) {
-  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   const uint64_t epochDuration = m_core.currency().isTestnet()
     ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
     : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
@@ -2627,7 +2659,6 @@ bool RpcServer::on_get_fee_pool_info(const COMMAND_RPC_GET_FEE_POOL_INFO::reques
 
 bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::request& req,
                                       COMMAND_RPC_GET_EPOCH_HISTORY::response& res) {
-  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   static constexpr uint32_t MAX_EPOCH_HISTORY = 100;
 
   const uint64_t totalEpochs = m_core.getCommitmentIndex().getEpochCount();
@@ -2667,62 +2698,35 @@ bool RpcServer::on_get_epoch_history(const COMMAND_RPC_GET_EPOCH_HISTORY::reques
 
 bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::request& req,
                                       COMMAND_RPC_ESTIMATE_CD_YIELD::response& res) {
-  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   const uint32_t currentHeight = (req.current_height > 0)
     ? req.current_height
     : static_cast<uint32_t>(m_core.get_current_blockchain_height());
 
-  res.estimated_interest = m_core.currency().calculateCdInterest(
-    req.amount, req.creation_height, currentHeight, m_core.getCommitmentIndex(),
-    req.term, false);
+  // Same computation consensus applies to a claim (Blockchain::estimateCdClaim).
+  // Pass the CD's real term: without it interest is not clamped at maturity.
+  CdClaimEstimate est;
+  m_core.estimateCdClaim(req.amount, req.creation_height, currentHeight, req.term, est);
 
-  const uint64_t epochDuration = m_core.currency().isTestnet()
-    ? CryptoNote::parameters::TESTNET_EPOCH_DURATION_BLOCKS
-    : CryptoNote::parameters::EPOCH_DURATION_BLOCKS;
-  res.effective_epochs = (epochDuration > 0 && currentHeight > req.creation_height)
-    ? ((currentHeight - req.creation_height) / epochDuration)
-    : 0;
-
-  // Pool-aware cap: consensus only accepts claims backed by the fee pool AND
-  // the CD_APY_POOL vault partition (see checkCommitmentSpendInput + F-001).
-  res.fee_pool_balance = m_core.get_blockchain_storage().getFeePoolBalance();
-  res.cd_apy_vault_balance = m_core.get_blockchain_storage().getCdApyVaultBalance();
-  res.claimable_interest = std::min(res.estimated_interest,
-      std::min(res.fee_pool_balance, res.cd_apy_vault_balance));
+  res.base_interest = est.baseInterest;
+  res.bonus_interest = est.bonusInterest;
+  res.estimated_interest = (est.baseInterest > UINT64_MAX - est.bonusInterest)
+      ? UINT64_MAX : (est.baseInterest + est.bonusInterest);
+  res.effective_epochs = est.creditedEpochs;
+  res.fee_pool_balance = est.feePoolBalance;
+  res.cd_apy_vault_balance = est.cdApyVaultBalance;
+  res.bonus_vault_balance = est.bonusVaultBacking;
+  res.claimable_bonus = est.claimableBonus;
+  // Both portions capped: base by the fee pool and CD_APY_POOL, bonus by the
+  // Bonus Vault — exactly what checkCommitmentSpendInput would accept now.
+  res.claimable_interest = (est.claimableBase > UINT64_MAX - est.claimableBonus)
+      ? UINT64_MAX : (est.claimableBase + est.claimableBonus);
   res.pool_info_present = true;
-
-  // v11+: split the estimate into pool-backed base and BV-backed bonus using
-  // the same consensus formulas (no loyalty in the base; bonus from realized
-  // BV inflows, capped by the vault). Pre-v11 chains keep the legacy
-  // loyalty-inclusive estimate.
-  {
-    uint8_t chainVersion = m_core.currency().blockMajorVersionAtHeight(currentHeight);
-    if (chainVersion >= BLOCK_MAJOR_VERSION_11) {
-      const auto& ci = m_core.getCommitmentIndex();
-      uint64_t base = m_core.currency().calculateCdInterest(
-          req.amount, req.creation_height, currentHeight, ci,
-          req.term, false);
-      uint64_t bonus = m_core.currency().calculateCdBonus(
-          req.amount, req.creation_height, currentHeight, ci, req.term);
-      uint64_t bv = m_core.get_blockchain_storage().getBonusVaultBalance();
-      uint64_t bvUtxo = m_core.get_blockchain_storage().getBonusVaultUtxoBalance();
-      uint64_t bvBacking = std::min(bv, bvUtxo);
-      res.base_interest = base;
-      res.bonus_interest = bonus;
-      res.bonus_vault_balance = bvBacking;
-      res.claimable_bonus = std::min(bonus, bvBacking);
-      uint64_t totalFormula = (base > UINT64_MAX - bonus) ? UINT64_MAX : (base + bonus);
-      res.estimated_interest = totalFormula;
-      res.claimable_interest = (base > UINT64_MAX - res.claimable_bonus)
-          ? UINT64_MAX : (base + res.claimable_bonus);
-    }
-  }
 
   res.note = "Estimate only: the protocol distributes realized fee revenue "
              "(real yield — no interest is printed), so this is based on accrued "
              "epoch fee rates, not a promise; the amount actually claimable is "
-             "capped by the CD yield pool (and Bonus Vault for the tier bonus) "
-             "at claim time.";
+             "capped by the CD yield pool (and Bonus Vault for the yield-floor "
+             "top-up) at claim time.";
 
   res.status = CORE_RPC_STATUS_OK;
   return true;
@@ -2730,7 +2734,6 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
 
 bool RpcServer::on_get_treasury_info(const COMMAND_RPC_GET_TREASURY_INFO::request& req,
                                       COMMAND_RPC_GET_TREASURY_INFO::response& res) {
-  if (m_restricted_rpc) { res.status = "Failed, restricted handle"; return false; }
   res.treasury_balance = m_core.get_blockchain_storage().getTreasuryBalance();
   res.treasury_counter_xfg = m_core.get_blockchain_storage().getTreasuryCounterXFG();
   res.treasury_heat_reserve = m_core.get_blockchain_storage().getTreasuryHeatReserve();
@@ -2854,6 +2857,7 @@ bool RpcServer::on_amm_quote(const COMMAND_RPC_AMM_QUOTE::request& req,
   res.expected_output = quote.expectedOutput;
   res.price_impact_bps = quote.priceImpactBps;
   res.fee = quote.fee;
+  res.mint_output = quote.mintOutput;
   res.status = CORE_RPC_STATUS_OK;
   return true;
 }

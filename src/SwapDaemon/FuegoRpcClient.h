@@ -140,6 +140,11 @@ public:
   bool getTransactionOutputs(const std::string& txHashHex,
                              std::vector<TxOutputInfo>& outputs);
 
+  // Main-chain confirmations for a transaction. Pool transactions return zero.
+  // Returns false when the transaction or chain status cannot be verified.
+  bool getTransactionConfirmations(const std::string& txHashHex,
+                                   uint32_t& confirmations);
+
   // Get random outputs for ring decoys at a given amount.
   // Returns `count` random {global_index, public_key} pairs via the JSON endpoint.
   bool getRandomOutputs(uint64_t amount, uint64_t count,

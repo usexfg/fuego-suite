@@ -15,6 +15,7 @@
 
 #include "SolRpcClient.h"
 #include "Common/WinCompat.h"
+#include "Common/JsonValue.h"
 
 #include <atomic>
 #include <cstring>
@@ -654,7 +655,10 @@ bool SolRpcClient::getBalance(const std::string& pubkey, uint64_t& lamports) {
 
 bool SolRpcClient::getAccountInfo(const std::string& pubkey, SolAccountInfo& info) {
   // Request base64 encoding for account data
-  std::string params = "[\"" + pubkey + "\",{\"encoding\":\"base64\"}]";
+  // Secret extraction reads this account. An explicit finalized commitment
+  // prevents a shallow claim from authorizing the XFG payout.
+  std::string params = "[\"" + pubkey +
+      "\",{\"encoding\":\"base64\",\"commitment\":\"finalized\"}]";
   std::string resp = jsonRpc("getAccountInfo", params);
   if (resp.empty() || jsonHasError(resp)) return false;
 
@@ -706,17 +710,57 @@ bool SolRpcClient::getAccountInfo(const std::string& pubkey, SolAccountInfo& inf
 }
 
 bool SolRpcClient::getSignatureStatus(const std::string& signature, bool& confirmed) {
+  confirmed = false;
   std::string params = "[[\"" + signature + "\"]]";
   std::string resp = jsonRpc("getSignatureStatuses", params);
-  if (resp.empty() || jsonHasError(resp)) return false;
+  if (resp.empty()) return false;
+  try {
+    const auto root = Common::JsonValue::fromString(resp);
+    if (!root.isObject() || !root.contains("result") ||
+        (root.contains("error") && !root("error").isNil())) return false;
+    const auto& result = root("result");
+    if (!result.isObject() || !result.contains("value") ||
+        !result("value").isArray() || result("value").size() != 1) return false;
+    const auto& entry = result("value")[0];
+    if (entry.isNil()) return true;
+    if (!entry.isObject() || !entry.contains("err") ||
+        !entry("err").isNil() || !entry.contains("confirmationStatus") ||
+        !entry("confirmationStatus").isString()) return true;
+    const std::string status = entry("confirmationStatus").getString();
+    confirmed = status == "confirmed" || status == "finalized";
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
 
-  std::string result = jsonGetResult(resp);
-  if (result.empty()) return false;
-
-  // result.value[0] is null if unknown, or has confirmationStatus
-  std::string status = jsonGetString(result, "confirmationStatus");
-  confirmed = (status == "confirmed" || status == "finalized");
-  return true;
+bool SolRpcClient::getFinalizedSignatureSlot(const std::string& signature,
+                                             uint64_t& slot) {
+  slot = 0;
+  if (signature.empty()) return false;
+  const std::string params = "[[\"" + signature +
+      "\"],{\"searchTransactionHistory\":true}]";
+  const std::string response = jsonRpc("getSignatureStatuses", params);
+  if (response.empty()) return false;
+  try {
+    const auto root = Common::JsonValue::fromString(response);
+    if (!root.isObject() || !root.contains("result") ||
+        (root.contains("error") && !root("error").isNil())) return false;
+    const auto& result = root("result");
+    if (!result.isObject() || !result.contains("value") ||
+        !result("value").isArray() || result("value").size() != 1) return false;
+    const auto& entry = result("value")[0];
+    if (!entry.isObject() || !entry.contains("err") ||
+        !entry("err").isNil() || !entry.contains("confirmationStatus") ||
+        !entry("confirmationStatus").isString() ||
+        entry("confirmationStatus").getString() != "finalized" ||
+        !entry.contains("slot") || !entry("slot").isInteger() ||
+        entry("slot").getInteger() <= 0) return false;
+    slot = static_cast<uint64_t>(entry("slot").getInteger());
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -810,7 +854,8 @@ bool SolRpcClient::parseHtlcState(const std::vector<uint8_t>& data, SolHtlcInfo&
 bool SolRpcClient::getHtlcState(const std::string& htlcAccount, SolHtlcInfo& info) {
   SolAccountInfo acctInfo;
   if (!getAccountInfo(htlcAccount, acctInfo)) return false;
-  if (acctInfo.dataBase64.empty()) return false;
+  if (m_programId.empty() || acctInfo.owner != m_programId ||
+      acctInfo.executable || acctInfo.dataBase64.empty()) return false;
 
   std::vector<uint8_t> data = base64Decode(acctInfo.dataBase64);
   return parseHtlcState(data, info);

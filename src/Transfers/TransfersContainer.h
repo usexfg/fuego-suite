@@ -117,7 +117,9 @@ struct TransactionOutputInformationEx : public TransactionOutputInformationIn {
 
   TransactionOutputKey getTransactionOutputKey() const { return TransactionOutputKey {transactionHash, outputInTransaction}; }
 
-  void serialize(CryptoNote::ISerializer& s) {
+  // Layout of a stored output up to and including container storage version 1.
+  // It did not record commitmentKey. Kept so old wallet caches still load.
+  void serializeV1(CryptoNote::ISerializer& s) {
     s(reinterpret_cast<uint8_t&>(type), "type");
     s(amount, "");
     serializeGlobalOutputIndex(s, globalOutputIndex, "");
@@ -137,6 +139,16 @@ struct TransactionOutputInformationEx : public TransactionOutputInformationIn {
       s(term, "");
     } else if (type == TransactionTypes::OutputType::Commitment) {
       s(term, "");
+    }
+  }
+
+  // Storage version 2 adds the published commit key for Commitment outputs. The
+  // signer needs it to choose between the owner-bound and legacy derivations, and
+  // without it every cached HEAT/CD output would be unspendable after a restart.
+  void serialize(CryptoNote::ISerializer& s) {
+    serializeV1(s);
+    if (type == TransactionTypes::OutputType::Commitment) {
+      s(commitmentKey, "");
     }
   }
 
@@ -163,11 +175,32 @@ struct SpentTransactionOutput : TransactionOutputInformationEx {
     return spendingTransactionHash;
   }
 
-  void serialize(ISerializer& s) {
-    TransactionOutputInformationEx::serialize(s);
+  void serializeSpendInfo(ISerializer& s) {
     s(spendingBlock, "spendingBlock");
     s(spendingTransactionHash, "spendingTransactionHash");
     s(inputInTransaction, "inputInTransaction");
+  }
+
+  void serialize(ISerializer& s) {
+    TransactionOutputInformationEx::serialize(s);
+    serializeSpendInfo(s);
+  }
+};
+
+// Readers for records written before container storage version 2. Value-initialised
+// so commitmentKey reads as all-zero, which the signer treats as "not recorded",
+// meaning the output was recognised by the legacy-only scanner. readSequence
+// default-constructs its elements, so without this the field would be indeterminate.
+struct TransactionOutputInformationExV1 : public TransactionOutputInformationEx {
+  TransactionOutputInformationExV1() : TransactionOutputInformationEx() {}
+  void serialize(ISerializer& s) { serializeV1(s); }
+};
+
+struct SpentTransactionOutputV1 : public SpentTransactionOutput {
+  SpentTransactionOutputV1() : SpentTransactionOutput() {}
+  void serialize(ISerializer& s) {
+    serializeV1(s);
+    serializeSpendInfo(s);
   }
 };
 

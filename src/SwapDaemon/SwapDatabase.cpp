@@ -62,6 +62,12 @@ std::string SwapDatabase::archiveFilePath(const std::string& swapId) const {
 
 bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
   try {
+    // An archived terminal record wins over a stale active file left by a
+    // crash between archive commit and active-file cleanup.
+    if (!sm.isTerminal()) {
+      std::ifstream archived(archiveFilePath(sm.params().swapId), std::ios::binary);
+      if (archived.is_open()) return false;
+    }
     // ── Optimistic concurrency: reject a stale write. ──
     // The tick thread loads a record, mutates it in memory, then saves. The
     // peer-message thread may persist a newer version of the same record in
@@ -133,6 +139,12 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
       return false;
     }
 
+    if (sm.isTerminal()) {
+      // Archive was committed first. A failed unlink is harmless because
+      // loadSwapLocked treats the archive as authoritative.
+      std::remove(swapFilePath(sm.params().swapId).c_str());
+    }
+
     return true;
   } catch (const std::exception&) {
     return false;
@@ -141,6 +153,8 @@ bool SwapDatabase::saveSwapLocked(const SwapStateMachine& sm) {
 
 bool SwapDatabase::loadSwapLocked(const std::string& swapId, SwapStateMachine& sm) {
   try {
+    std::ifstream archived(archiveFilePath(swapId), std::ios::binary);
+    if (archived.is_open()) return false;
     std::string path = swapFilePath(swapId);
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs.is_open()) {
@@ -194,7 +208,8 @@ std::vector<std::string> SwapDatabase::listSwaps() {
   for (const auto& entry : fs::directory_iterator(m_swapsDir)) {
     std::string name = entry.path().filename().string();
     if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
-      swapIds.push_back(name.substr(0, name.size() - 5));
+      const std::string swapId = name.substr(0, name.size() - 5);
+      if (!fs::exists(archiveFilePath(swapId))) swapIds.push_back(swapId);
     }
   }
 #else
@@ -209,7 +224,9 @@ std::vector<std::string> SwapDatabase::listSwaps() {
     // Filter for .json files
     if (name.size() > 5 && name.substr(name.size() - 5) == ".json") {
       // Strip .json extension to get swap ID
-      swapIds.push_back(name.substr(0, name.size() - 5));
+      const std::string swapId = name.substr(0, name.size() - 5);
+      std::ifstream archived(archiveFilePath(swapId), std::ios::binary);
+      if (!archived.is_open()) swapIds.push_back(swapId);
     }
   }
 
@@ -242,6 +259,10 @@ void SwapDatabase::migrateTerminalSwaps() {
     std::string name = entry.path().filename().string();
     if (name.size() <= 5 || name.substr(name.size() - 5) != ".json") continue;
     std::string swapId = name.substr(0, name.size() - 5);
+    if (fs::exists(archiveFilePath(swapId))) {
+      std::remove(swapFilePath(swapId).c_str());
+      continue;
+    }
     SwapStateMachine sm;
     if (loadSwapLocked(swapId, sm) && sm.isTerminal()) {
       std::string src = swapFilePath(swapId);
@@ -260,6 +281,12 @@ void SwapDatabase::migrateTerminalSwaps() {
     std::string name = entry->d_name;
     if (name.size() <= 5 || name.substr(name.size() - 5) != ".json") continue;
     std::string swapId = name.substr(0, name.size() - 5);
+    std::ifstream archived(archiveFilePath(swapId), std::ios::binary);
+    if (archived.is_open()) {
+      archived.close();
+      std::remove(swapFilePath(swapId).c_str());
+      continue;
+    }
     SwapStateMachine sm;
     if (loadSwapLocked(swapId, sm) && sm.isTerminal()) {
       std::string src = swapFilePath(swapId);

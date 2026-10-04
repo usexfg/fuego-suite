@@ -40,6 +40,7 @@ class SwapDaemon;
 //   swap_status    {swap_id}                              → {swap: {...}} (with stateName/pairName)
 //   refund         {swap_id}                              → {success}
 //   check_timeouts {}                                     → {processed, refunded: [...]}
+//   list_chains    {}                                     → {chains: [...]} catalog + readiness
 class RpcServer {
 public:
   // controlToken: when non-empty, every POST requires header
@@ -72,6 +73,7 @@ private:
   std::string handleSwapStatus(const std::string& params);
   std::string handleRefund(const std::string& params);
   std::string handleCheckTimeouts(const std::string& params);
+  std::string handleListChains(const std::string& params);
 
   // Build a JSON-RPC error response.
   static std::string rpcError(int code, const std::string& message, int id = 0);

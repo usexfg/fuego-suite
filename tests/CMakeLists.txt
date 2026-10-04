@@ -29,9 +29,28 @@ target_link_libraries(commitment_owner_bound_tests PRIVATE
 )
 add_test(NAME commitment_owner_bound_tests COMMAND commitment_owner_bound_tests)
 
+# Persistence of the published commitment key. The signer cannot choose between the
+# owner-bound and legacy derivations without it, and it used to be lost on every
+# wallet save/reload. Also covers loading pre-version-2 caches.
+add_executable(commitment_persistence_tests
+    UnitTests/CommitmentPersistenceTest.cpp
+)
+target_include_directories(commitment_persistence_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(commitment_persistence_tests PRIVATE
+    Transfers
+    CryptoNoteCore
+    Serialization
+    Logging
+    Common
+    Crypto
+    gtest
+    gtest_main
+)
+add_test(NAME commitment_persistence_tests COMMAND commitment_persistence_tests)
+
 # Asset classification for commitment terms. Both the input and output side must
-# use one table, or per-asset conservation can be broken by decoy reordering.
-# See docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md section B.
+# use one table (Currency::classifyCommitmentTermAsset), or per-asset conservation can
+# be broken. See docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md section B.
 add_executable(asset_classification_tests
     UnitTests/AssetClassificationTest.cpp
 )

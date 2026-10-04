@@ -45,6 +45,8 @@ public:
       auto it = m_rawTxs.find(m_lastSpendTxid);
       if (it != m_rawTxs.end())
         out.rawSpendingTx = it->second;
+      auto proof = m_inclusions.find(m_lastSpendTxid);
+      if (proof != m_inclusions.end()) out.inclusion = proof->second;
       return true;
     }
     return false;
@@ -296,11 +298,11 @@ static void test_kmd_verifyLock_spv_mode() {
   auto mock = std::make_shared<MockSpvClient>();
   mock->m_tipHeight = 500;
 
-  std::vector<uint8_t> p2shScriptPubKey(23, 0x00);
-  p2shScriptPubKey[0] = 0xA9;
-  p2shScriptPubKey[1] = 0x14;
-  for (int i = 2; i < 22; ++i) p2shScriptPubKey[i] = static_cast<uint8_t>(i);
-  p2shScriptPubKey[22] = 0x87;
+  const auto redeemScript = KmdHtlcScript::createHashTimeLockScript(
+      std::vector<uint8_t>(32, 0xaa), 1234567890,
+      std::vector<uint8_t>(33, 0x02), std::vector<uint8_t>(33, 0x03), 500000);
+  const auto p2shScriptPubKey =
+      KmdHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
 
   uint64_t lockAmount = 100000;
   auto rawTx = buildMinimalRawTx(p2shScriptPubKey, lockAmount);
@@ -314,6 +316,7 @@ static void test_kmd_verifyLock_spv_mode() {
   SwapParams params;
   params.ctrLockTxId = lockTxId;
   params.ctrAmount = lockAmount;
+  params.chainState = KmdHtlcScript::bytesToHex(redeemScript);
 
   auto result = client.verifyLock(params);
   assert(result.success);
@@ -456,7 +459,7 @@ static void test_kmd_spv_mode_lock_claim_refund_fail() {
 
   result = client.verifyReserveProof("", 0, "addr:sig:msg");
   assert(!result.success);
-  assert(result.error.find("not implemented") != std::string::npos);
+  assert(result.error.find("RPC client not available") != std::string::npos);
 
   std::cout << "  PASSED" << std::endl;
 }
@@ -573,6 +576,13 @@ static void test_kmd_spv_claim_then_extract_secret() {
 
   // Step 2: tryExtractClaimedSecret → findSpend → getRawTx → parseClaimPreimage
   std::string secret = client.tryExtractClaimedSecret(params);
+  assert(secret.empty());  // mempool spend is insufficient to spend XFG
+  mock->m_inclusions[claimTxId] = {true, 501, 5, false};
+  assert(client.tryExtractClaimedSecret(params).empty());
+  mock->m_inclusions[claimTxId] = {true, 501, 5, true};
+  assert(client.tryExtractClaimedSecret(params).empty());
+  mock->m_inclusions[claimTxId] = {true, 501, 6, true};
+  secret = client.tryExtractClaimedSecret(params);
   assert(!secret.empty());
   // The extracted preimage should be the 32 bytes of 0x42 in hex
   assert(secret == "4242424242424242424242424242424242424242424242424242424242424242");
@@ -583,10 +593,10 @@ static void test_kmd_spv_claim_then_extract_secret() {
   std::string refundTxId = refundResult.txId;
   assert(!refundTxId.empty());
 
-  // Now the mock's findSpend returns the claim tx (first spend). Try extract again.
+  // The mock now reports the refund as the spend; an unproved refund cannot
+  // surface the previous claim's secret.
   secret = client.tryExtractClaimedSecret(params);
-  assert(!secret.empty());
-  assert(secret == "4242424242424242424242424242424242424242424242424242424242424242");
+  assert(secret.empty());
 
   std::cout << "  PASSED" << std::endl;
 }

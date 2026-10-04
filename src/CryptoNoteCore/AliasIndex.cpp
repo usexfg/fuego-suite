@@ -244,7 +244,8 @@ bool AliasIndex::removeAlias(const std::string& alias) {
 }
 
 bool AliasIndex::replaceAliasOwnership(const std::string& alias,
-                                       const Crypto::Hash& newAddressHash) {
+                                       const Crypto::Hash& newAddressHash,
+                                       const std::string& newOwnerAddress) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
   // Normalize to lowercase
@@ -268,8 +269,9 @@ bool AliasIndex::replaceAliasOwnership(const std::string& alias,
   std::string oldAddrHashHex = Common::podToHex(aliasIt->second.addressHash);
   m_addrHashToAlias.erase(oldAddrHashHex);
 
-  // Update entry with new address hash
+  // Keep RPC address resolution consistent with the ownership hash.
   aliasIt->second.addressHash = newAddressHash;
+  aliasIt->second.ownerAddress = newOwnerAddress;
 
   // Add new address hash mapping
   m_addrHashToAlias[newAddrHashHex] = normalizedAlias;
@@ -283,6 +285,13 @@ size_t AliasIndex::size() const {
   return m_aliases.size();
 }
 
+void AliasIndex::reset() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  m_aliases.clear();
+  m_addrHashToAlias.clear();
+  reserveDevTeamAliases();
+}
+
 // ============================================================================
 // PERSISTENCE
 // ============================================================================
@@ -294,6 +303,14 @@ void AliasEntry::serialize(ISerializer& s) {
   s(addressHash, "addressHash");
   s(aliasType, "aliasType");
   s(registeredBlock, "registeredBlock");
+}
+
+void AliasUndoOp::serialize(ISerializer& s) {
+  s(opType, "opType");
+  s(alias, "alias");
+  if (opType != 0) {
+    s(priorEntry, "priorEntry");
+  }
 }
 
 void AliasIndex::serialize(ISerializer& s) {
@@ -332,8 +349,9 @@ void applyAliasUndo(AliasIndex& index, const std::vector<AliasUndoOp>& ops) {
       case 1:  // undo release -> restore the entry as it was
         index.registerAlias(it->priorEntry);
         break;
-      case 2:  // undo transfer -> revert addressHash
-        index.replaceAliasOwnership(it->alias, it->priorAddressHash);
+      case 2:  // undo transfer -> restore both the hash and resolved address
+        index.replaceAliasOwnership(it->alias, it->priorEntry.addressHash,
+                                    it->priorEntry.ownerAddress);
         break;
       default:
         break;

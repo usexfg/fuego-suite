@@ -15,6 +15,8 @@ public:
   DogeChainClient(std::unique_ptr<DogeRpcClient> rpc, const std::string& wif);
 
   std::string chainName() const override { return "DOGE"; }
+  // Full-node mode cannot discover the lock spend without Bob's peer message.
+  bool isReadyForNewSwap() override { return false; }
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;

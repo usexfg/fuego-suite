@@ -3,6 +3,7 @@
 // ElectrumConnection, ElectrumSpvClient, and TestElectrumServer tests.
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -62,6 +63,16 @@ static std::vector<SpvHeader> buildChain(size_t count) {
     chain.push_back(h);
   }
   return chain;
+}
+
+static std::string singleHeaderRpcResponse(const std::string& method) {
+  static const std::string headerHex =
+      BchHtlcScript::bytesToHex(buildChain(1).front().serialize());
+  if (method == "blockchain.headers.subscribe")
+    return "{\"height\":0,\"hex\":\"" + headerHex + "\"}";
+  if (method == "blockchain.block.headers")
+    return "{\"headers\":\"" + headerHex + "\"}";
+  return {};
 }
 
 // =============================================================================
@@ -509,6 +520,52 @@ static std::string computeTxid(const std::vector<uint8_t>& rawTx) {
   return BchHtlcScript::bytesToHex(hashBE);
 }
 
+static void test_local_txid_binds_witness_and_broadcast_identity() {
+  const std::vector<uint8_t> zeroHash(32, 0);
+  const std::vector<uint8_t> base = buildTestRawTx(
+      {{zeroHash, 0xFFFFFFFF}}, {buildP2pkhSpk(std::vector<uint8_t>(20, 0xAA))});
+  assert(ElectrumSpvClient::computeTransactionId(base) == computeTxid(base));
+
+  // A SegWit witness changes the wtxid, while the canonical txid hashes the
+  // same version, inputs, outputs and locktime as the base serialization.
+  std::vector<uint8_t> withWitness(base.begin(), base.begin() + 4);
+  withWitness.insert(withWitness.end(), {0x00, 0x01});
+  withWitness.insert(withWitness.end(), base.begin() + 4, base.end() - 4);
+  withWitness.insert(withWitness.end(), {0x01, 0x01, 0x42});
+  withWitness.insert(withWitness.end(), base.end() - 4, base.end());
+  assert(ElectrumSpvClient::computeTransactionId(withWitness) == computeTxid(base));
+  assert(ElectrumSpvClient::computeTransactionId(std::vector<uint8_t>(64, 0)).empty());
+}
+
+static void test_spv_broadcast_checks_server_txid() {
+  const std::vector<uint8_t> zeroHash(32, 0);
+  const std::vector<uint8_t> rawTx = buildTestRawTx(
+      {{zeroHash, 0xFFFFFFFF}}, {buildP2pkhSpk(std::vector<uint8_t>(20, 0xAC))});
+  const std::string expected = computeTxid(rawTx);
+  std::atomic<bool> poisonResponse{false};
+  TestElectrumServer server;
+  server.setHandler([&](const std::string& method, const std::string&) -> std::string {
+    if (method == "server.version") return R"(["TestServer","1.4"])";
+    const std::string headers = singleHeaderRpcResponse(method);
+    if (!headers.empty()) return headers;
+    if (method == "blockchain.transaction.broadcast")
+      return "\"" + (poisonResponse.load() ? std::string(64, '1') : expected) + "\"";
+    return "null";
+  });
+  const uint16_t port = server.start();
+  ElectrumSpvClient client({"127.0.0.1:" + std::to_string(port)}, 1, 0,
+      std::string(64, '0'));
+  assert(client.syncHeaders());
+  std::string txid;
+  assert(client.broadcastTx(rawTx, txid));
+  assert(txid == expected);
+  poisonResponse.store(true);
+  txid.clear();
+  assert(!client.broadcastTx(rawTx, txid));
+  assert(txid.empty());
+  server.stop();
+}
+
 // =============================================================================
 // Task 8 tests: getRawTx + findSpend
 // =============================================================================
@@ -531,16 +588,19 @@ static void test_spv_get_raw_tx() {
   std::string fundingHex = BchHtlcScript::bytesToHex(fundingTx);
 
   std::string fundingTxid = computeTxid(fundingTx);
+  const std::string poisonedTxid(64, '1');
 
   // Override handler for this test: only serve blockchain.transaction.get
   server.setHandler([&](const std::string& method, const std::string& paramsJson) -> std::string {
     if (method == "server.version") {
       return R"(["TestServer","1.4"])";
     }
+    const std::string headerResponse = singleHeaderRpcResponse(method);
+    if (!headerResponse.empty()) return headerResponse;
     if (method == "blockchain.transaction.get") {
       Common::JsonValue params = Common::JsonValue::fromString(paramsJson);
       std::string reqTxid = params[0].getString();
-      if (reqTxid == fundingTxid) {
+      if (reqTxid == fundingTxid || reqTxid == poisonedTxid) {
         return "\"" + fundingHex + "\"";
       }
     }
@@ -548,9 +608,11 @@ static void test_spv_get_raw_tx() {
   });
 
   std::vector<uint8_t> rawTx;
+  assert(client.syncHeaders());
   assert(client.getRawTx(fundingTxid, rawTx));
   assert(!rawTx.empty());
   assert(rawTx == fundingTx);
+  assert(!client.getRawTx(poisonedTxid, rawTx));
 
   // Non-existent txid returns false
   assert(!client.getRawTx("0000000000000000000000000000000000000000000000000000000000000099", rawTx));
@@ -590,6 +652,8 @@ static void test_spv_find_spend() {
     if (method == "server.version") {
       return R"(["TestServer","1.4"])";
     }
+    const std::string headerResponse = singleHeaderRpcResponse(method);
+    if (!headerResponse.empty()) return headerResponse;
     if (method == "blockchain.transaction.get") {
       Common::JsonValue params = Common::JsonValue::fromString(paramsJson);
       std::string reqTxid = params[0].getString();
@@ -617,6 +681,7 @@ static void test_spv_find_spend() {
       "0000000000000000000000000000000000000000000000000000000000000000");
 
   SpvSpend spend;
+  assert(client.syncHeaders());
   assert(client.findSpend(fundingTxid, 0, spend));
   assert(spend.spent);
   assert(spend.spendingTxid == spendingTxid);
@@ -648,6 +713,8 @@ static void test_spv_find_spend_no_history() {
     if (method == "server.version") {
       return R"(["TestServer","1.4"])";
     }
+    const std::string headerResponse = singleHeaderRpcResponse(method);
+    if (!headerResponse.empty()) return headerResponse;
     if (method == "blockchain.transaction.get") {
       Common::JsonValue params = Common::JsonValue::fromString(paramsJson);
       std::string reqTxid = params[0].getString();
@@ -668,6 +735,7 @@ static void test_spv_find_spend_no_history() {
       "0000000000000000000000000000000000000000000000000000000000000000");
 
   SpvSpend spend;
+  assert(client.syncHeaders());
   assert(client.findSpend(fundingTxid, 0, spend));
   assert(!spend.spent);
 
@@ -811,11 +879,11 @@ static void test_spv_crosscheck_servers_disagree() {
   ElectrumSpvClient client({addrA, addrB}, 2, 0,
       "0000000000000000000000000000000000000000000000000000000000000000");
 
-  // syncHeaders uses server A (index 0), succeeds
-  assert(client.syncHeaders());
+  // Header synchronization cross-checks the fetched batch against the
+  // second server and rejects the disagreement immediately.
+  assert(!client.syncHeaders());
 
-  // getTipHeight queries both, takes min (both say 4),
-  // cross-checks header at height 4 — fails because servers disagree
+  // A later tip query must fail the same cross-check.
   uint64_t height = 0;
   assert(!client.getTipHeight(height));
 
@@ -886,7 +954,11 @@ int main() {
   test_spv_verify_tx_inclusion_valid();
   test_spv_verify_tx_inclusion_tampered();
   test_spv_verify_tx_empty_store();
+  test_local_txid_binds_witness_and_broadcast_identity();
+  test_spv_broadcast_checks_server_txid();
+  std::cout << "Testing raw Electrum transaction lookup..." << std::endl;
   test_spv_get_raw_tx();
+  std::cout << "Testing Electrum spend discovery..." << std::endl;
   test_spv_find_spend();
   test_spv_find_spend_no_history();
 

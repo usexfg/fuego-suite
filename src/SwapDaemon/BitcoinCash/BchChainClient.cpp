@@ -2,6 +2,7 @@
 #include "HtlcScript.h"
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
+#include "../utxo_claim_proof.h"
 
 #include <array>
 #include <cstring>
@@ -72,7 +73,7 @@ ChainClientResult BchChainClient::lock(const SwapParams& params) {
       recipientKey,
       hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount,
+      params.ctrAmount64(),
       lockTxId,
       redeemScriptHex);
   if (!ok) return ChainClientResult::fail("BCH lockHtlc failed");
@@ -105,7 +106,7 @@ ChainClientResult BchChainClient::verifyLock(const SwapParams& params) {
         "cannot listunspent by txid alone");
   }
 
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("BCH lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -235,7 +236,7 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
 
     // Check if this is a P2SH output: OP_HASH160 <20 bytes> OP_EQUAL (23 bytes)
     if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
-      if (value >= params.ctrAmount) {
+      if (value >= params.ctrAmount64()) {
         foundP2sh = true;
         onChainScriptHash.assign(p + 2, p + 22);
       }
@@ -246,7 +247,7 @@ ChainClientResult BchChainClient::verifyLockSpv(const SwapParams& params) {
 
   if (!foundP2sh) {
     return ChainClientResult::fail("BCH verifyLock SPV: no P2SH output with expected amount " +
-                                   std::to_string(params.ctrAmount));
+                                   std::to_string(params.ctrAmount64()));
   }
 
   // Fail closed: must bind to expected redeem script (no amount-only P2SH).
@@ -295,14 +296,14 @@ ChainClientResult BchChainClient::claim(const SwapParams& params) {
     auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("BCH claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     const uint32_t nSequence = 0xFFFFFFFD;
 
     auto der = BchHtlcScript::signInput(privKey, 1, 0, nSequence,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("BCH claim SPV: signing failed");
@@ -310,7 +311,7 @@ ChainClientResult BchChainClient::claim(const SwapParams& params) {
     auto scriptSig = BchHtlcScript::createClaimScriptSig(der, preimageBytes, redeemScript);
 
     auto rawTx = BchHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         scriptSig, params.ctrAddress, outputAmount, 0);
 
     std::string txid;
@@ -322,7 +323,7 @@ ChainClientResult BchChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -351,13 +352,13 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
     auto outputScript = BchHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("BCH refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     auto der = BchHtlcScript::signInput(privKey, 1, nLocktime,
         0xFFFFFFFE,
-        params.ctrLockTxId, 0, redeemScript, params.ctrAmount,
+        params.ctrLockTxId, 0, redeemScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("BCH refund SPV: signing failed");
@@ -365,7 +366,7 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
     auto scriptSig = BchHtlcScript::createRefundScriptSig(der, redeemScript);
 
     auto rawTx = BchHtlcScript::buildRawTransaction(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         scriptSig, params.ctrAddress, outputAmount, nLocktime);
 
     std::string txid;
@@ -377,7 +378,7 @@ ChainClientResult BchChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -449,12 +450,18 @@ ChainClientResult BchChainClient::getTransactionDetails(const std::string& txId,
       return result;
     }
 
+    if (!inclusion.included || !inclusion.merkleVerified ||
+        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
+        inclusion.depth == 0) {
+      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
+      return result;
+    }
+    result = ChainClientResult::ok(txId);
     result.success = true;
-    result.confirmed = true;
-    result.spvVerified = true;
+    result.confirmed = inclusion.included;
+    result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
-    result.confirmations = (tipHeight >= inclusion.blockHeight)
-        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    result.confirmations = inclusion.depth;
     return result;
   }
 
@@ -545,7 +552,9 @@ std::string BchChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {
       SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                   params.requiredConfirmations : 6))
         continue;
       if (spend.spendingTxid.empty()) continue;
       std::string secret = extractSecret(spend.spendingTxid, redeemHex);
@@ -555,6 +564,10 @@ std::string BchChainClient::tryExtractClaimedSecret(const SwapParams& params) {
 
   // Full-node: if we already know the claim txid (P2P or chainState suffix), parse it.
   if (m_rpc && !knownClaimTxid.empty()) {
+    std::string rawHex;
+    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
+        !spends_utxo_lock_output(BchHtlcScript::hexToBytes(rawHex),
+                              params.ctrLockTxId)) return {};
     std::string secret = extractSecret(knownClaimTxid, redeemHex);
     if (!secret.empty()) return secret;
   }

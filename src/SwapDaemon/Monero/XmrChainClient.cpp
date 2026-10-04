@@ -67,7 +67,7 @@ ChainClientResult XmrChainClient::lock(const SwapParams& params) {
   MoneroTransferResult xmrResult;
   bool ok = m_rpc->lockAdaptor(
       params.ctrAddress,
-      params.ctrAmount,
+      params.ctrAmount64(),
       xmrResult);
   if (!ok || !xmrResult.success)
     return ChainClientResult::fail("XMR lockAdaptor failed: " + xmrResult.error);
@@ -85,7 +85,7 @@ ChainClientResult XmrChainClient::verifyLock(const SwapParams& params) {
       !scalarAdd(ownView, peerView, combinedView)) {
     return ChainClientResult::fail("XMR verifyLock: shared view key derivation failed");
   }
-  bool ok = m_rpc->verifyLock(params.ctrAddress, vecToHex(combinedView), params.ctrAmount);
+  bool ok = m_rpc->verifyLock(params.ctrAddress, vecToHex(combinedView), params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("XMR lock not verified for shared address");
   return ChainClientResult::ok(params.ctrAddress);
 }

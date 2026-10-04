@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFor": "xfg-swapd DeFiLlama counterparty pricing",
-  "enumSource": "src/SwapDaemon/SwapTypes.h SwapPair",
+  "enumSource": "src/SwapDaemon/SwapPairCatalog.h XFG_SWAP_PAIR_CATALOG (ids 0-45, append-only). Ids 0-28 were originally declared in SwapTypes.h.",
   "lockSemanticsEvidence": {
     "evm": "src/SwapDaemon/Ethereum/HashedTimelock.sol lock(address payable,bytes32,uint256) external payable - no IERC20 parameter, so every EVM pair locks the chain's native currency",
     "solana": "src/SwapDaemon/Solana/SolRpcClient.cpp moves vault lamports via system_program, no SPL token account"
@@ -12,7 +12,7 @@
     "unexecutable": "the atomic divisor cannot be represented in the uint64 amount model (an asset-level block). Distinct from having no registered chain client, which chainClient records."
   },
   "policies": {
-    "maxProviderAgeSeconds": 120,
+    "maxProviderAgeSeconds": 600,
     "maxClockSkewSeconds": 120,
     "minConfidence": 0.8,
     "rateScale": 10000000,
@@ -21,7 +21,8 @@
       "lowDivisor": 1.2,
       "highDivisor": 0.8,
       "note": "proposed rate must satisfy referenceRate/1.2 <= rate <= referenceRate/0.8"
-    }
+    },
+    "maxProviderAgeNote": "DeFiLlama stamps /prices/current in 300 s buckets shared across a response, so observed age ramps 0-300 s. A 120 s gate would reject most of a 30 s poll cycle; 600 s tolerates two missed buckets. Must equal PricePolicy::maxProviderAgeSec in PriceFeed.h (verify-defillama-assets.py checks this)."
   },
   "pairs": [
     {
@@ -358,6 +359,210 @@
       "status": "priced",
       "chainClient": "implemented-not-wired",
       "chainClientSource": "src/SwapDaemon/Polkadot/PolkadotChainClient.h"
+    },
+    {
+      "id": 29,
+      "enum": "LINEA",
+      "settlementAsset": "ETH",
+      "ticker": "LINEA",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 30,
+      "enum": "ZKSYNC",
+      "settlementAsset": "ETH",
+      "ticker": "ZKSYNC",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 31,
+      "enum": "HYPEREVM",
+      "settlementAsset": "HYPE",
+      "ticker": "HYPEREVM",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "HYPE",
+      "status": "unpriced",
+      "note": "No feed id has been verified for HYPE, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 32,
+      "enum": "INK",
+      "settlementAsset": "ETH",
+      "ticker": "INK",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 33,
+      "enum": "RSK",
+      "settlementAsset": "RBTC",
+      "ticker": "RSK",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "RBTC",
+      "status": "unpriced",
+      "note": "No feed id has been verified for RBTC, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id. RBTC is pegged to BTC but must not be priced from a BTC id without an explicit decision.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 34,
+      "enum": "GNOSIS",
+      "settlementAsset": "XDAI",
+      "ticker": "GNOSIS",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "XDAI",
+      "status": "unpriced",
+      "note": "No feed id has been verified for XDAI, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id. xDAI is a USD stablecoin; the id and its symbol must be verified, not assumed.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 35,
+      "enum": "FLARE",
+      "settlementAsset": "FLR",
+      "ticker": "FLARE",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "FLR",
+      "status": "unpriced",
+      "note": "No feed id has been verified for FLR, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 36,
+      "enum": "KAIA",
+      "settlementAsset": "KAIA",
+      "ticker": "KAIA",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "KAIA",
+      "status": "unpriced",
+      "note": "No feed id has been verified for KAIA, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 37,
+      "enum": "SCROLL",
+      "settlementAsset": "ETH",
+      "ticker": "SCROLL",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 38,
+      "enum": "ABSTRACT",
+      "settlementAsset": "ETH",
+      "ticker": "ABSTRACT",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 39,
+      "enum": "PLUME",
+      "settlementAsset": "PLUME",
+      "ticker": "PLUME",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "PLUME",
+      "status": "unpriced",
+      "note": "No feed id has been verified for PLUME, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 40,
+      "enum": "SONEIUM",
+      "settlementAsset": "ETH",
+      "ticker": "SONEIUM",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 41,
+      "enum": "DOMA",
+      "settlementAsset": "ETH",
+      "ticker": "DOMA",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": "coingecko:ethereum",
+      "expectSymbol": "ETH",
+      "status": "priced",
+      "note": "Native ETH settlement (HashedTimelock.lock is external payable, no ERC20 parameter). Served by the generic EVM adapter, which activates from runtime config.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 42,
+      "enum": "BEAM",
+      "settlementAsset": "BEAM",
+      "ticker": "BEAM",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "BEAM",
+      "status": "unpriced",
+      "note": "No feed id has been verified for BEAM, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id. Beware coingecko:beam: that is the Mimblewimble coin, not the native token of the Beam EVM chain (chainId 4337).",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 43,
+      "enum": "MOONRIVER",
+      "settlementAsset": "MOVR",
+      "ticker": "MOONRIVER",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "MOVR",
+      "status": "unpriced",
+      "note": "No feed id has been verified for MOVR, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 44,
+      "enum": "PEAQ",
+      "settlementAsset": "PEAQ",
+      "ticker": "PEAQ",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "PEAQ",
+      "status": "unpriced",
+      "note": "No feed id has been verified for PEAQ, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
+    },
+    {
+      "id": 45,
+      "enum": "SEI",
+      "settlementAsset": "SEI",
+      "ticker": "SEI",
+      "atomicDivisor": "1e18",
+      "defiLlamaId": null,
+      "expectSymbol": "SEI",
+      "status": "unpriced",
+      "note": "No feed id has been verified for SEI, so this pair fails closed (UNPRICED) until one is proven live with scripts/verify-defillama-assets.py. Do not substitute a lookalike id.",
+      "chainClient": "generic-adapter"
     }
   ],
   "clientExposure": {
@@ -390,6 +595,6 @@
       ]
     }
   },
-  "chainClientNote": "SwapDaemon.cpp registers 25 of 29 pairs. The other 4 (SIA, ZANO, TON, DOT) also have implemented chain clients - SiaChainClient, ZanoChainClient, TonChainClient, PolkadotChainClient with their RPC clients - but no registerChain() call site, so getClient() returns nullptr. Every EVM pair is code-complete too: the per-chain subclasses are 6-line headers that only pass a label to EthChainClient, and activation is config-gated on a non-empty <chain>_host rather than on missing code.",
+  "chainClientNote": "SwapDaemon.cpp registers 25 of the original 29 pairs. The other 4 (SIA, ZANO, TON, DOT) also have implemented chain clients - SiaChainClient, ZanoChainClient, TonChainClient, PolkadotChainClient with their RPC clients - but no registerChain() call site, so getClient() returns nullptr. Every EVM pair is code-complete too: the per-chain subclasses are 6-line headers that only pass a label to EthChainClient, and activation is config-gated on a non-empty <chain>_host rather than on missing code. Pairs 29-45 (added to SwapPairCatalog.h with support=ADAPTER) have no per-chain registerChain() call: the generic EVM adapter registers them from runtime configuration when RPC, signer, chain id and HTLC registry preflight succeeds, recorded here as chainClient \"generic-adapter\".",
   "feedNote": "The oracle/feed is DeFiLlama (coins.llama.fi). The 'coingecko:' prefix is DeFiLlama's own coin-id namespace for assets whose reference price it sources from CoinGecko; it does not mean the feed calls CoinGecko directly."
 }

@@ -15,56 +15,34 @@
 #include "SwapTypes.h"
 #include <stdexcept>
 #include <algorithm>
+#include <cctype>
+#include <string_view>
 
 namespace XfgSwap {
 
-static bool iequal(const char* a, const char* b, int n) {
-  for (int i = 0; i < n; ++i) {
-    if (::toupper(a[i]) != ::toupper(b[i])) return false;
-    if (a[i] == '\0' || b[i] == '\0') return false;
+static bool iequal(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    const auto ac = static_cast<unsigned char>(a[i]);
+    const auto bc = static_cast<unsigned char>(b[i]);
+    if (std::toupper(ac) != std::toupper(bc)) return false;
   }
   return true;
 }
 
 bool swapPairFromString(const std::string& s, SwapPair& out) {
-  if (s.size() < 3 || s.size() > 12) return false;
-  const char* p = s.c_str();
-  int n = static_cast<int>(s.size());
-  if (iequal(p, "SOL", n))  { out = SwapPair::SOL;  return true; }
-  if (iequal(p, "ETH", n))  { out = SwapPair::ETH;  return true; }
-  if (iequal(p, "XMR", n))  { out = SwapPair::XMR;  return true; }
-  if (iequal(p, "BCH", n))  { out = SwapPair::BCH;  return true; }
-  if (iequal(p, "ARB", n))  { out = SwapPair::ARB;  return true; }
-  if (iequal(p, "BASE", n)) { out = SwapPair::BASE; return true; }
-  if (iequal(p, "KMD", n))  { out = SwapPair::KMD_SPV; return true; }
-  if (iequal(p, "KMD_SPV", n)) { out = SwapPair::KMD_SPV; return true; }
-  if (iequal(p, "BNB", n))  { out = SwapPair::BNB;  return true; }
-  if (iequal(p, "DCR", n))  { out = SwapPair::DCR;  return true; }
-  if (iequal(p, "BTC", n))  { out = SwapPair::BTC;  return true; }
-  if (iequal(p, "LTC", n))  { out = SwapPair::LTC;  return true; }
-  if (iequal(p, "POLY", n)) { out = SwapPair::POLYGON; return true; }
-  if (iequal(p, "POLYGON", n)) { out = SwapPair::POLYGON; return true; }
-  if (iequal(p, "GLEEC", n))   { out = SwapPair::GLEEC;     return true; }
-  if (iequal(p, "ROBINHOOD", n)) { out = SwapPair::ROBINHOOD; return true; }
-  if (iequal(p, "AVAX", n))    { out = SwapPair::AVAX;      return true; }
-  if (iequal(p, "CRO", n))     { out = SwapPair::CRO;       return true; }
-  if (iequal(p, "BOB", n))     { out = SwapPair::BOB;       return true; }
-  if (iequal(p, "SIA", n))     { out = SwapPair::SIA;       return true; }
-  if (iequal(p, "SC", n))      { out = SwapPair::SIA;       return true; }
-  if (iequal(p, "UNICHAIN", n)) { out = SwapPair::UNICHAIN; return true; }
-  if (iequal(p, "PLASMA", n))  { out = SwapPair::PLASMA;    return true; }
-  if (iequal(p, "DOGE", n))    { out = SwapPair::DOGE;      return true; }
-  if (iequal(p, "DASH", n))    { out = SwapPair::DASH;      return true; }
-  if (iequal(p, "ZEC", n))     { out = SwapPair::ZEC;       return true; }
-  if (iequal(p, "PULSECHAIN", n))  { out = SwapPair::PULSECHAIN;    return true; }
-  if (iequal(p, "PLS", n))     { out = SwapPair::PULSECHAIN;    return true; }
-  if (iequal(p, "ZANO", n))    { out = SwapPair::ZANO;      return true; }
-  if (iequal(p, "TON", n))     { out = SwapPair::TON;       return true; }
-  if (iequal(p, "MONAD", n))   { out = SwapPair::MONAD;     return true; }
-  if (iequal(p, "OPTIMISM", n)) { out = SwapPair::OPTIMISM;  return true; }
-  if (iequal(p, "OP", n))      { out = SwapPair::OPTIMISM;  return true; }
-  if (iequal(p, "DOT", n))     { out = SwapPair::DOT;       return true; }
-  if (iequal(p, "POLKADOT", n)) { out = SwapPair::DOT;      return true; }
+  if (s.empty() || s.size() > 32) return false;
+  for (const auto& descriptor : SWAP_PAIR_CATALOG) {
+    if (iequal(s, descriptor.symbol) || iequal(s, descriptor.key)) {
+      out = descriptor.pair;
+      return true;
+    }
+  }
+
+  // Compatibility aliases that are neither the protocol symbol nor config key.
+  if (iequal(s, "SC"))       { out = SwapPair::SIA; return true; }
+  if (iequal(s, "POLY"))     { out = SwapPair::POLYGON; return true; }
+  if (iequal(s, "POLKADOT")) { out = SwapPair::DOT; return true; }
   return false;
 }
 
@@ -76,38 +54,8 @@ SwapPair swapPairFromString(const std::string& s) {
 }
 
 const char* swapPairToString(SwapPair p) {
-  switch (p) {
-    case SwapPair::SOL: return "SOL";
-    case SwapPair::ETH: return "ETH";
-    case SwapPair::XMR: return "XMR";
-    case SwapPair::BCH: return "BCH";
-    case SwapPair::ARB:  return "ARB";
-    case SwapPair::BASE: return "BASE";
-    case SwapPair::KMD_SPV: return "KMD_SPV";
-    case SwapPair::BNB:     return "BNB";
-    case SwapPair::DCR:     return "DCR";
-    case SwapPair::BTC:     return "BTC";
-    case SwapPair::LTC:     return "LTC";
-    case SwapPair::POLYGON: return "POLYGON";
-    case SwapPair::GLEEC:   return "GLEEC";
-    case SwapPair::ROBINHOOD: return "ROBINHOOD";
-    case SwapPair::AVAX:    return "AVAX";
-    case SwapPair::CRO:     return "CRO";
-    case SwapPair::BOB:     return "BOB";
-    case SwapPair::SIA:     return "SIA";
-    case SwapPair::UNICHAIN: return "UNICHAIN";
-    case SwapPair::PLASMA:  return "PLASMA";
-    case SwapPair::DOGE:    return "DOGE";
-    case SwapPair::DASH:    return "DASH";
-    case SwapPair::ZEC:     return "ZEC";
-    case SwapPair::PULSECHAIN:  return "PULSECHAIN";
-    case SwapPair::ZANO:    return "ZANO";
-    case SwapPair::TON:     return "TON";
-    case SwapPair::MONAD:   return "MONAD";
-    case SwapPair::OPTIMISM: return "OPTIMISM";
-    case SwapPair::DOT:      return "DOT";
-  }
-  return "???";
+  const auto* descriptor = swapPairDescriptor(p);
+  return descriptor ? descriptor->symbol : "???";
 }
 
 const char* swapLockTypeToString(SwapLockType t) {
@@ -121,12 +69,10 @@ const char* swapLockTypeToString(SwapLockType t) {
 
 bool swapLockTypeFromString(const std::string& s, SwapLockType& out) {
   if (s.size() < 3 || s.size() > 20) return false;
-  const char* p = s.c_str();
-  int n = static_cast<int>(s.size());
-  if (iequal(p, "HTLC", n)) { out = SwapLockType::HTLC; return true; }
-  if (iequal(p, "PTLC", n)) { out = SwapLockType::PTLC; return true; }
-  if (iequal(p, "PTLC_HTLC_BRIDGE", n)) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
-  if (iequal(p, "BRIDGE", n)) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
+  if (iequal(s, "HTLC")) { out = SwapLockType::HTLC; return true; }
+  if (iequal(s, "PTLC")) { out = SwapLockType::PTLC; return true; }
+  if (iequal(s, "PTLC_HTLC_BRIDGE")) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
+  if (iequal(s, "BRIDGE")) { out = SwapLockType::PTLC_HTLC_BRIDGE; return true; }
   return false;
 }
 

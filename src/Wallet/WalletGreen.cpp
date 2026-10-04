@@ -44,6 +44,7 @@
 #include "Common/StringTools.h"
 #include "Common/Int128.h"
 #include "CryptoNoteCore/Account.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
@@ -477,8 +478,16 @@ namespace CryptoNote
             m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       INode::CdClaimInfo claimInfo;
       std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
-          static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo);
-      if (!ec && claimInfo.formulaInterest > 0) {
+          static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo, deposit.term);
+      // Spending the CD consumes its key image, so interest left off this
+      // transaction can never be claimed later. If the node cannot say what
+      // has accrued, stop rather than withdraw with a zero claim.
+      if (ec) {
+        throw std::system_error(ec,
+            "cannot read this CD's accrued interest from the node; withdrawal "
+            "aborted so the interest is not forfeited");
+      }
+      if (claimInfo.formulaInterest > 0) {
         claimedInterest = claimInfo.poolInfoPresent
             ? capInterestByPool(depositId, claimInfo.formulaInterest, claimedBonus, deposit.term)
             : claimInfo.formulaInterest;
@@ -487,20 +496,23 @@ namespace CryptoNote
 
     std::unique_ptr<ITransaction> transaction = createTransaction();
 
-    // A CD is HEAT: both the principal locked and the interest accrued. The
-    // payout must therefore be a HEAT_TERM commitment, not spendable XFG key
-    // outputs — paying XFG here credited the withdrawer in a different asset
-    // from the one debited out of the HEAT CD_APY_POOL / BONUS_VAULT, and the
-    // per-asset conservation rule could not see it because the whole CD was
-    // misclassified as XFG on both sides.
+    // A CD is HEAT, principal and interest alike: it pays out in full as a
+    // HEAT_TERM commitment. HEAT must balance exactly, so the XFG fee comes
+    // from XFG inputs added below. Legacy XFG deposits (pre-v10 multisig) pay
+    // out XFG, net of the fee — 7d83625bb had made every payout HEAT, a
+    // cross-asset withdrawal consensus refuses.
     const uint64_t fee = m_currency.minimumFee();
-    const uint64_t payout = deposit.amount + claimedInterest - fee;
-    {
-      const size_t outIdx = static_cast<size_t>(transaction->getOutputCount());
-      CryptoNote::TransactionOutputCommitment heatOut;
-      heatOut.commitKey = deriveSelfCommitmentKey(*transaction, outIdx);
-      heatOut.term = parameters::HEAT_TERM;
-      transaction->addOutput(payout, heatOut);
+    const bool commitmentDeposit = transfer.type == TransactionTypes::OutputType::Commitment;
+    if (commitmentDeposit) {
+      addHeatOutputToSelf(*transaction, deposit.amount + claimedInterest);
+    } else {
+      if (deposit.amount <= fee) {
+        throw std::system_error(make_error_code(CryptoNote::error::WRONG_AMOUNT),
+                                "Deposit does not cover the withdrawal fee");
+      }
+      for (uint64_t chunk : split(deposit.amount - fee, m_currency.defaultDustThreshold())) {
+        transaction->addOutput(chunk, account.address);
+      }
     }
     transaction->setUnlockTime(0);
 
@@ -509,11 +521,13 @@ namespace CryptoNote
 
       // Re-derive the spend scalar from the transaction. Owner-bound deposits
       // need the recipient spend secret; pre-v11 deposits fall back to their
-      // original ECDH scalar so existing funds stay withdrawable.
+      // original ECDH scalar so existing funds stay withdrawable. Only the dead
+      // createDeposit path ever stored a secret, and that path throws.
       KeyPair commitmentKeyPair;
       Crypto::KeyImage keyImage;
       resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
       Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
 
       // Fetch ring decoys from daemon.
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
@@ -586,19 +600,30 @@ namespace CryptoNote
       csInput.claimedInterest = claimedInterest;
       csInput.outputIndexes = relOffsets;
       csInput.keyImage      = keyImage;
-      transaction->addInput(csInput);
-
-      transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+      // XFG pays the fee. The key inputs come first, so the bonus claim names
+      // the CD input by its real index, and every input goes in before any is
+      // signed (the extra was appended after signing before, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
 
       // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
       if (claimedBonus > 0) {
         TransactionExtraCdBonusClaim bc;
-        bc.inputIndex = 0;
+        bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
         bc.claimedBonus = claimedBonus;
         std::vector<uint8_t> extra;
         addCdBonusClaimToExtra(extra, bc);
         transaction->appendExtra(extra);
       }
+
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Commitment withdrawal ring size=" << actualRing
         << " realPos=" << sortedRealPos;
@@ -773,15 +798,13 @@ namespace CryptoNote
     m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
       << " term=" << newTerm << " from rollover";
 
-    // New CD is self-owned and re-derived from the transaction, so there is no
-    // secret to store or lose. The pre-v11 form used a random 32-byte secret that
-    // was never persisted, which made every rolled-over CD unspendable.
-    const size_t newCdIdx = static_cast<size_t>(transaction->getOutputCount());
-    CryptoNote::TransactionOutputCommitment newCommitOut;
-    newCommitOut.commitKey = deriveSelfCommitmentKey(*transaction, newCdIdx);
-    newCommitOut.term = newTerm;
-
-    transaction->addOutput(reinvestedAmount - fee, newCommitOut);
+    // Create new commitment output
+    // Derived from the view key like every other output this wallet owns, so
+    // the scanner finds the new CD and a withdrawal re-derives its key. A
+    // random secret that was never stored made the rolled-over CD — principal
+    // and interest — unfindable and unspendable. It carries all of both; XFG
+    // pays the fee.
+    addCommitmentToSelf(*transaction, reinvestedAmount, newTerm);
     transaction->setUnlockTime(0);
 
     // Add commitment spend input with claimed interest
@@ -792,13 +815,13 @@ namespace CryptoNote
       KeyPair commitmentKeyPair;
       Crypto::KeyImage keyImage;
       try {
-        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey,
-                                  commitmentKeyPair, keyImage);
+        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
       } catch (const std::exception &e) {
         m_logger(ERROR) << "Rollover failed: " << e.what();
         return false;
       }
       Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
 
       // Fetch ring decoys
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
@@ -872,19 +895,30 @@ namespace CryptoNote
       csInput.claimedInterest = interest;
       csInput.outputIndexes = relOffsets;
       csInput.keyImage      = keyImage;
-      transaction->addInput(csInput);
-
-      transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+      // XFG pays the fee. Key inputs come first, so the bonus claim names the
+      // CD input by its real index, and every input goes in before any is
+      // signed (the extra used to be appended after signing, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
 
       // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
       if (rolloverBonus > 0) {
         TransactionExtraCdBonusClaim bc;
-        bc.inputIndex = 0;
+        bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
         bc.claimedBonus = rolloverBonus;
         std::vector<uint8_t> extra;
         addCdBonusClaimToExtra(extra, bc);
         transaction->appendExtra(extra);
       }
+
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover commitment spend ring size=" << actualRing
         << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
@@ -986,12 +1020,12 @@ namespace CryptoNote
     m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
       << " term=" << newTerm << " from rollover";
 
-    const size_t newCdIdx = static_cast<size_t>(transaction->getOutputCount());
-    CryptoNote::TransactionOutputCommitment newCommitOut;
-    newCommitOut.commitKey = deriveSelfCommitmentKey(*transaction, newCdIdx);
-    newCommitOut.term = newTerm;
-
-    transaction->addOutput(reinvestedAmount - fee, newCommitOut);
+    // Derived from the view key like every other output this wallet owns, so
+    // the scanner finds the new CD and a withdrawal re-derives its key. A
+    // random secret that was never stored made the rolled-over CD — principal
+    // and interest — unfindable and unspendable. It carries all of both; XFG
+    // pays the fee.
+    addCommitmentToSelf(*transaction, reinvestedAmount, newTerm);
     transaction->setUnlockTime(0);
 
     if (transfer.type == TransactionTypes::OutputType::Commitment) {
@@ -999,13 +1033,13 @@ namespace CryptoNote
       KeyPair commitmentKeyPair;
       Crypto::KeyImage keyImage;
       try {
-        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey,
-                                  commitmentKeyPair, keyImage);
+        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
       } catch (const std::exception &e) {
         m_logger(ERROR) << "Rollover failed: " << e.what();
         return false;
       }
       Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
 
       std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
       System::Event requestFinished(m_dispatcher);
@@ -1075,19 +1109,30 @@ namespace CryptoNote
       csInput.claimedInterest = interest;
       csInput.outputIndexes   = relOffsets;
       csInput.keyImage        = keyImage;
-      transaction->addInput(csInput);
-
-      transaction->signInputCommitmentSpend(0, sortedKeys, commitmentKeyPair, sortedRealPos);
+      // XFG pays the fee. Key inputs come first, so the bonus claim names the
+      // CD input by its real index, and every input goes in before any is
+      // signed (the extra used to be appended after signing, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
 
       // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
       if (rolloverBonus > 0) {
         TransactionExtraCdBonusClaim bc;
-        bc.inputIndex = 0;
+        bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
         bc.claimedBonus = rolloverBonus;
         std::vector<uint8_t> extra;
         addCdBonusClaimToExtra(extra, bc);
         transaction->appendExtra(extra);
       }
+
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
 
       m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover(precomputed) commitment spend ring size=" << actualRing
         << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
@@ -1333,6 +1378,157 @@ namespace CryptoNote
     return bills;
   }
 
+  uint64_t WalletGreen::selectHeatDeposits(uint64_t amount, std::vector<size_t> &depositIds) const
+  {
+    const uint32_t currentHeight = getBlockCount();
+    uint64_t total = 0;
+    for (size_t i = 0; i < m_deposits.size() && total < amount; ++i) {
+      const Deposit &dep = m_deposits.get<RandomAccessIndex>()[i];
+      if (dep.term == parameters::HEAT_TERM && !dep.locked && dep.unlockHeight <= currentHeight &&
+          dep.spendingTransactionId == WALLET_INVALID_DEPOSIT_ID) {
+        total += dep.amount;
+        depositIds.push_back(i);
+      }
+    }
+    return total;
+  }
+
+  std::vector<WalletGreen::HeatSpend> WalletGreen::prepareHeatSpends(const std::vector<size_t> &depositIds,
+                                                                      uint64_t mixin)
+  {
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    std::map<uint64_t, std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>> decoysByAmount;
+    std::vector<HeatSpend> spends;
+    for (size_t id : depositIds) {
+      const Deposit dep = m_deposits.get<RandomAccessIndex>()[id];
+      auto decoys = decoysByAmount.find(dep.amount);
+      if (decoys == decoysByAmount.end()) {
+        std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> fetched;
+        System::Event requestFinished(m_dispatcher);
+        std::error_code nodeError;
+        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height, fetched,
+          [&requestFinished, &nodeError, this](std::error_code ec) {
+            nodeError = ec;
+            this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+          });
+        requestFinished.wait();
+        if (nodeError) {
+          fetched.clear();  // no HEAT decoys yet at launch: bootstrap ring
+        }
+        decoys = decoysByAmount.emplace(dep.amount, std::move(fetched)).first;
+      }
+
+      WalletTransfer firstTransfer = getTransactionTransfer(dep.creatingTransactionId, 0);
+      const auto &walletRec = getWalletRecord(firstTransfer.address);
+      ITransfersContainer::TransferState state;
+      TransactionOutputInformation transfer;
+      walletRec.container->getTransfer(dep.transactionHash, dep.outputInTransaction, transfer, state);
+      if (state != ITransfersContainer::TransferState::TransferAvailable) {
+        // Skipping it would leave the transaction's HEAT short.
+        throw std::system_error(make_error_code(error::WRONG_STATE), "HEAT deposit is not spendable yet");
+      }
+
+      KeyPair commitmentKeyPair;
+      Crypto::KeyImage commitKeyImage;
+      resolveCommitmentSpendKey(transfer, walletRec.spendSecretKey, commitmentKeyPair, commitKeyImage);
+
+      // Distinct decoys only: a repeated ring member is refused by consensus.
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> candidates;
+      std::set<uint32_t> seen{static_cast<uint32_t>(transfer.globalOutputIndex)};
+      for (const auto &d : decoys->second) {
+        if (seen.insert(d.global_amount_index).second) {
+          candidates.push_back(d);
+        }
+      }
+      const size_t targetRing = pickDynamaxCommitmentRingSize(
+        candidates.size() + 1, m_currency.maxMixin(), m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
+      const size_t numDecoys = std::min(candidates.size(), targetRing > 0 ? targetRing - 1 : 0);
+      const size_t ringSize = numDecoys + 1;
+      const size_t realPos = Crypto::rand<size_t>() % ringSize;
+
+      // Ring members sorted by global index; offsets are delta-encoded.
+      std::vector<std::pair<uint32_t, Crypto::PublicKey>> members;
+      for (size_t k = 0; k < numDecoys; ++k) {
+        members.push_back({candidates[k].global_amount_index, candidates[k].commit_key});
+      }
+      members.insert(members.begin() + realPos,
+                     std::make_pair(static_cast<uint32_t>(transfer.globalOutputIndex), commitmentKeyPair.publicKey));
+      std::stable_sort(members.begin(), members.end(),
+                       [](const std::pair<uint32_t, Crypto::PublicKey> &a,
+                          const std::pair<uint32_t, Crypto::PublicKey> &b) { return a.first < b.first; });
+
+      HeatSpend spend;
+      spend.input.amount = dep.amount;
+      spend.input.keyImage = commitKeyImage;
+      spend.keys = commitmentKeyPair;
+      uint32_t previous = 0;
+      for (size_t s = 0; s < members.size(); ++s) {
+        spend.input.outputIndexes.push_back(s == 0 ? members[s].first : members[s].first - previous);
+        previous = members[s].first;
+        spend.ring.push_back(members[s].second);
+        if (members[s].first == static_cast<uint32_t>(transfer.globalOutputIndex)) {
+          spend.realIndex = s;
+        }
+      }
+      spends.push_back(std::move(spend));
+    }
+    return spends;
+  }
+
+  void WalletGreen::prepareXfgInputs(ITransaction &transaction, uint64_t xfgNeeded, uint64_t mixin,
+                                     std::vector<InputInfo> &keysInfo)
+  {
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    std::vector<WalletOuts> wallets = pickWalletsWithMoney();
+    std::vector<OutputToTransfer> selectedTransfers;
+    const uint64_t found = selectTransfers(xfgNeeded, false, m_currency.defaultDustThreshold(),
+                                           std::move(wallets), selectedTransfers);
+    if (found < xfgNeeded) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient XFG for the fee");
+    }
+    if (found > xfgNeeded) {
+      for (uint64_t chunk : split(found - xfgNeeded, m_currency.defaultDustThreshold())) {
+        transaction.addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+      }
+    }
+    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
+    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
+  }
+
+  void WalletGreen::addCommitmentToSelf(ITransaction &transaction, uint64_t amount, uint32_t term)
+  {
+    // Bound to this wallet's primary spend key, so the sender and any view-key
+    // holder cannot derive the spend scalar of the output.
+    const size_t outputIndex = static_cast<size_t>(transaction.getOutputCount());
+    CryptoNote::TransactionOutputCommitment out;
+    out.commitKey = deriveSelfCommitmentKey(transaction, outputIndex);
+    out.term = term;
+    transaction.addOutput(amount, out);
+  }
+
+  void WalletGreen::addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
+                                     const std::vector<HeatSpend> &heatSpends)
+  {
+    for (auto &input : keysInfo) {
+      transaction.addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
+    }
+    for (const auto &spend : heatSpends) {
+      transaction.addInput(spend.input);
+    }
+    size_t index = 0;
+    for (auto &input : keysInfo) {
+      transaction.signInputKey(index++, input.keyInfo, input.ephKeys);
+    }
+    for (const auto &spend : heatSpends) {
+      std::vector<const Crypto::PublicKey *> ring;
+      for (const auto &key : spend.ring) {
+        ring.push_back(&key);
+      }
+      transaction.signInputCommitmentSpend(index++, ring, spend.keys, spend.realIndex);
+    }
+  }
+
   void WalletGreen::mintHeatV10(
       uint64_t xfgBurned,
       uint64_t heatMinted,
@@ -1357,25 +1553,17 @@ namespace CryptoNote
     // expectedHeat = xfgBurned × price / COIN.
     // Falls back to spot pool rate if TWAP unavailable. Fail closed if no price.
     {
-      uint64_t twap = m_node.getHearthTwap();
-      if (twap > 0) {
-        heatMinted = static_cast<uint64_t>(
-            (static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN);
-      } else {
-        INode::AmmPoolReserves reserves;
-        if (!m_node.getAmmPoolReserves(reserves) && reserves.reserveXfg > 0 && reserves.reserveHeat > 0) {
-          // Match the consensus spot fallback exactly: price = floor(rH × COIN / rX),
-          // expectedHeat = floor(xfgBurned × price / COIN). Two-step floor avoids the
-          // wallet over-quoting (and the mint being rejected).
-          uint64_t spotPrice = static_cast<uint64_t>(
-              (static_cast<uint128_t>(reserves.reserveHeat) * parameters::COIN) / reserves.reserveXfg);
-          heatMinted = static_cast<uint64_t>(
-              (static_cast<uint128_t>(xfgBurned) * spotPrice) / parameters::COIN);
-        } else {
-          throw std::system_error(make_error_code(error::WRONG_AMOUNT),
-                                  "No pool price available for HEAT mint");
-        }
+      // Consensus prices a mint at the 8-block TWAP and refuses one without
+      // it. Build a little under it, so the TWAP moving before inclusion does
+      // not invalidate the mint.
+      const uint64_t twap = m_node.getHearthTwap();
+      if (twap == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                "No Hearth TWAP yet — HEAT mints open two blocks into v11");
       }
+      heatMinted = static_cast<uint64_t>(
+          ((static_cast<uint128_t>(xfgBurned) * twap) / parameters::COIN) *
+          (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
     }
     if (heatMinted == 0) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "HEAT amount too small for current pool rate");
@@ -1459,6 +1647,49 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS));
     }
     fee = m_currency.minimumFee();
+    if (targetPrice % parameters::ORDER_PRICE_TICK != 0) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "Limit price must be a multiple of the price tick");
+    }
+    if (side == 0) {
+      // BUY_XFG escrows HEAT: HEAT deposits fund the escrow and XFG pays the
+      // fee. It used to fund a HEAT escrow with XFG, which consensus refuses.
+      std::vector<size_t> heatDepositIds;
+      const uint64_t heat = selectHeatDeposits(amount, heatDepositIds);
+      if (heat < amount) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient HEAT for limit order");
+      }
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      CryptoNote::TransactionOutputCommitment poolOut;
+      poolOut.commitKey = CryptoNote::computePoolCommitKey();
+      poolOut.term = parameters::DEPOSIT_TERM_POOL_HEAT;
+      transaction->addOutput(amount, poolOut);
+      if (heat > amount) {
+        addHeatOutputToSelf(*transaction, heat - amount);
+      }
+      transaction->setUnlockTime(0);
+
+      // The order belongs to the wallet holding the HEAT that funds it.
+      const Deposit firstDeposit = m_deposits.get<RandomAccessIndex>()[heatDepositIds[0]];
+      const auto &owner = getWalletRecord(getTransactionTransfer(firstDeposit.creatingTransactionId, 0).address);
+      Crypto::Hash orderId{};
+      Crypto::generate_random_bytes(sizeof(orderId.data), orderId.data);
+      Crypto::Hash addressHash{};
+      uint8_t keyData[64];
+      memcpy(keyData, owner.spendPublicKey.data, 32);
+      memcpy(keyData + 32, m_viewPublicKey.data, 32);
+      Crypto::cn_fast_hash(keyData, 64, addressHash);
+      std::vector<uint8_t> extra;
+      addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
+      transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
+
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+      addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(heatDepositIds, mixin));
+      transactionHash = Common::podToHex(transaction->getTransactionHash());
+      validateSaveAndSendTransaction(*transaction, {}, false, true);
+      return;
+    }
+
     mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
     std::vector<WalletOuts> wallets = pickWalletsWithMoney();
     std::vector<OutputToTransfer> selectedTransfers;
@@ -1666,6 +1897,13 @@ namespace CryptoNote
     if (termEpochs == parameters::HEAT_TERM) {
       throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "term_epochs must not be HEAT_TERM");
     }
+    // Consensus rejects CD outputs below the activation height; say so plainly
+    // instead of building a transaction the network will refuse.
+    if (getBlockCount() < m_currency.cdActivationHeight()) {
+      throw std::system_error(make_error_code(error::WRONG_STATE),
+          "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
+          " (current height " + std::to_string(getBlockCount()) + ")");
+    }
 
     fee = m_currency.minimumFee();
     if (bankingFee == 0) {
@@ -1731,7 +1969,7 @@ namespace CryptoNote
 
     // HEAT change remains FOREVER HEAT_TERM
     if (changeAmount > 0) {
-      const uint32_t chIdx = static_cast<uint32_t>(transaction->getOutputCount());
+      const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
       CryptoNote::TransactionOutputCommitment chOut;
       chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
       chOut.term = parameters::HEAT_TERM;
@@ -1740,96 +1978,12 @@ namespace CryptoNote
 
     transaction->setUnlockTime(0);
 
-    // Dynamax: probe at maxMixin (32); shrink to 16/8 or bootstrap ring when HEAT pool is thin
-    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
-    const size_t probeCount = static_cast<size_t>(mixin);
-    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
-    {
-      Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
-      System::Event requestFinished(m_dispatcher);
-      std::error_code nodeError;
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
-        [&requestFinished, &nodeError, this](std::error_code ec) {
-          nodeError = ec;
-          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-        });
-      requestFinished.wait();
-      if (nodeError) {
-        // Empty/unknown commitment pool at launch — continue with real-only rings
-        allDecoys.clear();
-      }
-    }
 
-    size_t commitmentDepositIdx = 0;
-    for (size_t depIdx = 0; depIdx < selectedDepositIds.size(); ++depIdx) {
-      Deposit dep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[depIdx]];
-      WalletTransfer firstTransfer = getTransactionTransfer(dep.creatingTransactionId, 0);
-      std::string address = firstTransfer.address;
-      const auto &walletRec = getWalletRecord(address);
-      ITransfersContainer *container = walletRec.container;
-      ITransfersContainer::TransferState state;
-      TransactionOutputInformation transfer;
-      container->getTransfer(dep.transactionHash, dep.outputInTransaction, transfer, state);
-      if (state != ITransfersContainer::TransferState::TransferAvailable) {
-        continue;
-      }
-      KeyPair commitmentKeyPair;
-      Crypto::KeyImage commitKeyImage;
-      resolveCommitmentSpendKey(transfer, walletRec.spendSecretKey, commitmentKeyPair, commitKeyImage);
-
-      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
-      for (const auto& d : allDecoys) {
-        if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex)) {
-          filteredDecoys.push_back(d);
-        }
-      }
-      // available same-amount outs = decoys + real
-      const size_t availablePool = filteredDecoys.size() + 1;
-      const size_t targetRing = pickDynamaxCommitmentRingSize(
-        availablePool, m_currency.maxMixin(),
-        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
-      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
-      const size_t actualRing = numDecoys + 1;
-      if (actualRing == 0) continue;
-      const size_t realPos = Crypto::rand<size_t>() % actualRing;
-
-      std::vector<uint32_t> absIndices;
-      std::vector<const Crypto::PublicKey*> ringKeys;
-      size_t decoyPos = 0;
-      for (size_t slot = 0; slot < actualRing; ++slot) {
-        if (slot == realPos) {
-          absIndices.push_back(transfer.globalOutputIndex);
-          ringKeys.push_back(&commitmentKeyPair.publicKey);
-        } else {
-          absIndices.push_back(filteredDecoys[decoyPos].global_amount_index);
-          ringKeys.push_back(&filteredDecoys[decoyPos].commit_key);
-          ++decoyPos;
-        }
-      }
-      std::vector<size_t> order(actualRing);
-      std::iota(order.begin(), order.end(), 0);
-      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return absIndices[a] < absIndices[b]; });
-      size_t sortedRealPos = 0;
-      std::vector<uint32_t> sortedAbs(actualRing);
-      std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
-      for (size_t s = 0; s < actualRing; ++s) {
-        sortedAbs[s] = absIndices[order[s]];
-        sortedKeys[s] = ringKeys[order[s]];
-        if (order[s] == realPos) sortedRealPos = s;
-      }
-      std::vector<uint32_t> relOffsets(actualRing);
-      relOffsets[0] = sortedAbs[0];
-      for (size_t s = 1; s < actualRing; ++s) {
-        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
-      }
-      TransactionInputCommitmentSpend csInput;
-      csInput.amount = dep.amount;
-      csInput.outputIndexes = relOffsets;
-      csInput.keyImage = commitKeyImage;
-      transaction->addInput(csInput);
-      transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
-      commitmentDepositIdx++;
-    }
+    // XFG pays the fee — HEAT must balance exactly — and every input goes in
+    // before any is signed.
+    std::vector<InputInfo> keysInfo;
+    prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -1853,37 +2007,62 @@ namespace CryptoNote
     fee = m_currency.minimumFee();
 
     if (direction == 0) {
-      // XFG→HEAT: spend XFG KeyInputs + mint HEAT (mintHeatV10)
-      uint64_t heatOut = expectedOutput > 0 ? expectedOutput : minOutput;
-      if (heatOut == 0) {
+      // Hearth sell: the XFG goes into the pool and HEAT comes out on the
+      // curve. This used to call mintHeatV10 — burning the XFG instead — so
+      // `amm_swap` burned here but sold on Hearth in the SimpleWallet RPC.
+      // Burning is `heat_mint`.
+      uint64_t outputAmount = expectedOutput;
+      if (outputAmount == 0) {
         INode::AmmPoolReserves reserves;
-        std::error_code pec = m_node.getAmmPoolReserves(reserves);
-        if (!pec && reserves.reserveXfg > 0) {
-          heatOut = inputAmount * reserves.reserveHeat / reserves.reserveXfg;
-        } else {
-          heatOut = inputAmount / 10;
+        if (m_node.getAmmPoolReserves(reserves) || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+          throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Hearth pool reserves unavailable");
         }
+        const uint64_t net = ammSwapNetOutput(inputAmount, reserves.reserveXfg, reserves.reserveHeat);
+        outputAmount = static_cast<uint64_t>(
+            (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
       }
-      if (heatOut < minOutput) {
-        heatOut = minOutput;
+      if (outputAmount == 0 || outputAmount < minOutput) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                                "Swap quote is below the requested minimum output");
       }
-      mintHeatV10(inputAmount, heatOut, fee, mixin, transactionHash);
+      std::unique_ptr<ITransaction> transaction = createTransaction();
+      CryptoNote::TransactionOutputCommitment poolOut;
+      poolOut.commitKey = CryptoNote::computePoolCommitKey();
+      poolOut.term = parameters::DEPOSIT_TERM_POOL_XFG;
+      transaction->addOutput(inputAmount, poolOut);
+      for (uint64_t bill : decomposeHeatIntoBills(outputAmount)) {
+        addHeatOutputToSelf(*transaction, bill);
+      }
+      transaction->setUnlockTime(0);
+      std::vector<uint8_t> extra;
+      addAmmSwapAuthToExtra(extra, direction, inputAmount, outputAmount, minOutput);
+      transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, inputAmount + fee, mixin, keysInfo);
+      addAndSignInputs(*transaction, keysInfo, {});
+      transactionHash = Common::podToHex(transaction->getTransactionHash());
+      validateSaveAndSendTransaction(*transaction, {}, false, true);
       return;
     }
 
     // direction == 1: HEAT→XFG — spend unlocked HEAT_TERM deposits as commitment inputs
-    uint64_t outputAmount = expectedOutput > 0 ? expectedOutput : minOutput;
+    // Consensus caps the declared output at the constant-product curve, net
+    // of the 1% fee (ammSwapNetOutput). Quote a little under it so the pool
+    // moving before inclusion does not invalidate the swap. An explicit
+    // expectedOutput is the caller's quote and is used as given.
+    uint64_t outputAmount = expectedOutput;
     if (outputAmount == 0) {
       INode::AmmPoolReserves reserves;
-      std::error_code pec = m_node.getAmmPoolReserves(reserves);
-      if (!pec && reserves.reserveHeat > 0) {
-        outputAmount = inputAmount * reserves.reserveXfg / reserves.reserveHeat;
-      } else {
-        outputAmount = inputAmount * 10; // inverse of launch 10:1
+      if (m_node.getAmmPoolReserves(reserves) || reserves.reserveHeat == 0 || reserves.reserveXfg == 0) {
+        throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Hearth pool reserves unavailable");
       }
+      const uint64_t net = ammSwapNetOutput(inputAmount, reserves.reserveHeat, reserves.reserveXfg);
+      outputAmount = static_cast<uint64_t>(
+          (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
     }
-    if (outputAmount < minOutput) {
-      outputAmount = minOutput;
+    if (outputAmount == 0 || outputAmount < minOutput) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT),
+                              "Swap quote is below the requested minimum output");
     }
 
     uint32_t currentHeight = getBlockCount();
@@ -1938,94 +2117,11 @@ namespace CryptoNote
     addAmmSwapAuthToExtra(extra, direction, inputAmount, outputAmount, minOutput);
     transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
 
-    // Dynamax commitment rings: probe maxMixin, settle 32/16/8 or bootstrap if HEAT pool empty
-    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
-    const size_t probeCount = static_cast<size_t>(mixin);
-    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
-    {
-      Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
-      System::Event requestFinished(m_dispatcher);
-      std::error_code nodeError;
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
-        [&requestFinished, &nodeError, this](std::error_code ec) {
-          nodeError = ec;
-          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-        });
-      requestFinished.wait();
-      if (nodeError) {
-        allDecoys.clear(); // empty HEAT decoy pool at launch
-      }
-    }
 
-    size_t commitmentDepositIdx = 0;
-    for (size_t depIdx = 0; depIdx < selectedDepositIds.size(); ++depIdx) {
-      Deposit dep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[depIdx]];
-      WalletTransfer firstTransfer = getTransactionTransfer(dep.creatingTransactionId, 0);
-      const auto &walletRec = getWalletRecord(firstTransfer.address);
-      ITransfersContainer::TransferState state;
-      TransactionOutputInformation transfer;
-      walletRec.container->getTransfer(dep.transactionHash, dep.outputInTransaction, transfer, state);
-      if (state != ITransfersContainer::TransferState::TransferAvailable) {
-        continue;
-      }
-      KeyPair commitmentKeyPair;
-      Crypto::KeyImage commitKeyImage;
-      resolveCommitmentSpendKey(transfer, walletRec.spendSecretKey, commitmentKeyPair, commitKeyImage);
-
-      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
-      for (const auto& d : allDecoys) {
-        if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex)) {
-          filteredDecoys.push_back(d);
-        }
-      }
-      const size_t availablePool = filteredDecoys.size() + 1;
-      const size_t targetRing = pickDynamaxCommitmentRingSize(
-        availablePool, m_currency.maxMixin(),
-        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
-      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
-      const size_t actualRing = numDecoys + 1;
-      if (actualRing == 0) continue;
-      const size_t realPos = Crypto::rand<size_t>() % actualRing;
-      std::vector<uint32_t> absIndices;
-      std::vector<const Crypto::PublicKey*> ringKeys;
-      size_t decoyPos = 0;
-      for (size_t slot = 0; slot < actualRing; ++slot) {
-        if (slot == realPos) {
-          absIndices.push_back(transfer.globalOutputIndex);
-          ringKeys.push_back(&commitmentKeyPair.publicKey);
-        } else {
-          absIndices.push_back(filteredDecoys[decoyPos].global_amount_index);
-          ringKeys.push_back(&filteredDecoys[decoyPos].commit_key);
-          ++decoyPos;
-        }
-      }
-      std::vector<size_t> order(actualRing);
-      std::iota(order.begin(), order.end(), 0);
-      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return absIndices[a] < absIndices[b]; });
-      size_t sortedRealPos = 0;
-      std::vector<uint32_t> sortedAbs(actualRing);
-      std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
-      for (size_t s = 0; s < actualRing; ++s) {
-        sortedAbs[s] = absIndices[order[s]];
-        sortedKeys[s] = ringKeys[order[s]];
-        if (order[s] == realPos) sortedRealPos = s;
-      }
-      std::vector<uint32_t> relOffsets(actualRing);
-      relOffsets[0] = sortedAbs[0];
-      for (size_t s = 1; s < actualRing; ++s) {
-        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
-      }
-      TransactionInputCommitmentSpend csInput;
-      csInput.amount = dep.amount;
-      csInput.outputIndexes = relOffsets;
-      csInput.keyImage = commitKeyImage;
-      transaction->addInput(csInput);
-      transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
-      commitmentDepositIdx++;
-    }
-    if (commitmentDepositIdx == 0) {
-      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "No spendable HEAT deposit transfers");
-    }
+    // The fee comes out of the XFG received, so HEAT inputs alone; each
+    // deposit gets a ring of its own amount, and all are added before signing.
+    std::vector<InputInfo> noXfgInputs;
+    addAndSignInputs(*transaction, noXfgInputs, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -2083,7 +2179,9 @@ namespace CryptoNote
     std::unique_ptr<ITransaction> transaction = createTransaction();
     uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-    // HEAT commitment output for recipient (using recipient's view key)
+    // HEAT commitment output for the recipient. ECDH delivers it through the
+    // recipient's view key; ownership binds to the recipient's SPEND key, so the
+    // recipient can spend it but the sender and view-key holders cannot.
     const size_t rcptIdx = static_cast<size_t>(transaction->getOutputCount());
     CryptoNote::TransactionOutputCommitment rcptOut;
     rcptOut.commitKey = deriveRecipientCommitmentKey(
@@ -2108,112 +2206,12 @@ namespace CryptoNote
     CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
     transaction->appendExtra(extraData);
 
-    // Dynamax HEAT rings: probe maxMixin (32), settle 32/16/8 or bootstrap if pool empty
-    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
-    const size_t probeCount = static_cast<size_t>(mixin);
 
-    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> allDecoys;
-    {
-      Deposit firstDep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[0]];
-      System::Event requestFinished(m_dispatcher);
-      std::error_code nodeError;
-
-      throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(firstDep.amount, probeCount, firstDep.height, allDecoys,
-        [&requestFinished, &nodeError, this](std::error_code ec) {
-          nodeError = ec;
-          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-        });
-      requestFinished.wait();
-
-      if (nodeError) {
-        // Empty commitment decoy pool at HEAT launch — proceed real-only
-        allDecoys.clear();
-      }
-    }
-
-    size_t commitmentDepositIdx = 0;
-    for (size_t depIdx = 0; depIdx < selectedDepositIds.size(); ++depIdx) {
-      Deposit dep = m_deposits.get<RandomAccessIndex>()[selectedDepositIds[depIdx]];
-
-      // Get the transfer info for this deposit
-      WalletTransfer firstTransfer = getTransactionTransfer(dep.creatingTransactionId, 0);
-      std::string address = firstTransfer.address;
-      const auto &wallet = getWalletRecord(address);
-      ITransfersContainer *container = wallet.container;
-      ITransfersContainer::TransferState state;
-      TransactionOutputInformation transfer;
-
-      container->getTransfer(dep.transactionHash, dep.outputInTransaction, transfer, state);
-
-      if (state != ITransfersContainer::TransferState::TransferAvailable) {
-        continue;
-      }
-
-      KeyPair commitmentKeyPair;
-      Crypto::KeyImage commitKeyImage;
-      resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, commitKeyImage);
-
-      // Filter decoys to exclude the real output
-      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> filteredDecoys;
-      for (const auto& d : allDecoys) {
-        if (d.global_amount_index != static_cast<uint32_t>(transfer.globalOutputIndex)) {
-          filteredDecoys.push_back(d);
-        }
-      }
-      const size_t availablePool = filteredDecoys.size() + 1;
-      const size_t targetRing = pickDynamaxCommitmentRingSize(
-        availablePool, m_currency.maxMixin(),
-        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
-      const size_t numDecoys = std::min(filteredDecoys.size(), targetRing > 0 ? targetRing - 1 : 0);
-      const size_t actualRing = numDecoys + 1;
-      if (actualRing == 0) continue;
-      const size_t realPos = Crypto::rand<size_t>() % actualRing;
-
-      std::vector<uint32_t> absIndices;
-      std::vector<const Crypto::PublicKey*> ringKeys;
-      size_t decoyPos = 0;
-      for (size_t slot = 0; slot < actualRing; ++slot) {
-        if (slot == realPos) {
-          absIndices.push_back(transfer.globalOutputIndex);
-          ringKeys.push_back(&commitmentKeyPair.publicKey);
-        } else {
-          absIndices.push_back(filteredDecoys[decoyPos].global_amount_index);
-          ringKeys.push_back(&filteredDecoys[decoyPos].commit_key);
-          ++decoyPos;
-        }
-      }
-
-      // Sort ring by ascending global index; track new real position
-      std::vector<size_t> order(actualRing);
-      std::iota(order.begin(), order.end(), 0);
-      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-        return absIndices[a] < absIndices[b];
-      });
-      size_t sortedRealPos = 0;
-      std::vector<uint32_t> sortedAbs(actualRing);
-      std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
-      for (size_t s = 0; s < actualRing; ++s) {
-        sortedAbs[s] = absIndices[order[s]];
-        sortedKeys[s] = ringKeys[order[s]];
-        if (order[s] == realPos) sortedRealPos = s;
-      }
-
-      // Delta-encode absolute indices to relative offsets
-      std::vector<uint32_t> relOffsets(actualRing);
-      relOffsets[0] = sortedAbs[0];
-      for (size_t s = 1; s < actualRing; ++s) {
-        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
-      }
-
-      TransactionInputCommitmentSpend csInput;
-      csInput.amount = dep.amount;
-      csInput.outputIndexes = relOffsets;
-      csInput.keyImage = commitKeyImage;
-      transaction->addInput(csInput);
-      transaction->signInputCommitmentSpend(commitmentDepositIdx, sortedKeys, commitmentKeyPair, sortedRealPos);
-      commitmentDepositIdx++;
-    }
+    // XFG pays the fee — HEAT must balance exactly — and every input goes in
+    // before any is signed.
+    std::vector<InputInfo> keysInfo;
+    prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -5877,45 +5875,6 @@ namespace CryptoNote
     return commitKey;
   }
 
-  void WalletGreen::resolveCommitmentSpendKey(
-      const TransactionOutputInformation& transfer,
-      const Crypto::SecretKey& recipientSpendSecret,
-      KeyPair& outKeyPair,
-      Crypto::KeyImage& outKeyImage) const
-  {
-    Crypto::KeyDerivation derivation;
-    if (!Crypto::generate_key_derivation(
-          transfer.transactionPublicKey, m_viewSecretKey, derivation))
-    {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment spend: ECDH derivation failed");
-    }
-    const size_t outIdx = transfer.outputInTransaction;
-
-    Crypto::SecretKey spendSecret;
-    if (CryptoNote::deriveOwnerBoundKeyImage(
-          derivation, outIdx, transfer.commitmentKey, recipientSpendSecret,
-          spendSecret, outKeyImage))
-    {
-      outKeyPair = {transfer.commitmentKey, spendSecret};
-      return;
-    }
-
-    // Not reproducible from the spend secret, so this is a pre-v11 output.
-    // Its scalar depends only on the ECDH secret, which is exactly why the
-    // owner-bound form exists; it stays spendable so old funds are not stranded.
-    const std::array<uint8_t, 32> depositSecret =
-      CryptoNote::deriveDepositSecret(derivation, outIdx);
-    const CryptoNote::DepositCommitmentKeys legacy =
-      CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
-    if (legacy.commitKey != transfer.commitmentKey) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-                              "commitment spend: output matches neither derivation");
-    }
-    outKeyPair = {legacy.commitKey, legacy.keyScalar};
-    outKeyImage = legacy.keyImage;
-  }
-
   Crypto::PublicKey WalletGreen::deriveRecipientCommitmentKey(
       const ITransaction& transaction,
       size_t outputIndex,
@@ -5944,6 +5903,33 @@ namespace CryptoNote
                               "commitment output: owner-bound key derivation failed");
     }
     return commitKey;
+  }
+
+  void WalletGreen::resolveCommitmentSpendKey(
+      const TransactionOutputInformation& transfer,
+      const Crypto::SecretKey& recipientSpendSecret,
+      KeyPair& outKeyPair,
+      Crypto::KeyImage& outKeyImage) const
+  {
+    Crypto::KeyDerivation derivation;
+    if (!Crypto::generate_key_derivation(
+          transfer.transactionPublicKey, m_viewSecretKey, derivation))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment spend: ECDH derivation failed");
+    }
+
+    // The shared resolver decides owner-bound vs legacy and refuses to guess.
+    CryptoNote::CommitmentSpendKeys keys;
+    if (!CryptoNote::resolveCommitmentSpendKeys(
+          derivation, transfer.outputInTransaction, transfer.commitmentKey,
+          recipientSpendSecret, keys))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment spend: output matches neither derivation");
+    }
+    outKeyPair = {keys.commitKey, keys.spendScalar};
+    outKeyImage = keys.keyImage;
   }
 
   WalletGreen::WalletTrackingMode WalletGreen::getTrackingMode() const

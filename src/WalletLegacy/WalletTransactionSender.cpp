@@ -923,10 +923,12 @@ namespace CryptoNote
     return commitKey;
   }
 
-  // Signing side. Owner-bound outputs require the recipient spend secret;
-  // pre-v11 outputs fall back to the original ECDH-derived scalar so old funds
-  // stay spendable. Rejects rather than guesses if neither reproduces the
-  // published key.
+  // Signing side. Delegates to the shared resolver so this wallet and WalletGreen
+  // make the owner-bound / legacy decision identically: owner-bound outputs
+  // require the recipient spend secret, pre-v11 outputs fall back to the original
+  // ECDH-derived scalar so old funds stay spendable, and an output whose commit
+  // key was never recorded is treated as legacy. Rejects rather than guesses if
+  // the recorded key reproduces under neither derivation.
   void WalletTransactionSender::resolveCommitmentSpendKey(
       const Crypto::KeyDerivation& ecdh,
       size_t outputIndex,
@@ -934,23 +936,13 @@ namespace CryptoNote
       const Crypto::SecretKey& recipientSpendSecret,
       KeyPair& outKeyPair,
       Crypto::KeyImage& outKeyImage) {
-    const uint32_t commitOutputIndex = static_cast<uint32_t>(outputIndex);
-    Crypto::SecretKey spendSecret;
-    if (CryptoNote::deriveOwnerBoundKeyImage(ecdh, commitOutputIndex, commitKey,
-                                            recipientSpendSecret, spendSecret, outKeyImage)) {
-      outKeyPair = {commitKey, spendSecret};
-      return;
-    }
-
-    const std::array<uint8_t, 32> depositSecret =
-      CryptoNote::deriveDepositSecret(ecdh, commitOutputIndex);
-    const CryptoNote::DepositCommitmentKeys legacy =
-      CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
-    if (legacy.commitKey != commitKey) {
+    CryptoNote::CommitmentSpendKeys keys;
+    if (!CryptoNote::resolveCommitmentSpendKeys(ecdh, outputIndex, commitKey,
+                                                recipientSpendSecret, keys)) {
       throw std::runtime_error("commitment spend: output matches neither derivation");
     }
-    outKeyPair = {legacy.commitKey, legacy.keyScalar};
-    outKeyImage = legacy.keyImage;
+    outKeyPair = {keys.commitKey, keys.spendScalar};
+    outKeyImage = keys.keyImage;
   }
 
   std::unique_ptr<WalletRequest> WalletTransactionSender::doSendMultisigTransaction(std::shared_ptr<SendTransactionContext> &&context, std::deque<std::unique_ptr<WalletLegacyEvent>> &events)
@@ -1217,7 +1209,14 @@ namespace CryptoNote
           INode::CdClaimInfo claimInfo;
           std::error_code ec = m_node.getCdClaimInfo(dep.amount,
               static_cast<uint32_t>(dep.height), currentHeight, claimInfo, dep.term);
-          if (!ec && claimInfo.formulaInterest > 0) {
+          // Withdrawing spends the CD's key image: interest left off this
+          // transaction is gone for good. Abort instead of claiming zero.
+          if (ec) {
+            throw std::system_error(ec,
+                "cannot read a CD's accrued interest from the node; withdrawal "
+                "aborted so the interest is not forfeited");
+          }
+          if (claimInfo.formulaInterest > 0) {
             interest = claimInfo.formulaInterest;
             if (claimInfo.poolInfoPresent) {
               poolInfoPresent = true;

@@ -9,10 +9,12 @@ int main() {
   double eth = PriceOracle::getSeedRate(SwapPair::ETH);
   double base = PriceOracle::getSeedRate(SwapPair::BASE);
 
-  assert(arb > 100000.0 && "ARB seed rate must be non-trivial");
+  // Current seed economics are 1 XFG = $0.158, so ETH-family rates are
+  // roughly 13.5k XFG/ETH (the old >100k assertion predated that seed).
+  assert(arb > 10000.0 && "ARB seed rate must be non-trivial");
   assert(std::fabs(arb - eth) < 1.0 && "ARB seed rate must equal ETH");
 
-  assert(base > 100000.0 && "BASE seed rate must be non-trivial");
+  assert(base > 10000.0 && "BASE seed rate must be non-trivial");
   assert(std::fabs(base - eth) < 1.0 && "BASE seed rate must equal ETH");
 
   assert(PriceOracle::ctrDivisor(SwapPair::ARB) == 1e18);

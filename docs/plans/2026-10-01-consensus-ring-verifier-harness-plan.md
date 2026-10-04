@@ -4,6 +4,28 @@
 **Status:** plan only. Nothing here is implemented. Follows
 `v11-p0-commitment-keys-and-asset-accounting-guide.md` Section B.
 
+> **Update 2026-10-03 (audit merge of `keyderiv` into master).** This plan was written
+> against the branch's own Section B implementation, which was **not merged**. Master
+> already contained a different fix (`054cae35e`), and the audit chose it over the
+> branch's version. Read the plan with these corrections:
+>
+> - The single asset table is `Currency::classifyCommitmentTermAsset(term)`. It is total:
+>   every finite term, including **term 0** and `DIGM_TERM`, is HEAT; there is no
+>   "unrecognised term" outcome. Rows 5 and 6 below no longer apply.
+> - A mixed-asset ring is **rejected inside `checkCommitmentSpendInput` and
+>   `checkCommitmentTransferInput`** ("ring mixes asset classes"). It is not credited as
+>   XFG and not left to the conservation check. Row 3 below now expects a rejection at the
+>   ring check. `classifyInputAsset` classifies by member 0, which is exact *because*
+>   mixed rings are rejected first. The branch's version returned XFG for an unresolvable
+>   ring, which let a poison decoy choose the asset an input was credited as.
+> - `TransactionInputCommitmentTransfer` is now classified by its ring the same way, so it
+>   is no longer in the "not covered" list.
+> - `resolveCommitmentRingAsset` and the free `classifyCommitmentTermAsset(term, min, max)`
+>   do not exist on master; step 1 under Sequencing has no counterpart.
+>
+> The harness itself is still needed: nothing exercises the ring-mixing rejection through a
+> real `Blockchain` today. `tests/UnitTests/AssetClassificationTest.cpp` covers only the table.
+
 ## Why a harness rather than a unit test
 
 The defect fixed in Section B (part 1) was `classifyInputAsset` reading the asset
@@ -84,10 +106,10 @@ historical height".
 |---|------|-------|----------|
 | 1 | Single-asset HEAT ring | All members `HEAT_TERM` | Accepted |
 | 2 | Single-asset XFG ring | All members `TERM_REGULAR`-equivalent or `POOL_XFG` | Accepted |
-| 3 | **Mixed ring, real member last** | Member 0 `HEAT_TERM`, real member `POOL_XFG` at a later slot | `checkCommitmentSpendInput` accepts the signature; **conservation check rejects** the tx |
+| 3 | **Mixed ring, real member last** | Member 0 `HEAT_TERM`, real member `POOL_XFG` at a later slot | **`checkCommitmentSpendInput` rejects** ("ring mixes asset classes") before any signature or conservation check |
 | 4 | Mixed ring, real member first | Reverse of #3 | Same rejection — proves order-independence |
-| 5 | Unrecognised term in ring | One member `term = 0` | Rejected as unresolvable |
-| 6 | DIGM_TERM in ring | One member `DIGM_TERM` | Rejected as unresolvable |
+| 5 | ~~Unrecognised term in ring~~ | *Obsolete on master:* term 0 is plain HEAT, so a ring of `term = 0` and `HEAT_TERM` members is a single-asset ring | Accepted (pin this, it documents the decision) |
+| 6 | ~~DIGM_TERM in ring~~ | *Obsolete on master:* `DIGM_TERM` classifies as HEAT | Accepted as HEAT; DIGM mint accounting is a separate concern |
 | 7 | Out-of-range index | Relative offset beyond the amount's outputs | Rejected |
 | 8 | Slashed member | `isSlashed = true` on a decoy | Rejected (existing guard, regression coverage) |
 | 9 | Pool-term member | `POOL_XFG`/`POOL_HEAT` as a decoy | Rejected by the unspendability guard (existing) |
@@ -101,8 +123,7 @@ new classification must not retroactively reject history.
 
 ## Sequencing
 
-1. **Extraction + focused test (done separately, see changelog)** — the all-members
-   rule as a pure function over a refs vector, no `Blockchain` instance.
+1. ~~Extraction + focused test~~ — not applicable on master (see the update above).
 2. **Injection seam.** Choose option 1, 2 or 3 above. This unblocks everything else
    and is independently reviewable.
 3. **Harness fixture**: `Currency` builder, genesis construction, ref injection
@@ -125,8 +146,9 @@ new classification must not retroactively reject history.
 
 ## Not covered by this harness
 
-- Cross-asset accounting for `TransactionInputCommitmentTransfer`, which always
-  classifies XFG and does not bind `newTerm`. Separate work.
+- `TransactionInputCommitmentTransfer` no longer always classifies XFG (master resolves
+  its ring like a spend), but it still does not bind `newTerm` to a replacement output.
+  That part is open and needs its own cases.
 - `uint64_t` wrap in `out + fee + burn`. Separate work; needs its own adversarial
   cases at the `Core.cpp` conservation check.
 - DIGM mint accounting in `DigmMintEngine`, which sums commitment inputs as HEAT

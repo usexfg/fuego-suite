@@ -46,8 +46,13 @@ uint64_t rateToNum(double rate) {
   if (!finitePositive(rate)) return 0;
   double scaled = rate * kRateScale;
   if (!std::isfinite(scaled)) return 0;
+  // static_cast<double>(UINT64_MAX) is exactly 2^64, so this refuses everything
+  // that does not fit a uint64.
   if (scaled >= static_cast<double>(std::numeric_limits<uint64_t>::max())) return 0;
-  return static_cast<uint64_t>(std::llround(scaled));
+  // Round in floating point and convert once. std::llround returns a signed
+  // 64-bit value, so for scaled in [2^63, 2^64) it is out of range and its result
+  // is unspecified, even though the guard above lets that range through.
+  return static_cast<uint64_t>(std::round(scaled));
 }
 
 bool rateFromNum(uint64_t rateNum, double& out) {
@@ -187,6 +192,16 @@ PairQuote buildPairQuote(uint8_t pair,
   AssetPrice obs;
   q.status = evaluateAsset(asset, primary, secondary, policy, now, obs);
   q.reason.clear();
+
+  // With corroboration required, evaluateAsset reports SINGLE_SOURCE without an
+  // observation. Treating that like the quotable case below would price the pair
+  // from an empty observation and surface a misleading "counterpartyUsd invalid".
+  if (q.status == QuoteStatus::SINGLE_SOURCE && policy.requireCorroboration) {
+    q.reason = "corroboration required but only one feed answered";
+    q.managedOffersAllowed = false;
+    q.newSwapAllowed = false;
+    return q;
+  }
   switch (q.status) {
     case QuoteStatus::UNPRICED:     q.reason = "no feed id serves this asset"; break;
     case QuoteStatus::NO_DATA:      q.reason = primary.transportOk ? "asset absent from feed response"

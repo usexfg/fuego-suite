@@ -14,6 +14,9 @@ public:
                  const std::string& viewKeyHex);
 
   std::string chainName() const override { return "XMR"; }
+  // Alice currently derives only the unsigned XFG prefix hash, while the
+  // network indexes the signed claim txid. Existing swaps retain recovery.
+  bool isReadyForNewSwap() override { return false; }
   bool supportsPtlc() const override { return true; } // native adaptor-only, point-lock
   ChainClientResult lock(const SwapParams& params) override;
   ChainClientResult verifyLock(const SwapParams& params) override;

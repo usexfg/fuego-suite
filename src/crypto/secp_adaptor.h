@@ -48,6 +48,7 @@ bool secp_adaptor_sign(const SecretKey& sk, const SecretKey& k, const SecretKey&
 bool secp_adaptor_verify(const SecpPubKey& P, const SecpPubKey& T, const SecpAdaptorPresig& presig, const Hash& msg);
 
 // Extract t = s' - s (scalar mod n). sig is complete Schnorr sig [R_x||s] with same R as presig.
+// t_out is in the CryptoNote little-endian domain, as secp_adaptor_sign takes it.
 // The 4-arg overload additionally verifies t*G == expectedT; prefer it whenever T is known.
 // The 3-arg form only guards t != 0 (AUDIT M-3) — use only when T is unavailable.
 [[deprecated("use 4-arg overload that also verifies t*G == T")]]

@@ -25,6 +25,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "SwapDaemon/utxo_rpc_confirmations.h"
+
 namespace XfgSwap {
 
 // ---- Base64 encoding (for HTTP Basic Auth) ----------------------------------
@@ -196,10 +198,11 @@ bool BtcRpcClient::getTransaction(const std::string& txid, BtcTxInfo& info) {
 
     info.txid = result.contains("txid") ? result("txid").getString() : txid;
     info.confirmations = result.contains("confirmations")
-        ? static_cast<uint32_t>(result("confirmations").getInteger()) : 0;
+        ? verified_rpc_confirmations(result("confirmations").getInteger()) : 0;
     info.blockHeight = result.contains("blockheight")
         ? static_cast<uint64_t>(result("blockheight").getInteger()) : 0;
-    info.inMempool = (info.confirmations == 0);
+    info.inMempool = !result.contains("confirmations") ||
+        result("confirmations").getInteger() == 0;
 
     return true;
   } catch (const std::exception&) {
@@ -268,7 +271,7 @@ bool BtcRpcClient::listUnspent(const std::string& address, std::vector<BtcUtxo>&
       utxo.scriptPubKey = item.contains("scriptPubKey")
           ? item("scriptPubKey").getString() : "";
       utxo.confirmations = item.contains("confirmations")
-          ? static_cast<uint32_t>(item("confirmations").getInteger()) : 0;
+          ? verified_rpc_confirmations(item("confirmations").getInteger()) : 0;
 
       utxos.push_back(std::move(utxo));
     }

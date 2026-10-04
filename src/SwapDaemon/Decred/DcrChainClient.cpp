@@ -122,7 +122,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
   uint64_t fundAmount = 0;
   uint32_t fundVout = 0;
   for (const auto& u : utxos) {
-    if (u.second < params.ctrAmount + feeFloor) continue;
+    if (u.second < params.ctrAmount64() + feeFloor) continue;
     auto colon = u.first.rfind(':');
     if (colon == std::string::npos) continue;
     fundTxid = u.first.substr(0, colon);
@@ -136,7 +136,7 @@ ChainClientResult DcrChainClient::lock(const SwapParams& params) {
   try {
     std::string inputsJson = "[{\"txid\":\"" + fundTxid + "\",\"vout\":" +
         std::to_string(fundVout) + "}]";
-    double outDcr = static_cast<double>(params.ctrAmount) / 1e8;
+    double outDcr = static_cast<double>(params.ctrAmount64()) / 1e8;
     std::string outputsJson = "{\"" + htlcAddress + "\":" + std::to_string(outDcr) + "}";
 
     std::string rawTxHex;
@@ -178,9 +178,9 @@ ChainClientResult DcrChainClient::verifyLock(const SwapParams& params) {
   if (!m_rpc->getTxOut(params.ctrLockTxId, 0, amount))
     return ChainClientResult::fail("DCR verifyLock: tx output not found: " + params.ctrLockTxId);
 
-  if (amount < params.ctrAmount)
+  if (amount < params.ctrAmount64())
     return ChainClientResult::fail("DCR verifyLock: amount " +
-        std::to_string(amount) + " < required " + std::to_string(params.ctrAmount));
+        std::to_string(amount) + " < required " + std::to_string(params.ctrAmount64()));
 
   ChainClientResult result;
   result.success = true;
@@ -287,7 +287,7 @@ ChainClientResult DcrChainClient::verifyLockSpv(const SwapParams& params) {
 
     // Check if this is a P2SH output: OP_HASH160 <20 bytes> OP_EQUAL (23 bytes)
     if (spkLen == 23 && p[0] == 0xA9 && p[1] == 0x14 && p[22] == 0x87) {
-      if (value >= params.ctrAmount) {
+      if (value >= params.ctrAmount64()) {
         foundP2sh = true;
         onChainScriptHash.assign(p + 2, p + 22);
       }
@@ -298,7 +298,7 @@ ChainClientResult DcrChainClient::verifyLockSpv(const SwapParams& params) {
 
   if (!foundP2sh) {
     return ChainClientResult::fail("DCR verifyLock SPV: no P2SH output with expected amount " +
-                                   std::to_string(params.ctrAmount));
+                                   std::to_string(params.ctrAmount64()));
   }
 
   // Fail-closed: chainState redeem script is required (matches BCH/KMD strict check).
@@ -339,7 +339,7 @@ ChainClientResult DcrChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -360,7 +360,7 @@ ChainClientResult DcrChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -393,12 +393,18 @@ ChainClientResult DcrChainClient::getTransactionDetails(const std::string& txId,
       return result;
     }
 
+    if (!inclusion.included || !inclusion.merkleVerified ||
+        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
+        inclusion.depth == 0) {
+      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
+      return result;
+    }
+    result = ChainClientResult::ok(txId);
     result.success = true;
-    result.confirmed = true;
-    result.spvVerified = true;
+    result.confirmed = inclusion.included;
+    result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
-    result.confirmations = (tipHeight >= inclusion.blockHeight)
-        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    result.confirmations = inclusion.depth;
     return result;
   }
 
@@ -442,7 +448,9 @@ std::string DcrChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {
       SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                   params.requiredConfirmations : 6))
         continue;
       if (spend.spendingTxid.empty()) continue;
       std::string secret = extractSecret(spend.spendingTxid, params.chainState);

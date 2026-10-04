@@ -25,8 +25,10 @@ This brochure is about what Hearth **lets you do**. Pick a path:
 
 The simplest door in: hand over one asset, receive the other at the market's current price, settled on-chain in the same block you asked. No account, no KYC, no middleman — your wallet is your exchange account.
 
-- **XFG → ΗΞΔŦ:** sell XFG, receive ΗΞΔŦ at the pool's live price.
+- **XFG → ΗΞΔŦ:** sell XFG into the pool, receive ΗΞΔŦ.
 - **ΗΞΔŦ → XFG:** buy XFG with ΗΞΔŦ.
+
+The pool prices every trade on a constant-product curve: a small trade fills near the current price, and a large one moves it — the more you trade at once, the less each extra coin buys. Before a sale, `sell_xfg` shows what you'll receive, where it leaves the pool's price, and what **minting** the same XFG would give instead, then asks before it sells.
 
 You always set a **minimum you're willing to accept**, so a fast-moving market can't fill you at a price you didn't agree to.
 
@@ -34,6 +36,8 @@ You always set a **minimum you're willing to accept**, so a fast-moving market c
 sell_xfg <amount_xfg> <min_heat>
 buy_xfg  <amount_heat> <min_xfg>
 ```
+
+From the wallet RPC (SimpleWallet `--rpc-bind` and walletd) the same trades are `sell_xfg` and `buy_xfg`, or `amm_swap` with `direction` 0 or 1. Minting is `heat_mint`.
 
 > Want ΗΞΔŦ without buying it? You can also **mint it** — burn XFG and receive fresh ΗΞΔŦ at Hearth's discovered price. See [minting ΗΞΔŦ](/features/heat/mint-heat).
 

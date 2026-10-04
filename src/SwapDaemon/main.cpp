@@ -76,7 +76,6 @@ void printUsage() {
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
     "  --help                  Show this help message\n"
     "\n"
-    "Pairs: SOL, ETH, XMR, BCH, ARB, BASE, KMD, BNB, DCR, BTC, LTC, POLYGON\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
     "\n"
     "Examples:\n"
@@ -86,6 +85,35 @@ void printUsage() {
     "  xfg-swapd --testnet list\n"
     "  xfg-swapd --service --offer-config offers.json\n"
     << std::endl;
+
+  std::cout << "Protocol pairs (runtime configuration/readiness still required):\n  ";
+  size_t column = 2;
+  bool first = true;
+  for (const auto& descriptor : XfgSwap::SWAP_PAIR_CATALOG) {
+    if (!XfgSwap::isProtocolSwapPair(descriptor.id)) continue;
+    const std::string item = descriptor.symbol;
+    if (!first) {
+      if (column + 2 + item.size() > 78) {
+        std::cout << "\n  ";
+        column = 2;
+      } else {
+        std::cout << ", ";
+        column += 2;
+      }
+    }
+    std::cout << item;
+    column += item.size();
+    first = false;
+  }
+  std::cout << "\nStaged (not accepted for new swaps): ";
+  first = true;
+  for (const auto& descriptor : XfgSwap::SWAP_PAIR_CATALOG) {
+    if (XfgSwap::isProtocolSwapPair(descriptor.id)) continue;
+    if (!first) std::cout << ", ";
+    std::cout << descriptor.symbol;
+    first = false;
+  }
+  std::cout << "\n" << std::endl;
 }
 
 std::string getDefaultDataDir() {
@@ -507,7 +535,11 @@ int main(int argc, char* argv[]) {
         return true;
       };
       if (!parseAmount(xfgAmountStr, "xfg_amount", params.xfgAmount)) return 1;
-      if (!parseAmount(ctrAmountStr, "ctr_amount", params.ctrAmount)) return 1;
+      if (!XfgSwap::parseAtomicAmount(ctrAmountStr, params.ctrAmount) ||
+          params.ctrAmount == 0) {
+        std::cerr << "Error: ctr_amount must be a positive uint256 decimal integer" << std::endl;
+        return 1;
+      }
       params.peerEndpoint = peer;
 
       // Zero-init crypto fields

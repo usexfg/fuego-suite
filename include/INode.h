@@ -182,8 +182,9 @@ public:
     out = {1, 1};
     return {};
   }
-  // Rolling 8-block TWAP of Hearth spot price for HEAT mint validation.
-  // Returns 0 if unavailable (caller should fall back to spot pool rate).
+  // Rolling 8-block TWAP of the Hearth spot price — the price HEAT mints are
+  // validated at. 0 until two blocks have been averaged; consensus refuses
+  // mints until then, so there is no spot fallback.
   virtual uint64_t getHearthTwap() { return 0; }
 };
 

@@ -110,6 +110,8 @@ private:
   std::error_code handleSendHeat(const SendHeat::Request& request, SendHeat::Response& response);
   std::error_code handleHeatDeposit(const HeatDeposit::Request& request, HeatDeposit::Response& response);
   std::error_code handleAmmSwap(const AmmSwap::Request& request, AmmSwap::Response& response);
+  std::error_code handleSellXfg(const AmmSwap::Request& request, AmmSwap::Response& response);
+  std::error_code handleBuyXfg(const AmmSwap::Request& request, AmmSwap::Response& response);
   std::error_code handlePlaceLimitOrder(const PlaceLimitOrder::Request& request, PlaceLimitOrder::Response& response);
   std::error_code handleCancelLimitOrder(const CancelLimitOrder::Request& request, CancelLimitOrder::Response& response);
   std::error_code handleGetLimitOrders(const GetLimitOrders::Request& request, GetLimitOrders::Response& response);

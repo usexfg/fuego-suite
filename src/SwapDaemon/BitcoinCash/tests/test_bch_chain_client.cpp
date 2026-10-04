@@ -15,6 +15,8 @@
 #include "SwapDaemon/BitcoinCash/BchChainClient.h"
 #include "SwapDaemon/BitcoinCash/HtlcScript.h"
 #include "SwapDaemon/Spv/ISpvClient.h"
+#include "SwapDaemon/utxo_rpc_confirmations.h"
+#include "SwapDaemon/utxo_claim_proof.h"
 #include "Common/StringTools.h"
 
 using namespace XfgSwap;
@@ -284,12 +286,11 @@ static void test_checkSwapStatus_spv_mode() {
   mock->m_tipHeight = 500;
 
   // Build a raw locking tx with a P2SH output
-  std::vector<uint8_t> p2shScriptPubKey(23, 0x00);
-  p2shScriptPubKey[0] = 0xA9;
-  p2shScriptPubKey[1] = 0x14;
-  // Put some hash in the middle
-  for (int i = 2; i < 22; ++i) p2shScriptPubKey[i] = static_cast<uint8_t>(i);
-  p2shScriptPubKey[22] = 0x87;
+  const auto redeemScript = BchHtlcScript::createRedeemScript(
+      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
+      std::vector<uint8_t>(33, 0x03), 500000);
+  const auto p2shScriptPubKey =
+      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
 
   uint64_t lockAmount = 100000;
   auto rawTx = buildMinimalRawTx(p2shScriptPubKey, lockAmount);
@@ -303,6 +304,7 @@ static void test_checkSwapStatus_spv_mode() {
   SwapParams params;
   params.ctrLockTxId = lockTxId;
   params.ctrAmount = lockAmount;
+  params.chainState = BchHtlcScript::bytesToHex(redeemScript);
 
   auto result = client.verifyLock(params);
   assert(result.success);
@@ -320,10 +322,11 @@ static void test_verifyLock_spv_wrong_amount() {
   auto mock = std::make_shared<MockSpvClient>();
   mock->m_tipHeight = 500;
 
-  std::vector<uint8_t> p2shScriptPubKey(23, 0x00);
-  p2shScriptPubKey[0] = 0xA9;
-  p2shScriptPubKey[1] = 0x14;
-  p2shScriptPubKey[22] = 0x87;
+  const auto redeemScript = BchHtlcScript::createRedeemScript(
+      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
+      std::vector<uint8_t>(33, 0x03), 500000);
+  const auto p2shScriptPubKey =
+      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
 
   uint64_t lockAmount = 100000;
   auto rawTx = buildMinimalRawTx(p2shScriptPubKey, lockAmount);
@@ -368,10 +371,11 @@ static void test_verifyLock_spv_not_confirmed() {
   auto mock = std::make_shared<MockSpvClient>();
   mock->m_tipHeight = 500;
 
-  std::vector<uint8_t> p2shScriptPubKey(23, 0x00);
-  p2shScriptPubKey[0] = 0xA9;
-  p2shScriptPubKey[1] = 0x14;
-  p2shScriptPubKey[22] = 0x87;
+  const auto redeemScript = BchHtlcScript::createRedeemScript(
+      std::vector<uint8_t>(32, 0xaa), std::vector<uint8_t>(33, 0x02),
+      std::vector<uint8_t>(33, 0x03), 500000);
+  const auto p2shScriptPubKey =
+      BchHtlcScript::redeemScriptToP2shScriptPubKey(redeemScript);
 
   auto rawTx = buildMinimalRawTx(p2shScriptPubKey, 100000);
 
@@ -384,6 +388,7 @@ static void test_verifyLock_spv_not_confirmed() {
   SwapParams params;
   params.ctrLockTxId = lockTxId;
   params.ctrAmount = 100000;
+  params.chainState = BchHtlcScript::bytesToHex(redeemScript);
 
   auto result = client.verifyLock(params);
   // verifyTxInclusion returns true but inclusion.included is false
@@ -455,6 +460,20 @@ static void test_getCurrentHeight_spv_mode() {
   std::cout << "  PASSED" << std::endl;
 }
 
+static void test_transaction_details_reject_invalid_merkle_proof() {
+  auto mock = std::make_shared<MockSpvClient>();
+  mock->m_inclusions["claim-tx"] = {false, 0, 0, false};
+  BchChainClient client(mock, "");
+  ChainClientResult result;
+  client.getTransactionDetails("claim-tx", result);
+  assert(!result.success && !result.confirmed && !result.spvVerified);
+
+  mock->m_inclusions["claim-tx"] = {true, 995, 6, true};
+  client.getTransactionDetails("claim-tx", result);
+  assert(result.success && result.confirmed && result.spvVerified);
+  assert(result.confirmations == 6 && result.blockHeight == 995);
+}
+
 static void test_fullNode_mode_no_spv() {
   std::cout << "test_fullNode_mode_no_spv..." << std::endl;
 
@@ -492,6 +511,21 @@ static void test_fullNode_mode_no_spv() {
 int main() {
   std::cout << "=== BchChainClient / BchHtlcScript SPV Tests ===" << std::endl;
 
+  assert(verified_rpc_confirmations(-1) == 0);
+  assert(verified_rpc_confirmations(0) == 0);
+  assert(verified_rpc_confirmations(6) == 6);
+  assert(verified_rpc_confirmations(4294967296LL) == 0);
+
+  // A valid preimage in an unrelated confirmed transaction must not prove
+  // that this swap's funding outpoint was spent.
+  const auto outpointTx = buildMinimalRawTx({0x51}, 1000);
+  assert(spends_utxo_lock_output(outpointTx, std::string(64, '0')));
+  assert(!spends_utxo_lock_output(outpointTx, std::string(64, '1')));
+  assert(!spends_utxo_lock_output(outpointTx, std::string(64, '0'), 1));
+  assert(!spends_utxo_lock_output(std::vector<uint8_t>(outpointTx.begin(),
+                                                     outpointTx.begin() + 7),
+                               std::string(64, '0')));
+
   test_redeemScriptToP2shScriptPubKey();
   test_parseClaimPreimage_basic();
   test_parseClaimPreimage_wrongP2sh();
@@ -503,6 +537,7 @@ int main() {
   test_extractSecret_spv_mode();
   test_extractSecret_spv_not_found();
   test_getCurrentHeight_spv_mode();
+  test_transaction_details_reject_invalid_merkle_proof();
   test_fullNode_mode_no_spv();
 
   std::cout << "\nAll tests passed." << std::endl;

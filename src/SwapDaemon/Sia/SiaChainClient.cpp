@@ -42,7 +42,7 @@ ChainClientResult SiaChainClient::lock(const SwapParams& params) {
                      std::to_string(params.ctrTimeoutBlock);
   std::string txid;
   // params.ctrAmount is expected in hastings (10^24 per SC) from UI conversion.
-  if (!m_rpc->sendSiacoins(params.ctrAddress, params.ctrAmount, memo, txid))
+  if (!m_rpc->sendSiacoins(params.ctrAddress, params.ctrAmount64(), memo, txid))
     return ChainClientResult::fail("SIA lock: sendSiacoins failed");
   return ChainClientResult::okWithState(txid, hashHex);
 }

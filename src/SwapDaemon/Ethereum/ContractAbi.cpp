@@ -66,17 +66,9 @@ static std::string bytesToHex(const uint8_t* data, size_t len) {
   return oss.str();
 }
 
-// Parse a 64-char hex chunk into a uint64_t (big-endian, takes low 8 bytes)
-static uint64_t hexChunkToUint64(const std::string& chunk) {
-  // chunk is 64 hex chars = 32 bytes; uint256 big-endian, we take last 8 bytes
-  if (chunk.size() < 64) return 0;
-  // Last 16 hex chars = 8 bytes
-  std::string low = chunk.substr(48, 16);
-  uint64_t result = 0;
-  for (char c : low) {
-    result <<= 4;
-    result |= hexCharToNibble(c);
-  }
+static AtomicAmount hexChunkToAtomicAmount(const std::string& chunk) {
+  AtomicAmount result = 0;
+  for (char c : chunk) result = (result << 4) | hexCharToNibble(c);
   return result;
 }
 
@@ -233,7 +225,10 @@ bool decodeGetContract(const std::string& hexData, ContractInfo& info) {
   }
 
   // Need at least 8 * 64 = 512 hex chars
-  if (data.size() < 512) return false;
+  if (data.size() < 512 || !std::all_of(data.begin(), data.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+               (c >= 'A' && c <= 'F');
+      })) return false;
 
   // Extract each 64-char chunk
   std::string chunks[8];
@@ -243,9 +238,10 @@ bool decodeGetContract(const std::string& hexData, ContractInfo& info) {
 
   info.sender       = hexChunkToAddress(chunks[0]);
   info.recipient    = hexChunkToAddress(chunks[1]);
-  info.amount       = hexChunkToUint64(chunks[2]);
+  info.amount       = hexChunkToAtomicAmount(chunks[2]);
   info.hashLock     = hexChunkToHash(chunks[3]);
-  info.timeoutBlock = hexChunkToUint64(chunks[4]);
+  const AtomicAmount timeout = hexChunkToAtomicAmount(chunks[4]);
+  if (!atomicAmountToUint64(timeout, info.timeoutBlock)) return false;
   info.claimed      = hexChunkToBool(chunks[5]);
   info.refunded     = hexChunkToBool(chunks[6]);
   info.preimage     = hexChunkToHash(chunks[7]);
@@ -279,7 +275,10 @@ bool decodeGetContractPoint(const std::string& hexData, PointContractInfo& info)
     data = data.substr(2);
   }
 
-  if (data.size() < 512) return false;
+  if (data.size() < 512 || !std::all_of(data.begin(), data.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+               (c >= 'A' && c <= 'F');
+      })) return false;
 
   std::string chunks[8];
   for (int i = 0; i < 8; ++i) {
@@ -288,9 +287,10 @@ bool decodeGetContractPoint(const std::string& hexData, PointContractInfo& info)
 
   info.sender       = hexChunkToAddress(chunks[0]);
   info.recipient    = hexChunkToAddress(chunks[1]);
-  info.amount       = hexChunkToUint64(chunks[2]);
+  info.amount       = hexChunkToAtomicAmount(chunks[2]);
   info.pointAddress = hexChunkToAddress(chunks[3]);
-  info.timeoutBlock = hexChunkToUint64(chunks[4]);
+  const AtomicAmount timeout = hexChunkToAtomicAmount(chunks[4]);
+  if (!atomicAmountToUint64(timeout, info.timeoutBlock)) return false;
   info.claimed      = hexChunkToBool(chunks[5]);
   info.refunded     = hexChunkToBool(chunks[6]);
   info.secret       = hexChunkToHash(chunks[7]);

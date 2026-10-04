@@ -40,22 +40,6 @@ struct EpochFeeRateEntry {
   }
 };
 
-// v11+: realized Bonus Vault inflow per epoch. bonusHeat is the HEAT added to
-// the BONUS_VAULT partition that epoch; weightedBase is Σ (principal × tier
-// weight / 100) over CDs created within the rolling window ending at that
-// epoch. A CD's bonus share for the epoch is
-// bonusHeat × (principal × weight/100) / weightedBase, so total payouts can
-// never exceed actual BV inflows (no overpromising).
-struct BonusEpochRateEntry {
-  uint64_t bonusHeat = 0;
-  uint64_t weightedBase = 0;
-
-  void serialize(ISerializer& s) {
-    s(bonusHeat, "bonus_heat");
-    s(weightedBase, "weighted_base");
-  }
-};
-
 struct CommitmentEntry {
   Crypto::Hash commitment;
   Crypto::Hash txHash;
@@ -146,16 +130,9 @@ public:
   uint64_t getEpochFeeRate(uint64_t epochNumber) const;
   EpochFeeRateEntry getEpochFeeRateEntry(uint64_t epochNumber) const;
   uint64_t getEpochCount() const;
-  uint64_t getBonusEpochCount() const;
   // Remove the most-recently recorded epoch fee rate (used by popBlock rollback).
   void popEpochFeeRate();
 
-  // v11+: realized Bonus Vault inflow per epoch. Repeated calls for the same
-  // epoch accumulate bonusHeat (deferred XFG conversion lands in a later
-  // epoch boundary but belongs to the same recorded epoch).
-  void recordBonusEpochRate(uint64_t epochNumber, uint64_t bonusHeat, uint64_t weightedBase);
-  BonusEpochRateEntry getBonusEpochRateEntry(uint64_t epochNumber) const;
-  void popBonusEpochRate();
 
   void storeEpochReport(const EpochReport& report);
   std::optional<EpochReport> getEpochReport(uint64_t epochNumber) const;
@@ -174,7 +151,6 @@ private:
   mutable std::mutex m_mutex;
 
   std::vector<EpochFeeRateEntry> m_epochFeeRates;
-  std::vector<BonusEpochRateEntry> m_bonusEpochRates;
 
   mutable Crypto::Hash m_current_merkle_root;
   mutable bool m_merkleDirty = true;

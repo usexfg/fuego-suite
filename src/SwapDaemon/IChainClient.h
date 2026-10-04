@@ -16,6 +16,17 @@ public:
   virtual ChainClientResult claim(const SwapParams& params) = 0;
   virtual ChainClientResult refund(const SwapParams& params) = 0;
 
+  // A configured client may remain available to recover existing swaps even
+  // when it cannot safely start a new one. Never use this to gate claim/refund.
+  virtual bool isReadyForNewSwap() { return true; }
+  // Optional explanation surfaced by the daemon catalog. Subclasses with a
+  // preflight (notably generic EVM) override this without changing recovery.
+  virtual std::string readinessError() { return ""; }
+
+  // Derived from the live client mode when creating a swap, then persisted
+  // with the swap so confirmation policy survives daemon restarts.
+  virtual bool usesSpvVerification() const { return false; }
+
   // ── PTLC capability + PTLC lock path ──
   // Override in PTLC-capable clients (BTC Taproot, SOL ed25519, XMR/ZANO).
   // For HTLC-only chains (most EVMs, TON, SIA) keep default false → negotiate yields BRIDGE.
@@ -48,6 +59,17 @@ public:
                                                uint64_t minAmount,
                                                const std::string& proof) = 0;
 
+  // Preserve legacy 64-bit adapters, but never silently narrow a wide EVM
+  // requirement. EVM clients override this with a full-width balance check.
+  virtual ChainClientResult verifyReserveProofWide(const std::string& expectedMessage,
+                                                   const AtomicAmount& minAmount,
+                                                   const std::string& proof) {
+    uint64_t narrow = 0;
+    if (!atomicAmountToUint64(minAmount, narrow))
+      return ChainClientResult::fail("counterparty amount exceeds adapter range");
+    return verifyReserveProof(expectedMessage, narrow, proof);
+  }
+
   // Get transaction details including SPV confirmation status.
   // Populates ChainClientResult with confirmed/spvVerified/confirmations fields.
   virtual ChainClientResult getTransactionDetails(const std::string& txId,
@@ -62,6 +84,13 @@ public:
   virtual std::string tryExtractClaimedSecret(const SwapParams& params) {
     (void)params;
     return {};
+  }
+
+  // Chain-state proof that this exact lock was claimed with sufficient
+  // finality. Alice cannot depend on Bob sending a claim transaction ID.
+  virtual bool hasConfirmedClaim(const SwapParams& params) {
+    (void)params;
+    return false;
   }
 
   virtual bool getCurrentHeight(uint64_t& height) { (void)height; return false; }

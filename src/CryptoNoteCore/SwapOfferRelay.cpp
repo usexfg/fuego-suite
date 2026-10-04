@@ -161,8 +161,7 @@ bool SwapOfferRelay::validateOffer(const SwapOfferMsg& offer) const {
   if (offer.offerId.empty()) return false;
   if (offer.xfgAmount == 0 || offer.rateNum == 0) return false;
   if (offer.ttlBlocks == 0 || offer.ttlBlocks > 1080) return false;
-  // pair must index a valid order book slot (0..MAX_PAIR_INDEX)
-  if (!isValidPair(offer.pair)) return false;
+  if (!isExecutablePair(offer.pair)) return false;
   Crypto::Hash offerHash = offerCanonicalHash(offer);
   return Crypto::check_signature(offerHash, offer.makerPubKey, offer.signature);
 }
@@ -211,6 +210,7 @@ void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
 void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amount,
                                        const std::string& takerPubKey,
                                        const std::string& proofOfFunds) {
+  if (!isValidSwapRequestInput(offerId, takerPubKey, proofOfFunds)) return;
   std::lock_guard<std::mutex> lock(m_mutex);
   // Bound queue to prevent memory-exhaustion DoS from gossip floods.
   if (m_pendingRequests.size() >= MAX_PENDING_REQUESTS) {
@@ -222,6 +222,7 @@ void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amou
 void SwapOfferRelay::submitSwapRequest(const std::string& offerId, uint64_t amount,
                                        const std::string& takerPubKey,
                                        const std::string& proofOfFunds) {
+  if (!isValidSwapRequestInput(offerId, takerPubKey, proofOfFunds)) return;
   handleSwapRequest(offerId, amount, takerPubKey, proofOfFunds);
 
   if (m_p2pEndpoint) {
@@ -482,7 +483,7 @@ bool SwapOfferRelay::validateOrderSignature(const SwapOrder& o) const {
   if (o.orderId.empty() || o.orderId.size() != 64) return false;
   if (o.amount == 0 || o.price == 0) return false;
   if (o.ttlBlocks == 0 || o.ttlBlocks > 1080) return false;
-  if (!isValidPair(o.pair)) return false;
+  if (!isExecutablePair(o.pair)) return false;
   if (o.side != SwapOrder::Side::BID && o.side != SwapOrder::Side::ASK) return false;
 
   // orderId must be the canonical hash of maker fields

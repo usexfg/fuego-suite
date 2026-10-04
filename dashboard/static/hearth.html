@@ -98,9 +98,9 @@
             <span class="telemetry-label">Salon Mid</span>
             <span class="telemetry-val" id="heat-redemption">—</span>
           </div>
-          <div class="telemetry-cell heat-cell" title="Purchasing-power reference, adjusted for inflation since 2009">
+          <div class="telemetry-cell heat-cell" title="Fuego daemon's HEAT USD reference; not an external market quote">
             <span class="telemetry-label">HΞ∆Ŧ Reference</span>
-            <span class="telemetry-val" id="heat-peg">1 HΞ∆Ŧ ≋ $1.58</span>
+            <span class="telemetry-val" id="heat-peg">—</span>
           </div>
         </div>
       </div>
@@ -124,7 +124,7 @@
           <div class="hearth-spot-bar">
             <div class="spot-price-group">
               <span class="spot-price-main" id="price-xfg-heat">— HΞ∆Ŧ</span>
-              <span class="spot-price-usd" id="price-xfg-usd">≈ $—</span>
+              <span class="spot-price-usd" id="price-xfg-usd">Reference-implied USD unavailable</span>
               <span class="spot-price-spread" id="price-spread">Spread —</span>
             </div>
             <div class="timeframe-pushers">
@@ -176,7 +176,7 @@
 
             <div class="order-inputs-grid">
               <div class="form-group">
-                <label class="form-label" for="order-amount">Amount (XFG)</label>
+                <label class="form-label" for="order-amount" id="order-amount-label">HEAT budget</label>
                 <input type="text" class="form-input" id="order-amount" placeholder="0.00" inputmode="decimal" autocomplete="off">
                 <div class="pct-chips">
                   <span class="pct-chip" data-pct="0.25">25%</span>
@@ -193,9 +193,9 @@
               </div>
 
               <div class="form-group" id="expiry-group">
-                <label class="form-label" for="order-expiry">Term (Blocks)</label>
-                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320" autocomplete="off">
-                <div class="hint">4,320 blk ≈ one Epoch</div>
+                <label class="form-label" for="order-expiry">Absolute expiry height</label>
+                <input type="text" class="form-input" id="order-expiry" placeholder="0" value="0" inputmode="numeric" autocomplete="off">
+                <div class="hint">0 means no expiry</div>
               </div>
 
               <button type="button" class="btn btn-block btn-firegold" id="order-preview-btn">Review</button>
@@ -203,7 +203,7 @@
 
             <div class="order-fee-notice">
               <span>Salon fee 1% · 70% CD yield · 30% house rebate</span>
-              <span id="order-estimate-sub">Continuous depth against the salon pool</span>
+              <span id="order-estimate-sub">Live quote shown before submission</span>
             </div>
           </div>
         </div>
@@ -234,7 +234,7 @@
         <div id="order-modal-details" class="mb-md"></div>
         <div class="row gap-md mb-sm">
           <button type="button" class="btn btn-firegold flex-1" id="order-exec-btn">Commit via Vault</button>
-          <button type="button" class="btn btn-secondary flex-1" id="order-copy-btn">Copy Command</button>
+          <button type="button" class="btn btn-secondary flex-1" id="order-copy-btn">Copy Wallet RPC</button>
         </div>
         <div class="code-block" id="order-cli-cmd" hidden></div>
       </div>

@@ -200,6 +200,13 @@ bool secp_adaptor_extract(const SecpAdaptorPresig& presig, const SecpSchnorrSig&
   // NOTE: callers that hold the adaptor point T MUST prefer the 4-arg overload
   // below, which additionally checks t*G == T. The 3-arg form only guards t!=0.
   if (secp_scalar_is_zero(t)) return false;
+  // t is computed in the secp (big-endian) domain. Hand it back in the
+  // CryptoNote little-endian domain secp_adaptor_sign takes it in, so
+  // sign → extract round-trips and the caller can use it directly as the
+  // ed25519 adaptor secret. SwapDaemon checks secret_key_to_public_key(t)
+  // against the swap's adaptor point; the big-endian bytes failed that
+  // check for every valid extraction.
+  std::reverse(t.begin(), t.end());
   std::memcpy(&t_out, t.data(), 32);
   return true;
 }
@@ -212,7 +219,7 @@ bool secp_adaptor_extract(const SecpAdaptorPresig& presig, const SecpSchnorrSig&
   // committed for this swap. Without this a rogue completed signature yields a
   // wrong t and the counter-chain claim fails, stranding funds to timeout.
   SecpPubKey derived{};
-  if (!secp_secret_to_pubkey(t, derived) || derived != expectedT) {
+  if (!secp_point_from_ed_secret(t, derived) || derived != expectedT) {
     std::memset(&t, 0, sizeof(t));
     return false;
   }

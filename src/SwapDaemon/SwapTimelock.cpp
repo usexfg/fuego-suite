@@ -2,42 +2,42 @@
 
 #include "SwapTimelock.h"
 #include "CryptoNoteConfig.h"
+#include <limits>
 
 namespace XfgSwap {
 
+uint64_t minMsPerBlock(SwapPair pair) {
+  const auto* descriptor = swapPairDescriptor(pair);
+  return descriptor ? descriptor->minBlockTimeMs : 600000;
+}
+
+uint64_t maxMsPerBlock(SwapPair pair) {
+  const auto* descriptor = swapPairDescriptor(pair);
+  return descriptor ? descriptor->maxBlockTimeMs : 600000;
+}
+
 uint64_t msPerBlock(SwapPair pair) {
-  switch (pair) {
-    case SwapPair::SOL: return 400;      // ~0.4s/slot
-    case SwapPair::ETH: return 12000;    // 12s/block
-    case SwapPair::XMR: return 120000;   // 120s/block
-    case SwapPair::BCH: return 600000;   // 600s/block
-    case SwapPair::BTC: return 600000;   // 600s/block
-    case SwapPair::LTC: return 150000;   // ~2.5min/block
-    case SwapPair::ARB:  return 250;     // ~0.25s/block
-    case SwapPair::BASE: return 2000;    // ~2s/block
-    case SwapPair::KMD_SPV: return 60000; // ~60s/block
-    case SwapPair::BNB: return 3000;     // ~3s/block
-    case SwapPair::DCR: return 300000;   // ~5min/block
-    case SwapPair::POLYGON: return 2000; // ~2s/block
-    case SwapPair::GLEEC: return 5000;   // ~5s/block (Evmos/Tendermint)
-    case SwapPair::ROBINHOOD: return 3000; // ~3s/block
-    case SwapPair::AVAX: return 2000;    // ~2s/block
-    case SwapPair::CRO: return 6000;     // ~6s/block
-    case SwapPair::BOB: return 2000;     // ~2s/block (OP Stack)
-    case SwapPair::SIA: return 15000;    // ~15s/block
-    case SwapPair::UNICHAIN: return 1000; // ~1s/block (OP Stack)
-    case SwapPair::PLASMA: return 2000;  // ~2s/block
-    case SwapPair::DOGE: return 60000;   // ~60s/block
-    case SwapPair::DASH: return 260000;  // ~2.6min/block
-    case SwapPair::ZEC:  return 150000;  // ~2.5min/block
-    case SwapPair::PULSECHAIN: return 1000;  // ~1s/block
-    case SwapPair::ZANO: return 120000;  // ~2min/block
-    case SwapPair::TON: return 5000;     // ~5s/block
-    case SwapPair::MONAD: return 500;    // ~0.5s/block
-    case SwapPair::OPTIMISM: return 2000; // ~2s/block
-    case SwapPair::DOT: return 6000;      // ~6s/block (Polkadot relay)
-    default:             return 600000;  // conservative default (safe: overestimates CTR)
+  return maxMsPerBlock(pair);
+}
+
+uint64_t claimRunwayBlocks(SwapPair pair) {
+  const uint64_t minBlockMs = minMsPerBlock(pair);
+  if (minBlockMs == 0) return 0;
+  uint64_t blocks = MIN_CLAIM_RUNWAY_MS / minBlockMs;
+  if (MIN_CLAIM_RUNWAY_MS % minBlockMs != 0) ++blocks;
+  return blocks < MIN_CLAIM_RUNWAY_BLOCKS ? MIN_CLAIM_RUNWAY_BLOCKS : blocks;
+}
+
+bool minimumCounterpartyWindowBlocks(SwapPair pair,
+                                     uint64_t requiredConfirmations,
+                                     uint64_t& out) {
+  const uint64_t runway = claimRunwayBlocks(pair);
+  if (runway == 0 ||
+      requiredConfirmations > std::numeric_limits<uint64_t>::max() - runway) {
+    return false;
   }
+  out = requiredConfirmations + runway;
+  return true;
 }
 
 bool timelockOrderingOk(SwapPair pair,
@@ -52,13 +52,22 @@ bool timelockOrderingOk(SwapPair pair,
     return false;
   }
 
-  uint64_t xfgBlocks   = xfgTimeoutHeight - xfgCurrentHeight;
-  uint64_t xfgDeadlineMs = xfgBlocks * (CryptoNote::parameters::DIFFICULTY_TARGET * 1000ULL);
+  const uint64_t xfgBlocks = xfgTimeoutHeight - xfgCurrentHeight;
+  const uint64_t xfgBlockMs = CryptoNote::parameters::DIFFICULTY_TARGET * 1000ULL;
+  const uint64_t ctrBlocks = ctrTimeoutHeight - ctrCurrentHeight;
+  const uint64_t ctrBlockMs = maxMsPerBlock(pair);
+  if (xfgBlockMs == 0 || ctrBlockMs == 0) return false;
 
-  uint64_t ctrBlocks   = ctrTimeoutHeight - ctrCurrentHeight;
-  uint64_t ctrDeadlineMs = ctrBlocks * msPerBlock(pair);
-
-  uint64_t marginMs = marginSec * 1000ULL;
+  const uint64_t max = std::numeric_limits<uint64_t>::max();
+  if (xfgBlocks > max / xfgBlockMs ||
+      ctrBlocks > max / ctrBlockMs ||
+      marginSec > max / 1000ULL) {
+    return false;
+  }
+  const uint64_t xfgDeadlineMs = xfgBlocks * xfgBlockMs;
+  const uint64_t ctrDeadlineMs = ctrBlocks * ctrBlockMs;
+  const uint64_t marginMs = marginSec * 1000ULL;
+  if (ctrDeadlineMs > max - marginMs) return false;
 
   return xfgDeadlineMs >= ctrDeadlineMs + marginMs;
 }

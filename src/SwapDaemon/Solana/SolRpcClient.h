@@ -86,6 +86,10 @@ public:
   // Returns false on RPC failure; sets confirmed=true/false.
   bool getSignatureStatus(const std::string& signature, bool& confirmed);
 
+  // Historical status lookup for refund reconciliation. Only a successful
+  // finalized signature is returned with its chain slot.
+  bool getFinalizedSignatureSlot(const std::string& signature, uint64_t& slot);
+
   // ─── HTLC operations ───────────────────────────────────────────
   //
   // These build, sign, and send transactions that call the xfg_htlc

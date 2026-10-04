@@ -21,8 +21,100 @@
 #include <sstream>
 #include <mutex>
 #include <stdexcept>
+#include <charconv>
+#include <cctype>
 
 namespace XfgSwap {
+
+namespace {
+
+bool parseUint64Param(const Common::JsonValue& value, uint64_t& out) {
+  if (value.isInteger()) {
+    const int64_t parsed = value.getInteger();
+    if (parsed < 0) return false;
+    out = static_cast<uint64_t>(parsed);
+    return true;
+  }
+  if (!value.isString()) return false;
+  const std::string& text = value.getString();
+  if (text.empty()) return false;
+  uint64_t parsed = 0;
+  const char* begin = text.data();
+  const char* end = begin + text.size();
+  const auto result = std::from_chars(begin, end, parsed, 10);
+  if (result.ec != std::errc{} || result.ptr != end) return false;
+  out = parsed;
+  return true;
+}
+
+bool parseAtomicAmountParam(const Common::JsonValue& value, AtomicAmount& out) {
+  if (value.isString()) return parseAtomicAmount(value.getString(), out);
+  // JSON numbers beyond 2^53-1 may already have been rounded by a browser.
+  // Require canonical decimal strings for the full uint256 range.
+  if (value.isInteger()) {
+    const int64_t number = value.getInteger();
+    if (number < 0 || number > 9007199254740991LL) return false;
+    out = static_cast<uint64_t>(number);
+    return true;
+  }
+  return false;
+}
+
+bool isLoopbackBrowserOrigin(const std::string& origin) {
+  if (origin.empty()) return true; // CLI/server-to-server request
+  const size_t schemeEnd = origin.find("://");
+  if (schemeEnd == std::string::npos) return false;
+  std::string scheme = origin.substr(0, schemeEnd);
+  for (char& c : scheme)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (scheme != "http" && scheme != "https") return false;
+
+  const std::string authority = origin.substr(schemeEnd + 3);
+  if (authority.empty() || authority.find_first_of("/?#@") != std::string::npos)
+    return false;
+
+  std::string host;
+  std::string port;
+  if (authority.front() == '[') {
+    const size_t close = authority.find(']');
+    if (close == std::string::npos) return false;
+    host = authority.substr(1, close - 1);
+    if (close + 1 < authority.size()) {
+      if (authority[close + 1] != ':') return false;
+      port = authority.substr(close + 2);
+    }
+  } else {
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) {
+      if (authority.find(':') != colon) return false; // unbracketed IPv6
+      host = authority.substr(0, colon);
+      port = authority.substr(colon + 1);
+    } else {
+      host = authority;
+    }
+  }
+  for (char& c : host)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (host != "localhost" && host != "127.0.0.1" && host != "::1")
+    return false;
+  if (!port.empty()) {
+    uint32_t parsed = 0;
+    const auto result = std::from_chars(port.data(), port.data() + port.size(), parsed, 10);
+    if (result.ec != std::errc{} || result.ptr != port.data() + port.size() ||
+        parsed == 0 || parsed > 65535) return false;
+  }
+  return true;
+}
+
+void setLoopbackCors(const httplib::Request& req, httplib::Response& res) {
+  const std::string origin = req.get_header_value("Origin");
+  if (!origin.empty()) {
+    res.set_header("Access-Control-Allow-Origin", origin);
+    res.set_header("Vary", "Origin");
+  }
+}
+
+} // namespace
 
 RpcServer::RpcServer(SwapDaemon& daemon, Logging::ILogger& logger,
                      const std::string& controlToken)
@@ -88,6 +180,12 @@ bool RpcServer::authorize(const httplib::Request& req) const {
 
 void RpcServer::registerRoutes() {
   m_server->Post("/", [this](const httplib::Request& req, httplib::Response& res) {
+    if (!isLoopbackBrowserOrigin(req.get_header_value("Origin"))) {
+      res.status = 403;
+      res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32002,"message":"Browser origin not allowed"},"id":null})",
+                      "application/json");
+      return;
+    }
     if (!authorize(req)) {
       res.status = 401;
       res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32001,"message":"Unauthorized"},"id":null})",
@@ -96,20 +194,28 @@ void RpcServer::registerRoutes() {
     }
     std::string response = dispatch(req.body);
     res.set_content(response, "application/json");
-    res.set_header("Access-Control-Allow-Origin", "*");
+    setLoopbackCors(req, res);
   });
 
-  m_server->Options(".*", [](const httplib::Request&, httplib::Response& res) {
-    res.set_header("Access-Control-Allow-Origin", "*");
+  m_server->Options(".*", [](const httplib::Request& req, httplib::Response& res) {
+    if (!isLoopbackBrowserOrigin(req.get_header_value("Origin"))) {
+      res.status = 403;
+      return;
+    }
+    setLoopbackCors(req, res);
     res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.set_header("Access-Control-Allow-Headers", "Content-Type, X-Swap-Token, Authorization");
     res.status = 204;
   });
 
   // Health check (no auth)
-  m_server->Get("/health", [](const httplib::Request&, httplib::Response& res) {
+  m_server->Get("/health", [](const httplib::Request& req, httplib::Response& res) {
+    if (!isLoopbackBrowserOrigin(req.get_header_value("Origin"))) {
+      res.status = 403;
+      return;
+    }
     res.set_content(R"({"status":"ok"})", "application/json");
-    res.set_header("Access-Control-Allow-Origin", "*");
+    setLoopbackCors(req, res);
   });
 }
 
@@ -165,6 +271,8 @@ std::string RpcServer::dispatch(const std::string& body) {
     result = handleRefund(params);
   } else if (method == "check_timeouts") {
     result = handleCheckTimeouts(params);
+  } else if (method == "list_chains") {
+    result = handleListChains(params);
   } else {
     return rpcError(-32601, "Method not found: " + method, id);
   }
@@ -177,6 +285,10 @@ std::string RpcServer::dispatch(const std::string& body) {
   return rpcSuccess(result, id);
 }
 
+std::string RpcServer::handleListChains(const std::string& /*params*/) {
+  return std::string("{\"chains\":") + m_daemon.buildChainCatalogJson() + "}";
+}
+
 std::string RpcServer::handleInitiateSwap(const std::string& params) {
   try {
     auto root = Common::JsonValue::fromString(params);
@@ -186,7 +298,7 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
 
     SwapPair pair = SwapPair::SOL;
     uint64_t xfgAmount = 0;
-    uint64_t ctrAmount = 0;
+    AtomicAmount ctrAmount = 0;
     std::string peer;
 
     if (root.contains("pair")) {
@@ -196,10 +308,14 @@ std::string RpcServer::handleInitiateSwap(const std::string& params) {
       }
     }
     if (root.contains("xfg_amount")) {
-      xfgAmount = static_cast<uint64_t>(root("xfg_amount").getInteger());
+      if (!parseUint64Param(root("xfg_amount"), xfgAmount)) {
+        return rpcError(-32602, "xfg_amount must be a uint64 integer or decimal string");
+      }
     }
     if (root.contains("ctr_amount")) {
-      ctrAmount = static_cast<uint64_t>(root("ctr_amount").getInteger());
+      if (!parseAtomicAmountParam(root("ctr_amount"), ctrAmount)) {
+        return rpcError(-32602, "ctr_amount must be a uint256 decimal string (or safe JSON integer)");
+      }
     }
     if (root.contains("peer")) {
       peer = root("peer").getString();

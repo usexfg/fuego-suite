@@ -1,10 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -144,4 +149,80 @@ func TestOperatorMiddlewareRejectsCrossOriginAndSimplePosts(t *testing.T) {
 	if got := reached.Load(); got != 1 {
 		t.Fatalf("handler reached %d times, want 1", got)
 	}
+}
+
+// The pre-paint register restore is inline and allowed only by digest, so the
+// CSP header and the markup are load-bearing on each other: editing the inline
+// script without regenerating the digest silently disables it, and the failure
+// is a flash of the default register rather than an error. This recomputes the
+// digest from the served HTML and compares it against the header.
+func TestInlineScriptHashMatchesCSP(t *testing.T) {
+	htmlPath, staticDir := resolveHTMLAsset(t)
+
+	raw, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", htmlPath, err)
+	}
+
+	// The only inline script is the register restore; external ones carry src.
+	body, count := firstInlineScript(string(raw))
+	if count != 1 {
+		t.Fatalf("expected exactly 1 inline script in %s, found %d", filepath.Base(htmlPath), count)
+	}
+
+	sum := sha256.Sum256([]byte(body))
+	want := "sha256-" + base64.StdEncoding.EncodeToString(sum[:])
+
+	rec := httptest.NewRecorder()
+	securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, httptest.NewRequest("GET", "/hearth.html", nil))
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, want) {
+		t.Errorf("CSP does not allow the inline script.\n  want substring: %s\n  got: %s\n\n"+
+			"regenerate with:\n"+
+			"  python3 -c \"import re,hashlib,base64,sys;"+
+			"b=re.search(r'<script(?![^>]*src=)[^>]*>(.*?)</script>',"+
+			"open(sys.argv[1]).read(),re.S).group(1);"+
+			"print('sha256-'+base64.b64encode(hashlib.sha256(b.encode()).digest()).decode())\" %s",
+			want, csp, filepath.Base(htmlPath))
+	}
+
+	_ = staticDir
+}
+
+// firstInlineScript returns the body of the first <script> with no src
+// attribute, and how many such scripts the document contains.
+func firstInlineScript(doc string) (string, int) {
+	var body string
+	count := 0
+	for _, m := range regexp.MustCompile(`(?s)<script([^>]*)>(.*?)</script>`).FindAllStringSubmatch(doc, -1) {
+		if strings.Contains(m[1], "src=") {
+			continue
+		}
+		count++
+		if body == "" {
+			body = m[2]
+		}
+	}
+	return body, count
+}
+
+func resolveHTMLAsset(t *testing.T) (string, string) {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cand := range []string{
+		filepath.Join(dir, "static", "hearth.html"),
+		filepath.Join(dir, "hearth.html"),
+	} {
+		if _, err := os.Stat(cand); err == nil {
+			return cand, dir
+		}
+	}
+	t.Skip("hearth.html not found relative to package dir")
+	return "", ""
 }

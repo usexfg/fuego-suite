@@ -330,7 +330,13 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self'; "+
+				// The pre-paint register restore in hearth.html is inline so it runs
+				// before first paint. 'unsafe-inline' would defeat the policy
+				// entirely, so allow exactly that one script by hash instead.
+				// The digest is base64, not hex: sha256sum output must be piped
+				// through base64. Regenerate with TestInlineScriptHashMatchesCSP,
+				// which fails loudly if the markup and this header ever drift.
+				"script-src 'self' 'sha256-ibV0GXBtfrSbCnu6wFcVaDxNwt9yrvqauBsXRmZKA9Q='; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self' ws://127.0.0.1:*; "+

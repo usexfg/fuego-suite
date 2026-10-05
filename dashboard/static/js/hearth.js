@@ -51,10 +51,18 @@ const ChartStyle = (() => {
                noChangeColor: t['--ink-30'] + '33',
                borderUpColor: t['--dir-up'] + '66', borderDownColor: t['--dir-down'] + '66',
                borderNoChangeColor: t['--ink-30'] + '66' }],
+      // klinecharts indexes this flat array by line order and falls through to
+      // a library default (a pink outside the palette) once it runs out. The
+      // default MA draws 4 series on the candle pane and VOL draws 3 on the
+      // volume pane, so all seven slots must be filled.
       lines: [
-        { color: t['--accent'], size: 1 },   // MA — the house accent
-        { color: t['--ink-50'], size: 1 },   // EMA — neutral
-        { color: t['--flame'], size: 1 }     // VOL — the complication
+        { color: t['--accent'], size: 1 },       // MA — the house accent
+        { color: t['--accent-bright'], size: 1 },
+        { color: t['--accent-mid'], size: 1 },
+        { color: t['--ink-50'], size: 1 },       // EMA — neutral
+        { color: t['--ink-30'], size: 1 },
+        { color: t['--flame'], size: 1 },        // VOL — the complication
+        { color: t['--flame-bright'], size: 1 }
       ]
     },
     xAxis: { axisLine: { color: t['--hairline'] }, tickLine: { color: t['--hairline-soft'] }, tickText: { color: t['--ink-30'], size: 10 } },
@@ -391,6 +399,40 @@ const Hearth = (() => {
     const denominator = valid ? Number(data.redemption_price_denom) : 0;
     setMetricText('heat-redemption', numerator > 0 && denominator > 0
       ? (numerator / denominator).toFixed(4) + ' XFG / HΞ∆Ŧ' : '—');
+    renderCdApyEstimate(valid ? data.epoch_swap_fees : 0, valid ? data.heat_on_deposit : 0);
+  }
+
+  // Mirrors the consensus epoch rate: the CD share of the epoch's atomic-swap
+  // fees is converted to HEAT at the pool rate, divided by the HEAT still
+  // earning inside a CD, then annualised. Constants are mirrored from
+  // src/CryptoNoteConfig.h — the dashboard has no build step against the
+  // daemon, so they cannot be imported. `spot_price` is ammGetSpotPrice scaled
+  // by COIN, which is exactly the form the C++ multiplies by before the divide.
+  const CD_SHARE_PCT = 69;
+  const EPOCHS_PER_YEAR = 73;
+
+  function renderCdApyEstimate(epochSwapFees, heatOnDeposit) {
+    const fees = Number(epochSwapFees);
+    const principal = Number(heatOnDeposit);
+    const spot = Number(currentSpotPrice);
+    const hasPrincipal = Number.isFinite(principal) && principal > 0;
+
+    if (!hasPrincipal) {
+      setMetricText('cd-apy', '—');
+      setMetricText('cd-apy-sub', 'no CD principal');
+      return;
+    }
+    if (!(Number.isFinite(fees) && fees > 0) || !(Number.isFinite(spot) && spot > 0)) {
+      setMetricText('cd-apy', '—');
+      setMetricText('cd-apy-sub', 'no swap fees this epoch');
+      return;
+    }
+
+    const cdShareXfg = (fees * CD_SHARE_PCT) / 100;
+    const cdHeat = (cdShareXfg * spot) / App.COIN;
+    const apy = (cdHeat / principal) * EPOCHS_PER_YEAR;
+    setMetricText('cd-apy', Number.isFinite(apy) && apy > 0 ? (apy * 100).toFixed(2) + '%' : '—');
+    setMetricText('cd-apy-sub', 'swap-fee leg · est.');
   }
 
   function updateReferencePrice(data) {

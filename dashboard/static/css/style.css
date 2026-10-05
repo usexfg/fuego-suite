@@ -34,18 +34,19 @@
    BANK OF XFG — ATELIER TERMINAL
    ═══════════════════════════════════════════════════════════════════════════
 
-   THREE REGISTERED THEMES
-   ───────────────────────
-   The surface carries three complete moods. All three are expressed as pure
+   FOUR REGISTERED THEMES
+   ──────────────────────
+   The surface carries four complete moods. All four are expressed as pure
    token values: the layout, the information architecture and the density
    targets are identical across them, so switching a theme never reflows a
    panel and never changes what a control means.
 
-     maison     near-black, hairlines, sharp corners, no fill — the quiet register
+     maison     near-black, hairlines, soft corners, no fill — the quiet register
      fulltrade  the generous register: warm primary, graded depth, large controls
-     reserve    the house register: quiet canvas, burnished amber, filled action
+     reference  the doctrine itself: zero radius, zero shadow, maximum density
+     champagne  the burnished register: warm obsidian, gold chrome, sharp 90°
 
-   ONE INVARIANT ACROSS ALL THREE
+   ONE INVARIANT ACROSS ALL FOUR
    ──────────────────────────────
    Directional colour never changes meaning with the theme. The house trades on
    the eastern convention — rising and bid are warm, falling and ask are cool —
@@ -61,6 +62,58 @@
    here, once, rather than scattered as literals through the component layer.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   TYPE REGISTERS
+   ────────────────
+   The colour register (data-theme) and the type register (data-font) are
+   independent: any of the four surfaces can be set in any of the four faces.
+
+   Every stack ends in 'Brand Shield'. The bundled faces disagree about Greek —
+   IBM Plex Sans carries Η Ξ Δ, Cormorant SC does not, and the wordmark is
+   ΗΞΔŦ. Without a shared tail the same string would render from the register's
+   own face in some registers and tofu in others, so the register a user picks
+   would silently change whether the brand name is legible. The shield is
+   subset to the brand string plus the technical marks and nothing else, and it
+   only ever supplies glyphs the chosen face has already declined.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@font-face {
+  font-family: 'Register Sans';
+  src: url('/vendor/fonts/registers/plex-mono.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 100 900;
+}
+@font-face {
+  font-family: 'Register Serif';
+  src: url('/vendor/fonts/registers/serif-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Register Geometric';
+  src: url('/vendor/fonts/registers/geometric-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Register Didone';
+  src: url('/vendor/fonts/registers/didone-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Register Mono';
+  src: url('/vendor/fonts/registers/plex-mono.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Brand Shield';
+  src: url('/vendor/fonts/registers/brand-shield.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+
+
 :root {
   /* ── The one true scale ─────────────────────────────────────────────────
      4px base unit. Nothing in markup may name a pixel value. */
@@ -72,8 +125,35 @@
   --space-lg: 14px;
   --space-xl: 20px;
 
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-sans: 'Saira', system-ui, -apple-system, sans-serif;
+  /* Type is a register of its own (data-font). These are the two used when the
+     reader has not chosen one, and they carry the same Brand Shield tail as
+     every named register so the wordmark is legible either way. */
+  --font-mono: 'IBM Plex Mono', 'Brand Shield', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: 'Saira', 'Brand Shield', system-ui, -apple-system, sans-serif;
+}
+
+/* The type register. Declared AFTER the :root defaults above, not before:
+   both selectors carry the same specificity, so source order decides, and a
+   block placed earlier would be silently overridden by the default pair — the
+   surface would keep rendering in Saira no matter which register was chosen. */
+[data-font="terminus"] {
+  --font-sans: 'Register Sans', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+}
+/* Ledger — a bookish serif for the macro voice; figures stay monospaced. */
+[data-font="ledger"] {
+  --font-sans: 'Register Serif', 'Brand Shield', ui-serif, Georgia, serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+}
+/* Facet — geometric, wide apertures, the machine register. */
+[data-font="facet"] {
+  --font-sans: 'Register Geometric', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+}
+/* Didone — high-contrast, the engraved register. */
+[data-font="didone"] {
+  --font-sans: 'Register Didone', 'Brand Shield', ui-serif, Georgia, serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
 
   /* Geometry and type are theme-owned: see each block below. Every component
      below reads these and nothing else. */
@@ -375,6 +455,99 @@
   --transition: 60ms linear;    /* under 100ms; state changes read as instant */
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME — CHAMPAGNE
+   The burnished register. Warm obsidian rather than neutral black, champagne
+   gold carrying all of the chrome, and sharp 90° corners throughout.
+
+   It sits between the two dark registers deliberately: Maison is neutral
+   near-black with soft corners, Reference is flat and dense. Champagne is the
+   warm, jewellery-like middle — gold on a brown-black, nothing round, no fill,
+   no glow.
+
+   Direction still obeys the house invariant: rises and bids are the warm hue,
+   falls and asks the cool one. Amber rather than the terracotta Maison uses,
+   because against champagne gold a red candle reads as an alarm rather than as
+   a gain. The lavender down is tied to the complication.
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="champagne"] {
+  --surface-base:   #0a0705;
+  --surface-panel:  #120d09;
+  --surface-raised: #1b1410;
+  --surface-hover:  #261c16;
+  --surface-active: #33261d;
+  --surface-inset:  #060403;
+
+  --ink-100: rgba(255, 252, 246, 1.00);
+  --ink-90:  rgba(255, 250, 240, 0.88);
+  --ink-70:  rgba(250, 242, 228, 0.72);
+  --ink-50:  rgba(242, 230, 210, 0.58);
+  --ink-30:  rgba(238, 224, 200, 0.46);
+  --ink-20:  rgba(238, 224, 200, 0.16);
+
+  --hairline:      rgba(242, 230, 210, 0.11);
+  --hairline-soft: rgba(242, 230, 210, 0.06);
+  --hairline-lit:  rgba(242, 230, 210, 0.20);
+
+  --dir-up:        #d9a441;
+  --dir-up-bright: #eec97e;
+  --dir-up-mid:    rgba(217, 164, 65, 0.62);
+  --dir-up-line:   rgba(217, 164, 65, 0.32);
+  --dir-up-tint:   rgba(217, 164, 65, 0.10);
+  --dir-up-ghost:  rgba(217, 164, 65, 0.045);
+
+  --dir-down:        #7d8fb8;
+  --dir-down-bright: #a3b2d4;
+  --dir-down-mid:    rgba(125, 143, 184, 0.62);
+  --dir-down-line:   rgba(125, 143, 184, 0.32);
+  --dir-down-tint:   rgba(125, 143, 184, 0.10);
+  --dir-down-ghost:  rgba(125, 143, 184, 0.045);
+
+  --accent:        #c9a44c;
+  --accent-bright: #e8cf94;
+  --accent-mid:    rgba(201, 164, 76, 0.60);
+  --accent-line:   rgba(201, 164, 76, 0.32);
+  --accent-tint:   rgba(201, 164, 76, 0.10);
+  --accent-ghost:  rgba(201, 164, 76, 0.04);
+
+  --trim:         var(--accent-line);
+  --trim-bright:  var(--accent-mid);
+  --flame:        #ebd9ff;
+  --flame-bright: #f8f2ff;
+  --flame-line:   rgba(235, 217, 255, 0.30);
+  --flame-tint:   rgba(235, 217, 255, 0.09);
+
+  --ok: #7d9e6a;   --ok-tint:   rgba(125, 158, 106, 0.10);
+  --warn: #c9a44c; --warn-tint: rgba(201, 164, 76, 0.10);
+  --bad: #b4643f;  --bad-tint:  rgba(180, 100, 63, 0.10);
+  --rate: #c9a44c;
+
+  /* Sharp 90° throughout, and the compact scale of the quiet register. */
+  --radius-card: 0;
+  --radius-ctl: 0;
+  --radius-pill: 0;
+  --h-nav: 44px;
+  --h-header: 26px;
+  --h-input: 24px;
+  --h-cta: 28px;
+  --h-row: 20px;
+  --fs-label: 9px;
+  --fs-data: 11px;
+  --fs-ctl: 9px;
+  --fs-input: 12px;
+  --fs-display: 19px;
+  --fw-input: 500;
+  --pad-panel: var(--space-sm);
+
+  --glow: none;
+  --cta-fill: none;
+  --cta-ink: var(--ink-100);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --halo: none;
+  --transition: 70ms linear;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -592,6 +765,35 @@ html, body {
   background: var(--accent-tint);
   box-shadow: inset 0 0 0 1px var(--trim-bright);
 }
+
+/* The type register is the same control; it only differs in that its labels
+   are set in the reader's chosen face, so the selector is a live specimen. */
+.font-opt {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-md);
+  font-family: var(--font-sans);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-50);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.font-opt:hover { color: var(--ink-90); }
+.font-opt[aria-pressed="true"] {
+  color: var(--accent-bright);
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--trim-bright);
+}
+/* Terminus and Ledger are sans and serif; marking the two serif registers lets
+   the specimen read as a type choice rather than four identical buttons. */
+.font-opt[data-font="ledger"],
+.font-opt[data-font="didone"] { font-style: normal; }
 
 /* ═══ BUTTONS ══════════════════════════════════════════════════════════ */
 
@@ -811,6 +1013,15 @@ html, body {
   font-size: calc(var(--fs-data) + 2px);
   font-weight: 600;
   color: var(--ink-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Tertiary line under a value — qualifies it rather than restating it. */
+.telemetry-sub {
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  color: var(--ink-30);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

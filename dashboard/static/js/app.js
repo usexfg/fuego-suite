@@ -8,10 +8,10 @@ const App = (() => {
   let health = { daemon: false, wallet: false, swapd: false };
 
   // ── Theme ──────────────────────────────────────────────────────────────────
-  // Three registered registers. The choice is cosmetic only: it is persisted,
+  // Four registered registers. The choice is cosmetic only: it is persisted,
   // restored before first paint, and announced so charts can re-read their
   // tokens. Directional colour never changes meaning between registers.
-  const THEMES = ['maison', 'fulltrade', 'reference'];
+  const THEMES = ['maison', 'fulltrade', 'reference', 'champagne'];
   const THEME_KEY = 'xfg.theme';
   let theme = 'reference';
 
@@ -46,6 +46,43 @@ const App = (() => {
       btn.addEventListener('click', () => applyTheme(btn.dataset.theme, true));
     });
     syncThemeSwitcher();
+  }
+
+  // ── Type Register ───────────────────────────────────────────────────────────
+  // Independent of the colour register: any surface can be set in any face.
+  // Shares the applyTheme shape, so the two never need to know about each other.
+  const FONT_REGISTERS = ['terminus', 'ledger', 'facet', 'didone'];
+  const FONT_KEY = 'xfg.font';
+  let fontRegister = 'terminus';
+
+  function storedFontRegister() {
+    try {
+      const v = localStorage.getItem(FONT_KEY);
+      return FONT_REGISTERS.includes(v) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function applyFontRegister(name, persist) {
+    if (!FONT_REGISTERS.includes(name)) return;
+    fontRegister = name;
+    document.documentElement.setAttribute('data-font', name);
+    if (persist !== false) { try { localStorage.setItem(FONT_KEY, name); } catch (e) { /* private mode */ } }
+    syncFontSwitcher();
+    emit('font', name);
+  }
+
+  function syncFontSwitcher() {
+    document.querySelectorAll('.font-opt').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.font === fontRegister));
+    });
+  }
+
+  function initFontSwitcher() {
+    applyFontRegister(storedFontRegister() || fontRegister, false);
+    document.querySelectorAll('.font-opt').forEach(btn => {
+      btn.addEventListener('click', () => applyFontRegister(btn.dataset.font, true));
+    });
+    syncFontSwitcher();
   }
 
   // Read the live token values. Charts must resolve colours through this rather
@@ -253,6 +290,7 @@ const App = (() => {
 
   function init() {
     initThemeSwitcher();
+    initFontSwitcher();
     connectWS();
     startHealthPolling();
   }
@@ -261,6 +299,9 @@ const App = (() => {
     fmtXfg, fmtHeat, fmtPct, fmtPrice, fmtTime, fmtHeight, fmtDuration,
     copyToClipboard, showToast,
     tokens, applyTheme, initThemeSwitcher,
+    applyFontRegister, initFontSwitcher,
+    get fontRegister() { return fontRegister; },
+    get FONT_REGISTERS() { return FONT_REGISTERS.slice(); },
     get theme() { return theme; },
     get THEMES() { return THEMES.slice(); },
     get health() { return health; },

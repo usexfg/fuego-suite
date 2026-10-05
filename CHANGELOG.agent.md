@@ -4,6 +4,154 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Dashboard — Champagne theme as the fourth register, merged onto master
+
+**Started**: 2026-10-05
+**Agent**: Sisyphus (space-bunny-free)
+**Status**: DONE
+
+Fast-forwarded `fci` onto `origin/master` (25 commits) and re-applied the champagne work onto
+master's own design system instead of alongside it. Master's `ecc4f2ab hearth dashboard redesign`
+already ships a theme architecture, so the parallel implementation was discarded.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Fast-forward `fci` to `origin/master`, backing up uncommitted work first | Sisyphus | 2026-10-05 | DONE |
+| Resolve 9 conflicted files onto master's architecture, discard parallel theme infra | Sisyphus | 2026-10-05 | DONE |
+| Add `champagne` as the fourth register: 65 tokens, full parity with the other three | Sisyphus | 2026-10-05 | DONE |
+| Honour master's direction invariant (warm up / cool down) in the champagne palette | Sisyphus | 2026-10-05 | DONE |
+| Add the fourth `.theme-opt` switcher button | Sisyphus | 2026-10-05 | DONE |
+| Re-apply the CD yield tile against master's RPC fields | Sisyphus | 2026-10-05 | DONE |
+| Fix null-deref crash introduced in the CD tile call site | Sisyphus | 2026-10-05 | DONE |
+| Correct the "THREE REGISTERED THEMES" header and its `reserve`/`reference` naming bug | Sisyphus | 2026-10-05 | DONE |
+| Verify all four registers in a real browser | Sisyphus | 2026-10-05 | DONE |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `git rev-list --left-right --count origin/master...fci` before pull | `25 0` — fast-forward, no divergence |
+| Unmerged paths after resolution | 0 |
+| `go build` dashboard | PASS (exit 0) |
+| `node --check` app.js / hearth.js | PASS |
+| CSS brace balance | 0 |
+| Champagne token coverage vs union of other three | 65/65, none missing |
+| Distinct `--surface-base` across 4 registers | 4 |
+| Distinct `--accent` across 4 registers | 4 |
+| Distinct `--dir-up` across 4 registers | 4 |
+| Distinct painted-canvas colour signatures | 4 — chart repaints per register |
+| `aria-pressed` correct on active button | true, all four |
+| Persistence across reload (`xfg.theme`) | PASS |
+| CD yield math linearity in principal | exact 2.0000 ratio |
+
+### Notes on what was discarded and why
+
+The earlier attempt built its own theme layer (a `THEMES` array, a `cssVar`/`cssVarA` resolver,
+and a `<select>` switcher) plus three extra palettes (`noir`, `ember`, `parchment`). Master
+already had a better version of all of it: a registered-theme list with pre-paint restore, a
+`tokens()` resolver, and a segmented `.theme-opt` switcher with `aria-pressed`. Only the
+champagne palette survived, re-expressed in master's token vocabulary.
+
+Master's telemetry already reads the correct wire fields (`total_burned_xfg`,
+`redemption_price_num`/`_denom`), so those earlier fixes were dropped as duplicates.
+
+### Known issues (pre-existing, NOT addressed — out of scope)
+
+- **CSP blocks the pre-paint theme restore.** The dashboard sets `script-src 'self'`, which blocks
+  the inline script master uses to apply the stored theme before first paint. Every load therefore
+  flashes the default register before the stored one is applied. `initThemeSwitcher` recovers, so
+  the theme is correct a moment later. Needs a nonce or a hash in the CSP header.
+- **klinecharts library-default pink leaks into the chart.** `ChartStyle.build()` supplies three
+  indicator line colours, but the default MA/EMA/VOL series draw four and three respectively, so
+  klinecharts falls through to its own default pink (`#e11d74`) for the remainder.
+- `get_ohlvc` and `get_orderbook_state` return `Method not found` (-32601) on the running daemon,
+  so the chart and both ladders serve mock data.
+- The CD yield figure covers the swap-fee leg only. `/heat_metrics` does not expose the Hearth
+  taker-fee leg (`m_ammPool.cdHearthFeeAccumulator`); for the settled rate, `/get_epoch_history`
+  returns `fee_rate_fixed_point`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Sisyphus | 2026-10-05 |
+| Tests pass | PASS (no test target touched) | Sisyphus | 2026-10-05 |
+| All tasks verified | PASS | Sisyphus | 2026-10-05 |
+
+---
+
+## Dashboard — Font register selector, CSP fix, chart palette fix
+
+**Started**: 2026-10-05
+**Agent**: Sisyphus (space-bunny-free)
+**Status**: DONE
+
+Fixed both pre-existing defects found in the previous pass and added a type register
+independent of the colour register.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| CSP: allow the pre-paint inline script by digest instead of leaving it blocked | Sisyphus | 2026-10-05 | DONE |
+| CSP: add `TestInlineScriptHashMatchesCSP` so header and markup cannot drift apart | Sisyphus | 2026-10-05 | DONE |
+| Chart: fill all 7 klinecharts indicator line slots, removing the leaked library pink | Sisyphus | 2026-10-05 | DONE |
+| Replace `▢` / `✕`, which exist in zero bundled fonts, with covered equivalents | Sisyphus | 2026-10-05 | DONE |
+| Build 4 type registers subset from `dashboard/fonts`, plus a shared Brand Shield | Sisyphus | 2026-10-05 | DONE |
+| Wire the type register: tokens, switcher, persistence, pre-paint restore | Sisyphus | 2026-10-05 | DONE |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `go build` / `go test ./...` | PASS |
+| `TestInlineScriptHashMatchesCSP` | PASS, and verified to FAIL on injected drift |
+| `node --check` all dashboard JS | PASS |
+| CSS brace balance | 0 |
+| CSP violations on load | 0 (was 2) |
+| klinecharts default pink `#e11d74` in canvas | 0 px across all 4 registers (was leaking) |
+| Wordmark `ΗΞΔŦ` renders as real glyphs | 108 px vs 80 px for genuine tofu |
+| Distinct rendered widths per type register | 4/4 (388 / 320 / 392 / 330 px) |
+| Theme x font combinations applying both registers | 16/16 |
+| Persistence across reload | both registers restored |
+
+### Notes
+
+The wordmark `ΗΞΔŦ` is Greek and Latin Extended-A, and the bundled faces disagree about it:
+IBM Plex Sans carries Η Ξ Δ, Cormorant SC does not. Every stack therefore ends in a
+`Brand Shield` face subset to the brand string plus the technical marks, built from Arimo
+— the one bundled family covering all ten required glyphs. Without it, choosing a register
+would silently change whether the brand name is legible.
+
+`▢` (U+25A2) and `✕` (U+2715), used by the rectangle and clear-overlay buttons, exist in
+none of the 304 bundled fonts and could never render from any register. Replaced with
+`■` (U+25A0) and `×` (U+00D7).
+
+The Ledger register ships as a static instance at wght 400 / opsz 14 rather than the
+variable original: 42.5 KB instead of 254.6 KB, since the dashboard never exercises the
+axes.
+
+### Known issues (pre-existing, NOT addressed — out of scope)
+
+- `get_ohlvc` and `get_orderbook_state` return `Method not found` (-32601) on the running
+  daemon, so the chart and both ladders serve mock data. Visible above as an empty book and
+  "No live bids" / "No live asks".
+- Indicator buttons are labelled `MA 20` / `EMA 12` but the chart draws klinecharts' default
+  `MA(5,10,30,60)`: `createIndicator('MA', ...)` is called without parameters.
+- The CD yield figure covers the swap-fee leg only. `/heat_metrics` does not expose the
+  Hearth taker-fee leg; `/get_epoch_history` returns `fee_rate_fixed_point` for the
+  settled rate.
+- `order-modal-details` interpolates raw input values into `innerHTML` (DOM-XSS sink). Low
+  risk on a localhost single-user dashboard.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Sisyphus | 2026-10-05 |
+| Tests pass | PASS (incl. new CSP drift test) | Sisyphus | 2026-10-05 |
+| All tasks verified | PASS | Sisyphus | 2026-10-05 |
+
+---
+
 ## Mainline swap and operator-dashboard integration
 
 **Started**: 2026-10-01

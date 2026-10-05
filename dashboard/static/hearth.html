@@ -6,13 +6,17 @@
   <title>Hearth — Bank of XFG</title>
   <link rel="stylesheet" href="/css/style.css">
   <script>
-    // Resolve the register before first paint so the surface never flashes
-    // the default theme on load. Kept inline and tiny for that reason.
+    // Resolve both registers before first paint so the surface never flashes
+    // the default on load. Kept inline and tiny for that reason. The CSP allows
+    // exactly this one script by hash — see script-src in main.go.
     (function () {
-      var t;
+      var t, f, d = document.documentElement;
       try { t = localStorage.getItem('xfg.theme'); } catch (e) {}
-      document.documentElement.setAttribute('data-theme',
-        (t === 'maison' || t === 'fulltrade' || t === 'reference') ? t : 'reference');
+      try { f = localStorage.getItem('xfg.font'); } catch (e) {}
+      d.setAttribute('data-theme',
+        (t === 'maison' || t === 'fulltrade' || t === 'reference' || t === 'champagne') ? t : 'reference');
+      d.setAttribute('data-font',
+        (f === 'terminus' || f === 'ledger' || f === 'facet' || f === 'didone') ? f : 'terminus');
     })();
   </script>
 </head>
@@ -59,6 +63,16 @@
         <button type="button" class="theme-opt" data-theme="maison" aria-pressed="false" title="Quiet register — near-black, hairlines, sharp corners">Maison</button>
         <button type="button" class="theme-opt" data-theme="fulltrade" aria-pressed="false" title="House reference — warm primary, graded depth, generous controls">FullTrade</button>
         <button type="button" class="theme-opt" data-theme="reference" aria-pressed="false" title="The doctrine itself — zero radius, zero shadow, flat surfaces, maximum density">Reference</button>
+        <button type="button" class="theme-opt" data-theme="champagne" aria-pressed="false" title="The burnished register — warm obsidian, champagne gold, sharp 90° corners">Champagne</button>
+      </div>
+    </div>
+
+    <div class="theme-switch">
+      <div class="theme-seg font-seg" role="group" aria-label="Type register">
+        <button type="button" class="font-opt" data-font="terminus" aria-pressed="false" title="Neutral grotesque over the house mono">Terminus</button>
+        <button type="button" class="font-opt" data-font="ledger" aria-pressed="false" title="Bookish serif voice; figures stay monospaced">Ledger</button>
+        <button type="button" class="font-opt" data-font="facet" aria-pressed="false" title="Geometric, wide apertures — the machine register">Facet</button>
+        <button type="button" class="font-opt" data-font="didone" aria-pressed="false" title="High-contrast engraved letterforms">Didone</button>
       </div>
     </div>
   </nav>
@@ -101,6 +115,11 @@
           <div class="telemetry-cell heat-cell" title="Fuego daemon's HEAT USD reference; not an external market quote">
             <span class="telemetry-label">HΞ∆Ŧ Reference</span>
             <span class="telemetry-val" id="heat-peg">—</span>
+          </div>
+          <div class="telemetry-cell" title="Annualised Certificate of Deposit yield implied by the epoch's swap fees, at the current pool rate">
+            <span class="telemetry-label" id="cd-apy-label">CD Yield</span>
+            <span class="telemetry-val gold" id="cd-apy">—</span>
+            <span class="telemetry-sub" id="cd-apy-sub">awaiting epoch data</span>
           </div>
         </div>
       </div>
@@ -155,8 +174,8 @@
               <button class="draw-btn" data-tool="segment" title="Trendline" aria-label="Trendline">⁄</button>
               <button class="draw-btn" data-tool="horizontalRay" title="Horizontal ray" aria-label="Horizontal ray">―</button>
               <button class="draw-btn" data-tool="fibonacci" title="Fibonacci retracement" aria-label="Fibonacci retracement">%</button>
-              <button class="draw-btn" data-tool="rectangle" title="Rectangle zone" aria-label="Rectangle zone">▢</button>
-              <button class="draw-btn" data-tool="clear" title="Clear overlays" aria-label="Clear overlays">✕</button>
+              <button class="draw-btn" data-tool="rectangle" title="Rectangle zone" aria-label="Rectangle zone">■</button>
+              <button class="draw-btn" data-tool="clear" title="Clear overlays" aria-label="Clear overlays">×</button>
             </div>
           </div>
 

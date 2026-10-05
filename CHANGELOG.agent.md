@@ -152,6 +152,73 @@ axes.
 
 ---
 
+## Dashboard — Brutalist champagne register, Didone optical sizing, price-line wording
+
+**Started**: 2026-10-05
+**Agent**: Sisyphus (space-bunny-free)
+**Status**: DONE
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Restore the spot-price line to `0.10000 HΞ∆Ŧ ≈ $0.1580 USD` / `Spread: 100 bps` | Sisyphus | 2026-10-05 | DONE |
+| Make the type register actually visible: body uses `--font-sans`, figures stay mono | Sisyphus | 2026-10-05 | DONE |
+| Raise hairlines so the Swiss paper lines render instead of sitting at 0.05 alpha | Sisyphus | 2026-10-05 | DONE |
+| Rebase champagne onto the brutalist doctrine, accent red replaced by champagne gold | Sisyphus | 2026-10-05 | DONE |
+| Step the Didone register's size scale up for its small-caps x-height | Sisyphus | 2026-10-05 | DONE |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `go build` / `go test ./...` | PASS |
+| CSS brace balance | 0 |
+| Every `var()` resolves to a declaration | PASS |
+| Price line exact string match | `0.10000 HΞ∆Ŧ  ≈ $0.1580 USD   Spread: 100 bps` |
+| Didone renders larger than all other registers | 15 px vs 13 px telemetry |
+| Didone holds against theme tokens (champagne pair) | `--fs-display: 23px`, was 19 px |
+| Champagne substrate / ink / accent | `#0a0a0a` / white phosphor / `#c9a44c` |
+| Champagne radius, shadows, cta-fill | `0`, `none`, flat gold plate |
+| Hazard-red (`#E61919`/`#FF2A2A`) elements | 0 |
+| CRT scanline overlay present | yes |
+| Body faces distinct across 4 type registers | 4/4 |
+| Page errors | none |
+
+### Notes
+
+The type register previously appeared inert because `html, body` set
+`font-family: var(--font-mono)` and every register shared the single bundled
+monospaced face (only IBM Plex Mono qualifies among the 304). Body now uses
+`--font-sans`; the `.num` block keeps `var(--font-mono)` so figures stay
+column-aligned at a fixed 126 px advance in all four registers.
+
+Cormorant SC is a small-caps face drawn for titling, so it sets visibly smaller
+than the grotesque and geometric registers at the same nominal size. Its size
+scale is stepped up (+2 px data, +4 px display) to compensate.
+
+`--z-hud`/`--z-pop`/`--z-chrome`/`--z-modal`/`--z-toast` were declared only in a
+block orphaned by an earlier edit; removing it would have left twelve `var()`
+references unresolved. The stacking scale is reinstated in `:root`.
+
+### Known issues (pre-existing, NOT addressed — out of scope)
+
+- `Spread: 100 bps` is nominal. The orchestrator's real spread is adaptive
+  (30–300 bps) and `/amm_pool_info` does not carry it.
+- `get_ohlvc` and `get_orderbook_state` return `Method not found` (-32601) on the
+  running daemon, so the chart and both ladders serve mock data.
+- Indicator buttons are labelled `MA 20` / `EMA 12` but draw klinecharts'
+  default `MA(5,10,30,60)`: `createIndicator('MA', ...)` takes no parameters.
+- The CD yield figure covers the swap-fee leg only.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Sisyphus | 2026-10-05 |
+| Tests pass | PASS | Sisyphus | 2026-10-05 |
+| All tasks verified | PASS | Sisyphus | 2026-10-05 |
+
+---
+
 ## Mainline swap and operator-dashboard integration
 
 **Started**: 2026-10-01
@@ -2121,3 +2188,88 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Tests pass (tasks 10-12) | PASS: core 194/194, hearth 31/31, auction 57/57, p2p 115/115 |
 | Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
 | All tasks done | NO — tasks 7b and 16 open |
+
+---
+
+## Feature: `xfg-swapd gen_swap_key` — real XFG swap-key command; fix fabricated `fuego-wallet generate-key`
+
+**Start date:** 2026-10-05
+**Agent:** Sisyphus (space-bunny-free)
+
+### Problem
+
+`swap_config.example.json` instructed operators to run `fuego-wallet generate-key`
+to obtain `xfg_secret_key`. That command does not exist, and neither does a binary
+named `fuego-wallet`:
+
+- No `generate-key` / `generate_key` / `genkey` string literal exists anywhere under
+  `src/` (verified by grep).
+- The wallet target `SimpleWallet` has `OUTPUT_NAME "fire_wallet"`
+  (`src/CMakeLists.txt:970`), so the correct binary is `fire_wallet`.
+- The wallet registers no key-generation subcommand at all. Commands dispatch through
+  `ConsoleHandler::runCommand` and are registered in the `simple_wallet` constructor
+  (`src/SimpleWallet/SimpleWallet.cpp:573-643`) — keygen is not among them.
+  `get_swapKey` exists but its registration is commented out (line 583).
+- `export_keys` (registered, line 574) does print the spend secret key, but only for
+  an already-open wallet, and the commented-out guidance to
+  `grep secret` the wallet file is wrong for an encrypted wallet.
+
+The example file carried a **second, contradictory** instruction 60 lines earlier
+(`cat ~/.fuego/wallet.keys | grep secret`), so the file told operators two different
+ways to get the same value, neither of them a working command.
+
+### Design note
+
+`xfg_secret_key` is parsed into a `Crypto::SecretKey` and handed to
+`SwapDaemon::setMakerKeys`, which uses it for two things:
+
+1. Deriving the swap database's at-rest encryption key (`SwapDaemon.cpp:4905`).
+2. Signing offers **and deriving XFG chain output keys** (`SwapDaemon.cpp:1680,1696`).
+
+So it is a spending key, not a cosmetic identifier. Telling operators to paste their
+main wallet spend key into a plaintext JSON file concentrates risk. A dedicated
+`gen_swap_key` lets the daemon hold its own key, funded with only what swaps require.
+The command's output says so explicitly.
+
+### Change
+
+Added `gen_swap_key` as an offline command on `xfg-swapd` — the binary that consumes
+`xfg_secret_key` and already ships a key generator (`--generate-spv-config`). It is
+dispatched **before** the `SwapDaemon` is constructed (`main.cpp:396-402`) so it opens
+no database, contacts no node, and needs no config or data dir.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify no keygen command exists; confirm real binary names (`fire_wallet`, `xfg-swapd`) | Sisyphus | 2026-10-05 | DONE |
+| 2 | Add `generateSwapKey()` to the anonymous namespace in `src/SwapDaemon/main.cpp` | Sisyphus | 2026-10-05 | DONE |
+| 3 | Dispatch `gen_swap_key` before daemon construction; register in `printUsage()` | Sisyphus | 2026-10-05 | DONE |
+| 4 | Correct the two stale comments in `swap_config.example.json` | Sisyphus | 2026-10-05 | DONE |
+| 5 | Correct the comment in the `--generate-spv-config` template (`main.cpp`) | Sisyphus | 2026-10-05 | DONE |
+| 6 | Build + end-to-end verify; add this entry | Sisyphus | 2026-10-05 | DONE |
+
+### Verification
+| Check | Result |
+|-------|--------|
+| Build compiles | PASS — `cmake --build . --target SwapDaemon` clean, linked `xfg-swapd` |
+| Command runs offline | PASS — no node, no config, no data dir; exit 0 |
+| Output format | PASS — 64-char hex secret key (len==64 asserted) |
+| Daemon accepts generated key | PASS — fed through the real loader: `Loaded XFG wallet key for offer signing` |
+| Invalid key rejected (control) | PASS — `"nothex"` → `Invalid xfg_secret_key in swap config` |
+| Keys unique per run | PASS — two consecutive runs differ |
+| `--help` lists command | PASS |
+| Regression: `test_spv_config_wiring` | PASS — 10/10 |
+| `--generate-spv-config` | **PRE-EXISTING SEGFAULT** — see below |
+
+### Pre-existing defects found, NOT introduced here (both reproduced on stashed baseline)
+
+1. **`xfg-swapd --generate-spv-config` segfaults** (SIGSEGV, core dumped). Reproduced
+   with all local changes stashed, so it predates this work. This is the *first step*
+   documented in `swap_config.example.json`, so the documented quickstart is currently
+   unusable. Not fixed here — out of scope.
+2. **`swap_config.example.json` does not parse.** It is JSONC (`//` comments) but
+   `loadChainClientConfig` uses a jsoncpp reader without comment support:
+   `Error loading swap config: Config file is not valid JSON: Unable to parse`.
+   Reproduced against `git show HEAD:swap_config.example.json`, so it also predates this
+   work. Copying the example and using it as-is fails. Not fixed here — enabling comment
+   parsing is a loader-level decision.

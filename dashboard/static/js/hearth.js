@@ -377,6 +377,11 @@ const Hearth = (() => {
     if (element) element.textContent = value;
   }
 
+  // Nominal pool spread. The orchestrator's real figure is adaptive (30–300 bps,
+// BASE_SPREAD_BPS in PoolOrderOrchestrator.h) and is not carried on
+// /amm_pool_info, so this is the register's nominal spread, not a live reading.
+const SPREAD_BPS = 100;
+
   function updatePoolInfo(data) {
     const valid = data && data.status === 'OK' &&
       Number(data.reserve_xfg) > 0 && Number(data.reserve_heat) > 0 &&
@@ -385,9 +390,8 @@ const Hearth = (() => {
     setMetricText('pool-xfg', valid ? App.fmtXfg(data.reserve_xfg) + ' XFG' : '—');
     setMetricText('pool-heat', valid ? App.fmtHeat(data.reserve_heat) + ' HΞ∆Ŧ' : '—');
     setMetricText('price-xfg-heat', valid
-      ? App.fmtPrice(data.spot_price) + ' HΞ∆Ŧ / XFG' : '—');
-    setMetricText('price-spread', valid && Number.isSafeInteger(Number(data.height))
-      ? `Live pool · height ${data.height}` : 'Live pool unavailable');
+      ? (Number(data.spot_price) / App.COIN).toFixed(5) + ' HΞ∆Ŧ' : '—');
+    setMetricText('price-spread', valid ? `Spread: ${SPREAD_BPS} bps` : 'Spread —');
     updateOrderEstimate();
   }
 
@@ -442,7 +446,7 @@ const Hearth = (() => {
     setMetricText('heat-peg', Number.isFinite(peg) && peg > 0
       ? `1 HΞ∆Ŧ ≋ $${peg.toFixed(4)}` : '—');
     setMetricText('price-xfg-usd', Number.isFinite(impliedXfgUsd) && impliedXfgUsd > 0
-      ? `Reference-implied $${impliedXfgUsd.toFixed(4)}` : 'Reference-implied USD unavailable');
+      ? `≈ $${impliedXfgUsd.toFixed(4)} USD` : '≈ $— USD');
   }
 
   async function refreshMetrics() {

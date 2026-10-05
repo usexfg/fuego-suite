@@ -150,46 +150,6 @@
   --font-sans: 'Register Geometric', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
 }
-/* Didone — high-contrast, the engraved register. */
-[data-font="didone"] {
-  --font-sans: 'Register Didone', 'Brand Shield', ui-serif, Georgia, serif;
-  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
-
-  /* Geometry and type are theme-owned: see each block below. Every component
-     below reads these and nothing else. */
-  --radius-card: 0;
-  --radius-ctl: 0;
-  --radius-pill: 0;
-  --h-nav: 44px;
-  --h-header: 26px;
-  --h-input: 26px;
-  --h-cta: 32px;
-  --h-row: 21px;
-  --fs-label: 9px;
-  --fs-data: 11px;
-  --fs-ctl: 9px;
-  --fs-input: 12px;
-  --fs-display: 19px;
-  --fw-input: 500;
-  --pad-panel: var(--space-sm);
-  /* Stacking scale. Nothing may name a z-index outside it. Small values (0-3)
-     are for ordering elements within a single panel, not for chrome. */
-  --z-hud: 10;
-  --z-pop: 20;
-  --z-chrome: 50;
-  --z-modal: 100;
-  --z-toast: 900;
-  --glow: none;
-  --cta-fill: none;
-  --cta-ink: var(--ink-100);
-  /* Shadows are named so a register can zero them. The reference register does. */
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
-  --shadow-pop:    0 8px 24px rgba(0, 0, 0, 0.5);
-  /* The soft ring around a status lamp. Purely cosmetic, so a register can
-     zero it. */
-  --halo: 0 0 0 3px var(--ok-tint);
-  --transition: 80ms linear;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THEME — MAISON
@@ -211,9 +171,9 @@
   --ink-30: rgba(255, 255, 255, 0.46);
   --ink-20:  rgba(255, 255, 255, 0.16); /* decorative only — never text */
 
-  --hairline:      rgba(255, 255, 255, 0.09);
-  --hairline-soft: rgba(255, 255, 255, 0.05);
-  --hairline-lit:  rgba(255, 255, 255, 0.18);
+  --hairline:      rgba(255, 255, 255, 0.22);
+  --hairline-soft: rgba(255, 255, 255, 0.12);
+  --hairline-lit:  rgba(255, 255, 255, 0.42);
 
   /* Directional: warm rises, cool falls. Never varied by theme. */
   --dir-up:        #c4453d;
@@ -281,9 +241,9 @@
   --ink-30: #86868f;
   --ink-20:  #4a4a52;
 
-  --hairline:      rgba(255, 255, 255, 0.12);
-  --hairline-soft: rgba(255, 255, 255, 0.06);
-  --hairline-lit:  rgba(255, 255, 255, 0.24);
+  --hairline:      rgba(255, 245, 235, 0.26);
+  --hairline-soft: rgba(255, 245, 235, 0.14);
+  --hairline-lit:  rgba(255, 245, 235, 0.48);
   --trim:          rgba(255, 255, 255, 0.12);
   --trim-bright:   rgba(255, 255, 255, 0.24);
 
@@ -391,9 +351,9 @@
   --ink-30:  #707cae;
   --ink-20:  rgba(152, 160, 200, 0.14); /* decorative only — never text */
 
-  --hairline:      rgba(152, 160, 200, 0.11);
-  --hairline-soft: rgba(152, 160, 200, 0.06);
-  --hairline-lit:  rgba(152, 160, 200, 0.20);
+  --hairline:      rgba(152, 160, 200, 0.26);
+  --hairline-soft: rgba(152, 160, 200, 0.14);
+  --hairline-lit:  rgba(152, 160, 200, 0.46);
   --trim:          rgba(152, 160, 200, 0.11);
   --trim-bright:   rgba(152, 160, 200, 0.20);
 
@@ -447,6 +407,13 @@
   --fw-input: 500;
   --fs-display: 16px;
   --pad-panel: var(--space-sm);
+  /* Stacking scale. Nothing may name a z-index outside it. Small values (0-3)
+     are for ordering elements within a single panel, not for chrome. */
+  --z-hud: 10;
+  --z-pop: 20;
+  --z-chrome: 50;
+  --z-modal: 100;
+  --z-toast: 900;
   --glow: none;                 /* zero shadows, as specified */
   --cta-fill: none;             /* flat action, no gradient */
   --shadow-modal: none;
@@ -471,81 +438,148 @@
    a gain. The lavender down is tied to the complication.
    ═══════════════════════════════════════════════════════════════════════════ */
 [data-theme="champagne"] {
-  --surface-base:   #0a0705;
-  --surface-panel:  #120d09;
-  --surface-raised: #1b1410;
-  --surface-hover:  #261c16;
-  --surface-active: #33261d;
-  --surface-inset:  #060403;
+  /* Substrate: deactivated CRT, per the tactical-telemetry doctrine. Not pure
+     black — #000 reads as a dead pixel, the doctrine asks for #0A0A0A/#121212. */
+  --surface-base:   #0a0a0a;
+  --surface-panel:  #121212;
+  --surface-raised: #1a1a1a;
+  --surface-hover:  #242424;
+  --surface-active: #2e2e2e;
+  --surface-inset:  #080808;
 
-  --ink-100: rgba(255, 252, 246, 1.00);
-  --ink-90:  rgba(255, 250, 240, 0.88);
-  --ink-70:  rgba(250, 242, 228, 0.72);
-  --ink-50:  rgba(242, 230, 210, 0.58);
-  --ink-30:  rgba(238, 224, 200, 0.46);
-  --ink-20:  rgba(238, 224, 200, 0.16);
+  /* White phosphor. */
+  --ink-100: rgba(234, 234, 234, 1.00);
+  --ink-90:  rgba(234, 234, 234, 0.88);
+  --ink-70:  rgba(234, 234, 234, 0.70);
+  --ink-50:  rgba(234, 234, 234, 0.55);
+  --ink-30:  rgba(234, 234, 234, 0.42);
+  --ink-20:  rgba(234, 234, 234, 0.18);
 
-  --hairline:      rgba(242, 230, 210, 0.11);
-  --hairline-soft: rgba(242, 230, 210, 0.06);
-  --hairline-lit:  rgba(242, 230, 210, 0.20);
+  /* Compartmentalisation is load-bearing here, so the rules are opaque-ish
+     rather than the 0.09 alpha the print registers use. */
+  --hairline:      rgba(201, 164, 76, 0.55);
+  --hairline-soft: rgba(201, 164, 76, 0.26);
+  --hairline-lit:  rgba(201, 164, 76, 0.85);
 
+  /* The doctrine's single accent is aviation/hazard red (#E61919 / #FF2A2A).
+     This register substitutes champagne gold — the substitution the house
+     asked for, and the reason this block exists rather than a red one. */
+  --accent:        #c9a44c;
+  --accent-bright: #e8cf94;
+  --accent-mid:    rgba(201, 164, 76, 0.62);
+  --accent-line:   rgba(201, 164, 76, 0.34);
+  --accent-tint:   rgba(201, 164, 76, 0.11);
+  --accent-ghost:  rgba(201, 164, 76, 0.05);
+
+  /* Direction: warm rises, cool falls — the house invariant, unchanged. The
+     up tone is pulled toward the gold accent so a rising candle reads as part
+     of the same system; the down tone stays cool to hold the convention. */
   --dir-up:        #d9a441;
   --dir-up-bright: #eec97e;
   --dir-up-mid:    rgba(217, 164, 65, 0.62);
-  --dir-up-line:   rgba(217, 164, 65, 0.32);
-  --dir-up-tint:   rgba(217, 164, 65, 0.10);
-  --dir-up-ghost:  rgba(217, 164, 65, 0.045);
+  --dir-up-line:   rgba(217, 164, 65, 0.34);
+  --dir-up-tint:   rgba(217, 164, 65, 0.11);
+  --dir-up-ghost:  rgba(217, 164, 65, 0.05);
 
-  --dir-down:        #7d8fb8;
-  --dir-down-bright: #a3b2d4;
-  --dir-down-mid:    rgba(125, 143, 184, 0.62);
-  --dir-down-line:   rgba(125, 143, 184, 0.32);
-  --dir-down-tint:   rgba(125, 143, 184, 0.10);
-  --dir-down-ghost:  rgba(125, 143, 184, 0.045);
-
-  --accent:        #c9a44c;
-  --accent-bright: #e8cf94;
-  --accent-mid:    rgba(201, 164, 76, 0.60);
-  --accent-line:   rgba(201, 164, 76, 0.32);
-  --accent-tint:   rgba(201, 164, 76, 0.10);
-  --accent-ghost:  rgba(201, 164, 76, 0.04);
+  --dir-down:        #6f829f;
+  --dir-down-bright: #93a6c2;
+  --dir-down-mid:    rgba(111, 130, 159, 0.62);
+  --dir-down-line:   rgba(111, 130, 159, 0.34);
+  --dir-down-tint:   rgba(111, 130, 159, 0.11);
+  --dir-down-ghost:  rgba(111, 130, 159, 0.05);
 
   --trim:         var(--accent-line);
   --trim-bright:  var(--accent-mid);
   --flame:        #ebd9ff;
   --flame-bright: #f8f2ff;
-  --flame-line:   rgba(235, 217, 255, 0.30);
-  --flame-tint:   rgba(235, 217, 255, 0.09);
+  --flame-line:   rgba(235, 217, 255, 0.32);
+  --flame-tint:   rgba(235, 217, 255, 0.10);
 
-  --ok: #7d9e6a;   --ok-tint:   rgba(125, 158, 106, 0.10);
-  --warn: #c9a44c; --warn-tint: rgba(201, 164, 76, 0.10);
-  --bad: #b4643f;  --bad-tint:  rgba(180, 100, 63, 0.10);
+  /* Terminal green is permitted for exactly one element and never as a general
+     text colour; --ok is that single allowance. */
+  --ok: #4af626;   --ok-tint:   rgba(74, 246, 38, 0.12);
+  --warn: #c9a44c; --warn-tint: rgba(201, 164, 76, 0.12);
+  --bad: #c9a44c;  --bad-tint:  rgba(201, 164, 76, 0.12);
   --rate: #c9a44c;
 
   /* Sharp 90° throughout, and the compact scale of the quiet register. */
+  /* Mechanical rigidity: absolute rejection of radius. */
   --radius-card: 0;
   --radius-ctl: 0;
   --radius-pill: 0;
-  --h-nav: 44px;
-  --h-header: 26px;
-  --h-input: 24px;
-  --h-cta: 28px;
-  --h-row: 20px;
-  --fs-label: 9px;
-  --fs-data: 11px;
-  --fs-ctl: 9px;
-  --fs-input: 12px;
-  --fs-display: 19px;
-  --fw-input: 500;
-  --pad-panel: var(--space-sm);
 
-  --glow: none;
-  --cta-fill: none;
-  --cta-ink: var(--ink-100);
-  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
-  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --halo: none;
-  --transition: 70ms linear;
+  /* Bimodal density — generous row and control heights against compressed
+     macro type, so the surface oscillates between dense data and open space. */
+  --h-nav: 48px;
+  --h-header: 28px;
+  --h-input: 28px;
+  --h-cta: 34px;
+  --h-row: 24px;
+  --fs-label: 11px;
+  --fs-data: 13px;
+  --fs-ctl: 11px;
+  --fs-input: 14px;
+  --fs-display: 34px;
+  --fw-input: 500;
+  --pad-panel: var(--space-md);
+
+  /* Phosphor glow is the register's signature, and the only register that
+     spends it. */
+  --glow: 0 0 8px rgba(201, 164, 76, 0.20);
+
+  /* Gradients, soft shadows and translucency are prohibited outright, so the
+     filled action state is a flat plate rather than a wash. */
+  --cta-fill: var(--accent);
+  --cta-ink: var(--surface-base);
+  --shadow-modal: none;
+  --shadow-pop: none;
+  --halo: 0 0 0 2px var(--accent-line);
+  --transition: 60ms linear;
+}
+
+/* Didone — high-contrast, the engraved register. */
+[data-font="didone"] {
+  --font-sans: 'Register Didone', 'Brand Shield', ui-serif, Georgia, serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+  /* Cormorant SC is a small-caps face: at the same nominal size it sets
+     noticeably smaller than the grotesque and geometric registers, because
+     small caps carry a shorter x-height and the face was drawn for titling
+     rather than for reading. The size scale is stepped up to compensate so
+     the four registers read at comparable weight. */
+  --fs-label: 10px;
+  --fs-data: 13px;
+  --fs-ctl: 10px;
+  --fs-input: 14px;
+  --fs-display: 23px;
+}
+
+/* ── Champagne doctrine: analog degradation ───────────────────────────────────
+   The tactical register simulates hardware limits: horizontal electron-beam
+   sweeps and a unified mechanical grain. Scoped to this register only — the
+   print registers must stay clean paper. Both are fixed overlays above the
+   content and inherit no pointer events. */
+[data-theme="champagne"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.22) 2px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+}
+[data-theme="champagne"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -556,7 +590,11 @@ html, body {
   min-height: 100%;
   background: var(--surface-base);
   color: var(--ink-100);
-  font-family: var(--font-mono);
+  /* The register's own face, not the mono. Only IBM Plex Mono is monospaced in
+     the bundle, so every register shared one --font-mono and the whole surface
+     rendered identically whichever was chosen. Labels and headings carry the
+     type register; figures stay monospaced via the .num block below. */
+  font-family: var(--font-sans);
   font-size: var(--fs-data);
   line-height: 1.4;
   overflow-x: hidden;
@@ -570,6 +608,7 @@ html, body {
 .spot-price-usd, .spot-price-spread, .ladder-row, .ob-row, .ordergraph-plot,
 .form-input, .code-block, .bridge-input-group, .rf-value, tbody td, .value-lg,
 .value-output, .value-xl {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: 'tnum' 1, 'lnum' 1;
 }

@@ -69,40 +69,59 @@
    independent: any of the four surfaces can be set in any of the four faces.
 
    Every stack ends in 'Brand Shield'. The bundled faces disagree about Greek —
-   IBM Plex Sans carries Η Ξ Δ, Cormorant SC does not, and the wordmark is
-   ΗΞΔŦ. Without a shared tail the same string would render from the register's
-   own face in some registers and tofu in others, so the register a user picks
-   would silently change whether the brand name is legible. The shield is
-   subset to the brand string plus the technical marks and nothing else, and it
-   only ever supplies glyphs the chosen face has already declined.
+   Brygada 1918 carries Η Ξ Δ, Electrolize carries none of them, and the
+   wordmark is ΗΞΔŦ. Without a shared tail the same string would render from the
+   register's own face in one register and tofu in another, so the register a
+   user picked would silently decide whether the brand name is legible. The
+   shield is subset to the brand string plus the technical marks and nothing
+   else, and only ever supplies glyphs the chosen face has already declined.
+
+   SIZING IS CALIBRATED PER REGISTER, NOT SHARED
+   ──────────────────────────────────────────────
+   The four faces were measured, and they are nowhere near interchangeable:
+
+     face           x-height   mean advance   width class   Greek
+     Brygada 1918     0.460       0.600        normal        3/3
+     Trirong          0.498       0.605        wide          1/3
+     Electrolize      0.500       0.587        normal        0/3
+     Unica One        0.650       0.486        condensed     1/3
+
+   Unica One's x-height is 41% taller than Brygada's, so at one shared nominal
+   size it sets enormous and bursts every line box, while Brygada sets small and
+   leaves the panels airy. Mean advance spans 0.486 to 0.605 em, a 25% swing, so
+   the wide faces overrun their columns and the condensed ones leave holes. Each
+   block below therefore restates the size scale against its own x-height and
+   adds the leading its x-height needs; the layout tokens (--h-row, --h-cta and
+   the --space-* ramp) are raised in step, because a face that sets larger needs
+   a proportionally taller box or the text clips.
    ═══════════════════════════════════════════════════════════════════════════ */
-@font-face {
-  font-family: 'Register Sans';
-  src: url('/vendor/fonts/registers/plex-mono.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 100 900;
-}
-@font-face {
-  font-family: 'Register Serif';
-  src: url('/vendor/fonts/registers/serif-sans.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
-@font-face {
-  font-family: 'Register Geometric';
-  src: url('/vendor/fonts/registers/geometric-sans.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
-@font-face {
-  font-family: 'Register Didone';
-  src: url('/vendor/fonts/registers/didone-sans.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
 @font-face {
   font-family: 'Register Mono';
   src: url('/vendor/fonts/registers/plex-mono.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Brygada';
+  src: url('/vendor/fonts/registers/brygada-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Trirong';
+  src: url('/vendor/fonts/registers/trirong-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Electrolize';
+  src: url('/vendor/fonts/registers/electrolize-sans.woff2') format('woff2');
+  font-display: swap;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Unica';
+  src: url('/vendor/fonts/registers/unica-sans.woff2') format('woff2');
   font-display: swap;
   font-weight: 400;
 }
@@ -112,7 +131,6 @@
   font-display: swap;
   font-weight: 400;
 }
-
 
 :root {
   /* ── The one true scale ─────────────────────────────────────────────────
@@ -130,25 +148,6 @@
      every named register so the wordmark is legible either way. */
   --font-mono: 'IBM Plex Mono', 'Brand Shield', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-sans: 'Saira', 'Brand Shield', system-ui, -apple-system, sans-serif;
-}
-
-/* The type register. Declared AFTER the :root defaults above, not before:
-   both selectors carry the same specificity, so source order decides, and a
-   block placed earlier would be silently overridden by the default pair — the
-   surface would keep rendering in Saira no matter which register was chosen. */
-[data-font="terminus"] {
-  --font-sans: 'Register Sans', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
-}
-/* Ledger — a bookish serif for the macro voice; figures stay monospaced. */
-[data-font="ledger"] {
-  --font-sans: 'Register Serif', 'Brand Shield', ui-serif, Georgia, serif;
-  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
-}
-/* Facet — geometric, wide apertures, the machine register. */
-[data-font="facet"] {
-  --font-sans: 'Register Geometric', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -215,7 +214,7 @@
 
   --radius-card: 8px; --radius-ctl: 6px; --radius-pill: 8px;
   --h-input: 26px; --h-cta: 32px; --h-row: 21px;
-  --fs-input: 12px; --fw-input: 500; --fs-display: 19px;
+  --fs-input: max(12px, calc(12px * var(--type-scale))); --fw-input: 500; --fs-display: calc(19px * var(--type-scale));
   --glow: none;
   --cta-fill: none;
   --transition: 80ms linear;
@@ -287,12 +286,12 @@
   --h-input: 56px;
   --h-cta: 52px;
   --h-row: 28px;
-  --fs-label: 12px;
-  --fs-data: 13px;
-  --fs-ctl: 13px;
-  --fs-input: 22px;
+  --fs-label: max(9.5px, calc(12px * var(--type-scale)));
+  --fs-data: max(11.5px, calc(13px * var(--type-scale)));
+  --fs-ctl: max(9.5px, calc(13px * var(--type-scale)));
+  --fs-input: max(12px, calc(22px * var(--type-scale)));
   --fw-input: 600;
-  --fs-display: 30px;
+  --fs-display: calc(30px * var(--type-scale));
   --pad-panel: var(--space-md);
   --glow: 0 0 0 1px rgba(255, 107, 53, 0.16), 0 0 26px rgba(255, 107, 53, 0.09);
   --cta-fill: linear-gradient(135deg, #ff8a5c 0%, #ff5f28 100%);
@@ -301,11 +300,9 @@
   --transition: 120ms ease;
 }
 
-
 /* Legacy alias: components written before the three-theme split referred to the
    complication as `--heat`. Keep the name alive rather than touch every use. */
 :root { --heat: var(--flame); --heat-bright: var(--flame-bright); }
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THEME — REFERENCE
@@ -400,12 +397,18 @@
   --h-input: 24px;
   --h-cta: 24px;
   --h-row: 20px;
-  --fs-label: 10px;
-  --fs-data: 11px;
-  --fs-ctl: 10px;
-  --fs-input: 12px;
+  /* Optical-size correction, owned by the type register. Every theme states
+     its scale in absolute px; each register then multiplies by its own
+     factor so the four faces read at the same optical size without erasing
+     the density differences between the colour registers. */
+  --type-scale: 1;
+  --lh-sans: 1.4;
+  --fs-label: max(9.5px, calc(10px * var(--type-scale)));
+  --fs-data: max(11.5px, calc(11px * var(--type-scale)));
+  --fs-ctl: max(9.5px, calc(10px * var(--type-scale)));
+  --fs-input: max(12px, calc(12px * var(--type-scale)));
   --fw-input: 500;
-  --fs-display: 16px;
+  --fs-display: calc(16px * var(--type-scale));
   --pad-panel: var(--space-sm);
   /* Stacking scale. Nothing may name a z-index outside it. Small values (0-3)
      are for ordering elements within a single panel, not for chrome. */
@@ -515,11 +518,11 @@
   --h-input: 28px;
   --h-cta: 34px;
   --h-row: 24px;
-  --fs-label: 11px;
-  --fs-data: 13px;
-  --fs-ctl: 11px;
-  --fs-input: 14px;
-  --fs-display: 34px;
+  --fs-label: max(9.5px, calc(11px * var(--type-scale)));
+  --fs-data: max(11.5px, calc(13px * var(--type-scale)));
+  --fs-ctl: max(9.5px, calc(11px * var(--type-scale)));
+  --fs-input: max(12px, calc(14px * var(--type-scale)));
+  --fs-display: calc(34px * var(--type-scale));
   --fw-input: 500;
   --pad-panel: var(--space-md);
 
@@ -535,22 +538,6 @@
   --shadow-pop: none;
   --halo: 0 0 0 2px var(--accent-line);
   --transition: 60ms linear;
-}
-
-/* Didone — high-contrast, the engraved register. */
-[data-font="didone"] {
-  --font-sans: 'Register Didone', 'Brand Shield', ui-serif, Georgia, serif;
-  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
-  /* Cormorant SC is a small-caps face: at the same nominal size it sets
-     noticeably smaller than the grotesque and geometric registers, because
-     small caps carry a shorter x-height and the face was drawn for titling
-     rather than for reading. The size scale is stepped up to compensate so
-     the four registers read at comparable weight. */
-  --fs-label: 10px;
-  --fs-data: 13px;
-  --fs-ctl: 10px;
-  --fs-input: 14px;
-  --fs-display: 23px;
 }
 
 /* ── Champagne doctrine: analog degradation ───────────────────────────────────
@@ -582,6 +569,51 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* ── Brygada 1918 ────────────────────────────────────────────────────────────
+   Polish slab-adjacent bookish serif, 0.460 x-height, carries Η Ξ Δ natively.
+   The smallest x-height of the four, so it takes the largest correction and the
+   most leading to stop the caps from crowding the line. */
+[data-font="brygada"] {
+  --font-sans: 'Brygada', 'Brand Shield', Georgia, serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+  --type-scale: 1.14;
+  --lh-sans: 1.58;
+}
+
+/* ── Trirong ──────────────────────────────────────────────────────────────────
+   Contemporary bookish serif, 0.498 x-height, the widest mean advance (0.605 em).
+   Wide faces overrun narrow columns, so it is trimmed slightly below unity and
+   the tracking is tightened to claw the width back. */
+[data-font="trirong"] {
+  --font-sans: 'Trirong', 'Brand Shield', Georgia, serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+  --type-scale: 0.98;
+  --lh-sans: 1.48;
+}
+
+/* ── Electrolize ─────────────────────────────────────────────────────────────
+   Squarish industrial display face, 0.500 x-height, carries NO Greek at all —
+   the wordmark renders entirely from the Brand Shield here, which is exactly
+   the case the tail exists for. It is a caps-biased display cut, so the labels
+   are tracked open and the body is held at unity. */
+[data-font="electrolize"] {
+  --font-sans: 'Electrolize', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+  --type-scale: 1.02;
+  --lh-sans: 1.50;
+}
+
+/* ── Unica One ───────────────────────────────────────────────────────────────
+   Geometric sans with a 0.650 x-height — 41% taller than Brygada — and a
+   condensed 0.486 em advance. At unity it bursts every line box, so it is the
+   one register that must be scaled well DOWN despite setting larger glyphs. */
+[data-font="unica"] {
+  --font-sans: 'Unica', 'Brand Shield', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Register Mono', 'Brand Shield', ui-monospace, monospace;
+  --type-scale: 0.90;
+  --lh-sans: 1.42;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -596,7 +628,7 @@ html, body {
      type register; figures stay monospaced via the .num block below. */
   font-family: var(--font-sans);
   font-size: var(--fs-data);
-  line-height: 1.4;
+  line-height: var(--lh-sans);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   transition: background var(--transition), color var(--transition);
@@ -829,10 +861,6 @@ html, body {
   background: var(--accent-tint);
   box-shadow: inset 0 0 0 1px var(--trim-bright);
 }
-/* Terminus and Ledger are sans and serif; marking the two serif registers lets
-   the specimen read as a type choice rather than four identical buttons. */
-.font-opt[data-font="ledger"],
-.font-opt[data-font="didone"] { font-style: normal; }
 
 /* ═══ BUTTONS ══════════════════════════════════════════════════════════ */
 

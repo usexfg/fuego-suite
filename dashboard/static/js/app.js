@@ -51,7 +51,7 @@ const App = (() => {
   // ── Type Register ───────────────────────────────────────────────────────────
   // Independent of the colour register: any surface can be set in any face.
   // Shares the applyTheme shape, so the two never need to know about each other.
-  const FONT_REGISTERS = ['terminus', 'ledger', 'facet', 'didone'];
+  const FONT_REGISTERS = ['brygada', 'trirong', 'electrolize', 'unica'];
   const FONT_KEY = 'xfg.font';
   let fontRegister = 'terminus';
 

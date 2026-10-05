@@ -219,6 +219,79 @@ references unresolved. The stacking scale is reinstated in `:root`.
 
 ---
 
+## Dashboard — Type register rebuilt on Brygada / Trirong / Electrolize / Unica
+
+**Started**: 2026-10-05
+**Agent**: Sisyphus (space-bunny-free)
+**Status**: DONE
+
+Replaces the previous four type registers. The faces were measured rather than
+eyeballed, and the measurements are what drove the sizing.
+
+| face | x-height | mean advance | width class | Greek |
+|------|----------|--------------|-------------|-------|
+| Brygada 1918 | 0.460 | 0.600 em | normal | 3/3 native |
+| Trirong | 0.498 | 0.605 em | wide | 1/3 |
+| Electrolize | 0.500 | 0.587 em | normal | 0/3 |
+| Unica One | 0.650 | 0.486 em | condensed | 1/3 |
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Subset the four named faces to woff2 | Sisyphus | 2026-10-05 | DONE |
+| Introduce `--type-scale` optical correction | Sisyphus | 2026-10-05 | DONE |
+| Stop the correction resizing layout boxes | Sisyphus | 2026-10-05 | DONE |
+| Floor the micro sizes so labels stay legible | Sisyphus | 2026-10-05 | DONE |
+| Update switcher, registry and pre-paint whitelist | Sisyphus | 2026-10-05 | DONE |
+| Regenerate the CSP digest for the edited inline script | Sisyphus | 2026-10-05 | DONE |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `go build` / `go test ./...` | PASS |
+| CSS brace balance / unresolved `var()` | 0 / none |
+| Distinct body faces across 4 registers | 4/4 |
+| Telemetry size convergence | 14.54 / 13.5 / 13.5 / 13.5 px |
+| Label legibility floor honoured | min 9.5 px |
+| Cell height / text size ratio | 5.19–5.71x, no clipping |
+| Wordmark ΗΞΔŦ | real glyphs (93 px vs 36 px tofu) |
+| Price line | `0.10000 HΞ∆Ŧ  Spread: 100 bps` |
+| Page errors | none |
+
+### Notes
+
+Two corrections made during the work, both caught by looking at renders rather
+than at the numbers:
+
+- `--type-scale` was initially applied to `--h-nav`/`--h-row`/`--h-cta` as well
+  as the font sizes, which made every panel resize when the typeface changed —
+  the opposite of a stable layout. Box heights are now owned by the colour
+  register alone and the type register cannot touch them.
+- A single scale factor drove `--fs-label` to 8 px under Unica One. Micro sizes
+  are now `max(floor, base * scale)` so the tall-x-height faces cannot push
+  labels below legibility; only `--fs-display` floats freely.
+
+Electrolize carries no Greek at all, so the ΗΞΔŦ wordmark renders entirely from
+the Brand Shield in that register — the exact case the shared tail exists for.
+
+### Known issues (pre-existing, NOT addressed — out of scope)
+
+- `Spread: 100 bps` is nominal; the orchestrator's real spread is adaptive
+  (30–300 bps) and `/amm_pool_info` does not carry it.
+- `get_ohlrc` and `get_orderbook_state` return `Method not found` (-32601), so
+  the chart and both ladders serve mock data.
+- Indicator buttons read `MA 20` / `EMA 12` but draw `MA(5,10,30,60)`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | Sisyphus | 2026-10-05 |
+| Tests pass | PASS (incl. CSP drift test) | Sisyphus | 2026-10-05 |
+| All tasks verified | PASS | Sisyphus | 2026-10-05 |
+
+---
+
 ## Mainline swap and operator-dashboard integration
 
 **Started**: 2026-10-01

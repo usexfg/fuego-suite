@@ -336,7 +336,7 @@ func securityHeaders(next http.Handler) http.Handler {
 				// The digest is base64, not hex: sha256sum output must be piped
 				// through base64. Regenerate with TestInlineScriptHashMatchesCSP,
 				// which fails loudly if the markup and this header ever drift.
-				"script-src 'self' 'sha256-ibV0GXBtfrSbCnu6wFcVaDxNwt9yrvqauBsXRmZKA9Q='; "+
+				"script-src 'self' 'sha256-DFntQoTOFd7unKQqhDjpSt/aTRhv13TP5gMGAZsxQfI='; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self' ws://127.0.0.1:*; "+

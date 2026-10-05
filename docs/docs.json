@@ -37,7 +37,7 @@
       {
         "group": "Architecture",
         "pages": [
-          "fuego-dual-asset-architecture"
+          "heat/fuego-dual-asset-architecture"
         ]
       },
       {

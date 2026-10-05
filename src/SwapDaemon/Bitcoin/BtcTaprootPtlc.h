@@ -83,10 +83,19 @@ public:
 
   // P2.1 claim parse: locate the witness sig whose R_x matches storedPresig.R
   // (key-path or script-path), then t = s' - s via Crypto::secp_adaptor_extract.
+  // The 5-arg overload additionally verifies t*G == expectedT (AUDIT M-3).
+  // Prefer the 5-arg form whenever the adaptor point T is known.
+  [[deprecated("pass expectedT to verify t*G == T")]]
   static bool parseClaimSecret(
       const std::vector<uint8_t>& rawTx,
       const std::vector<uint8_t>& tweakedPub33,
       const Crypto::SecpAdaptorPresig& storedPresig,
+      Crypto::SecretKey& tOut);
+  static bool parseClaimSecret(
+      const std::vector<uint8_t>& rawTx,
+      const std::vector<uint8_t>& tweakedPub33,
+      const Crypto::SecpAdaptorPresig& storedPresig,
+      const Crypto::SecpPubKey& expectedT,
       Crypto::SecretKey& tOut);
 
   // Control block for single-leaf script path (no merkle path): 33 bytes = 0xc0|parity || internalX(32)

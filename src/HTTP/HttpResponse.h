@@ -29,6 +29,7 @@ namespace CryptoNote {
       STATUS_400,
       STATUS_401,
       STATUS_404,
+      STATUS_429,
       STATUS_500
     };
 

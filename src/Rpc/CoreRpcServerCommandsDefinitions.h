@@ -46,10 +46,12 @@ struct COMMAND_RPC_GET_HEIGHT {
 
   struct response {
     uint64_t height;
+    std::string network;
     std::string status;
 
     void serialize(ISerializer &s) {
       KV_MEMBER(height)
+      KV_MEMBER(network)
       KV_MEMBER(status)
     }
   };
@@ -421,6 +423,7 @@ struct COMMAND_RPC_GET_INFO {
   struct response {
     std::string status;
     std::string version;
+    std::string network;
     std::string fee_address;
     std::string top_block_hash;
     uint64_t height;
@@ -446,6 +449,7 @@ struct COMMAND_RPC_GET_INFO {
       KV_MEMBER(status)
       KV_MEMBER(height)
       KV_MEMBER(version)
+      KV_MEMBER(network)
       KV_MEMBER(difficulty)
       KV_MEMBER(top_block_hash)
       KV_MEMBER(tx_count)
@@ -514,7 +518,7 @@ struct COMMAND_RPC_GETBLOCKCOUNT {
 struct COMMAND_RPC_PROVE_COLLATERAL {
   struct request {
     std::string transactionHash;
-    uint8_t commitment_type;  // 136=Burn(0x08), 7=CIA(0x07), 205=CD(0xCD)
+    uint8_t commitment_type;  // 213=deposit secret(0xD5). Legacy 0x08/0x07 retired, 0xCD COLD retired.
     bool commitment;          // Whether to verify commitment
 
     void serialize(ISerializer &s) {
@@ -1785,6 +1789,7 @@ struct swap_trade_rpc_entry {
   uint8_t pair;
   uint64_t xfgAmount;
   uint64_t ctrAmount;
+  std::string ctrAmountAtomic;
   std::string rate;       // double as string
   uint32_t blockHeight;
   uint64_t timestamp;
@@ -1793,6 +1798,7 @@ struct swap_trade_rpc_entry {
     KV_MEMBER(pair)
     KV_MEMBER(xfgAmount)
     KV_MEMBER(ctrAmount)
+    KV_MEMBER(ctrAmountAtomic)
     KV_MEMBER(rate)
     KV_MEMBER(blockHeight)
     KV_MEMBER(timestamp)
@@ -2247,6 +2253,7 @@ struct COMMAND_RPC_INITIATE_SWAP {
     std::string pair;          // "SOL", "ETH", "XMR", "BCH"
     uint64_t    xfg_amount = 0;
     uint64_t    ctr_amount = 0;
+    std::string ctr_amount_atomic; // v2 decimal string; overrides legacy uint64 only when legacy is zero
     std::string ctr_address;   // counterparty chain address
     std::string peer_endpoint; // counterparty network endpoint
     std::string peer_pub_key;  // counterparty Musig2 pubkey (hex)
@@ -2255,6 +2262,7 @@ struct COMMAND_RPC_INITIATE_SWAP {
       KV_MEMBER(pair)
       KV_MEMBER(xfg_amount)
       KV_MEMBER(ctr_amount)
+      KV_MEMBER(ctr_amount_atomic)
       KV_MEMBER(ctr_address)
       KV_MEMBER(peer_endpoint)
       KV_MEMBER(peer_pub_key)
@@ -2527,11 +2535,15 @@ struct COMMAND_RPC_AMM_QUOTE {
     uint64_t expected_output;
     uint64_t price_impact_bps;
     uint64_t fee;
+    // Selling XFG only: the HEAT burning the same XFG would mint at the 8-block
+    // TWAP (no pool, no price impact). 0 when there is no TWAP yet.
+    uint64_t mint_output = 0;
     std::string status;
     void serialize(ISerializer &s) {
       KV_MEMBER(expected_output)
       KV_MEMBER(price_impact_bps)
       KV_MEMBER(fee)
+      KV_MEMBER(mint_output)
       KV_MEMBER(status)
     }
   };

@@ -16,6 +16,8 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "WalletRpcServer.h"
+#include "Common/Int128.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "Wallet/WalletGreen.h"
 #include "IWallet.h"
 
@@ -32,7 +34,6 @@
 #include "SwapDaemon/AdaptorSwap.h"
 #include "CryptoNoteCore/CryptoNoteBasic.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletHelper.h"
 #include "Common/Base58.h"
 #include "Common/CommandLine.h"
@@ -180,6 +181,9 @@ void wallet_rpc_server::processRequest(const CryptoNote::HttpRequest& request, C
       { "heat_mint",          makeMemberMethod(&wallet_rpc_server::on_heat_mint) },
       { "send_heat",          makeMemberMethod(&wallet_rpc_server::on_send_heat) },
       { "amm_swap",           makeMemberMethod(&wallet_rpc_server::on_amm_swap) },
+      // The CLI's names for the two Hearth directions; burning XFG is heat_mint.
+      { "sell_xfg",           makeMemberMethod(&wallet_rpc_server::on_sell_xfg) },
+      { "buy_xfg",            makeMemberMethod(&wallet_rpc_server::on_buy_xfg) },
       { "amm_add_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_add_liquidity) },
       { "amm_remove_liquidity",  makeMemberMethod(&wallet_rpc_server::on_amm_remove_liquidity) },
       { "amm_claim_lp_fees",  makeMemberMethod(&wallet_rpc_server::on_amm_claim_lp_fees) },
@@ -862,6 +866,7 @@ bool wallet_rpc_server::on_get_transfers(const wallet_rpc::COMMAND_RPC_GET_TRANS
 
 bool wallet_rpc_server::on_get_height(const wallet_rpc::COMMAND_RPC_GET_HEIGHT::request& req, wallet_rpc::COMMAND_RPC_GET_HEIGHT::response& res) {
   res.height = m_node.getLastLocalBlockHeight();
+  res.network = m_currency.isTestnet() ? "testnet" : "mainnet";
   return true;
 }
 
@@ -918,28 +923,15 @@ bool wallet_rpc_server::on_create_cd(const wallet_rpc::COMMAND_RPC_CREATE_CD::re
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "term must be > 0");
     }
 
-    // Validate deposit_type: only HEAT=0x08, YIELD=0x07 are permitted (COLD=0xCD removed)
-    static const std::initializer_list<uint32_t> validDepositTypes = {0x07, 0x08};
-    bool typeValid = false;
-    for (uint32_t v : validDepositTypes) {
-      if (req.deposit_type == v) { typeValid = true; break; }
-    }
-    if (!typeValid) {
-      throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR,
-          "deposit_type must be one of: 0x07 (YIELD), 0x08 (HEAT)");
-    }
-
-    // Map wire deposit_type to internal CommitmentType (COLD=0xCD removed)
-    CryptoNote::CommitmentType commitType =
-        (req.deposit_type == 0x08) ? CryptoNote::CommitmentType::HEAT :
-        (req.deposit_type == 0x07) ? CryptoNote::CommitmentType::YIELD :
-                                     CryptoNote::CommitmentType::HEAT; // fallback (validation ensures only 0x07/0x08)
-    CryptoNote::DepositCommitment commitment(commitType, Crypto::Hash{});
+    // deposit_type is accepted but ignored: legacy 0x07 YIELD / 0x08 HEAT
+    // commitment extras are retired. Term-locked HEAT CDs are
+    // TransactionOutputCommitment outputs; HEAT burns use mintHeatV10.
+    (void)req.deposit_type;
 
     std::string txHash;
     CryptoNote::IWallet* iwallet = static_cast<CryptoNote::IWallet*>(wg);
     std::string addr = iwallet->getAddress(0);
-    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash, commitment);
+    iwallet->createDeposit(req.amount, static_cast<uint64_t>(req.term), addr, addr, txHash);
 
     // Deposit ID is the new last index after creation
     size_t depositId = iwallet->getWalletDepositCount() - 1;
@@ -1104,11 +1096,38 @@ bool wallet_rpc_server::on_send_heat(const wallet_rpc::COMMAND_RPC_SEND_HEAT::re
   return true;
 }
 
+bool wallet_rpc_server::on_sell_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  wallet_rpc::COMMAND_RPC_AMM_SWAP::request sell = req;
+  sell.direction = 0;
+  return on_amm_swap(sell, res);
+}
+
+bool wallet_rpc_server::on_buy_xfg(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
+  wallet_rpc::COMMAND_RPC_AMM_SWAP::request buy = req;
+  buy.direction = 1;
+  return on_amm_swap(buy, res);
+}
+
 bool wallet_rpc_server::on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::request& req, wallet_rpc::COMMAND_RPC_AMM_SWAP::response& res) {
   try {
     if (req.direction > 1) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "direction must be 0 (XFG→HEAT) or 1 (HEAT→XFG)");
     if (req.input_amount == 0) throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "input_amount must be > 0");
-    if (req.expected_output < req.min_output) {
+    // No expected_output: quote the curve, net of the 1% fee — the most
+    // consensus accepts — a little under it for price drift. A zero output
+    // was sent as is before, which consensus refuses.
+    uint64_t expectedOutput = req.expected_output;
+    if (expectedOutput == 0) {
+      CryptoNote::INode::AmmPoolReserves reserves;
+      if (m_node.getAmmPoolReserves(reserves) || reserves.reserveXfg == 0 || reserves.reserveHeat == 0) {
+        throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "Hearth pool reserves unavailable");
+      }
+      const uint64_t net = req.direction == 0
+          ? CryptoNote::ammSwapNetOutput(req.input_amount, reserves.reserveXfg, reserves.reserveHeat)
+          : CryptoNote::ammSwapNetOutput(req.input_amount, reserves.reserveHeat, reserves.reserveXfg);
+      expectedOutput = static_cast<uint64_t>(
+          (static_cast<uint128_t>(net) * (10000 - CryptoNote::parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
+    }
+    if (expectedOutput == 0 || expectedOutput < req.min_output) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR, "expected_output below min_output");
     }
     uint64_t fee = (req.fee > 0) ? req.fee : m_currency.minimumFee();
@@ -1117,7 +1136,7 @@ bool wallet_rpc_server::on_amm_swap(const wallet_rpc::COMMAND_RPC_AMM_SWAP::requ
     WalletHelper::IWalletRemoveObserverGuard removeGuard(m_wallet, sent);
 
     CryptoNote::TransactionId txId = m_wallet.ammSwapV10(req.direction, req.input_amount,
-        req.expected_output, req.min_output, fee, req.mixin);
+        expectedOutput, req.min_output, fee, req.mixin);
     if (txId == WALLET_INVALID_TRANSACTION_ID) {
       throw JsonRpc::JsonRpcError(WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR, "AMM swap failed");
     }

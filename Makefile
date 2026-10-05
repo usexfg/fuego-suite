@@ -60,8 +60,10 @@ build-dashboard:
 	@if command -v go >/dev/null 2>&1; then \
 		echo "Building Fuego Dashboard"; \
 		cd dashboard && go mod tidy && go build -o fuego-dashboard . && \
+		cp -r coin_icons/. static/coin-icons/ && \
 		mkdir -p ../build/release/bin && \
 		cp fuego-dashboard ../build/release/bin/ && \
+		rm -rf ../build/release/bin/static && \
 		cp -r static ../build/release/bin/static && \
 		chmod +x ../build/release/bin/fuego-dashboard && \
 		echo "Fuego Dashboard built successfully"; \

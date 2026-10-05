@@ -22,6 +22,7 @@
 #include <memory>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 #include "HttpServer.h"
 #include <Logging/LoggerRef.h>
@@ -203,19 +204,22 @@ private:
   XfgSwap::SwapDaemon* m_swapDaemon = nullptr;
 
   // ── Request rate limiting (DoS hardening) ────────────────────────────────
-  // Lightweight global rolling-window throttle for resource-intensive and
-  // state-changing endpoints (sendrawtransaction, place_order). Prevents a
-  // single client from flooding the node's CPU/mempool/orderbook.
-  std::atomic<uint64_t> m_lastTxSubmitWindow{0};
-  std::atomic<uint32_t> m_txSubmitCount{0};
-  std::atomic<uint64_t> m_lastOrderSubmitWindow{0};
-  std::atomic<uint32_t> m_orderSubmitCount{0};
+  // Per-IP rolling-window token bucket keyed on the TCP-layer peer address
+  // (set by HttpServer as X-Remote-Addr; X-Forwarded-For is never consulted).
+  // Idle entries are expired when the map exceeds MAX_IP_BUCKETS to bound
+  // memory growth.
+  struct IpBucket {
+    uint64_t windowStart = 0;
+    uint32_t count       = 0;
+  };
+  static constexpr size_t MAX_IP_BUCKETS = 8192;
+  std::mutex m_rateMutex;
+  std::unordered_map<std::string, IpBucket> m_txRateBuckets;
+  std::unordered_map<std::string, IpBucket> m_orderRateBuckets;
 
-  // Returns true if the request is allowed, false if throttled. windowStart /
-  // count track the current 1s window; maxPerWindow is the burst cap.
-  static bool rateLimit(std::atomic<uint64_t>& windowStart,
-                        std::atomic<uint32_t>& count,
-                        uint32_t maxPerWindow);
+  bool rateLimitByIp(std::unordered_map<std::string, IpBucket>& buckets,
+                     const std::string& ip,
+                     uint32_t maxPerWindow);
 
 };
 

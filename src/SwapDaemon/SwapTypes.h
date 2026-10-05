@@ -18,6 +18,11 @@
 #include <cstdint>
 #include <vector>
 #include <functional>
+#include <array>
+#include <limits>
+#include <stdexcept>
+#include <boost/multiprecision/cpp_int.hpp>
+#include "SwapPairCatalog.h"
 #include "crypto/hash.h"
 #include "crypto/crypto.h"
 #include "crypto/adaptor.h"
@@ -25,6 +30,58 @@
 #include "crypto/musig2.h"
 
 namespace XfgSwap {
+
+// Counterparty chains do not share Fuego's 64-bit money representation. EVM
+// contracts use uint256 and 18-decimal native assets exceed uint64 at only
+// 18.446744073709551615 whole units. Keep the counterparty amount at its
+// native atomic precision and narrow only inside adapters whose consensus
+// amount is genuinely uint64 (UTXO, Solana, CryptoNote, etc.).
+using AtomicAmount = boost::multiprecision::uint256_t;
+
+inline std::string atomicAmountToString(const AtomicAmount& amount) {
+  return amount.convert_to<std::string>();
+}
+
+inline bool parseAtomicAmount(const std::string& text, AtomicAmount& amount) {
+  if (text.empty()) return false;
+  if (text.size() > 1 && text.front() == '0') return false;
+  AtomicAmount parsed = 0;
+  const AtomicAmount max = (std::numeric_limits<AtomicAmount>::max)();
+  for (char c : text) {
+    if (c < '0' || c > '9') return false;
+    const unsigned digit = static_cast<unsigned>(c - '0');
+    if (parsed > (max - digit) / 10) return false;
+    parsed = parsed * 10 + digit;
+  }
+  amount = parsed;
+  return true;
+}
+
+inline bool atomicAmountToUint64(const AtomicAmount& amount, uint64_t& out) {
+  if (amount > (std::numeric_limits<uint64_t>::max)()) return false;
+  out = amount.convert_to<uint64_t>();
+  return true;
+}
+
+inline std::array<uint8_t, 32> atomicAmountToBigEndian(const AtomicAmount& amount) {
+  std::array<uint8_t, 32> bytes{};
+  AtomicAmount remaining = amount;
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[bytes.size() - 1 - i] =
+        static_cast<uint8_t>((remaining & 0xff).convert_to<unsigned>());
+    remaining >>= 8;
+  }
+  return bytes;
+}
+
+inline AtomicAmount atomicAmountFromBigEndian(const uint8_t* bytes, size_t size) {
+  AtomicAmount amount = 0;
+  for (size_t i = 0; i < size; ++i) {
+    amount <<= 8;
+    amount += bytes[i];
+  }
+  return amount;
+}
 
 enum class SwapState : uint8_t {
   // ── Legacy HTLC flow (inactive) ──
@@ -72,38 +129,6 @@ enum class SwapState : uint8_t {
 enum class SwapRole : uint8_t {
   ALICE = 0,  // Has counterparty coin, wants XFG
   BOB = 1     // Has XFG, wants counterparty coin
-};
-
-enum class SwapPair : uint8_t {
-  SOL = 0,
-  ETH = 1,
-  XMR = 2,
-  BCH = 3,
-  ARB = 4,
-  BASE = 5,
-  KMD_SPV = 6,
-  BNB = 7,
-  DCR = 8,
-  BTC = 9,
-  LTC = 10,
-  POLYGON = 11,
-  GLEEC = 12,
-  ROBINHOOD = 13,
-  AVAX = 14,
-  CRO = 15,
-  BOB = 16,
-  SIA = 17,
-  UNICHAIN = 18,
-  PLASMA = 19,
-  DOGE = 20,
-  DASH = 21,
-  ZEC = 22,
-  PULSEX = 23,
-  ZANO = 24,
-  MONAD = 25,
-  OPTIMISM = 26,
-  TON = 27,
-  DOT = 28
 };
 
 enum class SwapLockType : uint8_t {
@@ -171,7 +196,18 @@ struct SwapParams {
   SwapPair pair;
   SwapRole role;
   uint64_t xfgAmount;           // atomic units
-  uint64_t ctrAmount;           // counterparty amount (atomic units)
+  AtomicAmount ctrAmount;       // counterparty amount in native atomic units
+  // Version 1 records predate full-width counterparty amounts. New swaps use
+  // version 2 and bind the amount in the signed key exchange before funding.
+  uint8_t amountProtocolVersion = 2;
+
+  uint64_t ctrAmount64() const {
+    uint64_t narrowed = 0;
+    if (!atomicAmountToUint64(ctrAmount, narrowed)) {
+      throw std::overflow_error("counterparty amount exceeds this chain's uint64 atomic limit");
+    }
+    return narrowed;
+  }
 
   // Keys
   Crypto::PublicKey aliceXfgPubKey;
@@ -219,6 +255,26 @@ struct SwapParams {
   uint32_t htlcOutputIndex;     // global HTLC output index on Fuego
   std::string ctrLockTxId;      // counterparty lock tx hash
   std::string ctrClaimTxId;     // counterparty claim tx hash (Bob's on-chain claim of CTR)
+  // Persisted before calling claim(): an RPC failure may mean the transaction
+  // was submitted but its response was lost. While true, absence of a txid is
+  // never evidence that Bob did not claim the counterparty leg.
+  bool ctrClaimAttempted = false;
+  // Written before Alice calls refund(). A lost RPC response leaves the
+  // outcome unknown and must not generate a different refund transaction.
+  bool ctrRefundAttempted = false;
+  bool ctrRefundSubmitted = false;
+  std::string ctrRefundTxId;
+  bool escrowRefundBroadcast = false;
+  // Signed once and persisted before broadcast so a lost RPC response retries
+  // the same XFG transaction instead of generating a conflicting refund.
+  std::string escrowRefundTxHex;
+  std::string escrowRefundTxId;
+  // Direct claim is signed and persisted before send, then retried unchanged
+  // until Fuego confirms it. Broadcast alone is not swap completion.
+  std::string escrowClaimTxHex;
+  std::string escrowClaimTxId;
+  bool escrow_claim_fee_report_attempted = false;
+  bool escrow_refund_fee_report_attempted = false;
   uint32_t requiredConfirmations = 6;  // SPV confirmations required (default 6 for BCH)
 
   // Counterparty-specific

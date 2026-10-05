@@ -190,7 +190,13 @@ bool SwapStateMachine::transition(SwapState newState, uint32_t currentHeight) {
     if (currentHeight == 0) {
       return false;
     }
-    if (m_params.xfgTimeoutHeight > 0 && currentHeight < m_params.xfgTimeoutHeight) {
+    // Alice's verified counterparty refund can settle before the later XFG
+    // deadline. The caller must verify its chain's height and inclusion.
+    const bool aliceCtrConfirmed = newState == SwapState::ADAPTOR_REFUNDED &&
+        m_params.role == SwapRole::ALICE && m_params.ctrRefundSubmitted &&
+        !m_params.ctrRefundTxId.empty();
+    if (!aliceCtrConfirmed && m_params.xfgTimeoutHeight > 0 &&
+        currentHeight < m_params.xfgTimeoutHeight) {
       return false;
     }
   }
@@ -240,13 +246,17 @@ std::string SwapStateMachine::serialize() const {
   Common::JsonValue root(Common::JsonValue::OBJECT);
 
   // Serialization version — bump when adding new fields.
-  root.insert("serVersion", static_cast<int64_t>(5));
+  root.insert("serVersion", static_cast<int64_t>(6));
 
   root.insert("swapId", m_params.swapId);
   root.insert("pair", static_cast<int64_t>(static_cast<uint8_t>(m_params.pair)));
   root.insert("role", static_cast<int64_t>(static_cast<uint8_t>(m_params.role)));
   root.insert("xfgAmount", static_cast<int64_t>(m_params.xfgAmount));
-  root.insert("ctrAmount", static_cast<int64_t>(m_params.ctrAmount));
+  // String encoding is mandatory: old readers call getInteger() and reject a
+  // v6 record instead of silently truncating an EVM amount during recovery.
+  root.insert("ctrAmount", atomicAmountToString(m_params.ctrAmount));
+  root.insert("amountProtocolVersion",
+              static_cast<int64_t>(m_params.amountProtocolVersion));
   root.insert("state", static_cast<int64_t>(static_cast<uint8_t>(m_state)));
 
   // Adaptor sig fields
@@ -367,6 +377,20 @@ std::string SwapStateMachine::serialize() const {
 
   root.insert("ctrLockTxId", m_params.ctrLockTxId);
   root.insert("ctrClaimTxId", m_params.ctrClaimTxId);
+  root.insert("ctrClaimAttempted", static_cast<int64_t>(m_params.ctrClaimAttempted ? 1 : 0));
+  root.insert("ctrRefundAttempted", static_cast<int64_t>(m_params.ctrRefundAttempted ? 1 : 0));
+  root.insert("ctrRefundSubmitted", static_cast<int64_t>(m_params.ctrRefundSubmitted ? 1 : 0));
+  root.insert("ctrRefundTxId", m_params.ctrRefundTxId);
+  root.insert("escrowRefundBroadcast", static_cast<int64_t>(m_params.escrowRefundBroadcast ? 1 : 0));
+  root.insert("escrowRefundTxHex", m_params.escrowRefundTxHex);
+  root.insert("escrowRefundTxId", m_params.escrowRefundTxId);
+  root.insert("escrowClaimTxHex", m_params.escrowClaimTxHex);
+  root.insert("escrowClaimTxId", m_params.escrowClaimTxId);
+  root.insert("escrow_claim_fee_report_attempted",
+              static_cast<int64_t>(m_params.escrow_claim_fee_report_attempted ? 1 : 0));
+  root.insert("escrow_refund_fee_report_attempted",
+              static_cast<int64_t>(m_params.escrow_refund_fee_report_attempted ? 1 : 0));
+  root.insert("useSpvVerification", static_cast<int64_t>(m_params.useSpvVerification ? 1 : 0));
   root.insert("ctrAddress", m_params.ctrAddress);
   root.insert("peerEndpoint", m_params.peerEndpoint);
   root.insert("chainState", m_params.chainState);
@@ -446,7 +470,22 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.pair = static_cast<SwapPair>(static_cast<uint8_t>(root("pair").getInteger()));
   params.role = static_cast<SwapRole>(static_cast<uint8_t>(root("role").getInteger()));
   params.xfgAmount = static_cast<uint64_t>(root("xfgAmount").getInteger());
-  params.ctrAmount = static_cast<uint64_t>(root("ctrAmount").getInteger());
+  const int64_t serVersion = root.contains("serVersion")
+      ? root("serVersion").getInteger() : 0;
+  if (serVersion < 0 || serVersion > 6)
+    throw std::runtime_error("unsupported swap record serialization version");
+  if (serVersion >= 6) {
+    if (!root("ctrAmount").isString() ||
+        !parseAtomicAmount(root("ctrAmount").getString(), params.ctrAmount))
+      throw std::runtime_error("invalid v6 counterparty amount");
+    const int64_t version = root("amountProtocolVersion").getInteger();
+    if (version != 1 && version != 2)
+      throw std::runtime_error("unsupported swap amount protocol version");
+    params.amountProtocolVersion = static_cast<uint8_t>(version);
+  } else {
+    params.ctrAmount = static_cast<uint64_t>(root("ctrAmount").getInteger());
+    params.amountProtocolVersion = 1;
+  }
 
   // Adaptor sig fields
   if (root.contains("ourSwapPubKey"))
@@ -554,6 +593,32 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
   params.ctrLockTxId = root("ctrLockTxId").getString();
   if (root.contains("ctrClaimTxId"))
     params.ctrClaimTxId = root("ctrClaimTxId").getString();
+  if (root.contains("ctrClaimAttempted"))
+    params.ctrClaimAttempted = root("ctrClaimAttempted").getInteger() != 0;
+  if (root.contains("ctrRefundAttempted"))
+    params.ctrRefundAttempted = root("ctrRefundAttempted").getInteger() != 0;
+  if (root.contains("ctrRefundSubmitted"))
+    params.ctrRefundSubmitted = root("ctrRefundSubmitted").getInteger() != 0;
+  if (root.contains("ctrRefundTxId"))
+    params.ctrRefundTxId = root("ctrRefundTxId").getString();
+  if (root.contains("escrowRefundBroadcast"))
+    params.escrowRefundBroadcast = root("escrowRefundBroadcast").getInteger() != 0;
+  if (root.contains("escrowRefundTxHex"))
+    params.escrowRefundTxHex = root("escrowRefundTxHex").getString();
+  if (root.contains("escrowRefundTxId"))
+    params.escrowRefundTxId = root("escrowRefundTxId").getString();
+  if (root.contains("escrowClaimTxHex"))
+    params.escrowClaimTxHex = root("escrowClaimTxHex").getString();
+  if (root.contains("escrowClaimTxId"))
+    params.escrowClaimTxId = root("escrowClaimTxId").getString();
+  if (root.contains("escrow_claim_fee_report_attempted"))
+    params.escrow_claim_fee_report_attempted =
+        root("escrow_claim_fee_report_attempted").getInteger() != 0;
+  if (root.contains("escrow_refund_fee_report_attempted"))
+    params.escrow_refund_fee_report_attempted =
+        root("escrow_refund_fee_report_attempted").getInteger() != 0;
+  if (root.contains("useSpvVerification"))
+    params.useSpvVerification = root("useSpvVerification").getInteger() != 0;
   params.ctrAddress = root("ctrAddress").getString();
   params.peerEndpoint = root("peerEndpoint").getString();
   params.chainState = root("chainState").getString();
@@ -626,6 +691,18 @@ SwapStateMachine SwapStateMachine::deserialize(const std::string& json) {
 
   SwapStateMachine sm(params);
   sm.m_state = static_cast<SwapState>(static_cast<uint8_t>(root("state").getInteger()));
+  // Older records did not persist claim attempts. Both the ordinary
+  // CTR_LOCKED path and the SPV waiting path could submit Bob's claim before
+  // recording a txid. Hold unilateral XFG recovery for these records until
+  // the counterparty outcome is reconciled.
+  if (!root.contains("ctrClaimAttempted") && params.role == SwapRole::BOB &&
+      (sm.m_state == SwapState::ADAPTOR_CTR_LOCKED ||
+       sm.m_state == SwapState::ADAPTOR_WAITING_SPV ||
+       sm.m_state == SwapState::ADAPTOR_SECRET_CONFIRMED_SPV)) {
+    sm.m_params.ctrClaimAttempted = true;
+    if (sm.m_state != SwapState::ADAPTOR_CTR_LOCKED)
+      sm.m_params.useSpvVerification = true;
+  }
   sm.m_createdAt = static_cast<time_t>(root("createdAt").getInteger());
   sm.m_updatedAt = static_cast<time_t>(root("updatedAt").getInteger());
   if (root.contains("recordVersion")) {

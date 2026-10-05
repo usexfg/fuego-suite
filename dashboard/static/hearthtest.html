@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hearth — Atelier Bench</title>
+  <link rel="stylesheet" href="/css/hearthtest.css">
+  <script>
+    // Resolve the register before first paint so the surface never flashes
+    // the default theme on load. Kept inline and tiny for that reason.
+    (function () {
+      var t;
+      try { t = localStorage.getItem('xfg.theme'); } catch (e) {}
+      document.documentElement.setAttribute('data-theme',
+        (t === 'maison' || t === 'fulltrade' || t === 'reference') ? t : 'reference');
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the working surface</a>
+
+  <nav class="nav">
+    <a href="/hearth.html" class="nav-brand">
+      <img src="/coin-icons/fuego.png" alt="Fuego Reserve" class="nav-brand-logo">
+      <div class="nav-brand-meta">
+        <span class="nav-brand-title">Fuego Reserve</span>
+        <span class="nav-brand-sub">Atelier Bench</span>
+      </div>
+    </a>
+
+    <div class="nav-links-wrap">
+      <a href="/hearth.html" class="nav-link">
+        <span>Hearth</span>
+        <span class="nav-link-badge">The Salon Floor</span>
+      </a>
+      <a href="/hearthtest.html" class="nav-link active">
+        <span>Bench</span>
+        <span class="nav-link-badge">Demonstration</span>
+      </a>
+    </div>
+
+    <div class="nav-status">
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-daemon"></span>
+        <span>Caliber</span>
+      </span>
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-wallet"></span>
+        <span>Vault</span>
+      </span>
+      <span class="nav-status-item">
+        <span class="status-dot offline" id="status-swapd"></span>
+        <span>Transfer</span>
+      </span>
+    </div>
+
+    <div class="theme-switch">
+      <div class="theme-seg" role="group" aria-label="Interface register">
+        <button type="button" class="theme-opt" data-theme="maison" aria-pressed="false" title="Quiet register — near-black, hairlines, sharp corners">Maison</button>
+        <button type="button" class="theme-opt" data-theme="fulltrade" aria-pressed="false" title="House reference — warm primary, graded depth, generous controls">FullTrade</button>
+        <button type="button" class="theme-opt" data-theme="reference" aria-pressed="false" title="The doctrine itself — zero radius, zero shadow, flat surfaces, maximum density">Reference</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- The bench states its own nature. Nothing here reaches a vault. -->
+  <div class="bench-banner">
+    <span class="bench-mark">Bench</span>
+    <span>Every figure on this page is synthesised locally from a fixed seed. No
+      daemon, vault, or transfer process is contacted, and no order can be
+      committed. House economics shown are the real protocol constants.</span>
+  </div>
+
+  <div class="hearth-wrap" id="main">
+    <div class="hearth-chamber">
+
+      <div class="hearth-fascia">
+        <div class="fascia-header">
+          <div class="fascia-title">
+            <span class="dot"></span>
+            <span>Hearth — Salon Register</span>
+          </div>
+          <div class="caps">
+            Series XII · Pool Depths with Limit Overlay
+          </div>
+        </div>
+        <div class="telemetry-grid">
+          <div class="telemetry-cell" title="XFG committed to the burn-to-mint transformation">
+            <span class="telemetry-label">XFG Transformed</span>
+            <span class="telemetry-val firegold" id="heat-burned">—</span>
+          </div>
+          <div class="telemetry-cell heat-cell" title="HΞ∆Ŧ in circulation">
+            <span class="telemetry-label">HΞ∆Ŧ Circulating</span>
+            <span class="telemetry-val" id="heat-supply">—</span>
+          </div>
+          <div class="telemetry-cell" title="XFG held by the salon pool">
+            <span class="telemetry-label">Pool XFG Reserve</span>
+            <span class="telemetry-val gold" id="pool-xfg">—</span>
+          </div>
+          <div class="telemetry-cell heat-cell" title="HΞ∆Ŧ held by the salon pool">
+            <span class="telemetry-label">Pool HΞ∆Ŧ Reserve</span>
+            <span class="telemetry-val" id="pool-heat">—</span>
+          </div>
+          <div class="telemetry-cell" title="Salon pool mid price, XFG per HΞ∆Ŧ">
+            <span class="telemetry-label">Salon Mid</span>
+            <span class="telemetry-val" id="heat-redemption">—</span>
+          </div>
+          <div class="telemetry-cell heat-cell" title="Purchasing-power reference, adjusted for inflation since 2009">
+            <span class="telemetry-label">HΞ∆Ŧ Reference</span>
+            <span class="telemetry-val">1 HΞ∆Ŧ ≋ $1.58</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hearth-floor-grid">
+
+        <div class="ladder-panel ladder-bids">
+          <div class="ladder-header bids-head">
+            <span>XFG Bids</span>
+            <span>Price / Depth</span>
+          </div>
+          <div class="ladder-list" id="hearth-bids">
+            <div class="hearth-empty-state">Awaiting depth…</div>
+          </div>
+        </div>
+
+        <div class="hearth-center">
+          <div class="hearth-spot-bar">
+            <div class="spot-price-group">
+              <span class="spot-price-main" id="price-xfg-heat">— HΞ∆Ŧ</span>
+              <span class="spot-price-usd" id="price-xfg-usd">≈ $—</span>
+              <span class="spot-price-spread" id="price-spread">Spread —</span>
+            </div>
+            <div class="timeframe-pushers">
+              <button class="tf-pusher active ohlcv-tf" data-tf="1h">1H</button>
+              <button class="tf-pusher ohlcv-tf" data-tf="4h">4H</button>
+              <button class="tf-pusher ohlcv-tf" data-tf="1d">1D</button>
+              <button class="tf-pusher ohlcv-tf" data-tf="1w">1W</button>
+            </div>
+          </div>
+
+          <div class="hearth-chart-wrap">
+            <div id="hearth-chart" class="chart-container"></div>
+            <div class="chart-crosshair" id="chart-crosshair">
+              <span id="ch-o">O —</span>
+              <span id="ch-h">H —</span>
+              <span id="ch-l">L —</span>
+              <span id="ch-c">C —</span>
+              <span id="ch-v">V —</span>
+              <span id="ch-time"></span>
+            </div>
+            <div class="chart-indicators" id="chart-indicators">
+              <button class="ind-btn active" data-ind="sma20" title="Simple moving average, 20 periods"><span class="ind-dot" style="background:var(--maison);"></span>MA 20</button>
+              <button class="ind-btn" data-ind="ema12" title="Exponential moving average, 12 periods"><span class="ind-dot" style="background:var(--ink-50);"></span>EMA 12</button>
+              <button class="ind-btn active" data-ind="vol" title="Volume — coloured by the candle's own direction"><span class="ind-dot ind-dot-dual"></span>VOL</button>
+            </div>
+            <div class="chart-drawing-tools" id="chart-drawing-tools">
+              <button class="draw-btn" data-tool="segment" title="Trendline" aria-label="Trendline">⁄</button>
+              <button class="draw-btn" data-tool="horizontalRay" title="Horizontal ray" aria-label="Horizontal ray">―</button>
+              <button class="draw-btn" data-tool="fibonacci" title="Fibonacci retracement" aria-label="Fibonacci retracement">%</button>
+              <button class="draw-btn" data-tool="rectangle" title="Rectangle zone" aria-label="Rectangle zone">▢</button>
+              <button class="draw-btn" data-tool="clear" title="Clear overlays" aria-label="Clear overlays">✕</button>
+            </div>
+          </div>
+
+          <!-- Real historical XFG/USD closes. Deliberately a separate panel and
+               a separate axis: the bench above quotes HΞΔŦ per XFG, so the two
+               series are never plotted on one scale. Source is daily, so only
+               1D and 1W exist — 1H/4H are omitted rather than invented. -->
+          <div class="archive-panel" id="archive-panel">
+            <div class="archive-head">
+              <div class="archive-titles">
+                <span class="archive-title">XFG / USD — archive</span>
+                <span class="archive-sub" id="archive-sub">daily closes</span>
+              </div>
+              <div class="timeframe-pushers">
+                <button class="tf-pusher active archive-tf" data-atf="1d">1D</button>
+                <button class="tf-pusher archive-tf" data-atf="1w">1W</button>
+              </div>
+            </div>
+            <div class="archive-chart-wrap">
+              <div id="archive-chart" class="chart-container"></div>
+              <div class="chart-crosshair" id="archive-crosshair">
+                <span id="ach-o">O —</span>
+                <span id="ach-h">H —</span>
+                <span id="ach-l">L —</span>
+                <span id="ach-c">C —</span>
+                <span id="ach-v">V —</span>
+                <span id="ach-time"></span>
+              </div>
+              <div class="archive-state" id="archive-state">Loading archive…</div>
+            </div>
+          </div>
+
+          <div class="order-ticket-console">
+            <div class="order-ticket-top">
+              <div class="side-switch">
+                <button type="button" class="side-btn buy-side active" id="tab-buy" data-side="buy">Acquire XFG</button>
+                <button type="button" class="side-btn sell-side" id="tab-sell" data-side="sell">Release XFG</button>
+              </div>
+              <div class="type-switch">
+                <button type="button" class="type-chip active" data-type="limit">Standing Limit</button>
+                <button type="button" class="type-chip" data-type="market">Immediate (Pool)</button>
+              </div>
+            </div>
+
+            <div class="order-inputs-grid">
+              <div class="form-group">
+                <label class="form-label" for="order-amount">Amount (XFG)</label>
+                <input type="text" class="form-input" id="order-amount" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                <div class="pct-chips">
+                  <span class="pct-chip" data-pct="0.25">25%</span>
+                  <span class="pct-chip" data-pct="0.50">50%</span>
+                  <span class="pct-chip" data-pct="0.75">75%</span>
+                  <span class="pct-chip" data-pct="1.00">Max</span>
+                </div>
+              </div>
+
+              <div class="form-group" id="price-group">
+                <label class="form-label" for="order-price">Limit (HΞ∆Ŧ / XFG)</label>
+                <input type="text" class="form-input" id="order-price" placeholder="0.00" inputmode="decimal" autocomplete="off">
+                <div class="hint">Select a depth level to prefill</div>
+              </div>
+
+              <div class="form-group" id="expiry-group">
+                <label class="form-label" for="order-expiry">Term (Blocks)</label>
+                <input type="text" class="form-input" id="order-expiry" placeholder="4320" value="4320" autocomplete="off">
+                <div class="hint">4,320 blk ≈ one Epoch</div>
+              </div>
+
+              <button type="button" class="btn btn-block btn-firegold" id="order-preview-btn">Review</button>
+            </div>
+
+            <div class="order-fee-notice">
+              <span>Salon fee 1% · 70% CD yield · 30% house rebate</span>
+              <span id="order-estimate-sub">Continuous depth against the salon pool</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ladder-panel ladder-asks">
+          <div class="ladder-header asks-head">
+            <span>HΞ∆Ŧ Asks</span>
+            <span>Price / Depth</span>
+          </div>
+          <div class="ladder-list" id="hearth-asks">
+            <div class="hearth-empty-state">Awaiting depth…</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="order-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Review — Hearth Bench</span>
+        <button type="button" class="modal-close" id="order-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="order-modal-details" class="mb-md"></div>
+        <div class="row gap-md mb-sm">
+          <button type="button" class="btn btn-firegold flex-1" id="order-exec-btn">Commit via Vault</button>
+          <button type="button" class="btn btn-secondary flex-1" id="order-copy-btn">Copy Command</button>
+        </div>
+        <div class="code-block" id="order-cli-cmd" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/klinecharts.min.js"></script>
+  <script src="/js/archive.js"></script>
+  <script src="/js/hearthtest.js"></script>
+</body>
+</html>

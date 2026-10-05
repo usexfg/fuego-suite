@@ -42,13 +42,37 @@ namespace CryptoNote {
 #include <map>
 #include <vector>
 #include <ctime>
+#include <chrono>
 
 namespace XfgSwap {
+
+// Generic EVM adapter configuration. Chain identity, decimals, transaction
+// envelope, and protocol status come from SwapPairCatalog; operators provide
+// only deployment-specific runtime values here.
+struct EvmChainConfig {
+  SwapPair pair = SwapPair::ETH;
+  uint64_t chainId = 0;
+  std::string rpcUrl;
+  std::string privateKeyHex;
+  std::string address;
+  std::string htlcRegistry;
+  std::string ptlcRegistry;
+  std::string htlcBinPath;
+};
 
 // Configuration for counterparty chain RPC endpoints.
 // Pass to SwapDaemon constructor to wire per-chain clients.
 // Leave host empty ("") for any chain that is not in use.
 struct ChainClientConfig {
+  // Consensus network for every endpoint and deployment in this file. Older
+  // mainnet-only configs omit this field and therefore retain the historical
+  // mainnet default; testnet/dev profiles must state "testnet" explicitly.
+  std::string network = "mainnet";
+
+  // Preferred EVM configuration. Entries are keyed by catalog key under the
+  // `evm_chains` JSON object and supersede legacy flat fields for that pair.
+  std::vector<EvmChainConfig> evmChains;
+
   // BCH
   std::string bchHost;
   uint16_t    bchPort     = 8332;
@@ -273,13 +297,13 @@ struct ChainClientConfig {
   std::string zecWif;          // WIF-encoded private key (mainnet prefix 0x80)
   bool        zecTestnet = false;
 
-  // PULSEX (PulseChain — EVM, chain id 369, native PLS 18 decimals)
-  std::string pulsexHost;
-  uint16_t    pulsexPort   = 8545;
-  std::string pulsexPrivKeyHex;
-  std::string pulsexAddress;
-  uint64_t    pulsexChainId = 369;
-  std::string pulsexHtlcBinPath;
+  // PULSECHAIN (PulseChain — EVM, chain id 369, native PLS 18 decimals)
+  std::string pulsechain_host;
+  uint16_t    pulsechain_port   = 8545;
+  std::string pulsechain_priv_key_hex;
+  std::string pulsechain_address;
+  uint64_t    pulsechain_chain_id = 369;
+  std::string pulsechain_htlc_bin_path;
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   std::string zanoDaemonHost;
@@ -298,12 +322,12 @@ struct ChainClientConfig {
   std::string tonHtlcAddress;         // deployed HTLC contract address
   int         tonWorkchain   = 0;
 
-  // Monad (EVM L1, OP Stack, chain id 185)
+  // Monad (EVM L1, chain id 143)
   std::string monadHost;
   uint16_t    monadPort       = 8545;
   std::string monadPrivKeyHex;
   std::string monadAddress;
-  uint64_t    monadChainId    = 185;
+  uint64_t    monadChainId    = 143;
   std::string monadHtlcBinPath;
 
   // Optimism (EVM L2, OP Stack, chain id 10)
@@ -332,6 +356,7 @@ struct ChainClientConfig {
 };
 
 class SwapDaemon {
+  friend struct SwapDaemonTestAccess;
 public:
   // Construct with only the Fuegod connection.  Chain clients are disabled;
   // processSwap() will log a warning and skip counterparty-chain steps.
@@ -342,7 +367,14 @@ public:
   // For any chain whose host is empty the corresponding client is not created.
   SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
              const std::string& dataDir, Logging::ILogger& logger,
-             const ChainClientConfig& chainCfg);
+             const ChainClientConfig& chainCfg,
+             const std::string& network = "mainnet",
+             const std::string& profile = "mainnet");
+
+  SwapDaemon(const std::string& fuegodHost, uint16_t fuegodPort,
+             const std::string& dataDir, Logging::ILogger& logger,
+             const std::string& network,
+             const std::string& profile = "mainnet");
 
   ~SwapDaemon();
 
@@ -383,6 +415,14 @@ public:
   bool startStatusServer(uint16_t port);
 
   std::string buildStatusJson();
+  std::string buildChainCatalogJson();
+
+  struct ChainReadiness {
+    bool configured = false;
+    bool ready = false;
+    std::string error;
+  };
+  ChainReadiness getChainReadiness(SwapPair pair, bool refresh = false);
 
   // Start a new swap as initiator (Bob: has XFG, wants counterparty coin).
   bool initiate(SwapParams& params);
@@ -434,6 +474,10 @@ public:
   IChainClient* getChainClient(SwapPair pair) const { return m_chainRegistry.getClient(pair); }
 
  private:
+  // A caller-supplied key constrains the first signed KEY_EXCHANGE; it must
+  // not make the pending swap appear to have exchanged keys already.
+  static bool preparePeerIdentity(SwapParams& params);
+
   // Scan non-terminal swaps and warn about any stuck longer than threshold.
   // Called from checkTimeouts().
   void checkStuckSwaps();
@@ -473,8 +517,9 @@ public:
   // the completed MuSig2 adaptor aggregate over the deterministic claim tx
   // prefix; the refund is the maker's plain Schnorr signature. Neither
   // requires peer cooperation after funding.
-  bool broadcastEscrowClaimDirect(SwapParams& params);
-  bool broadcastEscrowRefundDirect(SwapParams& params);
+  bool broadcastEscrowClaimDirect(SwapStateMachine& sm);
+  bool broadcastEscrowRefundDirect(SwapStateMachine& sm);
+  bool refundFundedLeg(SwapStateMachine& sm, uint32_t currentHeight);
 
   // The deterministic claim tx prefix hash — the presig session message
   // for v11+ escrow swaps (identical on both sides).
@@ -494,6 +539,12 @@ public:
   // once sent.
   bool revealXmrShare(SwapStateMachine& sm);
 
+  // Applies only to new swaps and offers. Recovery of an existing swap keeps
+  // access to its chain client even if current configuration is incomplete.
+  bool hasConfirmedCounterpartyClaim(const SwapParams& params,
+                                      IChainClient* client);
+  bool reportSwapFeeOnce(SwapStateMachine& sm, bool claim);
+
   // Save with conflict-retry. saveSwap() now fails when the on-disk record
   // advanced concurrently (P2P writeback between our load and save). For
   // steps with IRREVERSIBLE external side effects (escrow funding already
@@ -504,10 +555,12 @@ public:
   // caller's SwapParams reference may be invalidated by the reload).
   template <typename F>
   bool saveSwapMerged(SwapStateMachine& sm, F&& apply) {
+    const std::string swapId = sm.params().swapId;
+    apply(sm);
     for (int attempt = 0; attempt < 5; ++attempt) {
       if (m_db.saveSwap(sm)) return true;
       SwapStateMachine latest;
-      if (!m_db.loadSwap(sm.params().swapId, latest)) return false;
+      if (!m_db.loadSwap(swapId, latest)) return false;
       apply(latest);
       sm = std::move(latest);
     }
@@ -517,6 +570,11 @@ public:
   // Returns the resolved XFG address. If input is an alias (@name or short name),
   // resolves via RPC. If already an address, returns as-is. Returns "" on failure.
   std::string resolveAddressOrAlias(const std::string& input);
+
+  // Applies only to creating/offering/accepting new swaps. Existing records
+  // keep their client for claim/refund even when current readiness fails.
+  bool canStartNewSwap(SwapPair pair, std::string* reason = nullptr,
+                       bool refresh = true);
 
   // Build an unsigned escrow-spend tx, run collaborative ring sig rounds
   // with the peer, attach the final signature, and broadcast.
@@ -544,6 +602,12 @@ public:
    PriceOracle m_oracle;
    Logging::LoggerRef m_logger;
    ChainRegistry m_chainRegistry;
+   struct ReadinessCacheEntry {
+     ChainReadiness value;
+     std::chrono::steady_clock::time_point checkedAt;
+   };
+   std::mutex m_readinessMutex;
+   std::map<SwapPair, ReadinessCacheEntry> m_readinessCache;
    std::unique_ptr<SwapP2P> m_p2p;
 
     CryptoNote::SwapOfferRelay* m_swapRelay = nullptr;
@@ -557,6 +621,8 @@ public:
 
     // Publicly reachable swap P2P endpoint advertised in AFK fill results.
     std::string m_publicEndpoint;
+    std::string m_network = "mainnet";
+    std::string m_profile = "mainnet";
 
     std::string m_xfgWalletRpcHost;
     uint16_t m_xfgWalletRpcPort = 0;
@@ -566,11 +632,19 @@ public:
    struct TakerRecord {
      std::vector<time_t> requestTimes;
      uint32_t failedSwaps = 0;
+     time_t lastSeen = 0;
    };
    std::mutex m_takerMutex;
    std::map<std::string, TakerRecord> m_takerHistory;
    static constexpr uint32_t MAX_TAKER_REQUESTS_PER_HOUR = 5;
    static constexpr uint32_t TAKER_BAN_THRESHOLD = 3;
+   // takerPubKey is self-asserted and free to mint, so an unbounded map is a
+   // remote memory-exhaustion vector: every failed proof from a fresh key used
+   // to leave a permanent entry. Entries expire by inactivity and the map is
+   // hard-capped; a permanent ban was never worth anything anyway, since
+   // rotating the key evades it.
+   static constexpr time_t TAKER_RECORD_TTL_SECONDS = 7200;   // 2h since last activity
+   static constexpr size_t MAX_TAKER_HISTORY_ENTRIES = 4096;
 
    bool isTakerRateLimited(const std::string& takerPubKey);
    void recordTakerFailure(const std::string& takerPubKey);

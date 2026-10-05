@@ -132,6 +132,22 @@ namespace CryptoNote
           break;
         }
 
+        case TX_EXTRA_MINER_BASKET_VOTE:
+        {
+          TransactionExtraMinerBasketVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
+        case TX_EXTRA_MINER_PARADIO_VOTE:
+        {
+          TransactionExtraMinerParadioVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
         case TX_EXTRA_HEAT_COMMITMENT:
         {
           TransactionExtraHeatCommitment heatCommitment;
@@ -167,32 +183,8 @@ namespace CryptoNote
         //   break;
         // }
 
-        case TX_EXTRA_LEGACY_BOND:
-        {
-          TransactionExtraLegacyBond bond;
-          read(iss, bond.originalTxHash.data, sizeof(bond.originalTxHash.data));
-          bond.amount = 0;
-          for (int i = 0; i < 8; ++i) {
-            bond.amount |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-          }
-          bond.originalCreationHeight = 0;
-          for (int i = 0; i < 4; ++i) {
-            bond.originalCreationHeight |= static_cast<uint32_t>(read<uint8_t>(iss)) << (i * 8);
-          }
-          transactionExtraFields.push_back(bond);
-          break;
-        }
-
-        case TX_EXTRA_LEGACY_BOND_CLAIM:
-        {
-          TransactionExtraLegacyBondClaim claim;
-          claim.claimedInterest = 0;
-          for (int i = 0; i < 8; ++i) {
-            claim.claimedInterest |= static_cast<uint64_t>(read<uint8_t>(iss)) << (i * 8);
-          }
-          transactionExtraFields.push_back(claim);
-          break;
-        }
+        // REMOVED: 0xCB legacy bond parsing (no bond claims exist)
+        // REMOVED: 0xCC legacy bond claim parsing (no bond claims exist)
 
         case TX_EXTRA_CD_BONUS_CLAIM:
         {
@@ -445,6 +437,17 @@ namespace CryptoNote
               break;
             }
 
+            case TX_EXTRA_ALIAS:
+           {
+             TransactionExtraAliasRegistration alias;
+             if (getAliasFromExtra(transactionExtra, alias)) {
+               transactionExtraFields.push_back(alias);
+             } else {
+               return false;
+             }
+             break;
+           }
+
             case TX_EXTRA_ALIAS_RELEASE:
            {
              TransactionExtraAliasRelease release;
@@ -523,6 +526,16 @@ namespace CryptoNote
       return true;
     }
 
+    bool operator()(const TransactionExtraMinerBasketVote &t)
+    {
+      return addMinerBasketVoteToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraMinerParadioVote &t)
+    {
+      return addMinerParadioVoteToExtra(extra, t);
+    }
+
     bool operator()(const TransactionExtraHeatCommitment &t)
     {
       return addHeatCommitmentToExtra(extra, t);
@@ -574,15 +587,7 @@ namespace CryptoNote
     //   return addColdMigrationToExtra(extra, t);
     // }
 
-    bool operator()(const TransactionExtraLegacyBond &t)
-    {
-      return addLegacyBondToExtra(extra, t);
-    }
-
-    bool operator()(const TransactionExtraLegacyBondClaim &t)
-    {
-      return addLegacyBondClaimToExtra(extra, t);
-    }
+    // REMOVED: 0xCB/0xCC legacy bond writers (types removed from variant)
 
     bool operator()(const TransactionExtraCdBonusClaim &t)
     {
@@ -764,6 +769,40 @@ namespace CryptoNote
     std::copy(reinterpret_cast<const uint8_t *>(blob.data()), reinterpret_cast<const uint8_t *>(blob.data() + blob.size()), std::back_inserter(tx_extra));
 
     return true;
+  }
+
+  bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_BASKET_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
+  bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_PARADIO_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
   }
 
   std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t> &extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key)
@@ -951,6 +990,31 @@ namespace CryptoNote
     return true;
   }
 
+  bool TransactionExtraMinerBasketVote::serialize(ISerializer &s)
+  {
+    s(present_mask, "present_mask");
+    // Only the fields flagged in present_mask are serialized on the wire.
+    // This lets a miner contribute a partial basket (e.g. only power + gas)
+    // without polluting the epoch median for commodities they didn't price.
+    // Phase 1: all votes land permanently on-chain for future back-pay audit.
+    if (present_mask & (1 << 0)) s(power, "power");
+    if (present_mask & (1 << 1)) s(milk,  "milk");
+    if (present_mask & (1 << 2)) s(bread, "bread");
+    if (present_mask & (1 << 3)) s(eggs,  "eggs");
+    if (present_mask & (1 << 4)) s(gas,   "gas");
+    return true;
+  }
+
+  bool TransactionExtraMinerParadioVote::serialize(ISerializer &s)
+  {
+    // Future DIGM Paradio feature: miner embeds a song title (UTF-8, max 128 B)
+    // as a block-level vote for which track plays next on the Paradio stream.
+    // Kept separate from the basket vote (tag 0x39) so each is independently
+    // optional and consensus for either subsystem is independent.
+    s(song_title, "song_title");
+    return true;
+  }
+
   bool TransactionExtraHeatCommitment::serialize(ISerializer &s)
   {
     s(commitment, "commitment");
@@ -959,17 +1023,7 @@ namespace CryptoNote
     return true;
   }
 
-  bool TransactionExtraYieldCommitment::serialize(ISerializer &s)
-  {
-    s(commitment, "commitment");
-    s(amount, "amount");
-    s(term, "term");
-    s(claimChainCode, "claimChainCode");
-    s(CIAId, "CIAId");
-    s(metadata, "metadata");
-    s(gift_secret, "gift_secret");
-    return true;
-  }
+  // REMOVED: 0x07 YIELD serialize (struct removed; never in variant)
 
   // REMOVED: COLD commitment serialize
   // bool TransactionExtraColdCommitment::serialize(ISerializer &s)
@@ -994,19 +1048,7 @@ namespace CryptoNote
   //   return true;
   // }
 
-  bool TransactionExtraLegacyBond::serialize(ISerializer &s)
-  {
-    s(originalTxHash, "originalTxHash");
-    s(amount, "amount");
-    s(originalCreationHeight, "originalCreationHeight");
-    return true;
-  }
-
-  bool TransactionExtraLegacyBondClaim::serialize(ISerializer &s)
-  {
-    s(claimedInterest, "claimedInterest");
-    return true;
-  }
+  // REMOVED: 0xCB/0xCC legacy bond serialize (structs removed)
 
   bool TransactionExtraAliasRegistration::serialize(ISerializer &s)
   {
@@ -1075,14 +1117,8 @@ namespace CryptoNote
     return true;
   }
 
-  bool createTxExtraWithHeatCommitment(const Crypto::Hash &commitment, uint64_t amount, const std::vector<uint8_t> &metadata, std::vector<uint8_t> &extra)
-  {
-    TransactionExtraHeatCommitment heatCommitment;
-    heatCommitment.commitment = commitment;
-    heatCommitment.amount = amount;
-    heatCommitment.metadata = metadata;
-    return addHeatCommitmentToExtra(extra, heatCommitment);
-  }
+  // REMOVED: createTxExtraWithHeatCommitment — no new 0x08 extras.
+  // addHeatCommitmentToExtra stays for variant round-trip of historical data.
 
   bool getHeatCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraHeatCommitment &commitment)
   {
@@ -1118,172 +1154,12 @@ namespace CryptoNote
     return true;
   }
 
-  bool addYieldCommitmentToExtra(std::vector<uint8_t> &tx_extra, const TransactionExtraYieldCommitment &commitment)
-  {
-    tx_extra.push_back(TX_EXTRA_YIELD_COMMITMENT);
-    tx_extra.insert(tx_extra.end(), commitment.commitment.data, commitment.commitment.data + sizeof(commitment.commitment.data));
-    uint64_t amount = commitment.amount;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
-      amount >>= 8;
-    }
-    uint32_t term = commitment.term;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(term & 0xFF));
-      term >>= 8;
-    }
-    tx_extra.push_back(commitment.claimChainCode);
-    uint8_t assetIdLen = static_cast<uint8_t>(commitment.CIAId.size());
-    tx_extra.push_back(assetIdLen);
-    tx_extra.insert(tx_extra.end(), commitment.CIAId.begin(), commitment.CIAId.end());
-    uint8_t metadataSize = static_cast<uint8_t>(commitment.metadata.size());
-    tx_extra.push_back(metadataSize);
-    if (metadataSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.metadata.begin(), commitment.metadata.end());
-    }
-    uint8_t giftSecretSize = static_cast<uint8_t>(commitment.gift_secret.size());
-    tx_extra.push_back(giftSecretSize);
-    if (giftSecretSize > 0) {
-      tx_extra.insert(tx_extra.end(), commitment.gift_secret.begin(), commitment.gift_secret.end());
-    }
-    return true;
-}
+  // REMOVED: 0x07 YIELD writers/readers (addYieldCommitmentToExtra,
+  // createTxExtraWithYieldCommitment, getYieldCommitmentFromExtra) — never
+  // parsed, never consensus. See TransactionExtra.h.
 
-  bool createTxExtraWithYieldCommitment(const Crypto::Hash &commitment, uint64_t amount, uint32_t term, const std::string &CIAId, const std::vector<uint8_t> &metadata, uint8_t claimChainCode, const std::vector<uint8_t> &gift_secret, std::vector<uint8_t> &extra)
-  {
-    TransactionExtraYieldCommitment yieldCommitment;
-    yieldCommitment.commitment = commitment;
-    yieldCommitment.amount = amount;
-    yieldCommitment.term = term;
-    yieldCommitment.CIAId = CIAId;
-    yieldCommitment.metadata = metadata;
-    yieldCommitment.claimChainCode = claimChainCode;
-    yieldCommitment.gift_secret = gift_secret;
-    return addYieldCommitmentToExtra(extra, yieldCommitment);
-  }
-
-  bool getYieldCommitmentFromExtra(const std::vector<uint8_t> &tx_extra, TransactionExtraYieldCommitment &commitment)
-  {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_YIELD_COMMITMENT) {
-      return false;
-    }
-    size_t pos = 1;
-    if (pos + 32 > tx_extra.size()) return false;
-    std::memcpy(commitment.commitment.data, &tx_extra[pos], 32);
-    pos += 32;
-    if (pos + 8 > tx_extra.size()) return false;
-    pos += 8;
-    if (pos + 4 > tx_extra.size()) return false;
-    commitment.term = 0;
-    for (int i = 0; i < 4; ++i) {
-      commitment.term |= static_cast<uint32_t>(tx_extra[pos + i]) << (i * 8);
-    }
-    pos += 4;
-    if (pos >= tx_extra.size()) return false;
-    commitment.claimChainCode = tx_extra[pos];
-    pos += 1;
-    if (pos >= tx_extra.size()) return false;
-    uint8_t assetIdLen = tx_extra[pos];
-    pos += 1;
-    if (pos + assetIdLen > tx_extra.size()) return false;
-    if (assetIdLen > 0) {
-      commitment.CIAId.assign(reinterpret_cast<const char*>(&tx_extra[pos]), assetIdLen);
-      pos += assetIdLen;
-    } else {
-      commitment.CIAId.clear();
-    }
-    if (pos >= tx_extra.size()) return false;
-    uint8_t metadataSize = tx_extra[pos];
-    pos += 1;
-    if (pos + metadataSize > tx_extra.size()) return false;
-    if (metadataSize > 0) {
-      commitment.metadata.assign(&tx_extra[pos], &tx_extra[pos] + metadataSize);
-      pos += metadataSize;
-    } else {
-      commitment.metadata.clear();
-    }
-    if (pos >= tx_extra.size()) return false;
-    uint8_t giftSecretSize = tx_extra[pos];
-    pos += 1;
-    if (pos + giftSecretSize > tx_extra.size()) return false;
-    if (giftSecretSize > 0) {
-      commitment.gift_secret.assign(&tx_extra[pos], &tx_extra[pos] + giftSecretSize);
-    } else {
-      commitment.gift_secret.clear();
-    }
-    return true;
-  }
-
-  Crypto::Hash computeCommitment(const std::array<uint8_t, 32> &secret,
-                                 uint64_t amount_atomic,
-                                 const Crypto::Hash &tx_prefix_hash,
-                                 uint32_t network_id,
-                                 uint32_t target_chain_id,
-                                 uint32_t commitment_version,
-                                 uint32_t term)
-  {
-    std::vector<uint8_t> preimage;
-    preimage.reserve(88);
-    preimage.insert(preimage.end(), secret.begin(), secret.end());
-    uint64_t amt = amount_atomic;
-    for (int i = 0; i < 8; ++i) {
-      preimage.push_back(static_cast<uint8_t>(amt & 0xFF));
-      amt >>= 8;
-    }
-    preimage.insert(preimage.end(), reinterpret_cast<const uint8_t*>(&tx_prefix_hash), reinterpret_cast<const uint8_t*>(&tx_prefix_hash) + sizeof(tx_prefix_hash));
-    uint32_t net_id = network_id;
-    for (int i = 0; i < 4; ++i) {
-      preimage.push_back(static_cast<uint8_t>(net_id & 0xFF));
-      net_id >>= 8;
-    }
-    uint32_t target_id = target_chain_id;
-    for (int i = 0; i < 4; ++i) {
-      preimage.push_back(static_cast<uint8_t>(target_id & 0xFF));
-      target_id >>= 8;
-    }
-    uint32_t version = commitment_version;
-    for (int i = 0; i < 4; ++i) {
-      preimage.push_back(static_cast<uint8_t>(version & 0xFF));
-      version >>= 8;
-    }
-    uint32_t t = term;
-    for (int i = 0; i < 4; ++i) {
-      preimage.push_back(static_cast<uint8_t>(t & 0xFF));
-      t >>= 8;
-    }
-    uint8_t md[32];
-    keccak(preimage.data(), static_cast<int>(preimage.size()), md, sizeof(md));
-    Crypto::Hash out{};
-    memcpy(&out, md, sizeof(out));
-    return out;
-  }
-
-  Crypto::Hash computeHeatCommitment(const std::array<uint8_t, 32> &secret,
-                                     uint64_t amount_atomic,
-                                     const Crypto::Hash &tx_prefix_hash,
-                                     uint32_t network_id,
-                                     uint32_t target_chain_id,
-                                     uint32_t commitment_version)
-  {
-    return computeCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version, parameters::HEAT_TERM);
-  }
-
-  bool buildHeatExtra(const std::array<uint8_t, 32> &secret,
-                      uint64_t amount_atomic,
-                      const Crypto::Hash &tx_prefix_hash,
-                      uint32_t network_id,
-                      uint32_t target_chain_id,
-                      uint32_t commitment_version,
-                      const std::vector<uint8_t> &metadata,
-                      std::vector<uint8_t> &extra)
-  {
-    Crypto::Hash commitment = computeHeatCommitment(secret, amount_atomic, tx_prefix_hash, network_id, target_chain_id, commitment_version);
-    const Crypto::Hash zero = {};
-    if (!memcmp(&commitment, &zero, sizeof(zero))) {
-      return false;
-    }
-    return CryptoNote::createTxExtraWithHeatCommitment(commitment, amount_atomic, metadata, extra);
-  }
+  // REMOVED: 0x08 creation helpers (computeCommitment, computeHeatCommitment,
+  // buildHeatExtra) — no new 0x08 extras. Historical parsing stays above.
 
   // REMOVED: COLD commitment computation
   // Crypto::Hash computeColdCommitment(const std::array<uint8_t, 32> &secret,
@@ -1366,65 +1242,8 @@ namespace CryptoNote
   //   return true;
   // }
 
-  bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond) {
-    tx_extra.push_back(TX_EXTRA_LEGACY_BOND);
-    tx_extra.insert(tx_extra.end(), bond.originalTxHash.data, bond.originalTxHash.data + 32);
-    uint64_t amount = bond.amount;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF));
-      amount >>= 8;
-    }
-    uint32_t height = bond.originalCreationHeight;
-    for (int i = 0; i < 4; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(height & 0xFF));
-      height >>= 8;
-    }
-    return true;
-  }
-
-  bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond) {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_LEGACY_BOND) {
-      return false;
-    }
-    size_t pos = 1;
-    if (pos + sizeof(Crypto::Hash) > tx_extra.size()) return false;
-    std::memcpy(&bond.originalTxHash, &tx_extra[pos], sizeof(Crypto::Hash));
-    pos += sizeof(Crypto::Hash);
-    if (pos + 8 > tx_extra.size()) return false;
-    bond.amount = 0;
-    for (int i = 0; i < 8; ++i, ++pos) {
-      bond.amount |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
-    }
-    if (pos + 4 > tx_extra.size()) return false;
-    bond.originalCreationHeight = 0;
-    for (int i = 0; i < 4; ++i, ++pos) {
-      bond.originalCreationHeight |= static_cast<uint32_t>(tx_extra[pos]) << (i * 8);
-    }
-    return true;
-  }
-
-  bool addLegacyBondClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBondClaim& claim) {
-    tx_extra.push_back(TX_EXTRA_LEGACY_BOND_CLAIM);
-    uint64_t v = claim.claimedInterest;
-    for (int i = 0; i < 8; ++i) {
-      tx_extra.push_back(static_cast<uint8_t>(v & 0xFF));
-      v >>= 8;
-    }
-    return true;
-  }
-
-  bool getLegacyBondClaimFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBondClaim& claim) {
-    if (tx_extra.empty() || tx_extra[0] != TX_EXTRA_LEGACY_BOND_CLAIM) {
-      return false;
-    }
-    size_t pos = 1;
-    if (pos + 8 > tx_extra.size()) return false;
-    claim.claimedInterest = 0;
-    for (int i = 0; i < 8; ++i, ++pos) {
-      claim.claimedInterest |= static_cast<uint64_t>(tx_extra[pos]) << (i * 8);
-    }
-    return true;
-  }
+  // REMOVED: 0xCB/0xCC legacy bond extras (add/getLegacyBond(Claim)ToExtra —
+  // no bond claims exist; tags no longer parse)
 
   bool addCdBonusClaimToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraCdBonusClaim& claim) {
     tx_extra.push_back(TX_EXTRA_CD_BONUS_CLAIM);
@@ -1467,6 +1286,16 @@ namespace CryptoNote
       if (tx.inputs[bc.inputIndex].type() != typeid(TransactionInputCommitmentSpend)) return false;
       if (bonusByInput.count(bc.inputIndex)) return false;
       if (bc.claimedBonus == 0) continue;
+      // The declared bonus must fit inside the interest this input actually
+      // claims. Without this, connect-time computes
+      //   baseClaim = claimedInterest > bonus ? claimedInterest - bonus : 0
+      // so an over-declared bonus floors the base to zero and the full declared
+      // amount is still debited from BONUS_VAULT — letting a single matured CD
+      // claiming 1 atomic unit of interest burn the entire vault. The interest
+      // itself is already capped by checkCommitmentSpendInput, so bounding the
+      // bonus by it transitively bounds the bonus by the real entitlement.
+      const auto& csIn = boost::get<TransactionInputCommitmentSpend>(tx.inputs[bc.inputIndex]);
+      if (bc.claimedBonus > csIn.claimedInterest) return false;
       if (bc.claimedBonus > UINT64_MAX - totalBonus) return false;
       bonusByInput[bc.inputIndex] = bc.claimedBonus;
       totalBonus += bc.claimedBonus;
@@ -1991,17 +1820,6 @@ namespace CryptoNote
     for (const auto& out : tx.outputs) {
       if (out.target.type() == typeid(TransactionOutputCommitment) &&
           boost::get<TransactionOutputCommitment>(out.target).term == parameters::DIGM_TERM) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool usesLegacyBondTags(const Transaction& tx) {
-    std::vector<TransactionExtraField> fields;
-    parseTransactionExtra(tx.extra, fields);
-    for (const auto& f : fields) {
-      if (f.type() == typeid(TransactionExtraLegacyBond) || f.type() == typeid(TransactionExtraLegacyBondClaim)) {
         return true;
       }
     }

@@ -130,8 +130,6 @@ public:
                                          uint64_t amount,
                                          uint64_t fee,
                                          uint64_t mixIn) override;
-  virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) override;
-
   // v11 Orderbook
   virtual TransactionId placeOrderV13(uint8_t side, uint64_t amount, uint64_t price, uint32_t expiration, uint64_t fee, uint64_t mixIn = 4) override;
   virtual TransactionId cancelOrderV13(const Crypto::Hash& orderId, uint64_t fee, uint64_t mixIn = 4) override;

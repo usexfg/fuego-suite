@@ -28,8 +28,20 @@ std::string SpvMerkle::computeRootHexDisplay(
     const std::string& txidDisplay,
     const std::vector<std::string>& branchDisplay,
     uint32_t pos) {
+  // A branch longer than this cannot describe a real block's tree (2^64 leaves
+  // already exceeds any conceivable tx count), and an unbounded branch is free
+  // grinding surface for a hostile server. Fail closed — callers compare the
+  // returned root against the stored header root, so "" never matches.
+  static const size_t MAX_BRANCH_DEPTH = 64;
+  if (branchDisplay.size() > MAX_BRANCH_DEPTH) {
+    return std::string();
+  }
+
   // Start with the txid converted from display (BE) hex to internal (LE) bytes.
   std::vector<uint8_t> cur = rev(BchHtlcScript::hexToBytes(txidDisplay));
+  if (cur.size() != 32) {
+    return std::string();
+  }
 
   for (const auto& bh : branchDisplay) {
     std::vector<uint8_t> b = rev(BchHtlcScript::hexToBytes(bh));
@@ -45,6 +57,13 @@ std::string SpvMerkle::computeRootHexDisplay(
     }
     cur = BchHtlcScript::doubleSha256(cat);
     pos >>= 1;
+  }
+
+  // After consuming every branch level, pos must be exhausted. Leftover high
+  // bits mean the claimed position does not correspond to a leaf at this depth,
+  // i.e. the branch and the index disagree.
+  if (pos != 0) {
+    return std::string();
   }
 
   // Convert back to display (BE) hex.

@@ -27,6 +27,7 @@
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "P2p/P2pProtocolDefinitions.h"
+#include "SwapDaemon/SwapPairCatalog.h"
 
 namespace CryptoNote {
 
@@ -43,7 +44,7 @@ struct SwapOfferMsg {
   bool        isSell      = true;
   uint64_t    xfgAmount   = 0;
   uint64_t    rateNum     = 0;   // XFG per 1 CTR, scaled by 1e7
-  uint8_t     pair        = 0;   // 0=XMR, 1=ETH, 2=BCH, 3=SOL, 4=ARB, 5=BASE
+  uint8_t     pair        = 0;   // append-only XfgSwap::SwapPair protocol id
   Crypto::PublicKey makerPubKey;
   Crypto::Signature signature;
   uint64_t    timestamp   = 0;
@@ -58,6 +59,7 @@ struct SwapTradeRecord {
   uint8_t     pair        = 0;
   uint64_t    xfgAmount   = 0;
   uint64_t    ctrAmount   = 0;
+  std::string ctrAmountAtomic; // canonical full-width decimal amount; legacy field is zero if wider
   double      rate        = 0.0;
   uint32_t    blockHeight = 0;
   uint64_t    timestamp   = 0;
@@ -94,7 +96,7 @@ struct SwapOrder {
 
   std::string  orderId;       // daemon-generated: cn_fast_hash(canonical fields)
   Side         side       = Side::BID;
-  uint8_t      pair       = 0;  // 0=XMR..5=BASE
+  uint8_t      pair       = 0;  // append-only XfgSwap::SwapPair protocol id
   uint64_t     price      = 0;  // XFG per 1 CTR, scaled by 1e7
   uint64_t     amount     = 0;  // total order size in XFG atomic units
   uint64_t     filled     = 0;  // amount filled so far
@@ -193,6 +195,19 @@ public:
   void handleSwapRequest(const std::string& offerId, uint64_t amount,
                          const std::string& takerPubKey, const std::string& proofOfFunds);
 
+  // P2P and RPC share this bound before queueing attacker-controlled strings.
+  static bool isValidSwapRequestInput(const std::string& offerId,
+                                      const std::string& takerPubKey,
+                                      const std::string& proofOfFunds) {
+    if (offerId.empty() || offerId.size() > 128 || takerPubKey.size() != 64 ||
+        proofOfFunds.empty() || proofOfFunds.size() > 65536) return false;
+    for (char c : takerPubKey) {
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F'))) return false;
+    }
+    return true;
+  }
+
   // RPC-originated request: store locally AND gossip to all peers so the
   // maker's node (wherever it is) queues it for its SwapDaemon.
   void submitSwapRequest(const std::string& offerId, uint64_t amount,
@@ -276,13 +291,31 @@ public:
   std::vector<Fill> matchOrder(SwapOrder::Side takerSide, uint8_t pair,
                                uint64_t takerPrice, uint64_t takerAmount);
 
+  // Protocol bounds and activation come from the append-only pair catalog.
+  // Staged ids retain storage slots but cannot enter the gossip order book.
+  static constexpr uint8_t MAX_PAIR_INDEX = XfgSwap::MAX_SWAP_PAIR_INDEX;
+  static constexpr bool isProtocolPair(uint8_t pair) {
+    return XfgSwap::isProtocolSwapPair(pair);
+  }
+
+  // Order-book capacity includes reserved SwapPair values, but offers and
+  // orders require an end-to-end executable chain path. The UTXO SPV clients
+  // cannot submit locks and do not validate chain-specific difficulty; their
+  // full-node modes lack independent claim discovery. Keep the numeric gates
+  // in sync with SwapPairCatalog.h. Client readiness adds a per-config gate.
+  static constexpr bool isExecutablePair(uint8_t pair) {
+    return isProtocolPair(pair) && pair != 2 && pair != 3 &&
+           pair != 6 && pair != 8 && pair != 9 && pair != 10 &&
+           pair != 17 && pair != 20 && pair != 21 && pair != 22 &&
+           pair != 24 && pair != 27 && pair != 28;
+  }
+
 private:
   // ── Legacy v1 internals ──
   bool validateOffer(const SwapOfferMsg& offer) const;
   void cleanupLegacyOffers();
 
   // ── v2 Orderbook internals ──
-  static constexpr uint8_t MAX_PAIR_INDEX = 11; // m_orderBooks[12] valid indices 0..11 (SwapPair core set)
   bool isValidPair(uint8_t pair) const { return pair <= MAX_PAIR_INDEX; }
   std::string generateOrderId(const SwapOrder& o) const;
   bool validateOrderSignature(const SwapOrder& o) const;
@@ -345,7 +378,7 @@ private:
   NativeXfgPriceRange m_nativeXfgPrice;
 
   // ── v2 Orderbook state ──
-  PairOrderBook m_orderBooks[12];  // indexed by pair (0..11) — ALWAYS bounds-check pair first
+  PairOrderBook m_orderBooks[MAX_PAIR_INDEX + 1];  // indexed by pair — ALWAYS bounds-check pair first
   std::map<std::string, SwapOrder> m_allOrders;  // orderId → order (all orders across all pairs)
   // Fill replay keys: hash(taker|maker|amount|price|height) — not maker-only
   std::map<std::string, uint64_t> m_fillReplay; // key → insert time (unix)

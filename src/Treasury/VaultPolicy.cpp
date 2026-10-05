@@ -65,11 +65,20 @@ bool VaultPolicy::isPermitted(
     }
 
     switch (source) {
-        case VaultPartition::CD_APY_POOL:
-            // TODO(M-1): require a TransactionExtraCdClaim tag and cap the amount
-            // against the accrued yield for the claimed deposit. Currently any
-            // tx targeting this partition is admitted — add claim-tag parsing here.
-            return true;
+        case VaultPartition::CD_APY_POOL: {
+            // Permit only if at least one CommitmentSpend input declares nonzero
+            // claimedInterest. Per-input amount caps are enforced by
+            // checkCommitmentSpendInput() in Blockchain.cpp; this gate ensures
+            // no unrelated transaction can drain the yield pool by presenting
+            // a vault key image without an accompanying interest claim.
+            for (const auto& input : tx.inputs) {
+                if (input.type() == typeid(TransactionInputCommitmentSpend)) {
+                    if (boost::get<TransactionInputCommitmentSpend>(input).claimedInterest > 0)
+                        return true;
+                }
+            }
+            return false;
+        }
 
         case VaultPartition::LP_RESERVE:
             return hasAmmAdd || hasAmmRem;

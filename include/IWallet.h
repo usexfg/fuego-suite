@@ -21,7 +21,6 @@
 #include "CryptoNote.h"
 #include "../src/CryptoNoteConfig.h"
 #include "../src/CryptoNoteCore/CryptoNoteBasic.h"
-#include "../src/CryptoNoteCore/DepositCommitment.h"
 
 namespace CryptoNote
 {
@@ -66,9 +65,9 @@ struct Deposit
 {
   // Deposit type enum
   enum class Type : uint8_t {
-    HEAT = 0x08,        // HEAT burn deposit (0x08)
+    HEAT = 0x08,        // HEAT deposits/CDs (term field carries HEAT_TERM or lock blocks)
     // COLD = 0xCD,      // REMOVED: COLD yield deposit
-    LEGACY_BOND = 0xCB, // Legacy bond (0xCB) — bug-era migration with 50% CD share
+    // LEGACY_BOND = 0xCB, // REMOVED: no bond claims exist
   };
 
   size_t creatingTransactionId;
@@ -195,7 +194,7 @@ public:
   virtual ~IWallet() {}
 
   virtual void initialize(const std::string& path, const std::string& password) = 0;
-  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash, const DepositCommitment& commitment = DepositCommitment())=0;
+  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash)=0;
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) = 0;
   virtual Deposit getDeposit(size_t bankingIndex) const = 0;
   virtual void initializeWithViewKey(const std::string& path, const std::string& password, const Crypto::SecretKey& viewSecretKey) = 0;

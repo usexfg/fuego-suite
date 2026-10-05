@@ -26,11 +26,13 @@ namespace XfgSwap {
 OfferManager::OfferManager(CryptoNote::SwapOfferRelay& relay,
                            const Crypto::SecretKey& makerSecretKey,
                            const Crypto::PublicKey& makerPublicKey,
-                           Logging::ILogger& logger)
+                           Logging::ILogger& logger,
+                           std::function<bool(uint8_t)> canPublishPair)
   : m_relay(relay),
     m_makerSecretKey(makerSecretKey),
     m_makerPublicKey(makerPublicKey),
-    m_logger(logger, "OfferManager") {}
+    m_logger(logger, "OfferManager"),
+    m_canPublishPair(std::move(canPublishPair)) {}
 
 bool OfferManager::loadConfig(const std::string& jsonPath) {
   std::ifstream f(jsonPath);
@@ -70,9 +72,8 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       // Validate economic fields: pair must index a valid order-book slot and
       // the offer amount must be positive. A zero amount can never be filled
       // and would spam the relay with useless offers.
-      // Bound mirrors SwapOfferRelay::MAX_PAIR_INDEX (valid indices 0..11).
-      if (mo.pair > 11) {
-        m_logger(Logging::ERROR) << "Managed offer skipped: invalid pair " << (int)mo.pair;
+      if (!CryptoNote::SwapOfferRelay::isExecutablePair(mo.pair)) {
+        m_logger(Logging::ERROR) << "Managed offer skipped: unsupported pair " << (int)mo.pair;
         continue;
       }
       if (mo.xfgAmount == 0) {
@@ -183,6 +184,12 @@ void OfferManager::tick(uint32_t currentHeight) {
   m_running = true;
 
   for (auto& state : m_states) {
+    // A recovery-only or disconnected client must not keep an offer live.
+    // Recheck each tick so an RPC outage also withdraws previously posted offers.
+    if (!m_canPublishPair || !m_canPublishPair(state.config.pair)) {
+      cancelManagedOffer(state);
+      continue;
+    }
     uint64_t compositeRateNum = compositeToRateNum(state.config.pair);
     if (compositeRateNum == 0) continue;
 

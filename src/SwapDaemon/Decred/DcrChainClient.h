@@ -30,6 +30,11 @@ public:
                  const std::string& wif = "");
 
   std::string chainName() const override { return "DCR"; }
+  bool usesSpvVerification() const override { return m_spvClient != nullptr; }
+  // SPV transport cannot broadcast and the full-node path cannot yet prove
+  // claim depth or extract Alice's preimage. Retain the client for recovery,
+  // but do not admit new DCR swaps until both modes are complete.
+  bool isReadyForNewSwap() override { return false; }
 
   std::string getReceiveAddress() const override;
   ChainClientResult lock(const SwapParams& params) override;

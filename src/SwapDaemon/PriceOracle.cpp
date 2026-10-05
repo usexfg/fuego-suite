@@ -19,20 +19,20 @@
 namespace XfgSwap {
 
 // =============================================================================
-// Seed prices: 1 XFG = $1.58 (1:1 Hearth pool bootstrap)
+// Seed prices: 1 XFG = $0.158 (10:1 Hearth pool bootstrap; HEAT peg = $1.58)
 // =============================================================================
 //
-// Counterparty prices (June 2026):
-//   SOL = $170    →  1 SOL =     108 XFG
-//   ETH = $2,140  →  1 ETH =   1,354 XFG
-//   BCH = $469    →  1 BCH =     297 XFG
-//   XMR = $343    →  1 XMR =     217 XFG
+// Counterparty prices (Sept 2026):
+//   SOL = $170    →  1 SOL =   1,076 XFG
+//   ETH = $2,140  →  1 ETH =  13,544 XFG
+//   BCH = $469    →  1 BCH =   2,968 XFG
+//   XMR = $343    →  1 XMR =   2,171 XFG
 //
 // These seed rates bootstrap the system before any swaps complete.
 // Once >= 5 real swaps exist for a pair, TWAP takes over entirely.
 // =============================================================================
 
-static const double SEED_XFG_USD = 1.58;
+static const double SEED_XFG_USD = 0.158;
 static const double SEED_SOL_USD = 170.0;
 static const double SEED_ETH_USD = 2140.0;
 static const double SEED_BCH_USD = 469.0;
@@ -49,7 +49,7 @@ static const double SEED_TON_USD = 5.50;
 static const double SEED_DOGE_USD = 0.22;
 static const double SEED_DASH_USD = 30.0;
 static const double SEED_ZEC_USD = 45.0;
-static const double SEED_PULSEX_USD = 0.0007;  // native PLS on PulseChain
+static const double SEED_PULSECHAIN_USD = 0.0007;  // native PLS on PulseChain
 static const double SEED_ZANO_USD = 3.20;
 static const double SEED_BTC_USD = 65000.0;
 static const double SEED_LTC_USD = 90.0;
@@ -116,7 +116,7 @@ double PriceOracle::getEffectiveRate(SwapPair pair) const {
     case SwapPair::DOGE: return SEED_DOGE_USD / xfgUsd;
     case SwapPair::DASH: return SEED_DASH_USD / xfgUsd;
     case SwapPair::ZEC: return SEED_ZEC_USD / xfgUsd;
-    case SwapPair::PULSEX: return SEED_PULSEX_USD / xfgUsd;
+    case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / xfgUsd;
     case SwapPair::ZANO: return SEED_ZANO_USD / xfgUsd;
     case SwapPair::BTC: return SEED_BTC_USD / xfgUsd;
     case SwapPair::LTC: return SEED_LTC_USD / xfgUsd;
@@ -152,7 +152,7 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::DOGE: return SEED_DOGE_USD / SEED_XFG_USD;
     case SwapPair::DASH: return SEED_DASH_USD / SEED_XFG_USD;
     case SwapPair::ZEC: return SEED_ZEC_USD / SEED_XFG_USD;
-    case SwapPair::PULSEX: return SEED_PULSEX_USD / SEED_XFG_USD;
+    case SwapPair::PULSECHAIN: return SEED_PULSECHAIN_USD / SEED_XFG_USD;
     case SwapPair::ZANO: return SEED_ZANO_USD / SEED_XFG_USD;
     case SwapPair::BTC: return SEED_BTC_USD / SEED_XFG_USD;
     case SwapPair::LTC: return SEED_LTC_USD / SEED_XFG_USD;
@@ -169,46 +169,16 @@ double PriceOracle::getSeedRate(SwapPair pair) {
 // =============================================================================
 
 double PriceOracle::ctrDivisor(SwapPair pair) {
-  switch (pair) {
-    case SwapPair::SOL: return 1e9;   // lamports (1 SOL = 1e9 lamports)
-    case SwapPair::ETH: return 1e18;  // wei
-    case SwapPair::BCH: return 1e8;   // satoshi
-    case SwapPair::XMR: return 1e12;  // piconero
-    case SwapPair::ARB: return 1e18;
-    case SwapPair::BASE: return 1e18;
-    case SwapPair::BNB: return 1e18;
-    case SwapPair::DCR: return 1e8;
-    case SwapPair::POLYGON: return 1e18;  // wei
-    case SwapPair::GLEEC: return 1e18;    // EVM (18 decimals)
-    case SwapPair::ROBINHOOD: return 1e18;
-    case SwapPair::AVAX: return 1e18;     // wei (18 decimals)
-    case SwapPair::CRO: return 1e18;      // wei (18 decimals)
-    case SwapPair::BOB: return 1e18;
-    case SwapPair::SIA: return 1e24;     // hastings (1 SC = 10^24)
-    case SwapPair::TON: return 1e9;      // nanotons
-    case SwapPair::UNICHAIN: return 1e18;
-    case SwapPair::PLASMA: return 1e18;   // XPL (18 decimals)
-    case SwapPair::DOGE: return 1e8;      // koinu (1 DOGE = 1e8 koinu)
-    case SwapPair::DASH: return 1e8;      // duffs (1 DASH = 1e8 duffs)
-    case SwapPair::ZEC: return 1e8;       // zatoshis (1 ZEC = 1e8 zats)
-    case SwapPair::PULSEX: return 1e18;   // PLS (18 decimals)
-    case SwapPair::ZANO: return 1e12;     // atoms (1 ZANO = 1e12 atoms)
-    case SwapPair::BTC: return 1e8;       // satoshi
-    case SwapPair::LTC: return 1e8;       // litoshi
-    case SwapPair::KMD_SPV: return 1e8;   // satoshi
-    case SwapPair::MONAD: return 1e18;    // wei
-    case SwapPair::OPTIMISM: return 1e18; // wei
-    case SwapPair::DOT: return 1e10;      // planck (1 DOT = 1e10 planck)
-    default:            return 1e8;
-  }
+  const auto* descriptor = swapPairDescriptor(pair);
+  return descriptor ? std::pow(10.0, static_cast<double>(descriptor->decimals)) : 1e8;
 }
 
-double PriceOracle::atomicToRate(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount) {
+double PriceOracle::atomicToRate(SwapPair pair, uint64_t xfgAmount, const AtomicAmount& ctrAmount) {
   if (ctrAmount == 0) return 0.0;
 
   // XFG: 7 decimals (COIN = 10,000,000)
   double xfgWhole = static_cast<double>(xfgAmount) / 1e7;
-  double ctrWhole = static_cast<double>(ctrAmount) / ctrDivisor(pair);
+  double ctrWhole = ctrAmount.convert_to<double>() / ctrDivisor(pair);
 
   if (ctrWhole <= 0.0) return 0.0;
 
@@ -324,7 +294,7 @@ RateCheck PriceOracle::validateRate(SwapPair pair, double proposedRate) const {
   return RateCheck::OK;
 }
 
-RateCheck PriceOracle::validateSwapAmounts(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount) const {
+RateCheck PriceOracle::validateSwapAmounts(SwapPair pair, uint64_t xfgAmount, const AtomicAmount& ctrAmount) const {
   double rate = atomicToRate(pair, xfgAmount, ctrAmount);
   return validateRate(pair, rate);
 }

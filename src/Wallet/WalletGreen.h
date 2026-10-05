@@ -31,6 +31,7 @@
 #include "Transfers/TransfersSynchronizer.h"
 #include "Transfers/BlockchainSynchronizer.h"
 #include "crypto/subaddress.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 
 namespace CryptoNote
 {
@@ -48,7 +49,7 @@ public:
   virtual ~WalletGreen();
 
   /* Deposit related functions */
-  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash, const DepositCommitment& commitment = DepositCommitment()) override;
+  virtual void createDeposit(uint64_t amount, uint64_t term, std::string sourceAddress, std::string destinationAddress, std::string &transactionHash) override;
   virtual void withdrawDeposit(DepositId depositId, std::string &transactionHash) override;
 
   /* HEAT v10 operations */
@@ -386,6 +387,16 @@ protected:
 
   void validateTransactionParameters(const TransactionParameters &transactionParameters) const;
   size_t doTransfer(const TransactionParameters &transactionParameters, Crypto::SecretKey &transactionSK);
+
+  // Unlocked HEAT deposits covering `amount`; returns their total.
+  uint64_t selectHeatDeposits(uint64_t amount, std::vector<size_t> &depositIds) const;
+  // A ring-signable spend of each deposit (planCommitmentSpend, no interest).
+  std::vector<CommitmentSpendPlan> planCommitmentSpends(const std::vector<size_t> &depositIds, uint64_t mixin);
+  // A HEAT_TERM output to this wallet's primary address (v2 keys).
+  void addHeatOutputToSelf(ITransaction &transaction, uint64_t amount)
+  {
+    addOwnedCommitmentOutput(transaction, primarySpendPublicKey(), m_viewPublicKey, parameters::HEAT_TERM, amount);
+  }
 
   void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,

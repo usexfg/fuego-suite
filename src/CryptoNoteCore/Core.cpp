@@ -29,6 +29,7 @@
 #include "../Logging/LoggerRef.h"
 #include "../Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "CryptoNoteFormatUtils.h"
+#include "AmmPool.h"
 
 #include "CryptoNoteTools.h"
 #include "CryptoNoteStatInfo.h"
@@ -396,16 +397,12 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     logger(ERROR) << "tx uses a HEAT-era feature before V11, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
-  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsCd(tx)) {
-    logger(ERROR) << "CD output before V12, rejected for tx id= " << getObjectHash(tx);
+  if (height < m_currency.cdActivationHeight() && createsCd(tx)) {
+    logger(ERROR) << "CD output before CD activation, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
   if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsDigm(tx)) {
     logger(ERROR) << "DIGM mint before V12, rejected for tx id= " << getObjectHash(tx);
-    return false;
-  }
-  if (usesLegacyBondTags(tx)) {
-    logger(ERROR) << "legacy bond tag, rejected for tx id= " << getObjectHash(tx);
     return false;
   }
 
@@ -453,7 +450,7 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     // AMM direction 0 (XFG→HEAT): XFG inputs must cover XFG outputs + fee.
     // AMM direction 1 (HEAT→XFG): HEAT inputs must cover HEAT outputs.
     AssetBalance inAssets = get_blockchain_storage().getTransactionInputAssetAmounts(tx, height);
-    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx, height);
+    AssetBalance outAssets = m_currency.getTransactionOutputAssetAmounts(tx);
     uint64_t fee = amount_in < amount_out ? m_currency.minimumFee() : amount_in - amount_out;
 
     if (hasHeatMintAuth || ammSwapDirection == 0) {
@@ -1538,11 +1535,11 @@ const CommitmentIndex& core::getCommitmentIndex() const {
 
 std::error_code core::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                            uint32_t currentHeight, uint64_t& outInterest,
-                                           bool isLegacyBond, uint32_t term,
+                                           uint32_t term,
                                            bool autoRolled) {
   outInterest = m_currency.calculateCdInterest(amount, creationHeight, currentHeight,
                                                m_blockchain.getCommitmentIndex(),
-                                               isLegacyBond, term, autoRolled);
+                                               term, autoRolled);
   return {};
 }
 
@@ -1624,8 +1621,9 @@ bool core::removeAlias(const std::string& alias) {
 }
 
 bool core::replaceAliasOwnership(const std::string& alias,
-                                 const Crypto::Hash& newAddressHash) {
-  return m_blockchain.replaceAliasOwnership(alias, newAddressHash);
+                                 const Crypto::Hash& newAddressHash,
+                                 const std::string& newOwnerAddress) {
+  return m_blockchain.replaceAliasOwnership(alias, newAddressHash, newOwnerAddress);
 }
 
 core::HeatMetrics core::getHeatMetrics() const {
@@ -1668,17 +1666,27 @@ core::HeatMetrics core::getHeatMetrics() const {
 
 core::AmmQuote core::getAmmQuote(uint64_t inputAmount, uint8_t direction) const {
   AmmQuote q;
-  auto est = m_blockchain.getOrderbookEstimate(direction, inputAmount);
-  q.expectedOutput = est.estimatedFill;
-  q.fee = std::max<uint64_t>(1, (inputAmount * parameters::HEARTH_FEE_BPS) / parameters::HEARTH_FEE_DIVISOR);
-  uint64_t spotPrice = m_blockchain.getHearthSpotPrice();
-  if (spotPrice > 0) {
-    if (est.worstCasePrice > 0 && spotPrice > 0) {
-      if (direction == 0) {
-        uint64_t delta = (est.worstCasePrice > spotPrice) ? (est.worstCasePrice - spotPrice) : (spotPrice - est.worstCasePrice);
-        q.priceImpactBps = (delta * 10000) / spotPrice;
-      }
-    }
+  if (inputAmount == 0 || direction > 1) return q;
+  // The alternative to selling XFG on Hearth: burning it mints HEAT at the
+  // TWAP, with no price impact — for a large sale, often far more HEAT.
+  if (direction == 0) {
+    q.mintOutput = static_cast<uint64_t>(
+        ((uint128_t)inputAmount * m_blockchain.getRollingTwap()) / parameters::COIN);
+  }
+  const auto& pool = m_blockchain.getAmmPool();
+  const uint64_t reserveIn = direction == 0 ? pool.reserveXfg : pool.reserveHeat;
+  const uint64_t reserveOut = direction == 0 ? pool.reserveHeat : pool.reserveXfg;
+  if (reserveIn == 0 || reserveOut == 0) return q;
+
+  // This endpoint quotes the same constant-product output that the AMM swap
+  // validator accepts. An orderbook estimate may be higher and must not be
+  // handed to the wallet as a fixed AMM transaction output.
+  const uint64_t gross = ammGetOutputAmount(inputAmount, reserveIn, reserveOut, 0);
+  q.expectedOutput = ammSwapNetOutput(inputAmount, reserveIn, reserveOut);
+  q.fee = gross - q.expectedOutput;  // denominated in the output asset
+  const uint128_t ideal = (uint128_t(inputAmount) * reserveOut) / reserveIn;
+  if (ideal > gross && ideal > 0) {
+    q.priceImpactBps = static_cast<uint64_t>(((ideal - gross) * 10000) / ideal);
   }
   return q;
 }

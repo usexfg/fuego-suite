@@ -17,19 +17,16 @@
 #include "Crypto/Secp256k1Signer.h"
 #include "Crypto/RlpEncoder.h"
 #include "crypto/keccak.h"
-#include "Common/WinCompat.h"
-
-#ifndef _WIN32
-#include <fcntl.h>
-#include <sys/select.h>
-#endif
+#include <HTTP/httplib.h>
 
 #include <atomic>
+#include <cctype>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
 #include <iomanip>
 #include <algorithm>
+#include <limits>
 
 namespace XfgSwap {
 
@@ -42,14 +39,16 @@ static uint64_t hexToUint64(const std::string& hex) {
   if (s.size() >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
     s = s.substr(2);
   }
-  // Reject hex values longer than 16 hex chars (64 bits) to prevent overflow
-  if (s.size() > 16) return UINT64_MAX;
+  // Empty, malformed, and oversized quantities are not zero.  UINT64_MAX is
+  // the parser sentinel and every RPC caller below rejects it.
+  if (s.empty() || s.size() > 16) return UINT64_MAX;
   uint64_t result = 0;
   for (char c : s) {
     result <<= 4;
     if (c >= '0' && c <= '9')      result |= static_cast<uint64_t>(c - '0');
     else if (c >= 'a' && c <= 'f') result |= static_cast<uint64_t>(c - 'a' + 10);
     else if (c >= 'A' && c <= 'F') result |= static_cast<uint64_t>(c - 'A' + 10);
+    else return UINT64_MAX;
   }
   return result;
 }
@@ -59,6 +58,38 @@ static std::string uint64ToHex(uint64_t val) {
   std::ostringstream oss;
   oss << "0x" << std::hex << val;
   return oss.str();
+}
+
+static bool hexToAtomicAmount(const std::string& hex, AtomicAmount& amount) {
+  if (hex.size() < 3 || hex[0] != '0' || (hex[1] != 'x' && hex[1] != 'X') ||
+      hex.size() > 66) return false;
+  AtomicAmount parsed = 0;
+  for (size_t i = 2; i < hex.size(); ++i) {
+    const char c = hex[i];
+    unsigned nibble = 0;
+    if (c >= '0' && c <= '9') nibble = static_cast<unsigned>(c - '0');
+    else if (c >= 'a' && c <= 'f') nibble = static_cast<unsigned>(c - 'a' + 10);
+    else if (c >= 'A' && c <= 'F') nibble = static_cast<unsigned>(c - 'A' + 10);
+    else return false;
+    parsed = (parsed << 4) | nibble;
+  }
+  amount = parsed;
+  return true;
+}
+
+static std::string atomicAmountToHex(const AtomicAmount& amount) {
+  if (amount == 0) return "0x0";
+  const auto bytes = atomicAmountToBigEndian(amount);
+  static constexpr char digits[] = "0123456789abcdef";
+  std::string result = "0x";
+  bool started = false;
+  for (uint8_t byte : bytes) {
+    const unsigned high = byte >> 4;
+    const unsigned low = byte & 0x0f;
+    if (high || started) { result += digits[high]; started = true; }
+    if (low || started) { result += digits[low]; started = true; }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +260,8 @@ static std::string bytesToHex(const std::vector<uint8_t>& v, bool prefix = true)
 // ─── EthRpcClient constructors ──────────────────────────────────────────────
 
 EthRpcClient::EthRpcClient(const std::string& host, uint16_t port)
-  : m_host(host), m_port(port) {
+  : m_port(0) {
+  configureEndpoint(host, port);
   m_privKey.fill(0);
 }
 
@@ -238,91 +270,52 @@ EthRpcClient::EthRpcClient(const std::string& host, uint16_t port,
                             const std::string& signerAddress,
                             uint64_t chainId,
                             EthTxType txType)
-  : m_host(host), m_port(port),
-    m_signerAddress(signerAddress), m_chainId(chainId), m_hasSigner(true),
+  : m_port(0), m_signerAddress(signerAddress), m_chainId(chainId),
     m_txType(txType) {
-  auto keyBytes = hexToBytes(privKeyHex);
-  if (keyBytes.size() != 32) {
+  configureEndpoint(host, port);
+  if (privKeyHex.size() != 64 ||
+      !std::all_of(privKeyHex.begin(), privKeyHex.end(), [](unsigned char c) {
+        return std::isxdigit(c) != 0;
+      })) {
     throw std::invalid_argument("EthRpcClient: privKeyHex must be 32 bytes (64 hex chars)");
   }
-  std::copy(keyBytes.begin(), keyBytes.end(), m_privKey.begin());
-}
-
-// ---------------------------------------------------------------------------
-// HTTP POST with keep-alive (persistent socket)
-// ---------------------------------------------------------------------------
-
-bool EthRpcClient::connectSocket() {
-  closeSocket();
-
-  struct addrinfo hints{}, *res = nullptr;
-  hints.ai_family   = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-
-  std::string portStr = std::to_string(m_port);
-  if (getaddrinfo(m_host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
-    return false;
+  auto nibble = [](char c) -> uint8_t {
+    if (c >= '0' && c <= '9') return static_cast<uint8_t>(c - '0');
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return static_cast<uint8_t>(c - 'a' + 10);
+  };
+  for (size_t i = 0; i < m_privKey.size(); ++i) {
+    m_privKey[i] = static_cast<uint8_t>((nibble(privKeyHex[i * 2]) << 4) |
+                                        nibble(privKeyHex[i * 2 + 1]));
   }
 
-  m_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (m_sock < 0) { freeaddrinfo(res); return false; }
-
-#ifdef _WIN32
-  DWORD tvSec = 10000;  // 10 seconds in milliseconds for SO_RCVTIMEO
-  setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO,
-    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
-  setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO,
-    reinterpret_cast<const char*>(&tvSec), sizeof(tvSec));
-#else
-  struct timeval tv = {10, 0};
-  setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-  setsockopt(m_sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-#endif
-
-#ifdef _WIN32
-  u_long nonblocking = 1;
-  ioctlsocket(m_sock, FIONBIO, &nonblocking);
-#else
-  int flags = fcntl(m_sock, F_GETFL, 0);
-  if (flags >= 0) fcntl(m_sock, F_SETFL, flags | O_NONBLOCK);
-#endif
-
-  int connRet = ::connect(m_sock, res->ai_addr, res->ai_addrlen);
-#ifdef _WIN32
-  if (connRet < 0 && WSAGetLastError() == WSAEWOULDBLOCK) {
-#else
-  if (connRet < 0 && errno == EINPROGRESS) {
-#endif
-    fd_set fdset;
-    FD_ZERO(&fdset);
-    FD_SET(m_sock, &fdset);
-#ifdef _WIN32
-    struct timeval selectTv = {10, 0};
-    if (select(0, NULL, &fdset, NULL, &selectTv) <= 0) {
-#else
-    if (select(m_sock + 1, NULL, &fdset, NULL, &tv) <= 0) {
-#endif
-      closeSocket(); freeaddrinfo(res); return false;
+  try {
+    if (!isValidEvmAddress(m_signerAddress)) {
+      throw std::invalid_argument("EthRpcClient: signerAddress must be 0x followed by 40 hex chars");
     }
-  } else if (connRet < 0) {
-    closeSocket(); freeaddrinfo(res); return false;
+    CryptoNote::SwapDaemon::Crypto::Secp256k1Signer signer;
+    const auto pubkey = signer.derivePublicKey(m_privKey);
+    uint8_t addressHash[32];
+    keccak(pubkey.data() + 1, 64, addressHash, 32);
+    const std::string derived = bytesToHex(addressHash + 12, 20);
+    auto lower = [](std::string value) {
+      for (char& c : value)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      return value;
+    };
+    if (lower(derived) != lower(m_signerAddress)) {
+      throw std::invalid_argument("EthRpcClient: signerAddress does not match private key");
+    }
+    m_hasSigner = true;
+  } catch (...) {
+    clear();
+    throw;
   }
-
-#ifdef _WIN32
-  u_long blocking = 0;
-  ioctlsocket(m_sock, FIONBIO, &blocking);
-#else
-  if (flags >= 0) fcntl(m_sock, F_SETFL, flags);
-#endif
-  freeaddrinfo(res);
-  m_sockHost = m_host;
-  m_sockPort = m_port;
-  return true;
 }
 
-void EthRpcClient::closeSocket() {
-  if (m_sock >= 0) { close(m_sock); m_sock = -1; }
-}
+// ---------------------------------------------------------------------------
+// Endpoint parsing + HTTP(S) transport
+// ---------------------------------------------------------------------------
 
 void EthRpcClient::clear() {
   volatile uint8_t* p = m_privKey.data();
@@ -330,76 +323,92 @@ void EthRpcClient::clear() {
   m_hasSigner = false;
 }
 
-static bool httpReadResponse(int sock, std::string& response) {
-  char buf[4096];
-  // Read until \r\n\r\n appears in accumulated data
-  std::string accum;
-  size_t hdrEnd = std::string::npos;
-  while (hdrEnd == std::string::npos) {
-    ssize_t n = recv(sock, buf, sizeof(buf), 0);
-    if (n <= 0) return false;
-    accum.append(buf, static_cast<size_t>(n));
-    hdrEnd = accum.find("\r\n\r\n");
+void EthRpcClient::configureEndpoint(const std::string& endpoint, uint16_t fallbackPort) {
+  if (endpoint.empty()) throw std::invalid_argument("EthRpcClient: empty RPC endpoint");
+
+  std::string rest = endpoint;
+  bool explicitScheme = false;
+  if (rest.compare(0, 8, "https://") == 0) {
+    m_scheme = "https";
+    rest.erase(0, 8);
+    explicitScheme = true;
+  } else if (rest.compare(0, 7, "http://") == 0) {
+    m_scheme = "http";
+    rest.erase(0, 7);
+    explicitScheme = true;
+  } else if (rest.find("://") != std::string::npos) {
+    throw std::invalid_argument("EthRpcClient: RPC endpoint must use http or https");
+  } else {
+    m_scheme = fallbackPort == 443 ? "https" : "http";
   }
-  // Parse Content-Length
-  size_t clPos = accum.find("Content-Length:");
-  if (clPos == std::string::npos) return false;
-  clPos += 15;
-  while (clPos < accum.size() && accum[clPos] == ' ') ++clPos;
-  size_t contentLen = 0;
-  while (clPos < accum.size() && accum[clPos] >= '0' && accum[clPos] <= '9')
-    contentLen = contentLen * 10 + (accum[clPos++] - '0');
-  // Body starts after \r\n\r\n
-  response = accum.substr(hdrEnd + 4);
-  // Read remaining body
-  while (response.size() < contentLen) {
-    ssize_t n = recv(sock, buf, sizeof(buf), 0);
-    if (n <= 0) return false;
-    response.append(buf, static_cast<size_t>(n));
+
+  const size_t pathPos = rest.find('/');
+  std::string authority = pathPos == std::string::npos ? rest : rest.substr(0, pathPos);
+  m_rpcPath = pathPos == std::string::npos ? "/" : rest.substr(pathPos);
+  if (m_rpcPath.empty()) m_rpcPath = "/";
+  if (authority.empty()) throw std::invalid_argument("EthRpcClient: RPC endpoint has no host");
+
+  auto parsePort = [](const std::string& text) -> uint16_t {
+    if (text.empty()) throw std::invalid_argument("EthRpcClient: empty RPC endpoint port");
+    size_t consumed = 0;
+    unsigned long parsed = 0;
+    try {
+      parsed = std::stoul(text, &consumed, 10);
+    } catch (const std::exception&) {
+      throw std::invalid_argument("EthRpcClient: invalid RPC endpoint port");
+    }
+    if (consumed != text.size() || parsed == 0 || parsed > 65535) {
+      throw std::invalid_argument("EthRpcClient: invalid RPC endpoint port");
+    }
+    return static_cast<uint16_t>(parsed);
+  };
+
+  bool explicitPort = false;
+  if (authority.front() == '[') {
+    const size_t bracket = authority.find(']');
+    if (bracket == std::string::npos)
+      throw std::invalid_argument("EthRpcClient: malformed IPv6 RPC endpoint");
+    m_host = authority.substr(0, bracket + 1);
+    if (bracket + 1 < authority.size()) {
+      if (authority[bracket + 1] != ':')
+        throw std::invalid_argument("EthRpcClient: malformed RPC endpoint port");
+      m_port = parsePort(authority.substr(bracket + 2));
+      explicitPort = true;
+    }
+  } else {
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos && authority.find(':') == colon) {
+      m_host = authority.substr(0, colon);
+      m_port = parsePort(authority.substr(colon + 1));
+      explicitPort = true;
+    } else {
+      m_host = authority;
+    }
   }
-  return true;
+  if (m_host.empty()) throw std::invalid_argument("EthRpcClient: RPC endpoint has no host");
+  if (!explicitPort) {
+    m_port = explicitScheme ? (m_scheme == "https" ? 443 : 80) : fallbackPort;
+    if (m_port == 0) m_port = m_scheme == "https" ? 443 : 80;
+  }
+  if (m_port == 0) throw std::invalid_argument("EthRpcClient: invalid RPC endpoint port");
+
+  m_endpointUrl = m_scheme + "://" + m_host + ":" + std::to_string(m_port);
 }
 
 std::string EthRpcClient::httpPost(const std::string& path, const std::string& body) {
-  // Connect or reconnect if host/port changed or socket broken
-  if (m_sock < 0 || m_sockHost != m_host || m_sockPort != m_port) {
-    if (!connectSocket()) return "";
+  try {
+    httplib::Client client(m_endpointUrl);
+    client.set_connection_timeout(10, 0);
+    client.set_read_timeout(10, 0);
+    client.set_write_timeout(10, 0);
+    client.enable_server_certificate_verification(true);
+    const std::string& requestPath = path == "/" ? m_rpcPath : path;
+    auto response = client.Post(requestPath, body, "application/json");
+    if (!response || response->status < 200 || response->status >= 300) return "";
+    return response->body;
+  } catch (const std::exception&) {
+    return "";
   }
-
-  // Build HTTP request with keep-alive
-  std::ostringstream req;
-  req << "POST " << path << " HTTP/1.1\r\n";
-  req << "Host: " << m_host << ":" << m_port << "\r\n";
-  req << "Content-Type: application/json\r\n";
-  req << "Content-Length: " << body.size() << "\r\n";
-  req << "Connection: keep-alive\r\n";
-  req << "\r\n";
-  req << body;
-
-  std::string request = req.str();
-
-  // Send, retry once on failure
-  for (int attempt = 0; attempt < 2; ++attempt) {
-    if (attempt > 0) {
-      closeSocket();
-      if (!connectSocket()) return "";
-    }
-    if (send(m_sock, request.data(), request.size(),
-#ifndef _WIN32
-             MSG_NOSIGNAL
-#else
-             0
-#endif
-             ) < 0)
-      continue;
-
-    std::string response;
-    if (httpReadResponse(m_sock, response))
-      return response;
-  }
-
-  closeSocket();
-  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +430,56 @@ std::string EthRpcClient::jsonRpc(const std::string& method, const std::string& 
 // Public API
 // ---------------------------------------------------------------------------
 
+bool EthRpcClient::isValidEvmAddress(const std::string& address) {
+  if (address.size() != 42 || address.compare(0, 2, "0x") != 0) return false;
+  for (size_t i = 2; i < address.size(); ++i) {
+    if (!std::isxdigit(static_cast<unsigned char>(address[i]))) return false;
+  }
+  return true;
+}
+
+bool EthRpcClient::getChainId(uint64_t& chainId) {
+  const std::string response = jsonRpc("eth_chainId", "[]");
+  if (response.empty() || jsonHasError(response)) return false;
+  const std::string result = jsonGetResult(response);
+  if (result.empty()) return false;
+  chainId = hexToUint64(result);
+  return chainId != UINT64_MAX;
+}
+
+bool EthRpcClient::isExpectedChain() {
+  uint64_t actual = 0;
+  return m_chainId != 0 && getChainId(actual) && actual == m_chainId;
+}
+
+bool EthRpcClient::hasDeployedHtlcRegistry() {
+  if (!isValidEvmAddress(m_htlcRegistry)) return false;
+
+  const std::string params = "[\"" + m_htlcRegistry + "\",\"latest\"]";
+  const std::string response = jsonRpc("eth_getCode", params);
+  if (response.empty() || jsonHasError(response)) return false;
+
+  const std::string code = jsonGetResult(response);
+  if (code.size() <= 2 || code.compare(0, 2, "0x") != 0 ||
+      (code.size() - 2) % 2 != 0) return false;
+  bool hasNonzeroByte = false;
+  for (size_t i = 2; i < code.size(); ++i) {
+    if (!std::isxdigit(static_cast<unsigned char>(code[i]))) return false;
+    hasNonzeroByte |= code[i] != '0';
+  }
+  if (!hasNonzeroByte) return false;
+
+  // A deployed address is not necessarily our HTLC registry. Query the
+  // read-only getContract ABI with an unused id before enabling new swaps.
+  // The expected registry returns a zero-filled 8-word tuple for that id.
+  const std::string probeId(64, '0');
+  std::string contractData;
+  if (!callContract(m_htlcRegistry, EthAbi::encodeGetContract(probeId),
+                    contractData)) return false;
+  EthAbi::ContractInfo ignored{};
+  return EthAbi::decodeGetContract(contractData, ignored);
+}
+
 bool EthRpcClient::getBlockNumber(uint64_t& blockNum) {
   std::string resp = jsonRpc("eth_blockNumber", "[]");
   if (resp.empty() || jsonHasError(resp)) return false;
@@ -429,10 +488,10 @@ bool EthRpcClient::getBlockNumber(uint64_t& blockNum) {
   if (result.empty()) return false;
 
   blockNum = hexToUint64(result);
-  return true;
+  return blockNum != UINT64_MAX;
 }
 
-bool EthRpcClient::getBalance(const std::string& address, uint64_t& balanceWei) {
+bool EthRpcClient::getBalance(const std::string& address, AtomicAmount& balanceWei) {
   std::string params = "[\"" + address + "\",\"latest\"]";
   std::string resp = jsonRpc("eth_getBalance", params);
   if (resp.empty() || jsonHasError(resp)) return false;
@@ -440,8 +499,7 @@ bool EthRpcClient::getBalance(const std::string& address, uint64_t& balanceWei) 
   std::string result = jsonGetResult(resp);
   if (result.empty()) return false;
 
-  balanceWei = hexToUint64(result);
-  return true;
+  return hexToAtomicAmount(result, balanceWei);
 }
 
 bool EthRpcClient::getTransactionReceipt(const std::string& txHash, EthTxReceipt& receipt) {
@@ -456,6 +514,8 @@ bool EthRpcClient::getTransactionReceipt(const std::string& txHash, EthTxReceipt
   receipt.contractAddress = jsonGetString(result, "contractAddress");
   receipt.gasUsed         = hexToUint64(jsonGetString(result, "gasUsed"));
   receipt.blockNumber     = hexToUint64(jsonGetString(result, "blockNumber"));
+  if (receipt.gasUsed == UINT64_MAX || receipt.blockNumber == UINT64_MAX)
+    return false;
 
   std::string status = jsonGetString(result, "status");
   receipt.success = (status == "0x1" || status == "0x01");
@@ -470,7 +530,7 @@ bool EthRpcClient::getNonce(const std::string& address, uint64_t& nonce) {
   std::string result = jsonGetResult(resp);
   if (result.empty()) return false;
   nonce = hexToUint64(result);
-  return true;
+  return nonce != UINT64_MAX;
 }
 
 // ─── EIP-155 signing internals ──────────────────────────────────────────────
@@ -479,13 +539,14 @@ std::vector<uint8_t> EthRpcClient::buildLegacySignedTx(uint64_t nonce,
                                                         uint64_t gasPriceWei,
                                                         uint64_t gasLimit,
                                                         const std::vector<uint8_t>& to,
-                                                        uint64_t valueWei,
+                                                        const AtomicAmount& valueWei,
                                                         const std::vector<uint8_t>& data) {
   if (!m_hasSigner) {
     throw std::runtime_error("EthRpcClient::buildLegacySignedTx: no signer configured");
   }
 
   using namespace CryptoNote::SwapDaemon::Crypto;
+  const auto valueBytes = atomicAmountToBigEndian(valueWei);
 
   // Step 1: RLP-encode the pre-sign payload: [nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0]
   RlpEncoder preSig;
@@ -494,7 +555,7 @@ std::vector<uint8_t> EthRpcClient::buildLegacySignedTx(uint64_t nonce,
   preSig.writeUint(gasPriceWei);
   preSig.writeUint(gasLimit);
   preSig.writeBytes(to);            // empty = contract deploy
-  preSig.writeUint(valueWei);
+  preSig.writeUint256(valueBytes.data());
   preSig.writeBytes(data);
   preSig.writeUint(m_chainId);      // EIP-155: chain ID
   preSig.writeBytes({});            // r = 0
@@ -520,7 +581,7 @@ std::vector<uint8_t> EthRpcClient::buildLegacySignedTx(uint64_t nonce,
   signedEnc.writeUint(gasPriceWei);
   signedEnc.writeUint(gasLimit);
   signedEnc.writeBytes(to);
-  signedEnc.writeUint(valueWei);
+  signedEnc.writeUint256(valueBytes.data());
   signedEnc.writeBytes(data);
   signedEnc.writeUint(v);
   signedEnc.writeBytes(sig.r.data(), sig.r.size());
@@ -536,13 +597,14 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
                                                          uint64_t maxFeePerGas,
                                                          uint64_t gasLimit,
                                                          const std::vector<uint8_t>& to,
-                                                         uint64_t valueWei,
+                                                         const AtomicAmount& valueWei,
                                                          const std::vector<uint8_t>& data) {
   if (!m_hasSigner) {
     throw std::runtime_error("EthRpcClient::buildEip1559SignedTx: no signer configured");
   }
 
   using namespace CryptoNote::SwapDaemon::Crypto;
+  const auto valueBytes = atomicAmountToBigEndian(valueWei);
 
   // Pre-sign payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
   //                                 gasLimit, to, value, data, accessList])
@@ -554,7 +616,7 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
   preSig.writeUint(maxFeePerGas);
   preSig.writeUint(gasLimit);
   preSig.writeBytes(to);
-  preSig.writeUint(valueWei);
+  preSig.writeUint256(valueBytes.data());
   preSig.writeBytes(data);
   preSig.writeEmptyList();          // empty access list MUST be RLP list 0xc0, not empty string 0x80
   preSig.endList();
@@ -583,7 +645,7 @@ std::vector<uint8_t> EthRpcClient::buildEip1559SignedTx(uint64_t nonce,
   signedEnc.writeUint(maxFeePerGas);
   signedEnc.writeUint(gasLimit);
   signedEnc.writeBytes(to);
-  signedEnc.writeUint(valueWei);
+  signedEnc.writeUint256(valueBytes.data());
   signedEnc.writeBytes(data);
   signedEnc.writeEmptyList();       // accessList (must match pre-image)
   signedEnc.writeUint(sig.recid);   // yParity
@@ -607,10 +669,7 @@ bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFee
   std::string tipStr = jsonGetResult(tipResp);
   if (tipStr.empty()) return false;
   uint64_t suggestedTip = hexToUint64(tipStr);
-
-  // Floor at 1 gwei
-  const uint64_t minTip = 1000000000ULL; // 1 gwei
-  maxPriorityFeePerGas = (suggestedTip > minTip) ? suggestedTip : minTip;
+  if (suggestedTip == UINT64_MAX) return false;
 
   // Query latest block to get base fee
   std::string blockResp = jsonRpc("eth_getBlockByNumber",
@@ -624,9 +683,29 @@ bool EthRpcClient::estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFee
   std::string baseFeeStr = jsonGetString(blockResult, "baseFeePerGas");
   if (baseFeeStr.empty()) return false;
   uint64_t baseFee = hexToUint64(baseFeeStr);
+  if (baseFee == UINT64_MAX) return false;
 
-  // maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas
-  maxFeePerGas = baseFee * 2 + maxPriorityFeePerGas;
+  return calculateCappedEip1559Fees(suggestedTip, baseFee,
+                                     maxPriorityFeePerGas, maxFeePerGas);
+}
+
+bool EthRpcClient::calculateCappedEip1559Fees(uint64_t suggestedTipWei,
+                                               uint64_t baseFeeWei,
+                                               uint64_t& maxPriorityFeePerGas,
+                                               uint64_t& maxFeePerGas) {
+  // maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas. A quote above the
+  // operator ceiling fails closed rather than exposing the signer to an
+  // unexpectedly expensive RPC suggestion.
+  constexpr uint64_t minTipWei = 1000000000ULL; // 1 gwei
+  const uint64_t priority = (suggestedTipWei > minTipWei)
+      ? suggestedTipWei : minTipWei;
+  const uint64_t max = std::numeric_limits<uint64_t>::max();
+  if (priority > MAX_FEE_PER_GAS_WEI ||
+      baseFeeWei > (max - priority) / 2) return false;
+  const uint64_t candidate = baseFeeWei * 2 + priority;
+  if (candidate > MAX_FEE_PER_GAS_WEI) return false;
+  maxPriorityFeePerGas = priority;
+  maxFeePerGas = candidate;
   return true;
 }
 
@@ -636,33 +715,65 @@ bool EthRpcClient::queryGasPrice(uint64_t& gasPriceWei) {
   std::string priceStr = jsonGetResult(resp);
   if (priceStr.empty()) return false;
   uint64_t rawPrice = hexToUint64(priceStr);
-  if (rawPrice == 0) return false;
-  constexpr uint64_t MAX_GAS_PRICE_WEI = 500000000000ULL; // 500 gwei cap
-  if (rawPrice > MAX_GAS_PRICE_WEI) {
-    rawPrice = MAX_GAS_PRICE_WEI;
+  if (rawPrice == 0 || rawPrice == UINT64_MAX) return false;
+  if (rawPrice > MAX_FEE_PER_GAS_WEI) {
+    rawPrice = MAX_FEE_PER_GAS_WEI;
   }
   gasPriceWei = rawPrice;
   return true;
 }
 
 bool EthRpcClient::estimateGas(const std::string& to, const std::string& data,
-                                uint64_t valueWei, uint64_t& gasEstimate) {
-  // Build eth_estimateGas call
-  (void)valueWei; // value is 0 for most contract calls
-  std::string params = "[{\"to\":\"" + to + "\",\"data\":\"" + data + "\"},\"latest\"]";
+                                const AtomicAmount& valueWei, uint64_t& gasEstimate) {
+  // Simulate as the configured signer: some RPC nodes apply sender-specific
+  // balance, nonce, or authorization rules during eth_estimateGas. Contract
+  // creation omits `to` per JSON-RPC.
+  const std::string params = buildEstimateGasParams(
+      m_signerAddress, to, data, valueWei);
   std::string resp = jsonRpc("eth_estimateGas", params);
   if (resp.empty() || jsonHasError(resp)) return false;
   std::string result = jsonGetResult(resp);
   if (result.empty()) return false;
   gasEstimate = hexToUint64(result);
+  if (gasEstimate == 0 || gasEstimate == UINT64_MAX ||
+      gasEstimate > std::numeric_limits<uint64_t>::max() - gasEstimate / 5)
+    return false;
   // Add 20% buffer
   gasEstimate = gasEstimate + gasEstimate / 5;
   return true;
 }
 
+std::string EthRpcClient::buildEstimateGasParams(const std::string& from,
+                                                 const std::string& to,
+                                                 const std::string& data,
+                                                 const AtomicAmount& valueWei) {
+  // Contract creation omits `to` per JSON-RPC. Include a sender when the
+  // client has one configured; public read-only estimateGas callers may not.
+  std::string txObject = "{";
+  if (!from.empty()) txObject += "\"from\":\"" + from + "\",";
+  if (!to.empty()) txObject += "\"to\":\"" + to + "\",";
+  txObject += "\"data\":\"" + data + "\",\"value\":\"" +
+      atomicAmountToHex(valueWei) + "\"}";
+  return "[" + txObject + ",\"latest\"]";
+}
+
+bool EthRpcClient::transactionFundingSufficient(const AtomicAmount& balanceWei,
+                                                  const AtomicAmount& valueWei,
+                                                  uint64_t gasLimit,
+                                                  uint64_t feePerGasWei,
+                                                  uint64_t estimatedGas) {
+  if (estimatedGas == 0 || estimatedGas > gasLimit) return false;
+  // Both fee inputs are bounded uint64 quantities. Their exact product fits
+  // uint128, but adding an arbitrary uint256 lock value still needs a guard.
+  const AtomicAmount feeWei = AtomicAmount(gasLimit) * feePerGasWei;
+  const AtomicAmount maxAmount = (std::numeric_limits<AtomicAmount>::max)();
+  if (valueWei > maxAmount - feeWei) return false;
+  return balanceWei >= valueWei + feeWei;
+}
+
 bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                                 const std::vector<uint8_t>& data,
-                                uint64_t valueWei,
+                                const AtomicAmount& valueWei,
                                 uint64_t gasLimit,
                                 std::string& txHash) {
   if (!m_hasSigner) {
@@ -670,27 +781,43 @@ bool EthRpcClient::signAndSend(const std::vector<uint8_t>& to,
                              "construct with EthRpcClient(host, port, privKeyHex, address, chainId)");
   }
 
-  // Fetch current nonce for the signer address.
-  uint64_t nonce = 0;
-  if (!getNonce(m_signerAddress, nonce)) {
-    return false;
+  // Collect bounded fee rates before signing. `valueWei` remains uint256; gas
+  // limit and wei-per-gas stay uint64 throughout fee estimation and encoding.
+  uint64_t maxPriorityFeePerGas = 0;
+  uint64_t maxFeePerGas = 0;
+  uint64_t gasPriceWei = m_gasPriceFallback;
+  if (m_txType == EthTxType::Eip1559) {
+    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) return false;
+    gasPriceWei = maxFeePerGas;
+  } else {
+    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
   }
+
+  // The RPC estimate includes a 20% safety buffer. Reject before signing if
+  // the caller's transaction gas cap cannot cover it.
+  uint64_t estimatedGas = 0;
+  const std::string toHexValue = to.empty() ? std::string() : bytesToHex(to);
+  if (!estimateGas(toHexValue, bytesToHex(data), valueWei, estimatedGas) ||
+      estimatedGas > gasLimit) return false;
+
+  // Balance includes both the native lock value and the maximum transaction
+  // fee. No transaction signature or broadcast is produced on an RPC failure,
+  // insufficient balance, or uint256 addition overflow.
+  AtomicAmount balanceWei = 0;
+  if (!getBalance(m_signerAddress, balanceWei) ||
+      !transactionFundingSufficient(balanceWei, valueWei, gasLimit,
+                                    gasPriceWei, estimatedGas)) return false;
+
+  // Fetch nonce only after funding preflight, then sign and broadcast.
+  uint64_t nonce = 0;
+  if (!getNonce(m_signerAddress, nonce)) return false;
 
   std::vector<uint8_t> rawTx;
 
   if (m_txType == EthTxType::Eip1559) {
-    // Dynamic fee estimation for EIP-1559
-    uint64_t maxPriorityFeePerGas = 0;
-    uint64_t maxFeePerGas = 0;
-    if (!estimateFees(maxPriorityFeePerGas, maxFeePerGas)) {
-      return false;
-    }
     rawTx = buildEip1559SignedTx(nonce, maxPriorityFeePerGas, maxFeePerGas,
                                   gasLimit, to, valueWei, data);
   } else {
-    // Legacy: query eth_gasPrice, fall back to configured default
-    uint64_t gasPriceWei = m_gasPriceFallback;
-    queryGasPrice(gasPriceWei); // use dynamic if available, fallback otherwise
     rawTx = buildLegacySignedTx(nonce, gasPriceWei, gasLimit, to, valueWei, data);
   }
 
@@ -707,7 +834,7 @@ bool EthRpcClient::deployContract(const std::string& /*fromAddress*/,
 }
 
 bool EthRpcClient::sendTransaction(const std::string& /*from*/, const std::string& to,
-                                   const std::string& data, uint64_t value,
+                                   const std::string& data, const AtomicAmount& value,
                                    uint64_t gasLimit, std::string& txHash) {
   auto toBytes   = hexToBytes(to);
   auto dataBytes = hexToBytes(data);
@@ -715,11 +842,12 @@ bool EthRpcClient::sendTransaction(const std::string& /*from*/, const std::strin
 }
 
 bool EthRpcClient::callContract(const std::string& to, const std::string& data,
-                                std::string& result) {
+                                std::string& result,
+                                const std::string& block_tag) {
   std::ostringstream params;
   params << "[{\"to\":\"" << to
          << "\",\"data\":\"" << data
-         << "\"},\"latest\"]";
+         << "\"},\"" << block_tag << "\"]";
 
   std::string resp = jsonRpc("eth_call", params.str());
   if (resp.empty() || jsonHasError(resp)) return false;
@@ -740,7 +868,7 @@ static std::string normalizeAddr20(const std::string& addr) {
 
 std::string EthRpcClient::computeContractId(const std::string& sender,
                                             const std::string& recipient,
-                                            uint64_t valueWei,
+                                            const AtomicAmount& valueWei,
                                             const std::string& hashLockHex,
                                             uint64_t timeoutBlock) {
   // abi.encodePacked(address, address, uint256, bytes32, uint256)
@@ -757,12 +885,8 @@ std::string EthRpcClient::computeContractId(const std::string& sender,
   packed.insert(packed.end(), recvBytes.begin(), recvBytes.end());
 
   // valueWei as big-endian uint256 (32 bytes)
-  {
-    std::vector<uint8_t> valBuf(32, 0);
-    for (int i = 0; i < 8; ++i)
-      valBuf[31 - i] = static_cast<uint8_t>((valueWei >> (i * 8)) & 0xFF);
-    packed.insert(packed.end(), valBuf.begin(), valBuf.end());
-  }
+  const auto valueBytes = atomicAmountToBigEndian(valueWei);
+  packed.insert(packed.end(), valueBytes.begin(), valueBytes.end());
 
   packed.insert(packed.end(), hashBytes.begin(), hashBytes.end());
 
@@ -783,7 +907,7 @@ bool EthRpcClient::lockHtlc(const std::string& fromAddress,
                             const std::string& recipientAddress,
                             const std::string& hashLockHex,
                             uint64_t timeoutBlock,
-                            uint64_t valueWei,
+                            const AtomicAmount& valueWei,
                             std::string& contractIdHex) {
   if (m_htlcRegistry.empty()) {
     throw std::runtime_error("EthRpcClient::lockHtlc: HTLC registry address not set — "
@@ -823,7 +947,7 @@ bool EthRpcClient::deployHtlc(const std::string& fromAddress,
                                const std::string& recipientAddress,
                                const std::string& hashLockHex,
                                uint64_t timeoutBlock,
-                               uint64_t valueWei,
+                               const AtomicAmount& valueWei,
                                std::string& contractAddressOrId) {
   // Prefer registry lock() path (matches HashedTimelock.sol).
   if (!m_htlcRegistry.empty()) {
@@ -836,7 +960,7 @@ bool EthRpcClient::deployHtlc(const std::string& fromAddress,
 }
 
 bool EthRpcClient::verifyLock(const std::string& contractIdHex,
-                               uint64_t expectedWei,
+                               const AtomicAmount& expectedWei,
                                const std::string& expectedRecipient,
                                const std::string& expectedHashLockHex,
                                uint64_t minTimeoutBlock) {
@@ -868,11 +992,12 @@ bool EthRpcClient::verifyLock(const std::string& contractIdHex,
   return true;
 }
 
-std::string EthRpcClient::getClaimedPreimage(const std::string& contractIdHex) {
+std::string EthRpcClient::getClaimedPreimage(const std::string& contractIdHex,
+                                            const std::string& block_tag) {
   if (m_htlcRegistry.empty() || contractIdHex.empty()) return {};
   std::string calldata = EthAbi::encodeGetContract(contractIdHex);
   std::string result;
-  if (!callContract(m_htlcRegistry, calldata, result)) return {};
+  if (!callContract(m_htlcRegistry, calldata, result, block_tag)) return {};
   EthAbi::ContractInfo info;
   if (!EthAbi::decodeGetContract(result, info)) return {};
   if (!info.claimed) return {};
@@ -959,7 +1084,7 @@ bool EthRpcClient::sendRawTransaction(const std::string& signedTxHex, std::strin
 
 std::string EthRpcClient::computePointContractId(const std::string& sender,
                                                  const std::string& recipient,
-                                                 uint64_t valueWei,
+                                                 const AtomicAmount& valueWei,
                                                  const std::string& pointAddress,
                                                  uint64_t timeoutBlock) {
   auto sendBytes  = hexToBytes(sender);
@@ -973,12 +1098,8 @@ std::string EthRpcClient::computePointContractId(const std::string& sender,
   packed.insert(packed.end(), sendBytes.begin(), sendBytes.end());
   packed.insert(packed.end(), recvBytes.begin(), recvBytes.end());
 
-  {
-    std::vector<uint8_t> valBuf(32, 0);
-    for (int i = 0; i < 8; ++i)
-      valBuf[31 - i] = static_cast<uint8_t>((valueWei >> (i * 8)) & 0xFF);
-    packed.insert(packed.end(), valBuf.begin(), valBuf.end());
-  }
+  const auto valueBytes = atomicAmountToBigEndian(valueWei);
+  packed.insert(packed.end(), valueBytes.begin(), valueBytes.end());
 
   packed.insert(packed.end(), pointBytes.begin(), pointBytes.end());
 
@@ -998,7 +1119,7 @@ bool EthRpcClient::lockPoint(const std::string& fromAddress,
                              const std::string& recipientAddress,
                              const std::string& pointAddress,
                              uint64_t timeoutBlock,
-                             uint64_t valueWei,
+                             const AtomicAmount& valueWei,
                              std::string& contractIdHex) {
   // m_ptlcRegistry is the dedicated pre-deployed PointTimelock registry
   // address (kept separate from the HashedTimelock registry so a chain can
@@ -1033,7 +1154,7 @@ bool EthRpcClient::lockPoint(const std::string& fromAddress,
 }
 
 bool EthRpcClient::verifyPointLock(const std::string& contractIdHex,
-                                   uint64_t expectedWei,
+                                   const AtomicAmount& expectedWei,
                                    const std::string& expectedRecipient,
                                    const std::string& expectedPointAddress,
                                    uint64_t minTimeoutBlock) {
@@ -1063,11 +1184,12 @@ bool EthRpcClient::verifyPointLock(const std::string& contractIdHex,
   return true;
 }
 
-std::string EthRpcClient::getClaimedPointSecret(const std::string& contractIdHex) {
+std::string EthRpcClient::getClaimedPointSecret(const std::string& contractIdHex,
+                                                const std::string& block_tag) {
   if (m_ptlcRegistry.empty() || contractIdHex.empty()) return {};
   std::string calldata = EthAbi::encodeGetContract(contractIdHex);
   std::string result;
-  if (!callContract(m_ptlcRegistry, calldata, result)) return {};
+  if (!callContract(m_ptlcRegistry, calldata, result, block_tag)) return {};
   EthAbi::PointContractInfo info;
   if (!EthAbi::decodeGetContractPoint(result, info)) return {};
   if (!info.claimed) return {};

@@ -26,14 +26,18 @@
 
 namespace CryptoNote {
 
+class ISerializer;
+
 // @ Alias entry for on-chain alias registry
 struct AliasEntry {
   std::string alias;            // "fuegodev" (regular)
-  std::string ownerAddress;     // Stored for /get_alias resolution. Not returned by /get_all_aliases.
+  std::string ownerAddress;     // Returned by alias RPC endpoints when present; public metadata.
   Crypto::Hash aliasHash;       // cn_fast_hash(alias) for fast lookup
-  Crypto::Hash addressHash;     // cn_fast_hash(address) for privacy
+  Crypto::Hash addressHash;     // cn_fast_hash(spendPublicKey || viewPublicKey); linkable pseudonym.
   uint8_t aliasType = 1;        // 0 = reserved (deprecated), 1 = Regular [a-z0-9&]
   uint32_t registeredBlock = 0;
+
+  void serialize(ISerializer& s);
 };
 
 class AliasIndex {
@@ -48,11 +52,12 @@ public:
   // Caller must have verified ownership before calling this.
   bool removeAlias(const std::string& alias);
 
-  // Transfer alias ownership — replaces addressHash mapping
+  // Transfer alias ownership — replaces the address and its hash mapping.
   // Caller must have verified old ownership before calling this.
   // newAddressHash: cn_fast_hash(newOwnerAddress)
   bool replaceAliasOwnership(const std::string& alias,
-                             const Crypto::Hash& newAddressHash);
+                             const Crypto::Hash& newAddressHash,
+                             const std::string& newOwnerAddress);
 
   // Queries
   bool aliasExists(const std::string& alias) const;
@@ -68,6 +73,13 @@ public:
 
   // State
   size_t size() const;
+  void reset();  // Clear indexed aliases and restore genesis reservations before replay.
+
+  // Cache persistence: without this, every registered/released/transferred
+  // alias is wiped on a normal daemon restart (there is no on-disk record —
+  // only rebuildCache(), which runs on cache-load failure, replays the chain
+  // and repopulates this index).
+  void serialize(ISerializer& s);
 
   // Validation helpers (static, usable by callers before registration)
   static bool isValidRegularAlias(const std::string& alias);
@@ -82,5 +94,24 @@ private:
   // Reserved alias names (registered at genesis / init)
   void reserveDevTeamAliases();
 };
+
+// Reorg-undo journal entry for a single AliasIndex mutation. The Blockchain
+// records one of these per successful register/release/transfer while
+// processing a block, and replays them via applyAliasUndo when that block is
+// popped during a reorg — otherwise a reorged-out mutation permanently
+// squats (or frees, or misattributes) the alias name.
+struct AliasUndoOp {
+  uint8_t opType = 0;               // 0 = register, 1 = release, 2 = transfer
+  std::string alias;
+  AliasEntry priorEntry;            // opType==1/2: full entry to restore on undo
+
+  void serialize(ISerializer& s);
+};
+
+// Reverts `ops` against `index`, LAST-applied-first (LIFO). A block that
+// registers then releases the same alias must undo as a unit in that order
+// (undo the release, then undo the register) to land back at "never
+// existed" — applying in forward order would leave it registered.
+void applyAliasUndo(AliasIndex& index, const std::vector<AliasUndoOp>& ops);
 
 }  // namespace CryptoNote

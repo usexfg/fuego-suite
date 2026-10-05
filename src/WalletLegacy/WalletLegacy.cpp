@@ -17,6 +17,7 @@
 
 #include "WalletLegacy.h"
 #include "crypto/adaptor.h"
+#include "SwapDaemon/SwapPairCatalog.h"
 
 #include <algorithm>
 #include <memory>
@@ -41,7 +42,6 @@
 #include "WalletLegacy/WalletUtils.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "WalletLegacy/WalletLegacyEvent.h"
 #include "WalletLegacy/WalletLegacy.h"
 
@@ -1096,6 +1096,15 @@ TransactionId WalletLegacy::lpClaimFeesV10(uint64_t lpShares, uint64_t minXfg, u
 TransactionId WalletLegacy::heatDepositV10(uint64_t amount, uint32_t termEpochs, uint64_t bankingFee, uint64_t fee, uint64_t mixIn) {
   throwIfNotInitialised();
 
+  // Consensus rejects CD outputs below the activation height; say so plainly
+  // instead of building a transaction the network will refuse.
+  const uint32_t nextHeight = m_node.getLastKnownBlockHeight() + 1;
+  if (nextHeight < m_currency.cdActivationHeight()) {
+    throw std::system_error(make_error_code(error::WRONG_STATE),
+        "HEAT CDs activate at block " + std::to_string(m_currency.cdActivationHeight()) +
+        " (current height " + std::to_string(nextHeight) + ")");
+  }
+
   TransactionId txId = 0;
   std::unique_ptr<WalletRequest> request;
   std::deque<std::unique_ptr<WalletLegacyEvent>> events;
@@ -1177,31 +1186,7 @@ TransactionId WalletLegacy::withdrawDeposits(const std::vector<DepositId>& depos
   return txId;
 }
 
-TransactionId WalletLegacy::withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) {
-  throwIfNotInitialised();
-
-  TransactionId txId = 0;
-  std::unique_ptr<WalletRequest> request;
-  std::deque<std::unique_ptr<WalletLegacyEvent>> events;
-
-  {
-    std::unique_lock<std::mutex> lock(m_cacheMutex);
-    request = m_sender->makeWithdrawLegacyBondRequest(txId, events, depositId, interest, fee);
-
-    if (request != nullptr) {
-      pushBalanceUpdatedEvents(events);
-    }
-  }
-
-  notifyClients(events);
-
-  if (request != nullptr) {
-    m_asyncContextCounter.addAsyncContext();
-    request->perform(m_node, std::bind(&WalletLegacy::sendTransactionCallback, this, std::placeholders::_1, std::placeholders::_2));
-  }
-
-  return txId;
-}
+// REMOVED: withdrawLegacyBond — no bond claims exist (0xCB/0xCC retired).
 
 /* go through all unlocked outputs and return a total of
   everything below the dust threshold */
@@ -2050,6 +2035,12 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
 
   if (amount == 0) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
   if (timeout_hours == 0 || timeout_hours > 200) return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  const auto* pairDescriptor =
+      XfgSwap::swapPairDescriptor(static_cast<XfgSwap::SwapPair>(pair));
+  if (!pairDescriptor ||
+      pairDescriptor->support == XfgSwap::SwapPairSupport::STAGED) {
+    return make_error_code(CryptoNote::error::INVALID_ARGUMENT);
+  }
 
   // 1. Generate AFK Lock Data
   Crypto::AFKLockData lockData;
@@ -2065,8 +2056,8 @@ std::error_code WalletLegacy::create_afk_lock(uint64_t amount, uint32_t timeout_
   {
     const uint8_t* secretBytes = reinterpret_cast<const uint8_t*>(&lockData.secret);
     uint8_t digest[32];
-    bool utxoFamily = (pair == 3 /*BCH*/ || pair == 6 /*KMD_SPV*/ || pair == 8 /*DCR*/ ||
-                       pair == 9 /*BTC*/ || pair == 10 /*LTC*/);
+    const bool utxoFamily =
+        pairDescriptor->family == XfgSwap::SwapChainFamily::UTXO;
     if (utxoFamily) {
       SHA256(secretBytes, 32, digest);
     } else {

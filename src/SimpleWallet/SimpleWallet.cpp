@@ -44,6 +44,8 @@
 #include "Common/PathTools.h"
 #include "Common/Util.h"
 #include "Common/DnsTools.h"
+#include "Common/Int128.h"
+#include "CryptoNoteCore/AmmPool.h"
 #include "CryptoNoteCore/CryptoNoteFormatUtils.h"
 #include "CryptoNoteCore/TransactionApi.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandler.h"
@@ -53,7 +55,6 @@
 #include "System/Timer.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "CryptoNoteCore/TransactionExtra.h"
-#include "CryptoNoteCore/DepositCommitment.h"
 #include "CryptoNoteCore/AliasIndex.h"
 #include "CryptoNoteCore/Currency.h"
 #include "crypto/crypto.h"
@@ -507,7 +508,7 @@ std::string simple_wallet::get_commands_str() {
   });
 
   add_cat("Hearth AMM", {
-    {"pool_info", "Show Hearth AMM pool state"},
+    {"pool_info", "Show Hearth pool state"},
     {"sell_xfg", "Sell XFG for HEAT on Hearth AMM"},
     {"buy_xfg", "Buy XFG with HEAT on Hearth AMM"},
     {"add_liq", "Add liquidity to Hearth"},
@@ -618,7 +619,7 @@ simple_wallet::simple_wallet(System::Dispatcher& dispatcher, const CryptoNote::C
 
   // HEAT / Hearth AMM commands (v11+)
   m_consoleHandler.setHandler("heat_info", boost::bind(&simple_wallet::heat_info, this, boost::arg<1>()), "Show HEAT stablecoin metrics");
-  m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth AMM pool state");
+  m_consoleHandler.setHandler("pool_info", boost::bind(&simple_wallet::pool_info, this, boost::arg<1>()), "Show Hearth pool state");
   m_consoleHandler.setHandler("mint_heat", boost::bind(&simple_wallet::mint_heat, this, boost::arg<1>()), "mint_heat <xfg_amount> - Burn XFG to mint HEAT");
   m_consoleHandler.setHandler("send_heat", boost::bind(&simple_wallet::send_heat, this, boost::arg<1>()), "send_heat <address> <amount> - Send HEAT to a recipient");
   m_consoleHandler.setHandler("sell_xfg", [this](const std::vector<std::string>& args) { m_lastSwapDirection = 0; return swap(args); }, "sell_xfg <amount> <min_heat> - Sell XFG for HEAT on Hearth AMM");
@@ -1151,32 +1152,9 @@ bool simple_wallet::deposit(const std::vector<std::string> &args)
 
     success_msg_writer() << "Creating deposit with commitment...";
 
-    // Create transaction extra with commitment
-    std::vector<uint8_t> extra;
+    // REMOVED: 0x07 YIELD extra (retired) — CDs need no commitment extra.
+    // (Unreachable: deposit is disabled above.)
     std::string extraString;
-
-    // Generate CD commitment - simple hash for on-chain interest tracking
-    Crypto::Hash commitment;
-    Crypto::generate_random_bytes(32, commitment.data);
-
-    // Create the transaction extra with CD/YIELD commitment
-    std::string cia_id = "";  // No CIA ID for standard CD deposits
-    uint8_t claim_chain_code = 1;  // Default chain code
-    std::vector<uint8_t> gift_secret;  // Empty - not gifting
-    std::vector<uint8_t> metadata;  // Empty metadata
-
-    if (!CryptoNote::createTxExtraWithYieldCommitment(commitment, deposit_amount, deposit_term, cia_id, metadata, claim_chain_code, gift_secret, extra)) {
-      fail_msg_writer() << "Failed to create CD commitment data";
-      return true;
-    }
-
-    success_msg_writer() << "CD commitment generated: " << Common::podToHex(commitment);
-    success_msg_writer() << "";
-    success_msg_writer() << "This CD earns on-chain interest from the fee pool.";
-    success_msg_writer() << "Interest accrues automatically each epoch (900 blocks ≈ 5 days).";
-
-    // Convert extra vector to string
-    extraString = std::string(extra.begin(), extra.end());
 
     // Use IWalletLegacy deposit method with extra data
     uint64_t fee = m_currency.minimumFee();
@@ -1378,26 +1356,9 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
     if (deposit.term == 0) continue;
 
     shown++;
-    // Extract commitment (Key Image) from transaction extra
+    // REMOVED: Key-Image extraction from 0x08 extra (retired). CDs carry no
+    // commitment extra; the commitment output itself is sufficient.
     std::string key_image_str = "";
-    if (!deposit.extra.empty()) {
-      std::vector<TransactionExtraField> extraFields;
-      std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-      if (parseTransactionExtra(extraBytes, extraFields)) {
-        for (const auto& field : extraFields) {
-          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-            const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            key_image_str = Common::podToHex(heatCommit.commitment);
-            break;
-           // COLD deposit type removed - TransactionExtraSimpleCD no longer used
-           // } else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-           //   const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-           //   key_image_str = Common::podToHex(coldCommit.commitment);
-           //   break;
-          }
-        }
-      }
-    }
 
     std::string amount_str = m_currency.formatAmount(deposit.amount);
 
@@ -1450,7 +1411,8 @@ bool simple_wallet::list_cds(const std::vector<std::string> &)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::burn(const std::vector<std::string> &args)
 {
-  fail_msg_writer() << "This feature is temporarily disabled in v1.10.00 AZORAHAI.";
+  (void)args;
+  fail_msg_writer() << "Legacy 0x08 STARK burns are retired. Use 'mint_heat <xfg_amount>' (mintHeatV10).";
   return true;
   // Simplified burn command - just takes amount, term is always FOREVER
   if (args.size() != 1)
@@ -1538,42 +1500,10 @@ bool simple_wallet::burn(const std::vector<std::string> &args)
     }
 
     // Generate unified STARK commitment (v3) for burn
-    auto starkResult = CryptoNote::StarkCommitmentGenerator::generate(
-        burn_amount,
-        CryptoNote::parameters::HEAT_TERM,
-        CryptoNote::parameters::STARK_NETWORK_ID_MAINNET,
-        CryptoNote::parameters::STARK_TARGET_CHAIN_ETH,
-        CryptoNote::parameters::STARK_COMMITMENT_VERSION);
-
-    // Display secret — user's claim ticket for xfg-stark-cli proof generation
-    success_msg_writer() << "";
-    success_msg_writer() << "STARK Commitment Data (SAVE THIS — needed to claim HEAT):";
-    success_msg_writer() << "  Secret:     " << Common::podToHex(starkResult.secret);
-    success_msg_writer() << "  Commitment: " << Common::podToHex(starkResult.commitment);
-    success_msg_writer() << "  Nullifier:  " << Common::podToHex(starkResult.nullifier);
-    success_msg_writer() << "";
-
+    // REMOVED: legacy 0x08 STARK burn path (StarkCommitmentGenerator +
+    // TransactionExtraHeatCommitment). Use 'mint_heat' (mintHeatV10, 0xF5).
+    // (Unreachable: burn is disabled above.)
     std::vector<uint8_t> extra;
-    CryptoNote::TransactionExtraHeatCommitment heatCommitment;
-    heatCommitment.commitment = starkResult.commitment;
-    heatCommitment.amount = burn_amount;
-    heatCommitment.metadata = {0x08};
-
-    CryptoNote::addHeatCommitmentToExtra(extra, heatCommitment);
-
-    // Encrypt STARK secret into tx extra (0xD5) so burn_info can retrieve it
-    CryptoNote::AccountKeys walletKeys;
-    m_wallet->getAccountKeys(walletKeys);
-    CryptoNote::DepositSecretPayload secretPayload;
-    secretPayload.depositType = 0x08; // HEAT
-    secretPayload.amount = burn_amount;
-    secretPayload.term = CryptoNote::parameters::HEAT_TERM;
-    memcpy(secretPayload.depositSecret, &starkResult.secret, 32);
-    CryptoNote::TransactionExtraDepositSecret encSecret;
-    if (CryptoNote::encryptDepositSecret(secretPayload, walletKeys.address.viewPublicKey, encSecret)) {
-      CryptoNote::addDepositSecretToExtra(extra, encSecret);
-    }
-
     std::string extraString(extra.begin(), extra.end());
 
     // Send the burn deposit transaction
@@ -1777,8 +1707,12 @@ bool simple_wallet::rollover(const std::vector<std::string> &args)
 }
 
 //----------------------------------------------------------------------------------------------------
-// USER-FACING: Users MUST generate STARK proofs from deposits for L2 claims
+// USER-FACING: retired — 0x08 STARK burns no longer exist.
 bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
+   (void)args;
+   fail_msg_writer() << "gen_proof is retired: legacy 0x08 STARK burns are removed. HEAT is minted via 'mint_heat'.";
+   return true;
+   /* RETIRED body below (0x08 STARK proof data):
    if (args.size() != 1) {
      fail_msg_writer() << "Usage: gen_proof <tx_hash>";
      return true;
@@ -1875,6 +1809,7 @@ bool simple_wallet::gen_proof(const std::vector<std::string> &args) {
    }
 
    return true;
+   */ // end RETIRED gen_proof body
  }
 
 
@@ -1963,24 +1898,9 @@ bool simple_wallet::cd_info(const std::vector<std::string> &args)
     success_msg_writer() << "Type:          " << depositType;
     success_msg_writer() << "Description:   " << typeDescription;
 
-    // Parse and display commitment from transaction extra
+    // Parse transaction extra (0x08 display retired; raw hex + 0xD5 below)
     if (!deposit.extra.empty()) {
-      std::vector<TransactionExtraField> extraFields;
       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-
-      if (parseTransactionExtra(extraBytes, extraFields)) {
-        for (const auto& field : extraFields) {
-             if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-               const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-               success_msg_writer() << "Key Image:     " << Common::podToHex(heatCommit.commitment);
-             }
-             // COLD deposit type removed - TransactionExtraSimpleCD no longer used
-             // else if (field.type() == typeid(CryptoNote::TransactionExtraSimpleCD)) {
-             //   const auto& coldCommit = boost::get<CryptoNote::TransactionExtraSimpleCD>(field);
-             //   success_msg_writer() << "Key Image:     " << Common::podToHex(coldCommit.commitment);
-             // }
-        }
-      }
 
       // Also show raw extra hex for debugging
       success_msg_writer() << "Extra (hex):   " << Common::toHex(extraBytes);
@@ -2100,29 +2020,15 @@ bool simple_wallet::burn_info(const std::vector<std::string> &args)
     success_msg_writer() << "=== XFG Burn Info ===";
     success_msg_writer() << "ID:            " << deposit_id;
     success_msg_writer() << "Amount:        " << m_currency.formatAmount(deposit.amount);
-    success_msg_writer() << "Type:          XFG Burn (HEAT/0x08)";
+    success_msg_writer() << "Type:          XFG Burn (HEAT)";
     success_msg_writer() << "Term:          FOREVER (permanently removed from circulation)";
     success_msg_writer() << "Height:        " << deposit.height;
     success_msg_writer() << "Status:        Burned";
     success_msg_writer() << "Transaction:   " << Common::podToHex(deposit.transactionHash);
 
-    // Parse and display HEAT commitment from transaction extra
+    // 0x08 commitment display retired; raw extra hex + 0xD5 secret below
     if (!deposit.extra.empty()) {
-      std::vector<TransactionExtraField> extraFields;
       std::vector<uint8_t> extraBytes(deposit.extra.begin(), deposit.extra.end());
-
-      if (parseTransactionExtra(extraBytes, extraFields)) {
-        for (const auto& field : extraFields) {
-          if (field.type() == typeid(TransactionExtraHeatCommitment)) {
-            const auto& heatCommit = boost::get<TransactionExtraHeatCommitment>(field);
-            success_msg_writer() << "Commitment:    " << Common::podToHex(heatCommit.commitment);
-            success_msg_writer() << "Burn Amount:   " << heatCommit.amount << " heat (atomic)";
-            if (!heatCommit.metadata.empty()) {
-              success_msg_writer() << "Metadata:      " << Common::toHex(heatCommit.metadata);
-            }
-          }
-        }
-      }
 
       success_msg_writer() << "Extra (hex):   " << Common::toHex(extraBytes);
 
@@ -2524,7 +2430,7 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     fail_msg_writer() << "Usage: initiate_swap <amount> <peer_pubkey_hex> <pair> [role]";
     fail_msg_writer() << "  amount:        XFG to lock in Musig2 escrow";
     fail_msg_writer() << "  peer_pubkey:   64-char hex Ed25519 public key of swap counterparty";
-    fail_msg_writer() << "  pair:          XMR, ETH, or BCH";
+    fail_msg_writer() << "  pair:          protocol pair symbol (see xfg-swapd --help)";
     fail_msg_writer() << "  role:          alice (default) or bob";
     return true;
   }
@@ -2545,21 +2451,14 @@ bool simple_wallet::initiate_swap(const std::vector<std::string> &args) {
     }
 
     // Parse pair
-    std::string pairStr = args[2];
-    std::transform(pairStr.begin(), pairStr.end(), pairStr.begin(), ::toupper);
     XfgSwap::SwapPair pair;
-    if (pairStr == "XMR") pair = XfgSwap::SwapPair::XMR;
-    else if (pairStr == "ETH") pair = XfgSwap::SwapPair::ETH;
-    else if (pairStr == "BCH") pair = XfgSwap::SwapPair::BCH;
-    else if (pairStr == "SOL") pair = XfgSwap::SwapPair::SOL;
-    else if (pairStr == "ARB") pair = XfgSwap::SwapPair::ARB;
-    else if (pairStr == "BASE") pair = XfgSwap::SwapPair::BASE;
-    else if (pairStr == "BNB") pair = XfgSwap::SwapPair::BNB;
-    else if (pairStr == "DCR") pair = XfgSwap::SwapPair::DCR;
-    else {
-      fail_msg_writer() << "Invalid pair: " << args[2] << ". Use SOL, ETH, XMR, BCH, ARB, BASE, BNB, or DCR.";
+    if (!XfgSwap::swapPairFromString(args[2], pair) ||
+        !XfgSwap::isProtocolSwapPair(static_cast<uint8_t>(pair))) {
+      fail_msg_writer() << "Invalid or staged pair: " << args[2]
+                        << ". Run xfg-swapd --help for the catalog.";
       return true;
     }
+    const std::string pairStr = XfgSwap::swapPairToString(pair);
 
     // Parse role (default: Alice)
     XfgSwap::SwapRole role = XfgSwap::SwapRole::ALICE;
@@ -3729,7 +3628,9 @@ bool simple_wallet::register_alias(const std::vector<std::string> &args) {
       memcpy(preimage + 32, &addr.viewPublicKey,  32);
       Crypto::cn_fast_hash(preimage, 64, aliasReg.addressHash);
     }
-    aliasReg.ownerAddress = "";  // Not stored on-chain for privacy — addressHash is sufficient
+    // Empty addresses were intended for privacy, but isValid() currently
+    // requires ownerAddress, so this path fails until private resolution is designed.
+    aliasReg.ownerAddress = "";
     aliasReg.aliasType = aliasType;
     aliasReg.networkId = static_cast<uint32_t>(m_currency.getFuegoNetworkId());
 
@@ -4034,14 +3935,14 @@ bool simple_wallet::heat_info(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT algorithmic supply-rate coin (v10+):";
   success_msg_writer() << "  Initial redemption price: 0.2 XFG per HEAT";
   success_msg_writer() << "  Mint: burn XFG -> mint HEAT at current redemption price";
-  success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth AMM (1.0% fee to CD yield pool)";
+  success_msg_writer() << "  Trade: swap XFG/HEAT on Hearth pool (1.0% fee to CD yield pool)";
   success_msg_writer() << "  PI Controller: value-band target, KP=0.08 KI=0.015";
   success_msg_writer() << "  Query daemon for live metrics: /heat_metrics";
   return true;
 }
 
 bool simple_wallet::pool_info(const std::vector<std::string>& args) {
-  success_msg_writer() << "Hearth AMM pool (v11+):";
+  success_msg_writer() << "Hearth pool (v11+):";
   success_msg_writer() << "  Pool: XFG/HEAT constant-product (X * Y = K)";
   success_msg_writer() << "  Fee: 0.3% (30 bps), routed to LP providers";
   success_msg_writer() << "  Bootstrap: first user LP transaction at v11 fork";
@@ -4073,27 +3974,27 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   }
 
   // Query live AMM pool rate from daemon — consensus validates against this, not hardcoded ratio
-  uint64_t poolReserveXfg = 0;
-  uint64_t poolReserveHeat = 0;
+  uint64_t poolTwap = 0;
   try {
     COMMAND_RPC_AMM_POOL_INFO::request poolReq;
     COMMAND_RPC_AMM_POOL_INFO::response poolRes;
     HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
     invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
-    poolReserveXfg = poolRes.reserve_xfg;
-    poolReserveHeat = poolRes.reserve_heat;
+    poolTwap = poolRes.hearth_twap;
   } catch (const std::exception& e) {
-    fail_msg_writer() << "Failed to query AMM pool: " << e.what();
+    fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
+    return false;
+  }
+  if (poolTwap == 0) {
+    fail_msg_writer() << "No Hearth TWAP yet — HEAT mints open two blocks into v11";
     return false;
   }
 
-  if (poolReserveXfg == 0 || poolReserveHeat == 0) {
-    fail_msg_writer() << "AMM pool is empty — cannot mint HEAT yet";
-    return false;
-  }
-
-  // Calculate HEAT amount using live pool rate: heatAmount = xfgAmount * reserveHeat / reserveXfg
-  uint64_t heatAmount = xfgAmount * poolReserveHeat / poolReserveXfg;
+  // Consensus prices the mint at the 8-block TWAP; build a little under it so
+  // the TWAP moving before inclusion does not invalidate the mint.
+  uint64_t heatAmount = static_cast<uint64_t>(
+      ((static_cast<uint128_t>(xfgAmount) * poolTwap) / parameters::COIN) *
+      (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
 
   // Enforce minimum HEAT mint (0.1 HEAT mainnet, 0.01 HEAT testnet)
   uint64_t minHeat = m_currency.isTestnet()
@@ -4102,7 +4003,8 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   if (heatAmount < minHeat) {
     fail_msg_writer() << "Minimum HEAT mint is " << m_currency.formatAmount(minHeat)
                       << " HEAT. You need at least "
-                      << m_currency.formatAmount(minHeat * poolReserveXfg / poolReserveHeat + 1)
+                      << m_currency.formatAmount(static_cast<uint64_t>(
+                             (static_cast<uint128_t>(minHeat) * parameters::COIN) / poolTwap) + 1)
                       << " XFG to mint that much.";
     return false;
   }
@@ -4110,8 +4012,9 @@ bool simple_wallet::mint_heat(const std::vector<std::string>& args) {
   success_msg_writer() << "HEAT Mint:";
   success_msg_writer() << "  Burn: " << m_currency.formatAmount(xfgAmount) << " XFG";
   success_msg_writer() << "  Mint: " << m_currency.formatAmount(heatAmount) << " HEAT";
-  success_msg_writer() << "  Rate: " << m_currency.formatAmount(poolReserveXfg)
-                       << " XFG / " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
+  success_msg_writer() << "  Price: " << m_currency.formatAmount(poolTwap)
+                       << " HEAT per XFG (8-block TWAP, minted "
+                       << parameters::WALLET_MINT_TWAP_MARGIN_BPS / 100.0 << "% under it)";
   success_msg_writer() << "  Fee:  " << m_currency.formatAmount(fee);
 
   // Confirmation prompt — user must explicitly approve the mint
@@ -4200,7 +4103,80 @@ bool simple_wallet::swap(const std::vector<std::string>& args) {
                        << " | min output: " << m_currency.formatAmount(minOutput);
 
   uint64_t mixIn = m_currency.isTestnet() ? 0 : CryptoNote::parameters::MIN_TX_MIXIN_SIZE;
-  uint64_t outputAmount = minOutput;
+  // Quote on the constant-product curve, net of the 1% fee — the most
+  // consensus accepts — a little under it so the pool moving before
+  // inclusion does not invalidate the swap.
+  uint64_t outputAmount = 0;
+  uint64_t mintAmount = 0;      // selling XFG: what burning it would mint instead
+  uint64_t spotBefore = 0, spotAfter = 0;  // HEAT per XFG × COIN
+  try {
+    COMMAND_RPC_AMM_POOL_INFO::request poolReq;
+    COMMAND_RPC_AMM_POOL_INFO::response poolRes;
+    HttpClient httpClient(m_dispatcher, m_daemon_host, m_daemon_port);
+    invokeJsonCommand(httpClient, "/amm_pool_info", poolReq, poolRes);
+    const uint64_t reserveIn = direction == 0 ? poolRes.reserve_xfg : poolRes.reserve_heat;
+    const uint64_t reserveOut = direction == 0 ? poolRes.reserve_heat : poolRes.reserve_xfg;
+    const uint64_t gross = ammGetOutputAmount(amount, reserveIn, reserveOut, 0);
+    const uint64_t net = ammSwapNetOutput(amount, reserveIn, reserveOut);
+    outputAmount = static_cast<uint64_t>(
+        (static_cast<uint128_t>(net) * (10000 - parameters::WALLET_SWAP_SLIPPAGE_BPS)) / 10000);
+    // Where the trade leaves the pool: the output and the fee's CD share leave.
+    const uint64_t cdFee = (gross - net) * parameters::HEARTH_CD_SHARE_PCT / 100;
+    const uint64_t outAfter = reserveOut > net + cdFee ? reserveOut - net - cdFee : 0;
+    const uint64_t xfgBefore = poolRes.reserve_xfg, heatBefore = poolRes.reserve_heat;
+    const uint64_t xfgAfter = direction == 0 ? reserveIn + amount : outAfter;
+    const uint64_t heatAfter = direction == 0 ? outAfter : reserveIn + amount;
+    spotBefore = ammGetSpotPrice(xfgBefore, heatBefore);
+    spotAfter = ammGetSpotPrice(xfgAfter, heatAfter);
+    if (direction == 0 && poolRes.hearth_twap > 0) {
+      mintAmount = static_cast<uint64_t>(
+          ((static_cast<uint128_t>(amount) * poolRes.hearth_twap) / parameters::COIN) *
+          (10000 - parameters::WALLET_MINT_TWAP_MARGIN_BPS) / 10000);
+    }
+  } catch (const std::exception& e) {
+    fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
+    return false;
+  }
+  if (outputAmount == 0 || outputAmount < minOutput) {
+    fail_msg_writer() << "Pool quote " << m_currency.formatAmount(outputAmount)
+                      << " is below your minimum " << m_currency.formatAmount(minOutput);
+    return false;
+  }
+  // Consensus lets one block move the price at most to double or half of
+  // its opening price (HEARTH_MAX_BLOCK_PRICE_MOVE_PCT); say so up front.
+  const uint64_t band = 100 + parameters::HEARTH_MAX_BLOCK_PRICE_MOVE_PCT;
+  if (spotBefore > 0 && (static_cast<uint128_t>(spotAfter) * 100 > static_cast<uint128_t>(spotBefore) * band ||
+                         static_cast<uint128_t>(spotAfter) * band < static_cast<uint128_t>(spotBefore) * 100)) {
+    fail_msg_writer() << "This trade would move the Hearth price from " << m_currency.formatAmount(spotBefore)
+                      << " to " << m_currency.formatAmount(spotAfter)
+                      << " HEAT per XFG — past the per-block limit (at most double or half). Split it across blocks.";
+    return false;
+  }
+  const double moveBps = spotBefore > 0
+      ? (static_cast<double>(spotAfter) - static_cast<double>(spotBefore)) * 10000.0 / spotBefore : 0.0;
+  success_msg_writer() << "Hearth " << (direction == 0 ? "sell" : "buy") << ": "
+                       << m_currency.formatAmount(outputAmount) << (direction == 0 ? " HEAT" : " XFG");
+  success_msg_writer() << "  Pool price: " << m_currency.formatAmount(spotBefore) << " -> "
+                       << m_currency.formatAmount(spotAfter) << " HEAT per XFG ("
+                       << std::fixed << std::setprecision(1) << moveBps / 100.0 << "%)";
+  if (direction == 0) {
+    // Burning mints at the TWAP without touching the pool — for a large
+    // sale, often far more HEAT. Offer it; the command stays a Hearth sale.
+    if (mintAmount > 0) {
+      success_msg_writer() << "Mint instead: " << m_currency.formatAmount(mintAmount)
+                           << " HEAT (burns the XFG at the 8-block TWAP; no pool price impact)"
+                           << " — use: mint_heat " << m_currency.formatAmount(amount);
+    } else {
+      success_msg_writer() << "Mint instead: unavailable (no Hearth TWAP yet)";
+    }
+    std::cout << "Proceed with the Hearth sell? (yes/no): ";
+    std::string answer;
+    std::getline(std::cin, answer);
+    if (answer != "yes" && answer != "y") {
+      fail_msg_writer() << "Sell cancelled.";
+      return false;
+    }
+  }
 
   CryptoNote::WalletHelper::SendCompleteResultObserver sent;
   WalletHelper::IWalletRemoveObserverGuard removeGuard(*m_wallet, sent);
@@ -4235,17 +4211,17 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
     poolReserveXfg = poolRes.reserve_xfg;
     poolReserveHeat = poolRes.reserve_heat;
   } catch (const std::exception& e) {
-    fail_msg_writer() << "Failed to query AMM pool: " << e.what();
+    fail_msg_writer() << "Failed to query Hearth pool: " << e.what();
     return false;
   }
 
   // No args — show pool ratio info and LP withdrawal warning
   if (args.empty()) {
     if (poolReserveXfg == 0 || poolReserveHeat == 0) {
-      success_msg_writer() << "Hearth AMM pool is empty — no liquidity yet.";
+      success_msg_writer() << "Hearth pool is empty — no liquidity yet.";
       return true;
     }
-    success_msg_writer() << "Hearth AMM Pool Ratio:";
+    success_msg_writer() << "Hearth Pool Ratio:";
     success_msg_writer() << "  " << m_currency.formatAmount(poolReserveXfg)
                          << " XFG : " << m_currency.formatAmount(poolReserveHeat) << " HEAT";
     success_msg_writer() << "  Every " << m_currency.formatAmount(poolReserveXfg)
@@ -4315,7 +4291,7 @@ bool simple_wallet::add_liq(const std::vector<std::string>& args) {
   } else {
     // Auto-calculate from pool ratio
     if (poolReserveXfg == 0 || poolReserveHeat == 0) {
-      fail_msg_writer() << "AMM pool is empty — provide both XFG and HEAT amounts explicitly.";
+      fail_msg_writer() << "Hearth pool is empty — provide both XFG and HEAT amounts explicitly.";
       return false;
     }
     heatAmount = xfgAmount * poolReserveHeat / poolReserveXfg;

@@ -2,11 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "palm",
   "name": "Fuego",
-  "logo": {
-    "dark": "/images/logo-dark.svg",
-    "light": "/images/logo-light.svg"
-  },
-  "favicon": "/images/favicon.svg",
+  "favicon": "/images/favicon.png",
   "colors": {
     "primary": "#FF4500",
     "light": "#FF6B35",

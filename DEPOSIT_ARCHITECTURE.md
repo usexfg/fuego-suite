@@ -30,11 +30,12 @@ one it refers to:
 | **HEAT (flatcoin)** | Current flatcoin, pegged to purchasing power | ✅ Active | Dynamic (Hearth pool TWAP) |
 | **Embers_Heat** | Legacy ERC20 token, inflationary | ❌ Deprecated | Fixed 10M:1 with XFG |
 
-**Legacy 10M conversion still in code** (DO NOT use for actual minting):
-- `Currency::convertXfgToHeat()` → `xfgAmount * 10000000` (legacy)
-- `Currency::convertHeatToXfg()` → `heatAmount / 10000000` (legacy)
-- `Currency::m_heatConversionRate = 10000000` (legacy)
-- `DepositCommitmentGenerator::convertXfgToHeat()` → same 10M ratio (legacy)
+**Legacy 10M conversion REMOVED (2026-09-11 purge)**:
+- `Currency::convertXfgToHeat()` / `convertHeatToXfg()` — deleted (were never
+  defined in code; only docs referenced them).
+- `Currency::m_heatConversionRate` / `getHeatConversionRate()` — deleted
+  (zero callers; the 10M field was dead weight).
+- Actual minting has always used Hearth pool TWAP via `mintHeatV10()`.
 
 **Actual minting uses Hearth pool TWAP**:
 - `mintHeatV10()` → `heatMinted = xfgBurned * 10^18 / twap`
@@ -113,10 +114,10 @@ The current system has exactly TWO paths, distinguished by the `term` field in
 | `src/CryptoNoteCore/Blockchain.cpp` | `m_heatCdFeePool`, CD_APY_POOL vault management |
 | `src/CryptoNoteCore/CommitmentIndex.cpp` | `processAutoRolls()` — auto-roll matured CDs |
 | `include/IWallet.h` | `Deposit` struct with `Deposit::Type::HEAT` |
-| `src/CryptoNoteCore/DepositCommitment.h` | `StarkCommitmentGenerator` for HEAT burns |
+| `src/CryptoNoteCore/DepositCommitment.h` | RETIRED marker (generators removed; burns use `mintHeatV10()`) |
 | `src/CryptoNoteCore/TransactionExtra.h` | `TransactionOutputCommitment` struct |
 | `include/CryptoNote.h` | `TransactionOutputCommitment`, `TransactionInputCommitmentSpend` |
-| `src/CryptoNoteCore/TransactionExtra.cpp` | `computeHeatCommitment()`, `buildHeatExtra()` |
+| `src/CryptoNoteCore/TransactionExtra.cpp` | tx-extra parse/serialize (0x08 creation helpers removed) |
 
 ### Deposit Flow (Current)
 
@@ -355,13 +356,12 @@ The old system had TWO separate tokens, both using zkSTARK-based deposits:
 - Inflationary rewards were unsustainable
 - Superseded by current HEAT flatcoin model
 
-**Legacy 10M ratio still in code** (DO NOT use for actual minting):
-- `Currency::convertXfgToHeat()` → `xfgAmount * 10000000` (legacy Embers_Heat ratio)
-- `Currency::convertHeatToXfg()` → `heatAmount / 10000000` (legacy)
-- `Currency::m_heatConversionRate = 10000000` (legacy)
-- `DepositCommitmentGenerator::convertXfgToHeat()` → same 10M ratio (legacy)
-- `PaymentServiceJsonRpcServer` uses it for display/estimation (legacy)
-- `WalletGreen::createDeposit()` uses it for HEAT burn commitment extra (legacy display value)
+**Legacy 10M ratio REMOVED (2026-09-11 purge)**:
+- `convertXfgToHeat()` / `convertHeatToXfg()` / `m_heatConversionRate` — deleted.
+- `PaymentServiceJsonRpcServer::handleCreateDeposit` no longer generates
+  commitment extras at all.
+- `WalletGreen::createDeposit()` ignores no commitment param (param removed);
+  HEAT burns go exclusively through `mintHeatV10()`.
 
 **Actual minting uses Hearth pool TWAP** (NOT 10M ratio):
 - `mintHeatV10()` → `heatMinted = xfgBurned * 10^18 / twap`
@@ -392,7 +392,7 @@ it does not exist and should not be created without explicit design review.
 | **term value** | `HEAT_TERM` (0xFFFFFFFF) | Actual block count |
 | **Reversible?** | No — XFG is permanently burned | Yes — principal returned at maturity |
 | **Reward** | HEAT minted via pool TWAP | APY from protocol revenue (CD_APY_POOL) |
-| **zkSTARK?** | Yes (StarkCommitmentGenerator) | No (ring signature only) |
+| **zkSTARK?** | No — mint auth via ring signatures (STARK relay removed) | No (ring signature only) |
 | **APY source** | None (instant mint) | Protocol fees (swap, mint, banking) |
 | **Code path** | `mintHeatV10()` | `createDeposit()` with `term != HEAT_TERM` |
 
@@ -548,8 +548,8 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 | `m_feePoolBalance` | 69% CD yield pool (swap fees) | CD yield minting |
 | `m_currentEpochSwapFees` | Current epoch swap fees | Swap fee collection |
 | `m_totalCdLocked` | Total XFG locked in CDs | Deposit/withdrawal |
-| `m_totalLegacyBondLocked` | Total XFG in legacy bonds | Bond operations |
-| `m_legacyBondYieldPool` | Legacy bond yield pool | Swap fees (legacy bond share) |
+| ~~`m_totalLegacyBondLocked`~~ | REMOVED (2026-09-11 purge) | — |
+| ~~`m_legacyBondYieldPool`~~ | REMOVED (2026-09-11 purge) | — |
 | `m_totalSwapFeesCollected` | Lifetime swap fees | Swap fee collection |
 | `m_totalCdInterestPaid` | Lifetime CD interest paid | Interest claims |
 | `m_totalTreasuryAccrued` | Total treasury accrued | — |
@@ -572,10 +572,8 @@ if (epochsToMaturity < LOYALTY_BONUS_FULL_EPOCHS) {
 #### Swap Fees (69/11/20)
 ```
 100% epochSwapFees
-├── 69% → cdShare
-│   ├── Split between regularCdShare and legacyBondShare (50/50 if legacy bonds exist)
-│   ├── regularCdShare → m_cdYieldPool → HEAT minting → m_heatCdFeePool + m_feePoolBalance
-│   └── legacyBondShare → m_legacyBondYieldPool
+├── 69% → cdShare (100% to regular CDs; legacy-bond split removed 2026-09-11)
+│   └── cdShare → m_cdYieldPool → HEAT minting → m_heatCdFeePool + m_feePoolBalance
 ├── 11% → bonusVaultShare → m_bonusVaultBalance
 └── 20% → treasuryShare → m_treasuryCounterXFG
 ```
@@ -615,7 +613,7 @@ XFG burned from treasury conversion
 | `m_bonusVaultBalance` | ✓ | 4482 |
 | `m_treasuryCounterXFG` | ✓ | 4520 |
 | `m_cdYieldPool` | ✓ | 4626, 4630 |
-| `m_legacyBondYieldPool` | ✓ | 4637 |
+| ~~`m_legacyBondYieldPool`~~ | REMOVED | — |
 | `m_feePoolBalance` | ✓ | 4656, 5552 |
 | `m_swfBalance` | ✓ | 4036, 4553 |
 | `m_swfHeatBalance` | ✓ | 4616 |
@@ -698,7 +696,7 @@ bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
 - You CANNOT "deposit a deposit" — you must mint HEAT first, then deposit it
 
 ### ❌ Do NOT use legacy 10M ratio for actual minting
-- `convertXfgToHeat()` returns `xfgAmount * 10000000` — this is LEGACY Embers_Heat ratio
+- There is no fixed XFG→HEAT ratio anywhere in code (10M field deleted 2026-09-11)
 - Actual minting uses Hearth pool TWAP: `heatMinted = xfgBurned * 10^18 / twap`
 - The 10M ratio is ONLY for display/estimation in commitment extra tags
 - If you need actual mint pricing, use `mintHeatV10()` or query Hearth pool TWAP
@@ -718,8 +716,7 @@ bool rolloverDeposit(DepositId depositId, uint32_t newTerm,
 
 ### ❌ Do NOT confuse "heat" references in code
 - "HEAT" can mean EITHER the current flatcoin OR the legacy Embers_Heat token
-- `convertXfgToHeat()` uses legacy 10M ratio (Embers_Heat)
-- `mintHeatV10()` uses Hearth pool TWAP (current HEAT flatcoin)
+- `mintHeatV10()` uses Hearth pool TWAP (current HEAT flatcoin) — the only mint path
 - Always check which "heat" a piece of code refers to
 
 ---
@@ -776,7 +773,7 @@ If privacy analysis confirms terms don't hurt anonymity:
 - `src/CryptoNoteCore/Currency.cpp` — `calculateCdInterest()`
 - `src/CryptoNoteCore/Blockchain.cpp` — CD_APY_POOL, m_heatCdFeePool
 - `src/CryptoNoteCore/CommitmentIndex.h` — `CommitmentEntry`, `CommitmentEntry::Type`
-- `src/CryptoNoteCore/DepositCommitment.h` — `StarkCommitmentGenerator`
+- `src/CryptoNoteCore/DepositCommitment.h` — RETIRED marker (generators removed)
 - `src/CryptoNoteCore/TransactionExtra.h` — `TransactionOutputCommitment`
 - `include/CryptoNote.h` — `TransactionInputCommitmentSpend`, `TransactionOutputUnified`
 - `src/CryptoNoteConfig.h` — `HEAT_TERM`, `DEPOSIT_TERM_*` constants

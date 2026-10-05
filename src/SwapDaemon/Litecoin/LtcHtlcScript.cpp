@@ -431,6 +431,8 @@ std::vector<uint8_t> LtcHtlcScript::parseClaimPreimage(
 
     uint64_t scriptSigLen = 0;
     if (!readVarInt(p, end, scriptSigLen)) return {};
+    static constexpr uint64_t MAX_SCRIPT_SIG_LEN = 10000;
+    if (scriptSigLen > MAX_SCRIPT_SIG_LEN) return {};
     if (p + scriptSigLen > end) return {};
     p += scriptSigLen;
 
@@ -482,11 +484,20 @@ std::vector<uint8_t> LtcHtlcScript::parseClaimPreimage(
     std::vector<uint8_t> actualHash = sha256(witnessScript);
     if (actualHash != expectedHash) continue;
 
-    // Found the HTLC input. The preimage is the second-to-last witness item
-    // (second item in the stack, index 1).
+    // M-2: verify SHA256(preimage) == hashLock embedded in the witnessScript.
+    // Script layout: [0]=OP_IF [1]=OP_SHA256 [2]=0x20 (push32) [3..34]=hashLock
+    if (witnessScript.size() < 35 ||
+        witnessScript[0] != LtcOpCode::OP_IF ||
+        witnessScript[1] != LtcOpCode::OP_SHA256 ||
+        witnessScript[2] != 0x20) {
+      continue;
+    }
+    std::vector<uint8_t> hashLock(witnessScript.begin() + 3, witnessScript.begin() + 35);
     const auto& preimageItem = witnessItems[1];
-    return std::vector<uint8_t>(preimageItem.first,
-                                 preimageItem.first + preimageItem.second);
+    std::vector<uint8_t> preimage(preimageItem.first, preimageItem.first + preimageItem.second);
+    if (sha256(preimage) != hashLock) continue;
+
+    return preimage;
   }
 
   return {};  // No matching input found

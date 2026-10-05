@@ -22,6 +22,7 @@
 #include <vector>
 #include <boost/utility.hpp>
 #include "../CryptoNoteConfig.h"
+#include "CdClaimEstimate.h"
 #include "../crypto/hash.h"
 #include "../Logging/LoggerRef.h"
 #include "CryptoNoteBasic.h"
@@ -195,6 +196,13 @@ public:
   uint64_t numberOfPeriodsToForgetTxDeletedFromPool() const { return m_numberOfPeriodsToForgetTxDeletedFromPool; }
 
   uint32_t upgradeHeight(uint8_t majorVersion) const;
+  // First height at which HEAT CDs may be created and earn interest. Mainnet:
+  // parameters::CD_ACTIVATION_HEIGHT. Testnet: its v11 height, so CDs keep
+  // being exercised there and its existing history stays valid.
+  uint32_t cdActivationHeight() const;
+  // First height at which a pre-v11 block may not carry HEAT, Hearth or
+  // legacy-burn tags (parameters::HEATWAVE_TAG_CUTOFF_HEIGHT; testnet: v11).
+  uint32_t heatwaveTagCutoffHeight() const;
   uint8_t blockMajorVersionAtHeight(uint32_t height) const;
   unsigned int upgradeVotingThreshold() const { return m_upgradeVotingThreshold; }
   uint32_t upgradeVotingWindow() const { return m_upgradeVotingWindow; }
@@ -224,26 +232,25 @@ public:
     // Interest functions
     uint64_t calculateInterest(uint64_t amount, uint32_t term, uint32_t height) const;
     // Fee-pool interest: accrued from swap fees over epochs a CD was locked
-    // isLegacyBond=true uses legacy bond fee rate track (50% CD share for bug-era deposits)
     // term=0 skips loyalty bonus check (conservative cap); pass actual term for payout
     // autoRolled=true compounds interest at the auto-roll boundary (doubled earning period)
     // v11+: returns BASE interest only; loyalty bonus is paid from Bonus Vault via calculateCdBonus().
     uint64_t calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                   uint32_t currentHeight,
                                   const CommitmentIndex& commitmentIndex,
-                                  bool isLegacyBond = false, uint32_t term = 0,
+                                  uint32_t term = 0,
                                   bool autoRolled = false) const;
-    // v11+: BV-backed loyalty bonus. Σ over locked epochs of
-    // bonusHeat_e × amount × tierWeight(term) / weightedBase_e — realized BV
-    // inflows only, so total payouts can never exceed the vault (no
-    // overpromising). Returns 0 pre-V11 (no bonus epoch rates recorded).
+    // v11+: Bonus Vault yield floor. For each credited epoch whose fee rate
+    // fell below CD_YIELD_FLOOR_RATE, tops the CD up to the floor. Paid from
+    // the BONUS_VAULT partition, so payouts never exceed realized inflows.
     uint64_t calculateCdBonus(uint64_t amount, uint32_t creationHeight,
                                uint32_t currentHeight,
                                const CommitmentIndex& commitmentIndex,
                                uint32_t term) const;
-    // Tier weight in percent for a CD term: 250/200/150/125 for the 72/36/18/6
-    // epoch tiers, 100 otherwise. Mirrors the loyalty multiplier mapping.
-    uint64_t loyaltyTierWeightPct(uint32_t term) const;
+    // Last epoch a CD is credited for. calculateCdInterest and
+    // calculateCdBonus pay epochs [creationHeight / D, this], and the v11+
+    // epoch-rate denominator counts the CD over exactly the same window.
+    uint64_t cdLastCreditedEpoch(uint32_t creationHeight, uint32_t term) const;
     uint64_t calculateTotalTransactionInterest(const Transaction &tx, uint32_t height) const;
     uint64_t getTransactionInputAmount(const TransactionInput &in, uint32_t height) const;
     uint64_t getTransactionAllInputsAmount(const Transaction &tx, uint32_t height) const;
@@ -256,14 +263,14 @@ public:
 
     // Finite-term CD marker: term > 0 and not one of the reserved term tags.
     static bool isFiniteCdTerm(uint32_t term);
-    // HEAT CDs activate at the V12 upgrade height: finite-term commitments
-    // created at or above it carry HEAT principal; older ones are legacy XFG.
+    // True from cdActivationHeight(): CDs (always HEAT) may exist at `height`.
     bool isHeatCdHeight(uint32_t height) const;
-    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term, bool heatCds);
-    // Asset of an existing commitment output, from its term and creation height.
-    AssetType classifyCommitmentRef(uint32_t term, uint32_t creationHeight) const;
-    // `height` is the height of the block that includes (or would include) tx.
-    AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx, uint32_t height) const;
+    static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
+    // Asset of a TransactionOutputCommitment by its term. The single mapping
+    // for both sides of the per-asset balance: an output is minted as this
+    // asset, and spending it must present the same asset.
+    static AssetType classifyCommitmentTermAsset(uint32_t term);
+    AssetBalance getTransactionOutputAssetAmounts(const Transaction& tx) const;
   size_t maxBlockCumulativeSize(uint64_t height) const;
 
   bool constructMinerTx(uint8_t blockMajorVersion, uint32_t height, size_t medianSize, uint64_t alreadyGeneratedCoins, size_t currentBlockSize,
@@ -286,9 +293,6 @@ public:
   uint64_t getBurnDepositLargeAmount() const { return m_burnDepositLargeAmount; }
   uint32_t getDepositTermForever() const { return m_depositTermForever; }
   uint32_t getDepositTermBurn() const { return m_depositTermForever; }  // Alias for compatibility
-
-  // HEAT token conversion methods
-  uint64_t getHeatConversionRate() const { return m_heatConversionRate; }
 
   // Money supply methods
   uint64_t getBaseMoneySupply() const { return m_baseMoneySupply; }
@@ -400,9 +404,6 @@ private:
   uint64_t m_burnDepositStandardAmount;
   uint64_t m_burnDepositLargeAmount;
   uint32_t m_depositTermForever;
-
-  // HEAT token conversion
-  uint64_t m_heatConversionRate;
 
   // Money supply
   uint64_t m_baseMoneySupply;
@@ -543,9 +544,6 @@ public:
   CurrencyBuilder& burnDepositStandardAmount(uint64_t val) { m_currency.m_burnDepositStandardAmount = val; return *this; }
   CurrencyBuilder& burnDepositLargeAmount(uint64_t val) { m_currency.m_burnDepositLargeAmount = val; return *this; }
   CurrencyBuilder& depositTermForever(uint32_t val) { m_currency.m_depositTermForever = val; return *this; }
-
-  // HEAT conversion builder
-  CurrencyBuilder& heatConversionRate(uint64_t val) { m_currency.m_heatConversionRate = val; return *this; }
 
   // Money supply builders
   CurrencyBuilder& baseMoneySupply(uint64_t val) { m_currency.m_baseMoneySupply = val; return *this; }

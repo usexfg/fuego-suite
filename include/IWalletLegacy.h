@@ -188,7 +188,6 @@ public:
                                          uint64_t amount,
                                          uint64_t fee,
                                          uint64_t mixIn) = 0;
-  virtual TransactionId withdrawLegacyBond(DepositId depositId, uint64_t interest, uint64_t fee) = 0;
   virtual std::error_code cancelTransaction(size_t transferId) = 0;
 
   // AFK Adaptor Swaps

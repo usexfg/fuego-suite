@@ -52,7 +52,7 @@ ChainClientResult SolChainClient::lock(const SwapParams& params) {
       params.ctrAddress,
       hashHex,
       params.ctrTimeoutBlock,
-      params.ctrAmount,
+      params.ctrAmount64(),
       solResult);
   if (!ok || !solResult.confirmed)
     return ChainClientResult::fail("SOL lock failed: " + solResult.error);
@@ -80,7 +80,7 @@ ChainClientResult SolChainClient::lockPtlc(const SwapParams& params) {
       params.ctrAddress,
       ptHex,
       params.ctrTimeoutBlock,
-      params.ctrAmount,
+      params.ctrAmount64(),
       solResult);
   if (!ok || !solResult.confirmed)
     return ChainClientResult::fail("SOL lockPtlc failed: " + solResult.error);
@@ -113,7 +113,7 @@ static ChainClientResult verifyPtlcAccount(SolRpcClient* rpc,
     return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
   if (info.claimed || info.refunded)
     return ChainClientResult::fail("SOL verifyLock: HTLC already claimed/refunded");
-  if (info.amount < params.ctrAmount)
+  if (info.amount < params.ctrAmount64())
     return ChainClientResult::fail("SOL verifyLock: amount too low");
   if (info.lockType != 1)
     return ChainClientResult::fail("SOL verifyLock: state is not a PTLC lock (lock_type != 1)");
@@ -149,7 +149,7 @@ ChainClientResult SolChainClient::verifyLock(const SwapParams& params) {
     return ChainClientResult::fail("SOL verifyLock: cannot read HTLC account state");
   if (info.claimed || info.refunded)
     return ChainClientResult::fail("SOL verifyLock: HTLC already claimed/refunded");
-  if (info.amount < params.ctrAmount)
+  if (info.amount < params.ctrAmount64())
     return ChainClientResult::fail("SOL verifyLock: amount too low");
 
   // Expected hashlock: H(t) from secret or published hashLock.
@@ -236,6 +236,11 @@ std::string SolChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   return info.preimage;
 }
 
+bool SolChainClient::hasConfirmedClaim(const SwapParams& params) {
+  // getHtlcState reads a finalized account owned by our HTLC program.
+  return !tryExtractClaimedSecret(params).empty();
+}
+
 ChainClientResult SolChainClient::refund(const SwapParams& params) {
   SolTxResult solResult;
   bool ok = m_rpc->refund(
@@ -245,6 +250,20 @@ ChainClientResult SolChainClient::refund(const SwapParams& params) {
   if (!ok || !solResult.confirmed)
     return ChainClientResult::fail("SOL refund failed: " + solResult.error);
   return ChainClientResult::ok(solResult.signature);
+}
+
+ChainClientResult SolChainClient::getTransactionDetails(
+    const std::string& txId, ChainClientResult& result) {
+  result = ChainClientResult::fail("SOL finalized transaction unavailable");
+  uint64_t slot = 0, tip = 0;
+  if (!m_rpc || !m_rpc->getFinalizedSignatureSlot(txId, slot) ||
+      !m_rpc->getSlot(tip) || tip < slot ||
+      tip - slot >= UINT32_MAX) return result;
+  result = ChainClientResult::ok(txId);
+  result.confirmed = true;
+  result.blockHeight = slot;
+  result.confirmations = static_cast<uint32_t>(tip - slot + 1);
+  return result;
 }
 
 ChainClientResult SolChainClient::verifyReserveProof(const std::string& expectedMessage,

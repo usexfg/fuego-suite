@@ -151,6 +151,14 @@ namespace CryptoNote
 		}
 	}
 
+	uint32_t Currency::cdActivationHeight() const {
+		return m_testnet ? m_upgradeHeightV11 : parameters::CD_ACTIVATION_HEIGHT;
+	}
+
+	uint32_t Currency::heatwaveTagCutoffHeight() const {
+		return m_testnet ? m_upgradeHeightV11 : parameters::HEATWAVE_TAG_CUTOFF_HEIGHT;
+	}
+
 	uint32_t Currency::upgradeHeight(uint8_t majorVersion) const {
 		if (majorVersion == BLOCK_MAJOR_VERSION_2) {
 			return m_upgradeHeightV2;
@@ -256,7 +264,10 @@ double Currency::getBurnPercentage() const {
 		uint64_t fee, uint32_t height, uint64_t& reward, int64_t& emissionChange, uint64_t burnedCoinsOverride) const {
 		unsigned int selectedEmissionSpeedFactor = emissionSpeedFactor(blockMajorVersion);
 
-    assert(selectedEmissionSpeedFactor > 0 && selectedEmissionSpeedFactor <= 8 * sizeof(uint64_t));
+    if (selectedEmissionSpeedFactor == 0 || selectedEmissionSpeedFactor > 8 * sizeof(uint64_t)) {
+      logger(ERROR, BRIGHT_RED) << "Invalid emission speed factor: " << selectedEmissionSpeedFactor;
+      return false;
+    }
 
     // Only use burn-adjusted reward formula for v10+ blocks (when burns were introduced)
     // burnedCoinsOverride: when != UINT64_MAX, use deterministic height-indexed value
@@ -268,10 +279,16 @@ double Currency::getBurnPercentage() const {
         // This makes burned coins available for re-emission
         uint64_t Osavvirsak = (alreadyGeneratedCoins > eternalFlame) ?
                               (alreadyGeneratedCoins - eternalFlame) : 0;
-        assert(Osavvirsak <= m_moneySupply);
+        if (Osavvirsak > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "Osavvirsak exceeds money supply at height " << height;
+          return false;
+        }
         baseReward = (m_moneySupply - Osavvirsak) >> selectedEmissionSpeedFactor;
     } else {
-        assert(alreadyGeneratedCoins <= m_moneySupply);
+        if (alreadyGeneratedCoins > m_moneySupply) {
+          logger(ERROR, BRIGHT_RED) << "alreadyGeneratedCoins exceeds money supply at height " << height;
+          return false;
+        }
         baseReward = (m_moneySupply - alreadyGeneratedCoins) >> selectedEmissionSpeedFactor;
     }
 
@@ -316,23 +333,11 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
-  uint64_t Currency::loyaltyTierWeightPct(uint32_t term) const {
+  uint64_t Currency::cdLastCreditedEpoch(uint32_t creationHeight, uint32_t term) const {
     const uint64_t epochDuration = m_testnet
         ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
         : parameters::EPOCH_DURATION_BLOCKS;
-    const uint32_t maxTerm = m_testnet
-        ? parameters::TESTNET_DEPOSIT_MAX_TERM
-        : parameters::DEPOSIT_MAX_TERM;
-    if (term == maxTerm) {
-      return parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
-    } else if (term == 36 * epochDuration) {
-      return parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×
-    } else if (term == 18 * epochDuration) {
-      return parameters::LOYALTY_BONUS_18_EPOCHS_PCT;  // 18 epochs: 1.5×
-    } else if (term == 6 * epochDuration) {
-      return parameters::LOYALTY_BONUS_6_EPOCHS_PCT;   // 6 epochs: 1.25×
-    }
-    return 100;  // rolling / no tier bonus
+    return (uint64_t(creationHeight) + term) / epochDuration;
   }
 
   uint64_t Currency::calculateCdBonus(uint64_t amount, uint32_t creationHeight,
@@ -347,23 +352,42 @@ double Currency::getBurnPercentage() const {
     uint64_t startEpoch = creationHeight / epochDuration;
     uint64_t endEpoch = currentHeight / epochDuration;
     if (term > 0) {
-      uint64_t expiryEpoch = (creationHeight + term) / epochDuration;
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
       if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
     }
     uint64_t epochCount = commitmentIndex.getEpochCount();
 
-    uint64_t weight = loyaltyTierWeightPct(term);
+    // YIELD FLOOR (replaces the pro-rata tier bonus).
+    //
+    // The vault now tops a CD up to CD_YIELD_FLOOR_RATE in any epoch whose
+    // fee-derived rate fell below it, rather than splitting realized inflow
+    // pro-rata by tier weight. Three reasons:
+    //
+    //  * The pro-rata form was zero-sum. A depositor's weight sat in both the
+    //    numerator and everyone's shared denominator, so if every CD picked the
+    //    top tier each one received exactly what it would have at the bottom
+    //    tier. "2.5x" bought share, never yield.
+    //  * That shared denominator was stateful and had to be maintained across
+    //    creation, withdrawal, maturity and reorg. It was maintained in none of
+    //    those: never decremented on withdrawal, windowed at 72 epochs
+    //    regardless of the CD's own term, and never reversed on pop. The floor
+    //    reads only this CD's principal and a global per-epoch rate, so there is
+    //    no shared state to drift.
+    //  * A floor is what a reserve is actually for — it smooths lean epochs
+    //    rather than redistributing fat ones.
+    //
+    // Flat in term by design: base interest compounds, so duration is already
+    // rewarded once. Payouts remain capped by the vault at settlement, so this
+    // is a ceiling ("up to"), never a promise the vault cannot honour.
     uint64_t bonus = 0;
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
-      BonusEpochRateEntry entry = commitmentIndex.getBonusEpochRateEntry(e);
-      if (entry.bonusHeat == 0 || entry.weightedBase == 0) continue;
-      // share = bonusHeat × (principal × weight/100) / weightedBase, where
-      // weightedBase = Σ (principal_j × weight_j/100) over the rolling window —
-      // realized BV inflow distributed pro-rata by tier weight (no overpromise).
-      uint64_t share = static_cast<uint64_t>(
-          (((uint128_t)amount * weight) / 100 * entry.bonusHeat) / entry.weightedBase);
-      if (bonus > UINT64_MAX - share) return UINT64_MAX;
-      bonus += share;
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
+      if (epochRate >= parameters::CD_YIELD_FLOOR_RATE) continue;  // not a lean epoch
+      uint64_t shortfall = parameters::CD_YIELD_FLOOR_RATE - epochRate;
+      uint64_t topUp = static_cast<uint64_t>(
+          ((uint128_t)amount * shortfall) / parameters::FEE_POOL_RATE_PRECISION);
+      if (bonus > UINT64_MAX - topUp) return UINT64_MAX;
+      bonus += topUp;
     }
     return bonus;
   }
@@ -373,7 +397,7 @@ double Currency::getBurnPercentage() const {
   uint64_t Currency::calculateCdInterest(uint64_t amount, uint32_t creationHeight,
                                           uint32_t currentHeight,
                                           const CommitmentIndex& commitmentIndex,
-                                          bool isLegacyBond, uint32_t term,
+                                          uint32_t term,
                                           bool autoRolled) const {
     if (currentHeight <= creationHeight) return 0;
 
@@ -382,6 +406,19 @@ double Currency::getBurnPercentage() const {
         : parameters::EPOCH_DURATION_BLOCKS;
     uint64_t startEpoch = creationHeight / epochDuration;
     uint64_t endEpoch = currentHeight / epochDuration;
+
+    // Base interest stops accruing at maturity. Without this a CD kept earning
+    // the full per-epoch rate forever, and `term` had no effect on the payout
+    // at all: it appears only in rolloverEpoch below, which collapses to
+    // endEpoch while auto-roll is disabled. A term=1 commitment therefore
+    // earned the same yield as a DEPOSIT_MAX_TERM one after a single block,
+    // defeating DEPOSIT_MIN_TERM. calculateCdBonus already clamps this way;
+    // the two paths now agree.
+    if (term > 0) {
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
+      if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
+    }
+
     uint64_t epochCount = commitmentIndex.getEpochCount();
 
     // Auto-roll boundary: compound point (only for auto-rolled CDs)
@@ -393,9 +430,7 @@ double Currency::getBurnPercentage() const {
     uint64_t currentBase = amount;
 
     for (uint64_t e = startEpoch; e <= endEpoch && e < epochCount; ++e) {
-      uint64_t epochRate = isLegacyBond
-          ? commitmentIndex.getLegacyEpochFeeRate(e)
-          : commitmentIndex.getEpochFeeRate(e);
+      uint64_t epochRate = commitmentIndex.getEpochFeeRate(e);
       uint64_t epochInterest = (uint64_t)(((uint128_t)currentBase * epochRate)
                                           / parameters::FEE_POOL_RATE_PRECISION);
       baseInterest += epochInterest;
@@ -524,10 +559,10 @@ double Currency::getBurnPercentage() const {
   }
 
   bool Currency::isHeatCdHeight(uint32_t height) const {
-    return height >= upgradeHeight(BLOCK_MAJOR_VERSION_12);
+    return height >= cdActivationHeight();
   }
 
-  static AssetType classifyCommitmentTerm(uint32_t term, bool heatCds) {
+  AssetType Currency::classifyCommitmentTermAsset(uint32_t term) {
     if (term == parameters::HEAT_TERM)
       return AssetType::HEAT;
     if (term == parameters::DEPOSIT_TERM_LP)
@@ -538,36 +573,53 @@ double Currency::getBurnPercentage() const {
       return AssetType::HEAT;
     if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
       return AssetType::XFG;
-    // Finite-term CDs: XFG principal before the HEAT-CD activation height
-    // (legacy, withdraw-only), HEAT principal from it onward.
-    if (heatCds && Currency::isFiniteCdTerm(term))
-      return AssetType::HEAT;
-    return AssetType::XFG;  // term=0 regular, legacy CD, DIGM
+    // Certificates of deposit are HEAT. Every marker term above is handled
+    // explicitly and the CD — the main case — used to fall through to the
+    // XFG default, which is where HEAT CDs came off the rails: the accrual,
+    // the CD_APY_POOL, the BONUS_VAULT and m_feePoolBalance are all HEAT, and
+    // heatDepositV10 (the heat_cd command) spends HEAT_TERM commitments to
+    // fund one — but classifying the resulting output as XFG made
+    // inAssets.heat != outAssets.heat, so consensus rejected every HEAT CD
+    // ever built. Term 0 is plain HEAT (check_tx_outputs admits it as such).
+    return AssetType::HEAT;
   }
 
-  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term, bool heatCds) {
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
+    if (target.type() == typeid(KeyOutput)) {
+      return AssetType::XFG;
+    }
+    if (target.type() == typeid(MultisignatureOutput)) {
+      return AssetType::XFG;
+    }
     if (target.type() == typeid(TransactionOutputCommitment)) {
-      return classifyCommitmentTerm(term, heatCds);
+      return classifyCommitmentTermAsset(term);
     }
     if (target.type() == typeid(TransactionOutputUnified)) {
-      return classifyCommitmentTerm(boost::get<TransactionOutputUnified>(target).term, heatCds);
+      auto& unified = boost::get<TransactionOutputUnified>(target);
+      if (unified.term == parameters::HEAT_TERM)
+        return AssetType::HEAT;
+      if (unified.term == parameters::DEPOSIT_TERM_LP)
+        return AssetType::LP;
+      if (unified.term == parameters::DEPOSIT_TERM_POOL_XFG)
+        return AssetType::XFG;
+      if (unified.term == parameters::DEPOSIT_TERM_POOL_HEAT)
+        return AssetType::HEAT;
+      if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+        return AssetType::XFG;
+      // term 0 is an ordinary output (XFG); any finite term is a CD (HEAT).
+      return (unified.term > 0) ? AssetType::HEAT : AssetType::XFG;
     }
-    return AssetType::XFG;  // KeyOutput, MultisignatureOutput
+    return AssetType::XFG;
   }
 
-  AssetType Currency::classifyCommitmentRef(uint32_t term, uint32_t creationHeight) const {
-    return classifyCommitmentTerm(term, isHeatCdHeight(creationHeight));
-  }
-
-  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx, uint32_t height) const {
-    const bool heatCds = isHeatCdHeight(height);
+  AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx) const {
     AssetBalance bal;
     for (const auto& out : tx.outputs) {
       uint32_t term = 0;
       if (out.target.type() == typeid(TransactionOutputCommitment)) {
         term = boost::get<TransactionOutputCommitment>(out.target).term;
       }
-      switch (classifyOutputAsset(out.target, term, heatCds)) {
+      switch (classifyOutputAsset(out.target, term)) {
         case AssetType::HEAT: bal.heat += out.amount; break;
         case AssetType::LP:   bal.lp   += out.amount; break;
         default:              bal.xfg  += out.amount; break;
@@ -1619,9 +1671,6 @@ double Currency::getBurnPercentage() const {
     burnDepositMinAmount(parameters::BURN_DEPOSIT_MIN_AMOUNT);
 
     depositTermForever(parameters::HEAT_TERM);
-
-    // HEAT conversion rate (1 XFG = 5 HEAT at launch ratio)
-    heatConversionRate(10000000);
 
     // Dynamic money supply initialization
     baseMoneySupply(parameters::MONEY_SUPPLY);

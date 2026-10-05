@@ -19,6 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <cctype>
+#include <set>
 #include <stdexcept>
 
 namespace XfgSwap {
@@ -98,6 +99,53 @@ static bool validateHex(const std::string& s, size_t expectedBytes,
   return true;
 }
 
+static bool validateEvmAddress(const std::string& address,
+                               const std::string& fieldName,
+                               std::string& errorMsg) {
+  if (address.empty()) return true;
+  if (address.size() != 42 || address.compare(0, 2, "0x") != 0) {
+    errorMsg = fieldName + " must be 0x followed by 40 hex chars";
+    return false;
+  }
+  for (size_t i = 2; i < address.size(); ++i) {
+    if (!std::isxdigit(static_cast<unsigned char>(address[i]))) {
+      errorMsg = fieldName + " contains non-hex character";
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool getOptionalString(const Common::JsonValue& object,
+                              const std::string& key,
+                              std::string& value,
+                              const std::string& context,
+                              std::string& errorMsg) {
+  if (!object.contains(key)) return true;
+  if (!object(key).isString()) {
+    errorMsg = context + "." + key + " must be a string";
+    return false;
+  }
+  value = object(key).getString();
+  return true;
+}
+
+static bool getOptionalUint(const Common::JsonValue& object,
+                            const std::string& key,
+                            uint64_t& value,
+                            bool& present,
+                            const std::string& context,
+                            std::string& errorMsg) {
+  present = object.contains(key);
+  if (!present) return true;
+  if (!object(key).isInteger() || object(key).getInteger() <= 0) {
+    errorMsg = context + "." + key + " must be a positive integer";
+    return false;
+  }
+  value = static_cast<uint64_t>(object(key).getInteger());
+  return true;
+}
+
 // ─── loadChainClientConfig ────────────────────────────────────────────────────
 
 bool loadChainClientConfig(const std::string& path,
@@ -117,11 +165,121 @@ bool loadChainClientConfig(const std::string& path,
   // keys → every field falls through to defaults → daemon registered every
   // chain at hardcoded loopback ports with no warning. An operator with a
   // typo would never know.
+  Common::JsonValue root;
   try {
-    Common::JsonValue::fromString(json);
+    root = Common::JsonValue::fromString(json);
   } catch (const std::exception& e) {
     errorMsg = "Config file is not valid JSON: " + std::string(e.what());
     return false;
+  }
+  if (!root.isObject()) {
+    errorMsg = "Config root must be a JSON object";
+    return false;
+  }
+
+  out.network = "mainnet";
+  if (root.contains("network")) {
+    if (!root("network").isString()) {
+      errorMsg = "network must be a string";
+      return false;
+    }
+    out.network = root("network").getString();
+  }
+  if (out.network != "mainnet" && out.network != "testnet") {
+    errorMsg = "network must be exactly mainnet or testnet";
+    return false;
+  }
+
+  // Preferred data-driven EVM map. A catalog entry fixes consensus-facing
+  // values (pair id and chain id); config only supplies endpoint, signer, and
+  // this chain's own deployed registry address.
+  out.evmChains.clear();
+  if (root.contains("evm_chains")) {
+    const auto& evmChains = root("evm_chains");
+    if (!evmChains.isObject()) {
+      errorMsg = "evm_chains must be a JSON object";
+      return false;
+    }
+
+    static const std::set<std::string> allowedFields = {
+      "rpc_url", "private_key", "address", "htlc_registry",
+      "ptlc_registry", "htlc_bin_path", "chain_id"
+    };
+    std::set<SwapPair> seenPairs;
+    for (const auto& namedEntry : evmChains.getObject()) {
+      const std::string& key = namedEntry.first;
+      const auto& entry = namedEntry.second;
+      const std::string context = "evm_chains." + key;
+      if (!entry.isObject()) {
+        errorMsg = context + " must be a JSON object";
+        return false;
+      }
+
+      SwapPair pair;
+      if (!swapPairFromString(key, pair)) {
+        errorMsg = context + " is not a catalogued swap chain";
+        return false;
+      }
+      const auto* descriptor = swapPairDescriptor(pair);
+      if (!descriptor || descriptor->family != SwapChainFamily::EVM) {
+        errorMsg = context + " is not an EVM chain";
+        return false;
+      }
+      if (descriptor->support == SwapPairSupport::STAGED ||
+          (descriptor->txEnvelope != EvmTxEnvelope::LEGACY &&
+           descriptor->txEnvelope != EvmTxEnvelope::EIP1559)) {
+        errorMsg = context + " requires a specialized adapter and cannot use evm_chains";
+        return false;
+      }
+      if (!seenPairs.insert(pair).second) {
+        errorMsg = context + " duplicates another EVM chain entry";
+        return false;
+      }
+      for (const auto& field : entry.getObject()) {
+        if (allowedFields.count(field.first) == 0) {
+          errorMsg = context + " has unknown field: " + field.first;
+          return false;
+        }
+      }
+
+      EvmChainConfig cfg;
+      cfg.pair = pair;
+      cfg.chainId = descriptor->chainId;
+      bool hasChainId = false;
+      if (!getOptionalString(entry, "rpc_url", cfg.rpcUrl, context, errorMsg) ||
+          !getOptionalString(entry, "private_key", cfg.privateKeyHex, context, errorMsg) ||
+          !getOptionalString(entry, "address", cfg.address, context, errorMsg) ||
+          !getOptionalString(entry, "htlc_registry", cfg.htlcRegistry, context, errorMsg) ||
+          !getOptionalString(entry, "ptlc_registry", cfg.ptlcRegistry, context, errorMsg) ||
+          !getOptionalString(entry, "htlc_bin_path", cfg.htlcBinPath, context, errorMsg) ||
+          !getOptionalUint(entry, "chain_id", cfg.chainId, hasChainId, context, errorMsg)) {
+        return false;
+      }
+      if (out.network == "testnet" && !hasChainId) {
+        errorMsg = context + ".chain_id is required on testnet";
+        return false;
+      }
+      if (out.network == "mainnet" && cfg.chainId != descriptor->chainId) {
+        errorMsg = context + ".chain_id does not match the mainnet catalog";
+        return false;
+      }
+      if (cfg.rpcUrl.empty()) {
+        errorMsg = context + ".rpc_url is required";
+        return false;
+      }
+      if (!validateHex(cfg.privateKeyHex, 32, context + ".private_key", errorMsg) ||
+          !validateEvmAddress(cfg.address, context + ".address", errorMsg) ||
+          !validateEvmAddress(cfg.htlcRegistry, context + ".htlc_registry", errorMsg) ||
+          !validateEvmAddress(cfg.ptlcRegistry, context + ".ptlc_registry", errorMsg)) {
+        return false;
+      }
+      if (cfg.privateKeyHex.empty() != cfg.address.empty()) {
+        errorMsg = context +
+                   " must configure private_key and address together";
+        return false;
+      }
+      out.evmChains.push_back(std::move(cfg));
+    }
   }
 
   // ── RPC endpoints ──
@@ -277,13 +435,13 @@ bool loadChainClientConfig(const std::string& path,
   out.zecWif     = jsonGetStr(json, "zec_wif", "");
   out.zecTestnet = jsonGetBool(json, "zec_testnet", false);
 
-  // PULSEX (PulseChain — EVM, chain id 369)
-  out.pulsexHost       = jsonGetStr (json, "pulsex_rpc_host", "");
-  out.pulsexPort       = static_cast<uint16_t>(jsonGetUint(json, "pulsex_rpc_port", 8545));
-  out.pulsexPrivKeyHex = jsonGetStr (json, "pulsex_priv_key");
-  out.pulsexAddress    = jsonGetStr (json, "pulsex_address");
-  out.pulsexChainId    = jsonGetUint(json, "pulsex_chain_id", 369);
-  out.pulsexHtlcBinPath= jsonGetStr (json, "pulsex_htlc_bin", out.ethHtlcBinPath);
+  // PULSECHAIN (PulseChain — EVM, chain id 369)
+  out.pulsechain_host       = jsonGetStr (json, "pulsechain_rpc_host", "");
+  out.pulsechain_port       = static_cast<uint16_t>(jsonGetUint(json, "pulsechain_rpc_port", 8545));
+  out.pulsechain_priv_key_hex = jsonGetStr (json, "pulsechain_priv_key");
+  out.pulsechain_address    = jsonGetStr (json, "pulsechain_address");
+  out.pulsechain_chain_id    = jsonGetUint(json, "pulsechain_chain_id", 369);
+  out.pulsechain_htlc_bin_path= jsonGetStr (json, "pulsechain_htlc_bin", out.ethHtlcBinPath);
 
   // ZANO (CryptoNote — shared 2-of-2 address via view-key adaptor scheme)
   out.zanoDaemonHost = jsonGetStr(json, "zano_daemon_host", "");
@@ -302,12 +460,12 @@ bool loadChainClientConfig(const std::string& path,
   out.tonHtlcAddress= jsonGetStr(json, "ton_htlc_address");
   out.tonWorkchain  = static_cast<int>(jsonGetUint(json, "ton_workchain", 0));
 
-  // Monad (EVM L1, OP Stack, chain id 185)
+  // Monad (EVM L1, chain id 143)
   out.monadHost       = jsonGetStr(json, "monad_rpc_host", "");
   out.monadPort       = static_cast<uint16_t>(jsonGetUint(json, "monad_rpc_port", 8545));
   out.monadPrivKeyHex = jsonGetStr(json, "monad_priv_key");
   out.monadAddress    = jsonGetStr(json, "monad_address");
-  out.monadChainId    = jsonGetUint(json, "monad_chain_id", 185);
+  out.monadChainId    = jsonGetUint(json, "monad_chain_id", 143);
   out.monadHtlcBinPath= jsonGetStr(json, "monad_htlc_bin", out.ethHtlcBinPath);
 
   // Optimism (EVM L2, OP Stack, chain id 10)
@@ -428,6 +586,16 @@ bool loadChainClientConfig(const std::string& path,
   out.xfgWalletRpcUser = jsonGetStr(json, "xfg_wallet_rpc_user");
   out.xfgWalletRpcPass = jsonGetStr(json, "xfg_wallet_rpc_pass");
 
+  if (out.network == "testnet" &&
+      (!out.ethHost.empty() || !out.arbHost.empty() || !out.baseHost.empty() ||
+       !out.polyHost.empty() || !out.bscHost.empty() || !out.gleecHost.empty() ||
+       !out.rhHost.empty() || !out.avaxHost.empty() || !out.croHost.empty() ||
+       !out.bobHost.empty() || !out.uniHost.empty() || !out.plasmaHost.empty() ||
+       !out.pulsechain_host.empty() || !out.monadHost.empty() || !out.opHost.empty())) {
+    errorMsg = "testnet EVM chains must use evm_chains entries with explicit chain_id and per-chain htlc_registry";
+    return false;
+  }
+
   // ── SPV mode validation ──
   auto spvCheck = [&](const std::string& mode, const std::string& wif,
                        const std::vector<std::string>& servers,
@@ -469,9 +637,9 @@ bool loadChainClientConfig(const std::string& path,
   if (!validateHex(out.xmrSpendKeyHex, 32, "xmr_spend_key", errorMsg)) return false;
   if (!validateHex(out.xmrViewKeyHex,  32, "xmr_view_key",  errorMsg)) return false;
 
-  if (!validateHex(out.pulsexPrivKeyHex, 32, "pulsex_priv_key", errorMsg)) return false;
-  if (!out.pulsexAddress.empty() && (out.pulsexAddress.size() < 2 || out.pulsexAddress.substr(0, 2) != "0x")) {
-    errorMsg = "pulsex_address must start with 0x";
+  if (!validateHex(out.pulsechain_priv_key_hex, 32, "pulsechain_priv_key", errorMsg)) return false;
+  if (!out.pulsechain_address.empty() && (out.pulsechain_address.size() < 2 || out.pulsechain_address.substr(0, 2) != "0x")) {
+    errorMsg = "pulsechain_address must start with 0x";
     return false;
   }
   if (!validateHex(out.zanoSpendKeyHex, 32, "zano_spend_key", errorMsg)) return false;

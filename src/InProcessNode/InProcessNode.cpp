@@ -1112,38 +1112,32 @@ void InProcessNode::isSynchronizedAsync(bool& syncStatus, const Callback& callba
 }
 
 std::error_code InProcessNode::getCdInterest(uint64_t amount, uint32_t creationHeight,
-                                              uint32_t currentHeight, uint64_t& outInterest,
-                                              bool isLegacyBond) {
-  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, isLegacyBond, 0, false);
+                                              uint32_t currentHeight, uint64_t& outInterest) {
+  return core.calculateCdInterest(amount, creationHeight, currentHeight, outInterest, 0, false);
 }
 
 std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creationHeight,
                                               uint32_t currentHeight, CdClaimInfo& out,
                                               uint32_t term) {
   out = CdClaimInfo{};
-  std::error_code ec = core.calculateCdInterest(amount, creationHeight, currentHeight,
-                                                out.formulaInterest,
-                                                false, 0, false);
+  CdClaimEstimate est;
+  std::error_code ec = core.estimateCdClaim(amount, creationHeight, currentHeight, term, est);
   if (ec) return ec;
-  out.feePoolBalance = core.getFeePoolBalance();
-  out.vaultBalance = core.getCdApyVaultBalance();
+  // Field-for-field the mapping NodeRpcProxy applies to /estimate_cd_yield, so
+  // a wallet computes the same claim in-process and over RPC.
+  out.formulaInterest = (est.baseInterest > UINT64_MAX - est.bonusInterest)
+      ? UINT64_MAX : (est.baseInterest + est.bonusInterest);
+  out.claimableInterest = (est.claimableBase > UINT64_MAX - est.claimableBonus)
+      ? UINT64_MAX : (est.claimableBase + est.claimableBonus);
+  out.feePoolBalance = est.feePoolBalance;
+  out.vaultBalance = est.cdApyVaultBalance;
   out.poolInfoPresent = true;
-  uint64_t backing = std::min(out.feePoolBalance, out.vaultBalance);
-  out.claimableInterest = std::min(out.formulaInterest, backing);
-
-  // v11+: consensus split (base without loyalty + BV-backed bonus).
-  uint64_t base = 0, bonus = 0;
-ec = core.calculateCdInterest(amount, creationHeight, currentHeight, base,
-                                 false, term, false);
-  if (ec) return ec;
-  out.baseInterest = base;
-  ec = core.calculateCdBonus(amount, creationHeight, currentHeight, bonus, term);
-  if (ec) return ec;
-  out.bonusInterest = bonus;
-  uint64_t bvBacking = std::min(core.getBonusVaultBalance(), core.getBonusVaultUtxoBalance());
-  out.bonusVaultBalance = bvBacking;
-  out.claimableBonus = std::min(out.bonusInterest, bvBacking);
-  // XFG CDs (created before the HEAT-CD height) are principal-only.
+  out.baseInterest = est.baseInterest;
+  out.bonusInterest = est.bonusInterest;
+  out.bonusVaultBalance = est.bonusVaultBacking;
+  out.claimableBonus = est.claimableBonus;
+  // A deposit created before the CD activation height is a principal-only
+  // XFG deposit and earns nothing.
   if (!core.currency().isHeatCdHeight(creationHeight)) {
     out.formulaInterest = 0;
     out.claimableInterest = 0;

@@ -2627,6 +2627,17 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
   bool ringHasNonCdMember = false;
+  // One asset per ring: classifyInputAsset resolves the ring's asset via
+  // resolveCommitmentRingAsset, whose XFG fallback for unresolvable rings must
+  // be unreachable for accepted transactions. A HEAT_TERM output spent inside
+  // a mixed ring would otherwise be credited as an XFG input, and the
+  // net-creation HEAT supply accounting (m_heatSupply) would inflate by the
+  // output amount on every spend-and-reissue churn. Enforce it here: every
+  // member must classify, and all members must classify alike.
+  const uint32_t cdMinTerm = m_currency.depositMinTerm();
+  const uint32_t cdMaxTerm = m_currency.depositMaxTerm();
+  AssetType ringAsset = AssetType::XFG;
+  bool ringAssetResolved = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
   // Track youngest (highest creation height) ring member for interest cap.
   // Using the youngest member prevents gaming the system by including old
@@ -2643,6 +2654,20 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
     }
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
+
+    AssetType memberAsset;
+    if (!classifyCommitmentTermAsset(ref.term, cdMinTerm, cdMaxTerm, memberAsset)) {
+      logger(INFO) << "CommitmentSpend: ring member at index " << absIdx
+                   << " has unclassifiable term " << ref.term << " — rejected";
+      return false;
+    }
+    if (!ringAssetResolved) {
+      ringAsset = memberAsset;
+      ringAssetResolved = true;
+    } else if (memberAsset != ringAsset) {
+      logger(INFO) << "CommitmentSpend: ring mixes asset classes at index " << absIdx;
+      return false;
+    }
 
     const bool finiteCd = ref.term > 0 && ref.term != CryptoNote::parameters::HEAT_TERM &&
                           ref.term != parameters::DEPOSIT_TERM_POOL_XFG &&
@@ -2908,6 +2933,12 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
   std::vector<const Crypto::PublicKey*> ringKeys;
   ringKeys.reserve(absoluteIndexes.size());
   bool hasNonForever = false;
+  // Same one-asset-per-ring rule as checkCommitmentSpendInput: classifyInputAsset
+  // falls back to XFG for unresolvable rings, so a mixed ring must never validate.
+  const uint32_t cdMinTerm = m_currency.depositMinTerm();
+  const uint32_t cdMaxTerm = m_currency.depositMaxTerm();
+  AssetType ringAsset = AssetType::XFG;
+  bool ringAssetResolved = false;
   uint32_t currentHeight = getCurrentBlockchainHeight();
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
@@ -2916,6 +2947,20 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     }
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
+
+    AssetType memberAsset;
+    if (!classifyCommitmentTermAsset(ref.term, cdMinTerm, cdMaxTerm, memberAsset)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx
+                   << " has unclassifiable term " << ref.term << " — rejected";
+      return false;
+    }
+    if (!ringAssetResolved) {
+      ringAsset = memberAsset;
+      ringAssetResolved = true;
+    } else if (memberAsset != ringAsset) {
+      logger(INFO) << "CommitmentTransfer: ring mixes asset classes at index " << absIdx;
+      return false;
+    }
 
     if (ref.term != CryptoNote::parameters::HEAT_TERM) {
       hasNonForever = true;
@@ -7766,6 +7811,9 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const Transacti
 
     AssetType ringAsset = AssetType::XFG;
     if (!resolveCommitmentRingAsset(ringTerms, 0, cdMinTerm, cdMaxTerm, ringAsset)) {
+      // checkCommitmentSpendInput / checkCommitmentTransferInput reject mixed
+      // or unclassifiable rings, so accepted transactions never reach this
+      // fallback; it exists only so mis-valued data stays conservative.
       return AssetType::XFG;  // mixed ring, or an unrecognised term
     }
     return ringAsset;

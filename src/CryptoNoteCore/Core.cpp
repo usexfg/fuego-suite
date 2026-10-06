@@ -1684,6 +1684,7 @@ core::AmmPoolInfo core::getAmmPoolInfo() const {
   info.totalLpShares = pool.totalLpShares;
   info.epochSwapFees = m_blockchain.getCurrentEpochSwapFees();
   info.spotPrice = m_blockchain.getHearthSpotPrice();
+  info.spreadBps = m_blockchain.getPoolSpreadBps();
   return info;
 }
 

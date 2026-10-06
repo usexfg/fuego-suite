@@ -270,6 +270,9 @@ namespace CryptoNote {
       uint64_t totalLpShares = 0;
       uint64_t spotPrice = 0;
       uint64_t epochSwapFees = 0;
+      // Adaptive spread in bps as last computed by the orchestrator. Node-local
+      // and informational, not consensus state.
+      uint32_t spreadBps = 0;
     };
     AmmPoolInfo getAmmPoolInfo() const;
     uint64_t getPoolTwap() const;

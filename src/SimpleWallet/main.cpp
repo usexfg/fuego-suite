@@ -10,6 +10,7 @@
 #include "SimpleWallet.h"
 #include "ClientHelper.h"
 #include "Const.h"
+#include "SimpleWallet/SwapKeyGen.h"
 
 #include "Common/CommandLine.h"
 #include "Common/PathTools.h"
@@ -35,6 +36,13 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
   _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
+
+  // Offline key generator for the swap config. Runs before any wallet,
+  // password, or node setup so it works on a bare machine.
+  if (SwapKeyGen::isRequested(argc, argv)) {
+    SwapKeyGen::print();
+    return 0;
+  }
 
   po::options_description desc_general("General options");
   command_line::add_arg(desc_general, command_line::arg_help);

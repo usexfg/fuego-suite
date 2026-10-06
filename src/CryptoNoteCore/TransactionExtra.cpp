@@ -988,6 +988,7 @@ namespace CryptoNote
   bool TransactionExtraMinerBasketVote::serialize(ISerializer &s)
   {
     s(present_mask, "present_mask");
+    present_mask &= 0x1F; // Sanitize mask to valid bits (0..4)
     // Only the fields flagged in present_mask are serialized on the wire.
     // This lets a miner contribute a partial basket (e.g. only power + gas)
     // without polluting the epoch median for commodities they didn't price.
@@ -1007,6 +1008,9 @@ namespace CryptoNote
     // Kept separate from the basket vote (tag 0x39) so each is independently
     // optional and consensus for either subsystem is independent.
     s(song_title, "song_title");
+    if (song_title.size() > 128) {
+      song_title.resize(128);
+    }
     return true;
   }
 

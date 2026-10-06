@@ -682,6 +682,13 @@ namespace {
   uint64_t g_priorPoolXfgReserve = 0;
   uint64_t g_priorPoolHeatReserve = 0;
   uint64_t g_poolBandFilledLastBlock = 0;
+  // Last spread the orchestrator computed. Deliberately NOT blockchain state:
+  // computeSpreadBps reads an in-memory 30-block price deque and the previous
+  // block's band counters, neither of which is serialised, so persisting this
+  // would need a state-format version bump for a value no other node could
+  // reproduce. It is cached here so the RPC can report the figure the
+  // orchestrator actually used rather than a fresh guess from stale inputs.
+  uint32_t g_poolLastSpreadBps = 0;
 
 } // namespace
 
@@ -1119,6 +1126,7 @@ if (!m_upgradeDetectorV2.init() || !m_upgradeDetectorV3.init() || !m_upgradeDete
     g_orderbookMempool.clear();
     g_poolOrchestrator = PoolOrderOrchestrator();
     g_orderbookLastClearingPrice = 0;
+    g_poolLastSpreadBps = 0;
     g_orderbookLastNumMatches = 0;
     g_orderbookIsInBootstrap = true;
     g_orderbookBootstrapBlocksRemaining = BOOTSTRAP_BLOCKS;
@@ -3998,6 +4006,10 @@ uint64_t CryptoNote::Blockchain::getPoolTwap() const {
   return static_cast<uint64_t>(m_twapAccumulator / m_twapBlockCount);
 }
 
+uint32_t CryptoNote::Blockchain::getPoolSpreadBps() const {
+  return g_poolLastSpreadBps;
+}
+
 uint64_t CryptoNote::Blockchain::getRollingTwap() const {
   return twapBefore(static_cast<uint32_t>(m_blocks.size()));
 }
@@ -4142,6 +4154,7 @@ void CryptoNote::Blockchain::processOrderbookForBlock(Block& block, const std::v
 
     uint32_t spreadBps = g_poolOrchestrator.computeSpreadBps(
       g_orderbookLastClearingPrice, bandFilled, bandPlaced);
+    g_poolLastSpreadBps = spreadBps;
 
     if (g_poolOrchestrator.shouldRegenerate(
           g_orderbookLastClearingPrice, priorPclear,

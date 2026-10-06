@@ -156,6 +156,11 @@ namespace CryptoNote {
     // Epoch pool TWAP: time-weighted average pool ratio (10^18 precision).
     // Returns 0 if no blocks accumulated this epoch.
     uint64_t getPoolTwap() const;
+    // Adaptive pool spread in basis points, as last computed by the
+    // orchestrator. Node-local: derived from an in-memory price deque and the
+    // previous block's band counters, not from serialised state, so two nodes
+    // may legitimately report different figures. Informational only.
+    uint32_t getPoolSpreadBps() const;
 
     // Rolling 8-block TWAP for HEAT mint price validation.
     // Simple average of the last 8 blocks' hearthPoolRatio.

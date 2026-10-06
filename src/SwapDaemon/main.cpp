@@ -45,6 +45,8 @@ const uint16_t DEFAULT_MAINNET_PORT = 18180;
 const uint16_t DEFAULT_TESTNET_PORT = 28280;
 const char* DEFAULT_HOST = "127.0.0.1";
 
+#define SPVCK(x) do { fprintf(stderr, "[spvck] %s\n", x); fflush(stderr); } while(0)
+
 void printUsage() {
   std::cout <<
     "Usage: xfg-swapd [options] <command> [args...]\n"
@@ -135,11 +137,14 @@ static void generateSpvConfig() {
     return key;
   };
 
+  SPVCK("signer ctor");
   Secp256k1Signer signer;
 
   auto pubkeyToAddress = [&](const std::array<uint8_t, 32>& privKey, uint8_t p2pkhVersion) {
     auto pubKey = signer.derivePublicKeyCompressed(privKey);
+    SPVCK("  derivePublicKeyCompressed ok");
     auto hash = XfgSwap::KmdHtlcScript::hash160(pubKey);
+    SPVCK("  hash160 ok");
     return XfgSwap::KmdHtlcScript::base58CheckEncode(p2pkhVersion, hash);
   };
 
@@ -153,19 +158,24 @@ static void generateSpvConfig() {
   auto kmdKey = genPrivKey();
   auto bchKey = genPrivKey();
 
+  SPVCK("btcWif");
   auto btcWif = privKeyToWif(btcKey, 0x80);
   auto btcAddr = pubkeyToAddress(btcKey, 0x00);
 
+  SPVCK("ltcWif");
   auto ltcWif = privKeyToWif(ltcKey, 0xB0);
   auto ltcAddr = pubkeyToAddress(ltcKey, 0x30);
 
+  SPVCK("kmdWif");
   auto kmdWif = privKeyToWif(kmdKey, 0xBC);
   auto kmdAddr = pubkeyToAddress(kmdKey, 0x3C);
 
+  SPVCK("bchWif");
   auto bchWif = privKeyToWif(bchKey, 0x80);
   auto bchAddr = pubkeyToAddress(bchKey, 0x00);
 
   // DCR uses hex-encoded private key (not Base58Check WIF) — version prefix + 32 bytes key + compress flag
+  SPVCK("genPrivKey dcr");
   auto dcrKey = genPrivKey();
   auto dcrPubKey = signer.derivePublicKeyCompressed(dcrKey);
   auto dcrPubKeyHash = XfgSwap::KmdHtlcScript::hash160(dcrPubKey);
@@ -174,8 +184,10 @@ static void generateSpvConfig() {
   dcrWifBytes.push_back(0x22);
   dcrWifBytes.insert(dcrWifBytes.end(), dcrKey.begin(), dcrKey.end());
   dcrWifBytes.push_back(0x01);
+  SPVCK("dcrWif");
   auto dcrWif = XfgSwap::KmdHtlcScript::bytesToHex(dcrWifBytes);
 
+  SPVCK("all keys done, about to print");
   std::string nl = "\n";
   std::string tab = "  ";
 
@@ -185,7 +197,7 @@ static void generateSpvConfig() {
     << tab << R"(// 2. Keep each `*_wif` as-is — these are freshly generated private keys.)" << nl
     << tab << R"(// 3. Fund each P2PKH address with the chain's native tokens so the daemon can)" << nl
     << tab << R"(//    claim HTLCs and receive refunds.)" << nl
-    << tab << R"(// 4. Set `xfg_secret_key` to your XFG wallet's secret key.)" << nl
+    << tab << R"(// 4. Set `xfg_secret_key`: run `fire_wallet gen_swap_key` and paste the result.)" << nl
     << tab << R"(//)" << nl
     << tab << R"(// Find public Electrum servers: https://github.com/cipig/electrum-servers)" << nl
     << tab << R"(// Find public Neutrino servers: https://github.com/dcrlabs/neutrino-servers)" << nl

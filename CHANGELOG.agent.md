@@ -2264,10 +2264,18 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 
 ---
 
-## Feature: `xfg-swapd gen_swap_key` — real XFG swap-key command; fix fabricated `fuego-wallet generate-key`
+## Feature: `fire_wallet gen_swap_key` — real XFG swap-key command; fix fabricated `fuego-wallet generate-key`
 
 **Start date:** 2026-10-05
 **Agent:** Sisyphus (space-bunny-free)
+
+> **Correction (same day).** This entry was first committed inside dashboard commit
+> `aed0ac1f` describing `gen_swap_key` as living on `xfg-swapd`. That was wrong — the
+> command belongs in the wallets, because the fabricated command it replaces
+> (`fuego-wallet generate-key`) was documented as a *wallet* command. `aed0ac1f` is
+> already pushed to `origin/fci`, so it is corrected here rather than amended.
+> `src/SwapDaemon/main.cpp` no longer contains the generator; it keeps only the
+> corrected comment in the `--generate-spv-config` template.
 
 ### Problem
 
@@ -2306,31 +2314,38 @@ The command's output says so explicitly.
 
 ### Change
 
-Added `gen_swap_key` as an offline command on `xfg-swapd` — the binary that consumes
-`xfg_secret_key` and already ships a key generator (`--generate-spv-config`). It is
-dispatched **before** the `SwapDaemon` is constructed (`main.cpp:396-402`) so it opens
-no database, contacts no node, and needs no config or data dir.
+Added `gen_swap_key` to the two wallet binaries — `fire_wallet` (target `SimpleWallet`)
+and `test_wallet` (target `testnet-wallet-cli`) — matching the tool the config example
+already told operators to use.
+
+Both entry points call `wallet.init(vm)` before any command dispatch, so a
+`ConsoleHandler` handler would demand a wallet file, password, and running node just to
+mint a key for a *different* program. The generator therefore intercepts at the top of
+`main()`, before program-options parsing, on `argv[1]` only.
+
+Shared implementation lives in `src/SimpleWallet/SwapKeyGen.h` (header-only, so
+`testnet-wallet-cli` — which compiles its own `main.cpp` — stays byte-identical without a
+CMake source-list change).
 
 ### Task List
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Verify no keygen command exists; confirm real binary names (`fire_wallet`, `xfg-swapd`) | Sisyphus | 2026-10-05 | DONE |
-| 2 | Add `generateSwapKey()` to the anonymous namespace in `src/SwapDaemon/main.cpp` | Sisyphus | 2026-10-05 | DONE |
-| 3 | Dispatch `gen_swap_key` before daemon construction; register in `printUsage()` | Sisyphus | 2026-10-05 | DONE |
+| 1 | Verify no keygen command exists; confirm real binary names (`fire_wallet`, `test_wallet`) | Sisyphus | 2026-10-05 | DONE |
+| 2 | Add shared `SwapKeyGen.h`; intercept in `fire_wallet` before wallet init | Sisyphus | 2026-10-05 | DONE |
+| 3 | Same interception in `test_wallet` (`testnet-wallet-cli`) | Sisyphus | 2026-10-05 | DONE |
 | 4 | Correct the two stale comments in `swap_config.example.json` | Sisyphus | 2026-10-05 | DONE |
-| 5 | Correct the comment in the `--generate-spv-config` template (`main.cpp`) | Sisyphus | 2026-10-05 | DONE |
-| 6 | Build + end-to-end verify; add this entry | Sisyphus | 2026-10-05 | DONE |
+| 5 | Correct the comment in the `--generate-spv-config` template (`SwapDaemon/main.cpp`) | Sisyphus | 2026-10-05 | DONE |
+| 6 | Build both wallets + end-to-end verify; correct this entry | Sisyphus | 2026-10-05 | DONE |
 
 ### Verification
 | Check | Result |
 |-------|--------|
-| Build compiles | PASS — `cmake --build . --target SwapDaemon` clean, linked `xfg-swapd` |
-| Command runs offline | PASS — no node, no config, no data dir; exit 0 |
+| Build compiles | PASS — `--target SimpleWallet testnet-wallet-cli` clean; both linked |
+| Runs with no wallet file / no node | PASS — `HOME=<tmp> fire_wallet gen_swap_key`, exit 0 |
+| Both binaries identical behaviour | PASS — same output shape, distinct keys per run |
 | Output format | PASS — 64-char hex secret key (len==64 asserted) |
-| Daemon accepts generated key | PASS — fed through the real loader: `Loaded XFG wallet key for offer signing` |
-| Invalid key rejected (control) | PASS — `"nothex"` → `Invalid xfg_secret_key in swap config` |
-| Keys unique per run | PASS — two consecutive runs differ |
-| `--help` lists command | PASS |
+| `xfg-swapd` accepts generated key | PASS — real loader: `Loaded XFG wallet key for offer signing` |
+| Invalid key rejected (control) | PASS — `"zzz"` → `Invalid xfg_secret_key in swap config` |
 | Regression: `test_spv_config_wiring` | PASS — 10/10 |
 | `--generate-spv-config` | **PRE-EXISTING SEGFAULT** — see below |
 

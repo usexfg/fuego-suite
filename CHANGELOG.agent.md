@@ -1973,3 +1973,91 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Tests pass (tasks 10-12) | PASS: core 194/194, hearth 31/31, auction 57/57, p2p 115/115 |
 | Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
 | All tasks done | NO — tasks 7b and 16 open |
+
+---
+
+## Fix: `--generate-spv-config` segfault (OpenSSL 3 legacy RIPEMD160) + JSONC swap configs
+
+**Start date:** 2026-10-06
+**Agent:** Sisyphus (space-bunny-free)
+
+Closes the two pre-existing defects recorded in the previous entry.
+
+### 1. `xfg-swapd --generate-spv-config` segfaulted (SIGSEGV)
+
+`KmdHtlcScript::ripemd160()` called `EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr)`.
+RIPEMD-160 moved to OpenSSL's **legacy provider** in 3.0, so `EVP_ripemd160()`
+yields a stub: init silently fails, and the following `EVP_DigestUpdate` /
+`EVP_DigestFinal_ex` dereference a NULL `ctx->digest`. Reproduced standalone
+against OpenSSL 3.0.2 with a 12-line program, then bisected to `hash160` by
+instrumenting `generateSpvConfig()`.
+
+Five call sites shared the defect — `KmdHtlcScript`, `ZecHtlcScript`,
+`DogeHtlcScript`, `BchHtlcScript`, `DashHtlcScript` — so this was not limited to
+the config generator: any path deriving a P2PKH address for those chains was
+affected.
+
+Replaced with a self-contained RIPEMD-160 (`SwapDaemon/Crypto/ripemd160.{h,cpp}`)
+that all five now delegate to. Carrying the algorithm keeps address derivation
+identical on every OpenSSL (1.1.1 → 4.x) and every platform.
+
+Two bugs were caught **by testing the implementation rather than trusting it**:
+- the right line was rotating right instead of left (7/8 vectors failed);
+- the padded tail was a single 64-byte block, overflowing the buffer whenever
+  56..63 bytes remained (the 62-byte vector caught it).
+
+Clean under `-fsanitize=address,undefined`. Pinned by `test_ripemd160` against
+all 8 published reference vectors.
+
+### 2. `swap_config.example.json` could not be loaded at all
+
+The example and the `--generate-spv-config` output are JSONC — `//` guidance is
+the point of an annotated template — but `loadChainClientConfig` fed them
+straight to a strict jsoncpp reader: `Config file is not valid JSON`. The
+documented quickstart was unusable end to end.
+
+Added a string-aware comment stripper. String-awareness is required: a naive
+`//` strip would corrupt `"https://rpc.example"` values. Newlines are preserved
+so parse errors still report the right line. The example now parses and fails
+later, on an actionable `pulsechain_priv_key must be 64 hex chars, got 20` for
+an unfilled placeholder — the correct behaviour for a template.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Reproduce RIPEMD-160 crash standalone against OpenSSL 3.0.2 | Sisyphus | 2026-10-06 | DONE |
+| 2 | Bisect to `hash160` via instrumentation in `generateSpvConfig()` | Sisyphus | 2026-10-06 | DONE |
+| 3 | Implement `ripemd160.{h,cpp}`; verify 8/8 official vectors under ASan+UBSan | Sisyphus | 2026-10-06 | DONE |
+| 4 | Route all 5 `EVP_ripemd160` call sites through it; add to 2 CMake targets | Sisyphus | 2026-10-06 | DONE |
+| 5 | Add `test_ripemd160` regression test | Sisyphus | 2026-10-06 | DONE |
+| 6 | String-aware JSONC comment stripping in `loadChainClientConfig` | Sisyphus | 2026-10-06 | DONE |
+| 7 | Re-apply `fire_wallet gen_swap_key` pointers lost during work | Sisyphus | 2026-10-06 | DONE |
+| 8 | Full verification + this entry | Sisyphus | 2026-10-06 | DONE |
+
+### Verification
+| Check | Result |
+|-------|--------|
+| `test_ripemd160` | PASS — 8/8 published vectors |
+| `test_spv_config_wiring` | PASS — 10/10 |
+| `--generate-spv-config` | PASS — exit 0, real addresses (`5Kho…`/`19…`, `6uwh…`/`LV7…`, `7KYy…`/`R9r…`, `5KG7…`/`1du…`) |
+| Generated config reloads through the real loader | PASS |
+| `swap_config.example.json` parses | PASS — reaches field validation |
+| `//` inside a JSON string preserved | PASS — `{"btc_mode":"//notacomment"}` loads |
+| `fire_wallet` / `test_wallet gen_swap_key` | PASS — exit 0, no wallet file, no node |
+| `fire_wallet` key accepted by `xfg-swapd` | PASS — `Loaded XFG wallet key for offer signing` |
+| Control: invalid key rejected | PASS — `Invalid xfg_secret_key in swap config` |
+| ASan + UBSan on ripemd160 | PASS — no findings |
+
+### Still broken, NOT fixed here (all reproduced on a clean stashed HEAD)
+
+1. **`test_swap_state_machine_spv` does not link** —
+   `undefined reference to Common::Console::setTextColor`. Its `target_link_libraries`
+   is identical to targets that link fine, so the missing symbol is pulled in
+   transitively only by this test's includes. Predates this work.
+2. **`test_sol_e2e` is not an automated test** — it requires six CLI arguments
+   and exits non-zero without them. Do not count it in CI.
+3. **Decred addresses use the wrong version byte.** `DCR_P2PKH_VERSION = 0x07`
+   yields `4Cxi…`; Decred mainnet P2PKH is `0x073f` and starts `Ds`. This is in
+   the base58/version layer, independent of the RIPEMD-160 fix, and will produce
+   unusable DCR addresses. **Not touched — fixing it needs the correct Decred
+   base58 alphabet and version constants verified against a dcrdata address.**

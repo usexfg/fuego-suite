@@ -231,7 +231,9 @@ add_library(InProcessNode STATIC ${InProcessNode})
 add_library(Logging STATIC ${Logging})
 target_include_directories(Logging SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
-target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
+# ConsoleLogger.cpp calls Common::Console::setTextColor(); declare the dependency
+# so libCommon.a is placed AFTER libLogging.a on the link line (static lib order).
+target_link_libraries(Logging PUBLIC Common)
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 
 # Swap core library: shared by libRpc and the xfg-swapd binary
@@ -279,6 +281,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
     SwapDaemon/Crypto/LegacySighash.cpp
@@ -420,6 +423,13 @@ target_link_libraries(test_spv_electrum PRIVATE
 add_executable(test_spv_config_wiring
     SwapDaemon/tests/test_spv_config_wiring.cpp)
 target_link_libraries(test_spv_config_wiring PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: RIPEMD-160 reference vectors
+add_executable(test_ripemd160
+    SwapDaemon/tests/test_ripemd160.cpp
+    SwapDaemon/Crypto/ripemd160.cpp)
+target_link_libraries(test_ripemd160 PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: SwapStateMachine SPV state transitions
@@ -697,6 +707,7 @@ add_executable(SwapDaemon
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
     SwapDaemon/Crypto/LegacySighash.cpp

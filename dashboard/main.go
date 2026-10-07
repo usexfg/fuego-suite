@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -30,6 +31,8 @@ type Config struct {
 	DaemonPort    int
 	WalletPort    int
 	SwapdPort     int
+	SwapdRPCPort  int
+	SwapdRPCToken string
 }
 
 func parseFlags() Config {
@@ -38,11 +41,16 @@ func parseFlags() Config {
 		DaemonPort:    18180,
 		WalletPort:    18183,
 		SwapdPort:     18900,
+		SwapdRPCPort:  18902,
+		SwapdRPCToken: os.Getenv("XFG_SWAPD_RPC_TOKEN"),
 	}
 	flag.IntVar(&cfg.DashboardPort, "port", cfg.DashboardPort, "Dashboard HTTP port")
 	flag.IntVar(&cfg.DaemonPort, "daemon-port", cfg.DaemonPort, "Fuegod RPC port")
 	flag.IntVar(&cfg.WalletPort, "wallet-port", cfg.WalletPort, "Walletd RPC port")
 	flag.IntVar(&cfg.SwapdPort, "swapd-port", cfg.SwapdPort, "Swap daemon status port")
+	flag.IntVar(&cfg.SwapdRPCPort, "swapd-rpc-port", cfg.SwapdRPCPort, "Swap daemon JSON-RPC port")
+	flag.StringVar(&cfg.SwapdRPCToken, "swapd-rpc-token", cfg.SwapdRPCToken,
+		"Swap daemon JSON-RPC token (prefer XFG_SWAPD_RPC_TOKEN)")
 	flag.Parse()
 	return cfg
 }
@@ -69,9 +77,9 @@ type Event struct {
 
 // Per-daemon health state
 type DaemonHealth struct {
-	Daemon  bool `json:"daemon"`
-	Wallet  bool `json:"wallet"`
-	Swapd   bool `json:"swapd"`
+	Daemon bool `json:"daemon"`
+	Wallet bool `json:"wallet"`
+	Swapd  bool `json:"swapd"`
 }
 
 type EventBus struct {
@@ -163,19 +171,30 @@ func fetchJSON(url string, timeout time.Duration) (map[string]interface{}, error
 	return result, nil
 }
 
-func fetchRaw(url string, timeout time.Duration) ([]byte, error) {
+func fetchJSONPost(url string, timeout time.Duration) (map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader("{}"))
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("daemon HTTP %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return nil, err
+	}
+	if status, ok := result["status"].(string); ok && status != "OK" {
+		return nil, fmt.Errorf("daemon status %s", status)
+	}
+	return result, nil
 }
 
 // ── Event Pollers ──────────────────────────────────────────────────────────────
@@ -193,18 +212,13 @@ func pollDaemon(bus *EventBus, daemonPort int) {
 		}
 
 		// HEAT metrics
-		if data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/heat_metrics", daemonPort), 3*time.Second); err == nil {
+		if data, err := fetchJSONPost(fmt.Sprintf("http://127.0.0.1:%d/heat_metrics", daemonPort), 3*time.Second); err == nil {
 			bus.Broadcast(Event{Type: EventHeat, Payload: data, Time: time.Now().Unix()})
 		}
 
 		// Pool info
-		if data, err := fetchJSON(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second); err == nil {
+		if data, err := fetchJSONPost(fmt.Sprintf("http://127.0.0.1:%d/amm_pool_info", daemonPort), 3*time.Second); err == nil {
 			bus.Broadcast(Event{Type: EventPool, Payload: data, Time: time.Now().Unix()})
-		}
-
-		// Orderbook
-		if body, err := fetchRaw(fmt.Sprintf("http://127.0.0.1:%d/json_rpc", daemonPort), 3*time.Second); err == nil {
-			_ = body // orderbook fetched via RPC proxy
 		}
 
 		// Health status
@@ -279,11 +293,7 @@ var upgrader = websocket.Upgrader{
 			return true
 		}
 		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		host := u.Hostname()
-		return host == "127.0.0.1" || host == "localhost" || host == "::1"
+		return err == nil && u.Scheme == "http" && strings.EqualFold(u.Host, r.Host)
 	},
 }
 
@@ -338,23 +348,29 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := (&url.URL{Host: r.Host}).Hostname()
+		if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
 		origin := r.Header.Get("Origin")
 		if origin != "" {
 			ou, err := url.Parse(origin)
-			if err != nil {
+			if err != nil || ou.Scheme != "http" || !strings.EqualFold(ou.Host, r.Host) {
 				http.Error(w, "bad origin", http.StatusForbidden)
-				return
-			}
-			oh := ou.Hostname()
-			if oh != "127.0.0.1" && oh != "localhost" && oh != "::1" {
-				http.Error(w, "forbidden origin", http.StatusForbidden)
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
+		if r.Method == http.MethodPost &&
+			(r.URL.Path == "/api/wallet" || r.URL.Path == "/api/swapd-rpc") &&
+			r.Header.Get("X-Fuego-Operator") != "1" {
+			http.Error(w, "operator header required", http.StatusForbidden)
+			return
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Fuego-Operator")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
@@ -384,7 +400,17 @@ var walletAllowedMethods = map[string]bool{
 	"place_limit_order":  true,
 	"cancel_limit_order": true,
 	"amm_swap":           true,
-	"initiate_swap":      true,
+}
+
+var swapdAllowedMethods = map[string]bool{
+	"initiate_swap":     true,
+	"accept":            true,
+	"get_reserve_proof": true,
+	"list_swaps":        true,
+	"swap_status":       true,
+	"refund":            true,
+	"check_timeouts":    true,
+	"list_chains":       true,
 }
 
 // Simple token-bucket rate limiter per IP.
@@ -412,9 +438,23 @@ func (rl *rateLimiter) allow(key string) bool {
 	return true
 }
 
-var walletRateLimiter = newRateLimiter(200 * time.Millisecond)
+var (
+	walletRateLimiter = newRateLimiter(200 * time.Millisecond)
+	swapdRateLimiter  = newRateLimiter(200 * time.Millisecond)
+)
 
-func walletProxyHandler(walletPort int) http.HandlerFunc {
+type localRPCProxyConfig struct {
+	port    int
+	path    string
+	service string
+	token   string
+	allowed map[string]bool
+	limiter *rateLimiter
+}
+
+// localRPCProxyHandler keeps daemon credentials server-side, validates the
+// requested method against a narrow allowlist, and only forwards to loopback.
+func localRPCProxyHandler(cfg localRPCProxyConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -422,16 +462,16 @@ func walletProxyHandler(walletPort int) http.HandlerFunc {
 		}
 
 		// Rate limit (per IP)
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = strings.Split(fwd, ",")[0]
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
 		}
-		if !walletRateLimiter.allow(ip) {
+		if !cfg.limiter.allow(ip) {
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
 		}
 
-		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 		if err != nil {
 			http.Error(w, "read error", http.StatusBadRequest)
 			return
@@ -439,16 +479,17 @@ func walletProxyHandler(walletPort int) http.HandlerFunc {
 
 		// Parse and validate method
 		var rpcReq struct {
-			Method string      `json:"method"`
-			Params interface{} `json:"params"`
-			ID     interface{} `json:"id"`
+			JSONRPC string      `json:"jsonrpc,omitempty"`
+			Method  string      `json:"method"`
+			Params  interface{} `json:"params"`
+			ID      interface{} `json:"id"`
 		}
 		if err := json.Unmarshal(body, &rpcReq); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
 
-		if !walletAllowedMethods[rpcReq.Method] {
+		if !cfg.allowed[rpcReq.Method] {
 			http.Error(w, fmt.Sprintf("method %q not allowed", rpcReq.Method), http.StatusForbidden)
 			return
 		}
@@ -463,16 +504,19 @@ func walletProxyHandler(walletPort int) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		proxyReq, err := http.NewRequestWithContext(ctx, "POST",
-			fmt.Sprintf("http://127.0.0.1:%d/json_rpc", walletPort),
+			fmt.Sprintf("http://127.0.0.1:%d%s", cfg.port, cfg.path),
 			strings.NewReader(string(cleanBody)))
 		if err != nil {
 			http.Error(w, "proxy error", http.StatusBadGateway)
 			return
 		}
 		proxyReq.Header.Set("Content-Type", "application/json")
+		if cfg.token != "" {
+			proxyReq.Header.Set("X-Swap-Token", cfg.token)
+		}
 		resp, err := http.DefaultClient.Do(proxyReq)
 		if err != nil {
-			http.Error(w, "walletd unreachable", http.StatusBadGateway)
+			http.Error(w, cfg.service+" unreachable", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -480,6 +524,20 @@ func walletProxyHandler(walletPort int) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}
+}
+
+func walletProxyHandler(walletPort int) http.HandlerFunc {
+	return localRPCProxyHandler(localRPCProxyConfig{
+		port: walletPort, path: "/json_rpc", service: "walletd",
+		allowed: walletAllowedMethods, limiter: walletRateLimiter,
+	})
+}
+
+func swapdRPCProxyHandler(swapdRPCPort int, token string) http.HandlerFunc {
+	return localRPCProxyHandler(localRPCProxyConfig{
+		port: swapdRPCPort, path: "/", service: "xfg-swapd", token: token,
+		allowed: swapdAllowedMethods, limiter: swapdRateLimiter,
+	})
 }
 
 // ── Health Check ───────────────────────────────────────────────────────────────
@@ -533,8 +591,8 @@ func resolveAssetRoot() string {
 		}
 		exeDir := filepath.Dir(exe)
 		candidates = append(candidates,
-			exeDir,                     // build/release/bin/ alongside static/
-			filepath.Dir(exeDir),       // bin/ inside build/release/
+			exeDir,                                   // build/release/bin/ alongside static/
+			filepath.Dir(exeDir),                     // bin/ inside build/release/
 			filepath.Join(exeDir, "..", "dashboard"), // repo layout: build/release/bin -> dashboard
 		)
 	}
@@ -565,9 +623,6 @@ func main() {
 	daemonTarget := fmt.Sprintf("http://127.0.0.1:%d", cfg.DaemonPort)
 	daemonProxy := newReverseProxy(daemonTarget)
 
-	walletTarget := fmt.Sprintf("http://127.0.0.1:%d", cfg.WalletPort)
-	walletProxy := newReverseProxy(walletTarget)
-
 	// Start event pollers
 	go pollDaemon(bus, cfg.DaemonPort)
 	go pollWallet(bus, cfg.WalletPort)
@@ -588,19 +643,19 @@ func main() {
 
 	// Wallet RPC proxy (browser-initiated execution — keys never touch browser)
 	mux.HandleFunc("/api/wallet", walletProxyHandler(cfg.WalletPort))
+	if cfg.SwapdRPCPort > 0 {
+		// xfg-swapd owns cross-chain execution. Keep its optional control token
+		// out of browser JavaScript and inject it on this loopback-only hop.
+		mux.HandleFunc("/api/swapd-rpc", swapdRPCProxyHandler(cfg.SwapdRPCPort, cfg.SwapdRPCToken))
+	}
 
-	// Daemon proxy (read-only)
-	mux.HandleFunc("/api/daemon/", proxyHandler(daemonProxy))
-
-	// Direct daemon RPC proxy
-	mux.HandleFunc("/json_rpc", proxyHandler(daemonProxy))
+	// Explicitly read-only daemon routes; no generic RPC pass-through.
 	mux.HandleFunc("/heat_metrics", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_pool_info", proxyHandler(daemonProxy))
 	mux.HandleFunc("/amm_quote", proxyHandler(daemonProxy))
+	mux.HandleFunc("/get_limit_orders", proxyHandler(daemonProxy))
+	mux.HandleFunc("/get_fuego_price", proxyHandler(daemonProxy))
 	mux.HandleFunc("/getswapprice", proxyHandler(daemonProxy))
-
-	// Wallet proxy (direct)
-	mux.HandleFunc("/wallet_rpc", proxyHandler(walletProxy))
 
 	// Swap daemon status (offers + active swaps JSON from xfg-swapd HTTP root)
 	if cfg.SwapdPort > 0 {

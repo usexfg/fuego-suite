@@ -9,9 +9,7 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace CryptoNote {
 
@@ -27,41 +25,42 @@ struct AssetBalance {
     uint64_t lp   = 0;
 };
 
-// Canonical commitment-term -> asset mapping. Single source of truth for BOTH the
-// input side (Blockchain::classifyInputAsset) and the output side
-// (Currency::classifyOutputAsset), so an output and the input that later spends
-// it can never be classified as different assets.
-//
-// Returns false for any unrecognised term, including term 0. Callers must reject
-// rather than substitute a default: an unknown term means the asset is unknown.
-//
-// term 0 is NOT a valid commitment output term. No producer emits it — every
-// creation site assigns HEAT_TERM, a validated CD term, or a protocol marker —
-// and it previously classified as HEAT on the output side but XFG on the input
-// side, which broke per-asset conservation for any output of that term. The
-// "unlocked commitment output" case is already HEAT_TERM.
-//
-// The CD range is runtime and differs on testnet, so the caller supplies it.
-bool classifyCommitmentTermAsset(uint32_t term,
-                                 uint32_t cdMinTerm,
-                                 uint32_t cdMaxTerm,
-                                 AssetType& outAsset);
+// One transaction's per-asset flows. `in` and `out` are what its inputs spend
+// and its outputs create. Sources are value the protocol pays into the
+// transaction with no input behind it (pool and escrow payouts, LP shares,
+// minted HEAT); sinks are value that leaves it with no output (pool and escrow
+// deposits, burns, treasury funding). Every source and sink comes from the
+// transaction's declared settlement amounts (Blockchain::computeAssetFlows).
+struct AssetFlows {
+    AssetBalance in;
+    AssetBalance out;
+    uint64_t xfgSource  = 0;
+    uint64_t xfgSink    = 0;
+    uint64_t heatSource = 0;
+    uint64_t heatSink   = 0;
+    uint64_t lpSource   = 0;
+    uint64_t lpSink     = 0;
+};
 
-// The all-members-same-asset rule for a commitment-spend ring, as a pure
-// function so it is testable without a Blockchain instance.
-//
-// `terms` are the terms of every ring member, in ring order (decoy order is
-// attacker-chosen). `outputIndex` selects which member of `terms` is being
-// resolved, so the rule can be asserted to be independent of that choice.
-//
-// Returns false when the ring cannot be resolved to exactly one asset: a member
-// whose term is not a recognised output class, or two members that disagree.
-// Callers must not substitute a default — an unresolvable ring means the input's
-// asset is unknown.
-bool resolveCommitmentRingAsset(const std::vector<uint32_t>& terms,
-                                size_t outputIndex,
-                                uint32_t cdMinTerm,
-                                uint32_t cdMaxTerm,
-                                AssetType& outAsset);
+// v11+ balance rule. The block reward is XFG, so a fee is XFG only: the XFG
+// surplus. HEAT and LP must balance exactly — neither can be created from
+// nothing, and neither leaves a transaction except through a declared sink.
+// Returns false on any imbalance or overflow.
+inline bool settleAssetFlows(const AssetFlows& f, uint64_t& xfgFee) {
+    auto add = [](uint64_t a, uint64_t b, uint64_t& sum) {
+        if (a > UINT64_MAX - b) return false;
+        sum = a + b;
+        return true;
+    };
+    uint64_t xIn = 0, xOut = 0, hIn = 0, hOut = 0, lIn = 0, lOut = 0;
+    if (!add(f.in.xfg, f.xfgSource, xIn) || !add(f.out.xfg, f.xfgSink, xOut) ||
+        !add(f.in.heat, f.heatSource, hIn) || !add(f.out.heat, f.heatSink, hOut) ||
+        !add(f.in.lp, f.lpSource, lIn) || !add(f.out.lp, f.lpSink, lOut)) {
+        return false;
+    }
+    if (xIn < xOut || hIn != hOut || lIn != lOut) return false;
+    xfgFee = xIn - xOut;
+    return true;
+}
 
 } // namespace CryptoNote

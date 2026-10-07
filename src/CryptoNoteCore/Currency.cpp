@@ -16,7 +16,6 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "Currency.h"
-#include "AssetType.h"
 #include "Common/Int128.h"
 #include <cctype>
 #include <numeric>
@@ -150,6 +149,14 @@ namespace CryptoNote
 		else {
 			return CryptoNote::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
 		}
+	}
+
+	uint32_t Currency::cdActivationHeight() const {
+		return m_testnet ? m_upgradeHeightV11 : parameters::CD_ACTIVATION_HEIGHT;
+	}
+
+	uint32_t Currency::heatwaveTagCutoffHeight() const {
+		return m_testnet ? m_upgradeHeightV11 : parameters::HEATWAVE_TAG_CUTOFF_HEIGHT;
 	}
 
 	uint32_t Currency::upgradeHeight(uint8_t majorVersion) const {
@@ -326,23 +333,11 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
-  uint64_t Currency::loyaltyTierWeightPct(uint32_t term) const {
+  uint64_t Currency::cdLastCreditedEpoch(uint32_t creationHeight, uint32_t term) const {
     const uint64_t epochDuration = m_testnet
         ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
         : parameters::EPOCH_DURATION_BLOCKS;
-    const uint32_t maxTerm = m_testnet
-        ? parameters::TESTNET_DEPOSIT_MAX_TERM
-        : parameters::DEPOSIT_MAX_TERM;
-    if (term == maxTerm) {
-      return parameters::LOYALTY_BONUS_72_EPOCHS_PCT;  // 72 epochs: 2.5×
-    } else if (term == 36 * epochDuration) {
-      return parameters::LOYALTY_BONUS_36_EPOCHS_PCT;  // 36 epochs: 2.0×
-    } else if (term == 18 * epochDuration) {
-      return parameters::LOYALTY_BONUS_18_EPOCHS_PCT;  // 18 epochs: 1.5×
-    } else if (term == 6 * epochDuration) {
-      return parameters::LOYALTY_BONUS_6_EPOCHS_PCT;   // 6 epochs: 1.25×
-    }
-    return 100;  // rolling / no tier bonus
+    return (uint64_t(creationHeight) + term) / epochDuration;
   }
 
   uint64_t Currency::calculateCdBonus(uint64_t amount, uint32_t creationHeight,
@@ -357,7 +352,7 @@ double Currency::getBurnPercentage() const {
     uint64_t startEpoch = creationHeight / epochDuration;
     uint64_t endEpoch = currentHeight / epochDuration;
     if (term > 0) {
-      uint64_t expiryEpoch = (creationHeight + term) / epochDuration;
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
       if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
     }
     uint64_t epochCount = commitmentIndex.getEpochCount();
@@ -420,7 +415,7 @@ double Currency::getBurnPercentage() const {
     // defeating DEPOSIT_MIN_TERM. calculateCdBonus already clamps this way;
     // the two paths now agree.
     if (term > 0) {
-      uint64_t expiryEpoch = (creationHeight + term) / epochDuration;
+      uint64_t expiryEpoch = cdLastCreditedEpoch(creationHeight, term);
       if (expiryEpoch < endEpoch) endEpoch = expiryEpoch;
     }
 
@@ -572,8 +567,29 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
-  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term,
-                                          uint32_t cdMinTerm, uint32_t cdMaxTerm) {
+  AssetType Currency::classifyCommitmentTermAsset(uint32_t term) {
+    if (term == parameters::HEAT_TERM)
+      return AssetType::HEAT;
+    if (term == parameters::DEPOSIT_TERM_LP)
+      return AssetType::LP;
+    if (term == parameters::DEPOSIT_TERM_POOL_XFG)
+      return AssetType::XFG;
+    if (term == parameters::DEPOSIT_TERM_POOL_HEAT)
+      return AssetType::HEAT;
+    if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+      return AssetType::XFG;
+    // Certificates of deposit are HEAT. Every marker term above is handled
+    // explicitly and the CD — the main case — used to fall through to the
+    // XFG default, which is where HEAT CDs came off the rails: the accrual,
+    // the CD_APY_POOL, the BONUS_VAULT and m_feePoolBalance are all HEAT, and
+    // heatDepositV10 (the heat_cd command) spends HEAT_TERM commitments to
+    // fund one — but classifying the resulting output as XFG made
+    // inAssets.heat != outAssets.heat, so consensus rejected every HEAT CD
+    // ever built. Term 0 is plain HEAT (check_tx_outputs admits it as such).
+    return AssetType::HEAT;
+  }
+
+  AssetType Currency::classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term) {
     if (target.type() == typeid(KeyOutput)) {
       return AssetType::XFG;
     }
@@ -581,29 +597,22 @@ double Currency::getBurnPercentage() const {
       return AssetType::XFG;
     }
     if (target.type() == typeid(TransactionOutputCommitment)) {
-      // Same table as the input side (Blockchain::classifyInputAsset), so an output
-      // and the input that later spends it can never be classified as different
-      // assets.
-      //
-      // An unrecognised term means the asset is unknown. XFG is the conservative
-      // choice: it cannot inflate an HEAT or LP balance, and check_tx_outputs
-      // rejects unrecognised terms at v11+ before this is reached.
-      AssetType asset = AssetType::XFG;
-      if (classifyCommitmentTermAsset(term, cdMinTerm, cdMaxTerm, asset)) {
-        return asset;
-      }
-      return AssetType::XFG;
+      return classifyCommitmentTermAsset(term);
     }
     if (target.type() == typeid(TransactionOutputUnified)) {
-      // v12 scheme, not yet live: term 0 is an ordinary XFG output and any finite
-      // term is a CD. Deliberately NOT shared with the commitment table, because the
-      // two schemes disagree about term 0 by design.
-      if (term == parameters::HEAT_TERM) return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_LP) return AssetType::LP;
-      if (term == parameters::DEPOSIT_TERM_POOL_XFG) return AssetType::XFG;
-      if (term == parameters::DEPOSIT_TERM_POOL_HEAT) return AssetType::HEAT;
-      if (term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG) return AssetType::XFG;
-      return (term > 0) ? AssetType::HEAT : AssetType::XFG;
+      auto& unified = boost::get<TransactionOutputUnified>(target);
+      if (unified.term == parameters::HEAT_TERM)
+        return AssetType::HEAT;
+      if (unified.term == parameters::DEPOSIT_TERM_LP)
+        return AssetType::LP;
+      if (unified.term == parameters::DEPOSIT_TERM_POOL_XFG)
+        return AssetType::XFG;
+      if (unified.term == parameters::DEPOSIT_TERM_POOL_HEAT)
+        return AssetType::HEAT;
+      if (unified.term == parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG)
+        return AssetType::XFG;
+      // term 0 is an ordinary output (XFG); any finite term is a CD (HEAT).
+      return (unified.term > 0) ? AssetType::HEAT : AssetType::XFG;
     }
     return AssetType::XFG;
   }
@@ -617,7 +626,7 @@ double Currency::getBurnPercentage() const {
         const auto& co = boost::get<TransactionOutputCommitment>(out.target);
         term = co.term;
       }
-      asset = classifyOutputAsset(out.target, term, depositMinTerm(), depositMaxTerm());
+      asset = classifyOutputAsset(out.target, term);
       switch (asset) {
         case AssetType::HEAT: bal.heat += out.amount; break;
         case AssetType::LP:   bal.lp   += out.amount; break;

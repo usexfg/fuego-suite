@@ -12,7 +12,7 @@ ChainClientResult ZanoChainClient::lock(const SwapParams& params) {
   ZanoTransferResult zanoResult;
   bool ok = m_rpc->lockAdaptor(
       params.ctrAddress,
-      params.ctrAmount,
+      params.ctrAmount64(),
       zanoResult);
   if (!ok || !zanoResult.success)
     return ChainClientResult::fail("ZANO lockAdaptor failed: " + zanoResult.error);
@@ -24,7 +24,7 @@ ChainClientResult ZanoChainClient::verifyLock(const SwapParams& params) {
   // shared view key — never trust whichever wallet is currently open on RPC.
   if (m_viewKeyHex.empty())
     return ChainClientResult::fail("ZANO verifyLock: shared view key not configured");
-  bool ok = m_rpc->verifyLock(params.ctrAddress, m_viewKeyHex, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(params.ctrAddress, m_viewKeyHex, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("ZANO lock not verified for shared address");
   return ChainClientResult::ok(params.ctrAddress);
 }

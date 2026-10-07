@@ -93,7 +93,7 @@
       <!-- Exploration Toolbar -->
       <div class="astrolabe-toolbar">
         <div class="filter-chips" id="category-filter-chips">
-          <span class="filter-chip active" data-cat="all">All Chains (28)</span>
+          <span class="filter-chip active" data-cat="all">All Chains (loading)</span>
           <span class="filter-chip" data-cat="privacy">Privacy</span>
           <span class="filter-chip" data-cat="calibers">Major UTXO</span>
           <span class="filter-chip" data-cat="evm">EVM &amp; L2</span>
@@ -139,8 +139,8 @@
 
     <!-- 2. SWAP AMOUNT FORM & COUNTERPARTY -->
     <section class="dexfg-form-row">
-      <div class="bridge-card" class="grow-wide">
-        <div class="card-header" class="rule-head">
+      <div class="bridge-card grow-wide">
+        <div class="card-header rule-head">
           <span class="section-title">Transfer Console</span>
           <span class="caps">Adaptor Signatures</span>
         </div>
@@ -170,76 +170,52 @@
 
         <div class="bridge-input-group" id="to-group">
           <div class="bridge-chain">
-            <img id="to-chain-icon" src="/coin-icons/btc.png" alt="?" class="bridge-logo">
+            <img id="to-chain-icon" src="/coin-icons/fuego.png" alt="?" class="bridge-logo">
             <div>
               <div class="chain-name-lg" id="to-chain-name">Select Counterparty Chain</div>
               <div class="caps" id="to-chain-ticker">—
               </div>
             </div>
-            <div class="push-end">
-              <select class="form-input" id="to-chain-select"
-                class="select-wide">
-                <option value="BTC">Bitcoin (BTC)</option>
-                <option value="ETH">Ethereum (ETH)</option>
-                <option value="SOL">Solana (SOL)</option>
-                <option value="XMR">Monero (XMR)</option>
-                <option value="LTC">Litecoin (LTC)</option>
-                <option value="BCH">Bitcoin Cash (BCH)</option>
-                <option value="ARB">Arbitrum (ARB)</option>
-                <option value="BASE">Base</option>
-                <option value="BNB">BNB Chain</option>
-                <option value="DCR">Decred (DCR)</option>
-                <option value="KMD_SPV">Komodo (KMD)</option>
-                <option value="POLYGON">Polygon (MATIC)</option>
-                <option value="GLEEC">Gleec (GLEEC)</option>
-                <option value="ROBINHOOD">Robinhood Chain</option>
-                <option value="AVAX">Avalanche (AVAX)</option>
-                <option value="CRO">Cronos (CRO)</option>
-                <option value="BOB">Bob</option>
-                <option value="SIA">Sia (SC)</option>
-                <option value="TON">TON</option>
-                <option value="UNICHAIN">Unichain</option>
-                <option value="PLASMA">Plasma (XPL)</option>
-                <option value="DOGE">Dogecoin (DOGE)</option>
-                <option value="DASH">Dash (DASH)</option>
-                <option value="ZEC">Zcash (ZEC)</option>
-                <option value="PULSECHAIN">PulseChain (PLS)</option>
-                <option value="ZANO">Zano (ZANO)</option>
-                <option value="MONAD">Monad</option>
-                <option value="OPTIMISM">Optimism (OP)</option>
-                <option value="DOT">Polkadot (DOT)</option>
+            <div style="margin-left:auto;">
+              <select class="form-input select-wide" id="to-chain-select">
+                <option value="">Loading xfg-swapd catalog…</option>
               </select>
             </div>
           </div>
-          <div
-            class="value-output"
-            id="bridge-estimated">0.00</div>
-          <div class="bridge-balance">Estimated output · after 2% house fee</div>
+          <div class="value-output" id="bridge-estimated">—</div>
+          <div class="bridge-balance">Exact counterparty amount</div>
         </div>
 
-        <div class="bridge-rate" id="bridge-rate">Enter volume to view rate</div>
-        <div class="bridge-fee">
-          House fee 2% · 69% CD yield · 11% bonus vault · 20% treasury · Schnorr adaptor signatures
-        </div>
+        <div class="bridge-rate" id="bridge-rate">Select an amount to see the rate</div>
+        <div class="bridge-fee">Exact amounts come from the selected offer or your counterparty agreement; network fees are not estimated here.</div>
 
         <button type="button" class="btn btn-block btn-firegold" id="bridge-init-btn">
-          Post Transfer
+          Review / Initiate Swap
         </button>
       </div>
 
-      <div class="card" class="grow-narrow">
+      <div class="card grow-narrow">
         <div class="card-header">
           <span>Counterparty</span>
         </div>
         <div class="card-body">
           <div class="form-group">
-            <label class="form-label">Counterparty Ed25519 Key (hex)</label>
-            <input type="text" class="form-input" id="peer-pubkey" placeholder="Optional for public book orders">
+            <label class="form-label">Counterparty amount (atomic units)</label>
+            <input type="text" class="form-input" id="ctr-amount" inputmode="numeric" placeholder="Exact amount locked on the counterparty chain">
           </div>
-          <p class="dexfg-note">
-            For a book take, leave blank unless settling against a specific peer.
-            Selecting an order on the ordergraph fills this panel.
-          </p>
+          <div class="form-group">
+            <label class="form-label">Peer swap endpoint</label>
+            <input type="text" class="form-input" id="peer-endpoint" placeholder="host:18901">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Verified peer public key (required)</label>
+            <input type="text" class="form-input" id="peer-pubkey" placeholder="Ed25519 public key of your swap partner">
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);">
+            New swaps require a locally ready chain adapter. A selected offer fills
+            the amounts, but the peer endpoint still comes from the maker.
+          </div>
+          <p class="dexfg-note">Selecting an offer prefills amounts; its maker endpoint is still required.</p>
           <div id="selected-offer-summary" class="selected-offer-summary" hidden></div>
         </div>
       </div>
@@ -253,7 +229,7 @@
         </div>
         <span class="badge badge-green" id="book-count">0 Offers</span>
       </div>
-      <div class="card-body" class="p0">
+      <div class="card-body p0">
         <div id="orderbook-list"></div>
         <div id="orderbook-empty" class="empty-state">
           <span class="empty-state-icon" aria-hidden="true">☰</span>
@@ -263,14 +239,14 @@
     </section>
 
     <!-- 4. ACTIVE SWAPS -->
-    <section class="card" class="mb-lg">
+    <section class="card mb-lg">
       <div class="card-header">
         <div class="title-glow">
           <span>Transfers in Flight</span>
         </div>
         <span class="badge badge-firegold" id="active-count">0 Active</span>
       </div>
-      <div class="card-body" class="p0 scroll-360">
+      <div class="card-body p0 scroll-360">
         <div id="active-swaps-list"></div>
         <div id="swaps-empty" class="empty-state">
           <span class="empty-state-icon" aria-hidden="true">↔</span>
@@ -283,13 +259,14 @@
     <div class="duo-grid">
       <div class="card">
         <div class="card-header"><span>Price Oracle — TWAP</span></div>
-        <div class="card-body" class="p0">
-          <div id="oracle-chart" class="chart-container" class="h-panel"></div>
+        <div class="card-body p0">
+          <div id="oracle-chart" class="chart-container h-panel"></div>
+          <div id="oracle-history-status" class="empty-state-text">Historical oracle series unavailable</div>
         </div>
       </div>
       <div class="card">
         <div class="card-header"><span>Implied Market Rates</span></div>
-        <div class="card-body" class="p0 scroll-240">
+        <div class="card-body p0 scroll-240">
           <table>
             <thead>
               <tr>
@@ -302,9 +279,9 @@
           </table>
         </div>
       </div>
-      <div class="card" class="span-all">
+      <div class="card span-all">
         <div class="card-header"><span>SPV Verification Telemetry</span></div>
-        <div class="card-body" class="p0">
+        <div class="card-body p0">
           <div class="metrics-grid">
             <div class="metric"><span class="metric-label">SPV Headers</span><span class="metric-value gold"
                 id="spv-height">—</span></div>
@@ -355,10 +332,10 @@
             <div class="step-label">Done</div>
           </div>
         </div>
-        <div class="code-block" id="init-cli-cmd" class="mb-md" hidden></div>
+        <div class="code-block mb-md" id="init-cli-cmd" hidden></div>
         <div class="row gap-md">
-          <button type="button" class="btn btn-firegold" id="init-exec-btn" class="flex-1">Commit via Vault</button>
-          <button type="button" class="btn btn-secondary" id="init-copy-btn" class="flex-1">Copy Command</button>
+          <button type="button" class="btn btn-firegold flex-1" id="init-exec-btn">Execute via xfg-swapd</button>
+          <button type="button" class="btn btn-secondary flex-1" id="init-copy-btn">Copy CLI command</button>
         </div>
       </div>
     </div>

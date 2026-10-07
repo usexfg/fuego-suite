@@ -42,7 +42,9 @@ void serialize(TransactionInformation& ti, CryptoNote::ISerializer& s) {
   s(ti.messages, "");
 }
 
-const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 1;
+// 2: Commitment outputs also store their published commit key (see
+//    TransactionOutputInformationEx::serialize). Version 1 and 0 caches still load.
+const uint32_t TRANSFERS_CONTAINER_STORAGE_VERSION = 2;
 
 namespace {
   template<typename TIterator>
@@ -950,9 +952,17 @@ void TransfersContainer::load(std::istream& in) {
 
   s(currentHeight, "height");
   readSequence<TransactionInformation>(std::inserter(transactions, transactions.end()), "transactions", s);
-  readSequence<TransactionOutputInformationEx>(std::inserter(unconfirmedTransfers, unconfirmedTransfers.end()), "unconfirmedTransfers", s);
-  readSequence<TransactionOutputInformationEx>(std::inserter(availableTransfers, availableTransfers.end()), "availableTransfers", s);
-  readSequence<SpentTransactionOutput>(std::inserter(spentTransfers, spentTransfers.end()), "spentTransfers", s);
+  if (version >= 2) {
+    readSequence<TransactionOutputInformationEx>(std::inserter(unconfirmedTransfers, unconfirmedTransfers.end()), "unconfirmedTransfers", s);
+    readSequence<TransactionOutputInformationEx>(std::inserter(availableTransfers, availableTransfers.end()), "availableTransfers", s);
+    readSequence<SpentTransactionOutput>(std::inserter(spentTransfers, spentTransfers.end()), "spentTransfers", s);
+  } else {
+    // Older layout: no commitmentKey. The V1 readers zero it, which the signer
+    // reads as "recognised by the legacy-only scanner".
+    readSequence<TransactionOutputInformationExV1>(std::inserter(unconfirmedTransfers, unconfirmedTransfers.end()), "unconfirmedTransfers", s);
+    readSequence<TransactionOutputInformationExV1>(std::inserter(availableTransfers, availableTransfers.end()), "availableTransfers", s);
+    readSequence<SpentTransactionOutputV1>(std::inserter(spentTransfers, spentTransfers.end()), "spentTransfers", s);
+  }
 
   if (version != 0) {
     readSequence<TransferUnlockJob>(std::inserter(transfersUnlockJobs, transfersUnlockJobs.end()), "transfersUnlockJobs", s);

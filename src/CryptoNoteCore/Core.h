@@ -163,6 +163,12 @@ namespace CryptoNote {
     uint64_t getCdApyVaultBalance() override { return m_blockchain.getCdApyVaultBalance(); }
     uint64_t getBonusVaultBalance() override { return m_blockchain.getBonusVaultBalance(); }
     uint64_t getBonusVaultUtxoBalance() override { return m_blockchain.getBonusVaultUtxoBalance(); }
+    std::error_code estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                    uint32_t currentHeight, uint32_t term,
+                                    CdClaimEstimate& out) override {
+      out = m_blockchain.estimateCdClaim(amount, creationHeight, currentHeight, term);
+      return {};
+    }
     std::error_code calculateCdBonus(uint64_t amount, uint32_t creationHeight,
                                      uint32_t currentHeight, uint64_t& outBonus,
                                      uint32_t term = 0) override {
@@ -254,6 +260,7 @@ namespace CryptoNote {
       uint64_t expectedOutput = 0;
       uint64_t priceImpactBps = 0;
       uint64_t fee = 0;
+      uint64_t mintOutput = 0;  // selling XFG: HEAT a burn of the input mints at the TWAP
     };
     AmmQuote getAmmQuote(uint64_t inputAmount, uint8_t direction) const;
 
@@ -306,7 +313,8 @@ namespace CryptoNote {
     std::vector<AliasEntry> getAllAliases() const;
     bool removeAlias(const std::string& alias);
     bool replaceAliasOwnership(const std::string& alias,
-                               const Crypto::Hash& newAddressHash);
+                               const Crypto::Hash& newAddressHash,
+                               const std::string& newOwnerAddress);
 
     bool is_key_image_spent(const Crypto::KeyImage &key_im);
 

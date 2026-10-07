@@ -5,6 +5,7 @@
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
 #include "../SwapPtlcLock.h"
+#include "../utxo_claim_proof.h"
 #include "../Crypto/Secp256k1Signer.h"
 
 #include <array>
@@ -139,7 +140,7 @@ ChainClientResult BtcChainClient::lock(const SwapParams& params) {
       recipientKey,
       hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount,
+      params.ctrAmount64(),
       lockTxId,
       redeemScriptHex);
   if (!ok) return ChainClientResult::fail("BTC lockHtlc failed");
@@ -171,7 +172,7 @@ ChainClientResult BtcChainClient::lockPtlc(const SwapParams& params) {
   if(recipientKey.size()!=66 && !params.ctrAddress.empty()){ std::string r; if(m_rpc->getAddressPubkey(params.ctrAddress,r) && r.size()==66) recipientKey=r; }
   if(recipientKey.size()!=66) return ChainClientResult::fail("BTC PtlcLock: need 33-byte pubkey");
   std::string lockTxId; std::string redeemHex;
-  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,hashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount,lockTxId,redeemHex);
+  bool ok=m_rpc->lockHtlc(m_wif,recipientKey,hashHex,static_cast<uint32_t>(params.ctrTimeoutBlock),params.ctrAmount64(),lockTxId,redeemHex);
   if(!ok) return ChainClientResult::fail("BTC PtlcLock: lockHtlc failed");
   Crypto::PublicKey pt=params.ptlcPoint; Crypto::PublicKey zero{}; std::memset(&zero,0,sizeof(zero));
   if(std::memcmp(&pt,&zero,sizeof(zero))==0) pt=params.adaptorPoint;
@@ -200,7 +201,7 @@ ChainClientResult BtcChainClient::verifyPtlcLock(const SwapParams& params) {
   }
 
   if (m_rpc) {
-    bool ok = m_rpc->verifyLock(p2trAddress, params.ctrAmount);
+    bool ok = m_rpc->verifyLock(p2trAddress, params.ctrAmount64());
     if (!ok)
       return ChainClientResult::fail("BTC PTLC lock not verified at " + p2trAddress);
     return ChainClientResult::ok(params.ctrLockTxId);
@@ -253,7 +254,7 @@ ChainClientResult BtcChainClient::verifyPtlcLock(const SwapParams& params) {
         if (p + spkLen > end) return ChainClientResult::fail("BTC verifyPtlcLock SPV: truncated");
         if (spkLen == 34 && p[0] == 0x51 && p[1] == 0x20 &&
             std::memcmp(p + 2, xOnly.data(), 32) == 0 &&
-            value >= params.ctrAmount) {
+            value >= params.ctrAmount64()) {
           foundP2tr = true;
         }
         p += spkLen;
@@ -262,7 +263,7 @@ ChainClientResult BtcChainClient::verifyPtlcLock(const SwapParams& params) {
 
     if (!foundP2tr)
       return ChainClientResult::fail("BTC verifyPtlcLock SPV: no P2TR output with expected amount " +
-                                     std::to_string(params.ctrAmount));
+                                     std::to_string(params.ctrAmount64()));
 
     SpvTxInclusion inclusion;
     if (!m_spvClient->verifyTxInclusion(params.ctrLockTxId, inclusion))
@@ -323,7 +324,7 @@ ChainClientResult BtcChainClient::lockPtlcPureP2tr(const SwapParams& params) {
     m_rpc->importAddress(out.p2trAddress, "fuego-ptlc", false);
 
     std::string lockTxId;
-    if (!m_rpc->sendToAddress(out.p2trAddress, params.ctrAmount, lockTxId))
+    if (!m_rpc->sendToAddress(out.p2trAddress, params.ctrAmount64(), lockTxId))
       return ChainClientResult::fail("BTC PtlcLock pure: sendtoaddress to " +
                                      out.p2trAddress + " failed");
 
@@ -361,7 +362,7 @@ ChainClientResult BtcChainClient::verifyLock(const SwapParams& params) {
         "cannot listunspent by txid alone");
   }
 
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("BTC lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -391,14 +392,14 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
     auto outputScript = BtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("BTC claim: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     const uint32_t nSequence = 0xFFFFFFFD;
 
     auto der = BtcHtlcScript::signInput(privKey, 2, 0, nSequence,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount,
+        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("BTC claim SPV: signing failed");
@@ -407,7 +408,7 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
     auto witnessStack = BtcHtlcScript::createClaimWitness(der, preimageBytes, witnessScript);
 
     auto rawTx = BtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, 0);
 
     std::string txid;
@@ -421,7 +422,7 @@ ChainClientResult BtcChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       redeemHexRaw2,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -457,13 +458,13 @@ ChainClientResult BtcChainClient::refund(const SwapParams& params) {
     auto outputScript = BtcHtlcScript::buildP2pkhScriptPubKey(pubKeyHash);
 
     uint64_t fee = 1000;
-    if (params.ctrAmount <= fee)
+    if (params.ctrAmount64() <= fee)
       return ChainClientResult::fail("BTC refund: amount too small for fee");
-    uint64_t outputAmount = params.ctrAmount - fee;
+    uint64_t outputAmount = params.ctrAmount64() - fee;
 
     auto der = BtcHtlcScript::signInput(privKey, 2, nLocktime,
         0xFFFFFFFE,
-        params.ctrLockTxId, 0, witnessScript, params.ctrAmount,
+        params.ctrLockTxId, 0, witnessScript, params.ctrAmount64(),
         outputScript, outputAmount);
     if (der.empty())
       return ChainClientResult::fail("BTC refund SPV: signing failed");
@@ -472,7 +473,7 @@ ChainClientResult BtcChainClient::refund(const SwapParams& params) {
     auto witnessStack = BtcHtlcScript::createRefundWitness(der, witnessScript);
 
     auto rawTx = BtcHtlcScript::buildRawSegWitTx(
-        params.ctrLockTxId, 0, params.ctrAmount,
+        params.ctrLockTxId, 0, params.ctrAmount64(),
         emptyScriptSig, witnessStack, params.ctrAddress, outputAmount, nLocktime);
 
     std::string txid;
@@ -486,7 +487,7 @@ ChainClientResult BtcChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       redeemHexRaw1,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -557,13 +558,13 @@ ChainClientResult BtcChainClient::claimOrRefundPtlcP2tr(const SwapParams& params
   }
 
   const uint64_t fee = 1000;
-  if (params.ctrAmount <= fee)
+  if (params.ctrAmount64() <= fee)
     return ChainClientResult::fail("BTC Ptlc spend: amount too small for fee");
-  const uint64_t outputAmount = params.ctrAmount - fee;
+  const uint64_t outputAmount = params.ctrAmount64() - fee;
 
   std::array<uint8_t, 32> sighash{};
   if (!BtcTaprootPtlc::computeTaprootKeyPathSighash(
-          params.ctrLockTxId, 0, params.ctrAmount,
+          params.ctrLockTxId, 0, params.ctrAmount64(),
           out.tweakedPubKeyXOnly, destSpk, outputAmount,
           /*nVersion=*/2, /*nSequence=*/0xFFFFFFFD, /*nLockTime=*/0, sighash))
     return ChainClientResult::fail("BTC Ptlc spend: sighash computation failed");
@@ -663,12 +664,18 @@ ChainClientResult BtcChainClient::getTransactionDetails(const std::string& txId,
       return result;
     }
 
+    if (!inclusion.included || !inclusion.merkleVerified ||
+        inclusion.blockHeight == 0 || inclusion.blockHeight > tipHeight ||
+        inclusion.depth == 0) {
+      result = ChainClientResult::fail("SPV: transaction inclusion proof invalid");
+      return result;
+    }
+    result = ChainClientResult::ok(txId);
     result.success = true;
-    result.confirmed = true;
-    result.spvVerified = true;
+    result.confirmed = inclusion.included;
+    result.spvVerified = inclusion.merkleVerified;
     result.blockHeight = inclusion.blockHeight;
-    result.confirmations = (tipHeight >= inclusion.blockHeight)
-        ? (tipHeight - inclusion.blockHeight + 1) : 1;
+    result.confirmations = inclusion.depth;
     return result;
   }
 
@@ -814,7 +821,7 @@ ChainClientResult BtcChainClient::verifyLockSpv(const SwapParams& params) {
     // Check if this is a P2WSH output: OP_0 (0x00) PUSH32 (0x20) <32-byte-hash>
     // Total: 34 bytes
     if (spkLen == 34 && p[0] == 0x00 && p[1] == 0x20) {
-      if (value >= params.ctrAmount) {
+      if (value >= params.ctrAmount64()) {
         // Verify the witness program hash matches the expected HTLC script
         if (!params.chainState.empty()) {
           auto redeemScript = BtcHtlcScript::hexToBytes(params.chainState);
@@ -833,7 +840,7 @@ ChainClientResult BtcChainClient::verifyLockSpv(const SwapParams& params) {
 
   if (!foundP2wsh) {
     return ChainClientResult::fail("BTC verifyLock SPV: no P2WSH output with expected amount " +
-                                   std::to_string(params.ctrAmount));
+                                   std::to_string(params.ctrAmount64()));
   }
 
   // Verify inclusion via SPV
@@ -916,7 +923,9 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
     if (m_spvClient) {
       for (uint32_t vout = 0; vout < 4 && rawTx.empty(); ++vout) {
         SpvSpend spend;
-        if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+        if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+            !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                     params.requiredConfirmations : 6))
           continue;
         if (spend.spendingTxid.empty()) continue;
         m_spvClient->getRawTx(spend.spendingTxid, rawTx);
@@ -926,7 +935,9 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
       if (m_rpc->getRawTransaction(params.ctrClaimTxId, rawHex) && !rawHex.empty())
         rawTx = BtcHtlcScript::hexToBytes(rawHex);
     }
-    if (rawTx.empty()) return {};
+    if (rawTx.empty() ||
+        (!m_spvClient &&
+         !spends_utxo_lock_output(rawTx, params.ctrLockTxId))) return {};
 
     // M-3: use 5-arg parseClaimSecret to verify t*G == T.
     // params.secpPubHex is the full 66-char compressed secp256k1 point (33 bytes).
@@ -962,7 +973,9 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   if (m_spvClient) {
     for (uint32_t vout = 0; vout < 4; ++vout) {
       SpvSpend spend;
-      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) || !spend.spent)
+      if (!m_spvClient->findSpend(params.ctrLockTxId, vout, spend) ||
+          !isVerifiedSpvSpend(spend, params.requiredConfirmations ?
+                                   params.requiredConfirmations : 6))
         continue;
       if (spend.spendingTxid.empty()) continue;
       std::string secret = extractSecret(spend.spendingTxid, redeemHex);
@@ -971,6 +984,10 @@ std::string BtcChainClient::tryExtractClaimedSecret(const SwapParams& params) {
   }
 
   if (m_rpc && !knownClaimTxid.empty()) {
+    std::string rawHex;
+    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
+        !spends_utxo_lock_output(BtcHtlcScript::hexToBytes(rawHex),
+                              params.ctrLockTxId)) return {};
     std::string secret = extractSecret(knownClaimTxid, redeemHex);
     if (!secret.empty()) return secret;
   }

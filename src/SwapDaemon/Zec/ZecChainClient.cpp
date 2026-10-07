@@ -1,4 +1,5 @@
 #include "ZecChainClient.h"
+#include "../utxo_claim_proof.h"
 #include "ZecHtlcScript.h"
 #include "Common/StringTools.h"
 #include "../SwapHashLock.h"
@@ -62,7 +63,7 @@ ChainClientResult ZecChainClient::lock(const SwapParams& params) {
       recipientKey,
       hashHex,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
-      params.ctrAmount,
+      params.ctrAmount64(),
       lockTxId,
       redeemScriptHex);
   if (!ok) return ChainClientResult::fail("ZEC lockHtlc failed");
@@ -91,7 +92,7 @@ ChainClientResult ZecChainClient::verifyLock(const SwapParams& params) {
         "cannot listunspent by txid alone");
   }
 
-  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount);
+  bool ok = m_rpc->verifyLock(htlcAddress, params.ctrAmount64());
   if (!ok) return ChainClientResult::fail("ZEC lock not verified at " + htlcAddress);
   return ChainClientResult::ok(params.ctrLockTxId);
 }
@@ -103,7 +104,7 @@ ChainClientResult ZecChainClient::claim(const SwapParams& params) {
   std::string claimTxId;
   bool ok = m_rpc->claim(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       Common::podToHex(params.adaptorSecret),
       params.ctrAddress,
@@ -119,7 +120,7 @@ ChainClientResult ZecChainClient::refund(const SwapParams& params) {
   std::string refundTxId;
   bool ok = m_rpc->refundHtlc(
       m_wif,
-      params.ctrLockTxId, 0, params.ctrAmount,
+      params.ctrLockTxId, 0, params.ctrAmount64(),
       params.chainState,
       static_cast<uint32_t>(params.ctrTimeoutBlock),
       params.ctrAddress,
@@ -237,6 +238,10 @@ std::string ZecChainClient::tryExtractClaimedSecret(const SwapParams& params) {
 
   // Full-node: if we already know the claim txid (P2P SECRET_REVEAL or chainState), parse it.
   if (m_rpc && !knownClaimTxid.empty()) {
+    std::string rawHex;
+    if (!m_rpc->getRawTransaction(knownClaimTxid, rawHex) ||
+        !spends_utxo_lock_output(ZecHtlcScript::hexToBytes(rawHex),
+                                 params.ctrLockTxId)) return {};
     std::string secret = extractSecret(knownClaimTxid, redeemHex);
     if (!secret.empty()) return secret;
   }

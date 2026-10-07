@@ -1119,28 +1119,22 @@ std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creation
                                               uint32_t currentHeight, CdClaimInfo& out,
                                               uint32_t term) {
   out = CdClaimInfo{};
-  std::error_code ec = core.calculateCdInterest(amount, creationHeight, currentHeight,
-                                                out.formulaInterest,
-                                                0, false);
+  CdClaimEstimate est;
+  std::error_code ec = core.estimateCdClaim(amount, creationHeight, currentHeight, term, est);
   if (ec) return ec;
-  out.feePoolBalance = core.getFeePoolBalance();
-  out.vaultBalance = core.getCdApyVaultBalance();
+  // Field-for-field the mapping NodeRpcProxy applies to /estimate_cd_yield, so
+  // a wallet computes the same claim in-process and over RPC.
+  out.formulaInterest = (est.baseInterest > UINT64_MAX - est.bonusInterest)
+      ? UINT64_MAX : (est.baseInterest + est.bonusInterest);
+  out.claimableInterest = (est.claimableBase > UINT64_MAX - est.claimableBonus)
+      ? UINT64_MAX : (est.claimableBase + est.claimableBonus);
+  out.feePoolBalance = est.feePoolBalance;
+  out.vaultBalance = est.cdApyVaultBalance;
   out.poolInfoPresent = true;
-  uint64_t backing = std::min(out.feePoolBalance, out.vaultBalance);
-  out.claimableInterest = std::min(out.formulaInterest, backing);
-
-  // v11+: consensus split (base without loyalty + BV-backed bonus).
-  uint64_t base = 0, bonus = 0;
-ec = core.calculateCdInterest(amount, creationHeight, currentHeight, base,
-                                 term, false);
-  if (ec) return ec;
-  out.baseInterest = base;
-  ec = core.calculateCdBonus(amount, creationHeight, currentHeight, bonus, term);
-  if (ec) return ec;
-  out.bonusInterest = bonus;
-  uint64_t bvBacking = std::min(core.getBonusVaultBalance(), core.getBonusVaultUtxoBalance());
-  out.bonusVaultBalance = bvBacking;
-  out.claimableBonus = std::min(out.bonusInterest, bvBacking);
+  out.baseInterest = est.baseInterest;
+  out.bonusInterest = est.bonusInterest;
+  out.bonusVaultBalance = est.bonusVaultBacking;
+  out.claimableBonus = est.claimableBonus;
   return {};
 }
 

@@ -123,6 +123,38 @@ or release readiness. Free disk on this machine is 11 GiB at 95% capacity, so a 
 
 ---
 
+## Mainline swap and operator-dashboard integration
+
+**Started**: 2026-10-01
+**Agent**: Codex (GPT-6)
+**Status**: MERGED — funded operation and dashboard parity gates pending
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Reconcile `codex/pr65-followups` with current `master`, preserving FCI config and the dashboard redesign | Codex | 2026-10-01 | DONE in isolated checkout |
+| Keep production Hearth data daemon-backed and submit only exact, quote-checked wallet requests | Codex | 2026-10-01 | Offline tests pass; funded test pending |
+| Derive SwapXFG chain readiness from xfg-swapd, carry uint256 EVM amounts as decimal strings, and require a verified peer key | Codex | 2026-10-01 | Offline tests pass; funded test pending |
+| Restrict dashboard operator proxies to same-origin loopback requests and allowlisted RPC methods | Codex | 2026-10-01 | Go tests pass; browser check pending |
+| Repair the existing `MinerConfig.cpp` namespace break found by the integration build | Codex | 2026-10-01 | DONE; daemon and swap binaries compile |
+| Reject oversized dashboard operator requests and imprecise live Hearth order amounts | Codex | 2026-10-01 | DONE; Go and JavaScript tests pass |
+| Commit merge and push to mainline without disturbing unrelated local work | Codex | 2026-10-01 | DONE; merge `f64eb0c8b` pushed to GitHub `master` |
+| Verify funded lock/claim/refund, restart/reorg, and full order/recovery UI parity before production activation or TUI removal | Operator + Codex | — | PENDING |
+
+### Sign-off
+
+| Gate | Result |
+|------|--------|
+| Dashboard Go and JavaScript offline tests | PASS in isolated checkout; funded operation not implied |
+| Focused C++ build/tests | PASS: Release `fuegod` and `xfg-swapd` compile; assertion-enabled catalog, ETH amount/wire, SPV, swap audit, state recovery, Hearth AMM, core, orderbook, and production-gate tests pass |
+| Graphify refresh | BLOCKED by installed `hyppo` cache locator error after AST extraction |
+| Mainline push | PASS: GitHub `master` advanced from `ea6950d8f` to `f64eb0c8b`; dirty canonical checkout was not modified |
+| Funded swap and dashboard parity | NOT RUN; TUI remains |
+
+Older entries below describe their original revisions. They do not establish
+funded production readiness for this merge.
+
+---
+
 ## Fuego Cost Index (FCI) Miner Basket Oracle & Voting
 
 **Started**: 2026-09-26
@@ -217,6 +249,144 @@ Elevated the Fuego web dashboard to reflect the **Maison de XFG** private Swiss 
 | HTTP endpoints functional (200 OK) | PASS | Antigravity | 2026-09-24 |
 | JavaScript syntax clean (`node -c`) | PASS | Antigravity | 2026-09-24 |
 | All tasks verified | PASS | Antigravity | 2026-09-24 |
+
+## Hearth live-data and quote-first operator controls
+
+**Branch/Feature**: `codex/swap-uint256-integration`
+**Started**: 2026-09-27
+**Agent**: Codex (GPT-6)
+**Status**: PARTIAL DASHBOARD PARITY — offline verified, funded UI execution pending
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Align `/amm_quote` with the constant-product AMM settlement bound rather than combined orderbook estimate | Codex (GPT-6) | 2026-09-27 | DONE — core links and 179/179 core regressions pass |
+| 2 | Remove production random candles, orderbook and pool/HEAT fixtures; surface unavailable states | Codex (GPT-6) | 2026-09-27 | DONE — separate design sandbox untouched |
+| 4 | Preview exact-output AMM swaps with correct direction, strict output floor, fresh quote recheck, and exact atomic parsing | Codex (GPT-6) | 2026-09-27 | DONE — no funded wallet execution claimed |
+| 5 | Add historical candles, owned order cancel/claim, complete order depth, and full SwapXFG fill/recovery controls | Codex | — | PENDING — TUI remains available |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| C++ build and core regressions | PASS — `fuegod` links; treasury/core 179/179 |
+| Dashboard offline tests | PASS — Go `go test ./...`; JS Hearth/order-pair 7/7; JS syntax |
+| Live funded browser-to-wallet exercise | NOT RUN — do not mark dashboard production-operational |
+
+---
+
+## Swap uint256 amount and review-blocker integration
+
+**Branch/Feature**: `codex/swap-uint256-integration`
+**Started**: 2026-09-27
+**Agent**: Codex (GPT-6)
+**Status**: OFFLINE INTEGRATION COMPLETE — funded testnet and dashboard parity not signed off
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Carry the versioned uint256 native-EVM amount path into canonical `xfgo`; retain explicit uint64 rejection for non-EVM adapters | Codex (GPT-6) | 2026-09-27 | DONE |
+| 2 | Add exact gas/value preflight and a 500 gwei EIP-1559 fee ceiling; cover both legacy and typed signed transactions | Codex (GPT-6) | 2026-09-27 | DONE |
+| 3 | Treat a supplied peer public key as expected identity until the first signed KEY_EXCHANGE; add admission regression | Codex (GPT-6) | 2026-09-27 | DONE |
+| 4 | Reconcile main's little-endian adaptor extraction and zeroed MuSig2 nonce semantics in merged tests | Codex (GPT-6) | 2026-09-27 | DONE |
+| 5 | Restore the executable swap guide and preserve unrelated HEAT/Starkproof work during landing | Codex (GPT-6) | 2026-09-27 | DONE |
+| 6 | Run funded testnet lock, claim, refund, restart, and fee-budget exercises for promoted EVM pairs | Operator + Codex | — | PENDING — not a condition for committing offline code, but required before production activation |
+| 7 | Finish live SwapXFG/Hearth dashboard execution and recovery parity before deleting TUI | Codex | — | PENDING — dashboard is not fully operational |
+
+### Sign-off
+
+| Check | Result |
+|-------|--------|
+| `xfg-swapd` and `fuegod` link | PASS — merged main/recovered source, 2026-09-27 |
+| Focused C++ tests | PASS — ETH protocol 37/37, state machine 16/16, presignature 9/9, swap audit 36/36, pair catalog, SPV config, price oracle |
+| Dashboard offline checks | PASS — Go `go test ./...` with local loopback permission, JS syntax, pair tests 2/2 |
+| Diff hygiene | PASS — conflict markers absent and `git diff --check` clean |
+| Graph refresh | BLOCKED — `graphify update .` AST extraction finished but graph rebuild failed in installed `hyppo` (`_center_distmat` locator); no graph sign-off claimed |
+| Funded-chain and mainnet validation | NOT RUN — no production-readiness assertion |
+
+The operator confirmed no historical swaps. The main-side removal of
+`Musig2SecNonce::signed_flag` changes the size of an old encrypted nonce blob;
+that legacy-record compatibility is not required for this zero-history landing,
+but must be revisited if any pre-merge records are found or imported later.
+
+---
+
+## PR #65 follow-up: executable swap pairs, configuration, and refund recovery
+
+**Branch/Feature**: codex/pr65-recovered
+**Started**: 2026-09-22
+**Agent**: Codex (GPT-6) with Fuego Guardian reviewers
+**Status**: IN PROGRESS — fee accounting and live fund-handling gates remain
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify Qodo and residual claims against merged PR #65 | Codex + Fuego Guardian reviewers | 2026-09-22 | DONE |
+| 2 | Align dashboard pair mapping and gate staged pair relay/order admission | Codex / offer-pairs reviewer | 2026-09-22 | DONE |
+| 3 | Fix PulseChain example keys and validate GLEEC HTLC readiness for new swaps | Codex / config reviewer | 2026-09-22 | DONE |
+| 4 | Gate local offer publication and new swaps on executable, reachable clients | Codex (GPT-6) | 2026-09-25 | DONE — money-changing decisions force a fresh readiness check |
+| 5 | Repair SPV claim recording and independent per-leg refund recovery | Codex (GPT-6) | 2026-09-25 | DONE — source paths and focused SPV tests |
+| 6 | Bound malformed P2P taker identities and verify affected paths | Codex (GPT-6) | 2026-09-23 | DONE |
+| 7 | Apply PulseChain and CI naming convention fixes | Codex (GPT-6) | 2026-09-23 | DONE |
+| 8 | Resolve confirmed counterparty claim, XFG claim, and refund race outcomes before release | Codex / Fuego Guardian reviewer | 2026-09-25 | IN PROGRESS — direct path hardened; testnet race exercise pending |
+| 9 | Make atomic-swap fee accounting durable and idempotent | Codex (GPT-6) | 2026-09-25 | TODO — server RPC cannot safely retry after uncertain result |
+| 10 | Integrate recovered swap changes without unrelated EVM/alias work | Codex (GPT-6) | 2026-09-27 | DONE — reviewed integration branch merged with current Hearth work; unrelated working-tree edits preserved |
+| 11 | Close BTC/BCH/LTC/KMD new swaps until transport and consensus SPV validation are complete | Codex (GPT-6) | 2026-09-26 | DONE — source gate, linked build, and focused tests passed |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles | PASS — Codex (GPT-6), 2026-09-26; fresh Release build linked `xfg-swapd` and all six focused test executables after the final UTXO gate |
+| Focused tests pass | PASS — Codex (GPT-6), 2026-09-26; orderbook 115/115, swap state 12/12, Electrum SPV, ETH protocol 21/21, pair catalog, config, dashboard 2/2 |
+| All tasks done | PENDING — fee accounting, testnet races, and scoped integration; see `PR65_FOLLOWUP_ADVERSARIAL_REVIEW.md` |
+
+`graphify update .` was attempted on 2026-09-23 but failed inside the installed
+`hyppo` dependency (`cannot cache function '_center_distmat': no locator
+available`). No graph update was signed off.
+## Dashboard Parity, Network Profiles, and Testnet Safety
+
+**Branch/Feature**: `codex/evm-dropin-batch`
+**Started**: 2026-09-24
+**Agent**: Codex
+**Status**: IN PROGRESS
+
+The legacy SwapXFG TUI remains frozen but present. It will not be removed until
+both browser surfaces have live-data and execution parity, recovery workflows
+remain reachable, and the testnet integration gates below pass.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 0 | Replace the 64-bit counterparty-amount ceiling with versioned uint256 atomics, string-safe APIs, full-width EVM ABI/RLP, and non-EVM overflow rejection | Codex | 2026-09-27 | OFFLINE VERIFIED IN INTEGRATION BRANCH; FUNDED TESTNET PENDING |
+| 1 | Add explicit mainnet/testnet/dev profiles, isolated ports/data, service-reported network identity, dashboard badge, and fail-closed write gating | Codex | 2026-09-24 | IN PROGRESS |
+| 2 | Remove Hearth mock/random fallbacks and expose honest live, stale, unavailable, and error states | Codex | 2026-09-24 | TODO |
+| 3 | Add quote-first Hearth execution, slippage/min-output protection, correct limit-order units/expiry, and order management | Codex | 2026-09-24 | TODO |
+| 4 | Complete SwapXFG signed order placement/cancel/my-orders and real soft-offer fill/status flows without weakening recovery | Codex | 2026-09-24 | TODO |
+| 5 | Add deterministic fixtures, unit/UI tests, testnet integrations, and mainnet read-only smoke checks | Codex | 2026-09-24 | TODO |
+| 6 | Remove the frozen TUI only after every dashboard acceptance gate passes | Codex | 2026-09-24 | BLOCKED ON GATES |
+
+### Sign-Off
+
+The user confirmed no prior swaps exist; there is no deployed record set to
+migrate. The v2 new-swap wire still rejects amount/version mismatch before
+funding. Offline validation on the isolated worktree: `xfg-swapd` and
+`SwapDaemonLib` build; ETH protocol 21/21, state-machine SPV 10/10, audit
+regressions 36/36, production gates 19/19, pre-sig 9/9, pair catalog,
+generic EVM config, BSC/Polygon, and price-oracle tests pass. Dashboard Go
+tests and JS syntax check pass. The later swap-integration section above
+records the merged offline checks. This is not funded-chain validation.
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Network/profile mismatch tests | — | — | PENDING |
+| Hearth live-data and transaction-safety tests | — | — | PENDING |
+| SwapXFG order/fill/recovery tests | — | — | PENDING |
+| Testnet integration suite | — | — | PENDING |
+| Mainnet read-only smoke checks | — | — | PENDING |
+| Dashboard parity accepted; TUI removal authorized | — | — | NO |
 
 ---
 
@@ -2534,3 +2704,281 @@ the four tests aimed at it — `MixedRingIsUnresolvable`,
   `newTerm`.
 - Replay against a synced node unverified: the term-0 / DIGM_TERM whitelist change
   is v11+-gated but no v11-era block has been checked for such an output.
+
+---
+
+## Alias resolution integrity and Farcaster privacy review
+
+**Started**: 2026-09-23
+**Agent**: Codex
+**Status**: COMPLETE
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Update alias transfer to retain the new owner address and reject a destination that differs from the signed hash | Codex | 2026-09-25 | DONE |
+| 2 | Restore both fields on reorganization, persist rollback history, and rebuild older alias caches | Codex | 2026-09-25 | DONE |
+| 3 | Build, run alias tests, and review the consensus-facing diff | Codex | 2026-09-25 | DONE |
+| 4 | Audit public alias and Farcaster privacy exposure; record wallet-link safeguards | Codex | 2026-09-25 | DONE |
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Alias index test target builds | Codex | 2026-09-25 | PASS |
+| Alias tests pass (including transfer undo serialization) | Codex | 2026-09-25 | PASS |
+| Guardian review | Codex + Fuego Guardian | 2026-09-25 | PASS — no blocking defect; privacy caveats documented |
+| All tasks done | Codex | 2026-09-25 | PASS |
+
+---
+
+## Work-order follow-up: verify 88a4299c, fix consensus state bugs, repair swap regressions
+
+**Branch/Feature**: master
+**Started**: 2026-09-25
+**Agent**: Claude Opus 5.5
+**Status**: COMPLETE
+
+Verification of `88a4299c` (items 1, 2, 4, 5, 7 of the CD work order, committed
+without a build): item 1 correct; item 5 correct (`addHeader` overwrites, so a
+client cannot spoof `X-Remote-Addr`); 7.1.3, 7.1.5 and 7.2.2 correct. Three needed
+rework:
+
+- **Item 2 was incomplete.** The CD denominator `m_heatOnDeposit` was reduced when
+  a CD was spent, but a ring signature hides which member was spent. It missed
+  every CD that left through `CommitmentTransfer`, subtracted `HEAT_TERM` spends that
+  were never counted, and kept matured CDs in the denominator after they stopped
+  earning. Rebuilt from creation data: a CD is counted from creation until the
+  boundary closing its last credited epoch (`Currency::cdLastCreditedEpoch`, the
+  same window `calculateCdInterest` pays) via `m_cdExpiryByEpoch`. CDs created in a
+  boundary block start in the next epoch and no longer dilute the closing one.
+  Block cache version 13 → 14 forces a replay.
+- **Item 4 gated the wrong endpoints.** `/estimate_cd_yield` is the wallet's CD
+  withdrawal path (`NodeRpcProxy::getCdClaimInfo`); gating it on restricted nodes
+  made withdrawals claim zero interest and forfeit it. Fee-pool, epoch-history and
+  treasury data are public consensus state. Un-gated those four; gated the
+  operator's own swap database instead (`/listswaps`, `/getswapstatus`,
+  `/getactiveswaps`).
+- **7.1.1 broke the all-zero == consumed nonce encoding** that the swap state
+  machine persists (`test_presig_round` 8/9). Removed `signed_flag`;
+  `musig2_partial_sign` now refuses an all-zero nonce and erases the whole struct.
+
+New defects found and fixed:
+
+- **Empty Hearth pool after `rebuildCache()`.** The constructor seeded the pool;
+  the rebuild reset it to empty and never re-seeded, so any node that rebuilt its
+  cache (every node crossing a cache-version bump) diverged from the network.
+  `seedHearthPool()` now serves both paths. Removed the uncalled
+  `bootstrapAmmPool`/`setBootstrapAmount`.
+- **HEAT → XFG through asset classification.** Term-0 commitments were minted as
+  HEAT but spent as XFG, and every `CommitmentTransfer` input was XFG. Both sides
+  now use `Currency::classifyCommitmentTermAsset`, transfers resolve their ring
+  like spends, and a ring may not mix asset classes.
+- **Deferred CD yield (item 3).** XFG held back while the pool had no price was
+  minted into `CD_APY_POOL` but never priced into any epoch rate; the conversion
+  epoch's numerator now includes it.
+- **Adaptor extract byte order (regression from #64).** `secp_adaptor_extract`
+  returned the secret big-endian after signing took it little-endian, so the
+  daemon's `secret_key_to_public_key(t) == adaptorPoint` check rejected every
+  valid pure-PTLC extraction (swap-audit 36/37). Extract now returns little-endian.
+- **Dead tier-bonus bookkeeping** (`m_bonusWeightedByEpoch`, bonus epoch rates,
+  `loyaltyTierWeightPct`, loyalty constants) removed; the yield floor replaced it.
+- **Item 8 (partial).** One claim estimate (`Blockchain::estimateCdClaim`) now
+  serves `/estimate_cd_yield` and `InProcessNode`, using the CD's real term;
+  `claimable_interest` caps the base by the pool again. `WalletGreen` and
+  `WalletLegacy` withdrawals abort instead of claiming zero when the node cannot
+  report accrued interest.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify 88a4299c items 1, 2, 4, 5, 7 against code | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 2 | Seed Hearth pool in rebuildCache; regression test on a real Blockchain | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 3 | CD denominator from maturity schedule; boundary-block exclusion; cache v14 | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 4 | Price deferred CD yield into the conversion epoch | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 5 | Unify commitment asset classification; ring asset uniformity | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 6 | Remove dead tier-bonus bookkeeping and bootstrap helpers | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 7 | Correct restricted-RPC gating | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 8 | Shared CD claim estimate; withdrawal aborts instead of forfeiting interest | Claude Opus 5.5 | 2026-09-25 | DONE |
+| 9 | MuSig2 nonce guard without signed_flag | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 10 | Adaptor extract returns little-endian | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 11 | Build and run every test target | Claude Opus 5.5 | 2026-09-26 | DONE |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles | PASS — Daemon, SimpleWallet and all 40 test targets (Claude Opus 5.5, 2026-09-26) |
+| Tests pass | PASS — every unit target; core 150/150, swap-audit 37/37, presig 9/9, hearth 31/31, auction 57/57, p2p 61/61 (live e2e harnesses need network args, not run) |
+| Regression tests fail without the fix | PASS — rebuildCache test fails 148/150 with the seed call removed |
+| All tasks done | YES |
+
+---
+
+## HEAT CD deferral; limit-withdraw loop exit; Hearth transaction-layer review
+
+**Branch/Feature**: master
+**Started**: 2026-09-26
+**Agent**: Claude Opus 5.5
+**Status**: IN PROGRESS
+
+CDs are deferred so HEAT and Hearth run on their own first (owner's call,
+2026-09-25): `CD_ACTIVATION_HEIGHT` defaults to the v12 height; testnet keeps
+CDs from its v11 height. The mempool now validates outputs at the next block's
+height. A limit-withdraw `break` that let invalid blocks through is fixed.
+
+The burns/Hearth/LP review (two findings recovered from agent checkpoints, the
+rest traced by hand) found the v11 transaction layer has never worked end to
+end, from one root cause: the fee is `all inputs − all outputs`, summing XFG
+and HEAT atomic units. Consequences, each confirmed in code:
+- HEAT mint: the burned XFG minus the minted HEAT lands in `fee_summary`, and
+  v10+ coinbase validation requires the miner to claim it (~90% of every burn
+  at 10:1). Treasury-fund donations reach the miner the same way.
+- XFG→HEAT swaps always fail validation; limit deposits (both sides) and LP
+  adds always fail; limit withdrawals are refused by the mempool.
+- A HEAT→XFG swap underflows the mempool fee; `fill_block_template` adds it
+  to the coinbase while validation substitutes `minimumFee`, so every template
+  is invalid while that tx is pooled.
+- CD withdrawals pay their fee in HEAT, which the coinbase pays out as XFG.
+
+Fixed by one settlement function, `Blockchain::validateSettlement`, used by block
+validation, the mempool (`checkTransactionSettlement`) and the block template.
+A transaction carries at most one settlement tag; the tag becomes per-asset
+sources and sinks (`AssetFlows`); HEAT and LP must balance exactly and the fee is
+the XFG surplus (`settleAssetFlows`). Pool markers are sinks, never outputs. The
+function also covers every condition settlement relies on — `pushBlock` ignores
+`pushTransaction`'s result, so settlement must never be the one to discover a
+failure. Further changes:
+- Swaps are priced on the constant-product curve (`ammSwapNetOutput`); v11 priced
+  them linearly at spot, so a large swap drained the pool. Settlement and
+  reversal use the declared amounts; the 70% CD share of the fee is derived from
+  the declared output, so the reversal is exact.
+- Mints require the 8-block TWAP (the spot fallback let a swap earlier in the
+  block set the mint price) and are priced by the declared burn. Pricing by all
+  XFG removed minus the *minimum* fee credited any extra fee — which the miner
+  collects — as burned HEAT backing. The over-burn "premium" credit to the
+  treasury is gone: it was applied during validation and never reversed.
+- LP adds mint the declared shares (at most what the deposit earns) and the
+  reversal removes exactly those; it used to recompute them from the post-add
+  pool, which is wrong for the first deposit.
+- The retired 0x08 burn tag is refused at v11+ (see task 8 for v10).
+- The block template admits one reserve-moving transaction (swap, LP add or
+  remove) per block and each order id once, and uses the fee
+  `validateSettlement` returns.
+- `m_heatSupply` (metric only) counts minted HEAT, not pool payouts.
+
+Live on mainnet v10 (found in this review; tasks 8-9):
+- The 0x08 burn tag's amount was never checked against a burn, yet
+  `pushToBankingIndex` fed half of it to the Eternal Flame — and the v10+ block
+  reward re-emits the Eternal Flame. A crafted transaction could inflate every
+  later block reward. The wallets merely stopped creating the tag.
+- v10 blocks validate a `HeatMintAuth` mint's asset balance but never its
+  price: HEAT could be minted from a zero burn. v10 also settles legacy AMM tags
+  into the pool.
+- Mitigation now: the mempool relays none of these tags before v11 (policy, no
+  fork). Consensus: `HEATWAVE_TAG_CUTOFF_HEIGHT` rejects them in pre-v11 blocks
+  from that height — a soft fork, defaulting to the v11 height (no change) until
+  a release sets an earlier one. Whether either was ever used on mainnet cannot
+  be checked from this machine (no synced mainnet chain).
+
+v11 mints never fed the Eternal Flame: only 0x08 did, and the mint tag replaced
+it. `pushToBankingIndex` now routes a v11 mint's declared burn the way 0x08 was
+routed — all of it to the burn tally, `MINT_BURN_EF_PCT` (50%) to the Eternal
+Flame, `MINT_BURN_TREASURY_PCT` (50%) to the SWF — and the init rescan matches.
+Nothing undid the SWF share on a pop; `popBlock` now does, for both tags.
+
+WalletGreen (walletd, PaymentGate) HEAT builders, task 7a — compile-verified
+only; no e2e send is possible here (the block-serving RPC hang):
+- HEAT must balance exactly, so HEAT sends, CD creation, CD withdrawal and
+  rollover, and HEAT limit orders now take the XFG fee from XFG inputs. HEAT
+  sends had no XFG fee at all (fee 0, refused by every mempool); a CD paid its
+  fee out of HEAT.
+- Every input is added before any is signed. ITransaction refuses an input
+  once anything is signed, so a spend of two HEAT deposits threw, and a CD
+  withdrawal with a bonus claim threw (its extra was appended after signing).
+- Each HEAT deposit gets decoys of its own amount; all rings used the first
+  deposit's decoys, and rings index commitment outputs by amount.
+- HEAT limit orders (BUY_XFG) spend HEAT; they used to fund a HEAT escrow with
+  XFG. Prices are checked against the tick before building.
+- CD keys: a withdrawal re-derives the key from the view key when no secret was
+  stored — only createDeposit stored one, so CDs from heatDepositV10 could not
+  be withdrawn. Rollover gave the new CD a random secret it never stored: the
+  scanner could not find it and nothing could spend it. It now derives it
+  from the view key like every other owned output.
+- Legacy (pre-v10, multisig) deposits pay out XFG again; 7d83625bb had made
+  every payout HEAT, which consensus refuses — withdrawals of old deposits from
+  walletd have failed on mainnet since.
+
+Tasks 10-12 (owner review of swap pricing, 2026-09-28):
+- The block-time backstop filled resting limit orders at the pre-block spot
+  price. At its cap (5% of the XFG reserve) that beats the curve by more than
+  the 1% fee, so alternating sell and buy orders pulled about 0.2% of the pool
+  per block. Fills now take the curve against the reserves earlier fills left,
+  and an order's limit holds for its average price over the fill
+  (`ammLimitSellCapacity`, `ammLimitBuyCapacity`, `ammCostToTake`, which rounds
+  up so the reserve product never shrinks). BUY fills also added the CD fee
+  share to `cdHearthFeeAccumulator` twice while the reversal removed it once;
+  the epoch mint turned the extra into unbacked CD yield.
+- Selling a large amount of XFG on Hearth moves the pool hard (10,000 XFG into
+  the genesis pool: 0.1 → 0.025 HEAT per XFG), while minting at the TWAP gives
+  about twice the HEAT with no price impact. `sell_xfg` stays a Hearth sale but
+  shows both amounts and the price move, then asks; `/amm_quote` returns the
+  mint amount too.
+- walletd's `amm_swap` direction 0 burned XFG (it called the mint), while the
+  SimpleWallet RPC's `amm_swap` sold on Hearth. Both now sell on Hearth; minting
+  is `heat_mint` in both. `sell_xfg` / `buy_xfg` are RPC aliases in both.
+
+Tasks 13-15 (owner review, 2026-09-28):
+- A HEAT→XFG swap's CD fee share is XFG, and it was valued in HEAT at the
+  post-trade spot. A trade that spiked the price (900 HEAT into a 1,000 XFG /
+  100 HEAT pool: ~97×) credited ~61 HEAT of CD yield for a fee worth 0.63 HEAT —
+  unbacked HEAT at the epoch mint. Swaps and HEAT-paid limit fills now value it
+  at the TWAP of earlier blocks; with no TWAP yet it stays in the reserves.
+- The TWAP window dropped its oldest entry on every push, restored none on a
+  pop, and was never saved. After a reorg or a restart a node priced mints from
+  a different window than its peers; with mints now TWAP-only, a restarted node
+  would reject any block carrying a mint. `m_blockSpotHistory` keeps each v11
+  block's end-of-block price (1,000 blocks past the window), is saved with the
+  cache, and pops exactly; `twapBefore(h)` averages the 8 blocks below h, so
+  validation, settlement and reversal agree, and the per-swap CD records go.
+- No limit capped a swap's price impact (`MAX_MARKET_PRICE_DEVIATION_PCT` feeds
+  only an RPC estimate). Swaps must now keep the price within double or half of
+  the block's opening price (`HEARTH_MAX_BLOCK_PRICE_MOVE_PCT = 100`); limit
+  fills stay capped at 5% of the reserve per block. `sell_xfg` checks it first.
+- The seed had no LP shares, so the first deposit by anyone — or the Treasury's
+  first provisioning — owned the whole pool, and the bootstrap-repaid check
+  passed at once. The seed now carries √(xfg·heat) shares for its provider
+  (`m_seedLpShares`); later deposits earn their pro-rata slice. The provider
+  cannot remove them yet (task 16).
+
+Testnet: v11 has been active there since height 30, and these rules apply to its
+whole v11 history. Blocks carrying mints, treasury funds, CD creation or CD
+withdrawals were paid under the old fee rule and will not revalidate; the
+testnet needs a reset. Mainnet v11 (1,111,111) is not active.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | CD activation height: consensus gate, claim-age rule, wallet refusal, test | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 2 | Mempool output checks at the next block height | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 3 | Limit-withdraw validation: no loop exit on failure | Claude Opus 5.5 | 2026-09-26 | DONE |
+| 4 | XFG-only fee model: validateSettlement (block, mempool, template); swap/LP settlement + exact reversal | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 5 | Constant-product swap pricing (was linear at spot); mints TWAP-only, priced by the declared burn | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 6 | Wallet pricing: WalletGreen + SimpleWallet mint at TWAP, swaps quoted on the curve | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 7a | WalletGreen HEAT builders: XFG fee inputs, per-amount rings, add-then-sign (send, CD create/withdraw/rollover, HEAT limit orders, HEAT→XFG swap) | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 7b | WalletLegacy (SimpleWallet) HEAT builders: same fixes through its async request chain | Claude Opus 5.5 | 2026-09-27 | TODO |
+| 10 | Limit-order backstop fills priced on the curve, limits held on the average; BUY fills credited the CD fee twice | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 11 | `/amm_quote` returns `mint_output`; `sell_xfg` shows the Hearth and mint quotes and the price move, then confirms | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 12 | walletd `amm_swap` direction 0 sells on Hearth (it burned); `sell_xfg`/`buy_xfg` RPC aliases; wallet RPC quotes the curve when no output is given | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 13 | CD fee shares valued at the TWAP of earlier blocks (was the post-trade spot); TWAP from a saved per-block spot history that reverses exactly | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 14 | Per-block price band: swaps keep the price within double/half of the block's opening price | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 15 | Seed carries LP shares (√(xfg·heat)) held by its provider; cache v15 | Claude Opus 5.5 | 2026-09-28 | DONE |
+| 16 | Seed provider can remove the seed's shares: needs the provider's key in consensus and spendable LP outputs | — | — | TODO |
+| 8 | Pre-v11 HEAT/AMM tags and the unchecked 0x08 burn: mempool refuses them now; consensus cutoff height (default = v11) | Claude Opus 5.5 | 2026-09-27 | DONE |
+| 9 | v11 mint burns feed the burn tally, the Eternal Flame and the SWF (0x08's 50/50 routing); SWF share undone on pop | Claude Opus 5.5 | 2026-09-27 | DONE |
+
+### Sign-off
+| Check | Status |
+|-------|--------|
+| Build compiles | PASS (tasks 1-6): Daemon, SimpleWallet, PaymentGateService, test targets |
+| Tests pass | PASS (tasks 1-6): core 178/178, hearth 31/31, auction 57/57, p2p 61/61 |
+| Tests pass (tasks 8-9) | PASS: core 185/185, hearth 31/31, auction 57/57, p2p 115/115 |
+| Tests pass (tasks 10-12) | PASS: core 194/194, hearth 31/31, auction 57/57, p2p 115/115 |
+| Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
+| All tasks done | NO — tasks 7b and 16 open |

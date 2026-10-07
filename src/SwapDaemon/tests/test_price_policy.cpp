@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <map>
+#include <set>
 #include <string>
 
 using namespace XfgSwap;
@@ -90,6 +92,16 @@ int main() {
 
     check(rateToNum(0.0) == 0, "rateToNum(0) == 0");
     check(rateToNum(-5.0) == 0, "rateToNum(negative) == 0");
+
+    // scaled values in [2^63, 2^64) fit a uint64 but not a signed long long, which
+    // is what std::llround returns. They must convert exactly, not saturate or wrap.
+    check(rateToNum(1.0e12) == 10000000000000000000ULL,
+          "rate*1e7 = 1e19 (above INT64_MAX, below UINT64_MAX) converts exactly");
+    check(rateToNum(1.8e12) == 18000000000000000000ULL,
+          "rate*1e7 = 1.8e19 converts exactly");
+    check(rateToNum(9.0e11) == 9000000000000000000ULL,
+          "rate*1e7 = 9e18 (just under INT64_MAX) converts exactly");
+    check(rateToNum(1.9e12) == 0, "rate*1e7 above UINT64_MAX is refused");
     double back = 0.0;
     check(rateFromNum(r.rateNum, back), "rateFromNum round-trips");
     check(std::fabs(back - r.referenceRate) < 1e-6, "rateFromNum recovers the rate within 1e-6");
@@ -112,10 +124,11 @@ int main() {
     check(!withinRateGuard(std::numeric_limits<double>::quiet_NaN(), ref), "NaN proposed refused");
   }
 
-  // ── catalog: 29 pairs, six share ETH, SIA unexecutable
+  // ── catalog: every pair bound, fourteen share ETH, SIA unexecutable
   {
     std::vector<PairAssetBinding> b = allBindings();
-    check(b.size() == 29, "catalog binds 29 pairs");
+    check(b.size() == SWAP_PAIR_COUNT, "catalog binds every pair in SWAP_PAIR_CATALOG");
+    check(b.size() == 46, "catalog binds 46 pairs");
 
     int eth = 0, unpriced = 0, unexec = 0;
     for (const auto& x : b) {
@@ -124,8 +137,9 @@ int main() {
       if (!x.asset->priced) ++unpriced;
       if (!x.asset->executable) ++unexec;
     }
-    check(eth == 7, "seven pairs settle in ETH (Ethereum itself plus ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM)");
-    check(unpriced == 2, "exactly two assets are unpriced (KMD, GLEEC)");
+    check(eth == 14, "fourteen pairs settle in ETH (Ethereum itself, ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM "
+                     "and the seven generic-adapter ETH chains)");
+    check(unpriced == 12, "twelve pairs are unpriced (KMD, GLEEC and the ten new native assets)");
     check(unexec == 1, "exactly one asset is unexecutable (SC, 1e24)");
 
     const AssetDescriptor* sc = assetForSymbol("SC");
@@ -140,6 +154,45 @@ int main() {
 
     check(distinctSymbolsForFeed("defillama").size() == 21, "21 distinct DeFiLlama assets");
     check(distinctSymbolsForFeed("pyth").size() == 17, "17 Pyth-corroborated assets");
+  }
+
+  // ── the price catalog and the protocol pair catalog describe the same pairs
+  // SwapPairCatalog.h is the append-only protocol source of truth. If a pair is added
+  // there without a settlement-asset binding here, it must be a test failure, not a
+  // silently unpriced pair that nobody decided on.
+  {
+    std::map<uint8_t, const AssetDescriptor*> bound;
+    for (const auto& x : allBindings()) bound[static_cast<uint8_t>(x.pair)] = x.asset;
+    check(bound.size() == allBindings().size(), "no pair is bound twice");
+
+    // The only pair whose protocol ticker differs from its feed symbol: the TON pair
+    // settles in GRAM (see the matrix note on coingecko:the-open-network).
+    const std::map<std::string, std::string> tickerAlias = {{"TON", "GRAM"}};
+
+    for (size_t i = 0; i < SWAP_PAIR_COUNT; ++i) {
+      const SwapPairDescriptor& d = SWAP_PAIR_CATALOG[i];
+      auto it = bound.find(d.id);
+      const std::string who = std::string(d.symbol) + " (id " + std::to_string(d.id) + ")";
+      check(it != bound.end() && it->second != nullptr, who + " has a settlement-asset binding");
+      if (it == bound.end() || it->second == nullptr) continue;
+      const AssetDescriptor& a = *it->second;
+
+      std::string wantSymbol = d.assetTicker;
+      auto alias = tickerAlias.find(wantSymbol);
+      if (alias != tickerAlias.end()) wantSymbol = alias->second;
+      check(a.symbol == wantSymbol, who + " settles in " + wantSymbol + " per the protocol catalog, bound to " + a.symbol);
+
+      // Divisor must equal 10^decimals, except where it cannot fit a uint64.
+      uint64_t pow10 = 1;
+      bool fits = d.decimals <= 19;
+      for (unsigned n = 0; fits && n < d.decimals; ++n) pow10 *= 10;
+      if (a.executable) {
+        check(fits && a.atomicDivisor == pow10, who + " atomicDivisor equals 10^decimals");
+      } else {
+        check(!fits || a.atomicDivisor == 0, who + " is unexecutable only because its divisor does not fit a uint64");
+      }
+      check(a.atomicDivisorText == "1e" + std::to_string(d.decimals), who + " divisor text matches decimals");
+    }
   }
 
   // ── observation validation
@@ -239,6 +292,29 @@ int main() {
     FeedResult tonSecondary = makeFeed("pyth", "GRAM", 1.51, now - 5, now - 2, 0.0, false);
     PairQuote tonQ = buildPairQuote(27, tonPrimary, &tonSecondary, 0.158, pol, now);
     check(tonQ.status == QuoteStatus::OK && tonQ.settlementAsset == "GRAM", "TON pair prices in GRAM");
+
+    // requireCorroboration at the quote level: one feed is not enough, and the reason
+    // must say so rather than reporting a bogus counterpartyUsd failure.
+    PricePolicy strictPol = pol;
+    strictPol.requireCorroboration = true;
+    PairQuote strictSingle = buildPairQuote(1, primary, nullptr, 0.158, strictPol, now);
+    check(strictSingle.status == QuoteStatus::SINGLE_SOURCE, "strict policy keeps SINGLE_SOURCE as the status");
+    check(!strictSingle.managedOffersAllowed && !strictSingle.newSwapAllowed,
+          "strict policy blocks funding on a single feed");
+    check(strictSingle.reason.find("corroboration") != std::string::npos,
+          "strict policy explains that corroboration is required");
+    check(!strictSingle.counterpartyUsdOk, "strict policy does not price from an empty observation");
+    PairQuote strictBoth = buildPairQuote(1, primary, &secondary, 0.158, strictPol, now);
+    check(strictBoth.status == QuoteStatus::OK && strictBoth.newSwapAllowed,
+          "strict policy still quotes a corroborated pair");
+
+    // A generic-adapter pair with no verified feed id fails closed.
+    PairQuote hype = buildPairQuote(static_cast<uint8_t>(SwapPair::HYPEREVM), primary, &secondary, 0.158, pol, now);
+    check(hype.status == QuoteStatus::UNPRICED && !hype.newSwapAllowed,
+          "HYPEREVM has no verified feed id and fails closed");
+    PairQuote linea = buildPairQuote(static_cast<uint8_t>(SwapPair::LINEA), primary, &secondary, 0.158, pol, now);
+    check(linea.status == QuoteStatus::OK && linea.settlementAsset == "ETH",
+          "LINEA settles in native ETH and prices off ETH");
 
     FeedResult dead;
     dead.feedName = "defillama";

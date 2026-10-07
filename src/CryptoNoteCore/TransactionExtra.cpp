@@ -1792,15 +1792,14 @@ namespace CryptoNote
     const Crypto::PublicKey& recipientSpendPublicKey,
     Crypto::PublicKey& commitKey) {
 
+    // An unset spend key must be a hard failure. The all-zero encoding is a
+    // valid (order-4) curve point, so it would otherwise pass check_key, and a
+    // caller that forgot to populate the recipient's spend key would emit an
+    // output nobody can spend — or, if this fell back to the legacy form, one the
+    // sender and any view-key holder can. Protocol-owned outputs (pool escrow
+    // markers) do not come through here: they use computePoolCommitKey().
     if (recipientSpendPublicKey == Crypto::PublicKey{}) {
-      // Protocol-owned output. These are excluded from commitment-spend rings
-      // by their term (see Blockchain.cpp's pool-term unspendability guard),
-      // so there is no recipient spend authority to bind to.
-      const std::array<uint8_t, 32> depositSecret = deriveDepositSecret(derivation, outputIndex);
-      const DepositCommitmentKeys legacy = deriveLegacyCommitmentKeys(depositSecret);
-      if (!Crypto::check_key(legacy.commitKey)) return false;
-      commitKey = legacy.commitKey;
-      return true;
+      return false;
     }
 
     return deriveOwnerBoundCommitKey(derivation, outputIndex, recipientSpendPublicKey, commitKey);
@@ -1900,6 +1899,83 @@ namespace CryptoNote
     Crypto::generate_key_image(commitKey, spendSecret, outKeyImage);
     outSpendSecret = spendSecret;
     return true;
+  }
+
+  bool deriveRecordedCommitmentKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey* recipientSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    outKeyImage = Crypto::KeyImage{};
+
+    if (recipientSpendSecret != nullptr) {
+      Crypto::SecretKey ignoredScalar;
+      Crypto::KeyImage keyImage;
+      if (deriveOwnerBoundKeyImage(
+            derivation, outputIndex, commitKey, *recipientSpendSecret, ignoredScalar, keyImage)) {
+        outKeyImage = keyImage;
+        return true;
+      }
+    }
+
+    // Not owner-bound under this spend secret (or there is no spend secret).
+    // The legacy form needs only the view-derived ECDH secret, so it is derivable
+    // either way and stays trackable by a view-only wallet.
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+    if (legacy.commitKey == commitKey) {
+      outKeyImage = legacy.keyImage;
+      return true;
+    }
+    return false;
+  }
+
+  bool resolveCommitmentSpendKeys(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& publishedCommitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    CommitmentSpendKeys& out) {
+
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+
+    // P was never recorded, so this output predates the scanner that records it
+    // and was recognised through the legacy form. There is nothing to verify the
+    // legacy keys against; consensus rejects a signature over the wrong ring key.
+    if (publishedCommitKey == Crypto::PublicKey{}) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    Crypto::SecretKey spendScalar;
+    Crypto::KeyImage keyImage;
+    if (deriveOwnerBoundKeyImage(
+          derivation, outputIndex, publishedCommitKey, recipientSpendSecret, spendScalar, keyImage)) {
+      out.form = CommitmentDerivation::OwnerBound;
+      out.commitKey = publishedCommitKey;
+      out.spendScalar = spendScalar;
+      out.keyImage = keyImage;
+      return true;
+    }
+
+    // Not reproducible from the spend secret, so this is a pre-v11 output. Its
+    // scalar depends only on the ECDH secret, which is exactly why the owner-bound
+    // form exists; it stays spendable so old funds are not stranded.
+    if (legacy.commitKey == publishedCommitKey) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    return false;
   }
 
   namespace {

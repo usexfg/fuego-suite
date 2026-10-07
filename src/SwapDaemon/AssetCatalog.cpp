@@ -49,6 +49,18 @@ static const AssetDescriptor kAssets[] = {
   {"MON",  "coingecko:monad",                   "MON",   1000000000000000000ULL, "1e18", true, true},
   {"GRAM", "coingecko:the-open-network",        "GRAM",  1000000000ULL,   "1e9",   true,  true},
   {"DOT",  "coingecko:polkadot",                "DOT",   10000000000ULL,  "1e10",  true,  true},
+  // Native coins of the generic-adapter EVM pairs. No feed id is verified for any of
+  // these yet, so each is unpriced and fails closed rather than borrowing a lookalike id.
+  {"HYPE", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"RBTC", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"XDAI", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"FLR",  "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"KAIA", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"PLUME","",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"BEAM", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"MOVR", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"PEAQ", "",                                  "",      1000000000000000000ULL, "1e18", false, true},
+  {"SEI",  "",                                  "",      1000000000000000000ULL, "1e18", false, true},
 };
 
 static const size_t kAssetCount = sizeof(kAssets) / sizeof(kAssets[0]);
@@ -91,6 +103,24 @@ struct CatalogIndex {
       {SwapPair::OPTIMISM,   &kAssets[1]},   // ETH
       {SwapPair::TON,        &kAssets[21]},  // GRAM
       {SwapPair::DOT,        &kAssets[22]},  // DOT
+      // Generic-adapter EVM pairs (SwapPairCatalog.h ids 29-45). Seven settle in ETH.
+      {SwapPair::LINEA,      &kAssets[1]},   // ETH
+      {SwapPair::ZKSYNC,     &kAssets[1]},   // ETH
+      {SwapPair::HYPEREVM,   &kAssets[23]},  // HYPE
+      {SwapPair::INK,        &kAssets[1]},   // ETH
+      {SwapPair::RSK,        &kAssets[24]},  // RBTC
+      {SwapPair::GNOSIS,     &kAssets[25]},  // XDAI
+      {SwapPair::FLARE,      &kAssets[26]},  // FLR
+      {SwapPair::KAIA,       &kAssets[27]},  // KAIA
+      {SwapPair::SCROLL,     &kAssets[1]},   // ETH
+      {SwapPair::ABSTRACT,   &kAssets[1]},   // ETH
+      {SwapPair::PLUME,      &kAssets[28]},  // PLUME
+      {SwapPair::SONEIUM,    &kAssets[1]},   // ETH
+      {SwapPair::DOMA,       &kAssets[1]},   // ETH
+      {SwapPair::BEAM,       &kAssets[29]},  // BEAM
+      {SwapPair::MOONRIVER,  &kAssets[30]},  // MOVR
+      {SwapPair::PEAQ,       &kAssets[31]},  // PEAQ
+      {SwapPair::SEI,        &kAssets[32]},  // SEI
     };
 
     for (size_t i = 0; i < kAssetCount; ++i) {

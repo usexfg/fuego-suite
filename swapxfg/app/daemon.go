@@ -48,6 +48,15 @@ func RunHeadless(cfg Config) error {
 
 	mux := http.NewServeMux()
 
+	// Fail closed: the control API can make walletd sign. Without a token we
+	// refuse to listen rather than expose an unauthenticated signer.
+	if cfg.ControlToken == "" {
+		log.Fatalf("headless mode requires --control-token (or $XFG_CONTROL_TOKEN): " +
+			"the control API signs offers via walletd and must not be unauthenticated")
+	}
+	guards := &controlGuards{token: cfg.ControlToken, limiter: newControlLimiter(300 * time.Millisecond)}
+	log.Printf("control API: token required, host/origin validated, rate limited")
+
 	writeStatus := func(w http.ResponseWriter) {
 		bal, _ := wallet.GetBalance()
 		var totalOffers int
@@ -190,7 +199,7 @@ func RunHeadless(cfg Config) error {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", cfg.HeadlessPort),
-		Handler: mux,
+		Handler: guards.wrap(mux.ServeHTTP),
 	}
 
 	go func() {

@@ -4,6 +4,74 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Security audit round 1 fixes: H-1, M-1, M-2, M-3
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: IN PROGRESS — all four code fixes land and compile; regression tests not yet written; round 2 audit (economics, wallet files) not started
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md`
+
+### Changes
+
+- **H-1 (HIGH) — remote daemon crash on intra-tx duplicate key image.** `checkTransactionInputs` tested every input only against *chain* state, so a transaction spending the same key image twice passed validation and then failed in the connect-path rollback, which erased earlier inputs with a type-blind `boost::get<KeyInput>` and threw an uncaught `boost::bad_get` on the first non-`KeyInput` element. Reachable from any P2P peer or mempool submission. Fixed three ways: a read-only pre-pass in `checkTransactionInputs` that rejects duplicate key images across all five key-image-carrying input types (`KeyInput`, `CommitmentSpend`, `CommitmentTransfer`, `SwapEscrow`, `Unified`); a single unified spentKeys insert loop in `pushTransaction` that tracks what it inserted and erases exactly that on failure; and a `try/catch` barrier at the connect call site so any remaining malformed input is a rejected block, not a `std::terminate`. `popTransaction` was verified to be type-guarded already, so the unwind path is safe.
+- **M-1 (MEDIUM) — ignored connect return left partial state on an accepted block.** `pushTransaction`'s `bool` was discarded at the block-assembly call site, so a transaction that failed *after* mutating indices (spentKeys, multisig/escrow usage flags, vault UTXOs, supply counters) still produced an accepted block with permanently burned key images and frozen outputs. Fixed by (a) propagating the return into the block-rejection path, (b) tracking the first loop's spentKeys inserts and rolling them back on every later failure exit, and (c) adding a read-only pre-pass that resolves every fallible lookup (escrow funding tx, escrow usage entry, commitment key-image collision) *before* the mutating loop runs — so the mutating loop can no longer fail partway through and strand earlier mutations. Deliberately chosen over a sprawling undo ledger: an undo path in a rollback-sensitive consensus function carries its own divergence risk, which would be worse than the bug being fixed.
+- **M-2 (MEDIUM) — `SwapEscrow` was missing the Ed25519 subgroup check.** Every other spendable input type rejects key images outside the prime-order subgroup; swap-escrow did not. It was contained by dual marking (spentKeys + escrow usage entry), but must not rely on that alone. Added the identical `scalarmultKey(keyImage, L) == I` guard used by `check_tx_input`, `checkCommitmentSpendInput`, `checkCommitmentTransferInput` and `core::handle_incoming_tx`.
+- **M-3 (MEDIUM) — path traversal in walletd export.** `exportWallet` and `exportWalletKeys` joined the RPC-supplied `exportFilename` onto the wallet directory with no validation: `..` segments escaped at open time and an *absolute* name made `boost::filesystem::operator/` discard the base entirely, so `exportWalletKeys` could be steered into writing plaintext secret keys anywhere the process could write. Added `isConfinedExportFileName` (rejects empty, over-long, any separator in either flavour, `.`/`..`, absolute paths, and anything whose parsed filename differs from the input) and applied it at both sites. Authenticated-RPC reachability caps this at MEDIUM.
+- `docs/SECURITY_AUDIT_FIX_GUIDE.md` (new): full findings register including the four prior "CRITICAL" crypto claims that were **false positives** and must not be "fixed" (`crypto-ops.c` `sc_check`/`signum`/`sc_mulsub` — branchless, public inputs, and the `signum` claim of "division by -a" is factually wrong).
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Map master worktree, define audit partitions | opencode | 2026-10-08 | DONE |
+| 2 | Audit crypto primitives (RNG, zeroize, nonce, point validation) | opencode | 2026-10-08 | DONE |
+| 3 | Audit consensus (key images, supply, mint/burn, reorg, AMM/CD) | opencode | 2026-10-08 | DONE |
+| 4 | Audit swaps (SwapDaemon, adaptor crate, contracts, timelocks) | opencode | 2026-10-08 | DONE |
+| 5 | Audit network surface (P2p, HTTP, Rpc, deserialization, auth) | opencode | 2026-10-08 | DONE |
+| 6 | Audit wallets (key handling, zeroization, encryption) | opencode | 2026-10-08 | DONE |
+| 7 | Audit Go/Rust (swapxfg/app, tui, fuego-swapd-adaptor) | opencode | 2026-10-08 | DONE |
+| 8 | FP-check triage of all findings | opencode | 2026-10-08 | DONE |
+| 9 | H-1 intra-tx duplicate key image + type-aware rollback + barrier | opencode | 2026-10-08 | DONE |
+| 10 | M-1 propagate connect return + rollback + read-only pre-pass | opencode | 2026-10-08 | DONE |
+| 11 | M-2 SwapEscrow domain check | opencode | 2026-10-08 | DONE |
+| 12 | M-3 export filename confinement | opencode | 2026-10-08 | DONE |
+| 13 | L-1..L-4 (dead Unified arm, ChaCha8, Rust Debug, sodium_memzero) | opencode | — | **TODO** |
+| 14 | INFO batch (delete dead oaes code, popen hardening, contract notes) | opencode | — | **TODO** |
+| 15 | Regression tests for H-1/M-1/M-2/M-3 | opencode | — | **TODO** |
+| 16 | Round 2 audit: consensus economics + wallet file handling | opencode | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| `cmake` configure regenerate | opencode | 2026-10-08 | PASS (stale cache fixed — see below) |
+| `CryptoNoteCore` target builds | opencode | 2026-10-08 | PASS (no new warnings) |
+| `PaymentGate` target builds | opencode | 2026-10-08 | PASS |
+| `core_tests` / `ctest` | — | — | **PENDING** |
+| H-1 crafted-block harness (rejected, daemon alive, state clean) | — | — | **PENDING** |
+| M-3 traversal probe (`../`, absolute, `a/../../x`, empty) | — | — | **PENDING** |
+
+### Not verified
+
+Everything checkable so far is checked; the two gates that matter most are
+not. Nothing has been run at runtime. The rejection and rollback paths in
+`pushTransaction` are consensus-critical and are exercised here only by the
+compiler — `core_tests` has not been run, no crafted block has been pushed,
+and no traversal filename has been probed against a live walletd. Task 15
+must land before any of this is called fixed.
+
+### Incidental
+
+`build/release` was configured from an older commit and still listed
+`src/CryptoNoteCore/AssetType.cpp`, which no longer exists, so any build failed
+at the compile step with `no such file or directory` before touching real work.
+Re-running `cmake ../..` in `build/release` regenerated the file list and the
+build proceeded. Not a source change; noting it so the next person does not
+read it as a regression.
+
+---
+
 ## Phase 2: dual-feed PriceFeed interface, asset catalog and rate guard
 
 **Started**: 2026-10-01

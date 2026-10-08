@@ -259,6 +259,90 @@ A full `SwapDaemonLib` link is still not attempted — free disk is ~9 GiB with 
 
 ---
 
+## Security audit round 2: consensus economics and wallet files
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: ANALYSIS ONLY — no source changes. R2-1 is CRITICAL and needs a design decision, not a patch (GATE-1: approval required before touching consensus economics).
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md` section 5 (round-2 scope)
+
+### Findings
+
+- **R2-1 (CRITICAL) — the treasury vault spend key is derivable from public data.**
+  `src/CryptoNoteConfig.h:306` hardcodes `VAULT_KEY_SEED[] = "xfgo_treasury_vault_v1"`, and
+  `src/Treasury/VaultKeys.cpp:19-45` derives the spend key as
+  `hash_to_scalar(keccak(genesisHash || VAULT_KEY_SEED))`. Both inputs are public: the genesis
+  hash is the public first block, and the seed ships in every release binary. Anyone can
+  recompute the vault spend key. The only other barrier, `VaultPolicy::isPermitted`
+  (`src/Treasury/VaultPolicy.cpp:41-100`), is a pure content predicate — CD_APY_POOL passes if
+  any `CommitmentSpend` declares `claimedInterest > 0`, LP_RESERVE if an AMM add/remove tag is
+  present, GENERAL_RESERVE if a mint-auth tag is present — and none of them require proof of
+  knowledge of the vault key. The vault spend public key is never used to create on-chain
+  outputs in the consensus path, so there is no ring signature to fall back on either. What the
+  vault holds is CD_APY_POOL (the sole backing for every CD interest claim, per the fee-pool
+  aggregate cap in `checkCommitmentSpendInput`), BONUS_VAULT, and the treasury reserves — i.e.
+  protocol revenue and the collateral behind every depositor's yield. Reaching a spend still
+  requires getting a transaction into a block, so this is not a free remote steal, but it
+  removes the only cryptographic barrier to draining it. Fixing this is a protocol change
+  (rotate the seed per deployment, or move vault authorization behind a real key), so it needs
+  an activation/migration plan rather than a one-line change.
+- **R2-2 (LOW) — wallet files use ChaCha8.** `src/Wallet/WalletGreen.cpp:2293` encrypts key
+  records with ChaCha8. The construction around it is sound: HMAC-SHA256 over `iv || ciphertext`
+  with a separately derived, domain-separated MAC key (`deriveMacKey`, label
+  `"fuego-wallet-hmac"`), verified with constant-time `CRYPTO_memcmp` and fail-closed at
+  `:2255`. Same reduced-round primitive concern as round-1 L-2, now also on the wallet-file
+  path. Cheap fix (ChaCha20-Poly1305) but needs a wallet-file format version bump.
+- **R2-3 (INFO) — the 69/11/20 epoch fee split strands integer dust.**
+  `src/CryptoNoteCore/Blockchain.cpp:5082-5084` computes three independent floor divisions of the
+  same `epochSwapFees`. Because 69 + 11 + 20 = 100 the shares can never exceed the total, so
+  this is not inflation — but up to 2 atomic units per epoch are left unallocated rather than
+  routed. If exact conservation is intended, give the remainder to `cdShare` explicitly.
+- **R2-4 (PROCESS, high hazard) — domain skill documentation is stale and would cause a
+  regression if trusted.** `~/.config/opencode/skills/fuego-currency/SKILL.md` documents an
+  80/20 swap-fee split and a 60/40 treasury split. The code is 69/11/20
+  (`CryptoNoteConfig.h:260,265,285`); 60/40 applies only to the treasury *sub*-allocation
+  (`TREASURY_LP_PCT`, `TREASURY_RESERVE_PCT`). An agent trusting that skill could "correct"
+  working revenue routing back to 80/20. Worth fixing before it misleads anyone.
+- **R2-5 (LOW, follow-up) — early return from mutating epoch work.**
+  `processBlockEpochWork` returns `false` mid-way at `Blockchain.cpp:5104` (bonus-vault
+  overflow guard) after epoch accounting has begun. On the cache-rebuild path (`:1233-1236`)
+  that `false` only logs and returns, leaving the node serving a partially-rebuilt cache. This
+  is the M-1 pattern again. Practically unreachable — the guard needs `bonusHeat` near
+  `UINT64_MAX` — so it is hardening, not an active bug. The `pushBlock` path at `:5044`
+  propagates the `false`; whether that caller unwinds cleanly was not traced.
+
+### Verified sound in this scope
+
+Fee split cannot over-allocate (69+11+20=100, all floor). Epoch CD denominator correctly
+excludes CDs created in the closing block. Wallet-file AEAD uses proper key separation and
+constant-time tag verification. `MINT_BURN` 50/50 and treasury 60/40 sub-allocation match
+`AGENTS.md`.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify fee-split constants against code, not skill docs | opencode | 2026-10-08 | DONE |
+| 2 | Audit treasury vault key derivation (R2-1) | opencode | 2026-10-08 | DONE |
+| 3 | Audit epoch fee split arithmetic (R2-3) | opencode | 2026-10-08 | DONE |
+| 4 | Audit wallet-file encryption + MAC (R2-2) | opencode | 2026-10-08 | DONE |
+| 5 | Audit epoch-work failure paths (R2-5) | opencode | 2026-10-08 | DONE |
+| 6 | Decide R2-1 remediation approach | — | — | **TODO (needs owner decision)** |
+| 7 | Correct stale fuego-currency skill docs (R2-4) | — | — | **TODO** |
+| 8 | Trace pushBlock(:5044) epoch-failure unwind | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| R2-1 severity + evidence | opencode | 2026-10-08 | PASS (derivation traced end to end) |
+| Fee-split conservation | opencode | 2026-10-08 | PASS (cannot exceed total) |
+| Wallet-file AEAD construction | opencode | 2026-10-08 | PASS (key separation + constant-time verify) |
+| R2-1 fix implemented | — | — | **NOT STARTED — GATE-1 approval required** |
+
+---
+
 
 ## Security audit round 1 fixes: H-1, M-1, M-2, M-3
 

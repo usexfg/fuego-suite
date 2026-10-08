@@ -2061,3 +2061,101 @@ an unfilled placeholder — the correct behaviour for a template.
    the base58/version layer, independent of the RIPEMD-160 fix, and will produce
    unusable DCR addresses. **Not touched — fixing it needs the correct Decred
    base58 alphabet and version constants verified against a dcrdata address.**
+
+---
+
+## Feature: Maison typeface selector — 2026-09-28
+
+### What changed
+
+Four candidate faces are now selectable from the nav while the maison register
+is active. Each is a separate `@font-face` family rather than a re-declaration
+of one, so the browser cannot serve a face cached against the wrong weight.
+
+| Key | Family | Files | Character |
+|-----|--------|-------|-----------|
+| `saira` | Saira (already vendored) | — | the existing look, and the default |
+| `cormorant` | Cormorant (variable) | 1 | high-contrast serif, the maison signature |
+| `bitter` | Bitter (variable) | 1 | slab serif |
+| `sourceserif` | Source Serif 4 (variable) | 1 | warm serif |
+| `plex` | IBM Plex Sans | 3 (400/500/600) | technical sans |
+
+The variable fonts carry 100–900 in a single file. IBM Plex Sans ships discrete
+400/500/600 because those are the only weights the interface asks for (600 ×31,
+500 ×5, 400 ×1).
+
+**Register and typeface are independent axes.** Every `data-typeface` rule is
+scoped `[data-theme="maison"][data-typeface="…"]`, so leaving maison makes the
+attribute inert rather than clearing it — which is what lets the choice survive a
+round trip. The control itself is `hidden` outside maison, because the other two
+registers pin their own face and a live-looking selector there would be a lie.
+
+**`--font-mono` is deliberately untouched.** The depth ladder and the order
+columns depend on tabular figures aligning down the column; none of these
+candidates are monospaced, so IBM Plex Mono stays for all numerics.
+
+**TTF, not woff2.** `pyftsubset` is present but `brotli` is absent from that
+interpreter, so woff2 output is impossible in this toolchain. 2.6 MB for the
+curated six, served locally.
+
+**Boot script.** The typeface resolves inline before first paint, same as the
+register, so the face is in place rather than snapping in afterwards.
+
+### Harness improvements this required
+
+- `El` had `setAttribute` as a no-op and no `getAttribute`/`removeAttribute`, so
+  no attribute-driven control could be tested at all. It now stores attributes
+  for real, still mirroring onto the instance for the harness's own reads.
+- A CSS-level gate: every `data-typeface` rule must be scoped to maison, name a
+  family that has an `@font-face`, and point at a file that is actually shipped.
+  The scope check was written twice — the first version searched text *before*
+  the rule body rather than the selector itself, and would have passed on an
+  unscoped rule. Verified by temporarily unscoping a rule and confirming it
+  fails.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Stage 4 candidate families into `static/fonts` | opencode | 2026-09-28 | DONE |
+| 2 | `@font-face` for each, weighted correctly | opencode | 2026-09-28 | DONE |
+| 3 | Scope typeface rules to the maison register | opencode | 2026-09-28 | DONE |
+| 4 | `MaisonTypeface` module: apply, persist, observe register | opencode | 2026-09-28 | DONE |
+| 5 | Nav control on all 3 pages; visible in maison only | opencode | 2026-09-28 | DONE |
+| 6 | Resolve before first paint in all 3 boot scripts | opencode | 2026-09-28 | DONE |
+| 7 | Harness: real attributes + CSS typeface gate | opencode | 2026-09-28 | DONE |
+| 8 | Verify scope gate fails on an unscoped rule | opencode | 2026-09-28 | DONE |
+| 9 | Build, serve, confirm all 6 fonts 200 `font/ttf` | opencode | 2026-09-28 | DONE |
+| 10 | Visual review of each face in a real browser | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| `go vet` | opencode | 2026-09-28 | PASS (clean) |
+| `go test ./...` | opencode | 2026-09-28 | PASS |
+| Node tests: hearth_order, swapxfg_pairs | opencode | 2026-09-28 | PASS (6/6, 4/4) |
+| Harness: 3 pages × 3 registers | opencode | 2026-09-28 | PASS (9/9) |
+| Every typeface rule scoped to maison | opencode | 2026-09-28 | PASS (verified to fail when unscoped) |
+| Every family used has an `@font-face` | opencode | 2026-09-28 | PASS |
+| Every `@font-face` url resolves on disk | opencode | 2026-09-28 | PASS (10/10 per sheet) |
+| Unknown typeface rejected, attribute cleaned up | opencode | 2026-09-28 | PASS |
+| Choice survives a register round trip | opencode | 2026-09-28 | PASS |
+| Braces balanced in both sheets | opencode | 2026-09-28 | PASS (352/352, 338/338) |
+| All 6 fonts 200 `font/ttf` from the release build | opencode | 2026-09-28 | PASS |
+| Visual review of each face in a real browser | — | — | **PENDING** |
+
+### Not verified
+
+Every checkable property is checked. What is not is the whole point of the
+feature: **nobody has looked at these faces rendered.** Cormorant at 9px in a
+depth ladder may be beautiful and illegible; Source Serif 4's optical sizing may
+need a word to look right at these sizes. Task 10 requires opening the page.
+
+### Open recommendation
+
+`dashboard/fonts/` — the 75 MB, 322-file upstream source drop, now tracked in
+git — is dead weight: the build reads only the six curated files in
+`static/fonts/`. Left as-is because the folder was added deliberately and
+untracking it is the owner's call, not mine. Recommend either dropping it from
+the index (history keeps it either way) or relocating it outside the repo.

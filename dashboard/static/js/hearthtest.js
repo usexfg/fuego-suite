@@ -638,6 +638,7 @@ const HearthTest = (() => {
 
   function init() {
     initThemeSwitcher();
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     onTheme(() => {
       if (chart) {
         try { chart.setStyles(ChartStyle.build(tokens(CHART_TOKENS))); }

@@ -49,7 +49,16 @@ class El {
   querySelector() { return null; }
   closest() { return null; }
   getBoundingClientRect() { return { width: 800, height: 400, top: 0, left: 0 }; }
-  setAttribute() {} removeAttribute() {}
+  // Real attribute storage. Mirrored onto the instance so the harness's own
+  // `documentElement['data-theme']` reads keep working, but get/remove must be
+  // genuine or any attribute-driven control is untestable.
+  setAttribute(k, v) { this._attrs = this._attrs || {}; this._attrs[k] = String(v); this[k] = String(v); }
+  getAttribute(k) { return (this._attrs && k in this._attrs) ? this._attrs[k] : null; }
+  removeAttribute(k) {
+    if (this._attrs) delete this._attrs[k];
+    delete this[k];
+  }
+  hasAttribute(k) { return !!(this._attrs && k in this._attrs); }
   get firstChild() { return this.children[0] || null; }
   focus() {} click() {} remove() {}
 }
@@ -106,7 +115,6 @@ function buildDom(html) {
   };
   doc.documentElement = new El('html');
   doc.documentElement.style = {};
-  doc.documentElement.setAttribute = (k, v) => { doc.documentElement[k] = v; };
   doc.head = new El('head');
   doc.body = new El('body');
   const byId = id => registry[id] || liveIds.get(id) || null;
@@ -218,12 +226,41 @@ function buildDom(html) {
 }
 
 const PAGES = [
-  ['hearth.html', ['vendor/klinecharts.min.js', 'js/archive.js', 'js/app.js', 'js/hearth.js'], 'Hearth'],
-  ['hearthtest.html', ['vendor/klinecharts.min.js', 'js/archive.js', 'js/hearthtest.js'], 'HearthTest'],
-  ['swapxfg.html', ['vendor/lightweight-charts.standalone.production.js', 'js/app.js', 'js/swapxfg.js'], 'SwapXFG']
+  ['hearth.html', ['vendor/klinecharts.min.js', 'js/typeface.js', 'js/archive.js', 'js/app.js', 'js/hearth.js'], 'Hearth'],
+  ['hearthtest.html', ['vendor/klinecharts.min.js', 'js/typeface.js', 'js/archive.js', 'js/hearthtest.js'], 'HearthTest'],
+  ['swapxfg.html', ['vendor/lightweight-charts.standalone.production.js', 'js/typeface.js', 'js/app.js', 'js/swapxfg.js'], 'SwapXFG']
 ];
 
 const THEMES = ['maison', 'fulltrade', 'reference'];
+
+// The typeface rules must all be scoped to the maison register, and every family
+// they name must have a matching @font-face, or the switch silently falls back.
+(function checkTypefaceCss() {
+  for (const sheet of ['style.css', 'hearthtest.css']) {
+    const css = fs.readFileSync(path.join(ROOT, 'css', sheet), 'utf8');
+    // Capture the FULL selector, not just the attribute fragment — otherwise a
+    // rule that forgets [data-theme="maison"] would still be counted as scoped.
+    const rules = [...css.matchAll(/([^{}]*\[data-typeface="([a-z]+)"\])\s*\{([^}]*)\}/g)];
+    if (!rules.length) throw new Error(`${sheet}: no data-typeface rules found`);
+    for (const [, selector, name, body] of rules) {
+      if (!/\[data-theme="maison"\]/.test(selector)) {
+        throw new Error(`${sheet}: typeface rule "${name}" is not scoped to maison: ${selector.trim()}`);
+      }
+      const family = (body.match(/--font-sans:\s*'([^']+)'/) || [])[1];
+      if (!family) throw new Error(`${sheet}: typeface rule "${name}" sets no --font-sans`);
+      if (!new RegExp(`font-family:\\s*'${family}'`).test(css)) {
+        throw new Error(`${sheet}: '${family}' is used but has no @font-face`);
+      }
+    }
+    // Every @font-face must point at a file that is actually shipped.
+    for (const m of css.matchAll(/url\('\.\.\/fonts\/([^']+)'\)/g)) {
+      if (!fs.existsSync(path.join(ROOT, 'fonts', m[1]))) {
+        throw new Error(`${sheet}: @font-face references missing file fonts/${m[1]}`);
+      }
+    }
+  }
+  console.log('typeface CSS: rules scoped to maison, families declared, files present\n');
+})();
 
 let failures = 0;
 (async () => {
@@ -243,14 +280,16 @@ for (const [page, scripts, globalName] of PAGES) {
 ;globalThis.__mod     = (typeof ${globalName} !== 'undefined') ? ${globalName} : undefined;
 ;globalThis.__archive = (typeof Archive !== 'undefined') ? Archive : undefined;
 ;globalThis.__data    = (typeof XfgArchive !== 'undefined') ? XfgArchive : undefined;
+;globalThis.__face    = (typeof MaisonTypeface !== 'undefined') ? MaisonTypeface : undefined;
 ;globalThis.__apply   = (typeof App !== 'undefined' && App.applyTheme) ? App.applyTheme
                       : (typeof applyTheme !== 'undefined') ? applyTheme : undefined;`;
       (0, eval)(bundle);
       const mod = global.__mod;
       const archive = global.__archive;
       const data = global.__data;
+      const face = global.__face;
       const apply = global.__apply;
-      global.__mod = global.__apply = global.__archive = global.__data = undefined;
+      global.__mod = global.__apply = global.__archive = global.__data = global.__face = undefined;
       if (typeof mod !== 'object' || typeof mod.init !== 'function') {
         throw new Error(`${globalName} did not export an init()`);
       }
@@ -340,6 +379,48 @@ for (const [page, scripts, globalName] of PAGES) {
           throw new Error('caption did not follow the timeframe change');
         }
         extra += ' · main chart shows real archive';
+      }
+
+      // The typeface is a maison-only axis. It must apply inside maison, drop
+      // out for the other registers, and survive a round trip.
+      if (face) {
+        const box = dom.registry['typeface-switch'];
+        const sel = dom.registry['maison-typeface'];
+        if (!box || !sel) throw new Error('typeface control missing from the page');
+
+        const attr = () => global.document.documentElement.getAttribute('data-typeface');
+        const isMaison = () => global.document.documentElement.getAttribute('data-theme') === 'maison';
+
+        // start maison: the control must be visible and the default applied
+        apply('maison', false);
+        face.sync();
+        if (box.hidden !== false) throw new Error('typeface control hidden while maison is active');
+        if (attr() !== null) throw new Error(`default typeface set an attribute: ${attr()}`);
+
+        // each candidate must apply a real attribute
+        for (const name of ['cormorant', 'bitter', 'sourceserif', 'plex']) {
+          face.apply(name);
+          if (attr() !== name) throw new Error(`typeface "${name}" did not apply (got ${attr()})`);
+          if (face.apply('nonsense') !== face.DEFAULT) {
+            throw new Error('an unknown typeface was accepted');
+          }
+          if (attr() !== null) throw new Error('rejected typeface left an attribute behind');
+        }
+
+        // Scoped to maison. The attribute deliberately survives the register
+        // switch — the CSS selector stops matching, which is what makes the
+        // choice persist across a round trip. What must change is the control's
+        // visibility, and the scoping of the rules themselves.
+        face.apply('cormorant');
+        apply('reference', false);
+        face.sync();
+        if (box.hidden !== true) throw new Error('typeface control still shown outside maison');
+
+        apply('maison', false);
+        face.sync();
+        if (box.hidden !== false) throw new Error('typeface control did not return with maison');
+        if (attr() !== 'cormorant') throw new Error(`stored typeface not restored (got ${attr()})`);
+        extra += ' · typeface ok';
       }
 
       // The overlay controls must work against the real 9.8 API. Drawing then

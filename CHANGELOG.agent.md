@@ -138,6 +138,31 @@ without -- so the corroboration path is genuinely exercised.
 this arm64 host. Still outstanding: the bounded poll worker, the two funding gates, the
 status snapshot, and a full build once disk allows.
 
+### CoinGecko API key header corrected
+
+An operator-supplied key was measured rather than assumed, and the first guess was
+wrong. CoinGecko exposes two header names and a free-tier key works under only one:
+
+| Header | Result with a free-tier key |
+|---|---|
+| `x-cg-demo-api-key` | **12/12 requests succeeded** |
+| `x-cg-pro-api-key` | 2/12, then 429 |
+
+The reader originally sent `x-cg-pro-api-key`, so a free key would have silently counted
+against the keyless 3/minute bucket and the feed would have looked broken for a reason
+that had nothing to do with the code. CoinGecko does **not** validate keys on
+`/simple/price` -- a deliberately bogus key also returns HTTP 200 -- so this could never
+have been caught by checking status codes, only by bursting and counting.
+
+Verified through the real reader with the key supplied only via `CG_API_KEY`:
+
+- key present: 5/5 fetches succeeded, 31 assets each
+- key absent:  0/5, every one `HTTP 429 rate limited (keyless tier allows 3 requests/minute)`
+
+The key is read from the environment and is never written to the repository. It was
+shared in a chat transcript during this work and should be treated as exposed and
+rotated.
+
 ---
 
 ## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe

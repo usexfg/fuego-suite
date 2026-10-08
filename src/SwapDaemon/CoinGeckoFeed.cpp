@@ -153,7 +153,13 @@ FeedResult CoinGeckoFeed::fetch(const PricePolicy& policy) {
     const char* env = std::getenv("CG_API_KEY");
     if (env != nullptr) key = env;
   }
-  if (!key.empty()) headers.emplace("x-cg-pro-api-key", key);
+  // The demo header, not the pro one. Measured 2026-10-04 with a free-tier key:
+  //   x-cg-demo-api-key -> 12/12 requests succeeded
+  //   x-cg-pro-api-key  -> 2/12 then 429
+  // So a free key under the pro header silently counts against the keyless bucket.
+  // CoinGecko does not validate keys on /simple/price at all -- a bogus key also
+  // returns 200 -- so this cannot be detected by status code, only by measuring.
+  if (!key.empty()) headers.emplace("x-cg-demo-api-key", key);
 
   std::string body;
   bool got = false;

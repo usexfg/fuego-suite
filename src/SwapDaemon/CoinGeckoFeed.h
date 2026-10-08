@@ -47,9 +47,14 @@ public:
   FeedResult fetch(const PricePolicy& policy) override;
 
   void setBaseUrl(const std::string& url) { m_baseUrl = url; }
-  // Optional. A keyless account is capped at 3 requests per minute, measured on
-  // 2026-10-04 (200,200,200,429,429,...). One batched poll a minute fits, but
-  // there is no headroom for a second caller on the same host.
+  // Optional, and read from CG_API_KEY in the environment when unset here.
+  //
+  // Keyless is capped at 3 requests per minute (measured 2026-10-04: 200,200,200,
+  // 429,429,...). One batched poll a minute fits, but with no headroom for a second
+  // caller on the same host. A free-tier key sent as x-cg-demo-api-key handled 12/12
+  // requests in the same burst that keyless throttled to 3.
+  //
+  // Never commit the key: pass it through the environment.
   void setApiKey(const std::string& key) { m_apiKey = key; }
 
 private:

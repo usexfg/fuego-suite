@@ -456,6 +456,10 @@ endif()
 option(BUILD_TESTS "Build test executables" OFF)
 if(BUILD_TESTS)
     enable_testing()
+    # external/CMakeLists.txt gates the vendored gtest on DO_TESTS, which nothing
+    # ever set, so -DBUILD_TESTS=ON configured tests/ but never built gtest and
+    # every test executable failed to link with "library 'gtest' not found".
+    set(DO_TESTS ON)
     add_subdirectory(tests)
 endif()
 

@@ -1768,6 +1768,216 @@ namespace CryptoNote
     return keys;
   }
 
+  std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex) {
+    uint8_t preimage[36];
+    memcpy(preimage, &derivation, 32);
+    uint32_t outIdx = static_cast<uint32_t>(outputIndex);
+    preimage[32] = outIdx & 0xFF;
+    preimage[33] = (outIdx >> 8) & 0xFF;
+    preimage[34] = (outIdx >> 16) & 0xFF;
+    preimage[35] = (outIdx >> 24) & 0xFF;
+    Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> depositSecret;
+    memcpy(depositSecret.data(), secHash.data, 32);
+    return depositSecret;
+  }
+
+  DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
+    return deriveCommitmentKeys(depositSecret);
+  }
+
+  bool deriveCommitmentOutputKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    // An unset spend key must be a hard failure. The all-zero encoding is a
+    // valid (order-4) curve point, so it would otherwise pass check_key, and a
+    // caller that forgot to populate the recipient's spend key would emit an
+    // output nobody can spend — or, if this fell back to the legacy form, one the
+    // sender and any view-key holder can. Protocol-owned outputs (pool escrow
+    // markers) do not come through here: they use computePoolCommitKey().
+    if (recipientSpendPublicKey == Crypto::PublicKey{}) {
+      return false;
+    }
+
+    return deriveOwnerBoundCommitKey(derivation, outputIndex, recipientSpendPublicKey, commitKey);
+  }
+
+  bool deriveOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    if (!Crypto::check_key(recipientSpendPublicKey)) {
+      return false;
+    }
+    if (!Crypto::derive_public_key(derivation, outputIndex, recipientSpendPublicKey, commitKey)) {
+      return false;
+    }
+    return Crypto::check_key(commitKey);
+  }
+
+  bool matchOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+    Crypto::PublicKey& outMatchedSpendKey,
+    bool& outAmbiguous) {
+
+    outAmbiguous = false;
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // underive_public_key solves P - tG = B for the single B that produced this
+    // output, so it is evaluated once. Iterating it per candidate key would
+    // return the same B each time and report a false ambiguity.
+    Crypto::PublicKey candidate;
+    if (!Crypto::underive_public_key(derivation, outputIndex, commitKey, candidate)) {
+      return false;
+    }
+    if (!Crypto::check_key(candidate)) {
+      return false;
+    }
+    if (spendPublicKeys.find(candidate) == spendPublicKeys.end()) {
+      return false;
+    }
+
+    // A genuine second match would require a different spend public key to
+    // produce the identical output key at the same index, which cannot happen
+    // for distinct keys. Confirm the recovered key really does re-derive the
+    // output rather than trusting the subtraction alone.
+    Crypto::PublicKey verify;
+    if (!Crypto::derive_public_key(derivation, outputIndex, candidate, verify)) {
+      return false;
+    }
+    if (verify != commitKey) {
+      outAmbiguous = true;
+      return false;
+    }
+
+    outMatchedSpendKey = candidate;
+    return true;
+  }
+
+  bool deriveOwnerBoundKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    Crypto::SecretKey& outSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // derive_secret_key throws on a non-canonical scalar. Validate first so a
+    // bad secret is reported as a rejection rather than an exception.
+    Crypto::PublicKey spendPublic;
+    if (!Crypto::secret_key_to_public_key(recipientSpendSecret, spendPublic)) {
+      return false;
+    }
+
+    Crypto::SecretKey spendSecret;
+    Crypto::derive_secret_key(derivation, outputIndex, recipientSpendSecret, spendSecret);
+
+    // The derived scalar must reproduce the published output key. A mismatch means
+    // the wrong spend secret, so no key image may be produced for it.
+    Crypto::PublicKey check;
+    if (!Crypto::secret_key_to_public_key(spendSecret, check)) {
+      return false;
+    }
+    if (check != commitKey) {
+      return false;
+    }
+
+    Crypto::generate_key_image(commitKey, spendSecret, outKeyImage);
+    outSpendSecret = spendSecret;
+    return true;
+  }
+
+  bool deriveRecordedCommitmentKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey* recipientSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    outKeyImage = Crypto::KeyImage{};
+
+    if (recipientSpendSecret != nullptr) {
+      Crypto::SecretKey ignoredScalar;
+      Crypto::KeyImage keyImage;
+      if (deriveOwnerBoundKeyImage(
+            derivation, outputIndex, commitKey, *recipientSpendSecret, ignoredScalar, keyImage)) {
+        outKeyImage = keyImage;
+        return true;
+      }
+    }
+
+    // Not owner-bound under this spend secret (or there is no spend secret).
+    // The legacy form needs only the view-derived ECDH secret, so it is derivable
+    // either way and stays trackable by a view-only wallet.
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+    if (legacy.commitKey == commitKey) {
+      outKeyImage = legacy.keyImage;
+      return true;
+    }
+    return false;
+  }
+
+  bool resolveCommitmentSpendKeys(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& publishedCommitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    CommitmentSpendKeys& out) {
+
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+
+    // P was never recorded, so this output predates the scanner that records it
+    // and was recognised through the legacy form. There is nothing to verify the
+    // legacy keys against; consensus rejects a signature over the wrong ring key.
+    if (publishedCommitKey == Crypto::PublicKey{}) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    Crypto::SecretKey spendScalar;
+    Crypto::KeyImage keyImage;
+    if (deriveOwnerBoundKeyImage(
+          derivation, outputIndex, publishedCommitKey, recipientSpendSecret, spendScalar, keyImage)) {
+      out.form = CommitmentDerivation::OwnerBound;
+      out.commitKey = publishedCommitKey;
+      out.spendScalar = spendScalar;
+      out.keyImage = keyImage;
+      return true;
+    }
+
+    // Not reproducible from the spend secret, so this is a pre-v11 output. Its
+    // scalar depends only on the ECDH secret, which is exactly why the owner-bound
+    // form exists; it stays spendable so old funds are not stranded.
+    if (legacy.commitKey == publishedCommitKey) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    return false;
+  }
+
   namespace {
   struct DepositKeyData {
     Crypto::KeyDerivation derivation;

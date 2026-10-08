@@ -52,6 +52,55 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Phase 2h: full CMake build verified, and the swap test suite wired to ctest
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE
+
+### The build was never actually blocked by disk
+
+The "not enough disk" caveat attached to phases 2c-2g was wrong. `build/release/` already
+held a cache configured for this host:
+
+    Boost_INCLUDE_DIR:PATH=/opt/homebrew/include      # Boost 1.89, arm64
+    OPENSSL_SSL_LIBRARY:/opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.dylib
+
+`/usr/local/lib` has Boost **headers only and no libraries**, which is why ad-hoc
+`clang++` invocations exploded on Boost internals. Pointing at Homebrew was the whole fix;
+6.1 GB free was never the constraint. Disk went 6.2 -> 6.1 GB for a full `SwapDaemonLib`
+plus every pricing test.
+
+### What this unblocked
+
+`SwapDaemonLib` builds clean, which compiles **`SwapDaemon.cpp` and `OfferManager.cpp`** --
+the two files phases 2c-2g could only claim were unverified. The `m_oracle` argument
+passing into `OfferManager` and the `recordCompletedTrade` rate guard are now real compiled
+code rather than reviewed-but-unbuilt edits.
+
+### Cherry-pick
+
+`5fb22f6f4`, `6862bc215` and `614906bd0` were cherry-picked onto
+`merge/keyderiv-owner-bound-final` with no conflicts, after a concurrent session switched
+branches and left the CoinGecko and worker files absent from the working tree.
+
+### Gates
+
+    SwapDaemonLib              Built (exit 0)
+    test_price_policy          423 checks, 0 failures
+    test_coingecko_feed         61 checks, 0 failures
+    test_pyth_feed              48 checks, 0 failures
+    test_price_worker           36 checks, 0 failures
+    test_defillama_feed         29 checks, 0 failures
+    test_price_oracle_defects   27 checks, 0 failures
+    test_price_oracle_arb       PASS
+    ctest (7 pricing suites)   100% passed, 0.10 sec
+
+### Still outstanding
+
+The two funding gates and the status snapshot. The worker is still not constructed by
+`SwapDaemon`, which is now compilable, so that wiring is no longer blocked.
+
 ## Phase 2g: bounded poll worker
 
 **Started**: 2026-10-04
@@ -180,13 +229,19 @@ source lists, the test target, and the `add_test` registration.
 `PythFeed` is **kept but left unconfigured** -- it is tested and fail-closed, so it is
 harmless, and it works again if Pyth resumes publishing. It is not the second source.
 
-### Also fixed: four test targets were never registered
+### The ctest gap, and a correction
 
-`test_price_oracle_defects`, `test_defillama_feed`, `test_pyth_feed` and now
-`test_coingecko_feed` had `add_executable` blocks but were missing from
-`_TEST_DAEMON_TARGETS`, so `ctest` never ran them. They pass as standalone binaries,
-which is how the gap went unnoticed; they had passed every gate while being unreachable
-from CI.
+Phase 2f claimed it had fixed this by adding four targets to `_TEST_DAEMON_TARGETS`.
+**That claim was wrong.** That loop only sets `RUNTIME_OUTPUT_DIRECTORY`; it never calls
+`add_test()`. `src/CMakeLists.txt` contained **zero** `add_test()` calls, so the entire
+`test_daemons` suite -- including pre-existing targets like `test_swap_pair_catalog` and
+`test_swap_hashlock`, not just mine -- was built and runnable by hand but invisible to
+`ctest` and therefore to CI.
+
+Fixed for real: a guarded `add_test()` loop over `_TEST_DAEMON_TARGETS`, checking `TARGET`
+and that the type is `EXECUTABLE` since the list also carries helper targets. `ctest -N`
+now reports **50 tests** where it previously reported none. The 7 pricing suites all pass
+through `ctest`.
 
 ### Sign-off
 

@@ -1087,6 +1087,21 @@ foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
   set_target_properties(${_tgt} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/test_daemons")
 endforeach()
+
+# Register these with ctest. The loop above only redirected the binaries; without
+# add_test() the whole test_daemons suite was built and runnable by hand but invisible
+# to ctest and therefore to CI. Guarded on TARGET + EXECUTABLE because the list also
+# carries helper targets that produce no runnable test.
+if(BUILD_TESTS)
+  foreach(_tgt IN LISTS _TEST_DAEMON_TARGETS)
+    if(TARGET ${_tgt})
+      get_target_property(_tgt_type ${_tgt} TYPE)
+      if(_tgt_type STREQUAL "EXECUTABLE")
+        add_test(NAME ${_tgt} COMMAND ${_tgt})
+      endif()
+    endif()
+  endforeach()
+endif()
 include(GNUInstallDirs)
 
 install(TARGETS Daemon RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

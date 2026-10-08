@@ -305,6 +305,7 @@ std::vector<PairAssetBinding> allBindings() {
 std::vector<std::string> distinctSymbolsForFeed(const std::string& feedName) {
   const CatalogIndex& idx = index();
   if (feedName == "defillama") return idx.defiLlamaIds;
+  if (feedName == "coingecko") return idx.defiLlamaIds;  // same coingecko:* ids
   if (feedName == "pyth")      return idx.pythSymbols;
   return {};
 }
@@ -314,6 +315,7 @@ std::vector<PairAssetBinding> bindingsForFeed(const std::string& feedName) {
   for (const auto& b : index().bindings) {
     if (b.asset == nullptr) continue;
     if (feedName == "defillama" && b.asset->priced) out.push_back(b);
+    else if (feedName == "coingecko" && b.asset->priced) out.push_back(b);
     else if (feedName == "pyth" && !b.asset->pythSymbol.empty()) out.push_back(b);
   }
   return out;

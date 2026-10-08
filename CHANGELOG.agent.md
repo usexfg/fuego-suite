@@ -52,6 +52,94 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Phase 2f: CoinGecko replaces Pyth as the second price source
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- live, corroborated quotes confirmed
+
+### Why the switch
+
+Phase 2e shipped a Pyth reader and proved Pyth cannot serve prices. CoinGecko was
+measured working on the same day, so it becomes the second source. Coverage:
+
+| | Pyth on-chain | CoinGecko |
+|---|---|---|
+| assets priced | 9 of 23 (14 revert) | **31 of 31** |
+| age of what answered | 47.7-640.8 days | 78-88 s |
+| requests | 1 batch | 1 batch |
+| confidence value | yes (a band) | **no** |
+
+CoinGecko also needs no second id table: its ids are the same `coingecko:*` strings
+DeFiLlama already uses, minus the prefix, so `kFeedMeta` stays one source of truth.
+
+### Rate limit is a hard design constraint
+
+Measured on 2026-10-04, keyless: 8 rapid requests returned
+`200, 200, 200, 429, 429, 429, 429, 429`. The tier allows **3 requests per minute**.
+Therefore:
+
+- One batched `/simple/price` call covers all 31 assets. A per-asset loop would 429 on
+  the third asset, so batching is correctness, not optimisation.
+- **No retry on 429.** Retrying inside the window extends the block.
+- `CG_API_KEY` is read from the environment when set and sent as `x-cg-pro-api-key`;
+  absent it, the keyless tier is used. A poll interval of 60 s leaves no headroom for a
+  second caller on the same host, which is why a key is worth having.
+
+### Behaviour that differs from the DeFiLlama reader
+
+- **No confidence.** `confidenceSupplied` stays false, so `PricePolicy`'s confidence
+  floor is skipped for this feed. Weaker than DeFiLlama's 0.99, and recorded as such
+  rather than faked.
+- **No per-asset symbol**, so identity cannot be checked against `expectedFeedSymbol`
+  the way the DeFiLlama parser does. CoinGecko keys the response by the id requested,
+  so a response key we did not ask for is refused instead of being priced. This is the
+  equivalent guard, not the same one.
+- `include_last_updated_at=true` is mandatory: without it there is no provider clock and
+  the policy rejects the observation.
+
+### Files
+
+`CoinGeckoFeed.h` / `.cpp` (new), `tests/test_coingecko_feed.cpp` (new, 61 checks).
+`AssetCatalog` registers `"coingecko"` as a feed name in `distinctSymbolsForFeed` and
+`bindingsForFeed`. No change to `PricePolicy` was needed: the cross-check compares by
+asset symbol and is already feed-agnostic. `src/CMakeLists.txt` gains the source in both
+source lists, the test target, and the `add_test` registration.
+
+`PythFeed` is **kept but left unconfigured** -- it is tested and fail-closed, so it is
+harmless, and it works again if Pyth resumes publishing. It is not the second source.
+
+### Also fixed: four test targets were never registered
+
+`test_price_oracle_defects`, `test_defillama_feed`, `test_pyth_feed` and now
+`test_coingecko_feed` had `add_executable` blocks but were missing from
+`_TEST_DAEMON_TARGETS`, so `ctest` never ran them. They pass as standalone binaries,
+which is how the gap went unnoticed; they had passed every gate while being unreachable
+from CI.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_coingecko_feed`: **61 checks, 0 failures**. `test_pyth_feed`: **48 checks,
+0 failures**. `test_price_policy`: **423 checks, 0 failures**. `test_defillama_feed`:
+**29 checks, 0 failures**. `test_price_oracle_defects`: **27 checks, 0 failures**.
+`test_price_oracle_arb`: **PASS**. `verify-defillama-assets.py`: exit 0.
+
+Live, both feeds in one process: DeFiLlama **31/31**, CoinGecko **31/31**, per-asset
+relative difference 0.001%-0.164%, ETH quote `ok` with both feeds and `single-source`
+without -- so the corroboration path is genuinely exercised.
+
+`SwapDaemon.cpp` remains uncompiled here: `/usr/local/include/boost` is x86_64-only on
+this arm64 host. Still outstanding: the bounded poll worker, the two funding gates, the
+status snapshot, and a full build once disk allows.
+
+---
+
 ## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe
 
 **Started**: 2026-10-04

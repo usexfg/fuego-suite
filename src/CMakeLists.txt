@@ -253,6 +253,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/PriceOracle.cpp
     SwapDaemon/DefiLlamaFeed.cpp
     SwapDaemon/PythFeed.cpp
+    SwapDaemon/CoinGeckoFeed.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -687,6 +688,7 @@ add_executable(SwapDaemon
     SwapDaemon/PriceOracle.cpp
     SwapDaemon/DefiLlamaFeed.cpp
     SwapDaemon/PythFeed.cpp
+    SwapDaemon/CoinGeckoFeed.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -806,6 +808,12 @@ target_link_libraries(testnet-wallet-cli PRIVATE
 add_executable(test_pyth_feed
     SwapDaemon/tests/test_pyth_feed.cpp)
 target_link_libraries(test_pyth_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: CoinGecko /simple/price parser (canned bodies)
+add_executable(test_coingecko_feed
+    SwapDaemon/tests/test_coingecko_feed.cpp)
+target_link_libraries(test_coingecko_feed PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
@@ -1026,6 +1034,10 @@ set(_TEST_DAEMON_TARGETS
     test_adaptor_roundtrip
     test_price_oracle_arb
     test_price_policy
+    test_price_oracle_defects
+    test_defillama_feed
+    test_coingecko_feed
+    test_pyth_feed
     test_swap_hashlock
     test_sol_htlc_address
     test_sol_e2e

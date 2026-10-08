@@ -251,6 +251,8 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/DefiLlamaFeed.cpp
+    SwapDaemon/PythFeed.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -683,6 +685,8 @@ add_executable(SwapDaemon
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/DefiLlamaFeed.cpp
+    SwapDaemon/PythFeed.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -797,6 +801,24 @@ target_link_libraries(testnet-wallet-cli PRIVATE
     Serialization
     ${JSONCPP_LIBRARIES}
 )
+
+# SwapDaemon unit test: Pyth on-chain getPriceUnsafe decoder (recorded payloads)
+add_executable(test_pyth_feed
+    SwapDaemon/tests/test_pyth_feed.cpp)
+target_link_libraries(test_pyth_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
+add_executable(test_defillama_feed
+    SwapDaemon/tests/test_defillama_feed.cpp)
+target_link_libraries(test_defillama_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: PriceOracle regressions (seed asset, divisor, TWAP, band)
+add_executable(test_price_oracle_defects
+    SwapDaemon/tests/test_price_oracle_defects.cpp)
+target_link_libraries(test_price_oracle_defects PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 set_target_properties(testnet-wallet-cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src")
 

@@ -1,9 +1,23 @@
 # DeFiLlama counterparty asset matrix (Phase 1 audit)
 
 Companion machine-readable data: `defillama-asset-matrix.json`
-Acceptance test: `scripts/verify-defillama-assets.py` (live; exit 0 = consistent)
+Identity audit: `scripts/verify-defillama-assets.py` (live; exit 0 = identities consistent; stale observations are reported)
 
 Status: audited 2026-10-01 against `https://coins.llama.fi/prices/current/<coingecko ids>`.
+
+## Integration update — 2026-10-04
+
+The current protocol catalog is `src/SwapDaemon/SwapPairCatalog.h`: **46 pairs**,
+with 33 distinct settlement assets. The 17 generic EVM adapters have explicit
+bindings; seven price from ETH and ten native assets have no verified feed id.
+An unpriced descriptor means that its identifier has not been verified, which
+is different from proving that no provider serves it.
+
+The provider-age default is **600 seconds**, matching `PricePolicy`. The live
+identity audit reports stale observations and does not certify quote readiness.
+Feed transports, managed-offer integration, and worker/status wiring remain
+unfinished Phase 2 work. The table below covers all current ids; later measured
+sections describe the original Phase 1 audit and its 29-pair revision.
 
 ## Why the settlement asset is not the ticker
 
@@ -28,25 +42,25 @@ is the wrong input for pair 4.
 
 | ID | Enum | Locks | div | DeFiLlama id | Sym | Status |
 |----|------|-------|-----|--------------|-----|--------|
-| 0 | SOL | SOL (lamports) | 1e9 | `coingecko:solana` | SOL | priced |
+| 0 | SOL | SOL | 1e9 | `coingecko:solana` | SOL | priced |
 | 1 | ETH | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
 | 2 | XMR | XMR | 1e12 | `coingecko:monero` | XMR | priced |
 | 3 | BCH | BCH | 1e8 | `coingecko:bitcoin-cash` | BCH | priced |
-| 4 | ARB | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
-| 5 | BASE | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
-| 6 | KMD_SPV | KMD | 1e8 | — | KMD | **unpriced** |
+| 4 | ARB | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 5 | BASE | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 6 | KMD_SPV | KMD | 1e8 | — | KMD | unpriced |
 | 7 | BNB | BNB | 1e18 | `coingecko:binancecoin` | BNB | priced |
 | 8 | DCR | DCR | 1e8 | `coingecko:decred` | DCR | priced |
 | 9 | BTC | BTC | 1e8 | `coingecko:bitcoin` | BTC | priced |
 | 10 | LTC | LTC | 1e8 | `coingecko:litecoin` | LTC | priced |
 | 11 | POLYGON | POL | 1e18 | `coingecko:polygon-ecosystem-token` | POL | priced |
-| 12 | GLEEC | GLEEC | 1e18 | — | GLEEC | **unpriced** |
-| 13 | ROBINHOOD | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 12 | GLEEC | GLEEC | 1e18 | — | GLEEC | unpriced |
+| 13 | ROBINHOOD | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
 | 14 | AVAX | AVAX | 1e18 | `coingecko:avalanche-2` | AVAX | priced |
 | 15 | CRO | CRO | 1e18 | `coingecko:crypto-com-chain` | CRO | priced |
-| 16 | BOB | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
-| 17 | SIA | SC | **1e24** | `coingecko:siacoin` | SC | **unexecutable** |
-| 18 | UNICHAIN | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 16 | BOB | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 17 | SIA | SC | 1e24 | `coingecko:siacoin` | SC | unexecutable |
+| 18 | UNICHAIN | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
 | 19 | PLASMA | XPL | 1e18 | `coingecko:plasma` | XPL | priced |
 | 20 | DOGE | DOGE | 1e8 | `coingecko:dogecoin` | DOGE | priced |
 | 21 | DASH | DASH | 1e8 | `coingecko:dash` | DASH | priced |
@@ -54,9 +68,26 @@ is the wrong input for pair 4.
 | 23 | PULSECHAIN | PLS | 1e18 | `coingecko:pulsechain` | PLS | priced |
 | 24 | ZANO | ZANO | 1e12 | `coingecko:zano` | ZANO | priced |
 | 25 | MONAD | MON | 1e18 | `coingecko:monad` | MON | priced |
-| 26 | OPTIMISM | **ETH** | 1e18 | `coingecko:ethereum` | ETH | priced |
-| 27 | TON | GRAM | 1e9 | `coingecko:the-open-network` | GRAM | priced, **client unwired** |
+| 26 | OPTIMISM | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 27 | TON | GRAM | 1e9 | `coingecko:the-open-network` | GRAM | priced |
 | 28 | DOT | DOT | 1e10 | `coingecko:polkadot` | DOT | priced |
+| 29 | LINEA | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 30 | ZKSYNC | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 31 | HYPEREVM | HYPE | 1e18 | — | HYPE | unpriced |
+| 32 | INK | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 33 | RSK | RBTC | 1e18 | — | RBTC | unpriced |
+| 34 | GNOSIS | XDAI | 1e18 | — | XDAI | unpriced |
+| 35 | FLARE | FLR | 1e18 | — | FLR | unpriced |
+| 36 | KAIA | KAIA | 1e18 | — | KAIA | unpriced |
+| 37 | SCROLL | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 38 | ABSTRACT | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 39 | PLUME | PLUME | 1e18 | — | PLUME | unpriced |
+| 40 | SONEIUM | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 41 | DOMA | ETH | 1e18 | `coingecko:ethereum` | ETH | priced |
+| 42 | BEAM | BEAM | 1e18 | — | BEAM | unpriced |
+| 43 | MOONRIVER | MOVR | 1e18 | — | MOVR | unpriced |
+| 44 | PEAQ | PEAQ | 1e18 | — | PEAQ | unpriced |
+| 45 | SEI | SEI | 1e18 | — | SEI | unpriced |
 
 Totals: 29 pairs, **21 distinct priced assets** (7 pairs share ETH: Ethereum itself plus ARB,
 BASE, ROBINHOOD, BOB, UNICHAIN and OPTIMISM), 27 pairs priced live, 2 unpriced (KMD, GLEEC).
@@ -337,3 +368,5 @@ manipulable: a sustained attack can move the denominator while DeFiLlama's count
 numerator stays correct, and a two-sided guard against the moved denominator does not
 remove that exposure. With no pool-based offer cap in force, the oracle bounds *display and
 rate consistency*; it does not make uncapped automated liquidity economically safe.
+
+The native GRAM settlement name is also documented in [TON’s primary currency description](https://docs.ton.org/start-here).

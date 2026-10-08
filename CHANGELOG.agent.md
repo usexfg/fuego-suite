@@ -1,8 +1,264 @@
+## Restore after concurrent branch switch (2026-10-04)
+
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- restored onto `security/audit-fixes-2026-10`
+
+### What happened
+
+The working tree moved underneath this work: `/Users/aejt/xfgo` was switched from
+`keyderiv` to `merge/keyderiv-owner-bound` and then to
+`security/audit-fixes-2026-10` by a concurrent session, and this shell's cwd had
+silently reset to the wallet repo, so a verification step reported "file not found"
+for files that had existed minutes earlier. A concurrent session had preserved the
+uncommitted work as `a92028c90` ("WIP: preserve uncommitted keyderiv-era work before
+master merge"), reachable from `stash-dashboard-wip`, so nothing was lost.
+
+### How it was restored
+
+A wholesale replay was NOT safe: HEAD had **diverged** from `a92028c90`
+(`git merge-base --is-ancestor` fails), and the other session is mid security-audit
+work. Restoring the tree wholesale would have reverted their changes. So:
+
+- **Restored wholesale** (files HEAD holds only in an older, pre-pricing form, and
+  which their in-flight work does not touch -- their dirty set was
+  `Blockchain.cpp`, the `secp256k1` submodule and a new audit guide):
+  `PriceFeed.h`, `AssetCatalog.cpp`, `PricePolicy.cpp`, `PriceOracle.{h,cpp}`,
+  `test_price_policy.cpp`, `verify-defillama-assets.py`, both matrix docs.
+- **Restored as new files**: `DefiLlamaFeed.{h,cpp}`, `PythFeed.{h,cpp}`,
+  `test_defillama_feed.cpp`, `test_pyth_feed.cpp`, `test_price_oracle_defects.cpp`,
+  `probe-pyth-liveness.py`.
+- **Patched surgically, never replaced** (diverged and shared):
+  `OfferManager.{h,cpp}` (oracle injected), `SwapDaemon.cpp` (oracle passed to
+  OfferManager, uncomputable-rate log), `src/CMakeLists.txt` (2 sources into both
+  source lists, 3 test targets), this file.
+- **Deliberately NOT restored**: `src/SwapDaemon/Crypto/ripemd160.{cpp,h}` and
+  `tests/test_ripemd160.cpp`. Those are deleted at HEAD relative to `a92028c90`
+  because they are the other session's newer security work, not ours.
+
+`SwapPairCatalog.h` was already identical between the two trees, so the 46-pair
+catalog needed no action.
+
+### Verification note
+
+The shell's `grep -c` was used several times as a gate and silently returned grep's
+*exit status* rather than a match count, so a couple of intermediate "passing" checks
+were meaningless. Gate results below were re-run with explicit assertions.
+
+---
+
 # Source Change Log
 
 Every feature/fix requires a task list with sign-off. Agents record name, date, and status when completing work.
 
 ---
+
+## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE (reader + ids + tests) -- **the source itself is NOT currently usable**
+
+### Headline finding: Pyth is not a live source today
+
+Every available read path was tested on 2026-10-04. None returns a fresh price:
+
+| Path | Result |
+|------|--------|
+| Hermes classic `/v2/price_feeds/latest` | HTTP 422. Root cause found: the deployment **ignores the `ids` filter entirely** -- `/v2/price_feeds?ids=<anything>` returns all 1881 feeds, including for 64 zeros. Only bulk metadata works. |
+| Hermes `/v2/updates/price_feed/latest` | HTTP 404, route absent. |
+| `hermes-stable.pyth.network` | Unreachable, DNS does not resolve. |
+| Pythnet RPC | Unreachable. |
+| **On-chain `eth_call getPriceUnsafe`** | Contract answers, but **14 of 23 ids revert** (never published on that chain) and the 9 that answer are **47.7 to 640.8 days stale** (median 130 days). |
+
+The on-chain case is the dangerous one: a contract that has stopped being written to still
+returns whatever it last stored. BTC reads $64,735 from 2026-07-23 and AVAX $35.92 from
+2025-01-01. Every one of the 9 would be rejected by the 600 s staleness gate.
+
+### Changes
+
+- `src/SwapDaemon/PythFeed.h` / `.cpp` (new): on-chain reader. One JSON-RPC batch with a
+  single `eth_call` per id, decoding the four ABI words of `getPriceUnsafe`
+  (`int64 price, uint64 conf, int32 expo, uint32 publishTime`). `parsePythBatch` is pure
+  (takes `now` as a parameter) and applies the shared `validateObservation` gate, so a
+  stale or unpublished feed yields `NO_DATA` rather than a months-old price. RPC url and
+  contract address are **required with no defaults** -- there is deliberately no fallback,
+  since guessing either would silently price the wrong asset.
+- `AssetDescriptor::pythId` added, and the catalog now carries **23 real Pythnet price ids**
+  resolved from live Hermes metadata. Every id was matched against its canonical
+  `Crypto.<TICKER>/USD` feed. The ETH/USD id `0xff61491a...0dace` independently matches the
+  value in Pyth's own documentation, and the Ethereum contract
+  `0x4305FB66699C3B2702D4d05CF36551390A4c69C6` was confirmed to hold code via `eth_getCode`.
+- `PricePolicy.cpp`: `validateObservation` un-`static`ed and declared in `PriceFeed.h`, so
+  the feed reader and the quote path cannot disagree about what "usable" means.
+- `scripts/probe-pyth-liveness.py` (new): re-runnable probe reporting each path, each
+  on-chain publishTime and its age, and exit 0 only when something is genuinely fresh.
+- `scripts/verify-defillama-assets.py`: catalog regex extended to 5 columns.
+
+### Two corrections the tests forced
+
+- **Function selector.** A hand-rolled Keccak gave `getPriceUnsafe(bytes32)` = `0x5f51bbd3`.
+  Validated against the two canonical Keccak-256 vectors, the repo's implementation gives
+  **`0x96834ad3`**. The wrong selector would have silently reverted every call.
+- **Confidence direction.** Pyth's `conf` is an absolute price band, so *smaller is better*,
+  while `PricePolicy::confidence` is a [0,1] quality score where *higher* is better
+  (DeFiLlama sends 0.99 directly) and `minConfidence` is 0.8. Passing Pyth's value
+  straight through would have failed every feed. Converted as `quality = 1 - band/price`.
+
+### Operational consequence
+
+None, provided the feed stays unconfigured: `PricePolicy` treats the secondary feed as
+optional, so a dead Pyth feed does not block trading. DeFiLlama alone yields
+`QuoteStatus::SINGLE_SOURCE` with managed offers and new swaps still allowed. What is lost
+is the cross-check, so `crossChecked` quotes are currently unobtainable.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_pyth_feed`: **48 checks, 0 failures**, using the real captured payload values
+(`price=190533915588 conf=106428258 expo=-8 publishTime=1786985890`) rather than a
+hand-typed hex string -- an earlier hand-typed literal was 254 chars instead of 256 and
+the parser correctly rejected it, which is the failure mode the encoding helper now
+prevents. `test_price_policy`: **276 checks, 0 failures**. `test_defillama_feed`: **29 checks,
+0 failures**. `test_price_oracle_defects`: **27 checks, 0 failures**.
+`test_price_oracle_arb`: **PASS**. `verify-defillama-assets.py`: exit 0. Live DeFiLlama
+fetch: 31/31 assets. `probe-pyth-liveness.py`: exit 1 with **0 fresh**.
+
+Still outstanding: the bounded poll worker, the two funding gates, the status snapshot, and
+a full build once disk allows.
+
+---
+
+## Phase 2d: PriceOracle defect fixes (wrong asset, invented divisor, dead band, dead live path)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — 27 regression checks pass, pre-existing tests unaffected
+
+### Fixes
+
+1. **OPTIMISM priced off the wrong asset.** `getSeedRate(OPTIMISM)` returned `SEED_OP_USD / SEED_XFG_USD`, but Optimism locks native ETH — `HashedTimelock.lock` is payable with no ERC-20 argument, exactly like ARB and BASE. It now uses `SEED_ETH_USD`, and all six ETH-settling pairs (OPTIMISM, ARB, BASE, BOB, UNICHAIN, ROBINHOOD) resolve to one rate.
+
+2. **`ctrDivisor()` invented a divisor.** The `default:` branch returned `1e8` for a pair with no descriptor, which silently mis-scales every amount comparison. It now returns `0.0` and callers treat that as "cannot convert".
+
+3. **A zero-rate trade poisoned the TWAP.** `recordCompletedSwap` accepted trades whose rate could not be computed. `getTwap` computes `weightedSum += rate * volume`, so such a trade was weighted as zero and dragged the average toward zero rather than being ignored. `recordCompletedSwap` now drops non-positive rates, and `SwapDaemon::recordCompletedTrade` logs the reason instead of silently recording a zero.
+
+4. **`OfferManager` never observed the live price.** The no-composite fallback called the static `PriceOracle::getSeedRate`, so managed offers were priced against a constant. `OfferManager` now holds a `PriceOracle&` (passed `m_oracle` from `SwapDaemon`) and the fallback calls `getEffectiveRate`, which applies the live Hearth XFG/USD when one has been published. A pair with no rate at all now logs and returns 0, which `tick` already handles.
+
+5. **The rate band was asymmetric and self-contradicting.** The code divided by `0.80` above but compared against a hardcoded `0.20` below, admitting a −80% quote, while the header documented `0.50` and an inline comment block argued both directions at once. `m_floorThreshold` is now a fractional tolerance (0.20) producing `ref/1.20 <= rate <= ref/0.80`, identical to `withinRateGuard`. `setFloorThreshold` now means tolerance and refuses values outside `(0, 1)` so a bad config cannot disable the band. The header comment was corrected.
+
+### Two further defects found while testing
+
+- **`setLiveXfgUsd` stored anything.** No validation at all, so a negative price was persisted. `getEffectiveRate` masked it by falling back to the seed, but every other reader of `getLiveXfgUsd()` would have seen it. Now refuses non-positive and non-finite values.
+- **The bootstrap window was wider than the band, making the band dead code.** `validateRate` returns from its bootstrap branch before reaching the band, and that branch used `m_maxBootstrapDrift = 0.50` — so a node with zero recorded trades (the common case) accepted quotes ±50% off seed and never evaluated the ±20% guard at all. `m_maxBootstrapDrift` now defaults to the same `0.20`, so one tolerance governs both paths.
+
+**This last one tightens a live risk control and should be reviewed deliberately.** It was not in the original defect list; it was surfaced by the regression test and is arguably the reason the band fix above appeared inert.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_oracle_defects`: **27 checks, 0 failures**. Pre-existing
+`test_price_oracle_arb`: **PASS, unmodified**. `test_price_policy`: **276 checks, 0 failures**.
+`test_defillama_feed`: **29 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+`OfferManager.cpp` syntax-checks clean; `SwapDaemon.cpp` has 0 errors outside `/usr/local/include/boost`,
+which fails on this arm64 host for an unrelated reason (x86_64 Boost), so the translation unit was
+not fully compiled. Still outstanding: the Pyth second source, the bounded poll worker, the two
+funding gates, the status snapshot, and a full build once disk allows.
+
+---
+
+## Phase 2c: DeFiLlama HTTPS transport and /prices/current parser
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — transport verified against the live endpoint
+
+### Changes
+
+- `src/SwapDaemon/DefiLlamaFeed.h` (new): `DefiLlamaWanted` (id → asset map), the pure `parseDefiLlamaBody(body, wanted, policy, now)` entry point, and `DefiLlamaFeed : PriceFeed` with an overridable base URL for stub servers.
+- `src/SwapDaemon/DefiLlamaFeed.cpp` (new): one batched HTTPS GET of `/prices/current/<comma-joined ids>` via `httplib::SSLClient`, matching the existing `TonRpcClient` idiom. Certificate verification on, redirects not followed, connect and read timeouts from `PricePolicy` (4 s each), and a `maxResponseBytes` ceiling checked before the body is parsed. The parser is separated from the transport and takes `now` as a parameter so it needs neither clock nor network.
+- `src/SwapDaemon/tests/test_defillama_feed.cpp` (new): 29 assertions over canned bodies.
+- `src/CMakeLists.txt`: `DefiLlamaFeed.cpp` added to both source lists; `test_defillama_feed` added and registered.
+
+### Fail-closed on asset identity
+
+The parser refuses an entry unless the feed's reported `symbol` equals the asset's `expectedFeedSymbol`, **including when the field is absent**. An id that resolves to a different asset, or that reports nothing, is dropped rather than priced — this is the control that stops `coingecko:the-open-network` being quoted as TON. An earlier version only compared the symbol when present, which the test caught.
+
+### Live verification
+
+Built against the real endpoint: certificate-verified HTTPS succeeded, **31 of 31 requested assets parsed, 0 refused**, and the whole stack produced a real quote — ETH at 17,062.94 XFG per ETH, `rateNum` 170,629,386,029, `managedOffersAllowed` and `newSwapAllowed` both true. SIA was refused with `stale; atomic divisor 1e24 does not fit the uint64 amount model`. ETH reports `single-source` because the Pyth second source is not implemented yet, which is the intended labelling rather than a silent pass.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_defillama_feed` compiles and runs: **29 checks, 0 failures** (linked against
+`/opt/homebrew/opt/openssl@3` for an arm64 OpenSSL; the `/usr/local/lib` copy is x86_64 only).
+`test_price_policy`: **276 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+Still outstanding: the Pyth second source, the bounded poll worker, OfferManager repricing,
+the funding gates, the status snapshot, and the `PriceOracle` defects.
+
+---
+
+## Phase 2b: rebase pricing onto SWAP_PAIR_CATALOG (46 pairs)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE for the catalog and policy; HTTP transports and funding gates still outstanding
+
+### Changes
+
+- `src/SwapDaemon/AssetCatalog.cpp`: rewritten. It no longer restates pair bindings; pair identity, native asset, decimals and support are read from `SWAP_PAIR_CATALOG`. The file now holds only feed metadata (DeFiLlama id, Pyth symbol, expected feed symbol) keyed by settlement asset. Divisor is computed as `10^decimals` and clamped: `10^24` for SC does not fit `uint64`, so it stays 0 with `atomicDivisorText="1e24"` and `executable=false`.
+- `src/SwapDaemon/PriceFeed.h`: `pairIsStaged()` added; `assetCatalog()` returns `std::deque` so descriptors stay addressable while the table is being built.
+- `src/SwapDaemon/PricePolicy.cpp`: `buildPairQuote` now refuses STAGED pairs outright — a STAGED pair gets `UNEXECUTABLE` and `newSwapAllowed=false` regardless of how healthy the feed is.
+- `docs/developer/defillama-asset-matrix.json`: regenerated to 46 pairs / 33 settlement assets, schema 2.
+- `scripts/verify-defillama-assets.py`: the AssetCatalog check now validates feed metadata instead of a hand-written binding table, since those bindings no longer exist in that file.
+- `AGENTS.md` (wallet): rewritten around the X-macro catalog — 46 pairs, 25 ACTIVE / 17 ADAPTER / 4 STAGED, settlement-vs-ticker, 14 ETH pairs, and the full 46-row table.
+
+### New assets verified live
+
+17 pairs were added to the protocol catalog (LINEA, ZKSYNC, HYPEREVM, INK, RSK, GNOSIS, FLARE, KAIA, SCROLL, ABSTRACT, PLUME, SONEIUM, DOMA, BEAM, MOONRIVER, PEAQ, SEI). All were checked against DeFiLlama and Pyth rather than assumed unpriced:
+
+- **11 resolve in DeFiLlama**, 6 of them also on Pyth: HYPE `coingecko:hyperliquid`, RBTC `coingecko:rootstock`, XDAI `coingecko:xdai`, FLR `coingecko:flare-networks`, KAIA `coingecko:kaia`, PLUME `coingecko:plume`, BEAM `coingecko:beam-2`, MOVR `coingecko:moonriver`, SEI `coingecko:sei-network`.
+- **XDAI needed correction**: `coingecko:x-dai` does not resolve; the working id is `coingecko:xdai` at $0.9999. The first guess would have marked Gnosis unpriced for the wrong reason.
+- **BEAM was ambiguous** — both `coingecko:beam` ($0.0116) and `coingecko:beam-2` ($0.0024) report symbol BEAM. DeFiLlama's own chain registry maps the Beam chain to `gecko_id: beam-2`, which resolves the collision.
+- **RBTC confirms itself**: $84,944 against BTC's $84,969, i.e. correctly pegged rather than confused with BTC itself.
+- **PEAQ remains unpriced** — `coingecko:peaq` and `coingecko:peaq-network` both fail. GLEEC also remains unpriced.
+- **KMD now resolves** at $0.02, but was observed **6.6 hours stale**, so the 600 s gate rejects it almost always. Intermittent availability, not a reliable feed.
+- **Pyth Hermes has no price route** on the deployment tested: `/v2/price_feeds` and `/v2/price_feeds/{id}` serve metadata, while `/v2/price_feeds/latest?ids=` returns 422 for every parameter encoding tried and `/v2/updates/price_feed/latest` 404s. Pyth must be read on-chain, which means handling it as a pull oracle whose on-chain value can be arbitrarily old.
+
+### Bug found and fixed
+
+`CatalogIndex` stored `AssetDescriptor*` into a `std::vector` while still `emplace_back`-ing into it. Vector growth reallocates, so every previously stored pointer dangled — the test binary segfaulted on first use. Switched to `std::deque`, whose references are stable across `push_back`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_policy` compiles and runs: **276 checks, 0 failures**.
+`scripts/verify-defillama-assets.py` exits 0: 46 pairs, 31 distinct DeFiLlama ids requested,
+44 of 46 pairs priced live, chain clients 25 wired / 17 generic-adapter / 4 unwired.
+A full `SwapDaemonLib` link is still not attempted — free disk is ~9 GiB with no CMake cache.
+
+---
+
 
 ## Security audit round 1 fixes: H-1, M-1, M-2, M-3
 

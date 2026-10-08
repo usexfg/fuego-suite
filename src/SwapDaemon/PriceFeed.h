@@ -17,6 +17,7 @@
 #include "SwapTypes.h"
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -30,6 +31,12 @@ struct AssetDescriptor {
   std::string symbol;        // settlement ticker actually locked
   std::string defiLlamaId;   // coins.llama.fi id, "coingecko:ethereum"
   std::string pythSymbol;    // Pyth "Crypto.BTC/USD" symbol part, empty if unlisted
+  // Pythnet 32-byte price-feed id, hex, no 0x. Resolved from live Hermes metadata and
+  // verified against the documented canonical feed; empty when Pyth does not list it.
+  std::string pythId;
+  // Symbol the feed must report back. Guards against an id that resolves to a
+  // different asset, the way coingecko:the-open-network reports GRAM.
+  std::string expectedFeedSymbol;
   // Atomic units per whole coin. Zero when the divisor does not fit uint64 (SC is
   // 10^24 hastings, which exceeds UINT64_MAX); atomicDivisorText keeps the true
   // value so nothing has to guess it. Never divide by this when it is zero.
@@ -49,7 +56,7 @@ struct PriceObservation {
   double   price = 0.0;
   int64_t  providerTimestamp = 0;  // feed's own stamp, unix seconds
   int64_t  fetchTimestamp = 0;     // our receipt time, unix seconds
-  double   confidence = 0.0;
+  double   confidence = 0.0;      // supplied quality scores must be finite in [0,1]
   bool     confidenceSupplied = false;
 };
 
@@ -73,8 +80,8 @@ struct PricePolicy {
   // would reject ~80% of a 30s poll cycle. 600s tolerates two missed buckets.
   int64_t  maxProviderAgeSec = 600;
   int64_t  maxClockSkewSec = 120;
-  double   minConfidence = 0.8;
-  double   crossCheckTolerance = 0.02;  // relative disagreement allowed
+  double   minConfidence = 0.8;       // finite in [0,1]
+  double   crossCheckTolerance = 0.02;  // finite relative disagreement limit in [0,1)
   bool     requireCorroboration = false;  // refuse SINGLE_SOURCE assets
   uint32_t pollIntervalSec = 30;
   int      connectTimeoutSec = 4;
@@ -109,6 +116,13 @@ RateResult computeReferenceRate(double counterpartyUsd, double xfgUsd);
 // Two-sided guard: referenceRate/1.2 <= proposed <= referenceRate/0.8.
 bool withinRateGuard(double proposedRate, double referenceRate);
 
+// Freshness / confidence / plausibility gate for one observation. Shared so a feed
+// reader and the quote path cannot disagree about what "usable" means.
+QuoteStatus validateObservation(const PriceObservation& o,
+                               const PricePolicy& policy,
+                               int64_t now,
+                               std::string& reason);
+
 uint64_t rateToNum(double rate);
 bool     rateFromNum(uint64_t rateNum, double& out);
 
@@ -122,11 +136,15 @@ public:
 };
 
 // ── Catalog ───────────────────────────────────────────────────────────────
-const std::vector<AssetDescriptor>& assetCatalog();
+const std::deque<AssetDescriptor>& assetCatalog();
 const AssetDescriptor* assetForSymbol(const std::string& symbol);
 std::vector<PairAssetBinding> bindingsForFeed(const std::string& feedName);
 std::vector<PairAssetBinding> allBindings();
 std::vector<std::string> distinctSymbolsForFeed(const std::string& feedName);
+
+// True when the protocol catalog marks the pair STAGED: the id is reserved for
+// old records but new offers and swaps must be rejected regardless of pricing.
+bool pairIsStaged(SwapPair pair);
 
 // ── Evaluation (pure; no I/O, no clock beyond the passed `now`) ───────────
 QuoteStatus evaluateAsset(const AssetDescriptor& asset,

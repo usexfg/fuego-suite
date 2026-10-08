@@ -53,6 +53,13 @@ static FeedResult makeFeed(const std::string& name,
   return f;
 }
 
+static void checkBlockedQuote(const PairQuote& quote, QuoteStatus status, const std::string& what) {
+  check(quote.status == status, what + " status");
+  check(!quote.managedOffersAllowed && !quote.newSwapAllowed, what + " blocks funding");
+  check(!quote.referenceRateOk && quote.rateNum == 0, what + " carries no usable rate");
+  check(!quote.reason.empty(), what + " explains rejection");
+}
+
 int main() {
   const PricePolicy pol;
   const int64_t now = 1791000000;
@@ -139,7 +146,7 @@ int main() {
     }
     check(eth == 14, "fourteen pairs settle in ETH (Ethereum itself, ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM "
                      "and the seven generic-adapter ETH chains)");
-    check(unpriced == 12, "twelve pairs are unpriced (KMD, GLEEC and the ten new native assets)");
+    check(unpriced == 2, "exactly two assets are unpriced: GLEEC and PEAQ (no feed id serves either)");
     check(unexec == 1, "exactly one asset is unexecutable (SC, 1e24)");
 
     const AssetDescriptor* sc = assetForSymbol("SC");
@@ -147,13 +154,22 @@ int main() {
     check(sc != nullptr && sc->atomicDivisorText == "1e24", "SC divisor text records the true 1e24");
     check(sc != nullptr && !sc->executable, "SC is marked unexecutable");
 
-    check(assetForSymbol("KMD") != nullptr && !assetForSymbol("KMD")->priced, "KMD unpriced");
+    check(assetForSymbol("KMD") != nullptr && assetForSymbol("KMD")->priced,
+          "KMD is priced via coingecko:komodo (intermittent, and observed 6.6h stale)");
+    check(assetForSymbol("GLEEC") != nullptr && !assetForSymbol("GLEEC")->priced, "GLEEC unpriced");
+    check(assetForSymbol("PEAQ") != nullptr && !assetForSymbol("PEAQ")->priced, "PEAQ unpriced");
+    check(assetForSymbol("RBTC") != nullptr && assetForSymbol("RBTC")->defiLlamaId == "coingecko:rootstock",
+          "RSK settles in RBTC, priced off Rootstock rather than BTC");
+    check(assetForSymbol("XDAI") != nullptr && assetForSymbol("XDAI")->defiLlamaId == "coingecko:xdai",
+          "Gnosis settles in xDAI, priced off xdai rather than DAI");
+    check(assetForSymbol("BEAM") != nullptr && assetForSymbol("BEAM")->defiLlamaId == "coingecko:beam-2",
+          "Beam uses coingecko:beam-2, the chain token per DeFiLlama's chain registry");
     check(assetForSymbol("GRAM") != nullptr && assetForSymbol("GRAM")->defiLlamaId == "coingecko:the-open-network",
           "TON pair settles in GRAM via coingecko:the-open-network");
     check(assetForSymbol("NOPE") == nullptr, "unknown symbol returns nullptr");
 
-    check(distinctSymbolsForFeed("defillama").size() == 21, "21 distinct DeFiLlama assets");
-    check(distinctSymbolsForFeed("pyth").size() == 17, "17 Pyth-corroborated assets");
+    check(distinctSymbolsForFeed("defillama").size() == 31, "31 distinct DeFiLlama assets");
+    check(distinctSymbolsForFeed("pyth").size() == 23, "23 Pyth-corroborated assets");
   }
 
   // ── the price catalog and the protocol pair catalog describe the same pairs
@@ -231,9 +247,9 @@ int main() {
     check(evaluateAsset(*btc, missing, nullptr, pol, now, out) == QuoteStatus::NO_DATA,
           "asset absent from a reachable feed is NO_DATA");
 
-    const AssetDescriptor* kmd = assetForSymbol("KMD");
-    check(evaluateAsset(*kmd, fresh, nullptr, pol, now, out) == QuoteStatus::UNPRICED,
-          "KMD is UNPRICED regardless of feed health");
+    const AssetDescriptor* gleec = assetForSymbol("GLEEC");
+    check(evaluateAsset(*gleec, fresh, nullptr, pol, now, out) == QuoteStatus::UNPRICED,
+          "GLEEC is UNPRICED regardless of feed health");
 
     // cross-check
     FeedResult agree = makeFeed("pyth", "BTC", 84050.0, now - 5, now - 2, 0.0, false);
@@ -281,17 +297,19 @@ int main() {
     check(siaQ.status == QuoteStatus::UNEXECUTABLE, "SIA priced but UNEXECUTABLE on the 1e24 divisor");
     check(!siaQ.managedOffersAllowed && !siaQ.newSwapAllowed, "SIA cannot fund despite a live price");
 
-    FeedResult kmd;
-    kmd.feedName = "defillama";
-    kmd.transportOk = true;
-    PairQuote kmdQ = buildPairQuote(6, kmd, nullptr, 0.158, pol, now);
-    check(kmdQ.status == QuoteStatus::UNPRICED, "KMD pair is UNPRICED");
-    check(!kmdQ.newSwapAllowed, "unpriced pair cannot start a swap");
+    FeedResult emptyFeed;
+    emptyFeed.feedName = "defillama";
+    emptyFeed.transportOk = true;
+    PairQuote gleecQ = buildPairQuote(12, emptyFeed, nullptr, 0.158, pol, now);
+    check(gleecQ.status == QuoteStatus::UNPRICED, "GLEEC pair is UNPRICED");
+    check(!gleecQ.newSwapAllowed, "unpriced pair cannot start a swap");
 
     FeedResult tonPrimary = makeFeed("defillama", "GRAM", 1.51, now - 5, now - 2, 0.99, true);
     FeedResult tonSecondary = makeFeed("pyth", "GRAM", 1.51, now - 5, now - 2, 0.0, false);
     PairQuote tonQ = buildPairQuote(27, tonPrimary, &tonSecondary, 0.158, pol, now);
-    check(tonQ.status == QuoteStatus::OK && tonQ.settlementAsset == "GRAM", "TON pair prices in GRAM");
+    check(tonQ.settlementAsset == "GRAM", "TON pair settles and prices in GRAM");
+    check(tonQ.status == QuoteStatus::UNEXECUTABLE && !tonQ.newSwapAllowed,
+          "TON is STAGED in the catalog, so a live GRAM price still cannot fund it");
 
     // requireCorroboration at the quote level: one feed is not enough, and the reason
     // must say so rather than reporting a bogus counterpartyUsd failure.
@@ -309,9 +327,13 @@ int main() {
           "strict policy still quotes a corroborated pair");
 
     // A generic-adapter pair with no verified feed id fails closed.
-    PairQuote hype = buildPairQuote(static_cast<uint8_t>(SwapPair::HYPEREVM), primary, &secondary, 0.158, pol, now);
-    check(hype.status == QuoteStatus::UNPRICED && !hype.newSwapAllowed,
-          "HYPEREVM has no verified feed id and fails closed");
+    FeedResult hypeFeed = makeFeed("defillama", "HYPE", 89.0, now - 5, now - 2, 0.99, true);
+    PairQuote hype = buildPairQuote(static_cast<uint8_t>(SwapPair::HYPEREVM), hypeFeed, nullptr, 0.158, pol, now);
+    check(hype.settlementAsset == "HYPE" && hype.counterpartyUsdOk,
+          "HYPEREVM prices in its own native HYPE, not ETH");
+    PairQuote peaq = buildPairQuote(static_cast<uint8_t>(SwapPair::PEAQ), primary, &secondary, 0.158, pol, now);
+    check(peaq.status == QuoteStatus::UNPRICED && !peaq.newSwapAllowed,
+          "PEAQ has no verified feed id and fails closed");
     PairQuote linea = buildPairQuote(static_cast<uint8_t>(SwapPair::LINEA), primary, &secondary, 0.158, pol, now);
     check(linea.status == QuoteStatus::OK && linea.settlementAsset == "ETH",
           "LINEA settles in native ETH and prices off ETH");
@@ -323,6 +345,170 @@ int main() {
     PairQuote deadQ = buildPairQuote(1, dead, nullptr, 0.158, pol, now);
     check(deadQ.status == QuoteStatus::NO_DATA && deadQ.reason == "tls handshake failed",
           "transport failure surfaces its reason and blocks funding");
+  }
+
+  {
+    const FeedResult primary = makeFeed("defillama", "ETH", 2700.0, now - 5, now - 2, 0.99, true);
+    const FeedResult secondary = makeFeed("pyth", "ETH", 2701.0, now - 5, now - 2, 0.99, true);
+    const double invalidConfidence[] = {
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      -std::numeric_limits<double>::infinity(), -0.001, 1.001
+    };
+    for (double confidence : invalidConfidence) {
+      FeedResult malformed = primary;
+      malformed.assets["ETH"].observation.confidence = confidence;
+      checkBlockedQuote(buildPairQuote(1, malformed, &secondary, 0.158, pol, now),
+                        QuoteStatus::LOW_CONFIDENCE, "malformed supplied confidence");
+    }
+
+    PricePolicy zeroFloor = pol;
+    zeroFloor.minConfidence = 0.0;
+    FeedResult zeroConfidence = primary;
+    zeroConfidence.assets["ETH"].observation.confidence = 0.0;
+    check(buildPairQuote(1, zeroConfidence, nullptr, 0.158, zeroFloor, now).newSwapAllowed,
+          "confidence zero is valid at a configured zero floor");
+    PricePolicy fullFloor = pol;
+    fullFloor.minConfidence = 1.0;
+    FeedResult fullConfidence = primary;
+    fullConfidence.assets["ETH"].observation.confidence = 1.0;
+    check(buildPairQuote(1, fullConfidence, nullptr, 0.158, fullFloor, now).newSwapAllowed,
+          "confidence one satisfies a configured full floor");
+
+    FeedResult absentConfidence = primary;
+    absentConfidence.assets["ETH"].observation.confidenceSupplied = false;
+    absentConfidence.assets["ETH"].observation.confidence = std::numeric_limits<double>::quiet_NaN();
+    check(buildPairQuote(1, absentConfidence, nullptr, 0.158, pol, now).newSwapAllowed,
+          "absent confidence remains optional");
+
+    for (double threshold : invalidConfidence) {
+      PricePolicy invalidFloor = pol;
+      invalidFloor.minConfidence = threshold;
+      checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, invalidFloor, now),
+                        QuoteStatus::NO_DATA, "invalid confidence floor");
+      PricePolicy invalidTolerance = pol;
+      invalidTolerance.crossCheckTolerance = threshold;
+      checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, invalidTolerance, now),
+                        QuoteStatus::NO_DATA, "invalid cross-check tolerance");
+    }
+    PricePolicy disabledCrossCheck = pol;
+    disabledCrossCheck.crossCheckTolerance = 1.0;
+    checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, disabledCrossCheck, now),
+                      QuoteStatus::NO_DATA, "tolerance one cannot disable corroboration checks");
+    PricePolicy exactCrossCheck = pol;
+    exactCrossCheck.crossCheckTolerance = 0.0;
+    check(buildPairQuote(1, primary, &primary, 0.158, exactCrossCheck, now).status == QuoteStatus::OK,
+          "zero tolerance accepts identical prices");
+    checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, exactCrossCheck, now),
+                      QuoteStatus::DISPUTED, "zero tolerance rejects distinct prices");
+
+    FeedResult failedPrimary = primary;
+    failedPrimary.transportOk = false;
+    failedPrimary.transportReason = "fetch failed after a previous valid response";
+    checkBlockedQuote(buildPairQuote(1, failedPrimary, &secondary, 0.158, pol, now),
+                      QuoteStatus::NO_DATA, "failed primary with usable asset data");
+    AssetPrice reused = primary.assets.at("ETH");
+    check(evaluateAsset(*assetForSymbol("ETH"), failedPrimary, &secondary, pol, now, reused) == QuoteStatus::NO_DATA &&
+          !reused.ok && reused.observation.price == 0.0,
+          "failed evaluation clears the caller's prior observation");
+
+    FeedResult failedSecondary = secondary;
+    failedSecondary.transportOk = false;
+    PricePolicy strict = pol;
+    strict.requireCorroboration = true;
+    checkBlockedQuote(buildPairQuote(1, primary, &failedSecondary, 0.158, strict, now),
+                      QuoteStatus::SINGLE_SOURCE, "failed secondary cannot corroborate cached data");
+    PairQuote single = buildPairQuote(1, primary, &failedSecondary, 0.158, pol, now);
+    check(single.status == QuoteStatus::SINGLE_SOURCE && single.newSwapAllowed,
+          "optional corroboration uses only the healthy primary");
+    failedSecondary.assets["ETH"].observation.price = 90000.0;
+    check(buildPairQuote(1, primary, &failedSecondary, 0.158, pol, now).status == QuoteStatus::SINGLE_SOURCE,
+          "failed secondary cannot dispute a healthy primary");
+    FeedResult malformedSecondary = secondary;
+    malformedSecondary.assets["ETH"].observation.confidence = std::numeric_limits<double>::quiet_NaN();
+    checkBlockedQuote(buildPairQuote(1, primary, &malformedSecondary, 0.158, strict, now),
+                      QuoteStatus::SINGLE_SOURCE, "malformed secondary confidence cannot corroborate");
+
+    const int64_t invalidClock[] = {0, -1, std::numeric_limits<int64_t>::min()};
+    for (int64_t clock : invalidClock) {
+      checkBlockedQuote(buildPairQuote(1, primary, &secondary, 0.158, pol, clock),
+                        QuoteStatus::NO_DATA, "non-positive current clock");
+    }
+    for (int64_t timestamp : invalidClock) {
+      FeedResult missingTime = primary;
+      missingTime.assets["ETH"].observation.providerTimestamp = timestamp;
+      checkBlockedQuote(buildPairQuote(1, missingTime, &secondary, 0.158, pol, now),
+                        QuoteStatus::NO_DATA, "non-positive provider timestamp");
+      missingTime = primary;
+      missingTime.assets["ETH"].observation.fetchTimestamp = timestamp;
+      checkBlockedQuote(buildPairQuote(1, missingTime, &secondary, 0.158, pol, now),
+                        QuoteStatus::NO_DATA, "non-positive receipt timestamp");
+    }
+    FeedResult futureReceipt = primary;
+    futureReceipt.assets["ETH"].observation.fetchTimestamp = std::numeric_limits<int64_t>::max();
+    checkBlockedQuote(buildPairQuote(1, futureReceipt, &secondary, 0.158, pol, now),
+                      QuoteStatus::STALE, "receipt at INT64_MAX is outside skew");
+    FeedResult futureProvider = primary;
+    futureProvider.assets["ETH"].observation.providerTimestamp = std::numeric_limits<int64_t>::max();
+    checkBlockedQuote(buildPairQuote(1, futureProvider, &secondary, 0.158, pol, now),
+                      QuoteStatus::STALE, "provider at INT64_MAX is outside skew");
+
+    PriceObservation observation = primary.assets.at("ETH").observation;
+    std::string reason;
+    observation.providerTimestamp = now - pol.maxProviderAgeSec;
+    observation.fetchTimestamp = now;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::OK,
+          "provider at the exact age limit is accepted");
+    --observation.providerTimestamp;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::STALE,
+          "provider one second past the age limit is stale");
+    observation.providerTimestamp = observation.fetchTimestamp = now - pol.maxProviderAgeSec;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::OK,
+          "receipt at the exact age limit is accepted");
+    --observation.fetchTimestamp;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::STALE,
+          "receipt one second past the age limit is stale");
+    observation.providerTimestamp = now;
+    observation.fetchTimestamp = now + pol.maxClockSkewSec;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::OK,
+          "receipt at the exact future skew limit is accepted");
+    ++observation.fetchTimestamp;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::STALE,
+          "receipt beyond future skew is rejected");
+    observation.providerTimestamp = now + pol.maxClockSkewSec;
+    observation.fetchTimestamp = now;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::OK,
+          "provider at the exact future skew limit is accepted");
+    ++observation.providerTimestamp;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::STALE,
+          "provider beyond future skew is rejected");
+    observation.providerTimestamp = now;
+    observation.fetchTimestamp = now - pol.maxClockSkewSec - 1;
+    check(validateObservation(observation, pol, now, reason) == QuoteStatus::STALE,
+          "provider cannot postdate its receipt beyond skew");
+
+    observation.providerTimestamp = observation.fetchTimestamp = std::numeric_limits<int64_t>::max();
+    check(validateObservation(observation, pol, std::numeric_limits<int64_t>::max(), reason) == QuoteStatus::OK,
+          "equal maximum int64 timestamps do not overflow");
+    observation.providerTimestamp = observation.fetchTimestamp = 1;
+    check(validateObservation(observation, pol, std::numeric_limits<int64_t>::max(), reason) == QuoteStatus::STALE,
+          "maximum representable timestamp age is safely rejected");
+    observation.providerTimestamp = observation.fetchTimestamp = now;
+    for (int64_t limit : {-1LL, std::numeric_limits<int64_t>::min()}) {
+      PricePolicy invalidAge = pol;
+      invalidAge.maxProviderAgeSec = limit;
+      check(validateObservation(observation, invalidAge, now, reason) == QuoteStatus::NO_DATA,
+            "negative provider age limit fails closed");
+      PricePolicy invalidSkew = pol;
+      invalidSkew.maxClockSkewSec = limit;
+      check(validateObservation(observation, invalidSkew, now, reason) == QuoteStatus::NO_DATA,
+            "negative skew limit fails closed");
+    }
+    PricePolicy exactClock = pol;
+    exactClock.maxProviderAgeSec = 0;
+    exactClock.maxClockSkewSec = 0;
+    check(validateObservation(observation, exactClock, now, reason) == QuoteStatus::OK,
+          "zero age and skew limits accept an exact current observation");
   }
 
   std::printf("%d checks, %d failures\n", g_checks, g_failures);

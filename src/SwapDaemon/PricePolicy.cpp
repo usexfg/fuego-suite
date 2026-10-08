@@ -42,6 +42,30 @@ static bool finitePositive(double v) {
   return std::isfinite(v) && v > 0.0;
 }
 
+static bool finiteUnitInterval(double value) {
+  return std::isfinite(value) && value >= 0.0 && value <= 1.0;
+}
+
+static bool validatePolicyLimits(const PricePolicy& policy, std::string& reason) {
+  if (policy.maxProviderAgeSec < 0) {
+    reason = "policy provider age is negative";
+    return false;
+  }
+  if (policy.maxClockSkewSec < 0) {
+    reason = "policy clock skew is negative";
+    return false;
+  }
+  if (!finiteUnitInterval(policy.minConfidence)) {
+    reason = "policy confidence floor is outside [0,1]";
+    return false;
+  }
+  if (!finiteUnitInterval(policy.crossCheckTolerance) || policy.crossCheckTolerance == 1.0) {
+    reason = "policy cross-check tolerance is outside [0,1)";
+    return false;
+  }
+  return true;
+}
+
 uint64_t rateToNum(double rate) {
   if (!finitePositive(rate)) return 0;
   double scaled = rate * kRateScale;
@@ -86,10 +110,15 @@ bool withinRateGuard(double proposedRate, double referenceRate) {
   return proposedRate >= low && proposedRate <= high;
 }
 
-static QuoteStatus validateObservation(const PriceObservation& o,
-                                       const PricePolicy& p,
-                                       int64_t now,
-                                       std::string& reason) {
+QuoteStatus validateObservation(const PriceObservation& o,
+                                const PricePolicy& p,
+                                int64_t now,
+                                std::string& reason) {
+  if (!validatePolicyLimits(p, reason)) return QuoteStatus::NO_DATA;
+  if (now <= 0) {
+    reason = "current time is not positive";
+    return QuoteStatus::NO_DATA;
+  }
   if (!finitePositive(o.price)) { reason = "price not finite or not positive"; return QuoteStatus::NO_DATA; }
 
   if (o.providerTimestamp <= 0) {
@@ -100,21 +129,36 @@ static QuoteStatus validateObservation(const PriceObservation& o,
     reason = "fetch timestamp missing";
     return QuoteStatus::NO_DATA;
   }
-  if (now - o.providerTimestamp > p.maxProviderAgeSec) {
+  if (o.providerTimestamp < now && now - o.providerTimestamp > p.maxProviderAgeSec) {
     reason = "provider stamp older than maxProviderAgeSec";
     return QuoteStatus::STALE;
   }
-  if (o.providerTimestamp - now > p.maxClockSkewSec) {
+  if (o.providerTimestamp > now && o.providerTimestamp - now > p.maxClockSkewSec) {
     reason = "provider timestamp ahead of clock skew allowance";
     return QuoteStatus::STALE;
   }
-  if (now - o.fetchTimestamp > p.maxProviderAgeSec) {
+  if (o.fetchTimestamp < now && now - o.fetchTimestamp > p.maxProviderAgeSec) {
     reason = "observation held longer than maxProviderAgeSec";
     return QuoteStatus::STALE;
   }
-  if (o.confidenceSupplied && o.confidence < p.minConfidence) {
-    reason = "confidence below policy floor";
-    return QuoteStatus::LOW_CONFIDENCE;
+  if (o.fetchTimestamp > now && o.fetchTimestamp - now > p.maxClockSkewSec) {
+    reason = "receipt timestamp ahead of clock skew allowance";
+    return QuoteStatus::STALE;
+  }
+  if (o.providerTimestamp > o.fetchTimestamp &&
+      o.providerTimestamp - o.fetchTimestamp > p.maxClockSkewSec) {
+    reason = "provider timestamp ahead of receipt skew allowance";
+    return QuoteStatus::STALE;
+  }
+  if (o.confidenceSupplied) {
+    if (!finiteUnitInterval(o.confidence)) {
+      reason = "confidence is outside [0,1]";
+      return QuoteStatus::LOW_CONFIDENCE;
+    }
+    if (o.confidence < p.minConfidence) {
+      reason = "confidence below policy floor";
+      return QuoteStatus::LOW_CONFIDENCE;
+    }
   }
   reason.clear();
   return QuoteStatus::OK;
@@ -126,17 +170,32 @@ QuoteStatus evaluateAsset(const AssetDescriptor& asset,
                           const PricePolicy& policy,
                           int64_t now,
                           AssetPrice& outObservation) {
-  if (!asset.priced) return QuoteStatus::UNPRICED;
+  outObservation = AssetPrice();
+  if (!asset.priced) {
+    outObservation.reason = "no feed id serves this asset";
+    return QuoteStatus::UNPRICED;
+  }
+  if (!primary.transportOk) {
+    outObservation.reason = primary.transportReason.empty() ? "primary feed transport failed"
+                                                          : primary.transportReason;
+    return QuoteStatus::NO_DATA;
+  }
 
   auto pit = primary.assets.find(asset.symbol);
-  if (pit == primary.assets.end() || !pit->second.ok) return QuoteStatus::NO_DATA;
+  if (pit == primary.assets.end()) {
+    outObservation.reason = "asset absent from feed response";
+    return QuoteStatus::NO_DATA;
+  }
+  if (!pit->second.ok) {
+    outObservation.reason = pit->second.reason.empty() ? "asset rejected by feed" : pit->second.reason;
+    return QuoteStatus::NO_DATA;
+  }
 
-  std::string reason;
-  QuoteStatus st = validateObservation(pit->second.observation, policy, now, reason);
+  QuoteStatus st = validateObservation(pit->second.observation, policy, now, outObservation.reason);
   if (st != QuoteStatus::OK) return st;
 
   bool corroborated = false;
-  if (secondary != nullptr) {
+  if (secondary != nullptr && secondary->transportOk) {
     auto sit = secondary->assets.find(asset.symbol);
     if (sit != secondary->assets.end() && sit->second.ok) {
       std::string sreason;
@@ -147,7 +206,10 @@ QuoteStatus evaluateAsset(const AssetDescriptor& asset,
         double denom = std::fmax(std::fabs(a), std::fabs(b));
         if (denom > 0.0) {
           double rel = std::fabs(a - b) / denom;
-          if (rel > policy.crossCheckTolerance) return QuoteStatus::DISPUTED;
+          if (rel > policy.crossCheckTolerance) {
+            outObservation.reason = "feed prices disagree beyond policy tolerance";
+            return QuoteStatus::DISPUTED;
+          }
         }
       }
     }
@@ -191,7 +253,7 @@ PairQuote buildPairQuote(uint8_t pair,
 
   AssetPrice obs;
   q.status = evaluateAsset(asset, primary, secondary, policy, now, obs);
-  q.reason.clear();
+  q.reason = obs.reason;
 
   // With corroboration required, evaluateAsset reports SINGLE_SOURCE without an
   // observation. Treating that like the quotable case below would price the pair
@@ -204,8 +266,7 @@ PairQuote buildPairQuote(uint8_t pair,
   }
   switch (q.status) {
     case QuoteStatus::UNPRICED:     q.reason = "no feed id serves this asset"; break;
-    case QuoteStatus::NO_DATA:      q.reason = primary.transportOk ? "asset absent from feed response"
-                                                                  : primary.transportReason; break;
+    case QuoteStatus::NO_DATA: break;
     case QuoteStatus::STALE:
     case QuoteStatus::LOW_CONFIDENCE:
     case QuoteStatus::DISPUTED:
@@ -258,6 +319,14 @@ PairQuote buildPairQuote(uint8_t pair,
     q.status = QuoteStatus::UNEXECUTABLE;
     q.reason = "atomic divisor " + asset.atomicDivisorText +
                " does not fit the uint64 amount model";
+    q.managedOffersAllowed = false;
+    q.newSwapAllowed = false;
+    return q;
+  }
+
+  if (pairIsStaged(static_cast<SwapPair>(pair))) {
+    q.status = QuoteStatus::UNEXECUTABLE;
+    q.reason = "pair is STAGED in the protocol catalog; new offers and swaps must be rejected";
     q.managedOffersAllowed = false;
     q.newSwapAllowed = false;
     return q;

@@ -254,6 +254,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/DefiLlamaFeed.cpp
     SwapDaemon/PythFeed.cpp
     SwapDaemon/CoinGeckoFeed.cpp
+    SwapDaemon/PriceWorker.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -689,6 +690,7 @@ add_executable(SwapDaemon
     SwapDaemon/DefiLlamaFeed.cpp
     SwapDaemon/PythFeed.cpp
     SwapDaemon/CoinGeckoFeed.cpp
+    SwapDaemon/PriceWorker.cpp
     SwapDaemon/PricePolicy.cpp
     SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
@@ -814,6 +816,12 @@ target_link_libraries(test_pyth_feed PRIVATE
 add_executable(test_coingecko_feed
     SwapDaemon/tests/test_coingecko_feed.cpp)
 target_link_libraries(test_coingecko_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: bounded poll worker (stub feeds, no network)
+add_executable(test_price_worker
+    SwapDaemon/tests/test_price_worker.cpp)
+target_link_libraries(test_price_worker PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 # SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
@@ -1037,6 +1045,7 @@ set(_TEST_DAEMON_TARGETS
     test_price_oracle_defects
     test_defillama_feed
     test_coingecko_feed
+    test_price_worker
     test_pyth_feed
     test_swap_hashlock
     test_sol_htlc_address

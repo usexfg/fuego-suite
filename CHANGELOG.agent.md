@@ -52,6 +52,77 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Phase 2g: bounded poll worker
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- thread-safe, verified under ThreadSanitizer
+
+### What it is
+
+`PriceWorker` polls both feeds on its own thread and publishes immutable snapshots that
+readers copy out in microseconds. It exists because a DeFiLlama `/prices/current` call can
+block for the full read timeout, and the swap-progress thread must never wait on the
+network.
+
+### Design decisions worth recording
+
+- **Per-source interval floors, not one interval.** `PricePolicy::pollIntervalSec` is 30s,
+  which is 2 requests/minute -- inside CoinGecko's 3/minute keyless ceiling but with no
+  headroom. The secondary is therefore floored at `kSecondaryMinIntervalSec = 60` and uses
+  the larger of that and the policy value.
+- **No early retry on a rate-limited source.** A 429 leaves the source skipped until its
+  next due time. Retrying inside the window extends the block, which is the failure mode
+  that matters for CoinGecko specifically.
+- **A failing secondary never halts trading.** `pollOnce` returns true if *either* source
+  answered, and a cycle that only refetches one side carries the last good value forward
+  for the other. The quote degrades to `SINGLE_SOURCE`, which still permits managed offers
+  and new swaps.
+- **Bounded history**: a deque capped at `kMaxHistory = 8` snapshots.
+- **Explicit "never polled" flags** rather than seeding attempt timestamps with
+  `INT64_MIN`. Subtracting from that sentinel overflowed and made every due-check return
+  false, so nothing was ever polled -- caught by the first test run.
+
+### Two bugs the tests caught during development
+
+1. `pollOnce` initially fetched each source **twice per cycle**, which would have doubled
+   CoinGecko's request rate against a 3/minute ceiling. Rewritten so each source is fetched
+   at most once, asserted by call counters in the tests.
+2. The `INT64_MIN` sentinel above, which made the worker silently poll nothing.
+
+### Tests
+
+`tests/test_price_worker.cpp` drives the worker synchronously with stub feeds -- no thread,
+no network -- covering: exactly one fetch per source per cycle, the 60s secondary floor not
+being retried inside, the primary keeping its 30s interval, a primary outage not blanking a
+healthy secondary, bounded history, snapshot copies being immune to caller mutation,
+recovery resetting the failure counter, an absent secondary, and `start`/`stop` on an empty
+worker.
+
+A separate throwaway harness ran the worker on a live thread while a second thread called
+`snapshot()` in a tight loop: 3.5M concurrent reads during live polling, clean under
+**ThreadSanitizer** with no race reports.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_price_worker`: **36 checks, 0 failures**. Prior suites unchanged:
+`test_coingecko_feed` 61, `test_pyth_feed` 48, `test_price_policy` 423,
+`test_defillama_feed` 29, `test_price_oracle_defects` 27, all 0 failures;
+`test_price_oracle_arb` PASS; `verify-defillama-assets.py` exit 0.
+
+Still outstanding: the two funding gates, the status snapshot, and a full build once disk
+allows. `SwapDaemon.cpp` still uncompiled on this host (x86_64 Boost on arm64), which means
+the worker is **not yet wired into SwapDaemon itself** -- it is built, tested and ready, but
+nothing constructs it in the daemon yet. That wiring is the remaining integration step.
+
+---
+
 ## Phase 2f: CoinGecko replaces Pyth as the second price source
 
 **Started**: 2026-10-04

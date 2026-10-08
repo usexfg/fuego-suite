@@ -471,6 +471,35 @@ bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx) {
   return true;
 }
 
+// H-1: a transaction must not spend the same key image twice. Key-image uniqueness
+// was only ever checked against *chain* state, so an intra-transaction duplicate
+// passed validation and then failed the connect-path rollback, which erased earlier
+// inputs by type-blind boost::get and threw an uncaught boost::bad_get on the first
+// non-KeyInput element -- a remote daemon crash. Sibling of
+// checkMultisignatureInputsDiff / checkSwapEscrowInputsDiff, and deliberately
+// spans every key-image-carrying input type rather than one of them.
+bool checkKeyImagesUnique(const TransactionPrefix& tx) {
+  std::set<std::string> seen;
+  for (const auto& inv : tx.inputs) {
+    const Crypto::KeyImage* keyImage = nullptr;
+    if (const auto* in = ::boost::get<KeyInput>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputCommitmentSpend>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputCommitmentTransfer>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputSwapEscrow>(&inv)) {
+      keyImage = &in->keyImage;
+    } else if (const auto* in = ::boost::get<TransactionInputUnified>(&inv)) {
+      keyImage = &in->keyImage;
+    }
+    if (keyImage && !seen.insert(Common::podToHex(*keyImage)).second) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool check_money_overflow(const TransactionPrefix &tx) {
   return check_inputs_overflow(tx) && check_outs_overflow(tx);
 }

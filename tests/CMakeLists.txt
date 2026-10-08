@@ -80,3 +80,21 @@ target_link_libraries(input_amount_overflow_tests PRIVATE
     gtest_main
 )
 add_test(NAME input_amount_overflow_tests COMMAND input_amount_overflow_tests)
+
+# Intra-transaction key-image uniqueness. Uniqueness was checked only against chain
+# state, so a transaction spending one key image twice passed validation and then
+# failed the connect rollback, which erased inputs by type-blind boost::get and
+# threw an uncaught boost::bad_get -- a remote daemon crash. Guards the
+# checkKeyImagesUnique check across every key-image-carrying input type.
+add_executable(key_image_uniqueness_tests
+    UnitTests/KeyImageUniquenessTest.cpp
+)
+target_include_directories(key_image_uniqueness_tests PRIVATE ${CMAKE_SOURCE_DIR}/external/gtest/include)
+target_link_libraries(key_image_uniqueness_tests PRIVATE
+    CryptoNoteCore
+    Crypto
+    Common
+    gtest
+    gtest_main
+)
+add_test(NAME key_image_uniqueness_tests COMMAND key_image_uniqueness_tests)

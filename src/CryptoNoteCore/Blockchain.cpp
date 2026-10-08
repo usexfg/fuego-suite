@@ -2554,31 +2554,13 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
   // H-1: reject a transaction that spends the same key image in more than one
   // input. Each input below is only tested against *chain* state, so an intra-tx
   // duplicate used to pass validation and then fail the connect-path rollback,
-  // which erased earlier inputs blindly by type and threw an uncaught
-  // boost::bad_get on the first non-KeyInput element — a remote daemon crash
-  // reachable from any P2P peer or mempool submission. Collect every key image
-  // up front so no input type can slip past.
-  {
-    std::set<std::string> seenKeyImages;
-    for (const auto& txin : tx.inputs) {
-      const Crypto::KeyImage* keyImage = nullptr;
-      if (const auto* in = boost::get<KeyInput>(&txin)) {
-        keyImage = &in->keyImage;
-      } else if (const auto* in = boost::get<TransactionInputCommitmentSpend>(&txin)) {
-        keyImage = &in->keyImage;
-      } else if (const auto* in = boost::get<TransactionInputCommitmentTransfer>(&txin)) {
-        keyImage = &in->keyImage;
-      } else if (const auto* in = boost::get<TransactionInputSwapEscrow>(&txin)) {
-        keyImage = &in->keyImage;
-      } else if (const auto* in = boost::get<TransactionInputUnified>(&txin)) {
-        keyImage = &in->keyImage;
-      }
-      if (keyImage && !seenKeyImages.insert(Common::podToHex(*keyImage)).second) {
-        logger(ERROR, BRIGHT_RED) << "Transaction " << transactionHash
-            << " spends the same key image in more than one input";
-        return false;
-      }
-    }
+  // which erased earlier inputs by type-blind boost::get and threw an uncaught
+  // boost::bad_get -- a remote daemon crash reachable from any P2P peer or
+  // mempool submission. checkKeyImagesUnique spans every key-image-carrying type.
+  if (!checkKeyImagesUnique(tx)) {
+    logger(ERROR, BRIGHT_RED) << "Transaction " << transactionHash
+        << " spends the same key image in more than one input";
+    return false;
   }
 
   for (const auto& txin : tx.inputs) {

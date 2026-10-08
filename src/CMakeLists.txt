@@ -442,6 +442,17 @@ add_executable(test_ripemd160
 target_link_libraries(test_ripemd160 PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# Regenerates the Rust SDK's owner-bound commitment cross-check vectors.
+# The SDK compares every value byte-for-byte, so this is the guard against the
+# two implementations drifting apart on the key that decides who can spend a
+# commitment output. See src/tools/ownerbound_vectors.cpp.
+# Ungated like the other test_* targets here, so CI's wire-format job can build it
+# against the pinned submodule without reconfiguring the whole tree.
+add_executable(ownerbound_vectors
+    tools/ownerbound_vectors.cpp)
+target_link_libraries(ownerbound_vectors PRIVATE
+    CryptoNoteCore Crypto Common Serialization)
+
 # SwapDaemon unit test: SwapStateMachine SPV state transitions
 add_executable(test_swap_state_machine_spv
     SwapDaemon/tests/test_swap_state_machine_spv.cpp)

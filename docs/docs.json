@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "willow",
+  "theme": "palm",
   "name": "Fuego",
   "favicon": {
     "light": "/images/PolishedFuegoGonCharcoal.png",
@@ -134,7 +134,7 @@
       "light": "/docs/images/image-15.jpg",
       "dark": "/strategy/coin-E-cooled-flame-G.jpg"
     },
-    "decoration": "windows"
+    "decoration": "grid"
   },
   "appearance": {
     "default": "dark"

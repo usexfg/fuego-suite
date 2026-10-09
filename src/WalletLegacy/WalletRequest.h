@@ -71,7 +71,7 @@ public:
 
   virtual void perform(INode& node, std::function<void(WalletRequest::Callback, std::error_code)> cb) override
   {
-    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount, m_maxHeight,
+    node.getRandomCommitmentOutsForAmount(m_amount, m_outsCount, m_maxHeight, 0,
       std::ref(m_context->commitmentOuts), std::bind(cb, m_cb, std::placeholders::_1));
   }
 

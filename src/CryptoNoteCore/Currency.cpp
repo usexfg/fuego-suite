@@ -567,6 +567,20 @@ double Currency::getBurnPercentage() const {
 
   /* ---------------------------------------------------------------------------------------------------- */
 
+  bool Currency::isFiniteCdTerm(uint32_t term) {
+    return term > 0 &&
+           term != parameters::HEAT_TERM &&
+           term != parameters::DEPOSIT_TERM_LP &&
+           term != parameters::DEPOSIT_TERM_POOL_XFG &&
+           term != parameters::DEPOSIT_TERM_POOL_HEAT &&
+           term != parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG &&
+           term != parameters::DIGM_TERM;
+  }
+
+  bool Currency::isHeatCdHeight(uint32_t height) const {
+    return height >= cdActivationHeight();
+  }
+
   AssetType Currency::classifyCommitmentTermAsset(uint32_t term) {
     if (term == parameters::HEAT_TERM)
       return AssetType::HEAT;
@@ -620,14 +634,11 @@ double Currency::getBurnPercentage() const {
   AssetBalance Currency::getTransactionOutputAssetAmounts(const Transaction& tx) const {
     AssetBalance bal;
     for (const auto& out : tx.outputs) {
-      AssetType asset = AssetType::XFG;
       uint32_t term = 0;
       if (out.target.type() == typeid(TransactionOutputCommitment)) {
-        const auto& co = boost::get<TransactionOutputCommitment>(out.target);
-        term = co.term;
+        term = boost::get<TransactionOutputCommitment>(out.target).term;
       }
-      asset = classifyOutputAsset(out.target, term);
-      switch (asset) {
+      switch (classifyOutputAsset(out.target, term)) {
         case AssetType::HEAT: bal.heat += out.amount; break;
         case AssetType::LP:   bal.lp   += out.amount; break;
         default:              bal.xfg  += out.amount; break;

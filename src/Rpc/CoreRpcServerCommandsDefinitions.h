@@ -349,11 +349,16 @@ struct COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS {
     uint64_t amount;
     uint64_t outs_count;
     uint32_t max_height = 0;
+    // CommitmentRingClass: 0 any (legacy), 1 HEAT_TERM, 2 mature HEAT CDs,
+    // 3 mature legacy XFG CDs. Classes 1-3 skip slashed and pool outputs, so
+    // rings satisfy the asset-homogeneous ring rule.
+    uint8_t ring_class = 0;
 
     void serialize(ISerializer& s) {
       KV_MEMBER(amount)
       KV_MEMBER(outs_count)
       KV_MEMBER(max_height)
+      KV_MEMBER(ring_class)
     }
   };
 

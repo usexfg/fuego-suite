@@ -1,0 +1,46 @@
+name: Notify fuego-valise
+
+# When a change lands on master in any file fuego-valise extracts its SDK
+# contract from (see SUITE_FILES in fuego-valise tool/check_suite_sync.py),
+# ask fuego-valise to re-sync. Needs the VALISE_DISPATCH_TOKEN secret: a
+# fine-grained token for usexfg/fuego-valise with Contents: read and write.
+# Without it this job only warns; fuego-valise still re-syncs daily.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/CryptoNoteConfig.h'
+      - 'src/CryptoNoteCore/TransactionExtra.h'
+      - 'src/CryptoNoteCore/Currency.cpp'
+      - 'src/Rpc/CoreRpcServerCommandsDefinitions.h'
+      - 'src/Rpc/RpcServer.cpp'
+      - 'src/CryptoNoteProtocol/CryptoNoteProtocolDefinitions.h'
+      - 'src/PaymentGate/PaymentServiceJsonRpcMessages.h'
+      - 'src/PaymentGate/PaymentServiceJsonRpcMessages.cpp'
+      - 'src/PaymentGate/PaymentServiceJsonRpcServer.cpp'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send repository_dispatch to fuego-valise
+        env:
+          TOKEN: ${{ secrets.VALISE_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::VALISE_DISPATCH_TOKEN is not set; fuego-valise will pick this change up on its daily sync."
+            exit 0
+          fi
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/usexfg/fuego-valise/dispatches \
+            -d "{\"event_type\":\"suite-updated\",\"client_payload\":{\"sha\":\"${SHA}\"}}"

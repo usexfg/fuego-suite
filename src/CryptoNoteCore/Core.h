@@ -153,7 +153,7 @@ namespace CryptoNote {
                                      std::vector<Crypto::PublicKey>& keys) override;
     Crypto::Hash get_tail_id();
     virtual bool get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_request &req, COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS_response &res) override;
-    virtual bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) override;
+    virtual bool get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, uint8_t ringClass, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) override;
     virtual bool get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,
                                     std::vector<uint32_t>& heights) override;
     void pause_mining() override;

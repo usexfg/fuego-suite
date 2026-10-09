@@ -52,6 +52,76 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## PR 68 conflict resolution: keep master's commitment scheme, port the additive consensus work
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk (PR #68)
+**Started**: 2026-10-09
+**Agent**: opencode (space-bunny-free)
+**Status**: COMPLETE — mergeable against master
+
+### What the conflict actually was
+
+This was not a textual merge conflict. Master had independently landed a *different*
+spend-key-bound commitment scheme from the `keyderiv` line, so this branch and master
+were cryptographically incompatible on the same outputs:
+
+| | This branch | Master |
+|---|---|---|
+| Owner-bound key | `Hs(D‖i‖"fuego_commit_v2")·G + B` | `P = B + t·G`, `t = derive(D, i)` |
+| Spend resolution | `deriveOwnedCommitmentKeys` picks by recorded key image | `resolveCommitmentSpendKeys` tries owner-bound, falls back to legacy |
+| Scan-side match | loops `spendKeys`, first match wins | `matchOwnerBoundCommitKey` uses `underive_public_key` and reports ambiguity |
+| V12 activation | 1,500,000 | 2,666,666 |
+
+Master's is already deployed. Taking either side wholesale was wrong, so the merge
+keeps master's scheme throughout and ports only what master does not have.
+
+### Ported (additive, scheme-independent)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `swapEscrowKeyImage` into CryptoNoteCore; SwapTxBuilder delegates | opencode | 2026-10-09 | DONE |
+| 2 | Enforce escrow key image in `validateSwapEscrowInput` | opencode | 2026-10-09 | DONE |
+| 3 | Per-output escrow spend tracking in mempool and block template | opencode | 2026-10-09 | DONE |
+| 4 | `getTreasuryFundBurn` + V11 min-fee computed on network fee only | opencode | 2026-10-09 | DONE |
+| 5 | `usesHeatEraFeatures` / `createsCd` / `createsDigm` consensus gating | opencode | 2026-10-09 | DONE |
+| 6 | CD-only commitment transfer rings | opencode | 2026-10-09 | DONE |
+| 7 | `ringClass` commitment-ring RPC plumbing + wallet call sites | opencode | 2026-10-09 | DONE |
+| 8 | `Currency::isFiniteCdTerm` / `isHeatCdHeight` | opencode | 2026-10-09 | DONE |
+| 9 | AGENTS.md "Network Facts" section | opencode | 2026-10-09 | DONE |
+
+### Discarded (superseded by master, or tied to the discarded scheme)
+
+- `deriveCommitmentKeysV1` / `deriveCommitmentPublicKeyV2` / `deriveCommitmentSecretKeyV2`
+  / `deriveOwnedCommitmentKeys` — a second owner-bound scheme. Merging it would have
+  changed the commit key for every output created under master's scheme.
+- `UPGRADE_HEIGHT_V12 = 1500000` — reverted to master's 2666666.
+- `WalletGreen.cpp` / `WalletGreen.h` / `WalletTransactionSender.cpp` /
+  `TransfersConsumer.cpp` — took master's. This branch's versions open-coded the
+  v1/v2 choice at ~15 call sites, which is what master replaced with
+  `resolveCommitmentSpendKey` / `deriveCommitmentOutputKey`.
+- `ITransfersContainer::getAvailableKeyImage` + its override — existed only so
+  `deriveOwnedCommitmentKeys` could find the recorded key image. Master's
+  `resolveCommitmentSpendKeys` takes the commit key directly, so nothing called it.
+- Two AGENTS.md lines rewritten: they described the discarded `fuego_commit_v2`
+  derivation and the pre-V11 CD/legacy-bond history this branch assumed existed.
+
+### Note on #2
+
+The escrow key image enters the global spent set. Before this, an escrow holder could
+copy a pending input's key image into their own spend, which would be accepted and
+permanently freeze the other owner's coins. Master validates the subgroup and tracks
+per-output usage, but never checked that the key image was *the* one for that output.
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Release, Ninja) | opencode | 2026-10-09 | PASS |
+| ctest (6 suites) | opencode | 2026-10-09 | PASS |
+| test_swap_escrow_claim 18/18 | opencode | 2026-10-09 | PASS |
+| test_eth_protocol, orderbook, catalog, audit regressions | opencode | 2026-10-09 | PASS |
+| All tasks done | opencode | 2026-10-09 | PASS |
+
+---
+
 ## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe
 
 **Started**: 2026-10-04

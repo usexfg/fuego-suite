@@ -100,6 +100,18 @@ namespace
     return mixin;
   }
 
+  // Ring class for a commitment ring, so the daemon only offers decoys of the
+  // same asset class (see COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request).
+  // 1 = HEAT_TERM wallet outputs, 2 = mature CDs. Every CD is HEAT, so a
+  // CD-only ring is automatically asset-homogeneous; class 3 (legacy XFG
+  // commitment CDs) matches nothing because none exist.
+  uint8_t commitmentRingClass(const Deposit &deposit) {
+    if (deposit.term == parameters::HEAT_TERM) {
+      return 1;
+    }
+    return Currency::isFiniteCdTerm(deposit.term) ? 2 : 0;
+  }
+
   #pragma pack(push, 1)
   struct LegacyEncryptedWalletRecord {
     Crypto::chacha8_iv iv;
@@ -535,7 +547,8 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -829,7 +842,8 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1046,7 +1060,8 @@ namespace CryptoNote
       std::error_code nodeError;
 
       throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height, decoys,
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
         [&requestFinished, &nodeError, this](std::error_code ec) {
           nodeError = ec;
           this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
@@ -1406,7 +1421,8 @@ namespace CryptoNote
         std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> fetched;
         System::Event requestFinished(m_dispatcher);
         std::error_code nodeError;
-        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height, fetched,
+        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height,
+          commitmentRingClass(dep), fetched,
           [&requestFinished, &nodeError, this](std::error_code ec) {
             nodeError = ec;
             this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));

@@ -265,6 +265,10 @@ public:
     bool getTransactionFee(const Transaction &tx, uint64_t &fee, uint32_t height) const;
     uint64_t getTransactionFee(const Transaction &tx, uint32_t height) const;
 
+    // Finite-term CD marker: term > 0 and not one of the reserved term tags.
+    static bool isFiniteCdTerm(uint32_t term);
+    // True from cdActivationHeight(): CDs (always HEAT) may exist at `height`.
+    bool isHeatCdHeight(uint32_t height) const;
     static AssetType classifyOutputAsset(const TransactionOutputTarget& target, uint32_t term);
     // Asset of a TransactionOutputCommitment by its term. The single mapping
     // for both sides of the per-asset balance: an output is minted as this

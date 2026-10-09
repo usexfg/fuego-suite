@@ -391,6 +391,21 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
+  if ((height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) ||
+       m_blockchain.getBlockMajorVersionForHeight(height) < BLOCK_MAJOR_VERSION_11) &&
+      usesHeatEraFeatures(tx)) {
+    logger(ERROR) << "tx uses a HEAT-era feature before V11, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+  if (height < m_currency.cdActivationHeight() && createsCd(tx)) {
+    logger(ERROR) << "CD output before CD activation, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+  if (height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) && createsDigm(tx)) {
+    logger(ERROR) << "DIGM mint before V12, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
+
   if (!check_inputs_types_supported(tx)) {
     logger(ERROR) << "unsupported input types for tx id= " << getObjectHash(tx);
     return false;
@@ -848,8 +863,8 @@ bool core::get_random_outs_for_amounts(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_
   return m_blockchain.getRandomOutsByAmount(req, res);
 }
 
-bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
-  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight);
+bool core::get_random_commitment_outs_for_amount(uint64_t amount, uint64_t count, uint32_t maxHeight, uint8_t ringClass, std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result) {
+  return m_blockchain.getRandomCommitmentOutputsForAmount(amount, count, result, maxHeight, ringClass);
 }
 
 bool core::get_output_heights(const std::vector<std::pair<uint64_t, uint32_t>>& queries,

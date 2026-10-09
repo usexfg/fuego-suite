@@ -24,6 +24,7 @@
 #include "CryptoNoteConfig.h"
 #include "Common/StringTools.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
+#include "CryptoNoteCore/Currency.h"
 #include "CryptoNoteCore/IBlock.h"
 #include "CryptoNoteCore/VerificationContext.h"
 #include "CryptoNoteProtocol/CryptoNoteProtocolHandlerCommon.h"
@@ -288,7 +289,7 @@ std::error_code InProcessNode::doGetRandomOutsByAmounts(std::vector<uint64_t>&& 
   return std::error_code();
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
   std::unique_lock<std::mutex> lock(mutex);
@@ -299,18 +300,18 @@ void InProcessNode::getRandomCommitmentOutsForAmount(uint64_t amount, uint64_t o
   }
 
   boost::asio::post(ioService,
-    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, std::ref(result), callback)
+    std::bind(&InProcessNode::getRandomCommitmentOutsForAmountAsync, this, amount, outsCount, maxHeight, ringClass, std::ref(result), callback)
   );
 }
 
-void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+void InProcessNode::getRandomCommitmentOutsForAmountAsync(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result, const Callback& callback)
 {
-  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, result);
+  std::error_code ec = doGetRandomCommitmentOutsForAmount(amount, outsCount, maxHeight, ringClass, result);
   callback(ec);
 }
 
-std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight,
+std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amount, uint64_t outsCount, uint32_t maxHeight, uint8_t ringClass,
     std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>& result)
 {
   {
@@ -321,7 +322,7 @@ std::error_code InProcessNode::doGetRandomCommitmentOutsForAmount(uint64_t amoun
   }
 
   try {
-    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, result)) {
+    if (!core.get_random_commitment_outs_for_amount(amount, outsCount, maxHeight, ringClass, result)) {
       return make_error_code(CryptoNote::error::REQUEST_ERROR);
     }
   } catch (std::system_error& e) {
@@ -1135,6 +1136,15 @@ std::error_code InProcessNode::getCdClaimInfo(uint64_t amount, uint32_t creation
   out.bonusInterest = est.bonusInterest;
   out.bonusVaultBalance = est.bonusVaultBacking;
   out.claimableBonus = est.claimableBonus;
+  // A deposit created before the CD activation height is a principal-only
+  // XFG deposit and earns nothing.
+  if (!core.currency().isHeatCdHeight(creationHeight)) {
+    out.formulaInterest = 0;
+    out.claimableInterest = 0;
+    out.baseInterest = 0;
+    out.bonusInterest = 0;
+    out.claimableBonus = 0;
+  }
   return {};
 }
 

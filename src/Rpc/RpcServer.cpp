@@ -813,7 +813,7 @@ bool RpcServer::on_get_random_outs(const COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOU
 bool RpcServer::on_get_random_commitment_outs(const COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request& req,
                                                 COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::response& res) {
   res.status = "Failed";
-  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, res.outs)) {
+  if (!m_core.get_random_commitment_outs_for_amount(req.amount, req.outs_count, req.max_height, req.ring_class, res.outs)) {
     return true;
   }
   res.status = CORE_RPC_STATUS_OK;
@@ -2721,6 +2721,16 @@ bool RpcServer::on_estimate_cd_yield(const COMMAND_RPC_ESTIMATE_CD_YIELD::reques
   res.claimable_interest = (est.claimableBase > UINT64_MAX - est.claimableBonus)
       ? UINT64_MAX : (est.claimableBase + est.claimableBonus);
   res.pool_info_present = true;
+
+  // CDs exist only from the CD activation height; a deposit created before
+  // it is a principal-only XFG deposit and earns nothing.
+  if (!m_core.currency().isHeatCdHeight(req.creation_height)) {
+    res.estimated_interest = 0;
+    res.claimable_interest = 0;
+    res.base_interest = 0;
+    res.bonus_interest = 0;
+    res.claimable_bonus = 0;
+  }
 
   res.note = "Estimate only: the protocol distributes realized fee revenue "
              "(real yield — no interest is printed), so this is based on accrued "

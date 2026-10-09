@@ -2291,7 +2291,8 @@ bool CryptoNote::Blockchain::getOutsByAmountAndIndexes(uint64_t amount,
 }
 
 bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount, uint64_t count,
-    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height) {
+    std::vector<COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS_out_entry>& result, uint32_t max_height,
+    uint8_t ringClass) {
   if (!m_indexManager.isReady()) return false;
   std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -2304,10 +2305,24 @@ bool CryptoNote::Blockchain::getRandomCommitmentOutputsForAmount(uint64_t amount
   std::vector<size_t> validIndices;
   validIndices.reserve(allRefs.size());
 
-  // Filter by height: only outputs created at or before max_height
-  if (max_height > 0) {
+  // Ring classes (see COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request):
+  // 1 HEAT_TERM, 2 mature CDs (every CD is HEAT). Class 3 (legacy XFG
+  // commitment CDs) matches nothing: none exist. Every class skips slashed
+  // and pool-owned outputs, which checkCommitmentSpendInput rejects, and
+  // keeps rings asset-homogeneous.
+  const uint32_t chainHeight = getCurrentBlockchainHeight();
+  auto eligible = [&](const CommitmentOutputRef& ref) {
+    if (max_height > 0 && ref.transactionIndex.block > max_height) return false;
+    if (ringClass == 0) return true;
+    if (ref.isSlashed) return false;
+    if (ringClass == 1) return ref.term == parameters::HEAT_TERM;
+    if (ringClass != 2 || !Currency::isFiniteCdTerm(ref.term)) return false;
+    return static_cast<uint64_t>(ref.transactionIndex.block) + ref.term <= chainHeight;
+  };
+
+  if (max_height > 0 || ringClass != 0) {
     for (size_t i = 0; i < allRefs.size(); ++i) {
-      if (allRefs[i].transactionIndex.block <= max_height) {
+      if (eligible(allRefs[i])) {
         validIndices.push_back(i);
       }
     }
@@ -2808,6 +2823,10 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
   uint32_t youngestRingMemberTerm = 0;
   bool youngestRingMemberRolled = false;
   bool youngestTermInitialized = false;
+  uint32_t oldestRingMemberHeight = UINT32_MAX;
+  // From V11 a HEAT_TERM output is wallet-owned HEAT, so an all-HEAT_TERM
+  // ring is the normal HEAT spend (see the degenerate-ring guard below).
+  const bool homogeneousRing = currentHeight >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
   for (uint64_t absIdx : absoluteIndexes) {
     if (absIdx >= amountRefs.size()) {
       logger(INFO) << "CommitmentSpend: global index " << absIdx << " out of range (" << amountRefs.size() << " commitment outputs at this amount)";
@@ -2832,6 +2851,7 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
 
     // Track youngest (most recent) ring member for interest bounds check
     uint32_t memberHeight = ref.transactionIndex.block;
+    oldestRingMemberHeight = std::min(oldestRingMemberHeight, memberHeight);
     if (memberHeight > youngestRingMemberHeight) {
       youngestRingMemberHeight = memberHeight;
       youngestRingMemberTerm = 0;
@@ -2903,7 +2923,10 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
 
   // Degenerate-ring guard: if every member is FOREVER-term, no valid real spend
   // is possible (all keyScalars were discarded for burns). Reject immediately.
-  if (!hasNonForever) {
+  // From V11 HEAT_TERM outputs are wallet-owned HEAT and rings must be
+  // asset-homogeneous, so an all-HEAT_TERM ring is the normal HEAT spend;
+  // ring-signature validity alone decides it.
+  if (!hasNonForever && !homogeneousRing) {
     logger(INFO) << "CommitmentSpend: all ring members are burned outputs — no valid real spend possible";
     return false;
   }
@@ -2930,20 +2953,18 @@ bool CryptoNote::Blockchain::checkCommitmentSpendInput(const TransactionInputCom
       logger(INFO) << "CommitmentSpend: positive interest claim requires a finite-CD ring";
       return false;
     }
-    // Legacy XFG deposits (created before V12) are withdraw-only in the new
-    // system: no HEAT-denominated interest accrues on XFG principal. If the
-    // youngest ring member predates V12, the real spend could be a legacy
-    // deposit, so no interest may be claimed. Applies only to v11+ blocks —
-    // pre-v11 blocks re-validate under their original rules (resync safety).
-    // No HEAT CD can exist below cdActivationHeight, so a ring whose youngest
-    // member is older than that may be a legacy deposit: withdraw-only.
+    // Only HEAT CDs earn interest, and none exists below cdActivationHeight.
+    // The real spend is hidden, so every ring member must be at or above that
+    // height: any older member could be the real spend and is principal-only.
+    // Applies to v11+ blocks; pre-v11 blocks re-validate under their original
+    // rules (resync safety).
     uint32_t cdStartHeight = m_currency.cdActivationHeight();
     uint32_t validatingBlockHeight = currentHeight + 1;
     uint8_t validatingBlockVersion = getBlockMajorVersionForHeight(validatingBlockHeight);
     if (validatingBlockVersion >= BLOCK_MAJOR_VERSION_11 &&
-        youngestRingMemberHeight < cdStartHeight) {
-      logger(INFO) << "CommitmentSpend: interest claim on a pre-CD deposit (youngest ring member at height "
-                   << youngestRingMemberHeight << " < CD activation " << cdStartHeight << ") rejected";
+        oldestRingMemberHeight < cdStartHeight) {
+      logger(INFO) << "CommitmentSpend: interest claim on a ring with a pre-CD member (height "
+                   << oldestRingMemberHeight << " < CD activation " << cdStartHeight << ") rejected";
       return false;
     }
     // Pre-v12 blocks keep the ORIGINAL max-across-ring cap (resync safety —
@@ -3098,10 +3119,15 @@ bool CryptoNote::Blockchain::checkCommitmentTransferInput(
     const CommitmentOutputRef& ref = amountRefs[absIdx];
     ringKeys.push_back(&ref.commitKey);
 
-    // One asset per ring: classifyInputAsset values the input by member 0.
-    if (Currency::classifyCommitmentTermAsset(ref.term) !=
-        Currency::classifyCommitmentTermAsset(amountRefs[absoluteIndexes[0]].term)) {
-      logger(INFO) << "CommitmentTransfer: ring mixes asset classes at index " << absIdx;
+    // Only CDs are transferable. Pool-owned outputs share a commit key whose
+    // secret derives from a public seed, and HEAT_TERM / LP / swap-receive
+    // outputs are not CDs: admitting any of them as ring members would let a
+    // transfer re-issue them as a CD (theft of pool reserves, or an asset
+    // switch at equal atomic amount). Every CD is HEAT, so a CD-only ring is
+    // one asset.
+    if (!Currency::isFiniteCdTerm(ref.term)) {
+      logger(INFO) << "CommitmentTransfer: ring member at index " << absIdx
+                   << " is not a CD (term 0x" << std::hex << ref.term << std::dec << ") — rejected";
       return false;
     }
 
@@ -3656,6 +3682,32 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     }
 
     bool isTransactionValid = true;
+
+    // HEAT, the Hearth AMM, LP shares, the orderbook, every commitment output
+    // and input, and CD transfers start at V11: none ever occurred on mainnet
+    // before it, so all are rejected below it. The block at the V11 height
+    // itself still carries major version 10 (the upgrade detector switches
+    // after it), so the version is checked too.
+    if ((block.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11) ||
+         block.bl.majorVersion < BLOCK_MAJOR_VERSION_11) &&
+        usesHeatEraFeatures(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id
+                                 << " uses a HEAT-era feature before V11";
+    }
+    // CDs (always HEAT) start at cdActivationHeight (mainnet V12); no CD of
+    // any kind exists before it.
+    if (block.height < m_currency.cdActivationHeight() &&
+        createsCd(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " CD output before CD activation";
+    }
+    // No DIGM mint exists before V12.
+    if (block.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_12) &&
+        createsDigm(transactions[i])) {
+      isTransactionValid = false;
+      logger(INFO, BRIGHT_WHITE) << "Transaction " << tx_id << " DIGM mint before V12";
+    }
 
     if (block.bl.majorVersion < BLOCK_MAJOR_VERSION_11 &&
         (hasTreasuryFund || hasLimitDeposit || hasLimitWithdraw)) {
@@ -7096,6 +7148,15 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
       logger(DEBUGGING) << "Swap escrow input must carry exactly one signature";
       return false;
     }
+    // The key image enters the global spent set: it must be the one derived
+    // from this escrow output and mode, never a value copied from another
+    // pending input (that would freeze the other owner's coins).
+    const SwapEscrowMode mode = input.mode == 1
+        ? SWAP_ESCROW_MODE_REFUND : SWAP_ESCROW_MODE_CLAIM;
+    if (input.keyImage != swapEscrowKeyImage(input.escrowTxId, input.escrowOutputIndex, mode)) {
+      logger(DEBUGGING) << "Swap escrow input key image does not match its escrow output";
+      return false;
+    }
 
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
 
@@ -7591,7 +7652,7 @@ CryptoNote::AssetType CryptoNote::Blockchain::classifyInputAsset(const Transacti
       return AssetType::XFG;
     return Currency::classifyCommitmentTermAsset(it->second[absIdx].term);
   }
-  return AssetType::XFG;
+  return AssetType::XFG;  // KeyInput, MultisignatureInput
 }
 
 
@@ -7944,6 +8005,8 @@ bool CryptoNote::Blockchain::checkTransactionSettlement(const Transaction& tx, u
 
 CryptoNote::AssetBalance CryptoNote::Blockchain::getTransactionInputAssetAmounts(const Transaction& tx, uint32_t height) const {
   AssetBalance bal;
+  // An interest claim needs a ring of CDs only, and every CD is HEAT, so
+  // principal and interest are both counted as the ring's asset.
   for (const auto& in : tx.inputs) {
     AssetType asset = classifyInputAsset(in);
     uint64_t amount = m_currency.getTransactionInputAmount(in, height);

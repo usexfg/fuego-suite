@@ -100,6 +100,22 @@ namespace CryptoNote
   }
 
 
+  // Claim and refund of one escrow output carry different key images, but
+  // only one can ever be mined (the output is marked used). The pool and the
+  // block template therefore track every escrow spend of an output under ONE
+  // marker — the claim-mode key image, deliberately ignoring `in.mode` — so
+  // the second spend is refused instead of being packed into a block the
+  // chain then rejects.
+  //
+  // This is a per-output marker, NOT the input's own key image: consensus
+  // requires those to differ by mode, so tracking them separately would let a
+  // claim and a refund of one output both sit in the pool.
+  static Crypto::KeyImage swapEscrowSpendMarker(const TransactionInputSwapEscrow &in)
+  {
+    return swapEscrowKeyImage(in.escrowTxId, in.escrowOutputIndex,
+                              SWAP_ESCROW_MODE_CLAIM);
+  }
+
   //---------------------------------------------------------------------------------
   // BlockTemplate
   //---------------------------------------------------------------------------------
@@ -138,6 +154,12 @@ namespace CryptoNote
           const auto &msig = boost::get<MultisignatureInput>(in);
           auto r = m_usedOutputs.insert(std::make_pair(msig.amount, msig.outputIndex));
           (void)r; //just to make compiler to shut up
+          assert(r.second);
+        }
+        else if (in.type() == typeid(TransactionInputSwapEscrow))
+        {
+          auto r = m_keyImages.insert(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in)));
+          (void)r;
           assert(r.second);
         }
       }
@@ -181,6 +203,13 @@ namespace CryptoNote
         {
           const auto &msig = boost::get<MultisignatureInput>(in);
           if (m_usedOutputs.count(std::make_pair(msig.amount, msig.outputIndex)))
+          {
+            return false;
+          }
+        }
+        else if (in.type() == typeid(TransactionInputSwapEscrow))
+        {
+          if (m_keyImages.count(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))))
           {
             return false;
           }
@@ -307,9 +336,17 @@ namespace CryptoNote
       }
     }
 
+    // V11 onward the TreasuryFund burn is not a miner fee, so the
+    // network fee (XFG) must clear the minimum on its own.
+    uint64_t networkFee = fee;
+    if (height >= m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      const uint64_t burn = getTreasuryFundBurn(tx.extra);
+      networkFee = (fee >= burn) ? fee - burn : 0;
+    }
+
     // Check minimum fee based on current block version
     // For mempool transactions, use the latest version rules
-    if (!isFusionTransaction && fee < m_currency.minimumFee()) {
+    if (!isFusionTransaction && networkFee < m_currency.minimumFee()) {
       logger(DEBUGGING) << "transaction fee is not enough: " << m_currency.formatAmount(fee) <<
         ", minimum fee: " << m_currency.formatAmount(m_currency.minimumFee());
       tvc.m_verification_failed = true;
@@ -369,6 +406,26 @@ namespace CryptoNote
       return true;
     }
 
+    // M-1 (pool): reserve the spent inputs BEFORE publishing the transaction to
+    // the pool indexes. addTransactionInputs touches only m_spent_key_images /
+    // m_spentOutputs and reads nothing from m_transactions, so running it first
+    // makes the pair atomic with respect to the lock held above. It was called
+    // AFTER the pool insert, so a failure partway through its loop (duplicate
+    // key image, an escrow output already spent in the pool) returned false with
+    // the transaction already in m_transactions, m_paymentIdIndex,
+    // m_timestampIndex and m_ttlIndex, and with every key image inserted by the
+    // inputs before the failing one left burned until the next restart.
+    if (!addTransactionInputs(id, tx, keptByBlock))
+    {
+      return false;
+    }
+
+    // From here the spent inputs are reserved, so every remaining failure must
+    // release them. The only fallible step left is the m_transactions insert.
+    auto releaseSpentInputsOnFailure = [&]() {
+      removeTransactionInputs(id, tx, keptByBlock);
+    };
+
     // add to pool
     {
       TransactionDetails txd;
@@ -387,6 +444,7 @@ namespace CryptoNote
       if (!(txd_p.second))
       {
         logger(WARNING, BRIGHT_YELLOW) << " Transaction already exists at inserting in memory pool";
+        releaseSpentInputsOnFailure();
         return false;
       }
       m_paymentIdIndex.add(txd.tx);
@@ -409,9 +467,6 @@ namespace CryptoNote
       tvc.m_should_be_relayed = inputsValid && (fee > 0 || isFusionTransaction || ttl.ttl != 0);
       tvc.m_verification_failed = true;
     }
-
-    if (!addTransactionInputs(id, tx, keptByBlock))
-      return false;
 
     tvc.m_verification_failed = false;
     //succeed
@@ -955,6 +1010,19 @@ namespace CryptoNote
           m_spent_key_images.erase(it);
         }
       }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        const Crypto::KeyImage marker = swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in));
+        auto it = m_spent_key_images.find(marker);
+        if (it != m_spent_key_images.end())
+        {
+          it->second.erase(tx_id);
+          if (it->second.empty())
+          {
+            m_spent_key_images.erase(it);
+          }
+        }
+      }
     }
 
     return true;
@@ -1033,6 +1101,20 @@ namespace CryptoNote
           return false;
         }
       }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        std::unordered_set<Crypto::Hash> &spenders = m_spent_key_images[swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))];
+        if (!(keptByBlock || spenders.size() == 0))
+        {
+          logger(ERROR, BRIGHT_RED) << "internal error: swap escrow output already spent in pool, tx_id=" << id;
+          return false;
+        }
+        if (!spenders.insert(id).second)
+        {
+          logger(ERROR, BRIGHT_RED) << "internal error: try to insert duplicate iterator in key_image set";
+          return false;
+        }
+      }
     }
 
     return true;
@@ -1071,6 +1153,13 @@ namespace CryptoNote
       {
         const auto &xfer = boost::get<TransactionInputCommitmentTransfer>(in);
         if (m_spent_key_images.count(xfer.keyImage))
+        {
+          return true;
+        }
+      }
+      else if (in.type() == typeid(TransactionInputSwapEscrow))
+      {
+        if (m_spent_key_images.count(swapEscrowSpendMarker(boost::get<TransactionInputSwapEscrow>(in))))
         {
           return true;
         }

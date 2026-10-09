@@ -16,11 +16,18 @@
 // along with Fuego. If not, see <https://www.gnu.org/licenses/>.
 
 #include "TransactionExtra.h"
+#include <cstring>
+#include "Currency.h"
 #include "CryptoNoteTools.h"
 #include "../CryptoNoteConfig.h"
 #include "../crypto/hash.h"
 #include "../crypto/crypto.h"
 #include "../crypto/chacha8.h"
+
+extern "C" {
+#include "crypto/crypto-ops.h"
+}
+
 #include "Common/int-util.h"
 #include "Common/MemoryInputStream.h"
 #include "Common/StreamTools.h"
@@ -31,6 +38,7 @@
 #include "crypto/keccak.h"
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <chrono>
 #include <iostream>
 
@@ -1745,6 +1753,102 @@ namespace CryptoNote
     tx_extra.push_back(asset);
     for (int i = 0; i < 8; ++i) { tx_extra.push_back(static_cast<uint8_t>(amount & 0xFF)); amount >>= 8; }
     return true;
+  }
+
+  bool usesHeatEraFeatures(const Transaction& tx) {
+    for (const auto& in : tx.inputs) {
+      if (in.type() == typeid(TransactionInputCommitmentTransfer) ||
+          in.type() == typeid(TransactionInputCommitmentSpend)) {
+        return true;
+      }
+    }
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment)) {
+        return true;
+      }
+    }
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx.extra, fields)) {
+      return false;
+    }
+    for (const auto& f : fields) {
+      const auto& t = f.type();
+      if (t == typeid(TransactionExtraHeatMintAuth) || t == typeid(TransactionExtraHeatSendAuth) ||
+          t == typeid(TransactionExtraAmmSwap) || t == typeid(TransactionExtraAmmSwapAuth) ||
+          t == typeid(TransactionExtraAmmAddLiquidity) || t == typeid(TransactionExtraAmmRemoveLiquidity) ||
+          t == typeid(TransactionExtraAmmCompound) || t == typeid(TransactionExtraAmmClaim) ||
+          t == typeid(TransactionExtraLpAddAuth) || t == typeid(TransactionExtraLpRemoveAuth) ||
+          t == typeid(TransactionExtraOrderPlace) || t == typeid(TransactionExtraOrderCancel) ||
+          t == typeid(TransactionExtraMarketBuyAuth) || t == typeid(TransactionExtraMarketSellAuth) ||
+          t == typeid(TransactionExtraLimitDeposit) || t == typeid(TransactionExtraLimitWithdraw) ||
+          t == typeid(TransactionExtraTreasuryFund) || t == typeid(TransactionExtraCdBonusClaim)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool createsCd(const Transaction& tx) {
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment) &&
+          Currency::isFiniteCdTerm(boost::get<TransactionOutputCommitment>(out.target).term)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool createsDigm(const Transaction& tx) {
+    for (const auto& out : tx.outputs) {
+      if (out.target.type() == typeid(TransactionOutputCommitment) &&
+          boost::get<TransactionOutputCommitment>(out.target).term == parameters::DIGM_TERM) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  uint64_t getTreasuryFundBurn(const std::vector<uint8_t>& tx_extra) {
+    std::vector<TransactionExtraField> fields;
+    if (!parseTransactionExtra(tx_extra, fields)) {
+      return 0;
+    }
+    uint64_t amount = 0;
+    bool found = false;
+    for (const auto& field : fields) {
+      if (field.type() == typeid(TransactionExtraTreasuryFund)) {
+        if (found) {
+          return 0;  // duplicate tags are rejected by consensus
+        }
+        found = true;
+        amount = boost::get<TransactionExtraTreasuryFund>(field).amount;
+      }
+    }
+    return amount;
+  }
+
+  Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, SwapEscrowMode mode) {
+    if (mode != SWAP_ESCROW_MODE_CLAIM && mode != SWAP_ESCROW_MODE_REFUND) {
+      throw std::invalid_argument("swapEscrowKeyImage: mode must be CLAIM or REFUND");
+    }
+    unsigned char buf[32 + 2 + 1];
+    std::memcpy(buf, escrowTxId.data, 32);
+    buf[32] = static_cast<unsigned char>(outputIndex & 0xFF);
+    buf[33] = static_cast<unsigned char>((outputIndex >> 8) & 0xFF);
+    buf[34] = static_cast<unsigned char>(mode);
+    Crypto::Hash seed;
+    Crypto::cn_fast_hash(buf, sizeof(buf), seed);
+    Crypto::Hash h;
+    Crypto::cn_fast_hash(seed.data, sizeof(seed.data), h);
+    ge_p2 point;
+    ge_p1p1 point2;
+    ge_p3 p;
+    ge_fromfe_frombytes_vartime(&point, reinterpret_cast<const unsigned char*>(&h));
+    ge_mul8(&point2, &point);
+    ge_p1p1_to_p3(&p, &point2);
+    Crypto::KeyImage ki;
+    ge_p3_tobytes(reinterpret_cast<unsigned char*>(&ki), &p);
+    return ki;
   }
 
   DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {

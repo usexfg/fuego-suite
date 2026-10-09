@@ -1840,6 +1840,19 @@ bool SwapDaemon::fundEscrow(SwapParams& params) {
   // by (tx hash, output index 0). The legacy key-output global index
   // resolution does not apply; the direct claim/refund paths use the
   // funding-tx reference instead of a decoy ring.
+  //
+  // This is the single-output invariant that ESCROW_OUTPUT_INDEX_IN_TX (used
+  // by the claim and refund builders, and hashed into the escrow key image)
+  // depends on. Checked rather than assumed: adding a change output here would
+  // silently repoint every claim and refund at the wrong output.
+  if (tx.outputs.size() != 1) {
+    m_logger(Logging::ERROR) << "  Escrow funding tx has " << tx.outputs.size()
+      << " outputs, expected 1 — refusing to fund";
+    return false;
+  }
+  static_assert(SwapTxBuilder::ESCROW_OUTPUT_INDEX_IN_TX == 0,
+                "fundEscrow pushes the escrow as its only output, so the "
+                "in-transaction index must be 0");
   params.escrowOutputIndex = 0;
 
   // Verify the escrow output is visible on-chain.
@@ -3935,9 +3948,9 @@ bool SwapDaemon::broadcastEscrowRefundDirect(SwapStateMachine& sm) {
     CryptoNote::TransactionInputSwapEscrow in;
     in.amount = params.xfgAmount;
     in.escrowTxId = params.escrowTxHash;
-    in.escrowOutputIndex = 0;
+    in.escrowOutputIndex = SwapTxBuilder::ESCROW_OUTPUT_INDEX_IN_TX;
     in.mode = 1; // refund
-    in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, 0, CryptoNote::SWAP_ESCROW_MODE_REFUND);
+    in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, SwapTxBuilder::ESCROW_OUTPUT_INDEX_IN_TX, CryptoNote::SWAP_ESCROW_MODE_REFUND);
     tx.inputs.push_back(in);
 
     CryptoNote::KeyOutput ko;

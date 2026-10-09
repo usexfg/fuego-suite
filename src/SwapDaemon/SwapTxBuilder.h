@@ -76,6 +76,17 @@ public:
   // Minimum fee in atomic units (0.001 XFG)
   static constexpr uint64_t MIN_FEE = 10000;
 
+  // Output index, WITHIN the escrow funding transaction, of the
+  // TransactionOutputSwapEscrow. fundEscrow() builds a funding transaction
+  // whose only output is the escrow, so this is always 0 and consensus
+  // resolves the escrow by (escrowTxId, this index).
+  //
+  // Do NOT confuse it with SwapParams::escrowOutputIndex, which the daemon
+  // uses as a GLOBAL output index for ring/decoy selection on the funding
+  // side. The two are different spaces; passing one where the other is
+  // expected makes the escrow input reference the wrong output.
+  static constexpr uint16_t ESCROW_OUTPUT_INDEX_IN_TX = 0;
+
   // ── Step 1: Build unsigned transaction skeleton ──────────────────────
 
   // Construct the unsigned transaction spending the escrow output.

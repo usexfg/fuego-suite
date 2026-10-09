@@ -537,9 +537,9 @@ bool SwapTxBuilder::buildDeterministicClaimTx(const SwapParams& params,
   CryptoNote::TransactionInputSwapEscrow in;
   in.amount = params.xfgAmount;
   in.escrowTxId = params.escrowTxHash;
-  in.escrowOutputIndex = 0;
+  in.escrowOutputIndex = ESCROW_OUTPUT_INDEX_IN_TX;
   in.mode = 0; // claim
-  in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, 0, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
+  in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, ESCROW_OUTPUT_INDEX_IN_TX, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
   tx.inputs.push_back(in);
 
   CryptoNote::KeyOutput ko;

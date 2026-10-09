@@ -99,17 +99,34 @@ int main() {
     check(err.empty(), "and the error is cleared when funded");
   }
 
-  // ---- the overflow trap: escrow + fee must not wrap
+  // ---- the overflow traps: BOTH the multiply and the add must be guarded
   {
-    // This is the arithmetic the gate has to get right at the top of the uint64 range.
-    const uint64_t huge = UINT64_MAX - 5;
-    uint64_t fee = (huge / 100);
-    bool wrapped = false;
-    uint64_t required = 0;
-    if (fee > UINT64_MAX - huge) wrapped = true;   // the check in initiate()
-    else required = huge + fee + kMinFee;          // kMinFee term can also wrap
-    check(wrapped, "huge escrow + fee is detected before the addition, not after");
-    (void)required;
+    const uint64_t bps = 100;   // SWAP_FEE_RATE_BPS
+
+    // The multiply: xfgAmount * 100 wraps above ~1.8e17 atomic. An earlier draft guarded
+    // only the addition, which validates a requirement built from a silently wrapped fee.
+    const uint64_t tooBigToScale = UINT64_MAX / bps + 1;
+    check(tooBigToScale > UINT64_MAX / bps, "multiply guard threshold is exclusive");
+    check(tooBigToScale * bps < tooBigToScale,
+          "and confirms the multiply really would wrap past it");
+    bool refusedMultiply = (tooBigToScale > UINT64_MAX / bps);
+    check(refusedMultiply, "an unpayable escrow is refused at the multiply");
+
+    // Just under the threshold must still be accepted and computed correctly.
+    const uint64_t largestSafe = UINT64_MAX / bps;
+    const uint64_t fee = (largestSafe * bps) / 10000;
+    check(largestSafe * bps <= UINT64_MAX, "largest safe amount does not wrap");
+    check(fee > 0, "and still yields a real fee");
+
+    // The add: escrow + fee + MIN_FEE must not wrap.
+    const uint64_t nearMax = UINT64_MAX - 5;
+    bool refusedAdd = false;
+    if (fee > UINT64_MAX - nearMax) refusedAdd = true;
+    else {
+      const uint64_t sum = nearMax + fee + kMinFee;
+      refusedAdd = sum < nearMax;   // wrapped
+    }
+    check(refusedAdd, "an escrow whose total overflows is refused at the addition");
   }
 
   // ---- real fuegod /getbalance shapes

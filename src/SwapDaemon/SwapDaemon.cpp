@@ -1117,7 +1117,12 @@ bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason, bool refres
   // amount is checked in initiate(), where params.xfgAmount is known. An earlier draft
   // computed a fee from a default-constructed SwapParams whose xfgAmount is 0, which
   // silently reduced this to a bare MIN_FEE.
-  const FundingReadiness funding = getFundingReadiness(SwapTxBuilder::MIN_FEE, refresh);
+  // Deliberately NOT forwarding `refresh`. OfferManager::tick calls this once per offer
+  // per block and every existing call site passes refresh=true, which would turn the
+  // 30s cache into dead code and put a wallet RPC on the block-processing hot path.
+  // Only initiate() forces a fresh read, because that is where the exact amount is known
+  // and the read must reflect it.
+  const FundingReadiness funding = getFundingReadiness(SwapTxBuilder::MIN_FEE, false);
   if (!funding.funded) {
     if (reason) *reason = funding.error;
     return false;
@@ -1199,16 +1204,21 @@ bool SwapDaemon::initiate(SwapParams& params) {
   {
     // Same fee constant the rest of the daemon uses (reportSwapFeeOnce). Nothing else
     // in this file selects a testnet variant, so this does not invent one either.
-    const uint64_t fee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+    const uint64_t bps = CryptoNote::parameters::SWAP_FEE_RATE_BPS;
+    // The multiply needs its own guard. xfgAmount * 100 overflows above ~1.8e17 atomic,
+    // which would understate the fee; guarding only the addition would then validate a
+    // requirement built from a wrapped fee.
+    if (params.xfgAmount > UINT64_MAX / bps) {
+      m_logger(Logging::ERROR) << "Escrow amount is too large to compute a fee; refusing";
+      return false;
+    }
+    const uint64_t fee = (params.xfgAmount * bps) /
                         CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
-    // Guard the addition: a near-max xfgAmount plus fee must not wrap to a small number
-    // and let an unfunded swap through.
-    uint64_t required = 0;
     if (fee > UINT64_MAX - params.xfgAmount) {
       m_logger(Logging::ERROR) << "Escrow amount plus fee overflows; refusing";
       return false;
     }
-    required = params.xfgAmount + fee + SwapTxBuilder::MIN_FEE;
+    const uint64_t required = params.xfgAmount + fee + SwapTxBuilder::MIN_FEE;
 
     const FundingReadiness funding = getFundingReadiness(required, true);
     if (!funding.funded) {

@@ -252,6 +252,41 @@ market quote.
 | Price policy tests | PASS — 423 checks | Codex | 2026-10-08 |
 | All tasks done | PASS | Codex | 2026-10-08 |
 
+### Adversarial review of Gate A, and what it caught
+
+Self-reviewed with three hostile personas (Saboteur / New Hire / Security Auditor). Two
+real defects were found in code that had already been committed:
+
+**CRITICAL -- the cache was dead code and I had put a wallet RPC on the block hot path.**
+`getFundingReadiness(requiredAtomic, refresh)` only reads its 30 s cache when
+`refresh == false`, but **every** call site passes `refresh = true`, including the
+OfferManager callback at `SwapDaemon.cpp:5106`, which `OfferManager::tick` invokes once per
+offer per block. So the cache I added specifically to stop hammering the wallet RPC was
+write-only, and every managed offer triggered a fresh `/getbalance` on the tick thread. The
+same pre-existing `refresh=true` convention already defeats the 60 s chain-readiness cache,
+so this inherited an existing latent issue and made it materially worse: a chain-height RPC
+became a wallet-balance RPC. Fixed by deliberately **not** forwarding `refresh` in
+`canStartNewSwap`; only `initiate()` forces a fresh read, because that is where the exact
+amount is known.
+
+**WARNING -- the fee multiply was unchecked while the add was guarded.**
+`params.xfgAmount * SWAP_FEE_RATE_BPS` (100) overflows above ~1.8e17 atomic, understating
+the fee. Guarding only the subsequent addition validated a requirement built from an
+already-wrapped fee, so the guard gave false assurance. Fixed with an explicit
+`xfgAmount > UINT64_MAX / bps` refusal before the multiply. `test_funding_gates` extended
+to cover both traps: 23 checks, 0 failures.
+
+**Noted, not changed:** `canStartNewSwap` now covers chain readiness *and* wallet funding,
+which its name does not convey. Renaming it would touch five call sites on a branch another
+session is actively editing; the header comment records the behaviour instead.
+
+**TOCTOU, accepted:** the balance is proven, then spent later. A concurrent drain can still
+empty the wallet between the check and the broadcast. That window is inherent to checking a
+balance at all; closing it needs wallet-side reservation, which is out of scope here.
+
+**Logs disclose balances:** the refusal message includes exact spendable and required
+amounts. That is operationally useful and the daemon log is local-only, so it was kept.
+
 ---
 
 ## Phase 2h: full CMake build verified, and the swap test suite wired to ctest

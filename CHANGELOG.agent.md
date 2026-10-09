@@ -1,3 +1,62 @@
+## Correct stale fuego-currency skill documentation (R2-4)
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE
+**Scope**: documentation only — no source changes, so no build/test gate applies
+**Files**: `~/.config/opencode/skills/fuego-currency/SKILL.md` (synced to `~/.opencode/skills/fuego-currency/SKILL.md`)
+
+### What was wrong
+
+The skill documented an **80/20** swap-fee split and described the treasury **60/40** split as
+if it were the fee split. The code is **69/11/20** (`src/CryptoNoteConfig.h:264,269,289`); 60/40
+applies only to the treasury *sub*-allocation (`TREASURY_LP_PCT`, `TREASURY_RESERVE_PCT`).
+Every stale reference was corrected against the constants in source, which are the ground truth:
+
+- fee-pool split bullets and the epoch routing diagram (80/20 → 69/11/20, with the 60/40
+  explicitly re-labelled as a split *of the 20% treasury slice*)
+- constants table: `SWAP_FEE_CD_SHARE_PCT` 80 → 69, and the missing
+  `SWAP_FEE_BONUS_VAULT_PCT` (11) and `SWAP_FEE_TREASURY_SHARE_PCT` (20) rows added;
+  `TREASURY_LP_PCT`/`TREASURY_RESERVE_PCT` rows added and labelled
+- APY formula: the `0.8 ×` factor replaced with an explicit `cd_pool_heat` term that names both
+  contributors (69% of swap fees converted at the pool rate, plus 100% of AMM flat fees)
+- HEAT CD deposit yield line, CD yield pipeline bullets, pipeline rules, and both Python example
+  comments
+- a "peg defense" bucket that does not exist at this constant set → renamed to Reserve Balance
+
+### Why it mattered
+
+During the round-2 audit this stale doc nearly caused a **regression in the opposite direction**:
+an agent trusting it would have "corrected" working 69/11/20 revenue routing back to 80/20,
+moving protocol funds out of the CD Yield Pool and Bonus Vault. The skill is loaded
+automatically for Fuego currency questions, so the wrong numbers would have been applied
+confidently. A staleness banner now heads the file, pointing at `src/CryptoNoteConfig.h` as the
+single source of truth.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Diff every stale constant against `CryptoNoteConfig.h` | opencode | 2026-10-08 | DONE |
+| 2 | Correct fee-pool split + epoch routing diagram | opencode | 2026-10-08 | DONE |
+| 3 | Correct constants table (add missing 11/20 rows) | opencode | 2026-10-08 | DONE |
+| 4 | Correct APY formula to name both HEAT contributors | opencode | 2026-10-08 | DONE |
+| 5 | Correct yield line, pipeline bullets, examples | opencode | 2026-10-08 | DONE |
+| 6 | Add staleness banner naming source as truth | opencode | 2026-10-08 | DONE |
+| 7 | Verify no stale 80/20 reference remains | opencode | 2026-10-08 | DONE |
+| 8 | Sync `~/.opencode` copy | opencode | 2026-10-08 | DONE |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Every corrected value matches `CryptoNoteConfig.h` | opencode | 2026-10-08 | PASS (checked line by line) |
+| No stale 80/20 reference remains | opencode | 2026-10-08 | PASS (grep) |
+| Both skill copies identical | opencode | 2026-10-08 | PASS (`diff` → IDENTICAL) |
+| Build / tests | — | — | N/A (documentation only) |
+
+---
+
 ## Restore after concurrent branch switch (2026-10-04)
 
 **Agent**: opencode (space-bunny-free)

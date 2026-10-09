@@ -615,10 +615,19 @@ bool createsCd(const Transaction& tx);
 // True when tx creates a DIGM_TERM output. No DIGM mint exists before V12;
 // consensus rejects them below V12.
 bool createsDigm(const Transaction& tx);
+// Which spend of a swap escrow output a key image belongs to. The mode is
+// hashed into the marker preimage, so claim and refund of ONE output carry
+// different key images — it is a discriminant, not a boolean flag, and not a
+// value a caller may leave unset.
+enum SwapEscrowMode : uint8_t {
+  SWAP_ESCROW_MODE_CLAIM  = 0,
+  SWAP_ESCROW_MODE_REFUND = 1,
+};
+
 // Consensus key image of a swap escrow spend: hash_to_ec(H(escrowTxId ||
 // outputIndex_LE16 || mode)). Validation requires it exactly, so the field
 // cannot carry another output's key image into the spent set.
-Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, uint8_t mode);
+Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, SwapEscrowMode mode);
 Crypto::PublicKey computePoolCommitKey();
 Crypto::Hash hashOutput(const TransactionOutput& output);
 std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t>& extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key);

@@ -14,6 +14,7 @@
 #include "SwapDaemon/SwapTxBuilder.h"
 #include "SwapDaemon/SwapTypes.h"
 #include "CryptoNoteConfig.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 #include "CryptoNoteCore/CryptoNoteSerialization.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
 #include "Serialization/BinarySerializationTools.h"
@@ -159,7 +160,7 @@ static bool test_refund_signature() {
     in.escrowTxId = bob.escrowTxHash;
     in.escrowOutputIndex = 0;
     in.mode = 1;
-    in.keyImage = SwapTxBuilder::swapEscrowKeyImage(bob.escrowTxHash, 0, 1);
+    in.keyImage = CryptoNote::swapEscrowKeyImage(bob.escrowTxHash, 0, CryptoNote::SWAP_ESCROW_MODE_REFUND);
     tx.inputs.push_back(in);
     CryptoNote::KeyOutput ko;
     ko.key = bob.ourSwapPubKey;
@@ -184,10 +185,10 @@ static bool test_escrow_key_image_determinism() {
   std::cout << "[3] Deterministic escrow key images\n";
   Crypto::Hash txid;
   std::memset(txid.data, 0xAB, sizeof(txid.data));
-  Crypto::KeyImage ki1 = SwapTxBuilder::swapEscrowKeyImage(txid, 0, 0);
-  Crypto::KeyImage ki2 = SwapTxBuilder::swapEscrowKeyImage(txid, 0, 0);
-  Crypto::KeyImage kiR = SwapTxBuilder::swapEscrowKeyImage(txid, 0, 1);
-  Crypto::KeyImage ki3 = SwapTxBuilder::swapEscrowKeyImage(txid, 1, 0);
+  Crypto::KeyImage ki1 = CryptoNote::swapEscrowKeyImage(txid, 0, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
+  Crypto::KeyImage ki2 = CryptoNote::swapEscrowKeyImage(txid, 0, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
+  Crypto::KeyImage kiR = CryptoNote::swapEscrowKeyImage(txid, 0, CryptoNote::SWAP_ESCROW_MODE_REFUND);
+  Crypto::KeyImage ki3 = CryptoNote::swapEscrowKeyImage(txid, 1, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
   CHECK(std::memcmp(&ki1, &ki2, sizeof(ki1)) == 0, "same inputs → same KI");
   CHECK(std::memcmp(&ki1, &kiR, sizeof(ki1)) != 0, "claim and refund KIs differ");
   CHECK(std::memcmp(&ki1, &ki3, sizeof(ki1)) != 0, "different output index → different KI");
@@ -218,7 +219,7 @@ static bool test_serialization_roundtrip() {
   std::memset(in.escrowTxId.data, 0x5C, sizeof(in.escrowTxId.data));
   in.escrowOutputIndex = 0;
   in.mode = 0;
-  in.keyImage = SwapTxBuilder::swapEscrowKeyImage(in.escrowTxId, 0, 0);
+  in.keyImage = CryptoNote::swapEscrowKeyImage(in.escrowTxId, 0, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
   tx.inputs.push_back(in);
   Crypto::Signature sig;
   std::memset(&sig, 0, sizeof(sig));

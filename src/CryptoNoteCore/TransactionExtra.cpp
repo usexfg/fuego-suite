@@ -38,6 +38,7 @@ extern "C" {
 #include "crypto/keccak.h"
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <chrono>
 #include <iostream>
 
@@ -1826,12 +1827,15 @@ namespace CryptoNote
     return amount;
   }
 
-  Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, uint8_t mode) {
+  Crypto::KeyImage swapEscrowKeyImage(const Crypto::Hash& escrowTxId, uint16_t outputIndex, SwapEscrowMode mode) {
+    if (mode != SWAP_ESCROW_MODE_CLAIM && mode != SWAP_ESCROW_MODE_REFUND) {
+      throw std::invalid_argument("swapEscrowKeyImage: mode must be CLAIM or REFUND");
+    }
     unsigned char buf[32 + 2 + 1];
     std::memcpy(buf, escrowTxId.data, 32);
     buf[32] = static_cast<unsigned char>(outputIndex & 0xFF);
     buf[33] = static_cast<unsigned char>((outputIndex >> 8) & 0xFF);
-    buf[34] = mode;
+    buf[34] = static_cast<unsigned char>(mode);
     Crypto::Hash seed;
     Crypto::cn_fast_hash(buf, sizeof(buf), seed);
     Crypto::Hash h;

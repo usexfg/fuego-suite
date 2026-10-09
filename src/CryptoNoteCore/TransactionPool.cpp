@@ -102,12 +102,18 @@ namespace CryptoNote
 
   // Claim and refund of one escrow output carry different key images, but
   // only one can ever be mined (the output is marked used). The pool and the
-  // block template track every escrow spend under the claim-mode key image,
-  // so the second spend of an output is refused instead of being packed into
-  // a block that the chain then rejects.
+  // block template therefore track every escrow spend of an output under ONE
+  // marker — the claim-mode key image, deliberately ignoring `in.mode` — so
+  // the second spend is refused instead of being packed into a block the
+  // chain then rejects.
+  //
+  // This is a per-output marker, NOT the input's own key image: consensus
+  // requires those to differ by mode, so tracking them separately would let a
+  // claim and a refund of one output both sit in the pool.
   static Crypto::KeyImage swapEscrowSpendMarker(const TransactionInputSwapEscrow &in)
   {
-    return swapEscrowKeyImage(in.escrowTxId, in.escrowOutputIndex, 0);
+    return swapEscrowKeyImage(in.escrowTxId, in.escrowOutputIndex,
+                              SWAP_ESCROW_MODE_CLAIM);
   }
 
   //---------------------------------------------------------------------------------
@@ -400,6 +406,26 @@ namespace CryptoNote
       return true;
     }
 
+    // M-1 (pool): reserve the spent inputs BEFORE publishing the transaction to
+    // the pool indexes. addTransactionInputs touches only m_spent_key_images /
+    // m_spentOutputs and reads nothing from m_transactions, so running it first
+    // makes the pair atomic with respect to the lock held above. It was called
+    // AFTER the pool insert, so a failure partway through its loop (duplicate
+    // key image, an escrow output already spent in the pool) returned false with
+    // the transaction already in m_transactions, m_paymentIdIndex,
+    // m_timestampIndex and m_ttlIndex, and with every key image inserted by the
+    // inputs before the failing one left burned until the next restart.
+    if (!addTransactionInputs(id, tx, keptByBlock))
+    {
+      return false;
+    }
+
+    // From here the spent inputs are reserved, so every remaining failure must
+    // release them. The only fallible step left is the m_transactions insert.
+    auto releaseSpentInputsOnFailure = [&]() {
+      removeTransactionInputs(id, tx, keptByBlock);
+    };
+
     // add to pool
     {
       TransactionDetails txd;
@@ -418,6 +444,7 @@ namespace CryptoNote
       if (!(txd_p.second))
       {
         logger(WARNING, BRIGHT_YELLOW) << " Transaction already exists at inserting in memory pool";
+        releaseSpentInputsOnFailure();
         return false;
       }
       m_paymentIdIndex.add(txd.tx);
@@ -440,9 +467,6 @@ namespace CryptoNote
       tvc.m_should_be_relayed = inputsValid && (fee > 0 || isFusionTransaction || ttl.ttl != 0);
       tvc.m_verification_failed = true;
     }
-
-    if (!addTransactionInputs(id, tx, keptByBlock))
-      return false;
 
     tvc.m_verification_failed = false;
     //succeed

@@ -3937,7 +3937,7 @@ bool SwapDaemon::broadcastEscrowRefundDirect(SwapStateMachine& sm) {
     in.escrowTxId = params.escrowTxHash;
     in.escrowOutputIndex = 0;
     in.mode = 1; // refund
-    in.keyImage = SwapTxBuilder::swapEscrowKeyImage(params.escrowTxHash, 0, 1);
+    in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, 0, CryptoNote::SWAP_ESCROW_MODE_REFUND);
     tx.inputs.push_back(in);
 
     CryptoNote::KeyOutput ko;

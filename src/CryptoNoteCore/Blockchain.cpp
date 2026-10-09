@@ -7151,7 +7151,9 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
     // The key image enters the global spent set: it must be the one derived
     // from this escrow output and mode, never a value copied from another
     // pending input (that would freeze the other owner's coins).
-    if (input.keyImage != swapEscrowKeyImage(input.escrowTxId, input.escrowOutputIndex, input.mode)) {
+    const SwapEscrowMode mode = input.mode == 1
+        ? SWAP_ESCROW_MODE_REFUND : SWAP_ESCROW_MODE_CLAIM;
+    if (input.keyImage != swapEscrowKeyImage(input.escrowTxId, input.escrowOutputIndex, mode)) {
       logger(DEBUGGING) << "Swap escrow input key image does not match its escrow output";
       return false;
     }

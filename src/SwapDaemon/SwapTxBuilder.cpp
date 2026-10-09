@@ -507,20 +507,6 @@ Crypto::Hash SwapTxBuilder::sharedSeed(const SwapParams& params) {
   return seed;
 }
 
-Crypto::KeyImage SwapTxBuilder::swapEscrowKeyImage(const Crypto::Hash& escrowTxId,
-                                                   uint16_t outputIndex,
-                                                   uint8_t mode) {
-  // The mode byte is part of the key-image seed and is consensus-validated
-  // (mode > 1 is rejected in Blockchain::validateSwapEscrowInput). Enforce
-  // the same bound here so an internal misuse can never seed an invalid
-  // key image (defense in depth).
-  if (mode > 1) {
-    throw std::invalid_argument("swapEscrowKeyImage: mode must be 0 (claim) or 1 (refund)");
-  }
-  // Single definition shared with consensus (Blockchain::validateSwapEscrowInput).
-  return CryptoNote::swapEscrowKeyImage(escrowTxId, outputIndex, mode);
-}
-
 bool SwapTxBuilder::buildDeterministicClaimTx(const SwapParams& params,
                                               const Crypto::PublicKey& destinationKey,
                                               uint64_t protocolFee,
@@ -553,7 +539,7 @@ bool SwapTxBuilder::buildDeterministicClaimTx(const SwapParams& params,
   in.escrowTxId = params.escrowTxHash;
   in.escrowOutputIndex = 0;
   in.mode = 0; // claim
-  in.keyImage = swapEscrowKeyImage(params.escrowTxHash, 0, 0);
+  in.keyImage = CryptoNote::swapEscrowKeyImage(params.escrowTxHash, 0, CryptoNote::SWAP_ESCROW_MODE_CLAIM);
   tx.inputs.push_back(in);
 
   CryptoNote::KeyOutput ko;

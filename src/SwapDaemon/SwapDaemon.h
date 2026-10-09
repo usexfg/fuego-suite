@@ -418,6 +418,9 @@ public:
   bool startStatusServer(uint16_t port);
 
   std::string buildStatusJson();
+  // Oracle and per-feed health for the status endpoint. Reads only the worker's
+  // published snapshot, so it never blocks on the network.
+  std::string buildPriceStatusJson();
   std::string buildChainCatalogJson();
 
   struct ChainReadiness {

@@ -5023,6 +5023,88 @@ bool SwapDaemon::loadOfferConfig(const std::string& jsonPath) {
   return true;
 }
 
+std::string SwapDaemon::buildPriceStatusJson() {
+  const int64_t now = static_cast<int64_t>(std::time(nullptr));
+  const double liveXfgUsd = m_oracle.getLiveXfgUsd();
+
+  Common::JsonValue out(Common::JsonValue::OBJECT);
+  out.insert("xfgUsd", Common::JsonValue(liveXfgUsd));
+  out.insert("seedXfgUsd", Common::JsonValue(PriceOracle::getSeedXfgUsd()));
+  out.insert("xfgUsdSource", std::string(liveXfgUsd > 0.0 ? "hearth" : "seed"));
+
+  PriceSnapshot snapshot;
+  const bool haveSnapshot = m_priceWorker.snapshot(snapshot);
+  out.insert("snapshotAvailable", Common::JsonValue(haveSnapshot));
+  out.insert("snapshotAgeSec",
+             haveSnapshot ? std::max<int64_t>(0, now - snapshot.takenAt) : int64_t{-1});
+  out.insert("pollCycles", static_cast<int64_t>(m_priceWorker.cycles()));
+  out.insert("secondaryFailures", static_cast<int64_t>(m_priceWorker.consecutiveSecondaryFailures()));
+
+  auto feedToJson = [&](const FeedResult& r) {
+    Common::JsonValue f(Common::JsonValue::OBJECT);
+    int64_t ok = 0;
+    int64_t oldest = 0;
+    int64_t newest = 0;
+    for (const auto& kv : r.assets) {
+      if (!kv.second.ok) continue;
+      ++ok;
+      const int64_t t = kv.second.observation.providerTimestamp;
+      if (oldest == 0 || t < oldest) oldest = t;
+      if (t > newest) newest = t;
+    }
+    f.insert("transportOk", Common::JsonValue(r.transportOk));
+    f.insert("reason", r.transportReason);
+    f.insert("assets", static_cast<int64_t>(r.assets.size()));
+    f.insert("ok", ok);
+    f.insert("oldestAgeSec", oldest > 0 ? std::max<int64_t>(0, now - oldest) : int64_t{-1});
+    f.insert("newestAgeSec", newest > 0 ? std::max<int64_t>(0, now - newest) : int64_t{-1});
+    return f;
+  };
+
+  Common::JsonValue feeds(Common::JsonValue::OBJECT);
+  if (haveSnapshot) {
+    feeds.insert("defillama", feedToJson(snapshot.primary));
+    feeds.insert("coingecko", feedToJson(snapshot.secondary));
+  } else {
+    FeedResult none;
+    none.transportReason = "no snapshot yet";
+    feeds.insert("defillama", feedToJson(none));
+    feeds.insert("coingecko", feedToJson(none));
+  }
+  out.insert("feeds", feeds);
+
+  const double xfgUsdForQuote =
+      liveXfgUsd > 0.0 ? liveXfgUsd : PriceOracle::getSeedXfgUsd();
+  Common::JsonValue::Array pairs;
+  pairs.reserve(SWAP_PAIR_COUNT);
+  for (const auto& descriptor : SWAP_PAIR_CATALOG) {
+    PairQuote q;
+    if (haveSnapshot) {
+      q = buildPairQuote(descriptor.id, snapshot.primary, &snapshot.secondary,
+                         xfgUsdForQuote, m_pricePolicy, now);
+    } else {
+      q.pair = descriptor.id;
+      q.status = QuoteStatus::MISSING_DATA;
+      q.reason = "price feeds have not produced a snapshot";
+    }
+    Common::JsonValue e(Common::JsonValue::OBJECT);
+    e.insert("id", static_cast<int64_t>(descriptor.id));
+    e.insert("symbol", std::string(descriptor.symbol));
+    e.insert("support", std::string(
+        descriptor.support == SwapPairSupport::ACTIVE ? "ACTIVE"
+        : descriptor.support == SwapPairSupport::STAGED ? "STAGED" : "ADAPTER"));
+    e.insert("status", std::string(quoteStatusToString(q.status)));
+    e.insert("referenceRate", Common::JsonValue(q.referenceRate));
+    e.insert("rateNum", static_cast<int64_t>(q.rateNum));
+    e.insert("managedOffersAllowed", Common::JsonValue(q.managedOffersAllowed));
+    e.insert("newSwapAllowed", Common::JsonValue(q.newSwapAllowed));
+    e.insert("reason", q.reason);
+    pairs.push_back(e);
+  }
+  out.insert("pairs", pairs);
+  return out.toString();
+}
+
 std::string SwapDaemon::buildStatusJson() {
   std::ostringstream json;
   json << "{";
@@ -5081,7 +5163,9 @@ std::string SwapDaemon::buildStatusJson() {
            << "}";
     }
   }
-  json << "]}";
+  json << "],";
+  json << "\"prices\":" << buildPriceStatusJson();
+  json << "}";
   return json.str();
 }
 

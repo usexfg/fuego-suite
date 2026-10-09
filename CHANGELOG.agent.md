@@ -52,6 +52,84 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Phase 2i: price status snapshot on the status endpoint
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- live JSON verified against both feeds
+
+### What it adds
+
+`buildStatusJson()` reported network, profile, height, chains, offers and swaps, but
+nothing at all about prices. An operator could not tell whether quoting was live,
+corroborated, single-source or stale -- the single most important operational fact about
+the daemon. `buildPriceStatusJson()` adds a `"prices"` section:
+
+    xfgUsd, seedXfgUsd, xfgUsdSource ("hearth" | "seed")
+    snapshotAvailable, snapshotAgeSec, pollCycles, secondaryFailures
+    feeds.defillama / feeds.coingecko:
+        transportOk, reason, assets, ok, oldestAgeSec, newestAgeSec
+    pairs[46]: id, symbol, support, status, referenceRate, rateNum,
+               managedOffersAllowed, newSwapAllowed, reason
+
+It reads only the worker's published snapshot under a short lock, so serving status never
+waits on the network.
+
+Built with the `JsonValue` object/array idiom already used by `buildChainCatalogJson`
+rather than string concatenation, and `test_price_status` **parses the emitted JSON**
+instead of merely checking it was produced -- a status endpoint returning malformed JSON
+is worse than one returning nothing.
+
+### What running it live revealed
+
+    defillama oldestAgeSec=6047   coingecko oldestAgeSec=51542
+    NOTE worst defillama asset PLS is 6047s old -- stale per policy
+    pairs: ok=29  single-source=0
+
+Two things worth acting on:
+
+1. **PLS is genuinely stale** -- 6047s, past the 600s gate, so it is correctly refused.
+2. **CoinGecko's worst asset is 51542s (~14h) old.** Both feeds carry some assets far
+   older than the freshness policy allows. The snapshot makes that visible per feed
+   instead of it being invisible behind a single boolean. 29 of 46 pairs are fully
+   corroborated right now and none degraded to single-source.
+
+The first draft of the test asserted every feed age was inside the window. That was the
+wrong assertion: the endpoint's job is to *report* the worst age so this is visible, not
+to guarantee freshness. Corrected to assert the age is reported and that a stale asset is
+genuinely rejected by the policy.
+
+### Funding gates: not done, and deliberately
+
+The "two funding gates" were never specified anywhere in the repository -- they exist only
+as "still outstanding" lines in this changelog, so there is no definition to implement
+against. Investigating the current code first:
+
+- **One gate already exists**: `verifyEscrowFunding(params)` guards the transition into
+  `ADAPTOR_ESCROW_FUNDED`.
+- **A reorg guard exists** on the counterparty lock proof for the SPV path.
+- **A local balance gate does not exist and cannot be added cheaply.** There is no
+  `getBalance` call anywhere in `SwapDaemon.cpp`, and `FuegoRpcClient` exposes no balance
+  API at all (height, currencyId, info, fuegoPrice, walletAddress, outputs,
+  confirmations). Implementing "do not advertise a swap you cannot fund" requires a new
+  walletd JSON-RPC method plus a walletd change -- a cross-daemon, funds-safety change
+  that should not be invented from an ambiguous one-line note.
+
+Guessing at a funds-safety control on an atomic swap protocol risks either halting swaps or,
+worse, failing open. Left for a decision with the actual requirement stated.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PASS | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_price_status`: **15 checks, 0 failures** (live). `ctest` over the 8 pricing suites:
+**100% passed**. `SwapDaemonLib` builds, so `buildPriceStatusJson` is compiled rather
+than merely reviewed.
+
 ## Local master integration retention — 2026-10-08
 
 The audited branch no longer carried several paths still tracked by local

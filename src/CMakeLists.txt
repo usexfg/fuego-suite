@@ -835,6 +835,12 @@ add_executable(test_price_worker
 target_link_libraries(test_price_worker PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon test: price status snapshot (parses the JSON, hits the live feeds)
+add_executable(test_price_status
+    SwapDaemon/tests/test_price_status.cpp)
+target_link_libraries(test_price_status PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
 add_executable(test_defillama_feed
     SwapDaemon/tests/test_defillama_feed.cpp)
@@ -1057,6 +1063,7 @@ set(_TEST_DAEMON_TARGETS
     test_defillama_feed
     test_coingecko_feed
     test_price_worker
+    test_price_status
     test_pyth_feed
     test_swap_hashlock
     test_sol_htlc_address

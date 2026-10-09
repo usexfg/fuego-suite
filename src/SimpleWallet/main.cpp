@@ -9,6 +9,7 @@
 
 #include "SimpleWallet.h"
 #include "ClientHelper.h"
+#include "SimpleWallet/SwapKeyGen.h"
 #include "Const.h"
 
 #include "Common/CommandLine.h"
@@ -32,6 +33,13 @@ using namespace Logging;
 
 int main(int argc, char* argv[])
 {
+  // Offline key generator for the swap config. Runs before any wallet,
+  // password, or node setup so it works on a bare machine.
+  if (SwapKeyGen::isRequested(argc, argv)) {
+    SwapKeyGen::print();
+    return 0;
+  }
+
 #ifdef _WIN32
   _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif

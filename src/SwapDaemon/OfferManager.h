@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "PriceOracle.h"
 #include "SwapTypes.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
@@ -39,10 +40,11 @@ public:
   };
 
   OfferManager(CryptoNote::SwapOfferRelay& relay,
+               PriceOracle& oracle,
                const Crypto::SecretKey& makerSecretKey,
                const Crypto::PublicKey& makerPublicKey,
                Logging::ILogger& logger,
-               std::function<bool(uint8_t)> pair_ready);
+               std::function<bool(uint8_t)> canPublishPair);
 
   bool loadConfig(const std::string& jsonPath);
   bool loadConfigFromJson(const std::string& json);
@@ -66,10 +68,11 @@ private:
   void cancelManagedOffer(OfferState& state);
 
   CryptoNote::SwapOfferRelay& m_relay;
+  PriceOracle& m_oracle;
   Crypto::SecretKey m_makerSecretKey;
   Crypto::PublicKey m_makerPublicKey;
   Logging::LoggerRef m_logger;
-  std::function<bool(uint8_t)> m_pair_ready;
+  std::function<bool(uint8_t)> m_canPublishPair;
   std::vector<OfferState> m_states;
   uint32_t m_ttlBlocks = 60;
   bool m_running = false;

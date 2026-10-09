@@ -17,14 +17,6 @@
 
 using namespace CryptoNote;
 
-static_assert(SwapOfferRelay::MAX_PAIR_INDEX ==
-              static_cast<uint8_t>(XfgSwap::SwapPair::DOT),
-              "relay storage must cover every SwapPair ID");
-static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::MONAD) == 25 &&
-              static_cast<uint8_t>(XfgSwap::SwapPair::OPTIMISM) == 26 &&
-              static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
-              "executable pair IDs must match SwapPair ordering");
-
 static int tests_run = 0;
 static int tests_passed = 0;
 
@@ -152,6 +144,49 @@ static std::vector<MatchFill> matchOrders(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 int main() {
+  // The array bound includes every enum value, while staged chains cannot
+  // enter either the legacy offer relay or the signed order book.
+  static_assert(XfgSwap::MAX_SWAP_PAIR_INDEX ==
+                    SwapOfferRelay::MAX_PAIR_INDEX,
+                "SwapOfferRelay capacity must cover SwapPair");
+  static_assert(static_cast<uint8_t>(XfgSwap::SwapPair::XMR) == 2 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::BCH) == 3 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::KMD_SPV) == 6 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DCR) == 8 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::BTC) == 9 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::LTC) == 10 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::SIA) == 17 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DOGE) == 20 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::DASH) == 21 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::ZEC) == 22 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::ZANO) == 24 &&
+                    static_cast<uint8_t>(XfgSwap::SwapPair::TON) == 27,
+                "Update executable-pair admission when staged indices change");
+  for (uint8_t pair = 0; pair <= SwapOfferRelay::MAX_PAIR_INDEX; ++pair) {
+    const bool staged = pair == 2 || pair == 3 || pair == 6 ||
+                        pair == 8 || pair == 9 || pair == 10 || pair == 17 ||
+                        pair == 20 || pair == 21 || pair == 22 ||
+                        pair == 24 || pair == 27 || pair == 28;
+    TEST(SwapOfferRelay::isExecutablePair(pair) == !staged);
+  }
+  TEST(!SwapOfferRelay::isExecutablePair(XfgSwap::MAX_SWAP_PAIR_INDEX + 1));
+  TEST(!SwapOfferRelay::isExecutablePair(255));
+
+  // P2P requests reach this shared ingress without the RPC's input checks.
+  const std::string validTakerKey(64, 'a');
+  TEST(SwapOfferRelay::isValidSwapRequestInput(
+      "offer", validTakerKey, std::string(65536, 'p')));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(4096, 'a'), "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(63, 'a'), "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", std::string(63, 'a') + "g", "proof"));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      "offer", validTakerKey, std::string(65537, 'p')));
+  TEST(!SwapOfferRelay::isValidSwapRequestInput(
+      std::string(129, 'o'), validTakerKey, "proof"));
+
 
   // ── PriceLevel::totalDepth ──
 
@@ -425,20 +460,6 @@ int main() {
     TEST(snap.bids.empty());
     TEST(snap.asks.empty());
     TEST(snap.spread == 0);
-  }
-
-  // ── Executable pair admission ──
-
-  // Admission rejects reserved or incomplete pairs while retaining all
-  // enum slots for storage and future activation.
-  {
-    const uint8_t disabled[] = {2, 3, 6, 8, 9, 10, 17, 20, 21, 22, 24, 27, 28};
-    for (uint8_t pair : disabled) TEST(!SwapOfferRelay::isExecutablePair(pair));
-    TEST(SwapOfferRelay::isExecutablePair(0));   // SOL
-    TEST(SwapOfferRelay::isExecutablePair(23));  // PULSECHAIN
-    TEST(SwapOfferRelay::isExecutablePair(25));  // MONAD
-    TEST(SwapOfferRelay::isExecutablePair(26));  // OPTIMISM
-    TEST(!SwapOfferRelay::isExecutablePair(29));
   }
 
   // ── SwapOrder defaults ──

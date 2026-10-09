@@ -114,6 +114,24 @@ namespace CryptoNote
       return false;
     }
 
+    // ── Inject FCI basket vote into coinbase TxExtra ──────────────────────
+    // present_mask == 0 → skip entirely; no extra bytes written, full backward compat.
+    // Phase 1: all votes land on-chain permanently for auditable DIGM back-pay.
+    if (m_fci_basket.present_mask != 0) {
+      if (!addMinerBasketVoteToExtra(bl.baseTransaction.extra, m_fci_basket)) {
+        logger(WARNING) << "[FCI] Failed to inject basket vote into coinbase extra";
+      }
+    }
+
+    // ── Inject Paradio vote (future DIGM feature) if configured ──────────
+    if (!m_paradio_vote.empty()) {
+      TransactionExtraMinerParadioVote pv;
+      pv.song_title = m_paradio_vote;
+      if (!addMinerParadioVoteToExtra(bl.baseTransaction.extra, pv)) {
+        logger(WARNING) << "[Paradio] Failed to inject vote into coinbase extra";
+      }
+    }
+
     set_block_template(bl, di);
     return true;
   }
@@ -204,6 +222,31 @@ namespace CryptoNote
       if(config.miningThreads > 0) {
         m_threads_total = config.miningThreads;
       }
+    }
+
+    // ── FCI basket — copy from config, will be injected into every coinbase ─
+    m_fci_basket.present_mask = config.fciPresentMask;
+    m_fci_basket.power        = config.fciPower;
+    m_fci_basket.milk         = config.fciMilk;
+    m_fci_basket.bread        = config.fciBread;
+    m_fci_basket.eggs         = config.fciEggs;
+    m_fci_basket.gas          = config.fciGas;
+    m_paradio_vote            = config.paradioVote;
+
+    if (m_fci_basket.present_mask) {
+      logger(INFO) << "[FCI] Basket vote active: mask=0x"
+        << std::hex << static_cast<int>(m_fci_basket.present_mask) << std::dec
+        << " power=" << m_fci_basket.power
+        << " milk=" << m_fci_basket.milk
+        << " bread=" << m_fci_basket.bread
+        << " eggs=" << m_fci_basket.eggs
+        << " gas=" << m_fci_basket.gas
+        << " (all in \u00b5USD)";
+    } else {
+      logger(INFO) << "[FCI] No basket prices configured. Use --fci-power/milk/gas/bread/eggs or --fci-oracle to participate.";
+    }
+    if (!m_paradio_vote.empty()) {
+      logger(INFO) << "[Paradio] Block vote: '" << m_paradio_vote << "'";
     }
 
     return true;

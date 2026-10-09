@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
-#include <mutex>
+#include "../SwapTypes.h"
 
 namespace XfgSwap {
 
@@ -27,9 +27,9 @@ enum class EthTxType : uint8_t { Legacy = 0, Eip1559 = 2 };
 struct EthTxReceipt {
   std::string txHash;
   std::string contractAddress;
-  uint64_t blockNumber;
-  bool success;            // status == 1
-  uint64_t gasUsed;
+  uint64_t blockNumber = 0;
+  bool success = false;            // status == 1
+  uint64_t gasUsed = 0;
 };
 
 class EthRpcClient {
@@ -49,17 +49,22 @@ public:
                uint64_t chainId,
                EthTxType txType = EthTxType::Eip1559);
 
-  ~EthRpcClient() { closeSocket(); clear(); }
+  ~EthRpcClient() { clear(); }
+
+  // Parsed endpoint details. Full http(s) URLs, including provider paths such
+  // as Avalanche's /ext/bc/C/rpc, are accepted in the legacy `host` argument.
+  const std::string& endpointUrl() const { return m_endpointUrl; }
+  const std::string& rpcPath() const { return m_rpcPath; }
+  bool usesTls() const { return m_scheme == "https"; }
 
   bool hasSigner() const { return m_hasSigner; }
   uint64_t expectedChainId() const { return m_chainId; }
-  bool getChainId(uint64_t& chain_id);
-  static bool isValidEvmAddress(const std::string& address);
-  bool hasDeployedHtlcRegistry();
+  bool getChainId(uint64_t& chainId);
+  bool isExpectedChain();
 
   // Basic queries
   bool getBlockNumber(uint64_t& blockNum);
-  bool getBalance(const std::string& address, uint64_t& balanceWei);
+  bool getBalance(const std::string& address, AtomicAmount& balanceWei);
   bool getTransactionReceipt(const std::string& txHash, EthTxReceipt& receipt);
   bool getNonce(const std::string& address, uint64_t& nonce);
 
@@ -72,10 +77,12 @@ public:
 
   // Call a contract method (state-changing; signs and broadcasts raw tx)
   bool sendTransaction(const std::string& from, const std::string& to,
-                       const std::string& data, uint64_t value,
+                       const std::string& data, const AtomicAmount& value,
                        uint64_t gasLimit, std::string& txHash);
 
-  bool callContract(const std::string& to, const std::string& data, std::string& result);
+  bool callContract(const std::string& to, const std::string& data,
+                    std::string& result,
+                    const std::string& block_tag = "latest");
 
   // Send raw signed transaction
   bool sendRawTransaction(const std::string& signedTxHex, std::string& txHash);
@@ -89,6 +96,8 @@ public:
   // Set the pre-deployed HashedTimelock registry address ("0x...").
   void setHtlcRegistry(const std::string& registryAddress) { m_htlcRegistry = registryAddress; }
   const std::string& htlcRegistry() const { return m_htlcRegistry; }
+  static bool isValidEvmAddress(const std::string& address);
+  bool hasDeployedHtlcRegistry();
 
   // Set the pre-deployed PointTimelock registry address ("0x...").
   // Pure PTLC (EVM side): locks keyed by a secp256k1 point address instead of
@@ -103,7 +112,7 @@ public:
   // matching Solidity HashedTimelock.lock().
   static std::string computeContractId(const std::string& sender,
                                        const std::string& recipient,
-                                       uint64_t valueWei,
+                                       const AtomicAmount& valueWei,
                                        const std::string& hashLockHex,
                                        uint64_t timeoutBlock);
 
@@ -112,7 +121,7 @@ public:
                 const std::string& recipientAddress,
                 const std::string& hashLockHex,
                 uint64_t timeoutBlock,
-                uint64_t valueWei,
+                const AtomicAmount& valueWei,
                 std::string& contractIdHex);
 
   // verify via getContract(contractId): amount, recipient, hashLock, not claimed/refunded.
@@ -120,13 +129,14 @@ public:
   // on-chain timeout is too near — otherwise they can refund before we can
   // safely claim after revealing / locking our side.
   bool verifyLock(const std::string& contractIdHex,
-                  uint64_t expectedWei,
+                  const AtomicAmount& expectedWei,
                   const std::string& expectedRecipient = "",
                   const std::string& expectedHashLockHex = "",
                   uint64_t minTimeoutBlock = 0);
 
   // If claimed, returns 64-char hex preimage; empty if not claimed / error.
-  std::string getClaimedPreimage(const std::string& contractIdHex);
+  std::string getClaimedPreimage(const std::string& contractIdHex,
+                                 const std::string& block_tag = "latest");
 
   // ─── PointTimelock operations (PointTimelock.sol registry model) ──────────
   //
@@ -139,7 +149,7 @@ public:
   // pointAddress, timeoutBlock)) matching Solidity PointTimelock.lock().
   static std::string computePointContractId(const std::string& sender,
                                             const std::string& recipient,
-                                            uint64_t valueWei,
+                                            const AtomicAmount& valueWei,
                                             const std::string& pointAddress,
                                             uint64_t timeoutBlock);
 
@@ -148,21 +158,22 @@ public:
                  const std::string& recipientAddress,
                  const std::string& pointAddress,
                  uint64_t timeoutBlock,
-                 uint64_t valueWei,
+                 const AtomicAmount& valueWei,
                  std::string& contractIdHex);
 
   // Verify via getContract(contractId): amount, recipient, pointAddress,
   // not claimed/refunded. Empty expected* args skip that comparison.
   // AUDIT 6.1: minTimeoutBlock (0 = skip) — see verifyLock().
   bool verifyPointLock(const std::string& contractIdHex,
-                       uint64_t expectedWei,
+                       const AtomicAmount& expectedWei,
                        const std::string& expectedRecipient = "",
                        const std::string& expectedPointAddress = "",
                        uint64_t minTimeoutBlock = 0);
 
   // If claimed, returns 64-char hex of the canonical big-endian scalar t;
   // empty if not claimed / error.
-  std::string getClaimedPointSecret(const std::string& contractIdHex);
+  std::string getClaimedPointSecret(const std::string& contractIdHex,
+                                    const std::string& block_tag = "latest");
 
   // Claim ETH: claim(contractId, preimage) on the HashedTimelock registry.
   bool claimHtlc(const std::string& fromAddress,
@@ -194,14 +205,18 @@ public:
                   const std::string& recipientAddress,
                   const std::string& hashLockHex,
                   uint64_t timeoutBlock,
-                  uint64_t valueWei,
+                  const AtomicAmount& valueWei,
                   std::string& contractAddressOrId);
 
   // Estimate gas for a transaction (eth_estimateGas).
   bool estimateGas(const std::string& to, const std::string& data,
-                   uint64_t valueWei, uint64_t& gasEstimate);
+                   const AtomicAmount& valueWei, uint64_t& gasEstimate);
 
 private:
+  // Test access for offline transaction-envelope vectors. Production callers
+  // use sendTransaction(), which estimates fees and broadcasts the result.
+  friend struct EthRpcClientTestAccess;
+
   std::string httpPost(const std::string& path, const std::string& body);
   std::string jsonRpc(const std::string& method, const std::string& params);
 
@@ -214,16 +229,32 @@ private:
   // Throws std::runtime_error if the signer private key is not configured.
   bool signAndSend(const std::vector<uint8_t>& to,
                    const std::vector<uint8_t>& data,
-                   uint64_t valueWei,
+                   const AtomicAmount& valueWei,
                    uint64_t gasLimit,
                    std::string& txHash);
+
+  // The gas estimate is already buffered by estimateGas(). Fees remain
+  // uint64 wei-per-gas and uint64 gas units; only their product and total are
+  // widened for exact, overflow-safe balance comparison.
+  static bool transactionFundingSufficient(const AtomicAmount& balanceWei,
+                                            const AtomicAmount& valueWei,
+                                            uint64_t gasLimit,
+                                            uint64_t feePerGasWei,
+                                            uint64_t estimatedGas);
+
+  // Keep the eth_estimateGas request envelope shared with offline tests so
+  // the sender used for simulation cannot silently diverge from the signer.
+  static std::string buildEstimateGasParams(const std::string& from,
+                                             const std::string& to,
+                                             const std::string& data,
+                                             const AtomicAmount& valueWei);
 
   // Build a signed raw EIP-155 (type-0) transaction.
   std::vector<uint8_t> buildLegacySignedTx(uint64_t nonce,
                                            uint64_t gasPriceWei,
                                            uint64_t gasLimit,
                                            const std::vector<uint8_t>& to,
-                                           uint64_t valueWei,
+                                           const AtomicAmount& valueWei,
                                            const std::vector<uint8_t>& data);
 
   // Build a signed raw EIP-1559 (type-2) transaction.
@@ -232,25 +263,38 @@ private:
                                             uint64_t maxFeePerGas,
                                             uint64_t gasLimit,
                                             const std::vector<uint8_t>& to,
-                                            uint64_t valueWei,
+                                            const AtomicAmount& valueWei,
                                             const std::vector<uint8_t>& data);
 
   // Estimate dynamic fees for EIP-1559.
   bool estimateFees(uint64_t& maxPriorityFeePerGas, uint64_t& maxFeePerGas);
 
+  // Refuse RPC-suggested fee envelopes above the same 500 gwei ceiling used
+  // for legacy transactions. Never silently turn a high quote into a signed
+  // transaction with an operator-unapproved maximum fee.
+  static bool calculateCappedEip1559Fees(uint64_t suggestedTipWei,
+                                          uint64_t baseFeeWei,
+                                          uint64_t& maxPriorityFeePerGas,
+                                          uint64_t& maxFeePerGas);
+  static constexpr uint64_t MAX_FEE_PER_GAS_WEI = 500000000000ULL;
+
   // Query eth_gasPrice for legacy (type-0) transactions.
   // Returns false if the RPC call fails; caller should use m_gasPriceFallback.
   bool queryGasPrice(uint64_t& gasPriceWei);
 
+  void configureEndpoint(const std::string& endpoint, uint16_t fallbackPort);
+
+  std::string m_scheme;
   std::string m_host;
   uint16_t    m_port;
+  std::string m_rpcPath;
+  std::string m_endpointUrl;
 
   // Signing credentials — empty if not configured.
   std::array<uint8_t, 32> m_privKey;   // zeroed if not configured
   std::string              m_signerAddress;
   uint64_t                 m_chainId = 0;
   bool                     m_hasSigner = false;
-  std::mutex               m_rpc_mutex;
 
   // Pre-compiled HTLC contract bytecode (hex, no 0x prefix) — optional.
   std::string m_htlcBytecode;
@@ -267,15 +311,6 @@ private:
   // Used when eth_gasPrice RPC call fails.
   uint64_t m_gasPriceFallback = 20000000000ULL; // 20 gwei
 
-  // Persistent HTTP connection (keep-alive).  -1 if not connected.
-  // Reused across RPC calls, reconnected on failure.
-  int m_sock = -1;
-  std::string m_sockHost;
-  uint16_t    m_sockPort = 0;
-
-  // Internal: connect or reconnect to the RPC host.
-  bool connectSocket();
-  void closeSocket();
   void clear();
 };
 

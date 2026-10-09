@@ -31,6 +31,7 @@
 #include "Transfers/TransfersSynchronizer.h"
 #include "Transfers/BlockchainSynchronizer.h"
 #include "crypto/subaddress.h"
+#include "CryptoNoteCore/TransactionExtra.h"
 
 namespace CryptoNote
 {
@@ -221,6 +222,29 @@ protected:
   void throwIfNotInitialized() const;
   void throwIfStopped() const;
   void throwIfTrackingMode() const;
+  // Derives a user-owned commitment output key at `outputIndex` of `transaction`,
+  // bound to the primary address's spend public key. Every self-owned commitment
+  // output in this wallet routes through here so none can silently fall back to
+  // the sender/view-key-spendable legacy derivation.
+  Crypto::PublicKey deriveSelfCommitmentKey(const ITransaction& transaction, size_t outputIndex);
+  // Same, but for an output owned by a third party. `recipientViewPublicKey`
+  // drives the ECDH (delivery) and `recipientSpendPublicKey` binds ownership,
+  // so the recipient can spend the output but the sender cannot.
+  Crypto::PublicKey deriveRecipientCommitmentKey(
+    const ITransaction& transaction,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientViewPublicKey,
+    const Crypto::PublicKey& recipientSpendPublicKey);
+  // Recovers the scalar and key image needed to sign a CommitmentSpend for an
+  // existing deposit. Owner-bound outputs require the recipient spend secret;
+  // legacy outputs fall back to the original ECDH-derived scalar so pre-v11
+  // deposits stay spendable. `recipientSpendSecret` is the primary address's
+  // spend secret.
+  void resolveCommitmentSpendKey(
+    const TransactionOutputInformation& transfer,
+    const Crypto::SecretKey& recipientSpendSecret,
+    KeyPair& outKeyPair,
+    Crypto::KeyImage& outKeyImage) const;
   void doShutdown();
   void clearCaches(bool clearTransactions, bool clearCachedData);
   void clearCacheAndShutdown();
@@ -365,6 +389,37 @@ protected:
 
   void validateTransactionParameters(const TransactionParameters &transactionParameters) const;
   size_t doTransfer(const TransactionParameters &transactionParameters, Crypto::SecretKey &transactionSK);
+
+  // One HEAT deposit ready to spend: its input and what signs it.
+  struct HeatSpend
+  {
+    TransactionInputCommitmentSpend input;
+    std::vector<Crypto::PublicKey> ring;  // ring keys, in the input's order
+    KeyPair keys;
+    size_t realIndex = 0;
+  };
+  // Unlocked HEAT deposits covering `amount`; returns their total.
+  uint64_t selectHeatDeposits(uint64_t amount, std::vector<size_t> &depositIds) const;
+  // A ring-signable spend of each deposit, with decoys of the deposit's own
+  // amount (rings index commitment outputs by amount).
+  std::vector<HeatSpend> prepareHeatSpends(const std::vector<size_t> &depositIds, uint64_t mixin);
+  // XFG the transaction spends — at least its fee: selects transfers, adds the
+  // change output, and prepares the key inputs.
+  void prepareXfgInputs(ITransaction &transaction, uint64_t xfgNeeded, uint64_t mixin,
+                        std::vector<InputInfo> &keysInfo);
+  // A commitment output this wallet can find and spend: its key is bound to the
+  // primary address's spend public key (deriveSelfCommitmentKey), so the scanner
+  // recognises it and only this wallet's spend secret can sign for it. The signing
+  // side is resolveCommitmentSpendKey; there is no legacy-only spend helper.
+  void addCommitmentToSelf(ITransaction &transaction, uint64_t amount, uint32_t term);
+  void addHeatOutputToSelf(ITransaction &transaction, uint64_t amount)
+  {
+    addCommitmentToSelf(transaction, amount, parameters::HEAT_TERM);
+  }
+  // Adds every input, then signs them. A signature covers the whole prefix,
+  // so ITransaction refuses an input once anything is signed.
+  void addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
+                        const std::vector<HeatSpend> &heatSpends);
 
   void requestMixinOuts(const std::vector<OutputToTransfer> &selectedTransfers,
                         uint64_t mixIn,

@@ -84,6 +84,10 @@ enum class PeerMessageType : uint8_t {
 // Phase 1: Each party sends their swap public key.
 struct MsgKeyExchange {
   Crypto::PublicKey swapPubKey;
+  uint8_t amountProtocolVersion = 1; // v1 digest remains readable for recovery
+  SwapPair pair = SwapPair::SOL;
+  uint64_t xfgAmount = 0;
+  AtomicAmount ctrAmount = 0;
 };
 
 // Phase 2: Bob sends adaptor point T, DLEQ Q, proof, and HTLC hashlock to Alice.

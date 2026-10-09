@@ -127,6 +127,22 @@ namespace CryptoNote
           break;
         }
 
+        case TX_EXTRA_MINER_BASKET_VOTE:
+        {
+          TransactionExtraMinerBasketVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
+        case TX_EXTRA_MINER_PARADIO_VOTE:
+        {
+          TransactionExtraMinerParadioVote vote;
+          ar(vote, "vote");
+          transactionExtraFields.push_back(vote);
+          break;
+        }
+
         case TX_EXTRA_HEAT_COMMITMENT:
         {
           TransactionExtraHeatCommitment heatCommitment;
@@ -505,6 +521,16 @@ namespace CryptoNote
       return true;
     }
 
+    bool operator()(const TransactionExtraMinerBasketVote &t)
+    {
+      return addMinerBasketVoteToExtra(extra, t);
+    }
+
+    bool operator()(const TransactionExtraMinerParadioVote &t)
+    {
+      return addMinerParadioVoteToExtra(extra, t);
+    }
+
     bool operator()(const TransactionExtraHeatCommitment &t)
     {
       return addHeatCommitmentToExtra(extra, t);
@@ -740,6 +766,40 @@ namespace CryptoNote
     return true;
   }
 
+  bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_BASKET_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
+  bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote)
+  {
+    BinaryArray blob;
+    if (!toBinaryArray(vote, blob)) return false;
+    tx_extra.reserve(tx_extra.size() + 1 + blob.size());
+    tx_extra.push_back(TX_EXTRA_MINER_PARADIO_VOTE);
+    std::copy(blob.begin(), blob.end(), std::back_inserter(tx_extra));
+    return true;
+  }
+
+  bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote)
+  {
+    std::vector<TransactionExtraField> tx_extra_fields;
+    parseTransactionExtra(tx_extra, tx_extra_fields);
+    return findTransactionExtraFieldByType(tx_extra_fields, vote);
+  }
+
   std::vector<std::string> get_messages_from_extra(const std::vector<uint8_t> &extra, const Crypto::PublicKey &txkey, const Crypto::SecretKey *recepient_secret_key)
   {
     std::vector<TransactionExtraField> tx_extra_fields;
@@ -922,6 +982,31 @@ namespace CryptoNote
   bool tx_extra_message::serialize(ISerializer &s)
   {
     s(data, "data");
+    return true;
+  }
+
+  bool TransactionExtraMinerBasketVote::serialize(ISerializer &s)
+  {
+    s(present_mask, "present_mask");
+    // Only the fields flagged in present_mask are serialized on the wire.
+    // This lets a miner contribute a partial basket (e.g. only power + gas)
+    // without polluting the epoch median for commodities they didn't price.
+    // Phase 1: all votes land permanently on-chain for future back-pay audit.
+    if (present_mask & (1 << 0)) s(power, "power");
+    if (present_mask & (1 << 1)) s(milk,  "milk");
+    if (present_mask & (1 << 2)) s(bread, "bread");
+    if (present_mask & (1 << 3)) s(eggs,  "eggs");
+    if (present_mask & (1 << 4)) s(gas,   "gas");
+    return true;
+  }
+
+  bool TransactionExtraMinerParadioVote::serialize(ISerializer &s)
+  {
+    // Future DIGM Paradio feature: miner embeds a song title (UTF-8, max 128 B)
+    // as a block-level vote for which track plays next on the Paradio stream.
+    // Kept separate from the basket vote (tag 0x39) so each is independently
+    // optional and consensus for either subsystem is independent.
+    s(song_title, "song_title");
     return true;
   }
 
@@ -1681,6 +1766,216 @@ namespace CryptoNote
         reinterpret_cast<Crypto::EllipticCurveScalar&>(keys.amountMask));
     }
     return keys;
+  }
+
+  std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex) {
+    uint8_t preimage[36];
+    memcpy(preimage, &derivation, 32);
+    uint32_t outIdx = static_cast<uint32_t>(outputIndex);
+    preimage[32] = outIdx & 0xFF;
+    preimage[33] = (outIdx >> 8) & 0xFF;
+    preimage[34] = (outIdx >> 16) & 0xFF;
+    preimage[35] = (outIdx >> 24) & 0xFF;
+    Crypto::Hash secHash = Crypto::cn_fast_hash(preimage, sizeof(preimage));
+    std::array<uint8_t, 32> depositSecret;
+    memcpy(depositSecret.data(), secHash.data, 32);
+    return depositSecret;
+  }
+
+  DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret) {
+    return deriveCommitmentKeys(depositSecret);
+  }
+
+  bool deriveCommitmentOutputKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    // An unset spend key must be a hard failure. The all-zero encoding is a
+    // valid (order-4) curve point, so it would otherwise pass check_key, and a
+    // caller that forgot to populate the recipient's spend key would emit an
+    // output nobody can spend — or, if this fell back to the legacy form, one the
+    // sender and any view-key holder can. Protocol-owned outputs (pool escrow
+    // markers) do not come through here: they use computePoolCommitKey().
+    if (recipientSpendPublicKey == Crypto::PublicKey{}) {
+      return false;
+    }
+
+    return deriveOwnerBoundCommitKey(derivation, outputIndex, recipientSpendPublicKey, commitKey);
+  }
+
+  bool deriveOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& recipientSpendPublicKey,
+    Crypto::PublicKey& commitKey) {
+
+    if (!Crypto::check_key(recipientSpendPublicKey)) {
+      return false;
+    }
+    if (!Crypto::derive_public_key(derivation, outputIndex, recipientSpendPublicKey, commitKey)) {
+      return false;
+    }
+    return Crypto::check_key(commitKey);
+  }
+
+  bool matchOwnerBoundCommitKey(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+    Crypto::PublicKey& outMatchedSpendKey,
+    bool& outAmbiguous) {
+
+    outAmbiguous = false;
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // underive_public_key solves P - tG = B for the single B that produced this
+    // output, so it is evaluated once. Iterating it per candidate key would
+    // return the same B each time and report a false ambiguity.
+    Crypto::PublicKey candidate;
+    if (!Crypto::underive_public_key(derivation, outputIndex, commitKey, candidate)) {
+      return false;
+    }
+    if (!Crypto::check_key(candidate)) {
+      return false;
+    }
+    if (spendPublicKeys.find(candidate) == spendPublicKeys.end()) {
+      return false;
+    }
+
+    // A genuine second match would require a different spend public key to
+    // produce the identical output key at the same index, which cannot happen
+    // for distinct keys. Confirm the recovered key really does re-derive the
+    // output rather than trusting the subtraction alone.
+    Crypto::PublicKey verify;
+    if (!Crypto::derive_public_key(derivation, outputIndex, candidate, verify)) {
+      return false;
+    }
+    if (verify != commitKey) {
+      outAmbiguous = true;
+      return false;
+    }
+
+    outMatchedSpendKey = candidate;
+    return true;
+  }
+
+  bool deriveOwnerBoundKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    Crypto::SecretKey& outSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    if (!Crypto::check_key(commitKey)) {
+      return false;
+    }
+
+    // derive_secret_key throws on a non-canonical scalar. Validate first so a
+    // bad secret is reported as a rejection rather than an exception.
+    Crypto::PublicKey spendPublic;
+    if (!Crypto::secret_key_to_public_key(recipientSpendSecret, spendPublic)) {
+      return false;
+    }
+
+    Crypto::SecretKey spendSecret;
+    Crypto::derive_secret_key(derivation, outputIndex, recipientSpendSecret, spendSecret);
+
+    // The derived scalar must reproduce the published output key. A mismatch means
+    // the wrong spend secret, so no key image may be produced for it.
+    Crypto::PublicKey check;
+    if (!Crypto::secret_key_to_public_key(spendSecret, check)) {
+      return false;
+    }
+    if (check != commitKey) {
+      return false;
+    }
+
+    Crypto::generate_key_image(commitKey, spendSecret, outKeyImage);
+    outSpendSecret = spendSecret;
+    return true;
+  }
+
+  bool deriveRecordedCommitmentKeyImage(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& commitKey,
+    const Crypto::SecretKey* recipientSpendSecret,
+    Crypto::KeyImage& outKeyImage) {
+
+    outKeyImage = Crypto::KeyImage{};
+
+    if (recipientSpendSecret != nullptr) {
+      Crypto::SecretKey ignoredScalar;
+      Crypto::KeyImage keyImage;
+      if (deriveOwnerBoundKeyImage(
+            derivation, outputIndex, commitKey, *recipientSpendSecret, ignoredScalar, keyImage)) {
+        outKeyImage = keyImage;
+        return true;
+      }
+    }
+
+    // Not owner-bound under this spend secret (or there is no spend secret).
+    // The legacy form needs only the view-derived ECDH secret, so it is derivable
+    // either way and stays trackable by a view-only wallet.
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+    if (legacy.commitKey == commitKey) {
+      outKeyImage = legacy.keyImage;
+      return true;
+    }
+    return false;
+  }
+
+  bool resolveCommitmentSpendKeys(
+    const Crypto::KeyDerivation& derivation,
+    size_t outputIndex,
+    const Crypto::PublicKey& publishedCommitKey,
+    const Crypto::SecretKey& recipientSpendSecret,
+    CommitmentSpendKeys& out) {
+
+    const DepositCommitmentKeys legacy =
+      deriveLegacyCommitmentKeys(deriveDepositSecret(derivation, outputIndex));
+
+    // P was never recorded, so this output predates the scanner that records it
+    // and was recognised through the legacy form. There is nothing to verify the
+    // legacy keys against; consensus rejects a signature over the wrong ring key.
+    if (publishedCommitKey == Crypto::PublicKey{}) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    Crypto::SecretKey spendScalar;
+    Crypto::KeyImage keyImage;
+    if (deriveOwnerBoundKeyImage(
+          derivation, outputIndex, publishedCommitKey, recipientSpendSecret, spendScalar, keyImage)) {
+      out.form = CommitmentDerivation::OwnerBound;
+      out.commitKey = publishedCommitKey;
+      out.spendScalar = spendScalar;
+      out.keyImage = keyImage;
+      return true;
+    }
+
+    // Not reproducible from the spend secret, so this is a pre-v11 output. Its
+    // scalar depends only on the ECDH secret, which is exactly why the owner-bound
+    // form exists; it stays spendable so old funds are not stranded.
+    if (legacy.commitKey == publishedCommitKey) {
+      out.form = CommitmentDerivation::LegacyExposed;
+      out.commitKey = legacy.commitKey;
+      out.spendScalar = legacy.keyScalar;
+      out.keyImage = legacy.keyImage;
+      return true;
+    }
+
+    return false;
   }
 
   namespace {

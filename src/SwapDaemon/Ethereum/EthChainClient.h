@@ -13,6 +13,8 @@ public:
                  const std::string& chainName = "ETH");
 
   std::string chainName() const override { return m_chainName; }
+  std::string readinessError() override;
+  bool isReadyForNewSwap() override { return readinessError().empty(); }
   bool supportsPtlc() const override { return false; } // Phase 1: BRIDGE (HTLC on EVM, PTLC on XFG). Native Schnorr via EIP in Phase 4.
   // Pure PTLC (PointTimelock registry model) is available only when a
   // PointTimelock registry address has been wired via setPtlcRegistry().
@@ -23,6 +25,11 @@ public:
   // underlying EthRpcClient so lock/verify/claim/refund point operations
   // target it. Empty address keeps pure PTLC disabled.
   void setPtlcRegistry(const std::string& registryAddress);
+
+protected:
+  bool hasDeployedHtlcRegistry();
+
+public:
 
   // Canonical endian transforms (ContractAbi endian rule): Solidity uint256 /
   // libsecp256k1 read scalars BIG-endian; CryptoNote stores LITTLE-endian;
@@ -38,15 +45,19 @@ public:
   ChainClientResult verifyLock(const SwapParams& params) override;
   ChainClientResult claim(const SwapParams& params) override;
   ChainClientResult refund(const SwapParams& params) override;
-
-  std::string readinessError() override;
+  ChainClientResult getTransactionDetails(const std::string& txId,
+                                          ChainClientResult& result) override;
 
   std::string getReceiveAddress() const override { return m_address; }
   ChainClientResult verifyReserveProof(const std::string& expectedMessage,
                                        uint64_t minAmount,
                                        const std::string& proof) override;
+  ChainClientResult verifyReserveProofWide(const std::string& expectedMessage,
+                                           const AtomicAmount& minAmount,
+                                           const std::string& proof) override;
   bool getCurrentHeight(uint64_t& height) override;
   std::string tryExtractClaimedSecret(const SwapParams& params) override;
+  bool hasConfirmedClaim(const SwapParams& params) override;
 
 private:
   std::unique_ptr<EthRpcClient> m_rpc;

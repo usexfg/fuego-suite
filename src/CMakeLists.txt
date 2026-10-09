@@ -231,7 +231,9 @@ add_library(InProcessNode STATIC ${InProcessNode})
 add_library(Logging STATIC ${Logging})
 target_include_directories(Logging SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
-target_link_libraries(Logging PUBLIC ${Boost_LIBRARIES})
+# ConsoleLogger.cpp calls Common::Console::setTextColor(); declare the dependency
+# so libCommon.a is placed AFTER libLogging.a on the link line (static lib order).
+target_link_libraries(Logging PUBLIC Common)
 add_library(NodeRpcProxy STATIC ${NodeRpcProxy})
 
 # Swap core library: shared by libRpc and the xfg-swapd binary
@@ -249,6 +251,10 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/SwapP2P.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/DefiLlamaFeed.cpp
+    SwapDaemon/PythFeed.cpp
+    SwapDaemon/PricePolicy.cpp
+    SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/StatusServer.cpp
     SwapDaemon/RpcServer.cpp
@@ -279,6 +285,7 @@ add_library(SwapDaemonLib STATIC
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
     SwapDaemon/Crypto/LegacySighash.cpp
@@ -356,6 +363,18 @@ add_executable(test_price_oracle_arb
 target_link_libraries(test_price_oracle_arb PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon unit test: DeFiLlama/Pyth feed policy, rate guard, asset catalog
+add_executable(test_price_policy
+    SwapDaemon/tests/test_price_policy.cpp)
+target_link_libraries(test_price_policy PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# Single-source pair catalog, generic EVM metadata, and endpoint parsing.
+add_executable(test_swap_pair_catalog
+    SwapDaemon/tests/test_swap_pair_catalog.cpp)
+target_link_libraries(test_swap_pair_catalog PRIVATE
+    SwapDaemonLib Common Crypto CryptoNoteCore Serialization OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: HTLC hashlock derivation (keccak256/sha256 of secret)
 add_executable(test_swap_hashlock
     SwapDaemon/tests/test_swap_hashlock.cpp)
@@ -415,6 +434,24 @@ add_executable(test_spv_config_wiring
     SwapDaemon/tests/test_spv_config_wiring.cpp)
 target_link_libraries(test_spv_config_wiring PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: RIPEMD-160 reference vectors
+add_executable(test_ripemd160
+    SwapDaemon/tests/test_ripemd160.cpp
+    SwapDaemon/Crypto/ripemd160.cpp)
+target_link_libraries(test_ripemd160 PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# Regenerates the Rust SDK's owner-bound commitment cross-check vectors.
+# The SDK compares every value byte-for-byte, so this is the guard against the
+# two implementations drifting apart on the key that decides who can spend a
+# commitment output. See src/tools/ownerbound_vectors.cpp.
+# Ungated like the other test_* targets here, so CI's wire-format job can build it
+# against the pinned submodule without reconfiguring the whole tree.
+add_executable(ownerbound_vectors
+    tools/ownerbound_vectors.cpp)
+target_link_libraries(ownerbound_vectors PRIVATE
+    CryptoNoteCore Crypto Common Serialization)
 
 # SwapDaemon unit test: SwapStateMachine SPV state transitions
 add_executable(test_swap_state_machine_spv
@@ -659,6 +696,10 @@ add_executable(SwapDaemon
     SwapDaemon/AdaptorSwap.cpp
     SwapDaemon/FuegoRpcClient.cpp
     SwapDaemon/PriceOracle.cpp
+    SwapDaemon/DefiLlamaFeed.cpp
+    SwapDaemon/PythFeed.cpp
+    SwapDaemon/PricePolicy.cpp
+    SwapDaemon/AssetCatalog.cpp
     SwapDaemon/OfferManager.cpp
     SwapDaemon/SwapDaemon.cpp
     SwapDaemon/SwapP2P.cpp
@@ -691,6 +732,7 @@ add_executable(SwapDaemon
     SwapDaemon/Solana/SolRpcClient.cpp
     SwapDaemon/Solana/SolChainClient.cpp
     SwapDaemon/Crypto/Secp256k1Signer.cpp
+    SwapDaemon/Crypto/ripemd160.cpp
     SwapDaemon/Crypto/RlpEncoder.cpp
     SwapDaemon/Crypto/Bip143Sighash.cpp
     SwapDaemon/Crypto/LegacySighash.cpp
@@ -770,6 +812,24 @@ target_link_libraries(testnet-wallet-cli PRIVATE
     Serialization
     ${JSONCPP_LIBRARIES}
 )
+
+# SwapDaemon unit test: Pyth on-chain getPriceUnsafe decoder (recorded payloads)
+add_executable(test_pyth_feed
+    SwapDaemon/tests/test_pyth_feed.cpp)
+target_link_libraries(test_pyth_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
+add_executable(test_defillama_feed
+    SwapDaemon/tests/test_defillama_feed.cpp)
+target_link_libraries(test_defillama_feed PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
+# SwapDaemon unit test: PriceOracle regressions (seed asset, divisor, TWAP, band)
+add_executable(test_price_oracle_defects
+    SwapDaemon/tests/test_price_oracle_defects.cpp)
+target_link_libraries(test_price_oracle_defects PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
 set_target_properties(testnet-wallet-cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src")
 
@@ -940,6 +1000,10 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR APPLE AND NOT ANDROID)
   target_link_libraries(PaymentGateService PRIVATE -lresolv)
   target_link_libraries(Optimizer PRIVATE -lresolv)
   target_link_libraries(SwapDaemon PRIVATE -lresolv)
+  target_link_libraries(test_swap_state_machine_spv PRIVATE -lresolv)
+  # core_tests builds a real Blockchain (rebuildCache regression), which links
+  # the DNS checkpoint lookup.
+  target_link_libraries(core_tests PRIVATE -lresolv)
 endif ()
 
 # --------------------------
@@ -969,8 +1033,10 @@ set_property(TARGET SwapDaemon PROPERTY OUTPUT_NAME "xfg-swapd")
 # Test daemons → build/test_daemons/ (kept out of production src/)
 # --------------------------
 set(_TEST_DAEMON_TARGETS
+    test_swap_pair_catalog
     test_adaptor_roundtrip
     test_price_oracle_arb
+    test_price_policy
     test_swap_hashlock
     test_sol_htlc_address
     test_sol_e2e

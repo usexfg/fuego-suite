@@ -463,6 +463,44 @@ bool FuegoRpcClient::sendTransfer(const std::string& address, uint64_t amount,
 
 // ── Daemon RPC: transaction inspection ───────────────────────────────
 
+bool FuegoRpcClient::getTransactionConfirmations(const std::string& txHashHex,
+                                                  uint32_t& confirmations) {
+  confirmations = 0;
+  Crypto::Hash parsed{};
+  if (!Common::podFromHex(txHashHex, parsed)) return false;
+  try {
+    Common::JsonValue request(Common::JsonValue::OBJECT);
+    request.insert("jsonrpc", "2.0");
+    request.insert("id", static_cast<int64_t>(0));
+    request.insert("method", "f_transaction_json");
+    Common::JsonValue params(Common::JsonValue::OBJECT);
+    params.insert("hash", txHashHex);
+    request.insert("params", params);
+    const auto response = Common::JsonValue::fromString(
+        daemonPost("/json_rpc", request.toString()));
+    if (!response.isObject() || response.contains("error") ||
+        !response.contains("result")) return false;
+    const auto& result = response("result");
+    if (!result.isObject() || !result.contains("txDetails") ||
+        !result("txDetails").isObject() ||
+        !result("txDetails").contains("hash") ||
+        result("txDetails")("hash").getString() != txHashHex ||
+        !result.contains("block") || !result("block").isObject() ||
+        !result("block").contains("height") ||
+        !result("block").contains("hash")) return false;
+    const auto& block = result("block");
+    const int64_t blockHeight = block("height").getInteger();
+    if (blockHeight <= 0 || block("hash").getString().size() != 64) return true;
+    uint32_t chainHeight = 0;
+    if (!getHeight(chainHeight) || chainHeight <= static_cast<uint64_t>(blockHeight))
+      return false;
+    confirmations = chainHeight - static_cast<uint32_t>(blockHeight);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 bool FuegoRpcClient::getTransactionOutputs(const std::string& txHashHex,
                                            std::vector<TxOutputInfo>& outputs) {
   try {

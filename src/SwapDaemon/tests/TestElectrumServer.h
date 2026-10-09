@@ -87,6 +87,11 @@ public:
 
   void stop() {
     m_running.store(false);
+    const int clientFd = m_clientFd.load();
+    if (clientFd >= 0) {
+      // Wake recv() when a test stops the server before destroying its client.
+      ::shutdown(clientFd, SHUT_RDWR);
+    }
     if (m_listenFd >= 0) {
       ::shutdown(m_listenFd, SHUT_RDWR);
       ::close(m_listenFd);
@@ -127,7 +132,9 @@ private:
       }
 
       // Handle exactly one connection then exit
+      m_clientFd.store(clientFd);
       handleClient(clientFd);
+      m_clientFd.store(-1);
       ::close(clientFd);
       break;
     }
@@ -223,6 +230,7 @@ private:
   std::thread m_thread;
   std::atomic<uint16_t> m_port{0};
   std::atomic<bool> m_running{false};
+  std::atomic<int> m_clientFd{-1};
   int m_listenFd = -1;
   Handler m_handler;
   std::map<std::string, std::string> m_cannedResponses;

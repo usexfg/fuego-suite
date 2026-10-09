@@ -210,6 +210,7 @@ void SwapOfferRelay::handleCancelMessage(const std::string& offerId,
 void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amount,
                                        const std::string& takerPubKey,
                                        const std::string& proofOfFunds) {
+  if (!isValidSwapRequestInput(offerId, takerPubKey, proofOfFunds)) return;
   std::lock_guard<std::mutex> lock(m_mutex);
   // Bound queue to prevent memory-exhaustion DoS from gossip floods.
   if (m_pendingRequests.size() >= MAX_PENDING_REQUESTS) {
@@ -221,6 +222,7 @@ void SwapOfferRelay::handleSwapRequest(const std::string& offerId, uint64_t amou
 void SwapOfferRelay::submitSwapRequest(const std::string& offerId, uint64_t amount,
                                        const std::string& takerPubKey,
                                        const std::string& proofOfFunds) {
+  if (!isValidSwapRequestInput(offerId, takerPubKey, proofOfFunds)) return;
   handleSwapRequest(offerId, amount, takerPubKey, proofOfFunds);
 
   if (m_p2pEndpoint) {

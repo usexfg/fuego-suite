@@ -7,6 +7,56 @@ const App = (() => {
   const listeners = {};
   let health = { daemon: false, wallet: false, swapd: false };
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  // Three registered registers. The choice is cosmetic only: it is persisted,
+  // restored before first paint, and announced so charts can re-read their
+  // tokens. Directional colour never changes meaning between registers.
+  const THEMES = ['maison', 'fulltrade', 'reference'];
+  const THEME_KEY = 'xfg.theme';
+  let theme = 'reference';
+
+  function storedTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return THEMES.includes(v) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function applyTheme(name, persist) {
+    if (!THEMES.includes(name)) return;
+    theme = name;
+    document.documentElement.setAttribute('data-theme', name);
+    if (persist !== false) { try { localStorage.setItem(THEME_KEY, name); } catch (e) { /* private mode */ } }
+    syncThemeSwitcher();
+    emit('theme', name);
+  }
+
+  function syncThemeSwitcher() {
+    document.querySelectorAll('.theme-opt').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.theme === theme));
+    });
+  }
+
+  function initThemeSwitcher() {
+    // Restored here rather than at module load so the very first paint is
+    // already in the right register — no flash of the default.
+    applyTheme(storedTheme() || theme, false);
+
+    document.querySelectorAll('.theme-opt').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.theme, true));
+    });
+    syncThemeSwitcher();
+  }
+
+  // Read the live token values. Charts must resolve colours through this rather
+  // than caching them, so they follow a theme change.
+  function tokens(names) {
+    const cs = getComputedStyle(document.documentElement);
+    const out = {};
+    names.forEach(n => { out[n] = cs.getPropertyValue(n).trim(); });
+    return out;
+  }
+
   // ── WebSocket ──
 
   function connectWS() {
@@ -59,10 +109,29 @@ const App = (() => {
 
   // ── API Client ──
 
-  async function rpc(method, params = {}) {
-    const resp = await fetch('/json_rpc', {
+  async function daemonGet(path) {
+    const resp = await fetch(path);
+    return resp.json();
+  }
+
+  // Non-JSON-RPC daemon routes use a flat JSON request/response body.
+  async function daemonPost(path, params = {}) {
+    const resp = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (!resp.ok) throw new Error(`daemon HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.status && data.status !== 'OK') throw new Error(data.status);
+    return data;
+  }
+
+  // Wallet RPC proxy — browser never touches the access key
+  async function walletRpc(method, params = {}) {
+    const resp = await fetch('/api/wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Fuego-Operator': '1' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 'dash', method, params })
     });
     const data = await resp.json();
@@ -70,19 +139,23 @@ const App = (() => {
     return data.result;
   }
 
-  async function daemonGet(path) {
-    const resp = await fetch(path);
-    return resp.json();
-  }
-
-  // Wallet RPC proxy — browser never touches the access key
-  async function walletRpc(method, params = {}) {
-    const resp = await fetch('/api/wallet', {
+  // Cross-chain execution belongs to xfg-swapd (18902), not walletd. The Go
+  // dashboard proxy injects the optional control token so it never reaches the
+  // browser or copied commands.
+  async function swapRpc(method, params = {}) {
+    const resp = await fetch('/api/swapd-rpc', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'dash', method, params })
+      headers: { 'Content-Type': 'application/json', 'X-Fuego-Operator': '1' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
     });
-    const data = await resp.json();
+    const text = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text.trim() || `xfg-swapd HTTP ${resp.status}`);
+    }
+    if (!resp.ok) throw new Error(data.error?.message || `xfg-swapd HTTP ${resp.status}`);
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
     return data.result;
   }
@@ -179,14 +252,18 @@ const App = (() => {
   // ── Init ──
 
   function init() {
+    initThemeSwitcher();
+    if (typeof MaisonTypeface !== 'undefined') MaisonTypeface.init();
     connectWS();
     startHealthPolling();
   }
-
   return {
-    init, on, rpc, daemonGet, walletRpc,
+    init, on, daemonGet, daemonPost, walletRpc, swapRpc,
     fmtXfg, fmtHeat, fmtPct, fmtPrice, fmtTime, fmtHeight, fmtDuration,
     copyToClipboard, showToast,
+    tokens, applyTheme, initThemeSwitcher,
+    get theme() { return theme; },
+    get THEMES() { return THEMES.slice(); },
     get health() { return health; },
     get COIN() { return COIN; }
   };

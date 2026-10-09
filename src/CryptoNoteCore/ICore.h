@@ -29,6 +29,7 @@
 
 #include "CryptoNoteCore/MessageQueue.h"
 #include "CryptoNoteCore/BlockchainMessages.h"
+#include "CryptoNoteCore/CdClaimEstimate.h"
 
 namespace CryptoNote {
 
@@ -184,6 +185,13 @@ public:
   }
   virtual uint64_t getBonusVaultBalance() { return 0; }
   virtual uint64_t getBonusVaultUtxoBalance() { return 0; }
+  // Pool-aware CD claim estimate (see CdClaimEstimate). Non-pure so stubs compile.
+  virtual std::error_code estimateCdClaim(uint64_t amount, uint32_t creationHeight,
+                                          uint32_t currentHeight, uint32_t term,
+                                          CdClaimEstimate& out) {
+    out = CdClaimEstimate{};
+    return std::make_error_code(std::errc::not_supported);
+  }
 };
 
 } //namespace CryptoNote

@@ -28,7 +28,7 @@ namespace XfgSwap {
 struct CompletedSwapTrade {
   SwapPair pair;
   uint64_t xfgAmount;     // atomic units (7 decimals)
-  uint64_t ctrAmount;     // atomic units (pair-dependent decimals)
+  AtomicAmount ctrAmount; // atomic units (pair-dependent decimals)
   double   rate;           // XFG per 1 CTR unit (human-readable)
   uint32_t blockHeight;    // XFG block height when HTLC was claimed
   time_t   timestamp;
@@ -101,7 +101,7 @@ public:
   RateCheck validateRate(SwapPair pair, double proposedRate) const;
 
   // Convenience: validate from atomic amounts
-  RateCheck validateSwapAmounts(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount) const;
+  RateCheck validateSwapAmounts(SwapPair pair, uint64_t xfgAmount, const AtomicAmount& ctrAmount) const;
 
   // Human-readable result
   static const char* rateCheckToString(RateCheck rc);
@@ -133,12 +133,12 @@ private:
   std::deque<CompletedSwapTrade> m_trades;
   size_t   m_twapMaxTrades;    // default 20
   uint64_t m_twapMaxAgeSec;    // default 604800 (7 days)
-  double   m_floorThreshold;   // default 0.50
+  double   m_floorThreshold;   // fractional tolerance, default 0.20 (+/-20%)
   double   m_maxBootstrapDrift; // default 0.50 (±50%)
   double   m_liveXfgUsd;        // live pool price, 0.0 = use seed
 
   // Convert atomic amounts to a rate (XFG per 1 whole CTR coin)
-  static double atomicToRate(SwapPair pair, uint64_t xfgAmount, uint64_t ctrAmount);
+  static double atomicToRate(SwapPair pair, uint64_t xfgAmount, const AtomicAmount& ctrAmount);
 };
 
 } // namespace XfgSwap

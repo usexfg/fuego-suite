@@ -356,8 +356,17 @@ int main(int argc, char* argv[])
     std::string swapDataDir = coreConfig.configFolder + "/swaps";
     boost::filesystem::create_directories(swapDataDir);
     auto swapDb = std::make_unique<XfgSwap::SwapDatabase>(swapDataDir);
+    // The embedded swapd talks to fuegod's own RPC over HTTP, not
+    // in-process. Dial the same interface the RPC server binds to: when the
+    // node is bound to a specific IP (e.g. --rpc-bind-ip=<public-ip> for
+    // pool/wallet access), loopback is NOT listening and every height query
+    // is refused ("Cannot query fuegod height" on each 30s tick).
+    std::string swapRpcHost = rpcConfig.bindIp;
+    if (swapRpcHost.empty() || swapRpcHost == "0.0.0.0" || swapRpcHost == "::") {
+      swapRpcHost = "127.0.0.1";
+    }
     auto swapDaemon = std::make_unique<XfgSwap::SwapDaemon>(
-      "127.0.0.1", rpcConfig.bindPort, swapDataDir, logManager);
+      swapRpcHost, rpcConfig.bindPort, swapDataDir, logManager);
     swapDaemon->setSwapRelay(swapRelay.get());
     swapDaemon->start();
     rpcServer.setSwapDb(swapDb.get());

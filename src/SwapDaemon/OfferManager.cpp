@@ -24,15 +24,17 @@
 namespace XfgSwap {
 
 OfferManager::OfferManager(CryptoNote::SwapOfferRelay& relay,
+                           PriceOracle& oracle,
                            const Crypto::SecretKey& makerSecretKey,
                            const Crypto::PublicKey& makerPublicKey,
                            Logging::ILogger& logger,
-                           std::function<bool(uint8_t)> pair_ready)
+                           std::function<bool(uint8_t)> canPublishPair)
   : m_relay(relay),
+    m_oracle(oracle),
     m_makerSecretKey(makerSecretKey),
     m_makerPublicKey(makerPublicKey),
     m_logger(logger, "OfferManager"),
-    m_pair_ready(std::move(pair_ready)) {}
+    m_canPublishPair(std::move(canPublishPair)) {}
 
 bool OfferManager::loadConfig(const std::string& jsonPath) {
   std::ifstream f(jsonPath);
@@ -69,11 +71,11 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
       mo.slippagePct  = static_cast<uint8_t>(entry("slippagePct").getInteger());
       if (mo.slippagePct == 0) mo.slippagePct = 5;
 
-      // Validate economic fields: pair must be executable and the offer
-      // amount must be positive. A zero amount can never be filled
+      // Validate economic fields: pair must index a valid order-book slot and
+      // the offer amount must be positive. A zero amount can never be filled
       // and would spam the relay with useless offers.
       if (!CryptoNote::SwapOfferRelay::isExecutablePair(mo.pair)) {
-        m_logger(Logging::ERROR) << "Managed offer skipped: non-executable pair " << (int)mo.pair;
+        m_logger(Logging::ERROR) << "Managed offer skipped: unsupported pair " << (int)mo.pair;
         continue;
       }
       if (mo.xfgAmount == 0) {
@@ -101,8 +103,15 @@ bool OfferManager::loadConfigFromJson(const std::string& json) {
 uint64_t OfferManager::compositeToRateNum(uint8_t pair) {
   CryptoNote::CompositePrice cp = m_relay.getCompositePrice(pair);
   if (cp.sourceCount == 0) {
-    double seedRate = PriceOracle::getSeedRate(static_cast<SwapPair>(pair));
-    return static_cast<uint64_t>(seedRate * 1e7);
+    // The relay had nothing. The old code returned the static seed, so managed offers
+    // were priced against a constant and never saw the live Hearth XFG price.
+    const double rate = m_oracle.getEffectiveRate(static_cast<SwapPair>(pair));
+    if (rate <= 0.0) {
+      m_logger(Logging::WARNING) << "OfferManager: no rate for pair="
+        << static_cast<int>(pair) << ", skipping this managed offer";
+      return 0;
+    }
+    return static_cast<uint64_t>(rate * 1e7);
   }
   return static_cast<uint64_t>(cp.rate * 1e7);
 }
@@ -184,7 +193,9 @@ void OfferManager::tick(uint32_t currentHeight) {
   m_running = true;
 
   for (auto& state : m_states) {
-    if (!m_pair_ready(state.config.pair)) {
+    // A recovery-only or disconnected client must not keep an offer live.
+    // Recheck each tick so an RPC outage also withdraws previously posted offers.
+    if (!m_canPublishPair || !m_canPublishPair(state.config.pair)) {
       cancelManagedOffer(state);
       continue;
     }

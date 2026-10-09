@@ -76,7 +76,6 @@ void printUsage() {
     "  --generate-spv-config   Generate SPV config template with fresh keys and addresses\n"
     "  --help                  Show this help message\n"
     "\n"
-    "Pairs: SOL, ETH, XMR, BCH, ARB, BASE, KMD, BNB, DCR, BTC, LTC, POLYGON\n"
     "Amounts are in atomic units (1 XFG = 10,000,000 atomic)\n"
     "\n"
     "Examples:\n"
@@ -86,6 +85,35 @@ void printUsage() {
     "  xfg-swapd --testnet list\n"
     "  xfg-swapd --service --offer-config offers.json\n"
     << std::endl;
+
+  std::cout << "Protocol pairs (runtime configuration/readiness still required):\n  ";
+  size_t column = 2;
+  bool first = true;
+  for (const auto& descriptor : XfgSwap::SWAP_PAIR_CATALOG) {
+    if (!XfgSwap::isProtocolSwapPair(descriptor.id)) continue;
+    const std::string item = descriptor.symbol;
+    if (!first) {
+      if (column + 2 + item.size() > 78) {
+        std::cout << "\n  ";
+        column = 2;
+      } else {
+        std::cout << ", ";
+        column += 2;
+      }
+    }
+    std::cout << item;
+    column += item.size();
+    first = false;
+  }
+  std::cout << "\nStaged (not accepted for new swaps): ";
+  first = true;
+  for (const auto& descriptor : XfgSwap::SWAP_PAIR_CATALOG) {
+    if (XfgSwap::isProtocolSwapPair(descriptor.id)) continue;
+    if (!first) std::cout << ", ";
+    std::cout << descriptor.symbol;
+    first = false;
+  }
+  std::cout << "\n" << std::endl;
 }
 
 std::string getDefaultDataDir() {
@@ -157,7 +185,7 @@ static void generateSpvConfig() {
     << tab << R"(// 2. Keep each `*_wif` as-is — these are freshly generated private keys.)" << nl
     << tab << R"(// 3. Fund each P2PKH address with the chain's native tokens so the daemon can)" << nl
     << tab << R"(//    claim HTLCs and receive refunds.)" << nl
-    << tab << R"(// 4. Set `xfg_secret_key` to your XFG wallet's secret key.)" << nl
+    << tab << R"(// 4. Set `xfg_secret_key`: run `fire_wallet gen_swap_key` and paste the result.)" << nl
     << tab << R"(//)" << nl
     << tab << R"(// Find public Electrum servers: https://github.com/cipig/electrum-servers)" << nl
     << tab << R"(// Find public Neutrino servers: https://github.com/dcrlabs/neutrino-servers)" << nl
@@ -195,6 +223,7 @@ static void generateSpvConfig() {
     << tab << R"("dcr_wif": ")" << dcrWif << R"(",  // P2PKH address: )" << dcrAddr << nl
     << nl
     << tab << R"(// ── XFG ──)" << nl
+    << tab << R"(// Run `fire_wallet gen_swap_key` and paste the printed secret key here.)" << nl
     << tab << R"("xfg_secret_key": "<your_xfg_secret_key>",)" << nl
     << nl
     << tab << R"(// ── EVM chains (RPC-only, not SPV) ──)" << nl
@@ -507,7 +536,11 @@ int main(int argc, char* argv[]) {
         return true;
       };
       if (!parseAmount(xfgAmountStr, "xfg_amount", params.xfgAmount)) return 1;
-      if (!parseAmount(ctrAmountStr, "ctr_amount", params.ctrAmount)) return 1;
+      if (!XfgSwap::parseAtomicAmount(ctrAmountStr, params.ctrAmount) ||
+          params.ctrAmount == 0) {
+        std::cerr << "Error: ctr_amount must be a positive uint256 decimal integer" << std::endl;
+        return 1;
+      }
       params.peerEndpoint = peer;
 
       // Zero-init crypto fields

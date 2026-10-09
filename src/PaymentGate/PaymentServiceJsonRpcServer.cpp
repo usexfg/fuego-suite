@@ -88,6 +88,9 @@ PaymentServiceJsonRpcServer::PaymentServiceJsonRpcServer(System::Dispatcher& sys
   // Unified TUI surface: same method names as fire_wallet WalletRpcServer where possible
   handlers.emplace("heat_deposit", jsonHandler<HeatDeposit::Request, HeatDeposit::Response>(std::bind(&PaymentServiceJsonRpcServer::handleHeatDeposit, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("amm_swap", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleAmmSwap, this, std::placeholders::_1, std::placeholders::_2)));
+  // The CLI's names for the two Hearth directions; burning XFG is heat_mint.
+  handlers.emplace("sell_xfg", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleSellXfg, this, std::placeholders::_1, std::placeholders::_2)));
+  handlers.emplace("buy_xfg", jsonHandler<AmmSwap::Request, AmmSwap::Response>(std::bind(&PaymentServiceJsonRpcServer::handleBuyXfg, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("place_limit_order", jsonHandler<PlaceLimitOrder::Request, PlaceLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handlePlaceLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("cancel_limit_order", jsonHandler<CancelLimitOrder::Request, CancelLimitOrder::Response>(std::bind(&PaymentServiceJsonRpcServer::handleCancelLimitOrder, this, std::placeholders::_1, std::placeholders::_2)));
   handlers.emplace("get_limit_orders", jsonHandler<GetLimitOrders::Request, GetLimitOrders::Response>(std::bind(&PaymentServiceJsonRpcServer::handleGetLimitOrders, this, std::placeholders::_1, std::placeholders::_2)));
@@ -374,6 +377,20 @@ std::error_code PaymentServiceJsonRpcServer::handleHeatDeposit(const HeatDeposit
     response.status = "OK";
   }
   return ec;
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleSellXfg(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  AmmSwap::Request sell = request;
+  sell.direction = 0;
+  return handleAmmSwap(sell, response);
+}
+
+std::error_code PaymentServiceJsonRpcServer::handleBuyXfg(const AmmSwap::Request& request, AmmSwap::Response& response)
+{
+  AmmSwap::Request buy = request;
+  buy.direction = 1;
+  return handleAmmSwap(buy, response);
 }
 
 std::error_code PaymentServiceJsonRpcServer::handleAmmSwap(const AmmSwap::Request& request, AmmSwap::Response& response)

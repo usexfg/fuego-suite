@@ -101,6 +101,10 @@ bool check_inputs_types_supported(const TransactionPrefix& tx);
 bool check_outs_valid(const TransactionPrefix& tx, std::string* error = 0);
 bool checkMultisignatureInputsDiff(const TransactionPrefix& tx);
 bool checkSwapEscrowInputsDiff(const TransactionPrefix& tx);
+// H-1: rejects a transaction spending one key image in more than one input, across
+// all key-image-carrying input types. Must run before the connect path, which
+// cannot safely unwind a duplicate insert.
+bool checkKeyImagesUnique(const TransactionPrefix& tx);
 
 bool check_money_overflow(const TransactionPrefix& tx);
 bool check_outs_overflow(const TransactionPrefix& tx);

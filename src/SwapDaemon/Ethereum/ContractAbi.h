@@ -17,6 +17,7 @@
 #include <string>
 #include <cstdint>
 #include "../../crypto/hash.h"
+#include "../SwapTypes.h"
 
 namespace XfgSwap {
 namespace EthAbi {
@@ -43,7 +44,7 @@ std::string encodeGetContract(const std::string& contractId);
 struct ContractInfo {
   std::string sender;
   std::string recipient;
-  uint64_t amount;
+  AtomicAmount amount;
   Crypto::Hash hashLock;
   uint64_t timeoutBlock;
   bool claimed;
@@ -56,7 +57,7 @@ bool decodeGetContract(const std::string& hexData, ContractInfo& info);
 struct PointContractInfo {
   std::string sender;
   std::string recipient;
-  uint64_t amount;
+  AtomicAmount amount;
   std::string pointAddress;
   uint64_t timeoutBlock;
   bool claimed;

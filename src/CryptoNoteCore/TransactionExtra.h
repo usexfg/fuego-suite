@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include <boost/variant.hpp>
 
@@ -43,6 +44,9 @@
 // parser + struct stay so historical burns keep their banking-index tally.
 #define TX_EXTRA_HEAT_COMMITMENT            0x08
 #define TX_EXTRA_BURN_RECEIPT               0x18
+// 0x3_ tags: Miner Oracle & Voting
+#define TX_EXTRA_MINER_BASKET_VOTE          0x38
+#define TX_EXTRA_MINER_PARADIO_VOTE         0x39
 #define TX_EXTRA_DIGM_MINT                  0xA8
 // 0x_A tags: DIGM Artist related meta/msgs/txns
 #define TX_EXTRA_DIGM_ALBUM                 0x0A
@@ -120,6 +124,21 @@ struct TransactionExtraTTL {
   uint64_t ttl;
 };
 
+struct TransactionExtraMinerBasketVote {
+  uint8_t present_mask;
+  uint32_t power;
+  uint32_t milk;
+  uint32_t bread;
+  uint32_t eggs;
+  uint32_t gas;
+  bool serialize(ISerializer& serializer);
+};
+
+struct TransactionExtraMinerParadioVote {
+  std::string song_title;
+  bool serialize(ISerializer& serializer);
+};
+
 struct TransactionExtraHeatCommitment {
   // HISTORICAL, parse-only (see TX_EXTRA_HEAT_COMMITMENT). No new instances.
   Crypto::Hash commitment;       // Opaque commitment hash
@@ -167,7 +186,7 @@ struct TransactionExtraAliasRegistration {
   std::string alias;               // Exactly 8 chars: [a-z0-9] for regular users
   Crypto::Hash aliasHash;          // cn_fast_hash(alias) for fast lookup
   Crypto::Hash addressHash;        // cn_fast_hash(spendKey||viewKey) for privacy (v2 scheme)
-  std::string ownerAddress;        // Full wallet address (optional: can be empty for privacy)
+  std::string ownerAddress;        // Full address serialized publicly; currently required by isValid().
   uint8_t aliasType = 0;           // 0 = reserved (deprecated), 1 = Regular user (lowercase [a-z0-9])
   uint32_t networkId = 0;          // Fuego network identifier — prevents testnet-to-mainnet replay attacks
   bool serialize(ISerializer& serializer);
@@ -351,6 +370,126 @@ struct DepositCommitmentKeys {
   Crypto::EllipticCurveScalar amountMask;
 };
 
+// Which derivation produced a commitment output key. The public output key
+// distinguishes the two forms, so no new tx_extra tag is needed for recognition.
+enum class CommitmentDerivation : uint8_t {
+  // v11+ user-owned: P = B + tG, spendable only with the recipient's spend secret.
+  OwnerBound = 0,
+  // Pre-v11: keyScalar = Hs("fuego_commit_key" || depositSecret), which the
+  // sender and any view-key holder can compute. Explicitly exposed.
+  LegacyExposed = 1,
+  // Both forms appear to match. Never guessed; rejected.
+  Ambiguous = 2,
+};
+
+// Public side of the owner-bound derivation. Usable by sender and scanner alike.
+// `recipientSpendPublicKey` is B (B_sub = B + mG on a subaddress).
+// Returns the commit key P = derive_public_key(D, outputIndex, B).
+bool deriveOwnerBoundCommitKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& recipientSpendPublicKey,
+  Crypto::PublicKey& commitKey);
+
+// Scan-side: identify WHICH registered spend public key produced `commitKey`.
+// Uses underive_public_key so the matching key is found rather than assumed.
+// Returns true on a unique match. On a second match, returns false and sets
+// *outAmbiguous, so the caller can reject instead of guessing.
+bool matchOwnerBoundCommitKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const std::unordered_set<Crypto::PublicKey>& spendPublicKeys,
+  Crypto::PublicKey& outMatchedSpendKey,
+  bool& outAmbiguous);
+
+// Spender-side: x = derive_secret_key(D, outputIndex, b) and I = key_image(P, x).
+// `recipientSpendSecret` is b (b_sub = b + m on a subaddress). Must be called
+// only in a signing context; callers must not cache the result in view-only state.
+// Verifies xG == P before returning the key image.
+bool deriveOwnerBoundKeyImage(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const Crypto::SecretKey& recipientSpendSecret,
+  Crypto::SecretKey& outSpendSecret,
+  Crypto::KeyImage& outKeyImage);
+
+// Pre-v11 derivation, retained for historical rescans and sweeps. Never call
+// this for new user-owned outputs: anyone with the view secret can spend them.
+DepositCommitmentKeys deriveLegacyCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
+
+// depositSecret = cn_fast_hash(D || i_LE32); retained for the amount mask.
+std::array<uint8_t, 32> deriveDepositSecret(const Crypto::KeyDerivation& derivation, size_t outputIndex);
+
+// Single entry point for CREATING a user-owned commitment output.
+//
+// Every creation site needs the same four things and previously open-coded all
+// of them, which is how the sender/view-key-spendable derivation kept being
+// reached by new code. This returns the owner-bound form P = B + tG when the
+// recipient spend public key is supplied, so a caller cannot emit an exposed
+// output by omission.
+//
+// `recipientSpendPublicKey` is B for the destination and must be set: a null
+// (all-zero) key is rejected. It is a valid order-4 curve point, so without this
+// check an unpopulated address would pass validation and produce an output that
+// is either unspendable or, under a legacy fallback, spendable by the sender.
+// Protocol-owned outputs (pool escrow markers) are not created here; they use
+// computePoolCommitKey().
+//
+// Returns false if the owner-bound key cannot be derived, so the caller must
+// treat that as a hard error rather than silently falling back to the legacy
+// derivation — a silent fallback would recreate the flaw this replaces.
+bool deriveCommitmentOutputKey(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& recipientSpendPublicKey,
+  Crypto::PublicKey& commitKey);
+
+// Key image the scanner records when it first recognises a commitment output as
+// its own. Owner-bound outputs need the spend secret (pass nullptr for a
+// view-only wallet); legacy outputs are derivable from the view secret alone, so a
+// view-only wallet can still track their spends.
+//
+// Returns false when the key image cannot be known (view-only wallet and an
+// owner-bound output, or the output matches neither form). Callers must leave the
+// key image zeroed in that case — never uninitialised — because it is hashed into
+// the spent-output index and written to the wallet cache.
+bool deriveRecordedCommitmentKeyImage(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& commitKey,
+  const Crypto::SecretKey* recipientSpendSecret,
+  Crypto::KeyImage& outKeyImage);
+
+// Everything a signer needs to spend an existing commitment output.
+struct CommitmentSpendKeys {
+  CommitmentDerivation form = CommitmentDerivation::OwnerBound;
+  Crypto::PublicKey commitKey;
+  Crypto::SecretKey spendScalar;
+  Crypto::KeyImage keyImage;
+};
+
+// Spend-side resolution for an output this wallet owns. Both wallets call this,
+// so the owner-bound / legacy decision lives in exactly one place.
+//
+// `publishedCommitKey` is the commit key P recorded when the output was scanned.
+// A null (all-zero) value means "not recorded": the output was recognised by a
+// scanner that predates recording it, and that scanner only knew the legacy form,
+// so it is resolved as legacy.
+//
+// Otherwise the owner-bound form is tried first and the legacy form is the
+// fallback for pre-v11 funds. If neither reproduces P this returns false rather
+// than guessing, so a bad record is a refusal to sign and never a bad signature.
+bool resolveCommitmentSpendKeys(
+  const Crypto::KeyDerivation& derivation,
+  size_t outputIndex,
+  const Crypto::PublicKey& publishedCommitKey,
+  const Crypto::SecretKey& recipientSpendSecret,
+  CommitmentSpendKeys& out);
+
+// Existing sender/view-key-spendable derivation. Kept under an explicit legacy
+// name; new code must not use it. See deriveOwnerBoundCommitKey for user outputs.
 DepositCommitmentKeys deriveCommitmentKeys(const std::array<uint8_t, 32>& depositSecret);
 
 enum class DepositType : uint8_t {
@@ -388,7 +527,7 @@ bool addDepositSecretToExtra(std::vector<uint8_t>& tx_extra,
 bool getDepositSecretFromExtra(const std::vector<uint8_t>& tx_extra,
                                 TransactionExtraDepositSecret& out);
 
-typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
+typedef boost::variant<CryptoNote::TransactionExtraPadding, CryptoNote::TransactionExtraPublicKey, CryptoNote::TransactionExtraNonce, CryptoNote::TransactionExtraMergeMiningTag, CryptoNote::tx_extra_message, CryptoNote::TransactionExtraTTL, CryptoNote::TransactionExtraMinerBasketVote, CryptoNote::TransactionExtraMinerParadioVote, CryptoNote::TransactionExtraAliasRegistration, CryptoNote::TransactionExtraAliasRelease, CryptoNote::TransactionExtraAliasTransfer, CryptoNote::TransactionExtraHeatCommitment, /* TransactionExtraSimpleCD REMOVED */ /* TransactionExtraColdCommitment REMOVED */ /* TransactionExtraColdMigration REMOVED */ /* TransactionExtraDepositReceipt REMOVED */ CryptoNote::TransactionExtraBurnReceipt, /* TransactionExtraLegacyBond REMOVED */ /* TransactionExtraLegacyBondClaim REMOVED */ CryptoNote::TransactionExtraCdBonusClaim, CryptoNote::TransactionExtraAmmSwap, CryptoNote::TransactionExtraAmmAddLiquidity, CryptoNote::TransactionExtraAmmRemoveLiquidity, CryptoNote::TransactionExtraAmmCompound, CryptoNote::TransactionExtraAmmClaim, CryptoNote::TransactionExtraHeatMintAuth, CryptoNote::TransactionExtraHeatSendAuth, CryptoNote::TransactionExtraAmmSwapAuth, CryptoNote::TransactionExtraLpAddAuth, CryptoNote::TransactionExtraLpRemoveAuth, CryptoNote::TransactionExtraOrderPlace, CryptoNote::TransactionExtraOrderCancel, CryptoNote::TransactionExtraMarketBuyAuth, CryptoNote::TransactionExtraMarketSellAuth, CryptoNote::TransactionExtraLimitDeposit, CryptoNote::TransactionExtraLimitWithdraw, CryptoNote::TransactionExtraTreasuryFund> TransactionExtraField;
 
 template<typename T>
 bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField>& tx_extra_fields, T& field) {
@@ -412,6 +551,12 @@ void setPaymentIdToTransactionExtraNonce(BinaryArray& extra_nonce, const Crypto:
 bool getPaymentIdFromTransactionExtraNonce(const BinaryArray& extra_nonce, Crypto::Hash& payment_id);
 bool appendMergeMiningTagToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMergeMiningTag& mm_tag);
 bool append_message_to_extra(std::vector<uint8_t>& tx_extra, const tx_extra_message& message);
+
+bool addMinerBasketVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerBasketVote& vote);
+bool getMinerBasketVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerBasketVote& vote);
+bool addMinerParadioVoteToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraMinerParadioVote& vote);
+bool getMinerParadioVoteFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraMinerParadioVote& vote);
+
 // bool addColdMigrationToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraColdMigration& migration);  // REMOVED: COLD migration
 // bool addLegacyBondToExtra(std::vector<uint8_t>& tx_extra, const TransactionExtraLegacyBond& bond);  // REMOVED
 // bool getLegacyBondFromExtra(const std::vector<uint8_t>& tx_extra, TransactionExtraLegacyBond& bond);  // REMOVED

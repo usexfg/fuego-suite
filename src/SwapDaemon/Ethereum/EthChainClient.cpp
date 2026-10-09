@@ -5,29 +5,16 @@
 #include "crypto/secp_adaptor.h"
 #include "../Crypto/Secp256k1Signer.h"
 #include "../SwapHashLock.h"
-#include "../SwapTimelock.h"   // AUDIT 6.1: msPerBlock() for the timeout floor
-#include <algorithm>
+#include "../SwapTimelock.h"
+#include <limits>
 #include <stdexcept>
 #include <cctype>
 #include <cstring>
 #include <sstream>
 #include <iomanip>
+#include <limits>
 
 namespace XfgSwap {
-
-std::string EthChainClient::readinessError() {
-  if (!m_rpc || !m_rpc->hasSigner()) return "EVM signer is not configured";
-  if (!EthRpcClient::isValidEvmAddress(m_address))
-    return "EVM signer address is invalid";
-  if (!EthRpcClient::isValidEvmAddress(m_rpc->htlcRegistry()))
-    return "HTLC registry address is missing or invalid";
-  uint64_t chain_id = 0;
-  if (!m_rpc->getChainId(chain_id)) return "EVM chain ID query failed";
-  if (chain_id != m_rpc->expectedChainId()) return "EVM chain ID mismatch";
-  if (!m_rpc->hasDeployedHtlcRegistry())
-    return "HTLC registry code or ABI probe failed";
-  return "";
-}
 
 namespace {
 bool isZeroSecret(const Crypto::SecretKey& s) {
@@ -78,9 +65,32 @@ EthChainClient::EthChainClient(std::unique_ptr<EthRpcClient> rpc, const std::str
                                const std::string& chainName)
   : m_rpc(std::move(rpc)), m_address(address), m_chainName(chainName) {}
 
+std::string EthChainClient::readinessError() {
+  if (!m_rpc) return "RPC client is not configured";
+  if (!m_rpc->hasSigner()) return "signer is not configured";
+  if (!EthRpcClient::isValidEvmAddress(m_address)) return "signer address is invalid";
+
+  uint64_t actualChainId = 0;
+  if (!m_rpc->getChainId(actualChainId)) return "RPC chain id query failed";
+  if (actualChainId != m_rpc->expectedChainId()) {
+    return "RPC chain id mismatch (expected " +
+        std::to_string(m_rpc->expectedChainId()) + ", got " +
+        std::to_string(actualChainId) + ")";
+  }
+  if (!EthRpcClient::isValidEvmAddress(m_rpc->htlcRegistry()))
+    return "HTLC registry address is not configured";
+  if (!m_rpc->hasDeployedHtlcRegistry())
+    return "HTLC registry code or ABI probe failed";
+  return "";
+}
+
 void EthChainClient::setPtlcRegistry(const std::string& registryAddress) {
   m_ptlcRegistry = registryAddress;
   if (m_rpc) m_rpc->setPtlcRegistry(registryAddress);
+}
+
+bool EthChainClient::hasDeployedHtlcRegistry() {
+  return m_rpc && m_rpc->hasDeployedHtlcRegistry();
 }
 
 bool EthChainClient::supportsPurePtlc() const {
@@ -147,25 +157,26 @@ ChainClientResult EthChainClient::lock(const SwapParams& params) {
 ChainClientResult EthChainClient::verifyLock(const SwapParams& params) {
   // ctrLockTxId holds the registry contractId (not a tx hash).
 
-  // AUDIT 6.1: the counterparty's on-chain timeout must leave us enough runway
-  // to observe the lock, wait our required confirmations, and get our claim
-  // mined before they can refund (otherwise: they refund, we've already
-  // revealed t / locked our side, we lose). Require the lock to outlast the
-  // current tip by (confirmations + a ~1h time-based floor in this chain's
-  // blocks). If the tip is unavailable we pass 0 and skip the check —
-  // behaviour is then exactly as before this fix, never stricter-by-accident.
-  uint64_t minTimeoutBlock = 0;
-  {
-    uint64_t ethTip = 0;
-    if (m_rpc->getBlockNumber(ethTip)) {
-      const uint64_t msPer = msPerBlock(params.pair);
-      uint64_t runwayBlocks = (msPer > 0) ? (3600ULL * 1000ULL) / msPer : 300;
-      runwayBlocks = std::max<uint64_t>(runwayBlocks, 30);
-      const uint64_t conf =
-          params.requiredConfirmations ? params.requiredConfirmations : 6;
-      minTimeoutBlock = ethTip + conf + runwayBlocks;
-    }
-  }
+  // The counterparty timeout must leave enough blocks to observe the lock,
+  // wait confirmations, and claim.  Use the catalog's fastest credible block
+  // interval here (ceil division); using an average or slow interval makes the
+  // runway dangerously short on sub-second chains.  Tip lookup is fail-closed:
+  // a lock whose remaining runway cannot be measured must not advance a swap.
+  uint64_t ethTip = 0;
+  if (!m_rpc->getBlockNumber(ethTip))
+    return ChainClientResult::fail(m_chainName +
+        " verifyLock: chain tip unavailable for timeout safety check");
+  const uint64_t conf = params.requiredConfirmations
+      ? params.requiredConfirmations : 6;
+  uint64_t minimumBlocks = 0;
+  if (!minimumCounterpartyWindowBlocks(params.pair, conf, minimumBlocks))
+    return ChainClientResult::fail(m_chainName +
+        " verifyLock: invalid catalog block-time bound");
+  const uint64_t max = std::numeric_limits<uint64_t>::max();
+  if (ethTip > max - minimumBlocks)
+    return ChainClientResult::fail(m_chainName +
+        " verifyLock: timeout safety calculation overflow");
+  const uint64_t minTimeoutBlock = ethTip + minimumBlocks;
 
   // Pure PTLC: verify amount + recipient + pointAddress + not claimed/refunded
   // against the PointTimelock registry. Fail-closed on missing registry.
@@ -270,8 +281,36 @@ ChainClientResult EthChainClient::refund(const SwapParams& params) {
   }
 }
 
+ChainClientResult EthChainClient::getTransactionDetails(
+    const std::string& txId, ChainClientResult& result) {
+  result = ChainClientResult::fail(m_chainName + " transaction receipt unavailable");
+  if (!m_rpc || txId.size() != 66 || txId.substr(0, 2) != "0x") return result;
+  EthTxReceipt receipt{};
+  uint64_t tip = 0;
+  if (!m_rpc->getTransactionReceipt(txId, receipt) || !receipt.success ||
+      receipt.blockNumber == 0 || !m_rpc->getBlockNumber(tip) ||
+      tip < receipt.blockNumber) return result;
+  auto lower = [](std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  };
+  if (lower(receipt.txHash) != lower(txId)) return result;
+  const uint64_t depth = tip - receipt.blockNumber + 1;
+  if (depth > std::numeric_limits<uint32_t>::max()) return result;
+  result = ChainClientResult::ok(txId);
+  result.confirmed = true;
+  result.blockHeight = receipt.blockNumber;
+  result.confirmations = static_cast<uint32_t>(depth);
+  return result;
+}
+
 ChainClientResult EthChainClient::verifyReserveProof(const std::string& expectedMessage,
     uint64_t minAmount, const std::string& proof) {
+  return verifyReserveProofWide(expectedMessage, AtomicAmount(minAmount), proof);
+}
+
+ChainClientResult EthChainClient::verifyReserveProofWide(const std::string& expectedMessage,
+    const AtomicAmount& minAmount, const std::string& proof) {
   size_t c1 = proof.find(':');
   size_t c2 = proof.find(':', c1 + 1);
   if (c1 == std::string::npos || c2 == std::string::npos)
@@ -344,12 +383,12 @@ ChainClientResult EthChainClient::verifyReserveProof(const std::string& expected
   if (!expectedMessage.empty() && message != expectedMessage)
     return ChainClientResult::fail(m_chainName + " reserve proof: message not bound to this offer");
 
-  uint64_t balanceWei = 0;
+  AtomicAmount balanceWei = 0;
   if (!m_rpc->getBalance(address, balanceWei))
     return ChainClientResult::fail(m_chainName + " reserve proof: balance check RPC failed");
   if (balanceWei < minAmount)
     return ChainClientResult::fail(m_chainName + " reserve proof: insufficient balance (" +
-                                   std::to_string(balanceWei) + " < " + std::to_string(minAmount) + ")");
+                                   atomicAmountToString(balanceWei) + " < " + atomicAmountToString(minAmount) + ")");
 
   return ChainClientResult::ok(address);
 }
@@ -359,15 +398,30 @@ bool EthChainClient::getCurrentHeight(uint64_t& height) {
 }
 
 std::string EthChainClient::tryExtractClaimedSecret(const SwapParams& params) {
+  // Read the registry at a block with the required depth. This proves the
+  // claimed state even if Bob withholds his transaction ID, and prevents an
+  // unrelated old transaction ID from certifying a shallow claim.
+  const uint32_t required = params.requiredConfirmations
+      ? params.requiredConfirmations : 6;
+  uint64_t tip = 0;
+  if (!m_rpc || !m_rpc->getBlockNumber(tip) || tip < required) return {};
+  std::ostringstream block_tag;
+  block_tag << "0x" << std::hex << (tip - required + 1);
+
   // Pure PTLC: ctrLockTxId is the PointTimelock contractId; after claim the
   // canonical BIG-endian scalar t is stored on-chain. Reverse it back to the
   // CryptoNote LITTLE-endian scalar our XFG adaptor consumes.
   if (ptlcNegotiated(params)) {
     if (m_ptlcRegistry.empty()) return {};
-    return secretLeHexFromBe(m_rpc->getClaimedPointSecret(params.ctrLockTxId));
+    return secretLeHexFromBe(
+        m_rpc->getClaimedPointSecret(params.ctrLockTxId, block_tag.str()));
   }
   // BRIDGE/HTLC: after claim, preimage is stored on-chain.
-  return m_rpc->getClaimedPreimage(params.ctrLockTxId);
+  return m_rpc->getClaimedPreimage(params.ctrLockTxId, block_tag.str());
+}
+
+bool EthChainClient::hasConfirmedClaim(const SwapParams& params) {
+  return !tryExtractClaimedSecret(params).empty();
 }
 
 } // namespace XfgSwap

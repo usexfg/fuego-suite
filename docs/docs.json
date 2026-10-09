@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "palm",
+  "theme": "linden",
   "name": "Fuego",
   "favicon": {
     "light": "/images/PolishedFuegoGonCharcoal.png",

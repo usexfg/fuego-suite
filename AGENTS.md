@@ -26,7 +26,7 @@ Consensus invariants (keep them):
 - Commitment rings (CommitmentSpend and CommitmentTransfer) hold a single asset from V11; inputs are classified by ring, so a mixed ring would switch asset at equal atomic amount.
 - CD transfer rings accept CDs only (pool outputs share a commit key derivable from a public seed).
 - A TreasuryFund amount is burned into a treasury ledger and is never part of the miner fee sum (V11+). The CD banking fee is payable in XFG (burned to the SWF ledger) or HΞΔŦ (treasury HΞΔŦ reserve); it is not paid to the dev wallet from V11.
-- Every commitment output uses spend-key-bound (v2) keys: `Hs(D‖i‖"fuego_commit_v2")·G + B`. Never create v1 (view-key-only) commitment keys — the sender and any view-key holder can spend those. v1 is detect/spend-only for old outputs.
+- Every commitment output uses spend-key-bound (owner-bound) keys: `P = B + t·G` with `t = derive(D, i)`. Never create a legacy view-key-only commitment key (`Hs("fuego_commit_key"‖depositSecret)`) — the sender and any view-key holder can spend those. `deriveLegacyCommitmentKeys` is detect/spend-only, for old outputs.
 - New rules key on block **height** (`upgradeHeight`), not block major version: no V12 upgrade detector exists, so blocks never report major version 12.
 
 Agent rules:

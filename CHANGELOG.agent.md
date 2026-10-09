@@ -1,6 +1,603 @@
+## Restore after concurrent branch switch (2026-10-04)
+
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- restored onto `security/audit-fixes-2026-10`
+
+### What happened
+
+The working tree moved underneath this work: `/Users/aejt/xfgo` was switched from
+`keyderiv` to `merge/keyderiv-owner-bound` and then to
+`security/audit-fixes-2026-10` by a concurrent session, and this shell's cwd had
+silently reset to the wallet repo, so a verification step reported "file not found"
+for files that had existed minutes earlier. A concurrent session had preserved the
+uncommitted work as `a92028c90` ("WIP: preserve uncommitted keyderiv-era work before
+master merge"), reachable from `stash-dashboard-wip`, so nothing was lost.
+
+### How it was restored
+
+A wholesale replay was NOT safe: HEAD had **diverged** from `a92028c90`
+(`git merge-base --is-ancestor` fails), and the other session is mid security-audit
+work. Restoring the tree wholesale would have reverted their changes. So:
+
+- **Restored wholesale** (files HEAD holds only in an older, pre-pricing form, and
+  which their in-flight work does not touch -- their dirty set was
+  `Blockchain.cpp`, the `secp256k1` submodule and a new audit guide):
+  `PriceFeed.h`, `AssetCatalog.cpp`, `PricePolicy.cpp`, `PriceOracle.{h,cpp}`,
+  `test_price_policy.cpp`, `verify-defillama-assets.py`, both matrix docs.
+- **Restored as new files**: `DefiLlamaFeed.{h,cpp}`, `PythFeed.{h,cpp}`,
+  `test_defillama_feed.cpp`, `test_pyth_feed.cpp`, `test_price_oracle_defects.cpp`,
+  `probe-pyth-liveness.py`.
+- **Patched surgically, never replaced** (diverged and shared):
+  `OfferManager.{h,cpp}` (oracle injected), `SwapDaemon.cpp` (oracle passed to
+  OfferManager, uncomputable-rate log), `src/CMakeLists.txt` (2 sources into both
+  source lists, 3 test targets), this file.
+- **Deliberately NOT restored**: `src/SwapDaemon/Crypto/ripemd160.{cpp,h}` and
+  `tests/test_ripemd160.cpp`. Those are deleted at HEAD relative to `a92028c90`
+  because they are the other session's newer security work, not ours.
+
+`SwapPairCatalog.h` was already identical between the two trees, so the 46-pair
+catalog needed no action.
+
+### Verification note
+
+The shell's `grep -c` was used several times as a gate and silently returned grep's
+*exit status* rather than a match count, so a couple of intermediate "passing" checks
+were meaningless. Gate results below were re-run with explicit assertions.
+
+---
+
 # Source Change Log
 
 Every feature/fix requires a task list with sign-off. Agents record name, date, and status when completing work.
+
+---
+
+## PR 68 conflict resolution: keep master's commitment scheme, port the additive consensus work
+
+**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk (PR #68)
+**Started**: 2026-10-09
+**Agent**: opencode (space-bunny-free)
+**Status**: COMPLETE — mergeable against master
+
+### What the conflict actually was
+
+This was not a textual merge conflict. Master had independently landed a *different*
+spend-key-bound commitment scheme from the `keyderiv` line, so this branch and master
+were cryptographically incompatible on the same outputs:
+
+| | This branch | Master |
+|---|---|---|
+| Owner-bound key | `Hs(D‖i‖"fuego_commit_v2")·G + B` | `P = B + t·G`, `t = derive(D, i)` |
+| Spend resolution | `deriveOwnedCommitmentKeys` picks by recorded key image | `resolveCommitmentSpendKeys` tries owner-bound, falls back to legacy |
+| Scan-side match | loops `spendKeys`, first match wins | `matchOwnerBoundCommitKey` uses `underive_public_key` and reports ambiguity |
+| V12 activation | 1,500,000 | 2,666,666 |
+
+Master's is already deployed. Taking either side wholesale was wrong, so the merge
+keeps master's scheme throughout and ports only what master does not have.
+
+### Ported (additive, scheme-independent)
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | `swapEscrowKeyImage` into CryptoNoteCore; SwapTxBuilder delegates | opencode | 2026-10-09 | DONE |
+| 2 | Enforce escrow key image in `validateSwapEscrowInput` | opencode | 2026-10-09 | DONE |
+| 3 | Per-output escrow spend tracking in mempool and block template | opencode | 2026-10-09 | DONE |
+| 4 | `getTreasuryFundBurn` + V11 min-fee computed on network fee only | opencode | 2026-10-09 | DONE |
+| 5 | `usesHeatEraFeatures` / `createsCd` / `createsDigm` consensus gating | opencode | 2026-10-09 | DONE |
+| 6 | CD-only commitment transfer rings | opencode | 2026-10-09 | DONE |
+| 7 | `ringClass` commitment-ring RPC plumbing + wallet call sites | opencode | 2026-10-09 | DONE |
+| 8 | `Currency::isFiniteCdTerm` / `isHeatCdHeight` | opencode | 2026-10-09 | DONE |
+| 9 | AGENTS.md "Network Facts" section | opencode | 2026-10-09 | DONE |
+
+### Discarded (superseded by master, or tied to the discarded scheme)
+
+- `deriveCommitmentKeysV1` / `deriveCommitmentPublicKeyV2` / `deriveCommitmentSecretKeyV2`
+  / `deriveOwnedCommitmentKeys` — a second owner-bound scheme. Merging it would have
+  changed the commit key for every output created under master's scheme.
+- `UPGRADE_HEIGHT_V12 = 1500000` — reverted to master's 2666666.
+- `WalletGreen.cpp` / `WalletGreen.h` / `WalletTransactionSender.cpp` /
+  `TransfersConsumer.cpp` — took master's. This branch's versions open-coded the
+  v1/v2 choice at ~15 call sites, which is what master replaced with
+  `resolveCommitmentSpendKey` / `deriveCommitmentOutputKey`.
+- `ITransfersContainer::getAvailableKeyImage` + its override — existed only so
+  `deriveOwnedCommitmentKeys` could find the recorded key image. Master's
+  `resolveCommitmentSpendKeys` takes the commit key directly, so nothing called it.
+- Two AGENTS.md lines rewritten: they described the discarded `fuego_commit_v2`
+  derivation and the pre-V11 CD/legacy-bond history this branch assumed existed.
+
+### Note on #2
+
+The escrow key image enters the global spent set. Before this, an escrow holder could
+copy a pending input's key image into their own spend, which would be accepted and
+permanently freeze the other owner's coins. Master validates the subgroup and tracks
+per-output usage, but never checked that the key image was *the* one for that output.
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| Build compiles (Release, Ninja) | opencode | 2026-10-09 | PASS |
+| ctest (6 suites) | opencode | 2026-10-09 | PASS |
+| test_swap_escrow_claim 18/18 | opencode | 2026-10-09 | PASS |
+| test_eth_protocol, orderbook, catalog, audit regressions | opencode | 2026-10-09 | PASS |
+| All tasks done | opencode | 2026-10-09 | PASS |
+
+---
+
+## Phase 2e: Pyth second source -- on-chain reader, verified ids, liveness probe
+
+**Started**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE (reader + ids + tests) -- **the source itself is NOT currently usable**
+
+### Headline finding: Pyth is not a live source today
+
+Every available read path was tested on 2026-10-04. None returns a fresh price:
+
+| Path | Result |
+|------|--------|
+| Hermes classic `/v2/price_feeds/latest` | HTTP 422. Root cause found: the deployment **ignores the `ids` filter entirely** -- `/v2/price_feeds?ids=<anything>` returns all 1881 feeds, including for 64 zeros. Only bulk metadata works. |
+| Hermes `/v2/updates/price_feed/latest` | HTTP 404, route absent. |
+| `hermes-stable.pyth.network` | Unreachable, DNS does not resolve. |
+| Pythnet RPC | Unreachable. |
+| **On-chain `eth_call getPriceUnsafe`** | Contract answers, but **14 of 23 ids revert** (never published on that chain) and the 9 that answer are **47.7 to 640.8 days stale** (median 130 days). |
+
+The on-chain case is the dangerous one: a contract that has stopped being written to still
+returns whatever it last stored. BTC reads $64,735 from 2026-07-23 and AVAX $35.92 from
+2025-01-01. Every one of the 9 would be rejected by the 600 s staleness gate.
+
+### Changes
+
+- `src/SwapDaemon/PythFeed.h` / `.cpp` (new): on-chain reader. One JSON-RPC batch with a
+  single `eth_call` per id, decoding the four ABI words of `getPriceUnsafe`
+  (`int64 price, uint64 conf, int32 expo, uint32 publishTime`). `parsePythBatch` is pure
+  (takes `now` as a parameter) and applies the shared `validateObservation` gate, so a
+  stale or unpublished feed yields `NO_DATA` rather than a months-old price. RPC url and
+  contract address are **required with no defaults** -- there is deliberately no fallback,
+  since guessing either would silently price the wrong asset.
+- `AssetDescriptor::pythId` added, and the catalog now carries **23 real Pythnet price ids**
+  resolved from live Hermes metadata. Every id was matched against its canonical
+  `Crypto.<TICKER>/USD` feed. The ETH/USD id `0xff61491a...0dace` independently matches the
+  value in Pyth's own documentation, and the Ethereum contract
+  `0x4305FB66699C3B2702D4d05CF36551390A4c69C6` was confirmed to hold code via `eth_getCode`.
+- `PricePolicy.cpp`: `validateObservation` un-`static`ed and declared in `PriceFeed.h`, so
+  the feed reader and the quote path cannot disagree about what "usable" means.
+- `scripts/probe-pyth-liveness.py` (new): re-runnable probe reporting each path, each
+  on-chain publishTime and its age, and exit 0 only when something is genuinely fresh.
+- `scripts/verify-defillama-assets.py`: catalog regex extended to 5 columns.
+
+### Two corrections the tests forced
+
+- **Function selector.** A hand-rolled Keccak gave `getPriceUnsafe(bytes32)` = `0x5f51bbd3`.
+  Validated against the two canonical Keccak-256 vectors, the repo's implementation gives
+  **`0x96834ad3`**. The wrong selector would have silently reverted every call.
+- **Confidence direction.** Pyth's `conf` is an absolute price band, so *smaller is better*,
+  while `PricePolicy::confidence` is a [0,1] quality score where *higher* is better
+  (DeFiLlama sends 0.99 directly) and `minConfidence` is 0.8. Passing Pyth's value
+  straight through would have failed every feed. Converted as `quality = 1 - band/price`.
+
+### Operational consequence
+
+None, provided the feed stays unconfigured: `PricePolicy` treats the secondary feed as
+optional, so a dead Pyth feed does not block trading. DeFiLlama alone yields
+`QuoteStatus::SINGLE_SOURCE` with managed offers and new swaps still allowed. What is lost
+is the cross-check, so `crossChecked` quotes are currently unobtainable.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-04 |
+| Tests pass | PASS | opencode | 2026-10-04 |
+| All tasks done | PARTIAL | opencode | 2026-10-04 |
+
+`test_pyth_feed`: **48 checks, 0 failures**, using the real captured payload values
+(`price=190533915588 conf=106428258 expo=-8 publishTime=1786985890`) rather than a
+hand-typed hex string -- an earlier hand-typed literal was 254 chars instead of 256 and
+the parser correctly rejected it, which is the failure mode the encoding helper now
+prevents. `test_price_policy`: **276 checks, 0 failures**. `test_defillama_feed`: **29 checks,
+0 failures**. `test_price_oracle_defects`: **27 checks, 0 failures**.
+`test_price_oracle_arb`: **PASS**. `verify-defillama-assets.py`: exit 0. Live DeFiLlama
+fetch: 31/31 assets. `probe-pyth-liveness.py`: exit 1 with **0 fresh**.
+
+Still outstanding: the bounded poll worker, the two funding gates, the status snapshot, and
+a full build once disk allows.
+
+---
+
+## Phase 2d: PriceOracle defect fixes (wrong asset, invented divisor, dead band, dead live path)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — 27 regression checks pass, pre-existing tests unaffected
+
+### Fixes
+
+1. **OPTIMISM priced off the wrong asset.** `getSeedRate(OPTIMISM)` returned `SEED_OP_USD / SEED_XFG_USD`, but Optimism locks native ETH — `HashedTimelock.lock` is payable with no ERC-20 argument, exactly like ARB and BASE. It now uses `SEED_ETH_USD`, and all six ETH-settling pairs (OPTIMISM, ARB, BASE, BOB, UNICHAIN, ROBINHOOD) resolve to one rate.
+
+2. **`ctrDivisor()` invented a divisor.** The `default:` branch returned `1e8` for a pair with no descriptor, which silently mis-scales every amount comparison. It now returns `0.0` and callers treat that as "cannot convert".
+
+3. **A zero-rate trade poisoned the TWAP.** `recordCompletedSwap` accepted trades whose rate could not be computed. `getTwap` computes `weightedSum += rate * volume`, so such a trade was weighted as zero and dragged the average toward zero rather than being ignored. `recordCompletedSwap` now drops non-positive rates, and `SwapDaemon::recordCompletedTrade` logs the reason instead of silently recording a zero.
+
+4. **`OfferManager` never observed the live price.** The no-composite fallback called the static `PriceOracle::getSeedRate`, so managed offers were priced against a constant. `OfferManager` now holds a `PriceOracle&` (passed `m_oracle` from `SwapDaemon`) and the fallback calls `getEffectiveRate`, which applies the live Hearth XFG/USD when one has been published. A pair with no rate at all now logs and returns 0, which `tick` already handles.
+
+5. **The rate band was asymmetric and self-contradicting.** The code divided by `0.80` above but compared against a hardcoded `0.20` below, admitting a −80% quote, while the header documented `0.50` and an inline comment block argued both directions at once. `m_floorThreshold` is now a fractional tolerance (0.20) producing `ref/1.20 <= rate <= ref/0.80`, identical to `withinRateGuard`. `setFloorThreshold` now means tolerance and refuses values outside `(0, 1)` so a bad config cannot disable the band. The header comment was corrected.
+
+### Two further defects found while testing
+
+- **`setLiveXfgUsd` stored anything.** No validation at all, so a negative price was persisted. `getEffectiveRate` masked it by falling back to the seed, but every other reader of `getLiveXfgUsd()` would have seen it. Now refuses non-positive and non-finite values.
+- **The bootstrap window was wider than the band, making the band dead code.** `validateRate` returns from its bootstrap branch before reaching the band, and that branch used `m_maxBootstrapDrift = 0.50` — so a node with zero recorded trades (the common case) accepted quotes ±50% off seed and never evaluated the ±20% guard at all. `m_maxBootstrapDrift` now defaults to the same `0.20`, so one tolerance governs both paths.
+
+**This last one tightens a live risk control and should be reviewed deliberately.** It was not in the original defect list; it was surfaced by the regression test and is arguably the reason the band fix above appeared inert.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_oracle_defects`: **27 checks, 0 failures**. Pre-existing
+`test_price_oracle_arb`: **PASS, unmodified**. `test_price_policy`: **276 checks, 0 failures**.
+`test_defillama_feed`: **29 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+`OfferManager.cpp` syntax-checks clean; `SwapDaemon.cpp` has 0 errors outside `/usr/local/include/boost`,
+which fails on this arm64 host for an unrelated reason (x86_64 Boost), so the translation unit was
+not fully compiled. Still outstanding: the Pyth second source, the bounded poll worker, the two
+funding gates, the status snapshot, and a full build once disk allows.
+
+---
+
+## Phase 2c: DeFiLlama HTTPS transport and /prices/current parser
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE — transport verified against the live endpoint
+
+### Changes
+
+- `src/SwapDaemon/DefiLlamaFeed.h` (new): `DefiLlamaWanted` (id → asset map), the pure `parseDefiLlamaBody(body, wanted, policy, now)` entry point, and `DefiLlamaFeed : PriceFeed` with an overridable base URL for stub servers.
+- `src/SwapDaemon/DefiLlamaFeed.cpp` (new): one batched HTTPS GET of `/prices/current/<comma-joined ids>` via `httplib::SSLClient`, matching the existing `TonRpcClient` idiom. Certificate verification on, redirects not followed, connect and read timeouts from `PricePolicy` (4 s each), and a `maxResponseBytes` ceiling checked before the body is parsed. The parser is separated from the transport and takes `now` as a parameter so it needs neither clock nor network.
+- `src/SwapDaemon/tests/test_defillama_feed.cpp` (new): 29 assertions over canned bodies.
+- `src/CMakeLists.txt`: `DefiLlamaFeed.cpp` added to both source lists; `test_defillama_feed` added and registered.
+
+### Fail-closed on asset identity
+
+The parser refuses an entry unless the feed's reported `symbol` equals the asset's `expectedFeedSymbol`, **including when the field is absent**. An id that resolves to a different asset, or that reports nothing, is dropped rather than priced — this is the control that stops `coingecko:the-open-network` being quoted as TON. An earlier version only compared the symbol when present, which the test caught.
+
+### Live verification
+
+Built against the real endpoint: certificate-verified HTTPS succeeded, **31 of 31 requested assets parsed, 0 refused**, and the whole stack produced a real quote — ETH at 17,062.94 XFG per ETH, `rateNum` 170,629,386,029, `managedOffersAllowed` and `newSwapAllowed` both true. SIA was refused with `stale; atomic divisor 1e24 does not fit the uint64 amount model`. ETH reports `single-source` because the Pyth second source is not implemented yet, which is the intended labelling rather than a silent pass.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_defillama_feed` compiles and runs: **29 checks, 0 failures** (linked against
+`/opt/homebrew/opt/openssl@3` for an arm64 OpenSSL; the `/usr/local/lib` copy is x86_64 only).
+`test_price_policy`: **276 checks, 0 failures**. `verify-defillama-assets.py`: exit 0.
+Still outstanding: the Pyth second source, the bounded poll worker, OfferManager repricing,
+the funding gates, the status snapshot, and the `PriceOracle` defects.
+
+---
+
+## Phase 2b: rebase pricing onto SWAP_PAIR_CATALOG (46 pairs)
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE for the catalog and policy; HTTP transports and funding gates still outstanding
+
+### Changes
+
+- `src/SwapDaemon/AssetCatalog.cpp`: rewritten. It no longer restates pair bindings; pair identity, native asset, decimals and support are read from `SWAP_PAIR_CATALOG`. The file now holds only feed metadata (DeFiLlama id, Pyth symbol, expected feed symbol) keyed by settlement asset. Divisor is computed as `10^decimals` and clamped: `10^24` for SC does not fit `uint64`, so it stays 0 with `atomicDivisorText="1e24"` and `executable=false`.
+- `src/SwapDaemon/PriceFeed.h`: `pairIsStaged()` added; `assetCatalog()` returns `std::deque` so descriptors stay addressable while the table is being built.
+- `src/SwapDaemon/PricePolicy.cpp`: `buildPairQuote` now refuses STAGED pairs outright — a STAGED pair gets `UNEXECUTABLE` and `newSwapAllowed=false` regardless of how healthy the feed is.
+- `docs/developer/defillama-asset-matrix.json`: regenerated to 46 pairs / 33 settlement assets, schema 2.
+- `scripts/verify-defillama-assets.py`: the AssetCatalog check now validates feed metadata instead of a hand-written binding table, since those bindings no longer exist in that file.
+- `AGENTS.md` (wallet): rewritten around the X-macro catalog — 46 pairs, 25 ACTIVE / 17 ADAPTER / 4 STAGED, settlement-vs-ticker, 14 ETH pairs, and the full 46-row table.
+
+### New assets verified live
+
+17 pairs were added to the protocol catalog (LINEA, ZKSYNC, HYPEREVM, INK, RSK, GNOSIS, FLARE, KAIA, SCROLL, ABSTRACT, PLUME, SONEIUM, DOMA, BEAM, MOONRIVER, PEAQ, SEI). All were checked against DeFiLlama and Pyth rather than assumed unpriced:
+
+- **11 resolve in DeFiLlama**, 6 of them also on Pyth: HYPE `coingecko:hyperliquid`, RBTC `coingecko:rootstock`, XDAI `coingecko:xdai`, FLR `coingecko:flare-networks`, KAIA `coingecko:kaia`, PLUME `coingecko:plume`, BEAM `coingecko:beam-2`, MOVR `coingecko:moonriver`, SEI `coingecko:sei-network`.
+- **XDAI needed correction**: `coingecko:x-dai` does not resolve; the working id is `coingecko:xdai` at $0.9999. The first guess would have marked Gnosis unpriced for the wrong reason.
+- **BEAM was ambiguous** — both `coingecko:beam` ($0.0116) and `coingecko:beam-2` ($0.0024) report symbol BEAM. DeFiLlama's own chain registry maps the Beam chain to `gecko_id: beam-2`, which resolves the collision.
+- **RBTC confirms itself**: $84,944 against BTC's $84,969, i.e. correctly pegged rather than confused with BTC itself.
+- **PEAQ remains unpriced** — `coingecko:peaq` and `coingecko:peaq-network` both fail. GLEEC also remains unpriced.
+- **KMD now resolves** at $0.02, but was observed **6.6 hours stale**, so the 600 s gate rejects it almost always. Intermittent availability, not a reliable feed.
+- **Pyth Hermes has no price route** on the deployment tested: `/v2/price_feeds` and `/v2/price_feeds/{id}` serve metadata, while `/v2/price_feeds/latest?ids=` returns 422 for every parameter encoding tried and `/v2/updates/price_feed/latest` 404s. Pyth must be read on-chain, which means handling it as a pull oracle whose on-chain value can be arbitrarily old.
+
+### Bug found and fixed
+
+`CatalogIndex` stored `AssetDescriptor*` into a `std::vector` while still `emplace_back`-ing into it. Vector growth reallocates, so every previously stored pointer dangled — the test binary segfaulted on first use. Switched to `std::deque`, whose references are stable across `push_back`.
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS | opencode | 2026-10-01 |
+| All tasks done | PARTIAL | opencode | 2026-10-01 |
+
+`test_price_policy` compiles and runs: **276 checks, 0 failures**.
+`scripts/verify-defillama-assets.py` exits 0: 46 pairs, 31 distinct DeFiLlama ids requested,
+44 of 46 pairs priced live, chain clients 25 wired / 17 generic-adapter / 4 unwired.
+A full `SwapDaemonLib` link is still not attempted — free disk is ~9 GiB with no CMake cache.
+
+---
+
+## Security audit round 2: consensus economics and wallet files
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: ANALYSIS ONLY — no source changes. R2-1 is CRITICAL and needs a design decision, not a patch (GATE-1: approval required before touching consensus economics).
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md` section 5 (round-2 scope)
+
+### Findings
+
+- **R2-1 (CRITICAL) — the treasury vault spend key is derivable from public data.**
+  `src/CryptoNoteConfig.h:306` hardcodes `VAULT_KEY_SEED[] = "xfgo_treasury_vault_v1"`, and
+  `src/Treasury/VaultKeys.cpp:19-45` derives the spend key as
+  `hash_to_scalar(keccak(genesisHash || VAULT_KEY_SEED))`. Both inputs are public: the genesis
+  hash is the public first block, and the seed ships in every release binary. Anyone can
+  recompute the vault spend key. The only other barrier, `VaultPolicy::isPermitted`
+  (`src/Treasury/VaultPolicy.cpp:41-100`), is a pure content predicate — CD_APY_POOL passes if
+  any `CommitmentSpend` declares `claimedInterest > 0`, LP_RESERVE if an AMM add/remove tag is
+  present, GENERAL_RESERVE if a mint-auth tag is present — and none of them require proof of
+  knowledge of the vault key. The vault spend public key is never used to create on-chain
+  outputs in the consensus path, so there is no ring signature to fall back on either. What the
+  vault holds is CD_APY_POOL (the sole backing for every CD interest claim, per the fee-pool
+  aggregate cap in `checkCommitmentSpendInput`), BONUS_VAULT, and the treasury reserves — i.e.
+  protocol revenue and the collateral behind every depositor's yield. Reaching a spend still
+  requires getting a transaction into a block, so this is not a free remote steal, but it
+  removes the only cryptographic barrier to draining it. Fixing this is a protocol change
+  (rotate the seed per deployment, or move vault authorization behind a real key), so it needs
+  an activation/migration plan rather than a one-line change.
+- **R2-2 (LOW) — wallet files use ChaCha8.** `src/Wallet/WalletGreen.cpp:2293` encrypts key
+  records with ChaCha8. The construction around it is sound: HMAC-SHA256 over `iv || ciphertext`
+  with a separately derived, domain-separated MAC key (`deriveMacKey`, label
+  `"fuego-wallet-hmac"`), verified with constant-time `CRYPTO_memcmp` and fail-closed at
+  `:2255`. Same reduced-round primitive concern as round-1 L-2, now also on the wallet-file
+  path. Cheap fix (ChaCha20-Poly1305) but needs a wallet-file format version bump.
+- **R2-3 (INFO) — the 69/11/20 epoch fee split strands integer dust.**
+  `src/CryptoNoteCore/Blockchain.cpp:5082-5084` computes three independent floor divisions of the
+  same `epochSwapFees`. Because 69 + 11 + 20 = 100 the shares can never exceed the total, so
+  this is not inflation — but up to 2 atomic units per epoch are left unallocated rather than
+  routed. If exact conservation is intended, give the remainder to `cdShare` explicitly.
+- **R2-4 (PROCESS, high hazard) — domain skill documentation is stale and would cause a
+  regression if trusted.** `~/.config/opencode/skills/fuego-currency/SKILL.md` documents an
+  80/20 swap-fee split and a 60/40 treasury split. The code is 69/11/20
+  (`CryptoNoteConfig.h:260,265,285`); 60/40 applies only to the treasury *sub*-allocation
+  (`TREASURY_LP_PCT`, `TREASURY_RESERVE_PCT`). An agent trusting that skill could "correct"
+  working revenue routing back to 80/20. Worth fixing before it misleads anyone.
+- **R2-5 (LOW, follow-up) — early return from mutating epoch work.**
+  `processBlockEpochWork` returns `false` mid-way at `Blockchain.cpp:5104` (bonus-vault
+  overflow guard) after epoch accounting has begun. On the cache-rebuild path (`:1233-1236`)
+  that `false` only logs and returns, leaving the node serving a partially-rebuilt cache. This
+  is the M-1 pattern again. Practically unreachable — the guard needs `bonusHeat` near
+  `UINT64_MAX` — so it is hardening, not an active bug. The `pushBlock` path at `:5044`
+  propagates the `false`; whether that caller unwinds cleanly was not traced.
+
+### Verified sound in this scope
+
+Fee split cannot over-allocate (69+11+20=100, all floor). Epoch CD denominator correctly
+excludes CDs created in the closing block. Wallet-file AEAD uses proper key separation and
+constant-time tag verification. `MINT_BURN` 50/50 and treasury 60/40 sub-allocation match
+`AGENTS.md`.
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Verify fee-split constants against code, not skill docs | opencode | 2026-10-08 | DONE |
+| 2 | Audit treasury vault key derivation (R2-1) | opencode | 2026-10-08 | DONE |
+| 3 | Audit epoch fee split arithmetic (R2-3) | opencode | 2026-10-08 | DONE |
+| 4 | Audit wallet-file encryption + MAC (R2-2) | opencode | 2026-10-08 | DONE |
+| 5 | Audit epoch-work failure paths (R2-5) | opencode | 2026-10-08 | DONE |
+| 6 | Decide R2-1 remediation approach | — | — | **TODO (needs owner decision)** |
+| 7 | Correct stale fuego-currency skill docs (R2-4) | — | — | **TODO** |
+| 8 | Trace pushBlock(:5044) epoch-failure unwind | — | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| R2-1 severity + evidence | opencode | 2026-10-08 | PASS (derivation traced end to end) |
+| Fee-split conservation | opencode | 2026-10-08 | PASS (cannot exceed total) |
+| Wallet-file AEAD construction | opencode | 2026-10-08 | PASS (key separation + constant-time verify) |
+| R2-1 fix implemented | — | — | **NOT STARTED — GATE-1 approval required** |
+
+---
+
+
+## Security audit round 1 fixes: H-1, M-1, M-2, M-3
+
+**Started**: 2026-10-08
+**Agent**: opencode (space-bunny-free)
+**Branch**: `security/audit-fixes-2026-10`
+**Status**: IN PROGRESS — all four code fixes land and compile; regression tests not yet written; round 2 audit (economics, wallet files) not started
+**Guide**: `docs/SECURITY_AUDIT_FIX_GUIDE.md`
+
+### Changes
+
+- **H-1 (HIGH) — remote daemon crash on intra-tx duplicate key image.** `checkTransactionInputs` tested every input only against *chain* state, so a transaction spending the same key image twice passed validation and then failed in the connect-path rollback, which erased earlier inputs with a type-blind `boost::get<KeyInput>` and threw an uncaught `boost::bad_get` on the first non-`KeyInput` element. Reachable from any P2P peer or mempool submission. Fixed three ways: a read-only pre-pass in `checkTransactionInputs` that rejects duplicate key images across all five key-image-carrying input types (`KeyInput`, `CommitmentSpend`, `CommitmentTransfer`, `SwapEscrow`, `Unified`); a single unified spentKeys insert loop in `pushTransaction` that tracks what it inserted and erases exactly that on failure; and a `try/catch` barrier at the connect call site so any remaining malformed input is a rejected block, not a `std::terminate`. `popTransaction` was verified to be type-guarded already, so the unwind path is safe.
+- **M-1 (MEDIUM) — ignored connect return left partial state on an accepted block.** `pushTransaction`'s `bool` was discarded at the block-assembly call site, so a transaction that failed *after* mutating indices (spentKeys, multisig/escrow usage flags, vault UTXOs, supply counters) still produced an accepted block with permanently burned key images and frozen outputs. Fixed by (a) propagating the return into the block-rejection path, (b) tracking the first loop's spentKeys inserts and rolling them back on every later failure exit, and (c) adding a read-only pre-pass that resolves every fallible lookup (escrow funding tx, escrow usage entry, commitment key-image collision) *before* the mutating loop runs — so the mutating loop can no longer fail partway through and strand earlier mutations. Deliberately chosen over a sprawling undo ledger: an undo path in a rollback-sensitive consensus function carries its own divergence risk, which would be worse than the bug being fixed.
+- **M-2 (MEDIUM) — `SwapEscrow` was missing the Ed25519 subgroup check.** Every other spendable input type rejects key images outside the prime-order subgroup; swap-escrow did not. It was contained by dual marking (spentKeys + escrow usage entry), but must not rely on that alone. Added the identical `scalarmultKey(keyImage, L) == I` guard used by `check_tx_input`, `checkCommitmentSpendInput`, `checkCommitmentTransferInput` and `core::handle_incoming_tx`.
+- **M-3 (MEDIUM) — path traversal in walletd export.** `exportWallet` and `exportWalletKeys` joined the RPC-supplied `exportFilename` onto the wallet directory with no validation: `..` segments escaped at open time and an *absolute* name made `boost::filesystem::operator/` discard the base entirely, so `exportWalletKeys` could be steered into writing plaintext secret keys anywhere the process could write. Added `isConfinedExportFileName` (rejects empty, over-long, any separator in either flavour, `.`/`..`, absolute paths, and anything whose parsed filename differs from the input) and applied it at both sites. Authenticated-RPC reachability caps this at MEDIUM.
+- `docs/SECURITY_AUDIT_FIX_GUIDE.md` (new): full findings register including the four prior "CRITICAL" crypto claims that were **false positives** and must not be "fixed" (`crypto-ops.c` `sc_check`/`signum`/`sc_mulsub` — branchless, public inputs, and the `signum` claim of "division by -a" is factually wrong).
+
+### Task List
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Map master worktree, define audit partitions | opencode | 2026-10-08 | DONE |
+| 2 | Audit crypto primitives (RNG, zeroize, nonce, point validation) | opencode | 2026-10-08 | DONE |
+| 3 | Audit consensus (key images, supply, mint/burn, reorg, AMM/CD) | opencode | 2026-10-08 | DONE |
+| 4 | Audit swaps (SwapDaemon, adaptor crate, contracts, timelocks) | opencode | 2026-10-08 | DONE |
+| 5 | Audit network surface (P2p, HTTP, Rpc, deserialization, auth) | opencode | 2026-10-08 | DONE |
+| 6 | Audit wallets (key handling, zeroization, encryption) | opencode | 2026-10-08 | DONE |
+| 7 | Audit Go/Rust (swapxfg/app, tui, fuego-swapd-adaptor) | opencode | 2026-10-08 | DONE |
+| 8 | FP-check triage of all findings | opencode | 2026-10-08 | DONE |
+| 9 | H-1 intra-tx duplicate key image + type-aware rollback + barrier | opencode | 2026-10-08 | DONE |
+| 10 | M-1 propagate connect return + rollback + read-only pre-pass | opencode | 2026-10-08 | DONE |
+| 11 | M-2 SwapEscrow domain check | opencode | 2026-10-08 | DONE |
+| 12 | M-3 export filename confinement | opencode | 2026-10-08 | DONE |
+| 13 | L-1..L-4 (dead Unified arm, ChaCha8, Rust Debug, sodium_memzero) | opencode | — | **TODO** |
+| 14 | INFO batch (delete dead oaes code, popen hardening, contract notes) | opencode | — | **TODO** |
+| 15 | Regression tests for H-1/M-1/M-2/M-3 | opencode | — | **TODO** |
+| 16 | Round 2 audit: consensus economics + wallet file handling | opencode | — | **TODO** |
+
+### Sign-Off
+
+| Gate | Signed By | Date | Result |
+|------|-----------|------|--------|
+| `cmake` configure regenerate | opencode | 2026-10-08 | PASS (stale cache fixed — see below) |
+| `CryptoNoteCore` target builds | opencode | 2026-10-08 | PASS (no new warnings) |
+| `PaymentGate` target builds | opencode | 2026-10-08 | PASS |
+| `core_tests` / `ctest` | — | — | **PENDING** |
+| H-1 crafted-block harness (rejected, daemon alive, state clean) | — | — | **PENDING** |
+| M-3 traversal probe (`../`, absolute, `a/../../x`, empty) | — | — | **PENDING** |
+
+### Not verified
+
+Everything checkable so far is checked; the two gates that matter most are
+not. Nothing has been run at runtime. The rejection and rollback paths in
+`pushTransaction` are consensus-critical and are exercised here only by the
+compiler — `core_tests` has not been run, no crafted block has been pushed,
+and no traversal filename has been probed against a live walletd. Task 15
+must land before any of this is called fixed.
+
+### Incidental
+
+`build/release` was configured from an older commit and still listed
+`src/CryptoNoteCore/AssetType.cpp`, which no longer exists, so any build failed
+at the compile step with `no such file or directory` before touching real work.
+Re-running `cmake ../..` in `build/release` regenerated the file list and the
+build proceeded. Not a source change; noting it so the next person does not
+read it as a regression.
+
+---
+
+## Phase 2: dual-feed PriceFeed interface, asset catalog and rate guard
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: PARTIAL — pure policy core, catalog and tests done and passing; HTTP transports, bounded worker, OfferManager repricing and status snapshot not started
+
+### Changes
+
+- `src/SwapDaemon/PriceFeed.h` (new): feed abstraction. `AssetDescriptor` (settlement asset, DeFiLlama id, Pyth symbol, atomic divisor plus a decimal text form, `priced`, `executable`), `PriceObservation`, `FeedResult`, `PricePolicy`, `QuoteStatus`, and the `PriceFeed` interface. `maxProviderAgeSec` defaults to 600s with the 300s-bucket rationale recorded inline.
+- `src/SwapDaemon/PricePolicy.cpp` (new): all rate and guard arithmetic, free of I/O and of any clock other than a passed `now`, so it is directly unit-testable. `computeReferenceRate` (counterpartyUsd / xfgUsd), `rateToNum`/`rateFromNum` with explicit overflow refusal at the 1e7 scale, `withinRateGuard` implementing the symmetric `referenceRate/1.2 <= rate <= referenceRate/0.8`, `evaluateAsset` (freshness, clock skew, confidence floor, cross-check tolerance) and `buildPairQuote`.
+- `src/SwapDaemon/AssetCatalog.cpp` (new): 23 settlement-asset descriptors and all 29 pair bindings. Seven pairs share the ETH descriptor (Ethereum plus ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM). KMD and GLEEC carry `priced=false`; SC carries `atomicDivisor=0` with `atomicDivisorText="1e24"` and `executable=false` rather than a value that cannot exist in a `uint64`.
+- `src/SwapDaemon/tests/test_price_policy.cpp` (new): 72 assertions over rate direction, 1e7 scaling, overflow and underflow, guard boundaries and asymmetry, every `QuoteStatus` transition, the catalog invariants, SIA amount-model refusal and GRAM pricing.
+- `src/CMakeLists.txt`: the two new sources added to both SwapDaemon source lists; `test_price_policy` added as a target and registered in `_TEST_DAEMON_TARGETS`.
+- `scripts/verify-defillama-assets.py`: now cross-checks `AssetCatalog.cpp` against the JSON matrix (asset identity, divisor text, priced/executable flags) and against the `registerChain` call sites, so the C++, JSON and Dart views cannot drift apart silently.
+
+### Design decisions
+
+- **Two axes, not one.** `status` records the amount model (only SC fails, at 1e24) and `chainClient` records wiring (SIA, ZANO, TON, DOT are implemented but unregistered). An earlier draft conflated them and the cross-check caught it.
+- **SIA's divisor is stored as text.** `1000000000000000000000000ULL` does not compile as a literal, which is the amount-model bug made visible. The descriptor holds `atomicDivisor=0`, `atomicDivisorText="1e24"` and `executable=false`, so nothing divides by zero and nothing claims a representable value.
+- **`SINGLE_SOURCE` is quotable by default.** DCR, SC, PLS and ZANO have no Pyth feed. Refusing them would strand four assets, and the freshness policy is what gates funding, so corroboration is a separate toggle (`requireCorroboration`, default false) and single-source assets are labelled rather than silently presented as confirmed.
+- XFG/USD is passed in from Hearth by the caller and never taken from a feed or from `PriceOracle::SEED_XFG_USD`.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Define `PriceFeed` interface, observation and policy types | opencode | 2026-10-01 | DONE |
+| Implement rate math, 1e7 scaling and overflow refusal | opencode | 2026-10-01 | DONE |
+| Implement symmetric two-sided rate guard | opencode | 2026-10-01 | DONE |
+| Implement freshness, skew, confidence and cross-check gates | opencode | 2026-10-01 | DONE |
+| Build 23-asset catalog with all 29 pair bindings | opencode | 2026-10-01 | DONE |
+| Represent the 1e24 SC divisor without lying | opencode | 2026-10-01 | DONE |
+| Write and pass the unit test suite (72 assertions) | opencode | 2026-10-01 | DONE |
+| Wire sources and test into CMake | opencode | 2026-10-01 | DONE |
+| Cross-check C++ catalog against JSON matrix and call sites | opencode | 2026-10-01 | DONE |
+| DeFiLlama HTTPS transport (httplib) | — | — | NOT STARTED |
+| Pyth HTTPS transport + feed-id pinning | — | — | NOT STARTED |
+| Bounded background poll worker off the swap-progress thread | — | — | NOT STARTED |
+| Reprice managed offers from the oracle; cancel when unavailable | — | — | NOT STARTED |
+| Maker stale-offer rejection before escrow | — | — | NOT STARTED |
+| Funding-gate call before lock, direct and AFK paths | — | — | NOT STARTED |
+| Oracle snapshot in the loopback status JSON | — | — | NOT STARTED |
+| Fix `PriceOracle` OPTIMISM/OP-token and `ctrDivisor` default | — | — | NOT STARTED |
+| Widen `OfferManager::compositeToRateNum` off static seed | — | — | NOT STARTED |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | PARTIAL | opencode | 2026-10-01 |
+| Tests pass | PASS (policy suite) | opencode | 2026-10-01 |
+| All tasks done | FAIL (transports and gates outstanding) | opencode | 2026-10-01 |
+
+Notes on sign-off: `test_price_policy` was compiled and run directly
+(`clang++ -std=c++17` over the three new translation units) and reports **72 checks, 0 failures**.
+A full `SwapDaemonLib` link was **not** attempted: free disk is ~9 GiB and there is no CMake
+cache in `build/`, so a full configure+build is not currently safe. The CMake edits are text-only
+and unverified by a configure step. No funded swap, no live transport, and no restart or reorg
+behaviour has been exercised.
+
+---
+
+## Phase 1: DeFiLlama counterparty asset matrix and API audit
+
+**Started**: 2026-10-01
+**Agent**: opencode (space-bunny-free)
+**Status**: PARTIAL — audit complete; oracle/feed, RPC, Valise, dashboard and Hearth history phases not started
+
+### Changes
+
+- `docs/developer/defillama-asset-matrix.md` (new): 29-row settlement-asset matrix with the evidence for each asset-identity decision, the three unpriced pairs, the SIA amount-model blocker, the measured feed cadence, the rate contract, six pre-existing defects found while auditing, and the residual manipulable-denominator risk.
+- `docs/developer/defillama-asset-matrix.json` (new): machine-readable source of truth for pair id, enum name, settlement asset, ticker, atomic divisor, DeFiLlama id, expected symbol and status, plus the policy block (120 s provider age, 0.8 confidence floor, 1e7 rate scale, symmetric guard) and the Valise client-exposure list.
+- `scripts/verify-defillama-assets.py` (new): live acceptance test. Cross-checks the matrix against the C++ `SwapPair` enum and Valise's `SwapPairSdk`, then fetches every distinct asset in one batched request and enforces symbol match, finite positive price, confidence floor, provider-age and future-timestamp gates. Exits non-zero on any failure.
+
+### Audit findings
+
+- 29 pairs map to **20 distinct priced assets**; ETH is the settlement asset for six pairs (ARB, BASE, ROBINHOOD, BOB, UNICHAIN, OPTIMISM) because `HashedTimelock.lock()` is `external payable` with no ERC20 parameter.
+- `coingecko:arbitrum` resolves to the ARB governance token (~$0.20) and must not be used for pair 4.
+- **unpriced**: KMD_SPV(6), GLEEC(12), TON(27). TON's only resolving id returns `symbol: "GRAM"`, so it is a wrong-substitute trap rather than a price.
+- **unexecutable**: SIA(17). `coingecko:siacoin` resolves, but the 1e24 divisor exceeds UINT64_MAX, so the uint64 amount model blocks the pair regardless of feed health.
+- The provider timestamp advances in exact **300 s buckets** and is shared across all coins in a response. The guide's proposed 120 s provider-age gate would reject ~80 % of a 30 s poll cycle. Decision required before the feed is coded.
+- Valise's `SwapPairSdk` exposes **22** pairs, not the 12 stated in `AGENTS.md`.
+
+### Defects recorded, not yet fixed
+
+1. `PriceOracle.cpp` seeds OPTIMISM from `SEED_OP_USD`; Optimism locks native ETH.
+2. `PriceOracle::ctrDivisor` `default:` returns `1e8` instead of failing, yielding a wrong divisor silently.
+3. `OfferManager::compositeToRateNum` uses static `getSeedRate()` and never reaches `getEffectiveRate()`, so managed offers never see the live Hearth price.
+4. `m_floorThreshold` is 0.80 in the constructor but documented as 0.50; the real band is `ref/0.8` up and `ref*0.20` down, not a symmetric ±20 % guard.
+5. `AGENTS.md` and the dev guide both understate Valise exposure as 12 pairs.
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Establish settlement-asset ground truth from chain clients | opencode | 2026-10-01 | DONE |
+| Build 29-row matrix with divisor, DeFiLlama id and executability | opencode | 2026-10-01 | DONE |
+| Verify every identifier against a live batched response | opencode | 2026-10-01 | DONE |
+| Add C++ enum and Valise `SwapPairSdk` mapping cross-checks | opencode | 2026-10-01 | DONE |
+| Record unsupported/unregistered pairs separately | opencode | 2026-10-01 | DONE |
+| Measure provider feed cadence against the proposed staleness gate | opencode | 2026-10-01 | DONE |
+| Phase 2 — xfg-swapd DeFiLlama client, worker, snapshot, funding gates | — | — | NOT STARTED |
+| Phase 3 — fuegod `/getswapprice` read-only semantics | — | — | NOT STARTED |
+| Phase 4 — Valise native DEX reference model | — | — | NOT STARTED |
+| Phase 5 — dashboard source/age and trade series | — | — | NOT STARTED |
+| Phase 6 — Hearth canonical history index | — | — | NOT STARTED |
+
+### Sign-off
+
+| Gate | Status | Agent | Date |
+|------|--------|-------|------|
+| Build compiles | UNCERTAIN | opencode | 2026-10-01 |
+| Tests pass | PASS (auditor only) | opencode | 2026-10-01 |
+| All tasks done | FAIL (phases 2-6 outstanding) | opencode | 2026-10-01 |
+
+Notes on sign-off: no C++ source was modified in this phase, so nothing was compiled.
+`scripts/verify-defillama-assets.py` passes live (exit 0, 25 of 29 pairs priced) but is a
+mapping and feed-contract test only — it is not evidence of a working oracle, a funded swap,
+or release readiness. Free disk on this machine is 11 GiB at 95% capacity, so a full
+`xfgo` configure+build was not attempted.
 
 ---
 
@@ -1698,6 +2295,896 @@ match `reserve` was never actioned, because `reserve` had already been
 retired by the register work above. It needs restating against a live
 reference.
 
+---
+
+## v11 P0 Part 1 — owner-bound commitment derivation
+
+**Started**: 2026-09-29
+**Agent**: opencode (Space Bunny, via okoc)
+**Status**: DONE (Part 1 only; Part 2 asset accounting NOT started)
+**Guide**: `docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md`
+
+### Scope
+
+Part 1 only. The crypto primitives, the owner-bound derivation, the scanner
+rewrite and unit tests. Node/wallet creation-path migration (32 remaining
+`deriveCommitmentKeys` call sites in `WalletGreen.cpp` and
+`WalletTransactionSender.cpp`) and all of Section B are deliberately NOT done —
+creating owner-bound outputs is gated at v11 rollout, and Section B requires the
+v11/v12 activation matrix to be frozen first.
+
+### Changes
+
+- `TransactionExtra.h` / `TransactionExtra.cpp`: Added `deriveOwnerBoundCommitKey`
+  (P = B + tG via the existing `derive_public_key`), `matchOwnerBoundCommitKey`
+  (view-only recognition via `underive_public_key`), and
+  `deriveOwnerBoundKeyImage` (x = b + t, verified xG == P, then key image).
+  Added `deriveDepositSecret` for the unchanged `cn_fast_hash(D || i_LE32)`
+  amount-mask input, and `deriveLegacyCommitmentKeys` as the explicit name for
+  the pre-v11 derivation. `deriveCommitmentKeys` itself is untouched.
+- `TransfersConsumer.cpp`: `findMyOutputs` now tries the owner-bound form first
+  and attributes the output to the **matching** spend key via `underive_public_key`
+  instead of the first element of `spendKeys`, then falls back to the legacy form
+  for old funds. `createTransfers` derives the key image only when the account
+  has a spend secret; a view-only wallet no longer receives a key image it cannot
+  legitimately produce.
+- `MinerConfig.cpp`: removed an unreachable `return false;` and the extra closing
+  brace that prematurely closed `namespace CryptoNote`. This was **pre-existing**
+  breakage (file was byte-identical to HEAD) that made the whole `CryptoNoteCore`
+  target, and therefore every test target, fail to compile.
+- `tests/UnitTests/CommitmentOwnerBoundTest.cpp`: 13 cases covering output
+  indices 0, 1, 127, 128 and 1000000; wrong view key; wrong spend key; sender
+  forgery attempt; invalid public key; two recipients in one transaction;
+  legacy/owner-bound distinguishability; depositSecret byte layout; and legacy
+  recognition of old outputs.
+- `tests/CMakeLists.txt`: registered `commitment_owner_bound_tests`.
+
+### Defects found and fixed during verification
+
+1. `matchOwnerBoundCommitKey` looped `underive_public_key` per registered key.
+   That function solves `P - tG = B` for a single B and returns the same value
+   on every iteration, so the loop reported false ambiguity and rejected every
+   real match. Fixed to derive the candidate once and verify by re-deriving.
+2. `derive_secret_key` throws `std::runtime_error` on a non-canonical scalar.
+   `deriveOwnerBoundKeyImage` now validates with `secret_key_to_public_key`
+   first, so untrusted input is a rejection rather than an exception.
+
+### Verification
+
+| Gate | Result |
+|------|--------|
+| `commitment_owner_bound_tests` (13 cases) | PASS |
+| `alias_index_tests` (9 cases, pre-existing) | PASS |
+| `fuegod` daemon links and runs | PASS |
+| Adversarial: attacker holds r, a, and public data, tries to sign | REJECTED for r, a and zero scalar; only b signs |
+| Adversarial: attacker derives D from r,A | SUCCEEDS, as expected — this is the flaw being fixed for new outputs |
+
+| Task | Owner | Date | Status |
+|------|-------|------|--------|
+| Owner-bound derivation primitives | opencode | 2026-09-29 | DONE |
+| Scanner attribution fix | opencode | 2026-09-29 | DONE |
+| View-only key-image restriction | opencode | 2026-09-29 | DONE |
+| Unit tests + build | opencode | 2026-09-29 | DONE |
+| fuego-guardian verification (crypto, consensus, wallet, security, quality) | opencode | 2026-09-29 | PASS with reservations |
+| Node/wallet creation-path migration (32 call sites) | — | — | **NOT STARTED** |
+| Valise Rust SDK / walletd / Flutter parity | — | — | **NOT STARTED** |
+| Section B asset accounting | — | — | **NOT STARTED** |
+
+### Not verified / open
+
+- No send → scan → sign → node-verify end-to-end run, and no rescan-after-restart
+  test. Creation paths still emit legacy outputs, so an owner-bound output cannot
+  yet be produced on-chain to exercise that path.
+- Subaddress vectors (`B_sub = B + mG`) are not covered; no test uses a subaddress.
+- No C++/Rust byte-for-byte vectors. The Valise SDK still reproduces the legacy
+  derivation, so cross-implementation agreement does not yet exist.
+- Legacy outputs remain sender- and view-key-spendable. Nothing in this change
+  revokes that; old funds need a sweep, and a sweep can be raced.
+- `MinerConfig.cpp` was fixed only because it blocked the build. That file was
+  already broken at HEAD, which means master does not currently compile. The
+  FCI oracle work it belongs to is unreviewed by this task.
+
+---
+
+## v11 P0 Part 2 — first live creation path migrated (heatDepositV10)
+
+**Started**: 2026-10-01
+**Status**: IN PROGRESS — 1 of 14 live creation paths migrated
+**Guide**: `docs/developer/v11-p0-commitment-keys-and-asset-accounting-guide.md`
+
+### Build prerequisites (pre-existing, unrelated to this change)
+
+- `BUILD_TESTS` defaults OFF (`CMakeLists.txt:456`), so `tests/` is skipped by a
+  default configure.
+- gtest is gated on a *different* flag, `DO_TESTS` (`external/CMakeLists.txt:7`).
+  `BUILD_TESTS=ON` alone configures the test targets but fails to link.
+- Bundled gtest declares `cmake_minimum_required` < 3.5, which current CMake
+  rejects. Configure needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`.
+
+Full configure line that works:
+`cmake -DBUILD_TESTS=ON -DDO_TESTS=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../..`
+
+### Changes
+
+- `TransactionExtra.{h,cpp}`: added `deriveCommitmentOutputKey` — the single
+  entry point for CREATING a commitment output. Given a recipient spend public
+  key it returns the owner-bound form; a null key is the explicit protocol-owned
+  escape hatch (pool escrow markers, excluded from rings by term) and returns
+  the legacy key. An invalid key is a rejection, never a silent fallback.
+- `WalletGreen.{h,cpp}`: added `deriveSelfCommitmentKey(transaction, outputIndex)`,
+  which resolves the primary address's `B` and derives through the new helper.
+  Every self-owned commitment output should route through it.
+- `WalletGreen::heatDepositV10`: the CD output and the HEAT change output now use
+  the owner-bound form. The CommitmentSpend signing path derives the spend secret
+  and key image via `deriveOwnerBoundKeyImage` and falls back to the legacy
+  scalar only when the published key is not reproducible from the spend secret —
+  so legacy deposits stay spendable.
+- `include/ITransfersContainer.h`: `TransactionOutputInformation` gained
+  `commitmentKey`. The signer needs the published `P` to choose between the two
+  derivations; it was not previously available off the transfer record.
+
+### Verification
+
+| Gate | Result |
+|------|--------|
+| `commitment_owner_bound_tests` | PASS — 16 cases (13 prior + 3 new) |
+| `alias_index_tests` | PASS — 9 cases |
+| Full `make` incl. `fuegod` | PASS |
+| `fuegod` runs | not verified this session |
+
+The three new cases cover: the helper produces exactly the owner-bound key at
+every guide index (0, 1, 127, 128, 1000000) and the sender cannot sign it; a
+null recipient key reproduces the legacy key exactly; an invalid recipient key
+is rejected.
+
+Note on the invalid-key case: `data[0] = 0xFF` is a *valid* Ed25519 encoding
+(`check_key` returns 1). The test uses an all-`0xFF` key, which does fail.
+
+### Not done / open
+
+- **13 of 14 live creation paths still emit legacy-derived outputs**:
+  `withdrawDeposit`, `rolloverDeposit` (x2), `mintHeatV10`, `cancelLimitOrderV13`,
+  `ammSwapV10`, `sendHeatV10`, and their change/receive legs.
+- `createDeposit` (line ~1232) is **dead code** — it throws unconditionally at
+  the top with "XFG-funded CDs are no longer valid". Its derivation is
+  unreachable. Left untouched deliberately; removing it is a separate change.
+- `WalletTransactionSender.cpp` (17 sites) is untouched.
+- No end-to-end send -> scan -> sign -> node-verify run, and no rescan-after-
+  restart test. No owner-bound output has been produced on a live testnet yet.
+- Valise Rust SDK still reproduces only the legacy derivation. Cross-implementation
+  byte-for-byte vectors do not exist, so neither wallet should ship this yet:
+  a new sender paying an old recipient produces an output the old wallet cannot
+  find.
+
+---
+
+## Defect found during P0 Part 2: rollover CD secrets are never stored
+
+**Found**: 2026-10-01, while migrating `WalletGreen` creation paths
+**Status**: OPEN — blocks migrating `rolloverDeposit`
+**Severity**: pre-existing, unrelated to the owner-bound work
+
+### What happens
+
+`rolloverDeposit` (both overloads, `WalletGreen.cpp` ~792 and ~1011) creates the
+reinvested CD with a **random** 32-byte secret:
+
+    std::array<uint8_t, 32> newDepositSecret;
+    generate_random_bytes(sizeof(newDepositSecret), newDepositSecret.data());
+    CryptoNote::DepositCommitmentKeys newCommitKeys =
+      CryptoNote::deriveCommitmentKeys(newDepositSecret);
+
+That secret is never persisted. The setter `addBurnDepositSecret`
+(`WalletGreen.cpp:6735`) has exactly **one** caller in the whole tree:
+
+    WalletGreen.cpp:1341  — inside createDeposit
+
+and `createDeposit` throws unconditionally at its top ("XFG-funded CDs are no
+longer valid"), so it is dead code. Nothing else in the tree writes
+`m_burnDepositSecrets`.
+
+Every later spend of a rolled-over CD goes through `getBurnDepositSecret`,
+which fails:
+
+    m_logger(ERROR) << "Rollover failed: commitment secret not found";
+    return false;
+
+**Consequence**: a CD produced by `rolloverDeposit` cannot subsequently be
+withdrawn, rolled again, or spent through `withdrawDeposit` / `rolloverDeposit`
+/ `heatDepositV10`. `withdrawDeposit` throws `DEPOSIT_LOCKED` for the same reason.
+The random secret exists nowhere after the process exits, so this is not
+recoverable by a rescan — it is unrecoverable, full stop.
+
+### Why it blocks the owner-bound migration
+
+The random-secret design and the owner-bound design are incompatible:
+
+- random secret -> `commitKey = Hs("fuego_commit_key" || secret)`, recoverable only
+  from the stored secret
+- owner-bound   -> `commitKey = B + tG`, recoverable from ECDH + the recipient's
+  spend key
+
+A random secret is not derived from the transaction at all, so it cannot be
+migrated mechanically the way the ECDH sites were. It has to be redesigned.
+
+### Options (owner decision required)
+
+1. **Store the secret on rollover.** Smallest diff, preserves current behaviour,
+   but keeps a second recovery model alongside ECDH and the "TODO: Persist to
+   wallet file" note at `WalletGreen.cpp:6742` becomes a second way to lose funds.
+2. **Convert rollover to the ECDH self-owned form.** Matches every other creation
+   path, no secret to store or lose, and is what the owner-bound migration wants
+   anyway. Changes rollover's recovery model.
+
+Recommendation: option 2, but this is a design change to a function that is
+currently broken, so it is not being done unilaterally.
+
+### Related: `withdrawDeposit` still uses the stored-secret path
+
+`withdrawDeposit` (~:512) and both `rolloverDeposit` overloads still sign their
+CommitmentSpend from `getBurnDepositSecret` rather than the ECDH path used by
+`ammSwapV10` / `sendHeatV10`. Those three remain unmigrated pending this decision.
+
+### Flagged for the user — `sendHeatV10` recipient-output behaviour change
+
+`sendHeatV10` now binds the recipient HEAT output to the **recipient's** spend
+public key via the new `deriveRecipientCommitmentKey`. Before this change the
+sender, and any holder of the recipient's view key, could derive the spend scalar
+for that output; now only the recipient can. This is the intended fix, but it is
+a live behaviour change on a transfer path, and any tooling that assumed the
+legacy form will break. Not yet covered by an end-to-end test.
+
+---
+
+## v11 P0 Part 2 (cont.) — WalletGreen creation paths migrated
+
+**Date**: 2026-10-01
+**Status**: 10 of 13 live `WalletGreen` paths migrated; 3 blocked (see rollover defect above)
+
+### Changes
+
+New helpers, all routing through the single `deriveCommitmentOutputKey` entry
+point from Part 2 so no site can reach the legacy derivation by omission:
+
+- `deriveSelfCommitmentKey(transaction, outputIndex)` — self-owned output,
+  resolves the primary address's `B`.
+- `deriveRecipientCommitmentKey(transaction, outputIndex, recipientView, recipientSpend)`
+  — third-party output. ECDH still uses the recipient's *view* key for delivery;
+  ownership binds to the recipient's *spend* key.
+- `resolveCommitmentSpendKey(transfer, recipientSpendSecret, outKeyPair, outKeyImage)`
+  — one signing path shared by all CommitmentSpend sites. Tries owner-bound,
+  falls back to the legacy scalar only when the published key is not reproducible
+  from the spend secret. Rejects (does not guess) if neither matches.
+
+Migrated:
+
+| Path | Outputs | Sign |
+|---|---|---|
+| `withdrawDeposit` | payout | (unchanged: reads stored secret) |
+| `mintHeatV10` | HEAT bills | — |
+| `cancelLimitOrderV13` | HEAT refund/proceeds | — |
+| `heatDepositV10` | CD, change | ECDH spend path |
+| `ammSwapV10` | user receive, change | ECDH spend path |
+| `sendHeatV10` | recipient, change | ECDH spend path |
+
+`sendHeatV10`'s recipient output is now bound to the *recipient's* spend key.
+This is a live behaviour change on a transfer path — see the flagged section in
+the defect entry above.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+No new test cases were added for this batch. The helpers added here
+(`deriveSelfCommitmentKey`, `deriveRecipientCommitmentKey`,
+`resolveCommitmentSpendKey`) are wallet-layer and not exercised by the existing
+suite — that gap is called out below rather than papered over.
+
+### Not done / open
+
+- **`rolloverDeposit` (x2) and `withdrawDeposit`'s signing** still use the
+  stored-random-secret path. Blocked on the rollover design decision.
+- `createDeposit` remains dead code (throws unconditionally).
+- **`WalletTransactionSender.cpp` — 17 sites — untouched.** These are the
+  WalletLegacy paths, a separate wallet implementation.
+- **No end-to-end test.** No owner-bound output has been produced, scanned,
+  signed and node-verified. The signing helper's legacy-vs-owner-bound branch is
+  covered only indirectly.
+- **Valise Rust SDK still implements only the legacy derivation.** Ship blocker.
+- `fuegod` was rebuilt but not run this session.
+
+---
+
+## v11 P0 Part 2 (cont.) — WalletLegacy (WalletTransactionSender) migrated
+
+**Date**: 2026-10-01
+**Status**: ALL 17 `WalletTransactionSender.cpp` sites migrated
+
+### Recommendation on the rollover design question (asked earlier)
+
+**Convert to ECDH, do not store the secret.** Reasons:
+
+1. The stored secret is never persisted — `m_burnDepositSecrets` has no
+   serialization anywhere in either wallet. A stored secret is lost on restart,
+   which is the same unrecoverable outcome the rollover bug already produces,
+   only deferred to the next restart instead of the next spend.
+2. Owner-bound output keys have no scalar to store. `P = B + tG` is recovered
+   from ECDH plus the recipient's spend key. Storing a secret would mean keeping
+   two incompatible recovery models for the same output type.
+3. Every migrated path now re-derives from the transaction. That is the property
+   that makes rescan-after-restart work, and it is what the owner-bound form
+   exists to provide.
+
+Not actioned here — rollover is blocked on the user's decision.
+
+### Changes
+
+Added `deriveSelfCommitmentKey`, `deriveRecipientCommitmentKey`,
+`deriveCommitmentOutputKeyFor` and `resolveCommitmentSpendKey` to
+`WalletTransactionSender`, mirroring the WalletGreen helpers. All route through
+the single `deriveCommitmentOutputKey` entry point.
+
+Migrated all 17 sites across 10 functions:
+`doSendMultisigTransaction`, `doSendCommitmentWithdrawTransaction`,
+`doSendHeatMintV10Transaction`, `doSendAmmSwapV10Transaction`,
+`doSendAmmSwapV10CommitmentTransaction`, `doSendLpAddV10Transaction`,
+`doSendLpRemoveV10Transaction`, `doSendHeatDepositV10Transaction`,
+`doSendHeatTransferV10Transaction`, `doSendCancelOrderV13Transaction`.
+
+### Removed: dead burn-deposit-secret event
+
+`doSendMultisigTransaction` pushed `WalletBurnDepositSecretCreatedEvent` carrying
+`commitKeys.keyScalar`. Its only consumer is `WalletLegacy::storeBurnDepositSecret`
+(`WalletLegacy.cpp:1987`), which writes `m_burnDepositSecrets` — and
+`getBurnDepositSecret` has **no callers** in `WalletLegacy`. The map is never
+serialized. So the event stored a spend scalar that nothing could ever read.
+
+Removed the push rather than inventing a key image to give it. This is the
+WalletLegacy instance of the same defect recorded above for WalletGreen.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+`WalletLegacy::storeBurnDepositSecret` / `getBurnDepositSecret` /
+`WalletBurnDepositSecretCreatedEvent` are now unreferenced from the sender path
+but still declared. Removing them is a separate cleanup, not done here.
+
+### Not done / open
+
+- **No new tests for the WalletLegacy helpers.** Same gap as the WalletGreen
+  batch: the helpers are wallet-layer and the existing suite does not reach them.
+- **No end-to-end run.** Nothing has been produced, scanned, signed and
+  node-verified end to end.
+- **Valise Rust SDK still implements only the legacy derivation. Ship blocker.**
+- `rolloverDeposit` (x2) and dead `createDeposit` remain in WalletGreen.
+
+---
+
+## v11 P0 Part 2 (cont.) — rollover converted to ECDH, stored-secret paths removed
+
+**Date**: 2026-10-01
+**Status**: DONE. No wallet path derives a commitment key via the
+sender/view-key-spendable legacy form any more.
+
+### Changes
+
+`rolloverDeposit` (both overloads) and `withdrawDeposit` no longer read
+`getBurnDepositSecret`. All three now re-derive the spend scalar from the
+transaction via `resolveCommitmentSpendKey`, which takes the owner-bound path when
+the published key reproduces from the recipient spend secret and falls back to the
+legacy scalar otherwise. The unrecoverable-secret defect is therefore closed:
+there is no secret left to store, lose, or fail to persist.
+
+`rolloverDeposit` no longer generates a random secret for the reinvested CD. The
+new CD is self-owned and derived like every other output.
+
+`getBurnDepositSecret` / `addBurnDepositSecret` / `m_burnDepositSecrets` in
+WalletGreen and `storeBurnDepositSecret` / `getBurnDepositSecret` /
+`m_burnDepositSecrets` / `WalletBurnDepositSecretCreatedEvent` in WalletLegacy now
+have **no callers**. Left declared rather than deleted — removing them touches
+public method surfaces and the observer callback, which is a separate reviewed
+change.
+
+### Consequence worth stating
+
+Previously any CD created by `rolloverDeposit` was unspendable afterwards
+(`getBurnDepositSecret` always failed). Withdraw and re-roll of such a CD were
+impossible. Both now work for owner-bound CDs, and continue to work for any
+pre-v11 CD through the legacy fallback.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+### Remaining legacy derivation call site
+
+One, in `WalletGreen::createDeposit` — dead code that throws unconditionally
+("XFG-funded CDs are no longer valid"). Its derivation is unreachable. Left as-is
+so that removing dead code stays a separate change.
+
+### Still open
+
+- **Valise Rust SDK implements only the legacy derivation. Ship blocker.**
+- No end-to-end produce -> scan -> sign -> node-verify run.
+- The wallet helpers (`deriveSelfCommitmentKey`, `resolveCommitmentSpendKey`, and
+  the WalletLegacy equivalents) are still not exercised by the test suite.
+- No C++/Rust byte-for-byte vectors exist.
+
+---
+
+## v11 P0 Part 3 — Valise Rust SDK parity
+
+**Date**: 2026-10-01
+**Status**: owner-bound primitives implemented and verified byte-for-byte against C++.
+**2 Rust tests fail on pinned hashes — see below, needs a decision.**
+
+### C++/Rust cross-language vectors (the ship gate)
+
+Built a C++ harness linked against the production daemon sources
+(`TransactionExtra.cpp` / `crypto.cpp`) that emits owner-bound vectors, and a Rust
+test that checks them byte-for-byte. Both live in the Valise repo:
+
+- `fuego-crypto/tests/data/ownerbound_vectors.txt` — 72 lines of C++ output
+- `fuego-crypto/tests/ownerbound_vectors.rs` — 3 tests
+
+Coverage: 2 deterministic key pairs x 5 guide indices (0, 1, 127, 128, 1000000)
+x {commit key, key image, spend scalar, scanner match, legacy commit key, amount
+mask, protocol-owned key} = 70 per-index vectors, all matching.
+
+Building the harness against this repo requires the project's exact flags:
+
+    c++ -std=c++17 -stdlib=libc++ -arch arm64 -isysroot $(xcrun --show-sdk-path) \
+        -mmacosx-version-min=13.0 -fno-strict-aliasing -O1 \
+        -DBOOST_MPL_CFG_NO_PREPROCESSED_HEADERS -DBOOST_MPL_LIMIT_LIST_SIZE=40 \
+        -I/opt/homebrew/include -I include -I src -I external \
+        harness.cpp -o harness \
+        build/release/src/libCryptoNoteCore.a build/release/src/libCrypto.a \
+        build/release/src/libCommon.a build/release/src/libSerialization.a
+
+The two boost defines are required — without them boost 1.90 fails to compile
+`boost/variant.hpp` under this configuration. Easy to miss.
+
+### SDK changes
+
+`fuego-crypto/src/ring.rs`: added `derive_owner_bound_commit_key`,
+`match_owner_bound_commit_key`, `derive_owner_bound_key_image`, and
+`derive_commitment_output_key` (the single creation entry point, mirroring C++,
+including the `None` recipient = protocol-owned escape hatch). Documented
+`derive_commitment_keys` as pre-v11 and sender/view-key-spendable.
+
+`fuego-sdk/src/transaction_builder.rs`: 3 creation sites now use
+`derive_commitment_output_key`.
+
+**API change:** `BuildCommitmentDestination` gained a required `spend_pub: [u8; 32]`.
+Without the recipient spend public key only the legacy form can be produced, so
+this is deliberately not optional. Callers updated in
+`core/src/wallet_service.rs` (3 sites) and the test vectors.
+
+### Test updates
+
+`phase7_vectors::heat_send_recipient_view_key` previously asserted the output
+reproduced the legacy derivation from the recipient's view key. Rewritten to assert
+the actual security property: the output matches the owner-bound key for the
+recipient's spend public key, does **not** match the legacy derivation, the
+recipient's spend secret produces a valid key image, and the sender's own spend
+secret does not.
+
+`phase7_vectors::heat_mint_transaction` previously asserted each mint output
+equalled `derive_commitment_keys(...)`. Now asserts the owner-bound key.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `fuego-crypto` tests | 19 passed (12 ref10 + 3 ownerbound + 4 tx_builder) |
+| Owner-bound vectors vs C++ | PASS — 70/70 byte-identical |
+| `fuego-sdk` tests | 17 passed, **2 failed** |
+
+### The 2 failures — decision needed, not silently re-pinned
+
+Both are hardcoded C++ cross-language transaction hashes that legitimately changed
+because the commitment output keys changed:
+
+- `heat_send_recipient_view_key` — expected `4040667a...`, now `39cfd9e2...`
+- `print_cross_language_artifacts` — expected `07a2adaa...`, now `6bff0585...`
+
+The owner-bound security assertions in both tests pass. Re-pinning the new hashes
+would be trivially easy and would make CI green, but these hashes were pinned as
+"verified by the C++ production parser (parseAndValidateTransactionFromBinaryArray)".
+**The new hashes have not been through the C++ parser** — nothing here has run the
+Rust-built transaction through the C++ node. Re-pinning to self-generated output
+would replace a real cross-implementation check with a tautology.
+
+Required before shipping: confirm a transaction built by these Rust paths parses
+and validates in the C++ daemon, then re-pin. Until then this gate is genuinely
+open, not merely red.
+
+### Still not done
+
+- `fuego-sdk/src/scanner.rs:496` still uses `derive_commitment_keys` and has no
+  owner-bound branch. The Rust scanner therefore cannot attribute owner-bound
+  outputs. This is the remaining blocker for Rust-side operation: a C++ wallet can
+  now create owner-bound outputs that the Rust scanner will not find.
+- No end-to-end run against a live testnet node.
+
+---
+
+## v11 P0 Part 3 (cont.) — Rust scanner closed
+
+**Date**: 2026-10-01
+**Status**: SDK side complete. Branch `feat/owner-bound-commitment-keys`
+(commits `88909b4`, `cad36f1`).
+
+`fuego-sdk/src/scanner.rs` now mirrors the key-output branch for commitments:
+it recovers WHICH registered spend key produced the output via
+`underive_public_key`, then derives the scalar and key image with that key's
+secret. Legacy subaddresses go through their own derivations. Pre-v11 outputs
+still resolve through the legacy derivation — deliberately, since those funds
+must stay spendable rather than stranded.
+
+Two tests added in the existing `subaddress_tests` module:
+
+- `finds_owner_bound_commitment_output` — discovered, and the recovered scalar
+  satisfies `scalar*G == commit_key` (proves it is the real spend scalar, not a
+  placeholder)
+- `still_finds_legacy_commitment_output` — pre-v11 funds stay discoverable
+
+The first test was verified meaningful by disabling the owner-bound resolution:
+it fails, while the legacy test keeps passing. A test that cannot fail proves
+nothing.
+
+### SDK test results
+
+38 passed, 2 failed. The 2 failures are the pre-existing pinned C++ transaction
+hashes documented in the Part 3 entry — unchanged by this work.
+
+### What the SDK can and cannot do now
+
+Can: create owner-bound commitment outputs, discover and attribute them,
+recover the spend scalar and key image, and still read pre-v11 ones.
+
+Cannot yet: the two pinned C++ hashes need a transaction built by these Rust
+paths to be parsed and validated by the C++ daemon before they can be re-pinned.
+Until then that cross-implementation gate is open.
+
+### Still open on the C++ side
+
+- No end-to-end run: produce -> scan -> sign -> node-verify against a testnet.
+- `fuegod` was rebuilt after each batch but not exercised as a daemon.
+- Section B asset accounting (`classifyInputAsset` trusting ring member 0, the
+  term-0 classification inconsistency, `uint64_t` wrap paths) is untouched and
+  is the highest-value remaining pre-v11 work.
+
+---
+
+## v11 P0 Section B (part 1) — asset classification hardened
+
+**Date**: 2026-10-01
+**Status**: DONE for classification. Overflow arithmetic and the
+`TransactionInputCommitmentTransfer` input type remain open.
+
+### The defect
+
+`Blockchain::classifyInputAsset` derived an input's asset from
+`commitmentOutputs()[amount][outputIndexes[0]]` — the **first ring member**. Ring
+member order is attacker-chosen and a ring signature hides which member is real,
+so reordering decoys changed the asset an input was credited.
+
+`checkCommitmentSpendInput` never required ring members to share an asset, so a
+mixed ring passed validation. An attacker could place a `HEAT_TERM` output first
+and their real `DEPOSIT_TERM_POOL_XFG` output elsewhere: the MLSAG is valid for
+*some* member, and consensus would credit the input as HEAT while an XFG-leg
+value left. Every unresolvable path (missing amount index, empty ring,
+out-of-range offset) also defaulted to XFG, so the same class of output could be
+forced to the wrong asset.
+
+**Reachable at v11 without any CD existing** — it needs only a
+`TransactionInputCommitmentSpend`, which the v11 HEAT paths use. Gating CD
+*creation* to v12 does not close it.
+
+The two sides also disagreed about term 0: `classifyOutputAsset` treated a
+`TransactionOutputCommitment` with term 0 as HEAT but a `TransactionOutputUnified`
+with term 0 as XFG.
+
+### Changes
+
+- New `src/CryptoNoteCore/AssetType.{h,cpp}`: `classifyCommitmentTermAsset(term)`,
+  one table for both sides. `AssetType.h` now carries the history of the term-0
+  divergence so it is not reintroduced.
+- `Blockchain::classifyInputAsset`: classifies **every** ring member and requires
+  one asset. A mixed ring, or one referencing a non-existent index, is
+  unresolvable and falls back to XFG rather than taking the first member's asset.
+- `Currency::classifyOutputAsset`: both commitment and unified outputs now route
+  through the shared table. Net −49/+18 lines; the duplicated ladder is gone.
+
+Decoys are now constrained to same-asset members. That narrows the anonymity set
+and is a real privacy cost — it disappears when the shielded pool supersedes rings.
+It is called out in the v11 pool plan's value-path table.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `asset_classification_tests` (new, 6 cases) | PASS |
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+The new tests were verified load-bearing: reintroducing the term-0 divergence
+fails 3 of the 6 (`ZeroTermIsXfg`, `CdAndOrdinaryAreDistinctAssets`,
+`RingPermutationCannotChangeAsset`).
+
+An earlier draft of the last test was tautological — it compared
+`classify(x)` with `classify(x)` — and was replaced rather than shipped.
+
+### Not covered
+
+These tests exercise the shared table. They do **not** construct a mixed-asset
+ring against `checkCommitmentSpendInput`; that needs a built transaction in the
+verifier test harness. The all-members-same-asset requirement currently lives in
+`classifyInputAsset` (which drives `getTransactionInputAssetAmounts` and hence the
+per-asset conservation check), not as an explicit rejection in the ring builder.
+
+### Still open in Section B
+
+- `uint64_t` wrap paths: several `out + fee + burn` expressions and aggregate sums
+  can overflow. `check_money_overflow` does not cover claimed interest.
+- `TransactionInputCommitmentTransfer` always classifies XFG and does not bind
+  `newTerm` to a replacement output — a potential HEAT/LP to XFG conversion.
+  Recommend rejecting this input type after the v11 gate, or making it safe.
+- `DigmMintEngine` sums every commitment-spend input as HEAT without knowing the
+  real ring member's asset. Recommend disabling DIGM mint at v11.
+- Rollback (`popBlock`) must invert the same deltas; not re-verified here.
+
+---
+
+## v11 P0 Section B (part 2) — term 0 and DIGM_TERM removed from the term table
+
+**Date**: 2026-10-01
+**Status**: DONE. Term classification is now strict; unknown terms reject.
+
+### Why term 0 was removed rather than assigned an asset
+
+Term 0 could have been HEAT (what `check_tx_outputs`' comment claimed) or XFG
+(what `TransactionOutputUnified` means by 0). Neither was verifiable:
+
+- **No producer emits it.** Every commitment-output creation site assigns
+  `HEAT_TERM`, a validated CD term (`term_epochs * epoch_duration`, range-checked),
+  or a protocol marker. The only `= 0` in the tree is a `SimpleWallet.cpp`
+  initializer that is overwritten before use or bailed on by the range check.
+- **The two sides already disagreed**, HEAT on output and XFG on input, which is
+  the conservation break this whole change exists to close.
+
+Assigning either value would have picked a side to hide the bug. Removing it means
+there is no disagreement left to resolve. The "unlocked commitment output" case is
+already `HEAT_TERM`.
+
+XFG can never legitimately be a commitment term: term is a lock period in blocks,
+and unlocked liquid XFG belongs in a `KeyOutput`, which every asset rule already
+treats as XFG unconditionally and which has no `term` field at all.
+
+### DIGM_TERM removed
+
+`DigmMintEngine` sums every commitment-spend input as HEAT without knowing the real
+ring member's asset, so DIGM has no sound per-asset accounting. The term previously
+fell through to HEAT on both sides, which made it look classified when it was not
+accounted. Removed from the table and from the `check_tx_outputs` whitelist.
+
+Checked first: the only references to `DIGM_TERM` outside the whitelist were
+supply-indexing comparisons at `Blockchain.cpp:6398` and `:6921`. Those are
+now unreachable for new outputs but left in place — they must keep working if a
+historical DIGM output ever exists, and removing them is a separate change.
+No wallet, daemon or CLI path creates a DIGM output.
+
+### The table now rejects
+
+`classifyCommitmentTermAsset(term, cdMinTerm, cdMaxTerm, outAsset)` returns bool.
+Unrecognised terms — including 0, `DIGM_TERM`, and anything between 1 and
+`cdMinTerm` — return false without touching `outAsset`. Callers must not
+substitute a default.
+
+The CD bounds are **parameters**, not constants: the range is runtime
+(`Currency::depositMinTerm/depositMaxTerm`) and testnet uses 10–720 against
+mainnet's 5400–64800. The previous single-argument table hardcoded the mainnet
+range via a `term > 0` catch-all, which silently disagreed with
+`check_tx_outputs` about which terms are valid.
+
+`Currency::classifyOutputAsset` gained the two bound parameters, since it is a
+static member and cannot read currency state. Its sole caller passes them.
+
+### Behaviour change to be aware of
+
+`check_tx_outputs` no longer accepts term 0 or `DIGM_TERM` at v11+. Both were
+previously accepted. This is version-gated to v11+, so pre-v11 blocks are
+untouched — but if any v11-era block already carries such an output, replay now
+rejects it. No producer can create one, so this should be a no-op on chain; it has
+not been verified against a synced node.
+
+`classifyOutputAsset` falls back to XFG for an unrecognised term rather than
+rejecting, because it returns a value and is called from
+`getTransactionOutputAssetAmounts`. XFG is the safe direction there: it cannot
+inflate an HEAT or LP balance. `check_tx_outputs` is what actually rejects.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `asset_classification_tests` (9 cases) | PASS |
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+The new suite asserts rejection behaviour, the runtime CD bounds (a term valid on
+testnet and invalid on mainnet), that a rejected term leaves the caller's output
+untouched, and that a foreign term makes a ring unresolvable.
+
+### Still open
+
+- No mixed-ring transaction test against `checkCommitmentSpendInput` — needs a
+  built transaction in the verifier harness.
+- `uint64_t` wrap paths (`out + fee + burn`, `check_money_overflow` missing
+  claimed interest).
+- `TransactionInputCommitmentTransfer` always classifies XFG and does not bind
+  `newTerm`.
+- Supply-indexing comparisons at `:6398` / `:6921` are now dead for new outputs.
+
+---
+
+## Aggregate input-total uint64 overflow
+
+**Date**: 2026-10-03
+**Status**: DONE for input totals. `out + fee + burn` and the per-asset
+`AssetBalance` accumulators remain open.
+
+### A false lead worth recording
+
+An earlier pass in this workspace reported `check_inputs_overflow`'s guard as
+broken:
+
+```cpp
+if (money > amount + money) return false;   // alleged: "never detects overflow"
+```
+
+**That claim was wrong.** Unsigned wraparound is well-defined in C++, and
+`money > amount + money` is exactly equivalent to `amount > UINT64_MAX - money`.
+Verified against a 128-bit oracle: 289 boundary pairs, 20M random pairs, and 3M
+random accumulation sequences — zero mismatches for either form. The one-line
+reversal to `amount > UINT64_MAX - money` that was sitting uncommitted in the tree
+is a readability change, **not a fix**, and was reverted rather than committed as
+one. `check_inputs_overflow` was always correct.
+
+### The real defect
+
+`Currency::getTransactionAllInputsAmount` accumulated with a bare `amount +=`
+across every input:
+
+```cpp
+for (const auto &in : tx.inputs)
+    amount += getTransactionInputAmount(in, height);
+```
+
+`getTransactionInputAmount` already refused its own two-operand add
+(`amount + interest`, `amount + claimedInterest`), so every input was individually
+valid — but the **running total across inputs** could still wrap past
+`UINT64_MAX`. Every caller compares that total against the output sum to decide
+whether a transaction is funded (`check_tx_semantic`, `check_tx_fee`,
+`TransactionPool`), so a wrapped total read as a small, plausible, *funded*
+number. Two inputs of `UINT64_MAX` and `2` produced a total of `1`.
+
+`get_inputs_money_amount` had the identical gap but already returned `bool`, so the
+error channel existed and simply never fired.
+
+### Changes
+
+- `CryptoNoteFormatUtils.cpp` — `get_inputs_money_amount` now refuses on overflow
+  instead of wrapping. Its existing `bool` return finally carries a `false`.
+- `Currency.h` / `Currency.cpp` — new
+  `getTransactionAllInputsAmountChecked(tx, height, total)`, same total but
+  reports aggregate overflow. The unchecked accessor is left unchanged because
+  reporting callers (`BlockchainExplorer`, `RpcServer`) want a value, not a
+  verdict.
+- `Core.cpp` — `check_tx_semantic` uses the checked variant and rejects the tx.
+
+`check_tx_fee` needed no change: it already consumed `get_inputs_money_amount`'s
+`bool`, which is now meaningful.
+
+### Verified
+
+| Gate | Result |
+|------|--------|
+| `input_amount_overflow_tests` (new, 7) | PASS |
+| `asset_classification_tests` | PASS — 17 |
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+Load-bearing, checked by reinstating each defect in isolation:
+
+- reverting the `get_inputs_money_amount` guard fails exactly 1 test;
+- reverting the aggregate guard fails exactly the 3 tests aimed at it.
+
+Boundary cases are pinned both ways: a total landing exactly on `UINT64_MAX` is
+accepted, one unit over is refused.
+
+### Still open
+
+- `out + fee + burn` expressions (`Core.cpp:442`, `HeatMintEngine.cpp:59`,
+  `Blockchain.cpp:4069`) still add without a pre-check.
+- Per-asset `AssetBalance` accumulators in
+  `getTransactionInputAssetAmounts` / `getTransactionOutputAssetAmounts` use bare
+  `+=` per asset, and those feed the live v11 conservation check. Not yet guarded.
+- No end-to-end test through the verifier; coverage is arithmetic-level only.
+- `TransactionInputCommitmentTransfer` always classifies XFG, `newTerm` unbound.
+- No mixed-ring test against `checkCommitmentSpendInput`.
+
+---
+
+## v11 P0 Section B (part 3) — ring-asset rule extracted and tested
+
+**Date**: 2026-10-01
+**Status**: DONE. Harness plan written; harness not built.
+
+### Extraction
+
+`resolveCommitmentRingAsset(terms, outputIndex, cdMinTerm, cdMaxTerm, outAsset)`
+added to `AssetType.{h,cpp}`: the all-members-same-asset rule as a pure function
+over a term list. `Blockchain::classifyInputAsset` now decodes the relative
+offsets and delegates to it — it does **not** re-implement the rule, so there is
+still exactly one source of truth.
+
+The function takes `outputIndex` so a test can assert order-independence directly,
+even though production callers pass 0 (every member must agree, so no member is
+special).
+
+### Harness plan
+
+`docs/plans/2026-10-01-consensus-ring-verifier-harness-plan.md`. The blocker is
+injection: `IndexManager m_indexManager` is private with no public accessor and no
+test friend. The plan compares three seams (narrow accessor, test friend,
+extending the already-friend `BlockchainIndicesSerializer`) and recommends the
+third. Also specifies a 13-case matrix, which layer rejects each, and notes that
+the harness must first demonstrate a valid single-asset ring is *accepted* — a
+harness that rejects everything passes nothing.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `asset_classification_tests` | PASS — 17 (9 term table + 8 ring rule) |
+| `commitment_owner_bound_tests` | PASS — 16 |
+| `alias_index_tests` | PASS — 9 |
+| Full `make` incl. `fuegod` | PASS |
+
+Load-bearing check: reinstating the pre-fix "take member 0" behaviour fails exactly
+the four tests aimed at it — `MixedRingIsUnresolvable`,
+`ReorderingDoesNotChangeOutcome`, `UnrecognisedTermAnywhereIsUnresolvable`,
+`RejectionLeavesOutputUntouched` — and leaves the other 13 passing.
+
+### Still open
+
+- Harness not built (see the plan). Until then the fix is proven at the function
+  level, not through `checkCommitmentSpendInput` or a block.
+- `uint64_t` wrap paths.
+- `TransactionInputCommitmentTransfer` always classifies XFG, does not bind
+  `newTerm`.
+- Replay against a synced node unverified: the term-0 / DIGM_TERM whitelist change
+  is v11+-gated but no v11-era block has been checked for such an output.
+
+---
+
 ## Alias resolution integrity and Farcaster privacy review
 
 **Started**: 2026-09-23
@@ -1974,283 +3461,188 @@ testnet needs a reset. Mainnet v11 (1,111,111) is not active.
 | Tests pass (tasks 13-15) | PASS: core 202/202, hearth 31/31, auction 57/57, p2p 115/115 |
 | All tasks done | NO — tasks 7b and 16 open |
 
+---
+
+## Fix: `--generate-spv-config` segfault (OpenSSL 3 legacy RIPEMD160) + JSONC swap configs
+
+**Start date:** 2026-10-06
+**Agent:** Sisyphus (space-bunny-free)
+
+Closes the two pre-existing defects recorded in the previous entry.
+
+### 1. `xfg-swapd --generate-spv-config` segfaulted (SIGSEGV)
+
+`KmdHtlcScript::ripemd160()` called `EVP_DigestInit_ex(ctx, EVP_ripemd160(), nullptr)`.
+RIPEMD-160 moved to OpenSSL's **legacy provider** in 3.0, so `EVP_ripemd160()`
+yields a stub: init silently fails, and the following `EVP_DigestUpdate` /
+`EVP_DigestFinal_ex` dereference a NULL `ctx->digest`. Reproduced standalone
+against OpenSSL 3.0.2 with a 12-line program, then bisected to `hash160` by
+instrumenting `generateSpvConfig()`.
+
+Five call sites shared the defect — `KmdHtlcScript`, `ZecHtlcScript`,
+`DogeHtlcScript`, `BchHtlcScript`, `DashHtlcScript` — so this was not limited to
+the config generator: any path deriving a P2PKH address for those chains was
+affected.
+
+Replaced with a self-contained RIPEMD-160 (`SwapDaemon/Crypto/ripemd160.{h,cpp}`)
+that all five now delegate to. Carrying the algorithm keeps address derivation
+identical on every OpenSSL (1.1.1 → 4.x) and every platform.
+
+Two bugs were caught **by testing the implementation rather than trusting it**:
+- the right line was rotating right instead of left (7/8 vectors failed);
+- the padded tail was a single 64-byte block, overflowing the buffer whenever
+  56..63 bytes remained (the 62-byte vector caught it).
+
+Clean under `-fsanitize=address,undefined`. Pinned by `test_ripemd160` against
+all 8 published reference vectors.
+
+### 2. `swap_config.example.json` could not be loaded at all
+
+The example and the `--generate-spv-config` output are JSONC — `//` guidance is
+the point of an annotated template — but `loadChainClientConfig` fed them
+straight to a strict jsoncpp reader: `Config file is not valid JSON`. The
+documented quickstart was unusable end to end.
+
+Added a string-aware comment stripper. String-awareness is required: a naive
+`//` strip would corrupt `"https://rpc.example"` values. Newlines are preserved
+so parse errors still report the right line. The example now parses and fails
+later, on an actionable `pulsechain_priv_key must be 64 hex chars, got 20` for
+an unfilled placeholder — the correct behaviour for a template.
+
+### Task List
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Reproduce RIPEMD-160 crash standalone against OpenSSL 3.0.2 | Sisyphus | 2026-10-06 | DONE |
+| 2 | Bisect to `hash160` via instrumentation in `generateSpvConfig()` | Sisyphus | 2026-10-06 | DONE |
+| 3 | Implement `ripemd160.{h,cpp}`; verify 8/8 official vectors under ASan+UBSan | Sisyphus | 2026-10-06 | DONE |
+| 4 | Route all 5 `EVP_ripemd160` call sites through it; add to 2 CMake targets | Sisyphus | 2026-10-06 | DONE |
+| 5 | Add `test_ripemd160` regression test | Sisyphus | 2026-10-06 | DONE |
+| 6 | String-aware JSONC comment stripping in `loadChainClientConfig` | Sisyphus | 2026-10-06 | DONE |
+| 7 | Re-apply `fire_wallet gen_swap_key` pointers lost during work | Sisyphus | 2026-10-06 | DONE |
+| 8 | Full verification + this entry | Sisyphus | 2026-10-06 | DONE |
+
+### Verification
+| Check | Result |
+|-------|--------|
+| `test_ripemd160` | PASS — 8/8 published vectors |
+| `test_spv_config_wiring` | PASS — 10/10 |
+| `--generate-spv-config` | PASS — exit 0, real addresses (`5Kho…`/`19…`, `6uwh…`/`LV7…`, `7KYy…`/`R9r…`, `5KG7…`/`1du…`) |
+| Generated config reloads through the real loader | PASS |
+| `swap_config.example.json` parses | PASS — reaches field validation |
+| `//` inside a JSON string preserved | PASS — `{"btc_mode":"//notacomment"}` loads |
+| `fire_wallet` / `test_wallet gen_swap_key` | PASS — exit 0, no wallet file, no node |
+| `fire_wallet` key accepted by `xfg-swapd` | PASS — `Loaded XFG wallet key for offer signing` |
+| Control: invalid key rejected | PASS — `Invalid xfg_secret_key in swap config` |
+| ASan + UBSan on ripemd160 | PASS — no findings |
+
+### Still broken, NOT fixed here (all reproduced on a clean stashed HEAD)
+
+1. **`test_swap_state_machine_spv` does not link** —
+   `undefined reference to Common::Console::setTextColor`. Its `target_link_libraries`
+   is identical to targets that link fine, so the missing symbol is pulled in
+   transitively only by this test's includes. Predates this work.
+2. **`test_sol_e2e` is not an automated test** — it requires six CLI arguments
+   and exits non-zero without them. Do not count it in CI.
+3. **Decred addresses use the wrong version byte.** `DCR_P2PKH_VERSION = 0x07`
+   yields `4Cxi…`; Decred mainnet P2PKH is `0x073f` and starts `Ds`. This is in
+   the base58/version layer, independent of the RIPEMD-160 fix, and will produce
+   unusable DCR addresses. **Not touched — fixing it needs the correct Decred
+   base58 alphabet and version constants verified against a dcrdata address.**
 
 ---
 
-## fuego-valise SDK Sync Trigger
+## Feature: Maison typeface selector — 2026-09-28
 
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-09-27
-**Agent**: claude-code
-**Status**: COMPLETE
+### What changed
+
+Four candidate faces are now selectable from the nav while the maison register
+is active. Each is a separate `@font-face` family rather than a re-declaration
+of one, so the browser cannot serve a face cached against the wrong weight.
+
+| Key | Family | Files | Character |
+|-----|--------|-------|-----------|
+| `saira` | Saira (already vendored) | — | the existing look, and the default |
+| `cormorant` | Cormorant (variable) | 1 | high-contrast serif, the maison signature |
+| `bitter` | Bitter (variable) | 1 | slab serif |
+| `sourceserif` | Source Serif 4 (variable) | 1 | warm serif |
+| `plex` | IBM Plex Sans | 3 (400/500/600) | technical sans |
+
+The variable fonts carry 100–900 in a single file. IBM Plex Sans ships discrete
+400/500/600 because those are the only weights the interface asks for (600 ×31,
+500 ×5, 400 ×1).
+
+**Register and typeface are independent axes.** Every `data-typeface` rule is
+scoped `[data-theme="maison"][data-typeface="…"]`, so leaving maison makes the
+attribute inert rather than clearing it — which is what lets the choice survive a
+round trip. The control itself is `hidden` outside maison, because the other two
+registers pin their own face and a live-looking selector there would be a lie.
+
+**`--font-mono` is deliberately untouched.** The depth ladder and the order
+columns depend on tabular figures aligning down the column; none of these
+candidates are monospaced, so IBM Plex Mono stays for all numerics.
+
+**TTF, not woff2.** `pyftsubset` is present but `brotli` is absent from that
+interpreter, so woff2 output is impossible in this toolchain. 2.6 MB for the
+curated six, served locally.
+
+**Boot script.** The typeface resolves inline before first paint, same as the
+register, so the face is in place rather than snapping in afterwards.
+
+### Harness improvements this required
+
+- `El` had `setAttribute` as a no-op and no `getAttribute`/`removeAttribute`, so
+  no attribute-driven control could be tested at all. It now stores attributes
+  for real, still mirroring onto the instance for the harness's own reads.
+- A CSS-level gate: every `data-typeface` rule must be scoped to maison, name a
+  family that has an `@font-face`, and point at a file that is actually shipped.
+  The scope check was written twice — the first version searched text *before*
+  the rule body rather than the selector itself, and would have passed on an
+  unscoped rule. Verified by temporarily unscoping a rule and confirming it
+  fails.
 
 ### Task List
 
 | # | Task | Owner | Date | Status |
 |---|------|-------|------|--------|
-| 1 | Add `.github/workflows/notify-valise.yml`: repository_dispatch to fuego-valise when contract source files change on master | claude-code | 2026-09-27 | DONE |
-
-No C++ source changed. The job needs the `VALISE_DISPATCH_TOKEN` secret; without it it warns and exits 0.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| No source change (build unaffected) | claude-code | 2026-09-27 | PASS |
-| All tasks complete | claude-code | 2026-09-27 | PASS |
-
----
-
-## HEAT CDs at V12, Spend-Key-Bound Commitment Keys, Transfer Theft Fix
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-09-28
-**Agent**: claude-code
-**Status**: COMPLETE (consensus rules activate at the V12 height; mainnet height still a placeholder)
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Height-aware asset classification: finite-term CDs created at or above `upgradeHeight(V12)` are HEAT (`Currency::isHeatCdHeight`, `classifyCommitmentRef`); legacy CDs stay XFG, withdraw-only | claude-code | 2026-09-28 | DONE |
-| 2 | CD interest (`claimedInterest`) counted as HEAT from V12 — it is backed by the HEAT CD_APY_POOL / BONUS_VAULT partitions | claude-code | 2026-09-28 | DONE |
-| 3 | Asset-homogeneous CommitmentSpend rings from V12 (closes the first-ring-member asset switch); all-HEAT_TERM rings allowed from V12 | claude-code | 2026-09-28 | DONE |
-| 4 | CommitmentTransfer rings accept CDs only (pool outputs share a commit key derivable from a public seed; HEAT/LP/SWRX members allowed asset switches); classified by ring | claude-code | 2026-09-28 | DONE |
-| 5 | TreasuryFund burn excluded from the miner fee sum from V12 (was minted again to the miner as XFG); block template and mempool minimum-fee check mirror it | claude-code | 2026-09-28 | DONE |
-| 6 | Block template fee for mints (outputs > inputs) uses the consensus minimum fee instead of a wrapped subtraction | claude-code | 2026-09-28 | DONE |
-| 7 | `/getrandom_commitment_outs.bin` `ring_class` filter (HEAT_TERM / mature HEAT CDs / mature legacy CDs; no pool or slashed outputs), plumbed through ICore, INode, InProcessNode, NodeRpcProxy | claude-code | 2026-09-28 | DONE |
-| 8 | Spend-key-bound (v2) commitment keys: `Hs(D‖i‖"fuego_commit_v2")·G + B`; v1 keys let the sender and any view-key holder spend HEAT/CDs. Scanner detects v2 then v1; `ITransfersContainer::getAvailableKeyImage` tells schemes apart | claude-code | 2026-09-28 | DONE |
-| 9 | WalletGreen: HEAT send / HEAT CD / withdraw / rollover rebuilt — XFG network fee inputs, ring classes, all inputs added before signing (per-input signing invalidated earlier signatures), bill-denominated CDs, v2 outputs, keys checked against the on-chain commit key | claude-code | 2026-09-28 | DONE |
-| 10 | WalletLegacy: all commitment outputs v2; spends pick v1/v2 by recorded key image | claude-code | 2026-09-28 | DONE |
-| 11 | Build Daemon, PaymentGateService, SimpleWallet, Wallet; cross-check v2 keys and tx serialization against the fuego-valise Rust SDK | claude-code | 2026-09-29 | DONE |
-
-### Known Open Items
-
-- Mainnet `UPGRADE_HEIGHT_V12` = 2666666 is ~21 years out at 480 s blocks, and no V12 upgrade detector exists, so blocks never report major version 12. All new rules key on height, not block version.
-- Testnet V12 = 180: a testnet already past 180 will not resync (historical finite-term CDs now classify as HEAT) without a reset or a later V12 height.
-- The mixed-ring asset switch remains open under v11 rules (not changed there for resync safety).
-- WalletLegacy/SimpleWallet HEAT send and HEAT deposit still lack XFG network-fee inputs, sign per input, and pay the banking fee as an XFG output funded by HEAT; they will be rejected.
-- AMM HEAT→XFG swap: the pool output classifies as HEAT so the expected XFG is 0, and SWRX outputs can never mature; LP-term commitments can never be spent (maturity overflow).
-- `tests/UnitTests/INodeStubs.h` already had a stale `getRandomCommitmentOutsForAmount` signature; updated, but the unit-test target was not built in this change.
+| 1 | Stage 4 candidate families into `static/fonts` | opencode | 2026-09-28 | DONE |
+| 2 | `@font-face` for each, weighted correctly | opencode | 2026-09-28 | DONE |
+| 3 | Scope typeface rules to the maison register | opencode | 2026-09-28 | DONE |
+| 4 | `MaisonTypeface` module: apply, persist, observe register | opencode | 2026-09-28 | DONE |
+| 5 | Nav control on all 3 pages; visible in maison only | opencode | 2026-09-28 | DONE |
+| 6 | Resolve before first paint in all 3 boot scripts | opencode | 2026-09-28 | DONE |
+| 7 | Harness: real attributes + CSS typeface gate | opencode | 2026-09-28 | DONE |
+| 8 | Verify scope gate fails on an unscoped rule | opencode | 2026-09-28 | DONE |
+| 9 | Build, serve, confirm all 6 fonts 200 `font/ttf` | opencode | 2026-09-28 | DONE |
+| 10 | Visual review of each face in a real browser | — | — | **TODO** |
 
 ### Sign-Off
 
 | Gate | Signed By | Date | Result |
 |------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet, Transfers) | claude-code | 2026-09-29 | PASS |
-| v2 commit keys + tx roundtrip match Rust SDK (C++ parser, deriveCommitmentPublicKeyV2) | claude-code | 2026-09-29 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
+| `go vet` | opencode | 2026-09-28 | PASS (clean) |
+| `go test ./...` | opencode | 2026-09-28 | PASS |
+| Node tests: hearth_order, swapxfg_pairs | opencode | 2026-09-28 | PASS (6/6, 4/4) |
+| Harness: 3 pages × 3 registers | opencode | 2026-09-28 | PASS (9/9) |
+| Every typeface rule scoped to maison | opencode | 2026-09-28 | PASS (verified to fail when unscoped) |
+| Every family used has an `@font-face` | opencode | 2026-09-28 | PASS |
+| Every `@font-face` url resolves on disk | opencode | 2026-09-28 | PASS (10/10 per sheet) |
+| Unknown typeface rejected, attribute cleaned up | opencode | 2026-09-28 | PASS |
+| Choice survives a register round trip | opencode | 2026-09-28 | PASS |
+| Braces balanced in both sheets | opencode | 2026-09-28 | PASS (352/352, 338/338) |
+| All 6 fonts 200 `font/ttf` from the release build | opencode | 2026-09-28 | PASS |
+| Visual review of each face in a real browser | — | — | **PENDING** |
 
----
+### Not verified
 
-## XFG CDs Principal-Only; XFG CD Creation Retired in Wallets
+Every checkable property is checked. What is not is the whole point of the
+feature: **nobody has looked at these faces rendered.** Cormorant at 9px in a
+depth ladder may be beautiful and illegible; Source Serif 4's optical sizing may
+need a word to look right at these sizes. Task 10 requires opening the page.
 
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-09-29
-**Agent**: claude-code
-**Status**: COMPLETE
+### Open recommendation
 
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Consensus (v11+ blocks): `claimedInterest > 0` requires every ring member to be a HEAT CD (finite term, created at or above the HEAT-CD height). XFG CDs earn zero interest in any asset; before the HEAT-CD height no claim can carry interest | claude-code | 2026-09-29 | DONE |
-| 2 | `/estimate_cd_yield` and `InProcessNode::getCdClaimInfo` report zero interest for XFG CDs | claude-code | 2026-09-29 | DONE |
-| 3 | WalletGreen / WalletLegacy: interest only computed for HEAT CDs; XFG CD rollover refused; XFG CD creation (`createDeposit`, `makeDepositRequest` finite terms) refused at every height | claude-code | 2026-09-29 | DONE |
-| 4 | Withdrawal of existing XFG CDs kept: principal returned as XFG (commitment and pre-v10 multisignature paths) | claude-code | 2026-09-29 | DONE |
-
-Resync impact: v11-era blocks carrying CD interest claims (testnet, V11 = 30) no longer validate; testnet needs a reset. Mainnet is below V11 in the checkpoint set, so it has no such blocks.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-09-29 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
-
----
-
-## Asset-Homogeneous Rings and TreasuryFund Miner-Fee Fix from V11
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-02
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | CommitmentSpend / CommitmentTransfer rings must be one asset from V11 (was V12): closes the first-ring-member HEAT/XFG switch for the whole v11 era; all-HEAT_TERM rings valid from V11 | claude-code | 2026-10-02 | DONE |
-| 2 | TreasuryFund burn excluded from the miner fee sum from V11 (was V12); block template and mempool minimum fee mirror it | claude-code | 2026-10-02 | DONE |
-
-Supersedes the "mixed-ring asset switch remains open under v11 rules" open item above. Testnet (V11 = 30) needs a reset; mainnet is below V11 per its checkpoints.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
-
----
-
-## No HEAT-Era Features Before V11; Legacy Bonds Principal-Only
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-02
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | `usesHeatEraFeatures`: HEAT mint/send, AMM swap/liquidity, orderbook, limit orders, TreasuryFund, CD bonus claims, HEAT/LP/pool/SWRX/DIGM commitment outputs, CD transfers. Rejected in blocks and the mempool below V11. The pre-v11 mint and legacy AMM checks fell back to a fixed 1:1 rate on an empty pool, i.e. HEAT minted from XFG before launch. No such transaction exists on mainnet before V11 | claude-code | 2026-10-02 | DONE |
-| 2 | Legacy bond (0xCC) claims with positive interest rejected at every height; epoch fees no longer diverted to the legacy bond pool | claude-code | 2026-10-02 | DONE |
-| 3 | WalletLegacy legacy bond withdrawal returns principal only (withdraw path kept) | claude-code | 2026-10-02 | DONE |
-
-Assumption: no HEAT mint, AMM, LP, orderbook, DIGM or CD-transfer transaction exists on mainnet below V11. If one does, nodes with this code stop at that block.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
-
----
-
-## Network Facts Recorded; No Legacy Bonds; DIGM From V12
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-02
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Legacy bond tags (0xCB / 0xCC) rejected at every height in blocks and mempool — no legacy bonds exist (`usesLegacyBondTags`) | claude-code | 2026-10-02 | DONE |
-| 2 | DIGM_TERM outputs rejected below V12 (`createsDigm`), moved out of the V11 HEAT-era gate — no DIGM mint exists before V12 | claude-code | 2026-10-02 | DONE |
-| 3 | AGENTS.md "Network Facts" section (maintainer-confirmed facts, consensus invariants, agent rules) | claude-code | 2026-10-02 | DONE |
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
-
----
-
-## 10:1 Launch Rate Only; No Commitments Before V11, No CDs Before V12; Pool Re-seed
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-02
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | `rebuildCache` emptied the Hearth pool without re-seeding it, while a fresh start seeds 10,000 XFG / 1,000 HEAT — nodes would disagree on every price-dependent rule from V11. `seedHearthPool()` now runs in both | claude-code | 2026-10-02 | DONE |
-| 2 | Removed every pre-v11 legacy validation/settlement path (legacy AMM swap, legacy mint auth, legacy non-auth mint, v10 LP add/remove, legacy AMM tags, legacy bond claim, pre-v11 swap settlement and reversal) — all carried fixed-rate fallbacks and are unreachable behind the V11 gate. No 1:1 rate remains | claude-code | 2026-10-02 | DONE |
-| 3 | HEAT-era gate covers any commitment output and any CommitmentSpend / CommitmentTransfer input, and applies to blocks still at major version 10 (the block at the V11 height is v10) | claude-code | 2026-10-02 | DONE |
-| 4 | Finite-term CD outputs rejected below V12 (`createsCd`) — no CD exists before V12 | claude-code | 2026-10-02 | DONE |
-| 5 | WalletGreen AMM swap quotes fail closed without a pool price (no 10:1 guess), uint128 math | claude-code | 2026-10-02 | DONE |
-| 6 | AGENTS.md facts updated: no HEAT/Hearth/CDs/atomic swaps used on mainnet yet; 10:1 launch rate only | claude-code | 2026-10-02 | DONE |
-
-Correction to earlier entries: the pre-v11 paths did not price at 1:1 on mainnet in practice — the pool is seeded at 10:1 — but they carried a 1:1 fallback for an empty pool, which `rebuildCache` produced.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
-| Unit/regression test suites | — | — | NOT RUN |
-
----
-
-## Mainnet V12 Height 1,500,000
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-02
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | `UPGRADE_HEIGHT_V12` 2666666 → 1500000 (maintainer decision). V12 height gates HEAT CDs, CD outputs and DIGM; all are height-based, so no upgrade detector is needed for them | claude-code | 2026-10-02 | DONE |
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet) | claude-code | 2026-10-02 | PASS |
-
----
-
-## Swap Escrow Key Image Enforcement; Spend/View-Key Review
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-03
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Consensus: a swap escrow input's key image must equal `swapEscrowKeyImage(escrowTxId, index, mode)`. It enters the global spent set unchecked, so an escrow holder could copy a pending input's key image and freeze that owner's coins permanently | claude-code | 2026-10-03 | DONE |
-| 2 | Mempool and block template track escrow spends per escrow output (claim and refund conflict); conflicting spends no longer reach a template that produces an invalid block | claude-code | 2026-10-03 | DONE |
-| 3 | `swapEscrowKeyImage` moved to CryptoNoteCore; SwapTxBuilder delegates (identical bytes; test_swap_escrow_claim 18/18) | claude-code | 2026-10-03 | DONE |
-| 4 | Review of the v2 spend/view-key code (TransactionExtra, TransfersConsumer, WalletGreen, WalletLegacy, valise SDK builder/scanner) | claude-code | 2026-10-03 | DONE |
-| 5 | Fix from the review: tracking (view-only) wallets left the commitment key image uninitialized for v2 outputs; now a deterministic placeholder, as for key outputs | claude-code | 2026-10-03 | DONE |
-| 6 | Cross-language check: C++ v2 public keys and spend secrets open the outputs built by the Rust SDK; tx round-trips byte-identical | claude-code | 2026-10-03 | DONE |
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (Daemon, PaymentGateService, SimpleWallet, Wallet, SwapDaemonLib) | claude-code | 2026-10-03 | PASS |
-| test_swap_escrow_claim | claude-code | 2026-10-03 | PASS (18/18) |
-
----
-
-## Merge master into claude/valise-sdk-suite-sync-9u8mdk
-
-**Branch/Feature**: claude/valise-sdk-suite-sync-9u8mdk
-**Started**: 2026-10-05
-**Agent**: claude-code
-**Status**: COMPLETE
-
-### Task List
-
-| # | Task | Owner | Date | Status |
-|---|------|-------|------|--------|
-| 1 | Consensus: keep master's settlement (`validateSettlement`), term-only asset classification (`classifyCommitmentTermAsset`: every finite-term commitment is HEAT) and `cdActivationHeight()`; drop the branch's height-based XFG/HEAT CD split | claude-code | 2026-10-05 | DONE |
-| 2 | Keep the branch's all-HEAT_TERM ring fix: master's degenerate-ring guard rejected every all-HEAT_TERM ring, which with one-asset rings made plain HEAT unspendable | claude-code | 2026-10-05 | DONE |
-| 3 | CD interest claims: every ring member (not only the youngest) must be at or above `cdActivationHeight()` | claude-code | 2026-10-05 | DONE |
-| 4 | CD transfer rings stay CD-only (master lacked it: pool outputs share a commit key derivable from a public seed) | claude-code | 2026-10-05 | DONE |
-| 5 | `createsCd` gate uses `cdActivationHeight()` in block validation and mempool, matching master's wallet and consensus CD gate (testnet CDs at its V11) | claude-code | 2026-10-05 | DONE |
-| 6 | WalletGreen: master's commitment helpers (`addCommitmentToSelf`, `deriveOwnCommitmentKeys`, `prepareHeatSpends`) created and spent v1 view-key-only keys — anyone with the view key, and the sender, could spend those outputs. Removed; every caller (withdraw, rollover, CD, HEAT send, AMM swap both directions, limit order) uses v2 `addOwnedCommitmentOutput` / `planCommitmentSpend(s)` | claude-code | 2026-10-05 | DONE |
-| 7 | Master's curve-consistent AMM quotes (`ammSwapNetOutput`, slippage margin) kept | claude-code | 2026-10-05 | DONE |
-| 8 | `usesLegacyBondTags` removed: master no longer parses 0xCB/0xCC, so an extra carrying them parses to no settlement tag and claims nothing | claude-code | 2026-10-05 | DONE |
-| 9 | Config: master's file with V12 = 1,500,000 re-applied | claude-code | 2026-10-05 | DONE |
-| 10 | AGENTS.md network facts updated for the merged model | claude-code | 2026-10-05 | DONE |
-
-Known, not from this merge: `test_swap_state_machine_spv` fails to link on master too (Logging needs Common::Console; same CMake as master). `test_wallet` is interactive (reads stdin), not a unit test. DIGM_TERM commitments classify as HEAT under master's mapping; harmless until DIGM exists (rejected below V12) but must be resolved before V12.
-
-### Sign-Off
-
-| Gate | Signed By | Date | Result |
-|------|-----------|------|--------|
-| Build compiles (all targets except the pre-existing test_swap_state_machine_spv link failure) | claude-code | 2026-10-05 | PASS |
-| core_tests | claude-code | 2026-10-05 | PASS (202/202) |
-| test_swap_escrow_claim | claude-code | 2026-10-05 | PASS (18/18) |
-| test_production_gates, test_xfg_spend_states, orderbook suites, swap/adaptor/presig/xmr tests | claude-code | 2026-10-05 | PASS |
+`dashboard/fonts/` — the 75 MB, 322-file upstream source drop, now tracked in
+git — is dead weight: the build reads only the six curated files in
+`static/fonts/`. Left as-is because the folder was added deliberately and
+untracking it is the owner's call, not mine. Recommend either dropping it from
+the index (history keeps it either way) or relocating it outside the repo.

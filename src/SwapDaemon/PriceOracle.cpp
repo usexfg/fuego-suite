@@ -68,8 +68,11 @@ static const size_t TWAP_MIN_TRADES = 5;
 PriceOracle::PriceOracle()
   : m_twapMaxTrades(20)
   , m_twapMaxAgeSec(604800)   // 7 days
-  , m_floorThreshold(0.80)    // reject if rate diverges beyond 80% band
-  , m_maxBootstrapDrift(0.50) // ±50% drift from seed in bootstrap
+  , m_floorThreshold(0.20)    // fractional tolerance: +/-20% around the reference
+  // Bootstrap used +/-50%, which is wider than the guard below and meant a fresh node
+  // -- the common case, zero recorded trades -- accepted quotes far outside the +/-20%
+  // band before ever reaching it. Both windows now share one tolerance.
+  , m_maxBootstrapDrift(0.20) // +/-20% drift from seed while bootstrapping
   , m_liveXfgUsd(0.0) {
 }
 
@@ -83,6 +86,10 @@ double PriceOracle::getSeedXfgUsd() {
 
 void PriceOracle::setLiveXfgUsd(double usd) {
   std::lock_guard<std::mutex> lock(m_mutex);
+  // Refuse a non-positive or non-finite live price instead of storing it.
+  // getEffectiveRate() already falls back to the seed when m_liveXfgUsd <= 0, but a
+  // stored -1 is still a landmine for every other reader of getLiveXfgUsd().
+  if (!(usd > 0.0) || !std::isfinite(usd)) return;
   m_liveXfgUsd = usd;
 }
 
@@ -158,7 +165,9 @@ double PriceOracle::getSeedRate(SwapPair pair) {
     case SwapPair::LTC: return SEED_LTC_USD / SEED_XFG_USD;
     case SwapPair::KMD_SPV: return SEED_KMD_USD / SEED_XFG_USD;
     case SwapPair::MONAD: return SEED_MONAD_USD / SEED_XFG_USD;
-    case SwapPair::OPTIMISM: return SEED_OP_USD / SEED_XFG_USD;
+    // Optimism locks native ETH (HashedTimelock.lock is payable with no ERC-20 arg),
+    // so it must be priced off ETH -- not off the OP token.
+    case SwapPair::OPTIMISM: return SEED_ETH_USD / SEED_XFG_USD;
     case SwapPair::DOT: return SEED_DOT_USD / SEED_XFG_USD;
     default:            return 0.0;
   }
@@ -170,7 +179,10 @@ double PriceOracle::getSeedRate(SwapPair pair) {
 
 double PriceOracle::ctrDivisor(SwapPair pair) {
   const auto* descriptor = swapPairDescriptor(pair);
-  return descriptor ? std::pow(10.0, static_cast<double>(descriptor->decimals)) : 1e8;
+  // No descriptor means the pair has no known decimals. Returning a plausible 1e8
+  // here silently mis-scales every amount comparison downstream, so fail visibly
+  // instead; callers must treat 0.0 as "cannot convert".
+  return descriptor ? std::pow(10.0, static_cast<double>(descriptor->decimals)) : 0.0;
 }
 
 double PriceOracle::atomicToRate(SwapPair pair, uint64_t xfgAmount, const AtomicAmount& ctrAmount) {
@@ -192,6 +204,12 @@ double PriceOracle::atomicToRate(SwapPair pair, uint64_t xfgAmount, const Atomic
 
 void PriceOracle::recordCompletedSwap(const CompletedSwapTrade& trade) {
   std::lock_guard<std::mutex> lock(m_mutex);
+
+  // getTwap weights by rate*volume, so a trade recorded with an uncomputed rate of 0
+  // would drag the TWAP toward zero instead of merely being ignored. Refuse it here
+  // and let the caller keep publishing its own reason.
+  if (trade.rate <= 0.0) return;
+
   m_trades.push_back(trade);
 
   // Trim to max history size (keep 10x window for multi-pair storage)
@@ -271,23 +289,24 @@ RateCheck PriceOracle::validateRate(SwapPair pair, double proposedRate) const {
     if (refRate <= 0.0) return RateCheck::RATE_NO_DATA;
   }
 
-  // Floor protection: reject if proposed rate gives XFG sellers < 50% of fair value
-  // "rate" = XFG per 1 CTR. Higher rate = MORE XFG for 1 CTR = CHEAPER XFG.
-  // Selling XFG cheap = high rate. Protect sellers = reject if rate is TOO HIGH
-  // (buyer getting too many XFG per CTR coin).
+  // Rate = XFG per 1 whole CTR coin, so a HIGH rate sells XFG cheaply (the seller
+  // gives away more XFG) and a LOW rate sells XFG expensively. Both directions carry
+  // risk -- the first against the seller, the second against the buyer -- so the
+  // band is symmetric about the reference and both tails are rejected.
   //
-  // Actually: from XFG seller's perspective, a HIGH rate means they're giving away
-  // more XFG for the same CTR. So floor protection = reject if rate > refRate * 2.0
-  // (seller gets less than 50% fair value per XFG).
-  //
-  // Conversely, a LOW rate means XFG is MORE expensive (fewer XFG per CTR).
-  // We never block price going UP (XFG getting more expensive = lower rate).
+  // m_floorThreshold is the fractional tolerance (0.20 = +/-20%), which yields
+  //     ref / 1.20 <= rate <= ref / 0.80
+  // matching PricePolicy::withinRateGuard, so the live and legacy paths enforce the
+  // same band. The previous code divided by 0.80 above but compared against a
+  // hardcoded 0.20 below, which admitted a -80% quote while the header claimed 0.50.
+  if (m_floorThreshold <= 0.0 || m_floorThreshold >= 1.0) return RateCheck::RATE_NO_DATA;
 
-  if (proposedRate > refRate / m_floorThreshold) {
+  const double tol = m_floorThreshold;
+  if (proposedRate > refRate / (1.0 - tol)) {
     return RateCheck::BELOW_FLOOR;
   }
 
-  if (proposedRate < refRate * 0.20) {
+  if (proposedRate < refRate / (1.0 + tol)) {
     return RateCheck::ABOVE_MARKET;
   }
 
@@ -322,6 +341,9 @@ void PriceOracle::setTwapMaxAge(uint64_t seconds) {
 }
 
 void PriceOracle::setFloorThreshold(double fraction) {
+  // Fractional tolerance, not a divisor. Clamped so a bad config cannot silently
+  // disable the band: at >= 1.0 the upper bound would divide by zero.
+  if (fraction <= 0.0 || fraction >= 1.0) return;
   m_floorThreshold = fraction;
 }
 

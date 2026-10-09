@@ -422,7 +422,11 @@ bool core::check_tx_semantic(const Transaction& tx, bool keeped_by_block, uint32
     return false;
   }
 
-  uint64_t amount_in = m_currency.getTransactionAllInputsAmount(tx, height);
+  uint64_t amount_in = 0;
+  if (!m_currency.getTransactionAllInputsAmountChecked(tx, height, amount_in)) {
+    logger(ERROR) << "tx input total overflow, rejected for tx id= " << getObjectHash(tx);
+    return false;
+  }
   uint64_t amount_out = get_outs_money_amount(tx);
 
   // Parse extra tags for per-asset conservation check

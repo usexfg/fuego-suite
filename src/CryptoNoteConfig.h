@@ -285,7 +285,7 @@ const uint64_t EPOCHS_PER_YEAR = 73; // 65700 blocks/yr / 900 blocks/epoch
 const uint64_t SWAP_FEE_TREASURY_SHARE_PCT =
     20; // 20% of epoch swap fees → Treasury Reserve
 
-// HEAT stablecoin peg reference (v11+: Hearth pool seeded at the 10:1 launch rate)
+// HEAT stablecoin peg reference (v11+: 1:1 Hearth pool bootstrap)
 const double HEAT_PEG_USD = 1.58; // HEAT peg reference in USD (launch constant)
 // TODO(Phase 2): Fuego Cost Index adjustment — when enabled, HEAT_PEG_USD
 // updates periodically via FCI oracle to preserve purchasing power. Until then,
@@ -476,7 +476,7 @@ const uint32_t UPGRADE_HEIGHT_V10 =
 const uint32_t UPGRADE_HEIGHT_V11 =
     1111111; //{HEATWAVE}  HEAT + HEARTH exchange
 const uint32_t UPGRADE_HEIGHT_V12 =
-    1500000; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG
+    2666666; //{SILENTFIRE}  HEAT CDs + unified outputs + hidden amounts + MLSAG
              //+ BP+
 const uint32_t CD_ACTIVATION_HEIGHT = UPGRADE_HEIGHT_V12;
 const uint32_t HEATWAVE_TAG_CUTOFF_HEIGHT = UPGRADE_HEIGHT_V11;

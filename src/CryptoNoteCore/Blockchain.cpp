@@ -2565,6 +2565,19 @@ bool CryptoNote::Blockchain::checkTransactionInputs(const Transaction& tx, const
   }
 
   Crypto::Hash transactionHash = getObjectHash(tx);
+
+  // H-1: reject a transaction that spends the same key image in more than one
+  // input. Each input below is only tested against *chain* state, so an intra-tx
+  // duplicate used to pass validation and then fail the connect-path rollback,
+  // which erased earlier inputs by type-blind boost::get and threw an uncaught
+  // boost::bad_get -- a remote daemon crash reachable from any P2P peer or
+  // mempool submission. checkKeyImagesUnique spans every key-image-carrying type.
+  if (!checkKeyImagesUnique(tx)) {
+    logger(ERROR, BRIGHT_RED) << "Transaction " << transactionHash
+        << " spends the same key image in more than one input";
+    return false;
+  }
+
   for (const auto& txin : tx.inputs) {
     assert(inputIndex < tx.signatures.size());
     if (txin.type() == typeid(KeyInput)) {
@@ -3939,7 +3952,28 @@ bool CryptoNote::Blockchain::pushBlock(const Block &blockData, const std::vector
     }
 
     ++transactionIndex.transaction;
-    pushTransaction(block, tx_id, transactionIndex);
+    // M-1: the connect path mutates indices (spentKeys, multisig/escrow usage
+    // flags, vault UTXOs) and can fail after some of those mutations landed.
+    // Its return value used to be discarded, so such a block was accepted with
+    // partially-applied state. Reject the block and unwind the way every other
+    // per-tx failure above does. H-1(c): the barrier guarantees a malformed
+    // input that trips a boost::get on this path is a rejected block rather than
+    // an uncaught exception that terminates the daemon.
+    bool txConnected = false;
+    try {
+      txConnected = pushTransaction(block, tx_id, transactionIndex);
+    } catch (const std::exception& e) {
+      logger(ERROR, BRIGHT_RED) << "Block " << blockHash << " transaction " << tx_id
+          << " threw during connect: " << e.what();
+    }
+    if (!txConnected) {
+      logger(INFO, BRIGHT_WHITE) << "Block " << blockHash << " has a transaction that failed to connect: " << tx_id;
+      bvc.m_verification_failed = true;
+
+      block.transactions.pop_back();
+      popTransactions(block, minerTransactionHash);
+      return false;
+    }
 
     cumulative_block_size += blob_size;
     fee_summary += txFee;
@@ -6000,34 +6034,41 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     return false;
   }
 
+  // H-1(b)/M-1: a single pass over every key-image-carrying input, with an exact
+  // rollback of this call's inserts on any failure. The previous shape erased
+  // earlier inputs with a type-blind boost::get — which throws boost::bad_get on
+  // the first non-KeyInput element (the remote crash) — and the SwapEscrow
+  // failure path returned without undoing anything already inserted.
+  std::vector<Crypto::KeyImage> insertedKeyImages;
+  auto rollbackSpentKeyInserts = [&]() {
+    for (const auto& keyImage : insertedKeyImages) {
+      m_indexManager.spentKeys().erase(keyImage);
+    }
+    insertedKeyImages.clear();
+  };
+
   for (size_t i = 0; i < transaction.tx.inputs.size(); ++i)
   {
-      if (transaction.tx.inputs[i].type() == typeid(KeyInput))
-      {
-        auto result = m_indexManager.spentKeys().insert(std::make_pair(::boost::get<KeyInput>(transaction.tx.inputs[i]).keyImage, block.height));
-        if (!result.second)
-        {
-          logger(ERROR, BRIGHT_RED) << "Double spending transaction was pushed to blockchain.";
-
-          for (size_t j = 0; j < i; ++j)
-          {
-            m_indexManager.spentKeys().erase(::boost::get<KeyInput>(transaction.tx.inputs[i - 1 - j]).keyImage);
-          }
-
-        m_indexManager.transactionMap().erase(transactionHash);
-        return false;
-      }
+    const Crypto::KeyImage* keyImage = nullptr;
+    if (transaction.tx.inputs[i].type() == typeid(KeyInput))
+    {
+      keyImage = &::boost::get<KeyInput>(transaction.tx.inputs[i]).keyImage;
     }
-      else if (transaction.tx.inputs[i].type() == typeid(TransactionInputSwapEscrow))
-      {
-        auto result = m_indexManager.spentKeys().insert(std::make_pair(::boost::get<TransactionInputSwapEscrow>(transaction.tx.inputs[i]).keyImage, block.height));
-        if (!result.second)
-        {
-          logger(ERROR, BRIGHT_RED) << "Double spending swap escrow transaction was pushed to blockchain.";
-          m_indexManager.transactionMap().erase(transactionHash);
-          return false;
-        }
-      }
+    else if (transaction.tx.inputs[i].type() == typeid(TransactionInputSwapEscrow))
+    {
+      keyImage = &::boost::get<TransactionInputSwapEscrow>(transaction.tx.inputs[i]).keyImage;
+    }
+    if (!keyImage) continue;
+
+    auto result = m_indexManager.spentKeys().insert(std::make_pair(*keyImage, block.height));
+    if (!result.second)
+    {
+      logger(ERROR, BRIGHT_RED) << "Double spending transaction was pushed to blockchain.";
+      rollbackSpentKeyInserts();
+      m_indexManager.transactionMap().erase(transactionHash);
+      return false;
+    }
+    insertedKeyImages.push_back(*keyImage);
   }
 
   // Vault consensus gate: reject unauthorized vault spends
@@ -6053,6 +6094,7 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
       if (!VaultPolicy::isPermitted(transaction.tx, vaultSource, m_vault)) {
         logger(ERROR, BRIGHT_RED) << "Rejected unauthorized vault spend for partition "
             << vaultPartitionName(vaultSource);
+        rollbackSpentKeyInserts();
         m_indexManager.transactionMap().erase(transactionHash);
         return false;
       }
@@ -6067,8 +6109,71 @@ bool CryptoNote::Blockchain::pushTransaction(BlockEntry& block, const Crypto::Ha
     uint64_t txClaimedBonus = 0;
     if (!getCdBonusClaims(transaction.tx, bonusByInput, txClaimedBonus)) {
       logger(ERROR, BRIGHT_RED) << "Malformed CD bonus claims at connect";
+      rollbackSpentKeyInserts();
       m_indexManager.transactionMap().erase(transactionHash);
       return false;
+    }
+  }
+
+  // M-1: the connect loop below mixes checks with mutations (usage flags, vault
+  // draws, supply counters), so a failure on a *later* input used to strand every
+  // mutation the *earlier* inputs had already made — permanently burning key
+  // images, freezing multisig/escrow outputs and draining vault UTXOs, on a block
+  // that then got accepted because the return value was ignored. Resolve every
+  // fallible lookup and collision read-only first, so the mutating loop that
+  // follows cannot fail partway through.
+  for (const auto& inv : transaction.tx.inputs) {
+    if (inv.type() == typeid(TransactionInputSwapEscrow)) {
+      const auto& in = ::boost::get<TransactionInputSwapEscrow>(inv);
+      auto txIt = m_indexManager.transactionMap().find(in.escrowTxId);
+      if (txIt == m_indexManager.transactionMap().end()) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow spend references unknown funding tx on connect";
+        rollbackSpentKeyInserts();
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+      auto amountIt = m_indexManager.swapEscrowOutputs().find(in.amount);
+      if (amountIt == m_indexManager.swapEscrowOutputs().end()) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow spend amount not indexed on connect";
+        rollbackSpentKeyInserts();
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+      bool foundUnused = false;
+      for (const auto& usage : amountIt->second) {
+        if (usage.transactionIndex.block == txIt->second.block &&
+            usage.transactionIndex.transaction == txIt->second.transaction &&
+            usage.outputIndex == in.escrowOutputIndex) {
+          if (usage.isUsed) {
+            logger(ERROR, BRIGHT_RED) << "Swap escrow output double-spent on connect";
+            rollbackSpentKeyInserts();
+            m_indexManager.transactionMap().erase(transactionHash);
+            return false;
+          }
+          foundUnused = true;
+          break;
+        }
+      }
+      if (!foundUnused) {
+        logger(ERROR, BRIGHT_RED) << "Swap escrow output usage entry missing on connect";
+        rollbackSpentKeyInserts();
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+    } else if (inv.type() == typeid(TransactionInputCommitmentSpend)) {
+      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentSpend>(inv).keyImage)) {
+        logger(ERROR, BRIGHT_RED) << "Double spending commitment transaction was pushed to blockchain.";
+        rollbackSpentKeyInserts();
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
+    } else if (inv.type() == typeid(TransactionInputCommitmentTransfer)) {
+      if (have_tx_keyimg_as_spent(::boost::get<TransactionInputCommitmentTransfer>(inv).keyImage)) {
+        logger(ERROR, BRIGHT_RED) << "Double spending commitment transfer was pushed to blockchain.";
+        rollbackSpentKeyInserts();
+        m_indexManager.transactionMap().erase(transactionHash);
+        return false;
+      }
     }
   }
 
@@ -7052,6 +7157,18 @@ void CryptoNote::Blockchain::popTransactions(const BlockEntry& block, const Cryp
     }
 
     std::lock_guard<decltype(m_blockchain_lock)> lk(m_blockchain_lock);
+
+    // M-2: subgroup check. Every other spendable input type rejects key images
+    // outside the prime-order subgroup (check_tx_input, checkCommitmentSpendInput,
+    // checkCommitmentTransferInput, core::handle_incoming_tx). SwapEscrow was the
+    // one type missing it — contained today by dual marking (spentKeys + the
+    // escrow usage entry), but it must not rely on that alone.
+    static const Crypto::KeyImage I = { { 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+    static const Crypto::KeyImage L = { { 0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10 } };
+    if (!(scalarmultKey(input.keyImage, L) == I)) {
+      logger(ERROR, BRIGHT_RED) << "Swap escrow key image not in valid Ed25519 domain";
+      return false;
+    }
 
     // Resolve the funding transaction and its output.
     auto txIt = m_indexManager.transactionMap().find(input.escrowTxId);

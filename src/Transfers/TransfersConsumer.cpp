@@ -100,26 +100,36 @@ void findMyOutputs(
      }
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // Re-derive commitKey via ECDH and compare (works for COLD, HEAT).
-      // depositSecret = cn_fast_hash(derivation || outputIndex_LE32)
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // v2 (spend-key bound): commitKey = Hs(D||i||domain)*G + B names the
-      // owning spend key. v1 (legacy): commitKey from H(D||i) alone.
-      bool found = false;
-      for (const auto& spendKey : spendKeys) {
-        Crypto::PublicKey v2Key;
-        if (CryptoNote::deriveCommitmentPublicKeyV2(derivation, static_cast<uint32_t>(idx), spendKey, v2Key) &&
-            v2Key == out.commitKey) {
-          outputs[spendKey].push_back(static_cast<uint32_t>(idx));
-          found = true;
-          break;
-        }
+      // Two derivations may produce this output key. Try the owner-bound form
+      // first: it uses underive_public_key to find WHICH spend key matched,
+      // rather than attributing the output to the first element of spendKeys.
+      Crypto::PublicKey matchedSpendKey;
+      bool ambiguous = false;
+      const bool ownerBound = CryptoNote::matchOwnerBoundCommitKey(
+        derivation, idx, out.commitKey, spendKeys, matchedSpendKey, ambiguous);
+      if (ambiguous) {
+        // The recovered key does not re-derive the output key. matchOwnerBoundCommitKey
+        // reports this with a false return, so it has to be checked before the
+        // legacy fallback below or that fallback would claim the output anyway.
+        continue;
       }
-      if (!found &&
-          CryptoNote::deriveCommitmentKeysV1(derivation, static_cast<uint32_t>(idx)).commitKey == out.commitKey) {
+      if (ownerBound) {
+        outputs[matchedSpendKey].push_back(static_cast<uint32_t>(idx));
+        continue;
+      }
+
+      // No owner-bound match. Fall back to the pre-v11 form, which the sender
+      // and any view-key holder can also derive. These outputs are exposed and
+      // must be surfaced as such rather than presented as securely received.
+      const std::array<uint8_t, 32> depositSecret =
+        CryptoNote::deriveDepositSecret(derivation, idx);
+      const CryptoNote::DepositCommitmentKeys legacy =
+        CryptoNote::deriveLegacyCommitmentKeys(depositSecret);
+      if (legacy.commitKey == out.commitKey) {
         for (const auto& spendKey : spendKeys) {
           outputs[spendKey].push_back(static_cast<uint32_t>(idx));
           break;
@@ -444,7 +454,10 @@ std::error_code createTransfers(
       continue;
     }
 
-    TransactionOutputInformationIn info;
+    // Zero-initialised: keyImage and commitmentKey are hashed into the spent-output
+    // index and written to the wallet cache, so a branch that cannot fill them must
+    // leave a defined value rather than stack contents.
+    TransactionOutputInformationIn info{};
 
     info.type = outType;
     info.transactionPublicKey = txPubKey;
@@ -506,32 +519,28 @@ std::error_code createTransfers(
       info.term = out.term;
 
     } else if (outType == TransactionTypes::OutputType::Commitment) {
-      // COLD commitment deposit output.
-      // Re-derive depositSecret to get keyImage for SpentOutputDescriptor tracking.
       uint64_t amount;
       TransactionOutputCommitment out;
       tx.getOutput(idx, out, amount);
 
-      // Key image of the owned commitment. v2 needs the spend secret; a
-      // tracking wallet (null spend secret) gets a deterministic placeholder
-      // exactly as generate_key_image_helper gives its key outputs, so the
-      // container index stays unique, and it cannot see these spends.
-      info.keyImage = Crypto::KeyImage{};
+      // keyImage is required for SpentOutputDescriptor tracking. An owner-bound
+      // key image needs the recipient's spend secret, which a view-only wallet
+      // does not have, so it stays zero there. Legacy key images are derivable
+      // from the view secret alone and are still recorded for view-only wallets,
+      // exactly as before the owner-bound form existed.
       KeyDerivation derivation;
       if (generate_key_derivation(txPubKey, account.viewSecretKey, derivation)) {
-        const uint32_t outIdx = static_cast<uint32_t>(idx);
-        Crypto::PublicKey v2Key;
-        if (CryptoNote::deriveCommitmentPublicKeyV2(derivation, outIdx, account.address.spendPublicKey, v2Key) &&
-            v2Key == out.commitKey) {
-          Crypto::SecretKey keyScalar;
-          CryptoNote::deriveCommitmentSecretKeyV2(derivation, outIdx, account.spendSecretKey, keyScalar);
-          Crypto::generate_key_image(out.commitKey, keyScalar, info.keyImage);
-        } else {
-          info.keyImage = CryptoNote::deriveCommitmentKeysV1(derivation, outIdx).keyImage;
+        const bool haveSpendSecret = account.spendSecretKey != NULL_SECRET_KEY;
+        Crypto::KeyImage recordedKeyImage;
+        if (CryptoNote::deriveRecordedCommitmentKeyImage(
+              derivation, idx, out.commitKey,
+              haveSpendSecret ? &account.spendSecretKey : nullptr, recordedKeyImage)) {
+          info.keyImage = recordedKeyImage;
         }
       }
       info.amount = amount;
       info.term = out.term;
+      info.commitmentKey = out.commitKey;
     }
 
    transfers.push_back(info);

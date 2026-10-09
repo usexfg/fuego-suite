@@ -100,6 +100,18 @@ namespace
     return mixin;
   }
 
+  // Ring class for a commitment ring, so the daemon only offers decoys of the
+  // same asset class (see COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request).
+  // 1 = HEAT_TERM wallet outputs, 2 = mature CDs. Every CD is HEAT, so a
+  // CD-only ring is automatically asset-homogeneous; class 3 (legacy XFG
+  // commitment CDs) matches nothing because none exist.
+  uint8_t commitmentRingClass(const Deposit &deposit) {
+    if (deposit.term == parameters::HEAT_TERM) {
+      return 1;
+    }
+    return Currency::isFiniteCdTerm(deposit.term) ? 2 : 0;
+  }
+
   #pragma pack(push, 1)
   struct LegacyEncryptedWalletRecord {
     Crypto::chacha8_iv iv;
@@ -425,244 +437,6 @@ namespace CryptoNote
     return formulaInterest;
   }
 
-  static std::vector<uint64_t> decomposeHeatIntoBills(uint64_t amount);
-
-  // Decoy class for a wallet-owned commitment (see
-  // COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::request::ring_class): keeps
-  // rings asset-homogeneous, mature and free of pool/slashed outputs.
-  uint8_t WalletGreen::commitmentRingClass(const Deposit& deposit) const
-  {
-    if (deposit.term == parameters::HEAT_TERM) {
-      return 1;
-    }
-    if (Currency::isFiniteCdTerm(deposit.term)) {
-      return 2;  // every CD is HEAT
-    }
-    return 0;
-  }
-
-  std::vector<WalletGreen::CommitmentSpendPlan> WalletGreen::planCommitmentSpends(
-      const std::vector<size_t>& depositIds, uint64_t mixin)
-  {
-    std::vector<CommitmentSpendPlan> plans;
-    plans.reserve(depositIds.size());
-    for (size_t id : depositIds) {
-      plans.push_back(planCommitmentSpend(m_deposits.get<RandomAccessIndex>()[id], 0, mixin));
-    }
-    return plans;
-  }
-
-  // Spend keys of a wallet-owned commitment output, checked against the
-  // on-chain commit key: v2 (spend-key bound), else legacy v1 (view-key
-  // ECDH), else the secret stored at creation (createDeposit).
-  KeyPair WalletGreen::ownedCommitmentKeys(const Deposit& deposit)
-  {
-    TransactionOutputInformation transfer;
-    WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
-    const auto &walletRec = getWalletRecord(firstTransfer.address);
-    ITransfersContainer::TransferState state;
-    walletRec.container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state);
-    if (state != ITransfersContainer::TransferState::TransferAvailable) {
-      throw std::system_error(make_error_code(error::DEPOSIT_LOCKED), "Commitment output is not spendable");
-    }
-
-    CryptoNote::Transaction tx;
-    {
-      System::Event requestFinished(m_dispatcher);
-      std::error_code nodeError;
-      throwIfStopped();
-      m_node.getTransaction(deposit.transactionHash, tx, [&requestFinished, &nodeError, this](std::error_code ec) {
-        nodeError = ec;
-        this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-      });
-      requestFinished.wait();
-      if (nodeError) {
-        throw std::system_error(nodeError, "Failed to fetch the commitment's transaction");
-      }
-    }
-    if (transfer.outputInTransaction >= tx.outputs.size() ||
-        tx.outputs[transfer.outputInTransaction].target.type() != typeid(TransactionOutputCommitment)) {
-      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR), "Output is not a commitment");
-    }
-    const Crypto::PublicKey& onChainKey =
-        boost::get<TransactionOutputCommitment>(tx.outputs[transfer.outputInTransaction].target).commitKey;
-
-    KeyPair keys;
-    keys.publicKey = onChainKey;
-    Crypto::KeyDerivation ecdh;
-    if (Crypto::generate_key_derivation(transfer.transactionPublicKey, m_viewSecretKey, ecdh)) {
-      Crypto::PublicKey v2Key;
-      if (walletRec.spendSecretKey != NULL_SECRET_KEY &&
-          CryptoNote::deriveCommitmentPublicKeyV2(ecdh, transfer.outputInTransaction, walletRec.spendPublicKey, v2Key) &&
-          v2Key == onChainKey) {
-        CryptoNote::deriveCommitmentSecretKeyV2(ecdh, transfer.outputInTransaction, walletRec.spendSecretKey, keys.secretKey);
-        return keys;
-      }
-      CryptoNote::DepositCommitmentKeys v1 = CryptoNote::deriveCommitmentKeysV1(ecdh, transfer.outputInTransaction);
-      if (v1.commitKey == onChainKey) {
-        keys.secretKey = v1.keyScalar;
-        return keys;
-      }
-    }
-    uint64_t storedAmount = 0;
-    std::vector<uint8_t> meta;
-    Crypto::PublicKey storedKey;
-    if (getBurnDepositSecret(Common::podToHex(deposit.transactionHash), keys.secretKey, storedAmount, meta) &&
-        Crypto::secret_key_to_public_key(keys.secretKey, storedKey) && storedKey == onChainKey) {
-      return keys;
-    }
-    throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
-      "No key of this wallet opens the commitment output");
-  }
-
-  WalletGreen::CommitmentSpendPlan WalletGreen::planCommitmentSpend(const Deposit& deposit,
-      uint64_t claimedInterest, uint64_t mixin)
-  {
-    TransactionOutputInformation transfer;
-    {
-      WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
-      const auto &walletRec = getWalletRecord(firstTransfer.address);
-      ITransfersContainer::TransferState state;
-      walletRec.container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state);
-    }
-
-    CommitmentSpendPlan plan;
-    plan.keys = ownedCommitmentKeys(deposit);
-    Crypto::KeyImage keyImage;
-    Crypto::generate_key_image(plan.keys.publicKey, plan.keys.secretKey, keyImage);
-
-    // Decoys of the same amount and asset class, no younger than the real
-    // output (Dynamax probe at maxMixin, settle on 32/16/8).
-    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
-    {
-      const uint64_t probe = normalizeMixinProbe(mixin, m_currency.maxMixin());
-      System::Event requestFinished(m_dispatcher);
-      std::error_code nodeError;
-      throwIfStopped();
-      m_node.getRandomCommitmentOutsForAmount(deposit.amount, probe, static_cast<uint32_t>(deposit.height),
-        commitmentRingClass(deposit), decoys,
-        [&requestFinished, &nodeError, this](std::error_code ec) {
-          nodeError = ec;
-          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
-        });
-      requestFinished.wait();
-      if (nodeError) {
-        throw std::system_error(nodeError, "Failed to fetch commitment ring members");
-      }
-    }
-    std::sort(decoys.begin(), decoys.end(), [](const auto& a, const auto& b) {
-      return a.global_amount_index < b.global_amount_index;
-    });
-    decoys.erase(std::unique(decoys.begin(), decoys.end(), [](const auto& a, const auto& b) {
-      return a.global_amount_index == b.global_amount_index;
-    }), decoys.end());
-    decoys.erase(std::remove_if(decoys.begin(), decoys.end(), [&](const auto& d) {
-      return d.global_amount_index == transfer.globalOutputIndex;
-    }), decoys.end());
-    std::shuffle(decoys.begin(), decoys.end(),
-                 std::default_random_engine{Crypto::rand<std::default_random_engine::result_type>()});
-
-    const size_t targetRing = pickDynamaxCommitmentRingSize(decoys.size() + 1, m_currency.maxMixin(),
-        m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
-    decoys.resize(std::min(decoys.size(), targetRing > 0 ? targetRing - 1 : 0));
-
-    std::vector<std::pair<uint32_t, Crypto::PublicKey>> ring;
-    ring.reserve(decoys.size() + 1);
-    ring.emplace_back(transfer.globalOutputIndex, plan.keys.publicKey);
-    for (const auto& d : decoys) {
-      ring.emplace_back(d.global_amount_index, d.commit_key);
-    }
-    std::sort(ring.begin(), ring.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    plan.input.amount = deposit.amount;
-    plan.input.claimedInterest = claimedInterest;
-    plan.input.keyImage = keyImage;
-    uint32_t previous = 0;
-    for (size_t i = 0; i < ring.size(); ++i) {
-      plan.input.outputIndexes.push_back(ring[i].first - previous);
-      previous = ring[i].first;
-      plan.ringKeys.push_back(ring[i].second);
-      if (ring[i].first == transfer.globalOutputIndex) {
-        plan.realPos = i;
-      }
-    }
-    return plan;
-  }
-
-  // Commitment output owned by the address (spendPublicKey, viewPublicKey):
-  // v2 keys — the view key finds it, only the spend key can spend it.
-  void WalletGreen::addOwnedCommitmentOutput(ITransaction& transaction, const Crypto::PublicKey& spendPublicKey,
-                                             const Crypto::PublicKey& viewPublicKey, uint32_t term, uint64_t amount)
-  {
-    const uint32_t idx = static_cast<uint32_t>(transaction.getOutputCount());
-    Crypto::SecretKey txSecretKey;
-    transaction.getTransactionSecretKey(txSecretKey);
-    Crypto::KeyDerivation ecdh;
-    CryptoNote::TransactionOutputCommitment out;
-    if (!Crypto::generate_key_derivation(viewPublicKey, txSecretKey, ecdh) ||
-        !CryptoNote::deriveCommitmentPublicKeyV2(ecdh, idx, spendPublicKey, out.commitKey)) {
-      throw std::system_error(make_error_code(error::BAD_ADDRESS), "Commitment output key derivation failed");
-    }
-    out.term = term;
-    transaction.addOutput(amount, out);
-  }
-
-  const Crypto::PublicKey& WalletGreen::primarySpendPublicKey() const
-  {
-    return m_walletsContainer.get<RandomAccessIndex>()[0].spendPublicKey;
-  }
-
-  // XFG key inputs covering neededMoney (the network fee, plus any XFG the
-  // caller spends), with change back to the first selected wallet. Inputs are
-  // returned for addAndSignInputs, after all outputs and extras are final.
-  std::vector<WalletGreen::InputInfo> WalletGreen::prepareXfgFunding(ITransaction& transaction,
-      uint64_t neededMoney, uint64_t mixin)
-  {
-    std::vector<OutputToTransfer> selectedTransfers;
-    uint64_t foundMoney = selectTransfers(neededMoney, false, m_currency.defaultDustThreshold(),
-                                          pickWalletsWithMoney(), selectedTransfers);
-    if (foundMoney < neededMoney) {
-      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient unlocked XFG for the network fee");
-    }
-    const uint64_t changeAmount = foundMoney - neededMoney;
-    if (changeAmount > 0) {
-      for (uint64_t changeOut : split(changeAmount, m_currency.defaultDustThreshold())) {
-        transaction.addOutput(changeOut, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
-      }
-    }
-    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
-    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
-    requestMixinOuts(selectedTransfers, mixin, mixinResult);
-    std::vector<InputInfo> keysInfo;
-    prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
-    return keysInfo;
-  }
-
-  // Adds every input first, then signs: a signature commits to the prefix
-  // hash, so no input, output or extra may change after the first one.
-  void WalletGreen::addAndSignInputs(ITransaction& transaction, std::vector<InputInfo>& keysInfo,
-                                     const std::vector<CommitmentSpendPlan>& commitments)
-  {
-    for (auto &input : keysInfo) {
-      transaction.addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
-    }
-    for (const auto &plan : commitments) {
-      transaction.addInput(plan.input);
-    }
-    size_t index = 0;
-    for (auto &input : keysInfo) {
-      transaction.signInputKey(index++, input.keyInfo, input.ephKeys);
-    }
-    for (const auto &plan : commitments) {
-      std::vector<const Crypto::PublicKey*> ringKeys;
-      ringKeys.reserve(plan.ringKeys.size());
-      for (const auto &key : plan.ringKeys) {
-        ringKeys.push_back(&key);
-      }
-      transaction.signInputCommitmentSpend(index++, ringKeys, plan.keys, plan.realPos);
-    }
-  }
-
   void WalletGreen::withdrawDeposit(
       DepositId depositId,
       std::string &transactionHash)
@@ -681,10 +455,6 @@ namespace CryptoNote
 
     if (deposit.unlockHeight > getBlockCount()) {
       throw std::system_error(make_error_code(CryptoNote::error::DEPOSIT_LOCKED));
-    }
-    if (deposit.term == parameters::HEAT_TERM) {
-      throw std::system_error(make_error_code(CryptoNote::error::WRONG_PARAMETERS),
-        "HEAT outputs are not deposits — use sendHeatV10");
     }
 
     const auto &wallet = getWalletRecord(address);
@@ -705,14 +475,19 @@ namespace CryptoNote
       << " type=" << static_cast<int>(transfer.type);
 
     // Accrued CD interest (pool-aware): claim what consensus accepts today.
-    // Only HEAT CDs earn; XFG CDs (created before the HEAT-CD height) are
-    // principal-only. An empty yield pool is a rare event — capInterestByPool
-    // warns so the user knows the remainder is forfeited now but becomes
-    // claimable once the pool replenishes from epoch fees.
+    // Only finite-term HEAT CDs earn — HEAT_TERM (0xFFFFFFFF) outputs are
+    // mint/burn outputs with no APY, and DEPOSIT_TERM_LP markers are pool
+    // reserve tags. Pre-v11 deposits cannot claim (consensus rejects); an
+    // empty yield pool is a rare event — capInterestByPool warns so the user
+    // knows the remainder is forfeited now but becomes claimable once the
+    // pool replenishes from epoch fees.
     uint64_t claimedInterest = 0;
     uint64_t claimedBonus = 0;
-    if (Currency::isFiniteCdTerm(deposit.term) &&
-        m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
+    if (deposit.term > 0 &&
+        deposit.term != parameters::HEAT_TERM &&
+        deposit.term != parameters::DEPOSIT_TERM_LP &&
+        static_cast<uint32_t>(deposit.height) >=
+            m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
       INode::CdClaimInfo claimInfo;
       std::error_code ec = m_node.getCdClaimInfo(deposit.amount,
           static_cast<uint32_t>(deposit.height), getBlockCount(), claimInfo, deposit.term);
@@ -732,21 +507,119 @@ namespace CryptoNote
     }
 
     std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    // A CD is HEAT, principal and interest alike: it pays out in full as a
+    // HEAT_TERM commitment. HEAT must balance exactly, so the XFG fee comes
+    // from XFG inputs added below. Legacy XFG deposits (pre-v10 multisig) pay
+    // out XFG, net of the fee — 7d83625bb had made every payout HEAT, a
+    // cross-asset withdrawal consensus refuses.
     const uint64_t fee = m_currency.minimumFee();
+    const bool commitmentDeposit = transfer.type == TransactionTypes::OutputType::Commitment;
+    if (commitmentDeposit) {
+      addHeatOutputToSelf(*transaction, deposit.amount + claimedInterest);
+    } else {
+      if (deposit.amount <= fee) {
+        throw std::system_error(make_error_code(CryptoNote::error::WRONG_AMOUNT),
+                                "Deposit does not cover the withdrawal fee");
+      }
+      for (uint64_t chunk : split(deposit.amount - fee, m_currency.defaultDustThreshold())) {
+        transaction->addOutput(chunk, account.address);
+      }
+    }
     transaction->setUnlockTime(0);
 
     if (transfer.type == TransactionTypes::OutputType::Commitment) {
-      // Every commitment CD is HEAT, principal and interest alike: it pays
-      // out in full as HEAT_TERM outputs bound to this wallet's spend key.
-      // HEAT must balance exactly, so XFG inputs pay the network fee.
-      std::vector<InputInfo> keysInfo;
-      for (uint64_t bill : decomposeHeatIntoBills(deposit.amount + claimedInterest)) {
-        addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, parameters::HEAT_TERM, bill);
+      // --- v10+ ring-signature commitment withdrawal ---
+
+      // Re-derive the spend scalar from the transaction. Owner-bound deposits
+      // need the recipient spend secret; pre-v11 deposits fall back to their
+      // original ECDH scalar so existing funds stay withdrawable. Only the dead
+      // createDeposit path ever stored a secret, and that path throws.
+      KeyPair commitmentKeyPair;
+      Crypto::KeyImage keyImage;
+      resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
+      Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
+
+      // Fetch ring decoys from daemon.
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
+      System::Event requestFinished(m_dispatcher);
+      std::error_code nodeError;
+
+      throwIfStopped();
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
+        [&requestFinished, &nodeError, this](std::error_code ec) {
+          nodeError = ec;
+          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+        });
+      requestFinished.wait();
+
+      if (nodeError) {
+        throw std::system_error(nodeError);
       }
-      keysInfo = prepareXfgFunding(*transaction, fee, 0);
+
+      // Remove any decoy that duplicates the real output's global index.
+      decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
+        [&](const CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry& d) {
+          return d.global_amount_index == transfer.globalOutputIndex;
+        }), decoys.end());
+
+      const size_t numDecoys    = std::min(decoys.size(), static_cast<size_t>(m_currency.maxMixin() - 1));
+      const size_t actualRing   = numDecoys + 1;
+      const size_t realPos      = Crypto::rand<size_t>() % actualRing;
+
+      std::vector<uint32_t>              absIndices;
+      std::vector<const Crypto::PublicKey*> ringKeys;
+      absIndices.reserve(actualRing);
+      ringKeys.reserve(actualRing);
+
+      size_t decoyPos = 0;
+      for (size_t slot = 0; slot < actualRing; ++slot) {
+        if (slot == realPos) {
+          absIndices.push_back(transfer.globalOutputIndex);
+          ringKeys.push_back(&commitKey);
+        } else {
+          absIndices.push_back(decoys[decoyPos].global_amount_index);
+          ringKeys.push_back(&decoys[decoyPos].commit_key);
+          ++decoyPos;
+        }
+      }
+
+      // Sort ring by ascending global index; track new real position.
+      std::vector<size_t> order(actualRing);
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return absIndices[a] < absIndices[b];
+      });
+      size_t sortedRealPos = 0;
+      std::vector<uint32_t>              sortedAbs(actualRing);
+      std::vector<const Crypto::PublicKey*> sortedKeys(actualRing);
+      for (size_t s = 0; s < actualRing; ++s) {
+        sortedAbs[s]  = absIndices[order[s]];
+        sortedKeys[s] = ringKeys[order[s]];
+        if (order[s] == realPos) sortedRealPos = s;
+      }
+
+      // Delta-encode absolute indices to relative offsets.
+      std::vector<uint32_t> relOffsets(actualRing);
+      relOffsets[0] = sortedAbs[0];
+      for (size_t s = 1; s < actualRing; ++s) {
+        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
+      }
+
+      TransactionInputCommitmentSpend csInput;
+      csInput.amount        = deposit.amount;
+      csInput.claimedInterest = claimedInterest;
+      csInput.outputIndexes = relOffsets;
+      csInput.keyImage      = keyImage;
+      // XFG pays the fee. The key inputs come first, so the bonus claim names
+      // the CD input by its real index, and every input goes in before any is
+      // signed (the extra was appended after signing before, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
 
       // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
-      // The commitment input follows the XFG key inputs.
       if (claimedBonus > 0) {
         TransactionExtraCdBonusClaim bc;
         bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
@@ -756,18 +629,20 @@ namespace CryptoNote
         transaction->appendExtra(extra);
       }
 
-      std::vector<CommitmentSpendPlan> plans;
-      plans.push_back(planCommitmentSpend(deposit, claimedInterest, m_currency.maxMixin()));
-      addAndSignInputs(*transaction, keysInfo, plans);
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
 
-      m_logger(DEBUGGING, BRIGHT_GREEN) << "Commitment withdrawal ring size=" << plans[0].ringKeys.size()
-        << " realPos=" << plans[0].realPos;
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Commitment withdrawal ring size=" << actualRing
+        << " realPos=" << sortedRealPos;
 
     } else {
       // --- Legacy MultisignatureInput withdrawal path (pre-v10 deposits) ---
-      for (auto amount : split(deposit.amount + claimedInterest - fee, m_currency.defaultDustThreshold())) {
-        transaction->addOutput(amount, account.address);
-      }
       std::vector<TransactionOutputInformation> selectedTransfers = { transfer };
       std::vector<MultisignatureInput> inputs = prepareMultisignatureInputs(selectedTransfers);
       for (const auto &input : inputs) {
@@ -869,16 +744,220 @@ namespace CryptoNote
       m_logger(ERROR) << "Rollover failed: deposit " << depositId << " does not exist";
       return false;
     }
+
     Deposit deposit = getDeposit(depositId);
 
-    // Only HEAT CDs earn interest; XFG CDs are principal-only.
-    uint64_t interest = 0;
-    if (Currency::isFiniteCdTerm(deposit.term) &&
-        m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
-      interest = m_currency.calculateCdInterest(deposit.amount, static_cast<uint32_t>(deposit.height),
-          getBlockCount(), commitmentIndex, deposit.term, false);
+    // Verify deposit is mature
+    uint32_t currentHeight = getBlockCount();
+    if (deposit.unlockHeight > currentHeight) {
+      m_logger(ERROR) << "Rollover failed: deposit " << depositId << " is not yet mature"
+        << " (unlockHeight=" << deposit.unlockHeight << " > currentHeight=" << currentHeight << ")";
+      return false;
     }
-    return rolloverDepositWithInterest(depositId, newTerm, interest, txHashOut);
+
+    WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
+    std::string address = firstTransfer.address;
+
+    const auto &wallet = getWalletRecord(address);
+    ITransfersContainer *container = wallet.container;
+    AccountKeys account = makeAccountKeys(wallet);
+    ITransfersContainer::TransferState state;
+    TransactionOutputInformation transfer;
+
+    container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state);
+
+    if (state != ITransfersContainer::TransferState::TransferAvailable) {
+      m_logger(ERROR) << "Rollover failed: deposit output is not available";
+      return false;
+    }
+
+    // Calculate accumulated interest.
+    // v11 zero-claim consensus rule: deposits created before v11 activation
+    // cannot claim CD yield (Blockchain.cpp youngest-ring pre-v11 gate), so
+    // zero the claim here to avoid building a tx the consensus rejects.
+    // Only finite-term HEAT CDs earn: HEAT_TERM mint/burn outputs and
+    // DEPOSIT_TERM_LP markers have no APY.
+    uint64_t interest = 0;
+    if (deposit.term > 0 &&
+        deposit.term != parameters::HEAT_TERM &&
+        deposit.term != parameters::DEPOSIT_TERM_LP) {
+      interest = m_currency.calculateCdInterest(
+          deposit.amount,
+          deposit.height,
+          currentHeight,
+          commitmentIndex,
+          deposit.term, false);
+      if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+        interest = 0;
+      }
+    }
+    // Pool-aware cap: consensus only accepts claims backed by the fee pool and
+    // CD_APY_POOL vault. Capping here keeps the rollover tx from being rejected.
+    uint64_t rolloverBonus = 0;
+    interest = capInterestByPool(depositId, interest, rolloverBonus, deposit.term);
+
+    m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover deposit id=" << depositId
+      << " amount=" << deposit.amount
+      << " interest=" << interest
+      << " newTerm=" << newTerm
+      << " globalOutputIndex=" << transfer.globalOutputIndex;
+
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    // Output: reinvested amount (original + interest)
+    uint64_t reinvestedAmount = deposit.amount + interest;
+    const uint64_t fee = m_currency.minimumFee();
+
+    m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
+      << " term=" << newTerm << " from rollover";
+
+    // Create new commitment output
+    // Derived from the view key like every other output this wallet owns, so
+    // the scanner finds the new CD and a withdrawal re-derives its key. A
+    // random secret that was never stored made the rolled-over CD — principal
+    // and interest — unfindable and unspendable. It carries all of both; XFG
+    // pays the fee.
+    addCommitmentToSelf(*transaction, reinvestedAmount, newTerm);
+    transaction->setUnlockTime(0);
+
+    // Add commitment spend input with claimed interest
+    if (transfer.type == TransactionTypes::OutputType::Commitment) {
+      // Re-derive the spend scalar from the transaction. Owner-bound CDs need the
+      // recipient spend secret; pre-v11 CDs fall back to their original ECDH
+      // scalar so existing deposits stay spendable.
+      KeyPair commitmentKeyPair;
+      Crypto::KeyImage keyImage;
+      try {
+        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
+      } catch (const std::exception &e) {
+        m_logger(ERROR) << "Rollover failed: " << e.what();
+        return false;
+      }
+      Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
+
+      // Fetch ring decoys
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
+      System::Event requestFinished(m_dispatcher);
+      std::error_code nodeError;
+
+      throwIfStopped();
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
+        [&requestFinished, &nodeError, this](std::error_code ec) {
+          nodeError = ec;
+          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+        });
+      requestFinished.wait();
+
+      if (nodeError) {
+        m_logger(ERROR) << "Rollover failed: could not fetch ring decoys: " << nodeError.message();
+        return false;
+      }
+
+      // Remove duplicates
+      decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
+        [&](const CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry& d) {
+          return d.global_amount_index == transfer.globalOutputIndex;
+        }), decoys.end());
+
+      const size_t numDecoys    = std::min(decoys.size(), static_cast<size_t>(m_currency.maxMixin() - 1));
+      const size_t actualRing   = numDecoys + 1;
+      const size_t realPos      = Crypto::rand<size_t>() % actualRing;
+
+      std::vector<uint32_t>                      absIndices;
+      std::vector<const Crypto::PublicKey*>      ringKeys;
+      absIndices.reserve(actualRing);
+      ringKeys.reserve(actualRing);
+
+      size_t decoyPos = 0;
+      for (size_t slot = 0; slot < actualRing; ++slot) {
+        if (slot == realPos) {
+          absIndices.push_back(transfer.globalOutputIndex);
+          ringKeys.push_back(&commitKey);
+        } else {
+          absIndices.push_back(decoys[decoyPos].global_amount_index);
+          ringKeys.push_back(&decoys[decoyPos].commit_key);
+          ++decoyPos;
+        }
+      }
+
+      // Sort ring by ascending global index
+      std::vector<size_t> order(actualRing);
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return absIndices[a] < absIndices[b];
+      });
+      size_t sortedRealPos = 0;
+      std::vector<uint32_t>                      sortedAbs(actualRing);
+      std::vector<const Crypto::PublicKey*>      sortedKeys(actualRing);
+      for (size_t s = 0; s < actualRing; ++s) {
+        sortedAbs[s]  = absIndices[order[s]];
+        sortedKeys[s] = ringKeys[order[s]];
+        if (order[s] == realPos) sortedRealPos = s;
+      }
+
+      // Delta-encode absolute indices to relative offsets
+      std::vector<uint32_t> relOffsets(actualRing);
+      relOffsets[0] = sortedAbs[0];
+      for (size_t s = 1; s < actualRing; ++s) {
+        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
+      }
+
+      TransactionInputCommitmentSpend csInput;
+      csInput.amount        = deposit.amount;
+      csInput.claimedInterest = interest;
+      csInput.outputIndexes = relOffsets;
+      csInput.keyImage      = keyImage;
+      // XFG pays the fee. Key inputs come first, so the bonus claim names the
+      // CD input by its real index, and every input goes in before any is
+      // signed (the extra used to be appended after signing, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
+
+      // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
+      if (rolloverBonus > 0) {
+        TransactionExtraCdBonusClaim bc;
+        bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
+        bc.claimedBonus = rolloverBonus;
+        std::vector<uint8_t> extra;
+        addCdBonusClaimToExtra(extra, bc);
+        transaction->appendExtra(extra);
+      }
+
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
+
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover commitment spend ring size=" << actualRing
+        << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
+
+    } else {
+      m_logger(ERROR) << "Rollover failed: deposit is not a commitment output";
+      return false;
+    }
+
+    // Send the transaction
+    try {
+      BinaryArray txData = transaction->getTransactionData();
+      CryptoNote::Transaction cryptoNoteTx;
+      if (!fromBinaryArray(cryptoNoteTx, txData)) {
+        m_logger(ERROR) << "Rollover failed: could not serialize transaction";
+        return false;
+      }
+      sendTransaction(cryptoNoteTx);
+      txHashOut = Common::podToHex(transaction->getTransactionHash());
+      m_logger(INFO) << "Rollover transaction sent: " << txHashOut;
+      return true;
+    } catch (const std::exception& e) {
+      m_logger(ERROR) << "Rollover failed to send transaction: " << e.what();
+      return false;
+    }
   }
 
   // Overload: accepts pre-computed interest (used by WalletRpcServer without Core access)
@@ -896,73 +975,162 @@ namespace CryptoNote
       m_logger(ERROR) << "Rollover failed: deposit " << depositId << " does not exist";
       return false;
     }
-    Deposit deposit = getDeposit(depositId);
-    uint64_t interest = precomputedInterest;
-    if (!Currency::isFiniteCdTerm(deposit.term) ||
-        !m_currency.isHeatCdHeight(static_cast<uint32_t>(deposit.height))) {
-      interest = 0;  // XFG CDs are principal-only
-    }
-    return rolloverDepositWithInterest(depositId, newTerm, interest, txHashOut);
-  }
 
-  bool WalletGreen::rolloverDepositWithInterest(
-      DepositId depositId,
-      uint32_t newTerm,
-      uint64_t interest,
-      std::string &txHashOut)
-  {
     Deposit deposit = getDeposit(depositId);
-    const uint32_t currentHeight = getBlockCount();
+
+    uint32_t currentHeight = getBlockCount();
     if (deposit.unlockHeight > currentHeight) {
       m_logger(ERROR) << "Rollover failed: deposit " << depositId << " is not yet mature"
         << " (unlockHeight=" << deposit.unlockHeight << " > currentHeight=" << currentHeight << ")";
       return false;
     }
-    if (!Currency::isFiniteCdTerm(deposit.term)) {
-      m_logger(ERROR) << "Rollover failed: deposit is not a CD";
-      return false;
-    }
-    if (newTerm < m_currency.depositMinTerm() || newTerm > m_currency.depositMaxTerm()) {
-      m_logger(ERROR) << "Rollover failed: new term " << newTerm << " outside the allowed range";
+
+    WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
+    std::string address = firstTransfer.address;
+
+    const auto &wallet = getWalletRecord(address);
+    ITransfersContainer *container = wallet.container;
+    AccountKeys account = makeAccountKeys(wallet);
+    ITransfersContainer::TransferState state;
+    TransactionOutputInformation transfer;
+
+    container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state);
+
+    if (state != ITransfersContainer::TransferState::TransferAvailable) {
+      m_logger(ERROR) << "Rollover failed: deposit output is not available";
       return false;
     }
 
-    // Only CDs roll over, and every CD is HEAT. Legacy XFG deposits are
-    // multisig outputs, withdraw-only and principal-only, so isFiniteCdTerm
-    // above already excluded them. The network fee is paid in XFG.
-    {
-      TransactionOutputInformation transfer;
-      WalletTransfer firstTransfer = getTransactionTransfer(deposit.creatingTransactionId, 0);
-      const auto &walletRec = getWalletRecord(firstTransfer.address);
-      ITransfersContainer::TransferState state;
-      if (!walletRec.container->getTransfer(deposit.transactionHash, deposit.outputInTransaction, transfer, state) ||
-          transfer.type != TransactionTypes::OutputType::Commitment) {
-        m_logger(ERROR) << "Rollover failed: XFG deposits are withdraw-only; withdraw and open a HEAT CD";
-        return false;
-      }
+    // Use the pre-computed interest supplied by the caller.
+    // v11 zero-claim consensus rule: pre-v11 deposits cannot claim CD yield,
+    // so zero the claim to match the consensus gate (see rolloverCd).
+    // Only finite-term HEAT CDs earn: HEAT_TERM mint/burn outputs and
+    // DEPOSIT_TERM_LP markers have no APY.
+    uint64_t interest = precomputedInterest;
+    if (deposit.term == parameters::HEAT_TERM ||
+        deposit.term == parameters::DEPOSIT_TERM_LP ||
+        deposit.term == 0) {
+      interest = 0;
     }
-
+    if (deposit.height < m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11)) {
+      interest = 0;
+    }
     // Pool-aware cap: consensus only accepts claims backed by the fee pool and
     // CD_APY_POOL vault. Capping here keeps the rollover tx from being rejected.
     uint64_t rolloverBonus = 0;
     interest = capInterestByPool(depositId, interest, rolloverBonus, deposit.term);
 
+    m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover(precomputed) deposit id=" << depositId
+      << " amount=" << deposit.amount
+      << " interest=" << interest
+      << " newTerm=" << newTerm
+      << " globalOutputIndex=" << transfer.globalOutputIndex;
+
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    uint64_t reinvestedAmount = deposit.amount + interest;
     const uint64_t fee = m_currency.minimumFee();
-    const uint64_t reinvestedAmount = deposit.amount + interest;
 
-    m_logger(DEBUGGING, BRIGHT_WHITE) << "Rollover deposit id=" << depositId
-      << " amount=" << deposit.amount << " interest=" << interest << " newTerm=" << newTerm;
+    m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating new CD with amount=" << reinvestedAmount
+      << " term=" << newTerm << " from rollover";
 
-    try {
-      std::unique_ptr<ITransaction> transaction = createTransaction();
-      for (uint64_t bill : decomposeHeatIntoBills(reinvestedAmount)) {
-        addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, newTerm, bill);
+    // Derived from the view key like every other output this wallet owns, so
+    // the scanner finds the new CD and a withdrawal re-derives its key. A
+    // random secret that was never stored made the rolled-over CD — principal
+    // and interest — unfindable and unspendable. It carries all of both; XFG
+    // pays the fee.
+    addCommitmentToSelf(*transaction, reinvestedAmount, newTerm);
+    transaction->setUnlockTime(0);
+
+    if (transfer.type == TransactionTypes::OutputType::Commitment) {
+      // Same ECDH re-derivation as the other rollover overload.
+      KeyPair commitmentKeyPair;
+      Crypto::KeyImage keyImage;
+      try {
+        resolveCommitmentSpendKey(transfer, wallet.spendSecretKey, commitmentKeyPair, keyImage);
+      } catch (const std::exception &e) {
+        m_logger(ERROR) << "Rollover failed: " << e.what();
+        return false;
       }
-      std::vector<InputInfo> keysInfo = prepareXfgFunding(*transaction, fee, 0);
-      transaction->setUnlockTime(0);
+      Crypto::PublicKey commitKey = commitmentKeyPair.publicKey;
+      Crypto::SecretKey keyScalar = commitmentKeyPair.secretKey;
+
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> decoys;
+      System::Event requestFinished(m_dispatcher);
+      std::error_code nodeError;
+
+      throwIfStopped();
+      m_node.getRandomCommitmentOutsForAmount(deposit.amount, m_currency.maxMixin(), deposit.height,
+        commitmentRingClass(deposit), decoys,
+        [&requestFinished, &nodeError, this](std::error_code ec) {
+          nodeError = ec;
+          this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+        });
+      requestFinished.wait();
+
+      if (nodeError) {
+        m_logger(ERROR) << "Rollover failed: could not fetch ring decoys: " << nodeError.message();
+        return false;
+      }
+
+      decoys.erase(std::remove_if(decoys.begin(), decoys.end(),
+        [&](const CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry& d) {
+          return d.global_amount_index == transfer.globalOutputIndex;
+        }), decoys.end());
+
+      const size_t numDecoys    = std::min(decoys.size(), static_cast<size_t>(m_currency.maxMixin() - 1));
+      const size_t actualRing   = numDecoys + 1;
+      const size_t realPos      = Crypto::rand<size_t>() % actualRing;
+
+      std::vector<uint32_t>                      absIndices;
+      std::vector<const Crypto::PublicKey*>      ringKeys;
+      absIndices.reserve(actualRing);
+      ringKeys.reserve(actualRing);
+
+      size_t decoyPos = 0;
+      for (size_t slot = 0; slot < actualRing; ++slot) {
+        if (slot == realPos) {
+          absIndices.push_back(transfer.globalOutputIndex);
+          ringKeys.push_back(&commitKey);
+        } else {
+          absIndices.push_back(decoys[decoyPos].global_amount_index);
+          ringKeys.push_back(&decoys[decoyPos].commit_key);
+          ++decoyPos;
+        }
+      }
+
+      std::vector<size_t> order(actualRing);
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return absIndices[a] < absIndices[b];
+      });
+      size_t sortedRealPos = 0;
+      std::vector<uint32_t>                      sortedAbs(actualRing);
+      std::vector<const Crypto::PublicKey*>      sortedKeys(actualRing);
+      for (size_t s = 0; s < actualRing; ++s) {
+        sortedAbs[s]  = absIndices[order[s]];
+        sortedKeys[s] = ringKeys[order[s]];
+        if (order[s] == realPos) sortedRealPos = s;
+      }
+
+      std::vector<uint32_t> relOffsets(actualRing);
+      relOffsets[0] = sortedAbs[0];
+      for (size_t s = 1; s < actualRing; ++s) {
+        relOffsets[s] = sortedAbs[s] - sortedAbs[s - 1];
+      }
+
+      TransactionInputCommitmentSpend csInput;
+      csInput.amount          = deposit.amount;
+      csInput.claimedInterest = interest;
+      csInput.outputIndexes   = relOffsets;
+      csInput.keyImage        = keyImage;
+      // XFG pays the fee. Key inputs come first, so the bonus claim names the
+      // CD input by its real index, and every input goes in before any is
+      // signed (the extra used to be appended after signing, which throws).
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, 0, keysInfo);
 
       // v11+: declare the BV-backed bonus portion (drawn from BONUS_VAULT).
-      // The commitment input follows the XFG key inputs.
       if (rolloverBonus > 0) {
         TransactionExtraCdBonusClaim bc;
         bc.inputIndex = static_cast<decltype(bc.inputIndex)>(keysInfo.size());
@@ -972,10 +1140,24 @@ namespace CryptoNote
         transaction->appendExtra(extra);
       }
 
-      std::vector<CommitmentSpendPlan> plans;
-      plans.push_back(planCommitmentSpend(deposit, interest, m_currency.maxMixin()));
-      addAndSignInputs(*transaction, keysInfo, plans);
+      HeatSpend spend;
+      spend.input = csInput;
+      for (const Crypto::PublicKey *key : sortedKeys) {
+        spend.ring.push_back(*key);
+      }
+      spend.keys = {commitKey, keyScalar};
+      spend.realIndex = sortedRealPos;
+      addAndSignInputs(*transaction, keysInfo, {spend});
 
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Rollover(precomputed) commitment spend ring size=" << actualRing
+        << " realPos=" << sortedRealPos << " claimedInterest=" << interest;
+
+    } else {
+      m_logger(ERROR) << "Rollover failed: deposit is not a commitment output";
+      return false;
+    }
+
+    try {
       BinaryArray txData = transaction->getTransactionData();
       CryptoNote::Transaction cryptoNoteTx;
       if (!fromBinaryArray(cryptoNoteTx, txData)) {
@@ -987,7 +1169,7 @@ namespace CryptoNote
       m_logger(INFO) << "Rollover transaction sent: " << txHashOut;
       return true;
     } catch (const std::exception& e) {
-      m_logger(ERROR) << "Rollover failed: " << e.what();
+      m_logger(ERROR) << "Rollover failed to send transaction: " << e.what();
       return false;
     }
   }
@@ -1031,6 +1213,165 @@ namespace CryptoNote
     /* Ensure that the address is valid and a part of this container */
     validateSourceAddresses({sourceAddress});
 
+    CryptoNote::AccountPublicAddress sourceAddr = parseAddress(sourceAddress);
+    CryptoNote::AccountPublicAddress destAddr = parseAddress(destinationAddress);
+
+    /* Create the transaction */
+    std::unique_ptr<ITransaction> transaction = createTransaction();
+
+    /* Select the wallet - If no source address was specified then it will pick funds from anywhere
+     and the change will go to the primary address of the wallet container */
+    std::vector<WalletOuts> wallets;
+    wallets = pickWallets({sourceAddress});
+
+    /* Select the transfers */
+    uint64_t fee = m_currency.minimumFee();
+    uint64_t neededMoney = amount + fee;
+    std::vector<OutputToTransfer> selectedTransfers;
+    uint64_t foundMoney = selectTransfers(neededMoney,
+                                          0 == 0,
+                                          m_currency.defaultDustThreshold(),
+                                          std::move(wallets),
+                                          selectedTransfers);
+
+    /* Do we have enough funds */
+    if (foundMoney < neededMoney)
+    {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT));
+    }
+
+    /* Now we add the outputs to the transaction, starting with the deposits output
+     which includes the term, and then after that the change outputs */
+
+    // Generate a random 32-byte deposit secret
+    std::array<uint8_t, 32> depositSecret;
+    generate_random_bytes(sizeof(depositSecret), depositSecret.data());
+
+    // Derive commitment keys from the deposit secret
+    CryptoNote::DepositCommitmentKeys commitKeys = CryptoNote::deriveCommitmentKeys(depositSecret);
+
+    // Create TransactionOutputCommitment instead of MultisignatureOutput
+    CryptoNote::TransactionOutputCommitment commitOut;
+    commitOut.commitKey = commitKeys.commitKey;
+    commitOut.term = static_cast<uint32_t>(term);
+
+    // Add the commitment output to the transaction
+    auto bankingIndex = transaction->addOutput(
+        neededMoney - fee,
+        commitOut);
+
+    // Deposit secret will be stored after inputs are signed (hash is final at that point).
+
+    /* Let's add the change outputs to the transaction */
+
+    std::vector<uint64_t> amounts;
+
+    /* Breakdown the change into specific amounts */
+    decompose_amount_into_digits(
+        foundMoney - neededMoney,
+        m_currency.defaultDustThreshold(),
+        [&](uint64_t chunk) { amounts.push_back(chunk); },
+        [&](uint64_t dust) { amounts.push_back(dust); });
+    std::vector<uint64_t> decomposedChange = amounts;
+
+    /* Now pair each of those amounts to the change address
+     which in the case of a deposit is the source address */
+    typedef std::pair<const AccountPublicAddress *, uint64_t> AmountToAddress;
+    std::vector<AmountToAddress> amountsToAddresses;
+    for (const auto &output : decomposedChange)
+    {
+      amountsToAddresses.emplace_back(AmountToAddress{&sourceAddr, output});
+    }
+
+    /* For the sake of privacy, we shuffle the output order randomly */
+    std::shuffle(amountsToAddresses.begin(), amountsToAddresses.end(), std::default_random_engine{Crypto::rand<std::default_random_engine::result_type>()});
+    std::sort(amountsToAddresses.begin(), amountsToAddresses.end(), [](const AmountToAddress &left, const AmountToAddress &right) {
+      return left.second < right.second;
+    });
+
+    /* Add the change outputs to the transaction */
+    try
+    {
+      for (const auto &amountToAddress : amountsToAddresses)
+      {
+        transaction->addOutput(amountToAddress.second,
+                               *amountToAddress.first);
+      }
+    }
+
+    catch (const std::exception &e)
+    {
+      m_logger(ERROR, BRIGHT_RED) << "Failed to add change outputs: " << e.what();
+      throw;
+    }
+
+    /* Now add the other components of the transaction such as the transaction secret key, unlocktime
+     since this is a deposit, we don't need to add messages or added extras beyond the transaction publick key */
+    Crypto::SecretKey transactionSK;
+    transaction->getTransactionSecretKey(transactionSK);
+    transaction->setUnlockTime(0);
+
+    /* Process commitment based on deposit type */
+    if (term == CryptoNote::parameters::HEAT_TERM) {
+      // HEAT burn/mint is handled exclusively by mintHeatV10().
+      // createDeposit() with HEAT_TERM is NOT a valid mint path.
+      throw std::system_error(make_error_code(CryptoNote::error::WRONG_PARAMETERS),
+        "HEAT burn/mint must use mintHeatV10(), not createDeposit(HEAT_TERM). "
+        "Use createDeposit() only for term-locked HEAT CDs (term != HEAT_TERM).");
+    } else {
+      // Term-locked HEAT CD (non-HEAT_TERM)
+      // The TransactionOutputCommitment output with term field is sufficient;
+      // no additional commitment extra needed for term-locked CDs.
+      m_logger(DEBUGGING, BRIGHT_GREEN) << "Creating term-locked HEAT CD for " << amount << " XFG term=" << term;
+    }
+
+    /* Add the transaction extra for messages (if any) */
+    std::vector<WalletMessage> messages;
+    Crypto::PublicKey publicKey = transaction->getTransactionPublicKey();
+    CryptoNote::KeyPair kp = {publicKey, transactionSK};
+    for (size_t i = 0; i < messages.size(); ++i)
+    {
+      CryptoNote::AccountPublicAddress addressBin;
+      if (!m_currency.parseAccountAddressString(messages[i].address, addressBin))
+        continue;
+      CryptoNote::tx_extra_message tag;
+      if (!tag.encrypt(i, messages[i].message, &addressBin, kp))
+        continue;
+      BinaryArray ba;
+      toBinaryArray(tag, ba);
+      ba.insert(ba.begin(), TX_EXTRA_MESSAGE_TAG);
+      transaction->appendExtra(ba);
+    }
+
+    /* Prepare the inputs */
+
+    /* Get additional inputs for the mixin */
+    typedef CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount outs_for_amount;
+    std::vector<outs_for_amount> mixinResult;
+    std::vector<InputInfo> keysInfo;
+    prepareInputs(selectedTransfers, mixinResult, m_currency.maxMixin(), keysInfo);
+
+    /* Add the inputs to the transaction */
+    std::vector<KeyPair> ephKeys;
+    for (auto &input : keysInfo)
+    {
+      transaction->addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
+    }
+
+    /* Now sign the inputs so we can proceed with the transaction */
+    size_t i = 0;
+    for (auto &input : keysInfo)
+    {
+      transaction->signInputKey(i++, input.keyInfo, input.ephKeys);
+    }
+
+    /* Return the transaction hash — inputs are now signed so hash is final */
+    transactionHash = Common::podToHex(transaction->getTransactionHash());
+
+    /* Store deposit secret under the final (post-signing) transaction hash */
+    addBurnDepositSecret(transactionHash, commitKeys.keyScalar, neededMoney - fee, std::vector<uint8_t>());
+
+    size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
   }
 
   // Split a HEAT amount into standard bill denominations so every output
@@ -1065,6 +1406,143 @@ namespace CryptoNote
       }
     }
     return total;
+  }
+
+  std::vector<WalletGreen::HeatSpend> WalletGreen::prepareHeatSpends(const std::vector<size_t> &depositIds,
+                                                                      uint64_t mixin)
+  {
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    std::map<uint64_t, std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry>> decoysByAmount;
+    std::vector<HeatSpend> spends;
+    for (size_t id : depositIds) {
+      const Deposit dep = m_deposits.get<RandomAccessIndex>()[id];
+      auto decoys = decoysByAmount.find(dep.amount);
+      if (decoys == decoysByAmount.end()) {
+        std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> fetched;
+        System::Event requestFinished(m_dispatcher);
+        std::error_code nodeError;
+        m_node.getRandomCommitmentOutsForAmount(dep.amount, mixin, dep.height,
+          commitmentRingClass(dep), fetched,
+          [&requestFinished, &nodeError, this](std::error_code ec) {
+            nodeError = ec;
+            this->m_dispatcher.remoteSpawn(std::bind(asyncRequestCompletion, std::ref(requestFinished)));
+          });
+        requestFinished.wait();
+        if (nodeError) {
+          fetched.clear();  // no HEAT decoys yet at launch: bootstrap ring
+        }
+        decoys = decoysByAmount.emplace(dep.amount, std::move(fetched)).first;
+      }
+
+      WalletTransfer firstTransfer = getTransactionTransfer(dep.creatingTransactionId, 0);
+      const auto &walletRec = getWalletRecord(firstTransfer.address);
+      ITransfersContainer::TransferState state;
+      TransactionOutputInformation transfer;
+      walletRec.container->getTransfer(dep.transactionHash, dep.outputInTransaction, transfer, state);
+      if (state != ITransfersContainer::TransferState::TransferAvailable) {
+        // Skipping it would leave the transaction's HEAT short.
+        throw std::system_error(make_error_code(error::WRONG_STATE), "HEAT deposit is not spendable yet");
+      }
+
+      KeyPair commitmentKeyPair;
+      Crypto::KeyImage commitKeyImage;
+      resolveCommitmentSpendKey(transfer, walletRec.spendSecretKey, commitmentKeyPair, commitKeyImage);
+
+      // Distinct decoys only: a repeated ring member is refused by consensus.
+      std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_COMMITMENT_OUTPUTS::out_entry> candidates;
+      std::set<uint32_t> seen{static_cast<uint32_t>(transfer.globalOutputIndex)};
+      for (const auto &d : decoys->second) {
+        if (seen.insert(d.global_amount_index).second) {
+          candidates.push_back(d);
+        }
+      }
+      const size_t targetRing = pickDynamaxCommitmentRingSize(
+        candidates.size() + 1, m_currency.maxMixin(), m_currency.minMixin(CryptoNote::BLOCK_MAJOR_VERSION_10));
+      const size_t numDecoys = std::min(candidates.size(), targetRing > 0 ? targetRing - 1 : 0);
+      const size_t ringSize = numDecoys + 1;
+      const size_t realPos = Crypto::rand<size_t>() % ringSize;
+
+      // Ring members sorted by global index; offsets are delta-encoded.
+      std::vector<std::pair<uint32_t, Crypto::PublicKey>> members;
+      for (size_t k = 0; k < numDecoys; ++k) {
+        members.push_back({candidates[k].global_amount_index, candidates[k].commit_key});
+      }
+      members.insert(members.begin() + realPos,
+                     std::make_pair(static_cast<uint32_t>(transfer.globalOutputIndex), commitmentKeyPair.publicKey));
+      std::stable_sort(members.begin(), members.end(),
+                       [](const std::pair<uint32_t, Crypto::PublicKey> &a,
+                          const std::pair<uint32_t, Crypto::PublicKey> &b) { return a.first < b.first; });
+
+      HeatSpend spend;
+      spend.input.amount = dep.amount;
+      spend.input.keyImage = commitKeyImage;
+      spend.keys = commitmentKeyPair;
+      uint32_t previous = 0;
+      for (size_t s = 0; s < members.size(); ++s) {
+        spend.input.outputIndexes.push_back(s == 0 ? members[s].first : members[s].first - previous);
+        previous = members[s].first;
+        spend.ring.push_back(members[s].second);
+        if (members[s].first == static_cast<uint32_t>(transfer.globalOutputIndex)) {
+          spend.realIndex = s;
+        }
+      }
+      spends.push_back(std::move(spend));
+    }
+    return spends;
+  }
+
+  void WalletGreen::prepareXfgInputs(ITransaction &transaction, uint64_t xfgNeeded, uint64_t mixin,
+                                     std::vector<InputInfo> &keysInfo)
+  {
+    mixin = normalizeMixinProbe(mixin, m_currency.maxMixin());
+    std::vector<WalletOuts> wallets = pickWalletsWithMoney();
+    std::vector<OutputToTransfer> selectedTransfers;
+    const uint64_t found = selectTransfers(xfgNeeded, false, m_currency.defaultDustThreshold(),
+                                           std::move(wallets), selectedTransfers);
+    if (found < xfgNeeded) {
+      throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient XFG for the fee");
+    }
+    if (found > xfgNeeded) {
+      for (uint64_t chunk : split(found - xfgNeeded, m_currency.defaultDustThreshold())) {
+        transaction.addOutput(chunk, AccountPublicAddress{selectedTransfers[0].wallet->spendPublicKey, m_viewPublicKey});
+      }
+    }
+    std::vector<CryptoNote::COMMAND_RPC_GET_RANDOM_OUTPUTS_FOR_AMOUNTS::outs_for_amount> mixinResult;
+    requestMixinOuts(selectedTransfers, mixin, mixinResult);
+    prepareInputs(selectedTransfers, mixinResult, mixin, keysInfo);
+  }
+
+  void WalletGreen::addCommitmentToSelf(ITransaction &transaction, uint64_t amount, uint32_t term)
+  {
+    // Bound to this wallet's primary spend key, so the sender and any view-key
+    // holder cannot derive the spend scalar of the output.
+    const size_t outputIndex = static_cast<size_t>(transaction.getOutputCount());
+    CryptoNote::TransactionOutputCommitment out;
+    out.commitKey = deriveSelfCommitmentKey(transaction, outputIndex);
+    out.term = term;
+    transaction.addOutput(amount, out);
+  }
+
+  void WalletGreen::addAndSignInputs(ITransaction &transaction, std::vector<InputInfo> &keysInfo,
+                                     const std::vector<HeatSpend> &heatSpends)
+  {
+    for (auto &input : keysInfo) {
+      transaction.addInput(makeAccountKeys(*input.walletRecord), input.keyInfo, input.ephKeys);
+    }
+    for (const auto &spend : heatSpends) {
+      transaction.addInput(spend.input);
+    }
+    size_t index = 0;
+    for (auto &input : keysInfo) {
+      transaction.signInputKey(index++, input.keyInfo, input.ephKeys);
+    }
+    for (const auto &spend : heatSpends) {
+      std::vector<const Crypto::PublicKey *> ring;
+      for (const auto &key : spend.ring) {
+        ring.push_back(&key);
+      }
+      transaction.signInputCommitmentSpend(index++, ring, spend.keys, spend.realIndex);
+    }
   }
 
   void WalletGreen::mintHeatV10(
@@ -1123,13 +1601,12 @@ namespace CryptoNote
     // Build HEAT commitment outputs — split into bill denominations
     std::vector<uint64_t> heatBills = decomposeHeatIntoBills(heatMinted);
 
-    Crypto::SecretKey txSecretKey;
-    transaction->getTransactionSecretKey(txSecretKey);
-    Crypto::KeyDerivation ecdh;
-    Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh);
-
     for (uint64_t billAmount : heatBills) {
-      addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, parameters::HEAT_TERM, billAmount);
+      const size_t commitOutputIndex = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment heatOut;
+      heatOut.commitKey = deriveSelfCommitmentKey(*transaction, commitOutputIndex);
+      heatOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(billAmount, heatOut);
     }
 
     // XFG change outputs
@@ -1221,8 +1698,9 @@ namespace CryptoNote
       addLimitDepositToExtra(extra, side, amount, targetPrice, expiration, orderId, addressHash);
       transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
 
-      std::vector<InputInfo> keysInfo = prepareXfgFunding(*transaction, fee, mixin);
-      addAndSignInputs(*transaction, keysInfo, planCommitmentSpends(heatDepositIds, mixin));
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+      addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(heatDepositIds, mixin));
       transactionHash = Common::podToHex(transaction->getTransactionHash());
       validateSaveAndSendTransaction(*transaction, {}, false, true);
       return;
@@ -1368,8 +1846,11 @@ namespace CryptoNote
     // Exact payout: return the remaining deposit and any fill proceeds so the
     // consensus equality check verifies the full claim.
     auto addHeatCommitmentOutput = [&](uint64_t heatAmount) {
-      addOwnedCommitmentOutput(*transaction, ownerWallet->spendPublicKey, m_viewPublicKey,
-                               parameters::HEAT_TERM, heatAmount);
+      const size_t outIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment heatOut;
+      heatOut.commitKey = deriveSelfCommitmentKey(*transaction, outIdx);
+      heatOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(heatAmount, heatOut);
     };
 
     if (orderSide == 1) {
@@ -1440,8 +1921,6 @@ namespace CryptoNote
           " (current height " + std::to_string(getBlockCount()) + ")");
     }
 
-    const uint32_t currentHeight = getBlockCount();
-
     fee = m_currency.minimumFee();
     if (bankingFee == 0) {
       bankingFee = amount / 1000; // 0.1% default (matches SimpleWallet heat_deposit)
@@ -1451,13 +1930,13 @@ namespace CryptoNote
     const uint64_t epochBlocks = m_currency.isTestnet()
       ? parameters::TESTNET_EPOCH_DURATION_BLOCKS
       : parameters::EPOCH_DURATION_BLOCKS;
-    const uint64_t cdTermBlocks64 = static_cast<uint64_t>(termEpochs) * epochBlocks;
-    if (cdTermBlocks64 < m_currency.depositMinTerm() || cdTermBlocks64 > m_currency.depositMaxTerm()) {
-      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term outside the allowed range");
+    const uint32_t cdTermBlocks = static_cast<uint32_t>(termEpochs * epochBlocks);
+    if (cdTermBlocks == 0) {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS), "CD term blocks underflow");
     }
-    const uint32_t cdTermBlocks = static_cast<uint32_t>(cdTermBlocks64);
 
     const uint64_t neededHeat = amount + bankingFee;
+    uint32_t currentHeight = getBlockCount();
     uint64_t totalHeat = 0;
     std::vector<size_t> selectedDepositIds;
     for (size_t i = 0; i < m_deposits.size(); ++i) {
@@ -1476,38 +1955,51 @@ namespace CryptoNote
     }
 
     std::unique_ptr<ITransaction> transaction = createTransaction();
+    const uint64_t changeAmount = totalHeat - neededHeat;
 
-    // Finite-term HEAT CD split into bill denominations, so each CD shares a
-    // per-amount decoy pool with other CDs when it is withdrawn.
-    for (uint64_t bill : decomposeHeatIntoBills(amount)) {
-      addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, cdTermBlocks, bill);
+    // Finite-term HEAT CD commitment (epoch-mapped blocks)
+    {
+      const size_t cdIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment cdOut;
+      cdOut.commitKey = deriveSelfCommitmentKey(*transaction, cdIdx);
+      cdOut.term = cdTermBlocks;
+      transaction->addOutput(amount, cdOut);
     }
 
-    // HEAT change remains HEAT_TERM
-    const uint64_t changeAmount = totalHeat - neededHeat;
-    if (changeAmount > 0) {
-      for (uint64_t bill : decomposeHeatIntoBills(changeAmount)) {
-        addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, parameters::HEAT_TERM, bill);
+    // Banking fee → Treasury LP Manager (v11+): burned HEAT credited via the
+    // TreasuryFund tag (no output — the burn is implicit). Pre-v12: dev-fund output.
+    if (bankingFee > 0) {
+      uint32_t v11Height = m_currency.upgradeHeight(BLOCK_MAJOR_VERSION_11);
+      if (currentHeight >= v11Height) {
+        std::vector<uint8_t> extra;
+        CryptoNote::addTreasuryFundToExtra(extra, 1, bankingFee);
+        CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+        transaction->appendExtra(extraData);
+      } else {
+        AccountPublicAddress devAddr{};
+        if (m_currency.parseAccountAddressString(CryptoNote::FUEGO_DEV_FUND_ADDRESS, devAddr)) {
+          transaction->addOutput(bankingFee, devAddr);
+        }
       }
     }
 
-    // XFG key inputs pay the network fee (XFG change output added here).
-    std::vector<InputInfo> keysInfo = prepareXfgFunding(*transaction, fee, mixin);
+    // HEAT change remains FOREVER HEAT_TERM
+    if (changeAmount > 0) {
+      const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment chOut;
+      chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
+      chOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(changeAmount, chOut);
+    }
+
     transaction->setUnlockTime(0);
 
-    // Banking fee → Treasury LP Manager: burned HEAT credited via the
-    // TreasuryFund tag (asset 1, no output — the burn is implicit).
-    {
-      std::vector<uint8_t> extra;
-      CryptoNote::addTreasuryFundToExtra(extra, 1, bankingFee);
-      transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
-    }
 
-    std::vector<CommitmentSpendPlan> plans;
-    for (size_t id : selectedDepositIds) {
-      plans.push_back(planCommitmentSpend(m_deposits.get<RandomAccessIndex>()[id], 0, mixin));
-    }
-    addAndSignInputs(*transaction, keysInfo, plans);
+    // XFG pays the fee — HEAT must balance exactly — and every input goes in
+    // before any is signed.
+    std::vector<InputInfo> keysInfo;
+    prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -1561,7 +2053,8 @@ namespace CryptoNote
       std::vector<uint8_t> extra;
       addAmmSwapAuthToExtra(extra, direction, inputAmount, outputAmount, minOutput);
       transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
-      std::vector<InputInfo> keysInfo = prepareXfgFunding(*transaction, inputAmount + fee, mixin);
+      std::vector<InputInfo> keysInfo;
+      prepareXfgInputs(*transaction, inputAmount + fee, mixin, keysInfo);
       addAndSignInputs(*transaction, keysInfo, {});
       transactionHash = Common::podToHex(transaction->getTransactionHash());
       validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -1618,14 +2111,21 @@ namespace CryptoNote
     // User receives XFG commitment (SWRX)
     uint64_t netXfg = (outputAmount > fee) ? (outputAmount - fee) : 0;
     if (netXfg > 0) {
-      addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey,
-                               parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG, netXfg);
+      const size_t commitIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment receiveOut;
+      receiveOut.commitKey = deriveSelfCommitmentKey(*transaction, commitIdx);
+      receiveOut.term = parameters::DEPOSIT_TERM_SWAP_RECEIVE_XFG;
+      transaction->addOutput(netXfg, receiveOut);
     }
 
     // HEAT change (FOREVER)
     if (totalHeat > inputAmount) {
-      addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey,
-                               parameters::HEAT_TERM, totalHeat - inputAmount);
+      uint64_t changeHeat = totalHeat - inputAmount;
+      const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment changeOut;
+      changeOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
+      changeOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(changeHeat, changeOut);
     }
 
     transaction->setUnlockTime(0);
@@ -1637,7 +2137,7 @@ namespace CryptoNote
     // The fee comes out of the XFG received, so HEAT inputs alone; each
     // deposit gets a ring of its own amount, and all are added before signing.
     std::vector<InputInfo> noXfgInputs;
-    addAndSignInputs(*transaction, noXfgInputs, planCommitmentSpends(selectedDepositIds, mixin));
+    addAndSignInputs(*transaction, noXfgInputs, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -1662,18 +2162,19 @@ namespace CryptoNote
       throw std::system_error(make_error_code(error::BAD_ADDRESS));
     }
 
-    // The pool requires the minimum fee in XFG; HEAT itself is conserved.
     fee = m_currency.minimumFee();
 
+    // Parse recipient address to get view public key
     AccountPublicAddress recipientAddr;
     if (!m_currency.parseAccountAddressString(recipient, recipientAddr)) {
       throw std::system_error(make_error_code(error::BAD_ADDRESS));
     }
 
-    // Find unspent HEAT outputs
+    // Find unspent HEAT deposits
     uint32_t currentHeight = getBlockCount();
     uint64_t totalHeat = 0;
     std::vector<size_t> selectedDepositIds;
+
     for (size_t i = 0; i < m_deposits.size(); ++i) {
       Deposit dep = m_deposits.get<RandomAccessIndex>()[i];
       if (dep.term == parameters::HEAT_TERM
@@ -1685,34 +2186,48 @@ namespace CryptoNote
         if (totalHeat >= amount) break;
       }
     }
+
     if (totalHeat < amount) {
       throw std::system_error(make_error_code(error::WRONG_AMOUNT), "Insufficient HEAT balance");
     }
 
+    // Create the transaction
     std::unique_ptr<ITransaction> transaction = createTransaction();
+    uint64_t changeAmount = (totalHeat > amount) ? (totalHeat - amount) : 0;
 
-    // Recipient and change as HEAT bills (shared per-amount decoy pools).
-    for (uint64_t bill : decomposeHeatIntoBills(amount)) {
-      addOwnedCommitmentOutput(*transaction, recipientAddr.spendPublicKey, recipientAddr.viewPublicKey, parameters::HEAT_TERM, bill);
-    }
-    const uint64_t changeAmount = totalHeat - amount;
+    // HEAT commitment output for the recipient. ECDH delivers it through the
+    // recipient's view key; ownership binds to the recipient's SPEND key, so the
+    // recipient can spend it but the sender and view-key holders cannot.
+    const size_t rcptIdx = static_cast<size_t>(transaction->getOutputCount());
+    CryptoNote::TransactionOutputCommitment rcptOut;
+    rcptOut.commitKey = deriveRecipientCommitmentKey(
+      *transaction, rcptIdx, recipientAddr.viewPublicKey, recipientAddr.spendPublicKey);
+    rcptOut.term = parameters::HEAT_TERM;
+    transaction->addOutput(amount, rcptOut);
+
+    // HEAT change output (sender's view key)
     if (changeAmount > 0) {
-      for (uint64_t bill : decomposeHeatIntoBills(changeAmount)) {
-        addOwnedCommitmentOutput(*transaction, primarySpendPublicKey(), m_viewPublicKey, parameters::HEAT_TERM, bill);
-      }
+      const size_t chIdx = static_cast<size_t>(transaction->getOutputCount());
+      CryptoNote::TransactionOutputCommitment chOut;
+      chOut.commitKey = deriveSelfCommitmentKey(*transaction, chIdx);
+      chOut.term = parameters::HEAT_TERM;
+      transaction->addOutput(changeAmount, chOut);
     }
 
-    std::vector<InputInfo> keysInfo = prepareXfgFunding(*transaction, fee, mixin);
     transaction->setUnlockTime(0);
 
     // Auth tag extra: 0xF9 + 8 bytes LE heatAmount
-    {
-      std::vector<uint8_t> extra;
-      addHeatSendAuthToExtra(extra, amount);
-      transaction->appendExtra(CryptoNote::BinaryArray(extra.begin(), extra.end()));
-    }
+    std::vector<uint8_t> extra;
+    addHeatSendAuthToExtra(extra, amount);
+    CryptoNote::BinaryArray extraData(extra.begin(), extra.end());
+    transaction->appendExtra(extraData);
 
-    addAndSignInputs(*transaction, keysInfo, planCommitmentSpends(selectedDepositIds, mixin));
+
+    // XFG pays the fee — HEAT must balance exactly — and every input goes in
+    // before any is signed.
+    std::vector<InputInfo> keysInfo;
+    prepareXfgInputs(*transaction, fee, mixin, keysInfo);
+    addAndSignInputs(*transaction, keysInfo, prepareHeatSpends(selectedDepositIds, mixin));
 
     transactionHash = Common::podToHex(transaction->getTransactionHash());
     size_t id = validateSaveAndSendTransaction(*transaction, {}, false, true);
@@ -5339,6 +5854,98 @@ namespace CryptoNote
     {
       throw std::system_error(make_error_code(error::TRACKING_MODE));
     }
+  }
+
+  Crypto::PublicKey WalletGreen::deriveSelfCommitmentKey(
+      const ITransaction& transaction,
+      size_t outputIndex)
+  {
+    const auto& wallets = m_walletsContainer.get<RandomAccessIndex>();
+    if (wallets.empty())
+    {
+      throw std::system_error(make_error_code(error::WRONG_PARAMETERS),
+                              "cannot derive a commitment output without an address");
+    }
+
+    Crypto::SecretKey txSecretKey;
+    if (!transaction.getTransactionSecretKey(txSecretKey))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: could not retrieve tx secret key");
+    }
+
+    Crypto::KeyDerivation ecdh;
+    if (!Crypto::generate_key_derivation(m_viewPublicKey, txSecretKey, ecdh))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: ECDH derivation failed");
+    }
+
+    Crypto::PublicKey commitKey;
+    if (!CryptoNote::deriveCommitmentOutputKey(
+          ecdh, outputIndex, wallets.front().spendPublicKey, commitKey))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: owner-bound key derivation failed");
+    }
+    return commitKey;
+  }
+
+  Crypto::PublicKey WalletGreen::deriveRecipientCommitmentKey(
+      const ITransaction& transaction,
+      size_t outputIndex,
+      const Crypto::PublicKey& recipientViewPublicKey,
+      const Crypto::PublicKey& recipientSpendPublicKey)
+  {
+    Crypto::SecretKey txSecretKey;
+    if (!transaction.getTransactionSecretKey(txSecretKey))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: could not retrieve tx secret key");
+    }
+
+    Crypto::KeyDerivation ecdh;
+    if (!Crypto::generate_key_derivation(recipientViewPublicKey, txSecretKey, ecdh))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: ECDH derivation failed");
+    }
+
+    Crypto::PublicKey commitKey;
+    if (!CryptoNote::deriveCommitmentOutputKey(
+          ecdh, outputIndex, recipientSpendPublicKey, commitKey))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment output: owner-bound key derivation failed");
+    }
+    return commitKey;
+  }
+
+  void WalletGreen::resolveCommitmentSpendKey(
+      const TransactionOutputInformation& transfer,
+      const Crypto::SecretKey& recipientSpendSecret,
+      KeyPair& outKeyPair,
+      Crypto::KeyImage& outKeyImage) const
+  {
+    Crypto::KeyDerivation derivation;
+    if (!Crypto::generate_key_derivation(
+          transfer.transactionPublicKey, m_viewSecretKey, derivation))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment spend: ECDH derivation failed");
+    }
+
+    // The shared resolver decides owner-bound vs legacy and refuses to guess.
+    CryptoNote::CommitmentSpendKeys keys;
+    if (!CryptoNote::resolveCommitmentSpendKeys(
+          derivation, transfer.outputInTransaction, transfer.commitmentKey,
+          recipientSpendSecret, keys))
+    {
+      throw std::system_error(make_error_code(error::INTERNAL_WALLET_ERROR),
+                              "commitment spend: output matches neither derivation");
+    }
+    outKeyPair = {keys.commitKey, keys.spendScalar};
+    outKeyImage = keys.keyImage;
   }
 
   WalletGreen::WalletTrackingMode WalletGreen::getTrackingMode() const

@@ -15,7 +15,14 @@ type Config struct {
 	NoBch        bool   // disable BCH connection
 	Headless     bool   // run in headless mode (no TUI)
 	HeadlessPort int    // HTTP control API port (default: 18190)
-	StatusPort   int    // xfg-swapd status port (default: 18900)
+	// ControlToken authorizes the headless control API. Required whenever
+	// headless mode is enabled: /offer and /cancel make walletd sign with the
+	// operator's key, so an unauthenticated listener would let any local
+	// process — or, via DNS rebinding, any web page the operator visits —
+	// place signed offers.
+	ControlToken   string // --control-token or $XFG_CONTROL_TOKEN
+	NoControlToken bool   // refuse to start headless without a token
+	StatusPort     int    // xfg-swapd status port (default: 18900)
 }
 
 func DefaultConfig() Config {

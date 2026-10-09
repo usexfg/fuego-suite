@@ -52,6 +52,22 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Local master integration retention — 2026-10-08
+
+The audited branch no longer carried several paths still tracked by local
+`master`. They are retained before integration so the merge does not delete
+repository files.
+
+| # | Task | Owner | Date | Status |
+|---|------|-------|------|--------|
+| 1 | Restore every path that the branch merge would remove from local `master` | Codex | 2026-10-08 | DONE |
+| 2 | Verify the resulting merge has no tracked-file deletions | Codex | 2026-10-08 | DONE |
+
+| Gate | Result | Agent | Date |
+|------|--------|-------|------|
+| Merge deletion check | PASS — zero paths | Codex | 2026-10-08 |
+| All tasks done | PASS | Codex | 2026-10-08 |
+
 ## AFK soft-order fail-closed boundary — 2026-10-08
 
 The AFK soft-order path cannot give the taker a unilateral XFG claim and its old

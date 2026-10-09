@@ -4,9 +4,9 @@
   "name": "Fuego",
   "favicon": "/images/favicon.png",
   "colors": {
-    "primary": "#FF4500",
-    "light": "#FF6B35",
-    "dark": "#CC3700"
+    "primary": "#AF893F",
+    "light": "#9E9E9D",
+    "dark": "#816C2F"
   },
   "navbar": {
     "links": [
@@ -124,5 +124,16 @@
     "socials": {
       "github": "https://github.com/usexfg/fuego-suite"
     }
+  },
+  "description": "Sovereign Sound Money Private Banking",
+  "background": {
+    "image": {
+      "light": "/docs/images/image-15.jpg",
+      "dark": "/strategy/coin-E-cooled-flame-G.jpg"
+    },
+    "decoration": "windows"
+  },
+  "appearance": {
+    "default": "dark"
   }
 }

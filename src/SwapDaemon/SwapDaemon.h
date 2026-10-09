@@ -637,8 +637,14 @@ public:
 
   // Cached wallet balance. Not keyed by pair: spendable XFG is a wallet-wide quantity,
   // so one entry serves every pair and the per-call work is a single comparison.
+  // `present` means "there is a cacheable entry"; `ok` is whether the fetch behind it
+  // succeeded. These MUST be separate. An earlier version collapsed them into one
+  // `valid` flag, so the failure path wrote an entry that the cache-hit test could never
+  // match -- making the failure cache write-only. A down wallet RPC then produced one RPC
+  // per offer per block, amplifying an outage into the tick thread.
   struct FundingCacheEntry {
-    bool        valid = false;
+    bool        present = false;
+    bool        ok = false;
     uint64_t    available = 0;
     std::chrono::steady_clock::time_point checkedAt{};
   };

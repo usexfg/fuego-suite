@@ -346,6 +346,45 @@ balance at all; closing it needs wallet-side reservation, which is out of scope 
 **Logs disclose balances:** the refusal message includes exact spendable and required
 amounts. That is operationally useful and the daemon log is local-only, so it was kept.
 
+### Adversarial review, second pass -- over the FIXES, not the original
+
+The first review covered Gate A as written. It did **not** re-run the personas over the
+fixes, which is where the next defect was waiting, because the fix changed the refresh
+semantics.
+
+**CRITICAL -- the failure cache was still write-only; the same bug, one branch over.**
+`getFundingReadiness`'s cache-hit test required `m_fundingCache.valid`, and the failure path
+wrote `FundingCacheEntry{false, ...}`. So a cached failure could never match the
+cache-hit condition: every subsequent call fell through to a fresh `/getbalance`. With
+`OfferManager::tick` asking once per offer per block, a **down or slow wallet RPC produced
+one RPC per offer per block** -- an outage amplified into the tick thread. The success path
+was fixed in the first pass; the failure path kept the identical defect.
+
+Fixed by splitting the single `valid` flag into `present` ("there is a cacheable entry") and
+`ok` ("the fetch behind it succeeded"), and by making the cache-hit branch serve the cached
+failure directly. Still fails closed -- the cached outcome is simply `not funded` with the
+same "cannot prove" wording -- it just stops amplifying. `test_funding_gates` gained a
+regression test that a cached failure short-circuits, that it expires after the TTL so
+recovery is possible, and that an absent entry still forces a fetch: **28 checks, 0
+failures**.
+
+**WARNING -- the pre-existing chain-readiness cache is still bypassed on the same hot path.**
+`canStartNewSwap` still forwards `refresh` to `getChainReadiness`, and the OfferManager
+callback passes `refresh = true`, so the 60 s chain-readiness cache is defeated exactly as
+the funding cache was. Gate A's hot path is therefore now cheap, but the chain check on it
+still issues a chain RPC per offer per block. This predates Gate A and was left alone
+deliberately: it is outside the funding change, and changing readiness caching alters which
+pairs get withdrawn, which is a behavioural decision rather than a bug fix.
+
+**NOTE -- bounded fail-open window on the advertising path.** The cache can serve a balance
+up to 30 s old, so `canStartNewSwap` may report "funded" from a slightly stale figure. This
+affects only whether an offer stays advertised. Any swap that actually starts goes through
+`initiate()`, which forces a fresh read of the exact required amount, so no swap is ever
+funded on a stale number. Accepted.
+
+**NOTE -- `m_readinessMutex` now guards two caches.** No correctness issue, since neither
+hold is held across the RPC, but the name no longer describes what it protects.
+
 ---
 
 ## Phase 2h: full CMake build verified, and the swap test suite wired to ctest

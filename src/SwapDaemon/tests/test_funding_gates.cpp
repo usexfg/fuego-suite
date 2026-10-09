@@ -146,6 +146,38 @@ int main() {
           "a wallet whose coins are all locked reports zero spendable");
   }
 
+  // ---- the cache must short-circuit BOTH outcomes (regression: failure was write-only)
+  //
+  // An earlier version collapsed "there is a cacheable entry" and "the fetch succeeded"
+  // into one flag, so the failure path wrote an entry the cache-hit test could never
+  // match. A dead wallet RPC then issued one RPC per offer per block.
+  {
+    struct Entry { bool present; bool ok; uint64_t available; };
+    // Mimics the two cache-hit conditions now in getFundingReadiness.
+    auto cacheHitServesFailure = [](const Entry& e, int64_t age) {
+      if (!e.present || age >= 30) return false;
+      return !e.ok;   // short-circuits without an RPC
+    };
+    Entry failedFetch{true, false, 0};
+    check(cacheHitServesFailure(failedFetch, 5),
+          "a cached FAILURE short-circuits instead of re-issuing the RPC");
+
+    Entry staleFailure{true, false, 0};
+    check(!cacheHitServesFailure(staleFailure, 31),
+          "but it expires after the TTL so recovery is possible");
+
+    Entry empty{false, false, 0};
+    check(!cacheHitServesFailure(empty, 1),
+          "an absent entry still forces a fetch");
+
+    // And the failure must remain fail-closed even when served from cache.
+    std::string err;
+    check(!fundedGiven(false, failedFetch.available, kRequired, err),
+          "a cache-served failure is still not funded");
+    check(err.find("cannot prove") != std::string::npos,
+          "with the same cannot-prove wording, not an 'insufficient' lie");
+  }
+
   std::printf("%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

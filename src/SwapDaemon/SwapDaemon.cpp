@@ -1067,8 +1067,15 @@ SwapDaemon::FundingReadiness SwapDaemon::getFundingReadiness(uint64_t requiredAt
   const auto now = std::chrono::steady_clock::now();
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    if (!refresh && m_fundingCache.valid &&
+    if (!refresh && m_fundingCache.present &&
         now - m_fundingCache.checkedAt < std::chrono::seconds(30)) {
+      // Serve the cached outcome either way. A cached failure must still short-circuit,
+      // or a dead wallet RPC is re-issued once per offer per block.
+      if (!m_fundingCache.ok) {
+        result.funded = false;
+        result.error = "wallet balance unavailable; cannot prove escrow funding";
+        return result;
+      }
       result.available = m_fundingCache.available;
       result.funded = result.available >= requiredAtomic;
       if (!result.funded) {
@@ -1084,13 +1091,14 @@ SwapDaemon::FundingReadiness SwapDaemon::getFundingReadiness(uint64_t requiredAt
     result.funded = false;
     result.error = "wallet balance unavailable; cannot prove escrow funding";
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    m_fundingCache = FundingCacheEntry{false, 0, now};
+    // Cache the failure too. Still fails closed -- it just stops amplifying.
+    m_fundingCache = FundingCacheEntry{true, false, 0, now};
     return result;
   }
 
   {
     std::lock_guard<std::mutex> lock(m_readinessMutex);
-    m_fundingCache = FundingCacheEntry{true, available, now};
+    m_fundingCache = FundingCacheEntry{true, true, available, now};
   }
   result.available = available;
   result.funded = available >= requiredAtomic;

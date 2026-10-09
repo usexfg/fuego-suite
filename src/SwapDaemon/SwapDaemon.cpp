@@ -1051,10 +1051,80 @@ SwapDaemon::ChainReadiness SwapDaemon::getChainReadiness(SwapPair pair, bool ref
   return result;
 }
 
+// Gate A -- local escrow funding sufficiency.
+//
+// Fails CLOSED on purpose. An unreachable wallet RPC, an unparseable body or a missing
+// `available` field all mean "cannot prove the funds are there", so this returns funded
+// with an explanatory error rather than defaulting to funded. Getting that backwards
+// would let a node advertise and accept swaps it cannot honour, which is exactly the
+// failure this gate exists to prevent.
+//
+// `requiredAtomic` is the escrow amount; the protocol fee and a network fee are added by
+// the caller so this stays a pure comparison.
+SwapDaemon::FundingReadiness SwapDaemon::getFundingReadiness(uint64_t requiredAtomic,
+                                                              bool refresh) {
+  FundingReadiness result;
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(m_readinessMutex);
+    if (!refresh && m_fundingCache.valid &&
+        now - m_fundingCache.checkedAt < std::chrono::seconds(30)) {
+      result.available = m_fundingCache.available;
+      result.funded = result.available >= requiredAtomic;
+      if (!result.funded) {
+        result.error = "spendable XFG " + std::to_string(result.available) +
+                       " is below the required " + std::to_string(requiredAtomic);
+      }
+      return result;
+    }
+  }
+
+  uint64_t available = 0;
+  if (!m_rpc.getSpendableBalance(available)) {
+    result.funded = false;
+    result.error = "wallet balance unavailable; cannot prove escrow funding";
+    std::lock_guard<std::mutex> lock(m_readinessMutex);
+    m_fundingCache = FundingCacheEntry{false, 0, now};
+    return result;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(m_readinessMutex);
+    m_fundingCache = FundingCacheEntry{true, available, now};
+  }
+  result.available = available;
+  result.funded = available >= requiredAtomic;
+  if (!result.funded) {
+    result.error = "spendable XFG " + std::to_string(available) +
+                   " is below the required " + std::to_string(requiredAtomic);
+  }
+  return result;
+}
+
 bool SwapDaemon::canStartNewSwap(SwapPair pair, std::string* reason, bool refresh) {
   const ChainReadiness readiness = getChainReadiness(pair, refresh);
-  if (reason) *reason = readiness.error;
-  return readiness.ready;
+  if (!readiness.ready) {
+    if (reason) *reason = readiness.error;
+    return false;
+  }
+
+  // Gate A. OfferManager::tick consults this once per offer per block, so an offer is
+  // withdrawn as soon as the wallet can no longer cover it, rather than the node
+  // continuing to advertise a swap it would fail to fund. The smallest offer we could be
+  // asked to honour is the floor check; the real amount is re-checked in initiate().
+  // canStartNewSwap only knows the pair, not the amount, so this checks a floor: enough
+  // to cover one network fee, i.e. the wallet is not empty or fully locked. The exact
+  // amount is checked in initiate(), where params.xfgAmount is known. An earlier draft
+  // computed a fee from a default-constructed SwapParams whose xfgAmount is 0, which
+  // silently reduced this to a bare MIN_FEE.
+  const FundingReadiness funding = getFundingReadiness(SwapTxBuilder::MIN_FEE, refresh);
+  if (!funding.funded) {
+    if (reason) *reason = funding.error;
+    return false;
+  }
+
+  if (reason) reason->clear();
+  return true;
 }
 
 bool SwapDaemon::hasConfirmedCounterpartyClaim(const SwapParams& params,
@@ -1121,6 +1191,30 @@ bool SwapDaemon::initiate(SwapParams& params) {
       params.amountProtocolVersion != 2) {
     m_logger(Logging::ERROR) << "Invalid new-swap amount or amount protocol version";
     return false;
+  }
+
+  // Gate A, exact amount. canStartNewSwap only proves the wallet is non-empty; this
+  // proves it can cover THIS escrow plus its fees. Checked before anything is
+  // persisted or broadcast. Refreshed because the amount is only known here.
+  {
+    // Same fee constant the rest of the daemon uses (reportSwapFeeOnce). Nothing else
+    // in this file selects a testnet variant, so this does not invent one either.
+    const uint64_t fee = (params.xfgAmount * CryptoNote::parameters::SWAP_FEE_RATE_BPS) /
+                        CryptoNote::parameters::SWAP_FEE_RATE_DIVISOR;
+    // Guard the addition: a near-max xfgAmount plus fee must not wrap to a small number
+    // and let an unfunded swap through.
+    uint64_t required = 0;
+    if (fee > UINT64_MAX - params.xfgAmount) {
+      m_logger(Logging::ERROR) << "Escrow amount plus fee overflows; refusing";
+      return false;
+    }
+    required = params.xfgAmount + fee + SwapTxBuilder::MIN_FEE;
+
+    const FundingReadiness funding = getFundingReadiness(required, true);
+    if (!funding.funded) {
+      m_logger(Logging::ERROR) << "Refusing to start swap: " << funding.error;
+      return false;
+    }
   }
   if (amountDescriptor->family != SwapChainFamily::EVM &&
       params.ctrAmount > (std::numeric_limits<uint64_t>::max)()) {

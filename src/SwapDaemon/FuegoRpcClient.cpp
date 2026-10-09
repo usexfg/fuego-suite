@@ -276,6 +276,28 @@ std::string FuegoRpcClient::walletJsonRpc(const std::string& method, const std::
 
 // ── Daemon RPC methods ───────────────────────────────────────────────
 
+// `available` is the unlocked spendable balance. `locked` and `pending` are excluded on
+// purpose: an amount that is already escrowed or still maturing cannot fund a new swap,
+// and treating it as spendable would let the node over-advertise.
+bool FuegoRpcClient::getSpendableBalance(uint64_t& atomic) {
+  try {
+    const std::string body = daemonPost("/getbalance", "{}");
+    const Common::JsonValue json = Common::JsonValue::fromString(body);
+    if (!json.isObject() || !json.contains("available")) {
+      return false;
+    }
+    const int64_t value = json("available").getInteger();
+    if (value <= 0) {
+      atomic = 0;
+      return true;
+    }
+    atomic = static_cast<uint64_t>(value);
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
 bool FuegoRpcClient::getHeight(uint32_t& height) {
   try {
     std::string responseBody = daemonPost("/getheight", "{}");

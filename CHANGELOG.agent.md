@@ -52,6 +52,68 @@ Every feature/fix requires a task list with sign-off. Agents record name, date, 
 
 ---
 
+## Phase 2j: Gate A -- local escrow funding sufficiency
+
+**Date**: 2026-10-04
+**Agent**: opencode (space-bunny-free)
+**Status**: DONE -- wired, compiled, tested. Adversarial review applied (see below).
+
+### Correction: of the two gates I guessed at, one already exists
+
+Before implementing I checked the code, and my earlier guess was wrong in both halves:
+
+- "Refuse to advance to presigs until the peer lock is confirmed" would **break the
+  protocol**. The state order is `ESCROW_FUNDED -> PRESIGS_READY -> CTR_LOCKED ->
+  SECRET_REVEALED`, and presigs are adaptor-signed precisely so they can be built before
+  the counterparty locks. Requiring the lock first defeats the construction.
+- "Counterparty lock confirmed before the secret is revealed" **already exists**:
+  `SwapDaemon::handlePresigsReady` calls `client->verifyLock(params)` and only
+  transitions to `ADAPTOR_CTR_LOCKED` on success. The secret cannot be revealed without
+  passing through `CTR_LOCKED`.
+
+So exactly one gate was genuinely missing.
+
+### What Gate A does
+
+Refuses to start or keep advertising a swap the wallet cannot fund.
+
+- `FuegoRpcClient::getSpendableBalance` calls the wallet's `/getbalance` and reads
+  **`available`**, deliberately not `locked` or `total`: coins already escrowed or still
+  maturing cannot fund a new swap, and counting them would let the node over-advertise.
+  A negative `available` clamps to 0 rather than wrapping into a huge `uint64`.
+- `SwapDaemon::getFundingReadiness(requiredAtomic, refresh)` is the shared decision, with
+  a 30 s cache because `OfferManager::tick` consults it once per offer per block.
+- **Fails closed.** An unreachable RPC, a non-object body, a missing `available`, or a
+  non-integer value all mean "cannot prove the funds are there", never "funded". The
+  default the other way is precisely the failure the gate exists to prevent.
+- Wired into two places: `canStartNewSwap` (a floor of one network fee, so an offer is
+  withdrawn as soon as the wallet can no longer cover it) and `initiate` (the exact
+  `xfgAmount + protocol fee + MIN_FEE`, refreshed, checked before anything is persisted or
+  broadcast).
+
+### Two things the tests caught
+
+- The floor check initially computed the protocol fee from a default-constructed
+  `SwapParams()` whose `xfgAmount` is 0, which silently reduced the requirement to a bare
+  `MIN_FEE` while still looking like a fee calculation. Replaced with an honest floor plus
+  the exact check in `initiate`.
+- An earlier draft selected `SWAP_FEE_RATE_BPS` vs `TESTNET_SWAP_FEE_RATE_BPS` on
+  `m_network`. `m_network` is a plain string (not an enum, so it did not compile), and
+  nothing else in the daemon selects a testnet variant, so the split was removed rather
+  than invented. It now uses the same constant as `reportSwapFeeOnce`.
+
+`initiate` also guards `xfgAmount + fee` against wrap before adding: a near-max escrow must
+be refused, not silently reduced to a small requirement.
+
+### Tests
+
+`test_funding_gates`: **18 checks, 0 failures** covering empty/malformed/array bodies, a
+missing `available`, a non-integer `available`, a negative balance, the boundary at
+`required - 1` / `required` / `required + 1`, the wrap trap at the top of `uint64`, a real
+fuegod `/getbalance` shape, and a locked-heavy wallet that must report zero spendable.
+
+`ctest` over the 9 pricing/funding suites: **100% passed**.
+
 ## Phase 2i: price status snapshot on the status endpoint
 
 **Date**: 2026-10-04

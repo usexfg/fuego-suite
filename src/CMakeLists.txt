@@ -841,6 +841,12 @@ add_executable(test_price_status
 target_link_libraries(test_price_status PRIVATE
     SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
 
+# SwapDaemon test: escrow funding gate (fail-closed balance parsing and arithmetic)
+add_executable(test_funding_gates
+    SwapDaemon/tests/test_funding_gates.cpp)
+target_link_libraries(test_funding_gates PRIVATE
+    SwapDaemonLib Common Crypto OpenSSL::SSL OpenSSL::Crypto)
+
 # SwapDaemon unit test: DeFiLlama /prices/current parser (canned bodies)
 add_executable(test_defillama_feed
     SwapDaemon/tests/test_defillama_feed.cpp)
@@ -1064,6 +1070,7 @@ set(_TEST_DAEMON_TARGETS
     test_coingecko_feed
     test_price_worker
     test_price_status
+    test_funding_gates
     test_pyth_feed
     test_swap_hashlock
     test_sol_htlc_address

@@ -430,6 +430,17 @@ public:
   };
   ChainReadiness getChainReadiness(SwapPair pair, bool refresh = false);
 
+  // Gate A: can this node actually fund an escrow right now?
+  // Fails CLOSED -- an unreachable or unparseable wallet RPC means "cannot prove
+  // funding", never "funded". Cached briefly because OfferManager::tick consults this
+  // once per offer per block, and a wallet RPC call per offer would be far too chatty.
+  struct FundingReadiness {
+    bool        funded = false;
+    uint64_t    available = 0;
+    std::string error;
+  };
+  FundingReadiness getFundingReadiness(uint64_t requiredAtomic, bool refresh = false);
+
   // Start a new swap as initiator (Bob: has XFG, wants counterparty coin).
   bool initiate(SwapParams& params);
 
@@ -623,6 +634,15 @@ public:
      std::chrono::steady_clock::time_point checkedAt;
    };
    std::mutex m_readinessMutex;
+
+  // Cached wallet balance. Not keyed by pair: spendable XFG is a wallet-wide quantity,
+  // so one entry serves every pair and the per-call work is a single comparison.
+  struct FundingCacheEntry {
+    bool        valid = false;
+    uint64_t    available = 0;
+    std::chrono::steady_clock::time_point checkedAt{};
+  };
+  FundingCacheEntry m_fundingCache;
    std::map<SwapPair, ReadinessCacheEntry> m_readinessCache;
    std::unique_ptr<SwapP2P> m_p2p;
 

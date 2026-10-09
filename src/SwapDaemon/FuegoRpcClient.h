@@ -90,6 +90,10 @@ public:
 
   // Query /getheight
   bool getHeight(uint32_t& height);
+  // Unlocked, spendable XFG in atomic units, from the wallet's /getbalance `available`
+  // field. Returns false on any failure so callers can fail closed rather than assume
+  // the wallet is funded.
+  bool getSpendableBalance(uint64_t& atomic);
 
   // Relay via /sendrawtransaction
   bool sendRawTransaction(const std::string& txHex);
